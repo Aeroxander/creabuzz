@@ -101,6 +101,7 @@ interface IKitSetThreshold {
 
 interface IKitLockable {
     function setLockGuard(address guard) external;
+    function lockGuardSet() external view returns (bool);
 }
 
 /// @title DaoLaunchKit
@@ -326,7 +327,7 @@ contract DaoLaunchKit {
             revert PanelMismatch();
         }
         // The lock, and then the panel (its reviewers are checked against the lock in the mandate's constructor).
-        uint256 calls = 2 + (p.proposalThreshold == 0 ? 0 : 1) + (lock == address(0) ? 0 : (challenged ? 1 : 2));
+        uint256 calls = 3 + (p.proposalThreshold == 0 ? 0 : 1) + (lock != address(0) && !challenged ? 1 : 0);
         KitCall[] memory initCalls = new KitCall[](calls);
         uint256 next;
         // Governance opens when the buyers can hold their Shares. The DAO's voting policy is a clone made in its own
@@ -343,8 +344,10 @@ contract DaoLaunchKit {
             initCalls[next++] =
                 KitCall(predictedDao, 0, abi.encodeCall(IKitSetThreshold.setProposalThreshold, (p.proposalThreshold)));
         }
+        // The lock guard is chosen now, and a launch with no team chooses "none": either way no later vote can install
+        // one, which could refuse every exit (D73).
+        initCalls[next++] = KitCall(predictedShares, 0, abi.encodeCall(IKitLockable.setLockGuard, (lock)));
         if (lock != address(0)) {
-            initCalls[next++] = KitCall(predictedShares, 0, abi.encodeCall(IKitLockable.setLockGuard, (lock)));
             if (!challenged) {
                 initCalls[next++] = KitCall(
                     address(mandateFactory),
@@ -361,6 +364,7 @@ contract DaoLaunchKit {
         require(dao == predictedDao, "kit: dao address");
         address shares = IKitDao(dao).shares();
         require(shares == predictedShares, "kit: shares address");
+        require(IKitLockable(shares).lockGuardSet(), "kit: lock guard");
         // The factory the panel was named in is the one this DAO's own voting policy uses, or the lock would not honour it.
         require(IKitDao(dao).votingWeight() == predictedPolicy, "kit: policy address");
         require(IKitPolicy(IKitDao(dao).votingWeight()).mandateFactory() == address(mandateFactory), "kit: mandate factory");

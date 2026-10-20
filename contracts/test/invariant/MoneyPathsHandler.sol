@@ -855,6 +855,7 @@ contract MoneyPathsHandler is Test {
 
     /// @notice A stranger (or a holder, or a reviewer) calls something only the DAO, the lock or the budget may call. Every
     /// one of these must revert; if any succeeds, that is a violation in itself, and `_checkMoney` catches any money moved.
+    /// The allowance, permit and leaving-switch doors no longer exist on the DAO (D73, D76); calling them must still fail.
     function attack(uint8 door, uint256 whoSeed, uint256 amountSeed) external step {
         address who = whoSeed % 3 == 0 ? ATTACKER : whoSeed % 3 == 1 ? _anyone(whoSeed >> 2) : _pick(_reviewers, whoSeed);
         uint256 amount = bound(amountSeed, 1, 1_000_000e6);
@@ -862,8 +863,8 @@ contract MoneyPathsHandler is Test {
         address target;
         bytes memory data;
         door %= 18;
-        if (door == 0) (target, data) = (address(dao), abi.encodeCall(Moloch.spendAllowance, (address(usdc), amount)));
-        else if (door == 1) (target, data) = (address(dao), abi.encodeCall(Moloch.setAllowance, (who, address(usdc), amount)));
+        if (door == 0) (target, data) = (address(dao), abi.encodeWithSignature("spendAllowance(address,uint256)", address(usdc), amount));
+        else if (door == 1) (target, data) = (address(dao), abi.encodeWithSignature("setAllowance(address,address,uint256)", who, address(usdc), amount));
         else if (door == 2) {
             Call[] memory calls = new Call[](1);
             calls[0] = Call(address(usdc), 0, transferOut);
@@ -875,7 +876,9 @@ contract MoneyPathsHandler is Test {
             );
         } else if (door == 4) {
             (target, data) =
-                (address(dao), abi.encodeCall(Moloch.spendPermit, (0, address(usdc), 0, transferOut, bytes32(amountSeed))));
+                (address(dao), abi.encodeWithSignature(
+                    "spendPermit(uint8,address,uint256,bytes,bytes32)", uint8(0), address(usdc), uint256(0), transferOut, bytes32(amountSeed)
+                ));
         } else if (door == 5) (target, data) = (address(mandate), abi.encodeCall(TreasuryMandate.close, ()));
         else if (door == 6) {
             (target, data) =
@@ -901,10 +904,10 @@ contract MoneyPathsHandler is Test {
                 )
             );
             if (who == manager) return;
-        } else if (door == 16) (target, data) = (address(dao), abi.encodeCall(Moloch.setRagequittable, (false)));
+        } else if (door == 16) (target, data) = (address(dao), abi.encodeWithSignature("setRagequittable(bool)", false));
         else {
             bytes[] memory inner = new bytes[](1);
-            inner[0] = abi.encodeCall(Moloch.spendAllowance, (address(usdc), amount));
+            inner[0] = abi.encodeWithSignature("spendAllowance(address,uint256)", address(usdc), amount);
             (target, data) = (address(dao), abi.encodeCall(Moloch.multicall, (inner)));
         }
         vm.prank(who);

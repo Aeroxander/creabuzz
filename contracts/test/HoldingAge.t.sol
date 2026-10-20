@@ -128,13 +128,11 @@ contract HoldingAgeTest is VotingFixture {
 
     function test_burning_everything_clears_the_age_and_a_partial_burn_keeps_it() public {
         vm.warp(start + 40 days);
-        vm.prank(address(dao));
-        shares.burnFromMoloch(ALICE, 30e18);
+        _leave(ALICE, 30e18);
         (uint256 balance, uint256 age) = _age(ALICE);
         assertEq(balance, 70e18);
         assertEq(age, 40 days);
-        vm.prank(address(dao));
-        shares.burnFromMoloch(ALICE, 70e18);
+        _leave(ALICE, 70e18);
         (balance, age) = _age(ALICE);
         assertEq(balance, 0);
         assertEq(age, 0);
@@ -189,5 +187,13 @@ contract HoldingAgeTest is VotingFixture {
             (uint256 b, uint256 a) = _age(people[i]);
             if (b != 0) assertLe(a, vm.getBlockTimestamp() - start);
         }
+    }
+
+    /// @dev Shares burn only when their owner leaves (D73), so a test that needs fewer Shares has the holder leave.
+    function _leave(address holder, uint256 amount) internal {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(0);
+        vm.prank(holder);
+        dao.ragequit(tokens, amount, 0);
     }
 }

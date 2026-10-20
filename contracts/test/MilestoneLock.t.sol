@@ -275,9 +275,9 @@ contract MilestoneLockTest is VotingFixture {
         vm.expectRevert(MilestoneLock.OnlyDao.selector);
         lock.forfeit(ALICE);
 
-        // Before the forfeit, even a governance burn of the locked part is refused.
+        // Before the forfeit, a governance burn is refused outright: Shares burn only while their owner leaves (D73).
         vm.prank(address(dao));
-        vm.expectRevert(Shares.LockedShares.selector);
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
         shares.burnFromMoloch(ALICE, 51e18);
         // And nobody but the lock can burn through the forfeit path.
         vm.prank(address(dao));

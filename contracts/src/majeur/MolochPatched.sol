@@ -896,6 +896,10 @@ contract Moloch {
     }
 
     /* PERMIT */
+    // @@CREABUZZ PATCH BEGIN removed-set-permit
+    // Removed (D76: permits let a vote grant calls to run later; nothing here uses them). The upstream text stays in the comment below for the fork checker.
+    /*
+    // @@CREABUZZ PATCH END removed-set-permit
     function setPermit(
         uint8 op,
         address to,
@@ -922,7 +926,14 @@ contract Moloch {
 
         emit PermitSet(spender, tokenId, count);
     }
+    // @@CREABUZZ PATCH BEGIN removed-set-permit-end
+    */
+    // @@CREABUZZ PATCH END removed-set-permit-end
 
+    // @@CREABUZZ PATCH BEGIN removed-spend-permit
+    // Removed (D76: permits let a vote grant calls to run later; nothing here uses them). The upstream text stays in the comment below for the fork checker.
+    /*
+    // @@CREABUZZ PATCH END removed-spend-permit
     function spendPermit(uint8 op, address to, uint256 value, bytes calldata data, bytes32 nonce)
         public
         payable
@@ -941,20 +952,41 @@ contract Moloch {
         if (futarchy[tokenId].enabled) _resolveFutarchyYes(tokenId);
         emit PermitSpent(tokenId, msg.sender, op, to, value);
     }
+    // @@CREABUZZ PATCH BEGIN removed-spend-permit-end
+    */
+    // @@CREABUZZ PATCH END removed-spend-permit-end
 
     /**
      * ALLOWANCE
      */
+    // @@CREABUZZ PATCH BEGIN removed-set-allowance
+    // Removed (D76: allowances let a vote grant payments out of the treasury; nothing here uses them). The upstream text stays in the comment below for the fork checker.
+    /*
+    // @@CREABUZZ PATCH END removed-set-allowance
     function setAllowance(address spender, address token, uint256 amount) public payable onlyDAO {
         allowance[token][spender] = amount;
     }
+    // @@CREABUZZ PATCH BEGIN removed-set-allowance-end
+    */
+    // @@CREABUZZ PATCH END removed-set-allowance-end
 
+    // @@CREABUZZ PATCH BEGIN removed-spend-allowance
+    // Removed (D76: allowances let a vote grant payments out of the treasury; nothing here uses them). The upstream text stays in the comment below for the fork checker.
+    /*
+    // @@CREABUZZ PATCH END removed-spend-allowance
     function spendAllowance(address token, uint256 amount) public nonReentrant {
         allowance[token][msg.sender] -= amount;
         _payout(token, msg.sender, amount);
     }
+    // @@CREABUZZ PATCH BEGIN removed-spend-allowance-end
+    */
+    // @@CREABUZZ PATCH END removed-spend-allowance-end
 
     /* SALE */
+    // @@CREABUZZ PATCH BEGIN removed-set-sale
+    // Removed (D76: the DAO's own share sale minted or handed out Shares at any price a vote chose). The upstream text stays in the comment below for the fork checker.
+    /*
+    // @@CREABUZZ PATCH END removed-set-sale
     function setSale(
         address payToken,
         uint256 pricePerShare,
@@ -969,7 +1001,14 @@ contract Moloch {
         });
         emit SaleUpdated(payToken, pricePerShare, cap, minting, active, isLoot);
     }
+    // @@CREABUZZ PATCH BEGIN removed-set-sale-end
+    */
+    // @@CREABUZZ PATCH END removed-set-sale-end
 
+    // @@CREABUZZ PATCH BEGIN removed-buy-shares
+    // Removed (D76: the DAO's own share sale minted or handed out Shares at any price a vote chose). The upstream text stays in the comment below for the fork checker.
+    /*
+    // @@CREABUZZ PATCH END removed-buy-shares
     function buyShares(address payToken, uint256 shareAmount, uint256 maxPay)
         public
         payable
@@ -1021,8 +1060,21 @@ contract Moloch {
 
         emit SharesPurchased(msg.sender, payToken, shareAmount, cost);
     }
+    // @@CREABUZZ PATCH BEGIN removed-buy-shares-end
+    */
+    // @@CREABUZZ PATCH END removed-buy-shares-end
 
     /* RAGEQUIT */
+    // @@CREABUZZ PATCH BEGIN ragequit-leaving
+    uint256 constant LEAVING_SLOT = 0x6372656162757a7a2e6c656176696e67; // "creabuzz.leaving"
+
+    /// @notice True only while `ragequit` burns the leaving holder's Shares and Loot: the one time they accept a burn.
+    function leaving() public view returns (bool on) {
+        assembly ("memory-safe") {
+            on := tload(LEAVING_SLOT)
+        }
+    }
+    // @@CREABUZZ PATCH END ragequit-leaving
     function ragequit(address[] calldata tokens, uint256 sharesToBurn, uint256 lootToBurn)
         public
         nonReentrant
@@ -1042,8 +1094,20 @@ contract Moloch {
             // can never be ragequit: leaving them in the denominator would shrink every member's exit by their weight.
             total -= _shares.balanceOf(address(this)) + _loot.balanceOf(address(this));
     // @@CREABUZZ PATCH END ragequit-excludes-treasury-shares
+    // @@CREABUZZ PATCH BEGIN ragequit-leaving-flag
+            // Shares and Loot accept a burn only while this is up (D73), so no vote can burn a holder's units: the
+            // only burns are a holder's own exit here, and the milestone lock's forfeits through `burnForfeited`.
+            assembly ("memory-safe") {
+                tstore(LEAVING_SLOT, 1)
+            }
+    // @@CREABUZZ PATCH END ragequit-leaving-flag
             if (sharesToBurn != 0) _shares.burnFromMoloch(msg.sender, sharesToBurn);
             if (lootToBurn != 0) _loot.burnFromMoloch(msg.sender, lootToBurn);
+    // @@CREABUZZ PATCH BEGIN ragequit-leaving-flag-clear
+            assembly ("memory-safe") {
+                tstore(LEAVING_SLOT, 0)
+            }
+    // @@CREABUZZ PATCH END ragequit-leaving-flag-clear
 
             address prev;
             address tk;
@@ -1109,9 +1173,16 @@ contract Moloch {
         timelockDelay = s;
     }
 
+    // @@CREABUZZ PATCH BEGIN removed-set-ragequittable
+    // Removed (D73: nobody can switch leaving off; a DAO keeps the choice it was born with). The upstream text stays in the comment below for the fork checker.
+    /*
+    // @@CREABUZZ PATCH END removed-set-ragequittable
     function setRagequittable(bool on) public payable onlyDAO {
         ragequittable = on;
     }
+    // @@CREABUZZ PATCH BEGIN removed-set-ragequittable-end
+    */
+    // @@CREABUZZ PATCH END removed-set-ragequittable-end
 
     function setTransfersLocked(bool sharesLocked, bool lootLocked) public payable onlyDAO {
         shares.setTransfersLocked(sharesLocked);
@@ -1492,11 +1563,16 @@ contract Shares {
         }
     }
 
+    /// @notice Whether the lock guard has been chosen: a lock, or "none" (zero). Either way the choice is final.
+    bool public lockGuardSet;
+
     function setLockGuard(address guard) public payable onlyDAO {
         require(guard == address(0) || guard.code.length != 0, Unauthorized());
         // Set once. A lock that a vote could undo or swap for a friendlier one is a promise the team would have to
-        // keep only for as long as they keep a majority, so the DAO that sets it cannot take it off again.
-        require(lockGuard == address(0), LockGuardSet());
+        // keep only for as long as they keep a majority, so the DAO that sets it cannot take it off again. Choosing no
+        // lock is final too (D73): a guard installed later could refuse every exit.
+        require(!lockGuardSet, LockGuardSet());
+        lockGuardSet = true;
         emit LockGuardUpdated(lockGuard, guard);
         lockGuard = guard;
     }
@@ -1539,12 +1615,15 @@ contract Shares {
 
     function burnFromMoloch(address from, uint256 amount) public payable onlyDAO {
     // @@CREABUZZ PATCH BEGIN shares-burn-lock
+        // Only a holder's own exit burns their Shares (D73): a passed vote that calls this directly is refused.
+        require(Moloch(DAO).leaving(), Unauthorized());
         _requireUnlocked(from, amount);
-    // @@CREABUZZ PATCH END shares-burn-lock
         _burn(from, amount);
     }
 
+    /// @dev Upstream's burn body, shared with `burnForfeited`.
     function _burn(address from, uint256 amount) internal {
+    // @@CREABUZZ PATCH END shares-burn-lock
         balanceOf[from] -= amount;
         unchecked {
             totalSupply -= amount;
@@ -2139,6 +2218,10 @@ contract Loot {
     }
 
     function burnFromMoloch(address from, uint256 amount) public payable onlyDAO {
+        // @@CREABUZZ PATCH BEGIN loot-burn-leaving
+        // Only a holder's own exit, or the DAO converting their Loot into Shares one for one, burns Loot (D73).
+        require(Moloch(DAO).leaving() || Moloch(DAO).convertingLoot(), Unauthorized());
+        // @@CREABUZZ PATCH END loot-burn-leaving
         // @@CREABUZZ PATCH BEGIN loot-checkpoint-writes
         uint256 supplyBefore = totalSupply;
         // @@CREABUZZ PATCH END loot-checkpoint-writes

@@ -256,6 +256,11 @@ contract DaoLaunchKitTest is Test {
         assertEq(shares.lockGuard(), address(0));
         vm.prank(founder);
         shares.transfer(alice, 225e18);
+        // "No lock" was chosen at birth and is final: a vote cannot install a guard that could refuse every exit (D73).
+        assertTrue(shares.lockGuardSet());
+        vm.prank(d);
+        vm.expectRevert(Shares.LockGuardSet.selector);
+        shares.setLockGuard(address(this));
     }
 
     function test_the_launch_names_the_milestone_panel_and_no_vote_can_take_the_lock_off() public {

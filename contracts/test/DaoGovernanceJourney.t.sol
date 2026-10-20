@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test, Vm} from "forge-std/Test.sol";
-import {Call, Moloch, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
+import {Call, Loot, Moloch, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 import {AllocationVoting} from "../src/AllocationVoting.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 import {ClaimStake} from "../src/ClaimStake.sol";
@@ -105,17 +105,16 @@ contract DaoGovernanceJourneyTest is Test {
         policy = AllocationVoting(dao.votingWeight());
         cash = new MandateCurrency();
         cash.mint(address(dao), 100000e18);
+        // An investor pays in and the holders vote them Loot for it (the DAO's own share sale is gone, D76).
+        cash.mint(INVESTOR, 1000e18);
+        vm.prank(INVESTOR);
+        cash.transfer(address(dao), 1000e18);
         execute(
-            address(dao),
-            abi.encodeCall(Moloch.setSale, (address(cash), uint256(10), uint256(100e18), true, true, true)),
+            address(dao.loot()),
+            abi.encodeCall(Loot.mintFromMoloch, (INVESTOR, uint256(100e18))),
             bytes32("investment"),
             48 hours
         );
-        cash.mint(INVESTOR, 1000e18);
-        vm.startPrank(INVESTOR);
-        cash.approve(address(dao), 1000e18);
-        dao.buyShares(address(cash), 100e18, 1000e18);
-        vm.stopPrank();
         vm.roll(block.number + 1);
         assertEq(cash.balanceOf(address(dao)), 101000e18);
         assertEq(dao.loot().balanceOf(INVESTOR), 100e18);

@@ -63,6 +63,9 @@ contract ContributorKit {
     Summoner public immutable summoner;
     TreasuryMandateFactory public immutable budgetFactory;
     address public immutable molochImplementation;
+    /// @notice The Shares implementation every DAO of this factory clones (made by the Moloch implementation with
+    /// CREATE2), so the kit can point at a DAO's Shares before the DAO exists.
+    address public immutable sharesImplementation;
 
     /// @dev The patched factory's defaults, read back after launch: a decision lives 14 days and waits 1 day.
     uint64 internal constant PROPOSAL_TTL = 14 days;
@@ -74,6 +77,10 @@ contract ContributorKit {
         summoner = summoner_;
         budgetFactory = TreasuryMandateFactory(summoner_.mandateFactory());
         molochImplementation = summoner_.getImplementation();
+        sharesImplementation = _create2(
+            molochImplementation, bytes32(bytes20(molochImplementation)), keccak256(type(Shares).creationCode)
+        );
+        if (sharesImplementation.code.length == 0) revert InvalidTerms();
     }
 
     /// @notice The caller's DAO address for `founderShares` and `salt`, before anything is sent.
@@ -116,7 +123,7 @@ contract ContributorKit {
         address predicted = predictDao(msg.sender, p.founderShares, p.salt);
         uint96 threshold = thresholdFor(p.founderShares);
 
-        Call[] memory setup = new Call[](withProject ? 4 : 3);
+        Call[] memory setup = new Call[](withProject ? 5 : 4);
         setup[0] = Call(predicted, 0, abi.encodeCall(Moloch.setProposalThreshold, (threshold)));
         setup[1] = Call(
             address(budgetFactory),
@@ -137,7 +144,10 @@ contract ContributorKit {
                 )
             );
         }
-        setup[next] = Call(predicted, 0, abi.encodeCall(Moloch.setTransfersLocked, (true, true)));
+        setup[next++] = Call(predicted, 0, abi.encodeCall(Moloch.setTransfersLocked, (true, true)));
+        // No lock guard, decided now and for good: a guard a later vote installed could refuse every exit (D73).
+        address predictedShares = _predictShares(predicted);
+        setup[next] = Call(predictedShares, 0, abi.encodeCall(Shares.setLockGuard, (address(0))));
 
         (address[] memory holders, uint256[] memory amounts) = _holders(msg.sender, p.founderShares);
         dao = address(
@@ -164,12 +174,26 @@ contract ContributorKit {
             dao != predicted || made.proposalThreshold() != threshold || made.proposalTTL() != PROPOSAL_TTL
                 || made.timelockDelay() != TIMELOCK || policy == address(0) || AllocationVoting(policy).dao() != dao
                 || budgetFactory.daos(budget) != dao || !Shares(address(made.shares())).transfersLocked()
+                || address(made.shares()) != predictedShares || !Shares(predictedShares).lockGuardSet()
         ) revert SetupNotApplied();
         if (withProject) {
             (address manager,,,,, uint128 shareBudget,) = TreasuryMandate(budget).projects(p.projectId);
             if (manager != p.projectManager || shareBudget != p.projectShares) revert SetupNotApplied();
         }
         emit ContributorProjectLaunched(msg.sender, dao, budget, p.salt, p.projectId);
+    }
+
+    /// @dev The DAO's Shares clone: the minimal proxy of the Shares implementation, made by the DAO with CREATE2 and
+    /// the DAO's own address as salt (`Moloch.init`).
+    function _predictShares(address dao) internal view returns (address) {
+        bytes memory proxy = abi.encodePacked(
+            hex"602d5f8160095f39f35f5f365f5f37365f73", sharesImplementation, hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
+        );
+        return _create2(dao, bytes32(bytes20(dao)), keccak256(proxy));
+    }
+
+    function _create2(address deployer, bytes32 salt, bytes32 initcodeHash) internal pure returns (address) {
+        return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), deployer, salt, initcodeHash)))));
     }
 
     function _holders(address founder, uint256 founderShares)

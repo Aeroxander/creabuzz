@@ -96,6 +96,17 @@ contract ContributorKitTest is Test {
         assertEq(AllocationVoting(dao.votingWeight()).dao(), address(dao));
     }
 
+    function test_no_lock_guard_is_chosen_at_birth_so_no_vote_can_install_one() public {
+        (Moloch dao,) = _launch(_params("no-guard"));
+        Shares shares = dao.shares();
+        assertEq(shares.lockGuard(), address(0));
+        assertTrue(shares.lockGuardSet(), "the choice of no lock is made at birth and is final (D73)");
+        vm.prank(address(dao));
+        vm.expectRevert(Shares.LockGuardSet.selector);
+        shares.setLockGuard(address(this));
+        assertEq(kit.sharesImplementation().code.length > 0, true);
+    }
+
     function test_the_first_claim_is_filed_bound_and_approved_on_day_one_and_an_award_still_mints() public {
         (Moloch dao, TreasuryMandate budget) = _launch(_params("day-one"));
         ClaimStake claims = budget.claims();

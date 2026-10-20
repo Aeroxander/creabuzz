@@ -275,8 +275,7 @@ contract AllocationVotingTest is VotingFixture {
 
     function testFuzz_any_nonzero_remaining_supply_can_authorize(uint96 input) public {
         uint96 supply = uint96(bound(input, 1, 100e18));
-        vm.prank(address(dao));
-        shares.burnFromMoloch(ALICE, 100e18 - supply);
+        _leave(ALICE, 100e18 - supply);
         vm.roll(block.number + 1);
         vote(ALICE, ID, supply);
         vm.warp(vm.getBlockTimestamp() + 48 hours);
@@ -392,5 +391,13 @@ contract AllocationVotingTest is VotingFixture {
     function _rules(uint256 id) internal view returns (AllocationVoting.Rules memory r) {
         (r.votingSupply, r.quorum, r.minYes, r.approvalBps, r.reviewEndsAt, r.expiresAt, r.delay, r.hold, r.bounded, r.exclusive) =
             ledger.proposals(id);
+    }
+
+    /// @dev Shares burn only when their owner leaves (D73), so a test that needs fewer Shares has the holder leave.
+    function _leave(address holder, uint256 amount) internal {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(0);
+        vm.prank(holder);
+        dao.ragequit(tokens, amount, 0);
     }
 }
