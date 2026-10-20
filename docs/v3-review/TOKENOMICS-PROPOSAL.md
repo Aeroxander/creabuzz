@@ -2,7 +2,10 @@
 
 Status: **decided 2026-10-21**: you accepted T1 to T8 as written; they are D72 to D79 in [DECISIONS.md](DECISIONS.md), and
 the contract changes are written up in [TOKENOMICS-CONTRACT-CHANGES.md](TOKENOMICS-CONTRACT-CHANGES.md). Nothing is built yet.
-The text below is the proposal as you accepted it. Each recommendation names the change it would need and what it does to the
+The text below is the proposal as you accepted it. A second review the same day corrected four things in it, marked where they
+appear: the exit pays per Share, not per dollar (auction buyers pay different prices); the notice before a decision runs
+is at least 3 days, not 3.5; the yearly cap is measured against the Shares that count on exit; two more ways to take
+leaving away were closed; and the 30 days' notice before trading is now enforced by the contract, not only by the app. The write-up's §0a lists them. Each recommendation names the change it would need and what it does to the
 audit scope ([AUDIT-SCOPE.md](AUDIT-SCOPE.md)).
 
 It covers the six open questions about the raise: what a backer gets, limits on the split, dilution, trading after the
@@ -37,7 +40,7 @@ before the audit, because the fix touches the exit rule in the patched DAO.
 
 | # | Question | Recommendation | Change | Audit scope |
 |---|---|---|---|---|
-| T1 | What does leaving pay? | **Team Shares still locked behind milestones are left out when the exit is worked out**, so a backer who leaves before any milestone takes their full share of the money not yet spent. The team's claim grows as each milestone unlocks. | Patched DAO `ragequit` (one more subtraction), a `totalLocked()` read on both milestone locks, the web exit preview | Changes one audited function a little; invariant 3 is rewritten |
+| T1 | What does leaving pay? | **Team Shares still locked behind milestones are left out when the exit is worked out**, so a backer who leaves before any milestone takes their Shares' full proportional part of the money not yet spent (per Share, not per dollar: auction buyers pay different prices). The team's claim grows as each milestone unlocks. | Patched DAO `ragequit` (one more subtraction), a `totalLocked()` read on both milestone locks, the web exit preview | Changes one audited function a little; invariant 3 is rewritten |
 | T2 | Can leaving be switched off? | **No. Remove the off switch** from DAOs made here. | Delete `setRagequittable` | Smaller |
 | T3 | What does the sale have to sell? | **The sale sells out or refunds**: the target is the whole sale tranche at the starting price. A popular sale still clears higher and raises more. | App default (the existing "fixed price" line, 100%) and a kit check | One `require` in the kit |
 | T4 | Limits on the split | **Sale at least 60% of all Shares, team at most 35%, DAO reserve at most 20% (default 0). All of the team's Shares behind 2 to 8 milestones, none worth more than half.** Defaults: 75 / 25 / 0. | Checks in `DaoLaunchKit` and the planner; new presets | A handful of `require`s in the kit |
@@ -55,9 +58,9 @@ contributor agreements.
 
 | | Today, raise just meets target | Proposed |
 |---|---|---|
-| $1,000 if you leave on day one | $130 | $1,000 (less anything already spent) |
+| $1,000 if you leave on day one (everyone paid the same average price) | $130 | $1,000 (less anything already spent) |
 | The team's share of the votes on day one | 87% | 25% (film), 30% (app) |
-| New Shares possible in two years | No limit; 77% of all Shares already sit in the DAO, handed out by one vote | At most 21% more, and only for reviewed work |
+| New Shares in two years | No limit; 77% of all Shares already sit in the DAO, handed out by one vote | Only for reviewed work; they can cut each Share's exit value by at most 9.1% a year (about 17% over two) |
 | Who can switch off leaving | A vote | Nobody |
 | Can Shares be sold to someone else | Yes, on any exchange anyone sets up | No, until a market is voted open under the bar |
 
@@ -92,9 +95,10 @@ total even though they can never leave. Money the DAO already put into a work bu
 not part of anyone's exit: it is committed to the work.
 
 **Votes**: a treasury decision (the "full vote") needs 20% of the voting Shares to take part and two thirds of those
-voting for or against to agree, after a 48-hour review, a 12-hour hold and a one-day wait (`AllocationVoting`). The team
-votes with all its Shares. Anything nobody votes against passes once the team alone clears the turnout bar. What
-protects the backers is the 3.5 days in which they can see a decision coming and leave.
+voting for or against to agree, after a 48-hour review (the 12-hour hold runs inside it) and a one-day wait
+(`AllocationVoting`): at least 3 days from opening to running. The team votes with all its Shares. Anything nobody votes
+against passes once the team alone clears the turnout bar. What protects the backers is those 3 days in which they can
+see a decision coming and leave.
 
 Put together: **the exit is the backer's only real protection, and today the team's free allocation dilutes it**
 (a backer who leaves on day one gets back half when the sale sells out, 13% when it only meets its target), **while the team's votes decide everything.**
@@ -114,7 +118,7 @@ share of revenue. Two questions: should leaving be worth more, and should there 
    number is the problem: half (sold out) to 13% (at target) of the backer's money on day one, before anything is spent.
    A project would have to explain why a backer who leaves the next morning loses most of their money.
 2. **Leave locked team Shares out of the exit total (recommended).** The total becomes: every Share except the DAO's own
-   and the team's still-locked ones. On day one a backer can leave with their full share of the unspent money. Each time
+   and the team's still-locked ones. On day one a backer can leave with their Shares' full part of the unspent money. Each time
    a milestone unlocks, those team Shares join the total and the team's claim grows, as it does in the votes. If backers
    leave before a milestone, they take their money with them, and the team's later Shares claim only what is left. This
    is the old Moloch idea (everyone who leaves takes their fair part) applied to Shares that were not paid for.
@@ -124,7 +128,8 @@ share of revenue. Two questions: should leaving be worth more, and should there 
 
 **Recommendation: option 2 (T1), together with T2** (leaving cannot be switched off). With transfers locked (T6),
 leaving is the only way out, so it has to stay on. Today a vote can switch it off (`setRagequittable`), and the money
-paths invariants even test that door.
+paths invariants even test that door. (A review found two more ways a vote could take leaving away, a lock guard
+installed later and a burn of a holder's Shares; both are closed in the write-up, §2a.)
 
 **What it needs**
 
@@ -267,8 +272,9 @@ can pass alone can hand them out, which cuts a backer's 3% to almost nothing.
 - The DAO's built-in share sale goes, together with the permits and allowances nothing here uses (AUDIT-SCOPE.md §6,
   item 4, already suggested it). A second raise would be its own design later, with first refusal and a price no lower
   than the exit value per Share, so a new buyer never takes value from those who stayed.
-- Over two years the most a backer can be diluted is 21% (1.1 × 1.1), and the page shows how much of this year's
-  allowance is left.
+- The yearly 10% is measured against the Shares that count when someone leaves, so new Shares can cut each Share's
+  exit value by at most 9.1% a year (1 − 1/1.1), about 17% over two years; unlocks are separate and shown milestone by
+  milestone. The page shows how much of this year's allowance is left.
 
 **What it needs**
 
@@ -417,7 +423,8 @@ lawyer check the sale page, the agreement and the exit screen together.
 ## 8. Worked examples
 
 Assumptions for all three: amounts in USDC; nothing happens that the table does not list; "$1,000 at exit" is what a
-backer who paid $1,000 at the sale price would receive by leaving at that moment. Spending is counted when the money
+backer who paid $1,000 at the sale's average price would receive by leaving at that moment (the exit pays per Share,
+so a buyer who paid more than the average per Share gets less, an earlier, cheaper buyer more). Spending is counted when the money
 goes into a work budget, because from then on it is not in the treasury. Today's rules use the standard 20 / 20 / 60
 split, a billion Shares, and a raise that meets its target exactly (15% of the tranche sold). The proposed rules use T1
 to T6. The numbers come from a short script (the formula in §1); each row is one event.
@@ -450,7 +457,8 @@ pass it.
 
 **What the backer should read from it.** The exit is not "your money back": money spent on making the film is gone, and
 that is the point of backing it. What the exit gives is protection against a team that does not spend well. Proposed,
-a backer who loses confidence before the production budget passes can leave with all of their $1,000. Today, the same
+a backer who paid the average price and loses confidence before the production budget passes can leave with all of
+their $1,000. Today, the same
 backer leaves with $130, and the team, with 87% of the votes, decides the budget.
 
 ### 8b. A $250,000 app raise
@@ -483,7 +491,7 @@ is no limit.
 the release happen, and a backer who leaves before each step takes their full part of what is left. By month 13 most of
 the raise has been spent on the work, which is what it was for; from then on revenue is what raises the exit value. A
 team that wanted to pay itself the treasury instead would need backers not to vote against it, and everyone who noticed
-in the 3.5 days could leave with their full part first.
+in the 3 days could leave with their full part first.
 
 ### 8c. An open-source contributor project (no raise)
 

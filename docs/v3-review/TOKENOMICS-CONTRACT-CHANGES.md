@@ -1,17 +1,17 @@
 # The tokenomics decisions as contract changes (write-up before the code, D72–D79, 2026-10-21)
 
 You accepted T1 to T8 of [TOKENOMICS-PROPOSAL.md](TOKENOMICS-PROPOSAL.md) as written (D72–D79). As the plan asks of any
-contract change, this says exactly what changes, in which contract, what it must not break, how it is tested and what it
+contract change, this says exactly what changes (revised after a second review the same day, D80, §0a), in which contract, what it must not break, how it is tested and what it
 does to the audit, before any code is written. Nothing here is built yet.
 
 | Decision | What | Contracts |
 |---|---|---|
 | D72 (T1) | Team Shares still locked are left out of the exit total | `MilestoneChallenge`, `MilestoneLock`, patched `Moloch.ragequit` |
-| D73 (T2) | Leaving cannot be switched off | patched `Moloch` (remove `setRagequittable`) |
+| D73 (T2) | Leaving cannot be switched off or taken away | patched `Moloch` (remove `setRagequittable`; burns only while leaving), `Shares` (the lock guard decided at birth) |
 | D74 (T3) | The sale sells out or refunds | `DaoLaunchKit` |
 | D75 (T4) | Limits on the split and the milestones | `DaoLaunchKit` |
 | D76 (T5) | New Shares only as pay for reviewed work, at most 10% a year; the DAO's own share sale, permits and allowances removed | `Shares`, `Loot`, patched `Moloch`, `DaoLaunchKit` |
-| D77 (T6) | Shares cannot be sent between wallets, except to and from the auction | `Shares`, `DaoLaunchKit` |
+| D77 (T6) | Shares cannot be sent between wallets, except to and from the auction; lifting that takes 30 days' notice | `Shares`, `DaoLaunchKit` |
 | D78 (T7) | A revenue pledge into the treasury | none (app only) |
 | D79 (T8) | The founder's limits in contributor projects | `ContributorKit` (and the D76 rule) |
 
@@ -33,6 +33,22 @@ Built in a scratch copy of `contracts/` at `1bcb885c0` (solc 0.8.37, `via_ir`, 2
 | `MilestoneLockFactory` (runtime) | 9,078 | 24,576 | |
 
 So the removals of D73 and D76 come first: they make the room every other change in the patched DAO needs.
+
+## 0a. What a second review changed (2026-10-21)
+
+Another AI reviewed the proposal and this write-up against the code. Each point was checked before anything here
+changed; all of them hold, and one more turned up while checking them.
+
+| Finding | Checked | What changed here |
+|---|---|---|
+| A vote can still close leaving: `Shares.setLockGuard` accepts any contract while the slot is empty, and contributor projects and teamless raises are born without a guard. A guard that reverts in `lockedOf` (or, after D72, reports more than exists in `totalLocked`) blocks every exit, for good | Yes (`MolochPatched.sol` 1495: set once, any contract with code) | §2: the guard is decided at birth, including "none", and cannot be set after. Both kits test it |
+| **Found while checking:** a vote can call `Shares.burnFromMoloch(holder, amount)` directly. It is `onlyDAO`, and its only intended caller is `ragequit`, so a passed proposal can burn any holder's free Shares: their exit taken away without leaving ever being switched off | Yes (1540; the only call in the DAO is from `ragequit`, 1045) | §2: Shares accept a burn only while the DAO is inside `ragequit`, the same transient-flag pattern as D76's awards |
+| "$1,000 back on day one" is wrong for a buyer who paid more than others. The auction sells each block at that block's price, so early buyers pay less per Share, and the exit pays per Share, not per dollar (the reviewer's local run: $50 and $100 for 50 Shares each, both leave with $75) | Yes: that is how the auction works; the worked examples assumed one price | The promise is a proportional claim on the pooled proceeds; the proposal's tables say what they assume; a regression case in §1's tests |
+| The notice before a decision runs is 72 hours, not 84: the hold runs inside the review (`AllocationVoting.earliestApproval` takes the later of review end and hold end), then the one-day delay | Yes (`AllocationVoting.sol` 453) | Copy and docs say "at least 3 days" for the full vote (2 for the lighter one). No contract change: 72 hours is enough to send one exit transaction, and a longer wait costs every honest decision |
+| The 30 days' notice before trading was app policy: a raw proposal could lift the transfer lock at once | Yes | §5: lifting the lock takes effect 30 days after it is announced, in `Shares`. The audit, legal read and track record stay app policy, and the page says which is which |
+| The yearly cap was measured against Shares that include locked team Shares, which the exit leaves out: 10 new Shares on 65 backer Shares and 35 locked cut each Share's exit value by 13.3%, not 10% | Yes | §4: the base is the same total the exit uses, so new Shares can cut each Share's exit value by at most 1 − 1/1.1 ≈ 9.1% a year; unlocks are separate and shown on their own |
+| D79 compares the founder with a budget that may never be awarded | Yes | §6 says it is a starting limit, not contributor control; founder-led governance stays a stated dependency until ownership actually spreads |
+| Closing Loot for good conflicts with the trading note's later Shares-to-Loot idea | Partly: no such conversion exists in the contracts, and the clones cannot be upgraded, so it needs new code and a migration (or a separate token) whether or not Loot is closed | §4 says so; nothing speculative is added now |
 
 The auction question the proposal left open is answered by its source: the auction prices each block from the supply
 still left divided by the blocks still left (`ContinuousClearingAuction.sol`, `DemandLib.currencyRaisedAtPrice` with
@@ -82,6 +98,13 @@ predicted DAO, the executor, the auction or the kit (§3). What moves the total:
 A holder who leaves just before an unlock takes more than one who leaves just after. That is the intended effect ("leave
 before each milestone with your full part"), not a race to fix.
 
+**What it promises, exactly.** Every Share that counts gets the same part of the pooled treasury. Buyers in the auction
+pay different prices (earlier blocks clear lower), so the promise is "your Shares' proportional part of what is left",
+not "the money you paid": a buyer who paid more than the average per Share gets back less than they paid even before
+anything is spent, and an earlier buyer more. Protecting each buyer's own principal would need a different sale or
+per-buyer accounting; that is not proposed. The sale page and the exit screen show the buyer's own average price next to
+the exit value per Share, so the difference is visible.
+
 **The app.** `ragequit-position.ts` reads `totalLocked()` from the Shares' lock guard and subtracts it, so the exit
 screen still shows exactly what the chain pays (invariant 3). The Milestones tab says that an unlock lowers the exit
 value of every other Share, and when the next one could happen.
@@ -92,6 +115,8 @@ value of every other Share, and when the next one could happen.
 - after one milestone unlocks, the exit uses the unlocked tranche; a forfeit and an upheld late objection leave every
   other holder's exit unchanged;
 - a guard that reports more locked than exists makes `ragequit` revert, not pay;
+- two buyers at different auction prices (the reviewer's case: $50 and $100 for 50 Shares each, $150 in the treasury)
+  each leave with $75: the exit pays per Share, and the test pins it so the copy cannot drift back to "your money";
 - `totalLocked == Σ lockedOf(team)` after every step, in `MoneyPaths` as a new invariant;
 - invariant 3 and `RagequitPreviewFfi.t.sol` rewritten for the new total;
 - mutations: the subtraction removed; the counter not decreased on unlock; the counter not decreased on forfeit.
@@ -119,6 +144,31 @@ decision forms uses any of them.
 
 **Tests**: a proposal calling each removed selector cannot move money or change the setting (the test pins whether the
 call reverts or does nothing); the full suite and the simulation still pass with the doors gone.
+
+### 2a. D73 also covers the two other ways a vote could take leaving away
+
+Removing the switch is not enough on its own (§0a):
+
+- **The lock guard is decided at birth.** `Shares` gains `bool lockGuardSet`; `setLockGuard(guard)` may be called once,
+  with a lock **or with zero for "no lock"**, and either way the choice is final. Today zero leaves the slot open, and a
+  later vote can fill it with any contract, which could refuse every exit. `DaoLaunchKit` calls it with the lock, or
+  with zero for a teamless raise; `ContributorKit` calls it with zero; both read `lockGuardSet` back. A DAO made without
+  a kit keeps today's behaviour until it chooses.
+- **Shares are burned only by their owner leaving.** `Shares.burnFromMoloch` (and `Loot.burnFromMoloch`) accept a burn
+  only while the DAO is inside `ragequit`: `ragequit` sets a transient flag (as D76's award flag, `leaving()`), and the
+  burn requires it. `ragequit` only ever burns from `msg.sender`, so no vote can burn a holder's Shares. Burns that are
+  meant to happen are unaffected: forfeits and upheld late objections go through `burnForfeited`, which only the lock
+  can call. A teamless or contributor DAO has no such path, so in those DAOs nobody's Shares can be burned except by
+  their owner.
+
+Both are a few bytes (the flag in `ragequit`, a `require` in two burns, a bool in `Shares`). After them, the only way a
+holder's exit can shrink is the money leaving the treasury by a passed vote, which is the governance the product
+describes, and the holder's own notice of at least three days to leave first.
+
+**Tests**: through both kits, a passed vote to set a lock guard reverts (including after a launch that chose none); a
+passed vote to burn a holder's Shares reverts; a holder can still leave, and a forfeit and an upheld late objection
+still burn. New invariant: "a holder's free Shares fall only by their own transfer or their own exit". Mutations: the
+burn flag check removed; the guard settable twice.
 
 ## 3. D74 and D75: the launch kit refuses unfair terms
 
@@ -167,14 +217,23 @@ it holds by a transfer; `Loot.mintFromMoloch` likewise.
 - Under an award, `mintFromMoloch` first moves Shares from the DAO's own holding, if it has any, then mints the rest. A
   reserve (D75 allows up to 20%) is therefore spent on reviewed work before anything new is created, and both count.
 - Counting: on each counted amount, if a year has passed since `yearStart` (or no year has started), a new year starts
-  now with `yearBase` = Shares outside the DAO at that moment and `issuedThisYear = 0`; then
-  `issuedThisYear += amount` and `issuedThisYear × 10,000 ≤ yearBase × issuanceCapBps`, or the award reverts.
+  now with `yearBase` = **the Shares that count when someone leaves** (Shares outside the DAO, less what the lock still
+  holds: the same total as D72's exit) and `issuedThisYear = 0`; then `issuedThisYear += amount` and
+  `issuedThisYear × 10,000 ≤ yearBase × issuanceCapBps`, or the award reverts.
+- What the cap therefore protects, precisely: new Shares can lower each existing Share's part of the treasury by at most
+  1 − 1/1.1 ≈ 9.1% in a year (about 17% over two). It does not cover unlocks, which lower it too, by design and on a
+  schedule the page shows milestone by milestone. A first version measured the cap against all Shares outside the DAO,
+  locked ones included; with 65 backer Shares and 35 locked, 10 new Shares would have cut each Share's exit value by
+  13.3%, more than "10%" suggests (§0a).
 - Launch-time Shares are not counted: `Shares.init` mints with `_mint`, not `mintFromMoloch`, and the rule is set by
   the DAO's initialization calls after it.
 
 **In `Loot`**: `closeMinting()`, `onlyDAO`, set once; after it `mintFromMoloch` reverts. The kits call it at birth, so
 no Loot ever exists in these DAOs. (`convertLootToShares` then has nothing to convert; an award with `convert` set
-fails, which the app never sends.)
+fails, which the app never sends.) The trading note's later idea of turning Shares into non-voting Loot to sell is not
+foreclosed by this any more than it is today: no such conversion exists in the contracts and the clones cannot be
+upgraded, so it would need new contract code and a migration, or a separate token, either way. Nothing for it is added
+now.
 
 **In the patched `Moloch`**: `awardContribution` sets a transient flag around its mint (`tstore` before, cleared
 after), and `awarding()` reads it. The flag is set after `consumeContribution` returns and cleared right after the
@@ -187,8 +246,9 @@ bytes.
 
 **Choices made here, which you may want to see**: the year is a fixed window from the first new Share, not a rolling
 twelve months (no history to keep). So 10% at the end of one year and 10% at the start of the next is possible, which
-the page says ("at most 10% in each year since the first award"). The base is the Shares outside the DAO, which is what
-a backer's share is measured against.
+the page says ("at most 10% in each year since the first award"). The base is the Shares that count when someone
+leaves, so the cap is a cap on what new Shares take from an exit. `Shares` reads the lock's `totalLocked()` (D72) for
+it.
 
 **What happens to an award over the limit.** `consumeContribution` runs first and the mint then reverts, so the whole
 award reverts: the claim stays paid and not yet awarded, and the same award can be voted again in the next year. The
@@ -225,10 +285,27 @@ than a narrower exemption.
 `setTransferExempt(predictedAuction)` on the Shares, both read back. The auction's address is already predicted (D69)
 and checked after creation.
 
-**Later**: lifting the lock stays a vote (`setTransfersLocked(false, …)`), because opening a market is the project's
-decision. The app treats it as "open trading", its own decision kind, which it offers only when the bar of
-CONTRIBUTOR-TOKEN-TRADING.md is met. The `market seed` command line path (D14) cannot run while Shares are locked;
-it waits for that decision.
+**Lifting the lock: 30 days' notice, in the contract.** Opening a market stays the project's decision, but a holder who
+disagrees must have time to leave first, and a raw proposal must not be able to skip that (§0a). So, once the lock is on
+in a DAO made by a kit, `Shares` lifts it in two steps:
+
+- `announceTransferUnlock()` (`onlyDAO`, a passed vote) records the time; `cancelTransferUnlock()` withdraws it;
+- `setTransfersLocked(false)` succeeds only 30 days or more after an announcement still standing. Locking again is
+  immediate. The 30 days are a constant, not a setting.
+
+The kit turns this on with the lock (`setTransfersLocked(true)` plus a set-once `unlockNoticeRequired`), so the patched
+DAO's `setTransfersLocked(bool, bool)` keeps its signature and simply fails early. Loot is closed (§4) and has no
+holders, so it needs no notice.
+
+**What the contract enforces, and what stays app policy.** The contract enforces: transfers locked from birth, the
+auction the only exemption, 30 days between announcing and lifting. The rest of the trading bar (an audited venue, a
+legal read, a track record, mainnet) cannot be checked by a contract. The app offers "Open trading" as its own decision
+kind only when they are met, and the Powers card says plainly that a vote could still announce an unlock without them,
+and that holders would then have 30 days to leave. The `market seed` command line path (D14) cannot run while Shares are
+locked.
+
+**Tests** for the notice: lifting without an announcement, or 29 days after one, reverts; 30 days after succeeds; a
+cancelled announcement does not count; locking again is immediate.
 
 **Tests**: a holder-to-holder transfer reverts; collecting from the auction, sweeping and graduating all work on the
 real auction (`DaoLaunchKit.t.sol` and the challenge journey); the exemption is set once; a new invariant "while locked,
@@ -242,7 +319,14 @@ else `InvalidTerms`. Two more setup calls: `Shares.setIssuanceRule(NO_CAP)` (awa
 `Loot.closeMinting()`, both read back with the rest. The Start page says the founder can start with at most a third of
 the first budget, and the Contributions tab shows the founder's share over time and whether the founder alone can still
 pass a vote. Tests: a founder stake above a third reverts, a founder named as a reviewer reverts, a direct mint by a
-passed vote reverts, an award still mints.
+passed vote reverts, an award still mints. The kit also sets the lock guard to "none" for good (§2a).
+
+**What it is, and what it is not.** It is a limit at the start: it keeps a founder from beginning with an outsized
+stake. It does not make contributors the majority: the budget it is measured against may never be awarded, and the
+founder still decides alone until enough of it is. So founder-led governance stays an accepted dependency of a
+contributor project until ownership actually spreads, and the Start page and the Contributions tab say so in those
+words. The rule that contributors must also agree to larger changes (option 3 of the proposal's §6) is what would
+change that, and is still to be written up.
 
 ## 7. D78 and the app (no contract)
 
@@ -263,26 +347,34 @@ passed vote reverts, an award still mints.
   budgets and the reviewer bonds are untouched.
 - `GraduationExecutor` and `AllowlistHook` are untouched, so the bytecode embedded in the desktop app stays valid.
 - The auction and its factory are upstream and untouched.
-- DAOs not made by the kits (the raw summon) keep upstream behaviour except for the removed functions: no issuance rule,
-  no transfer lock unless they vote one.
+- DAOs not made by the kits (the raw summon) keep upstream behaviour except for the removed functions and the burn rule:
+  no issuance rule, no transfer lock unless they vote one.
+
+What stays true after all of it, and stays on the pages: a passed vote can still commit or spend the treasury (the
+holder's protection is at least three days' notice and the exit, now permanent); who owns what and how everyone voted is
+public on the chain; and the currency's issuer can block payments to an address (the contracts keep that money for its
+owner, D67, D68, but cannot make the issuer release it). The launch order is unchanged: the social MVP, then contributor
+projects, then the audited raise.
 
 ## 9. The audit scope after this
 
 | File | Change |
 |---|---|
-| `src/majeur/MolochPatched.sol` (`Moloch`) | seven functions removed; `ragequit` subtracts what is locked; the award flag. Smaller than today |
-| `src/majeur/MolochPatched.sol` (`Shares`, `Loot`) | the issuance rule, the award-only mint and transfer-out, the transfer exemption; Loot's closed minting |
+| `src/majeur/MolochPatched.sol` (`Moloch`) | seven functions removed; `ragequit` subtracts what is locked and sets the leaving flag; the award flag. Smaller than today |
+| `src/majeur/MolochPatched.sol` (`Shares`, `Loot`) | the issuance rule, the award-only mint and transfer-out, the transfer exemption and the 30-day unlock notice, the guard decided once, burns only while leaving; Loot's closed minting |
 | `src/MilestoneChallenge.sol`, `src/MilestoneLock.sol` | the `totalLocked` counter |
 | `src/DaoLaunchKit.sol` (or a new `src/LaunchTerms.sol`) | the launch checks, the issuance and transfer initialization |
 | `src/ContributorKit.sol` (adjacent) | two checks, two setup calls |
 
 AUDIT-SCOPE.md §6 item 4 (the vote-granted share sale, permits and allowances) is resolved by removal. The invariants
-grow from 12 to 16 (`totalLocked`, award-only issuance, the yearly cap, the transfer lock); invariant 3 is rewritten.
+grow from 12 to 17 (`totalLocked`, award-only issuance, the yearly cap, the transfer lock, free Shares fall only by
+their owner's own action); invariant 3 is rewritten.
 LBAMM and the market contracts stay out. The freeze tag comes after all of it.
 
 ## 10. The order of the work
 
-1. The removals (§2): the suite, the fork checker, the invariants and the simulation with the doors gone.
+1. The removals (§2) and the two exit protections (§2a): the suite, the fork checker, the invariants and the
+   simulation with the doors gone.
 2. D72 (§1): the counter, the subtraction, the exit preview, invariant 3.
 3. D76 (§4): `Shares`, `Loot`, the flag.
 4. D77 (§5): the exemption.

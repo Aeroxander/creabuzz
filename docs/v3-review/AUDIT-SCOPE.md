@@ -9,7 +9,7 @@ This is the groundwork for the external audit the roadmap requires before any ra
 ([SOCIAL-MVP-ROADMAP-2026-10-19.md §5](SOCIAL-MVP-ROADMAP-2026-10-19.md)). Mainnet stays off until that audit is done
 and its report replaces the "unaudited" notice.
 
-**Changes still to come before the freeze (D72–D79, decided 2026-10-21, not built).** The tokenomics decisions change
+**Changes still to come before the freeze (D72–D80, decided 2026-10-21, not built).** The tokenomics decisions change
 `ragequit`, `Shares`, `Loot`, both milestone locks and both kits, and remove seven functions from the patched DAO
 ([TOKENOMICS-CONTRACT-CHANGES.md §9](TOKENOMICS-CONTRACT-CHANGES.md)). The tables below describe the contracts before
 them.
@@ -296,7 +296,7 @@ the mutation check.
 **Location**: `AllocationVoting.thresholdsMet()`
 **Description**: with `minYesVotesAbsolute` at its default of zero, a proposal can reach quorum on abstentions and pass
 with a small "for" if nobody opposes. Opposition is free (it never draws on a holder's pool), and the review, hold and
-delay give at least 84 hours to oppose or leave.
+delay give at least 72 hours to oppose or leave (the hold runs inside the review; corrected 2026-10-21, it said 84).
 **Recommendation**: a non-zero `minYes` per lane, or a product decision that this is acceptable.
 
 ## [ES-7] The proposal threshold reads current, not snapshot, ownership

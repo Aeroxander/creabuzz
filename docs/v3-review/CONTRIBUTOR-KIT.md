@@ -7,10 +7,10 @@ Written before the code, as the plan's rule asks of any contract change.
 A contributor project made by the DAO maker (`OrgBinding.summonAndBind`, D65) is born with nothing to work on. Before
 anyone can claim work, it needs:
 
-- a work budget, which takes the full vote (48 h review, 12 h hold, 1 day wait: about 3.5 days);
-- then a project inside it, on the lighter vote (24 h, 6 h, 1 day: about 2.25 days).
+- a work budget, which takes the full vote (48 h review with the 12 h hold inside it, then a 1 day wait: about 3 days);
+- then a project inside it, on the lighter vote (24 h with the 6 h hold inside it, then 1 day: about 2 days).
 
-So the first claim is possible about **six days** after the founder pressed Start. During those days the founder is the
+So the first claim is possible about **five days** after the founder pressed Start. During those days the founder is the
 only holder, so the votes protect nobody: no one can be outvoted, and no one is there to object or leave. The waits
 cost the founder a week and protect nothing.
 
@@ -53,7 +53,7 @@ instead of sending again. Scoping the salt to the caller means nobody else can t
 
 ## What does not change
 
-- Every later decision is voted as before: more budgets, more projects, every **award** (lighter vote, about 2.25 days),
+- Every later decision is voted as before: more budgets, more projects, every **award** (lighter vote, about 2 days),
   lifting the transfer lock, anything touching the treasury. Once anyone besides the founder holds Shares, the waits
   protect them again.
 - The DAO is the same kind as every other here (the same factory, voting policy and budget factory), so the Decisions,
