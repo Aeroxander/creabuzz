@@ -217,6 +217,12 @@ contract DaoLaunchKitTest is Test {
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
         loot.mintFromMoloch(founder, 1);
 
+        // Shares cannot be sent between wallets, except to and from the auction, and lifting that takes 30 days' notice
+        // (D77).
+        assertTrue(shares.transfersLocked());
+        assertEq(shares.transferExempt(), address(auction));
+        assertTrue(shares.unlockNoticeRequired());
+
         // The founders vote with all of it from the first block.
         assertEq(shares.getVotes(founder), 225e18);
         assertEq(policy.totalCapacity(), 1000e18);
@@ -228,11 +234,12 @@ contract DaoLaunchKitTest is Test {
         assertEq(lock.lockedOf(founder), 180e18);
         assertEq(lock.lockedOf(cofounder), 60e18);
         assertEq(lock.lockedOf(alice), 0, "nobody else is held");
+        // Nothing moves between wallets while transfers are locked (D77); the 20% never locked can still leave, and not
+        // one Share more.
         vm.prank(founder);
-        shares.transfer(alice, 45e18); // the 20% that was never locked
-        vm.prank(founder);
-        vm.expectRevert(Shares.LockedShares.selector);
+        vm.expectRevert(bytes4(keccak256("Locked()")));
         shares.transfer(alice, 1);
+        _leaveWith(dao, founder, 45e18);
         address[] memory assets = new address[](1);
         assets[0] = address(currency);
         vm.prank(founder);
@@ -265,7 +272,9 @@ contract DaoLaunchKitTest is Test {
         (address d,,) = kit.launch(p);
         Shares shares = Moloch(payable(d)).shares();
         assertEq(shares.lockGuard(), address(0));
+        // Nothing is held back by milestones, but transfers stay locked like every launch's (D77).
         vm.prank(founder);
+        vm.expectRevert(bytes4(keccak256("Locked()")));
         shares.transfer(alice, 225e18);
         // "No lock" was chosen at birth and is final: a vote cannot install a guard that could refuse every exit (D73).
         assertTrue(shares.lockGuardSet());
@@ -706,12 +715,9 @@ contract DaoLaunchKitTest is Test {
         assertEq(factory.createdBy(address(lock)), address(kit));
         assertEq(TreasuryMandateFactory(kit.mandateFactory()).milestoneMandate(address(dao)), address(0));
 
-        // The lock holds the team's Shares as firmly as the panel's does.
-        vm.prank(founder);
-        shares.transfer(alice, 45e18);
-        vm.prank(founder);
-        vm.expectRevert(Shares.LockedShares.selector);
-        shares.transfer(alice, 1);
+        // The lock holds the team's Shares as firmly as the panel's does: the free 20% can leave, nothing more.
+        _leaveWith(dao, founder, 45e18);
+        _refusedAsLocked(dao, founder);
         // Nobody can take it off or swap it.
         vm.prank(address(dao));
         vm.expectRevert(Shares.LockGuardSet.selector);
@@ -812,16 +818,29 @@ contract DaoLaunchKitTest is Test {
         lock.finish(0);
         assertEq(lock.lockedOf(founder), 112.5e18);
         assertEq(lock.lockedOf(cofounder), 37.5e18);
-        vm.prank(founder);
-        shares.transfer(alice, 112.5e18); // the 20% never locked, and the 30% that just unlocked
-        vm.prank(founder);
-        vm.expectRevert(Shares.LockedShares.selector);
-        shares.transfer(alice, 1);
+        _leaveWith(dao, founder, 112.5e18); // the 20% never locked, and the 30% that just unlocked
+        _refusedAsLocked(dao, founder);
         // The bond comes back once the month of clawback is over.
         vm.warp(vm.getBlockTimestamp() + 30 days);
         uint256 before_ = currency.balanceOf(founder);
         lock.releaseBond(0);
         assertEq(currency.balanceOf(founder), before_ + 10e18);
+    }
+
+    /// @dev With transfers locked (D77), what is free is shown by leaving with it.
+    function _leaveWith(Moloch dao, address who, uint256 amount) internal {
+        address[] memory assets = new address[](1);
+        assets[0] = address(currency);
+        vm.prank(who);
+        dao.ragequit(assets, amount, 0);
+    }
+
+    function _refusedAsLocked(Moloch dao, address who) internal {
+        address[] memory assets = new address[](1);
+        assets[0] = address(currency);
+        vm.prank(who);
+        vm.expectRevert(Shares.LockedShares.selector);
+        dao.ragequit(assets, 1, 0);
     }
 
     function _bid(address auction, address bidder, uint128 amount, uint256 maxPrice, uint256 prevTick)

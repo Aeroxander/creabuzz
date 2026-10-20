@@ -103,6 +103,9 @@ interface IKitLockable {
     function setLockGuard(address guard) external;
     function lockGuardSet() external view returns (bool);
     function setIssuanceRule(uint16 capBps) external;
+    function lockTransfersWithNotice(address exempt) external;
+    function transfersLocked() external view returns (bool);
+    function transferExempt() external view returns (address);
     function awardsOnly() external view returns (bool);
     function issuanceCapBps() external view returns (uint16);
 }
@@ -332,7 +335,7 @@ contract DaoLaunchKit {
             revert PanelMismatch();
         }
         // The lock, and then the panel (its reviewers are checked against the lock in the mandate's constructor).
-        uint256 calls = 4 + (p.proposalThreshold == 0 ? 0 : 1) + (lock != address(0) && !challenged ? 1 : 0);
+        uint256 calls = 5 + (p.proposalThreshold == 0 ? 0 : 1) + (lock != address(0) && !challenged ? 1 : 0);
         KitCall[] memory initCalls = new KitCall[](calls);
         uint256 next;
         // Governance opens when the buyers can hold their Shares. The DAO's voting policy is a clone made in its own
@@ -356,6 +359,10 @@ contract DaoLaunchKit {
         // vote may lower it, never raise it.
         initCalls[next++] =
             KitCall(predictedShares, 0, abi.encodeCall(IKitLockable.setIssuanceRule, (YEARLY_ISSUANCE_BPS)));
+        // No market for now (D77): Shares move only to and from the auction (funding it, buyers collecting), and lifting
+        // the lock takes effect 30 days after a vote announces it.
+        initCalls[next++] =
+            KitCall(predictedShares, 0, abi.encodeCall(IKitLockable.lockTransfersWithNotice, (predictedAuction)));
         if (lock != address(0)) {
             if (!challenged) {
                 initCalls[next++] = KitCall(
@@ -393,6 +400,9 @@ contract DaoLaunchKit {
         // 5. The auction: created, bound and funded in the same call.
         auction = factory.create(shares, p.saleSupply, p.auctionConfig, p.auctionSalt);
         require(auction == predictedAuction, "kit: auction address");
+        require(
+            IKitLockable(shares).transfersLocked() && IKitLockable(shares).transferExempt() == auction, "kit: transfer lock"
+        );
         exec.bindAuction(auction);
         exec.fundAuction(auction, p.saleSupply);
         // Fail closed: the block governance opens at is the block the buyers can claim from.

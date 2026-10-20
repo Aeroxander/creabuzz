@@ -1556,8 +1556,52 @@ contract Shares {
     }
 
     function setTransfersLocked(bool locked) public payable onlyDAO {
+    // @@CREABUZZ PATCH BEGIN shares-unlock-notice
+        // Where the lock came with a notice (D77), lifting it works only 30 days after an unlock was announced, so a
+        // holder who disagrees with opening a market has that long to leave. Locking again is immediate and needs a
+        // new notice before the next unlock.
+        if (locked) unlockAnnouncedAt = 0;
+        else if (
+            unlockNoticeRequired && (unlockAnnouncedAt == 0 || block.timestamp < uint256(unlockAnnouncedAt) + UNLOCK_NOTICE)
+        ) revert UnlockNotDue();
+    // @@CREABUZZ PATCH END shares-unlock-notice
         transfersLocked = locked;
     }
+    // @@CREABUZZ PATCH BEGIN shares-transfer-lock-notice
+
+    /// @notice How long an announced unlock waits before transfers can open (D77).
+    uint256 public constant UNLOCK_NOTICE = 30 days;
+    /// @notice The one address Shares may still move to or from while locked: the sale's auction, so buyers can collect.
+    address public transferExempt;
+    /// @notice Whether lifting the lock needs the notice. Set once, with the lock, by `lockTransfersWithNotice`.
+    bool public unlockNoticeRequired;
+    /// @notice When an unlock was announced; zero when none is standing.
+    uint64 public unlockAnnouncedAt;
+
+    event TransferUnlockAnnounced(uint64 at);
+    event TransferUnlockCancelled();
+    error UnlockNotDue();
+
+    /// @notice Lock transfers for good unless an unlock is announced 30 days ahead, with `exempt` (zero for none) the
+    /// one address Shares may still move to or from. Once only; the kits call it at birth.
+    function lockTransfersWithNotice(address exempt) public payable onlyDAO {
+        if (unlockNoticeRequired) revert Unauthorized();
+        unlockNoticeRequired = true;
+        transferExempt = exempt;
+        transfersLocked = true;
+    }
+
+    function announceTransferUnlock() public payable onlyDAO {
+        if (!unlockNoticeRequired || !transfersLocked) revert Unauthorized();
+        unlockAnnouncedAt = uint64(block.timestamp);
+        emit TransferUnlockAnnounced(unlockAnnouncedAt);
+    }
+
+    function cancelTransferUnlock() public payable onlyDAO {
+        unlockAnnouncedAt = 0;
+        emit TransferUnlockCancelled();
+    }
+    // @@CREABUZZ PATCH END shares-transfer-lock-notice
     // @@CREABUZZ PATCH BEGIN erc20c-surface
     /// @notice ERC-20C: the transfer validator the DAO chose (zero until it chooses one, unlike the stock ERC-20C,
     /// which falls back to a default validator that may not exist on a chain). It sees plain transfers only: minting
@@ -1792,6 +1836,10 @@ contract Shares {
     }
 
     function _checkUnlocked(address from, address to) internal view {
+    // @@CREABUZZ PATCH BEGIN shares-transfer-exempt
+        address exempt = transferExempt;
+        if (exempt != address(0) && (from == exempt || to == exempt)) return;
+    // @@CREABUZZ PATCH END shares-transfer-exempt
         if (transfersLocked && from != DAO && to != DAO) {
             revert Locked();
         }

@@ -195,6 +195,20 @@ const MUTATIONS = [
     "",
     "test/IssuanceRule.t.sol",
   ],
+  [
+    "D77: the transfer lock can be lifted without 30 days' notice",
+    "contracts/src/majeur/MolochPatched.sol",
+    "        ) revert UnlockNotDue();",
+    "        ) {}",
+    "test/TransferLock.t.sol",
+  ],
+  [
+    "D77: Shares move between wallets while locked (the exemption lets everything through)",
+    "contracts/src/majeur/MolochPatched.sol",
+    "        if (exempt != address(0) && (from == exempt || to == exempt)) return;",
+    "        if (exempt != address(0)) return;",
+    "test/TransferLock.t.sol",
+  ],
 ];
 
 const only = process.argv.slice(2).map(Number);

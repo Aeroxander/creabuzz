@@ -84,6 +84,8 @@ contract ContributorKitTest is Test {
         (uint256 price,,,,) = dao.sales(address(currency));
         assertEq(price, 0, "no sale: nothing can be bought from the DAO");
         assertTrue(shares.transfersLocked(), "Shares cannot be sent between wallets");
+        assertTrue(shares.unlockNoticeRequired(), "and lifting that takes 30 days' notice (D77)");
+        assertEq(shares.transferExempt(), address(0));
 
         assertEq(factory.daos(address(budget)), address(dao), "the budget is the DAO's own");
         assertEq(budget.shareBudget(), 100e18);

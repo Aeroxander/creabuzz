@@ -125,7 +125,7 @@ contract ContributorKit {
         address predicted = predictDao(msg.sender, p.founderShares, p.salt);
         uint96 threshold = thresholdFor(p.founderShares);
 
-        Call[] memory setup = new Call[](withProject ? 6 : 5);
+        Call[] memory setup = new Call[](withProject ? 7 : 6);
         setup[0] = Call(predicted, 0, abi.encodeCall(Moloch.setProposalThreshold, (threshold)));
         setup[1] = Call(
             address(budgetFactory),
@@ -147,8 +147,10 @@ contract ContributorKit {
             );
         }
         setup[next++] = Call(predicted, 0, abi.encodeCall(Moloch.setTransfersLocked, (true, true)));
-        // No lock guard, decided now and for good: a guard a later vote installed could refuse every exit (D73).
         address predictedShares = _predictShares(predicted);
+        // Lifting the transfer lock later takes effect only 30 days after a vote announces it (D77).
+        setup[next++] = Call(predictedShares, 0, abi.encodeCall(Shares.lockTransfersWithNotice, (address(0))));
+        // No lock guard, decided now and for good: a guard a later vote installed could refuse every exit (D73).
         setup[next++] = Call(predictedShares, 0, abi.encodeCall(Shares.setLockGuard, (address(0))));
         // Shares only from reviewed awards, with no yearly limit (D79): a vote the founder carries cannot mint more.
         setup[next] = Call(predictedShares, 0, abi.encodeCall(Shares.setIssuanceRule, (NO_CAP)));
@@ -180,6 +182,7 @@ contract ContributorKit {
                 || budgetFactory.daos(budget) != dao || !Shares(address(made.shares())).transfersLocked()
                 || address(made.shares()) != predictedShares || !Shares(predictedShares).lockGuardSet()
                 || !Shares(predictedShares).awardsOnly() || Shares(predictedShares).issuanceCapBps() != NO_CAP
+                || !Shares(predictedShares).unlockNoticeRequired()
         ) revert SetupNotApplied();
         if (withProject) {
             (address manager,,,,, uint128 shareBudget,) = TreasuryMandate(budget).projects(p.projectId);
