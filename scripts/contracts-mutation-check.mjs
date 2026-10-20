@@ -209,6 +209,48 @@ const MUTATIONS = [
     "        if (exempt != address(0)) return;",
     "test/TransferLock.t.sol",
   ],
+  [
+    "D75: the kit accepts a sale under 60% of all Shares",
+    "contracts/src/DaoLaunchKit.sol",
+    "        if (uint256(p.saleSupply) * 10_000 < total * 6_000) revert UnfairTerms(1);",
+    "",
+    "full",
+  ],
+  [
+    "D75: the kit accepts team Shares outside the milestones",
+    "contracts/src/DaoLaunchKit.sol",
+    "            if (sum != 10_000) revert UnfairTerms(4);",
+    "",
+    "full",
+  ],
+  [
+    "D72/D75: the kit accepts a team seat that is the DAO, the executor, the auction or the kit",
+    "contracts/src/DaoLaunchKit.sol",
+    "            if (seat == dao || seat == executor || seat == auction || seat == address(this)) revert UnfairTerms(5);",
+    "",
+    "full",
+  ],
+  [
+    "D74: the kit accepts a raise target below the whole tranche at the floor",
+    "contracts/src/DaoLaunchKit.sol",
+    "        if (required < (floorPrice * p.saleSupply) >> 96) revert UnfairTerms(6);",
+    "",
+    "full",
+  ],
+  [
+    "D79: a founder can start with more than a third of the first budget",
+    "contracts/src/ContributorKit.sol",
+    "        if (p.founderShares > uint256(p.shareBudget) / 3) revert InvalidTerms();",
+    "",
+    "test/ContributorKit.t.sol",
+  ],
+  [
+    "D79: the founder can sit on the first budget's panel",
+    "contracts/src/ContributorKit.sol",
+    "            if (p.reviewers[i] == msg.sender) revert InvalidTerms();",
+    "",
+    "test/ContributorKit.t.sol",
+  ],
 ];
 
 const only = process.argv.slice(2).map(Number);

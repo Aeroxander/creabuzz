@@ -520,6 +520,16 @@ artifact_field() { # <artifact.json> <dotted.path> -> value
 
 lower_code() { cast code "$1" --rpc-url "$RPC_URL" 2>/dev/null | tr '[:upper:]' '[:lower:]'; }
 
+deploy_artifact() { # <artifact.json> -> the address of a fresh deployment that takes no constructor arguments
+  local bytecode receipt address
+  bytecode=$(artifact_field "$1" bytecode.object) || return 1
+  receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" --create "0x${bytecode#0x}" 2>&1) \
+    || { echo "$receipt" >&2; return 1; }
+  address=$(node -e 'console.log(JSON.parse(process.argv[1]).contractAddress ?? "")' "$receipt")
+  [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] || return 1
+  echo "$address"
+}
+
 place_cca() {
   echo
   local factory_json="$REPO_ROOT/contracts/out/ContinuousClearingAuctionFactory.sol/ContinuousClearingAuctionFactory.json"
@@ -613,9 +623,16 @@ deploy_launch_kit() {
   [[ -n "$summoner" && "$(code_bytes "$summoner")" != "0" ]] \
     || fail_step "launch-kit" "no deployed Summoner to point the kit at (org dao step first)"
   echo "── launch kit: deploying DaoLaunchKit (summoner $summoner, CCA factory $CCA_FACTORY_ADDRESS)"
-  if ! (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build src/DaoLaunchKit.sol) >/dev/null; then
+  if ! (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build src/DaoLaunchKit.sol \
+      src/MilestoneLockFactory.sol src/MilestoneChallengeFactory.sol) >/dev/null; then
     fail_step "launch-kit" "forge build src/DaoLaunchKit.sol failed"
   fi
+  # The two lock factories are deployed beside the kit, which names them (its creation code has no room for them).
+  local lock_factory challenge_factory
+  lock_factory=$(deploy_artifact "$REPO_ROOT/contracts/out/MilestoneLockFactory.sol/MilestoneLockFactory.json") \
+    || fail_step "launch-kit" "deploying MilestoneLockFactory failed"
+  challenge_factory=$(deploy_artifact "$REPO_ROOT/contracts/out/MilestoneChallengeFactory.sol/MilestoneChallengeFactory.json") \
+    || fail_step "launch-kit" "deploying MilestoneChallengeFactory failed"
   local bytecode args data receipt status address block shares_impl
   shares_impl=$(shares_implementation "$summoner") \
     || fail_step "launch-kit" "cannot read the Shares implementation off a DAO this summoner made"
@@ -623,7 +640,8 @@ deploy_launch_kit() {
     || fail_step "launch-kit" "the Shares implementation $shares_impl has no code"
   bytecode=$(artifact_field "$REPO_ROOT/contracts/out/DaoLaunchKit.sol/DaoLaunchKit.json" bytecode.object) \
     || fail_step "launch-kit" "cannot read the DaoLaunchKit artifact"
-  args=$(cast abi-encode "constructor(address,address,address)" "$summoner" "$CCA_FACTORY_ADDRESS" "$shares_impl") \
+  args=$(cast abi-encode "constructor(address,address,address,address,address)" "$summoner" "$CCA_FACTORY_ADDRESS" \
+      "$shares_impl" "$lock_factory" "$challenge_factory") \
     || fail_step "launch-kit" "cast abi-encode constructor args failed"
   data="0x${bytecode#0x}${args#0x}"
   if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
@@ -649,7 +667,7 @@ deploy_launch_kit() {
     fs.writeFileSync(file, JSON.stringify({
       chainId: Number(chainId),
       project: "buzz-dev-chain",
-      note: "scripts/dev-chain.sh — DaoLaunchKit(summoner, CCA factory, Shares implementation)",
+      note: "scripts/dev-chain.sh — DaoLaunchKit(summoner, CCA factory, Shares implementation, lock factories)",
       tx,
       block: Number(block),
       roles: [{ role: "launch-kit", address }],

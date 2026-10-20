@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {MilestoneLock} from "../src/MilestoneLock.sol";
+import {MilestoneLockFactory} from "../src/MilestoneLockFactory.sol";
+import {MilestoneChallengeFactory} from "../src/MilestoneChallengeFactory.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 import {ClaimStake} from "../src/ClaimStake.sol";
 import {VerifierSet} from "../src/VerifierSet.sol";
@@ -100,7 +102,13 @@ contract SepoliaLaunchForkTest is Test {
         kit = IForkKit(
             vm.deployCode(
                 "DaoLaunchKit.sol:DaoLaunchKit",
-                abi.encode(address(summoner), CCA_FACTORY, _sharesImplementation(summoner))
+                abi.encode(
+                    address(summoner),
+                    CCA_FACTORY,
+                    _sharesImplementation(summoner),
+                    new MilestoneLockFactory(),
+                    new MilestoneChallengeFactory()
+                )
             )
         );
     }

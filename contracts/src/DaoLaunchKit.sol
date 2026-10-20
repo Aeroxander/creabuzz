@@ -3,8 +3,6 @@ pragma solidity ^0.8.24;
 
 import {GraduationExecutor} from "./GraduationExecutor.sol";
 import {MilestoneChallenge} from "./MilestoneChallenge.sol";
-import {MilestoneLockFactory} from "./MilestoneLockFactory.sol";
-import {MilestoneChallengeFactory} from "./MilestoneChallengeFactory.sol";
 
 /// @dev The one `Call` shape Majeur's `Summoner.summon` takes for its initialization calls.
 struct KitCall {
@@ -218,15 +216,30 @@ contract DaoLaunchKit {
     );
 
     error EmptyLaunch();
+    /// @notice The launch's terms are outside the limits (D74, D75): 1 the sale under 60% of all Shares, 2 the team
+    /// over 35%, 3 the DAO's reserve over 20%, 4 the team's Shares not all behind 2 to 8 milestones of at most half
+    /// each, 5 a team seat that is the DAO, the executor, the auction or the kit, 6 a raise target below the whole
+    /// tranche at the floor price.
+    error UnfairTerms(uint8 rule);
     error TeamMismatch();
     error TooManyTeam();
     /// @notice Milestones need a panel to judge them, and a panel needs milestones to judge.
     error PanelMismatch();
 
-    constructor(IKitSummoner summoner_, IKitAuctionFactory factory_, address sharesImplementation_) {
+    /// @dev The two lock factories are deployed beside the kit, not by it: their creation code inside the kit's own would
+    /// leave no room under the 49,152-byte limit for the launch's checks (D74, D75). They are permissionless and record
+    /// who made each lock, so the kit's locks are still told apart by `createdBy`.
+    constructor(
+        IKitSummoner summoner_,
+        IKitAuctionFactory factory_,
+        address sharesImplementation_,
+        IKitLockFactory lockFactory_,
+        IKitChallengeFactory challengeFactory_
+    ) {
         require(
             address(summoner_).code.length != 0 && address(factory_).code.length != 0
-                && sharesImplementation_.code.length != 0,
+                && sharesImplementation_.code.length != 0 && address(lockFactory_).code.length != 0
+                && address(challengeFactory_).code.length != 0,
             "kit: no code"
         );
         summoner = summoner_;
@@ -234,8 +247,8 @@ contract DaoLaunchKit {
         sharesImplementation = sharesImplementation_;
         mandateFactory = IKitMandateFactory(summoner_.mandateFactory());
         require(address(mandateFactory).code.length != 0, "kit: no mandate factory");
-        lockFactory = IKitLockFactory(address(new MilestoneLockFactory()));
-        challengeFactory = IKitChallengeFactory(address(new MilestoneChallengeFactory()));
+        lockFactory = lockFactory_;
+        challengeFactory = challengeFactory_;
     }
 
     /// @notice The executor's address for `launcher`'s launch `salt`, before anything is sent. The auction config must
@@ -347,6 +360,7 @@ contract DaoLaunchKit {
         // supply, or they would raise every proposal's bar until each buyer claims (ES-3). Checked against the real
         // auction below.
         address predictedAuction = factory.getAddress(predictedShares, p.saleSupply, p.auctionConfig, p.auctionSalt, address(this));
+        _checkTerms(p, executor, predictedDao, predictedAuction);
         initCalls[next++] = KitCall(predictedPolicy, 0, abi.encodeCall(IKitPolicy.setExcluded, (predictedAuction, true)));
         if (p.proposalThreshold != 0) {
             initCalls[next++] =
@@ -409,6 +423,35 @@ contract DaoLaunchKit {
         require(IKitAuction(auction).claimBlock() == p.governanceStartBlock, "kit: governance start");
 
         emit Launched(dao, msg.sender, shares, executor, auction, lock, p.saleSupply);
+    }
+
+    // ---- the launch's terms (D74, D75) ------------------------------------------------------------
+
+    function _checkTerms(Params calldata p, address executor, address dao, address auction) private view {
+        uint256 team;
+        for (uint256 i; i < p.team.length; ++i) {
+            address seat = p.team[i];
+            if (seat == dao || seat == executor || seat == auction || seat == address(this)) revert UnfairTerms(5);
+            team += p.teamShares[i];
+        }
+        uint256 total = team + p.saleSupply + p.daoShares;
+        if (uint256(p.saleSupply) * 10_000 < total * 6_000) revert UnfairTerms(1);
+        if (team * 10_000 > total * 3_500) revert UnfairTerms(2);
+        if (p.daoShares * 10_000 > total * 2_000) revert UnfairTerms(3);
+        if (team != 0) {
+            uint256 n = p.milestoneBps.length;
+            if (n < 2 || n > 8) revert UnfairTerms(4);
+            uint256 sum;
+            for (uint256 i; i < n; ++i) {
+                if (p.milestoneBps[i] > 5_000) revert UnfairTerms(4);
+                sum += p.milestoneBps[i];
+            }
+            if (sum != 10_000) revert UnfairTerms(4);
+        }
+        // `abi.encode(AuctionParameters)`: a head word, then the struct's fields; the floor price is the ninth field
+        // and the required raise the tenth (the auction decodes the same bytes, so this is the target it will use).
+        (uint256 floorPrice, uint256 required) = abi.decode(p.auctionConfig[288:352], (uint256, uint256));
+        if (required < (floorPrice * p.saleSupply) >> 96) revert UnfairTerms(6);
     }
 
     // ---- address prediction ------------------------------------------------------------------

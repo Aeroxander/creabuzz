@@ -279,10 +279,13 @@ async function deployStack() {
     keccak_256(hexToBytes(`ff${moloch.slice(2)}${salt}${bytesToHex(keccak_256(hexToBytes(sharesCode.slice(2))))}`)),
   ).slice(24)}`;
   if ((await rpc("eth_getCode", [sharesImpl, "latest"])) === "0x") throw new Error("Shares implementation not found");
+  // The lock factories are deployed beside the kit, which names them.
+  const lockFactory = await deploy("MilestoneLockFactory.sol/MilestoneLockFactory.json");
+  const challengeFactory = await deploy("MilestoneChallengeFactory.sol/MilestoneChallengeFactory.json");
   const kit = await deploy(
     "DaoLaunchKit.sol/DaoLaunchKit.json",
-    ["address", "address", "address"],
-    [summoner, CCA_FACTORY, sharesImpl],
+    ["address", "address", "address", "address", "address"],
+    [summoner, CCA_FACTORY, sharesImpl, lockFactory, challengeFactory],
   );
   USDC = await deploy("MoneyPathsHandler.sol/MockUSDC.json");
   return { kit, summoner, mandateFactory };

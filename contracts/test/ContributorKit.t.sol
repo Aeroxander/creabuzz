@@ -50,7 +50,7 @@ contract ContributorKitTest is Test {
         p.founderShares = 200e18;
         p.salt = salt;
         p.currency = address(currency);
-        p.shareBudget = 100e18;
+        p.shareBudget = 600e18; // the founder's 200 are a third of it, the most D79 allows
         p.shareCap = 40e18;
         p.budgetExpires = uint64(block.timestamp + 90 days);
         p.reviewers = _reviewers();
@@ -88,7 +88,7 @@ contract ContributorKitTest is Test {
         assertEq(shares.transferExempt(), address(0));
 
         assertEq(factory.daos(address(budget)), address(dao), "the budget is the DAO's own");
-        assertEq(budget.shareBudget(), 100e18);
+        assertEq(budget.shareBudget(), 600e18);
         assertEq(budget.perProjectShareCap(), 40e18);
         assertEq(budget.budget(), 0, "no money in the budget");
         assertEq(budget.reviewerBond(), 0);
@@ -199,6 +199,13 @@ contract ContributorKitTest is Test {
 
     function test_bad_terms_are_refused() public {
         ContributorKit.Params memory p;
+        // D79: the founder starts with at most a third of the first budget, and does not judge it.
+        p = _params("bad");
+        p.founderShares = 201e18;
+        _expectInvalid(p);
+        p = _params("bad");
+        p.reviewers[1] = FOUNDER;
+        _expectInvalid(p);
         p = _params("bad");
         p.reviewers = new address[](0);
         _expectInvalid(p);
@@ -209,7 +216,7 @@ contract ContributorKitTest is Test {
         p.projectShares = 50e18; // above the per-project limit
         _expectInvalid(p);
         p = _params("bad");
-        p.shareCap = 200e18; // above the whole budget
+        p.shareCap = 700e18; // above the whole budget
         _expectInvalid(p);
         p = _params("bad");
         p.founderShares = 0;

@@ -35,7 +35,13 @@ contract DeployLaunchKit is Script {
         address molochImplementation = _implementationFromLog(summoner);
         sharesImplementation = sharesImplementationOf(molochImplementation);
         require(sharesImplementation.code.length != 0, "DeployLaunchKit: the Shares implementation has no code");
-        kit = vm.deployCode("DaoLaunchKit.sol:DaoLaunchKit", abi.encode(summoner, ccaFactory, sharesImplementation));
+        // The lock factories go beside the kit, which names them (its creation code has no room to carry them).
+        address lockFactory = vm.deployCode("MilestoneLockFactory.sol:MilestoneLockFactory");
+        address challengeFactory = vm.deployCode("MilestoneChallengeFactory.sol:MilestoneChallengeFactory");
+        kit = vm.deployCode(
+            "DaoLaunchKit.sol:DaoLaunchKit",
+            abi.encode(summoner, ccaFactory, sharesImplementation, lockFactory, challengeFactory)
+        );
         address contributorKit = vm.deployCode("ContributorKit.sol:ContributorKit", abi.encode(summoner));
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");

@@ -71,7 +71,7 @@ interface IKit {
 contract DaoLaunchKitTest is Test {
     uint256 internal constant Q96 = 1 << 96;
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
-    uint128 internal constant SALE = 400e18;
+    uint128 internal constant SALE = 600e18; // 60% of the 1000, the least a launch may sell (D75)
     uint64 internal constant START_BLOCK = 100;
     uint64 internal constant END_BLOCK = 102;
     uint64 internal constant CLAIM_BLOCK = 105;
@@ -110,7 +110,10 @@ contract DaoLaunchKitTest is Test {
         Summoner summoner = newSummoner();
         kit = IKit(
             vm.deployCode(
-                "DaoLaunchKit.sol:DaoLaunchKit", abi.encode(address(summoner), factory, _sharesImplementation(summoner))
+                "DaoLaunchKit.sol:DaoLaunchKit",
+                abi.encode(
+                    address(summoner), factory, _sharesImplementation(summoner), new MilestoneLockFactory(), new MilestoneChallengeFactory()
+                )
             )
         );
     }
@@ -143,7 +146,7 @@ contract DaoLaunchKitTest is Test {
                 tickSpacing: Q96,
                 validationHook: address(0),
                 floorPrice: Q96,
-                requiredCurrencyRaised: 500e18,
+                requiredCurrencyRaised: 600e18, // the whole tranche at the floor: it sells out or refunds (D74)
                 auctionStepsData: abi.encodePacked(uint24(5_000_000), uint40(2))
             })
         );
@@ -161,12 +164,13 @@ contract DaoLaunchKitTest is Test {
         p.teamShares = new uint256[](2);
         p.teamShares[0] = 225e18;
         p.teamShares[1] = 75e18;
-        // 30% of each founder's Shares unlock with the first milestone, 50% with the second; 20% were never locked.
+        // Half of each founder's Shares unlock with the first milestone, half with the second: all of them are locked
+        // (D75).
         p.milestoneChecks = new bytes32[](2);
         p.milestoneChecks[0] = keccak256("alpha shipped");
         p.milestoneChecks[1] = keccak256("first customers");
         p.milestoneBps = new uint16[](2);
-        p.milestoneBps[0] = 3000;
+        p.milestoneBps[0] = 5000;
         p.milestoneBps[1] = 5000;
         // Three outside reviewers judge the milestones, two must agree, and nobody posts a bond in this fixture.
         p.reviewers = new address[](3);
@@ -176,7 +180,7 @@ contract DaoLaunchKitTest is Test {
         p.reviewQuorum = 2;
         p.panelCurrency = address(currency);
         p.panelExpires = uint64(block.timestamp + 730 days);
-        p.daoShares = 300e18; // treasury, milestones, community: the DAO's own, outside voting and outside exits
+        p.daoShares = 100e18; // the DAO's own reserve (at most 20%), outside voting and outside exits
         p.saleSupply = SALE;
         p.auctionConfig = _config(executor);
         p.auctionSalt = salt;
@@ -201,7 +205,7 @@ contract DaoLaunchKitTest is Test {
         assertEq(shares.totalSupply(), 1000e18);
         assertEq(shares.balanceOf(founder), 225e18);
         assertEq(shares.balanceOf(cofounder), 75e18);
-        assertEq(shares.balanceOf(address(dao)), 300e18, "the DAO keeps its own allocation");
+        assertEq(shares.balanceOf(address(dao)), 100e18, "the DAO keeps its own allocation");
         assertEq(shares.balanceOf(address(auction)), SALE, "the sale tranche sits in the auction");
         assertEq(shares.balanceOf(address(executor)), 0, "and the executor passed it all on");
         assertEq(shares.balanceOf(address(kit)), 0);
@@ -227,19 +231,18 @@ contract DaoLaunchKitTest is Test {
         assertEq(shares.getVotes(founder), 225e18);
         assertEq(policy.totalCapacity(), 1000e18);
 
-        // The DAO was born pointing its Shares at a lock: 80% of each founder's Shares are held until a milestone.
+        // The DAO was born pointing its Shares at a lock: every founder Share is held until a milestone (D75).
         MilestoneLock lock = MilestoneLock(shares.lockGuard());
         assertTrue(address(lock) != address(0), "the lock was set in the DAO's own initialization");
         assertEq(lock.dao(), address(dao));
-        assertEq(lock.lockedOf(founder), 180e18);
-        assertEq(lock.lockedOf(cofounder), 60e18);
+        assertEq(lock.lockedOf(founder), 225e18);
+        assertEq(lock.lockedOf(cofounder), 75e18);
+        assertEq(lock.totalLocked(), 300e18);
         assertEq(lock.lockedOf(alice), 0, "nobody else is held");
-        // Nothing moves between wallets while transfers are locked (D77); the 20% never locked can still leave, and not
-        // one Share more.
+        // Nothing moves between wallets while transfers are locked (D77), and none of it can leave yet.
         vm.prank(founder);
         vm.expectRevert(bytes4(keccak256("Locked()")));
         shares.transfer(alice, 1);
-        _leaveWith(dao, founder, 45e18);
         address[] memory assets = new address[](1);
         assets[0] = address(currency);
         vm.prank(founder);
@@ -261,21 +264,25 @@ contract DaoLaunchKitTest is Test {
         assertEq(dao.timelockDelay(), 1 days);
     }
 
-    function test_a_launch_with_no_milestones_locks_nothing() public {
+    function test_a_team_needs_milestones_and_a_launch_with_no_team_locks_nothing() public {
         _needArtifacts();
         bytes32 salt = bytes32("free");
         KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
         p.milestoneChecks = new bytes32[](0);
         p.milestoneBps = new uint16[](0);
         p.reviewers = new address[](0); // no milestones, so no panel to judge them
+        // A team whose Shares no milestone holds back is refused (D75): they would be a claim on the raise from day one.
+        vm.prank(founder);
+        vm.expectRevert(abi.encodeWithSignature("UnfairTerms(uint8)", uint8(4)));
+        kit.launch(p);
+        // With no team there is nothing to lock: the sale and the DAO's reserve only.
+        p.team = new address[](0);
+        p.teamShares = new uint256[](0);
         vm.prank(founder);
         (address d,,) = kit.launch(p);
         Shares shares = Moloch(payable(d)).shares();
         assertEq(shares.lockGuard(), address(0));
-        // Nothing is held back by milestones, but transfers stay locked like every launch's (D77).
-        vm.prank(founder);
-        vm.expectRevert(bytes4(keccak256("Locked()")));
-        shares.transfer(alice, 225e18);
+        assertEq(shares.balanceOf(founder), 0);
         // "No lock" was chosen at birth and is final: a vote cannot install a guard that could refuse every exit (D73).
         assertTrue(shares.lockGuardSet());
         vm.prank(d);
@@ -365,7 +372,9 @@ contract DaoLaunchKitTest is Test {
                     vm.deployCode(
                         "ContinuousClearingAuctionFactory.sol:ContinuousClearingAuctionFactory", abi.encode(address(0))
                     ),
-                    address(currency)
+                    address(currency),
+                    kit.lockFactory(),
+                    kit.challengeFactory()
                 )
             )
         );
@@ -400,24 +409,24 @@ contract DaoLaunchKitTest is Test {
         vm.prank(alice);
         auction.claimTokens(aliceBid);
         vm.roll(block.number + 1);
-        // Voting supply leaves out the DAO's own 300 (1000 total, 700 that could ever vote) and, since ES-3, the Shares
+        // Voting supply leaves out the DAO's own 100 (1000 total, 900 that could ever vote) and, since ES-3, the Shares
         // still waiting in the auction for Bob and Carol to claim them.
         uint256 waiting = shares.balanceOf(address(auction));
         assertGt(waiting, 0);
         vm.prank(alice);
         dao.castVote(1, 1, 180e18);
         (uint96 votingSupply,,,,,,,,,) = dao.proposalVotingRules(1);
-        assertEq(votingSupply, 700e18 - waiting);
+        assertEq(votingSupply, 900e18 - waiting);
         assertEq(policy.weightFor(bytes32(uint256(1)), address(dao), uint48(block.number - 1)), 0);
-        // And her exit divides the treasury by the members' Shares that can leave: 700 less the team's 240 still locked
-        // (D72), not by 1000 or 700.
+        // And her exit divides the treasury by the members' Shares that can leave: 900 less the team's 300 still locked
+        // (D72), not by 1000 or 900.
         address[] memory assets = new address[](1);
         assets[0] = address(currency);
         uint256 before_ = currency.balanceOf(alice);
         vm.prank(alice);
         dao.ragequit(assets, 180e18, 0);
-        assertEq(currency.balanceOf(alice) - before_, uint256(800e18) * 180e18 / 460e18);
-        assertEq(shares.balanceOf(address(dao)), 300e18, "the DAO's allocation is untouched");
+        assertEq(currency.balanceOf(alice) - before_, uint256(1200e18) * 180e18 / 600e18);
+        assertEq(shares.balanceOf(address(dao)), 100e18, "the DAO's allocation is untouched");
     }
 
     function test_the_whole_launch_ends_with_the_raise_in_the_dao_and_votes_in_the_backers_hands() public {
@@ -432,7 +441,7 @@ contract DaoLaunchKitTest is Test {
         vm.roll(END_BLOCK + 1);
         auction.checkpoint();
         executor.executeGraduation(address(auction));
-        assertEq(currency.balanceOf(address(dao)), 800e18, "the raise is the DAO's");
+        assertEq(currency.balanceOf(address(dao)), 1200e18, "the raise is the DAO's: the 600 on sale at 2");
         assertEq(currency.balanceOf(founder), 0);
         vm.roll(END_BLOCK + 2);
         vm.prank(bob);
@@ -444,7 +453,7 @@ contract DaoLaunchKitTest is Test {
         auction.claimTokens(aliceBid);
         vm.prank(bob);
         auction.claimTokens(bobBid);
-        assertEq(shares.balanceOf(alice), 180e18);
+        assertEq(shares.balanceOf(alice), 330e18, "440 left after Bob's 160, shared with Carol 720:240");
         assertEq(shares.balanceOf(bob), 160e18);
         vm.roll(block.number + 1);
 
@@ -456,13 +465,13 @@ contract DaoLaunchKitTest is Test {
         assertEq(dao.createdAt(id), uint64(block.timestamp));
         address[] memory assets = new address[](1);
         assets[0] = address(currency);
-        uint256 beforeExit = currency.balanceOf(alice); // already holds the 360 her bid was refunded
+        uint256 beforeExit = currency.balanceOf(alice); // already holds the 60 her bid was refunded
         vm.prank(alice);
         dao.ragequit(assets, 180e18, 0);
         assertEq(
             currency.balanceOf(alice) - beforeExit,
-            uint256(800e18) * 180e18 / 460e18,
-            "800 over the 460 member Shares that can leave (700 less the team's 240 still locked, D72), times her 180"
+            uint256(1200e18) * 180e18 / 600e18,
+            "1200 over the 600 member Shares that can leave (900 less the team's 300 still locked, D72), times her 180"
         );
     }
 
@@ -477,7 +486,7 @@ contract DaoLaunchKitTest is Test {
         assertTrue(policy.isExcluded(address(auction)), "the auction is outside the voting supply from birth");
 
         vm.roll(START_BLOCK);
-        uint256 aliceBid = _bid(address(auction), alice, 720e18, 2 * Q96, Q96);
+        uint256 aliceBid = _bid(address(auction), alice, 1040e18, 2 * Q96, Q96); // with Bob's 320, more than the 600 on sale at 2
         uint256 bobBid = _bid(address(auction), bob, 320e18, 4 * Q96, 2 * Q96);
         vm.roll(END_BLOCK + 1);
         auction.checkpoint();
@@ -525,7 +534,7 @@ contract DaoLaunchKitTest is Test {
         assertEq(policy.governanceStartBlock(), CLAIM_BLOCK, "governance opens when the buyers can claim");
         vm.roll(block.number + 1);
 
-        bytes memory drain = abi.encodeWithSignature("transfer(address,uint256)", founder, uint256(800e18));
+        bytes memory drain = abi.encodeWithSignature("transfer(address,uint256)", founder, uint256(1200e18));
         bytes32 nonce = bytes32("drain");
         uint256 id = dao.proposalId(0, address(currency), 0, drain, nonce);
         // The team cannot open it, vote it in or open it by intent while the sale runs.
@@ -545,7 +554,7 @@ contract DaoLaunchKitTest is Test {
         vm.roll(END_BLOCK + 1);
         auction.checkpoint();
         executor.executeGraduation(address(auction));
-        assertEq(currency.balanceOf(address(dao)), 800e18);
+        assertEq(currency.balanceOf(address(dao)), 1200e18);
         vm.prank(founder);
         vm.expectRevert(abi.encodeWithSelector(AllocationVoting.GovernanceNotOpen.selector, CLAIM_BLOCK));
         dao.castVote(id, 1, 225e18);
@@ -574,8 +583,8 @@ contract DaoLaunchKitTest is Test {
         uint256 before_ = currency.balanceOf(alice);
         vm.prank(alice);
         dao.ragequit(assets, 180e18, 0);
-        // 700 member Shares less the team's 240 still locked (D72).
-        assertEq(currency.balanceOf(alice) - before_, uint256(800e18) * 180e18 / 460e18);
+        // 900 member Shares less the team's 300 still locked (D72).
+        assertEq(currency.balanceOf(alice) - before_, uint256(1200e18) * 180e18 / 600e18);
     }
 
     function test_governance_can_only_be_held_closed_once_and_only_into_the_future() public {
@@ -636,6 +645,69 @@ contract DaoLaunchKitTest is Test {
         assertEq(executor.treasury(), address(dao), "the founder's executor pays the founder's DAO");
     }
 
+    /// D74 and D75: the kit refuses a launch whose terms are outside the limits, each at its edge.
+    function test_unfair_terms_are_refused_at_the_edge_of_each_limit() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("unfair");
+        address executor = kit.predictExecutor(founder, salt);
+        KitParams memory p;
+
+        // The sale must be at least 60% of all Shares: 600 of 1001 is not.
+        p = _params(salt, executor);
+        p.daoShares = 101e18;
+        _refused(p, 1);
+        // The team at most 35%: 375 of 1025 is 36.6% (the sale, 650, is 63.4%).
+        p = _params(salt, executor);
+        p.saleSupply = 650e18;
+        p.daoShares = 0;
+        p.teamShares[0] = 300e18;
+        _refused(p, 2);
+        // The DAO's reserve at most 20%: 210 of 1000 is over (sale 700, team 90).
+        p = _params(salt, executor);
+        p.saleSupply = 700e18;
+        p.daoShares = 210e18;
+        p.teamShares[0] = 60e18;
+        p.teamShares[1] = 30e18;
+        _refused(p, 3);
+        // Every team Share behind 2 to 8 milestones, none above half.
+        p = _params(salt, executor);
+        p.milestoneBps[1] = 4900; // 99% locked
+        _refused(p, 4);
+        p = _params(salt, executor);
+        p.milestoneBps[0] = 5100;
+        p.milestoneBps[1] = 4900; // one milestone holds more than half
+        _refused(p, 4);
+        p = _params(salt, executor);
+        p.milestoneChecks = new bytes32[](1);
+        p.milestoneChecks[0] = keccak256("everything");
+        p.milestoneBps = new uint16[](1);
+        p.milestoneBps[0] = 10_000; // one milestone only
+        _refused(p, 4);
+        // A team seat cannot be the DAO, the executor, the auction or the kit (D72's exit would count it twice).
+        p = _params(salt, executor);
+        p.team[1] = executor;
+        _refused(p, 5);
+        p = _params(salt, executor);
+        p.team[1] = address(kit);
+        _refused(p, 5);
+        // The target must be the whole tranche at the floor: 599 of 600 is not.
+        p = _params(salt, executor);
+        AuctionParams memory a = abi.decode(p.auctionConfig, (AuctionParams));
+        a.requiredCurrencyRaised = 599e18;
+        p.auctionConfig = abi.encode(a);
+        _refused(p, 6);
+        // And the fixture itself, at the edges, launches.
+        p = _params(salt, executor);
+        vm.prank(founder);
+        kit.launch(p);
+    }
+
+    function _refused(KitParams memory p, uint8 rule) internal {
+        vm.prank(founder);
+        vm.expectRevert(abi.encodeWithSignature("UnfairTerms(uint8)", rule));
+        kit.launch(p);
+    }
+
     function test_the_inputs_are_checked() public {
         _needArtifacts();
         bytes32 salt = bytes32("bad inputs");
@@ -657,8 +729,8 @@ contract DaoLaunchKitTest is Test {
         assertLe(address(kit).code.length, 24_576, "the kit");
         assertLe(kit.lockFactory().code.length, 24_576, "the panel lock factory");
         assertLe(kit.challengeFactory().code.length, 24_576, "the challenge lock factory");
-        // The kit's creation code is limited too (EIP-3860), and it carries both factories.
-        assertLe(vm.getCode("DaoLaunchKit.sol:DaoLaunchKit").length, 49_152 - 64 * 3, "the kit's creation code");
+        // The kit's creation code is limited too (EIP-3860); the factories are deployed beside it.
+        assertLe(vm.getCode("DaoLaunchKit.sol:DaoLaunchKit").length, 49_152 - 64 * 5, "the kit's creation code");
     }
 
     // ---- milestones that unlock unless holders object -------------------------------------------------
@@ -699,8 +771,8 @@ contract DaoLaunchKitTest is Test {
         MilestoneChallenge lock = MilestoneChallenge(shares.lockGuard());
         assertTrue(address(lock) != address(0));
         assertEq(lock.dao(), address(dao));
-        assertEq(lock.lockedOf(founder), 180e18);
-        assertEq(lock.lockedOf(cofounder), 60e18);
+        assertEq(lock.lockedOf(founder), 225e18);
+        assertEq(lock.lockedOf(cofounder), 75e18);
         assertEq(lock.window(), 7 days);
         assertEq(lock.votePeriod(), 5 days);
         assertEq(lock.clawback(), 30 days);
@@ -715,8 +787,7 @@ contract DaoLaunchKitTest is Test {
         assertEq(factory.createdBy(address(lock)), address(kit));
         assertEq(TreasuryMandateFactory(kit.mandateFactory()).milestoneMandate(address(dao)), address(0));
 
-        // The lock holds the team's Shares as firmly as the panel's does: the free 20% can leave, nothing more.
-        _leaveWith(dao, founder, 45e18);
+        // The lock holds the team's Shares as firmly as the panel's does: none can leave before a milestone.
         _refusedAsLocked(dao, founder);
         // Nobody can take it off or swap it.
         vm.prank(address(dao));
@@ -765,7 +836,7 @@ contract DaoLaunchKitTest is Test {
         Shares shares = dao.shares();
         MilestoneChallenge lock = MilestoneChallenge(shares.lockGuard());
         vm.roll(START_BLOCK);
-        uint256 aliceBid = _bid(address(auction), alice, 720e18, 2 * Q96, Q96);
+        uint256 aliceBid = _bid(address(auction), alice, 1040e18, 2 * Q96, Q96); // with Bob's 320, more than the 600 on sale at 2
         uint256 bobBid = _bid(address(auction), bob, 320e18, 4 * Q96, 2 * Q96);
         vm.roll(END_BLOCK + 1);
         auction.checkpoint();
@@ -792,7 +863,7 @@ contract DaoLaunchKitTest is Test {
         vm.roll(vm.getBlockNumber() + 1);
         assertEq(shares.balanceOf(bob), 160e18);
 
-        // The founder publishes the first milestone (30% of the team's Shares: a 14-day window) and bob objects.
+        // The founder publishes the first milestone (half of the team's Shares: a 21-day window) and bob objects.
         vm.prank(founder);
         lock.submit(0, bytes32("evidence"));
         currency.mint(bob, 1e18);
@@ -802,23 +873,23 @@ contract DaoLaunchKitTest is Test {
         lock.object(0);
         vm.prank(alice);
         lock.vote(0, true);
-        vm.warp(vm.getBlockTimestamp() + 14 days);
+        vm.warp(vm.getBlockTimestamp() + 21 days);
         lock.resolve(0);
         (MilestoneChallenge.Phase phase,, uint8 attempts,,,,,) = lock.milestone(0);
         assertEq(uint8(phase), uint8(MilestoneChallenge.Phase.None));
         assertEq(attempts, 1);
         assertEq(currency.balanceOf(bob), 1e18 + 5e18, "the deposit back, and half the founder's bond");
-        assertEq(currency.balanceOf(address(dao)), 800e18 + 5e18, "the raise, and the other half of the bond");
-        assertEq(lock.lockedOf(founder), 180e18);
+        assertEq(currency.balanceOf(address(dao)), 1200e18 + 5e18, "the raise, and the other half of the bond");
+        assertEq(lock.lockedOf(founder), 225e18);
 
-        // The second attempt waits twice as long. Nobody objects, anyone finishes it, and the team's 30% is free.
+        // The second attempt waits twice as long. Nobody objects, anyone finishes it, and the team's first half is free.
         vm.prank(founder);
         lock.submit(0, bytes32("better evidence"));
-        vm.warp(vm.getBlockTimestamp() + 28 days);
+        vm.warp(vm.getBlockTimestamp() + 42 days);
         lock.finish(0);
         assertEq(lock.lockedOf(founder), 112.5e18);
         assertEq(lock.lockedOf(cofounder), 37.5e18);
-        _leaveWith(dao, founder, 112.5e18); // the 20% never locked, and the 30% that just unlocked
+        _leaveWith(dao, founder, 112.5e18); // the half that just unlocked
         _refusedAsLocked(dao, founder);
         // The bond comes back once the month of clawback is over.
         vm.warp(vm.getBlockTimestamp() + 30 days);

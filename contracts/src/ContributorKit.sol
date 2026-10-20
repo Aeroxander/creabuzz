@@ -122,6 +122,13 @@ contract ContributorKit {
                     || p.projectExpires > p.budgetExpires)
         ) revert InvalidTerms();
 
+        // D79: the founder starts with at most a third of the first budget (so once it is awarded they hold at most a
+        // quarter), and does not sit on its panel judging everyone else's claims.
+        if (p.founderShares > uint256(p.shareBudget) / 3) revert InvalidTerms();
+        for (uint256 i; i < p.reviewers.length; ++i) {
+            if (p.reviewers[i] == msg.sender) revert InvalidTerms();
+        }
+
         address predicted = predictDao(msg.sender, p.founderShares, p.salt);
         uint96 threshold = thresholdFor(p.founderShares);
 
