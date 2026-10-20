@@ -16,8 +16,62 @@ import {MockProtocolFeeController} from "btt/mocks/MockProtocolFeeController.sol
 import {
     ContinuousClearingAuctionFactory
 } from "continuous-clearing-auction/src/ContinuousClearingAuctionFactory.sol";
-import {GraduationExecutor} from "../src/GraduationExecutor.sol";
-import {AllowlistHook} from "../src/hooks/AllowlistHook.sol";
+
+/// @dev Our executor and allowlist hook, driven through their compiled artifacts (`vm.deployCode`): this file must compile
+///      with the auction's exact solc pin (=0.8.26), while our own contracts compile with the project's newer one (ES-5),
+///      so it cannot import them. Their errors, struct and functions match the contracts'.
+interface IGraduationExecutor {
+    struct Graduation {
+        uint256 initialPriceX96;
+        uint256 tokensSold;
+        uint256 currencyRaised;
+        uint256 reserveEscrow;
+        uint256 treasuryShare;
+        uint256 unsoldTokens;
+        address tokenMasterPool;
+        bool executed;
+    }
+
+    error NotGraduated(address auction);
+    error AlreadyExecuted(address auction);
+    error AuctionGraduated(address auction);
+    error AuctionStillRunning(address auction);
+    error ReserveLocked(address auction, uint64 unlockAt);
+
+    function bindAuction(address auction) external;
+    function executeGraduation(address auction) external;
+    function recoverFailedLaunch(address auction) external;
+    function releaseReserve(address auction, address tokenMasterPool) external;
+    function withdrawStuckReserve(address auction) external;
+    function launchRecovered(address auction) external view returns (bool);
+    function graduations(address auction)
+        external
+        view
+        returns (uint256, uint256, uint256, uint256, uint256, uint256, address, bool);
+}
+
+/// @dev See `IGraduationExecutor` above.
+interface IAllowlistHook {
+    error NotAllowlisted(address bidder);
+    error OverPerWalletCap(address bidder, uint128 spent, uint128 bid, uint128 cap);
+    error NotAuction(address caller);
+
+    function setAuction(address auction_) external;
+    function setBidder(address bidder, bool isAllowed) external;
+    function spent(address bidder) external view returns (uint128);
+    function validate(uint256 maxPrice, uint128 amount, address owner_, address sender, bytes calldata hookData)
+        external;
+}
+
+function deployExecutor(Vm vm, address treasury, uint16 reserveBps, uint64 reserveLock) returns (IGraduationExecutor) {
+    return IGraduationExecutor(
+        vm.deployCode("GraduationExecutor.sol:GraduationExecutor", abi.encode(treasury, reserveBps, reserveLock))
+    );
+}
+
+function deployAllowlistHook(Vm vm, address owner, uint128 cap) returns (IAllowlistHook) {
+    return IAllowlistHook(vm.deployCode("AllowlistHook.sol:AllowlistHook", abi.encode(owner, cap)));
+}
 
 /// @dev The vendored Permit2 harness is compiled as its own unit (Permit2 pins
 ///      `pragma solidity 0.8.17`); this test only talks to it through `vm.deployCode`.
@@ -162,7 +216,7 @@ contract LaunchLifecycleTest is Test {
 
     MockERC20 internal currency;
     MockERC20 internal saleToken;
-    GraduationExecutor internal executor;
+    IGraduationExecutor internal executor;
     address internal treasury;
     address internal pool;
     address internal feeRecipient;
@@ -185,7 +239,7 @@ contract LaunchLifecycleTest is Test {
 
         currency = new MockERC20();
         saleToken = new MockERC20();
-        executor = new GraduationExecutor(treasury, RESERVE_BPS, RESERVE_LOCK);
+        executor = deployExecutor(vm, treasury, RESERVE_BPS, RESERVE_LOCK);
 
         // ABI pin: the auction's bid pull is `SafeTransferLib.permit2TransferFrom`
         // which composes `transferFrom(address,address,uint160,address)`
@@ -274,7 +328,7 @@ contract LaunchLifecycleTest is Test {
     function _graduationOf(address auctionAddr)
         internal
         view
-        returns (GraduationExecutor.Graduation memory g)
+        returns (IGraduationExecutor.Graduation memory g)
     {
         (
             g.initialPriceX96,
@@ -332,7 +386,7 @@ contract LaunchLifecycleTest is Test {
         // (IContinuousClearingAuction.sol:170-174). The block-100 checkpoint sold
         // 0 mps, so nothing is raised until the end block is checkpointed.
         assertFalse(auction.isGraduated(), "raise only materializes at final checkpoint");
-        vm.expectRevert(abi.encodeWithSelector(GraduationExecutor.NotGraduated.selector, address(auction)));
+        vm.expectRevert(abi.encodeWithSelector(IGraduationExecutor.NotGraduated.selector, address(auction)));
         executor.executeGraduation(address(auction));
 
         // --- Finalize at block 103 (past endBlock): the final checkpoint sells
@@ -348,14 +402,14 @@ contract LaunchLifecycleTest is Test {
         // Recovery must not touch a graduated launch — before execution ...
         vm.prank(treasury);
         vm.expectRevert(
-            abi.encodeWithSelector(GraduationExecutor.AuctionGraduated.selector, address(auction))
+            abi.encodeWithSelector(IGraduationExecutor.AuctionGraduated.selector, address(auction))
         );
         executor.recoverFailedLaunch(address(auction));
 
         // --- Graduation: fee first, then reserve/treasury split of the NET raise
         // (GraduationExecutor.sol:121-146, ContinuousClearingAuction.sol:134-148).
         executor.executeGraduation(address(auction));
-        GraduationExecutor.Graduation memory g = _graduationOf(address(auction));
+        IGraduationExecutor.Graduation memory g = _graduationOf(address(auction));
         assertEq(g.initialPriceX96, 2 * Q96, "lbpInitializationParams initialPriceX96");
         assertEq(g.tokensSold, TOTAL_SUPPLY, "lbpInitializationParams tokensSold");
         assertEq(g.currencyRaised, 1800e18, "net raise after 200e18 protocol fee");
@@ -377,9 +431,9 @@ contract LaunchLifecycleTest is Test {
         assertEq(saleToken.balanceOf(address(auction)), TOTAL_SUPPLY, "supply held for claims");
 
         // Double graduation reverts in the integrated path (GraduationExecutor.sol:107;
-        // also covered as a unit in GraduationExecutor.t.sol:128-134).
+        // also covered as a unit in IGraduationExecutor.t.sol:128-134).
         vm.expectRevert(
-            abi.encodeWithSelector(GraduationExecutor.AlreadyExecuted.selector, address(auction))
+            abi.encodeWithSelector(IGraduationExecutor.AlreadyExecuted.selector, address(auction))
         );
         executor.executeGraduation(address(auction));
 
@@ -387,7 +441,7 @@ contract LaunchLifecycleTest is Test {
         // (GraduationExecutor.sol:159-190).
         vm.prank(treasury);
         vm.expectRevert(
-            abi.encodeWithSelector(GraduationExecutor.AuctionGraduated.selector, address(auction))
+            abi.encodeWithSelector(IGraduationExecutor.AuctionGraduated.selector, address(auction))
         );
         executor.recoverFailedLaunch(address(auction));
 
@@ -435,7 +489,7 @@ contract LaunchLifecycleTest is Test {
         // Recovery is refused while the auction is live (GraduationExecutor.sol:172-174).
         vm.prank(treasury);
         vm.expectRevert(
-            abi.encodeWithSelector(GraduationExecutor.AuctionStillRunning.selector, address(auction))
+            abi.encodeWithSelector(IGraduationExecutor.AuctionStillRunning.selector, address(auction))
         );
         executor.recoverFailedLaunch(address(auction));
 
@@ -445,7 +499,7 @@ contract LaunchLifecycleTest is Test {
         assertFalse(auction.isGraduated(), "500e18 < 1000e18 threshold");
 
         // Threshold not met: graduation is refused (GraduationExecutor.sol:109).
-        vm.expectRevert(abi.encodeWithSelector(GraduationExecutor.NotGraduated.selector, address(auction)));
+        vm.expectRevert(abi.encodeWithSelector(IGraduationExecutor.NotGraduated.selector, address(auction)));
         executor.executeGraduation(address(auction));
 
         // Non-graduated exits fully refund (ContinuousClearingAuction.sol:499-502).
@@ -500,7 +554,7 @@ contract LaunchLifecycleTest is Test {
         assertTrue(auction.isGraduated(), "500e18 >= 300e18 threshold");
 
         executor.executeGraduation(address(auction));
-        GraduationExecutor.Graduation memory g = _graduationOf(address(auction));
+        IGraduationExecutor.Graduation memory g = _graduationOf(address(auction));
         assertEq(g.initialPriceX96, FLOOR_PRICE_Q96);
         assertEq(g.tokensSold, 500e18);
         assertEq(g.currencyRaised, 500e18, "no fee controller: net raise = raw raise");
@@ -550,7 +604,7 @@ contract LaunchLifecycleTest is Test {
         // checkpoint-first fix removed this call reverts NotGraduated.
         executor.executeGraduation(address(auction));
 
-        GraduationExecutor.Graduation memory g = _graduationOf(address(auction));
+        IGraduationExecutor.Graduation memory g = _graduationOf(address(auction));
         assertEq(g.initialPriceX96, FLOOR_PRICE_Q96);
         assertEq(g.tokensSold, 500e18);
         assertEq(g.currencyRaised, 500e18, "no fee controller: net raise = raw raise");
@@ -598,7 +652,7 @@ contract LaunchLifecycleTest is Test {
         // Graduation happens exactly once (GraduationExecutor.sol:107).
         executor.executeGraduation(address(auction));
         vm.expectRevert(
-            abi.encodeWithSelector(GraduationExecutor.AlreadyExecuted.selector, address(auction))
+            abi.encodeWithSelector(IGraduationExecutor.AlreadyExecuted.selector, address(auction))
         );
         executor.executeGraduation(address(auction));
 
@@ -656,7 +710,7 @@ contract LaunchLifecycleTest is Test {
         // The deploying wallet IS the treasury (the app's treasury gate).
         saleToken.mint(treasury, TOTAL_SUPPLY);
         ContinuousClearingAuctionFactory factory = new ContinuousClearingAuctionFactory(address(0));
-        AllowlistHook hook = new AllowlistHook(treasury, 1000e18);
+        IAllowlistHook hook = deployAllowlistHook(vm, treasury, 1000e18);
         bytes memory configData = _appConfigData(300e18, address(hook));
         bytes32 salt = bytes32(uint256(1));
 
@@ -689,7 +743,7 @@ contract LaunchLifecycleTest is Test {
         // Past the end block a keeper (no explicit checkpoint) graduates the launch.
         vm.roll(END_BLOCK + 1);
         executor.executeGraduation(created);
-        GraduationExecutor.Graduation memory g = _graduationOf(created);
+        IGraduationExecutor.Graduation memory g = _graduationOf(created);
         assertTrue(g.executed);
         assertEq(g.currencyRaised, 500e18);
         assertEq(g.reserveEscrow, 200e18, "4000bps to the reserve escrow");
@@ -702,7 +756,7 @@ contract LaunchLifecycleTest is Test {
         vm.prank(treasury);
         vm.expectRevert(
             abi.encodeWithSelector(
-                GraduationExecutor.ReserveLocked.selector,
+                IGraduationExecutor.ReserveLocked.selector,
                 created,
                 uint64(block.timestamp) + RESERVE_LOCK
             )
@@ -770,7 +824,7 @@ contract LaunchLifecycleTest is Test {
     /// the hook, allowlisted bidders bid up to their cap, everyone else is refused
     /// by the auction with the hook's own reason.
     function test_allowlist_hook_gates_the_real_auction_and_strangers_cannot_drive_it() public {
-        AllowlistHook hook = new AllowlistHook(treasury, 400e18);
+        IAllowlistHook hook = deployAllowlistHook(vm, treasury, 400e18);
         AuctionParameters memory params = AuctionParameters({
             currency: address(currency),
             tokensRecipient: address(executor),
@@ -795,7 +849,7 @@ contract LaunchLifecycleTest is Test {
 
         // A stranger cannot burn dan's cap by calling the hook directly.
         vm.prank(erin);
-        vm.expectRevert(abi.encodeWithSelector(AllowlistHook.NotAuction.selector, erin));
+        vm.expectRevert(abi.encodeWithSelector(IAllowlistHook.NotAuction.selector, erin));
         hook.validate(2 * Q96, 400e18, dan, dan, "");
         assertEq(hook.spent(dan), 0);
 
@@ -813,7 +867,7 @@ contract LaunchLifecycleTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(
                 bytes4(keccak256("ValidationHookCallFailed(bytes)")),
-                abi.encodeWithSelector(AllowlistHook.NotAllowlisted.selector, erin)
+                abi.encodeWithSelector(IAllowlistHook.NotAllowlisted.selector, erin)
             )
         );
         auction.submitBid(2 * Q96, 100e18, erin, FLOOR_PRICE_Q96, "");
@@ -830,7 +884,7 @@ contract LaunchLifecycleTest is Test {
             abi.encodeWithSelector(
                 bytes4(keccak256("ValidationHookCallFailed(bytes)")),
                 abi.encodeWithSelector(
-                    AllowlistHook.OverPerWalletCap.selector, dan, uint128(250e18), uint128(200e18), uint128(400e18)
+                    IAllowlistHook.OverPerWalletCap.selector, dan, uint128(250e18), uint128(200e18), uint128(400e18)
                 )
             )
         );

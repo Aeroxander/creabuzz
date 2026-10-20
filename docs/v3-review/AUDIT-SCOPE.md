@@ -39,10 +39,10 @@ Lines are total and source lines (no blanks or comments) at `e72c8911b`, except 
 
 | Contract | File | Lines (source) | Role in the raise |
 |---|---|---|---|
-| `DaoLaunchKit` | `src/DaoLaunchKit.sol` | 436 (314) | The one-transaction launch: executor, DAO, lock, panel, auction. Compiled with solc 0.8.26 (the CCA's pin). |
-| `GraduationExecutor` | `src/GraduationExecutor.sol` | 459 (255) | Holds the sale tranche, funds the auction, sweeps the raise to the DAO, recovers a failed sale for the DAO. The kit uses it with `reserveBps = 0`, so its reserve paths are unused in a DAO launch. 0.8.26. |
+| `DaoLaunchKit` | `src/DaoLaunchKit.sol` | 436 (314) | The one-transaction launch: executor, DAO, lock, panel, auction. Compiled with solc 0.8.37 like the rest since D70 (before: 0.8.26, the CCA's pin). |
+| `GraduationExecutor` | `src/GraduationExecutor.sol` | 459 (255) | Holds the sale tranche, funds the auction, sweeps the raise to the DAO, recovers a failed sale for the DAO. The kit uses it with `reserveBps = 0`, so its reserve paths are unused in a DAO launch. |
 | CCA interfaces | `src/CCA.sol` | 66 (30) | Mirrored interfaces of the upstream auction; `test/PinnedInterfaces.t.sol` compares them with the pinned source. |
-| Patched Majeur DAO | `src/majeur/MolochPatched.sol` (`Moloch`, `Shares`, `Loot`, `Badges`, `Summoner`) | 2,641 (1,636) | The DAO, its treasury, ragequit, the Shares ERC-20(C) with the lock guard. Upstream is `lib/majeur/src/Moloch.sol`; the fork is additive: 64 `@@CREABUZZ PATCH` blocks, 314 lines inside them, upstream text kept in comments (`scripts/check-majeur-fork.mjs` enforces it). The runtime size is within 47 bytes of the 24,576-byte limit. |
+| Patched Majeur DAO | `src/majeur/MolochPatched.sol` (`Moloch`, `Shares`, `Loot`, `Badges`, `Summoner`) | 2,641 (1,636) | The DAO, its treasury, ragequit, the Shares ERC-20(C) with the lock guard. Upstream is `lib/majeur/src/Moloch.sol`; the fork is additive: 64 `@@CREABUZZ PATCH` blocks, 314 lines inside them, upstream text kept in comments (`scripts/check-majeur-fork.mjs` enforces it). The runtime size is 24,575 of the 24,576-byte limit with solc 0.8.37 (47 bytes spare with 0.8.30): any further patch must first free space, for example by disabling the unused allowance, permit and share-sale paths (§6, item 4). |
 | `AllocationVoting` (+ `IVotingWeight`) | `src/AllocationVoting.sol`, `src/VotingWeight.sol` | 629 (465) + 21 (13) | The only ballot: snapshots of owned Shares, two lanes, quorum, approval, review, hold time, the governor's queue reset. Cloned per DAO. |
 | `MilestoneChallenge` (+ factory) | `src/MilestoneChallenge.sol`, `src/MilestoneChallengeFactory.sol` | 544 (420) + 30 (21) after D67 | The default lock: publish with a bond, object with a deposit, holder vote without the team, late objection burns what is still locked, milestones in order and only after the month on the one before (D56–D58). |
 | `MilestoneLock` (+ factory) | `src/MilestoneLock.sol`, `src/MilestoneLockFactory.sol` | 199 (133) + 30 (20) | The panel lock: a tranche unlocks on a `Paid` claim in the DAO's named panel mandate. |
@@ -70,7 +70,8 @@ market contracts (evaluation only), `DaoURIAdapter`.
 | Limit Break creator-token standards / transfer validator | `v5.0.0` / `59adb8b` | The ERC-20C surface of Shares (`setTransferValidator`) | Optional: zero until a DAO chooses a validator; never consulted on mint or burn, so it can never block an exit. |
 | The sale currency (USDC) | per chain | Raise, treasury, bonds, deposits, claims | Assumed a plain ERC-20: no fee on transfer, no rebasing, no callbacks. The factory and `VerifierSet.bond` fail closed on short transfers; other paths do not check. A pausable or blocklisting USDC can freeze payouts to a blocked address (the exit, a bond release), not redirect them. |
 
-Compiler: solc 0.8.30 (0.8.26 for the kit, the executor and the allowlist hook), `via_ir`, optimizer 200 runs, EVM
+Compiler: solc 0.8.37 for every first-party contract since D70 (before: 0.8.30, and 0.8.26 for the kit, the executor
+and the allowlist hook), `via_ir`, optimizer 200 runs, EVM
 `cancun` (the DAO uses transient storage for its reentrancy guard).
 
 ## 4. Who is trusted with what
@@ -265,15 +266,18 @@ predicts the auction's address and adds it to the policy's exclusions in the DAO
 whose `transfer` returns nothing (USDT on Ethereum) would make every stake, reserve and payout revert.
 **Recommendation**: `SafeERC20`, once the factory has room (see ES-2). The pilot's currency is USDC, which returns `bool`.
 
-## [ES-5] The pinned compilers carry known bugs
-**Severity**: Low
+## [ES-5] The pinned compilers carry known bugs (fixed, D70)
+**Severity**: Low, fixed
 **Category**: evm-audit-general (compiler version)
 **Location**: solc 0.8.26 (kit, executor, allowlist hook) and 0.8.30 (everything else), `via_ir`, optimizer on
 **Description**: the Solidity bug list names, for these versions, `YulOptimizerKnowledgeBaseStaleBookkeeping` (applies:
 the optimizer is on), the two stack-spill bugs in mutual recursion (via-IR; we did not search the code exhaustively for
 mutual recursion), and others whose conditions this code does not meet (no `transient` state variables, no
-named-argument custom errors in `require`, no custom storage layout). All are fixed by 0.8.38.
-**Recommendation**: freeze on solc 0.8.38 or later where the CCA's pin allows, and rerun the suite, the simulation and
+named-argument custom errors in `require`, no custom storage layout). (A first version of this note said "fixed by
+0.8.38": that came from the Solidity development branch's bug list; 0.8.38 is not released.)
+**Recommendation (done, D70)**: every first-party contract now compiles with solc 0.8.37 (released 2026-09-10), whose
+only listed bug is `YulOptimizerKnowledgeBaseStaleBookkeeping` (low; fixed in 0.8.38: move the pin when it ships). The
+upstream auction keeps its own 0.8.26. Rerun the suite, the simulation and
 the mutation check.
 
 ## [ES-6] Abstentions count toward quorum and not toward approval

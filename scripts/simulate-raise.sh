@@ -18,6 +18,8 @@ for tool in forge anvil node; do
   command -v "$tool" >/dev/null 2>&1 || { echo "missing tool: $tool"; exit 2; }
 done
 [[ -d packages/creaton-core/node_modules && -d web/node_modules ]] || { echo "run pnpm install first"; exit 2; }
+# The pinned solc may be newer than this machine's forge knows about (see scripts/ensure-solc.sh).
+scripts/ensure-solc.sh || { echo "could not install the pinned solc"; exit 2; }
 # The simulation deploys from contracts/out (including the test-only six-decimal USDC); forge build is incremental.
 (cd contracts && FOUNDRY_LINT_LINT_ON_BUILD=false forge build >/dev/null) || { echo "forge build failed"; exit 2; }
 exec node scripts/simulate-raise.mjs "$@"

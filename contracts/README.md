@@ -45,8 +45,8 @@ surface that wraps upstream primitives:
   a `MilestoneLock`, a `GraduationExecutor` it runs, the DAO (via the
   Summoner), the sale on the canonical CCA, and the raise's payee set to the
   DAO. Needs the Shares implementation address (every DAO the Summoner makes
-  clones one) so it can name the lock before the DAO exists. Built with solc 0.8.26
-  (the CCA's pin), so the tests that exercise it deploy its artifact; set
+  clones one) so it can name the lock before the DAO exists. Built with the
+  project's pinned solc (0.8.37), not the CCA's 0.8.26, so the tests that exercise it deploy its artifact; set
   `REQUIRE_CONTRACT_ARTIFACTS=1` to make a missing artifact fail instead of
   skip.
 - `src/MilestoneLock.sol` + `src/MilestoneBadge.sol` — the team's Shares are
@@ -108,8 +108,12 @@ mirrored `src/CCA.sol` to the upstream sources).
 
 The desktop deploys `GraduationExecutor` and `AllowlistHook` from creation
 bytecode embedded in `desktop/src/features/launchpad/lib/graduationArtifact.ts`.
-`foundry.toml` pins their compiler (`compilation_restrictions`, solc 0.8.26) so
-the artifact is reproducible. After ANY change to either contract (or their
+`foundry.toml` pins the compiler of everything in `src/` (`compilation_restrictions`,
+solc 0.8.37) so the artifact is reproducible. A forge older than that compiler does not know it exists
+("No solc version exists that matches the version requirement"): run `scripts/ensure-solc.sh` once, which installs it
+from the official Solidity binaries host after checking its checksum. A test cannot import our contracts beside the
+CCA's own sources (pinned =0.8.26); `test/LaunchLifecycle.t.sol` drives the executor and the hook through their
+artifacts for that reason. After ANY change to either contract (or their
 imports):
 
 ```bash
