@@ -14,10 +14,16 @@ const PATH = `${process.env.PATH ?? ""}:${homedir()}/.foundry/bin`;
 
 async function startAnvil() {
   const port = 20_000 + Math.floor(Math.random() * 10_000);
-  const child = spawn("anvil", ["--port", String(port), "--silent"], {
-    env: { ...process.env, PATH },
-    stdio: "ignore",
-  });
+  // --prune-history=500 keeps anvil's past state in memory only: without it anvil can leave state under
+  // ~/.foundry/anvil/tmp behind when it is stopped.
+  const child = spawn(
+    "anvil",
+    ["--port", String(port), "--prune-history=500", "--silent"],
+    {
+      env: { ...process.env, PATH },
+      stdio: "ignore",
+    },
+  );
   const failed = new Promise((resolve) =>
     child.once("error", () => resolve(true)),
   );
