@@ -84,7 +84,7 @@ export async function installAnvilWallet(
 /**
  * Point the app's chain reads at this node. `getRpcEndpoint` prefers the
  * saved choice in localStorage over any build-time default
- * (`web/src/features/launchpad/chain.ts`).
+ * (`web/src/features/launchpad/chain-config.ts`).
  */
 export async function pointChainAt(page: Page, rpcUrl: string): Promise<void> {
   await page.addInitScript(

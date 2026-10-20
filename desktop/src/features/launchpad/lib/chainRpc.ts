@@ -156,7 +156,7 @@ export const DEFAULT_RPC_ENDPOINT = "http://127.0.0.1:8545";
 // ─── Chain presets ───────────────────────────────────────────────────────────
 //
 // The picker's single source of truth for this app. The web client renders the
-// very same list (`web/src/features/launchpad/chain.ts`); `chainRpc.test.mjs`
+// very same list (`web/src/features/launchpad/chain-config.ts`); `chainRpc.test.mjs`
 // imports both and pins them equal, so the two lists cannot drift apart. Add a
 // chain there AND here, in the same change.
 //
@@ -253,7 +253,7 @@ function viteEnv(): ChainEnv | undefined {
  * Whether this build may offer mainnet chains. Off unless `VITE_ENABLE_MAINNET`
  * is "1"/"true": the launchpad contracts are unaudited and no legal posture
  * exists yet (docs/dao-os.md rule R4), so a default build shows test networks
- * only. Mirrors `web/src/features/launchpad/chain.ts`.
+ * only. Mirrors `web/src/features/launchpad/chain-config.ts`.
  */
 export function mainnetEnabled(env: ChainEnv | undefined = viteEnv()): boolean {
   const flag = env?.VITE_ENABLE_MAINNET?.trim().toLowerCase();
