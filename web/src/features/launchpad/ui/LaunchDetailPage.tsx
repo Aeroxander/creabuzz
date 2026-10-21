@@ -442,7 +442,23 @@ export function LaunchDetailPage({
           <DaoOverview
             dao={workDao}
             launch={launch}
-            onOpen={(target) => setTab(target)}
+            onOpen={(target, claim) => {
+              if (!claim) {
+                setTab(target);
+                return;
+              }
+              // Open the claim itself: the Work tab scrolls to it and focuses it.
+              setLocalTab(target);
+              void navigate({
+                search: (previous) => ({
+                  ...previous,
+                  tab: target,
+                  claim: claim.id,
+                  mandate: claim.mandate,
+                }),
+                replace: true,
+              });
+            }}
           >
             {raiseOverview}
           </DaoOverview>

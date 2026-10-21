@@ -21,6 +21,7 @@ import {
   summaryLine,
 } from "../lib/dao-overview";
 import { formatUnits } from "../lib/dao-actions";
+import { openWorkAreas } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
 import { useConnectedWallet } from "../use-connected-wallet";
@@ -55,7 +56,11 @@ export function DaoOverview({
 }: {
   launch: Launch;
   dao: string;
-  onOpen: (tab: OverviewTarget) => void;
+  /** Open a tab; with a claim, the Work tab opens on that claim. */
+  onOpen: (
+    tab: OverviewTarget,
+    claim?: { id: string; mandate: string },
+  ) => void;
   /** The raise this project came from, shown folded under "About the raise". */
   children: ReactNode;
 }) {
@@ -110,7 +115,7 @@ export function DaoOverview({
     work.data?.chainTime ??
     0;
   // Most urgent first: what closes soonest comes before what can wait.
-  const items = rankAttention(
+  const ranked = rankAttention(
     [
       ...attentionItems({
         decisions: decisions.data,
@@ -125,6 +130,11 @@ export function DaoOverview({
     ],
     clock,
   );
+  // How many work areas take submissions now (their words are on the Work tab, under Ways to help).
+  const openAreas = work.data ? openWorkAreas(work.data, []).length : 0;
+  // What this person can do now, and their own work waiting on someone else, said apart.
+  const items = ranked.filter((item) => item.actor !== "others");
+  const waiting = ranked.filter((item) => item.actor === "others");
   // A read that failed with nothing earlier to show: an empty list would be a guess, not an answer.
   const unread = [decisions, work, challengeLock].some(
     (q) => q.isError && q.data === undefined,
@@ -212,7 +222,7 @@ export function DaoOverview({
                       ) : null}
                     </span>
                     <Button
-                      onClick={() => onOpen(item.tab)}
+                      onClick={() => onOpen(item.tab, item.claim)}
                       size="sm"
                       type="button"
                       variant="outline"
@@ -223,9 +233,64 @@ export function DaoOverview({
                 ))}
               </ul>
             )}
+            {waiting.length > 0 ? (
+              <div className="mt-3" data-testid="dao-waiting-others">
+                <h4 className="text-xs font-semibold text-muted-foreground">
+                  Waiting on someone else
+                </h4>
+                <ul className="mt-1 divide-y divide-border/60">
+                  {waiting.map((item) => (
+                    <li
+                      className="flex items-start justify-between gap-3 py-2"
+                      data-testid="dao-waiting"
+                      key={item.key}
+                    >
+                      <span className="text-sm">
+                        {item.text}
+                        {item.due !== undefined && item.due > clock ? (
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {`Changes ${deadline(item.due)}.`}
+                          </span>
+                        ) : null}
+                      </span>
+                      <Button
+                        onClick={() => onOpen(item.tab, item.claim)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        {item.action}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </>
         )}
       </Card>
+      {openAreas > 0 ? (
+        <Card
+          className="flex flex-wrap items-center justify-between gap-3 p-4"
+          data-testid="dao-ways-to-help"
+        >
+          <span className="text-sm">
+            <span className="font-semibold">Ways to help:</span>{" "}
+            {openAreas === 1
+              ? "1 work area is open for submissions."
+              : `${openAreas} work areas are open for submissions.`}{" "}
+            You need no Shares to submit work.
+          </span>
+          <Button
+            data-testid="dao-ways-to-help-open"
+            onClick={() => onOpen("work")}
+            size="sm"
+            type="button"
+          >
+            See ways to help
+          </Button>
+        </Card>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-3">
         <Figure
           label="In the treasury"

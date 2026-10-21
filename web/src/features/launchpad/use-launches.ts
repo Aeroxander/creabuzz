@@ -364,6 +364,8 @@ export interface CreateLaunchInput {
   ipRecord?: IpRecord;
   /** The team's revenue pledge (D78). */
   revenuePledge?: RevenuePledge;
+  /** The first work areas' words, exactly as hashed, so people can see what finished work looks like. */
+  workAreas?: { name: string; check: string }[];
 }
 
 /** Every channel the record binds: the picked ones plus the chat rooms, once each. */
@@ -434,6 +436,11 @@ export function useCreateLaunch() {
       if (input.ipRecord) content.ipRecord = ipRecordContent(input.ipRecord);
       if (input.revenuePledge)
         content.revenuePledge = revenuePledgeContent(input.revenuePledge);
+      if (input.workAreas && input.workAreas.length > 0)
+        content.workAreas = input.workAreas.map((area) => ({
+          name: area.name,
+          check: area.check,
+        }));
       if (input.asAgent) {
         return publishMirror(
           { kind: KIND_LAUNCH_RECORD, tags, content },

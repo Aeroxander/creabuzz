@@ -52,6 +52,7 @@ export function recordToInput(
     ...(record.legalWrapper ? { legalWrapper: record.legalWrapper } : {}),
     ...(record.ipRecord ? { ipRecord: record.ipRecord } : {}),
     ...(record.revenuePledge ? { revenuePledge: record.revenuePledge } : {}),
+    ...(record.workAreas.length > 0 ? { workAreas: record.workAreas } : {}),
     ...(record.reviewerTerms ? { reviewerTerms: record.reviewerTerms } : {}),
     ...(record.unlocks ? { unlocks: record.unlocks } : {}),
     ...(record.daoAtGraduation !== null

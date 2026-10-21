@@ -176,6 +176,15 @@ test("the record says contributors only, names the DAO and sells nothing", () =>
   assert.equal(input.tokenPlan.mode, "dao");
   assert.equal(input.tokenPlan.supply, "100000");
   assert.equal(isContributorProject({ ...input, auction: null }), true);
+  // Each first work area's words, exactly as the launch hashes them: the chain keeps only the hash.
+  assert.deepEqual(
+    input.workAreas,
+    contributorTerms(draft()).projects.map((p) => ({
+      name: p.name,
+      check: p.check,
+    })),
+  );
+  assert.ok(input.workAreas.length > 0);
 });
 
 test("the preview needs only the Share fields, and none while they do not make sense", () => {

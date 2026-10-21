@@ -10,7 +10,7 @@
  */
 
 import type { Decision, DecisionsSnapshot } from "./decisions.ts";
-import { nextStep, type ClaimView } from "./work.ts";
+import { idLabel, nextStep, type ClaimView } from "./work.ts";
 import type { WorkSnapshot } from "./work-read.ts";
 
 /** The tab that holds the answer. */
@@ -19,7 +19,16 @@ export type AttentionTab = "decisions" | "work" | "milestones";
 export interface AttentionItem {
   /** Stable, so a list re-renders without flicker. */
   key: string;
-  kind: "bond" | "vote" | "move" | "review" | "payout" | "award";
+  kind:
+    | "bond"
+    | "vote"
+    | "move"
+    | "bind"
+    | "review"
+    | "settle"
+    | "payout"
+    | "award"
+    | "waiting";
   /** One sentence, naming the thing. */
   text: string;
   /** The label of the one button. */
@@ -31,6 +40,13 @@ export interface AttentionItem {
   why?: string;
   /** What happens if they do nothing, in one sentence. */
   ifIgnored?: string;
+  /** The claim it is about, so the button opens that claim on the Work tab rather than the tab's top. */
+  claim?: { id: string; mandate: string };
+  /**
+   * Who acts: `you` (the default) for something only this person, or anyone including them, can do now; `others` for
+   * this person's own work waiting on someone else (a manager, the reviewers, the challenge window, a vote).
+   */
+  actor?: "you" | "others";
 }
 
 const OPEN_DECISION: readonly Decision["state"][] = [
@@ -58,6 +74,45 @@ const sameAddress = (a: string, b: string | null) =>
 
 function shortAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+/** Where a person's own claim stands while it waits on someone else, or null when it is theirs to act on or done. */
+function waitingText(
+  claim: ClaimView,
+  step: ReturnType<typeof nextStep>,
+  label: string,
+  challengeWindow: number,
+  now: number,
+): { text: string; due?: number } | null {
+  const money = claim.record.amount > 0n;
+  switch (step.kind) {
+    case "bind":
+      return step.who === "manager"
+        ? {
+            text: `Your “${label}” is waiting for a work area's manager to accept it for review.`,
+          }
+        : null;
+    case "review":
+      return {
+        text: `Your “${label}” is waiting for reviewers: ${claim.approvals} of ${claim.quorum} approvals.`,
+      };
+    case "award":
+      return {
+        text: `Your “${label}” is finished. Shareholders decide by a vote whether to award Shares for it.`,
+      };
+    case "none": {
+      if (claim.record.status !== "Approved") return null;
+      const open = claim.record.releasedAt + challengeWindow;
+      return open > now
+        ? {
+            text: `Your “${label}” was approved. You can ${money ? "take the payment" : "mark it finished"} once the challenge window ends.`,
+            due: open,
+          }
+        : null;
+    }
+    default:
+      return null;
+  }
 }
 
 /** Whether a claim is not finished: still being reviewed, or approved and waiting to be taken. */
@@ -119,6 +174,7 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
         items.push({
           key: `payout-${claim.id}`,
           kind: "payout",
+          claim: { id: claim.id, mandate: mandate.address },
           text:
             claim.record.amount > 0n
               ? "Your claim was approved. You can take your payment now."
@@ -140,6 +196,7 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
         items.push({
           key: `review-${claim.id}`,
           kind: "review",
+          claim: { id: claim.id, mandate: mandate.address },
           text: `${who(claim.record.contributor)} filed a claim that needs your review.`,
           action: "Review it",
           tab: "work",
@@ -153,6 +210,73 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
               ? "Anyone can now close this unanswered claim and return its stake and reserved payment."
               : "After its deadline, anyone can close an unanswered claim and return its stake and reserved payment.",
         });
+      }
+      const target = { id: claim.id, mandate: mandate.address };
+      const label = idLabel(claim.id);
+      const mine = sameAddress(claim.record.contributor, wallet);
+      const managesItsArea =
+        claim.project !== null &&
+        mandate.projects.some(
+          (p) =>
+            p.id.toLowerCase() === claim.project?.toLowerCase() &&
+            sameAddress(p.record.manager, wallet),
+        );
+      // A manager's turn: work submitted in their budget that no work area has accepted yet.
+      if (
+        step.kind === "bind" &&
+        step.who === "manager" &&
+        !mandate.isMilestonePanel &&
+        mandate.projects.some((p) => sameAddress(p.record.manager, wallet))
+      ) {
+        items.push({
+          key: `bind-${claim.id}`,
+          kind: "bind",
+          text: `${who(claim.record.contributor)} submitted “${label}”. Accept it for review in one of your work areas.`,
+          action: "Accept for review",
+          tab: "work",
+          claim: target,
+          why: "You manage a work area in this budget.",
+          ifIgnored:
+            "The reviewers cannot judge it until a manager accepts it.",
+        });
+      }
+      // Enough approvals: anyone may finish the review, so it is offered to the two people who are waiting on it.
+      if (step.kind === "settle" && (mine || managesItsArea)) {
+        items.push({
+          key: `settle-${claim.id}`,
+          kind: "settle",
+          text: mine
+            ? `Enough reviewers approved your “${label}”. Anyone can now finish its review, you included.`
+            : `Enough reviewers approved “${label}” by ${who(claim.record.contributor)}. Anyone can now finish its review, you included.`,
+          action: "Finish the review",
+          tab: "work",
+          claim: target,
+          why: mine ? "It is your work." : "You manage its work area.",
+          ifIgnored:
+            "Its challenge window starts only once the review is finished.",
+        });
+      }
+      // The person's own work, waiting on someone else: said, so they know where it stands and who acts next.
+      if (mine) {
+        const waiting = waitingText(
+          claim,
+          step,
+          label,
+          mandate.challengeWindow,
+          work?.chainTime ?? 0,
+        );
+        if (waiting) {
+          items.push({
+            key: `waiting-${claim.id}`,
+            kind: "waiting",
+            actor: "others",
+            text: waiting.text,
+            action: "See it",
+            tab: "work",
+            claim: target,
+            ...(waiting.due !== undefined ? { due: waiting.due } : {}),
+          });
+        }
       }
     }
   }
@@ -218,9 +342,12 @@ const KIND_ORDER: readonly AttentionItem["kind"][] = [
   "bond",
   "payout",
   "review",
+  "bind",
+  "settle",
   "vote",
   "move",
   "award",
+  "waiting",
 ];
 
 /**

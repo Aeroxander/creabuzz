@@ -2,7 +2,8 @@ import { type ChallengeIntent, challengeFor } from "../lib/challenge";
 import type { SponsorIntent } from "../lib/sponsor";
 import { useContributions } from "../use-contributions";
 import { SuggestedWork } from "./SuggestedWork";
-import { useEffect, useMemo, useRef } from "react";
+import { WaysToHelp } from "./WaysToHelp";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
@@ -29,6 +30,12 @@ import {
 import type { MandateView } from "../lib/work-read";
 import type { Launch } from "../models";
 import { usePublishMirror } from "../use-launches";
+import {
+  type OpenWorkArea,
+  openWorkAreas,
+  recordSources,
+} from "../lib/ways-to-help";
+import { useWorkProposals } from "../use-work-proposals";
 import { useWalletSend } from "../use-wallet-send";
 import { useMilestoneLock, useRecordEvents, useWork } from "../use-work";
 import { claimKey, type RecordEvents } from "../lib/record-read";
@@ -113,6 +120,40 @@ export function WorkTab({
       ),
     [work.data],
   );
+  // Ways to help: the open work areas, each with its words when someone published words that hash to its check.
+  const proposals = useWorkProposals(
+    launch.record.chainId ?? null,
+    dao,
+    approvedProjects,
+  );
+  const areas = useMemo(
+    () =>
+      work.data
+        ? openWorkAreas(work.data, [
+            ...recordSources(launch.record.workAreas),
+            ...evidence.areaWords,
+            ...proposals.rows.map((row) => ({
+              text: row.check,
+              id: row.projectId,
+            })),
+          ])
+        : [],
+    [work.data, launch.record.workAreas, evidence.areaWords, proposals.rows],
+  );
+  // The work area someone chose to submit work for: the submit form opens on it, its words filled in.
+  const [picked, setPicked] = useState<{
+    area: OpenWorkArea;
+    at: number;
+  } | null>(null);
+  const areaMoney = (area: OpenWorkArea) => {
+    const mandate = work.data?.mandates.find(
+      (m) => m.address.toLowerCase() === area.mandate,
+    );
+    const currency = mandate?.currency;
+    return currency?.decimalsKnown
+      ? `${formatAtomic(area.moneyLeft, currency.decimals, { maxFractionDigits: 2 })} ${currency.symbol}`.trim()
+      : `${area.moneyLeft.toString()} raw units`;
+  };
   const focusedClaim = useRef<string | null>(null);
   useEffect(() => {
     const focusKey = focusClaim
@@ -167,6 +208,15 @@ export function WorkTab({
           </p>
         ) : null}
       </Card>
+
+      {work.data ? (
+        <WaysToHelp
+          areas={areas}
+          labelOf={labelOf}
+          money={areaMoney}
+          onPick={(area) => setPicked({ area, at: Date.now() })}
+        />
+      ) : null}
 
       <SuggestedWork
         approved={approvedProjects}
@@ -239,6 +289,8 @@ export function WorkTab({
             </p>
           ) : null}
           <FileClaimCard
+            areas={areas}
+            picked={picked}
             launch={launch}
             busy={busy}
             gate={gate}

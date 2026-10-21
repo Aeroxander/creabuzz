@@ -169,6 +169,11 @@ export interface LaunchRecord {
   ipRecord: IpRecord | null;
   /** The team's pledge of part of what the project earns to the treasury (D78); the contracts do not enforce it. */
   revenuePledge: RevenuePledge | null;
+  /**
+   * The first work areas' words exactly as hashed (a contributor project publishes them with its record), so people
+   * can see what finished work looks like; they count only when they hash to a work area's check on the chain.
+   */
+  workAreas: { name: string; check: string }[];
   tokenPlan: {
     /**
      * "mint": a reserve-backed apptoken minted before the sale. "dao": the project's own Shares, created
@@ -210,6 +215,11 @@ export interface LaunchUpdate {
    * what the claim committed to on the chain (see `lib/evidence.ts`).
    */
   claim?: { id: string; mandate: string; check: string };
+  /**
+   * Set when this update publishes a work area's words: the budget that holds it, its id, and the words exactly as
+   * hashed. They count only when they hash to the work area's check on the chain (`lib/work-area-words.ts`).
+   */
+  workArea?: { mandate: string; id: string; check: string };
 }
 
 export type ProposalKind = "plain" | "futarchy-budget" | "signal";
@@ -464,8 +474,26 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
       typeof body.legalWrapper === "string" ? body.legalWrapper : null,
     ipRecord: parseIpRecord(body.ipRecord),
     revenuePledge: parseRevenuePledge(body.revenuePledge),
+    workAreas: parseWorkAreas(body.workAreas),
     tokenPlan: parseTokenPlan(contentObject(event).tokenPlan),
   };
+}
+
+/** The most work areas' words one record carries: the kit makes at most eight, with room for a few added later. */
+const MAX_RECORD_WORK_AREAS = 32;
+
+function parseWorkAreas(value: unknown): LaunchRecord["workAreas"] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_RECORD_WORK_AREAS).flatMap((entry) => {
+    if (entry === null || typeof entry !== "object") return [];
+    const raw = entry as Record<string, unknown>;
+    return typeof raw.name === "string" &&
+      typeof raw.check === "string" &&
+      raw.name.length <= 64 &&
+      raw.check.length <= 1_000
+      ? [{ name: raw.name, check: raw.check }]
+      : [];
+  });
 }
 
 function parseTokenPlan(value: unknown): LaunchRecord["tokenPlan"] {
@@ -608,6 +636,7 @@ export function parseLaunchUpdate(event: NostrEvent): LaunchUpdate | null {
     body: typeof body.body === "string" ? body.body : "",
     links: strs(body.links),
     claim: parseUpdateClaim(body.claim),
+    workArea: parseUpdateClaim(body.workArea),
   };
 }
 

@@ -1041,3 +1041,32 @@ By hand, as in 4ai (account 0 the founder, 1 and 2 reviewers, 3 a contributor):
    in favour as well as the lanes'. With the defaults nothing changes; a DAO whose `minYesVotesAbsolute` is above the
    founder's Shares no longer says the founder can pass a decision alone.
 
+## 4ao. Ways to help and the next-action queue (D89, 2026-10-22)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test                           # ways-to-help.test.mjs, dao-overview.test.mjs, record-input.test.mjs
+scripts/web-contributor-e2e.sh                # both journeys submit from Ways to help, and use Needs you
+```
+
+By hand, as in 4ak (account 0 the founder, 1 and 2 reviewers, 3 a contributor, 4 a newcomer):
+
+1. **Ways to help.** Start a contributor project with a work area "docs". As the contributor (no Shares), open the
+   project: the Overview says "Ways to help: 1 work area is open for submissions. You need no Shares to submit work."
+   **See ways to help** opens the Work tab, where **Ways to help** lists "docs" with "Finished looks like: …" (the
+   words you typed at Start), who manages it, how many Shares it can still award, and until when.
+2. **Submit work for this.** Press it: the submit form scrolls into view on that work area with the words filled in
+   and "These are docs's exact words, checked against the network." Type a name and where the work is, and submit.
+3. **Waiting on someone else.** On the contributor's Overview: "Your “…” is waiting for a work area's manager to
+   accept it for review." Later it says how many reviewers approved, then when the challenge window ends, then that
+   Shareholders decide on an award.
+4. **Needs you.** As the founder, the Overview's **Needs you** says "… submitted “…”. Accept it for review in one of
+   your work areas." Its button opens the Work tab on that claim. Once both reviewers approve, the contributor and the
+   founder are each told anyone can now finish the review.
+5. **A voted work area.** As the founder, approve a new work area by a vote (Decisions → Approve a work area, typing what
+   finished work looks like). Once the vote opens, its words are published beside it; after it passes, Ways to help
+   lists the new area with those words. If publishing them fails, the Decisions tab says so with **Publish them
+   again**.
+6. **Unpublished words.** A work area whose words were never published (one approved before this change) shows "Its
+   exact words are not published here. Ask its manager for them before you submit."
+

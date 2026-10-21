@@ -54,6 +54,11 @@ export interface DecisionDraft {
   lane: DecisionLane;
   title: string;
   lines: string[];
+  /**
+   * For a work area: its words exactly as hashed, its id and its budget. The chain keeps only the hash, so the page
+   * publishes the words beside the vote for the people who will submit work in it (`lib/work-area-words.ts`).
+   */
+  workArea?: { mandate: string; id: string; check: string };
 }
 
 export class DecisionInputError extends Error {
@@ -377,6 +382,7 @@ export function projectDecision(input: ProjectInput): DecisionDraft {
         : []),
       `Judged by: “${input.checkText.trim()}”`,
     ],
+    workArea: { mandate, id, check: input.checkText },
   };
 }
 

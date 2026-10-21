@@ -5,6 +5,7 @@ import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import { type EvidencePacket, packetsOf } from "./lib/evidence";
+import type { WordsSource } from "./lib/ways-to-help";
 import { readEvidenceEvents } from "./lib/evidence-query";
 import { launchCoordinate, parseLaunchUpdate, type Launch } from "./models";
 
@@ -18,6 +19,11 @@ export const evidenceQueryKey = ["launchpad", "evidence"] as const;
  */
 export function useEvidencePackets(launch: Launch): {
   packets: EvidencePacket[];
+  /**
+   * Work areas' words published in the same updates (beside the vote that approved each), and the words every piece of
+   * evidence was submitted against; each counts only when it hashes to a work area's check (`lib/ways-to-help.ts`).
+   */
+  areaWords: WordsSource[];
   error: boolean;
   /** The launch has more updates than were read: a claim with no evidence here may have it in an older update. */
   incomplete: boolean;
@@ -42,6 +48,23 @@ export function useEvidencePackets(launch: Launch): {
     staleTime: 15_000,
     refetchOnWindowFocus: false,
   });
+  const areaWords = useMemo<WordsSource[]>(
+    () => [
+      ...[...launch.updates, ...(query.data?.updates ?? [])].flatMap(
+        (update) =>
+          update.workArea
+            ? [
+                {
+                  text: update.workArea.check,
+                  mandate: update.workArea.mandate,
+                  id: update.workArea.id,
+                },
+              ]
+            : [],
+      ),
+    ],
+    [launch.updates, query.data],
+  );
   const packets = useMemo(() => {
     const merged = packetsOf([
       ...launch.updates,
@@ -54,8 +77,20 @@ export function useEvidencePackets(launch: Launch): {
       return true;
     });
   }, [launch.updates, query.data]);
+  // One list, kept stable between renders so what reads it is not worked out again each time.
+  const allWords = useMemo<WordsSource[]>(
+    () => [
+      ...areaWords,
+      ...packets.map((packet) => ({
+        text: packet.check,
+        mandate: packet.mandate,
+      })),
+    ],
+    [areaWords, packets],
+  );
   return {
     packets,
+    areaWords: allWords,
     error: query.isError,
     incomplete: query.data ? !query.data.complete : false,
     refetch: () => void query.refetch(),

@@ -138,7 +138,8 @@ export function useWaitingOnMe(): {
           : []),
         // A project whose milestones unlock unless holders object: what that asks of this person.
         ...(lock ? challengeAttention(lock, target.wallet) : []),
-      ];
+        // Home lists what this person can do; their own work waiting on others is on the project's page.
+      ].filter((item) => item.actor !== "others");
       const now = lock?.now ?? decided?.chainTime ?? worked?.chainTime ?? 0;
       return items.map((item) => ({
         launch: target.launch,

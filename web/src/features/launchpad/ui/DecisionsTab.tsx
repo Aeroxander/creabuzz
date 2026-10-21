@@ -90,6 +90,7 @@ export function DecisionsTab({
 
       {snapshot && context.data ? (
         <DecisionComposer
+          launch={launch}
           busy={busy}
           challenge={challenge}
           sponsor={sponsor}

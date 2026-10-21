@@ -88,6 +88,10 @@ export function WaitingOnYou() {
                   author: launch.record.author,
                   // The tab where the thing is acted on: a reviewer's bond or review is on Work, a vote on Decisions.
                   tab: item.tab,
+                  // And the claim itself, when it is about one: the Work tab opens on it.
+                  ...(item.claim
+                    ? { claim: item.claim.id, mandate: item.claim.mandate }
+                    : {}),
                 }}
                 to="/launchpad/$launchId"
               >

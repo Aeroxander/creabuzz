@@ -46,7 +46,11 @@ const claim = (id, status, extra = {}) => ({
   ...extra,
 });
 
+const BUDGET = `0x${"b1".repeat(20)}`;
 const mandate = (claims, extra = {}) => ({
+  address: BUDGET,
+  isMilestonePanel: false,
+  projects: [],
   closed: false,
   challengeWindow: 100,
   walletIsReviewer: false,
@@ -150,8 +154,108 @@ test("a payout is waiting for the contributor, once the challenge window is over
       wallet: ME,
       titleOf,
     }).map((i) => i.kind);
-  assert.deepEqual(at(9_050), []); // 9_000 + 100 > 9_050
+  // 9_000 + 100 > 9_050: theirs to take only once the window is over; until then it waits, and says until when.
+  assert.deepEqual(at(9_050), ["waiting"]);
   assert.deepEqual(at(9_100), ["payout"]);
+});
+
+const managed = (manager) => ({
+  id: "docs",
+  record: { manager },
+});
+
+test("a manager is asked to accept submitted work in one of their work areas, and the button opens that claim", () => {
+  const submitted = claim("c1", "Open", { project: null });
+  const items = (manager) =>
+    attentionItems({
+      decisions: undefined,
+      work: {
+        chainTime: 10_000,
+        mandates: [mandate([submitted], { projects: [managed(manager)] })],
+      },
+      wallet: ME,
+      titleOf,
+    });
+  const [item] = items(ME);
+  assert.equal(item.kind, "bind");
+  assert.equal(item.action, "Accept for review");
+  assert.deepEqual(item.claim, { id: "c1", mandate: BUDGET });
+  // Someone who manages no work area there is not asked.
+  assert.deepEqual(items(OTHER), []);
+});
+
+test("enough approvals: the contributor and the work area's manager are told anyone can finish the review", () => {
+  const approvedEnough = (contributor) =>
+    claim("c1", "Open", {
+      approvals: 2,
+      record: { ...claim("x", "Open").record, contributor },
+    });
+  const items = (contributor, manager) =>
+    attentionItems({
+      decisions: undefined,
+      work: {
+        chainTime: 10_000,
+        mandates: [
+          mandate([approvedEnough(contributor)], {
+            projects: [managed(manager)],
+          }),
+        ],
+      },
+      wallet: ME,
+      titleOf,
+    });
+  const mine = items(ME, OTHER);
+  assert.deepEqual(
+    mine.map((i) => i.kind),
+    ["settle"],
+  );
+  assert.match(mine[0].text, /^Enough reviewers approved your “/);
+  assert.match(mine[0].text, /Anyone can now finish its review, you included/);
+  assert.deepEqual(
+    items(OTHER, ME).map((i) => [i.kind, i.why]),
+    [["settle", "You manage its work area."]],
+  );
+  // Neither theirs nor their work area's: not asked, even though the contract would let them.
+  assert.deepEqual(items(OTHER, OTHER), []);
+});
+
+test("your own work waiting on someone else is said apart, with who acts next", () => {
+  const mine = (id, status, extra = {}) =>
+    claim(id, status, {
+      ...extra,
+      record: {
+        ...claim("x", status).record,
+        contributor: ME,
+        ...(extra.record ?? {}),
+      },
+    });
+  const items = attentionItems({
+    decisions: snap([], { walletCapacity: 0n }),
+    work: {
+      chainTime: 10_000,
+      mandates: [
+        mandate([
+          mine("a", "Open", { project: null }),
+          mine("b", "Open", { approvals: 1 }),
+          mine("c", "Approved", { record: { releasedAt: 9_950 } }),
+          mine("d", "Paid"),
+        ]),
+      ],
+    },
+    wallet: ME,
+    titleOf,
+  });
+  assert.ok(items.every((i) => i.actor === "others" && i.kind === "waiting"));
+  const text = Object.fromEntries(items.map((i) => [i.claim.id, i.text]));
+  assert.match(text.a, /waiting for a work area's manager to accept it/);
+  assert.match(text.b, /waiting for reviewers: 1 of 2 approvals/);
+  assert.match(
+    text.c,
+    /You can mark it finished once the challenge window ends/,
+  );
+  assert.match(text.d, /Shareholders decide by a vote whether to award Shares/);
+  // The window's end is when it changes by itself.
+  assert.equal(items.find((i) => i.claim.id === "c").due, 10_050);
 });
 
 test("a finished claim with no award yet asks holders to put the award to a vote", () => {

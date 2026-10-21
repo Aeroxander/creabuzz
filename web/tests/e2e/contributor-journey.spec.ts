@@ -137,7 +137,7 @@ const projectPath = (tab: string, slug = "docs-commons") =>
   `/launchpad/${slug}?author=${FOUNDER}&tab=${tab}`;
 
 /** Re-read the page after the chain's clock moved. */
-async function refresh(page: Page, tab: "Decisions" | "Work") {
+async function refresh(page: Page, tab: "Overview" | "Decisions" | "Work") {
   await page.reload();
   await page.getByRole("tab", { name: tab }).click();
 }
@@ -295,18 +295,36 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(contributor.getByTestId("work-projects")).toContainText("docs", {
     timeout: 30_000,
   });
-  await contributor.getByTestId("work-claim-name").fill("write-docs");
-  await contributor
-    .getByTestId("work-claim-evidence")
-    .fill("https://example.com/pr/1");
-  await contributor.getByTestId("work-claim-check").fill(CHECK);
-  await contributor.getByTestId("work-claim-submit").click();
-  await expect(contributor.getByTestId("work-claim-filed")).toBeVisible({
-    timeout: 90_000,
-  });
+  // Nobody told them the words: the project's record published them at launch, and the chain's hash vouches for them.
+  await submitFromWaysToHelp(
+    contributor,
+    "docs",
+    CHECK,
+    "write-docs",
+    "https://example.com/pr/1",
+  );
+  // Their own work, waiting on someone else, is said on the project's page.
+  await refresh(contributor, "Overview");
+  await expect(contributor.getByTestId("dao-waiting")).toContainText(
+    "Your “write-docs” is waiting for a work area's manager to accept it for review.",
+    { timeout: 30_000 },
+  );
 
   // ── 3. the founder (the first project's manager) takes it on, two reviewers approve, it is finished ──
-  await refresh(founder, "Work");
+  // "Needs you" names the submission, and its button opens that claim on the Work tab.
+  await refresh(founder, "Overview");
+  const accept = founder
+    .getByTestId("dao-attention")
+    .filter({ hasText: "submitted “write-docs”" });
+  await expect(accept).toContainText(
+    "Accept it for review in one of your work areas.",
+    { timeout: 30_000 },
+  );
+  await accept.getByRole("button", { name: "Accept for review" }).click();
+  await expect(founder.getByRole("tab", { name: "Work" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await founder.getByTestId("work-bind").click();
   await expect(founder.getByTestId("work-claim-next")).toContainText(
     "0 of 2 approvals",
@@ -391,16 +409,29 @@ test("a contributor project is started from the page, work is claimed the same d
 const claimCard = (page: Page, name: string) =>
   page.getByTestId("work-claim").filter({ hasText: name });
 
-/** File a claim that asks for no money, the way the Work tab's form does. */
-async function fileClaim(
+/**
+ * Submit work from Ways to help: the work area shows its words (read from what was published and checked against the
+ * chain), and its button opens the submit form with them filled in, so only the name and the evidence are typed.
+ */
+async function submitFromWaysToHelp(
   page: Page,
+  area: string,
+  words: string,
   name: string,
   evidence: string,
-  check: string,
 ) {
+  const way = page.locator(`[data-testid="way-to-help"][data-area="${area}"]`);
+  await expect(way.getByTestId("way-to-help-words")).toHaveText(
+    `Finished looks like: ${words}`,
+    { timeout: 30_000 },
+  );
+  await way.getByTestId("way-to-help-submit").click();
+  await expect(page.getByTestId("work-claim-check")).toHaveValue(words);
+  await expect(page.getByTestId("work-claim-check-note")).toContainText(
+    "exact words, checked against the network",
+  );
   await page.getByTestId("work-claim-name").fill(name);
   await page.getByTestId("work-claim-evidence").fill(evidence);
-  await page.getByTestId("work-claim-check").fill(check);
   await page.getByTestId("work-claim-submit").click();
   await expect(page.getByTestId("work-claim-filed")).toBeVisible({
     timeout: 90_000,
@@ -505,11 +536,12 @@ test("several people earn in one contributor project: two first projects, and a 
     "guide",
     { timeout: 30_000 },
   );
-  await fileClaim(
+  await submitFromWaysToHelp(
     contributor,
+    "guide",
+    GUIDE,
     "write-guide",
     "https://example.com/pr/11",
-    GUIDE,
   );
 
   // ── 3. a newcomer with no Shares suggests work and asks for 5% of the project ─────────────────────
@@ -581,6 +613,22 @@ test("several people earn in one contributor project: two first projects, and a 
   await expect(founder.getByTestId("decision-opened")).toBeVisible({
     timeout: 60_000,
   });
+  // The chain keeps only the hash of the work area's words: they are published beside the vote, as an update.
+  await expect
+    .poll(() =>
+      published.some((e) => {
+        const event = e as unknown as { kind: number; content: string };
+        if (event.kind !== 47003) return false;
+        const body = JSON.parse(event.content) as {
+          workArea?: { check?: string };
+        };
+        return body.workArea?.check === SPANISH;
+      }),
+    )
+    .toBe(true);
+  await expect(founder.getByTestId("decision-words-unpublished")).toHaveCount(
+    0,
+  );
   await carryOut(founder, 90_000, 90_000);
   await refresh(founder, "Work");
   await expect(founder.getByTestId("work-projects")).toContainText("guide-es", {
@@ -593,11 +641,13 @@ test("several people earn in one contributor project: two first projects, and a 
   await expect(newcomer.getByTestId("work-proposal-approved")).toBeVisible({
     timeout: 30_000,
   });
-  await fileClaim(
+  // The work area's words came with its vote (and the suggestion): Ways to help shows them, checked against the chain.
+  await submitFromWaysToHelp(
     newcomer,
+    "guide-es",
+    SPANISH,
     "translate-es",
     "https://example.com/pr/12",
-    SPANISH,
   );
 
   // ── 6. the founder takes each claim on in its own project; both reviewers approve both ────────────

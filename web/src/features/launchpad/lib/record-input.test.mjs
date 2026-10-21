@@ -79,6 +79,7 @@ function record(overrides = {}) {
       symbol: "NEB",
       supply: "1000000000",
     },
+    workAreas: [{ name: "docs", check: "the docs are merged and reviewed" }],
     ...overrides,
   };
 }
@@ -97,6 +98,8 @@ test("a save that means to change one field erases none of the others", () => {
   // The money terms that were already burned once.
   assert.equal(input.tickSpacing, "79228162514");
   assert.deepEqual(input.tokenPlan, source.tokenPlan);
+  // The words people read for each first work area: the chain keeps only their hash, so a save must not drop them.
+  assert.deepEqual(input.workAreas, source.workAreas);
   assert.equal(input.budget, "1200000000000000000");
   assert.deepEqual(input.allocation, STANDARD_ALLOCATION);
   assert.equal(input.daoAtGraduation, true);

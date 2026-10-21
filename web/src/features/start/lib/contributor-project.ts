@@ -556,7 +556,10 @@ export function wordAddress(word: string): string {
 /** What the project publishes once its DAO exists: contributors only, the DAO's own Shares, nothing for sale. */
 export function contributorRecordInput(input: {
   launchId: string;
-  terms: Pick<ContributorTerms, "name" | "pitch" | "symbol" | "founderWhole">;
+  terms: Pick<
+    ContributorTerms,
+    "name" | "pitch" | "symbol" | "founderWhole" | "projects"
+  >;
   chainId: number;
   dao: string;
   shares: string;
@@ -591,5 +594,10 @@ export function contributorRecordInput(input: {
       symbol: input.terms.symbol,
       supply: input.terms.founderWhole.toString(),
     },
+    // The chain keeps only each first work area's hashed words; these let people read them (verified by the hash).
+    workAreas: input.terms.projects.map((p) => ({
+      name: p.name,
+      check: p.check,
+    })),
   };
 }

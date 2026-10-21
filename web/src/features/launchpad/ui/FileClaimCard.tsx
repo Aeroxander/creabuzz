@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
@@ -17,6 +17,7 @@ import {
   ZERO_WORD,
 } from "../lib/work";
 import type { MandateView } from "../lib/work-read";
+import type { OpenWorkArea } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { usePublishMirror } from "../use-launches";
 
@@ -39,9 +40,15 @@ export function FileClaimCard({
   gate,
   busy,
   onSend,
+  areas = [],
+  picked = null,
 }: {
   /** The launch the evidence is published to, so reviewers can read what was submitted. */
   launch: Launch;
+  /** The work areas open for submissions, each with its words when they are published (`lib/ways-to-help.ts`). */
+  areas?: readonly OpenWorkArea[];
+  /** A work area someone chose under Ways to help: the form opens on it, its words filled in. `at` makes a repeat count. */
+  picked?: { area: OpenWorkArea; at: number } | null;
   mandates: MandateView[];
   wallet: string | null;
   gate: string | null;
@@ -60,7 +67,33 @@ export function FileClaimCard({
   const [deposit, setDeposit] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [filed, setFiled] = useState<string | null>(null);
+  const [areaId, setAreaId] = useState("");
   const mandate = open[Math.min(which, open.length - 1)];
+  const card = useRef<HTMLDivElement | null>(null);
+  const nameInput = useRef<HTMLInputElement | null>(null);
+  // This budget's open work areas, and the one chosen, whose verified words fill the check.
+  const budgetAreas = areas.filter(
+    (a) => mandate && a.mandate === mandate.address.toLowerCase(),
+  );
+  const chosenArea = budgetAreas.find((a) => a.id === areaId) ?? null;
+  const pickArea = (area: OpenWorkArea | null) => {
+    setAreaId(area?.id ?? "");
+    if (area?.words) setCheck(area.words);
+  };
+  // Chosen under Ways to help: move to its budget and work area, fill its words, and bring the form into view. It
+  // answers the pick only: the budgets are read again on every render, and a re-read must not undo what was typed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run once per pick
+  useEffect(() => {
+    if (!picked) return;
+    const index = open.findIndex(
+      (m) => m.address.toLowerCase() === picked.area.mandate,
+    );
+    if (index >= 0) setWhich(index);
+    setAreaId(picked.area.id);
+    if (picked.area.words) setCheck(picked.area.words);
+    card.current?.scrollIntoView({ block: "start" });
+    nameInput.current?.focus({ preventScroll: true });
+  }, [picked]);
   // What the wallet holds of the budget's currency, to check a deposit against before the wallet is asked.
   const held = useQuery({
     queryKey: [
@@ -203,12 +236,13 @@ export function FileClaimCard({
     setName("");
     setEvidence("");
     setCheck("");
+    setAreaId("");
     setPay("");
     setDeposit("");
   };
 
   return (
-    <Card className="p-4" data-testid="work-file-claim">
+    <Card className="p-4" data-testid="work-file-claim" ref={card}>
       <h3 className="text-sm font-semibold">Submit your work</h3>
       <p className="mt-1 text-sm text-muted-foreground">
         Submit what you finished. The manager of a work area accepts it for
@@ -232,7 +266,10 @@ export function FileClaimCard({
           <span className="font-medium">Work budget</span>
           <select
             className="rounded-md border border-black/10 bg-transparent px-2 py-1 dark:border-white/10"
-            onChange={(e) => setWhich(Number(e.target.value))}
+            onChange={(e) => {
+              setWhich(Number(e.target.value));
+              setAreaId("");
+            }}
             value={which}
           >
             {open.map((m, i) => (
@@ -246,6 +283,28 @@ export function FileClaimCard({
         </label>
       ) : null}
       <div className="mt-2 grid gap-2">
+        {budgetAreas.length > 0 ? (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">Work area</span>
+            <select
+              className="rounded-md border border-black/10 bg-transparent px-2 py-1 dark:border-white/10"
+              data-testid="work-claim-area"
+              onChange={(e) =>
+                pickArea(
+                  budgetAreas.find((a) => a.id === e.target.value) ?? null,
+                )
+              }
+              value={areaId}
+            >
+              <option value="">Not sure yet</option>
+              {budgetAreas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <div className="flex flex-col gap-1 text-sm">
           <label className="font-medium" htmlFor="work-claim-name-input">
             Name this claim
@@ -253,6 +312,7 @@ export function FileClaimCard({
           <Input
             data-testid="work-claim-name"
             id="work-claim-name-input"
+            ref={nameInput}
             maxLength={32}
             onChange={(e) => setName(e.target.value)}
             placeholder="write-the-docs"
@@ -282,9 +342,15 @@ export function FileClaimCard({
             placeholder="The work area's acceptance check, in its exact words"
             value={check}
           />
-          <span className="text-xs text-muted-foreground">
-            Use the work area&apos;s exact words. If they differ, its manager
-            cannot accept your work for review.
+          <span
+            className="text-xs text-muted-foreground"
+            data-testid="work-claim-check-note"
+          >
+            {chosenArea?.words && check.trim() === chosenArea.words
+              ? `These are ${chosenArea.name}'s exact words, checked against the network.`
+              : chosenArea && !chosenArea.words
+                ? `${chosenArea.name}'s words are not published here: ask its manager for them. If yours differ, it cannot be accepted for review.`
+                : "Use the work area's exact words. If they differ, its manager cannot accept your work for review."}
           </span>
         </div>
       </div>
