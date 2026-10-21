@@ -7,6 +7,10 @@ import { parseAllocation, type SupplyAllocation } from "./lib/allocation.ts";
 import { parseWikiTag } from "./lib/draft-proposal.ts";
 import { parseFunding, type FundingStatus } from "./lib/funding.ts";
 import { type IpRecord, parseIpRecord } from "./lib/ip-record.ts";
+import {
+  parseRevenuePledge,
+  type RevenuePledge,
+} from "./lib/revenue-pledge.ts";
 import { parseUnlockPlan, type UnlockPlan } from "./lib/unlock-plans.ts";
 import {
   KIND_LAUNCH_BID,
@@ -163,6 +167,8 @@ export interface LaunchRecord {
    * Null when the record never said, which is not the same as "open".
    */
   ipRecord: IpRecord | null;
+  /** The team's pledge of part of what the project earns to the treasury (D78); the contracts do not enforce it. */
+  revenuePledge: RevenuePledge | null;
   tokenPlan: {
     /**
      * "mint": a reserve-backed apptoken minted before the sale. "dao": the project's own Shares, created
@@ -457,6 +463,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     legalWrapper:
       typeof body.legalWrapper === "string" ? body.legalWrapper : null,
     ipRecord: parseIpRecord(body.ipRecord),
+    revenuePledge: parseRevenuePledge(body.revenuePledge),
     tokenPlan: parseTokenPlan(contentObject(event).tokenPlan),
   };
 }

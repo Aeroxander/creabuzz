@@ -177,6 +177,13 @@ test("every field a launch can be created with is carried by a save", () => {
     vesting: { tranches: [{ multiple: 2, fraction: 1 }] },
     unlocks: { kind: "none" },
     reviewerTerms: "Each agreed to answer within 7 days. Unpaid.",
+    revenuePledge: {
+      v: 1,
+      percent: 10,
+      every: "month",
+      until: null,
+      document: null,
+    },
   });
   const carried = Object.keys(recordToInput(full));
   const missing = fields.filter(

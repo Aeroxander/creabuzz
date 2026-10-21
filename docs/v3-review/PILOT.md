@@ -14,7 +14,7 @@ for it.
 In the pilot:
 
 - Discover, follow, project updates and the project's page, with its terms before the bid.
-- Bids, refunds, collecting tokens, and leaving with a share of what is left in the treasury while leaving is switched on.
+- Bids, refunds, collecting tokens, and leaving with a share of what is left in the treasury, which no vote can switch off (D73).
 - The milestones, public: the agreement, the tokens each one holds back, the evidence the team published, any objection and
   the vote on it, the waiting period and the release.
 - Reviewed work budgets as the normal way to pay for work; direct payments stay possible and are shown as spending with no
@@ -38,7 +38,7 @@ trade-offs, and the pilot does not claim it.
 
 - Keep "Back teams. Follow what they build."
 - Say "team tokens unlock", not "the team earns its tokens": ownership and voting already exist.
-- Say "your share of what is left in the treasury, while leaving is switched on", not "refund" or a guaranteed floor. A
+- Say "your share of what is left in the treasury, whenever you want to leave", not "refund" or a guaranteed floor. A
   missed minimum raise is different: every bid is refunded.
 - Say "nobody objected" or "holders turned it down", not "verified" or "proven": a milestone nobody objects to unlocks, so what
   a backer is shown is the evidence and the chance to object, not a guarantee that it was reached.

@@ -83,6 +83,8 @@ const record = {
     pitch: "A DAO run from the page.",
     stage: "graduated",
     currency: CURRENCY || undefined,
+    // The team's pledge of part of what the project earns (D78): shown beside the money that came in.
+    revenuePledge: { v: 1, percent: 20, every: "quarter" },
     tokenPlan: {
       mode: "dao",
       name: "Nebula",
@@ -419,4 +421,101 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
     await founder.getByRole("tab", { name: tab }).click();
     await shot(founder, `6-${tab.toLowerCase()}`);
   }
+
+  // ── 5. the year's allowance of new Shares: the award counted against it (D76) ─────────────────────────
+  // 800M Shares outside the DAO, the team's 200M still locked: 10% of the 600M that count on exit is 60M a year.
+  await refresh(founder, "Work");
+  await expect(founder.getByTestId("work-allowance")).toContainText(
+    "59,999,975 of this year's 60,000,000 new Shares are left to award",
+    { timeout: 30_000 },
+  );
+
+  // ── 6. money paid in shows beside the team's pledge, never called revenue (D78) ─────────────────────
+  const paid = 1_500n * 10n ** 6n;
+  await rpc("eth_sendTransaction", [
+    {
+      from: FOUNDER_WALLET,
+      to: CURRENCY,
+      data: `0xa9059cbb${DAO.slice(2).toLowerCase().padStart(64, "0")}${paid.toString(16).padStart(64, "0")}`,
+    },
+  ]);
+  await founder.getByRole("tab", { name: "Overview" }).click();
+  await founder.reload();
+  const moneyIn = founder.getByTestId("dao-money-in");
+  await expect(moneyIn.getByTestId("dao-money-in-headline")).toContainText(
+    "Besides the raise, 1,500",
+    { timeout: 30_000 },
+  );
+  await expect(moneyIn.getByTestId("dao-money-in-pledge")).toContainText(
+    "The team pledges 20% of the project's net receipts to the treasury, every quarter",
+  );
+  await expect(moneyIn.getByTestId("dao-money-in-pledge")).toContainText(
+    "The contracts do not enforce it.",
+  );
+  await shot(founder, "7-money-in");
+
+  // ── 7. opening trading: announced by one vote, opened by a second only 30 days later (D77) ──────────
+  await refresh(founder, "Decisions");
+  await founder.getByTestId("decision-new").click();
+  await founder.getByTestId("decision-kind-trading").click();
+  await expect(founder.getByTestId("trading-state")).toContainText(
+    "Trading is locked",
+    { timeout: 30_000 },
+  );
+  // The bar is the app's policy: nothing is offered until the proposer says they checked it.
+  await expect(founder.getByTestId("trading-bar")).toContainText(
+    "The contracts check none of this",
+  );
+  await expect(founder.getByTestId("decision-draft-submit")).toHaveCount(0);
+  await founder.getByTestId("trading-bar-checked").check();
+  await expect(founder.getByTestId("decision-draft-title")).toContainText(
+    "Announce that trading opens in 30 days",
+  );
+  await founder.getByTestId("decision-draft-submit").click();
+  await expect(founder.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(founder, 175_000, 90_000);
+  await founder.getByTestId("decision-new").click();
+  await founder.getByTestId("decision-kind-trading").click();
+  await expect(founder.getByTestId("trading-state")).toContainText(
+    "Trading was announced. It can open from",
+    { timeout: 30_000 },
+  );
+  // Inside the 30 days the only step is to withdraw it.
+  await expect(founder.getByTestId("decision-draft-title")).toContainText(
+    "Withdraw the announcement",
+  );
+  await pass(30 * 86_400);
+  await refresh(founder, "Decisions");
+  await founder.getByTestId("decision-new").click();
+  await founder.getByTestId("decision-kind-trading").click();
+  await expect(founder.getByTestId("trading-state")).toContainText(
+    "A vote can open it now",
+    { timeout: 30_000 },
+  );
+  await founder.getByTestId("trading-bar-checked").check();
+  await expect(founder.getByTestId("decision-draft-title")).toHaveText(
+    "Open trading",
+  );
+  await founder.getByTestId("decision-draft-submit").click();
+  await expect(founder.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(founder, 175_000, 90_000);
+  await founder.getByTestId("decision-new").click();
+  await founder.getByTestId("decision-kind-trading").click();
+  await expect(founder.getByTestId("trading-state")).toContainText(
+    "Trading is open",
+    { timeout: 30_000 },
+  );
+  // The chain agrees: Shares now move between wallets.
+  expect(
+    BigInt(
+      String(
+        await rpc("eth_call", [{ to: SHARES, data: "0x83f1211b" }, "latest"]),
+      ),
+    ),
+  ).toBe(0n);
+  await shot(founder, "8-trading-open");
 });

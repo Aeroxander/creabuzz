@@ -30,6 +30,7 @@ import {
   remainingToGraduate,
 } from "../lib/amounts";
 import { IpRecordCard } from "./IpRecordCard";
+import { RevenuePledgeCard } from "./RevenuePledgeCard";
 import { AboutProjectCard } from "./AboutProjectCard";
 import { MilestoneSummaryCard } from "./MilestoneSummaryCard";
 import { PowersSection } from "./PowersCard";
@@ -283,6 +284,9 @@ export function OverviewTab({
         <PowersSection record={record} />
       ) : null}
       <IpRecordCard launch={launch} />
+      {record.tokenPlan?.mode === "dao" ? (
+        <RevenuePledgeCard launch={launch} />
+      ) : null}
       {/* Everything a person checks for themselves rather than reads: addresses, what the record promises against what the
           chain proves, the trust gate and the raw verdict and receipt counts. Folded away so the page leads with the terms. */}
       <details

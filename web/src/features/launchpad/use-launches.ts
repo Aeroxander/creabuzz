@@ -26,6 +26,7 @@ import {
 import { hasChat } from "./lib/launch-chat";
 import { fundingContent, type FundingStatus } from "./lib/funding";
 import { type IpRecord, ipRecordContent } from "./lib/ip-record";
+import { type RevenuePledge, revenuePledgeContent } from "./lib/revenue-pledge";
 import { supersedingTime } from "./lib/record-time";
 import { launchQueryFilter } from "./lib/launch-query";
 import { evidenceQueryKey } from "./use-evidence";
@@ -361,6 +362,8 @@ export interface CreateLaunchInput {
   legalWrapper?: string;
   /** Who holds the project's IP and the documents that say so. */
   ipRecord?: IpRecord;
+  /** The team's revenue pledge (D78). */
+  revenuePledge?: RevenuePledge;
 }
 
 /** Every channel the record binds: the picked ones plus the chat rooms, once each. */
@@ -429,6 +432,8 @@ export function useCreateLaunch() {
         content.daoAtGraduation = input.daoAtGraduation;
       if (input.legalWrapper) content.legalWrapper = input.legalWrapper;
       if (input.ipRecord) content.ipRecord = ipRecordContent(input.ipRecord);
+      if (input.revenuePledge)
+        content.revenuePledge = revenuePledgeContent(input.revenuePledge);
       if (input.asAgent) {
         return publishMirror(
           { kind: KIND_LAUNCH_RECORD, tags, content },

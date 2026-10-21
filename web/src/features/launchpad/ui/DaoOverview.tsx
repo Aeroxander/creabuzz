@@ -35,6 +35,9 @@ import { ProjectDeliveryOverview } from "./ProjectDeliveryOverview";
 import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 import { MilestoneProgressCard } from "./MilestoneProgressCard";
 import { SpendingCard } from "./SpendingCard";
+import { MoneyInCard } from "./MoneyInCard";
+import { useMoneyIn } from "../use-money-in";
+import { useWalletLabels } from "../use-wallet-labels";
 
 export type OverviewTarget =
   | "decisions"
@@ -85,6 +88,17 @@ export function DaoOverview({
     work: work.data,
     factory: context.data?.factory,
   });
+
+  const moneyIn = useMoneyIn({
+    dao,
+    currency: launch.record.currency || null,
+    auction: launch.record.auction,
+    shares: context.data?.shares ?? null,
+    budgets: work.data?.mandates.map((m) => m.address),
+  });
+  const payerLabel = useWalletLabels(
+    moneyIn.data?.paidIn.map((p) => p.from) ?? [],
+  );
 
   const challengeLock = useChallengeLock(dao);
   // The chain's own time, in which every deadline here is given.
@@ -296,6 +310,15 @@ export function DaoOverview({
           labelOf={labelOf}
           onOpenDecisions={() => onOpen("decisions")}
           summary={spending}
+          symbol={symbol}
+        />
+      ) : null}
+      {moneyIn.data && sale ? (
+        <MoneyInCard
+          decimals={sale.decimals}
+          labelOf={payerLabel}
+          pledge={launch.record.revenuePledge}
+          summary={moneyIn.data}
           symbol={symbol}
         />
       ) : null}

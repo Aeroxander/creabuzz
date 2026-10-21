@@ -14,6 +14,7 @@ import {
   formatUnits,
 } from "./daoActions.ts";
 import { MARKET_SIGNATURES } from "./marketActions.ts";
+import { describeTrading } from "./tradingActions.ts";
 
 const sel = (key: keyof typeof MARKET_SIGNATURES) =>
   selectorOf(MARKET_SIGNATURES[key]).toLowerCase();
@@ -166,5 +167,7 @@ export function describeDecision(
     const market = marketOf(batch, ctx);
     if (market) return market;
   }
+  const trading = describeTrading(action, ctx);
+  if (trading) return trading;
   return describeAction(action, ctx);
 }

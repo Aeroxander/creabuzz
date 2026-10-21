@@ -41,6 +41,9 @@ web-record, web-work, cli-milestone and cli-no-raise. Not run: web-economy (need
 web-sepolia-fork (needs a Sepolia node), and the market journeys (LBAMM is evaluation-only, and with transfers locked
 and no reserve they need the 30-day unlock and a new way to fund a pool).
 
+The app pieces of §7 (the revenue pledge and the money that came in, the yearly allowance on the Work tab, the Open
+trading decision with the 30-day notice, and the copy that leaving is permanent) are built too: D82.
+
 ## 0. Measured first
 
 Built in a scratch copy of `contracts/` at `1bcb885c0` (solc 0.8.37, `via_ir`, 200 runs), nothing committed:

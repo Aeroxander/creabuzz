@@ -36,6 +36,8 @@ import { EvidenceBlock } from "./EvidenceBlock";
 import { FileClaimCard } from "./FileClaimCard";
 import { ChallengeLockedCard } from "./ChallengeLockedCard";
 import { LockedSharesCard } from "./LockedSharesCard";
+import { useDecisionContext } from "../use-decisions";
+import { AllowanceNote } from "./AllowanceNote";
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
 const sameAddress = (a: string | null, b: string) =>
@@ -72,6 +74,7 @@ export function WorkTab({
 }) {
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const work = useWork(dao, wallet.address);
+  const context = useDecisionContext(dao);
   const lock = useMilestoneLock(dao, wallet.address, work.data);
   const challengeLock = useChallengeLock(dao);
   const lockKind = lockKindOf(dao, challengeLock);
@@ -116,6 +119,11 @@ export function WorkTab({
           challenge window, the contributor claims payment. Shares require a
           separate DAO decision.
         </p>
+        <AllowanceNote
+          dao={dao}
+          now={work.data?.chainTime ?? Math.floor(Date.now() / 1000)}
+          shares={context.data?.shares ?? null}
+        />
         <WalletStrip testIdPrefix="work" wallet={wallet} />
         <Button
           className="mt-2"

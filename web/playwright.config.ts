@@ -82,6 +82,7 @@ export default defineConfig({
         "**/task-planning.spec.ts",
         "**/board-ideas.spec.ts",
         "**/launchpad-ip-record.spec.ts",
+        "**/launchpad-revenue-pledge.spec.ts",
         "**/portfolio.spec.ts",
         "**/tour.spec.ts",
       ],

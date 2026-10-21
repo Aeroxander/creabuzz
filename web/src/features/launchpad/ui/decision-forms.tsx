@@ -21,6 +21,7 @@ import {
 } from "../lib/market-actions";
 import { decodeWord, idLabel } from "../lib/work";
 import type { WorkSnapshot } from "../lib/work-read";
+import { useAllowance } from "./AllowanceNote";
 import {
   PeoplePicker,
   SelectField,
@@ -377,21 +378,35 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
   const left = project
     ? project.record.shareBudget - project.record.sharesAwarded
     : null;
+  // The Shares refuse an award over this year's allowance of new Shares (D76), so the form says so first.
+  const allowance = useAllowance(
+    ctx.sharesToken || null,
+    ctx.dao,
+    ctx.chainTime,
+  );
+  const allowanceLeft = allowance?.kind === "capped" ? allowance.left : null;
 
   const result = useMemo<DraftResult>(() => {
     if (!chosen)
       return { problem: "No approved claim is waiting for an award." };
-    return attempt(() =>
-      awardDecision({
+    return attempt(() => {
+      const amount = shares.trim()
+        ? parseUnits(shares, 18, "shares", "The Shares")
+        : 0n;
+      if (allowanceLeft !== null && amount > allowanceLeft) {
+        throw new DecisionInputError(
+          "shares",
+          `That is more new Shares than this year allows: ${formatUnits(allowanceLeft, 18)} are left to award.`,
+        );
+      }
+      return awardDecision({
         dao: ctx.dao,
         mandate: chosen.mandate.address,
         claimId: chosen.claim.id,
-        shares: shares.trim()
-          ? parseUnits(shares, 18, "shares", "The Shares")
-          : 0n,
-      }),
-    );
-  }, [ctx, chosen, shares]);
+        shares: amount,
+      });
+    });
+  }, [ctx, chosen, shares, allowanceLeft]);
 
   return (
     <div className="mt-3 grid gap-3" data-testid="form-award">
@@ -420,9 +435,16 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
       )}
       <TextField
         hint={
-          left !== null
-            ? `The project has ${formatUnits(left, 18)} Shares left to award.`
-            : undefined
+          [
+            left !== null
+              ? `The project has ${formatUnits(left, 18)} Shares left to award.`
+              : null,
+            allowanceLeft !== null
+              ? `This year's allowance of new Shares has ${formatUnits(allowanceLeft, 18)} left.`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined
         }
         inputMode="decimal"
         label="Shares to award"

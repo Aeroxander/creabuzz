@@ -600,6 +600,7 @@ export interface ActionDescription {
     | "close-budget"
     | "slash"
     | "market"
+    | "trading"
     | "batch"
     | "unknown";
   title: string;

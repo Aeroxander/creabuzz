@@ -22,7 +22,7 @@ export function decodeCurrencyAnswer(raw: string): string {
   const body = raw.startsWith("0x") ? raw.slice(2) : raw;
   if (!/^[0-9a-fA-F]{64}$/.test(body) || !/^0{24}/.test(body)) {
     throw new Error(
-      "The sale did not say what currency it was paid in, so leaving is switched off until it does.",
+      "The sale did not say what currency it was paid in, so this page cannot offer leaving until it does.",
     );
   }
   return `0x${body.slice(24).toLowerCase()}`;

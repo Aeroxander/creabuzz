@@ -587,7 +587,9 @@ test("a launch made in the wizard, as published, launches into its DAO", async (
   // The wizard's allocation (the standard 75% sale, 25% team, none kept by the DAO, D75) came out as Shares.
   const shares = tag(launched, "token");
   const total = await callWord(shares, "0x18160ddd");
-  expect(await balanceOf(shares, tag(launched, "auction"))).toBe((total * 3n) / 4n);
+  expect(await balanceOf(shares, tag(launched, "auction"))).toBe(
+    (total * 3n) / 4n,
+  );
   expect(await balanceOf(shares, dao)).toBe(0n);
   // The team's 25% is in the founder's wallet from the first block (it votes), held back by the milestone lock.
   expect(await balanceOf(shares, FOUNDER_WALLET)).toBe(total / 4n);

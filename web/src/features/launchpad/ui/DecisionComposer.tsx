@@ -21,6 +21,7 @@ import {
   SlashForm,
   UnwindForm,
 } from "./enforcement-forms";
+import { TradingForm } from "./TradingForm";
 import { WorkBudgetForm } from "./WorkBudgetForm";
 
 type Kind =
@@ -33,7 +34,8 @@ type Kind =
   | "freeze"
   | "unwind"
   | "slash"
-  | "close";
+  | "close"
+  | "trading";
 
 /** The decisions whose forms pick from the DAO's work budgets and claims. */
 const WORK_KINDS: ReadonlySet<Kind> = new Set([
@@ -93,6 +95,12 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     id: "close",
     label: "Close a work budget",
     about: "Stop new claims and take back what is not set aside.",
+  },
+  {
+    id: "trading",
+    label: "Open trading",
+    about:
+      "Let Shares be sent between wallets, and so bought and sold. It can open only 30 days after a vote announces it.",
   },
   {
     id: "pay",
@@ -283,6 +291,15 @@ export function DecisionComposer({
               ctx={ctx}
               gate={gate}
               key={`c${formKey}`}
+              onSubmit={submit}
+            />
+          ) : kind === "trading" ? (
+            <TradingForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`t${formKey}`}
               onSubmit={submit}
             />
           ) : kind === "market" ? (

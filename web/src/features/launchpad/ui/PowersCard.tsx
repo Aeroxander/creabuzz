@@ -16,7 +16,10 @@ import { Card } from "@/shared/ui/card";
 import { recordSaleCurrency } from "../chain";
 import { formatAtomic } from "../lib/amounts";
 import { span } from "../lib/challenge-copy";
+import { NO_CAP, type ShareRules } from "../lib/trading-actions";
 import { isEvmAddress, type LaunchRecord } from "../models";
+import { useDecisionContext } from "../use-decisions";
+import { useShareRules } from "../use-share-rules";
 import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
 import { useWork } from "../use-work";
 
@@ -48,7 +51,27 @@ export interface ChallengeFacts {
 
 const ALWAYS = [
   "No decision of any kind can be opened before the buyers can claim their tokens.",
+  "No vote can switch off leaving with your share of what the DAO holds, or take your Shares from you.",
 ] as const;
+
+/** What the DAO's Shares say about new Shares and trading (D76, D77), when they could be read. */
+function ruleLines(rules: ShareRules | null): string[] {
+  if (!rules) return [];
+  const lines: string[] = [];
+  if (rules.awardsOnly) {
+    lines.push(
+      rules.issuanceCapBps === NO_CAP
+        ? "New Shares are only ever pay for work the reviewers accepted. No vote can create Shares any other way."
+        : `New Shares are only ever pay for work the reviewers accepted, and at most ${rules.issuanceCapBps / 100}% more a year of the Shares that count when someone leaves. No vote can raise that limit.`,
+    );
+  }
+  if (rules.transfersLocked && rules.unlockNoticeRequired) {
+    lines.push(
+      "Shares cannot be sent between wallets, so nobody can sell them, until a vote opens trading; that vote can only run 30 days after trading is announced, and you can leave in between.",
+    );
+  }
+  return lines;
+}
 
 const LOCKED = [
   "The team's locked Shares unlock only when the named reviewers approve each milestone. The lock is set once, at launch.",
@@ -74,12 +97,22 @@ const NOT_LOCKED = [
   "The team's Shares are not locked. The team can sell or move them from the start, and they count when the DAO votes.",
 ] as const;
 
-const VOTABLE = [
-  "Spend the money the DAO holds.",
-  "Issue new Shares.",
-  "Turn leaving with your share of the treasury on or off.",
-  "Change the voting rules themselves: how many must vote, how many must agree, and how long a decision waits.",
-] as const;
+function votable(rules: ShareRules | null): string[] {
+  return [
+    "Spend the money the DAO holds.",
+    rules?.awardsOnly
+      ? "Award new Shares for accepted work, within that limit."
+      : "Issue new Shares.",
+    ...(rules?.transfersLocked
+      ? [
+          "Announce that trading opens. A second vote can open it 30 days later.",
+        ]
+      : rules
+        ? ["Lock trading again."]
+        : []),
+    "Change the voting rules themselves: how many must vote, how many must agree, and how long a decision waits.",
+  ];
+}
 
 const GIVE_UP =
   "Give up a team member's unearned Shares. They are burned, never released for sale.";
@@ -91,6 +124,7 @@ export function PowersCard({
   challenge = null,
   rule = "panel",
   ruleUnreadable = false,
+  shareRules = null,
 }: {
   /** The plan locks the team's Shares behind milestones. */
   locked: boolean;
@@ -107,6 +141,8 @@ export function PowersCard({
   rule?: "challenge" | "panel" | "unknown";
   /** The rule is unknown because reading it failed, which the card says. */
   ruleUnreadable?: boolean;
+  /** What the DAO's Shares say about new Shares and trading, or null when not known (no DAO yet, or older Shares). */
+  shareRules?: ShareRules | null;
 }) {
   return (
     <Card className="p-4" data-testid="launch-powers">
@@ -129,6 +165,7 @@ export function PowersCard({
                 : LOCKED
             : NOT_LOCKED),
           ...ALWAYS,
+          ...ruleLines(shareRules),
         ].map((line) => (
           <li key={line}>{line}</li>
         ))}
@@ -215,7 +252,7 @@ export function PowersCard({
         {locked ? ", with its locked Shares," : ""} from the first day.
       </p>
       <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
-        {[...VOTABLE, ...(locked ? [GIVE_UP] : [])].map((line) => (
+        {[...votable(shareRules), ...(locked ? [GIVE_UP] : [])].map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
@@ -223,10 +260,11 @@ export function PowersCard({
         If a decision goes against you
       </h3>
       <p className="mt-1 text-sm">
-        Every decision waits through a review period and a delay before it runs.
-        Until it runs, you can leave with your share of what the DAO holds, as
-        long as leaving is switched on. Money already moved into a work budget
-        is not part of that share.
+        Every decision waits before it runs: at least three days for anything
+        that spends the treasury or changes the rules, two for an award or a
+        project inside a budget already voted. Until it runs, you can leave with
+        your share of what the DAO holds; no vote can switch that off. Money
+        already moved into a work budget is not part of that share.
       </p>
     </Card>
   );
@@ -235,6 +273,10 @@ export function PowersCard({
 /** The card for a launch record: it reads the milestone panel from the chain once the project has a DAO. */
 export function PowersSection({ record }: { record: LaunchRecord }) {
   const locked = record.unlocks?.mode === "milestones";
+  const treasury =
+    record.treasury && isEvmAddress(record.treasury) ? record.treasury : null;
+  const context = useDecisionContext(treasury);
+  const rules = useShareRules(context.data?.shares ?? null, treasury);
   const dao =
     locked && record.treasury && isEvmAddress(record.treasury)
       ? record.treasury
@@ -286,6 +328,7 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
             : "unknown"
       }
       ruleUnreadable={kind === "unreadable"}
+      shareRules={rules.data?.rules ?? null}
     />
   );
 }
