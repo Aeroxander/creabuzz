@@ -5,8 +5,9 @@
  * - Leaving is permanent only in DAOs made after D73, which removed the switch and the vote-made burns; those answer
  *   `leaving()`. An older DAO, or one summoned with leaving off, does not get that line.
  * - The wait is a setting, not a floor: `AllocationVoting.setLane` allows a review of one day and no hold, and the DAO's
- *   `setTimelockDelay` one second. A decision's review is fixed when it opens; the delay after it passes is whatever the
- *   DAO's setting is when it runs. So the card states today's numbers and that a vote can shorten them.
+ *   `setTimelockDelay` one second. Each decision keeps the review, hold and delay in force when it opened
+ *   (`AllocationVoting.Rules`, `executionDelay`), so a change only reaches decisions opened after it. The card states
+ *   today's numbers and that a vote can shorten them for later decisions.
  *
  * Pure apart from the injected `call`: `dao-guarantees.test.mjs` drives it with a fake chain. A network that does not
  * answer is an error, never a guarantee.
@@ -98,5 +99,5 @@ export function noticeText(notice: Notice, of: "dao" | "plan"): string {
     of === "dao"
       ? `With this DAO's settings today, every decision waits before it runs: ${numbers}.`
       : `The DAO starts out with every decision waiting ${numbers}.`;
-  return `${opening} These are settings, not promises: a vote can shorten them for decisions opened later, to as little as a day, and that vote waits the notice in force when it is opened.`;
+  return `${opening} These are settings, not promises: each decision keeps the waits in force when it opens, but a vote can shorten them for decisions opened later, to as little as a day, and that vote itself waits the notice in force when it is opened.`;
 }
