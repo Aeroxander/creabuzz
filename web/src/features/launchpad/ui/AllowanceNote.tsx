@@ -18,7 +18,7 @@ const date = (seconds: number) =>
 /** The allowance for awards, from the Shares' rules; null until it is known. */
 export function useAllowance(shares: string | null, dao: string, now: number) {
   const read = useShareRules(shares, dao);
-  if (!read.data) return null;
+  if (!read.data || read.data.predates) return null;
   return issuanceAllowance(read.data.rules, now, read.data.exitBase);
 }
 
@@ -32,7 +32,17 @@ export function AllowanceNote({
   /** The chain's clock, in seconds. */
   now: number;
 }) {
+  const read = useShareRules(shares, dao);
   const text = allowanceText(useAllowance(shares, dao, now), date);
+  if (read.isError && !read.data) {
+    return (
+      <p className="mt-2 text-sm" data-testid="work-allowance-unavailable">
+        Couldn&apos;t read this year&apos;s allowance of new Shares from the
+        network. The Shares still refuse an award over it, so check again before
+        proposing one.
+      </p>
+    );
+  }
   if (!text) return null;
   return (
     <p className="mt-2 text-sm" data-testid="work-allowance">

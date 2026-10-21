@@ -57,6 +57,21 @@ test("Shares made before the rules (the read is refused) say so, instead of an e
   assert.equal(read.predates, true);
 });
 
+test("Shares and a lock made before the rules say so; no allowance base is worked out for them", async () => {
+  // Before D72 the lock had no `totalLocked()`: the old reader asked it anyway and the whole read failed.
+  const answers = kitShares();
+  delete answers[`${SHARES} 0x0704ab61`];
+  delete answers[`${LOCK} 0x56891412`];
+  const read = await readShareRules(chain(answers), SHARES, DAO);
+  assert.equal(read.predates, true);
+  assert.equal(read.rules, null);
+  assert.equal(
+    read.exitBase,
+    null,
+    "no new-rule base for Shares without the rule",
+  );
+});
+
 test("a network that does not answer is an error, never a DAO without rules", async () => {
   await assert.rejects(
     readShareRules(

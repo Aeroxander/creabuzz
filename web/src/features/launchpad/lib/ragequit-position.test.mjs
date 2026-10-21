@@ -31,6 +31,7 @@ import {
   decodeSymbol,
   deriveClaimablePosition,
   exitDenominator,
+  fetchRagequitPosition,
   overdrawsPosition,
   SELECTOR_BALANCE_OF,
   SELECTOR_LOCK_GUARD,
@@ -362,4 +363,119 @@ test("a token's symbol is read from either answer an ERC-20 gives", () => {
   // Neither: no symbol, never garbage.
   assert.equal(decodeSymbol("0x"), null);
   assert.equal(decodeSymbol(`0x${word(32n)}${word(0n)}`), null);
+});
+
+// ---------------------------------------------------------------------------
+// The fetcher against a chain, including DAOs and locks made before D72
+// ---------------------------------------------------------------------------
+
+const LOCK = `0x${"1c".repeat(20)}`;
+const USDC = `0x${"cc".repeat(20)}`;
+const ENDPOINT = "http://chain.test";
+const addrWord = (a) => `0x${a.slice(2).toLowerCase().padStart(64, "0")}`;
+const u = (n) => `0x${word(BigInt(n))}`;
+
+/**
+ * A DAO with 1,000 Shares: 100 its own, 300 the team's (240 still locked; the founder holds 200 of them, 160 locked),
+ * 600 the backers', and 650 USDC in its treasury. `over` adds or removes answers (null removes: the call reverts).
+ */
+function daoChain(over = {}) {
+  const answers = {
+    [`${DAO} ${SELECTOR_RAGEQUITTABLE}`]: u(1),
+    [`${DAO} ${SELECTOR_SHARES}`]: addrWord(SHARES_TK),
+    [`${DAO} ${SELECTOR_LOOT}`]: addrWord(LOOT_TK),
+    [`${DAO} 0xaf56f7dc`]: u(0), // leaving(): a DAO made after D72
+    [`${USDC} ${SELECTOR_BALANCE_OF}`]: u(650),
+    [`${SHARES_TK} ${SELECTOR_TOTAL_SUPPLY}`]: u(1000),
+    [`${LOOT_TK} ${SELECTOR_TOTAL_SUPPLY}`]: u(0),
+    [`${SHARES_TK} ${SELECTOR_BALANCE_OF}${word(BigInt(HOLDER))}`]: u(200),
+    [`${LOOT_TK} ${SELECTOR_BALANCE_OF}${word(BigInt(HOLDER))}`]: u(0),
+    [`${SHARES_TK} ${SELECTOR_BALANCE_OF}${word(BigInt(DAO))}`]: u(100),
+    [`${LOOT_TK} ${SELECTOR_BALANCE_OF}${word(BigInt(DAO))}`]: u(0),
+    [`${SHARES_TK} ${SELECTOR_LOCK_GUARD}`]: addrWord(LOCK),
+    [`${LOCK} ${SELECTOR_LOCKED_OF}`]: u(160),
+    [`${LOCK} ${SELECTOR_TOTAL_LOCKED}`]: u(240),
+    ...over,
+  };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    const { to, data } = body.params[0];
+    const exact = answers[`${to.toLowerCase()} ${data}`];
+    const answer =
+      exact !== undefined
+        ? exact
+        : answers[`${to.toLowerCase()} ${data.slice(0, 10)}`];
+    const reply =
+      answer instanceof Error
+        ? { error: { code: -32000, message: answer.message } }
+        : answer === undefined || answer === null
+          ? { error: { code: 3, message: "execution reverted" } }
+          : { result: answer };
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, ...reply }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
+test("a DAO made after D72 leaves the Shares still locked out of its exit", async () => {
+  const restore = daoChain();
+  try {
+    const position = await fetchRagequitPosition(ENDPOINT, DAO, HOLDER, [USDC]);
+    assert.equal(position.exitRule, "current");
+    assert.equal(position.lockedTotal, 240n);
+    assert.equal(position.sharesBurnable, 40n);
+    // 1000 − 100 the DAO's − 240 locked = 660 count; 40 of them take 650 × 40 / 660.
+    assert.equal(position.rows[0].due, (650n * 40n) / 660n);
+  } finally {
+    restore();
+  }
+});
+
+test("a DAO and lock made before D72 still get an exit preview, worked out the way their exit pays", async () => {
+  // Neither the lock's `totalLocked()` nor the DAO's `leaving()` exists yet: that DAO's exit counts locked Shares.
+  const restore = daoChain({
+    [`${LOCK} ${SELECTOR_TOTAL_LOCKED}`]: null,
+    [`${DAO} 0xaf56f7dc`]: null,
+  });
+  try {
+    const position = await fetchRagequitPosition(ENDPOINT, DAO, HOLDER, [USDC]);
+    assert.equal(position.exitRule, "legacy");
+    assert.equal(
+      position.lockedTotal,
+      0n,
+      "the old exit leaves nothing locked out",
+    );
+    assert.equal(position.sharesBurnable, 40n);
+    // 1000 − 100 the DAO's = 900 count; 40 of them take 650 × 40 / 900.
+    assert.equal(position.rows[0].due, (650n * 40n) / 900n);
+  } finally {
+    restore();
+  }
+});
+
+test("a DAO made after D72 with a lock that cannot say what it holds is unknown, not a figure", async () => {
+  // That DAO's exit asks the lock and is refused, so nothing it would pay can be worked out.
+  const restore = daoChain({ [`${LOCK} ${SELECTOR_TOTAL_LOCKED}`]: null });
+  try {
+    const position = await fetchRagequitPosition(ENDPOINT, DAO, HOLDER, [USDC]);
+    assert.equal(position.exitRule, "unknown");
+  } finally {
+    restore();
+  }
+});
+
+test("a network failure reading the lock is an error, never a smaller or larger exit", async () => {
+  const restore = daoChain({
+    [`${LOCK} ${SELECTOR_TOTAL_LOCKED}`]: new Error("header not found"),
+  });
+  try {
+    await assert.rejects(fetchRagequitPosition(ENDPOINT, DAO, HOLDER, [USDC]));
+  } finally {
+    restore();
+  }
 });
