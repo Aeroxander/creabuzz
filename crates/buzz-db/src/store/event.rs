@@ -2406,6 +2406,55 @@ pub async fn insert_canvas_head_checked(
 }
 
 impl Db {
+    /// Whether this server received any record from `pubkey` in this community before `cutoff` (the server's own
+    /// receive time, which a client cannot set). Used to tell new accounts from established ones.
+    #[datastore_span(name = "has_events_received_before", system = "postgresql")]
+    pub async fn has_events_received_before(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+        cutoff: DateTime<Utc>,
+    ) -> Result<bool> {
+        let row = sqlx::query(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM events
+                WHERE community_id = $1 AND pubkey = $2 AND received_at < $3
+            ) AS found
+            "#,
+        )
+        .bind(community_id.as_uuid())
+        .bind(pubkey)
+        .bind(cutoff)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row.try_get::<bool, _>("found")?)
+    }
+
+    /// How many records of these `kinds` this server received from `pubkey` in this community since `since`.
+    #[datastore_span(name = "count_events_received_since", system = "postgresql")]
+    pub async fn count_events_received_since(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+        kinds: &[i32],
+        since: DateTime<Utc>,
+    ) -> Result<i64> {
+        let row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS n FROM events
+            WHERE community_id = $1 AND pubkey = $2 AND kind = ANY($3) AND received_at >= $4
+            "#,
+        )
+        .bind(community_id.as_uuid())
+        .bind(pubkey)
+        .bind(kinds)
+        .bind(since)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row.try_get::<i64, _>("n")?)
+    }
+
     /// Inserts an event. Returns `(StoredEvent, was_inserted)` — `false` on duplicate.
     #[datastore_span(name = "insert_event", system = "postgresql")]
     pub async fn insert_event(

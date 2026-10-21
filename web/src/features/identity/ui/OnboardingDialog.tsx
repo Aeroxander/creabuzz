@@ -2,7 +2,7 @@
  * First-run onboarding: name the durable identity and publish its profile.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 
 import { saveNewProfile } from "../lib/profile";
@@ -12,7 +12,139 @@ import { signInWithWallet, walletAvailable } from "../lib/siwe";
 import { Fingerprint, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Overlay } from "@/shared/ui/portal";
+import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 import { CREATE_ACCOUNT } from "../lib/account-copy";
+import {
+  mayCreateAccount,
+  type PolicyState,
+  policyFromResponse,
+  policyRequirements,
+  rememberAcceptance,
+} from "../lib/join-policy";
+
+/** How long to wait for the server's terms before letting sign-up go ahead without them. */
+const POLICY_TIMEOUT_MS = 5_000;
+
+/** The server's terms of use and privacy note (`lib/join-policy.ts`). */
+function useJoinPolicy(): PolicyState {
+  const [state, setState] = useState<PolicyState>({ status: "loading" });
+  useEffect(() => {
+    let active = true;
+    let base = "";
+    try {
+      base = relayHttpBaseUrl();
+    } catch {
+      setState({ status: "unavailable" });
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), POLICY_TIMEOUT_MS);
+    fetch(`${base}/api/join-policy`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return policyFromResponse(await response.json());
+      })
+      .catch((): PolicyState => ({ status: "unavailable" }))
+      .then((next) => {
+        if (active) setState(next);
+      })
+      .finally(() => clearTimeout(timer));
+    return () => {
+      active = false;
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, []);
+  return state;
+}
+
+/** The boxes the server's policy asks for, with its terms and privacy note one click away (each opens as a page). */
+function PolicyBoxes({
+  state,
+  agreed,
+  ageOk,
+  onAgreed,
+  onAgeOk,
+}: {
+  state: PolicyState;
+  agreed: boolean;
+  ageOk: boolean;
+  onAgreed: (value: boolean) => void;
+  onAgeOk: (value: boolean) => void;
+}) {
+  if (state.status === "loading") {
+    return (
+      <p className="mb-3 text-xs text-muted-foreground" role="status">
+        Loading this server's terms…
+      </p>
+    );
+  }
+  if (state.status === "unavailable") {
+    return (
+      <p
+        className="mb-3 text-xs text-muted-foreground"
+        data-testid="onboarding-policy-unavailable"
+      >
+        This server's terms of use could not be loaded right now. You will be
+        asked to agree to them when it answers.
+      </p>
+    );
+  }
+  const needs = policyRequirements(state);
+  if (state.status !== "ready" || (!needs.agreement && !needs.age)) return null;
+  const base = relayHttpBaseUrl();
+  const { policy } = state;
+  const link = (path: string, label: string) => (
+    <a
+      className="font-medium text-foreground underline underline-offset-2"
+      href={`${base}/api/join-policy/${path}`}
+      rel="noopener noreferrer"
+      target="_blank"
+    >
+      {label}
+    </a>
+  );
+  return (
+    <div
+      className="mb-3 space-y-2 rounded-xl border border-black/10 bg-black/[0.03] p-3 text-xs text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]"
+      data-testid="onboarding-policy"
+    >
+      {needs.age ? (
+        <label className="flex items-start gap-2">
+          <input
+            checked={ageOk}
+            className="mt-0.5"
+            data-testid="onboarding-policy-age"
+            onChange={(e) => onAgeOk(e.target.checked)}
+            type="checkbox"
+          />
+          <span>I am 18 years of age or older.</span>
+        </label>
+      ) : null}
+      {needs.agreement ? (
+        <label className="flex items-start gap-2">
+          <input
+            checked={agreed}
+            className="mt-0.5"
+            data-testid="onboarding-policy-agree"
+            onChange={(e) => onAgreed(e.target.checked)}
+            type="checkbox"
+          />
+          <span>
+            I agree to the{" "}
+            {policy.terms_markdown
+              ? link("terms", "Terms of use")
+              : "Terms of use"}
+            {policy.privacy_markdown ? (
+              <> and have read the {link("privacy", "Privacy note")}</>
+            ) : null}
+            . Posts and votes are public.
+          </span>
+        </label>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * Save the name typed above. The passkey and wallet routes make the key without a profile, and any route can find no
@@ -44,13 +176,22 @@ export function OnboardingDialog({
   const [about, setAbout] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const policy = useJoinPolicy();
+  const [agreed, setAgreed] = useState(false);
+  const [ageOk, setAgeOk] = useState(false);
+  const allowed = mayCreateAccount(policy, { agreement: agreed, age: ageOk });
+  /** Called once an account is made: keep which terms were agreed to. */
+  const accepted = () => {
+    if (policy.status === "ready") rememberAcceptance(policy.policy.version);
+  };
 
   const submit = async () => {
-    if (name.trim().length === 0) return;
+    if (name.trim().length === 0 || !allowed) return;
     setSaving(true);
     setError(null);
     try {
       getOrCreateIdentity(); // materialize the key now, visibly
+      accepted();
       await saveTypedName(name, about);
       onDone();
     } catch (e) {
@@ -66,6 +207,13 @@ export function OnboardingDialog({
       data-testid="onboarding-dialog"
     >
       <div className="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl">
+        <PolicyBoxes
+          ageOk={ageOk}
+          agreed={agreed}
+          onAgeOk={setAgeOk}
+          onAgreed={setAgreed}
+          state={policy}
+        />
         <button
           type="button"
           onClick={() => {
@@ -74,6 +222,7 @@ export function OnboardingDialog({
               setError(null);
               try {
                 await createPasskeyIdentity(name.trim() || "Creaton user");
+                accepted();
                 await saveTypedName(name, about);
                 (onPasskeyDone ?? onDone)();
               } catch (e) {
@@ -82,7 +231,7 @@ export function OnboardingDialog({
               }
             })();
           }}
-          disabled={saving}
+          disabled={saving || !allowed}
           className="mb-3 flex w-full items-center justify-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
           data-testid="onboarding-passkey"
         >
@@ -92,13 +241,14 @@ export function OnboardingDialog({
         {walletAvailable() ? (
           <button
             type="button"
-            disabled={saving}
+            disabled={saving || !allowed}
             onClick={() => {
               void (async () => {
                 setSaving(true);
                 setError(null);
                 try {
                   await signInWithWallet();
+                  accepted();
                   await saveTypedName(name, about);
                   (onPasskeyDone ?? onDone)();
                 } catch (e) {
@@ -161,7 +311,7 @@ export function OnboardingDialog({
           </button>
           <button
             type="button"
-            disabled={saving || name.trim().length === 0}
+            disabled={saving || name.trim().length === 0 || !allowed}
             onClick={() => void submit()}
             className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
             data-testid="onboarding-create"

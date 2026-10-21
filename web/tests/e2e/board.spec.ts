@@ -946,7 +946,7 @@ test("if the second starter board is refused, the first stays, the problem is sa
 
   await page.getByTestId("starter-boards").click();
   await expect(page.getByTestId("starter-boards-problem")).toContainText(
-    "quota exceeded",
+    "Quota exceeded; retry in 20s.",
   );
   await expect(page.getByTestId("board-nav-supporters")).toBeVisible();
   await expect(page.getByTestId("board-nav-founders")).toHaveCount(0);

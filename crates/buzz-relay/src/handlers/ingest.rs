@@ -2599,6 +2599,73 @@ pub(crate) fn validate_wiki_correction_envelope(event: &Event) -> Result<(), Str
     Ok(())
 }
 
+/// The public writes a new account is slowed down on: posts (kind 1), board posts and board replies. Votes and chat are
+/// not counted.
+const NEW_ACCOUNT_LIMITED_KINDS: [u32; 3] = [
+    buzz_core::kind::KIND_TEXT_NOTE,
+    buzz_core::kind::KIND_FORUM_POST,
+    buzz_core::kind::KIND_FORUM_COMMENT,
+];
+
+/// Accounts already known to be established, so they are looked up once per process rather than on every post.
+/// Being established only ever becomes true (the first record's receive time does not move), so nothing here goes
+/// stale; a restart only costs one lookup per account again.
+static ESTABLISHED_ACCOUNTS: std::sync::LazyLock<dashmap::DashSet<(Uuid, [u8; 32])>> =
+    std::sync::LazyLock::new(dashmap::DashSet::new);
+
+/// An account this server first heard from less than `new_account_hours` ago may send at most
+/// `new_account_posts_per_hour` posts, board posts and board replies an hour; community owners and admins are not
+/// limited. Measured by the server's receive time, which a client cannot backdate.
+async fn check_new_account_limit(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let limit = state.config.new_account_posts_per_hour;
+    if limit == 0 {
+        return Ok(());
+    }
+    let pubkey = event.pubkey.to_bytes();
+    let key = (*tenant.community().as_uuid(), pubkey);
+    if ESTABLISHED_ACCOUNTS.contains(&key) {
+        return Ok(());
+    }
+    let now = chrono::Utc::now();
+    let cutoff = now - chrono::Duration::hours(i64::from(state.config.new_account_hours));
+    let established = state
+        .db
+        .has_events_received_before(tenant.community(), &pubkey, cutoff)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking account age: {e}")))?;
+    if established {
+        ESTABLISHED_ACCOUNTS.insert(key);
+        return Ok(());
+    }
+    if is_community_admin_or_owner(state, tenant, &event.pubkey.to_hex()).await? {
+        return Ok(());
+    }
+    let kinds: Vec<i32> = NEW_ACCOUNT_LIMITED_KINDS
+        .iter()
+        .map(|k| *k as i32)
+        .collect();
+    let sent = state
+        .db
+        .count_events_received_since(
+            tenant.community(),
+            &pubkey,
+            &kinds,
+            now - chrono::Duration::hours(1),
+        )
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error counting posts: {e}")))?;
+    if sent >= i64::from(limit) {
+        return Err(IngestError::Rejected(format!(
+            "rate-limited: new accounts can post {limit} times an hour for their first day; try again later"
+        )));
+    }
+    Ok(())
+}
+
 /// Anyone in a community may start a board, but not more than `boards_per_person_per_day` in a day unless they own or
 /// administer the community. The count includes boards since deleted, so deleting does not make room for more.
 async fn check_board_creation_limit(
@@ -5008,6 +5075,10 @@ async fn ingest_event_inner(
             )
             .increment(1);
         }
+    }
+
+    if NEW_ACCOUNT_LIMITED_KINDS.contains(&kind_u32) {
+        check_new_account_limit(state, tenant, &event).await?;
     }
 
     if kind_u32 == KIND_NIP29_JOIN_REQUEST {

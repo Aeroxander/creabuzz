@@ -1,9 +1,10 @@
 import { YourLaunchesSection } from "@/features/launchpad/ui/YourLaunchesSection";
 import { Link } from "@tanstack/react-router";
 import {
-  Heart,
+  ArrowBigUp,
   Megaphone,
   MessageCircle,
+  MessagesSquare,
   Quote,
   Repeat2,
   UserPlus,
@@ -45,9 +46,14 @@ const TABS: readonly { id: Tab; label: string }[] = [
 
 const ICON: Record<
   NotificationKind,
-  { Icon: typeof Heart; className: string }
+  { Icon: typeof ArrowBigUp; className: string }
 > = {
-  like: { Icon: Heart, className: "fill-rose-500 text-rose-500" },
+  like: { Icon: ArrowBigUp, className: "fill-orange-500 text-orange-500" },
+  "board-upvote": {
+    Icon: ArrowBigUp,
+    className: "fill-orange-500 text-orange-500",
+  },
+  "board-reply": { Icon: MessagesSquare, className: "text-sky-600" },
   repost: { Icon: Repeat2, className: "text-emerald-600" },
   quote: { Icon: Quote, className: "text-sky-600" },
   follow: { Icon: UserPlus, className: "text-sky-600" },
@@ -56,7 +62,9 @@ const ICON: Record<
 };
 
 const VERB: Record<NotificationKind, string> = {
-  like: "liked your post",
+  like: "upvoted your post",
+  "board-upvote": "upvoted your board post",
+  "board-reply": "replied on a board",
   repost: "reposted your post",
   quote: "quoted your post",
   follow: "followed you",
@@ -122,7 +130,15 @@ function ReactionRow({
           </p>
         ) : null}
       </div>
-      {group.targetId ? (
+      {group.board ? (
+        <Link
+          aria-label={`Open: ${VERB[group.kind]}`}
+          className="absolute inset-0"
+          params={{ boardId: group.board.boardId }}
+          search={{ post: group.board.postId }}
+          to="/b/$boardId"
+        />
+      ) : group.targetId ? (
         <Link
           aria-label={`Open: ${VERB[group.kind]}`}
           className="absolute inset-0"
@@ -193,7 +209,7 @@ function LaunchUpdatesSection({ visitSeenAt }: { visitSeenAt: number }) {
   );
 }
 
-/** Likes, reposts, quotes, replies, mentions and new followers. */
+/** Up votes, reposts, quotes, replies, mentions, new followers, and board replies and up votes. */
 export function NotificationsPage() {
   const me = existingUserPubkey();
   const notifications = useNotifications();
@@ -215,12 +231,15 @@ export function NotificationsPage() {
       (n) =>
         tab === "all" ||
         n.kind === "reply" ||
+        n.kind === "board-reply" ||
         n.kind === "mention" ||
         n.kind === "quote",
     ),
   );
   const reactions = groups.filter(
-    (g) => g.kind === "like" || g.kind === "repost" || g.kind === "follow",
+    (g) =>
+      (g.kind === "like" || g.kind === "repost" || g.kind === "follow") &&
+      !g.board,
   );
   const posts = groups.filter((g) => g.noteId !== null);
 
@@ -248,7 +267,7 @@ export function NotificationsPage() {
       ) : null}
       {!me ? (
         <EmptyState title="Sign in to see notifications">
-          Likes, reposts, replies and new followers show up here.
+          Votes, replies, reposts and new followers show up here.
         </EmptyState>
       ) : notifications.isLoading ? (
         <TimelineSkeleton />
@@ -269,10 +288,12 @@ export function NotificationsPage() {
               key={group.key}
               people={people}
               targetText={
-                group.targetId
-                  ? targets?.find((t) => t.event.id === group.targetId)?.event
-                      .content
-                  : undefined
+                group.board
+                  ? group.board.text
+                  : group.targetId
+                    ? targets?.find((t) => t.event.id === group.targetId)?.event
+                        .content
+                    : undefined
               }
               unread={group.at > (visitSeenAt.current ?? 0)}
             />

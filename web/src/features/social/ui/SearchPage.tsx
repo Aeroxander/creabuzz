@@ -2,7 +2,9 @@ import { Link, useSearch } from "@tanstack/react-router";
 import { Hash } from "lucide-react";
 import { useState } from "react";
 
+import { useBoardSearch } from "../../board/use-board-search";
 import { parseEntity } from "../lib/entity";
+import { mixChronological } from "../lib/mixed-timeline";
 import { usePostSearch, useUserSearch } from "../use-discovery";
 import { usePeople } from "../use-people";
 import { PersonRow } from "./PersonRow";
@@ -19,10 +21,22 @@ const TABS: readonly { id: Tab; label: string }[] = [
   { id: "people", label: "People" },
 ];
 
+/** Short posts and board posts with the words searched for, newest first. */
 function PostResults({ q }: { q: string }) {
   const results = usePostSearch(q);
-  if (results.isLoading) return <TimelineSkeleton />;
-  if (!results.data?.length) {
+  const board = useBoardSearch(q);
+  if (results.isLoading || board.isLoading) return <TimelineSkeleton />;
+  const items = mixChronological(results.data ?? [], board.posts, true);
+  const boardsFailed = board.error ? (
+    <p
+      className="border-b border-black/10 px-4 py-2 text-xs text-amber-700 dark:border-white/10 dark:text-amber-300"
+      data-testid="social-search-boards-failed"
+      role="status"
+    >
+      Board posts could not be searched right now; these are short posts only.
+    </p>
+  ) : null;
+  if (items.length === 0 && !board.error) {
     return (
       <EmptyState title={`No posts for "${q}"`}>
         Try another word, or look for people.
@@ -32,9 +46,13 @@ function PostResults({ q }: { q: string }) {
   return (
     <>
       <p className="border-b border-black/10 px-4 py-2 text-xs text-black/60 dark:border-white/10 dark:text-white/60">
-        Showing matches from the latest posts on this server.
+        Showing matches from the latest posts and board posts on this server.
       </p>
-      <PostList rows={results.data} />
+      {boardsFailed}
+      <PostList
+        boards={{ names: board.boards, add: board.add }}
+        items={items}
+      />
     </>
   );
 }

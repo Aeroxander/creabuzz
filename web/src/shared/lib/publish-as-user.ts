@@ -1,6 +1,7 @@
 import { signAsUser } from "@/shared/lib/identity";
 import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
 import { openPublishSession, publishEvent } from "@/shared/lib/publish-event";
+import { refusalText } from "@/shared/lib/refusal-text";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
 /**
@@ -17,7 +18,7 @@ export async function publishAsUser(
   const result = await publishEvent(relayWsUrl(), signed, {
     signAuth: signAsUser,
   });
-  if (!result.accepted) throw new Error(result.message || failure);
+  if (!result.accepted) throw new Error(refusalText(result.message, failure));
   return signed;
 }
 
@@ -41,7 +42,8 @@ export function openUserPublisher(): UserPublisher {
     publish: async (template, failure) => {
       const signed = await signAsUser(template);
       const result = await session.publish(signed);
-      if (!result.accepted) throw new Error(result.message || failure);
+      if (!result.accepted)
+        throw new Error(refusalText(result.message, failure));
       return signed;
     },
     close: session.close,

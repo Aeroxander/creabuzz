@@ -437,6 +437,16 @@ pub struct Config {
     /// and project templates create several at once.
     pub boards_per_person_per_day: u32,
 
+    /// How many posts, board posts and board replies an account this server first heard from less than
+    /// `new_account_hours` ago may send in an hour (`BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR`, default 20; 0 turns the limit
+    /// off). Community owners and admins are not limited, and neither are votes or chat. Keys cost nothing to make, so
+    /// this is what keeps a script of fresh accounts from flooding an open community.
+    pub new_account_posts_per_hour: u32,
+
+    /// How long an account counts as new (`BUZZ_NEW_ACCOUNT_HOURS`, default 24), measured from the first record this
+    /// server received from it.
+    pub new_account_hours: u32,
+
     /// Deployment-level relay operator pubkeys allowed to use the
     /// `/operator/communities` management endpoints.
     ///
@@ -1138,6 +1148,17 @@ impl Config {
             _ => 5,
         };
 
+        let whole_number = |name: &str, default: u32| -> Result<u32, ConfigError> {
+            match std::env::var(name) {
+                Ok(raw) if !raw.trim().is_empty() => raw.trim().parse::<u32>().map_err(|_| {
+                    ConfigError::InvalidValue(format!("{name} must be a whole number, got {raw:?}"))
+                }),
+                _ => Ok(default),
+            }
+        };
+        let new_account_posts_per_hour = whole_number("BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR", 20)?;
+        let new_account_hours = whole_number("BUZZ_NEW_ACCOUNT_HOURS", 24)?;
+
         let relay_operator_pubkeys = match std::env::var("RELAY_OPERATOR_PUBKEYS") {
             Ok(raw) => {
                 let mut pubkeys = Vec::new();
@@ -1714,6 +1735,8 @@ impl Config {
             self_serve_community_domain,
             self_serve_max_per_hour,
             boards_per_person_per_day,
+            new_account_posts_per_hour,
+            new_account_hours,
             relay_operator_pubkeys,
             operator_listener_delivery_urls,
             allow_nip_oa_auth,
@@ -3107,6 +3130,30 @@ mod tests {
             Err(ConfigError::InvalidValue(ref msg)) if msg.contains("BUZZ_BOARDS_PER_PERSON_PER_DAY")
         ));
         assert_eq!(off.expect("config").boards_per_person_per_day, 0);
+    }
+
+    #[test]
+    fn new_account_limit_defaults_to_twenty_an_hour_for_a_day_and_must_be_whole_numbers() {
+        let _guards = env_guards();
+        std::env::remove_var("BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR");
+        std::env::remove_var("BUZZ_NEW_ACCOUNT_HOURS");
+        let default = Config::from_env().expect("config");
+        std::env::set_var("BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR", "lots");
+        let bad = Config::from_env();
+        std::env::set_var("BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR", "0");
+        std::env::set_var("BUZZ_NEW_ACCOUNT_HOURS", "48");
+        let set = Config::from_env().expect("config");
+        std::env::remove_var("BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR");
+        std::env::remove_var("BUZZ_NEW_ACCOUNT_HOURS");
+
+        assert_eq!(default.new_account_posts_per_hour, 20);
+        assert_eq!(default.new_account_hours, 24);
+        assert!(matches!(
+            bad,
+            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR")
+        ));
+        assert_eq!(set.new_account_posts_per_hour, 0);
+        assert_eq!(set.new_account_hours, 48);
     }
 
     #[test]

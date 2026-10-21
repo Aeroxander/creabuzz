@@ -54,6 +54,10 @@ notifications (shared with item 7).
 
 ## 3. Launching the social MVP
 
+Done for the launch (D83, 2026-10-21): board replies and up votes in notifications, the server's terms and privacy
+note at sign-up (drafts in `docs/policies/` to finish with a lawyer), a slow-down for new accounts, and board posts in
+search.
+
 What has to be true before strangers use it (hosting and mainnet are yours, as before):
 
 - One run of the whole social path on the hosted server with three real accounts: sign up, post, follow, start a board

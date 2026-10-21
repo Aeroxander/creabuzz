@@ -11,6 +11,12 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 
 import { indexProfiles } from "../profiles/lib/index-profiles";
 import {
+  KIND_FORUM_COMMENT,
+  KIND_FORUM_POST,
+  KIND_FORUM_VOTE,
+} from "../board/lib/board-events";
+import {
+  buildBoardNotifications,
   buildNotifications,
   readSeenAt,
   writeSeenAt,
@@ -30,7 +36,29 @@ import { socialKeys, useFollowing } from "./use-social-data";
 const TRENDING_WINDOW_SECONDS = 3 * 24 * 60 * 60;
 const SEARCH_SCAN_LIMIT = 1000;
 
-/** Likes, reposts, quotes, replies, mentions and new followers aimed at you. */
+/** How many of your newest board posts and replies are watched for replies and up votes. */
+const BOARD_WATCH_LIMIT = 200;
+
+/**
+ * Board replies and up votes on your own board posts and replies. Board records name what they answer, not who wrote
+ * it, so this reads your newest posts and replies and then what names them.
+ */
+async function fetchBoardNotifications(me: string) {
+  const mine = await readEvents({
+    kinds: [KIND_FORUM_POST, KIND_FORUM_COMMENT],
+    authors: [me],
+    limit: BOARD_WATCH_LIMIT,
+  });
+  if (mine.length === 0) return [];
+  const related = await readEvents({
+    kinds: [KIND_FORUM_COMMENT, KIND_FORUM_VOTE],
+    "#e": mine.map((e) => e.id),
+    limit: 1000,
+  });
+  return buildBoardNotifications(mine, related, me);
+}
+
+/** Up votes, reposts, quotes, replies, mentions, new followers, and board replies and up votes, aimed at you. */
 export function useNotifications() {
   const me = existingUserPubkey();
   return useQuery({
@@ -39,9 +67,9 @@ export function useNotifications() {
     staleTime: 30_000,
     // The relay does not fan out `#p` filters, so polling is how they arrive.
     refetchInterval: 30_000,
-    queryFn: async () =>
-      buildNotifications(
-        await readEvents({
+    queryFn: async () => {
+      const [social, board] = await Promise.all([
+        readEvents({
           kinds: [
             KIND_TEXT_NOTE,
             KIND_REPOST,
@@ -51,8 +79,12 @@ export function useNotifications() {
           "#p": [me as string],
           limit: 500,
         }),
-        me as string,
-      ),
+        fetchBoardNotifications(me as string),
+      ]);
+      return [...buildNotifications(social, me as string), ...board].sort(
+        (a, b) => b.at - a.at,
+      );
+    },
   });
 }
 

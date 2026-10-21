@@ -75,6 +75,7 @@ export default defineConfig({
         "**/helpers.spec.ts",
         "**/board.spec.ts",
         "**/home-timeline.spec.ts",
+        "**/social-mvp.spec.ts",
         "**/home-checklist.spec.ts",
         "**/projects.spec.ts",
         "**/discover.spec.ts",

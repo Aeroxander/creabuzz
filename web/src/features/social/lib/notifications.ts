@@ -1,7 +1,10 @@
 /**
  * Social notifications: what people did to you, from the events that tag you
- * (`#p`). Likes and reposts on the same note collapse into one row. Pure and
- * alias-free: `social.test.mjs` drives it under `node --test`.
+ * (`#p`), and on boards from the replies and votes that name your board posts
+ * and replies (board records name what they answer, not who wrote it). Up votes
+ * and reposts on the same post collapse into one row; a down vote is not a
+ * notification. Pure and alias-free: `social.test.mjs` drives it under
+ * `node --test`.
  */
 
 import {
@@ -11,7 +14,12 @@ import {
   KIND_TEXT_NOTE,
 } from "../../../shared/constants/kinds.ts";
 import { parseNote, type SignedEventLike } from "../../feed/lib/feed-events.ts";
+import { splitPost } from "../../board/lib/post-text.ts";
 import { lastTagValue, tagValues } from "./engagement.ts";
+
+const KIND_BOARD_POST = 45001;
+const KIND_BOARD_VOTE = 45002;
+const KIND_BOARD_REPLY = 45003;
 
 export type NotificationKind =
   | "like"
@@ -19,7 +27,18 @@ export type NotificationKind =
   | "quote"
   | "reply"
   | "mention"
-  | "follow";
+  | "follow"
+  | "board-reply"
+  | "board-upvote";
+
+/** Where a board notification opens: the board, the post the conversation is under, and a line to show. */
+export interface BoardRef {
+  boardId: string;
+  /** The board post at the top of the conversation. */
+  postId: string;
+  /** For an up vote, your post's title or your reply; for a reply, what they wrote. */
+  text: string;
+}
 
 export interface NotificationItem {
   id: string;
@@ -30,6 +49,93 @@ export interface NotificationItem {
   targetId: string | null;
   /** The actor's own note, for replies, quotes and mentions. */
   noteId: string | null;
+  /** Set for board replies and votes. */
+  board?: BoardRef;
+}
+
+function tagOf(tags: readonly string[][], name: string): string | null {
+  const value = tags.find((tag) => tag[0] === name)?.[1];
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+/** A board reply's post (`root`, or its only `e`) and what it directly answers (`reply`, else the post). */
+function boardReplyTarget(
+  tags: readonly string[][],
+): { postId: string; parent: string } | null {
+  const refs = tags.filter((tag) => tag[0] === "e" && tag[1]);
+  if (refs.length === 0) return null;
+  const marked = (marker: string) => refs.find((tag) => tag[3] === marker)?.[1];
+  const postId = marked("root") ?? marked("reply") ?? refs[0][1];
+  return { postId, parent: marked("reply") ?? postId };
+}
+
+/**
+ * Board notifications for `viewer`: replies that answer one of `mine` (their board posts and replies) and up votes on
+ * them. `related` is whatever names those records; anything else in it is ignored.
+ */
+export function buildBoardNotifications(
+  mine: readonly SignedEventLike[],
+  related: readonly SignedEventLike[],
+  viewer: string,
+): NotificationItem[] {
+  const own = new Map<
+    string,
+    { boardId: string; postId: string; text: string }
+  >();
+  for (const e of mine) {
+    if (e.pubkey !== viewer) continue;
+    const boardId = tagOf(e.tags, "h");
+    if (!boardId) continue;
+    if (e.kind === KIND_BOARD_POST) {
+      own.set(e.id, {
+        boardId,
+        postId: e.id,
+        text: splitPost(e.content).title,
+      });
+    } else if (e.kind === KIND_BOARD_REPLY) {
+      const target = boardReplyTarget(e.tags);
+      if (target)
+        own.set(e.id, { boardId, postId: target.postId, text: e.content });
+    }
+  }
+  const seen = new Set<string>();
+  const items: NotificationItem[] = [];
+  for (const e of related) {
+    if (e.pubkey === viewer || seen.has(e.id)) continue;
+    seen.add(e.id);
+    if (e.kind === KIND_BOARD_REPLY) {
+      const target = boardReplyTarget(e.tags);
+      const answered = target ? own.get(target.parent) : undefined;
+      if (!target || !answered) continue;
+      items.push({
+        id: e.id,
+        kind: "board-reply",
+        actor: e.pubkey,
+        at: e.created_at,
+        targetId: target.parent,
+        noteId: null,
+        board: {
+          boardId: answered.boardId,
+          postId: answered.postId,
+          text: e.content,
+        },
+      });
+    } else if (e.kind === KIND_BOARD_VOTE && e.content === "+") {
+      const targetId = lastTagValue(e.tags, "e") ?? "";
+      const voted = own.get(targetId);
+      if (!voted) continue;
+      items.push({
+        id: e.id,
+        kind: "board-upvote",
+        actor: e.pubkey,
+        at: e.created_at,
+        targetId,
+        noteId: null,
+        board: voted,
+      });
+    }
+  }
+  return items.sort((a, b) => b.at - a.at);
 }
 
 /** Events that tag `viewer` → notifications, newest first. */
@@ -105,9 +211,10 @@ export interface NotificationGroup {
   at: number;
   targetId: string | null;
   noteId: string | null;
+  board?: BoardRef;
 }
 
-/** Collapse likes / reposts on one note into a single row. */
+/** Collapse up votes and reposts on one post into a single row. */
 export function groupNotifications(
   items: readonly NotificationItem[],
 ): NotificationGroup[] {
@@ -115,7 +222,10 @@ export function groupNotifications(
   const byKey = new Map<string, NotificationGroup>();
   for (const item of items) {
     const groupable =
-      (item.kind === "like" || item.kind === "repost") && item.targetId;
+      (item.kind === "like" ||
+        item.kind === "repost" ||
+        item.kind === "board-upvote") &&
+      item.targetId;
     const key = groupable ? `${item.kind}:${item.targetId}` : item.id;
     const existing = byKey.get(key);
     if (existing) {
@@ -130,6 +240,7 @@ export function groupNotifications(
       at: item.at,
       targetId: item.targetId,
       noteId: item.noteId,
+      ...(item.board ? { board: item.board } : {}),
     };
     byKey.set(key, group);
     groups.push(group);

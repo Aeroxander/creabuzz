@@ -856,3 +856,28 @@ By hand against the local server (the `relay-3001` and `web-3001` entries in `.c
    you started), and **Start a board**.
 7. **Profile.** Open the first account's profile: Posts shows both kinds; the score counts the second account's votes
    (your own votes on your own posts do not count).
+
+## 4aj. Board notifications, terms at sign-up, new-account limit, board search (D83, 2026-10-21)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test
+pnpm --dir web build
+pnpm --dir web exec playwright test --project=smoke social-mvp.spec.ts first-run.spec.ts home-timeline.spec.ts
+cargo test -p buzz-relay --lib -- new_account_limit board_limit --ignored   # needs Postgres + Redis
+```
+
+By hand against the local server. The `relay-3001` entry in `.claude/launch.json` loads the drafts in `docs/policies/`,
+so the terms show at sign-up. Use two accounts (two browsers, or a normal and a private window):
+
+1. **Terms.** Sign out (or use a private window) and press **Create your account**: a box says "I agree to the Terms of
+   use and have read the Privacy note"; the links open each as a page. Passkey, wallet and Create account stay greyed
+   out until it is ticked.
+2. **Board notifications.** As the second account reply to the first account's board post and press its up arrow. As
+   the first account open **Notifications**: "replied on a board" with the reply, and "upvoted your board post" with the
+   title; each opens the post on its board.
+3. **Search.** Search for a word in a board post's title: the board post shows with its board's name, beside any short
+   posts with the word.
+4. **New-account limit.** With a brand-new account, post more than 20 short posts within an hour (or start the server
+   with `BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR=2` to see it sooner): the next one is refused with "New accounts can post …
+   times an hour for their first day; try again later." and your text stays in the box. Votes still work.
