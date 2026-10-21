@@ -13,7 +13,7 @@
 #                                           funded key, check what came out, and leave the repo as it was. Nothing public changes.
 #   scripts/sepolia-deploy.sh --broadcast   DEPLOY for real, to the Sepolia named by SEPOLIA_RPC_URL, signing with
 #                                           DEPLOYER_PRIVATE_KEY (a key used for nothing else, holding only test ETH).
-#                                           Writes contracts/deployments/dao-launch-kit-11155111.json: commit it.
+#                                           Writes contracts/deployments/dao-launch-kit-11155111.json (not ignored): commit it.
 #
 # Env (set them in .env, never on the command line, never in the repo):
 #   SEPOLIA_RPC_URL          your node (the rehearsal falls back to a public one; a real deploy refuses to)
@@ -35,27 +35,22 @@ if [[ -f .env ]]; then set -a; source .env; set +a; fi
 export PATH="$HOME/.foundry/bin:$PATH"
 command -v forge >/dev/null && command -v cast >/dev/null && command -v anvil >/dev/null || fail "foundry (forge, cast, anvil) is not on PATH"
 
-SEPOLIA_CHAIN_ID=11155111
+# shellcheck source=lib/sepolia-fork.sh
+. "$REPO_ROOT/scripts/lib/sepolia-fork.sh"
 CCA_FACTORY=0x000000001F26a0044BaA66024e7b6599c61963F8
-DEPLOYMENTS="$REPO_ROOT/contracts/deployments"
-MANIFEST="$DEPLOYMENTS/dao-launch-kit-${SEPOLIA_CHAIN_ID}.json"
-BROADCASTS="$REPO_ROOT/contracts/broadcast/DeployLaunchKit.s.sol/${SEPOLIA_CHAIN_ID}"
+MANIFEST="$SEPOLIA_MANIFEST"
 BACKUP="$(mktemp -d)"
 ANVIL_PID=""
+FORK_URL="${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}"
 
 cleanup() {
   [[ -n "$ANVIL_PID" ]] && kill "$ANVIL_PID" 2>/dev/null || true
-  if [[ "$MODE" == "rehearse" ]]; then
-    # A rehearsal leaves no manifest and no broadcast record behind: they name addresses on a throwaway fork.
-    rm -f "$MANIFEST"; [[ -f "$BACKUP/manifest.json" ]] && cp -p "$BACKUP/manifest.json" "$MANIFEST"
-    rm -rf "$BROADCASTS"
-  fi
+  # A rehearsal leaves no manifest and no broadcast record behind: they name addresses on a throwaway fork.
+  [[ "$MODE" == "rehearse" ]] && sepolia_restore_artifacts "$BACKUP"
   rm -rf "$BACKUP"
 }
 trap cleanup EXIT
 [[ -f "$MANIFEST" ]] && cp -p "$MANIFEST" "$BACKUP/manifest.json"
-
-(cd contracts && FOUNDRY_LINT_LINT_ON_BUILD=false forge build >/dev/null) || fail "forge build failed"
 
 if [[ "$MODE" == "broadcast" ]]; then
   [[ -n "${SEPOLIA_RPC_URL:-}" ]] || fail "set SEPOLIA_RPC_URL in .env: a real deploy does not use a public fallback"
@@ -68,41 +63,25 @@ if [[ "$MODE" == "broadcast" ]]; then
   step "deploying to Sepolia from $DEPLOYER (balance $(cast from-wei "$BALANCE") ETH)"
   [[ "$BALANCE" != "0" ]] || fail "the deployer has no test ETH: fund $DEPLOYER from a Sepolia faucet"
 else
-  FORK_URL="${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}"
   PORT="${ANVIL_PORT:-$((18000 + RANDOM % 1000))}"
-  RPC="http://127.0.0.1:${PORT}"
   KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80   # anvil's public dev key, funded on a fork
   step "rehearsal: forking Sepolia into a local anvil on :${PORT} (nothing public changes)"
-  # A few blocks behind the head: a public node answers from several backends, and the newest block is not on all of them yet
-  # ("block not found" while the fork is being made).
-  HEAD_BLOCK="$(cast block-number --rpc-url "$FORK_URL" 2>/dev/null || true)"
-  [[ "$HEAD_BLOCK" =~ ^[0-9]+$ ]] || fail "could not read the head of $FORK_URL"
-  # --prune-history=500: the last 500 blocks' state stays in memory (about what anvil keeps there anyway) and none goes to
-  # disk. Without it anvil spills older state to ~/.foundry/anvil/tmp (gigabytes on a long run) and leaves it there however
-  # it is stopped, SIGINT included.
-  anvil --fork-url "$FORK_URL" --fork-block-number "$((HEAD_BLOCK - 10))" --port "$PORT" --prune-history=500 --silent >"$BACKUP/anvil.log" 2>&1 &
-  ANVIL_PID=$!
-  for _ in $(seq 1 60); do
-    [[ "$(cast chain-id --rpc-url "$RPC" 2>/dev/null || true)" == "$SEPOLIA_CHAIN_ID" ]] && break
-    kill -0 "$ANVIL_PID" 2>/dev/null || { tail -20 "$BACKUP/anvil.log"; fail "anvil exited"; }
-    sleep 1
-  done
-  [[ "$(cast chain-id --rpc-url "$RPC")" == "$SEPOLIA_CHAIN_ID" ]] || fail "the fork did not come up as Sepolia"
+  sepolia_fork_up "$FORK_URL" "$PORT" "$BACKUP/anvil.log"
+  RPC="$FORK_RPC"
+  ANVIL_PID="$FORK_PID"
 fi
 
 [[ "$(cast codesize "$CCA_FACTORY" --rpc-url "$RPC")" != "0" ]] || fail "no auction factory at $CCA_FACTORY on this chain"
 
-step "deploying the summoner and the launch kit"
+step "deploying the summoner, the launch kit and the contributor kit"
 OUT="$BACKUP/forge.out"
-BROADCAST_FLAG=(--broadcast)
-(cd contracts && PRIVATE_KEY="$KEY" forge script script/DeployLaunchKit.s.sol --rpc-url "$RPC" "${BROADCAST_FLAG[@]}" >"$OUT" 2>&1) \
-  || { tail -40 "$OUT"; fail "forge script failed"; }
+sepolia_deploy_kits "$RPC" "$KEY" "$OUT"
 grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|Auction factory)" "$OUT" || tail -20 "$OUT"
 
-KIT=$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(m.roles.find(r=>r.role==="launch-kit").address)' "$MANIFEST")
-SUMMONER=$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(m.roles.find(r=>r.role==="summoner").address)' "$MANIFEST")
-CONTRIBUTOR_KIT=$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(m.roles.find(r=>r.role==="contributor-kit").address)' "$MANIFEST")
-SHARES_IMPL=$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(m.roles.find(r=>r.role==="shares-implementation").address)' "$MANIFEST")
+KIT=$(sepolia_role launch-kit)
+SUMMONER=$(sepolia_role summoner)
+CONTRIBUTOR_KIT=$(sepolia_role contributor-kit)
+SHARES_IMPL=$(sepolia_role shares-implementation)
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 first() { awk '{print $1}' | head -1; }
 
@@ -118,12 +97,23 @@ echo "  ✓ the kit at $KIT names the summoner, the auction factory, the Shares 
 [[ "$(lower "$(cast call "$CONTRIBUTOR_KIT" 'budgetFactory()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$(cast call "$SUMMONER" 'mandateFactory()(address)' --rpc-url "$RPC" | first)")" ]] || fail "the contributor kit does not name the summoner's work budget factory"
 echo "  ✓ the contributor kit at $CONTRIBUTOR_KIT names the same summoner and work budget factory"
 
+# What it costs: the gas the deploy used, priced at what Sepolia charges now and at a busy day's 20 gwei. Test ETH has no
+# price, but the deployer needs this much of it from a faucet.
+read -r GAS TXS LARGEST <<<"$(sepolia_deploy_gas)"
+(( LARGEST <= SEPOLIA_TX_GAS_CAP )) || fail "one deploy transaction asks for ${LARGEST} gas, over Sepolia's cap of ${SEPOLIA_TX_GAS_CAP} for one transaction"
+echo "  ✓ the largest deploy transaction asks for ${LARGEST} gas, under Sepolia's cap of ${SEPOLIA_TX_GAS_CAP} for one transaction"
+eth_for() { cast from-wei "$(node -e 'console.log((BigInt(process.argv[1])*BigInt(process.argv[2])).toString())' "$GAS" "$1")"; }
 if [[ "$MODE" == "rehearse" ]]; then
+  PRICE_NOW="$(cast gas-price --rpc-url "$FORK_URL" 2>/dev/null || echo 0)"
+  echo "  the deploy used ${GAS} gas in ${TXS} transactions: $(eth_for "$PRICE_NOW") ETH at Sepolia's gas price now ($(cast from-wei "$PRICE_NOW" gwei) gwei), $(eth_for 20000000000) ETH at 20 gwei"
   step "rehearsal passed. To deploy for real: put SEPOLIA_RPC_URL and DEPLOYER_PRIVATE_KEY in .env and run with --broadcast"
 else
+  SPENT=$(node -e 'console.log((BigInt(process.argv[1])-BigInt(process.argv[2])).toString())' "$BALANCE" "$(cast balance "$DEPLOYER" --rpc-url "$RPC")")
+  echo "  the deploy used ${GAS} gas in ${TXS} transactions and cost $(cast from-wei "$SPENT") test ETH"
   step "deployed. Commit contracts/deployments/dao-launch-kit-${SEPOLIA_CHAIN_ID}.json, then build the web app with:"
   # The block the deploy ran at is where this chain's history starts for the app: a real node refuses an event read from
   # block 0, so the build is told where to start.
   FROM_BLOCK=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).block)' "$MANIFEST")
-  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_CONTRIBUTOR_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
+  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_CHAIN_RPC_URL=<a read-only Sepolia node for the page> VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_CONTRIBUTOR_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
+  echo "  (docs/sepolia-testnet.md lists the rest: the relay URL, passkey accounts, what testers need)"
 fi
