@@ -49,7 +49,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   },
   {
     to: "/c",
-    label: "Workspaces",
+    label: "Communities",
     icon: MessagesSquare,
     matches: (p) => p === "/c" || p.startsWith("/c/") || p.startsWith("/repos"),
   },

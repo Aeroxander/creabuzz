@@ -8,6 +8,7 @@ import type { DecisionDraft } from "../lib/dao-actions";
 import { formatUnits } from "../lib/dao-actions";
 import type { DecisionsSnapshot } from "../lib/decisions";
 import { encodeOpenProposalWithAction } from "../lib/vote-tx";
+import type { PendingWords } from "../lib/pending-words";
 import type { Launch } from "../models";
 import { usePendingWords } from "../use-pending-words";
 import { PendingWordsNote } from "./PendingWordsNote";
@@ -165,14 +166,14 @@ export function DecisionComposer({
   // form lets go of it and dropped once the server accepts the words, so a failed publish survives a reload and is
   // retried on its own (`PendingWordsNote`). Held here only when the browser would not keep it.
   const pending = usePendingWords(launch);
-  const [unkept, setUnkept] = useState<DecisionDraft["workArea"] | null>(null);
+  const [unkept, setUnkept] = useState<PendingWords | null>(null);
   const publishWords = async (area: NonNullable<DecisionDraft["workArea"]>) => {
-    const kept = pending.keep(area);
+    const { job, result } = pending.keep(area);
     try {
-      await pending.send(area);
+      await pending.send(job);
       setUnkept(null);
     } catch {
-      if (!kept) setUnkept(area);
+      if (result !== "kept") setUnkept(job);
     }
   };
   const submit = async (draft: DecisionDraft) => {
@@ -238,7 +239,14 @@ export function DecisionComposer({
           Publish them before you leave this page:
           <Button
             disabled={pending.busy}
-            onClick={() => void publishWords(unkept)}
+            onClick={async () => {
+              try {
+                await pending.send(unkept);
+                setUnkept(null);
+              } catch {
+                // Still not taken: the note stays, with its button.
+              }
+            }}
             size="sm"
             type="button"
             variant="outline"
@@ -305,7 +313,13 @@ export function DecisionComposer({
               ) : null}
               <ProjectForm
                 preset={sponsor ?? undefined}
-                blocked={blocked}
+                blocked={
+                  blocked ??
+                  // Its words could not be kept if publishing them failed, so the vote waits for room.
+                  (pending.full
+                    ? "This browser is holding the words of 50 work areas that have not been published yet. Publish them first, from the Decisions or Work tab of each project you opened those votes in, so this work area's words can be kept if publishing them fails."
+                    : null)
+                }
                 busy={busy}
                 ctx={ctx}
                 gate={gate}

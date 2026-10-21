@@ -345,10 +345,9 @@ test("a contributor project is started from the page, work is claimed the same d
   const accept = founder
     .getByTestId("dao-attention")
     .filter({ hasText: "submitted “write-docs”" });
-  await expect(accept).toContainText(
-    "Accept it for review in docs.",
-    { timeout: 30_000 },
-  );
+  await expect(accept).toContainText("Accept it for review in docs.", {
+    timeout: 30_000,
+  });
   await accept.getByRole("button", { name: "Accept for review" }).click();
   await expect(founder.getByRole("tab", { name: "Work" })).toHaveAttribute(
     "aria-selected",

@@ -112,7 +112,7 @@ export function stepsFor(role: Role, signals: Signals): Step[] {
       id: "helper",
       done: signals.ranHelper,
       label: "Put an AI helper to work",
-      hint: "Optional. In your workspace, open AI helpers and run one in this tab.",
+      hint: "Optional. In your community, open AI helpers and run one in this tab.",
       to: "/c",
       optional: true,
     },

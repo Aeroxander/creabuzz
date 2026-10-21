@@ -1122,3 +1122,14 @@ By hand, with the accounts of 4ak:
 7. **Copy.** Joining a role and starting from the board say approval does not guarantee Shares; the form's button says
    **Submit work**; on a phone, tapping a profile's points explains them.
 
+## 4ar. The words queue never drops unpublished words; Communities in the top bar (D92, 2026-10-22)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test   # pending-words.test.mjs: a full list refuses and keeps the oldest; a stale publish keeps newer words
+```
+
+By hand: the top bar says **Communities**. The queue's limits are covered by the unit tests (50 unpublished work areas in
+one browser is not something to do by hand); its everyday path (a refused publish, reload, Publish the words) is 4aq
+step 1.
+

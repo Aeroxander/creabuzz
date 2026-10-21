@@ -76,17 +76,22 @@ contributors claim tasks, reviewers accept the work, and the Shares are awarded 
 whole journey; the Work tab and claim form are in the web app). Built in the web app (D65,
 `scripts/web-contributor-e2e.sh` runs it in pages on a local chain):
 
-- **Built:** a **"Start a contributor project"** path in Start that says plainly the project cannot raise money, then
-  in one transaction (the contributor kit, D66) makes the DAO with no sale, its first Shares-only work budget and first
-  project, and locks its Shares against transfers, so people can claim work the same day.
-- **Built:** a **Contributions** tab: who earned how much of the token and for which claim, read from the chain's award
-  events.
-- **Built (D84):** projects for more than one person. Start makes up to eight first projects in the same one
-  transaction; a pitch on the Projects board starts as a contributor project with each role a first project worth its
-  stake, earned only as the work is accepted (the board's old "Form the DAO" path, which skipped the tokenomics rules, is
-  gone); and anyone can suggest work on the Work tab with a price in Shares or as a percent of the project, which a
-  holder puts to a vote as "Approve a project", filled in. `scripts/web-contributor-e2e.sh` runs a journey with two
-  contributors, one of them a newcomer whose suggestion became the project they were paid in.
+- **Built:** a **"Start a contributor project"** path in Start that says plainly the project starts without a token sale
+  (its treasury can still receive payments) and that the founder starts with Shares, then in one transaction (the
+  contributor kit, D66) makes the DAO with no sale, its first Shares-only work budget and first work area, and locks its
+  Shares against transfers, so people can submit work the same day. (Copy corrected in D88.)
+- **Built:** a **Contributions** tab: who was awarded how many Shares and for which submission, read from the chain's
+  award events and confirmed against the Shares that actually arrived (D88), with what each person holds now and the
+  story behind each award (D90).
+- **Built (D84):** projects for more than one person. Start makes up to eight first work areas in the same one
+  transaction; a pitch on the Projects board starts as a contributor project with each role a first work area that can
+  award up to its stake, with each award still a separate vote (the board's old "Form the DAO" path, which skipped the
+  tokenomics rules, is gone); and anyone can suggest work on the Work tab with a price in Shares or as a percent of the
+  project, which a holder puts to a vote as "Approve a work area", filled in. `scripts/web-contributor-e2e.sh` runs a
+  journey with two contributors, one of them a newcomer whose suggestion became the work area they were awarded in.
+- **Built (D89 to D91):** Ways to help (open work areas with their verified words), Needs you and Waiting on someone
+  else, contribution stories, and the fixes from two outside reviews. What is next is a small hosted pilot, not more
+  features: see [STATUS-2026-10-22.md](STATUS-2026-10-22.md).
 - **Recommended, not built:** the rule for **when the token can be traded**
   ([CONTRIBUTOR-TOKEN-TRADING.md](CONTRIBUTOR-TOKEN-TRADING.md)). In short: not before the raise path is audited, lock
   transfers at birth (now built), and if a market ever opens, trade a non-voting claim, not the voting Shares.

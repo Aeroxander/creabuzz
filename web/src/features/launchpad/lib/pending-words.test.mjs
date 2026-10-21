@@ -6,6 +6,7 @@ import {
   keepPending,
   MAX_PENDING_WORDS,
   PENDING_WORDS_KEY,
+  pendingFull,
   pendingIn,
   pendingScope,
 } from "./pending-words.ts";
@@ -26,17 +27,18 @@ const scope = pendingScope({
   launchId: "docs",
   account: "CD".repeat(32),
 });
-const job = (id, check = "the guide is in Spanish") => ({
+const job = (id, check = "the guide is in Spanish", revision = `r-${id}`) => ({
   scope,
   mandate: `0x${"b1".repeat(20)}`,
   id,
   check,
   createdAt: 1,
+  revision,
 });
 
 test("a job is kept until its words are accepted, and survives a new read of the storage", () => {
   const storage = memory();
-  assert.equal(keepPending(storage, job("0xa")), true);
+  assert.equal(keepPending(storage, job("0xa")), "kept");
   // What a reload sees: the same storage, read again.
   assert.deepEqual(
     pendingIn(storage, scope).map((j) => j.id),
@@ -57,27 +59,64 @@ test("jobs belong to one server, network, project and account", () => {
     account: "ef".repeat(32),
   });
   assert.deepEqual(pendingIn(storage, otherAccount), []);
-  // The scope ignores case, as addresses and keys do.
-  assert.equal(pendingIn(storage, scope.toUpperCase().toLowerCase()).length, 1);
+  assert.equal(pendingIn(storage, scope).length, 1);
 });
 
-test("newer words for the same work area replace older ones, and the list is bounded", () => {
+test("a full list refuses a new work area and never evicts one that is still unpublished", () => {
   const storage = memory();
-  keepPending(storage, job("0xa", "first words"));
-  keepPending(storage, job("0xa", "corrected words"));
-  assert.deepEqual(
-    pendingIn(storage, scope).map((j) => j.check),
-    ["corrected words"],
-  );
-  for (let i = 0; i < MAX_PENDING_WORDS + 5; i++)
-    keepPending(storage, job(`0x${i.toString(16)}`));
+  for (let i = 0; i < MAX_PENDING_WORDS; i++)
+    assert.equal(keepPending(storage, job(`0x${i.toString(16)}`)), "kept");
+  assert.equal(pendingFull(storage), true);
+  // The 51st is refused, and says so; the first, still unpublished, is still there.
+  assert.equal(keepPending(storage, job("0xnew")), "full");
+  const ids = pendingIn(storage, scope).map((j) => j.id);
+  assert.equal(ids.length, MAX_PENDING_WORDS);
+  assert.ok(ids.includes("0x0"));
+  assert.ok(!ids.includes("0xnew"));
+  // Correcting the words of a work area already waiting takes no new room, so it is still allowed.
   assert.equal(
-    JSON.parse(storage.items.get(PENDING_WORDS_KEY)).length,
-    MAX_PENDING_WORDS,
+    keepPending(storage, job("0x0", "corrected", "r-0x0-2")),
+    "kept",
   );
+  assert.equal(
+    pendingIn(storage, scope).find((j) => j.id === "0x0")?.check,
+    "corrected",
+  );
+  // Publishing one frees room for the next.
+  dropPending(storage, job("0x1"));
+  assert.equal(keepPending(storage, job("0xnew")), "kept");
 });
 
-test("storage that refuses or holds garbage is not a crash, and says the job was not kept", () => {
+test("a slower publish of older words does not remove the newer words that replaced them", () => {
+  const storage = memory();
+  const earlier = job("0xa", "earlier words", "r-1");
+  const corrected = job("0xa", "corrected words", "r-2");
+  keepPending(storage, earlier);
+  keepPending(storage, corrected);
+  // The earlier words' publish completes last: it acknowledges only its own revision.
+  dropPending(storage, earlier);
+  assert.deepEqual(
+    pendingIn(storage, scope).map((j) => [j.check, j.revision]),
+    [["corrected words", "r-2"]],
+  );
+  dropPending(storage, corrected);
+  assert.deepEqual(pendingIn(storage, scope), []);
+});
+
+test("storage that refuses keeps every job it already had, and says the new one was not kept", () => {
+  const storage = memory();
+  keepPending(storage, job("0xa"));
+  const refusing = {
+    getItem: storage.getItem,
+    setItem: () => {
+      throw new Error("quota");
+    },
+  };
+  assert.equal(keepPending(refusing, job("0xb")), "unavailable");
+  assert.deepEqual(
+    pendingIn(storage, scope).map((j) => j.id),
+    ["0xa"],
+  );
   const broken = {
     getItem: () => {
       throw new Error("blocked");
@@ -86,7 +125,7 @@ test("storage that refuses or holds garbage is not a crash, and says the job was
       throw new Error("blocked");
     },
   };
-  assert.equal(keepPending(broken, job("0xa")), false);
+  assert.equal(keepPending(broken, job("0xa")), "unavailable");
   assert.deepEqual(pendingIn(broken, scope), []);
   const garbage = memory();
   garbage.setItem(PENDING_WORDS_KEY, "{not json");
