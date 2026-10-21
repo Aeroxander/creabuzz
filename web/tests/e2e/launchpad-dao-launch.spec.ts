@@ -30,10 +30,10 @@ const FOUNDER = getPublicKey(
   ),
 );
 const WAD = 10n ** 18n;
-// 200,000,000 sold of 1,000,000,000: 20% sale, 20% team, 60% the DAO's own.
-const SALE = 200_000_000n * WAD;
+// 600,000,000 sold of 800,000,000: the standard 75% sale and 25% team, none kept by the DAO (D75).
+const SALE = 600_000_000n * WAD;
 const TEAM = 200_000_000n * WAD;
-const DAO_OWN = 600_000_000n * WAD;
+const DAO_OWN = 0n;
 
 test.skip(
   !ANVIL_URL || !CURRENCY || !KIT,
@@ -94,9 +94,9 @@ async function waitMined(hash: string): Promise<void> {
   throw new Error(`transaction ${hash} was not mined`);
 }
 
-/** The terms of a 200M-Share sale in the dev USDC: $0.01 a Share, a $300,000 threshold. */
+/** The terms of a 600M-Share sale in the dev USDC: $0.0005 a Share, so the whole tranche is the $300,000 target (D74). */
 const TERMS = {
-  floorPrice: "792281625140000",
+  floorPrice: "39614081257000",
   tickSpacing: "79228162514",
   requiredRaised: "299999999998",
 };
@@ -130,31 +130,31 @@ function launchRecord(startBlock: number): StoredEvent {
         mode: "dao",
         name: "Nebula",
         symbol: "NEB",
-        supply: "200000000",
+        supply: "600000000",
       },
       allocation: {
-        sale: 20,
-        team: 20,
-        treasury: 30,
-        liquidity: 15,
-        milestones: 10,
-        community: 5,
+        sale: 75,
+        team: 25,
+        treasury: 0,
+        liquidity: 0,
+        milestones: 0,
+        community: 0,
       },
       // The team's Shares are theirs from the first block, but locked behind these two milestones.
       unlocks: {
         mode: "milestones",
-        allocationPct: 10,
+        allocationPct: 25,
         milestones: [
           {
             claim: "m1",
             label: "alpha shipped",
-            percent: 40,
+            percent: 50,
             verifier: "founder",
           },
           {
             claim: "m2",
             label: "mainnet live",
-            percent: 60,
+            percent: 50,
             verifier: "founder",
           },
         ],
@@ -309,7 +309,7 @@ test("the founder launches a project into its own DAO with one button, and the p
   // The founder is told, in plain words, where each part of the supply goes.
   const summary = page.getByTestId("dao-launch-summary");
   await expect(summary).toContainText("200,000,000 Shares");
-  await expect(summary).toContainText("600,000,000 Shares (they never vote)");
+  await expect(summary).toContainText("0 Shares (they never vote)");
   await expect(summary).toContainText("100% locked until its milestones");
 
   if (process.env.E2E_SHOTS) {
@@ -584,13 +584,13 @@ test("a launch made in the wizard, as published, launches into its DAO", async (
   const launched = relay.current();
   const dao = tag(launched, "treasury");
   expect(dao).toMatch(/^0x[0-9a-fA-F]{40}$/);
-  // The wizard's allocation (20% sale, 20% team, the rest the DAO's) came out as Shares.
+  // The wizard's allocation (the standard 75% sale, 25% team, none kept by the DAO, D75) came out as Shares.
   const shares = tag(launched, "token");
   const total = await callWord(shares, "0x18160ddd");
-  expect(await balanceOf(shares, tag(launched, "auction"))).toBe(total / 5n);
-  expect(await balanceOf(shares, dao)).toBe((total * 3n) / 5n);
-  // The team's 20% is in the founder's wallet from the first block (it votes), held back by the milestone lock.
-  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe(total / 5n);
+  expect(await balanceOf(shares, tag(launched, "auction"))).toBe((total * 3n) / 4n);
+  expect(await balanceOf(shares, dao)).toBe(0n);
+  // The team's 25% is in the founder's wallet from the first block (it votes), held back by the milestone lock.
+  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe(total / 4n);
 });
 
 test("with no wallet in the browser the launch is off, and nothing is sent", async ({
