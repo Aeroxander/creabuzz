@@ -721,6 +721,166 @@ contract DaoLaunchKitTest is Test {
         kit.launch(p);
     }
 
+    // ---- the two checks an outside review got round (D84) ---------------------------------------------------
+
+    /// The review's case: milestone percentages with no checks and no panel. No lock was made, "none" was final (D73), and
+    /// the founder left with all 225 team Shares against a funded treasury before any milestone.
+    function test_milestone_percentages_without_their_checks_are_refused_so_the_team_is_never_left_unlocked() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("missing-checks");
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+        p.milestoneChecks = new bytes32[](0);
+        p.reviewers = new address[](0);
+        _refused(p, 4);
+    }
+
+    /// Fewer checks than percentages, or more, never launch, by either path. (The locks themselves already refused these
+    /// when there was at least one check, and a challenged launch with none fails `PanelMismatch`; rule 4 now refuses the
+    /// panel case those left open.)
+    function test_every_percentage_needs_exactly_one_check_on_both_launch_paths() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("unpaired");
+        for (uint256 n; n < 4; ++n) {
+            if (n == 2) continue; // two checks for two percentages is the fixture, which launches
+            KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+            p.milestoneChecks = new bytes32[](n);
+            for (uint256 i; i < n; ++i) p.milestoneChecks[i] = keccak256(abi.encode("check", i));
+            if (n == 0) p.reviewers = new address[](0);
+            vm.prank(founder);
+            vm.expectRevert();
+            kit.launch(p);
+
+            KitParams memory c = _challengeParams(salt, kit.predictExecutor(founder, salt));
+            c.milestoneChecks = p.milestoneChecks;
+            vm.prank(founder);
+            vm.expectRevert();
+            kit.launchChallenged(c, _challengeTerms());
+        }
+    }
+
+    /// The read-back: the lock must hold the whole team allocation. Each tranche rounds down, so 225 Shares and one base
+    /// unit at 50 / 50 would leave that unit free; the launch is refused rather than leave any team Share unlocked.
+    function test_a_team_allocation_the_milestones_cannot_split_exactly_is_refused() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("dust");
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+        p.teamShares[0] = 225e18 + 1;
+        p.teamShares[1] = 75e18 - 1; // the same 300 in all, so every other rule still passes
+        vm.prank(founder);
+        vm.expectRevert(bytes("kit: team lock"));
+        kit.launch(p);
+        KitParams memory c = _challengeParams(salt, kit.predictExecutor(founder, salt));
+        c.teamShares = p.teamShares;
+        vm.prank(founder);
+        vm.expectRevert(bytes("kit: team lock"));
+        kit.launchChallenged(c, _challengeTerms());
+    }
+
+    /// Whatever schedule a launch names, a launch with a team either fails or ends with a lock holding every team Share.
+    function testFuzz_a_launch_with_a_team_either_fails_or_locks_every_team_share(
+        uint8 checks,
+        uint8 percentages,
+        bool paired,
+        uint256 founderShare,
+        bool challenged
+    ) public {
+        _needArtifacts();
+        uint256 nBps = bound(percentages, 0, 9);
+        uint256 nChecks = paired ? nBps : bound(checks, 0, 9);
+        bytes32 salt = bytes32("fuzz-schedule");
+        KitParams memory p = challenged
+            ? _challengeParams(salt, kit.predictExecutor(founder, salt))
+            : _params(salt, kit.predictExecutor(founder, salt));
+        p.milestoneChecks = new bytes32[](nChecks);
+        for (uint256 i; i < nChecks; ++i) p.milestoneChecks[i] = keccak256(abi.encode("milestone", i));
+        p.milestoneBps = new uint16[](nBps);
+        for (uint256 i; i < nBps; ++i) p.milestoneBps[i] = uint16(10_000 / nBps + (i == 0 ? 10_000 % nBps : 0));
+        if (nChecks == 0) p.reviewers = new address[](0);
+        // Whole Shares, which every percentage splits exactly (the rounding case has its own test above).
+        p.teamShares[0] = bound(founderShare, 1, 299) * 1e18;
+        p.teamShares[1] = 300e18 - p.teamShares[0];
+
+        try this.launchAs(p, challenged) returns (address made) {
+            Shares shares = Moloch(payable(made)).shares();
+            address lock = shares.lockGuard();
+            assertTrue(lock != address(0), "a team launch has a lock");
+            assertEq(MilestoneLock(lock).totalLocked(), 300e18, "and it holds every team Share");
+            assertEq(MilestoneLock(lock).lockedOf(founder), p.teamShares[0]);
+            assertEq(MilestoneLock(lock).lockedOf(cofounder), p.teamShares[1]);
+        } catch {}
+    }
+
+    /// @dev `try` needs an external call: the founder launches from inside this one.
+    function launchAs(KitParams calldata p, bool challenged) external returns (address dao) {
+        vm.prank(founder);
+        (dao,,) = challenged ? kit.launchChallenged(p, _challengeTerms()) : kit.launch(p);
+    }
+
+    /// @dev `p`'s auction config with the tuple `words` words later than the canonical encoding puts it: the head's
+    /// offset moves on and the gap is filled with junk. The ABI decoder follows the offset, so it is the same config.
+    function _shifted(bytes memory canonical, uint256 words) internal pure returns (bytes memory shifted) {
+        shifted = new bytes(canonical.length + 32 * words);
+        assembly ("memory-safe") {
+            mstore(add(shifted, 32), add(32, mul(32, words)))
+        }
+        for (uint256 w; w < words; ++w) {
+            bytes32 junk = keccak256(abi.encode("junk", w));
+            for (uint256 i; i < 32; ++i) shifted[32 + 32 * w + i] = junk[i];
+        }
+        for (uint256 i = 32; i < canonical.length; ++i) shifted[i + 32 * words] = canonical[i];
+    }
+
+    function _withTarget(bytes memory config, uint128 required) internal pure returns (bytes memory) {
+        AuctionParams memory a = abi.decode(config, (AuctionParams));
+        a.requiredCurrencyRaised = required;
+        return abi.encode(a);
+    }
+
+    /// The review's case: the tuple one word later and a target of one unit. The kit read the hook as the floor and the
+    /// floor as the target, accepted it, and the sale graduated on a one-unit bid with over 500 Shares unsold (D74).
+    function test_a_valid_auction_config_encoded_another_way_is_checked_on_what_the_auction_decodes() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("shifted");
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+        bytes memory full = p.auctionConfig;
+        p.auctionConfig = _shifted(_withTarget(full, 1), 1);
+        _refused(p, 6);
+        // The same encoding with the whole tranche as the target is a fair sale, and the auction got the real floor.
+        p.auctionConfig = _shifted(full, 1);
+        vm.prank(founder);
+        (,, address auction) = kit.launch(p);
+        (bool ok, bytes memory floor) = auction.staticcall(abi.encodeWithSignature("floorPrice()"));
+        assertTrue(ok);
+        assertEq(abi.decode(floor, (uint256)), Q96);
+    }
+
+    /// A floor so high that floor × supply passes 2^256: refused as unfair terms, not by an arithmetic panic.
+    function test_a_floor_whose_tranche_overflows_is_refused_as_unfair() public {
+        _needArtifacts();
+        bytes32 salt = bytes32("overflow");
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+        AuctionParams memory a = abi.decode(p.auctionConfig, (AuctionParams));
+        a.floorPrice = 1 << 200;
+        p.auctionConfig = abi.encode(a);
+        _refused(p, 6);
+    }
+
+    /// Wherever the tuple sits, the kit refuses exactly the targets below the whole tranche at the floor.
+    function testFuzz_the_target_check_reads_the_config_wherever_it_is_encoded(uint8 words, uint128 required) public {
+        _needArtifacts();
+        uint256 shift = bound(words, 0, 4);
+        required = uint128(bound(required, 0, 2 * uint256(SALE)));
+        bytes32 salt = bytes32("fuzz-target");
+        KitParams memory p = _params(salt, kit.predictExecutor(founder, salt));
+        p.auctionConfig = _shifted(_withTarget(p.auctionConfig, required), shift);
+        if (required < SALE) {
+            _refused(p, 6); // the floor is one currency unit a Share, so the tranche is 600 units
+        } else {
+            vm.prank(founder);
+            kit.launch(p);
+        }
+    }
+
     /// A contract larger than 24,576 bytes cannot be deployed on a real chain, though the test EVM allows it, so the launch
     /// kit and the factories it deploys are held to the limit here. (A first version of the factory was 592 bytes over and
     /// only a real chain refused it.)
