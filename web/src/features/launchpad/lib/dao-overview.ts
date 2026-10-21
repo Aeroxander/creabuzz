@@ -119,11 +119,17 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
         items.push({
           key: `payout-${claim.id}`,
           kind: "payout",
-          text: "Your claim was approved. You can take your payout now.",
-          action: "Take it",
+          text:
+            claim.record.amount > 0n
+              ? "Your claim was approved. You can take your payment now."
+              : "Your work was approved. Mark it finished so Shareholders can vote on an award.",
+          action: claim.record.amount > 0n ? "Take it" : "Finish it",
           tab: "work",
           why: "It is your claim.",
-          ifIgnored: "The payout waits until you take it.",
+          ifIgnored:
+            claim.record.amount > 0n
+              ? "The payment waits until you take it."
+              : "It cannot be awarded Shares until it is marked finished.",
         });
       }
       if (

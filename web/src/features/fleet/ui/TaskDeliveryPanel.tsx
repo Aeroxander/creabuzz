@@ -5,6 +5,7 @@ import { useLaunches } from "@/features/launchpad/use-launches";
 import { launchCoordinate } from "@/features/launchpad/models";
 import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { ethChainId, getRpcEndpoint } from "@/features/launchpad/chain";
+import { claimStatusLabel } from "@/features/launchpad/lib/work";
 import { workQuery } from "@/features/launchpad/use-work";
 import { useWalletLabels } from "@/features/launchpad/use-wallet-labels";
 import { Button } from "@/shared/ui/button";
@@ -199,8 +200,8 @@ export function TaskDeliveryPanel({
               ) : null}
               {claims.map((c) => (
                 <option key={c.key} value={c.key}>
-                  {c.claim.record.status} · claim {c.claim.id.slice(0, 10)}… ·
-                  budget {c.mandate.slice(0, 10)}…
+                  {claimStatusLabel(c.claim.record)} · claim{" "}
+                  {c.claim.id.slice(0, 10)}… · budget {c.mandate.slice(0, 10)}…
                 </option>
               ))}
             </select>
@@ -226,9 +227,9 @@ export function TaskDeliveryPanel({
           ) : null}
           {selected ? (
             <p className="text-xs" data-testid="task-delivery-status">
-              Read from the chain: {selected.claim.record.status} · filed by{" "}
-              {walletLabel(selected.claim.record.contributor)}. Review and
-              payment remain separate actions.
+              Read from the chain: {claimStatusLabel(selected.claim.record)} ·
+              filed by {walletLabel(selected.claim.record.contributor)}. Review
+              and payment remain separate actions.
             </p>
           ) : null}
         </>

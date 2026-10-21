@@ -37,7 +37,7 @@ export function DecisionsTab({
   focusDecision?: string;
   /** A claim someone came here to doubt: the form for it opens with that claim chosen. */
   challenge?: ChallengeIntent | null;
-  /** A suggestion being put to a vote: the composer opens "Approve a project" filled in from it. */
+  /** A suggestion being put to a vote: the composer opens "Approve a work area" filled in from it. */
   sponsor?: SponsorIntent | null;
 }) {
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);

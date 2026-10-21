@@ -300,6 +300,19 @@ export const CLAIM_STATUSES = [
 ] as const;
 export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
 
+/**
+ * A claim's status as people read it. The contract calls a claim `Paid` once its challenge window has passed and it
+ * was taken, whether or not it asked for money; one that asked for none moved no money, so it reads "Finished".
+ */
+export function claimStatusLabel(record: {
+  status: ClaimStatus;
+  amount: bigint;
+}): string {
+  return record.status === "Paid" && record.amount === 0n
+    ? "Finished"
+    : record.status;
+}
+
 export interface ClaimRecord {
   contributor: string;
   amount: bigint;
@@ -490,7 +503,7 @@ export function nextStep(
         return {
           kind: "bind",
           who: "manager",
-          text: "Waiting for a project manager to take this claim on.",
+          text: "Waiting for a work area's manager to accept it for review.",
         };
       }
       if (claim.quorum !== 0 && claim.approvals >= claim.quorum) {
@@ -507,16 +520,22 @@ export function nextStep(
       };
     case "Approved": {
       const open = record.releasedAt + challengeWindow;
+      // A claim that asked for no money is still taken once, to finish it: that is what makes it awardable.
+      const money = record.amount > 0n;
       return now >= open
         ? {
             kind: "payout",
             who: "contributor",
-            text: "Approved. The contributor can take it now.",
+            text: money
+              ? "Approved. The contributor can take the payment now."
+              : "Approved. The contributor can mark it finished now, so Shareholders can vote on an award.",
           }
         : {
             kind: "none",
             who: "nobody",
-            text: "Approved. It can be taken once the challenge window ends.",
+            text: money
+              ? "Approved. The payment can be taken once the challenge window ends."
+              : "Approved. It can be marked finished once the challenge window ends.",
           };
     }
     case "Paid":
@@ -536,12 +555,12 @@ export function nextStep(
         ? {
             kind: "none",
             who: "nobody",
-            text: "Paid, but not part of a project, so it cannot earn Shares.",
+            text: `${record.amount > 0n ? "Paid" : "Finished"}, but not part of a work area, so it cannot earn Shares.`,
           }
         : {
             kind: "award",
             who: "dao",
-            text: `${record.amount > 0n ? "Approved and paid" : "Approved"}. The DAO can vote to award Shares for it.`,
+            text: `${record.amount > 0n ? "Approved and paid" : "Finished; no money was asked for"}. Shareholders can vote to award Shares for it.`,
           };
     case "Frozen":
       return {

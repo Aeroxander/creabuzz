@@ -265,13 +265,14 @@ export function ProjectForm({
   return (
     <div className="mt-3 grid gap-3" data-testid="form-project">
       <p className="text-sm text-muted-foreground">
-        Approve a project inside a work budget. Its manager takes on claims; the
-        words below are what every claim for it is judged against, exactly.
+        Approve a work area inside a work budget. Its manager accepts submitted
+        work for review; the words below are what all of it is judged against,
+        exactly.
       </p>
       {budgets.length === 0 ? (
         <p className="text-sm" data-testid="project-no-budget">
           There is no open work budget yet. Set one aside first, then approve
-          projects inside it.
+          work areas inside it.
         </p>
       ) : (
         <SelectField
@@ -290,7 +291,7 @@ export function ProjectForm({
       )}
       <TextField
         hint="A short name, up to 32 characters."
-        label="Project name"
+        label="Work area name"
         onChange={setName}
         placeholder="docs"
         testId="project-name"
@@ -309,7 +310,7 @@ export function ProjectForm({
       />
       {isMilestonePanel ? (
         <SelectField
-          hint="The project holds nothing: it only lets reviewers judge this milestone, against its exact words."
+          hint="The work area holds nothing: it only lets reviewers judge this milestone, against its exact words."
           label="Which milestone"
           onChange={setMilestone}
           options={ctx.milestoneWords.map((words, index) => ({
@@ -321,9 +322,9 @@ export function ProjectForm({
         />
       ) : (
         <TextField
-          hint="Most Shares this project may award."
+          hint="Most Shares this work area may award."
           inputMode="decimal"
-          label="Shares for the project"
+          label="Shares for the work area"
           onChange={setShares}
           placeholder="1000"
           testId="project-shares"
@@ -333,7 +334,7 @@ export function ProjectForm({
       {hasMoney && !isMilestonePanel ? (
         <TextField
           inputMode="decimal"
-          label="Money for the project"
+          label="Money for the work area"
           onChange={setMoney}
           placeholder="0"
           testId="project-money"
@@ -349,7 +350,7 @@ export function ProjectForm({
       />
       {isMilestonePanel ? null : (
         <TextAreaField
-          hint="Claims for this project must state these exact words, or the manager cannot take them on."
+          hint="Work submitted here must state these exact words, or the manager cannot accept it for review."
           label="How the work is judged"
           onChange={setCheck}
           placeholder="The docs are merged and reviewed"
@@ -423,14 +424,14 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
     <div className="mt-3 grid gap-3" data-testid="form-award">
       <p className="text-sm text-muted-foreground">
         Award Shares to someone whose claim the reviewers approved. The work
-        budget refuses an award larger than the project has left, however the
+        budget refuses an award larger than the work area has left, however the
         vote goes.
       </p>
       {awardable.length === 0 ? (
         <p className="text-sm" data-testid="award-none">
           No approved claim is waiting for an award. A claim becomes awardable
-          once its reviewers approve it, the waiting period has passed, and its
-          project's manager has taken it on.
+          once its work area&apos;s manager has accepted it, its reviewers
+          approve it, and the waiting period has passed.
         </p>
       ) : (
         <SelectField
@@ -438,7 +439,7 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
           onChange={setWhich}
           options={awardable.map((a) => ({
             value: key(a),
-            label: `“${idLabel(a.claim.id)}” by ${a.claim.record.contributor.slice(0, 8)}… in project “${a.claim.project ? idLabel(a.claim.project) : ""}”`,
+            label: `“${idLabel(a.claim.id)}” by ${a.claim.record.contributor.slice(0, 8)}… in work area “${a.claim.project ? idLabel(a.claim.project) : ""}”`,
           }))}
           testId="award-claim"
           value={chosen ? key(chosen) : ""}
@@ -448,7 +449,7 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
         hint={
           [
             left !== null
-              ? `The project has ${formatUnits(left, 18)} Shares left to award.`
+              ? `The work area has ${formatUnits(left, 18)} Shares left to award.`
               : null,
             allowanceLeft !== null
               ? `This year's allowance of new Shares has ${formatUnits(allowanceLeft, 18)} left.`

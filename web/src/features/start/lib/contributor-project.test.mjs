@@ -220,7 +220,7 @@ test("several first projects (D84): distinct names, each within the limit, toget
   assert.equal(contributorIssue(twice)?.index, 1);
   assert.equal(
     contributorIssue(twice)?.message,
-    "Two projects are called “dev”: give each its own name.",
+    "Two work areas are called “dev”: give each its own name.",
   );
   // A problem names its project, even when there is only one.
   const big = draft({
@@ -229,14 +229,14 @@ test("several first projects (D84): distinct names, each within the limit, toget
   });
   assert.equal(
     contributorIssue(big)?.message,
-    "“docs” can award at most 40 Shares, the most for one project.",
+    "“docs” can award at most 40 Shares, the most for one work area.",
   );
   const unnamed = draft({
     projects: [{ name: "", check: "docs delivered", shares: "1" }],
   });
   assert.equal(
     contributorIssue(unnamed)?.message,
-    "Name the first project, in a word or two.",
+    "Name the first work area, in a word or two.",
   );
   const nine = draft({
     projects: Array.from({ length: 9 }, (_, i) => ({

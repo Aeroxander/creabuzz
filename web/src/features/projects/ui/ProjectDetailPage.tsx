@@ -291,9 +291,9 @@ function LaunchpadBridge({
             : "Start it as a contributor project"}
         </h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          Each role becomes a project in its first work budget, worth its stake.
-          The person in it earns those Shares as their work is accepted by
-          reviewers, so nothing is handed out up front and nobody can sell a
+          Each role becomes a work area in its first work budget, worth its
+          stake. The person in it earns those Shares as their work is accepted
+          by reviewers, so nothing is handed out up front and nobody can sell a
           stake they have not earned. The founder starts with their declared
           stake.
         </p>

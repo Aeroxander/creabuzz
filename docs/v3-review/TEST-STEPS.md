@@ -521,7 +521,7 @@ scripts/cli-milestone-e2e.sh && scripts/web-milestone-e2e.sh        # REAL chain
 
 By hand: open **Manage** on a launch whose team Shares are locked behind milestones. **Who judges your milestones** appears above the Launch button and the button
 stays off until you name reviewers outside your team (picked by name, or pasted). Reload before launching: what you typed is still there. After launching, the **Work**
-tab lists **Milestone panel**, with its reviewers and bond. To approve a milestone project, **Decisions** ▸ **Approve a project** ▸ choose the milestone panel: it asks
+tab lists **Milestone panel**, with its reviewers and bond. To approve a milestone project, **Decisions** ▸ **Approve a work area** ▸ choose the milestone panel: it asks
 which milestone, not for Shares or words. Try the three things a vote cannot do (they are contract rules, tested in Forge): set the lock guard again, name a second
 panel, or unlock a milestone through any other budget.
 
@@ -773,8 +773,8 @@ Use a wallet on the local chain (account 0 as the founder; two other accounts as
    take it on. As the two reviewers, approve it. Finish it, wait out the challenge window (on a local chain:
    `cast rpc anvil_increaseTime 700000` and `cast rpc anvil_mine 1`), and take it as the contributor.
 7. **Award.** As the founder, Decisions → **Award Shares for a claim**, back it, let the review and wait pass, run it.
-   The Contributions tab then shows the contributor, the Shares, "write-docs in the project docs", and their part of all
-   Shares.
+   The Contributions tab then shows the contributor, the Shares awarded, "write-docs in the work area docs", and what they
+   hold now.
 8. **Locked.** In a wallet, try to send some Shares to another address: the network refuses it.
 9. **Market.** On a build with a market configured (`VITE_LBAMM_ADDRESSES`), **New decision** offers "Put Shares on the
    market" for a DAO that raised, and not for this project (no automated test covers this yet).
@@ -900,14 +900,14 @@ paid, two award votes, and the Contributions tab showing both people. To try it 
 as in 4ai, then use account 0 as the founder, accounts 1 and 2 as reviewers, and accounts 3 and 4 as two contributors
 (account 4 with a second Creaton account, so the suggestion is someone else's):
 
-1. **Several first projects.** Start → Start a contributor project. Under **First project**, press **Add another
-   project**: the heading becomes "First projects" and each has its own name, Shares and "what finished work looks like".
-   Lower "Most for one project": a project still at the old number follows it; one you typed keeps yours, and if it is
-   now too big the form says which project ("“docs” can award at most 40 Shares, the most for one project."). Start it:
-   the wallet asks once, and the Work tab lists every project.
+1. **Several first work areas.** Start → Start a contributor project. Under **First work area**, press **Add another
+   work area**: the heading becomes "First work areas" and each has its own name, Shares and "what finished work looks
+   like". Lower "Most for one work area": one still at the old number follows it; one you typed keeps yours, and if it
+   is now too big the form says which ("“docs” can award at most 40 Shares, the most for one work area."). Start it: the
+   wallet asks once, and the Work tab lists every work area. (D84 called these first projects; D88 renamed them.)
 2. **From the Projects board.** Discover → Project Board → a pitch you posted with roles (say a writer at 12% and a
    designer at 8%). The card at the bottom says **Start it as a contributor project**; press it. Start opens filled in:
-   1,000,000 Shares are the whole project, your declared stake is your starting Shares, each role is a first project of
+   1,000,000 Shares are the whole project, your declared stake is your starting Shares, each role is a first work area of
    its stake (a 12% role is 120,000 Shares) whose check names the person in it, and the budget is at least three times
    your start, with the spare room said in the "From the Projects board" box. Someone else opening the same link is told
    only the person who posted it can start it. Once started, the board's card says **This project is running** and links
@@ -917,14 +917,15 @@ as in 4ai, then use account 0 as the founder, accounts 1 and 2 as reviewers, and
    and **5** with "% of the project" chosen: the line under it says how many Shares that is ("11 Shares: 5.2% of the
    project once they are added to the 200 that exist now…"). Switch to Shares to type a number instead. **Suggest it**
    posts it on a board, so it also shows on that board and in Home's timeline.
-4. **Put it to a vote.** As the founder, the suggestion has **Put to a vote**: it opens Decisions with **Approve a
-   project** already filled in (name, Shares, check) and a note that it came from a suggestion. Back it, let the review
+4. **Put it to a vote.** As the founder, the suggestion has **Put to a vote**: it opens Decisions with **Approve a work
+   area** already filled in (name, Shares, check) and a note that it came from a suggestion. Back it, let the review
    and the wait pass (`cast rpc anvil_increaseTime 90000`, `cast rpc anvil_mine 1` each time), run it. The suggestion
-   then says **Approved as a project**, and the project is in the Work tab's list.
-5. **Earn it.** As account 4, file a claim with the suggestion's exact check words. As the founder, take each claim on in
-   its own project (**Take on in guide-es**). Both reviewers approve, the founder finishes the review, wait out the
-   challenge window, and each contributor takes their claim. Two award decisions later, the Contributions tab shows both
-   people with their Shares, their part of all Shares, and the work each was for.
+   then says **Approved as a work area**, and it is in the Work tab's list.
+5. **Earn it.** As account 4, submit work with the suggestion's exact check words. As the founder, accept each
+   submission in its own work area (**Accept for review in guide-es**). Both reviewers approve, the founder finishes the
+   review, wait out the challenge window, and each contributor marks theirs finished. Two award decisions later, the
+   Contributions tab shows both people with the Shares they were awarded, what they hold now, and the work each was
+   for.
 
 ## 4al. Contributor projects on a Sepolia fork, ready for the testnet (D85, 2026-10-21)
 
@@ -996,9 +997,47 @@ scripts/web-dao-launch-e2e.sh                                 # the real-chain l
    when there are more than five. Stop the chain node while the page loads: the card says "Couldn't tell what came into
    the treasury just now" with Try again, never a figure.
 4. **Spending and claims.** "Where the treasury's money went" shows, for each direct payment, the day its decision ran
-   and the transaction. On the Work tab a paid claim says "Paid <day> · <transaction>"; the Track record's payouts
+   and the transaction. On the Work tab a paid claim says "Paid <day> · <transaction>" (one that asked for no money says
+   "Finished <day> · <transaction> · No money was asked for.", D88); the Track record's payouts
    carry the same link.
 5. **Powers and who decides.** On a DAO launch page, "If a decision goes against you" gives today's notice from the
    DAO's settings and says a vote can shorten them. "Who decides right now" says what share of the votes the team holds,
    whether it can pass a decision alone, and how many sale Shares still wait to be claimed. On a contributor project's
    Contributions tab the same card speaks of the biggest holder (the founder, until awards spread the Shares).
+
+## 4an. Plainer contributor copy, work areas, finished claims, confirmed awards, every voting bar (D88, 2026-10-21)
+
+```bash
+. ./bin/activate-hermit
+(cd packages/creaton-core && pnpm test)       # claim words and status labels
+pnpm --dir web test                           # contributions.test.mjs, vote-control.test.mjs among them
+pnpm --dir web build && pnpm --dir web exec playwright test --project=smoke contributor-project.spec.ts
+scripts/web-contributor-e2e.sh                # both contributor journeys on a local chain
+scripts/web-work-e2e.sh                       # a Shares-only claim from filing to finished
+```
+
+By hand, as in 4ai (account 0 the founder, 1 and 2 reviewers, 3 a contributor):
+
+1. **Start.** Start's first card is **Build with contributors**, "Start without a token sale…". On the contributor page
+   the box is **Starts without a token sale**: no sale and no way to start one here, but the treasury can still receive
+   payments; you start with Shares and may at first hold every Share that votes; approval alone gives no Shares;
+   transfers start locked and opening them takes two votes at least 30 days apart. Under the form, **At the start** says
+   you hold all of your Shares and the budget's Shares do not vote yet; **If the whole work budget is awarded** is
+   labelled an illustration. Reviewers' help says reviewing gives no Shares or votes.
+2. **Work areas.** The form says **First work area**, the Work tab lists **Work areas**, the decision is **Approve a work
+   area**, and an award reads "… in the work area docs".
+3. **Submit and finish.** As the contributor, the form is **Submit your work**. As the founder, the button is **Accept
+   for review in docs**. After both reviewers approve, the review is finished and the challenge window passes
+   (`cast rpc anvil_increaseTime 700000`, `cast rpc anvil_mine 1`), the contributor's button is **Mark it finished**
+   (not "Claim payment"); afterwards the claim says **Finished**, never Paid, with "No money was asked for." A claim that
+   asked for money still says Paid.
+4. **Contributions.** After the award vote runs, the tab shows "Shares awarded over time", **Starting Shares** (your 200,
+   from the token's own mint), and for the contributor "25 Shares awarded" and "Holds 25 now (… of all Shares now)". An
+   award recorded without its Shares (only a vote crafted to call the work budget's `consumeContribution` directly can
+   make one; the app's award form never does) shows "Award recorded; the Shares were not found reaching them", sits
+   under **Recorded, not confirmed**, and is not added to what was awarded: `contributions.test.mjs` and
+   `contributor-project.spec.ts` cover it, since the app offers no way to make one by hand.
+5. **Who decides.** On the Contributions tab, "Who decides right now" uses the DAO's own turnout settings and minimum
+   in favour as well as the lanes'. With the defaults nothing changes; a DAO whose `minYesVotesAbsolute` is above the
+   founder's Shares no longer says the founder can pass a decision alone.
+

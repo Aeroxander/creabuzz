@@ -359,7 +359,7 @@ export function projectDecision(input: ProjectInput): DecisionDraft {
     to: mandate,
     data,
     lane: "bounded",
-    title: `Approve the project “${idLabel(id)}”`,
+    title: `Approve the work area “${idLabel(id)}”`,
     lines: [
       `Managed by ${manager}`,
       ...(input.amount === 0n && input.shares === 0n
@@ -749,7 +749,7 @@ function describeCall(
         ) as [string, string, bigint, bigint, bigint, string];
       return {
         kind: "project",
-        title: `Approve the project “${idLabel(id)}”`,
+        title: `Approve the work area “${idLabel(id)}”`,
         lines: [
           `Managed by ${who(ctx, manager)}`,
           ...(projectShares === 0n && amount === 0n

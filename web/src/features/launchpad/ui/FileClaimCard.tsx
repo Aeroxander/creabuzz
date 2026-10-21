@@ -144,7 +144,7 @@ export function FileClaimCard({
     }
     if (amount > 0n && amount > mandate.created.perProjectCap) {
       setProblem(
-        `A single project can hold at most ${formatUnits(mandate.created.perProjectCap, decimals)} of this budget.`,
+        `A single work area can hold at most ${formatUnits(mandate.created.perProjectCap, decimals)} of this budget.`,
       );
       return;
     }
@@ -209,12 +209,11 @@ export function FileClaimCard({
 
   return (
     <Card className="p-4" data-testid="work-file-claim">
-      <h3 className="text-sm font-semibold">
-        Ask to be recognised for your work
-      </h3>
+      <h3 className="text-sm font-semibold">Submit your work</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        File a claim for what you did. A project manager takes it on, reviewers
-        check it, and the DAO can vote to award you Shares.
+        Submit what you finished. The manager of a work area accepts it for
+        review, the reviewers check it, and Shareholders can then vote to award
+        you Shares; approval alone gives none.
         {holdsMoney
           ? " For money, approval is followed by finalizing review, a challenge window, and claiming payment to the wallet that filed this claim."
           : ""}
@@ -280,12 +279,12 @@ export function FileClaimCard({
             data-testid="work-claim-check"
             id="work-claim-check-input"
             onChange={(e) => setCheck(e.target.value)}
-            placeholder="The project's acceptance check, in its exact words"
+            placeholder="The work area's acceptance check, in its exact words"
             value={check}
           />
           <span className="text-xs text-muted-foreground">
-            Use the words the project uses. If they differ, its manager cannot
-            take your claim on.
+            Use the work area&apos;s exact words. If they differ, its manager
+            cannot accept your work for review.
           </span>
         </div>
       </div>
@@ -344,7 +343,8 @@ export function FileClaimCard({
             data-testid="work-claim-filed"
             role="status"
           >
-            Filed “{filed}”. It is waiting for a project manager.
+            Submitted “{filed}”. It is waiting for a work area&apos;s manager to
+            accept it for review.
           </span>
         ) : null}
       </div>

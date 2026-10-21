@@ -32,6 +32,7 @@ import {
   idLabel,
   idWord,
   nextStep,
+  claimStatusLabel,
 } from "./work.ts";
 
 const word = (value) => BigInt(value).toString(16).padStart(64, "0");
@@ -200,11 +201,30 @@ test("each state of a claim has one next step and one person who takes it", () =
   // Paid: the DAO may award Shares once; not at all without a project; nothing after.
   const paid = view({ record: { status: "Paid" } });
   assert.equal(nextStep(paid, 0, WINDOW).kind, "award");
-  // A claim that asked for no money is not described as paid.
-  assert.match(nextStep(paid, 0, WINDOW).text, /^Approved\. The DAO/);
+  // A claim that asked for no money is not described as paid, at any step after approval.
+  assert.match(
+    nextStep(paid, 0, WINDOW).text,
+    /^Finished; no money was asked for\. Shareholders can vote/,
+  );
+  assert.doesNotMatch(nextStep(approved, 1000 + WINDOW, WINDOW).text, /pay/i);
   assert.match(
     nextStep(view({ record: { status: "Paid", amount: 5n } }), 0, WINDOW).text,
     /^Approved and paid\./,
+  );
+  assert.match(
+    nextStep(
+      view({ record: { status: "Approved", releasedAt: 1000, amount: 5n } }),
+      1000 + WINDOW,
+      WINDOW,
+    ).text,
+    /take the payment now/,
+  );
+  // The label the pages show for a status: a no-money claim past its window is finished, not paid.
+  assert.equal(claimStatusLabel({ status: "Paid", amount: 0n }), "Finished");
+  assert.equal(claimStatusLabel({ status: "Paid", amount: 5n }), "Paid");
+  assert.equal(
+    claimStatusLabel({ status: "Approved", amount: 0n }),
+    "Approved",
   );
   assert.equal(nextStep({ ...paid, project: null }, 0, WINDOW).kind, "none");
   assert.equal(

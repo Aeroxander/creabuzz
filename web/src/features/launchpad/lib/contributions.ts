@@ -1,17 +1,23 @@
 /**
  * Who earned a DAO's Shares, how many, and for which accepted work, read from the chain.
  *
- * An award is a DAO vote, and the work budget it counts against says so in its own event:
+ * An award counts against the work budget it came from, and the budget says so in its own event:
  * `ContributionConsumed(claimId, contributor, shares)`, emitted only for a claim the reviewers approved, whose challenge
  * window passed, and that was never awarded before. Every one of those events, from every work budget the DAO made, is
- * a line here; the claim's project is read from the budget that holds it. Nothing comes from what someone wrote about
- * the work, so the page cannot show an award the chain did not make.
+ * a line here; the claim's work area is read from the budget that holds it.
  *
- * The Shares in existence now are read too, so each person's part is a share of all of them, and what was not earned
- * through work (the founders' starting Shares, less anything given back) is shown as the difference.
+ * The event alone does not prove the Shares arrived: the DAO can record a claim as used by a vote that calls the budget
+ * directly, with no award. So each award is checked against the Shares token itself: the same transaction must move at
+ * least that many Shares to the person, minted or out of the DAO's own reserve (`awardContribution` does one or both).
+ * An award whose Shares were not found reads as recorded, not received, and is not counted as earned; when the token's
+ * history could not be read, none is confirmed.
  *
- * Bounded (Review-Proven Rule 4): at most `MAX_BUDGETS` work budgets and `MAX_AWARDS` awards; past that the snapshot
- * says it is cut short.
+ * The Shares that were not awarded for work (a contributor project's starting Shares; in a raise, the team's and the
+ * sale's) are the token's mints outside award transactions: what was issued, which leaving later cannot change. What
+ * each person holds is read separately, now, because past awards and present holdings differ once anyone leaves.
+ *
+ * Bounded (Review-Proven Rule 4): at most `MAX_BUDGETS` work budgets and `MAX_AWARDS` awards, two reads of the token's
+ * history, and one balance per person shown; past the limits the snapshot says it is cut short.
  *
  * Alias-free: `contributions.test.mjs` runs it against a fake chain.
  */
@@ -34,11 +40,24 @@ import type { WorkChain } from "./work-read.ts";
 
 export const MAX_BUDGETS = 32;
 export const MAX_AWARDS = 500;
+/** Share moves read to confirm awards (mints, and moves out of the DAO's reserve), each. */
+export const MAX_MOVES = 2_000;
 
 /** `ContributionConsumed(bytes32 indexed claimId, address indexed contributor, uint128 shares)`. */
 export const TOPIC_CONTRIBUTION_CONSUMED = `0x${bytesToHex(
   keccak_256(utf8ToBytes("ContributionConsumed(bytes32,address,uint128)")),
 )}`;
+
+/** `Transfer(address indexed from, address indexed to, uint256 value)`, as the Shares token emits it. */
+export const TOPIC_TRANSFER = `0x${bytesToHex(
+  keccak_256(utf8ToBytes("Transfer(address,address,uint256)")),
+)}`;
+
+/**
+ * Whether an award's Shares reached the person: `received` when its transaction moved them there, `missing` when it
+ * did not, `unknown` when the token's history could not be read.
+ */
+export type Receipt = "received" | "missing" | "unknown";
 
 export interface ContributionAward {
   /** The work budget the claim was filed in. */
@@ -46,19 +65,25 @@ export interface ContributionAward {
   claimId: string;
   /** The claim's name as it was filed ("write-docs"), or a shortened id. */
   claim: string;
-  /** The project inside the budget the claim was taken on by, as named; null when it could not be read. */
+  /** The work area inside the budget the claim was accepted into, as named; null when it could not be read. */
   project: string | null;
   contributor: string;
   shares: bigint;
   blockNumber: number | null;
   txHash: string | null;
+  receipt: Receipt;
 }
 
 export interface Contributor {
   address: string;
+  /** Shares awarded to them whose arrival was confirmed. */
   earned: bigint;
-  /** Basis points of all Shares in existence now; null when the total could not be read. */
-  bpsOfAll: number | null;
+  /** Shares recorded as awarded to them whose arrival was not confirmed (missing, or unknown). */
+  unconfirmed: bigint;
+  /** What they hold now; null when it could not be read. */
+  heldNow: bigint | null;
+  /** What they hold now, in basis points of all Shares now; null when either could not be read. */
+  bpsNow: number | null;
   awards: ContributionAward[];
 }
 
@@ -66,10 +91,14 @@ export interface ContributionsSnapshot {
   dao: string;
   /** All the DAO's Shares in existence now; null when it could not be read. */
   totalShares: bigint | null;
-  /** Shares awarded for accepted work, in all. */
+  /** Shares awarded for accepted work whose arrival was confirmed, in all. */
   earned: bigint;
-  /** Shares not awarded for work (the starting Shares, less any given back); null when the total is unknown. */
-  notFromWork: bigint | null;
+  /** Shares recorded as awarded whose arrival was not confirmed, in all. */
+  unconfirmed: bigint;
+  /** The token's history could not be read, so no award could be confirmed. */
+  receiptsUnread: boolean;
+  /** Shares issued other than by an award (the starting Shares); null when the token's history could not be read. */
+  startingShares: bigint | null;
   /** Most earned first. */
   people: Contributor[];
   /** Work budgets read. */
@@ -92,7 +121,7 @@ const WORD_RE = /^0x[0-9a-fA-F]{64}$/;
 export function decodeContributionConsumed(
   log: RawLog,
   budget: string,
-): Omit<ContributionAward, "project"> | null {
+): Omit<ContributionAward, "project" | "receipt"> | null {
   const topics = log.topics ?? [];
   if (
     topics[0]?.toLowerCase() !== TOPIC_CONTRIBUTION_CONSUMED ||
@@ -122,20 +151,93 @@ export function decodeContributionConsumed(
 
 const TOTAL_SUPPLY = encodeCall0("totalSupply()");
 const SHARES = encodeCall0("shares()");
+const BALANCE_OF = "0x70a08231";
 
-async function totalShares(chain: WorkChain, dao: string) {
-  try {
-    const token = decodeAddress(await chain.call(dao, SHARES));
-    return decodeWord(await chain.call(token, TOTAL_SUPPLY));
-  } catch {
+/** One Shares move from a `Transfer` log of `token`, or null for a log that is not one. */
+export function decodeShareMove(
+  log: RawLog,
+  token: string,
+): { from: string; to: string; amount: bigint; txHash: string } | null {
+  const topics = log.topics ?? [];
+  if (
+    (log.address && log.address.toLowerCase() !== token.toLowerCase()) ||
+    topics[0]?.toLowerCase() !== TOPIC_TRANSFER ||
+    !WORD_RE.test(topics[1] ?? "") ||
+    !WORD_RE.test(topics[2] ?? "") ||
+    !log.data ||
+    log.data.length < 66 ||
+    typeof log.transactionHash !== "string"
+  )
     return null;
+  return {
+    from: decodeAddress(topics[1] as string),
+    to: decodeAddress(topics[2] as string),
+    amount: decodeWord(log.data),
+    txHash: log.transactionHash.toLowerCase(),
+  };
+}
+
+const ZERO_ADDRESS = `0x${"0".repeat(40)}`;
+const moveKey = (txHash: string, to: string) =>
+  `${txHash.toLowerCase()}:${to.toLowerCase()}`;
+
+/**
+ * Which awards' Shares reached the person, and the Shares issued outside awards, from the token's mints and its moves
+ * out of the DAO. Awards in one transaction to one person are checked together (a vote can carry several).
+ */
+export function confirmAwards(
+  awards: readonly Omit<ContributionAward, "receipt">[],
+  moves: { from: string; to: string; amount: bigint; txHash: string }[] | null,
+  dao: string,
+): { awards: ContributionAward[]; startingShares: bigint | null } {
+  if (moves === null)
+    return {
+      awards: awards.map((a) => ({ ...a, receipt: "unknown" })),
+      startingShares: null,
+    };
+  const arrived = new Map<string, bigint>();
+  for (const move of moves) {
+    const from = move.from.toLowerCase();
+    if (from !== ZERO_ADDRESS && from !== dao.toLowerCase()) continue;
+    const key = moveKey(move.txHash, move.to);
+    arrived.set(key, (arrived.get(key) ?? 0n) + move.amount);
   }
+  const owed = new Map<string, bigint>();
+  for (const award of awards) {
+    if (!award.txHash) continue;
+    const key = moveKey(award.txHash, award.contributor);
+    owed.set(key, (owed.get(key) ?? 0n) + award.shares);
+  }
+  const awardTxs = new Set(
+    awards.flatMap((a) => (a.txHash ? [a.txHash.toLowerCase()] : [])),
+  );
+  const startingShares = moves
+    .filter(
+      (m) => m.from.toLowerCase() === ZERO_ADDRESS && !awardTxs.has(m.txHash),
+    )
+    .reduce((sum, m) => sum + m.amount, 0n);
+  return {
+    awards: awards.map((award) => {
+      if (!award.txHash) return { ...award, receipt: "missing" as const };
+      const key = moveKey(award.txHash, award.contributor);
+      return {
+        ...award,
+        receipt:
+          (arrived.get(key) ?? 0n) >= (owed.get(key) ?? 0n) &&
+          (arrived.get(key) ?? 0n) > 0n
+            ? ("received" as const)
+            : ("missing" as const),
+      };
+    }),
+    startingShares,
+  };
 }
 
 /** Group awards by person, most earned first (ties by address, so the order is stable). */
 export function groupContributions(
   awards: readonly ContributionAward[],
-  totalShares: bigint | null,
+  holdings: ReadonlyMap<string, bigint | null> = new Map(),
+  totalShares: bigint | null = null,
 ): Contributor[] {
   const byPerson = new Map<string, ContributionAward[]>();
   for (const award of awards) {
@@ -144,13 +246,17 @@ export function groupContributions(
   }
   return [...byPerson.entries()]
     .map(([address, list]) => {
-      const earned = list.reduce((sum, a) => sum + a.shares, 0n);
+      const sum = (pick: (a: ContributionAward) => boolean) =>
+        list.filter(pick).reduce((total, a) => total + a.shares, 0n);
+      const heldNow = holdings.get(address) ?? null;
       return {
         address,
-        earned,
-        bpsOfAll:
-          totalShares && totalShares > 0n
-            ? Number((earned * 10_000n) / totalShares)
+        earned: sum((a) => a.receipt === "received"),
+        unconfirmed: sum((a) => a.receipt !== "received"),
+        heldNow,
+        bpsNow:
+          heldNow !== null && totalShares && totalShares > 0n
+            ? Number((heldNow * 10_000n) / totalShares)
             : null,
         awards: [...list].sort(
           (a, b) => (b.blockNumber ?? 0) - (a.blockNumber ?? 0),
@@ -158,11 +264,15 @@ export function groupContributions(
       };
     })
     .sort((a, b) =>
-      a.earned === b.earned
-        ? a.address.localeCompare(b.address)
-        : a.earned > b.earned
+      a.earned !== b.earned
+        ? a.earned > b.earned
           ? -1
-          : 1,
+          : 1
+        : a.unconfirmed !== b.unconfirmed
+          ? a.unconfirmed > b.unconfirmed
+            ? -1
+            : 1
+          : a.address.localeCompare(b.address),
     );
 }
 
@@ -232,14 +342,71 @@ export async function readContributions(
     }),
   );
 
-  const total = await totalShares(chain, dao);
-  const earned = awards.reduce((sum, a) => sum + a.shares, 0n);
+  // The token: its total now, its mints and moves out of the DAO (to confirm the awards), and each person's balance now.
+  let token: string | null = null;
+  try {
+    token = decodeAddress(await chain.call(dao, SHARES));
+  } catch {
+    token = null;
+  }
+  const read = async <T>(run: (t: string) => Promise<T>): Promise<T | null> => {
+    if (token === null) return null;
+    try {
+      return await run(token);
+    } catch {
+      return null;
+    }
+  };
+  const [total, moves] = await Promise.all([
+    read(async (t) => decodeWord(await chain.call(t, TOTAL_SUPPLY))),
+    read(async (t) => {
+      const [minted, fromDao] = await Promise.all([
+        chain.logs({ address: t, topics: [TOPIC_TRANSFER, ZERO_WORD] }),
+        chain.logs({ address: t, topics: [TOPIC_TRANSFER, addressTopic(dao)] }),
+      ]);
+      if (minted.length > MAX_MOVES || fromDao.length > MAX_MOVES)
+        truncated = true;
+      return [
+        ...minted.slice(0, MAX_MOVES),
+        ...fromDao.slice(0, MAX_MOVES),
+      ].flatMap((log) => {
+        const move = decodeShareMove(log as RawLog, t);
+        return move ? [move] : [];
+      });
+    }),
+  ]);
+  const confirmed = confirmAwards(awards, moves, dao);
+  const people = [
+    ...new Set(confirmed.awards.map((a) => a.contributor.toLowerCase())),
+  ];
+  const holdings = new Map(
+    await Promise.all(
+      people.map(
+        async (person) =>
+          [
+            person,
+            await read(async (t) =>
+              decodeWord(
+                await chain.call(
+                  t,
+                  `${BALANCE_OF}${person.slice(2).padStart(64, "0")}`,
+                ),
+              ),
+            ),
+          ] as const,
+      ),
+    ),
+  );
+  const sum = (pick: (a: ContributionAward) => boolean) =>
+    confirmed.awards.filter(pick).reduce((t, a) => t + a.shares, 0n);
   return {
     dao: dao.toLowerCase(),
     totalShares: total,
-    earned,
-    notFromWork: total === null ? null : total > earned ? total - earned : 0n,
-    people: groupContributions(awards, total),
+    earned: sum((a) => a.receipt === "received"),
+    unconfirmed: sum((a) => a.receipt !== "received"),
+    receiptsUnread: moves === null,
+    startingShares: confirmed.startingShares,
+    people: groupContributions(confirmed.awards, holdings, total),
     budgets: budgets.length,
     truncated,
   };

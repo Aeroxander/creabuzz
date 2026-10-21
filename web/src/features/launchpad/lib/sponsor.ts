@@ -1,4 +1,4 @@
-/** A suggestion someone is putting to a vote: the Decisions tab opens "Approve a project" filled in from it (D84). */
+/** A suggestion someone is putting to a vote: the Decisions tab opens "Approve a work area" filled in from it (D84). */
 export interface SponsorIntent {
   /** The suggestion (board post) it came from. */
   proposalId: string;

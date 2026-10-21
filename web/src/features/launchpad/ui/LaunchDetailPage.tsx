@@ -145,7 +145,7 @@ export function LaunchDetailPage({
   >(null);
   // A claim someone is on their way to doubt: the Decisions tab opens its form with that claim chosen, once.
   const [challenge, setChallenge] = useState<ChallengeIntent | null>(null);
-  // A suggestion someone is putting to a vote: the Decisions tab opens "Approve a project" filled in from it, once.
+  // A suggestion someone is putting to a vote: the Decisions tab opens "Approve a work area" filled in from it, once.
   const [sponsor, setSponsor] = useState<SponsorIntent | null>(null);
   useEffect(() => {
     if (tab !== "decisions") {
@@ -370,7 +370,7 @@ export function LaunchDetailPage({
               className="max-w-60 text-right text-xs text-muted-foreground"
               data-testid="contributor-note"
             >
-              Nothing is for sale. Shares are earned only for accepted work.
+              No token sale. New Shares come only from awards for reviewed work.
             </p>
           ) : (
             /* §7 "Launch page copy": what a buyer acquires, said before the

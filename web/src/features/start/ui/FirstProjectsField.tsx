@@ -44,12 +44,12 @@ export function FirstProjectsField({
       data-testid="contributor-projects"
     >
       <legend className="mb-1 text-sm font-semibold">
-        {several ? "First projects" : "First project"}
+        {several ? "First work areas" : "First work area"}
       </legend>
       <p className="-mt-1 text-xs text-muted-foreground">
         What people can work on from the first day. You manage each one: you
-        take each claim on, the reviewers judge it, and the project votes the
-        award.
+        accept each submission for review, the reviewers judge it, and
+        Shareholders vote on the award.
       </p>
       {projects.map((project, index) => (
         <div
@@ -64,7 +64,7 @@ export function FirstProjectsField({
                 hint={
                   index === 0 ? "A word or two, for example: docs." : undefined
                 }
-                label={several ? `Project ${index + 1}` : "Name"}
+                label={several ? `Work area ${index + 1}` : "Name"}
                 onChange={update(index, "name")}
                 placeholder="docs"
                 testId={
@@ -86,7 +86,7 @@ export function FirstProjectsField({
             </div>
             {several ? (
               <Button
-                aria-label={`Remove ${project.name || `project ${index + 1}`}`}
+                aria-label={`Remove ${project.name || `work area ${index + 1}`}`}
                 className="mb-0.5 shrink-0"
                 onClick={() => onChange(projects.filter((_, i) => i !== index))}
                 size="sm"
@@ -124,12 +124,12 @@ export function FirstProjectsField({
           type="button"
           variant="outline"
         >
-          <Plus aria-hidden className="mr-1 h-4 w-4" /> Add another project
+          <Plus aria-hidden className="mr-1 h-4 w-4" /> Add another work area
         </Button>
       ) : (
         <p className="text-xs text-muted-foreground">
           Eight is the most a project starts with; the project can vote to add
-          more later.
+          more work areas later.
         </p>
       )}
     </fieldset>

@@ -16,6 +16,7 @@ import {
 } from "../lib/evidence";
 import {
   bondShortfall,
+  claimStatusLabel,
   encodeAttest,
   encodeBind,
   encodeBond,
@@ -77,7 +78,7 @@ export function WorkTab({
   onOpenDecisions?: () => void;
   /** Go to the Decisions tab with the form for doubting (or unwinding) one claim already filled in. */
   onChallenge?: (intent: ChallengeIntent) => void;
-  /** Someone is putting a suggestion to a vote (D84): open "Approve a project" filled in from it. */
+  /** Someone is putting a suggestion to a vote (D84): open "Approve a work area" filled in from it. */
   onSponsor?: (intent: SponsorIntent) => void;
 }) {
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
@@ -512,10 +513,10 @@ function MandateCard({
         onSend={onSend}
       />
 
-      <h4 className="mt-3 text-sm font-semibold">Projects</h4>
+      <h4 className="mt-3 text-sm font-semibold">Work areas</h4>
       {mandate.projects.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No project has been approved in this budget yet.
+          No work area has been approved in this budget yet.
         </p>
       ) : (
         <ul
@@ -588,11 +589,11 @@ function MandateCard({
                     className="text-xs text-muted-foreground"
                     data-testid="work-claim-status"
                   >
-                    {claim.record.status} · filed by{" "}
+                    {claimStatusLabel(claim.record)} · filed by{" "}
                     {labelOf(claim.record.contributor)}
                     {claim.record.amount > 0n
                       ? ` · asks for ${money(claim.record.amount)}`
-                      : " · asks to be recognised, not paid"}
+                      : " · asks for no money, only a chance at Shares"}
                   </span>
                 </div>
                 <p className="mt-1" data-testid="work-claim-next">
@@ -600,6 +601,7 @@ function MandateCard({
                 </p>
                 {claim.record.status === "Paid" ? (
                   <PaidLine
+                    money={claim.record.amount > 0n}
                     at={payouts?.paidAt.get(
                       claimKey(mandate.address, claim.id),
                     )}
@@ -657,7 +659,7 @@ function MandateCard({
                           size="sm"
                           type="button"
                         >
-                          Take on in {idLabel(project.id)}
+                          Accept for review in {idLabel(project.id)}
                         </Button>
                       ))
                     : null}
@@ -729,7 +731,9 @@ function MandateCard({
                       size="sm"
                       type="button"
                     >
-                      Claim payment
+                      {claim.record.amount > 0n
+                        ? "Claim payment"
+                        : "Mark it finished"}
                     </Button>
                   ) : null}
                 </div>
@@ -786,35 +790,45 @@ function MandateCard({
   );
 }
 
-/** When a paid claim was paid out and in which transaction, or why that is not shown. */
+/**
+ * When a claim was taken and in which transaction, or why that is not shown. A claim that asked for no money moved
+ * none, so it says it was finished, never paid.
+ */
 function PaidLine({
+  money,
   at,
   tx,
   chainId,
   unread,
   reading,
 }: {
+  money: boolean;
   at: number | undefined;
   tx: string | undefined;
   chainId: number;
   unread: boolean;
   reading: boolean;
 }) {
+  const what = money ? "paid" : "finished";
   return (
     <p
       className="mt-1 text-xs text-muted-foreground"
       data-testid="work-claim-paid"
     >
       {unread ? (
-        "When it was paid could not be read just now."
+        `When it was ${what} could not be read just now.`
       ) : reading ? (
-        "Reading when it was paid…"
+        `Reading when it was ${what}…`
       ) : tx ? (
         <>
-          Paid {paidOn(at)} · <TxLink chainId={chainId} tx={tx} />
+          {money ? "Paid" : "Finished"} {paidOn(at)} ·{" "}
+          <TxLink chainId={chainId} tx={tx} />
+          {money ? null : " · No money was asked for."}
         </>
-      ) : (
+      ) : money ? (
         "Paid; its payout transaction was not found in the history this page reads."
+      ) : (
+        "Finished; its transaction was not found in the history this page reads."
       )}
     </p>
   );

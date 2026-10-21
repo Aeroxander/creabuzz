@@ -214,7 +214,7 @@ test("approval records one ownership grant and the map says which is which", asy
   // The way on: each role becomes a project its person earns by delivering.
   const bridge = page.getByTestId("dao-bridge");
   await expect(bridge).toContainText("Start it as a contributor project");
-  await expect(bridge).toContainText("Each role becomes a project");
+  await expect(bridge).toContainText("Each role becomes a work area");
   await expect(page.getByTestId("start-contributor-project")).toBeVisible();
 
   // What do I do about it: one click publishes exactly one grant.

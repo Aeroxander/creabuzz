@@ -242,7 +242,7 @@ test("every action this module writes is read back as what it is", () => {
   );
   const project = describeAction(projectDecision(baseProject()), ctx);
   assert.equal(project.kind, "project");
-  assert.equal(project.title, "Approve the project “docs”");
+  assert.equal(project.title, "Approve the work area “docs”");
   const award = describeAction(
     awardDecision({
       dao: DAO,

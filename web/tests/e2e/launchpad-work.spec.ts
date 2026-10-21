@@ -182,7 +182,9 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   await expect(filer.getByTestId("work-claim-filed")).toBeVisible({
     timeout: 60_000,
   });
-  await expect(claimNext(filer)).toContainText("Waiting for a project manager");
+  await expect(claimNext(filer)).toContainText(
+    "Waiting for a work area's manager",
+  );
   // What they submitted is published beside the claim, and the page shows it matches what the claim committed to.
   await expect(filer.getByTestId("work-evidence-text")).toContainText(
     "https://example.com/pr/1",
@@ -201,10 +203,10 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   await expect(manager.getByTestId("work-projects")).toContainText("docs");
   await expect(manager.getByTestId("work-claims")).toContainText("write-docs");
   await expect(claimNext(manager)).toContainText(
-    "Waiting for a project manager",
+    "Waiting for a work area's manager",
   );
   await expect(manager.getByTestId("work-claim-status")).toContainText(
-    "asks to be recognised, not paid",
+    "asks for no money",
   );
   await manager.getByTestId("work-bind").click();
   await expect(claimNext(manager)).toContainText("0 of 2 approvals", {
@@ -279,20 +281,26 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   await rpc("anvil_mine", ["0x1"]);
   await contributor.reload();
   await contributor.getByRole("tab", { name: "Work" }).click();
-  await expect(claimNext(contributor)).toContainText("can take it now");
+  await expect(claimNext(contributor)).toContainText(
+    "can mark it finished now",
+  );
   // Only the contributor is offered the payout.
   await second.reload();
   await second.getByRole("tab", { name: "Work" }).click();
-  await expect(claimNext(second)).toContainText("can take it now");
+  await expect(claimNext(second)).toContainText("can mark it finished now");
   await expect(second.getByTestId("work-payout")).toHaveCount(0);
 
   await contributor.getByTestId("work-payout").click();
   await expect(claimNext(contributor)).toContainText(
-    "The DAO can vote to award Shares",
+    "Finished; no money was asked for. Shareholders can vote to award Shares",
     { timeout: 60_000 },
   );
   await expect(contributor.getByTestId("work-claim-status")).toContainText(
-    "Paid",
+    "Finished",
+  );
+  await expect(contributor.getByTestId("work-claim-paid")).toContainText(
+    "No money was asked for.",
+    { timeout: 30_000 },
   );
   // The award is the DAO's vote: the page sends the member to the Decisions tab to open it.
   await expect(contributor.getByTestId("work-award-help")).toContainText(
@@ -331,7 +339,7 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   const paidOption = delivery
     .getByTestId("task-delivery-claim")
     .locator("option")
-    .filter({ hasText: "Paid" });
+    .filter({ hasText: "Finished" });
   await expect(paidOption).toHaveCount(1, { timeout: 30_000 });
   const claimRef = await paidOption.getAttribute("value");
   if (!claimRef) throw new Error("The real paid claim had no reference");
@@ -348,9 +356,12 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
     claimRef.split(":")[1],
   );
   await delivery.getByRole("link", { name: "Open project claim" }).click();
-  await expect(linker.getByTestId("work-claim-status")).toContainText("Paid", {
-    timeout: 30_000,
-  });
+  await expect(linker.getByTestId("work-claim-status")).toContainText(
+    "Finished",
+    {
+      timeout: 30_000,
+    },
+  );
   await expect(
     linker.locator(`[id="claim-${claimRef.replace(":", "-")}"]`),
   ).toBeFocused();

@@ -132,14 +132,11 @@ export function StartPage() {
         className="flex flex-col gap-3 rounded-2xl border border-primary/60 bg-primary/5 p-5"
         data-testid="start-contributor"
       >
-        <h2 className="text-base font-bold">
-          Start a contributor project: no money, Shares for work
-        </h2>
+        <h2 className="text-base font-bold">Build with contributors</h2>
         <p className="text-sm text-muted-foreground">
-          The project cannot raise money. Its token, its Shares, goes only to
-          people whose work the reviewers accept, and a page shows who earned
-          how much and for what. It is the simplest way to build something
-          together.
+          Start without a token sale. Set up work, choose reviewers, and award
+          Shares, the project&apos;s voting tokens, through project votes. A
+          page shows who earned how much and for what.
         </p>
         <div>
           <Button asChild data-testid="start-go-contributor" size="sm">

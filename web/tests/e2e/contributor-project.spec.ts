@@ -7,7 +7,7 @@ import { createMockRelay } from "./mock-relay";
 /**
  * Contributor projects, in the browser, against a stubbed server and a stubbed chain (same-origin `/test-rpc`).
  *
- * The Start page offers the path and says plainly the project cannot raise money; a build that names no DAO maker for
+ * The Start page offers the path and says plainly there is no token sale; a build that names no DAO maker for
  * the network says so and does not offer to start. A contributor project's page calls itself what it is (never "Sale
  * completed"), has no buyer copy, and its Contributions tab shows who earned how many Shares for which claim in which
  * project, from the award events the stub chain serves.
@@ -36,11 +36,16 @@ const SHARES = a("5e");
 const BUDGET = a("b1");
 const ALICE = a("a1");
 const BOB = a("b0");
+const CAROL = a("c4");
+const FOUNDER_WALLET = a("f0");
 
 const TOPIC_MANDATE_CREATED =
   "0x2a075deaacc4f205aa6d5c9cdadfaf7c96743415971a38b677820238f7a0965b";
 const TOPIC_CONTRIBUTION_CONSUMED =
   "0x9bb4ec6ba5d3a80ea80a6926798482c0e41c1e10214a686fc8e8695253439e95";
+/** `Transfer(address,address,uint256)`: the Shares token's mints confirm each award. */
+const TOPIC_TRANSFER =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const CALL = {
   votingWeight: "0x6f533638",
   mandateFactory: "0xb04b7bdb",
@@ -48,6 +53,7 @@ const CALL = {
   totalSupply: "0x18160ddd",
   claimProject: "0x84a95c5f",
   decimals: "0x313ce567",
+  balanceOf: "0x70a08231",
 };
 
 const record = {
@@ -82,17 +88,36 @@ const record = {
   sig: "sig",
 };
 
-/** Award events: Alice 25 for write-docs (project docs) and 15 for translate; Bob 10 for fix-search. 150 Shares in all. */
+/**
+ * Award events: Alice 25 for write-docs (work area docs) and 15 for translate; Bob 10 for fix-search; and 5 recorded for
+ * Carol whose Shares never arrived (a vote that used her claim without awarding it). 150 Shares in all: the founder's
+ * 100 and the 50 actually awarded.
+ */
+const txOf = (block: number) => `0x${word(BigInt(block))}`;
 function awardLog(claim: string, who: string, shares: bigint, block: number) {
   return {
     address: BUDGET,
     topics: [TOPIC_CONTRIBUTION_CONSUMED, label(claim), `0x${word(who)}`],
     data: `0x${word(shares * E18)}`,
     blockNumber: `0x${block.toString(16)}`,
-    transactionHash: `0x${"ab".repeat(32)}`,
+    transactionHash: txOf(block),
     logIndex: "0x0",
   };
 }
+
+/** A mint of `shares` to `who` in the transaction of `block`. */
+function mintLog(who: string, shares: bigint, block: number) {
+  return {
+    address: SHARES,
+    topics: [TOPIC_TRANSFER, `0x${word(0n)}`, `0x${word(who)}`],
+    data: `0x${word(shares * E18)}`,
+    blockNumber: `0x${block.toString(16)}`,
+    transactionHash: txOf(block),
+    logIndex: "0x1",
+  };
+}
+
+const HELD: Record<string, bigint> = { [ALICE]: 40n, [BOB]: 10n, [CAROL]: 0n };
 
 async function installChain(page: Page, { awards = true } = {}) {
   await page.addInitScript(() => {
@@ -143,8 +168,23 @@ async function installChain(page: Page, { awards = true } = {}) {
                 awardLog("write-docs", ALICE, 25n, 10),
                 awardLog("fix-search", BOB, 10n, 11),
                 awardLog("translate", ALICE, 15n, 12),
+                awardLog("review-copy", CAROL, 5n, 13),
               ]
             : [],
+        });
+      }
+      if (target === SHARES && topics[0] === TOPIC_TRANSFER) {
+        // Mints only (from the zero address); nothing ever left the DAO's reserve here.
+        if (topics[1] !== `0x${word(0n)}`) return reply({ result: [] });
+        return reply({
+          result: awards
+            ? [
+                mintLog(FOUNDER_WALLET, 100n, 2),
+                mintLog(ALICE, 25n, 10),
+                mintLog(BOB, 10n, 11),
+                mintLog(ALICE, 15n, 12),
+              ]
+            : [mintLog(FOUNDER_WALLET, 150n, 2)],
         });
       }
       return reply({ result: [] });
@@ -159,6 +199,10 @@ async function installChain(page: Page, { awards = true } = {}) {
         return reply({ result: `0x${word(SHARES)}` });
       if (target === SHARES && data === CALL.totalSupply)
         return reply({ result: `0x${word(150n * E18)}` });
+      if (target === SHARES && data.startsWith(CALL.balanceOf)) {
+        const who = `0x${data.slice(-40)}`;
+        return reply({ result: `0x${word((HELD[who] ?? 0n) * E18)}` });
+      }
       if (target === BUDGET && data.startsWith(CALL.claimProject)) {
         const claim = `0x${data.slice(10)}`;
         return reply({
@@ -179,7 +223,7 @@ async function signIn(page: Page) {
   }, NSEC);
 }
 
-test("Start offers a contributor project, says it cannot raise money, and shows who would hold what", async ({
+test("Start offers a contributor project, says it has no token sale, and shows who holds what at the start and later", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -189,18 +233,23 @@ test("Start offers a contributor project, says it cannot raise money, and shows 
   await page.goto("/start");
 
   const path = page.getByTestId("start-contributor");
-  await expect(path).toContainText("The project cannot raise money");
+  await expect(path).toContainText("Start without a token sale");
   await path.getByTestId("start-go-contributor").click();
   await expect(page).toHaveURL(/\/start\/contributor$/);
 
-  await expect(page.getByTestId("contributor-no-raise")).toContainText(
-    "There is no sale. Nobody can buy Shares from the project",
+  const intro = page.getByTestId("contributor-no-raise");
+  await expect(intro).toContainText("Starts without a token sale");
+  // No promise the treasury can never receive money, the founder's starting Shares said before signing, review and
+  // award as separate steps, and the transfer rule as it is.
+  await expect(intro).toContainText(
+    "The treasury, the project's shared funds, can still receive payments.",
   );
-  await expect(page.getByTestId("contributor-no-raise")).toContainText(
-    "Shares are earned only for accepted work",
+  await expect(intro).toContainText(
+    "At first you may hold every Share that votes.",
   );
-  await expect(page.getByTestId("contributor-no-raise")).toContainText(
-    "Shares cannot be sent from one wallet to another, so nobody can sell them",
+  await expect(intro).toContainText("Approval alone gives no Shares.");
+  await expect(intro).toContainText(
+    "Opening transfers takes two project votes, at least 30 days apart.",
   );
   // The first project is part of the form: work can start the day the project exists.
   await expect(page.getByTestId("contributor-project-name")).toBeVisible();
@@ -212,12 +261,16 @@ test("Start offers a contributor project, says it cannot raise money, and shows 
   await page
     .getByTestId("contributor-pitch")
     .fill("Open docs for everyone, written by the people who use them.");
-  await expect(page.getByTestId("contributor-preview")).toContainText(
-    "You start with 100,000 Shares. If all 300,000 in this budget are earned, contributors will hold 75% of all Shares and you 25%.",
+  // Today and the illustration kept apart: the unawarded budget is never shown as contributors' Shares now.
+  await expect(page.getByTestId("contributor-preview-start")).toHaveText(
+    "At the start: you hold 100,000 of 100,000 Shares, every Share that votes. The work budget can award up to 300,000 more; those do not vote until they are awarded.",
+  );
+  await expect(page.getByTestId("contributor-preview-full")).toContainText(
+    "If the whole work budget is awarded (an illustration, not a prediction): contributors would hold 75% of all Shares and you 25%",
   );
   await page.getByTestId("contributor-budget-shares").fill("900000");
-  await expect(page.getByTestId("contributor-preview")).toContainText(
-    "contributors will hold 90% of all Shares and you 10%",
+  await expect(page.getByTestId("contributor-preview-full")).toContainText(
+    "contributors would hold 90% of all Shares and you 10%",
   );
 
   // This build names no DAO maker for the local network: it says so and offers no button that would fail.
@@ -251,7 +304,7 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
     "Raise closed",
   );
   await expect(page.getByTestId("contributor-note")).toHaveText(
-    "Nothing is for sale. Shares are earned only for accepted work.",
+    "No token sale. New Shares come only from awards for reviewed work.",
   );
   // Contributions come right after the overview for a project whose Shares only come from work.
   const tabs = page.getByRole("tab");
@@ -259,27 +312,36 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
   await expect(tabs.nth(1)).toHaveText("Contributions");
   await expect(page.getByRole("tab", { name: "My bids" })).toHaveCount(0);
 
-  // The figures are the chain's: 50 earned of 150, so 100 were the starting Shares.
-  await expect(page.getByTestId("contributions-earned")).toHaveText(
-    "50 (33.3% of all)",
-  );
-  await expect(page.getByTestId("contributions-not-from-work")).toHaveText(
-    "100",
-  );
+  // The figures are the chain's: 50 awarded and confirmed by the Shares that arrived, 5 recorded whose Shares never
+  // did, and the founder's 100 starting Shares read from the token's own mint, not worked out from what is left.
+  await expect(page.getByTestId("contributions-earned")).toHaveText("50");
+  await expect(page.getByTestId("contributions-unconfirmed")).toHaveText("5");
+  await expect(page.getByTestId("contributions-starting")).toHaveText("100");
   await expect(page.getByTestId("contributions-total")).toHaveText("150");
 
   const people = page.getByTestId("contribution-person");
-  await expect(people).toHaveCount(2);
+  await expect(people).toHaveCount(3);
   await expect(
     people.nth(0).getByTestId("contribution-person-earned"),
-  ).toHaveText("40 Shares, 26.7% of all");
+  ).toHaveText("40 Shares awarded");
+  // What they hold now is its own figure, beside what they were awarded.
+  await expect(
+    people.nth(0).getByTestId("contribution-person-held"),
+  ).toHaveText("Holds 40 now (26.7% of all Shares now).");
   await expect(people.nth(0).getByTestId("contribution-award")).toHaveText([
     "15 Shares for translate",
-    "25 Shares for write-docs in the project docs",
+    "25 Shares for write-docs in the work area docs",
   ]);
   await expect(
     people.nth(1).getByTestId("contribution-person-earned"),
-  ).toHaveText("10 Shares, 6.7% of all");
+  ).toHaveText("10 Shares awarded");
+  // An award the budget recorded but whose Shares never reached her: shown, and not counted as received.
+  await expect(
+    people.nth(2).getByTestId("contribution-person-earned"),
+  ).toHaveText("0 Shares awarded · 5 recorded, not confirmed");
+  await expect(
+    people.nth(2).getByTestId("contribution-award-unconfirmed"),
+  ).toHaveText("Award recorded; the Shares were not found reaching them");
   // Each award links to its claim on the Work tab.
   await expect(
     people.nth(1).getByRole("link", { name: "fix-search" }),
@@ -294,15 +356,13 @@ test("a project nobody has earned Shares in yet says so", async ({ page }) => {
   await installChain(page, { awards: false });
   await page.goto(`/launchpad/docs-commons?author=${ME}&tab=contributions`);
   await expect(page.getByTestId("contributions-empty")).toContainText(
-    "Nobody has earned Shares for work yet",
+    "No Share awards are shown yet",
     { timeout: 20_000 },
   );
-  await expect(page.getByTestId("contributions-not-from-work")).toHaveText(
-    "150",
-  );
+  await expect(page.getByTestId("contributions-starting")).toHaveText("150");
 });
 
-test("anyone suggests work with a % ask, and Put to a vote opens Approve a project filled in from it", async ({
+test("anyone suggests work with a % ask, and Put to a vote opens Approve a work area filled in from it", async ({
   page,
 }) => {
   const BOARD = "5b0a7d1e-0000-4000-8000-000000000002";
@@ -364,7 +424,7 @@ test("anyone suggests work with a % ask, and Put to a vote opens Approve a proje
     ]),
   );
 
-  // A holder puts it to a vote: the Decisions tab opens, to "Approve a project" filled in from it (the form itself needs
+  // A holder puts it to a vote: the Decisions tab opens, to "Approve a work area" filled in from it (the form itself needs
   // the chain's decisions, so `contributor-journey.spec.ts` checks it on a real one).
   await expectAccessible(page, "suggested work");
   await card.getByTestId("work-proposal-sponsor").click();

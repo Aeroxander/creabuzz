@@ -1,6 +1,6 @@
 /**
  * Suggested work (D84): anyone can suggest a piece of work for this project and name their price, in Shares or as a
- * share of the project, and any holder can put it to a vote as "Approve a project", filled in from the suggestion.
+ * share of the project, and any holder can put it to a vote as "Approve a work area", filled in from the suggestion.
  * Suggesting pays nothing: once approved, the person who suggested it files claims like anyone, the reviewers judge
  * them, and the project votes each award.
  *
@@ -137,7 +137,7 @@ function SuggestForm({
         value={body}
       />
       <TextField
-        hint="A word or two; the project's name if it is approved."
+        hint="A word or two; the work area's name if it is approved."
         label="Short name"
         onChange={setName}
         placeholder="docs-es"
@@ -298,8 +298,8 @@ function ProposalCard({
           className="mt-2 inline-flex items-center gap-1 text-sm text-emerald-700 dark:text-emerald-400"
           data-testid="work-proposal-approved"
         >
-          <CheckCircle2 aria-hidden className="h-4 w-4" /> Approved as a
-          project. {name} can file claims on it below.
+          <CheckCircle2 aria-hidden className="h-4 w-4" /> Approved as a work
+          area. {name} can submit work in it below.
         </p>
       ) : onSponsor ? (
         <Button

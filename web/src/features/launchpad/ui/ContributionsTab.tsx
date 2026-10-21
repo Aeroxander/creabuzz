@@ -1,6 +1,7 @@
 /**
  * Who earned this project's Shares, how many, and for which accepted work: every award the DAO voted, read from the
- * chain (`lib/contributions.ts`), grouped by person. The same for everyone, with or without a wallet.
+ * chain and checked against the Shares that actually arrived (`lib/contributions.ts`), grouped by person, with what each
+ * holds now beside it. The same for everyone, with or without a wallet.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -55,9 +56,19 @@ function AwardLine({
       {award.project ? (
         <span className="text-muted-foreground">
           {" "}
-          in the project {award.project}
+          in the work area {award.project}
         </span>
       ) : null}
+      {award.receipt === "received" ? null : (
+        <span
+          className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid="contribution-award-unconfirmed"
+        >
+          {award.receipt === "missing"
+            ? "Award recorded; the Shares were not found reaching them"
+            : "Award recorded; receipt not checked"}
+        </span>
+      )}
     </li>
   );
 }
@@ -110,7 +121,7 @@ export function ContributionsTab({
     );
   }
 
-  const { totalShares, earned, notFromWork, people } = snapshot;
+  const { totalShares, earned, unconfirmed, startingShares, people } = snapshot;
   return (
     <div
       className="flex max-w-3xl flex-col gap-4"
@@ -120,10 +131,11 @@ export function ContributionsTab({
         <h2 className="text-base font-bold">Who earned the Shares</h2>
         <p className="text-sm text-muted-foreground">
           {contributor
-            ? "This project cannot raise money. Its Shares are earned only for work the reviewers approved and the project then voted to award. "
+            ? "This project started without a token sale. New Shares come only from awards: the reviewers approve the work, then Shareholders vote to award it. "
             : ""}
-          Every award below is read from the network, not from what anyone wrote
-          about the work.
+          Every award below is read from the network and checked against the
+          Shares that reached the person, not taken from what anyone wrote about
+          the work. Past awards can differ from what someone holds today.
         </p>
         {testNotice ? (
           <p
@@ -136,27 +148,37 @@ export function ContributionsTab({
         <dl className="mt-1 flex flex-wrap gap-3">
           <div className="rounded-lg bg-secondary/60 px-3 py-1.5">
             <dt className="text-xs font-semibold text-muted-foreground">
-              Earned for accepted work
+              Shares awarded over time
             </dt>
             <dd
               className="text-lg font-extrabold tabular-nums"
               data-testid="contributions-earned"
             >
               {shares(earned)}
-              {totalShares && totalShares > 0n
-                ? ` (${percent(Number((earned * 10_000n) / totalShares))} of all)`
-                : ""}
             </dd>
           </div>
+          {unconfirmed > 0n ? (
+            <div className="rounded-lg bg-amber-50 px-3 py-1.5 dark:bg-amber-950">
+              <dt className="text-xs font-semibold text-muted-foreground">
+                Recorded, not confirmed
+              </dt>
+              <dd
+                className="text-lg font-extrabold tabular-nums"
+                data-testid="contributions-unconfirmed"
+              >
+                {shares(unconfirmed)}
+              </dd>
+            </div>
+          ) : null}
           <div className="rounded-lg bg-secondary/60 px-3 py-1.5">
             <dt className="text-xs font-semibold text-muted-foreground">
-              Not from work (the starting Shares)
+              {contributor ? "Starting Shares" : "Issued other than for work"}
             </dt>
             <dd
               className="text-lg font-extrabold tabular-nums"
-              data-testid="contributions-not-from-work"
+              data-testid="contributions-starting"
             >
-              {notFromWork === null ? "Unknown" : shares(notFromWork)}
+              {startingShares === null ? "Unknown" : shares(startingShares)}
             </dd>
           </div>
           <div className="rounded-lg bg-secondary/60 px-3 py-1.5">
@@ -171,6 +193,23 @@ export function ContributionsTab({
             </dd>
           </div>
         </dl>
+        {snapshot.receiptsUnread ? (
+          <p
+            className="flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-300"
+            data-testid="contributions-receipts-unread"
+            role="status"
+          >
+            Couldn&apos;t check just now that each award&apos;s Shares reached
+            the person, so the awards show as recorded, not confirmed.
+            <button
+              className="underline"
+              onClick={() => void contributions.refetch()}
+              type="button"
+            >
+              Try again
+            </button>
+          </p>
+        ) : null}
         {snapshot.truncated ? (
           <p className="text-xs text-amber-700 dark:text-amber-300">
             This DAO has more work budgets or awards than this page reads; the
@@ -197,9 +236,8 @@ export function ContributionsTab({
           className="p-4 text-sm text-muted-foreground"
           data-testid="contributions-empty"
         >
-          Nobody has earned Shares for work yet. Once the reviewers approve a
-          claim and the project votes to award it, the person and the work show
-          up here.
+          No Share awards are shown yet. Reviewed work can become an award after
+          a separate project vote; the person and the work then show up here.
         </Card>
       ) : (
         <ol className="flex flex-col gap-3">
@@ -218,12 +256,20 @@ export function ContributionsTab({
                     className="text-sm tabular-nums"
                     data-testid="contribution-person-earned"
                   >
-                    {shares(person.earned)} Shares
-                    {person.bpsOfAll === null
-                      ? ""
-                      : `, ${percent(person.bpsOfAll)} of all`}
+                    {shares(person.earned)} Shares awarded
+                    {person.unconfirmed > 0n
+                      ? ` · ${shares(person.unconfirmed)} recorded, not confirmed`
+                      : ""}
                   </span>
                 </div>
+                <p
+                  className="mt-0.5 text-xs text-muted-foreground"
+                  data-testid="contribution-person-held"
+                >
+                  {person.heldNow === null
+                    ? "What they hold now could not be read."
+                    : `Holds ${shares(person.heldNow)} now${person.bpsNow === null ? "" : ` (${percent(person.bpsNow)} of all Shares now)`}.`}
+                </p>
                 <ul className="mt-2 flex flex-col gap-1">
                   {person.awards.map((award) => (
                     <AwardLine

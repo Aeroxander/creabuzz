@@ -326,7 +326,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await founder.getByTestId("project-shares").fill("40");
   await founder.getByTestId("project-check").fill(CHECK);
   await expect(founder.getByTestId("decision-draft-title")).toHaveText(
-    "Approve the project “docs”",
+    "Approve the work area “docs”",
   );
   await expect(founder.getByTestId("decision-draft")).toContainText(
     "lighter vote",
@@ -383,8 +383,9 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await pass(700_000);
   await refresh(contributor, "Work");
   await contributor.getByTestId("work-payout").click();
+  // A claim that asked for no money finishes; it is never shown as paid.
   await expect(contributor.getByTestId("work-claim-status")).toContainText(
-    "Paid",
+    "Finished",
     { timeout: 60_000 },
   );
   // The award is the DAO's vote, and the page sends them to where it is made.

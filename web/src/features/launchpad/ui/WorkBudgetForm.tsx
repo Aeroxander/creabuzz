@@ -142,13 +142,13 @@ export function WorkBudgetForm({
             ? parseUnits(money, decimals, "budget", "The money")
             : 0n,
           cap: moneyCap.trim()
-            ? parseUnits(moneyCap, decimals, "cap", "The limit per project")
+            ? parseUnits(moneyCap, decimals, "cap", "The limit per work area")
             : 0n,
           shareBudget: shareBudget.trim()
             ? parseUnits(shareBudget, 18, "shareBudget", "The Shares")
             : 0n,
           shareCap: shareCap.trim()
-            ? parseUnits(shareCap, 18, "shareCap", "The limit per project")
+            ? parseUnits(shareCap, 18, "shareCap", "The limit per work area")
             : 0n,
           expiresAt: ctx.chainTime + Math.round(days(open, 90) * DAY),
           reviewers: list,
@@ -194,9 +194,9 @@ export function WorkBudgetForm({
         value={shareBudget}
       />
       <TextField
-        hint="The most Shares any one project can be allowed to award."
+        hint="The most Shares any one work area can be allowed to award."
         inputMode="decimal"
-        label="Most Shares for one project"
+        label="Most Shares for one work area"
         onChange={setShareCap}
         placeholder="25000"
         testId="budget-shares-cap"
@@ -214,9 +214,9 @@ export function WorkBudgetForm({
             value={money}
           />
           <TextField
-            hint="Needed with money: the most any one project can hold."
+            hint="Needed with money: the most any one work area can hold."
             inputMode="decimal"
-            label="Most money for one project"
+            label="Most money for one work area"
             onChange={setMoneyCap}
             placeholder="0"
             testId="budget-money-cap"

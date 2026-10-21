@@ -1,10 +1,10 @@
 /**
- * Start a contributor project: a DAO with no sale, whose Shares are earned only for accepted work.
+ * Start a contributor project: a DAO with no token sale, whose new Shares come only from awards for reviewed work.
  *
- * The page says plainly what the project cannot do before it asks for anything, shows who would hold what if the
- * whole first budget were awarded, and then makes it in one transaction and publishes it (`use-contributor-start.ts`).
- * People can claim work the moment it exists. A run cut short by a reload or a refusal is offered again from where it
- * stopped.
+ * Before it asks for anything the page says what the setup is (no sale, the founder's starting Shares, review and award
+ * as separate steps, transfers locked) and who holds what at the start and if the whole first budget were awarded;
+ * then it makes the project in one transaction and publishes it (`use-contributor-start.ts`). People can submit work
+ * the moment it exists. A run cut short by a reload or a refusal is offered again from where it stopped.
  */
 
 import { Link, useSearch } from "@tanstack/react-router";
@@ -58,7 +58,7 @@ function FromBoard({ start }: { start: PitchStart }) {
       <h2 className="text-base font-bold">From the Projects board</h2>
       <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
         <li>
-          Each role is a first project worth its stake: the person in it earns
+          Each role is a first work area worth its stake: the person in it earns
           those Shares as their work is accepted. Nothing is handed out up
           front.
         </li>
@@ -77,7 +77,7 @@ function FromBoard({ start }: { start: PitchStart }) {
         ) : null}
         {start.leftOut.length > 0 ? (
           <li data-testid="contributor-from-board-left-out">
-            A project starts with at most eight projects, so{" "}
+            A project starts with at most eight work areas, so{" "}
             {start.leftOut.join(", ")} can be added by a vote once it exists.
           </li>
         ) : null}
@@ -90,29 +90,30 @@ function FromBoard({ start }: { start: PitchStart }) {
 function WhatItIs({ testNotice }: { testNotice: string | null }) {
   return (
     <Card className="p-5" data-testid="contributor-no-raise">
-      <h2 className="text-base font-bold">This project cannot raise money</h2>
+      <h2 className="text-base font-bold">Starts without a token sale</h2>
       <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
         <li>
-          There is no sale. Nobody can buy Shares from the project, and this app
-          gives a contributor project no way to start one.
+          This setup has no token sale, and this app offers no way to start one
+          for this project. The treasury, the project&apos;s shared funds, can
+          still receive payments.
         </li>
         <li>
-          Shares are earned only for accepted work: someone claims a task, the
-          reviewers you name approve it, and the project votes to award the
-          Shares.
+          You start with Shares, the project&apos;s voting tokens, so you can
+          open and back its first votes. At first you may hold every Share that
+          votes.
         </li>
         <li>
-          People can claim work as soon as the project exists: its first work
-          budget and first project are set up with it, with no vote to wait for.
+          New Shares come only from awards. Someone submits work, you accept it
+          into a work area, the reviewers you name check it, and then
+          Shareholders vote on an award. Approval alone gives no Shares.
         </li>
         <li>
-          You start with some Shares so you can open and back the project's
-          votes. The project's Contributions tab shows everyone who holds Shares
-          from work, how many, and for what.
+          People can submit work the day the project exists: its first work
+          budget and work areas are set up with it, with no vote to wait for.
         </li>
         <li>
-          Shares cannot be sent from one wallet to another, so nobody can sell
-          them. The project can vote to change that later.
+          Shares start with transfers locked, so nobody can sell them. Opening
+          transfers takes two project votes, at least 30 days apart.
         </li>
       </ul>
       {testNotice ? (
@@ -226,7 +227,7 @@ export function ContributorStartPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
       <PageHeader
-        description="A project with no money in it: the token, its Shares, is shared out only for work the reviewers accept."
+        description="Set up a project where reviewed work can earn Shares, the project's voting tokens."
         title="Start a contributor project"
       />
       <WhatItIs testNotice={testRecordsNotice(start.network?.chainId)} />
@@ -256,16 +257,19 @@ export function ContributorStartPage() {
           ) : null}
           {done && projectLink ? (
             <div className="flex flex-col gap-3" data-testid="contributor-done">
+              <h3 className="text-base font-bold">
+                Your project is ready for contributions
+              </h3>
               <p className="text-sm">
-                The project exists, with its first work budget and its first
-                projects, and people can claim work on it now. You take each
-                claim on, the reviewers you named approve it, and then the
-                project votes to award the Shares. Share the link to the Work
-                tab with the people you want to work with.
+                Its first work budget and work areas are ready, and people can
+                submit work now. You accept each submission into a work area,
+                the reviewers you named check it, and Shareholders then vote on
+                each award. Share the Work page so people can see what needs
+                doing.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button asChild data-testid="contributor-open-project">
-                  <Link {...projectLink}>Open the project's work</Link>
+                  <Link {...projectLink}>Open work</Link>
                 </Button>
                 <Button onClick={start.clear} type="button" variant="outline">
                   Start another
@@ -334,17 +338,17 @@ export function ContributorStartPage() {
             value={draft.founderShares}
           />
           <TextField
-            hint="The first work budget: Shares the project may award for accepted work, in all."
+            hint="The first work budget: a limit on future awards in all, not a payment promised for any one task."
             inputMode="numeric"
-            label="Shares to earn"
+            label="Shares available for work"
             onChange={set("budgetShares")}
             testId="contributor-budget-shares"
             value={draft.budgetShares}
           />
           <TextField
-            hint="The most any one piece of the project (say, the docs) may award."
+            hint="The most any one work area (say, the docs) may award."
             inputMode="numeric"
-            label="Most for one project"
+            label="Most for one work area"
             onChange={set("projectCap")}
             testId="contributor-project-cap"
             value={draft.projectCap}
@@ -367,7 +371,7 @@ export function ContributorStartPage() {
                 testId="contributor-reviewers-people"
               />
             }
-            hint="Wallet addresses of the people who check each claim, one per line. Pick people other than the ones who will do the work."
+            hint="Wallet addresses of the people who check submitted work, one per line. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
             label="Reviewers"
             onChange={set("reviewers")}
             placeholder="0x… (one wallet address per line)"
@@ -398,11 +402,24 @@ export function ContributorStartPage() {
               className="rounded-lg bg-secondary/60 px-3 py-2 text-sm"
               data-testid="contributor-preview"
             >
-              You start with {formatWhole(preview.founderWhole)} Shares. If all{" "}
-              {formatWhole(preview.budgetWhole)} in this budget are earned,
-              contributors will hold {formatBps(preview.contributorsBps)} of all
-              Shares and you {formatBps(10_000 - preview.contributorsBps)}.
-              Later budgets are voted like any other decision.
+              <span className="block" data-testid="contributor-preview-start">
+                <strong>At the start:</strong> you hold{" "}
+                {formatWhole(preview.founderWhole)} of{" "}
+                {formatWhole(preview.founderWhole)} Shares, every Share that
+                votes. The work budget can award up to{" "}
+                {formatWhole(preview.budgetWhole)} more; those do not vote until
+                they are awarded.
+              </span>
+              <span
+                className="mt-1 block"
+                data-testid="contributor-preview-full"
+              >
+                <strong>If the whole work budget is awarded</strong> (an
+                illustration, not a prediction): contributors would hold{" "}
+                {formatBps(preview.contributorsBps)} of all Shares and you{" "}
+                {formatBps(10_000 - preview.contributorsBps)}, if nothing else
+                changes. Later budgets are voted like any other decision.
+              </span>
             </p>
           ) : null}
 

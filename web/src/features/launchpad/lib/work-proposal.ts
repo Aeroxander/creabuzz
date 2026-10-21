@@ -1,6 +1,6 @@
 /**
  * Suggested work (D84): anyone, holding Shares or not, can suggest a piece of work for a project and name their price;
- * any holder who can open votes can then put it to a vote as an "Approve a project" decision, filled in from the
+ * any holder who can open votes can then put it to a vote as an "Approve a work area" decision, filled in from the
  * suggestion. Nothing is paid by suggesting: once approved, the person files claims like anyone else, the reviewers
  * judge them, and the project votes each award.
  *

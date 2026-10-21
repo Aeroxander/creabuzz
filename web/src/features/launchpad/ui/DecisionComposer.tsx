@@ -56,9 +56,9 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
   },
   {
     id: "project",
-    label: "Approve a project",
+    label: "Approve a work area",
     about:
-      "A project inside a work budget, with a manager and a way to judge the work.",
+      "A work area inside a work budget, with a manager and a way to judge the work.",
   },
   {
     id: "award",
@@ -137,7 +137,7 @@ export function DecisionComposer({
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
   /** Someone came from a claim card to doubt it: open with that form and that claim chosen. */
   challenge?: ChallengeIntent | null;
-  /** Someone is putting a suggestion to a vote (D84): open "Approve a project" filled in from it. */
+  /** Someone is putting a suggestion to a vote (D84): open "Approve a work area" filled in from it. */
   sponsor?: SponsorIntent | null;
 }) {
   const [open, setOpen] = useState(Boolean(challenge || sponsor));
@@ -252,8 +252,8 @@ export function DecisionComposer({
                 >
                   Filled in from a suggestion: “{sponsor.name}” for{" "}
                   {sponsor.shares} Shares. Once it is approved, the person who
-                  suggested it files claims on it like anyone else; whoever
-                  manages it takes them on.
+                  suggested it submits work in it like anyone else, and whoever
+                  manages it accepts that work for review.
                 </p>
               ) : null}
               <ProjectForm

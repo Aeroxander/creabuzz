@@ -30,6 +30,10 @@ function chain(over = {}) {
     [`${POLICY} 0x713c311a${word(1)}`]: lane(1000, 5500),
     // excludedHolders(): one address, the auction
     [`${POLICY} 0x38f66048`]: `0x${word(32)}${word(1)}${addr(AUCTION)}`,
+    // The DAO's own bars: quorumBps(), quorumAbsolute(), minYesVotesAbsolute(); off unless a test sets them.
+    [`${DAO} 0xcd2ddd0c`]: w(0),
+    [`${DAO} 0x6a34d91a`]: w(0),
+    [`${DAO} 0x8ab8c683`]: w(0),
     ...over,
   };
   return async (to, data) => {
@@ -47,6 +51,29 @@ test("the votes that count leave out the DAO's own Shares and those still waitin
   assert.deepEqual(control.excluded, [AUCTION]);
   assert.deepEqual(control.full, { quorumBps: 2000, approvalBps: 6600 });
   assert.deepEqual(control.bounded, { quorumBps: 1000, approvalBps: 5500 });
+  assert.deepEqual(control.governor, {
+    quorumBps: 0,
+    quorumAbsolute: 0n,
+    minYes: 0n,
+  });
+});
+
+test("the DAO's own bars are read with the lanes'", async () => {
+  const control = await readVoteControl(
+    chain({
+      [`${DAO} 0xcd2ddd0c`]: w(3000),
+      [`${DAO} 0x6a34d91a`]: w(200n * WAD),
+      [`${DAO} 0x8ab8c683`]: w(400n * WAD),
+    }),
+    DAO,
+    POLICY,
+    SHARES,
+  );
+  assert.deepEqual(control.governor, {
+    quorumBps: 3000,
+    quorumAbsolute: 200n * WAD,
+    minYes: 400n * WAD,
+  });
 });
 
 test("a network failure is an error, never a share of the votes", async () => {
@@ -66,6 +93,7 @@ const control = {
   excluded: [AUCTION],
   full: { quorumBps: 2000, approvalBps: 6600 },
   bounded: { quorumBps: 1000, approvalBps: 5500 },
+  governor: { quorumBps: 0, quorumAbsolute: 0n, minYes: 0n },
 };
 
 test("who can pass a decision alone: against everyone, only when nobody else votes, or not at all", () => {
@@ -75,6 +103,61 @@ test("who can pass a decision alone: against everyone, only when nobody else vot
   assert.equal(controlOf(100n * WAD, control), "unopposed");
   assert.equal(controlOf(50n * WAD, control), "shared");
   assert.equal(controlOf(0n, { ...control, votingSupply: 0n }), "shared");
+});
+
+test("every bar counts: the DAO's minimum in favour, its own turnout share, its turnout floor", () => {
+  const withGovernor = (governor) => ({
+    ...control,
+    governor: { ...control.governor, ...governor },
+  });
+  // 300 of 450 clears two-thirds, but not a minimum of 400 votes in favour: it needs others.
+  assert.equal(
+    controlOf(300n * WAD, withGovernor({ minYes: 400n * WAD })),
+    "shared",
+  );
+  // 100 of 450 clears the lane's 20% turnout, but not the DAO's own 30%...
+  assert.equal(
+    controlOf(100n * WAD, withGovernor({ quorumBps: 3000 })),
+    "shared",
+  );
+  // ...nor a floor of 200 votes taking part.
+  assert.equal(
+    controlOf(100n * WAD, withGovernor({ quorumAbsolute: 200n * WAD })),
+    "shared",
+  );
+  // A floor above every vote that counts: nothing of that kind can pass.
+  assert.equal(
+    controlOf(300n * WAD, withGovernor({ quorumAbsolute: 451n * WAD })),
+    "nobody",
+  );
+  // Against everyone, votes for must be more than those against: exactly half is not enough even at a 50.01% bar.
+  assert.equal(
+    controlOf(225n * WAD, {
+      ...control,
+      full: { quorumBps: 2000, approvalBps: 5001 },
+    }),
+    "unopposed",
+  );
+  const lines = voteControlLines({
+    who: "Alice",
+    weight: 300n * WAD,
+    control: withGovernor({ quorumBps: 3000, minYes: 400n * WAD }),
+    kind: "contributors",
+    shares: (v) => `${v / WAD}`,
+  }).join(" ");
+  assert.match(lines, /needs 30% of those votes to take part/);
+  assert.match(lines, /Either needs at least 400 votes in favour/);
+  assert.doesNotMatch(lines, /can pass any decision alone/);
+  assert.match(
+    voteControlLines({
+      who: "Alice",
+      weight: 300n * WAD,
+      control: withGovernor({ quorumAbsolute: 451n * WAD }),
+      kind: "contributors",
+      shares: (v) => `${v / WAD}`,
+    }).join(" "),
+    /No decision that spends the treasury or changes the rules can pass now/,
+  );
 });
 
 test("how many Shares others need before one holder no longer decides alone", () => {
@@ -124,7 +207,7 @@ test("the words say who decides now and what changes it, for a raise and for a c
     /changes only as Shares are awarded for accepted work, and as holders leave/,
   );
 
-  // 50 of 450 is 11.1%: short of the 20% for spending, but past the 10% an award or a project needs.
+  // 50 of 450 is 11.1%: short of the 20% for spending, but past the 10% an award or a work area needs.
   const awards = voteControlLines({
     who: "Alice",
     weight: 50n * WAD,
@@ -134,7 +217,7 @@ test("the words say who decides now and what changes it, for a raise and for a c
   });
   assert.match(
     awards.join(" "),
-    /No single holder can pass a decision that spends the treasury or changes the rules alone, but Alice can pass an award or a project that nobody else votes on/,
+    /No single holder can pass a decision that spends the treasury or changes the rules alone, but Alice can pass an award or a work area that nobody else votes on/,
   );
   const shared = voteControlLines({
     who: "Alice",

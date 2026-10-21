@@ -189,7 +189,7 @@ test("a contributor project is started from the page, work is claimed the same d
   await open(founder, FOUNDER_WALLET, "/start");
   await founder.getByTestId("start-go-contributor").click();
   await expect(founder.getByTestId("contributor-no-raise")).toContainText(
-    "This project cannot raise money",
+    "Starts without a token sale",
   );
   // Every network this journey runs on is a test network: Shares earned on it stay there.
   await expect(founder.getByTestId("contributor-test-records")).toContainText(
@@ -330,8 +330,9 @@ test("a contributor project is started from the page, work is claimed the same d
   await pass(700_000);
   await refresh(contributor, "Work");
   await contributor.getByTestId("work-payout").click();
+  // It asked for no money, so it finishes rather than pays.
   await expect(contributor.getByTestId("work-claim-status")).toContainText(
-    "Paid",
+    "Finished",
     { timeout: 60_000 },
   );
   expect(await sharesOf(CONTRIBUTOR)).toBe(0n);
@@ -361,17 +362,21 @@ test("a contributor project is started from the page, work is claimed the same d
     { ignoreCase: true },
   );
   await expect(person.getByTestId("contribution-person-earned")).toHaveText(
-    "25 Shares, 11.1% of all",
+    "25 Shares awarded",
+  );
+  // Read from the chain now: the Shares really reached them, and what they hold is beside what they were awarded.
+  await expect(
+    person.getByTestId("contribution-award-unconfirmed"),
+  ).toHaveCount(0);
+  await expect(person.getByTestId("contribution-person-held")).toHaveText(
+    "Holds 25 now (11.1% of all Shares now).",
   );
   await expect(person.getByTestId("contribution-award")).toHaveText(
-    "25 Shares for write-docs in the project docs",
+    "25 Shares for write-docs in the work area docs",
   );
-  await expect(reader.getByTestId("contributions-earned")).toHaveText(
-    "25 (11.1% of all)",
-  );
-  await expect(reader.getByTestId("contributions-not-from-work")).toHaveText(
-    "200",
-  );
+  await expect(reader.getByTestId("contributions-earned")).toHaveText("25");
+  // The founder's starting Shares, from the token's own mint at launch.
+  await expect(reader.getByTestId("contributions-starting")).toHaveText("200");
   await expect(reader.getByTestId("contributions-test-records")).toContainText(
     "Shares earned here are test records",
   );
@@ -603,7 +608,10 @@ test("several people earn in one contributor project: two first projects, and a 
   ] as const) {
     const card = claimCard(founder, claim);
     await card
-      .getByRole("button", { name: `Take on in ${project}`, exact: true })
+      .getByRole("button", {
+        name: `Accept for review in ${project}`,
+        exact: true,
+      })
       .click();
     await expect(card.getByTestId("work-claim-next")).toContainText(
       "0 of 2 approvals",
@@ -639,9 +647,12 @@ test("several people earn in one contributor project: two first projects, and a 
     await refresh(page, "Work");
     const card = claimCard(page, claim);
     await card.getByTestId("work-payout").click();
-    await expect(card.getByTestId("work-claim-status")).toContainText("Paid", {
-      timeout: 60_000,
-    });
+    await expect(card.getByTestId("work-claim-status")).toContainText(
+      "Finished",
+      {
+        timeout: 60_000,
+      },
+    );
   }
 
   // ── 7. each award is its own vote ───────────────────────────────────────────────────────────────
@@ -663,20 +674,23 @@ test("several people earn in one contributor project: two first projects, and a 
       .filter({ hasText: address.slice(2, 6) });
   await expect(
     person(CONTRIBUTOR).getByTestId("contribution-person-earned"),
-  ).toHaveText("40 Shares, 15.9% of all");
+  ).toHaveText("40 Shares awarded");
+  await expect(
+    person(CONTRIBUTOR).getByTestId("contribution-person-held"),
+  ).toHaveText("Holds 40 now (15.9% of all Shares now).");
   await expect(
     person(CONTRIBUTOR).getByTestId("contribution-award"),
-  ).toHaveText("40 Shares for write-guide in the project guide");
+  ).toHaveText("40 Shares for write-guide in the work area guide");
   await expect(
     person(NEWCOMER).getByTestId("contribution-person-earned"),
-  ).toHaveText("11 Shares, 4.4% of all");
+  ).toHaveText("11 Shares awarded");
+  await expect(
+    person(NEWCOMER).getByTestId("contribution-person-held"),
+  ).toHaveText("Holds 11 now (4.4% of all Shares now).");
   await expect(person(NEWCOMER).getByTestId("contribution-award")).toHaveText(
-    "11 Shares for translate-es in the project guide-es",
+    "11 Shares for translate-es in the work area guide-es",
   );
-  await expect(reader.getByTestId("contributions-earned")).toHaveText(
-    "51 (20.3% of all)",
-  );
-  await expect(reader.getByTestId("contributions-not-from-work")).toHaveText(
-    "200",
-  );
+  await expect(reader.getByTestId("contributions-earned")).toHaveText("51");
+  await expect(reader.getByTestId("contributions-unconfirmed")).toHaveCount(0);
+  await expect(reader.getByTestId("contributions-starting")).toHaveText("200");
 });

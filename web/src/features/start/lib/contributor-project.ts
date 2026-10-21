@@ -1,5 +1,5 @@
 /**
- * A contributor project, as data: a DAO made with no sale at all, whose Shares are earned only for accepted work.
+ * A contributor project, as data: a DAO made with no token sale, whose new Shares come only from awards for reviewed work.
  *
  * What the founder fills in becomes two things, in order:
  *
@@ -166,11 +166,11 @@ function checkProjects(
   budgetWhole: bigint,
 ): ContributorTerms["projects"] {
   if (drafts.length === 0)
-    fail("projects", "Add a first project: something people can work on.");
+    fail("projects", "Add a first work area: something people can work on.");
   if (drafts.length > MAX_FIRST_PROJECTS)
     fail(
       "projects",
-      `Start with at most ${MAX_FIRST_PROJECTS} projects; the project can vote to add more later.`,
+      `Start with at most ${MAX_FIRST_PROJECTS} work areas; the project can vote to add more later.`,
     );
   const seen = new Set<string>();
   let total = 0n;
@@ -180,8 +180,8 @@ function checkProjects(
     const which = name
       ? `“${name}”`
       : drafts.length > 1
-        ? `project ${index + 1}`
-        : "the first project";
+        ? `work area ${index + 1}`
+        : "the first work area";
     const Which = which.charAt(0).toUpperCase() + which.slice(1);
     if (name.length === 0)
       fail("projects", `Name ${which}, in a word or two.`, index);
@@ -196,7 +196,7 @@ function checkProjects(
     if (seen.has(name))
       fail(
         "projects",
-        `Two projects are called ${which}: give each its own name.`,
+        `Two work areas are called ${which}: give each its own name.`,
         index,
       );
     seen.add(name);
@@ -222,7 +222,7 @@ function checkProjects(
     if (sharesWhole > capWhole)
       fail(
         "projects",
-        `${Which} can award at most ${formatWhole(capWhole)} Shares, the most for one project.`,
+        `${Which} can award at most ${formatWhole(capWhole)} Shares, the most for one work area.`,
         index,
       );
     total += sharesWhole;
@@ -231,7 +231,7 @@ function checkProjects(
   if (total > budgetWhole)
     fail(
       "projects",
-      `Together the projects award ${formatWhole(total)} Shares, more than the ${formatWhole(budgetWhole)} the budget holds.`,
+      `Together the work areas award ${formatWhole(total)} Shares, more than the ${formatWhole(budgetWhole)} the budget holds.`,
     );
   return projects;
 }
