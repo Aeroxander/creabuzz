@@ -15,6 +15,27 @@ does to the audit, before any code is written. Nothing here is built yet.
 | D78 (T7) | A revenue pledge into the treasury | none (app only) |
 | D79 (T8) | The founder's limits in contributor projects | `ContributorKit` (and the D76 rule) |
 
+## Built (2026-10-21)
+
+All of §1 to §6 is built, on the local branch `tokenomics-proposal`, one commit per step, each starting from a test that
+failed on the code before it, and each guard broken once by `scripts/contracts-mutation-check.mjs` (35 entries, all
+caught). Where the build differs from the plan below, the plan was changed to what was built:
+
+- **The lock factories are constructor arguments of the kit (§3).** The checks did not fit: the kit's creation code
+  carried both lock factories and was 590 bytes over the 49,152-byte limit with them. Rather than a separate checking
+  contract, the factories (permissionless; they record who made each lock) are deployed beside the kit and passed to its
+  constructor. The kit's creation code is now 22,951 bytes. `DeployLaunchKit`, `dev-chain.sh` and the simulation deploy
+  them.
+- **The yearly cap is a kit constant, not a launch parameter (§4):** `DaoLaunchKit.YEARLY_ISSUANCE_BPS = 1000`, so the
+  launch call's format, the shared encoder and its goldens did not change. A vote can lower it later.
+- **Loot needs no call of its own (§4):** it refuses to mint whenever its DAO's Shares have the issuance rule on.
+- **One call locks transfers (§5):** `Shares.lockTransfersWithNotice(exempt)` locks, names the exempt address and
+  turns the 30-day notice on, once.
+
+Sizes after: `Moloch` 22,090 bytes (2,486 spare), `Shares` 10,902, `Loot` 3,517, `DaoLaunchKit` 22,192 runtime and
+22,951 creation code, `ContributorKit` 6,181. The Forge suite is 452 passed, 0 failed; the web unit tests 1,802; the
+shared package 764; a 300-step simulation (seed 7) had zero breaks, with every transfer refused by the lock.
+
 ## 0. Measured first
 
 Built in a scratch copy of `contracts/` at `1bcb885c0` (solc 0.8.37, `via_ir`, 200 runs), nothing committed:
@@ -190,7 +211,8 @@ A team of zero stays possible (no milestones then, as today).
 the floor and the required amount means decoding `AuctionParameters` from `auctionConfig`, which has a dynamic field. If
 the checks do not fit, they move to a small separate contract, `LaunchTerms`, with one `view` function the kit calls
 (deployed once beside the kit, holding nothing, no roles); the kit's own change is then one call. Measure first; prefer
-the kit if it fits with at least 500 bytes left.
+the kit if it fits with at least 500 bytes left. (Built differently: see "Built" above. The lock factories moved out of
+the kit's creation code instead, and the checks stayed in the kit.)
 
 **The app.** `planDaoLaunch` runs the same checks so the form names the field before a wallet prompt; the own-DAO
 launch uses the 100% line by default (the existing "fixed price" line; the release shape stays a separate choice);
@@ -228,7 +250,8 @@ it holds by a transfer; `Loot.mintFromMoloch` likewise.
 - Launch-time Shares are not counted: `Shares.init` mints with `_mint`, not `mintFromMoloch`, and the rule is set by
   the DAO's initialization calls after it.
 
-**In `Loot`**: `closeMinting()`, `onlyDAO`, set once; after it `mintFromMoloch` reverts. The kits call it at birth, so
+**In `Loot`** (built as: Loot refuses to mint while its DAO's Shares have the rule on, so no call is needed):
+`closeMinting()`, `onlyDAO`, set once; after it `mintFromMoloch` reverts. The kits call it at birth, so
 no Loot ever exists in these DAOs. (`convertLootToShares` then has nothing to convert; an award with `convert` set
 fails, which the app never sends.) The trading note's later idea of turning Shares into non-voting Loot to sell is not
 foreclosed by this any more than it is today: no such conversion exists in the contracts and the clones cannot be
@@ -241,8 +264,9 @@ mint, so the only calls made while it is on are to the DAO's own Shares (or Loot
 ownership callback and voting policy: no contract outside the DAO runs while a mint is allowed. Measured with D72: +36
 bytes.
 
-**In the kits**: `DaoLaunchKit.Params` gains `uint16 yearlyCapBps`, required to be at most 1,000 (10%), set into
-`Shares` and `Loot.closeMinting()` in the initialization calls, and read back after the summon.
+**In the kits** (built as a kit constant, `YEARLY_ISSUANCE_BPS = 1000`, so the launch call is unchanged):
+`DaoLaunchKit.Params` gains `uint16 yearlyCapBps`, required to be at most 1,000 (10%), set into `Shares` and
+`Loot.closeMinting()` in the initialization calls, and read back after the summon.
 
 **Choices made here, which you may want to see**: the year is a fixed window from the first new Share, not a rolling
 twelve months (no history to keep). So 10% at the end of one year and 10% at the start of the next is possible, which
@@ -266,7 +290,8 @@ minted after closing. New invariants in `MoneyPaths`: "after the claim block, Sh
 **Today.** `Shares.setTransfersLocked` exists (contributor projects use it). While it is on, a transfer must go to or
 from the DAO. A raise cannot use it as is: the executor funds the auction and buyers collect from it.
 
-**The change, in `Shares`**: `address public transferExempt`, set once by `setTransferExempt(address)` (`onlyDAO`), and
+**The change, in `Shares`** (built as one call, `lockTransfersWithNotice(exempt)`, which locks, names the exempt address
+and turns the notice on, once): `address public transferExempt`, set once by `setTransferExempt(address)` (`onlyDAO`), and
 `_checkUnlocked` also lets a transfer through when it goes to or from that address. In a raise it is the auction, so:
 
 | Move | Allowed |
@@ -363,7 +388,7 @@ projects, then the audited raise.
 | `src/majeur/MolochPatched.sol` (`Moloch`) | seven functions removed; `ragequit` subtracts what is locked and sets the leaving flag; the award flag. Smaller than today |
 | `src/majeur/MolochPatched.sol` (`Shares`, `Loot`) | the issuance rule, the award-only mint and transfer-out, the transfer exemption and the 30-day unlock notice, the guard decided once, burns only while leaving; Loot's closed minting |
 | `src/MilestoneChallenge.sol`, `src/MilestoneLock.sol` | the `totalLocked` counter |
-| `src/DaoLaunchKit.sol` (or a new `src/LaunchTerms.sol`) | the launch checks, the issuance and transfer initialization |
+| `src/DaoLaunchKit.sol` | the launch checks, the issuance and transfer initialization; the lock factories become constructor arguments |
 | `src/ContributorKit.sol` (adjacent) | two checks, two setup calls |
 
 AUDIT-SCOPE.md §6 item 4 (the vote-granted share sale, permits and allowances) is resolved by removal. The invariants
