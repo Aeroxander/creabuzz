@@ -336,6 +336,19 @@ function PositionBody({
       </p>
     );
   }
+  if (position.exitRule === "unknown") {
+    return (
+      <p
+        className="mt-2 text-sm text-amber-800 dark:text-amber-200"
+        data-testid="ragequit-unknown"
+      >
+        This app can&apos;t tell what leaving would pay. This DAO&apos;s exit
+        asks its milestone lock how many Shares are still locked, and the lock
+        is older than the DAO and cannot answer, so the chain would refuse the
+        exit. Your Shares are unchanged.
+      </p>
+    );
+  }
   if (position.sharesBurnable === 0n) {
     return (
       <p
@@ -371,7 +384,11 @@ function PositionBody({
             <dd className="text-right">{formatShares(position.lootBalance)}</dd>
           </>
         ) : null}
-        <dt>Shares that can leave now</dt>
+        <dt>
+          {position.exitRule === "legacy"
+            ? "Shares the treasury is shared among"
+            : "Shares that can leave now"}
+        </dt>
         <dd className="text-right">
           {formatShares(
             exitDenominator({
@@ -388,6 +405,16 @@ function PositionBody({
           )}
         </dd>
       </dl>
+      {position.exitRule === "legacy" ? (
+        <p
+          className="mt-2 text-sm text-black/60 dark:text-white/60"
+          data-testid="ragequit-legacy"
+        >
+          This DAO was made before Shares still locked behind milestones were
+          left out of an exit, so its exit still counts them: your part is
+          worked out over every Share outside the DAO, locked ones included.
+        </p>
+      ) : null}
       <p className="mt-3 text-sm font-medium text-black dark:text-white">
         What you would take back now:
       </p>

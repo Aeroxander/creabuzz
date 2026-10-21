@@ -9,19 +9,32 @@
  * It follows the plan: a launch that does not lock the team's Shares says so and drops the lines about the lock, and a
  * launch with a lock tells backers who judges the milestones, how many must agree, until when, and what happens if they
  * cannot be reached.
+ *
+ * Once the DAO exists, what it guarantees is read from it, not assumed: leaving is promised as permanent only by a DAO
+ * made after that became so (D73) with leaving on, and the notice before a decision runs is today's setting, which a
+ * vote can shorten for later decisions (`lib/dao-guarantees.ts`).
  */
+
+import type { ReactNode } from "react";
 
 import { Card } from "@/shared/ui/card";
 
 import { recordSaleCurrency } from "../chain";
 import { formatAtomic } from "../lib/amounts";
 import { span } from "../lib/challenge-copy";
+import {
+  type DaoGuarantees,
+  DEFAULT_NOTICE,
+  noticeText,
+} from "../lib/dao-guarantees";
 import { NO_CAP, type ShareRules } from "../lib/trading-actions";
 import { isEvmAddress, type LaunchRecord } from "../models";
 import { useDecisionContext } from "../use-decisions";
+import { useDaoGuarantees } from "../use-dao-guarantees";
 import { useShareRules } from "../use-share-rules";
 import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
 import { useWork } from "../use-work";
+import { planVoteControlText, VoteControlNote } from "./VoteControlNote";
 
 const day = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString(undefined, {
@@ -49,10 +62,26 @@ export interface ChallengeFacts {
   bond: string | null;
 }
 
-const ALWAYS = [
-  "No decision of any kind can be opened before the buyers can claim their tokens.",
-  "No vote can switch off leaving with your share of what the DAO holds, or take your Shares from you.",
-] as const;
+const GOVERNANCE_WAITS =
+  "No decision of any kind can be opened before the buyers can claim their tokens.";
+const LEAVING_PERMANENT =
+  "No vote can switch off leaving with your share of what the DAO holds, or take your Shares from you.";
+const LEAVING_OFF =
+  "This DAO was made with leaving switched off, and no vote can switch it on: members cannot take a share of the treasury out.";
+const LEAVING_SWITCHABLE =
+  "Switch leaving off, or burn a holder's Shares: this DAO was made before those powers were removed.";
+
+/**
+ * What the DAO says about leaving: `plan` before it exists (the launch makes leaving permanent), its answers once read,
+ * or `unknown` while they are being read or could not be.
+ */
+type Leaving = "plan" | "unknown" | DaoGuarantees;
+
+function leavingLines(leaving: Leaving): string[] {
+  if (leaving === "plan") return [LEAVING_PERMANENT];
+  if (leaving === "unknown" || !leaving.leavingPermanent) return [];
+  return [leaving.ragequittable ? LEAVING_PERMANENT : LEAVING_OFF];
+}
 
 /** What the DAO's Shares say about new Shares and trading (D76, D77), when they could be read. */
 function ruleLines(rules: ShareRules | null): string[] {
@@ -97,8 +126,11 @@ const NOT_LOCKED = [
   "The team's Shares are not locked. The team can sell or move them from the start, and they count when the DAO votes.",
 ] as const;
 
-function votable(rules: ShareRules | null): string[] {
+function votable(rules: ShareRules | null, leaving: Leaving): string[] {
   return [
+    ...(typeof leaving === "object" && !leaving.leavingPermanent
+      ? [LEAVING_SWITCHABLE]
+      : []),
     "Spend the money the DAO holds.",
     rules?.awardsOnly
       ? "Award new Shares for accepted work, within that limit."
@@ -125,6 +157,8 @@ export function PowersCard({
   rule = "panel",
   ruleUnreadable = false,
   shareRules = null,
+  guarantees = "plan",
+  voteControl = null,
 }: {
   /** The plan locks the team's Shares behind milestones. */
   locked: boolean;
@@ -143,7 +177,20 @@ export function PowersCard({
   ruleUnreadable?: boolean;
   /** What the DAO's Shares say about new Shares and trading, or null when not known (no DAO yet, or older Shares). */
   shareRules?: ShareRules | null;
+  /**
+   * What the DAO guarantees an outvoted holder, as read from it; `plan` before the DAO exists, `unknown` while it is
+   * being read or when it could not be.
+   */
+  guarantees?: Leaving;
+  /** Who decides right now: read from the DAO once it exists, or the plan's split before. */
+  voteControl?: ReactNode;
 }) {
+  const canLeave =
+    guarantees === "plan" ||
+    (typeof guarantees === "object" && guarantees.ragequittable);
+  const permanent =
+    guarantees === "plan" ||
+    (typeof guarantees === "object" && guarantees.leavingPermanent);
   return (
     <Card className="p-4" data-testid="launch-powers">
       <h2 className="text-base font-semibold">
@@ -164,7 +211,8 @@ export function PowersCard({
                 ? LOCKED_RULE_UNKNOWN
                 : LOCKED
             : NOT_LOCKED),
-          ...ALWAYS,
+          GOVERNANCE_WAITS,
+          ...leavingLines(guarantees),
           ...ruleLines(shareRules),
         ].map((line) => (
           <li key={line}>{line}</li>
@@ -252,19 +300,32 @@ export function PowersCard({
         {locked ? ", with its locked Shares," : ""} from the first day.
       </p>
       <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
-        {[...votable(shareRules), ...(locked ? [GIVE_UP] : [])].map((line) => (
-          <li key={line}>{line}</li>
-        ))}
+        {[...votable(shareRules, guarantees), ...(locked ? [GIVE_UP] : [])].map(
+          (line) => (
+            <li key={line}>{line}</li>
+          ),
+        )}
       </ul>
+      {voteControl ? (
+        <>
+          <h3 className="mt-3 text-sm font-medium">Who decides right now</h3>
+          {voteControl}
+        </>
+      ) : null}
       <h3 className="mt-3 text-sm font-medium">
         If a decision goes against you
       </h3>
-      <p className="mt-1 text-sm">
-        Every decision waits before it runs: at least three days for anything
-        that spends the treasury or changes the rules, two for an award or a
-        project inside a budget already voted. Until it runs, you can leave with
-        your share of what the DAO holds; no vote can switch that off. Money
-        already moved into a work budget is not part of that share.
+      <p className="mt-1 text-sm" data-testid="launch-powers-notice">
+        {guarantees === "plan"
+          ? noticeText(DEFAULT_NOTICE, "plan")
+          : guarantees === "unknown"
+            ? "Every decision waits before it runs. How long, under this DAO's settings today, could not be read just now; a vote can shorten those settings for decisions opened later."
+            : noticeText(guarantees.notice, "dao")}{" "}
+        {guarantees === "unknown"
+          ? "Whether you can leave with your share before a decision runs is shown once this DAO's rules can be read."
+          : canLeave
+            ? `Until it runs, you can leave with your share of what the DAO holds${permanent ? "; no vote can switch that off" : ", for as long as leaving stays on"}. Money already moved into a work budget is not part of that share.`
+            : "Members cannot leave this DAO with a share of what it holds."}
       </p>
     </Card>
   );
@@ -277,6 +338,8 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
     record.treasury && isEvmAddress(record.treasury) ? record.treasury : null;
   const context = useDecisionContext(treasury);
   const rules = useShareRules(context.data?.shares ?? null, treasury);
+  const guarantees = useDaoGuarantees(treasury, context.data?.policy ?? null);
+  const planText = planVoteControlText(record.allocation);
   const dao =
     locked && record.treasury && isEvmAddress(record.treasury)
       ? record.treasury
@@ -329,6 +392,16 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
       }
       ruleUnreadable={kind === "unreadable"}
       shareRules={rules.data?.rules ?? null}
+      guarantees={treasury === null ? "plan" : (guarantees.data ?? "unknown")}
+      voteControl={
+        treasury !== null ? (
+          <VoteControlNote dao={treasury} kind="raise" />
+        ) : planText ? (
+          <p className="mt-2 text-sm" data-testid="vote-control-plan">
+            {planText}
+          </p>
+        ) : null
+      }
     />
   );
 }

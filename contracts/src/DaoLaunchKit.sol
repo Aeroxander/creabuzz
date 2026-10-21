@@ -11,6 +11,23 @@ struct KitCall {
     bytes data;
 }
 
+/// @dev The auction's own `AuctionParameters` (`lib/continuous-clearing-auction`, `IContinuousClearingAuction.sol`),
+/// field for field, so the kit decodes a launch's auction config with the same type the factory does and checks the
+/// numbers the auction will use, however the bytes are laid out (D86). `PinnedInterfaces.t.sol` holds it to upstream.
+struct KitAuctionParameters {
+    address currency;
+    address tokensRecipient;
+    address fundsRecipient;
+    uint64 startBlock;
+    uint64 endBlock;
+    uint64 claimBlock;
+    uint256 tickSpacing;
+    address validationHook;
+    uint256 floorPrice;
+    uint128 requiredCurrencyRaised;
+    bytes auctionStepsData;
+}
+
 interface IKitSummoner {
     function summon(
         string calldata orgName,
@@ -77,6 +94,10 @@ interface IKitChallengeFactory {
         uint16[] calldata bps,
         MilestoneChallenge.Terms calldata terms
     ) external returns (address lock);
+}
+
+interface IKitLock {
+    function totalLocked() external view returns (uint256);
 }
 
 interface IKitErc20 {
@@ -174,10 +195,10 @@ contract DaoLaunchKit {
         address[] team;
         uint256[] teamShares;
         /// The acceptance check of each milestone, in order; they unlock `milestoneBps` of every team member's
-        /// Shares. Empty means the team's Shares are not locked.
+        /// Shares. With a team, exactly one per percentage (D75, D86); with no team, nothing is locked.
         bytes32[] milestoneChecks;
-        /// The part of each team member's Shares each milestone unlocks (they add up to at most 10,000; the rest is
-        /// not locked at all).
+        /// The part of each team member's Shares each milestone unlocks: with a team, 2 to 8 of at most 5,000 each,
+        /// adding up to exactly 10,000 (D75).
         uint16[] milestoneBps;
         /// The panel that judges the milestones: who, how many must agree, and the bond each posts before judging (zero
         /// for none, with `bondToken` zero too). Required when there are milestones, and refused when there are none.
@@ -218,8 +239,8 @@ contract DaoLaunchKit {
     error EmptyLaunch();
     /// @notice The launch's terms are outside the limits (D74, D75): 1 the sale under 60% of all Shares, 2 the team
     /// over 35%, 3 the DAO's reserve over 20%, 4 the team's Shares not all behind 2 to 8 milestones of at most half
-    /// each, 5 a team seat that is the DAO, the executor, the auction or the kit, 6 a raise target below the whole
-    /// tranche at the floor price.
+    /// each, each with its check, 5 a team seat that is the DAO, the executor, the auction or the kit, 6 a raise
+    /// target below the whole tranche at the floor price.
     error UnfairTerms(uint8 rule);
     error TeamMismatch();
     error TooManyTeam();
@@ -395,6 +416,7 @@ contract DaoLaunchKit {
         address shares = IKitDao(dao).shares();
         require(shares == predictedShares, "kit: shares address");
         require(IKitLockable(shares).lockGuardSet(), "kit: lock guard");
+        _requireTeamLocked(p, lock);
         require(
             IKitLockable(shares).awardsOnly() && IKitLockable(shares).issuanceCapBps() == YEARLY_ISSUANCE_BPS,
             "kit: issuance rule"
@@ -439,8 +461,10 @@ contract DaoLaunchKit {
         if (team * 10_000 > total * 3_500) revert UnfairTerms(2);
         if (p.daoShares * 10_000 > total * 2_000) revert UnfairTerms(3);
         if (team != 0) {
+            // One acceptance check per percentage: the lock is made only from checks, so percentages without them
+            // would launch a team with no lock at all (D86).
             uint256 n = p.milestoneBps.length;
-            if (n < 2 || n > 8) revert UnfairTerms(4);
+            if (n < 2 || n > 8 || p.milestoneChecks.length != n) revert UnfairTerms(4);
             uint256 sum;
             for (uint256 i; i < n; ++i) {
                 if (p.milestoneBps[i] > 5_000) revert UnfairTerms(4);
@@ -448,10 +472,20 @@ contract DaoLaunchKit {
             }
             if (sum != 10_000) revert UnfairTerms(4);
         }
-        // `abi.encode(AuctionParameters)`: a head word, then the struct's fields; the floor price is the ninth field
-        // and the required raise the tenth (the auction decodes the same bytes, so this is the target it will use).
-        (uint256 floorPrice, uint256 required) = abi.decode(p.auctionConfig[288:352], (uint256, uint256));
-        if (required < (floorPrice * p.saleSupply) >> 96) revert UnfairTerms(6);
+        // The floor and the target as the factory will decode them for the auction: the same type, so the same numbers
+        // however the bytes are laid out (reading fixed offsets let a valid encoding with the tuple moved on pass, D86).
+        // `required ≥ ⌊floor × supply / 2^96⌋`, rearranged so nothing overflows (`required` is a uint128).
+        KitAuctionParameters memory a = abi.decode(p.auctionConfig, (KitAuctionParameters));
+        if (a.floorPrice > (((uint256(a.requiredCurrencyRaised) + 1) << 96) - 1) / p.saleSupply) revert UnfairTerms(6);
+    }
+
+    /// @dev Every team Share is behind the milestones (D75), checked on the lock that exists rather than on the inputs
+    /// (D86): the lock the DAO's initialization set as its guard (once, read back above) holds the team's whole
+    /// allocation. A tranche rounds down, so a split that does not divide exactly would otherwise leave a few units free.
+    function _requireTeamLocked(Params calldata p, address lock) private view {
+        uint256 team;
+        for (uint256 i; i < p.teamShares.length; ++i) team += p.teamShares[i];
+        if (team != 0) require(lock != address(0) && IKitLock(lock).totalLocked() == team, "kit: team lock");
     }
 
     // ---- address prediction ------------------------------------------------------------------

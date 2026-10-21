@@ -3,7 +3,8 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {
-    IContinuousClearingAuction as UpstreamAuction
+    IContinuousClearingAuction as UpstreamAuction,
+    AuctionParameters as UpstreamAuctionParameters
 } from "continuous-clearing-auction/src/interfaces/IContinuousClearingAuction.sol";
 import {
     IContinuousClearingAuctionFactory
@@ -17,6 +18,7 @@ import {
 import {IDistributorFactory} from "liquidity-launcher/src/interfaces/IDistributorFactory.sol";
 import {Summoner} from "../src/majeur/MolochPatched.sol";
 import {OrgBinding} from "../src/OrgBinding.sol";
+import {KitAuctionParameters} from "../src/DaoLaunchKit.sol";
 import {
     IContinuousClearingAuction as MirrorAuction,
     ICcaFinalization,
@@ -113,6 +115,44 @@ contract PinnedInterfacesTest is Test {
             MirrorInitializer.onGraduation.selector
         );
         assertEq(MirrorInitializer.onGraduation.selector, bytes4(0x99896688));
+    }
+
+    /// The launch kit decodes a launch's auction config with its own copy of `AuctionParameters` and checks the floor and
+    /// target it finds (D74, D86), so the copy must be upstream's type exactly: same names (building both with NAMED
+    /// fields fails to compile otherwise), same order and types (the encodings are compared), and a config encoded with
+    /// upstream's type decodes to the same floor and target in the kit's.
+    function test_the_kits_auction_parameters_match_upstream_field_for_field() public pure {
+        UpstreamAuctionParameters memory up = UpstreamAuctionParameters({
+            currency: address(1),
+            tokensRecipient: address(2),
+            fundsRecipient: address(3),
+            startBlock: 4,
+            endBlock: 5,
+            claimBlock: 6,
+            tickSpacing: 7,
+            validationHook: address(8),
+            floorPrice: 9,
+            requiredCurrencyRaised: 10,
+            auctionStepsData: hex"0b0b"
+        });
+        KitAuctionParameters memory mirror = KitAuctionParameters({
+            currency: address(1),
+            tokensRecipient: address(2),
+            fundsRecipient: address(3),
+            startBlock: 4,
+            endBlock: 5,
+            claimBlock: 6,
+            tickSpacing: 7,
+            validationHook: address(8),
+            floorPrice: 9,
+            requiredCurrencyRaised: 10,
+            auctionStepsData: hex"0b0b"
+        });
+        assertEq(abi.encode(up), abi.encode(mirror), "same field order and types");
+        KitAuctionParameters memory back = abi.decode(abi.encode(up), (KitAuctionParameters));
+        assertEq(back.floorPrice, up.floorPrice);
+        assertEq(back.requiredCurrencyRaised, up.requiredCurrencyRaised);
+        assertEq(keccak256(back.auctionStepsData), keccak256(up.auctionStepsData));
     }
 
     // ---------------------------------------------------------------- factory

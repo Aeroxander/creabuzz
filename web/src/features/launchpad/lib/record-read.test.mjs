@@ -168,6 +168,7 @@ test("when a claim was filed and paid, and who said what, come from the logs", a
           topics: [PAID, CLAIM],
           data: "0x",
           blockNumber: at(20),
+          transactionHash: `0x${"9a".repeat(32)}`,
         },
         {
           address: VERIFIERS,
@@ -183,6 +184,8 @@ test("when a claim was filed and paid, and who said what, come from the logs", a
   const key = claimKey(MANDATE, CLAIM);
   assert.equal(events.filedAt.get(key), 1_000);
   assert.equal(events.paidAt.get(key), 3_000);
+  // The payout's own transaction, so the page can link it.
+  assert.equal(events.paidTx.get(key), `0x${"9a".repeat(32)}`);
   assert.deepEqual(events.verdicts.get(key), [
     { reviewer: REVIEWER, approve: true },
   ]);

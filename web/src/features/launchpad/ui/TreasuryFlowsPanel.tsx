@@ -41,7 +41,6 @@ import { getRpcEndpoint, recordSaleCurrency } from "../chain";
 import type { LaunchReceipt, LaunchRecord } from "../models";
 import {
   explorerAddressUrl,
-  explorerTxUrl,
   fetchFundFlowPositions,
   fetchGraduationState,
   fundFlowReceiptRows,
@@ -58,6 +57,7 @@ import {
 import { formatAtomic, formatMoney } from "../lib/amounts";
 import { ETH_TOKEN } from "../lib/ragequit-tx";
 import { useOrgMoney } from "../use-launches";
+import { TxLink } from "./TxLink";
 
 export interface TreasuryFlowsPanelProps {
   record: LaunchRecord;
@@ -98,27 +98,6 @@ function payloadAmount(
 ): string {
   const text = payloadText(payload, field);
   return /^\d+$/.test(text) ? print(BigInt(text)) : text;
-}
-
-function TxLink({ chainId, tx }: { chainId: number; tx: string }) {
-  const url = explorerTxUrl(chainId, tx);
-  return url ? (
-    <a
-      className="break-all text-sky-700 underline dark:text-sky-300"
-      href={url}
-      rel="noreferrer"
-      target="_blank"
-    >
-      {truncatePubkey(tx)}
-    </a>
-  ) : (
-    <span
-      className="break-all text-black/60 dark:text-white/60"
-      title="This chain has no known explorer, so only the raw hash is shown."
-    >
-      {truncatePubkey(tx)} (no explorer on this chain)
-    </span>
-  );
 }
 
 function AddrLink({ chainId, address }: { chainId: number; address: string }) {

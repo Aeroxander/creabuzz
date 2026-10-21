@@ -16,7 +16,7 @@ import type { Launch } from "../models";
 import { useConnectedWallet } from "../use-connected-wallet";
 import { useDaoHoldings } from "../use-dao-holdings";
 import { useDecisionContext, useDecisions } from "../use-decisions";
-import { useSpendingSummary } from "../use-spending";
+import { usePaymentRuns, useSpendingSummary } from "../use-spending";
 import { useWork } from "../use-work";
 import { DelegationCard } from "./DelegationCard";
 import { Figure } from "./Figure";
@@ -57,6 +57,7 @@ export function DaoTreasuryTab({
     work: work.data,
     factory: context.data?.factory,
   });
+  const runs = usePaymentRuns(dao, spending);
   const symbol = sale?.kind === "custom" ? "USDC" : (sale?.symbol ?? "");
   const money = holdings.data?.treasury;
   return (
@@ -88,9 +89,11 @@ export function DaoTreasuryTab({
       </Card>
       {spending && sale ? (
         <SpendingCard
+          chainId={chainId}
           decimals={sale.decimals}
           labelOf={labelOf}
           onOpenDecisions={onOpenDecisions}
+          runs={runs.isError && !runs.data ? null : runs.data}
           summary={spending}
           symbol={symbol}
         />

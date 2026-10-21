@@ -23,6 +23,11 @@
  *   pool  = tk == address(0) ? dao.balance : balanceOfThis(tk)
  *   due   = mulDiv(pool, amt, total)                        // floor
  *
+ * DAOs and locks made before D72 have no `totalLocked()`, and their exit never
+ * subtracted it: for them the preview uses the old total (`exitRule: "legacy"`).
+ * A DAO made after D72 whose lock cannot answer is `"unknown"`: its exit asks
+ * the lock and is refused, so nothing here says what it would pay.
+ *
  * Shares a holder has not yet earned (the milestone lock guard) cannot be
  * burned: `burnFromMoloch` reverts `LockedShares` unless the balance covers the
  * burn plus the locked amount, so the exit burns `balance - lockedOf(holder)`.
@@ -50,6 +55,7 @@ export const SELECTOR_SYMBOL = "0x95d89b41"; // symbol()
 export const SELECTOR_LOCK_GUARD = "0x36bc529d"; // lockGuard()
 export const SELECTOR_LOCKED_OF = "0xa5f1e282"; // lockedOf(address)
 export const SELECTOR_TOTAL_LOCKED = "0x56891412"; // totalLocked()
+export const SELECTOR_LEAVING = "0xaf56f7dc"; // leaving() — only DAOs made after D72/D73 have it
 
 function addressWord(address: string): string {
   return address.toLowerCase().slice(2).padStart(64, "0");
@@ -321,6 +327,22 @@ export function overdrawsPosition(input: PositionInput): boolean {
   );
 }
 
+/**
+ * How the DAO's exit counts the Shares its lock still holds back. `current`: left out of the total (D72). `legacy`: a DAO
+ * made before D72 counts them, so the preview does too. `unknown`: the DAO leaves them out but its lock does not say how
+ * many, so its exit refuses to run and no figure can be given.
+ */
+export type ExitRule = "current" | "legacy" | "unknown";
+
+/** A contract that does not have the function: the call reverts, or answers nothing. A network failure is not one. */
+function isRefusal(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (/revert/i.test(error.message) ||
+      error.message === "expected 32-byte return")
+  );
+}
+
 /** The position as the UI shows it. */
 export interface RagequitPosition {
   /** `ragequittable()` — false means the exit reverts with `NotOk()`. */
@@ -339,8 +361,13 @@ export interface RagequitPosition {
   lootTotal: bigint;
   /** Shares + loot the DAO holds itself (outside the exit denominator). */
   daoHeld: bigint;
-  /** Every Share the lock still holds back, across the team (outside the exit denominator, D72). */
+  /**
+   * Every Share the lock still holds back, across the team, that the exit leaves out of its denominator (D72). Zero for a
+   * `legacy` DAO, whose exit counts them.
+   */
   lockedTotal: bigint;
+  /** How this DAO's exit counts locked Shares; with `unknown` the rows are not what an exit would pay. */
+  exitRule: ExitRule;
   /** Pools + claimable rows for a full exit of the burnable Shares (loot untouched). */
   rows: ClaimableRow[];
   /** True when nobody but the DAO holds Shares or Loot. */
@@ -390,15 +417,25 @@ export async function fetchRagequitPosition(
   );
   let sharesLocked = 0n;
   let lockedTotal = 0n;
+  let exitRule: ExitRule = "current";
   if (!/^0x0{40}$/.test(guard)) {
     const lockedRead = buildLockedOfRead(guard, holder);
     sharesLocked = decodeU256(
       await ethCall(endpoint, lockedRead.to, lockedRead.data),
     );
     const totalRead = buildTotalLockedRead(guard);
-    lockedTotal = decodeU256(
-      await ethCall(endpoint, totalRead.to, totalRead.data),
-    );
+    try {
+      lockedTotal = decodeU256(
+        await ethCall(endpoint, totalRead.to, totalRead.data),
+      );
+    } catch (error) {
+      if (!isRefusal(error)) throw error;
+      // A lock made before D72. Whether that matters depends on the DAO: one made before D72 never asks the lock and
+      // counts locked Shares; one made after asks, is refused, and cannot pay an exit at all.
+      exitRule = (await answers(endpoint, dao, SELECTOR_LEAVING))
+        ? "unknown"
+        : "legacy";
+    }
   }
   const sharesTotal = results.get("shares-total") as bigint;
   const lootTotal = results.get("loot-total") as bigint;
@@ -444,7 +481,23 @@ export async function fetchRagequitPosition(
     lootTotal,
     daoHeld,
     lockedTotal,
+    exitRule,
     rows,
     zeroSupply: exitDenominator(input) === 0n,
   };
+}
+
+/** Whether `to` has the view function `selector`: true when it answers, false when it refuses; a network failure throws. */
+async function answers(
+  endpoint: string,
+  to: string,
+  selector: string,
+): Promise<boolean> {
+  try {
+    decodeU256(await ethCall(endpoint, to, selector));
+    return true;
+  } catch (error) {
+    if (isRefusal(error)) return false;
+    throw error;
+  }
 }

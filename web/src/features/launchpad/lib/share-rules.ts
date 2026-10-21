@@ -3,7 +3,8 @@
  * (the base a new year's allowance of new Shares is measured against).
  *
  * Shares made before those rules refuse the first read: that is said (`predates`), not shown as an error, because it is
- * an answer. A network that does not answer is an error, never a DAO without rules.
+ * an answer, and nothing measured against the rules is worked out for them (their lock may predate `totalLocked()` too).
+ * A network that does not answer is an error, never a DAO without rules.
  *
  * Pure apart from the injected `call`: `share-rules.test.mjs` drives it with a fake chain.
  */
@@ -24,14 +25,19 @@ const TOTAL_LOCKED = "0x56891412";
 /** One `eth_call`: the raw return data, or a thrown error. */
 export type Call = (to: string, data: string) => Promise<string>;
 
-export interface ShareRulesRead {
-  /** The rules, or null when these Shares were made before them. */
-  rules: ShareRules | null;
-  /** True when the Shares refused the first read: they have no such rules. */
-  predates: boolean;
-  /** Shares outside the DAO, less what a lock still holds back. */
-  exitBase: bigint;
-}
+export type ShareRulesRead =
+  | {
+      rules: ShareRules;
+      predates: false;
+      /** Shares outside the DAO, less what a lock still holds back: a new year's allowance is measured against it. */
+      exitBase: bigint;
+    }
+  | {
+      /** These Shares were made before the rules: they refused the first read. */
+      rules: null;
+      predates: true;
+      exitBase: null;
+    };
 
 const isRefusal = (error: unknown) =>
   error instanceof Error && /revert/i.test(error.message);
@@ -58,11 +64,7 @@ export async function readShareRules(
     awardsOnly = u256(await read(SHARE_RULE_SIGNATURES.awardsOnly));
   } catch (error) {
     if (!isRefusal(error)) throw error;
-    return {
-      rules: null,
-      predates: true,
-      exitBase: await exitBase(call, shares, dao),
-    };
+    return { rules: null, predates: true, exitBase: null };
   }
   const [cap, yearStart, yearBase, issued, locked, notice, announced, exempt] =
     await Promise.all([

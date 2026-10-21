@@ -330,6 +330,20 @@ async function launch(kit, founder, label, requiredRaisedUsdc, team) {
   if (!ok(receipt)) throw new Error(`launch ${label} reverted`);
   const launched = decodeKitLaunched(receipt.logs, kit);
   if (!launched) throw new Error(`launch ${label}: no Launched event`);
+  // D75, D86: a launch with a team ends with its Shares pointed at a lock that holds every team Share.
+  const teamTotal = plan.teamShares.reduce((a, b) => a + b, 0n);
+  if (teamTotal > 0n) {
+    invariantChecks++;
+    const guard = addr(await call(launched.shares, sel("lockGuard()"))).toLowerCase();
+    if (!launched.lock || guard !== launched.lock) {
+      broke("a team launch left the team's Shares without their lock", `${label}: guard ${guard}`);
+    } else {
+      const locked = word(await call(launched.lock, sel("totalLocked()")));
+      if (locked !== teamTotal) {
+        broke("the lock does not hold the whole team allocation", `${label}: ${locked} of ${teamTotal}`);
+      }
+    }
+  }
   const loot = addr(await call(launched.dao, sel("loot()")));
   const policy = addr(await call(launched.dao, sel("votingWeight()")));
   return { ...launched, loot, policy, plan, startBlock, endBlock, claimBlock };

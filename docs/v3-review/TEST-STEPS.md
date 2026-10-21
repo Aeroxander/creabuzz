@@ -968,3 +968,37 @@ contributor wallet, each with a little Sepolia ETH and no USDC:
 Not covered: the real Sepolia (the deploy needs your key and go-ahead), the real relay (the spec stubs it in the page, as
 every mocked spec does; the raise journey `scripts/web-sepolia-fork-e2e.sh` covers the relay on a fork), passkey accounts
 sending the contributor launch through a bundler, and the week-long waits in real time.
+## 4am. The outside review's fixes: the launch kit, the exit and money screens, who decides (D86, D87, 2026-10-21)
+
+```bash
+. ./bin/activate-hermit
+cd contracts && REQUIRE_CONTRACT_ARTIFACTS=1 forge test      # the whole suite: the kit's tests need its artifacts
+node scripts/contracts-mutation-check.mjs                     # 38 guards, each must be caught (no uncommitted src changes)
+pnpm --dir web test
+pnpm --dir web exec tsc --noEmit
+pnpm --dir web build && pnpm --dir web exec playwright test --project=smoke launchpad.spec.ts \
+  launchpad-challenge.spec.ts launchpad-work.spec.ts launchpad-record.spec.ts launchpad-milestone.spec.ts
+scripts/web-dao-launch-e2e.sh                                 # the real-chain launch journey
+```
+
+1. **The kit (D86).** In the Forge output, `DaoLaunchKitTest` has seven new tests: percentages without checks, unpaired
+   counts on both paths, a split the milestones cannot divide (`kit: team lock`), a moved auction tuple with a one-unit
+   target (`UnfairTerms(6)`), the same with a fair target (it launches and the auction has the real floor), an
+   overflowing floor (`UnfairTerms(6)`, not a panic), and two fuzz tests. `PinnedInterfacesTest` has
+   `test_the_kits_auction_parameters_match_upstream_field_for_field`. Filtered runs skip the kit's tests (they need the
+   artifacts of a full build).
+2. **An older DAO's exit.** The unit test `ragequit-position.test.mjs` drives the real reader against a chain whose lock
+   has no `totalLocked()`: a DAO made before D72 gets a preview counted the old way, and the panel says "This DAO was
+   made before Shares still locked behind milestones were left out of an exit"; a DAO made after with such a lock says
+   "This app can't tell what leaving would pay" and offers no exit.
+3. **Money in.** On a DAO's Overview, "Money that came in" lists each payment with its day and transaction (the link
+   opens the explorer on Sepolia; on the local chain it shows the hash and "no explorer on this chain"), and "Show all"
+   when there are more than five. Stop the chain node while the page loads: the card says "Couldn't tell what came into
+   the treasury just now" with Try again, never a figure.
+4. **Spending and claims.** "Where the treasury's money went" shows, for each direct payment, the day its decision ran
+   and the transaction. On the Work tab a paid claim says "Paid <day> · <transaction>"; the Track record's payouts
+   carry the same link.
+5. **Powers and who decides.** On a DAO launch page, "If a decision goes against you" gives today's notice from the
+   DAO's settings and says a vote can shorten them. "Who decides right now" says what share of the votes the team holds,
+   whether it can pass a decision alone, and how many sale Shares still wait to be claimed. On a contributor project's
+   Contributions tab the same card speaks of the biggest holder (the founder, until awards spread the Shares).

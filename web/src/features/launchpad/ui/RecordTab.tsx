@@ -45,6 +45,7 @@ import { useDaoHolders, useRecordEvents, useWork } from "../use-work";
 import { bondsOf, decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
 import { HoldersCard } from "./HoldersCard";
+import { TxLink } from "./TxLink";
 
 const PAGE = 15;
 
@@ -105,6 +106,7 @@ export function RecordTab({
   const labelOf = personLabeler(wallets.data ?? [], (pubkey) =>
     pickUserName(profiles.data?.[pubkey]),
   );
+  const chainId = Number(launch.record.chainId ?? "") || 0;
   const [filter, setFilter] = useState<"all" | LedgerKind>("all");
   const [shown, setShown] = useState(PAGE);
 
@@ -426,6 +428,12 @@ export function RecordTab({
                   ) : null}
                   <p className="text-xs text-muted-foreground">
                     {entry.when > 0 ? day(entry.when) : "No date on record"}
+                    {entry.tx ? (
+                      <>
+                        {" · "}
+                        <TxLink chainId={chainId} tx={entry.tx} />
+                      </>
+                    ) : null}
                   </p>
                 </div>
                 {entry.tab ? (

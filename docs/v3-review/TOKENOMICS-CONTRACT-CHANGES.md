@@ -44,6 +44,11 @@ and no reserve they need the 30-day unlock and a new way to fund a pool).
 The app pieces of §7 (the revenue pledge and the money that came in, the yearly allowance on the Work tab, the Open
 trading decision with the 30-day notice, and the copy that leaving is permanent) are built too: D82.
 
+**An outside review then found two launch checks of §3 that could be got round (D86, §11).** A team could launch with
+milestone percentages and no milestone checks, so no lock was made and the founder could leave with every team Share at
+once; and the sell-out check read the auction's floor and target at fixed byte offsets, so a valid but unusual encoding
+made it check the wrong numbers. Both are fixed in `DaoLaunchKit`, written up in §11 before the code.
+
 ## 0. Measured first
 
 Built in a scratch copy of `contracts/` at `1bcb885c0` (solc 0.8.37, `via_ir`, 200 runs), nothing committed:
@@ -209,9 +214,9 @@ plus the DAO's own:
 | Sale | `saleSupply × 10,000 ≥ 6,000 × total` |
 | Team | `Σ teamShares × 10,000 ≤ 3,500 × total` |
 | DAO reserve | `daoShares × 10,000 ≤ 2,000 × total` |
-| Milestones, when there is a team | 2 to 8 of them; `milestoneBps` add up to exactly 10,000; none above 5,000 |
+| Milestones, when there is a team | 2 to 8 of them, one check per percentage (§11.1); `milestoneBps` add up to exactly 10,000; none above 5,000; read back after the summon: the lock holds the whole team allocation |
 | Team seats | none is zero, the predicted DAO, the executor, the predicted auction or the kit (D72's safety) |
-| Sells out or refunds | the auction's `requiredCurrencyRaised ≥ floorPrice × saleSupply / 2^96` (the whole tranche at the floor), worked out with `Math.mulDiv` so it cannot overflow |
+| Sells out or refunds | the auction's `requiredCurrencyRaised ≥ floorPrice × saleSupply / 2^96` (the whole tranche at the floor), decoded with the auction's own type and compared so it cannot overflow (§11.2) |
 
 A team of zero stays possible (no milestones then, as today).
 
@@ -418,3 +423,92 @@ LBAMM and the market contracts stay out. The freeze tag comes after all of it.
    and the freeze tag in AUDIT-SCOPE.md.
 
 Each step starts with a test that fails on the code before it, as D67–D70 did.
+
+## 11. Two launch checks an outside review got round (D86, 2026-10-21)
+
+An outside review of the built changes (a source, product and runtime review, not an audit) reproduced both of these
+against the real kit, the real auction and the real patched DAO. Both are in `DaoLaunchKit` only, and each fix starts
+from a test that fails on the code before it.
+
+### 11.1 A team could launch with no milestone lock
+
+**What happened.** `_launch` makes a lock only when `milestoneChecks` is not empty, and the D75 check (rule 4) looked only
+at `milestoneBps`. With team Shares, `milestoneBps = [5000, 5000]`, no checks and no reviewers, every check passed: no
+lock was made, the panel check saw "no lock and no panel" and agreed, and the Shares' lock guard was set to "none", which
+since D73 is final. The team's Shares were free from the first block. In the reproduction the founder left with all 225
+of theirs against a funded treasury before any milestone. That breaks D75 (every team Share behind milestones) and D72's
+promise to backers (their full part before any milestone), since free team Shares count in the exit total and can leave
+first.
+
+**The change.**
+
+- Rule 4 also requires, when there is a team, exactly one check per percentage (so 2 to 8 of each). The locks already
+  refuse a zero check, a zero percentage and a repeated check, so the kit does not repeat those.
+- After the summon the kit reads back what D75 claims, on what now exists rather than on the inputs: when the team holds
+  any Shares, the Shares' lock guard is the lock the kit made, and that lock's `totalLocked()` (D72) is the team's whole
+  allocation. Otherwise the launch reverts (`kit: team lock`). This also refuses a team allocation that the percentages
+  cannot split exactly: each tranche rounds down, so a few base units would have been free. The app never plans one (it
+  plans whole Shares of 18 decimals and whole-percent milestones, so every tranche divides exactly), and the shared
+  planner already sends one check per percentage.
+
+**Tests** (`DaoLaunchKit.t.sol`, through the real kit):
+
+- the review's case, percentages with no checks and no panel, is refused with `UnfairTerms(4)` (today it launches, and
+  the founder's exit of all 225 Shares succeeds);
+- fewer checks than percentages, and more, are refused, by `launch` and by `launchChallenged`;
+- 225 Shares and one base unit at 50 / 50 are refused with `kit: team lock` (today it launches with one unit free);
+- the launches that pass end with the lock guard being the kit's lock and `totalLocked` the whole team;
+- a fuzz test over the number of checks and percentages (0 to 9 each) and the seats' amounts: a launch with a team
+  either reverts or ends with a lock holding every team Share;
+- the simulation checks the same after every launch.
+
+**Mutations**: the count check removed (the first test then sees a different refusal); the read-back removed (the
+rounding test).
+
+### 11.2 The sell-out check read fixed bytes, not what the auction decodes
+
+**What happened.** Rule 6 read the floor price and the target with `abi.decode(p.auctionConfig[288:352], (uint256,
+uint256))`, assuming the encoding puts the tuple straight after a one-word head. The factory decodes the same bytes with
+`abi.decode(configData, (AuctionParameters))`, which follows the head's offset wherever it points. A valid encoding with
+the offset one word later made the kit read the validation hook as the floor and the real floor as the target, while the
+auction used the real target. In the reproduction a 600-Share sale with a target of one currency unit was accepted and
+graduated on a one-unit bid with more than 500 Shares unsold, which is the opposite of D74 (sells out or refunds).
+
+**The change.** The kit decodes the whole configuration with the auction's own type, `abi.decode(p.auctionConfig,
+(KitAuctionParameters))`, a field-for-field mirror of upstream `AuctionParameters` declared in the kit, so it checks the
+numbers the factory will hand the auction however they are encoded. The mirror is pinned against upstream in
+`PinnedInterfaces.t.sol`, like the other mirrored auction types. It is not put in `src/CCA.sol`: that would change the
+metadata hash of `GraduationExecutor`, whose bytecode the desktop app embeds.
+
+The comparison is rearranged so it cannot overflow. "The target is at least the whole tranche at the floor",
+`required ≥ ⌊floor × supply / 2^96⌋`, is the same as `floor ≤ ((required + 1) × 2^96 − 1) / supply`, and with
+`required` a `uint128` nothing in it exceeds 2^225. (§3 promised `Math.mulDiv`; the code multiplied with checked
+arithmetic, which refused a floor whose product overflows with an arithmetic panic instead of `UnfairTerms(6)`. That
+still failed closed, but it was not the stated rule.)
+
+**Tests:**
+
+- the review's case, the tuple one word later with a target of one unit, is refused with `UnfairTerms(6)` (today it
+  launches and graduates on one unit);
+- the same shifted encoding with the full target launches;
+- a floor so large that floor × supply overflows 256 bits is refused with `UnfairTerms(6)`, not a panic;
+- a fuzz test over the tuple's position (0 to 4 words later) and the target: the kit refuses exactly when the target is
+  below the tranche at the floor;
+- `PinnedInterfaces.t.sol`: the kit's mirror equals upstream `AuctionParameters`, field for field.
+
+**Mutations**: the fixed-offset read restored (the shifted test); the target check removed (the existing entry, moved to
+the new text).
+
+### 11.3 What does not change
+
+The launch call (`Params`), the shared encoder and its goldens, the locks, the executor and the auction are untouched;
+launches the app plans were never affected, because it sends one check per percentage and the canonical encoding. No
+kit-made DAO is live with money in it (testnet only), so nothing needs migrating; a testnet launch made with the old kit
+could lack its lock, and the app reads the lock guard from the chain rather than assuming one.
+
+**Verified (2026-10-21):** each new test failed on the kit before the fix; then `forge test` with
+`REQUIRE_CONTRACT_ARTIFACTS=1` 463 passed, 0 failed, 2 skipped; the mutation check 38 of 38 caught; the simulation
+3,000 steps (seed 7), 3,011 invariant checks including the lock after each of 11 launches, 0 breaks; and the real-chain
+journeys web-dao-launch, web-dao-journey, web-record, web-work, web-challenge, web-milestone, web-paid-work and
+web-contributor pass. The app pieces of the same review are D87.
+

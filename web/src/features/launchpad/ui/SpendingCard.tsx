@@ -3,14 +3,19 @@
  *
  * A DAO can do both, and a backer judging whether a team is accountable needs to see the split. This is the plain
  * reading of it: the words come from `spendingHeadline`, the figures from what the chain returned, and anything the page
- * could not read is said so rather than left out.
+ * could not read is said so rather than left out. Each direct payment shows the day its decision ran and the
+ * transaction, and the whole list opens in place.
  */
+
+import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
 import { formatAtomic } from "../lib/amounts";
+import type { Execution } from "../lib/payment-history";
 import { type SpendingSummary, spendingHeadline } from "../lib/spending";
+import { paidOn, TxLink } from "./TxLink";
 
 const MOST_SHOWN = 5;
 
@@ -20,6 +25,8 @@ export function SpendingCard({
   decimals,
   labelOf,
   onOpenDecisions,
+  runs,
+  chainId,
 }: {
   /** How a wallet is written: the person's name with the short address, or just the address. */
   labelOf: (address: string) => string;
@@ -27,10 +34,15 @@ export function SpendingCard({
   symbol: string;
   decimals: number;
   onOpenDecisions: () => void;
+  /** When and in which transaction each payment's decision ran, by decision id; undefined while it is read, null when
+   * it could not be. */
+  runs: ReadonlyMap<string, Execution> | null | undefined;
+  chainId: number;
 }) {
+  const [all, setAll] = useState(false);
   const money = (units: bigint) =>
     `${formatAtomic(units, decimals, { maxFractionDigits: 2 })} ${symbol}`.trim();
-  const shown = summary.direct.slice(0, MOST_SHOWN);
+  const shown = all ? summary.direct : summary.direct.slice(0, MOST_SHOWN);
   return (
     <Card className="p-4" data-testid="dao-spending">
       <h3 className="text-sm font-semibold">
@@ -66,15 +78,42 @@ export function SpendingCard({
           className="mt-2 flex flex-col gap-0.5 text-xs text-muted-foreground"
           data-testid="dao-spending-payments"
         >
-          {shown.map((payment) => (
-            <li key={`${payment.decisionId}-${payment.position}`}>
-              {money(payment.amount)} to {labelOf(payment.to)}
-            </li>
-          ))}
-          {summary.direct.length > shown.length ? (
-            <li>and {summary.direct.length - shown.length} more</li>
-          ) : null}
+          {shown.map((payment) => {
+            const run = runs?.get(payment.decisionId.toLowerCase());
+            return (
+              <li
+                data-testid="dao-spending-payment"
+                key={`${payment.decisionId}-${payment.position}`}
+              >
+                {money(payment.amount)} to {labelOf(payment.to)}
+                {" · "}
+                {run ? (
+                  <>
+                    {paidOn(run.at)} · <TxLink chainId={chainId} tx={run.tx} />
+                  </>
+                ) : runs === null ? (
+                  "when it ran could not be read"
+                ) : runs ? (
+                  "its transaction was not found"
+                ) : (
+                  "reading when it ran…"
+                )}
+              </li>
+            );
+          })}
         </ul>
+      ) : null}
+      {summary.direct.length > MOST_SHOWN ? (
+        <Button
+          className="mt-1"
+          data-testid="dao-spending-all"
+          onClick={() => setAll((open) => !open)}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          {all ? "Show fewer" : `Show all ${summary.direct.length} payments`}
+        </Button>
       ) : null}
       {summary.unread > 0 ? (
         <p

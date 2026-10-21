@@ -69,6 +69,7 @@ const work = (mandates, extra = {}) => ({
 const events = (extra = {}) => ({
   filedAt: new Map(),
   paidAt: new Map(),
+  paidTx: new Map(),
   verdicts: new Map(),
   promises: [],
   lock: "0xlock",
@@ -177,6 +178,7 @@ test("the ledger is newest first, undated entries last, and a paid claim says wh
     events: events({
       filedAt: new Map([[key1, 1_000]]),
       paidAt: new Map([[key1, 3_000]]),
+      paidTx: new Map([[key1, `0x${"9a".repeat(32)}`]]),
       verdicts: new Map([
         [
           key1,
@@ -194,6 +196,11 @@ test("the ledger is newest first, undated entries last, and a paid claim says wh
     ["paid", "approved", "filed", "decision", "filed"],
   );
   assert.equal(ledger[0].text, "Alice was paid 100 USDC.");
+  assert.equal(
+    ledger[0].tx,
+    `0x${"9a".repeat(32)}`,
+    "the payout links its transaction",
+  );
   assert.equal(ledger[1].detail, "Approved by Rae, Sam.");
   // The second claim has no date and comes last.
   assert.equal(ledger.at(-1).when, 0);
