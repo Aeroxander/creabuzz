@@ -505,3 +505,10 @@ The launch call (`Params`), the shared encoder and its goldens, the locks, the e
 launches the app plans were never affected, because it sends one check per percentage and the canonical encoding. No
 kit-made DAO is live with money in it (testnet only), so nothing needs migrating; a testnet launch made with the old kit
 could lack its lock, and the app reads the lock guard from the chain rather than assuming one.
+
+**Verified (2026-10-21):** each new test failed on the kit before the fix; then `forge test` with
+`REQUIRE_CONTRACT_ARTIFACTS=1` 463 passed, 0 failed, 2 skipped; the mutation check 38 of 38 caught; the simulation
+3,000 steps (seed 7), 3,011 invariant checks including the lock after each of 11 launches, 0 breaks; and the real-chain
+journeys web-dao-launch, web-dao-journey, web-record, web-work, web-challenge, web-milestone, web-paid-work and
+web-contributor pass. The app pieces of the same review are D85.
+
