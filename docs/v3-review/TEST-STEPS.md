@@ -973,7 +973,7 @@ sending the contributor launch through a bundler, and the week-long waits in rea
 ```bash
 . ./bin/activate-hermit
 cd contracts && REQUIRE_CONTRACT_ARTIFACTS=1 forge test      # the whole suite: the kit's tests need its artifacts
-node scripts/contracts-mutation-check.mjs                     # 38 guards, each must be caught (no uncommitted src changes)
+node scripts/contracts-mutation-check.mjs                     # 42 guards, each must be caught (no uncommitted src changes)
 pnpm --dir web test
 pnpm --dir web exec tsc --noEmit
 pnpm --dir web build && pnpm --dir web exec playwright test --project=smoke launchpad.spec.ts \

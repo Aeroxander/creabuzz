@@ -153,7 +153,7 @@ with the web app's own encoders and exit/bid logic. Each invariant was also chec
 | 16 | While transfers are locked, Shares move only to or from the exempt address (the auction), and unlocking runs only 30 days or more after an announcement still standing (D77) | `TransferLock.t.sol` (a fuzz test over senders, receivers and amounts) | every transfer step expects the refusal | the notice check removed; the exemption widened |
 | 17 | The kits refuse terms outside the limits, a team seat that is a system address, and (contributor projects) a founder stake above a third of the first budget or a founder on its panel (D74, D75, D79); a launch with a team either fails or ends with a lock holding every team Share, and the target check reads what the auction decodes however the configuration is encoded (D86) | `DaoLaunchKit.t.sol` (including `testFuzz_a_launch_with_a_team_either_fails_or_locks_every_team_share` and `testFuzz_the_target_check_reads_the_config_wherever_it_is_encoded`), `ContributorKit.t.sol`, `PinnedInterfaces.t.sol` (the kit's copy of `AuctionParameters`) | every launch is inside them, and its lock holds the whole team | each of the ten kit checks removed; the check-per-percentage rule removed; the lock read-back removed; the fixed-offset read restored |
 
-The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, 38 guards, all caught on 2026-10-21 after D86).
+The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, 42 guards, all caught on 2026-10-21 after D84 and D86 were merged).
 
 ## 6. Observations made while preparing (no behaviour changed)
 
