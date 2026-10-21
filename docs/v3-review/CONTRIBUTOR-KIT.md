@@ -79,3 +79,11 @@ no budget or project vote.
 
 It adds one small contract to the contributor-project audit scope. It holds nothing and keeps no roles after the
 transaction. Mainnet stays off.
+
+## On Sepolia (D83, 2026-10-21)
+
+`scripts/sepolia-deploy.sh` deploys the kit with the summoner and the launch kit; it is not broadcast yet. The real-chain
+journey runs on a fork of Sepolia with `scripts/web-contributor-e2e.sh --sepolia-fork`, and both runs first ask the kit
+itself to refuse the D79 limits. The hosted build's settings are in `docs/sepolia-testnet.md` §3. Shares earned on Sepolia
+are test records: they will not move to a real network automatically, and the app says so where people start a project
+and where they see who earned what.
