@@ -7,18 +7,18 @@
 #
 # ⚠️  DEV ONLY. Anvil's public dev keys, a local chain, nothing else.
 #
-# The founder (the first dev account) launches; the launch gives them the team's 20% of a 1B supply, 40% of it tied to
-# "alpha shipped" and 60% to "mainnet live". The launch itself names the panel that judges them (two outside reviewers,
+# The founder (the first dev account) launches; the launch gives them the team's 25% of an 800M supply, half of it tied to
+# "alpha shipped" and half to "mainnet live". The launch itself names the panel that judges them (two outside reviewers,
 # both must agree). The DAO then votes a project in that panel whose acceptance check is "alpha shipped", and the founder
 # files a claim for it. `world_milestone_paid` runs it to Paid.
 
 # shellcheck source=no-raise-world.sh
 . "$(dirname "${BASH_SOURCE[0]}")/no-raise-world.sh"
 
-TEAM_SHARES=200000000000000000000000000   # 200,000,000 Shares (20% of 1B)
-FIRST_TRANCHE=80000000000000000000000000  # 40% of the team's allocation
-SECOND_TRANCHE=120000000000000000000000000
-HALF_TRANCHE=40000000000000000000000000   # half of the first (Bash cannot divide a number this big)
+TEAM_SHARES=200000000000000000000000000   # 200,000,000 Shares (25% of 800M)
+FIRST_TRANCHE=100000000000000000000000000 # half of the team's allocation (no milestone holds more, D75)
+SECOND_TRANCHE=100000000000000000000000000
+HALF_TRANCHE=50000000000000000000000000   # half of the first (Bash cannot divide a number this big)
 
 world_launch_with_lock() {
   step "the founder launches a project into its own DAO through the kit, the team's Shares locked behind two milestones"

@@ -164,7 +164,8 @@ test("a contributor project is started from the page, work is claimed the same d
     .getByTestId("contributor-pitch")
     .fill("Open docs for everyone, written by the people who use them.");
   await founder.getByTestId("contributor-founder-shares").fill("200");
-  await founder.getByTestId("contributor-budget-shares").fill("100");
+  // Three times the founder's 200: the founder starts with at most a third of the first budget (D79).
+  await founder.getByTestId("contributor-budget-shares").fill("600");
   await founder.getByTestId("contributor-project-cap").fill("40");
   await founder
     .getByTestId("contributor-reviewers")

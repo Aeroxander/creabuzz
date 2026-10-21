@@ -21,7 +21,7 @@ world_launch_with_lock
 locks=$(as $KEY_FOUNDER work locks --dao "$DAO")
 [[ "$(echo "$locks" | jget locked)" == "$TEAM_SHARES" ]] || fail "all of the team's Shares should start locked: $locks"
 [[ "$(echo "$locks" | node -e 'const o=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(o.milestones.map((m)=>m.amount+":"+m.state).join(" "))')" \
-  == "$FIRST_TRANCHE:locked $SECOND_TRANCHE:locked" ]] || fail "two milestones, 40% and 60%, both locked: $locks"
+  == "$FIRST_TRANCHE:locked $SECOND_TRANCHE:locked" ]] || fail "two milestones, half each, both locked: $locks"
 
 step "locked Shares cannot be sold, and cannot be taken out of the DAO"
 if cast send --rpc-url "$RPC" --private-key "$KEY_FOUNDER" "$SHARES" "transfer(address,uint256)" "$REVIEWER1" 1 >/dev/null 2>&1; then
@@ -66,13 +66,17 @@ if as $KEY_CONTRIBUTOR work unlock --dao "$DAO" --beneficiary "$FOUNDER" --index
   fail "a milestone was unlocked twice"
 fi
 
-step "the freed part moves and can be taken out of the DAO, and not one Share more"
-cast send --rpc-url "$RPC" --private-key "$KEY_FOUNDER" "$SHARES" "transfer(address,uint256)" "$REVIEWER1" "$HALF_TRANCHE" >/dev/null \
-  || fail "the founder could not move the Shares the milestone freed"
+step "the freed part can be taken out of the DAO, and not one Share more; nothing moves between wallets"
+# Transfers between wallets are locked for every launch (D77), freed Shares too.
+if cast send --rpc-url "$RPC" --private-key "$KEY_FOUNDER" "$SHARES" "transfer(address,uint256)" "$REVIEWER1" "$HALF_TRANCHE" >/dev/null 2>&1; then
+  fail "the founder moved Shares between wallets while transfers are locked"
+fi
 # The same call that was refused before the milestone now goes through, so the lock was what refused it.
-cast send --rpc-url "$RPC" --private-key "$KEY_FOUNDER" "$DAO" "ragequit(address[],uint256,uint256)" \
-  "[0x0000000000000000000000000000000000000000]" "$HALF_TRANCHE" 0 >/dev/null \
-  || fail "the founder could not take the freed Shares out of the DAO"
+for _ in 1 2; do
+  cast send --rpc-url "$RPC" --private-key "$KEY_FOUNDER" "$DAO" "ragequit(address[],uint256,uint256)" \
+    "[0x0000000000000000000000000000000000000000]" "$HALF_TRANCHE" 0 >/dev/null \
+    || fail "the founder could not take the freed Shares out of the DAO"
+done
 [[ "$(shares_of "$FOUNDER")" == "$SECOND_TRANCHE" ]] || fail "only the second milestone's Shares should be left, all locked"
 if cast send --rpc-url "$RPC" --private-key "$KEY_FOUNDER" "$SHARES" "transfer(address,uint256)" "$REVIEWER1" 1 >/dev/null 2>&1; then
   fail "the founder moved a Share that is still locked"

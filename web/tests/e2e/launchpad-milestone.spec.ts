@@ -25,7 +25,7 @@ const FOUNDER = getPublicKey(
 );
 const WAD = 10n ** 18n;
 const TEAM = 200_000_000n * WAD;
-const SECOND_TRANCHE = 120_000_000n * WAD;
+const SECOND_TRANCHE = 100_000_000n * WAD; // half of the team's 200M (D75: no milestone holds more)
 
 test.skip(
   !ANVIL_URL || !DAO || !LOCK,
@@ -77,22 +77,22 @@ const record = {
       mode: "dao",
       name: "Nebula",
       symbol: "NEB",
-      supply: "200000000",
+      supply: "600000000",
     },
     unlocks: {
       mode: "milestones",
-      allocationPct: 10,
+      allocationPct: 25,
       milestones: [
         {
           claim: "m1",
           label: "alpha shipped",
-          percent: 40,
+          percent: 50,
           verifier: "founder",
         },
         {
           claim: "m2",
           label: "mainnet live",
-          percent: 60,
+          percent: 50,
           verifier: "founder",
         },
       ],
@@ -238,17 +238,17 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
 
   // The first milestone has a Paid claim waiting; the second has nothing yet.
   const first = page.getByTestId("locked-shares-milestone-0");
-  await expect(first).toContainText("80,000,000 Shares");
+  await expect(first).toContainText("100,000,000 Shares");
   await expect(first).toContainText("alpha shipped");
   const second = page.getByTestId("locked-shares-milestone-1");
-  await expect(second).toContainText("120,000,000 Shares");
+  await expect(second).toContainText("100,000,000 Shares");
   await expect(second).toContainText("mainnet live");
   await expect(page.getByTestId("locked-shares-unlock-1")).toHaveCount(0);
   await expect(second).toContainText("Not submitted yet");
 
   await page.getByTestId("locked-shares-unlock-0").click();
   await expect(page.getByTestId("locked-shares-total")).toContainText(
-    "120,000,000 Shares are still locked",
+    "100,000,000 Shares are still locked",
     { timeout: 60_000 },
   );
   await expect(first).toContainText("Unlocked");
@@ -328,7 +328,7 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
     /(\d+ days|\d+ months|1 day)/,
   );
   await expect(holder.getByTestId("portfolio-holding-locked")).toContainText(
-    "120,000,000 of them are locked",
+    "100,000,000 of them are locked",
   );
   if (process.env.E2E_SHOTS) {
     await holder.getByTestId("portfolio-holdings").screenshot({

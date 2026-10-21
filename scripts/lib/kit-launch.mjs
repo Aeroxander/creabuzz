@@ -40,16 +40,18 @@ async function ethCall(rpc, to, data) {
 if (mode === "plan") {
   const [rpc, kit, launcher, currency, start, reviewers, quorum, bond] = args;
   const startBlock = Number(start);
-  // A 200M-Share sale of a 1B supply in the dev USDC ($0.01 a Share, a $300,000 threshold); the team's 20% is held
-  // back by two milestones, worded exactly as the project that judges each will word its acceptance check.
+  // A 600M-Share sale of an 800M supply in the dev USDC ($0.0005 a Share): the whole tranche at the floor is the
+  // $300,000 target, so the sale sells out or refunds (D74), and the split is the standard 75 / 25 / 0 (D75). The team's
+  // 200M are all held back by two milestones of half each, worded exactly as the project that judges each will word
+  // its acceptance check.
   const record = {
     id: "milestone-e2e",
     author: launcher.toLowerCase(),
     chainId: "31337",
-    tokenPlan: { mode: "dao", name: "Nebula", symbol: "NEB", supply: "200000000" },
-    allocation: { sale: 20, team: 20, treasury: 30, liquidity: 15, milestones: 10, community: 5 },
+    tokenPlan: { mode: "dao", name: "Nebula", symbol: "NEB", supply: "600000000" },
+    allocation: { sale: 75, team: 25, treasury: 0, liquidity: 0, milestones: 0, community: 0 },
     currency,
-    floorPrice: "792281625140000",
+    floorPrice: "39614081257000",
     tickSpacing: "79228162514",
     requiredRaised: "299999999998",
     startBlock,
@@ -58,8 +60,8 @@ if (mode === "plan") {
     unlocks: {
       mode: "milestones",
       milestones: [
-        { label: "alpha shipped", percent: 40 },
-        { label: "mainnet live", percent: 60 },
+        { label: "alpha shipped", percent: 50 },
+        { label: "mainnet live", percent: 50 },
       ],
     },
   };

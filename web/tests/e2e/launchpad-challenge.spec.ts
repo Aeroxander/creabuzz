@@ -33,8 +33,9 @@ const FOUNDER = getPublicKey(
 );
 const WAD = 10n ** 18n;
 const DAY = 86_400;
-// 200,000,000 sold of 1,000,000,000: 20% sale, 20% team, 60% the DAO's own.
-const TEAM = 200_000_000n * WAD;
+// 30,000,000 sold of 40,000,000: 75% sale, 25% team, none kept by the DAO (the standard split, D75). The whole tranche at
+// a cent is the raise target: it sells out or refunds (D74).
+const TEAM = 10_000_000n * WAD;
 // The bond is 1% of the raise target, and an objector's deposit a tenth of that (both rounded down, as the plan does).
 const BOND = (299_999_999_998n * 100n) / 10_000n;
 const DEPOSIT = (BOND * 1_000n) / 10_000n;
@@ -143,12 +144,12 @@ function launchRecord(startBlock: number): StoredEvent {
         mode: "dao",
         name: "Nebula",
         symbol: "NEB",
-        supply: "200000000",
+        supply: "30000000",
       },
       allocation: {
-        sale: 20,
-        team: 20,
-        treasury: 60,
+        sale: 75,
+        team: 25,
+        treasury: 0,
         liquidity: 0,
         milestones: 0,
         community: 0,
@@ -157,10 +158,10 @@ function launchRecord(startBlock: number): StoredEvent {
       // records a launch into its own DAO, the plan governs the team's share.
       unlocks: {
         mode: "milestones",
-        allocationPct: 20,
+        allocationPct: 25,
         milestones: [
-          { claim: "m1", label: WORDS_ONE, percent: 40, verifier: "founder" },
-          { claim: "m2", label: WORDS_TWO, percent: 60, verifier: "founder" },
+          { claim: "m1", label: WORDS_ONE, percent: 50, verifier: "founder" },
+          { claim: "m2", label: WORDS_TWO, percent: 50, verifier: "founder" },
         ],
         months: null,
       },
@@ -426,7 +427,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     "any holder can object",
   );
   await expect(founder.getByTestId("challenge-summary")).toContainText(
-    "0 of 2 milestones unlocked. 200,000,000 tokens still locked.",
+    "0 of 2 milestones unlocked. 10,000,000 tokens still locked.",
   );
   await expect(founder.getByTestId("challenge-stage-0")).toHaveText(
     "Not published",
@@ -601,7 +602,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   await expect(founder.getByTestId("challenge-object-0")).toHaveCount(0);
 
   // ── The vote ends, anyone settles it, and the milestone is turned down ──────────────────────────────
-  await passTime(14 * DAY + 60);
+  await passTime(21 * DAY + 60); // half the team's tokens: a 21-day window
   await openMilestones(backerOne);
   await expect(backerOne.getByTestId("challenge-stage-0")).toHaveText(
     "Vote ended",
@@ -619,7 +620,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   expect(await balanceOf(CURRENCY, lock)).toBe(0n);
   expect(await lockedOf(FOUNDER_WALLET)).toBe(TEAM);
   await expect(backerOne.getByTestId("challenge-headline-0")).toContainText(
-    "28 days",
+    "42 days", // twice the 21 days a milestone holding half the team's tokens waits
   );
   say("the holders turned the milestone down");
 
@@ -639,7 +640,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   await expect(backerTwo.getByTestId("challenge-stage-0")).toHaveText(
     "Open to objections",
   );
-  await passTime(28 * DAY + 60);
+  await passTime(42 * DAY + 60); // the retry waits twice as long
   // A project whose lock cannot be read is said so on Home, never shown as "nothing is waiting": here the node refuses the
   // lock's questions, and the page asks again when told to.
   await founder.route(ANVIL_URL, (route) =>
@@ -677,34 +678,40 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     "Unlocked",
     { timeout: 90_000 },
   );
-  expect(await lockedOf(FOUNDER_WALLET)).toBe((TEAM * 60n) / 100n);
+  expect(await lockedOf(FOUNDER_WALLET)).toBe((TEAM * 50n) / 100n);
   await expect(backerTwo.getByTestId("challenge-summary")).toContainText(
-    "1 of 2 milestones unlocked. 120,000,000 tokens still locked.",
+    "1 of 2 milestones unlocked. 5,000,000 tokens still locked.",
   );
   // The retry went through unopposed: the objection that sent the first attempt back is not this attempt's.
   await expect(backerTwo.getByTestId("challenge-headline-0")).toContainText(
     "Nobody objected.",
   );
   await shot(backerTwo, "5-unlocked");
-  say("the milestone unlocked and the team's first 40% is free");
-  // The unlocked part can now move; the rest still cannot.
+  say("the milestone unlocked and the team's first half is free");
+  // Shares never move between wallets while transfers are locked (D77), unlocked or not; the unlocked half can leave
+  // with its part of the treasury, and not one Share more.
   await expect(
     rpc("eth_call", [
       {
         from: FOUNDER_WALLET,
         to: shares,
-        data: `0xa9059cbb${word(BACKER_ONE)}${word((TEAM * 40n) / 100n)}`,
+        data: `0xa9059cbb${word(BACKER_ONE)}${word(1n)}`,
       },
+      "latest",
+    ]),
+  ).rejects.toThrow();
+  const leave = (amount: bigint) =>
+    // ragequit(address[] tokens = [the sale currency], uint256 shares, uint256 loot = 0)
+    `0x29f64d1a${word(96n)}${word(amount)}${word(0n)}${word(1n)}${word(CURRENCY)}`;
+  await expect(
+    rpc("eth_call", [
+      { from: FOUNDER_WALLET, to: dao, data: leave((TEAM * 50n) / 100n) },
       "latest",
     ]),
   ).resolves.toBeTruthy();
   await expect(
     rpc("eth_call", [
-      {
-        from: FOUNDER_WALLET,
-        to: shares,
-        data: `0xa9059cbb${word(BACKER_ONE)}${word((TEAM * 40n) / 100n + 1n)}`,
-      },
+      { from: FOUNDER_WALLET, to: dao, data: leave((TEAM * 50n) / 100n + 1n) },
       "latest",
     ]),
   ).rejects.toThrow();
@@ -760,11 +767,11 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   await expect
     .poll(async () => lockedOf(FOUNDER_WALLET), { timeout: 90_000 })
     .toBe(0n);
-  // 120,000,000 locked Shares were burned; the 80,000,000 that unlocked are still the founder's.
+  // The 5,000,000 still locked were burned; the 5,000,000 that unlocked are still the founder's.
   expect(supplyBefore - (await callWord(shares, "0x18160ddd"))).toBe(
-    (TEAM * 60n) / 100n,
+    (TEAM * 50n) / 100n,
   );
-  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe((TEAM * 40n) / 100n);
+  expect(await balanceOf(shares, FOUNDER_WALLET)).toBe((TEAM * 50n) / 100n);
   say(
     "the late objection was upheld and the remaining locked Shares were burned",
   );
