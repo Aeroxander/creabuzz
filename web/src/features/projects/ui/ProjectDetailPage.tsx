@@ -514,11 +514,21 @@ export function ProjectDetailPage({
           role="status"
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <span>
-            This project's org node hasn't reached the server yet. Approvals
-            publish ownership grants that point at that node, and servers that
-            enforce the grant chain will hold them until it lands.
+          <span className="flex-1">
+            This project&apos;s setup is not on this server yet; it may still be
+            on its way. Until it arrives, approvals are recorded here, but a
+            server that checks who may grant a role holds them back.
           </span>
+          <Button
+            className="shrink-0"
+            data-testid="missing-node-retry"
+            onClick={refetch}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Check again
+          </Button>
         </div>
       ) : null}
 

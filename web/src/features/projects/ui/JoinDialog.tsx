@@ -35,7 +35,7 @@ import { usePublishProjectEvent } from "../use-projects";
 
 /** The non-binding stance, verbatim, shown wherever a stake is recorded. */
 export const STAKE_DISCLAIMER =
-  "Recorded and revocable until the project's DAO adopts the map. Not a legal contract.";
+  "A record on this board that the founder can take back: not Shares, not a payment, and not a legal contract. Shares come only from awards for accepted work.";
 
 export function JoinDialog({
   project,
@@ -100,9 +100,11 @@ export function JoinDialog({
             Request {role.label} for {pct || "?"}%
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {project.manifest.name} declares this role at up to {role.pct}%.
-            Once the founder approves, the stake is recorded as an ownership
-            grant.
+            {project.manifest.name} declares this role at up to {role.pct}%. If
+            the founder approves, this board records the role as yours: a record
+            they can take back, not Shares. If the project starts as a
+            contributor project, the role becomes a work area, and you earn its
+            Shares as your work is accepted.
           </AlertDialogDescription>
         </AlertDialogHeader>
 

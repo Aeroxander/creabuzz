@@ -4,19 +4,31 @@
  * holds now beside it. The same for everyone, with or without a wallet.
  */
 
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
+import { ethBlockTimestamps, getRpcEndpoint } from "../chain";
+import {
+  type AwardStory,
+  firstLink,
+  shortEvidence,
+  storyFor,
+  storyKey,
+} from "../lib/contribution-story";
 import { formatUnits } from "../lib/dao-actions";
 import type { ContributionAward } from "../lib/contributions";
 import { isContributorProject } from "../lib/funding";
 import { testRecordsNotice } from "../lib/test-network";
 import type { Launch } from "../models";
 import { useContributions } from "../use-contributions";
+import { useEvidencePackets } from "../use-evidence";
 import { useWalletLabels } from "../use-wallet-labels";
+import { useWork } from "../use-work";
+import { paidOn, TxLink } from "./TxLink";
 import { VoteControlNote } from "./VoteControlNote";
 
 const shares = (value: bigint) => formatUnits(value, 18);
@@ -27,38 +39,101 @@ function percent(bps: number): string {
   return `${tenths % 10 === 0 ? tenths / 10 : (tenths / 10).toFixed(1)}%`;
 }
 
+/** What the person delivered, when, how the review went, and the transaction: each said only as far as it is known. */
+function AwardStoryLine({
+  story,
+  award,
+  chainId,
+}: {
+  story: AwardStory;
+  award: ContributionAward;
+  chainId: number;
+}) {
+  const link = story.evidence ? firstLink(story.evidence) : null;
+  return (
+    <div
+      className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted-foreground"
+      data-testid="contribution-award-story"
+    >
+      <span>
+        {story.at === null ? "Date not read" : `Awarded ${paidOn(story.at)}`}
+        {award.txHash ? (
+          <>
+            {" · "}
+            <TxLink chainId={chainId} tx={award.txHash} />
+          </>
+        ) : null}
+        {story.review
+          ? ` · approved by ${story.review.approvals} of ${story.review.quorum} reviewers`
+          : ""}
+      </span>
+      {story.evidence ? (
+        <span data-testid="contribution-award-evidence">
+          In their words: “{shortEvidence(story.evidence)}”
+          {link ? (
+            <>
+              {" "}
+              <a
+                className="break-all text-primary-ink underline-offset-4 hover:underline"
+                href={link}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                Open what they delivered
+              </a>
+            </>
+          ) : null}
+        </span>
+      ) : story.evidenceState === "mismatch" ? (
+        <span>
+          What was published for it is not what the claim committed to, so it is
+          not shown as theirs.
+        </span>
+      ) : story.evidenceState === "missing" ? (
+        <span>No evidence was published for it.</span>
+      ) : (
+        <span>Its evidence is on the Work tab with the claim.</span>
+      )}
+    </div>
+  );
+}
+
 function AwardLine({
   award,
   launch,
+  story,
 }: {
   award: ContributionAward;
   launch: Launch;
+  story: AwardStory | null;
 }) {
   return (
     <li className="text-sm" data-testid="contribution-award">
-      <span className="font-semibold tabular-nums">
-        {shares(award.shares)} Shares
-      </span>{" "}
-      for{" "}
-      <Link
-        className="underline underline-offset-2"
-        params={{ launchId: launch.record.id }}
-        search={{
-          author: launch.record.author,
-          tab: "work",
-          claim: award.claimId,
-          mandate: award.budget,
-        }}
-        to="/launchpad/$launchId"
-      >
-        {award.claim}
-      </Link>
-      {award.project ? (
-        <span className="text-muted-foreground">
-          {" "}
-          in the work area {award.project}
-        </span>
-      ) : null}
+      <span data-testid="contribution-award-title">
+        <span className="font-semibold tabular-nums">
+          {shares(award.shares)} Shares
+        </span>{" "}
+        for{" "}
+        <Link
+          className="underline underline-offset-2"
+          params={{ launchId: launch.record.id }}
+          search={{
+            author: launch.record.author,
+            tab: "work",
+            claim: award.claimId,
+            mandate: award.budget,
+          }}
+          to="/launchpad/$launchId"
+        >
+          {award.claim}
+        </Link>
+        {award.project ? (
+          <span className="text-muted-foreground">
+            {" "}
+            in the work area {award.project}
+          </span>
+        ) : null}
+      </span>
       {award.receipt === "received" ? null : (
         <span
           className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-100"
@@ -69,8 +144,68 @@ function AwardLine({
             : "Award recorded; receipt not checked"}
         </span>
       )}
+      {story ? (
+        <AwardStoryLine
+          award={award}
+          chainId={Number(launch.record.chainId ?? "") || 0}
+          story={story}
+        />
+      ) : null}
     </li>
   );
+}
+
+/**
+ * The stories behind the awards: the claims and their evidence the Work tab reads (shared cache), and the times of the
+ * blocks the awards ran in, read once for the blocks shown.
+ */
+function useAwardStories(
+  dao: string,
+  launch: Launch,
+  awards: readonly ContributionAward[],
+) {
+  const work = useWork(dao, null);
+  const evidence = useEvidencePackets(launch);
+  const blocks = useMemo(
+    () => [
+      ...new Set(
+        awards.flatMap((a) => (a.blockNumber === null ? [] : [a.blockNumber])),
+      ),
+    ],
+    [awards],
+  );
+  const times = useQuery({
+    queryKey: ["launchpad", "work", dao, "award-times", blocks],
+    enabled: blocks.length > 0,
+    queryFn: async () =>
+      new Map(
+        (await ethBlockTimestamps(getRpcEndpoint(), blocks)).map((s) => [
+          s.block,
+          s.timestampSeconds,
+        ]),
+      ),
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
+  });
+  return useMemo(() => {
+    const claims = new Map(
+      (work.data?.mandates ?? []).flatMap((m) =>
+        m.claims.map((c) => [storyKey(m.address, c.id), c] as const),
+      ),
+    );
+    const stories = new Map<string, AwardStory>();
+    for (const award of awards) {
+      stories.set(
+        storyKey(award.budget, award.claimId),
+        storyFor(award, {
+          times: times.data ?? new Map(),
+          claims,
+          packets: evidence.packets,
+        }),
+      );
+    }
+    return stories;
+  }, [awards, work.data, times.data, evidence.packets]);
 }
 
 export function ContributionsTab({
@@ -89,6 +224,11 @@ export function ContributionsTab({
   const label = useWalletLabels(addresses);
   const contributor = isContributorProject(launch.record);
   const testNotice = testRecordsNotice(launch.record.chainId);
+  const allAwards = useMemo(
+    () => snapshot?.people.flatMap((p) => p.awards) ?? [],
+    [snapshot],
+  );
+  const stories = useAwardStories(dao, launch, allAwards);
 
   if (contributions.isLoading) {
     return (
@@ -276,6 +416,10 @@ export function ContributionsTab({
                       award={award}
                       key={`${award.budget}:${award.claimId}`}
                       launch={launch}
+                      story={
+                        stories.get(storyKey(award.budget, award.claimId)) ??
+                        null
+                      }
                     />
                   ))}
                 </ul>

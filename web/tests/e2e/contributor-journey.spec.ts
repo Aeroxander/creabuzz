@@ -290,6 +290,14 @@ test("a contributor project is started from the page, work is claimed the same d
     "Contributor project",
     { timeout: 30_000 },
   );
+  // The header says what it is and, read from the Shares themselves, that they cannot be traded yet.
+  await expect(founder.getByTestId("contributor-note")).toHaveText(
+    "No token sale at setup. New Shares come only from awards for reviewed work.",
+  );
+  await expect(founder.getByTestId("contributor-transfers")).toHaveText(
+    "Shares are locked: they cannot be sent between wallets.",
+    { timeout: 30_000 },
+  );
   const contributor = await context.newPage();
   await open(contributor, CONTRIBUTOR, projectPath("work"));
   await expect(contributor.getByTestId("work-projects")).toContainText("docs", {
@@ -389,9 +397,21 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(person.getByTestId("contribution-person-held")).toHaveText(
     "Holds 25 now (11.1% of all Shares now).",
   );
-  await expect(person.getByTestId("contribution-award")).toHaveText(
+  await expect(person.getByTestId("contribution-award-title")).toHaveText(
     "25 Shares for write-docs in the work area docs",
   );
+  // The story behind it: when it ran, how the review went, the transaction, and what they delivered in their own
+  // words, shown because it hashes to what the claim committed to.
+  const story = person.getByTestId("contribution-award-story");
+  await expect(story).toContainText("Awarded ", { timeout: 30_000 });
+  await expect(story).toContainText("approved by 2 of 2 reviewers");
+  await expect(story.getByTestId("tx-link")).toBeVisible();
+  await expect(story.getByTestId("contribution-award-evidence")).toContainText(
+    "In their words: “https://example.com/pr/1”",
+  );
+  await expect(
+    story.getByRole("link", { name: "Open what they delivered" }),
+  ).toHaveAttribute("href", "https://example.com/pr/1");
   await expect(reader.getByTestId("contributions-earned")).toHaveText("25");
   // The founder's starting Shares, from the token's own mint at launch.
   await expect(reader.getByTestId("contributions-starting")).toHaveText("200");
@@ -729,17 +749,25 @@ test("several people earn in one contributor project: two first projects, and a 
     person(CONTRIBUTOR).getByTestId("contribution-person-held"),
   ).toHaveText("Holds 40 now (15.9% of all Shares now).");
   await expect(
-    person(CONTRIBUTOR).getByTestId("contribution-award"),
+    person(CONTRIBUTOR).getByTestId("contribution-award-title"),
   ).toHaveText("40 Shares for write-guide in the work area guide");
+  await expect(
+    person(CONTRIBUTOR).getByTestId("contribution-award-evidence"),
+  ).toContainText("In their words: “https://example.com/pr/11”", {
+    timeout: 30_000,
+  });
   await expect(
     person(NEWCOMER).getByTestId("contribution-person-earned"),
   ).toHaveText("11 Shares awarded");
   await expect(
     person(NEWCOMER).getByTestId("contribution-person-held"),
   ).toHaveText("Holds 11 now (4.4% of all Shares now).");
-  await expect(person(NEWCOMER).getByTestId("contribution-award")).toHaveText(
-    "11 Shares for translate-es in the work area guide-es",
-  );
+  await expect(
+    person(NEWCOMER).getByTestId("contribution-award-title"),
+  ).toHaveText("11 Shares for translate-es in the work area guide-es");
+  await expect(
+    person(NEWCOMER).getByTestId("contribution-award-evidence"),
+  ).toContainText("In their words: “https://example.com/pr/12”");
   await expect(reader.getByTestId("contributions-earned")).toHaveText("51");
   await expect(reader.getByTestId("contributions-unconfirmed")).toHaveCount(0);
   await expect(reader.getByTestId("contributions-starting")).toHaveText("200");

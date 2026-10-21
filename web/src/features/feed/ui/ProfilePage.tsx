@@ -320,7 +320,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
         <PaymentWalletCard isSelf={isSelf} key={pubkey} pubkey={pubkey} />
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
           <span
-            title={`Up votes minus down votes on their newest ${SCORE_POSTS} posts and ${SCORE_POSTS} board posts`}
+            title={`Up votes minus down votes on their newest ${SCORE_POSTS} posts and ${SCORE_POSTS} board posts: feedback on posts, not votes in any project and not Shares`}
           >
             <Count
               label={score.data === 1 || score.data === -1 ? "point" : "points"}

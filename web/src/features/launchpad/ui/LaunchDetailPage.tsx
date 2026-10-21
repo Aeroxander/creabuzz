@@ -55,6 +55,7 @@ import { OverviewTab } from "./OverviewTab";
 import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 import { ProjectAgents } from "@/features/fleet/ui/ProjectAgents";
 import { ProjectDeliveryOverview } from "./ProjectDeliveryOverview";
+import { ContributorStatusNote } from "./ContributorStatusNote";
 import { DaoOverview } from "./DaoOverview";
 import { MyBidsPanel } from "./MyBidsPanel";
 import { ProposalCard } from "./ProposalCard";
@@ -366,12 +367,14 @@ export function LaunchDetailPage({
         }
         note={
           contributor ? (
-            <p
-              className="max-w-60 text-right text-xs text-muted-foreground"
-              data-testid="contributor-note"
-            >
-              No token sale. New Shares come only from awards for reviewed work.
-            </p>
+            <ContributorStatusNote
+              dao={workDao}
+              shares={
+                isEvmAddress(launch.record.token ?? "")
+                  ? (launch.record.token as string)
+                  : null
+              }
+            />
           ) : (
             /* §7 "Launch page copy": what a buyer acquires, said before the
                bid button — ownership only, never a yield. */

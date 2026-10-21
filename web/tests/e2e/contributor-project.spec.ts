@@ -304,7 +304,12 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
     "Raise closed",
   );
   await expect(page.getByTestId("contributor-note")).toHaveText(
-    "No token sale. New Shares come only from awards for reviewed work.",
+    "No token sale at setup. New Shares come only from awards for reviewed work.",
+  );
+  // Whether the Shares can be traded is read from them; this stub chain cannot answer, so it says so, never "locked".
+  await expect(page.getByTestId("contributor-transfers")).toHaveText(
+    "Whether its Shares can be traded could not be read just now.",
+    { timeout: 20_000 },
   );
   // Contributions come right after the overview for a project whose Shares only come from work.
   const tabs = page.getByRole("tab");
@@ -328,10 +333,22 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
   await expect(
     people.nth(0).getByTestId("contribution-person-held"),
   ).toHaveText("Holds 40 now (26.7% of all Shares now).");
-  await expect(people.nth(0).getByTestId("contribution-award")).toHaveText([
+  await expect(
+    people.nth(0).getByTestId("contribution-award-title"),
+  ).toHaveText([
     "15 Shares for translate",
     "25 Shares for write-docs in the work area docs",
   ]);
+  // The story behind an award says only what it could read: this stub chain gives no block times and no claims, so
+  // the date is "not read" and the evidence is left to the Work tab, never guessed; the transaction is still there.
+  const story = people.nth(0).getByTestId("contribution-award-story").first();
+  await expect(story).toContainText("Date not read");
+  await expect(story).toContainText(
+    "Its evidence is on the Work tab with the claim.",
+  );
+  await expect(story.getByTestId("tx-link")).toContainText(
+    "no explorer on this chain",
+  );
   await expect(
     people.nth(1).getByTestId("contribution-person-earned"),
   ).toHaveText("10 Shares awarded");

@@ -21,6 +21,7 @@ import {
   summaryLine,
 } from "../lib/dao-overview";
 import { formatUnits } from "../lib/dao-actions";
+import { isContributorProject } from "../lib/funding";
 import { openWorkAreas } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
@@ -43,6 +44,7 @@ import { useWalletLabels } from "../use-wallet-labels";
 export type OverviewTarget =
   | "decisions"
   | "work"
+  | "discussion"
   | "record"
   | "milestones"
   | "agents"
@@ -132,6 +134,8 @@ export function DaoOverview({
   );
   // How many work areas take submissions now (their words are on the Work tab, under Ways to help).
   const openAreas = work.data ? openWorkAreas(work.data, []).length : 0;
+  // A contributor project always says how to take part, even before a work area is open.
+  const contributor = isContributorProject(launch.record);
   // What this person can do now, and their own work waiting on someone else, said apart.
   const items = ranked.filter((item) => item.actor !== "others");
   const waiting = ranked.filter((item) => item.actor === "others");
@@ -269,26 +273,40 @@ export function DaoOverview({
           </>
         )}
       </Card>
-      {openAreas > 0 ? (
+      {openAreas > 0 || (contributor && work.data) ? (
         <Card
           className="flex flex-wrap items-center justify-between gap-3 p-4"
           data-testid="dao-ways-to-help"
         >
           <span className="text-sm">
             <span className="font-semibold">Ways to help:</span>{" "}
-            {openAreas === 1
-              ? "1 work area is open for submissions."
-              : `${openAreas} work areas are open for submissions.`}{" "}
-            You need no Shares to submit work.
+            {openAreas === 0
+              ? "No work area is open for submissions yet. Ask the team what would help."
+              : openAreas === 1
+                ? "1 work area is open for submissions. You need no Shares to submit work."
+                : `${openAreas} work areas are open for submissions. You need no Shares to submit work.`}
           </span>
-          <Button
-            data-testid="dao-ways-to-help-open"
-            onClick={() => onOpen("work")}
-            size="sm"
-            type="button"
-          >
-            See ways to help
-          </Button>
+          <span className="flex flex-wrap gap-2">
+            {openAreas > 0 ? (
+              <Button
+                data-testid="dao-ways-to-help-open"
+                onClick={() => onOpen("work")}
+                size="sm"
+                type="button"
+              >
+                See ways to help
+              </Button>
+            ) : null}
+            <Button
+              data-testid="dao-join-discussion"
+              onClick={() => onOpen("discussion")}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Join the discussion
+            </Button>
+          </span>
         </Card>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-3">

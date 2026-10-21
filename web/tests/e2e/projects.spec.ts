@@ -208,7 +208,7 @@ test("approval records one ownership grant and the map says which is which", asy
 
   // The stance is on the page where stakes are read and taken.
   await expect(page.getByTestId("stake-disclaimer")).toContainText(
-    "Recorded and revocable until the project's DAO adopts the map. Not a legal contract",
+    "A record on this board that the founder can take back: not Shares, not a payment, and not a legal contract.",
   );
 
   // The way on: each role becomes a project its person earns by delivering.

@@ -1070,3 +1070,27 @@ By hand, as in 4ak (account 0 the founder, 1 and 2 reviewers, 3 a contributor, 4
 6. **Unpublished words.** A work area whose words were never published (one approved before this change) shows "Its
    exact words are not published here. Ask its manager for them before you submit."
 
+## 4ap. Contribution stories, the project header and overview, joining copy (D90, 2026-10-22)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test                           # contribution-story.test.mjs among them
+pnpm --dir web build && pnpm --dir web exec playwright test --project=smoke contributor-project.spec.ts projects.spec.ts
+scripts/web-contributor-e2e.sh                # the stories, the header and Needs you on a real chain
+```
+
+By hand, after the award in 4ai or 4ak:
+
+1. **A story.** Open the Contributions tab (no wallet needed). Under each award: "Awarded <day> · <transaction> ·
+   approved by 2 of 2 reviewers", and "In their words: “…”" with **Open what they delivered**. Edit nothing on the
+   chain; if someone published different words for the same claim, they are not shown as theirs.
+2. **The header.** A contributor project says "No token sale at setup. New Shares come only from awards for reviewed
+   work." and below it "Shares are locked: they cannot be sent between wallets." After an Open trading announcement it
+   gives the date a second vote can open it.
+3. **The overview.** **Ways to help** is there even with no open work area ("Ask the team what would help"), with
+   **Join the discussion** opening the Discussion tab.
+4. **Joining a role.** On the Projects board, Request to join a role: the dialog says an approval is a record the
+   founder can take back, not Shares, and that in a contributor project the role becomes a work area whose Shares are
+   earned as work is accepted.
+5. **Profile points.** Hover the points on a profile: they are feedback on posts, not votes in any project, not Shares.
+
