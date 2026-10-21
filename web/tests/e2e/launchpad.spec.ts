@@ -423,7 +423,7 @@ test("an allocation that does not add up blocks the launch", async ({
   await page.getByTestId("launch-advanced").locator("> summary").click();
   await page.getByLabel("Launch id").fill("nebula-four");
   const sale = page.getByTestId("launch-allocation-sale");
-  await sale.fill("30");
+  await sale.fill("85"); // the standard split is 75 / 25 / 0
   await expect(page.getByTestId("launch-allocation-issue")).toContainText(
     "110%",
   );
@@ -1156,12 +1156,13 @@ test("a launch into its own DAO shows three shares, and says what each is", asyn
   await expect(page.getByTestId("launch-allocation-total")).toContainText(
     "100%",
   );
-  // The DAO's share is one number: raising the sale share makes the split not add up until the reserve follows.
-  await page.getByTestId("launch-allocation-sale").fill("30");
+  // The standard split is 75 / 25 / 0 (D75). Raising the sale share makes the split not add up until another share
+  // follows.
+  await page.getByTestId("launch-allocation-sale").fill("85");
   await expect(page.getByTestId("launch-allocation-issue")).toContainText(
     "110%",
   );
-  await page.getByTestId("launch-allocation-treasury").fill("50");
+  await page.getByTestId("launch-allocation-team").fill("15");
   await expect(page.getByTestId("launch-allocation-issue")).toHaveCount(0);
   await expect(page.getByTestId("launch-allocation-total")).toContainText(
     "100%",

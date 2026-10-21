@@ -213,11 +213,11 @@ test("Start offers a contributor project, says it cannot raise money, and shows 
     .getByTestId("contributor-pitch")
     .fill("Open docs for everyone, written by the people who use them.");
   await expect(page.getByTestId("contributor-preview")).toContainText(
-    "You start with 100,000 Shares. If all 100,000 in this budget are earned, contributors will hold 50% of all Shares and you 50%.",
+    "You start with 100,000 Shares. If all 300,000 in this budget are earned, contributors will hold 75% of all Shares and you 25%.",
   );
-  await page.getByTestId("contributor-budget-shares").fill("300000");
+  await page.getByTestId("contributor-budget-shares").fill("900000");
   await expect(page.getByTestId("contributor-preview")).toContainText(
-    "contributors will hold 75% of all Shares and you 25%",
+    "contributors will hold 90% of all Shares and you 10%",
   );
 
   // This build names no DAO maker for the local network: it says so and offers no button that would fail.
