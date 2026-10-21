@@ -9,11 +9,11 @@ This is the groundwork for the external audit the roadmap requires before any ra
 ([SOCIAL-MVP-ROADMAP-2026-10-19.md §5](SOCIAL-MVP-ROADMAP-2026-10-19.md)). Mainnet stays off until that audit is done
 and its report replaces the "unaudited" notice.
 
-**Changed since this was written (D72–D81, 2026-10-21, built on the local branch `tokenomics-proposal`, not yet
-merged).** The tokenomics decisions changed `ragequit`, `Shares`, `Loot`, both milestone locks and both kits, removed
-seven functions from the patched DAO, and made the lock factories constructor arguments of the launch kit
-([TOKENOMICS-CONTRACT-CHANGES.md](TOKENOMICS-CONTRACT-CHANGES.md), "Built" and §9). The tables below describe the
-contracts before them; update them, the invariant list (§5) and the mutation count before the freeze tag.
+**Updated 2026-10-21 for the tokenomics decisions (D72–D82, merged into `v4-governance-rework`).** They changed
+`ragequit`, `Shares`, `Loot`, both milestone locks and both kits, removed seven functions from the patched DAO, and made
+the lock factories constructor arguments of the launch kit
+([TOKENOMICS-CONTRACT-CHANGES.md](TOKENOMICS-CONTRACT-CHANGES.md)). §1, §2, §4, §5 and §6 describe the contracts after
+them; the ethskills walk in §10 was done before them, so the new code (§7, item 6) has had no checklist pass yet.
 
 **Freeze before sending.** Tag the commit the auditors receive and pin it here. A change to any file in the table below
 after the tag needs either a re-review of that file or a written reason why it is outside the money paths.
@@ -25,9 +25,13 @@ after the tag needs either a re-review of that file or a written reason why it i
    deploys a `GraduationExecutor` it runs (CREATE2 from the founder and the salt); summons the DAO through the patched
    Majeur `Summoner` with the team, the executor (the sale tranche) and the kit (the DAO's own allocation, passed on at
    once) as its only holders; in the DAO's own initialization points the Shares at the milestone lock
-   (`MilestoneChallenge` or `MilestoneLock`), names the review panel (panel launches only) and holds governance closed
-   until the sale's claim block; points the executor's payee at the DAO; and creates, binds and funds the auction on
-   Uniswap's canonical continuous clearing auction (CCA) factory.
+   (`MilestoneChallenge` or `MilestoneLock`, or "none" for a launch with no team, and the choice is final), names the
+   review panel (panel launches only), holds governance closed until the sale's claim block, turns on the issuance rule
+   (new Shares only from awards, at most 10% a year) and locks transfers with the auction exempt and a 30-day notice
+   for unlocking; points the executor's payee at the DAO; and creates, binds and funds the auction on Uniswap's
+   canonical continuous clearing auction (CCA) factory. Before any of it, the kit refuses terms outside the limits
+   (`UnfairTerms`: sale at least 60%, team at most 35%, reserve at most 20%, every team Share behind 2 to 8 milestones of
+   at most half each, no team seat that is a system address, a target of the whole tranche at the floor).
 2. **Sale.** Backers bid on the CCA through Permit2. When the sale ends anyone calls
    `GraduationExecutor.executeGraduation`: a raise that met its target is swept into the DAO's treasury and unsold
    Shares go to the DAO; one that missed it refunds every bid in full from the auction (`exitBid`), and only the DAO
@@ -35,7 +39,10 @@ after the tag needs either a re-review of that file or a written reason why it i
 3. **After the sale.** Buyers claim their Shares from the auction. From the claim block on, holders govern the treasury
    with `AllocationVoting` (the only ballot): payments, reviewed work budgets (`TreasuryMandate` with `ClaimStake` and
    bonded reviewers in `VerifierSet`), freezing and unwinding claims, taking a reviewer's bond, forfeiting a departed
-   founder's tranches. Any holder can leave with their share of the treasury (`ragequit`) while leaving is on.
+   founder's tranches. Any holder can leave with their share of the treasury (`ragequit`) at any time; no vote can
+   switch that off or burn a holder's Shares. The exit total leaves out the DAO's own Shares and the team's Shares still
+   locked. Shares cannot be sent between wallets until trading is announced by one vote and opened by another, 30 days
+   later.
 4. **Milestones.** The team's Shares vote from the first block but the milestone-tied part cannot be moved or ragequit
    until its milestone stands: unchallenged after a public window, or confirmed by a holder vote that excludes the team
    (`MilestoneChallenge`), or approved by the named panel after a seven-day challenge window (`MilestoneLock`). A late
@@ -43,26 +50,27 @@ after the tag needs either a re-review of that file or a written reason why it i
 
 ## 2. Contracts in scope
 
-Lines are total and source lines (no blanks or comments) at `e72c8911b`, except where marked.
+Lines are total and source lines (no blanks or comments) at `13b27b2c7`.
 
 | Contract | File | Lines (source) | Role in the raise |
 |---|---|---|---|
-| `DaoLaunchKit` | `src/DaoLaunchKit.sol` | 436 (314) | The one-transaction launch: executor, DAO, lock, panel, auction. Compiled with solc 0.8.37 like the rest since D70 (before: 0.8.26, the CCA's pin). |
+| `DaoLaunchKit` | `src/DaoLaunchKit.sol` | 517 (373) | The one-transaction launch: executor, DAO, lock, panel, auction, and the checks on the launch's terms (D74, D75). Takes the two lock factories as constructor arguments (its creation code had no room to carry them); 22,951 bytes of creation code. Compiled with solc 0.8.37 like the rest since D70 (before: 0.8.26, the CCA's pin). |
 | `GraduationExecutor` | `src/GraduationExecutor.sol` | 459 (255) | Holds the sale tranche, funds the auction, sweeps the raise to the DAO, recovers a failed sale for the DAO. The kit uses it with `reserveBps = 0`, so its reserve paths are unused in a DAO launch. |
 | CCA interfaces | `src/CCA.sol` | 66 (30) | Mirrored interfaces of the upstream auction; `test/PinnedInterfaces.t.sol` compares them with the pinned source. |
-| Patched Majeur DAO | `src/majeur/MolochPatched.sol` (`Moloch`, `Shares`, `Loot`, `Badges`, `Summoner`) | 2,641 (1,636) | The DAO, its treasury, ragequit, the Shares ERC-20(C) with the lock guard. Upstream is `lib/majeur/src/Moloch.sol`; the fork is additive: 64 `@@CREABUZZ PATCH` blocks, 314 lines inside them, upstream text kept in comments (`scripts/check-majeur-fork.mjs` enforces it). The runtime size is 24,575 of the 24,576-byte limit with solc 0.8.37 (47 bytes spare with 0.8.30): any further patch must first free space, for example by disabling the unused allowance, permit and share-sale paths (§6, item 4). |
+| Patched Majeur DAO | `src/majeur/MolochPatched.sol` (`Moloch`, `Shares`, `Loot`, `Badges`, `Summoner`) | 2,872 (1,645) | The DAO, its treasury, ragequit (leaving out the DAO's own Shares and those still locked, D72), the Shares ERC-20(C) with the lock guard (chosen once, "none" included), the issuance rule (mints and hand-outs only inside `awardContribution`, at most a capped share a year, D76), burns only inside `ragequit` (D73), and the transfer lock with one exempt address and a 30-day unlock notice (D77). `setRagequittable`, the share sale, permits and allowances are removed (upstream text kept in comments). Upstream is `lib/majeur/src/Moloch.sol`; the fork is additive: 89 `@@CREABUZZ PATCH` blocks, 584 lines inside them (`scripts/check-majeur-fork.mjs` enforces it). `Moloch` runtime 22,090 of 24,576 bytes; `Shares` 10,902. |
 | `AllocationVoting` (+ `IVotingWeight`) | `src/AllocationVoting.sol`, `src/VotingWeight.sol` | 629 (465) + 21 (13) | The only ballot: snapshots of owned Shares, two lanes, quorum, approval, review, hold time, the governor's queue reset. Cloned per DAO. |
-| `MilestoneChallenge` (+ factory) | `src/MilestoneChallenge.sol`, `src/MilestoneChallengeFactory.sol` | 544 (420) + 30 (21) after D67 | The default lock: publish with a bond, object with a deposit, holder vote without the team, late objection burns what is still locked, milestones in order and only after the month on the one before (D56–D58). |
-| `MilestoneLock` (+ factory) | `src/MilestoneLock.sol`, `src/MilestoneLockFactory.sol` | 199 (133) + 30 (20) | The panel lock: a tranche unlocks on a `Paid` claim in the DAO's named panel mandate. |
+| `MilestoneChallenge` (+ factory) | `src/MilestoneChallenge.sol`, `src/MilestoneChallengeFactory.sol` | 550 (422) + 30 (21) | The default lock: publish with a bond, object with a deposit, holder vote without the team, late objection burns what is still locked, milestones in order and only after the month on the one before (D56–D58); keeps `totalLocked`, which the exit leaves out (D72). |
+| `MilestoneLock` (+ factory) | `src/MilestoneLock.sol`, `src/MilestoneLockFactory.sol` | 206 (137) + 30 (20) | The panel lock: a tranche unlocks on a `Paid` claim in the DAO's named panel mandate; keeps `totalLocked` (D72). |
 | `MilestoneBadge` | `src/MilestoneBadge.sol` | 118 (85) | Soulbound record minted on unlock. Moves no value. |
 | `TreasuryMandate` (+ factory) | `src/TreasuryMandate.sol` | 416 (314) | Work budgets: a DAO-approved, finite budget in currency and/or Shares; projects; claim binding; reviewer slashing; closing. The factory is also where the panel is named. |
 | `ClaimStake` | `src/ClaimStake.sol` | 444 (279) | Claim escrow: contributor stake, reserved payout, approval quorum, 7-day challenge window, freeze, unwind, expiry. |
 | `VerifierSet` | `src/VerifierSet.sol` | 246 (166) | Reviewers, quorum, recusal, bonds with a 14-day unbonding delay, slashing by the owner (the mandate). |
 
-About 4,100 source lines of first-party code, of which the patched Majeur is the largest piece.
+About 4,250 source lines of first-party code, of which the patched Majeur is the largest piece.
 
 **Adjacent, not in the raise path** (review if time allows; they share contracts above): `ContributorKit` (contributor
-projects, no sale, D66), `OrgBinding`, `OrgAllowance`, `RoyaltyDistributor` (only reached through
+projects, no sale, D66; 228 (165) lines, refuses a founder stake above a third of the first budget and a founder on its
+panel, sets the issuance rule with no yearly cap, D79), `OrgBinding`, `OrgAllowance`, `RoyaltyDistributor` (only reached through
 `ClaimStake.submitClaimWithSchedule`, never wired in a raise), `ShareVesting`, `AuctionLauncher`,
 `AppTokenLBPInitializer`, the hooks (`AllowlistHook`, `TrustGatedHook`; a DAO launch passes no hook), the LBAMM and
 market contracts (evaluation only), `DaoURIAdapter`.
@@ -86,9 +94,11 @@ and the allowlist hook), `via_ir`, optimizer 200 runs, EVM
 
 - **The DAO (its holders, through a passed vote)** can spend the whole treasury, create and close work budgets, freeze
   claims, take reviewer bonds, forfeit (burn) a team member's locked tranches, change the voting lanes within bounds,
-  open a Majeur-native share sale, grant allowances and permits, and turn ragequit off. That is the product's promise
-  as [PILOT.md](PILOT.md) states it: a holder-governed treasury, with milestone-based unlocking of the team's
-  allocation. Nothing protects raised money from a majority vote except the exit while it is on.
+  award Shares for reviewed work within the year's allowance (and lower that allowance), and announce, open (30 days
+  later) or relock trading. It can no longer turn ragequit off, open a share sale, grant allowances or permits, mint or
+  hand out Shares outside an award, mint Loot, burn a holder's Shares, or install a lock guard after birth. That is the
+  product's promise as [PILOT.md](PILOT.md) states it: a holder-governed treasury, with milestone-based unlocking of
+  the team's allocation. Nothing protects raised money from a majority vote except the exit, which cannot be closed.
 - **The team** votes with all its Shares from the first block (team Shares count in DAO votes, not in milestone
   votes). It cannot move or ragequit locked Shares, cannot take the lock guard off (set once), cannot vote on its own
   milestones, and cannot publish a milestone before the one before has stood and its month for late objections is
@@ -96,8 +106,8 @@ and the allowlist hook), `via_ir`, optimizer 200 runs, EVM
 - **Reviewers** (work budgets and the panel lock) decide which claims are paid and, on the panel path, which milestones
   unlock. Their bond is at stake only through a DAO vote. A reviewer cannot judge their own claim, and a locked team
   member cannot sit on the panel.
-- **The founder** chooses the launch terms once; after the launch transaction they have no special role. The kit and
-  the factories hold no privileges after their call.
+- **The founder** chooses the launch terms once, within the kit's limits; after the launch transaction they have no
+  special role. The kit and the factories hold no privileges after their call.
 - **Anyone** can finish a milestone whose window passed, settle a vote, release a bond after the month, settle or expire
   a claim, execute a passed and queued proposal, return an expired budget's money to the DAO, and graduate a sale.
 
@@ -118,7 +128,7 @@ with the web app's own encoders and exit/bid logic. Each invariant was also chec
 |---|---|---|---|---|
 | 1 | Nothing leaves the treasury except through a holder's own exit or a proposal that met its bars (quorum of voting supply, approval share, majority, review, unbroken hold, not expired, queued for the delay), checked independently of the governor's `state` | `invariant_no_money_moved_outside_its_rules` (`_govern`, `_passing`, `_checkMoney`, the attacker) | every step (`checkInvariants`, `passing`) | governor executes without a passed vote; approval bar dropped |
 | 2 | A locked Share never moves: a team member's balance never falls below `lockedOf`; a transfer, `transferFrom` or ragequit that would dip into it fails and one within the free part succeeds | `invariant_locked_shares_are_always_held`, handler checks | every step and every transfer and exit | lock guard ignored in `Shares` |
-| 3 | Ragequit pays exactly what the web exit preview computes from the same reads (D51): free Shares only, the DAO's own Shares and Loot out of the denominator, floor division | handler `ragequit`; `RagequitPreviewFfi.t.sol` runs the web's own TypeScript through ffi against the chain | every exit, through `fetchRagequitPosition` itself | D51 denominator patch removed; web preview ignoring the DAO's Shares; web preview offering locked Shares |
+| 3 | Ragequit pays exactly what the web exit preview computes from the same reads (D51, D72): free Shares only, the DAO's own Shares and Loot and the lock's `totalLocked` out of the denominator, floor division | handler `ragequit`; `RagequitPreviewFfi.t.sol` runs the web's own TypeScript through ffi against the chain | every exit, through `fetchRagequitPosition` itself | D51 denominator patch removed; web preview ignoring the DAO's Shares; web preview offering locked Shares |
 | 4 | While any milestone can still be objected to late (or has a vote open), no later milestone has been published; an upheld late objection burns exactly what is still locked, and for any milestone but the last that is more than nothing unless the DAO already forfeited it (D58) | `invariant_later_milestones_wait_while_an_earlier_can_be_objected_to`, handler `_resolve` | every step and every resolve | D58 month guard removed; clawback removed |
 | 5 | A milestone vote counts the Shares the voter owned just before the objection, capped by what they hold now; the team cannot object or vote (D57) | handler `_object`/`_vote`, including Shares passed to another wallet after the objection | every objection vote | weight not capped by the current balance |
 | 6 | A reviewer's bond is taken only by a passed vote, never beyond what they hold (stake first, then bond waiting to be taken back), and what is taken reaches the DAO | `governSlash`, `BondSlashFuzz.t.sol` | every step | slash open to anyone; slash paying more than it took |
@@ -129,8 +139,13 @@ with the web app's own encoders and exit/bid logic. Each invariant was also chec
 | 10 | The voting ledger mirrors the Shares (`totalCapacity == totalSupply`); no Shares are minted after the sale outside a vote, and burns happen only on exits, forfeits and upheld late objections; Shares waiting in the auction are outside the voting supply (D69) | `invariant_budget_and_vote_ledger_bounds`; `DaoLaunchKit.t.sol` | every step | the kit's auction exclusion removed |
 | 11 | The sale: bidders on a met raise paid exactly what the DAO received (plus dust left in the auction), nobody paid above their limit; every bid on a missed raise is refunded in full and the DAO receives nothing | — (the CCA is exercised on a real chain) | after every sale | — |
 | 12 | A tranche is freed only by a milestone that stood, and is never both freed and forfeited | `invariant_tranches_free_only_with_their_milestone` | — | — |
+| 13 | The lock's `totalLocked` is always exactly the sum of its members' `lockedOf` (D72) | `invariant_locked_total_is_what_each_member_has_locked` | — | counter not lowered on a stand; not lowered on a forfeit; not lowered on a panel unlock |
+| 14 | Under the issuance rule no Share or Loot appears outside an award, and no passed vote can mint, hand out the DAO's own Shares, mint Loot or burn a holder's Shares (D73, D76) | `invariant_no_shares_or_loot_appear_outside_an_award`, handler `governShareMoves`; `IssuanceRule.t.sol`, `ExitProtections.t.sol` | every launch is born with the rule | the award-only check removed; the count removed; the hand-out check removed; Loot's closure removed; the leaving-only burn removed |
+| 15 | An award never takes the year's new Shares past the cap of that year's exit base; the cap only goes down (D76) | `IssuanceRule.t.sol` (with a stand-in DAO that says when an award is under way) | — | the count removed |
+| 16 | While transfers are locked, Shares move only to or from the exempt address (the auction), and unlocking runs only 30 days or more after an announcement still standing (D77) | `TransferLock.t.sol` (a fuzz test over senders, receivers and amounts) | every transfer step expects the refusal | the notice check removed; the exemption widened |
+| 17 | The kits refuse terms outside the limits, a team seat that is a system address, and (contributor projects) a founder stake above a third of the first budget or a founder on its panel (D74, D75, D79) | `DaoLaunchKit.t.sol`, `ContributorKit.t.sol` | every launch is inside them | each of the six kit checks removed |
 
-The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, sixteen guards).
+The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, 35 guards, all caught on 2026-10-21).
 
 ## 6. Observations made while preparing (no behaviour changed)
 
@@ -144,9 +159,9 @@ None of these is a loss of funds or a broken promise; each is worth an auditor's
    days. It harms only the contributor who files it; the web app never files one.
 3. The implementation contracts (`AllocationVoting`, `Shares`, `Loot`, `Badges` behind the clones) can be initialized
    by anyone. Their own storage is never used by a DAO; confirm nothing reads it.
-4. The patched Majeur keeps `setAllowance`/`spendAllowance`, `setPermit`/`spendPermit` and `setSale`/`buyShares`.
-   All are `onlyDAO` to enable, so they are vote-granted paths out of (or dilution of) the treasury, consistent with
-   invariant 1, but the web app shows none of them as decisions. An auditor may prefer them disabled like futarchy.
+4. (Resolved by D76, 2026-10-21.) The patched Majeur kept `setAllowance`/`spendAllowance`, `setPermit`/`spendPermit` and
+   `setSale`/`buyShares`, vote-granted paths out of (or dilution of) the treasury that the app never used. They are
+   removed, with `setRagequittable` (D73); the upstream text stays in comments for the fork checker.
 5. `MilestoneChallenge.eligibleSupply` reads current balances at the moment of the objection while weights use the
    block before; a holder who moves Shares into the team's or the DAO's wallets just before an objection lowers the
    3% bar slightly. Within the accepted "friends of the team" limitation.
@@ -170,6 +185,12 @@ None of these is a loss of funds or a broken promise; each is worth an auditor's
    after the summon).
 5. The work-budget triangle (`TreasuryMandate`, `ClaimStake`, `VerifierSet`): funding, freeze/unwind, slashing,
    closing.
+6. The tokenomics changes (D72–D79), which came after the ethskills walk in §10: the two transient flags in `Moloch`
+   (`leaving` around the burns in `ragequit`, `awarding` around the mint in `awardContribution`) and the `Shares`/`Loot`
+   checks that read them; the subtraction of `totalLocked` in `ragequit` (inside `unchecked`, guarded); the issuance
+   year in `Shares._countIssued` and the award paid from the DAO's own holding first; the transfer exemption and the
+   unlock notice; and the kit's terms check, including the reading of the floor and target from `auctionConfig` by
+   offset.
 
 ## 8. How to rerun all of it
 
@@ -184,6 +205,12 @@ node scripts/contracts-mutation-check.mjs                    # break each of 16 
 ```
 
 ## 9. What the simulation found
+
+**Rerun on 2026-10-21 after the tokenomics changes (D72–D79): zero invariant breaks.** Seeds 7, 11 and 23, 3,000 steps
+each, 9,000 invariant checks, every launch inside the kit's new limits (the whole tranche as the target, 60 / 25 / 15,
+every team Share behind milestones). With transfers locked from birth, every transfer step between wallets was refused
+by the lock (322 in the seed-23 run alone), and every exit paid what the web preview, now leaving out what the lock
+still holds, said it would. The figures below are from the first runs, on the contracts before those changes.
 
 **Zero invariant breaks.** Three runs of 3,000 steps each (seeds 7, 11 and 23, about 100 seconds each on a laptop),
 9,000 invariant checks after individual steps plus a sale check after each of 35 sales. These are the runs on the
