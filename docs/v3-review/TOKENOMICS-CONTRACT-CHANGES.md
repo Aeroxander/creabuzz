@@ -34,7 +34,12 @@ caught). Where the build differs from the plan below, the plan was changed to wh
 
 Sizes after: `Moloch` 22,090 bytes (2,486 spare), `Shares` 10,902, `Loot` 3,517, `DaoLaunchKit` 22,192 runtime and
 22,951 creation code, `ContributorKit` 6,181. The Forge suite is 452 passed, 0 failed; the web unit tests 1,802; the
-shared package 764; a 300-step simulation (seed 7) had zero breaks, with every transfer refused by the lock.
+shared package 764; the mocked browser smoke suite passes; the simulation ran 3,000 steps (seed 7) with zero breaks,
+every transfer refused by the lock; and these real-chain journeys pass on the new terms: web-challenge,
+web-contributor, web-dao-launch, web-milestone, web-dao-journey, web-decisions, web-discussion, web-paid-work,
+web-record, web-work, cli-milestone and cli-no-raise. Not run: web-economy (needs Postgres and Redis),
+web-sepolia-fork (needs a Sepolia node), and the market journeys (LBAMM is evaluation-only, and with transfers locked
+and no reserve they need the 30-day unlock and a new way to fund a pool).
 
 ## 0. Measured first
 
