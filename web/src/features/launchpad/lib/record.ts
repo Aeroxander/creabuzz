@@ -189,6 +189,8 @@ export interface LedgerEntry {
   detail?: string;
   /** The tab where the thing itself is, when there is one. */
   tab: "decisions" | "work" | null;
+  /** The transaction it happened in, when the chain gave one (a payout), so the page can link it. */
+  tx?: string;
 }
 
 const DECISION_WORDS: Record<DecisionState, string> = {
@@ -303,6 +305,7 @@ export function buildLedger(input: LedgerInput): LedgerEntry[] {
               ? `${who} was paid ${labels.money(mandate, claim.record.amount)}.`
               : `${who} was recognised for the work.`,
           tab: "work",
+          tx: events.paidTx.get(key),
         });
       }
     }

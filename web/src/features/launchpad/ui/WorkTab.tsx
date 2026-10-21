@@ -26,7 +26,9 @@ import type { MandateView } from "../lib/work-read";
 import type { Launch } from "../models";
 import { usePublishMirror } from "../use-launches";
 import { useWalletSend } from "../use-wallet-send";
-import { useMilestoneLock, useWork } from "../use-work";
+import { useMilestoneLock, useRecordEvents, useWork } from "../use-work";
+import { claimKey, type RecordEvents } from "../lib/record-read";
+import { paidOn, TxLink } from "./TxLink";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { BondReturn } from "./BondReturn";
 import { useEvidencePackets } from "../use-evidence";
@@ -74,6 +76,8 @@ export function WorkTab({
 }) {
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const work = useWork(dao, wallet.address);
+  // When and in which transaction each paid claim was paid out (the same read the Track record tab uses).
+  const payouts = useRecordEvents(dao, work.data);
   const context = useDecisionContext(dao);
   const lock = useMilestoneLock(dao, wallet.address, work.data);
   const challengeLock = useChallengeLock(dao);
@@ -231,6 +235,8 @@ export function WorkTab({
               labelOf={labelOf}
               onRefresh={() => void work.refetch()}
               onSend={send}
+              payouts={payouts.data}
+              payoutsUnread={payouts.isError && !payouts.data}
               wallet={wallet.address}
             />
           ))}
@@ -284,9 +290,14 @@ function MandateCard({
   evidence,
   labelOf,
   onRefresh,
+  payouts,
+  payoutsUnread,
 }: {
   /** How to write a wallet: the person's name with the short address, or just the address. */
   labelOf: (address: string) => string;
+  /** When and in which transaction claims were paid out; undefined while it is read. */
+  payouts: RecordEvents | undefined;
+  payoutsUnread: boolean;
   launch: Launch;
   /** Read the DAO's work again (a read that failed, tried once more). */
   onRefresh: () => void;
@@ -562,6 +573,19 @@ function MandateCard({
                 <p className="mt-1" data-testid="work-claim-next">
                   {step.text}
                 </p>
+                {claim.record.status === "Paid" ? (
+                  <PaidLine
+                    at={payouts?.paidAt.get(
+                      claimKey(mandate.address, claim.id),
+                    )}
+                    chainId={Number(launch.record.chainId ?? "") || 0}
+                    tx={payouts?.paidTx.get(
+                      claimKey(mandate.address, claim.id),
+                    )}
+                    unread={payoutsUnread}
+                    reading={payouts === undefined && !payoutsUnread}
+                  />
+                ) : null}
                 <EvidenceBlock
                   busy={busy !== null}
                   claim={claim}
@@ -734,6 +758,40 @@ function MandateCard({
         </ul>
       )}
     </Card>
+  );
+}
+
+/** When a paid claim was paid out and in which transaction, or why that is not shown. */
+function PaidLine({
+  at,
+  tx,
+  chainId,
+  unread,
+  reading,
+}: {
+  at: number | undefined;
+  tx: string | undefined;
+  chainId: number;
+  unread: boolean;
+  reading: boolean;
+}) {
+  return (
+    <p
+      className="mt-1 text-xs text-muted-foreground"
+      data-testid="work-claim-paid"
+    >
+      {unread ? (
+        "When it was paid could not be read just now."
+      ) : reading ? (
+        "Reading when it was paid…"
+      ) : tx ? (
+        <>
+          Paid {paidOn(at)} · <TxLink chainId={chainId} tx={tx} />
+        </>
+      ) : (
+        "Paid; its payout transaction was not found in the history this page reads."
+      )}
+    </p>
   );
 }
 

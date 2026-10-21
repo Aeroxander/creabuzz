@@ -113,7 +113,7 @@ export function useMilestoneLock(
 }
 
 /** The record's chain: the work reader's, plus the time of any block (a record without dates would be half a record). */
-function recordChain(endpoint: string): RecordChain {
+export function recordChain(endpoint: string): RecordChain {
   return {
     ...endpointChain(endpoint),
     blockTimes: async (blocks) =>

@@ -86,3 +86,101 @@ test("money in is split into the raise, what came back, and what was paid in", (
     "Nothing has been paid into the treasury besides the raise yet.",
   );
 });
+
+// ---------------------------------------------------------------------------
+// Reading it from the chain: a failed lookup is unknown, never a figure
+// ---------------------------------------------------------------------------
+
+const SHARES = `0x${"5a".repeat(20)}`;
+const USDC = `0x${"cc".repeat(20)}`;
+const word = (a) => `0x${a.slice(2).padStart(64, "0")}`;
+
+/** The raise came in from the executor: 300,000 USDC, and one 1,000 USDC payment from the team. */
+function moneyChain(over = {}) {
+  const answers = {
+    [`${AUCTION} 0x3b6fd2cf`]: word(EXECUTOR), // fundsRecipient()
+    [`${SHARES} 0x36bc529d`]: word(LOCK), // lockGuard()
+    [`${DAO} 0x03314efa`]: word(SHARES), // shares()
+    ...over,
+  };
+  return {
+    async call(to, data) {
+      const answer = answers[`${to.toLowerCase()} ${data}`];
+      if (answer === undefined) throw new Error("execution reverted");
+      if (answer instanceof Error) throw answer;
+      return answer;
+    },
+    async logs() {
+      return [
+        {
+          topics: [TRANSFER_TOPIC, topic(EXECUTOR), topic(DAO)],
+          data: amount(300_000_000_000n),
+          blockNumber: "0x20",
+          transactionHash: `0x${"a1".repeat(32)}`,
+        },
+        {
+          topics: [TRANSFER_TOPIC, topic(TEAM), topic(DAO)],
+          data: amount(1_000_000_000n),
+          blockNumber: "0x30",
+          transactionHash: `0x${"a2".repeat(32)}`,
+        },
+      ];
+    },
+    async blockTimes(blocks) {
+      return new Map(blocks.map((b) => [b, 1_700_000_000 + b]));
+    },
+  };
+}
+
+const input = (over = {}) => ({
+  dao: DAO,
+  currency: USDC,
+  auction: AUCTION,
+  shares: SHARES,
+  budgets: [],
+  ...over,
+});
+
+test("the raise from the executor is the raise, and other payments are listed with their date and transaction", async () => {
+  const { readMoneyIn } = await import("./money-in.ts");
+  const read = await readMoneyIn(moneyChain(), input());
+  assert.equal(read.raise, 300_000_000_000n);
+  assert.equal(read.paidInTotal, 1_000_000_000n);
+  assert.equal(read.paidIn.length, 1);
+  assert.equal(read.paidIn[0].tx, `0x${"a2".repeat(32)}`);
+  assert.equal(read.paidIn[0].at, 1_700_000_000 + 0x30);
+});
+
+test("a failed lookup of where the raise came from is an error, never 300,000 USDC paid in besides it", async () => {
+  // The review's case: `fundsRecipient()` did not answer, and the executor's transfer was counted as an extra payment.
+  const { readMoneyIn } = await import("./money-in.ts");
+  await assert.rejects(
+    readMoneyIn(
+      moneyChain({ [`${AUCTION} 0x3b6fd2cf`]: new Error("rpc http 503") }),
+      input(),
+    ),
+  );
+  await assert.rejects(
+    readMoneyIn(
+      moneyChain({ [`${SHARES} 0x36bc529d`]: new Error("execution reverted") }),
+      input(),
+    ),
+  );
+});
+
+test("Shares not yet known are read from the DAO, so the lock's payments are never counted before it is known", async () => {
+  const { readMoneyIn } = await import("./money-in.ts");
+  const chain = moneyChain();
+  const asked = [];
+  const call = chain.call;
+  chain.call = (to, data) => {
+    asked.push(`${to} ${data}`);
+    return call(to, data);
+  };
+  await readMoneyIn(chain, input({ shares: null }));
+  assert.ok(asked.includes(`${DAO} 0x03314efa`), "asks the DAO for its Shares");
+  assert.ok(
+    asked.includes(`${SHARES} 0x36bc529d`),
+    "then the Shares for the lock",
+  );
+});

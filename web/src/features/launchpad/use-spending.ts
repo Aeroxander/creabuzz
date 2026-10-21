@@ -1,9 +1,13 @@
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
+import { getRpcEndpoint } from "./chain";
+import { readExecutions } from "./lib/payment-history";
 import { type SpendingSummary, summariseSpending } from "./lib/spending";
 import type { DecisionsSnapshot } from "./lib/decisions";
 import type { WorkSnapshot } from "./lib/work-read";
 import { useWalletLabels } from "./use-wallet-labels";
+import { recordChain } from "./use-work";
 
 /**
  * Where a DAO's money went (`lib/spending.ts`) and how to write the wallets in it, from reads the page already holds.
@@ -54,4 +58,19 @@ export function useSpendingSummary(input: {
     [work, decisions, spending],
   );
   return { spending, labelOf: useWalletLabels(people), people };
+}
+
+/**
+ * When, and in which transaction, each direct payment's decision ran (`lib/payment-history.ts`), so the spending card can
+ * link every payment to the chain. Nothing is read until there are payments to date.
+ */
+export function usePaymentRuns(dao: string, spending: SpendingSummary | null) {
+  const ids = [...new Set(spending?.direct.map((p) => p.decisionId) ?? [])];
+  return useQuery({
+    queryKey: ["launchpad", "work", dao, "payment-runs", ids],
+    enabled: ids.length > 0,
+    queryFn: () => readExecutions(recordChain(getRpcEndpoint()), dao, ids),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
 }

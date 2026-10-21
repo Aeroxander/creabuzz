@@ -75,6 +75,8 @@ export interface RecordEvents {
   filedAt: ReadonlyMap<string, number>;
   /** Unix seconds each claim was paid out, by `claimKey`. */
   paidAt: ReadonlyMap<string, number>;
+  /** The transaction that paid each claim out, by `claimKey`, so a page can link it. */
+  paidTx: ReadonlyMap<string, string>;
   /** What each reviewer said, by `claimKey`. */
   verdicts: ReadonlyMap<string, Verdict[]>;
   promises: TeamPromise[];
@@ -88,6 +90,7 @@ interface Parsed {
   topics: string[];
   data: string;
   block: number;
+  tx: string | null;
 }
 
 function parse(raw: unknown): Parsed | null {
@@ -96,6 +99,7 @@ function parse(raw: unknown): Parsed | null {
     topics?: unknown;
     data?: unknown;
     blockNumber?: unknown;
+    transactionHash?: unknown;
   };
   if (!Array.isArray(log.topics) || typeof log.data !== "string") return null;
   if (!log.topics.every((t) => typeof t === "string")) return null;
@@ -105,7 +109,12 @@ function parse(raw: unknown): Parsed | null {
   } catch {
     return null;
   }
-  return { topics: log.topics as string[], data: log.data, block };
+  const tx =
+    typeof log.transactionHash === "string" &&
+    /^0x[0-9a-fA-F]{64}$/.test(log.transactionHash)
+      ? log.transactionHash
+      : null;
+  return { topics: log.topics as string[], data: log.data, block, tx };
 }
 
 /** The newest `MAX_RECORD_LOGS` entries of an event, oldest first, and whether older ones were left out. */
@@ -210,6 +219,7 @@ export async function readRecordEvents(
   let truncated = false;
   const filedBlocks = new Map<string, number>();
   const paidBlocks = new Map<string, number>();
+  const paidTx = new Map<string, string>();
   const verdicts = new Map<string, Verdict[]>();
 
   await Promise.all(
@@ -230,10 +240,9 @@ export async function readRecordEvents(
       }
       for (const log of paid.logs) {
         if (log.topics[1]) {
-          paidBlocks.set(
-            claimKey(mandate.address, idOf(log.topics[1])),
-            log.block,
-          );
+          const key = claimKey(mandate.address, idOf(log.topics[1]));
+          paidBlocks.set(key, log.block);
+          if (log.tx) paidTx.set(key, log.tx);
         }
       }
       for (const log of attested.logs) {
@@ -285,6 +294,7 @@ export async function readRecordEvents(
   return {
     filedAt: timed(filedBlocks),
     paidAt: timed(paidBlocks),
+    paidTx,
     verdicts,
     promises,
     lock: team.lock,

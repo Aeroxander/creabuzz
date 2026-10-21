@@ -25,7 +25,7 @@ import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
 import { useConnectedWallet } from "../use-connected-wallet";
 import { useDecisionContext, useDecisions } from "../use-decisions";
-import { useSpendingSummary } from "../use-spending";
+import { usePaymentRuns, useSpendingSummary } from "../use-spending";
 import { useChallengeLock } from "../use-challenge-lock";
 import { useWork } from "../use-work";
 import { decisionStage } from "./DecisionCard";
@@ -35,7 +35,7 @@ import { ProjectDeliveryOverview } from "./ProjectDeliveryOverview";
 import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 import { MilestoneProgressCard } from "./MilestoneProgressCard";
 import { SpendingCard } from "./SpendingCard";
-import { MoneyInCard } from "./MoneyInCard";
+import { MoneyInCard, MoneyInUnavailable } from "./MoneyInCard";
 import { useMoneyIn } from "../use-money-in";
 import { useWalletLabels } from "../use-wallet-labels";
 
@@ -89,6 +89,7 @@ export function DaoOverview({
     factory: context.data?.factory,
   });
 
+  const runs = usePaymentRuns(dao, spending);
   const moneyIn = useMoneyIn({
     dao,
     currency: launch.record.currency || null,
@@ -100,6 +101,7 @@ export function DaoOverview({
     moneyIn.data?.paidIn.map((p) => p.from) ?? [],
   );
 
+  const chainId = Number(launch.record.chainId ?? "") || 0;
   const challengeLock = useChallengeLock(dao);
   // The chain's own time, in which every deadline here is given.
   const clock =
@@ -306,21 +308,26 @@ export function DaoOverview({
 
       {spending && sale ? (
         <SpendingCard
+          chainId={chainId}
           decimals={sale.decimals}
           labelOf={labelOf}
           onOpenDecisions={() => onOpen("decisions")}
+          runs={runs.isError && !runs.data ? null : runs.data}
           summary={spending}
           symbol={symbol}
         />
       ) : null}
       {moneyIn.data && sale ? (
         <MoneyInCard
+          chainId={chainId}
           decimals={sale.decimals}
           labelOf={payerLabel}
           pledge={launch.record.revenuePledge}
           summary={moneyIn.data}
           symbol={symbol}
         />
+      ) : moneyIn.isError && sale ? (
+        <MoneyInUnavailable onRetry={() => void moneyIn.refetch()} />
       ) : null}
 
       <Card
