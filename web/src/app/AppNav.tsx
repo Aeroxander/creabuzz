@@ -77,7 +77,7 @@ export function TestnetChip() {
     <span
       className="hidden shrink-0 rounded-full border border-border bg-secondary px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground sm:inline"
       data-testid="testnet-chip"
-      title="This is a test version. Nothing here uses real money."
+      title="This is a test version. Nothing here uses real money, and Shares earned here are test records that will not move to a real network automatically."
     >
       Testnet
     </span>
