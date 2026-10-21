@@ -15,6 +15,7 @@ import { isContributorProject } from "../lib/funding";
 import type { Launch } from "../models";
 import { useContributions } from "../use-contributions";
 import { useWalletLabels } from "../use-wallet-labels";
+import { VoteControlNote } from "./VoteControlNote";
 
 const shares = (value: bigint) => formatUnits(value, 18);
 
@@ -166,6 +167,19 @@ export function ContributionsTab({
             oldest are shown.
           </p>
         ) : null}
+      </Card>
+
+      <Card className="p-4" data-testid="contributions-control">
+        <h2 className="text-base font-bold">Who decides right now</h2>
+        <p className="text-sm text-muted-foreground">
+          A project&apos;s decisions are votes of its Shares. Until awards
+          spread the Shares, the founder&apos;s starting Shares can be enough to
+          decide alone; this reads where that stands now.
+        </p>
+        <VoteControlNote
+          dao={dao}
+          kind={contributor ? "contributors" : "raise"}
+        />
       </Card>
 
       {people.length === 0 ? (

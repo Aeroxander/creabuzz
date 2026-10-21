@@ -15,6 +15,8 @@
  * vote can shorten for later decisions (`lib/dao-guarantees.ts`).
  */
 
+import type { ReactNode } from "react";
+
 import { Card } from "@/shared/ui/card";
 
 import { recordSaleCurrency } from "../chain";
@@ -32,6 +34,7 @@ import { useDaoGuarantees } from "../use-dao-guarantees";
 import { useShareRules } from "../use-share-rules";
 import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
 import { useWork } from "../use-work";
+import { planVoteControlText, VoteControlNote } from "./VoteControlNote";
 
 const day = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString(undefined, {
@@ -155,6 +158,7 @@ export function PowersCard({
   ruleUnreadable = false,
   shareRules = null,
   guarantees = "plan",
+  voteControl = null,
 }: {
   /** The plan locks the team's Shares behind milestones. */
   locked: boolean;
@@ -178,6 +182,8 @@ export function PowersCard({
    * being read or when it could not be.
    */
   guarantees?: Leaving;
+  /** Who decides right now: read from the DAO once it exists, or the plan's split before. */
+  voteControl?: ReactNode;
 }) {
   const canLeave =
     guarantees === "plan" ||
@@ -300,6 +306,12 @@ export function PowersCard({
           ),
         )}
       </ul>
+      {voteControl ? (
+        <>
+          <h3 className="mt-3 text-sm font-medium">Who decides right now</h3>
+          {voteControl}
+        </>
+      ) : null}
       <h3 className="mt-3 text-sm font-medium">
         If a decision goes against you
       </h3>
@@ -327,6 +339,7 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
   const context = useDecisionContext(treasury);
   const rules = useShareRules(context.data?.shares ?? null, treasury);
   const guarantees = useDaoGuarantees(treasury, context.data?.policy ?? null);
+  const planText = planVoteControlText(record.allocation);
   const dao =
     locked && record.treasury && isEvmAddress(record.treasury)
       ? record.treasury
@@ -380,6 +393,15 @@ export function PowersSection({ record }: { record: LaunchRecord }) {
       ruleUnreadable={kind === "unreadable"}
       shareRules={rules.data?.rules ?? null}
       guarantees={treasury === null ? "plan" : (guarantees.data ?? "unknown")}
+      voteControl={
+        treasury !== null ? (
+          <VoteControlNote dao={treasury} kind="raise" />
+        ) : planText ? (
+          <p className="mt-2 text-sm" data-testid="vote-control-plan">
+            {planText}
+          </p>
+        ) : null
+      }
     />
   );
 }
