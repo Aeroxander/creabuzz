@@ -15,6 +15,11 @@ the lock factories constructor arguments of the launch kit
 ([TOKENOMICS-CONTRACT-CHANGES.md](TOKENOMICS-CONTRACT-CHANGES.md)). §1, §2, §4, §5 and §6 describe the contracts after
 them; the ethskills walk in §10 was done before them, so the new code (§7, item 6) has had no checklist pass yet.
 
+**Updated again the same day for an outside review (D84, §11).** It found two launch checks in `DaoLaunchKit` that the
+ordinary `launch` call could get round: a team could launch without its milestone lock, and the sell-out check read
+fixed bytes of the auction configuration rather than what the auction decodes. Both are fixed in the kit only, each from
+a failing test; §1, §2, §5 and §7 follow.
+
 **Freeze before sending.** Tag the commit the auditors receive and pin it here. A change to any file in the table below
 after the tag needs either a re-review of that file or a written reason why it is outside the money paths.
 
@@ -31,7 +36,9 @@ after the tag needs either a re-review of that file or a written reason why it i
    for unlocking; points the executor's payee at the DAO; and creates, binds and funds the auction on Uniswap's
    canonical continuous clearing auction (CCA) factory. Before any of it, the kit refuses terms outside the limits
    (`UnfairTerms`: sale at least 60%, team at most 35%, reserve at most 20%, every team Share behind 2 to 8 milestones of
-   at most half each, no team seat that is a system address, a target of the whole tranche at the floor).
+   at most half each with one acceptance check per percentage, no team seat that is a system address, a target of the
+   whole tranche at the floor, read from the configuration decoded with the auction's own type), and after the summon it
+   reads back that the lock holds the team's whole allocation (D84).
 2. **Sale.** Backers bid on the CCA through Permit2. When the sale ends anyone calls
    `GraduationExecutor.executeGraduation`: a raise that met its target is swept into the DAO's treasury and unsold
    Shares go to the DAO; one that missed it refunds every bid in full from the auction (`exitBid`), and only the DAO
@@ -54,7 +61,7 @@ Lines are total and source lines (no blanks or comments) at `13b27b2c7`.
 
 | Contract | File | Lines (source) | Role in the raise |
 |---|---|---|---|
-| `DaoLaunchKit` | `src/DaoLaunchKit.sol` | 517 (373) | The one-transaction launch: executor, DAO, lock, panel, auction, and the checks on the launch's terms (D74, D75). Takes the two lock factories as constructor arguments (its creation code had no room to carry them); 22,951 bytes of creation code. Compiled with solc 0.8.37 like the rest since D70 (before: 0.8.26, the CCA's pin). |
+| `DaoLaunchKit` | `src/DaoLaunchKit.sol` | 551 (395), after D84 | The one-transaction launch: executor, DAO, lock, panel, auction, and the checks on the launch's terms (D74, D75), with the auction configuration decoded by a pinned copy of the auction's own `AuctionParameters` and the lock read back after the summon (D84). Takes the two lock factories as constructor arguments (its creation code had no room to carry them); 23,875 bytes of runtime (701 spare) and 24,634 of creation code. Compiled with solc 0.8.37 like the rest since D70 (before: 0.8.26, the CCA's pin). |
 | `GraduationExecutor` | `src/GraduationExecutor.sol` | 459 (255) | Holds the sale tranche, funds the auction, sweeps the raise to the DAO, recovers a failed sale for the DAO. The kit uses it with `reserveBps = 0`, so its reserve paths are unused in a DAO launch. |
 | CCA interfaces | `src/CCA.sol` | 66 (30) | Mirrored interfaces of the upstream auction; `test/PinnedInterfaces.t.sol` compares them with the pinned source. |
 | Patched Majeur DAO | `src/majeur/MolochPatched.sol` (`Moloch`, `Shares`, `Loot`, `Badges`, `Summoner`) | 2,872 (1,645) | The DAO, its treasury, ragequit (leaving out the DAO's own Shares and those still locked, D72), the Shares ERC-20(C) with the lock guard (chosen once, "none" included), the issuance rule (mints and hand-outs only inside `awardContribution`, at most a capped share a year, D76), burns only inside `ragequit` (D73), and the transfer lock with one exempt address and a 30-day unlock notice (D77). `setRagequittable`, the share sale, permits and allowances are removed (upstream text kept in comments). Upstream is `lib/majeur/src/Moloch.sol`; the fork is additive: 89 `@@CREABUZZ PATCH` blocks, 584 lines inside them (`scripts/check-majeur-fork.mjs` enforces it). `Moloch` runtime 22,090 of 24,576 bytes; `Shares` 10,902. |
@@ -143,9 +150,9 @@ with the web app's own encoders and exit/bid logic. Each invariant was also chec
 | 14 | Under the issuance rule no Share or Loot appears outside an award, and no passed vote can mint, hand out the DAO's own Shares, mint Loot or burn a holder's Shares (D73, D76) | `invariant_no_shares_or_loot_appear_outside_an_award`, handler `governShareMoves`; `IssuanceRule.t.sol`, `ExitProtections.t.sol` | every launch is born with the rule | the award-only check removed; the count removed; the hand-out check removed; Loot's closure removed; the leaving-only burn removed |
 | 15 | An award never takes the year's new Shares past the cap of that year's exit base; the cap only goes down (D76) | `IssuanceRule.t.sol` (with a stand-in DAO that says when an award is under way) | — | the count removed |
 | 16 | While transfers are locked, Shares move only to or from the exempt address (the auction), and unlocking runs only 30 days or more after an announcement still standing (D77) | `TransferLock.t.sol` (a fuzz test over senders, receivers and amounts) | every transfer step expects the refusal | the notice check removed; the exemption widened |
-| 17 | The kits refuse terms outside the limits, a team seat that is a system address, and (contributor projects) a founder stake above a third of the first budget or a founder on its panel (D74, D75, D79) | `DaoLaunchKit.t.sol`, `ContributorKit.t.sol` | every launch is inside them | each of the six kit checks removed |
+| 17 | The kits refuse terms outside the limits, a team seat that is a system address, and (contributor projects) a founder stake above a third of the first budget or a founder on its panel (D74, D75, D79); a launch with a team either fails or ends with a lock holding every team Share, and the target check reads what the auction decodes however the configuration is encoded (D84) | `DaoLaunchKit.t.sol` (including `testFuzz_a_launch_with_a_team_either_fails_or_locks_every_team_share` and `testFuzz_the_target_check_reads_the_config_wherever_it_is_encoded`), `ContributorKit.t.sol`, `PinnedInterfaces.t.sol` (the kit's copy of `AuctionParameters`) | every launch is inside them, and its lock holds the whole team | each of the six kit checks removed; the check-per-percentage rule removed; the lock read-back removed; the fixed-offset read restored |
 
-The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, 35 guards, all caught on 2026-10-21).
+The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, 38 guards, all caught on 2026-10-21 after D84).
 
 ## 6. Observations made while preparing (no behaviour changed)
 
@@ -189,8 +196,8 @@ None of these is a loss of funds or a broken promise; each is worth an auditor's
    (`leaving` around the burns in `ragequit`, `awarding` around the mint in `awardContribution`) and the `Shares`/`Loot`
    checks that read them; the subtraction of `totalLocked` in `ragequit` (inside `unchecked`, guarded); the issuance
    year in `Shares._countIssued` and the award paid from the DAO's own holding first; the transfer exemption and the
-   unlock notice; and the kit's terms check, including the reading of the floor and target from `auctionConfig` by
-   offset.
+   unlock notice; and the kit's terms check (since D84 the floor and target come from `auctionConfig` decoded with the
+   kit's pinned copy of the auction's type, and the team's lock is read back after the summon, §11).
 
 ## 8. How to rerun all of it
 
@@ -201,7 +208,7 @@ See [TEST-STEPS.md §4aj](TEST-STEPS.md). In short:
 cd contracts && forge test                                   # the whole suite, including the new invariants
 cd contracts && forge test --match-path "test/invariant/*"   # only the money-path invariants and fuzz tests
 scripts/simulate-raise.sh --steps 3000 --seed 7              # the agent-based simulation on its own anvil
-node scripts/contracts-mutation-check.mjs                    # break each of 16 guards once; every one must be caught
+node scripts/contracts-mutation-check.mjs                    # break each guard once (38); every one must be caught
 ```
 
 ## 9. What the simulation found
@@ -347,3 +354,30 @@ the snapshot, so this only allows opening. The launch default threshold is zero 
   initialized by anyone, which touches only their own unused storage (§6, item 3).
 - `TreasuryMandate.close()` transfers even a zero balance back; a currency that reverts on zero transfers would block
   closing an empty budget (USDC does not).
+
+## 11. An outside review of the tokenomics changes (2026-10-21)
+
+An outside reviewer read `d9e9c060e..98f1f73a5` (the D72–D82 commits) as a source, product and runtime review, not an
+audit, ran the suite and reproduced each finding against the real contracts. The two contract findings are fixed (D84,
+[TOKENOMICS-CONTRACT-CHANGES.md §11](TOKENOMICS-CONTRACT-CHANGES.md)); the app findings are in D85.
+
+## [OR-1] A team could launch without its milestone lock (fixed, D84)
+**Severity**: High (the team's Shares free from the first block, against the launch's stated terms)
+**Location**: `DaoLaunchKit._launch` (a lock only when `milestoneChecks` is not empty) and `_checkTerms` rule 4 (looked
+only at `milestoneBps`)
+**Description**: with team Shares, `milestoneBps = [5000, 5000]`, no checks and no reviewers, every check passed; no lock
+was made and "no lock" was then final (D73), so the founder could leave with every team Share before any milestone.
+**Fix**: rule 4 requires one check per percentage when there is a team, and after the summon the kit requires the lock
+to hold the team's whole allocation (`totalLocked`), which also refuses a split the percentages cannot divide exactly.
+**Tests**: the review's case, unpaired counts on both launch paths, the rounding case, and a fuzz test over schedules.
+
+## [OR-2] The sell-out check read fixed bytes, not what the auction decodes (fixed, D84)
+**Severity**: High (a raise could graduate far below its tranche, against D74)
+**Location**: `DaoLaunchKit._checkTerms` rule 6 (`abi.decode(p.auctionConfig[288:352], (uint256, uint256))`)
+**Description**: the factory decodes the configuration with `abi.decode(configData, (AuctionParameters))`, which follows
+the head's offset; a valid encoding with the tuple one word later made the kit read the hook as the floor and the floor
+as the target. A 600-Share sale with a one-unit target was accepted and graduated on a one-unit bid.
+**Fix**: decode with `KitAuctionParameters`, a copy of the auction's type pinned to upstream in `PinnedInterfaces.t.sol`,
+and compare `floor ≤ ((required + 1) × 2^96 − 1) / supply`, which cannot overflow.
+**Tests**: the review's case, the same encoding with a fair target, an overflowing floor, and a fuzz test over the
+tuple's position and the target.
