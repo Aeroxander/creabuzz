@@ -55,5 +55,8 @@ export function usePostToBoard() {
     [queryClient],
   );
 
-  return { boards, post };
+  /** True while the board list is still being read: not the same as "there are none". */
+  const loading = channels.isLoading;
+
+  return { boards, loading, post };
 }

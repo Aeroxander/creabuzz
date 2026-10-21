@@ -57,7 +57,8 @@ export type ContributorFlowAction = StepFlowAction<ContributorStep, never>;
 
 /** Everything a run knows, kept between visits. */
 export interface ContributorJob {
-  version: 2;
+  /** 3 since a launch can have several first projects (D84); a stored 2 is read and converted. */
+  version: 3;
   /** The founder's public key (the record's author). */
   author: string;
   launchId: string;
@@ -68,7 +69,7 @@ export interface ContributorJob {
   kit: string;
   /** The launch kit's DAO factory, when this network has a launch kit: the contributor kit must use the same one. */
   expectedSummoner: string | null;
-  /** The founder's wallet: the DAO's only holder at the start, and the first project's manager. */
+  /** The founder's wallet: the DAO's only holder at the start, and every first project's manager. */
   founder: string;
   /** The currency claims name for deposits (the network's USDC). */
   currency: string;
@@ -216,13 +217,19 @@ export async function runContributorStart(
 
 export const JOB_STORAGE_PREFIX = "creaton.contributor-start.";
 
-/** A stored job, or null when there is none or it is not one this version wrote. */
+/** A stored job, or null when there is none or it is not one this app wrote. A job from before D84 (one first project)
+ * is converted, so a start cut short by an update can still be finished. */
 export function parseJob(raw: string | null): ContributorJob | null {
   if (!raw) return null;
   try {
-    const value = JSON.parse(raw) as Partial<ContributorJob>;
+    const value = JSON.parse(raw) as Omit<
+      Partial<ContributorJob>,
+      "version"
+    > & {
+      version?: number;
+    };
     if (
-      value?.version !== 2 ||
+      (value?.version !== 2 && value?.version !== 3) ||
       typeof value.launchId !== "string" ||
       typeof value.salt !== "string" ||
       typeof value.kit !== "string" ||
@@ -231,7 +238,25 @@ export function parseJob(raw: string | null): ContributorJob | null {
       value.draft === null
     )
       return null;
-    return value as ContributorJob;
+    const draft = value.draft as ContributorDraft & {
+      projectName?: unknown;
+      projectCheck?: unknown;
+    };
+    if (!Array.isArray(draft.projects)) {
+      if (
+        typeof draft.projectName !== "string" ||
+        typeof draft.projectCheck !== "string"
+      )
+        return null;
+      const { projectName, projectCheck, ...rest } = draft;
+      value.draft = {
+        ...rest,
+        projects: [
+          { name: projectName, check: projectCheck, shares: draft.projectCap },
+        ],
+      };
+    }
+    return { ...value, version: 3 } as ContributorJob;
   } catch {
     return null;
   }

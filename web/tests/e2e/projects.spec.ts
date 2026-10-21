@@ -119,7 +119,7 @@ function requestEvent() {
   };
 }
 
-/** A launch record for `nebula` — the summon preview's cap figures live here. */
+/** A launch record for `nebula`: once it exists, the project is running. */
 function launchEvent() {
   return {
     id: "launch-1",
@@ -211,11 +211,11 @@ test("approval records one ownership grant and the map says which is which", asy
     "Recorded and revocable until the project's DAO adopts the map. Not a legal contract",
   );
 
-  // The launchpad bridge states the cap story.
+  // The way on: each role becomes a project its person earns by delivering.
   const bridge = page.getByTestId("dao-bridge");
-  await expect(bridge).toContainText("Form the DAO");
-  await expect(bridge).toContainText("1/6 of the graduation threshold");
-  await expect(bridge).toContainText("3× that budget");
+  await expect(bridge).toContainText("Start it as a contributor project");
+  await expect(bridge).toContainText("Each role becomes a project");
+  await expect(page.getByTestId("start-contributor-project")).toBeVisible();
 
   // What do I do about it: one click publishes exactly one grant.
   await page.getByRole("button", { name: "Approve 12%" }).click();
@@ -297,75 +297,106 @@ test("an over-pool pitch is refused before anything reaches the relay", async ({
   ).toHaveLength(0);
 });
 
-test("the summon preview maps the board to shares and refuses what it must", async ({
+test("the founder starts the board's team as a contributor project: each role is a first project worth its stake", async ({
   page,
 }) => {
   const relay = createMockRelay();
-  const founderAddress = `0x${"11".repeat(20)}`;
-  // The viewer's own SIWE binding — the one binding source this build reads
-  // (`identity/lib/siwe.ts` `readWalletBinding`); the relay has no read path
-  // for anyone else's, so the other seats must come back unbound.
   await page.addInitScript(
-    ([nsec, address, pubkey]) => {
-      window.localStorage.setItem("buzz.identity.nsec", nsec);
-      window.localStorage.setItem(
-        "buzz.siwe.binding",
-        JSON.stringify({ address, pubkey, boundAt: 1_000 }),
-      );
-    },
-    [FOUNDER_NSEC, founderAddress, FOUNDER],
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [FOUNDER_NSEC],
   );
   await relay.install(page);
   seedBoard(relay);
-  relay.seed(launchEvent());
 
   await page.goto(`/projects/nebula?author=${FOUNDER}`);
-  await expect(page.getByTestId("dao-bridge")).toContainText(
-    "A launch record already exists",
-  );
-  await page.getByTestId("form-dao").click();
+  await page.getByTestId("start-contributor-project").click();
+  await expect(page).toHaveURL(/\/start\/contributor\?/);
 
-  const dialog = page.getByRole("dialog", { name: "Form the DAO" });
-  await expect(dialog).toBeVisible();
-
-  // The cap line names both sides of the 1/6 rule: a year at the cap
-  // (1 USDC/mo × 6) against the graduation threshold — within at exactly 6×.
-  await expect(page.getByTestId("summon-cap-line")).toHaveText(
-    /Budget cap: 6 USDC of 6 USDC \(within\)/,
+  // 1,000,000 Shares are the whole project: the founder's 40% is what they start with, and the writer's 12% and the
+  // designer's 8% are projects of 120,000 and 80,000. The budget is three times the founder's start (D79), so it has
+  // room for 1,000,000 more for people who join later.
+  const from = page.getByTestId("contributor-from-board");
+  await expect(from).toContainText(
+    "Your declared stake is what you start with",
   );
+  await expect(from).toContainText("room for 1,000,000 Shares");
+  await expect(page.getByTestId("contributor-name")).toHaveValue("Nebula");
+  await expect(page.getByTestId("contributor-pitch")).toHaveValue(
+    "A social app for stargazers.",
+  );
+  await expect(page.getByTestId("contributor-founder-shares")).toHaveValue(
+    "400000",
+  );
+  await expect(page.getByTestId("contributor-budget-shares")).toHaveValue(
+    "1200000",
+  );
+  await expect(page.getByTestId("contributor-project-name")).toHaveValue(
+    "The writer",
+  );
+  await expect(page.getByTestId("contributor-project-shares-0")).toHaveValue(
+    "120000",
+  );
+  await expect(page.getByTestId("contributor-project-check")).toHaveValue(
+    "The writer: the work agreed for this role is delivered, and the reviewers accept it.",
+  );
+  await expect(page.getByTestId("contributor-project-name-1")).toHaveValue(
+    "The designer",
+  );
+  await expect(page.getByTestId("contributor-project-shares-1")).toHaveValue(
+    "80000",
+  );
+  // The designer's role has a person in it: the check names them.
+  await expect(page.getByTestId("contributor-project-check-1")).toHaveValue(
+    /^The designer: the work agreed for this role is delivered by .+, and the reviewers accept it\.$/,
+  );
+  // Nothing is sent until the founder presses start.
+  expect(relay.events.filter((event) => event.kind === 37001)).toHaveLength(0);
+});
+
+test("only the founder can start it, and a started project links to its work", async ({
+  browser,
+}) => {
+  // Someone else following the founder's link is told why it is not filled in.
+  const visitor = await browser.newPage();
+  const relay = createMockRelay();
+  await visitor.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    ["22".repeat(32)],
+  );
+  await relay.install(visitor);
+  seedBoard(relay);
+  await visitor.goto(`/projects/nebula?author=${FOUNDER}`);
+  await expect(visitor.getByTestId("dao-bridge")).toContainText(
+    "The founder starts it",
+  );
+  await expect(visitor.getByTestId("start-contributor-project")).toHaveCount(0);
+  await visitor.goto(`/start/contributor?project=nebula&author=${FOUNDER}`);
   await expect(
-    page.getByText("Large spends pass by default up to 3 USDC"),
-  ).toBeVisible();
+    visitor.getByTestId("contributor-from-board-problem"),
+  ).toHaveText("Only the person who posted the project can start it.");
+  await expect(visitor.getByTestId("contributor-name")).toHaveValue("");
+  await visitor.close();
 
-  // The founder's seat resolves to a bound address, at pct × 10^18 shares.
-  const founderRow = page.getByTestId("summon-seat-founder");
-  // truncatePubkey: first 8 chars ("0x111111") … last 4.
-  await expect(founderRow).toContainText("0x111111…1111");
-  await expect(founderRow).toContainText("40%");
-  await expect(founderRow).toContainText("40000000000000000000");
-
-  // The granted seat has no binding: refused loudly, with the fix named.
-  await expect(page.getByTestId("summon-seat-designer")).toContainText("—");
-  await expect(page.getByTestId("summon-seat-designer")).toContainText(
-    "8000000000000000000",
+  // Once its launch record exists, the board sends people to its work instead.
+  const founder = await browser.newPage();
+  const started = createMockRelay();
+  await founder.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [FOUNDER_NSEC],
   );
-  const unbound = page.getByTestId("summon-unbound");
-  await expect(unbound).toContainText("The designer");
-  await expect(unbound).toContainText("Ask them to bind an address");
-
-  const blockers = page.getByTestId("summon-blockers");
-  await expect(blockers).toContainText("no bound wallet address");
-  await expect(blockers).toContainText("No Summoner contract address");
-
-  // The §9 stance stays where the map is read and taken.
-  await expect(page.getByTestId("summon-disclaimer")).toContainText(
-    "Not a legal contract",
+  await started.install(founder);
+  seedBoard(started);
+  started.seed(launchEvent());
+  await founder.goto(`/projects/nebula?author=${FOUNDER}`);
+  await expect(founder.getByTestId("dao-bridge")).toContainText(
+    "This project is running",
   );
-
-  // One action, and it is not armed while a seat cannot be minted.
-  await expect(page.getByTestId("summon-run")).toBeDisabled();
-  await expect(page.getByTestId("summon-step-send")).toHaveText("pending");
-  await expect(page.getByTestId("summon-disabled-reason")).toBeVisible();
+  await expect(founder.getByTestId("dao-bridge-link")).toHaveAttribute(
+    "href",
+    /\/launchpad\/nebula\?.*tab=work/,
+  );
+  await expect(founder.getByTestId("start-contributor-project")).toHaveCount(0);
+  await founder.close();
 });
 
 async function openPitch(

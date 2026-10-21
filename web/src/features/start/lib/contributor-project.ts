@@ -4,8 +4,9 @@
  * What the founder fills in becomes two things, in order:
  *
  * 1. one transaction to the contributor kit (`ContributorKit.launch`), which makes, at once: the DAO with the founder as
- *    its only holder and no sale; its first work budget, paying in Shares only, with the reviewers the founder named; the
- *    first project inside it, managed by the founder; and a lock that keeps Shares from being sent between wallets. The
+ *    its only holder and no sale; its first work budget, paying in Shares only, with the reviewers the founder named; up
+ *    to eight first projects inside it (one per role, for a team from the Projects board, D84), managed by the founder;
+ *    and a lock that keeps Shares from being sent between wallets. The
  *    kit reads all of it back and makes nothing unless all of it came out as asked. So people can claim work the same
  *    day, with no vote first: until anyone else holds Shares, a vote would protect nobody
  *    (docs/v3-review/CONTRIBUTOR-KIT.md);
@@ -39,6 +40,8 @@ export const SHARE_UNIT = 10n ** 18n;
 /** A ceiling for what one form may create: a billion Shares. */
 export const MAX_WHOLE_SHARES = 1_000_000_000n;
 export const MAX_REVIEWERS = 32;
+/** The most first projects the contributor kit makes in one launch (`ContributorKit.MAX_FIRST_PROJECTS`). */
+export const MAX_FIRST_PROJECTS = 8;
 /** How long the first work budget, and the first project in it, stay open, in days. */
 export const BUDGET_DAYS = 90;
 
@@ -51,6 +54,16 @@ export const CONTRIBUTOR_DEFAULTS = {
   projectCap: "25000",
 } as const;
 
+/** One first project, as typed. */
+export interface ProjectDraft {
+  /** Its short name ("docs"). */
+  name: string;
+  /** What finished work in it looks like, in a sentence: every claim states it, and the reviewers judge against it. */
+  check: string;
+  /** Whole Shares it may award in all. */
+  shares: string;
+}
+
 export interface ContributorDraft {
   name: string;
   pitch: string;
@@ -59,24 +72,34 @@ export interface ContributorDraft {
   founderShares: string;
   /** Whole Shares the first work budget may award in all. */
   budgetShares: string;
-  /** Whole Shares any one project inside that budget may award; the first project gets this much. */
+  /** Whole Shares any one project inside that budget may award. */
   projectCap: string;
   /** One wallet address per line (commas and spaces work too). */
   reviewers: string;
   /** How many reviewers must agree; empty for a simple majority. */
   quorum: string;
-  /** The first project's short name ("docs"). */
-  projectName: string;
-  /** What finished work in it looks like, in a sentence: every claim states it, and the reviewers judge against it. */
-  projectCheck: string;
+  /** The first projects, one to eight. */
+  projects: ProjectDraft[];
+}
+
+/** A first project with nothing typed, sized at the per-project limit. */
+export function emptyProject(cap: string): ProjectDraft {
+  return { name: "", check: "", shares: cap };
 }
 
 export class ContributorInputError extends Error {
   readonly field: keyof ContributorDraft;
-  constructor(field: keyof ContributorDraft, message: string) {
+  /** For a first project's problem: which one (0-based). */
+  readonly index: number | null;
+  constructor(
+    field: keyof ContributorDraft,
+    message: string,
+    index: number | null = null,
+  ) {
     super(message);
     this.name = "ContributorInputError";
     this.field = field;
+    this.index = index;
   }
 }
 
@@ -84,8 +107,12 @@ const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const SYMBOL_RE = /^[A-Z0-9]{2,8}$/;
 const ZERO = `0x${"0".repeat(40)}`;
 
-function fail(field: keyof ContributorDraft, message: string): never {
-  throw new ContributorInputError(field, message);
+function fail(
+  field: keyof ContributorDraft,
+  message: string,
+  index: number | null = null,
+): never {
+  throw new ContributorInputError(field, message, index);
 }
 
 /** The short name the form suggests for a project name, never empty. */
@@ -98,13 +125,14 @@ function wholeShares(
   value: string,
   field: keyof ContributorDraft,
   what: string,
+  index: number | null = null,
 ): bigint {
   const text = value.trim().replace(/[,_\s]/g, "");
-  if (!/^\d+$/.test(text)) fail(field, `${what}: use a whole number.`);
+  if (!/^\d+$/.test(text)) fail(field, `${what}: use a whole number.`, index);
   const n = BigInt(text);
-  if (n === 0n) fail(field, `${what} must be more than 0.`);
+  if (n === 0n) fail(field, `${what} must be more than 0.`, index);
   if (n > MAX_WHOLE_SHARES)
-    fail(field, `${what} can be at most 1,000,000,000.`);
+    fail(field, `${what} can be at most 1,000,000,000.`, index);
   return n;
 }
 
@@ -126,10 +154,86 @@ export interface ContributorTerms {
   capWhole: bigint;
   reviewers: string[];
   quorum: number;
-  projectName: string;
-  projectCheck: string;
+  projects: { name: string; check: string; sharesWhole: bigint }[];
   /** Basis points of all Shares the contributors would hold if the whole first budget were awarded. */
   contributorsAtFullBudgetBps: number;
+}
+
+/** The first projects, checked: one to eight, distinct names, each within the per-project limit, all within the budget. */
+function checkProjects(
+  drafts: readonly ProjectDraft[],
+  capWhole: bigint,
+  budgetWhole: bigint,
+): ContributorTerms["projects"] {
+  if (drafts.length === 0)
+    fail("projects", "Add a first project: something people can work on.");
+  if (drafts.length > MAX_FIRST_PROJECTS)
+    fail(
+      "projects",
+      `Start with at most ${MAX_FIRST_PROJECTS} projects; the project can vote to add more later.`,
+    );
+  const seen = new Set<string>();
+  let total = 0n;
+  const projects = drafts.map((draft, index) => {
+    const name = draft.name.trim();
+    // Each problem names the project it is about: by its name once it has one.
+    const which = name
+      ? `“${name}”`
+      : drafts.length > 1
+        ? `project ${index + 1}`
+        : "the first project";
+    const Which = which.charAt(0).toUpperCase() + which.slice(1);
+    if (name.length === 0)
+      fail("projects", `Name ${which}, in a word or two.`, index);
+    if (utf8ToBytes(name).length > PROJECT_NAME_MAX)
+      fail(
+        "projects",
+        `Keep the name of ${which} to ${PROJECT_NAME_MAX} letters.`,
+        index,
+      );
+    if (name.startsWith("0x"))
+      fail("projects", `Start the name of ${which} with a letter.`, index);
+    if (seen.has(name))
+      fail(
+        "projects",
+        `Two projects are called ${which}: give each its own name.`,
+        index,
+      );
+    seen.add(name);
+    const check = draft.check.trim();
+    if (check.length < 5)
+      fail(
+        "projects",
+        `Say what finished work looks like for ${which}, so reviewers know what to check.`,
+        index,
+      );
+    if (check.length > CHECK_MAX)
+      fail(
+        "projects",
+        `Keep what finished work looks like for ${which} under ${CHECK_MAX} characters.`,
+        index,
+      );
+    const sharesWhole = wholeShares(
+      draft.shares,
+      "projects",
+      `The Shares for ${which}`,
+      index,
+    );
+    if (sharesWhole > capWhole)
+      fail(
+        "projects",
+        `${Which} can award at most ${formatWhole(capWhole)} Shares, the most for one project.`,
+        index,
+      );
+    total += sharesWhole;
+    return { name, check, sharesWhole };
+  });
+  if (total > budgetWhole)
+    fail(
+      "projects",
+      `Together the projects award ${formatWhole(total)} Shares, more than the ${formatWhole(budgetWhole)} the budget holds.`,
+    );
+  return projects;
 }
 
 /**
@@ -218,24 +322,7 @@ export function contributorTerms(
       "You cannot review the first budget's work yourself. Name other people: they check everyone's claims, yours too.",
     );
 
-  const projectName = draft.projectName.trim();
-  if (projectName.length === 0)
-    fail("projectName", "Name the first project, in a word or two.");
-  if (utf8ToBytes(projectName).length > PROJECT_NAME_MAX)
-    fail(
-      "projectName",
-      `Keep the project's name to ${PROJECT_NAME_MAX} letters.`,
-    );
-  if (projectName.startsWith("0x"))
-    fail("projectName", "Start the project's name with a letter.");
-  const projectCheck = draft.projectCheck.trim();
-  if (projectCheck.length < 5)
-    fail(
-      "projectCheck",
-      "Say what finished work looks like, so reviewers know what to check.",
-    );
-  if (projectCheck.length > CHECK_MAX)
-    fail("projectCheck", `Keep it under ${CHECK_MAX} characters.`);
+  const projects = checkProjects(draft.projects, capWhole, budgetWhole);
 
   const total = founderWhole + budgetWhole;
   const contributorsAtFullBudgetBps = Number((budgetWhole * 10_000n) / total);
@@ -248,8 +335,7 @@ export function contributorTerms(
     capWhole,
     reviewers,
     quorum,
-    projectName,
-    projectCheck,
+    projects,
     contributorsAtFullBudgetBps,
   };
 }
@@ -289,13 +375,18 @@ export function sharePreview(
 export function contributorIssue(
   draft: ContributorDraft,
   founderWallet: string | null = null,
-): { field: keyof ContributorDraft; message: string } | null {
+): {
+  field: keyof ContributorDraft;
+  message: string;
+  /** Which first project, for a problem with one of them. */
+  index: number | null;
+} | null {
   try {
     contributorTerms(draft, founderWallet);
     return null;
   } catch (error) {
     if (error instanceof ContributorInputError)
-      return { field: error.field, message: error.message };
+      return { field: error.field, message: error.message, index: error.index };
     throw error;
   }
 }
@@ -356,7 +447,7 @@ export function createAddress(sender: string, nonce: bigint): string {
 
 /** `ContributorKit.launch(Params)`, with the struct spelled out as the ABI sees it. */
 export const KIT_LAUNCH_SIGNATURE =
-  "launch((string,string,uint256,bytes32,address,uint128,uint128,uint64,address[],uint256,address,bytes32,address,uint128,uint64,bytes32))";
+  "launch((string,string,uint256,bytes32,address,uint128,uint128,uint64,address[],uint256,address,(bytes32,address,uint128,uint64,bytes32)[]))";
 
 const KIT_PARAMS: AbiType = {
   tuple: [
@@ -371,18 +462,16 @@ const KIT_PARAMS: AbiType = {
     { array: "address" },
     "uint256",
     "address",
-    "bytes32",
-    "address",
-    "uint128",
-    "uint64",
-    "bytes32",
+    {
+      array: { tuple: ["bytes32", "address", "uint128", "uint64", "bytes32"] },
+    },
   ],
 };
 
 export interface KitLaunch {
   terms: ContributorTerms;
   salt: string;
-  /** The founder's wallet: the only holder, and the first project's manager. */
+  /** The founder's wallet: the only holder, and every first project's manager. */
   founder: string;
   /** The token claims name for an optional deposit (the network's USDC). */
   currency: string;
@@ -392,7 +481,7 @@ export interface KitLaunch {
   now: number;
 }
 
-/** The one transaction that makes the whole project: DAO, budget, first project, transfer lock. No sale. */
+/** The one transaction that makes the whole project: DAO, budget, first projects, transfer lock. No sale. */
 export function encodeKitLaunch(launch: KitLaunch): string {
   for (const [value, what] of [
     [launch.founder, "founder"],
@@ -421,11 +510,13 @@ export function encodeKitLaunch(launch: KitLaunch): string {
         terms.reviewers,
         BigInt(terms.quorum),
         launch.predictedBudget,
-        idWord(terms.projectName),
-        launch.founder,
-        terms.capWhole * SHARE_UNIT,
-        expires,
-        hashText(terms.projectCheck),
+        terms.projects.map((project) => [
+          idWord(project.name),
+          launch.founder,
+          project.sharesWhole * SHARE_UNIT,
+          expires,
+          hashText(project.check),
+        ]),
       ],
     ],
   );

@@ -230,18 +230,24 @@ export function useContributorStart() {
     [create, endpoint, storageKey, wallet.wallet],
   );
 
-  /** Start a new project from the form. Throws a `ContributorInputError` for a draft that cannot start. */
+  /**
+   * Start a new project from the form. Throws a `ContributorInputError` for a draft that cannot start. `fromBoard` is a
+   * Projects-board project's id: the launch then takes that id, so the board links to it (D84).
+   */
   const start = useCallback(
-    (draft: ContributorDraft) => {
+    (draft: ContributorDraft, fromBoard?: string) => {
       if (!gate.ok || !network.data || !me || !wallet.address) return;
       const { chainId, kit, expectedSummoner, currency } = network.data;
       const terms = contributorTerms(draft, wallet.address);
       const taken = (launches.data ?? [])
         .filter((launch) => launch.record.author === me)
         .map((launch) => launch.record.id);
-      const launchId = ideaId(terms.name, taken);
+      const launchId =
+        fromBoard && !taken.includes(fromBoard)
+          ? fromBoard
+          : ideaId(terms.name, taken);
       run({
-        version: 2,
+        version: 3,
         author: me,
         launchId,
         salt: contributorSalt(me, launchId),

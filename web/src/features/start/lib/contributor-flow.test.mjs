@@ -34,7 +34,7 @@ const LAUNCH = selectorOf(KIT_LAUNCH_SIGNATURE);
 
 function job(overrides = {}) {
   return {
-    version: 2,
+    version: 3,
     author: AUTHOR,
     launchId: "docs-commons",
     salt: SALT,
@@ -50,8 +50,9 @@ function job(overrides = {}) {
       ...CONTRIBUTOR_DEFAULTS,
       reviewers: `${a("71")}\n${a("72")}`,
       quorum: "",
-      projectName: "docs",
-      projectCheck: "docs merged and reviewed",
+      projects: [
+        { name: "docs", check: "docs merged and reviewed", shares: "25000" },
+      ],
     },
     dao: null,
     shares: null,
@@ -213,4 +214,30 @@ test("a stored job that is not one this version wrote is ignored", () => {
   assert.equal(parseJob("{"), null);
   assert.equal(parseJob(JSON.stringify({ ...job(), version: 1 })), null);
   assert.equal(parseJob(JSON.stringify(job()))?.launchId, "docs-commons");
+});
+
+test("a job saved before several first projects (D84) is converted, not dropped", async () => {
+  const { parseJob } = await import("./contributor-flow.ts");
+  const old = job();
+  old.version = 2;
+  old.draft = {
+    ...old.draft,
+    projectName: "docs",
+    projectCheck: "docs merged and reviewed",
+  };
+  delete old.draft.projects;
+  const parsed = parseJob(JSON.stringify(old));
+  assert.equal(parsed.version, 3);
+  assert.deepEqual(parsed.draft.projects, [
+    {
+      name: "docs",
+      check: "docs merged and reviewed",
+      shares: old.draft.projectCap,
+    },
+  ]);
+  assert.equal("projectName" in parsed.draft, false);
+  assert.equal(
+    parseJob(JSON.stringify({ ...old, draft: { name: "x" } })),
+    null,
+  );
 });

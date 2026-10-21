@@ -7,6 +7,9 @@
 # budget and first project, and locks its Shares; then it is published); right away, with no vote, a contributor files a
 # claim that asks for no money, the founder takes it on, two reviewers approve it, it is finished and taken; the DAO
 # votes the award; and the project's Contributions page, opened with no wallet, shows who earned how much for what.
+# A second journey has several people earn (D84): two first projects at Start, a newcomer with no Shares suggests work
+# for 5% of the project, the founder puts it to a vote filled in from the suggestion, both people's claims are reviewed,
+# paid and awarded by vote, and the Contributions page shows both.
 #
 # ⚠️  DEV ONLY. Anvil's public dev keys, a local chain, nothing else.
 #

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { SponsorIntent } from "../lib/sponsor";
 import { useMemo, useState } from "react";
 import { PaymentRecipientPicker } from "@/features/identity/ui/PaymentRecipientPicker";
 
@@ -164,7 +165,17 @@ export interface FormProps {
   onSubmit: (draft: DecisionDraft) => void;
 }
 
-export function ProjectForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
+export function ProjectForm({
+  ctx,
+  blocked,
+  busy,
+  gate,
+  onSubmit,
+  preset,
+}: FormProps & {
+  /** A suggestion being put to a vote (D84): its name, Shares and check, typed in already. */
+  preset?: SponsorIntent;
+}) {
   // The milestone panel is listed last: a project is usually for ordinary work, and the panel is only for milestones.
   const openBudgets = (ctx.work?.mandates ?? []).filter(
     (m) => !m.closed && m.expiresAt > ctx.chainTime,
@@ -174,12 +185,12 @@ export function ProjectForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
     ...openBudgets.filter((m) => m.isMilestonePanel),
   ];
   const [which, setWhich] = useState("");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(preset?.name ?? "");
   const [manager, setManager] = useState("");
-  const [shares, setShares] = useState("");
+  const [shares, setShares] = useState(preset?.shares ?? "");
   const [money, setMoney] = useState("");
   const [open, setOpen] = useState("30");
-  const [check, setCheck] = useState("");
+  const [check, setCheck] = useState(preset?.check ?? "");
   const chosen = budgets.find((m) => m.address === which) ?? budgets[0];
   // The DAO's milestone panel holds nothing: a project in it only lets one of the team's milestones be judged, and its
   // words are the milestone's own, picked rather than typed.

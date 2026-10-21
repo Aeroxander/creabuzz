@@ -41,7 +41,6 @@ import {
   usePublishProjectEvent,
 } from "../use-projects";
 import { JoinDialog, STAKE_DISCLAIMER } from "./JoinDialog";
-import { SummonDialog } from "./SummonDialog";
 
 function StatusPill({ status }: { status: RequestState["status"] }) {
   const copy: Record<
@@ -261,94 +260,77 @@ function RequestRow({
   );
 }
 
+/**
+ * From the board to a project people can work on (D84): the founder starts it as a contributor project, where each role
+ * becomes a project in its first work budget and the person in it earns that stake as their work is accepted. Nothing
+ * is handed out up front, so a stake on this board stays a promise until the work behind it is done.
+ */
 function LaunchpadBridge({
   isFounder,
-  nameOf,
   project,
   projectId,
 }: {
   isFounder: boolean;
-  nameOf: (pubkey: string) => string;
   project: ProjectState;
   projectId: string;
 }) {
   const launches = useLaunches();
   const launch = launches.data?.find(
-    (record) => record.record.id === projectId,
+    (record) =>
+      record.record.id === projectId &&
+      record.record.author === project.founder,
   );
-  const [summonOpen, setSummonOpen] = useState(false);
   const linkClass =
     "inline-flex w-fit items-center gap-1 rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 dark:bg-white dark:text-black";
   return (
     <Card className="flex flex-col gap-3 p-4" data-testid="dao-bridge">
       <div>
-        <h2 className="text-base font-semibold">Form the DAO</h2>
+        <h2 className="text-base font-semibold">
+          {launch
+            ? "This project is running"
+            : "Start it as a contributor project"}
+        </h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          This map (recorded grants plus the founder's declared stake) is what
-          seeds your token allocation at launch. The launchpad holds it inside
-          the budget envelope: a monthly budget of at most{" "}
-          <span className="font-medium text-black dark:text-white">
-            1/6 of the graduation threshold
-          </span>{" "}
-          (the minimum raise), with large spends passing by default only up to{" "}
-          <span className="font-medium text-black dark:text-white">
-            3× that budget
-          </span>
-          . Forming the DAO is what turns a revocable record into an enforceable
-          one.
+          Each role becomes a project in its first work budget, worth its stake.
+          The person in it earns those Shares as their work is accepted by
+          reviewers, so nothing is handed out up front and nobody can sell a
+          stake they have not earned. The founder starts with their declared
+          stake.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        {isFounder ? (
-          <Button
-            className={linkClass}
-            data-testid="form-dao"
-            onClick={() => setSummonOpen(true)}
-            type="button"
-          >
-            Form the DAO
-            <ArrowRight className="h-4 w-4" aria-hidden />
-          </Button>
-        ) : (
-          <p className="text-2xs text-black/50 dark:text-white/50">
-            The founder forms the DAO from this map.
-          </p>
-        )}
         {launch ? (
           <Link
             className={linkClass}
             data-testid="dao-bridge-link"
             params={{ launchId: projectId }}
-            search={{ action: undefined, author: launch.record.author }}
+            search={{
+              action: undefined,
+              author: launch.record.author,
+              tab: "work",
+            }}
             to="/launchpad/$launchId"
           >
-            Open this project's launch
+            Open its work
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+        ) : isFounder ? (
+          <Link
+            className={linkClass}
+            data-testid="start-contributor-project"
+            search={{ project: projectId, author: project.founder }}
+            to="/start/contributor"
+          >
+            Start as a contributor project
             <ArrowRight className="h-4 w-4" aria-hidden />
           </Link>
         ) : (
-          <Link
-            className={linkClass}
-            data-testid="dao-bridge-link"
-            to="/launchpad"
-          >
-            Open the launchpad
-            <ArrowRight className="h-4 w-4" aria-hidden />
-          </Link>
+          <p className="text-2xs text-black/50 dark:text-white/50">
+            The founder starts it. Then each role's person earns their stake as
+            their work is accepted.
+          </p>
         )}
       </div>
-      <p className="text-2xs text-black/50 dark:text-white/50">
-        {launch
-          ? "A launch record already exists for this project id."
-          : `No launch record for “${projectId}” yet. Start one there; the ids line up.`}
-      </p>
-      {summonOpen ? (
-        <SummonDialog
-          launch={launch}
-          nameOf={nameOf}
-          onOpenChange={setSummonOpen}
-          project={project}
-        />
-      ) : null}
     </Card>
   );
 }
@@ -663,7 +645,6 @@ export function ProjectDetailPage({
 
       <LaunchpadBridge
         isFounder={isFounder}
-        nameOf={nameOf}
         project={project}
         projectId={projectId}
       />

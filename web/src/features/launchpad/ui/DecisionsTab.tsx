@@ -1,4 +1,5 @@
 import type { ChallengeIntent } from "../lib/challenge";
+import type { SponsorIntent } from "../lib/sponsor";
 import { isContributorProject } from "../lib/funding";
 import { Card } from "@/shared/ui/card";
 import { FailureNote, WalletStrip } from "./auction-widgets";
@@ -28,6 +29,7 @@ export function DecisionsTab({
   dao,
   focusDecision,
   challenge,
+  sponsor,
 }: {
   launch: Launch;
   dao: string;
@@ -35,6 +37,8 @@ export function DecisionsTab({
   focusDecision?: string;
   /** A claim someone came here to doubt: the form for it opens with that claim chosen. */
   challenge?: ChallengeIntent | null;
+  /** A suggestion being put to a vote: the composer opens "Approve a project" filled in from it. */
+  sponsor?: SponsorIntent | null;
 }) {
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const decisions = useDecisions(dao, wallet.address);
@@ -88,6 +92,7 @@ export function DecisionsTab({
         <DecisionComposer
           busy={busy}
           challenge={challenge}
+          sponsor={sponsor}
           ctx={{
             dao,
             chainId,

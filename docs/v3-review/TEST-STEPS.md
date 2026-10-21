@@ -881,3 +881,47 @@ so the terms show at sign-up. Use two accounts (two browsers, or a normal and a 
 4. **New-account limit.** With a brand-new account, post more than 20 short posts within an hour (or start the server
    with `BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR=2` to see it sooner): the next one is refused with "New accounts can post …
    times an hour for their first day; try again later." and your text stays in the box. Votes still work.
+
+## 4ak. Several first projects, starting from the Projects board, suggested work (D84, 2026-10-21)
+
+```bash
+. ./bin/activate-hermit
+(cd contracts && forge test --match-contract ContributorKitTest)
+pnpm --dir web test
+pnpm --dir web build
+pnpm --dir web exec playwright test --project=smoke contributor-project.spec.ts projects.spec.ts
+scripts/web-contributor-e2e.sh        # two journeys in pages on a throwaway local chain (about 10 minutes)
+```
+
+The journey script now runs two journeys: the one-contributor journey of 4ai, and a project where several people earn:
+two first projects at Start, a contributor claiming in one, a newcomer with no Shares suggesting work for 5% of the
+project, the founder putting that to a vote, the newcomer claiming in the project it became, both claims reviewed and
+paid, two award votes, and the Contributions tab showing both people. To try it by hand, set up the local chain and build
+as in 4ai, then use account 0 as the founder, accounts 1 and 2 as reviewers, and accounts 3 and 4 as two contributors
+(account 4 with a second Creaton account, so the suggestion is someone else's):
+
+1. **Several first projects.** Start → Start a contributor project. Under **First project**, press **Add another
+   project**: the heading becomes "First projects" and each has its own name, Shares and "what finished work looks like".
+   Lower "Most for one project": a project still at the old number follows it; one you typed keeps yours, and if it is
+   now too big the form says which project ("“docs” can award at most 40 Shares, the most for one project."). Start it:
+   the wallet asks once, and the Work tab lists every project.
+2. **From the Projects board.** Discover → Project Board → a pitch you posted with roles (say a writer at 12% and a
+   designer at 8%). The card at the bottom says **Start it as a contributor project**; press it. Start opens filled in:
+   1,000,000 Shares are the whole project, your declared stake is your starting Shares, each role is a first project of
+   its stake (a 12% role is 120,000 Shares) whose check names the person in it, and the budget is at least three times
+   your start, with the spare room said in the "From the Projects board" box. Someone else opening the same link is told
+   only the person who posted it can start it. Once started, the board's card says **This project is running** and links
+   to its work.
+3. **Suggest work.** As account 4, open the project's Work tab: **Suggested work** says anyone can suggest work and name
+   their price. Press **Suggest work**, fill in what you will do, a short name ("guide-es"), what finished looks like,
+   and **5** with "% of the project" chosen: the line under it says how many Shares that is ("11 Shares: 5.2% of the
+   project once they are added to the 200 that exist now…"). Switch to Shares to type a number instead. **Suggest it**
+   posts it on a board, so it also shows on that board and in Home's timeline.
+4. **Put it to a vote.** As the founder, the suggestion has **Put to a vote**: it opens Decisions with **Approve a
+   project** already filled in (name, Shares, check) and a note that it came from a suggestion. Back it, let the review
+   and the wait pass (`cast rpc anvil_increaseTime 90000`, `cast rpc anvil_mine 1` each time), run it. The suggestion
+   then says **Approved as a project**, and the project is in the Work tab's list.
+5. **Earn it.** As account 4, file a claim with the suggestion's exact check words. As the founder, take each claim on in
+   its own project (**Take on in guide-es**). Both reviewers approve, the founder finishes the review, wait out the
+   challenge window, and each contributor takes their claim. Two award decisions later, the Contributions tab shows both
+   people with their Shares, their part of all Shares, and the work each was for.

@@ -81,6 +81,12 @@ whole journey; the Work tab and claim form are in the web app). Built in the web
   project, and locks its Shares against transfers, so people can claim work the same day.
 - **Built:** a **Contributions** tab: who earned how much of the token and for which claim, read from the chain's award
   events.
+- **Built (D84):** projects for more than one person. Start makes up to eight first projects in the same one
+  transaction; a pitch on the Projects board starts as a contributor project with each role a first project worth its
+  stake, earned only as the work is accepted (the board's old "Form the DAO" path, which skipped the tokenomics rules, is
+  gone); and anyone can suggest work on the Work tab with a price in Shares or as a percent of the project, which a
+  holder puts to a vote as "Approve a project", filled in. `scripts/web-contributor-e2e.sh` runs a journey with two
+  contributors, one of them a newcomer whose suggestion became the project they were paid in.
 - **Recommended, not built:** the rule for **when the token can be traded**
   ([CONTRIBUTOR-TOKEN-TRADING.md](CONTRIBUTOR-TOKEN-TRADING.md)). In short: not before the raise path is audited, lock
   transfers at birth (now built), and if a market ever opens, trade a non-voting claim, not the voting Shares.

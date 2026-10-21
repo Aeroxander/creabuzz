@@ -301,3 +301,75 @@ test("a project nobody has earned Shares in yet says so", async ({ page }) => {
     "150",
   );
 });
+
+test("anyone suggests work with a % ask, and Put to a vote opens Approve a project filled in from it", async ({
+  page,
+}) => {
+  const BOARD = "5b0a7d1e-0000-4000-8000-000000000002";
+  const CHECK = "every docs page is in Spanish and merged";
+  const relay = createMockRelay();
+  relay.seed(record);
+  relay.seed({
+    id: "b".repeat(64),
+    pubkey: "c".repeat(64),
+    created_at: 50,
+    kind: 39000,
+    tags: [["d", BOARD], ["name", "ideas"], ["public"], ["t", "forum"]],
+    content: "",
+    sig: "sig",
+  });
+  await relay.install(page);
+  await installChain(page);
+  await signIn(page);
+  await page.goto(`/launchpad/docs-commons?author=${ME}&tab=work`);
+
+  const section = page.getByTestId("suggested-work");
+  await expect(section.getByTestId("suggested-work-empty")).toBeVisible({
+    timeout: 20_000,
+  });
+  await section.getByTestId("suggest-work").click();
+  await page.getByTestId("suggest-title").fill("Translate the docs to Spanish");
+  await page.getByTestId("suggest-name").fill("docs-es");
+  await page.getByTestId("suggest-check").fill(CHECK);
+  // 5% once added to the 150 Shares that exist: 8 Shares, rounded up so the ask reaches the share.
+  await page.getByTestId("suggest-amount").fill("5");
+  await expect(page.getByTestId("suggest-ask-preview")).toHaveText(
+    "8 Shares: 5.1% of the project once they are added to the 150 that exist now, so everyone else's part shrinks by that much.",
+  );
+  // The same ask can be typed in Shares.
+  await page.getByTestId("suggest-unit-shares").click();
+  await page.getByTestId("suggest-amount").fill("12");
+  await expect(page.getByTestId("suggest-ask-preview")).toContainText(
+    "12 Shares: 7.4% of the project",
+  );
+  await page.getByTestId("suggest-submit").click();
+
+  // It is a board post, on the board, that names this project.
+  const card = section.locator('[data-testid^="work-proposal-"][data-status]');
+  await expect(card).toHaveCount(1, { timeout: 10_000 });
+  await expect(card).toHaveAttribute("data-status", "suggested");
+  await expect(card.getByTestId("work-proposal-ask")).toHaveText(
+    "12 Shares (7.4%)",
+  );
+  const posts = relay.events.filter((event) => event.kind === 45001);
+  expect(posts).toHaveLength(1);
+  expect(posts[0].tags).toEqual(
+    expect.arrayContaining([
+      ["h", BOARD],
+      ["t", "work-proposal"],
+      ["t", `work-proposal:31337:${DAO}`],
+      ["project", "docs-es"],
+      ["ask", "12"],
+      ["check", CHECK],
+    ]),
+  );
+
+  // A holder puts it to a vote: the Decisions tab opens, to "Approve a project" filled in from it (the form itself needs
+  // the chain's decisions, so `contributor-journey.spec.ts` checks it on a real one).
+  await expectAccessible(page, "suggested work");
+  await card.getByTestId("work-proposal-sponsor").click();
+  await expect(page.getByRole("tab", { name: "Decisions" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});

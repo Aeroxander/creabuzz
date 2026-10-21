@@ -79,3 +79,30 @@ no budget or project vote.
 
 It adds one small contract to the contributor-project audit scope. It holds nothing and keeps no roles after the
 transaction. Mainnet stays off.
+
+## Several first projects (D84, 2026-10-21)
+
+Written before the code, as the plan's rule asks of any contract change.
+
+**The gap.** The kit sets up one first project. A project that starts from the Projects board has a team with roles
+(a designer for 10%, a developer for 20%); each role should become its own project in the work budget, earned as that
+person delivers. With one project at birth, every other role would wait for an "Approve a project" vote (about two days
+each) while the founder is still the only holder, so the vote protects nobody, the same reason the kit exists.
+
+**The change.** `Params` replaces the single project's five fields with `FirstProject[] projects` (each: id, manager,
+Shares, expiry, check), from none to eight. The kit refuses: more than eight, a repeated id, a zero id, manager, Shares
+or check, a project above the per-project cap or expiring after the budget, and projects that together ask for more than
+the budget holds (the budget would refuse that too; the kit says it first). Each becomes one more `approveProject`
+setup call, and each is read back after launch (manager and Shares), so a launch either has every project or nothing.
+The event names how many projects were made instead of the first one's id.
+
+**What does not change.** Everything D79 asks (the founder at most a third of the budget and not on its panel), the
+transfer lock, the issuance rule (awards only), the threshold, the read-back of the DAO, the salt. Every project after
+birth is still voted. No other contract changes.
+
+**Tests.** Two roles as two projects with different sizes, both claimable the same day; nine projects refused; a
+repeated id refused; projects asking for more than the budget refused; a project above the cap refused; the existing
+tests move to the array (one project, and none).
+
+**Audit scope.** The same small contract, with a bounded loop (at most eight calls). It still holds nothing and keeps no
+role.

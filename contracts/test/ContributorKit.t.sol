@@ -56,11 +56,18 @@ contract ContributorKitTest is Test {
         p.reviewers = _reviewers();
         p.quorum = 2;
         p.predictedBudget = _nextBudget();
-        p.projectId = PROJECT;
-        p.projectManager = FOUNDER;
-        p.projectShares = 40e18;
-        p.projectExpires = uint64(block.timestamp + 90 days);
-        p.projectCheck = CHECK;
+        p.projects = new ContributorKit.FirstProject[](1);
+        p.projects[0] = _project(PROJECT, 40e18, CHECK);
+    }
+
+    function _project(bytes32 id, uint128 shares, bytes32 check)
+        internal
+        view
+        returns (ContributorKit.FirstProject memory)
+    {
+        return ContributorKit.FirstProject({
+            id: id, manager: FOUNDER, shares: shares, expires: uint64(block.timestamp + 90 days), check: check
+        });
     }
 
     function _launch(ContributorKit.Params memory p) internal returns (Moloch dao, TreasuryMandate budget) {
@@ -181,7 +188,7 @@ contract ContributorKitTest is Test {
 
     function test_a_project_can_launch_without_a_first_project() public {
         ContributorKit.Params memory p = _params("no-project");
-        p.projectId = bytes32(0);
+        p.projects = new ContributorKit.FirstProject[](0);
         (, TreasuryMandate budget) = _launch(p);
         assertEq(budget.sharesAllocated(), 0);
     }
@@ -213,7 +220,7 @@ contract ContributorKitTest is Test {
         p.quorum = 3;
         _expectInvalid(p);
         p = _params("bad");
-        p.projectShares = 50e18; // above the per-project limit
+        p.projects[0].shares = 50e18; // above the per-project limit
         _expectInvalid(p);
         p = _params("bad");
         p.shareCap = 700e18; // above the whole budget
@@ -226,6 +233,70 @@ contract ContributorKitTest is Test {
         _expectInvalid(p);
     }
 
+    /// D84: a team from the Projects board starts with one project per role, of different sizes, all claimable on day one.
+    function test_each_role_becomes_its_own_first_project() public {
+        ContributorKit.Params memory p = _params("team");
+        p.projects = new ContributorKit.FirstProject[](2);
+        p.projects[0] = _project(bytes32("design"), 30e18, keccak256("designs delivered"));
+        p.projects[1] = _project(bytes32("dev"), 40e18, keccak256("app shipped"));
+        (Moloch dao, TreasuryMandate budget) = _launch(p);
+        (address m0,,,,, uint128 s0,) = budget.projects(bytes32("design"));
+        (address m1,,,,, uint128 s1,) = budget.projects(bytes32("dev"));
+        assertEq(m0, FOUNDER);
+        assertEq(m1, FOUNDER);
+        assertEq(s0, 30e18);
+        assertEq(s1, 40e18);
+        assertEq(budget.sharesAllocated(), 70e18, "both are set aside in the budget");
+        assertEq(dao.shares().totalSupply(), 200e18, "nothing is minted until work is awarded");
+    }
+
+    function test_first_projects_are_bounded_distinct_and_within_the_budget() public {
+        ContributorKit.Params memory p;
+        // Nine projects: one more than the kit makes.
+        p = _params("bounds");
+        p.shareCap = 60e18;
+        p.projects = new ContributorKit.FirstProject[](9);
+        for (uint256 i; i < 9; ++i) {
+            p.projects[i] = _project(bytes32(i + 1), 1e18, keccak256(abi.encode(i)));
+        }
+        _expectInvalid(p);
+        // The same id twice.
+        p = _params("bounds");
+        p.projects = new ContributorKit.FirstProject[](2);
+        p.projects[0] = _project(bytes32("dev"), 10e18, CHECK);
+        p.projects[1] = _project(bytes32("dev"), 10e18, CHECK);
+        _expectInvalid(p);
+        // Together more than the budget holds (600), each within the cap (300).
+        p = _params("bounds");
+        p.shareCap = 300e18;
+        p.projects = new ContributorKit.FirstProject[](3);
+        p.projects[0] = _project(bytes32("a"), 300e18, CHECK);
+        p.projects[1] = _project(bytes32("b"), 300e18, CHECK);
+        p.projects[2] = _project(bytes32("c"), 1e18, CHECK);
+        _expectInvalid(p);
+        // A project with no check, and one that outlives the budget.
+        p = _params("bounds");
+        p.projects[0].check = bytes32(0);
+        _expectInvalid(p);
+        p = _params("bounds");
+        p.projects[0].expires = p.budgetExpires + 1;
+        _expectInvalid(p);
+        // One project above the most for one project.
+        p = _params("bounds");
+        p.shareCap = 60e18;
+        p.projects[0].shares = 61e18;
+        _expectInvalid(p);
+        // Eight is fine.
+        p = _params("eight");
+        p.shareCap = 60e18;
+        p.projects = new ContributorKit.FirstProject[](8);
+        for (uint256 i; i < 8; ++i) {
+            p.projects[i] = _project(bytes32(i + 1), 50e18, keccak256(abi.encode(i)));
+        }
+        (, TreasuryMandate budget) = _launch(p);
+        assertEq(budget.sharesAllocated(), 400e18);
+    }
+
     function _expectInvalid(ContributorKit.Params memory p) internal {
         vm.prank(FOUNDER);
         vm.expectRevert(ContributorKit.InvalidTerms.selector);
@@ -234,7 +305,7 @@ contract ContributorKitTest is Test {
 
     function _otherDao() internal returns (Moloch) {
         ContributorKit.Params memory p = _params("other");
-        p.projectId = bytes32(0);
+        p.projects = new ContributorKit.FirstProject[](0);
         vm.prank(DAVE);
         (address d,) = kit.launch(p);
         return Moloch(payable(d));

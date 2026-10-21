@@ -1,10 +1,8 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Wallet } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { CHAIN_PRESETS } from "@/features/launchpad/chain";
 import { Modal } from "@/features/launchpad/ui/Modal";
-import { bindingRecordsQueryKey } from "@/features/projects/use-bindings";
 import { Button } from "@/shared/ui/button";
 
 import {
@@ -28,7 +26,6 @@ export function PaymentWalletCard({
   isSelf: boolean;
 }) {
   const query = usePaymentWallet(pubkey);
-  const client = useQueryClient();
   const [dialog, setDialog] = useState<"link" | "remove" | null>(null);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -51,10 +48,7 @@ export function PaymentWalletCard({
       await action();
       setCopied(false);
       setDialog(null);
-      await Promise.all([
-        query.refetch(),
-        client.invalidateQueries({ queryKey: bindingRecordsQueryKey }),
-      ]);
+      await query.refetch();
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Couldn't update your payment wallet.",

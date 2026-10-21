@@ -1,4 +1,5 @@
 import { type ChallengeIntent, challengePickKey } from "../lib/challenge";
+import type { SponsorIntent } from "../lib/sponsor";
 import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
@@ -127,6 +128,7 @@ export function DecisionComposer({
   gate,
   onSend,
   challenge,
+  sponsor,
 }: {
   snapshot: DecisionsSnapshot;
   ctx: FormContext;
@@ -135,9 +137,13 @@ export function DecisionComposer({
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
   /** Someone came from a claim card to doubt it: open with that form and that claim chosen. */
   challenge?: ChallengeIntent | null;
+  /** Someone is putting a suggestion to a vote (D84): open "Approve a project" filled in from it. */
+  sponsor?: SponsorIntent | null;
 }) {
-  const [open, setOpen] = useState(Boolean(challenge));
-  const [kind, setKind] = useState<Kind>(challenge?.kind ?? "budget");
+  const [open, setOpen] = useState(Boolean(challenge || sponsor));
+  const [kind, setKind] = useState<Kind>(
+    challenge?.kind ?? (sponsor ? "project" : "budget"),
+  );
   const [done, setDone] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
 
@@ -238,14 +244,28 @@ export function DecisionComposer({
               onSubmit={submit}
             />
           ) : kind === "project" ? (
-            <ProjectForm
-              blocked={blocked}
-              busy={busy}
-              ctx={ctx}
-              gate={gate}
-              key={`p${formKey}`}
-              onSubmit={submit}
-            />
+            <>
+              {sponsor ? (
+                <p
+                  className="mt-3 rounded-lg bg-secondary/60 px-3 py-2 text-sm"
+                  data-testid="decision-from-suggestion"
+                >
+                  Filled in from a suggestion: “{sponsor.name}” for{" "}
+                  {sponsor.shares} Shares. Once it is approved, the person who
+                  suggested it files claims on it like anyone else; whoever
+                  manages it takes them on.
+                </p>
+              ) : null}
+              <ProjectForm
+                preset={sponsor ?? undefined}
+                blocked={blocked}
+                busy={busy}
+                ctx={ctx}
+                gate={gate}
+                key={`p${formKey}`}
+                onSubmit={submit}
+              />
+            </>
           ) : kind === "award" ? (
             <AwardForm
               blocked={blocked}

@@ -12,6 +12,10 @@ import { installAnvilWallet } from "../helpers/anvil-wallet";
  * everything after is done in pages, each as the wallet of the person whose job it is. What is stubbed: the relay (it
  * keeps what pages publish and hands it to the others) and the wallets (`window.ethereum` forwarding to Anvil's
  * unlocked accounts).
+ *
+ * The second journey has several people earn (D84): two first projects at Start, a newcomer with no Shares suggests
+ * work and asks for 5% of the project, the founder puts it to a vote filled in from the suggestion, and both people's
+ * claims are taken on in their own projects, reviewed, paid and awarded by vote.
  */
 
 const ANVIL_URL = process.env.E2E_ANVIL_URL ?? "";
@@ -19,12 +23,18 @@ const KIT = process.env.E2E_KIT ?? "";
 const REVIEWER1 = process.env.E2E_REVIEWER1 ?? "";
 const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
 const CONTRIBUTOR = process.env.E2E_CONTRIBUTOR ?? "";
+/** Someone with no Shares who suggests work and names a price (D84). */
+const NEWCOMER = process.env.E2E_MANAGER ?? "";
 const FOUNDER_WALLET = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const NSEC = "33".repeat(32);
 const FOUNDER = getPublicKey(
   Uint8Array.from(NSEC.match(/.{2}/g) ?? [], (b) => Number.parseInt(b, 16)),
 );
+const NEWCOMER_NSEC = "44".repeat(32);
 const CHECK = "docs merged and reviewed";
+/** `ContributorProjectLaunched(address,address,address,bytes32,uint256)`. */
+const LAUNCHED =
+  "0x7f4eb55556e4a4d7639e36b6ec8b0e6d4ab4fcfff92dd9c201bed8e870716583";
 const E18 = 10n ** 18n;
 
 test.skip(
@@ -57,10 +67,28 @@ async function pass(seconds: number) {
   await rpc("anvil_mine", ["0x1"]);
 }
 
+/** The kit's launch events from `block` on. */
+async function launchedSince(block: bigint) {
+  return (
+    (await rpc("eth_getLogs", [
+      {
+        address: KIT,
+        fromBlock: `0x${block.toString(16)}`,
+        toBlock: "latest",
+      },
+    ])) as { topics: string[]; data: string }[]
+  ).filter((log) => log.topics[0] === LAUNCHED);
+}
+
 /** Everything the pages publish, served back to every page that asks for its kind (the launch record, the evidence). */
 const published: { id: string; kind: number }[] = [];
 
-async function open(page: Page, wallet: string | null, path: string) {
+async function open(
+  page: Page,
+  wallet: string | null,
+  path: string,
+  nsec = NSEC,
+) {
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
@@ -97,13 +125,13 @@ async function open(page: Page, wallet: string | null, path: string) {
       window.localStorage.setItem("buzz.identity.backedUp", "1");
       window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
     },
-    [NSEC, ANVIL_URL],
+    [nsec, ANVIL_URL],
   );
   await page.goto(path);
 }
 
-const projectPath = (tab: string) =>
-  `/launchpad/docs-commons?author=${FOUNDER}&tab=${tab}`;
+const projectPath = (tab: string, slug = "docs-commons") =>
+  `/launchpad/${slug}?author=${FOUNDER}&tab=${tab}`;
 
 /** Re-read the page after the chain's clock moved. */
 async function refresh(page: Page, tab: "Decisions" | "Work") {
@@ -186,19 +214,7 @@ test("a contributor project is started from the page, work is claimed the same d
 
   // The chain agrees: the kit made one project for this founder, the founder holds its only Shares, nothing is for
   // sale, and the Shares cannot be sent between wallets.
-  const launched = (
-    (await rpc("eth_getLogs", [
-      {
-        address: KIT,
-        fromBlock: `0x${blockBefore.toString(16)}`,
-        toBlock: "latest",
-      },
-    ])) as { topics: string[] }[]
-  ).filter(
-    (log) =>
-      log.topics[0] ===
-      "0x9dec7eb8f63140ffdc1e32aab051934ead41f327697e78bfb0eb2c911303ca18",
-  );
+  const launched = await launchedSince(blockBefore);
   expect(launched).toHaveLength(1);
   expect(wordAddress(launched[0].topics[1])).toBe(FOUNDER_WALLET.toLowerCase());
   const dao = wordAddress(launched[0].topics[2]);
@@ -328,4 +344,300 @@ test("a contributor project is started from the page, work is claimed the same d
       .getByTestId("contributions-tab")
       .screenshot({ path: `${process.env.E2E_SHOTS}/contributions.png` });
   }
+});
+
+/** A claim's row on the Work tab, by the name it was filed under. */
+const claimCard = (page: Page, name: string) =>
+  page.getByTestId("work-claim").filter({ hasText: name });
+
+/** File a claim that asks for no money, the way the Work tab's form does. */
+async function fileClaim(
+  page: Page,
+  name: string,
+  evidence: string,
+  check: string,
+) {
+  await page.getByTestId("work-claim-name").fill(name);
+  await page.getByTestId("work-claim-evidence").fill(evidence);
+  await page.getByTestId("work-claim-check").fill(check);
+  await page.getByTestId("work-claim-submit").click();
+  await expect(page.getByTestId("work-claim-filed")).toBeVisible({
+    timeout: 90_000,
+  });
+}
+
+/** Open an award for one paid claim, chosen by its name, and carry the vote out. */
+async function award(page: Page, claim: string, shares: string) {
+  await refresh(page, "Decisions");
+  await page.getByTestId("decision-new").click();
+  await page.getByTestId("decision-kind-award").click();
+  const select = page.getByTestId("award-claim");
+  await expect(select).toBeVisible({ timeout: 30_000 });
+  const value = await select
+    .locator("option", { hasText: claim })
+    .getAttribute("value");
+  await select.selectOption(value ?? "");
+  await page.getByTestId("award-shares").fill(shares);
+  await page.getByTestId("decision-draft-submit").click();
+  await expect(page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(page, 90_000, 90_000);
+}
+
+test("several people earn in one contributor project: two first projects, and a newcomer's suggestion with a % ask is put to a vote", async ({
+  context,
+}) => {
+  test.setTimeout(900_000);
+  // A board on this server for the suggestion to be posted on.
+  published.push({
+    id: "b0".repeat(32),
+    kind: 39000,
+    pubkey: "b".repeat(64),
+    created_at: 100,
+    tags: [
+      ["d", "5b0a7d1e-0000-4000-8000-000000000001"],
+      ["name", "ideas"],
+      ["public"],
+      ["t", "forum"],
+    ],
+    content: "",
+    sig: "sig",
+  } as { id: string; kind: number });
+  const GUIDE = "the guide's pages are merged and reviewed";
+  const EXAMPLES = "every example runs and is reviewed";
+  const SPANISH = "the guide is in Spanish, merged and reviewed";
+  const path = (tab: string) => projectPath(tab, "field-guide");
+
+  // ── 1. the founder starts it with two first projects, in one transaction ─────────────────────────
+  const founder = await context.newPage();
+  await open(founder, FOUNDER_WALLET, "/start/contributor");
+  await founder.getByTestId("contributor-name").fill("Field Guide");
+  await founder
+    .getByTestId("contributor-pitch")
+    .fill(
+      "A field guide to the city's trees, written by the people who walk it.",
+    );
+  await founder.getByTestId("contributor-founder-shares").fill("200");
+  await founder.getByTestId("contributor-budget-shares").fill("900");
+  await founder.getByTestId("contributor-project-cap").fill("60");
+  await founder
+    .getByTestId("contributor-reviewers")
+    .fill(`${REVIEWER1}\n${REVIEWER2}`);
+  await founder.getByTestId("contributor-project-name").fill("guide");
+  await founder.getByTestId("contributor-project-shares-0").fill("40");
+  await founder.getByTestId("contributor-project-check").fill(GUIDE);
+  await founder.getByTestId("contributor-project-add").click();
+  await founder.getByTestId("contributor-project-name-1").fill("examples");
+  await founder.getByTestId("contributor-project-shares-1").fill("30");
+  await founder.getByTestId("contributor-project-check-1").fill(EXAMPLES);
+  await expect(founder.getByTestId("contributor-gate")).toHaveCount(0, {
+    timeout: 20_000,
+  });
+  const blockBefore = BigInt(String(await rpc("eth_blockNumber")));
+  await founder.getByTestId("contributor-submit").click();
+  await expect(founder.getByTestId("contributor-done")).toBeVisible({
+    timeout: 120_000,
+  });
+  expect(BigInt(String(await rpc("eth_blockNumber"))) - blockBefore).toBe(1n);
+  const launched = await launchedSince(blockBefore);
+  expect(launched).toHaveLength(1);
+  // The event's data is (salt, projects): both first projects were made.
+  expect(BigInt(`0x${launched[0].data.slice(66, 130)}`)).toBe(2n);
+  const dao = wordAddress(launched[0].topics[2]);
+  const shares = wordAddress(await call(dao, "0x03314efa"));
+  const sharesOf = async (holder: string) =>
+    BigInt(await call(shares, `0x70a08231${addressArg(holder)}`));
+
+  await founder.getByTestId("contributor-open-project").click();
+  await founder.getByRole("tab", { name: "Work" }).click();
+  await expect(founder.getByTestId("work-projects")).toContainText("guide", {
+    timeout: 30_000,
+  });
+  await expect(founder.getByTestId("work-projects")).toContainText("examples");
+
+  // ── 2. a contributor claims work in the first project the same day ───────────────────────────────
+  const contributor = await context.newPage();
+  await open(contributor, CONTRIBUTOR, path("work"));
+  await expect(contributor.getByTestId("work-projects")).toContainText(
+    "guide",
+    { timeout: 30_000 },
+  );
+  await fileClaim(
+    contributor,
+    "write-guide",
+    "https://example.com/pr/11",
+    GUIDE,
+  );
+
+  // ── 3. a newcomer with no Shares suggests work and asks for 5% of the project ─────────────────────
+  const newcomer = await context.newPage();
+  await open(newcomer, NEWCOMER, path("work"), NEWCOMER_NSEC);
+  await newcomer.getByTestId("suggest-work").click();
+  await newcomer
+    .getByTestId("suggest-title")
+    .fill("Translate the guide to Spanish");
+  await newcomer
+    .getByTestId("suggest-body")
+    .fill("Half the people on our walks read Spanish first.");
+  await newcomer.getByTestId("suggest-name").fill("guide-es");
+  await newcomer.getByTestId("suggest-check").fill(SPANISH);
+  await newcomer.getByTestId("suggest-amount").fill("5");
+  // 5% once added to the 200 that exist: 11 Shares (rounded up), which is 5.2% of 211.
+  await expect(newcomer.getByTestId("suggest-ask-preview")).toContainText(
+    "11 Shares: 5.2% of the project once they are added to the 200 that exist now",
+    { timeout: 30_000 },
+  );
+  await newcomer.getByTestId("suggest-submit").click();
+  // Posted first (the server has it), then read back on the page.
+  await expect
+    .poll(
+      () =>
+        published.some(
+          (e) =>
+            e.kind === 45001 &&
+            (e as unknown as { tags: string[][] }).tags.some(
+              (t) => t[0] === "project" && t[1] === "guide-es",
+            ),
+        ),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  const suggestion = newcomer.locator(
+    '[data-testid^="work-proposal-"][data-status]',
+  );
+  await expect(suggestion).toHaveCount(1, { timeout: 30_000 });
+  await expect(suggestion.getByTestId("work-proposal-ask")).toHaveText(
+    "11 Shares (5.2%)",
+  );
+  const post = published.find(
+    (e) =>
+      e.kind === 45001 &&
+      (e as unknown as { tags: string[][] }).tags.some(
+        (t) => t[0] === "project" && t[1] === "guide-es",
+      ),
+  ) as unknown as { pubkey: string; tags: string[][] } | undefined;
+  expect(post?.tags).toContainEqual(["ask", "11"]);
+  expect(post?.pubkey).not.toBe(FOUNDER);
+
+  // ── 4. the founder, a holder, puts it to a vote, filled in from the suggestion; the vote passes ──────
+  await refresh(founder, "Work");
+  const toSponsor = founder.locator(
+    '[data-testid^="work-proposal-"][data-status="suggested"]',
+  );
+  await expect(toSponsor).toHaveCount(1, { timeout: 30_000 });
+  await toSponsor.getByTestId("work-proposal-sponsor").click();
+  await expect(founder.getByTestId("decision-from-suggestion")).toContainText(
+    "“guide-es” for 11 Shares",
+  );
+  await expect(founder.getByTestId("project-name")).toHaveValue("guide-es");
+  await expect(founder.getByTestId("project-shares")).toHaveValue("11");
+  await expect(founder.getByTestId("project-check")).toHaveValue(SPANISH);
+  await founder.getByTestId("decision-draft-submit").click();
+  await expect(founder.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(founder, 90_000, 90_000);
+  await refresh(founder, "Work");
+  await expect(founder.getByTestId("work-projects")).toContainText("guide-es", {
+    timeout: 30_000,
+  });
+  await expect(founder.getByTestId("work-proposal-approved")).toBeVisible();
+
+  // ── 5. the newcomer claims work in the project they suggested ────────────────────────────────────
+  await refresh(newcomer, "Work");
+  await expect(newcomer.getByTestId("work-proposal-approved")).toBeVisible({
+    timeout: 30_000,
+  });
+  await fileClaim(
+    newcomer,
+    "translate-es",
+    "https://example.com/pr/12",
+    SPANISH,
+  );
+
+  // ── 6. the founder takes each claim on in its own project; both reviewers approve both ────────────
+  await refresh(founder, "Work");
+  for (const [claim, project] of [
+    ["write-guide", "guide"],
+    ["translate-es", "guide-es"],
+  ] as const) {
+    const card = claimCard(founder, claim);
+    await card
+      .getByRole("button", { name: `Take on in ${project}`, exact: true })
+      .click();
+    await expect(card.getByTestId("work-claim-next")).toContainText(
+      "0 of 2 approvals",
+      { timeout: 60_000 },
+    );
+  }
+  for (const account of [REVIEWER1, REVIEWER2]) {
+    const reviewer = await context.newPage();
+    await open(reviewer, account, path("work"));
+    for (const claim of ["write-guide", "translate-es"]) {
+      const card = claimCard(reviewer, claim);
+      await card.getByTestId("work-approve").click();
+      await expect(card.getByTestId("work-approve")).toHaveCount(0, {
+        timeout: 60_000,
+      });
+    }
+    await reviewer.close();
+  }
+  await refresh(founder, "Work");
+  for (const claim of ["write-guide", "translate-es"]) {
+    const card = claimCard(founder, claim);
+    await card.getByTestId("work-settle").click();
+    await expect(card.getByTestId("work-claim-status")).toContainText(
+      "Approved",
+      { timeout: 60_000 },
+    );
+  }
+  await pass(700_000);
+  for (const [page, claim] of [
+    [contributor, "write-guide"],
+    [newcomer, "translate-es"],
+  ] as const) {
+    await refresh(page, "Work");
+    const card = claimCard(page, claim);
+    await card.getByTestId("work-payout").click();
+    await expect(card.getByTestId("work-claim-status")).toContainText("Paid", {
+      timeout: 60_000,
+    });
+  }
+
+  // ── 7. each award is its own vote ───────────────────────────────────────────────────────────────
+  await award(founder, "write-guide", "40");
+  await award(founder, "translate-es", "11");
+  expect(await sharesOf(CONTRIBUTOR)).toBe(40n * E18);
+  expect(await sharesOf(NEWCOMER)).toBe(11n * E18);
+  expect(BigInt(await call(shares, "0x18160ddd"))).toBe(251n * E18);
+
+  // ── 8. anyone reads who earned what, for which work ─────────────────────────────────────────────
+  const reader = await context.newPage();
+  await open(reader, null, path("contributions"));
+  await expect(reader.getByTestId("contribution-person")).toHaveCount(2, {
+    timeout: 30_000,
+  });
+  const person = (address: string) =>
+    reader
+      .getByTestId("contribution-person")
+      .filter({ hasText: address.slice(2, 6) });
+  await expect(
+    person(CONTRIBUTOR).getByTestId("contribution-person-earned"),
+  ).toHaveText("40 Shares, 15.9% of all");
+  await expect(
+    person(CONTRIBUTOR).getByTestId("contribution-award"),
+  ).toHaveText("40 Shares for write-guide in the project guide");
+  await expect(
+    person(NEWCOMER).getByTestId("contribution-person-earned"),
+  ).toHaveText("11 Shares, 4.4% of all");
+  await expect(person(NEWCOMER).getByTestId("contribution-award")).toHaveText(
+    "11 Shares for translate-es in the project guide-es",
+  );
+  await expect(reader.getByTestId("contributions-earned")).toHaveText(
+    "51 (20.3% of all)",
+  );
+  await expect(reader.getByTestId("contributions-not-from-work")).toHaveText(
+    "200",
+  );
 });

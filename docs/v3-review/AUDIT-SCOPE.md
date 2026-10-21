@@ -69,8 +69,9 @@ Lines are total and source lines (no blanks or comments) at `13b27b2c7`.
 About 4,250 source lines of first-party code, of which the patched Majeur is the largest piece.
 
 **Adjacent, not in the raise path** (review if time allows; they share contracts above): `ContributorKit` (contributor
-projects, no sale, D66; 228 (165) lines, refuses a founder stake above a third of the first budget and a founder on its
-panel, sets the issuance rule with no yearly cap, D79), `OrgBinding`, `OrgAllowance`, `RoyaltyDistributor` (only reached through
+projects, no sale, D66; 250 (180) lines, refuses a founder stake above a third of the first budget and a founder on its
+panel, sets the issuance rule with no yearly cap, D79; makes up to eight first projects in a bounded loop, each checked
+and read back, D84), `OrgBinding`, `OrgAllowance`, `RoyaltyDistributor` (only reached through
 `ClaimStake.submitClaimWithSchedule`, never wired in a raise), `ShareVesting`, `AuctionLauncher`,
 `AppTokenLBPInitializer`, the hooks (`AllowlistHook`, `TrustGatedHook`; a DAO launch passes no hook), the LBAMM and
 market contracts (evaluation only), `DaoURIAdapter`.
@@ -143,7 +144,7 @@ with the web app's own encoders and exit/bid logic. Each invariant was also chec
 | 14 | Under the issuance rule no Share or Loot appears outside an award, and no passed vote can mint, hand out the DAO's own Shares, mint Loot or burn a holder's Shares (D73, D76) | `invariant_no_shares_or_loot_appear_outside_an_award`, handler `governShareMoves`; `IssuanceRule.t.sol`, `ExitProtections.t.sol` | every launch is born with the rule | the award-only check removed; the count removed; the hand-out check removed; Loot's closure removed; the leaving-only burn removed |
 | 15 | An award never takes the year's new Shares past the cap of that year's exit base; the cap only goes down (D76) | `IssuanceRule.t.sol` (with a stand-in DAO that says when an award is under way) | — | the count removed |
 | 16 | While transfers are locked, Shares move only to or from the exempt address (the auction), and unlocking runs only 30 days or more after an announcement still standing (D77) | `TransferLock.t.sol` (a fuzz test over senders, receivers and amounts) | every transfer step expects the refusal | the notice check removed; the exemption widened |
-| 17 | The kits refuse terms outside the limits, a team seat that is a system address, and (contributor projects) a founder stake above a third of the first budget or a founder on its panel (D74, D75, D79) | `DaoLaunchKit.t.sol`, `ContributorKit.t.sol` | every launch is inside them | each of the six kit checks removed |
+| 17 | The kits refuse terms outside the limits, a team seat that is a system address, and (contributor projects) a founder stake above a third of the first budget or a founder on its panel (D74, D75, D79) | `DaoLaunchKit.t.sol`, `ContributorKit.t.sol` | every launch is inside them | each of the ten kit checks removed |
 
 The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, 35 guards, all caught on 2026-10-21).
 

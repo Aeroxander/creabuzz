@@ -1,4 +1,5 @@
 import { markFirstStep } from "@/shared/lib/first-steps";
+import type { SponsorIntent } from "../lib/sponsor";
 import type { ChallengeIntent } from "../lib/challenge";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -144,8 +145,13 @@ export function LaunchDetailPage({
   >(null);
   // A claim someone is on their way to doubt: the Decisions tab opens its form with that claim chosen, once.
   const [challenge, setChallenge] = useState<ChallengeIntent | null>(null);
+  // A suggestion someone is putting to a vote: the Decisions tab opens "Approve a project" filled in from it, once.
+  const [sponsor, setSponsor] = useState<SponsorIntent | null>(null);
   useEffect(() => {
-    if (tab !== "decisions") setChallenge(null);
+    if (tab !== "decisions") {
+      setChallenge(null);
+      setSponsor(null);
+    }
   }, [tab]);
   const follows = useLaunchFollows();
   const navigate = useNavigate({ from: "/launchpad/$launchId" });
@@ -481,6 +487,7 @@ export function LaunchDetailPage({
       {tab === "decisions" && workDao ? (
         <DecisionsTab
           challenge={challenge}
+          sponsor={sponsor}
           dao={workDao}
           focusDecision={initialDecision}
           launch={launch}
@@ -493,6 +500,10 @@ export function LaunchDetailPage({
           focusClaim={initialClaim}
           onChallenge={(intent) => {
             setChallenge(intent);
+            setTab("decisions");
+          }}
+          onSponsor={(intent) => {
+            setSponsor(intent);
             setTab("decisions");
           }}
           onOpenDecisions={() => setTab("decisions")}

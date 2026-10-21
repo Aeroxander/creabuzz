@@ -251,6 +251,34 @@ const MUTATIONS = [
     "",
     "test/ContributorKit.t.sol",
   ],
+  [
+    "D84: the kit makes more than eight first projects",
+    "contracts/src/ContributorKit.sol",
+    "        if (count > MAX_FIRST_PROJECTS) revert InvalidTerms();",
+    "",
+    "test/ContributorKit.t.sol",
+  ],
+  [
+    "D84: two first projects can have the same id",
+    "contracts/src/ContributorKit.sol",
+    "                if (p.projects[j].id == project.id) revert InvalidTerms();",
+    "",
+    "test/ContributorKit.t.sol",
+  ],
+  [
+    "D84: the first projects can ask for more than the budget holds",
+    "contracts/src/ContributorKit.sol",
+    "        if (total > p.shareBudget) revert InvalidTerms();",
+    "",
+    "test/ContributorKit.t.sol",
+  ],
+  [
+    "D84: a first project can be above the most for one project",
+    "contracts/src/ContributorKit.sol",
+    "                    || project.shares > p.shareCap || project.check == bytes32(0) || project.expires > p.budgetExpires",
+    "                    || project.check == bytes32(0) || project.expires > p.budgetExpires",
+    "test/ContributorKit.t.sol",
+  ],
 ];
 
 const only = process.argv.slice(2).map(Number);

@@ -7,8 +7,8 @@ import {TreasuryMandate, TreasuryMandateFactory} from "./TreasuryMandate.sol";
 
 /// @title ContributorKit
 /// @notice One transaction that makes a contributor project ready for work: a DAO with no sale, the caller as its only
-/// holder, its first work budget (Shares only) and, optionally, the first project in it, and its Shares locked against
-/// transfers between wallets. Nothing in it can be bought, and the first claim can be filed the same day.
+/// holder, its first work budget (Shares only) and up to eight first projects in it (one per role of a team that started
+/// on the Projects board, D84), and its Shares locked against transfers between wallets. Nothing in it can be bought, and the first claim can be filed the same day.
 ///
 /// Why the setup happens at birth and not by vote: until anyone else holds Shares, the founder is the only voter, so the
 /// review and waiting periods of the first two decisions protect nobody (about six days, for nothing). Everything after
@@ -26,6 +26,18 @@ import {TreasuryMandate, TreasuryMandateFactory} from "./TreasuryMandate.sol";
 ///
 /// The kit holds nothing and keeps no role: once `launch` returns, it has no power over the DAO.
 contract ContributorKit {
+    /// @notice A project made with the budget, ready for claims the same day.
+    struct FirstProject {
+        bytes32 id;
+        address manager;
+        uint128 shares;
+        uint64 expires;
+        bytes32 check;
+    }
+
+    /// @notice The most first projects one launch makes (a bounded loop).
+    uint256 public constant MAX_FIRST_PROJECTS = 8;
+
     struct Params {
         string name;
         string symbol;
@@ -43,17 +55,13 @@ contract ContributorKit {
         uint256 quorum;
         /// Where the budget factory's next budget will be: `CREATE(factory, nonce)` read just before sending.
         address predictedBudget;
-        /// The first project; leave `projectId` zero for none.
-        bytes32 projectId;
-        address projectManager;
-        uint128 projectShares;
-        uint64 projectExpires;
-        bytes32 projectCheck;
+        /// The first projects, none to `MAX_FIRST_PROJECTS`.
+        FirstProject[] projects;
     }
 
     /// @notice A contributor project was launched.
     event ContributorProjectLaunched(
-        address indexed founder, address indexed dao, address indexed budget, bytes32 salt, bytes32 projectId
+        address indexed founder, address indexed dao, address indexed budget, bytes32 salt, uint256 projects
     );
 
     error InvalidTerms();
@@ -112,15 +120,7 @@ contract ContributorKit {
                 || p.quorum > p.reviewers.length || p.predictedBudget == address(0) || p.currency.code.length == 0
                 || bytes(p.name).length == 0 || bytes(p.symbol).length == 0
         ) revert InvalidTerms();
-        bool withProject = p.projectId != bytes32(0);
-        if (
-            withProject
-                && (p.projectManager == address(0)
-                    || p.projectShares == 0
-                    || p.projectShares > p.shareCap
-                    || p.projectCheck == bytes32(0)
-                    || p.projectExpires > p.budgetExpires)
-        ) revert InvalidTerms();
+        _checkProjects(p);
 
         // D79: the founder starts with at most a third of the first budget (so once it is awarded they hold at most a
         // quarter), and does not sit on its panel judging everyone else's claims.
@@ -132,7 +132,8 @@ contract ContributorKit {
         address predicted = predictDao(msg.sender, p.founderShares, p.salt);
         uint96 threshold = thresholdFor(p.founderShares);
 
-        Call[] memory setup = new Call[](withProject ? 7 : 6);
+        uint256 count = p.projects.length;
+        Call[] memory setup = new Call[](6 + count);
         setup[0] = Call(predicted, 0, abi.encodeCall(Moloch.setProposalThreshold, (threshold)));
         setup[1] = Call(
             address(budgetFactory),
@@ -143,13 +144,14 @@ contract ContributorKit {
             )
         );
         uint256 next = 2;
-        if (withProject) {
+        for (uint256 i; i < count; ++i) {
+            FirstProject calldata project = p.projects[i];
             setup[next++] = Call(
                 p.predictedBudget,
                 0,
                 abi.encodeCall(
                     TreasuryMandate.approveProject,
-                    (p.projectId, p.projectManager, 0, p.projectShares, p.projectExpires, p.projectCheck)
+                    (project.id, project.manager, 0, project.shares, project.expires, project.check)
                 )
             );
         }
@@ -191,11 +193,31 @@ contract ContributorKit {
                 || !Shares(predictedShares).awardsOnly() || Shares(predictedShares).issuanceCapBps() != NO_CAP
                 || !Shares(predictedShares).unlockNoticeRequired()
         ) revert SetupNotApplied();
-        if (withProject) {
-            (address manager,,,,, uint128 shareBudget,) = TreasuryMandate(budget).projects(p.projectId);
-            if (manager != p.projectManager || shareBudget != p.projectShares) revert SetupNotApplied();
+        for (uint256 i; i < count; ++i) {
+            (address manager,,,,, uint128 shareBudget,) = TreasuryMandate(budget).projects(p.projects[i].id);
+            if (manager != p.projects[i].manager || shareBudget != p.projects[i].shares) revert SetupNotApplied();
         }
-        emit ContributorProjectLaunched(msg.sender, dao, budget, p.salt, p.projectId);
+        emit ContributorProjectLaunched(msg.sender, dao, budget, p.salt, count);
+    }
+
+    /// @dev The first projects: at most eight, distinct ids, each whole and within the cap and the budget's time, and
+    /// together within the budget (which would refuse it too; the kit says so first).
+    function _checkProjects(Params calldata p) internal pure {
+        uint256 count = p.projects.length;
+        if (count > MAX_FIRST_PROJECTS) revert InvalidTerms();
+        uint256 total;
+        for (uint256 i; i < count; ++i) {
+            FirstProject calldata project = p.projects[i];
+            if (
+                project.id == bytes32(0) || project.manager == address(0) || project.shares == 0
+                    || project.shares > p.shareCap || project.check == bytes32(0) || project.expires > p.budgetExpires
+            ) revert InvalidTerms();
+            for (uint256 j; j < i; ++j) {
+                if (p.projects[j].id == project.id) revert InvalidTerms();
+            }
+            total += project.shares;
+        }
+        if (total > p.shareBudget) revert InvalidTerms();
     }
 
     /// @dev The DAO's Shares clone: the minimal proxy of the Shares implementation, made by the DAO with CREATE2 and

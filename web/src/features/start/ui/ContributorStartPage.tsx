@@ -7,9 +7,9 @@
  * stopped.
  */
 
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import { Check } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   PeoplePicker,
@@ -30,11 +30,15 @@ import {
   type ContributorDraft,
   contributorIssue,
   contributorSymbol,
+  emptyProject,
   sharePreview,
   formatBps,
   formatWhole,
 } from "../lib/contributor-project";
+import type { PitchStart } from "../lib/from-pitch";
 import { useContributorStart } from "../use-contributor-start";
+import { useStartFromPitch } from "../use-start-from-pitch";
+import { FirstProjectsField } from "./FirstProjectsField";
 
 const EMPTY: ContributorDraft = {
   name: "",
@@ -43,9 +47,43 @@ const EMPTY: ContributorDraft = {
   ...CONTRIBUTOR_DEFAULTS,
   reviewers: "",
   quorum: "",
-  projectName: "",
-  projectCheck: "",
+  projects: [emptyProject(CONTRIBUTOR_DEFAULTS.projectCap)],
 };
+
+/** What starting from the Projects board does with the team (D84), said above the form. */
+function FromBoard({ start }: { start: PitchStart }) {
+  return (
+    <Card className="p-5" data-testid="contributor-from-board">
+      <h2 className="text-base font-bold">From the Projects board</h2>
+      <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
+        <li>
+          Each role is a first project worth its stake: the person in it earns
+          those Shares as their work is accepted. Nothing is handed out up
+          front.
+        </li>
+        <li>
+          1,000,000 Shares stand for the whole project once every role's work is
+          awarded.
+          {start.founderDefaulted
+            ? " You declared no stake, so you start with 1%, enough to open votes."
+            : " Your declared stake is what you start with."}
+        </li>
+        {start.roomWhole > 0n ? (
+          <li>
+            The first budget also has room for {formatWhole(start.roomWhole)}{" "}
+            Shares that no role takes yet, for people who join later.
+          </li>
+        ) : null}
+        {start.leftOut.length > 0 ? (
+          <li data-testid="contributor-from-board-left-out">
+            A project starts with at most eight projects, so{" "}
+            {start.leftOut.join(", ")} can be added by a vote once it exists.
+          </li>
+        ) : null}
+      </ul>
+    </Card>
+  );
+}
 
 /** What a contributor project is and is not, said before the form. */
 function WhatItIs() {
@@ -129,20 +167,39 @@ function Steps({
 export function ContributorStartPage() {
   const start = useContributorStart();
   const { job, flow, gate, wallet } = start;
+  const search = useSearch({ from: "/start/contributor" });
+  const fromBoard = useStartFromPitch(search.project, search.author);
   const [draft, setDraft] = useState<ContributorDraft>(EMPTY);
   const [symbolTouched, setSymbolTouched] = useState(false);
   const [tried, setTried] = useState(false);
 
-  const set = (field: keyof ContributorDraft) => (value: string) => {
-    setDraft((current) => {
-      const next = { ...current, [field]: value };
-      // The short name follows the name until the founder types their own.
-      if (field === "name" && !symbolTouched)
-        next.symbol = value.trim() ? contributorSymbol(value) : "";
-      return next;
-    });
-    if (field === "symbol") setSymbolTouched(true);
-  };
+  // A team from the Projects board fills the form once, when it has been read; the founder can still change anything.
+  const [seeded, setSeeded] = useState(false);
+  useEffect(() => {
+    if (seeded || !fromBoard.start) return;
+    setDraft(fromBoard.start.draft);
+    setSymbolTouched(true);
+    setSeeded(true);
+  }, [seeded, fromBoard.start]);
+
+  const set =
+    (field: Exclude<keyof ContributorDraft, "projects">) => (value: string) => {
+      setDraft((current) => {
+        const next = { ...current, [field]: value };
+        // The short name follows the name until the founder types their own.
+        if (field === "name" && !symbolTouched)
+          next.symbol = value.trim() ? contributorSymbol(value) : "";
+        // A project still at the most for one project follows it when it changes.
+        if (field === "projectCap")
+          next.projects = current.projects.map((project) =>
+            project.shares === current.projectCap
+              ? { ...project, shares: value }
+              : project,
+          );
+        return next;
+      });
+      if (field === "symbol") setSymbolTouched(true);
+    };
 
   const issue = contributorIssue(draft, wallet.address);
   const preview = sharePreview(draft);
@@ -164,6 +221,16 @@ export function ContributorStartPage() {
         title="Start a contributor project"
       />
       <WhatItIs />
+      {fromBoard.start ? <FromBoard start={fromBoard.start} /> : null}
+      {fromBoard.problem ? (
+        <p
+          className="text-sm text-destructive"
+          data-testid="contributor-from-board-problem"
+          role="alert"
+        >
+          {fromBoard.problem}
+        </p>
+      ) : null}
 
       {job ? (
         <Card className="flex flex-col gap-4 p-5" data-testid="contributor-run">
@@ -182,7 +249,7 @@ export function ContributorStartPage() {
             <div className="flex flex-col gap-3" data-testid="contributor-done">
               <p className="text-sm">
                 The project exists, with its first work budget and its first
-                project, and people can claim work on it now. You take each
+                projects, and people can claim work on it now. You take each
                 claim on, the reviewers you named approve it, and then the
                 project votes to award the Shares. Share the link to the Work
                 tab with the people you want to work with.
@@ -306,21 +373,15 @@ export function ContributorStartPage() {
             testId="contributor-quorum"
             value={draft.quorum}
           />
-          <TextField
-            hint="The first thing people can work on, in a word or two (for example: docs). You manage it: you take each claim on."
-            label="First project"
-            onChange={set("projectName")}
-            placeholder="docs"
-            testId="contributor-project-name"
-            value={draft.projectName}
-          />
-          <TextAreaField
-            hint="Every claim says it meets this, and the reviewers check the work against these words."
-            label="What finished work looks like"
-            onChange={set("projectCheck")}
-            placeholder="The pages are merged and reviewed"
-            testId="contributor-project-check"
-            value={draft.projectCheck}
+          <FirstProjectsField
+            cap={draft.projectCap}
+            onChange={(projects) =>
+              setDraft((current) => ({ ...current, projects }))
+            }
+            problemIndex={
+              tried && issue?.field === "projects" ? issue.index : null
+            }
+            projects={draft.projects}
           />
 
           {preview ? (
@@ -371,7 +432,7 @@ export function ContributorStartPage() {
               onClick={() => {
                 setTried(true);
                 if (issue) return;
-                start.start(draft);
+                start.start(draft, search.project);
               }}
               type="button"
             >

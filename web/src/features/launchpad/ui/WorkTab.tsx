@@ -1,4 +1,7 @@
 import { type ChallengeIntent, challengeFor } from "../lib/challenge";
+import type { SponsorIntent } from "../lib/sponsor";
+import { useContributions } from "../use-contributions";
+import { SuggestedWork } from "./SuggestedWork";
 import { useEffect, useMemo, useRef } from "react";
 
 import { truncatePubkey } from "@/shared/lib/pubkey";
@@ -62,6 +65,7 @@ export function WorkTab({
   dao,
   onOpenDecisions,
   onChallenge,
+  onSponsor,
   focusClaim,
 }: {
   launch: Launch;
@@ -71,6 +75,8 @@ export function WorkTab({
   onOpenDecisions?: () => void;
   /** Go to the Decisions tab with the form for doubting (or unwinding) one claim already filled in. */
   onChallenge?: (intent: ChallengeIntent) => void;
+  /** Someone is putting a suggestion to a vote (D84): open "Approve a project" filled in from it. */
+  onSponsor?: (intent: SponsorIntent) => void;
 }) {
   const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
   const work = useWork(dao, wallet.address);
@@ -91,6 +97,17 @@ export function WorkTab({
     [work.data],
   );
   const labelOf = useWalletLabels(people);
+  const contributions = useContributions(dao);
+  const approvedProjects = useMemo(
+    () =>
+      (work.data?.mandates ?? []).flatMap((m) =>
+        m.projects.map((p) => ({
+          projectId: p.approved.projectId,
+          checkHash: p.approved.checkHash,
+        })),
+      ),
+    [work.data],
+  );
   const focusedClaim = useRef<string | null>(null);
   useEffect(() => {
     const focusKey = focusClaim
@@ -145,6 +162,14 @@ export function WorkTab({
           </p>
         ) : null}
       </Card>
+
+      <SuggestedWork
+        approved={approvedProjects}
+        chainId={launch.record.chainId ?? null}
+        dao={dao}
+        onSponsor={onSponsor}
+        totalShares={contributions.data?.totalShares ?? null}
+      />
 
       {lock.data && wallet.address ? (
         lockKind === "challenge" && challengeLock.data ? (

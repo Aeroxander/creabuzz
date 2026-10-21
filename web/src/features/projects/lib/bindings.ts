@@ -1,16 +1,12 @@
 /**
- * EVM binding records — kind:37017, the relay-side read that lets a team seat
- * resolve without its holder being logged into *this* browser.
- *
- * Why it exists: `summon-composer.ts` `localBindingMap` could only read the
- * viewer's own SIWE binding (`features/identity/lib/siwe.ts`), so every other
- * seat resolved to "unbound" and blocked the summon. The record contract the
- * relay now publishes (kind:37017) closes that hole:
+ * EVM binding records — kind:37017: which wallet a person's key has bound, readable by anyone, so a person resolves to
+ * their wallet without being logged into *this* browser (the people pickers, `launchpad/use-people.ts`). The record
+ * contract:
  *
  * - **kind** 37017, **`d`** = the bound address as lowercase `0x…`
  *   (NIP-33 coordinate — one address, one thread, newest record wins);
  * - **authored by the bound npub** — the signature *is* the claim, which is
- *   why `authors` is the query's bound (`use-bindings.ts`);
+ *   why `authors` is the query's bound;
  * - **tags** `["address", "0x…"]`, optional `["chain", id]`;
  * - **content** `{ v, address, siweMessageHash, attestation, revoked? }`.
  *
