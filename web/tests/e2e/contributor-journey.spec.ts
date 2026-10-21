@@ -7,8 +7,10 @@ import { installAnvilWallet } from "../helpers/anvil-wallet";
  * A contributor project from start to award, entirely from pages, against a REAL local chain: no command line.
  *
  * Opt-in: `scripts/web-contributor-e2e.sh` boots the chain (with the contributor kit) and builds the app for it, then
- * runs this spec. The founder starts the project on the Start page: one transaction makes its DAO with no sale, its
- * first work budget and first project, and locks its Shares; then it is published. Work starts at once, with no vote:
+ * runs this spec; `--sepolia-fork` runs it on a fork of Sepolia, built the way a hosted Sepolia build is. The founder
+ * starts the project on the Start page: the form refuses the founder limits (D79) before anything is sent; then one
+ * transaction makes its DAO with no sale, its first work budget and first project, and locks its Shares; then it is
+ * published. Work starts at once, with no vote:
  * everything after is done in pages, each as the wallet of the person whose job it is. What is stubbed: the relay (it
  * keeps what pages publish and hands it to the others) and the wallets (`window.ethereum` forwarding to Anvil's
  * unlocked accounts).
@@ -25,7 +27,8 @@ const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
 const CONTRIBUTOR = process.env.E2E_CONTRIBUTOR ?? "";
 /** Someone with no Shares who suggests work and names a price (D84). */
 const NEWCOMER = process.env.E2E_MANAGER ?? "";
-const FOUNDER_WALLET = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+const FOUNDER_WALLET =
+  process.env.E2E_FOUNDER ?? "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const NSEC = "33".repeat(32);
 const FOUNDER = getPublicKey(
   Uint8Array.from(NSEC.match(/.{2}/g) ?? [], (b) => Number.parseInt(b, 16)),
@@ -178,7 +181,8 @@ async function carryOut(page: Page, toApprove: number, toWait: number) {
 test("a contributor project is started from the page, work is claimed the same day, and the award shows on its contributions", async ({
   context,
 }) => {
-  test.setTimeout(600_000);
+  // A fork reads state it has not seen yet from a public node, so it can be slower than a local chain.
+  test.setTimeout(Number(process.env.E2E_TIMEOUT_MS ?? 600_000));
 
   // ── 1. the founder starts it: one transaction makes the DAO, its budget and first project; then it is published ──
   const founder = await context.newPage();
@@ -186,6 +190,11 @@ test("a contributor project is started from the page, work is claimed the same d
   await founder.getByTestId("start-go-contributor").click();
   await expect(founder.getByTestId("contributor-no-raise")).toContainText(
     "This project cannot raise money",
+  );
+  // Every network this journey runs on is a test network: Shares earned on it stay there.
+  await expect(founder.getByTestId("contributor-test-records")).toContainText(
+    "Shares earned here are test records: they will not move to a real network automatically.",
+    { timeout: 20_000 },
   );
   await founder.getByTestId("contributor-name").fill("Docs Commons");
   await founder
@@ -203,6 +212,30 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(founder.getByTestId("contributor-gate")).toHaveCount(0, {
     timeout: 20_000,
   });
+
+  // The founder limits (D79), refused in the form before the wallet is asked: one Share above a third of the budget,
+  // then the founder on the review panel. The kit refuses both too (the script checks it on the same chain).
+  const refusedFrom = BigInt(String(await rpc("eth_blockNumber")));
+  await founder.getByTestId("contributor-founder-shares").fill("201");
+  await founder.getByTestId("contributor-submit").click();
+  await expect(founder.getByTestId("contributor-problem")).toContainText(
+    "Start with at most a third of the Shares the first budget can award",
+  );
+  await founder.getByTestId("contributor-founder-shares").fill("200");
+  await founder
+    .getByTestId("contributor-reviewers")
+    .fill(`${REVIEWER1}\n${FOUNDER_WALLET}`);
+  await founder.getByTestId("contributor-submit").click();
+  await expect(founder.getByTestId("contributor-problem")).toContainText(
+    "You cannot review the first budget's work yourself",
+  );
+  await founder
+    .getByTestId("contributor-reviewers")
+    .fill(`${REVIEWER1}\n${REVIEWER2}`);
+  await expect(founder.getByTestId("contributor-problem")).toHaveCount(0);
+  await expect(founder.getByTestId("contributor-run")).toHaveCount(0);
+  expect(BigInt(String(await rpc("eth_blockNumber")))).toBe(refusedFrom);
+
   const blockBefore = BigInt(String(await rpc("eth_blockNumber")));
   await founder.getByTestId("contributor-submit").click();
   await expect(founder.getByTestId("contributor-done")).toBeVisible({
@@ -339,6 +372,9 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(reader.getByTestId("contributions-not-from-work")).toHaveText(
     "200",
   );
+  await expect(reader.getByTestId("contributions-test-records")).toContainText(
+    "Shares earned here are test records",
+  );
   if (process.env.E2E_SHOTS) {
     await reader
       .getByTestId("contributions-tab")
@@ -388,7 +424,8 @@ async function award(page: Page, claim: string, shares: string) {
 test("several people earn in one contributor project: two first projects, and a newcomer's suggestion with a % ask is put to a vote", async ({
   context,
 }) => {
-  test.setTimeout(900_000);
+  // Longer than the first journey: three votes and two claims (and a fork is slower still, as above).
+  test.setTimeout(Number(process.env.E2E_TIMEOUT_MS ?? 600_000) * 1.5);
   // A board on this server for the suggestion to be posted on.
   published.push({
     id: "b0".repeat(32),
@@ -527,8 +564,10 @@ test("several people earn in one contributor project: two first projects, and a 
   );
   await expect(toSponsor).toHaveCount(1, { timeout: 30_000 });
   await toSponsor.getByTestId("work-proposal-sponsor").click();
+  // The form waits for the work budgets to be read (slower on a fork, which reads from a public node).
   await expect(founder.getByTestId("decision-from-suggestion")).toContainText(
     "“guide-es” for 11 Shares",
+    { timeout: 60_000 },
   );
   await expect(founder.getByTestId("project-name")).toHaveValue("guide-es");
   await expect(founder.getByTestId("project-shares")).toHaveValue("11");

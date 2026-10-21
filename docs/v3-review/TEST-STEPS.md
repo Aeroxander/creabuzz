@@ -779,8 +779,8 @@ Use a wallet on the local chain (account 0 as the founder; two other accounts as
 9. **Market.** On a build with a market configured (`VITE_LBAMM_ADDRESSES`), **New decision** offers "Put Shares on the
    market" for a DAO that raised, and not for this project (no automated test covers this yet).
 
-Not covered: Sepolia. `scripts/sepolia-deploy.sh` now deploys the contributor kit, but it has not been broadcast, so a
-Sepolia build says "Contributor projects cannot be started on Sepolia yet".
+Sepolia: the same journey runs on a fork of Sepolia (4al). The contributor kit has not been broadcast to the real Sepolia, so a
+hosted Sepolia build says "Contributor projects cannot be started on Sepolia yet" until it is.
 
 ## 4aj. Audit groundwork: invariants, the simulation, the mutation check (2026-10-19)
 
@@ -925,3 +925,46 @@ as in 4ai, then use account 0 as the founder, accounts 1 and 2 as reviewers, and
    its own project (**Take on in guide-es**). Both reviewers approve, the founder finishes the review, wait out the
    challenge window, and each contributor takes their claim. Two award decisions later, the Contributions tab shows both
    people with their Shares, their part of all Shares, and the work each was for.
+
+## 4al. Contributor projects on a Sepolia fork, ready for the testnet (D85, 2026-10-21)
+
+```bash
+. ./bin/activate-hermit
+scripts/sepolia-deploy.sh                          # rehearsal on a fork: deploy, checks, the per-transaction gas cap, today's cost
+scripts/web-contributor-e2e.sh --sepolia-fork      # both contributor journeys (4ai, 4ak) in pages on a fork, built like a hosted Sepolia build
+scripts/web-contributor-e2e.sh                     # the same spec on a local dev chain
+cd web && node --experimental-strip-types --test src/features/launchpad/lib/test-network.test.mjs
+```
+
+The fork journey forks Sepolia into a local anvil (`--prune-history=500`), deploys with the Sepolia deploy's own Forge
+script from a deployer key of its own, turns everyone in the story into a plain account with 0.1 test ETH (on the real
+Sepolia anvil's public dev accounts carry strangers' EIP-7702 delegations), and builds the web app with
+`VITE_LAUNCHPAD_CHAIN_ID=11155111`, `VITE_CHAIN_RPC_URL`, `VITE_CONTRIBUTOR_KITS`, `VITE_DAO_LAUNCH_KITS` and
+`VITE_HISTORY_FROM_BLOCKS`. Before the browser starts it asks the kit itself, from the founder: 200 starting Shares against a
+600 budget with two other reviewers goes through; 201 is refused with `InvalidTerms`; the founder on the panel is refused with
+`InvalidTerms`. It ends with the gas each person used. Nothing public changes, and the manifest and broadcast record it wrote
+are removed.
+
+By hand on a hosted Sepolia build (`docs/sepolia-testnet.md` §3), with a founder wallet, two reviewer wallets and a
+contributor wallet, each with a little Sepolia ETH and no USDC:
+
+1. **The notice.** Start → **Start a contributor project**. Under "This project cannot raise money" a line says Sepolia is a
+   test network and Shares earned there are test records that will not move to a real network automatically. Hover the
+   Testnet tag beside the logo: it says the same.
+2. **The founder limits, in the form.** Leave "Shares to earn" at 300,000 and type 100,001 as your starting Shares, fill in
+   the rest and press **Start the project**: it says to start with at most a third, and the wallet is not asked. Put it back
+   to 100,000, add your own wallet address to the reviewers and press again: it says you cannot review the first budget's
+   work yourself. Remove it.
+3. **Start it.** Press **Start the project**: the wallet asks once. Open the project's work.
+4. **Work.** As the contributor, file a claim in the first project with its check words. As the founder, take it on. As
+   both reviewers, approve it. As the founder, finish it. The challenge window is a week on a real network: come back
+   after it and take it as the contributor.
+5. **Award.** As the founder, Decisions → **Award Shares for a claim**, back it, start the wait once the review has passed,
+   run it once the wait has passed (on a real network the review and the wait take about a day each).
+6. **Contributions.** Open the Contributions tab with no wallet: the contributor, the Shares, the claim and the project, and
+   the same test-records line under "Who earned the Shares".
+7. **Locked.** Try to send some Shares from the contributor's wallet to another address: the network refuses it.
+
+Not covered: the real Sepolia (the deploy needs your key and go-ahead), the real relay (the spec stubs it in the page, as
+every mocked spec does; the raise journey `scripts/web-sepolia-fork-e2e.sh` covers the relay on a fork), passkey accounts
+sending the contributor launch through a bundler, and the week-long waits in real time.

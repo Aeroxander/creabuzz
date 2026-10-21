@@ -8,3 +8,7 @@ deployments/dao-launch-kit-*.json
 
 # Written by the deploy scripts and the dev chain on every run: outputs, not sources.
 deployments/*.json
+
+# Except the real Sepolia deploy (scripts/sepolia-deploy.sh --broadcast): public addresses a hosted build is made from.
+# Rehearsals and fork journeys write the same path on a throwaway fork and put it back as it was.
+!deployments/dao-launch-kit-11155111.json

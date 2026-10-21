@@ -16,6 +16,7 @@ import {
   TextAreaField,
   TextField,
 } from "@/features/launchpad/ui/decision-fields";
+import { testRecordsNotice } from "@/features/launchpad/lib/test-network";
 import { cn } from "@/shared/lib/cn";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
@@ -85,8 +86,8 @@ function FromBoard({ start }: { start: PitchStart }) {
   );
 }
 
-/** What a contributor project is and is not, said before the form. */
-function WhatItIs() {
+/** What a contributor project is and is not, said before the form; on a test network, what its Shares are worth. */
+function WhatItIs({ testNotice }: { testNotice: string | null }) {
   return (
     <Card className="p-5" data-testid="contributor-no-raise">
       <h2 className="text-base font-bold">This project cannot raise money</h2>
@@ -114,6 +115,14 @@ function WhatItIs() {
           them. The project can vote to change that later.
         </li>
       </ul>
+      {testNotice ? (
+        <p
+          className="mt-3 rounded-lg bg-secondary/60 px-3 py-2 text-sm font-medium"
+          data-testid="contributor-test-records"
+        >
+          {testNotice}
+        </p>
+      ) : null}
     </Card>
   );
 }
@@ -220,7 +229,7 @@ export function ContributorStartPage() {
         description="A project with no money in it: the token, its Shares, is shared out only for work the reviewers accept."
         title="Start a contributor project"
       />
-      <WhatItIs />
+      <WhatItIs testNotice={testRecordsNotice(start.network?.chainId)} />
       {fromBoard.start ? <FromBoard start={fromBoard.start} /> : null}
       {fromBoard.problem ? (
         <p

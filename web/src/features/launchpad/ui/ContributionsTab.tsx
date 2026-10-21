@@ -12,6 +12,7 @@ import { Card } from "@/shared/ui/card";
 import { formatUnits } from "../lib/dao-actions";
 import type { ContributionAward } from "../lib/contributions";
 import { isContributorProject } from "../lib/funding";
+import { testRecordsNotice } from "../lib/test-network";
 import type { Launch } from "../models";
 import { useContributions } from "../use-contributions";
 import { useWalletLabels } from "../use-wallet-labels";
@@ -75,6 +76,7 @@ export function ContributionsTab({
   );
   const label = useWalletLabels(addresses);
   const contributor = isContributorProject(launch.record);
+  const testNotice = testRecordsNotice(launch.record.chainId);
 
   if (contributions.isLoading) {
     return (
@@ -122,6 +124,14 @@ export function ContributionsTab({
           Every award below is read from the network, not from what anyone wrote
           about the work.
         </p>
+        {testNotice ? (
+          <p
+            className="text-sm font-medium"
+            data-testid="contributions-test-records"
+          >
+            {testNotice}
+          </p>
+        ) : null}
         <dl className="mt-1 flex flex-wrap gap-3">
           <div className="rounded-lg bg-secondary/60 px-3 py-1.5">
             <dt className="text-xs font-semibold text-muted-foreground">
