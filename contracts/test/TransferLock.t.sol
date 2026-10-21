@@ -110,4 +110,22 @@ contract TransferLockTest is VotingFixture {
         dao.ragequit(tokens, 10e18, 0);
         assertEq(shares.balanceOf(ALICE), 50e18);
     }
+
+    /// @dev While locked, any holder sending any amount to anyone succeeds only when the exempt address is one side of it.
+    function testFuzz_while_locked_shares_move_only_to_or_from_the_exempt_address(
+        uint8 fromSeed,
+        uint8 toSeed,
+        uint96 amountSeed
+    ) public {
+        address[4] memory people = [ALICE, CAROL, AUCTION, address(0xBEEF)];
+        address from = people[fromSeed % 4];
+        address to = people[toSeed % 4];
+        uint256 balance = shares.balanceOf(from);
+        uint256 amount = balance == 0 ? 0 : bound(amountSeed, 1, balance);
+        vm.prank(from);
+        (bool ok,) = address(shares).call(abi.encodeCall(Shares.transfer, (to, amount)));
+        bool exempt = from == AUCTION || to == AUCTION;
+        if (!exempt) assertFalse(ok, "Shares moved between wallets while locked");
+        if (exempt && amount <= balance) assertTrue(ok, "the auction could not move Shares");
+    }
 }

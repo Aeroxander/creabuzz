@@ -402,6 +402,30 @@ contract MoneyPathsHandler is Test {
             && block.timestamp >= uint256(queued) + delay;
     }
 
+    /// @notice A vote that tries to create Shares or Loot, hand out the DAO's own Shares, or burn a holder's Shares. Under
+    /// the issuance rule (D76) and the leaving-only burn (D73) none of these can run, however the holders vote: Shares come
+    /// only from awards for reviewed work, and only their owner's exit burns them.
+    function governShareMoves(uint8 kind, uint256 whoSeed, uint256 amountSeed, uint256 voteSeed) external step {
+        address who = _anyone(whoSeed);
+        uint256 amount = bound(amountSeed, 1, 100e18);
+        kind %= 4;
+        bytes memory data;
+        address target = address(shares);
+        if (kind == 0) data = abi.encodeCall(Shares.mintFromMoloch, (who, amount));
+        else if (kind == 1) data = abi.encodeCall(Shares.transfer, (who, amount));
+        else if (kind == 2) data = abi.encodeCall(Shares.burnFromMoloch, (who, 1));
+        else (target, data) = (address(loot), abi.encodeCall(Loot.mintFromMoloch, (who, amount)));
+        uint256 supply = shares.totalSupply();
+        uint256 lootSupply = loot.totalSupply();
+        uint256 balance = shares.balanceOf(who);
+        Vote memory v = _govern(target, 0, data, voteSeed);
+        if (v.executed) _fail("a vote created, handed out or burned Shares outside an award or an exit");
+        if (shares.totalSupply() != supply || loot.totalSupply() != lootSupply || shares.balanceOf(who) != balance) {
+            _fail("Shares changed hands outside an award or an exit");
+        }
+        _hit("govern.shareMoveRefused");
+    }
+
     /// @notice A vote to pay USDC or ETH out of the treasury to anyone (the attacker included).
     function governPay(uint256 amountSeed, uint256 toSeed, bool inEth, uint256 voteSeed) external step {
         address to = _anyone(toSeed);

@@ -26,6 +26,8 @@ import {MockUSDC, MoneyPathsHandler} from "./MoneyPathsHandler.sol";
 /// forge-config: default.invariant.fail-on-revert = true
 contract MoneyPathsInvariantTest is Test {
     MoneyPathsHandler internal handler;
+    uint256 internal initialShares;
+    uint256 internal initialLoot;
     Moloch internal dao;
     Shares internal shares;
     AllocationVoting internal policy;
@@ -129,6 +131,13 @@ contract MoneyPathsInvariantTest is Test {
             vm.stopPrank();
         }
 
+        // The launch kit's issuance rule (D76): new Shares only from awards, at most 10% a year. No step here awards any,
+        // so no Share or Loot unit may appear from now on.
+        vm.prank(address(dao));
+        shares.setIssuanceRule(1000);
+        initialShares = shares.totalSupply();
+        initialLoot = dao.loot().totalSupply();
+
         handler = new MoneyPathsHandler(dao, lock, mandate, usdc, team, backers, reviewers, LOOTER, CONTRIBUTOR, MANAGER);
 
         // Everyone can post a bond, a deposit or a stake.
@@ -148,7 +157,7 @@ contract MoneyPathsInvariantTest is Test {
         vm.roll(block.number + 1);
         targetContract(address(handler));
         // Weighted: whole milestone rounds and whole votes reach deep states, so they come up more often than single steps.
-        bytes4[] memory weighted = new bytes4[](40);
+        bytes4[] memory weighted = new bytes4[](42);
         uint256 n;
         for (uint256 i; i < 6; ++i) weighted[n++] = handler.milestoneRound.selector;
         for (uint256 i; i < 2; ++i) weighted[n++] = handler.governPay.selector;
@@ -179,6 +188,7 @@ contract MoneyPathsInvariantTest is Test {
         weighted[n++] = handler.issuerBlocks.selector;
         weighted[n++] = handler.withdrawOwed.selector;
         weighted[n++] = handler.elapse.selector;
+        for (uint256 i; i < 2; ++i) weighted[n++] = handler.governShareMoves.selector;
         assert(n == weighted.length);
         targetSelector(FuzzSelector({addr: address(handler), selectors: weighted}));
     }
@@ -281,6 +291,23 @@ contract MoneyPathsInvariantTest is Test {
             owed += claims.owed(payees[i]);
         }
         assertEq(usdc.balanceOf(address(claims)), owed, "claim escrow custody");
+    }
+
+    /// @notice The lock's running total (what the exit leaves out, D72) is always exactly what its members have locked.
+    function invariant_locked_total_is_what_each_member_has_locked() public view {
+        address[] memory members = lock.team();
+        uint256 sum;
+        for (uint256 i; i < members.length; ++i) {
+            sum += lock.lockedOf(members[i]);
+        }
+        assertEq(lock.totalLocked(), sum, "locked total");
+    }
+
+    /// @notice Under the issuance rule no step creates a Share or a Loot unit (D76): there are no awards in this run, and
+    /// no vote, mint or hand-out can do it.
+    function invariant_no_shares_or_loot_appear_outside_an_award() public view {
+        assertLe(shares.totalSupply(), initialShares, "a Share appeared");
+        assertLe(dao.loot().totalSupply(), initialLoot, "a Loot unit appeared");
     }
 
     function invariant_budget_and_vote_ledger_bounds() public view {
