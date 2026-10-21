@@ -17,7 +17,11 @@ import {
   ZERO_WORD,
 } from "../lib/work";
 import type { MandateView } from "../lib/work-read";
-import type { OpenWorkArea } from "../lib/ways-to-help";
+import {
+  type OpenWorkArea,
+  wordsAfterMove,
+  wordsProblem,
+} from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { usePublishMirror } from "../use-launches";
 
@@ -76,9 +80,12 @@ export function FileClaimCard({
     (a) => mandate && a.mandate === mandate.address.toLowerCase(),
   );
   const chosenArea = budgetAreas.find((a) => a.id === areaId) ?? null;
-  const pickArea = (area: OpenWorkArea | null) => {
+  // What was typed as the words for each work area, so moving between areas never carries one area's words into
+  // another: an area's own published words win, then what was typed for it, else nothing.
+  const typedFor = useRef(new Map<string, string>());
+  const moveTo = (area: OpenWorkArea | null) => {
+    setCheck(wordsAfterMove(typedFor.current, chosenArea, check, area));
     setAreaId(area?.id ?? "");
-    if (area?.words) setCheck(area.words);
   };
   // Chosen under Ways to help: move to its budget and work area, fill its words, and bring the form into view. It
   // answers the pick only: the budgets are read again on every render, and a re-read must not undo what was typed.
@@ -89,8 +96,7 @@ export function FileClaimCard({
       (m) => m.address.toLowerCase() === picked.area.mandate,
     );
     if (index >= 0) setWhich(index);
-    setAreaId(picked.area.id);
-    if (picked.area.words) setCheck(picked.area.words);
+    moveTo(picked.area);
     card.current?.scrollIntoView({ block: "start" });
     nameInput.current?.focus({ preventScroll: true });
   }, [picked]);
@@ -181,9 +187,30 @@ export function FileClaimCard({
       );
       return;
     }
+    // The words must be the chosen work area's, read again now: words carried over from another area, or criteria
+    // that changed since the page was opened, would make a submission its manager cannot accept.
+    const wanted = hashText(check);
+    const wrongWords = wordsProblem(chosenArea, check);
+    if (wrongWords) {
+      setProblem(wrongWords);
+      return;
+    }
     const existing = mandate.claims.find((c) => c.id === id);
     if (existing && !sameAddress(wallet, existing.record.contributor)) {
       setProblem("Someone else already used that name. Choose another.");
+      return;
+    }
+    if (
+      existing &&
+      existing.record.checkHash !== ZERO_WORD &&
+      existing.record.checkHash.toLowerCase() !== wanted &&
+      (existing.project !== null ||
+        existing.record.status !== "Open" ||
+        existing.approvals + existing.objections > 0)
+    ) {
+      setProblem(
+        "Your submission under that name was already accepted for review or reviewed, so its words can no longer change. Submit under a new name.",
+      );
       return;
     }
     if (!existing) {
@@ -203,11 +230,13 @@ export function FileClaimCard({
       );
       if (!landed) return;
     }
-    if (!existing || existing.record.checkHash === ZERO_WORD) {
+    // State the words, or correct them: a claim no work area has accepted and nobody has reviewed can still change
+    // its words (`ClaimStake.setCheck`), so a submission sent with the wrong words is put right, not stuck.
+    if (!existing || existing.record.checkHash.toLowerCase() !== wanted) {
       const landed = await onSend(
         `check-${id}`,
         mandate.claimsAddress,
-        encodeSetCheck(id, hashText(check)),
+        encodeSetCheck(id, wanted),
       );
       if (!landed) return;
     }
@@ -228,7 +257,7 @@ export function FileClaimCard({
       });
     } catch {
       setProblem(
-        "The claim is filed, but its evidence could not be published, and reviewers cannot approve a claim they cannot read. Press File claim again to publish it.",
+        "Your work is submitted, but its evidence could not be published, and reviewers cannot approve what they cannot read. Press Submit work again to publish it.",
       );
       return;
     }
@@ -267,6 +296,11 @@ export function FileClaimCard({
           <select
             className="rounded-md border border-black/10 bg-transparent px-2 py-1 dark:border-white/10"
             onChange={(e) => {
+              // Another budget: the chosen area's words do not come along.
+              if (chosenArea) {
+                wordsAfterMove(typedFor.current, chosenArea, check, null);
+                setCheck("");
+              }
               setWhich(Number(e.target.value));
               setAreaId("");
             }}
@@ -290,9 +324,7 @@ export function FileClaimCard({
               className="rounded-md border border-black/10 bg-transparent px-2 py-1 dark:border-white/10"
               data-testid="work-claim-area"
               onChange={(e) =>
-                pickArea(
-                  budgetAreas.find((a) => a.id === e.target.value) ?? null,
-                )
+                moveTo(budgetAreas.find((a) => a.id === e.target.value) ?? null)
               }
               value={areaId}
             >
@@ -401,7 +433,7 @@ export function FileClaimCard({
           size="sm"
           type="button"
         >
-          File claim
+          Submit work
         </Button>
         {filed ? (
           <span

@@ -600,9 +600,11 @@ export function PitchDialog({
                 </section>
                 <StakeSummary founder={myRole} openRoles={openRoles} />
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Stakes are declarations until a grant is recorded. Recorded
-                  and revocable until the project's DAO adopts the map. Not a
-                  legal contract.
+                  Stakes are declarations, and a recorded role is a record the
+                  founder can take back: not Shares and not a legal contract. If
+                  the project starts as a contributor project, each role becomes
+                  a work area whose Shares are awarded by vote for reviewed
+                  work.
                 </p>
               </>
             )}

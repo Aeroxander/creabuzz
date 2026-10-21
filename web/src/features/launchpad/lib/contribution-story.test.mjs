@@ -95,3 +95,40 @@ test("evidence is shortened at a word, and its first link is kept whole", () => 
   assert.equal(firstLink("no links here"), null);
   assert.equal(firstLink("javascript:alert(1) and ftp://x"), null);
 });
+
+test("absence says nothing was published only when the whole history was read and answered", () => {
+  const story = (read) =>
+    storyFor(award, {
+      times: new Map(),
+      claims: new Map([[storyKey(BUDGET, CLAIM), claim()]]),
+      packets: [],
+      read,
+    }).evidenceState;
+  assert.equal(
+    story({ loading: false, error: false, incomplete: false }),
+    "missing",
+  );
+  // A failed read, a read cut short at its limit, and one still on its way are each said as what they are.
+  assert.equal(
+    story({ loading: false, error: true, incomplete: false }),
+    "unreadable",
+  );
+  assert.equal(
+    story({ loading: false, error: false, incomplete: true }),
+    "not-found",
+  );
+  assert.equal(
+    story({ loading: true, error: false, incomplete: false }),
+    "reading",
+  );
+  // Evidence found in what was read is checked whatever else happened to the read.
+  assert.equal(
+    storyFor(award, {
+      times: new Map(),
+      claims: new Map([[storyKey(BUDGET, CLAIM), claim()]]),
+      packets: [packet(EVIDENCE)],
+      read: { loading: false, error: true, incomplete: true },
+    }).evidenceState,
+    "verified",
+  );
+});

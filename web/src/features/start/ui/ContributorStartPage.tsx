@@ -58,9 +58,10 @@ function FromBoard({ start }: { start: PitchStart }) {
       <h2 className="text-base font-bold">From the Projects board</h2>
       <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
         <li>
-          Each role is a first work area worth its stake: the person in it earns
-          those Shares as their work is accepted. Nothing is handed out up
-          front.
+          Each role is a first work area that can award up to its stake. The
+          person in it submits work, reviewers check it, and Shareholders then
+          vote separately on each award: approval does not guarantee Shares.
+          Nothing is handed out up front.
         </li>
         <li>
           1,000,000 Shares stand for the whole project once every role's work is

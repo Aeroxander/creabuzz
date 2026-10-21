@@ -6,7 +6,9 @@ import { hashText, idWord } from "@creaton/core/launchpad/work.ts";
 import {
   openWorkAreas,
   recordSources,
+  wordsAfterMove,
   wordsFor,
+  wordsProblem,
   workAreaUpdateContent,
 } from "./ways-to-help.ts";
 
@@ -128,4 +130,44 @@ test("the update that publishes a work area's words names the budget and the wor
     check: DOCS,
   });
   assert.equal(content.title, "Work area: guide-es");
+});
+
+const formArea = (name, words, check = words ?? "approved words") => ({
+  mandate: BUDGET,
+  id: idWord(name),
+  name,
+  words,
+  checkHash: hashText(check),
+});
+
+test("moving between work areas never carries one area's words into another", () => {
+  const drafts = new Map();
+  const a = formArea("docs", DOCS);
+  const b = formArea("art", null, "the art is drawn and reviewed");
+  // From A (its published words in the box) to B, whose words are not published: the box is empty, not A's words.
+  assert.equal(wordsAfterMove(drafts, null, "", a), DOCS);
+  assert.equal(wordsAfterMove(drafts, a, DOCS, b), "");
+  // What was typed for B comes back when returning to it; A shows its own words again.
+  assert.equal(wordsAfterMove(drafts, b, "the art is drawn", a), DOCS);
+  assert.equal(wordsAfterMove(drafts, a, DOCS, b), "the art is drawn");
+  // "Not sure yet" keeps the text as it is.
+  assert.equal(wordsAfterMove(drafts, b, "typed", null), "typed");
+});
+
+test("the words must hash to the chosen work area's check, read again when submitting", () => {
+  const b = formArea("art", null, "the art is drawn and reviewed");
+  // A's words chosen for B: refused, with what to do.
+  assert.match(
+    wordsProblem(b, DOCS),
+    /These are not art's words as it was approved/,
+  );
+  assert.equal(wordsProblem(b, "the art is drawn and reviewed"), null);
+  // The criteria changed since the page opened: the area read now has other words, so the old ones are refused.
+  const changed = formArea(
+    "docs",
+    "the docs are merged, reviewed and translated",
+  );
+  assert.match(wordsProblem(changed, DOCS), /These are not docs's exact words/);
+  // No area chosen: nothing to check against.
+  assert.equal(wordsProblem(null, "anything"), null);
 });

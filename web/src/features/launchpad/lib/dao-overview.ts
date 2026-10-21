@@ -10,7 +10,7 @@
  */
 
 import type { Decision, DecisionsSnapshot } from "./decisions.ts";
-import { idLabel, nextStep, type ClaimView } from "./work.ts";
+import { canAcceptClaim, idLabel, nextStep, type ClaimView } from "./work.ts";
 import type { WorkSnapshot } from "./work-read.ts";
 
 /** The tab that holds the answer. */
@@ -162,10 +162,12 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
       });
     }
     for (const claim of mandate.claims) {
+      // The milestone panel's claims are submitted by the team member who filed them, as the Work tab says too.
       const step = nextStep(
         claim,
         work?.chainTime ?? 0,
         mandate.challengeWindow,
+        mandate.isMilestonePanel,
       );
       if (
         step.kind === "payout" &&
@@ -221,23 +223,46 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
             p.id.toLowerCase() === claim.project?.toLowerCase() &&
             sameAddress(p.record.manager, wallet),
         );
-      // A manager's turn: work submitted in their budget that no work area has accepted yet.
-      if (
-        step.kind === "bind" &&
-        step.who === "manager" &&
-        !mandate.isMilestonePanel &&
-        mandate.projects.some((p) => sameAddress(p.record.manager, wallet))
-      ) {
+      // A manager's turn: work submitted in their budget that one of their work areas can accept now (the same check the
+      // budget makes: their area, open and not past its end, the same words, money left for a payment it asks for).
+      const accepting =
+        step.kind === "bind" && step.who === "manager"
+          ? mandate.projects.filter((project) =>
+              canAcceptClaim({
+                wallet,
+                mandate,
+                project,
+                claim,
+                now: work?.chainTime ?? 0,
+              }),
+            )
+          : [];
+      if (accepting.length > 0) {
         items.push({
           key: `bind-${claim.id}`,
           kind: "bind",
-          text: `${who(claim.record.contributor)} submitted “${label}”. Accept it for review in one of your work areas.`,
+          text:
+            accepting.length === 1
+              ? `${who(claim.record.contributor)} submitted “${label}”. Accept it for review in ${idLabel(accepting[0].id)}.`
+              : `${who(claim.record.contributor)} submitted “${label}”. Accept it for review in one of your work areas.`,
           action: "Accept for review",
           tab: "work",
           claim: target,
-          why: "You manage a work area in this budget.",
+          why: "You manage the work area its words are for.",
           ifIgnored:
             "The reviewers cannot judge it until a manager accepts it.",
+        });
+      }
+      // A milestone claim of theirs, filed but not yet submitted to the milestone panel: their step, on Milestones.
+      if (step.kind === "bind" && step.who === "contributor" && mine) {
+        items.push({
+          key: `bind-${claim.id}`,
+          kind: "bind",
+          text: `Your milestone claim “${label}” is filed but not yet submitted to the milestone panel.`,
+          action: "Finish submitting",
+          tab: "milestones",
+          why: "You filed it; only you can submit it.",
+          ifIgnored: "The panel cannot judge it until it is submitted.",
         });
       }
       // Enough approvals: anyone may finish the review, so it is offered to the two people who are waiting on it.
@@ -256,8 +281,9 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
             "Its challenge window starts only once the review is finished.",
         });
       }
-      // The person's own work, waiting on someone else: said, so they know where it stands and who acts next.
-      if (mine) {
+      // The person's own work, waiting on someone else: said, so they know where it stands and who acts next. A milestone
+      // claim's later steps (unlocking the milestone's Shares) are on the Milestones tab, so only its review is said.
+      if (mine && (!mandate.isMilestonePanel || step.kind === "review")) {
         const waiting = waitingText(
           claim,
           step,

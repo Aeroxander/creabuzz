@@ -27,6 +27,8 @@ export function useEvidencePackets(launch: Launch): {
   error: boolean;
   /** The launch has more updates than were read: a claim with no evidence here may have it in an older update. */
   incomplete: boolean;
+  /** The separate read has not answered yet. */
+  loading: boolean;
   refetch: () => void;
 } {
   const coordinate = launchCoordinate(launch.record.author, launch.record.id);
@@ -92,6 +94,7 @@ export function useEvidencePackets(launch: Launch): {
     packets,
     areaWords: allWords,
     error: query.isError,
+    loading: query.isLoading,
     incomplete: query.data ? !query.data.complete : false,
     refetch: () => void query.refetch(),
   };

@@ -368,6 +368,7 @@ export function LaunchDetailPage({
         note={
           contributor ? (
             <ContributorStatusNote
+              chainId={launch.record.chainId ?? null}
               dao={workDao}
               shares={
                 isEvmAddress(launch.record.token ?? "")

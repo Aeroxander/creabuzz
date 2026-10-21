@@ -83,6 +83,9 @@ async function launchedSince(block: bigint) {
   ).filter((log) => log.topics[0] === LAUNCHED);
 }
 
+/** Set by a test: the stub server refuses work areas' words until it is cleared. */
+let refuseWorkAreaWords = false;
+
 /** Everything the pages publish, served back to every page that asks for its kind (the launch record, the evidence). */
 const published: { id: string; kind: number }[] = [];
 
@@ -102,7 +105,20 @@ async function open(
       }
       if (!Array.isArray(parsed)) return;
       if (parsed[0] === "EVENT") {
-        const event = parsed[1] as { id: string; kind: number };
+        const event = parsed[1] as {
+          id: string;
+          kind: number;
+          content?: string;
+        };
+        // While a test says so, the server refuses a work area's words (a failed publish to recover from).
+        if (
+          refuseWorkAreaWords &&
+          event.kind === 47003 &&
+          (event.content ?? "").includes('"workArea"')
+        ) {
+          ws.send(JSON.stringify(["OK", event.id, false, "blocked: not now"]));
+          return;
+        }
         if (!published.some((known) => known.id === event.id))
           published.push(event);
         ws.send(JSON.stringify(["OK", event.id, true, ""]));
@@ -292,7 +308,12 @@ test("a contributor project is started from the page, work is claimed the same d
   );
   // The header says what it is and, read from the Shares themselves, that they cannot be traded yet.
   await expect(founder.getByTestId("contributor-note")).toHaveText(
-    "No token sale at setup. New Shares come only from awards for reviewed work.",
+    "No token sale at setup: it was made by the contributor kit.",
+    { timeout: 30_000 },
+  );
+  await expect(founder.getByTestId("contributor-issuance")).toHaveText(
+    "New Shares come only from awards for reviewed work.",
+    { timeout: 30_000 },
   );
   await expect(founder.getByTestId("contributor-transfers")).toHaveText(
     "Shares are locked: they cannot be sent between wallets.",
@@ -325,7 +346,7 @@ test("a contributor project is started from the page, work is claimed the same d
     .getByTestId("dao-attention")
     .filter({ hasText: "submitted “write-docs”" });
   await expect(accept).toContainText(
-    "Accept it for review in one of your work areas.",
+    "Accept it for review in docs.",
     { timeout: 30_000 },
   );
   await accept.getByRole("button", { name: "Accept for review" }).click();
@@ -404,7 +425,7 @@ test("a contributor project is started from the page, work is claimed the same d
   // words, shown because it hashes to what the claim committed to.
   const story = person.getByTestId("contribution-award-story");
   await expect(story).toContainText("Awarded ", { timeout: 30_000 });
-  await expect(story).toContainText("approved by 2 of 2 reviewers");
+  await expect(story).toContainText("2 approvals, 2 needed");
   await expect(story.getByTestId("tx-link")).toBeVisible();
   await expect(story.getByTestId("contribution-award-evidence")).toContainText(
     "In their words: “https://example.com/pr/1”",
@@ -629,10 +650,33 @@ test("several people earn in one contributor project: two first projects, and a 
   await expect(founder.getByTestId("project-name")).toHaveValue("guide-es");
   await expect(founder.getByTestId("project-shares")).toHaveValue("11");
   await expect(founder.getByTestId("project-check")).toHaveValue(SPANISH);
+  // The server refuses the words the first time: the vote is open, but its words are not yet published.
+  refuseWorkAreaWords = true;
   await founder.getByTestId("decision-draft-submit").click();
   await expect(founder.getByTestId("decision-opened")).toBeVisible({
     timeout: 60_000,
   });
+  await expect(founder.getByTestId("pending-words-item")).toContainText(
+    "The words for the work area “guide-es” are not published yet",
+    { timeout: 30_000 },
+  );
+  // The job outlives the page: after a reload it is still there to retry, and retrying does not open the vote again.
+  await refresh(founder, "Decisions");
+  await expect(founder.getByTestId("pending-words-item")).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  await expect(founder.getByTestId("decision-card").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  const decisionsBefore = await founder.getByTestId("decision-card").count();
+  refuseWorkAreaWords = false;
+  await founder.getByTestId("pending-words-publish").click();
+  await expect(founder.getByTestId("pending-words")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect(founder.getByTestId("decision-card")).toHaveCount(
+    decisionsBefore,
+  );
   // The chain keeps only the hash of the work area's words: they are published beside the vote, as an update.
   await expect
     .poll(() =>

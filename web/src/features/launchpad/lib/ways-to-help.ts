@@ -62,6 +62,8 @@ export interface OpenWorkArea {
   /** Money it may still reserve (the budget's currency units), when it holds money. */
   moneyLeft: bigint;
   expiresAt: number;
+  /** The hash its submissions must state (lower-case), read from the chain. */
+  checkHash: string;
   /** What finished work looks like, verified against the chain; null when nobody published words that match. */
   words: string | null;
 }
@@ -116,6 +118,7 @@ export function openWorkAreas(
             sharesLeft: sharesLeft > 0n ? sharesLeft : 0n,
             moneyLeft: moneyLeft > 0n ? moneyLeft : 0n,
             expiresAt: record.expiresAt,
+            checkHash: record.checkHash.toLowerCase(),
             words: wordsFor(
               {
                 mandate: mandate.address,
@@ -129,6 +132,42 @@ export function openWorkAreas(
       }),
     )
     .sort((a, b) => a.expiresAt - b.expiresAt || a.name.localeCompare(b.name));
+}
+
+/** A work area as the submit form knows it. */
+type FormArea = Pick<
+  OpenWorkArea,
+  "mandate" | "id" | "name" | "words" | "checkHash"
+>;
+
+const draftKey = (area: Pick<OpenWorkArea, "mandate" | "id">) =>
+  `${area.mandate.toLowerCase()}:${area.id.toLowerCase()}`;
+
+/**
+ * The words the submit form shows after moving from one work area to another. What was typed for the area being left
+ * is kept for it in `drafts`; the new area shows its own published words, else what was typed for it before, else
+ * nothing. One area's words never carry over into another's. Moving to "not sure yet" (`to` null) keeps the text.
+ */
+export function wordsAfterMove(
+  drafts: Map<string, string>,
+  from: Pick<OpenWorkArea, "mandate" | "id"> | null,
+  typed: string,
+  to: FormArea | null,
+): string {
+  if (from) drafts.set(draftKey(from), typed);
+  if (!to) return typed;
+  return to.words ?? drafts.get(draftKey(to)) ?? "";
+}
+
+/** Why these words cannot be submitted for the chosen work area, read from its hash now; or null when they can. */
+export function wordsProblem(
+  area: FormArea | null,
+  words: string,
+): string | null {
+  if (!area || hashText(words) === area.checkHash.toLowerCase()) return null;
+  return area.words
+    ? `These are not ${area.name}'s exact words, so its manager could not accept your work. Use the words shown under Ways to help.`
+    : `These are not ${area.name}'s words as it was approved, so its manager could not accept your work. Ask its manager for the exact words.`;
 }
 
 /** The update that publishes a work area's words beside the vote that approves it. */

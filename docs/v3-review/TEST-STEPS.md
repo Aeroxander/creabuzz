@@ -1094,3 +1094,31 @@ By hand, after the award in 4ai or 4ak:
    earned as work is accepted.
 5. **Profile points.** Hover the points on a profile: they are feedback on posts, not votes in any project, not Shares.
 
+## 4aq. Fixes from the outside review of D88 to D90 (D91, 2026-10-22)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test        # pending-words, ways-to-help, dao-overview, contribution-story, contributor-status tests
+scripts/web-contributor-e2e.sh   # includes a refused word publish, a reload and the retry
+```
+
+By hand, with the accounts of 4ak:
+
+1. **Words kept after a failed publish.** Stop the server (or go offline) right after opening an "Approve a work area"
+   vote: Decisions says the words are not published yet, with **Publish the words**. Reload: the note is still there.
+   Start the server and press it: the note goes, the words are published, and the vote list has no second copy.
+2. **The submit form.** On Work, pick a work area with published words, then one whose words are not published: the
+   words box empties. Type wrong words for an area and submit: it says these are not that area's words, and nothing
+   goes to the wallet. Submit under a name with wrong words while nobody has accepted it, then submit again under the
+   same name with the right words: the words are corrected (one more wallet prompt), not refused.
+3. **Accept for review.** As a manager of only one work area, a submission whose words are another area's is not
+   offered under Needs you, and its claim has no **Accept for review** button; nor in a closed budget or an ended area.
+4. **A milestone claim** you filed but did not submit shows under Needs you as "Finish submitting", opening Milestones.
+5. **Stories.** With the server stopped, the Contributions tab says "Couldn't read its evidence just now" with Try
+   again, never "No evidence was published". Approvals read "2 approvals, 2 needed".
+6. **The header.** On a contributor project: "No token sale at setup: it was made by the contributor kit.", "New Shares
+   come only from awards for reviewed work." and "Shares are locked…". On a build without the contributor kit set, it
+   says only what the record says, and with the network unreachable, that the Shares' rules could not be read.
+7. **Copy.** Joining a role and starting from the board say approval does not guarantee Shares; the form's button says
+   **Submit work**; on a phone, tapping a profile's points explains them.
+

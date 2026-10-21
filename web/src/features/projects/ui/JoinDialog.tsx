@@ -103,8 +103,9 @@ export function JoinDialog({
             {project.manifest.name} declares this role at up to {role.pct}%. If
             the founder approves, this board records the role as yours: a record
             they can take back, not Shares. If the project starts as a
-            contributor project, the role becomes a work area, and you earn its
-            Shares as your work is accepted.
+            contributor project, the role becomes a work area: you submit work,
+            reviewers check it, and Shareholders then vote separately on each
+            award. Approval does not guarantee Shares.
           </AlertDialogDescription>
         </AlertDialogHeader>
 

@@ -8,10 +8,9 @@ import type { DecisionDraft } from "../lib/dao-actions";
 import { formatUnits } from "../lib/dao-actions";
 import type { DecisionsSnapshot } from "../lib/decisions";
 import { encodeOpenProposalWithAction } from "../lib/vote-tx";
-import { workAreaUpdateContent } from "../lib/ways-to-help";
 import type { Launch } from "../models";
-import { usePublishMirror } from "../use-launches";
-import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
+import { usePendingWords } from "../use-pending-words";
+import { PendingWordsNote } from "./PendingWordsNote";
 import {
   AwardForm,
   CollectFeesForm,
@@ -162,23 +161,18 @@ export function DecisionComposer({
         ? `You need at least ${formatUnits(snapshot.proposalThreshold, 18)} Shares to put a decision to a vote. You hold ${formatUnits(capacity, 18)}.`
         : null;
 
-  const publish = usePublishMirror();
-  // A work area's words the chain does not keep, published beside its vote; held here while publishing them failed.
-  const [unpublished, setUnpublished] = useState<
-    DecisionDraft["workArea"] | null
-  >(null);
+  // A work area's words the chain does not keep, published beside its vote. The job is kept in this browser before the
+  // form lets go of it and dropped once the server accepts the words, so a failed publish survives a reload and is
+  // retried on its own (`PendingWordsNote`). Held here only when the browser would not keep it.
+  const pending = usePendingWords(launch);
+  const [unkept, setUnkept] = useState<DecisionDraft["workArea"] | null>(null);
   const publishWords = async (area: NonNullable<DecisionDraft["workArea"]>) => {
-    if (!launch) return;
+    const kept = pending.keep(area);
     try {
-      await publish.mutateAsync({
-        kind: KIND_LAUNCH_UPDATE,
-        author: launch.record.author,
-        launchId: launch.record.id,
-        content: workAreaUpdateContent(area),
-      });
-      setUnpublished(null);
+      await pending.send(area);
+      setUnkept(null);
     } catch {
-      setUnpublished(area);
+      if (!kept) setUnkept(area);
     }
   };
   const submit = async (draft: DecisionDraft) => {
@@ -199,7 +193,7 @@ export function DecisionComposer({
       setFormKey((k) => k + 1);
       setOpen(false);
       // The chain keeps only the hash of a work area's words: publish the words, so people can see what to deliver.
-      if (draft.workArea) await publishWords(draft.workArea);
+      if (draft.workArea && launch) await publishWords(draft.workArea);
     }
   };
 
@@ -228,17 +222,23 @@ export function DecisionComposer({
           Opened “{done}” for voting. It is in the list below.
         </p>
       ) : null}
-      {unpublished ? (
+      {launch ? (
+        <div className="mt-2">
+          <PendingWordsNote launch={launch} />
+        </div>
+      ) : null}
+      {unkept ? (
         <p
           className="mt-2 flex flex-wrap items-center gap-2 text-sm text-amber-700 dark:text-amber-300"
           data-testid="decision-words-unpublished"
           role="alert"
         >
           The vote is open, but the work area&apos;s words could not be
-          published, so people cannot read what finished work looks like.
+          published, and this browser could not keep them to try again later.
+          Publish them before you leave this page:
           <Button
-            disabled={publish.isPending}
-            onClick={() => void publishWords(unpublished)}
+            disabled={pending.busy}
+            onClick={() => void publishWords(unkept)}
             size="sm"
             type="button"
             variant="outline"

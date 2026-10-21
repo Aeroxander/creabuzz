@@ -16,8 +16,20 @@
 import { type EvidencePacket, evidenceFor } from "./evidence.ts";
 import type { ClaimView } from "./work.ts";
 
-/** How far the contributor's evidence could be checked. */
-export type EvidenceState = "verified" | "mismatch" | "missing" | "unknown";
+/**
+ * How far the contributor's evidence could be checked: `verified` (it is the evidence the claim committed to),
+ * `mismatch` (what was published is not), `missing` (the whole history was read and nothing was published), `not-found`
+ * (nothing in the part of the history that was read), `unreadable` (the read failed), `reading` (it has not answered
+ * yet), `unknown` (the claim itself was not read). Only `missing` says nothing was published.
+ */
+export type EvidenceState =
+  | "verified"
+  | "mismatch"
+  | "missing"
+  | "not-found"
+  | "unreadable"
+  | "reading"
+  | "unknown";
 
 export interface AwardStory {
   /** When the award ran (unix seconds); null when its block could not be read. */
@@ -44,6 +56,8 @@ export function storyFor(
       Pick<ClaimView, "id" | "record" | "approvals" | "quorum">
     >;
     packets: readonly EvidencePacket[];
+    /** How the evidence read went: absence counts as "nothing published" only when it was complete and answered. */
+    read?: { loading: boolean; error: boolean; incomplete: boolean };
   },
 ): AwardStory {
   const at =
@@ -54,11 +68,26 @@ export function storyFor(
   if (!claim)
     return { at, review: null, evidence: null, evidenceState: "unknown" };
   const standing = evidenceFor(claim, sources.packets, award.budget);
+  const read = sources.read ?? {
+    loading: false,
+    error: false,
+    incomplete: false,
+  };
+  const evidenceState: EvidenceState =
+    standing.kind !== "missing"
+      ? standing.kind
+      : read.loading
+        ? "reading"
+        : read.error
+          ? "unreadable"
+          : read.incomplete
+            ? "not-found"
+            : "missing";
   return {
     at,
     review: { approvals: claim.approvals, quorum: claim.quorum },
     evidence: standing.kind === "verified" ? standing.packet.evidence : null,
-    evidenceState: standing.kind,
+    evidenceState,
   };
 }
 

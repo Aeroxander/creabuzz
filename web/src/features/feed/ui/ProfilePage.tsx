@@ -205,6 +205,8 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
   const following = useFollowing(pubkey);
   const followers = useFollowerCount(pubkey);
   const score = useAuthorScore(pubkey);
+  // What points are, shown on a tap as well as on hover: a phone has no hover.
+  const [pointsHelp, setPointsHelp] = useState(false);
   const isSelf = me === pubkey;
   const hue = bannerHue(pubkey);
 
@@ -319,15 +321,20 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
         ) : null}
         <PaymentWalletCard isSelf={isSelf} key={pubkey} pubkey={pubkey} />
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
-          <span
+          <button
+            aria-controls="profile-points-help"
+            aria-expanded={pointsHelp}
+            className="text-left"
+            onClick={() => setPointsHelp((open) => !open)}
             title={`Up votes minus down votes on their newest ${SCORE_POSTS} posts and ${SCORE_POSTS} board posts: feedback on posts, not votes in any project and not Shares`}
+            type="button"
           >
             <Count
               label={score.data === 1 || score.data === -1 ? "point" : "points"}
               testId="profile-score"
               value={score.data === undefined ? "–" : String(score.data)}
             />
-          </span>
+          </button>
           <Count
             label="Following"
             testId="profile-following-count"
@@ -343,6 +350,17 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
             }
           />
         </div>
+        {pointsHelp ? (
+          <p
+            className="mt-1 text-xs text-black/60 dark:text-white/60"
+            data-testid="profile-points-help"
+            id="profile-points-help"
+          >
+            Points are up votes minus down votes on their newest {SCORE_POSTS}{" "}
+            posts and {SCORE_POSTS} board posts: feedback on posts, not votes in
+            any project and not Shares.
+          </p>
+        ) : null}
       </div>
 
       <div className="sticky top-12 z-10 border-b border-border/60 bg-background/45 backdrop-blur-xl max-md:top-[5.75rem]">

@@ -176,10 +176,11 @@ function TeamMap({
         ) : null}
       </ul>
       <p className="mt-3 text-2xs text-black/50 dark:text-white/50">
-        <span className="font-medium">recorded</span> = an ownership grant the
-        founder published · <span className="font-medium">declared</span> = the
-        founder's stake asserted by the pitch. Both stay revocable until the DAO
-        adopts the map.
+        <span className="font-medium">recorded</span> = a role the founder
+        approved on this board · <span className="font-medium">declared</span> =
+        a stake the pitch names. Both are records the founder can change, not
+        Shares: if the project starts as a contributor project, each role
+        becomes a work area whose Shares are awarded by vote for reviewed work.
       </p>
     </Card>
   );
@@ -291,11 +292,11 @@ function LaunchpadBridge({
             : "Start it as a contributor project"}
         </h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          Each role becomes a work area in its first work budget, worth its
-          stake. The person in it earns those Shares as their work is accepted
-          by reviewers, so nothing is handed out up front and nobody can sell a
-          stake they have not earned. The founder starts with their declared
-          stake.
+          Each role becomes a work area in its first work budget, able to award
+          up to its stake. The person in it submits work, reviewers check it,
+          and Shareholders then vote separately on each award: approval does not
+          guarantee Shares, and nothing is handed out up front. The founder
+          starts with their declared stake.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
@@ -326,8 +327,8 @@ function LaunchpadBridge({
           </Link>
         ) : (
           <p className="text-2xs text-black/50 dark:text-white/50">
-            The founder starts it. Then each role's person earns their stake as
-            their work is accepted.
+            The founder starts it. Then each role&apos;s person can earn Shares
+            for reviewed work, each award by a separate vote.
           </p>
         )}
       </div>

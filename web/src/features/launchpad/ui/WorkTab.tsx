@@ -2,6 +2,7 @@ import { type ChallengeIntent, challengeFor } from "../lib/challenge";
 import type { SponsorIntent } from "../lib/sponsor";
 import { useContributions } from "../use-contributions";
 import { SuggestedWork } from "./SuggestedWork";
+import { PendingWordsNote } from "./PendingWordsNote";
 import { WaysToHelp } from "./WaysToHelp";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -17,6 +18,7 @@ import {
 } from "../lib/evidence";
 import {
   bondShortfall,
+  canAcceptClaim,
   claimStatusLabel,
   encodeAttest,
   encodeBind,
@@ -176,11 +178,10 @@ export function WorkTab({
       <Card className="p-4">
         <h2 className="text-base font-bold">Work</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          The DAO can set aside money, Shares or both for work. People file a
-          claim for what they did. A manager accepts it into a project and the
-          required reviewers approve it. Review is then finalized; after the
-          challenge window, the contributor claims payment. Shares require a
-          separate DAO decision.
+          Find work under Ways to help, submit what you finished, and follow its
+          review here. Reviewer approval makes work eligible for an award;
+          Shareholders still vote on whether to award Shares. Work that asks for
+          money waits out a challenge window before it can be paid.
         </p>
         <AllowanceNote
           dao={dao}
@@ -209,12 +210,15 @@ export function WorkTab({
         ) : null}
       </Card>
 
+      <PendingWordsNote launch={launch} />
+
       {work.data ? (
         <WaysToHelp
           areas={areas}
           labelOf={labelOf}
           money={areaMoney}
           onPick={(area) => setPicked({ area, at: Date.now() })}
+          truncated={work.data.truncated}
         />
       ) : null}
 
@@ -691,29 +695,40 @@ function MandateCard({
                   </p>
                 ) : null}
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {step.kind === "bind" && myProjects.length > 0
-                    ? myProjects.map((project) => (
-                        <Button
-                          data-testid="work-bind"
-                          disabled={busy !== null || gate !== null}
-                          key={project.id}
-                          onClick={() =>
-                            void onSend(
-                              `bind-${claim.id}`,
-                              mandate.address,
-                              bindData(
-                                project.id,
-                                claim.id,
-                                claim.record.contributor,
-                              ),
-                            )
-                          }
-                          size="sm"
-                          type="button"
-                        >
-                          Accept for review in {idLabel(project.id)}
-                        </Button>
-                      ))
+                  {step.kind === "bind" && step.who === "manager"
+                    ? myProjects
+                        .filter((project) =>
+                          // Only where the budget would take it: the same check `fundMilestone` makes.
+                          canAcceptClaim({
+                            wallet,
+                            mandate,
+                            project,
+                            claim,
+                            now: chainTime,
+                          }),
+                        )
+                        .map((project) => (
+                          <Button
+                            data-testid="work-bind"
+                            disabled={busy !== null || gate !== null}
+                            key={project.id}
+                            onClick={() =>
+                              void onSend(
+                                `bind-${claim.id}`,
+                                mandate.address,
+                                bindData(
+                                  project.id,
+                                  claim.id,
+                                  claim.record.contributor,
+                                ),
+                              )
+                            }
+                            size="sm"
+                            type="button"
+                          >
+                            Accept for review in {idLabel(project.id)}
+                          </Button>
+                        ))
                     : null}
                   {reviewerTurn ? (
                     <>

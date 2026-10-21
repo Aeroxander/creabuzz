@@ -44,10 +44,12 @@ function AwardStoryLine({
   story,
   award,
   chainId,
+  onRetryEvidence,
 }: {
   story: AwardStory;
   award: ContributionAward;
   chainId: number;
+  onRetryEvidence: () => void;
 }) {
   const link = story.evidence ? firstLink(story.evidence) : null;
   return (
@@ -64,7 +66,7 @@ function AwardStoryLine({
           </>
         ) : null}
         {story.review
-          ? ` · approved by ${story.review.approvals} of ${story.review.quorum} reviewers`
+          ? ` · ${story.review.approvals} ${story.review.approvals === 1 ? "approval" : "approvals"}, ${story.review.quorum} needed`
           : ""}
       </span>
       {story.evidence ? (
@@ -91,6 +93,17 @@ function AwardStoryLine({
         </span>
       ) : story.evidenceState === "missing" ? (
         <span>No evidence was published for it.</span>
+      ) : story.evidenceState === "not-found" ? (
+        <span>Its evidence was not found in the history this page read.</span>
+      ) : story.evidenceState === "unreadable" ? (
+        <span>
+          Couldn&apos;t read its evidence just now.{" "}
+          <button className="underline" onClick={onRetryEvidence} type="button">
+            Try again
+          </button>
+        </span>
+      ) : story.evidenceState === "reading" ? (
+        <span>Reading its evidence…</span>
       ) : (
         <span>Its evidence is on the Work tab with the claim.</span>
       )}
@@ -102,10 +115,12 @@ function AwardLine({
   award,
   launch,
   story,
+  onRetryEvidence,
 }: {
   award: ContributionAward;
   launch: Launch;
   story: AwardStory | null;
+  onRetryEvidence: () => void;
 }) {
   return (
     <li className="text-sm" data-testid="contribution-award">
@@ -148,6 +163,7 @@ function AwardLine({
         <AwardStoryLine
           award={award}
           chainId={Number(launch.record.chainId ?? "") || 0}
+          onRetryEvidence={onRetryEvidence}
           story={story}
         />
       ) : null}
@@ -187,7 +203,7 @@ function useAwardStories(
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
   });
-  return useMemo(() => {
+  const stories = useMemo(() => {
     const claims = new Map(
       (work.data?.mandates ?? []).flatMap((m) =>
         m.claims.map((c) => [storyKey(m.address, c.id), c] as const),
@@ -201,11 +217,25 @@ function useAwardStories(
           times: times.data ?? new Map(),
           claims,
           packets: evidence.packets,
+          read: {
+            loading: evidence.loading,
+            error: evidence.error,
+            incomplete: evidence.incomplete,
+          },
         }),
       );
     }
     return stories;
-  }, [awards, work.data, times.data, evidence.packets]);
+  }, [
+    awards,
+    work.data,
+    times.data,
+    evidence.packets,
+    evidence.loading,
+    evidence.error,
+    evidence.incomplete,
+  ]);
+  return { stories, retryEvidence: evidence.refetch };
 }
 
 export function ContributionsTab({
@@ -228,7 +258,7 @@ export function ContributionsTab({
     () => snapshot?.people.flatMap((p) => p.awards) ?? [],
     [snapshot],
   );
-  const stories = useAwardStories(dao, launch, allAwards);
+  const { stories, retryEvidence } = useAwardStories(dao, launch, allAwards);
 
   if (contributions.isLoading) {
     return (
@@ -416,6 +446,7 @@ export function ContributionsTab({
                       award={award}
                       key={`${award.budget}:${award.claimId}`}
                       launch={launch}
+                      onRetryEvidence={retryEvidence}
                       story={
                         stories.get(storyKey(award.budget, award.claimId)) ??
                         null

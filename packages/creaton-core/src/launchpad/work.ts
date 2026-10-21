@@ -481,6 +481,33 @@ export type NextStep =
   | { kind: "award"; who: "dao"; text: string }
   | { kind: "none"; who: "nobody"; text: string };
 
+/**
+ * Whether `wallet` can accept `claim` for review in `project` right now: what `TreasuryMandate.fundMilestone` checks
+ * (the project's manager, an open budget and project neither past its end, an open claim no project holds yet, the
+ * same words, and money left for a payment it asks for), so the pages offer the step only where it can succeed.
+ */
+export function canAcceptClaim(input: {
+  wallet: string | null;
+  mandate: { closed: boolean; expiresAt: number };
+  project: { record: ProjectRecord };
+  claim: Pick<ClaimView, "record" | "project">;
+  now: number;
+}): boolean {
+  const { wallet, mandate, project, claim, now } = input;
+  const { record } = project;
+  return (
+    wallet !== null &&
+    record.manager.toLowerCase() === wallet.toLowerCase() &&
+    !mandate.closed &&
+    now < mandate.expiresAt &&
+    now < record.expiresAt &&
+    claim.project === null &&
+    claim.record.status === "Open" &&
+    claim.record.checkHash.toLowerCase() === record.checkHash.toLowerCase() &&
+    claim.record.amount <= record.budget - record.reserved
+  );
+}
+
 /** One sentence per state, in words a person can act on. */
 export function nextStep(
   claim: ClaimView,

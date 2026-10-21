@@ -9,6 +9,7 @@ import {
   rankEntries,
   summaryLine,
 } from "./dao-overview.ts";
+import { idWord } from "./work.ts";
 
 const ME = "0x" + "11".repeat(20);
 const OTHER = "0x" + "22".repeat(20);
@@ -38,7 +39,7 @@ const claim = (id, status, extra = {}) => ({
     expiresAt: 0,
     releasedAt: 0,
   },
-  project: "docs",
+  project: idWord("docs"),
   approvals: 0,
   objections: 0,
   quorum: 2,
@@ -52,6 +53,7 @@ const mandate = (claims, extra = {}) => ({
   isMilestonePanel: false,
   projects: [],
   closed: false,
+  expiresAt: 50_000,
   challengeWindow: 100,
   walletIsReviewer: false,
   walletAttested: [],
@@ -159,13 +161,27 @@ test("a payout is waiting for the contributor, once the challenge window is over
   assert.deepEqual(at(9_100), ["payout"]);
 });
 
-const managed = (manager) => ({
-  id: "docs",
-  record: { manager },
+const DOCS_CHECK = `0x${"d0".repeat(32)}`;
+const ART_CHECK = `0x${"a7".repeat(32)}`;
+const managed = (manager, record = {}) => ({
+  id: idWord("docs"),
+  record: {
+    manager,
+    budget: 0n,
+    reserved: 0n,
+    expiresAt: 40_000,
+    checkHash: DOCS_CHECK,
+    shareBudget: 40n,
+    sharesAwarded: 0n,
+    ...record,
+  },
 });
 
 test("a manager is asked to accept submitted work in one of their work areas, and the button opens that claim", () => {
-  const submitted = claim("c1", "Open", { project: null });
+  const submitted = claim("c1", "Open", {
+    project: null,
+    record: { ...claim("x", "Open").record, checkHash: DOCS_CHECK },
+  });
   const items = (manager) =>
     attentionItems({
       decisions: undefined,
@@ -179,9 +195,73 @@ test("a manager is asked to accept submitted work in one of their work areas, an
   const [item] = items(ME);
   assert.equal(item.kind, "bind");
   assert.equal(item.action, "Accept for review");
+  assert.match(item.text, /Accept it for review in docs\.$/);
   assert.deepEqual(item.claim, { id: "c1", mandate: BUDGET });
   // Someone who manages no work area there is not asked.
   assert.deepEqual(items(OTHER), []);
+});
+
+test("accept for review is offered only where the budget would take it: same words, open, not ended, money left", () => {
+  const submitted = (record = {}) =>
+    claim("c1", "Open", {
+      project: null,
+      record: {
+        ...claim("x", "Open").record,
+        checkHash: DOCS_CHECK,
+        ...record,
+      },
+    });
+  const kinds = (claimView, mandateExtra = {}, area = {}) =>
+    attentionItems({
+      decisions: undefined,
+      work: {
+        chainTime: 10_000,
+        mandates: [
+          mandate([claimView], {
+            projects: [managed(ME, area)],
+            ...mandateExtra,
+          }),
+        ],
+      },
+      wallet: ME,
+      titleOf,
+    }).map((i) => i.kind);
+  assert.deepEqual(kinds(submitted()), ["bind"]);
+  // An art submission, when they manage only docs: the words differ, so docs cannot take it.
+  assert.deepEqual(kinds(submitted({ checkHash: ART_CHECK })), []);
+  // A closed budget, an ended budget, or an ended work area.
+  assert.deepEqual(kinds(submitted(), { closed: true }), []);
+  assert.deepEqual(kinds(submitted(), { expiresAt: 10_000 }), []);
+  assert.deepEqual(kinds(submitted(), {}, { expiresAt: 9_000 }), []);
+  // A payment larger than what the work area has left to reserve.
+  assert.deepEqual(
+    kinds(submitted({ amount: 60n }), {}, { budget: 100n, reserved: 50n }),
+    [],
+  );
+  assert.deepEqual(
+    kinds(submitted({ amount: 50n }), {}, { budget: 100n, reserved: 50n }),
+    ["bind"],
+  );
+});
+
+test("a milestone claim not yet submitted is its filer's step, on the Milestones tab, not someone else's", () => {
+  const filed = claim("m1", "Open", {
+    project: null,
+    record: { ...claim("x", "Open").record, contributor: ME },
+  });
+  const items = attentionItems({
+    decisions: undefined,
+    work: {
+      chainTime: 10_000,
+      mandates: [mandate([filed], { isMilestonePanel: true })],
+    },
+    wallet: ME,
+    titleOf,
+  });
+  assert.deepEqual(
+    items.map((i) => [i.kind, i.actor ?? "you", i.tab, i.action]),
+    [["bind", "you", "milestones", "Finish submitting"]],
+  );
 });
 
 test("enough approvals: the contributor and the work area's manager are told anyone can finish the review", () => {

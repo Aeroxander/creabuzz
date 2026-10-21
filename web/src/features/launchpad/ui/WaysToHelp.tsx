@@ -23,8 +23,11 @@ export function WaysToHelp({
   labelOf,
   money,
   onPick,
+  truncated = false,
 }: {
   areas: readonly OpenWorkArea[];
+  /** The work read was cut short: "none open" is then only what was read. */
+  truncated?: boolean;
   labelOf: (address: string) => string;
   /** How a work area's money left is written, in its budget's currency. */
   money: (area: OpenWorkArea) => string;
@@ -44,8 +47,9 @@ export function WaysToHelp({
           className="mt-3 text-sm text-muted-foreground"
           data-testid="ways-to-help-none"
         >
-          No work area is open for submissions right now. Suggest work below, or
-          ask the team on the Discussion tab what would help.
+          {truncated
+            ? "No work area open for submissions was found in the work this page could read (the newest is read). Suggest work below, or ask the team on the Discussion tab what would help."
+            : "No work area is open for submissions right now. Suggest work below, or ask the team on the Discussion tab what would help."}
         </p>
       ) : (
         <ul className="mt-3 flex flex-col gap-2">

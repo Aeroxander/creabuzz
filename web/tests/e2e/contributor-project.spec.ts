@@ -303,14 +303,16 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
   await expect(page.getByTestId("launch-hero")).not.toContainText(
     "Raise closed",
   );
+  // This build names no contributor kit and the stub chain cannot answer for the Shares: the header says only what
+  // the record says and that the rules could not be read, never "only from awards" or "locked".
   await expect(page.getByTestId("contributor-note")).toHaveText(
-    "No token sale at setup. New Shares come only from awards for reviewed work.",
+    "Its record says it started without a token sale; this page could not confirm that with the contributor kit.",
   );
-  // Whether the Shares can be traded is read from them; this stub chain cannot answer, so it says so, never "locked".
-  await expect(page.getByTestId("contributor-transfers")).toHaveText(
-    "Whether its Shares can be traded could not be read just now.",
+  await expect(page.getByTestId("contributor-issuance")).toContainText(
+    "Its Shares' rules could not be read just now",
     { timeout: 20_000 },
   );
+  await expect(page.getByTestId("contributor-transfers")).toHaveCount(0);
   // Contributions come right after the overview for a project whose Shares only come from work.
   const tabs = page.getByRole("tab");
   await expect(tabs.nth(0)).toHaveText("Overview");
