@@ -70,6 +70,17 @@ pub enum ModerationNotice {
         /// (indefinite) — rendered as "until <RFC3339>" in the timeout body.
         timeout_until: Option<chrono::DateTime<chrono::Utc>>,
     },
+    /// To a person muted on one board: which board, until when, and why.
+    BoardMute {
+        /// The audit action row.
+        action_id: Uuid,
+        /// The board's name.
+        board: String,
+        /// The moderator's public reason (also in the board's public log).
+        public_reason: String,
+        /// When the mute lifts.
+        until: chrono::DateTime<chrono::Utc>,
+    },
 }
 
 /// Deliver a moderation notice to `recipient` in this community's
@@ -226,6 +237,7 @@ impl ModerationNotice {
             ModerationNotice::ReportResolved { report_id, .. } => *report_id,
             ModerationNotice::ContentActioned { action_id, .. } => *action_id,
             ModerationNotice::Restriction { action_id, .. } => *action_id,
+            ModerationNotice::BoardMute { action_id, .. } => *action_id,
         }
     }
 
@@ -277,6 +289,23 @@ impl ModerationNotice {
                     _ => String::new(),
                 };
                 format!("{action} {community}{terms}.\n\nReason: {public_reason}")
+            }
+            ModerationNotice::BoardMute {
+                board,
+                public_reason,
+                until,
+                ..
+            } => {
+                let reason = if public_reason.is_empty() {
+                    "none given"
+                } else {
+                    public_reason.as_str()
+                };
+                format!(
+                    "You have been muted on the board {board} in {community} until {}. \
+                     You can still read it, and post everywhere else.\n\nReason: {reason}",
+                    until.to_rfc3339()
+                )
             }
         }
     }

@@ -11,7 +11,10 @@ CREATE TABLE moderation_actions (
                         'delete_message', 'kick', 'ban', 'unban',
                         'timeout', 'untimeout', 'dismiss_report', 'escalate',
                         'resolve:delete', 'resolve:kick', 'resolve:ban',
-                        'resolve:timeout')),
+                        'resolve:timeout',
+                        'board_lock', 'board_unlock', 'board_pin', 'board_unpin',
+                        'board_mute', 'board_unmute', 'board_rules',
+                        'board_appoint', 'board_dismiss')),
     target_pubkey   BYTEA CHECK (target_pubkey IS NULL OR length(target_pubkey) = 32),
     target_event_id BYTEA CHECK (target_event_id IS NULL OR length(target_event_id) = 32),
     channel_id      UUID,
@@ -24,9 +27,10 @@ CREATE TABLE moderation_actions (
     -- NIP-OA: which principal matched a ban ('self' | 'owner'); audit-only,
     -- the client never learns which.
     matched_principal TEXT CHECK (matched_principal IS NULL OR matched_principal IN ('self', 'owner')),
-    -- Deployment authority type for HTTP-initiated actions.
+    -- Deployment authority type for HTTP-initiated actions; 'board_moderator'
+    -- for an action taken on the authority of a board moderator appointment.
     actor_authority   TEXT NOT NULL DEFAULT 'community'
-                      CHECK (actor_authority IN ('community', 'relay_operator', 'relay_moderator')),
+                      CHECK (actor_authority IN ('community', 'relay_operator', 'relay_moderator', 'board_moderator')),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (community_id, id),
     FOREIGN KEY (community_id, channel_id) REFERENCES channels (community_id, id)
@@ -37,3 +41,6 @@ CREATE INDEX idx_moderation_actions_created
 CREATE INDEX idx_moderation_actions_target_pubkey
     ON moderation_actions (community_id, target_pubkey)
     WHERE target_pubkey IS NOT NULL;
+-- The board moderator rate limit counts one actor's recent actions.
+CREATE INDEX idx_moderation_actions_actor_recent
+    ON moderation_actions (community_id, actor_pubkey, created_at DESC);

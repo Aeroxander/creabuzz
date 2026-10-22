@@ -1,6 +1,7 @@
 /**
  * The board's list of posts: sorting, the filter for proposals, the composer, and the "show" button that keeps the
- * list still while it is read.
+ * list still while it is read. Above them, the board's rules; pinned threads come first, and locked ones say so. The
+ * Moderation button opens who moderates the board and its public moderation log.
  *
  * Proposal posts are not ranked by votes. With "Proposals" chosen the order is fixed (decisions that can still change
  * first, then latest activity) and the sort buttons are hidden, because a vote on a board is not the DAO's vote.
@@ -24,10 +25,18 @@ import {
   filterPosts,
   SORT_LABELS,
 } from "../lib/board-model";
+import {
+  type BoardState,
+  type LogEntry,
+  pinnedFirst,
+} from "../lib/board-moderation";
 import { type PostStatus, priorityMap } from "../lib/post-status";
 import { type BoardRecords, POST_LIMIT } from "../use-board";
 import type { BoardActions } from "../use-board-actions";
+import type { BoardModerationActions } from "../use-board-moderation";
+import { BoardModerationPanel } from "./BoardModerationPanel";
 import { BoardPeople } from "./BoardPeople";
+import { BoardRules } from "./BoardRules";
 import { JoinBoardButton } from "./JoinBoardButton";
 import { PostComposer } from "./PostComposer";
 import { PostRow } from "./PostRow";
@@ -38,6 +47,18 @@ function needAccount(action: string): boolean {
   if (existingUserPubkey() !== null) return true;
   toast.error(needAccountTo(action));
   return false;
+}
+
+/** The board's moderation, as the list shows and offers it. */
+export interface BoardListModeration {
+  state: BoardState;
+  log: LogEntry[];
+  me: string | null;
+  canModerate: boolean;
+  canManage: boolean;
+  /** When the reader's mute on this board ends (unix seconds), if they are muted. */
+  mutedUntil: number | null;
+  actions: BoardModerationActions;
 }
 
 function sameOrder(a: readonly string[] | null, b: readonly string[]): boolean {
@@ -55,8 +76,10 @@ export function BoardList({
   suggestPeopleFrom,
   statuses,
   statusesReady,
+  moderation,
 }: {
   channel: Channel;
+  moderation: BoardListModeration;
   board: Board;
   records: BoardRecords;
   actions: BoardActions;
@@ -73,6 +96,7 @@ export function BoardList({
   const [filter, setFilter] = useState<BoardFilter>("all");
   const [composing, setComposing] = useState(false);
   const [showingPeople, setShowingPeople] = useState(false);
+  const [showingModeration, setShowingModeration] = useState(false);
   const [frozen, setFrozen] = useState<string[] | null>(null);
 
   const proposalsView = filter === "proposals";
@@ -207,6 +231,15 @@ export function BoardList({
               People
             </Button>
           ) : null}
+          <Button
+            aria-expanded={showingModeration}
+            data-testid="board-moderation-toggle"
+            onClick={() => setShowingModeration((v) => !v)}
+            size="sm"
+            variant="outline"
+          >
+            Moderation
+          </Button>
           {channel.visibility === "public" ? (
             <JoinBoardButton boardId={channel.id} boardName={channel.name} />
           ) : null}
@@ -229,6 +262,17 @@ export function BoardList({
         />
       ) : null}
 
+      {showingModeration ? (
+        <BoardModerationPanel
+          actions={moderation.actions}
+          canManage={moderation.canManage}
+          canModerate={moderation.canModerate}
+          log={moderation.log}
+          me={moderation.me}
+          state={moderation.state}
+        />
+      ) : null}
+
       {records.liveStatus && records.liveStatus !== "open" ? (
         <p
           className="px-4 pt-2 text-xs text-amber-700 dark:text-amber-300"
@@ -242,6 +286,22 @@ export function BoardList({
       ) : null}
 
       <div className="flex flex-col gap-3 p-4">
+        <BoardRules
+          canEdit={moderation.canManage}
+          onSave={moderation.actions.setRules}
+          rules={moderation.state.rules}
+        />
+        {moderation.mutedUntil !== null ? (
+          <p
+            className="rounded-xl border bg-secondary/30 p-3 text-sm"
+            data-testid="board-muted-note"
+            role="status"
+          >
+            You are muted on this board until{" "}
+            {new Date(moderation.mutedUntil * 1000).toLocaleString()}. You can
+            still read it, and post everywhere else.
+          </p>
+        ) : null}
         {composing ? (
           <PostComposer
             onCancel={() => setComposing(false)}
@@ -284,16 +344,20 @@ export function BoardList({
           </p>
         ) : (
           <ul className="flex flex-col gap-3" data-testid="board-posts">
-            {arrangement.rows.map((post) => (
-              <PostRow
-                key={post.id}
-                onOpen={() => onOpenPost(post.id)}
-                onVote={(direction) => vote(post, direction)}
-                post={post}
-                profile={profiles?.[post.author]}
-                status={statuses.get(post.id)}
-              />
-            ))}
+            {pinnedFirst(arrangement.rows, moderation.state.pinned).map(
+              (post) => (
+                <PostRow
+                  key={post.id}
+                  locked={moderation.state.locked.has(post.id)}
+                  pinned={moderation.state.pinned.includes(post.id)}
+                  onOpen={() => onOpenPost(post.id)}
+                  onVote={(direction) => vote(post, direction)}
+                  post={post}
+                  profile={profiles?.[post.author]}
+                  status={statuses.get(post.id)}
+                />
+              ),
+            )}
           </ul>
         )}
         {records.truncated ? (

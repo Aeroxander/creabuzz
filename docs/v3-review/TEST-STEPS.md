@@ -1133,3 +1133,35 @@ By hand: the top bar says **Communities**. The queue's limits are covered by the
 one browser is not something to do by hand); its everyday path (a refused publish, reload, Publish the words) is 4aq
 step 1.
 
+
+## 4as. Board moderation: lock, pin, rules, board-only mutes, appointed moderators, the public log (D94, 2026-10-22)
+
+```bash
+. ./bin/activate-hermit
+cargo test -p buzz-relay --lib moderation_authz          # the standing order and guard rails, table-tested
+cargo test -p buzz-relay --lib board_moderation_tests -- --ignored   # needs Postgres and Redis: the real ingest path
+pnpm --dir web test                                      # board-moderation.test.mjs
+pnpm --dir web exec playwright test --project=smoke tests/e2e/board-moderation.spec.ts
+```
+
+By hand, on a local server with three accounts (an owner who started the board, a moderator, a member), each in its
+own browser:
+
+1. **Rules.** As the owner, open the board: "This board has no rules yet. Write them". Write two lines, save. The member
+   sees **Board rules** above the posts and cannot change them.
+2. **Pin and lock.** The member posts twice. The owner opens the first post and presses **Pin**, then **Lock**: in the
+   list it is first, marked Pinned and Locked. The member opens it: "This thread is locked by the board's moderators.
+   No new replies", and no reply box. The owner can still reply. **Unlock**: the member can reply again.
+3. **Appoint.** The owner opens **Moderation**, pastes the moderator's npub, **Appoint for 90 days**. The moderator, on
+   reload, sees Lock, Pin and **Mute here** on the member's post, but not on the owner's (equal or higher standing), and
+   no appoint form.
+4. **Mute.** The moderator mutes the member for 14 days with a reason: the dialog says it needs a second moderator, and
+   the log says "muted … until (7 days). A longer mute waits for a second moderator". The member sees "You are muted on
+   this board until …" and cannot post, reply or vote there, but can post on another board. The owner lifts the mute
+   from the log (**Lift mute**); the member can post again.
+5. **Remove.** The moderator removes the member's reply: the thread says "1 reply was removed by moderators", and the
+   log names who and when. The moderator gets no Remove on the owner's post.
+6. **Step down.** The moderator presses **Step down** in Moderation; on reload they have no moderation controls.
+
+Working looks like: every action appears once in the Moderation log in plain words, the server refuses what the app
+does not offer (with a sentence, not a code), and a reload shows the same state.

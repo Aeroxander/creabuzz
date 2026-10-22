@@ -1,7 +1,7 @@
 /**
- * What a reader can do about someone else's post or reply: report it to the moderators, and, for the board's owners and
- * admins, remove it; for the community's owners and admins, ban the person. Nobody is offered these on their own words
- * (they have Delete). Each says what it does before it is done.
+ * What a reader can do about someone else's post or reply: report it to the moderators; for the board's moderators,
+ * owners and admins, remove it or mute its author on this board; for the community's owners and admins, ban the person.
+ * Nobody is offered these on their own words (they have Delete). Each says what it does before it is done.
  */
 
 import { useState } from "react";
@@ -9,6 +9,9 @@ import { useState } from "react";
 import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
+
+import type { MuteChoice } from "../lib/board-moderation";
+import { MuteDialog } from "./MuteDialog";
 
 export function BoardModeration({
   kind,
@@ -19,6 +22,7 @@ export function BoardModeration({
   canRemove,
   needAccount,
   onRemove,
+  mute,
   disabled = false,
 }: {
   kind: "post" | "reply";
@@ -26,8 +30,13 @@ export function BoardModeration({
   author: string;
   name: string;
   me: string | null;
-  /** The reader owns or administers this board. */
+  /** The reader may remove this: they own or administer the board, or moderate it and outrank the author. */
   canRemove: boolean;
+  /** Offered when the reader may mute the author on this board. */
+  mute?: {
+    choices: MuteChoice[];
+    onMute: (days: number, reason: string) => Promise<unknown>;
+  } | null;
   /** Tells a signed-out reader to make an account; true when they have one. */
   needAccount: (action: string) => boolean;
   onRemove: (id: string) => void;
@@ -35,6 +44,7 @@ export function BoardModeration({
 }) {
   const [reporting, setReporting] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [muting, setMuting] = useState(false);
   const ban = useBanAuthor(author, name);
   if (me !== null && me === author) return null;
   const noun = kind === "post" ? "post" : "reply";
@@ -61,6 +71,17 @@ export function BoardModeration({
           type="button"
         >
           Remove
+        </button>
+      ) : null}
+      {mute ? (
+        <button
+          className={button}
+          data-testid={`board-mute-${kind}`}
+          disabled={disabled}
+          onClick={() => setMuting(true)}
+          type="button"
+        >
+          Mute here
         </button>
       ) : null}
       {ban.allowed ? (
@@ -92,6 +113,14 @@ export function BoardModeration({
         open={removing}
         title={`Remove this ${noun}?`}
       />
+      {muting && mute ? (
+        <MuteDialog
+          choices={mute.choices}
+          name={name}
+          onClose={() => setMuting(false)}
+          onMute={mute.onMute}
+        />
+      ) : null}
       {ban.dialog}
     </>
   );

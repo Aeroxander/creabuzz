@@ -891,20 +891,29 @@ pub async fn validate_admin_event(
             let members = state.db.get_members(tenant.community(), channel_id).await?;
             if actor_is_channel_owner_or_admin(&members, &actor_bytes) {
                 Ok(())
-            } else {
-                // Allow the owning human of the agent that authored the target message,
+            } else if state
+                .db
+                .is_agent_owner(tenant.community(), &author, &actor_bytes)
+                .await?
+            {
+                // The owning human of the agent that authored the target message,
                 // even when the human is not a channel member.
-                if state
-                    .db
-                    .is_agent_owner(tenant.community(), &author, &actor_bytes)
-                    .await?
-                {
-                    Ok(())
-                } else {
-                    Err(anyhow::anyhow!(
-                        "must be event author or channel owner/admin"
-                    ))
-                }
+                Ok(())
+            } else if channel.channel_type == "forum" {
+                // On a board, also the community's owners and admins and the
+                // board's moderators, within the board guard rails (D93).
+                super::board_moderation::authorize_board_removal(
+                    tenant,
+                    state,
+                    channel_id,
+                    &actor_bytes,
+                    &author,
+                )
+                .await
+            } else {
+                Err(anyhow::anyhow!(
+                    "must be event author or channel owner/admin"
+                ))
             }
         }
         9008 => {
@@ -1980,6 +1989,7 @@ async fn handle_delete_event_side_effect(
     // Verify the target event belongs to the same channel as the h-tag.
     // Without this check, an admin of channel A could delete events in channel B
     // by sending h=A, e=<event-in-B>.
+    let mut removes_someone_else = false;
     if let Some(target_event) = state
         .db
         .get_event_by_id_including_deleted_for_event_write(tenant.community(), &target_id)
@@ -1997,7 +2007,19 @@ async fn handle_delete_event_side_effect(
             }
             _ => {} // Same channel — OK
         }
+        let author =
+            effective_message_author(&target_event.event, &state.relay_keypair.public_key());
+        removes_someone_else = author != event.pubkey.to_bytes().as_slice();
     }
+    // Removing someone else's words from a board is a moderation action: it goes
+    // in the board's public log, written with the removal itself (D93).
+    let board_removal = removes_someone_else
+        && state
+            .db
+            .get_channel_for_event_write(tenant.community(), channel_id)
+            .await
+            .map(|channel| channel.channel_type == "forum")
+            .map_err(|e| anyhow::anyhow!("get_channel failed: {e}"))?;
 
     // Look up thread metadata so we can pass parent/root IDs to the
     // transactional delete function.
@@ -2010,17 +2032,32 @@ async fn handle_delete_event_side_effect(
     let parent_id = meta.as_ref().and_then(|m| m.parent_event_id.clone());
     let root_id = meta.as_ref().and_then(|m| m.root_event_id.clone());
 
-    // Atomically soft-delete the event and decrement thread counters in one transaction.
-    let deleted = state
-        .db
-        .soft_delete_event_and_update_thread(
-            tenant.community(),
+    // Atomically soft-delete the event and decrement thread counters in one
+    // transaction (with the board log entry, for a removal on a board).
+    let deleted = if board_removal {
+        super::board_moderation::remove_board_post(
+            tenant,
+            state,
+            channel_id,
+            event,
             &target_id,
             parent_id.as_deref(),
             root_id.as_deref(),
         )
         .await
-        .map_err(|e| anyhow::anyhow!("soft_delete_event failed: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("board removal failed: {e}"))?
+    } else {
+        state
+            .db
+            .soft_delete_event_and_update_thread(
+                tenant.community(),
+                &target_id,
+                parent_id.as_deref(),
+                root_id.as_deref(),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("soft_delete_event failed: {e}"))?
+    };
 
     if !deleted {
         warn!(target_event = %hex::encode(&target_id), "event already deleted or not found");

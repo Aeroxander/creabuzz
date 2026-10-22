@@ -1,5 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { ExternalLink, MessageSquare, ScrollText } from "lucide-react";
+import {
+  ExternalLink,
+  Lock,
+  MessageSquare,
+  Pin,
+  ScrollText,
+} from "lucide-react";
 
 import {
   type Profile,
@@ -28,10 +34,16 @@ export function PostRow({
   profile,
   status,
   board,
+  pinned = false,
+  locked = false,
   onOpen,
   onVote,
 }: {
   post: BoardPost;
+  /** Pinned to the top of its board by a moderator. */
+  pinned?: boolean;
+  /** Locked by a moderator: no new replies. */
+  locked?: boolean;
   profile: Profile | undefined;
   /** Where the decision this post is about stands, when it could be read and checked. */
   status?: PostStatus;
@@ -102,6 +114,24 @@ export function PostRow({
                 </>
               ) : null}
               <span>{shortRelativeTime(post.createdAt)}</span>
+              {pinned ? (
+                <span
+                  className="inline-flex items-center gap-0.5 font-medium text-foreground/80"
+                  data-testid="board-post-pinned"
+                >
+                  <span aria-hidden>·</span>
+                  <Pin aria-hidden className="h-3 w-3" /> Pinned
+                </span>
+              ) : null}
+              {locked ? (
+                <span
+                  className="inline-flex items-center gap-0.5"
+                  data-testid="board-post-locked"
+                >
+                  <span aria-hidden>·</span>
+                  <Lock aria-hidden className="h-3 w-3" /> Locked
+                </span>
+              ) : null}
             </div>
           </div>
         </div>

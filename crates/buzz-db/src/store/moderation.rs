@@ -117,6 +117,21 @@ pub const MODERATION_ACTION_CHECK_VOCAB: &[&str] = &[
     "resolve:timeout",
 ];
 
+/// Audit action values board moderation adds to the `moderation_actions.action`
+/// CHECK in migration 0064 (a post removal is audited as `delete_message`,
+/// already in the 0006 vocabulary). Keep in lockstep with that migration.
+pub const BOARD_MODERATION_ACTION_VOCAB: &[&str] = &[
+    "board_lock",
+    "board_unlock",
+    "board_pin",
+    "board_unpin",
+    "board_mute",
+    "board_unmute",
+    "board_rules",
+    "board_appoint",
+    "board_dismiss",
+];
+
 /// Insert parameters for a moderation audit row.
 #[derive(Debug, Clone)]
 pub struct NewAction<'a> {

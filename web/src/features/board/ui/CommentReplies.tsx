@@ -6,6 +6,7 @@ import {
 } from "@/features/profiles/use-profiles";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import type { BoardComment } from "../lib/board-model";
+import type { MuteChoice } from "../lib/board-moderation";
 import type { CommentThread } from "../lib/comment-threads";
 import { AuthorChip } from "./AuthorChip";
 import { BoardMarkdown } from "./BoardMarkdown";
@@ -22,8 +23,14 @@ interface ReplyContext {
   onVote: (comment: BoardComment, direction: "up" | "down") => void;
   onReply: (id: string) => void;
   onDelete: (id: string) => void;
-  /** The reader owns or administers this board: they may remove other people's replies. */
-  canModerate: boolean;
+  /** Whether the reader may remove this author's reply. */
+  canRemove: (author: string) => boolean;
+  /** Whether the reader may mute this author on the board, and how long. */
+  canMute: (author: string) => boolean;
+  muteChoices: MuteChoice[];
+  onMute: (author: string, days: number, reason: string) => Promise<unknown>;
+  /** False in a locked thread for readers below moderator: no Reply buttons. */
+  canReply: boolean;
   needAccount: (action: string) => boolean;
   onRemove: (id: string) => void;
 }
@@ -48,7 +55,11 @@ export function CommentReplies({
     onVote,
     onReply,
     onDelete,
-    canModerate,
+    canRemove,
+    canMute,
+    muteChoices,
+    onMute,
+    canReply,
     needAccount,
     onRemove,
   } = context;
@@ -88,16 +99,18 @@ export function CommentReplies({
                   <BoardMarkdown text={comment.body} />
                 </div>
                 <div className="mt-1 flex gap-3 text-xs text-muted-foreground">
-                  <button
-                    aria-label={`Reply to ${name}`}
-                    className="underline disabled:opacity-50"
-                    data-testid="board-reply-to"
-                    disabled={busy}
-                    onClick={() => onReply(comment.id)}
-                    type="button"
-                  >
-                    Reply
-                  </button>
+                  {canReply ? (
+                    <button
+                      aria-label={`Reply to ${name}`}
+                      className="underline disabled:opacity-50"
+                      data-testid="board-reply-to"
+                      disabled={busy}
+                      onClick={() => onReply(comment.id)}
+                      type="button"
+                    >
+                      Reply
+                    </button>
+                  ) : null}
                   {me !== null && me === comment.author ? (
                     <button
                       className="underline disabled:opacity-50"
@@ -111,11 +124,20 @@ export function CommentReplies({
                   ) : null}
                   <BoardModeration
                     author={comment.author}
-                    canRemove={canModerate}
+                    canRemove={canRemove(comment.author)}
                     disabled={busy}
                     id={comment.id}
                     kind="reply"
                     me={me}
+                    mute={
+                      canMute(comment.author)
+                        ? {
+                            choices: muteChoices,
+                            onMute: (days, reason) =>
+                              onMute(comment.author, days, reason),
+                          }
+                        : null
+                    }
                     name={name}
                     needAccount={needAccount}
                     onRemove={onRemove}

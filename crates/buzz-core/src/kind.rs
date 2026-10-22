@@ -460,6 +460,49 @@ pub const fn is_moderation_command_kind(kind: u32) -> bool {
     )
 }
 
+// Board moderation commands (signed by someone with standing on the board: its
+// moderators, owners and admins, or the community's owners and admins). Like
+// 9040–9044 they are validated and run directly, never stored as events; each
+// accepted command writes a `moderation_actions` audit row and a relay-signed
+// public log entry (kind 45004) in the same transaction. All carry the board's
+// `h` tag and an optional public `reason` tag.
+/// Board moderation: lock a thread (`e` = the post), so no new replies.
+pub const KIND_BOARD_LOCK_THREAD: u32 = 9045;
+/// Board moderation: unlock a thread (`e` = the post).
+pub const KIND_BOARD_UNLOCK_THREAD: u32 = 9046;
+/// Board moderation: pin a thread to the top of the board (`e` = the post).
+pub const KIND_BOARD_PIN_THREAD: u32 = 9047;
+/// Board moderation: unpin a thread (`e` = the post).
+pub const KIND_BOARD_UNPIN_THREAD: u32 = 9048;
+/// Board moderation: mute a pubkey on this board only, until an `expiration`
+/// tag timestamp (`p` tag target).
+pub const KIND_BOARD_MUTE: u32 = 9049;
+/// Board moderation: lift a board mute early (`p` tag target).
+pub const KIND_BOARD_UNMUTE: u32 = 9050;
+/// Board moderation: set the board's rules (content; empty clears them).
+pub const KIND_BOARD_SET_RULES: u32 = 9051;
+/// Board moderation: appoint a board moderator (`p` tag) until an optional
+/// `expiration` tag (the end of their term).
+pub const KIND_BOARD_APPOINT_MODERATOR: u32 = 9052;
+/// Board moderation: end a board moderator's appointment (`p` tag).
+pub const KIND_BOARD_REMOVE_MODERATOR: u32 = 9053;
+
+/// Returns `true` for board moderation command kinds (9045–9053).
+pub const fn is_board_moderation_command_kind(kind: u32) -> bool {
+    matches!(
+        kind,
+        KIND_BOARD_LOCK_THREAD
+            | KIND_BOARD_UNLOCK_THREAD
+            | KIND_BOARD_PIN_THREAD
+            | KIND_BOARD_UNPIN_THREAD
+            | KIND_BOARD_MUTE
+            | KIND_BOARD_UNMUTE
+            | KIND_BOARD_SET_RULES
+            | KIND_BOARD_APPOINT_MODERATOR
+            | KIND_BOARD_REMOVE_MODERATOR
+    )
+}
+
 // NIP-43 relay membership admin commands
 /// NIP-43: Add a pubkey to the relay member list.
 pub const RELAY_ADMIN_ADD_MEMBER: u32 = 9030;
@@ -517,6 +560,12 @@ pub const KIND_THREAD_SUMMARY: u32 = 39005;
 pub const KIND_WINDOW_BOUNDS: u32 = 39006;
 /// NIP-CW thread-mode query-time bounds, bound to a normalized newest-first thread request.
 pub const KIND_THREAD_WINDOW_BOUNDS: u32 = 39007;
+
+/// Board moderation state (relay-signed, addressable, `d` and `h` = board channel id):
+/// the board's rules (content), pinned and locked threads, and its appointed
+/// moderators with their term ends. Rebuilt from the database in the same
+/// transaction as every board moderation command.
+pub const KIND_BOARD_STATE: u32 = 39008;
 
 /// Workflow definition (parameterized replaceable, d=workflow_uuid).
 pub const KIND_WORKFLOW_DEF: u32 = 30620;
@@ -766,6 +815,12 @@ pub const KIND_ARTIFACT_REMOVAL: u32 = 45011;
 pub const KIND_FORUM_VOTE: u32 = 45002;
 /// A comment reply on a forum post.
 pub const KIND_FORUM_COMMENT: u32 = 45003;
+/// A board's public moderation log entry (relay-signed, `h` = the board): what
+/// was done (`action`), by whom (`actor`, with their standing in `role`), to
+/// which post (`e`, and `thread` for a removed reply) or person (`p`), until
+/// when (`until`, never `expiration`, so the entry outlives the mute), and the
+/// public reason (content).
+pub const KIND_BOARD_MODERATION_LOG: u32 = 45004;
 
 // Workflow engine (46000–46999)
 /// Trigger workflow execution.
@@ -1087,6 +1142,15 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_MODERATION_TIMEOUT,
     KIND_MODERATION_UNTIMEOUT,
     KIND_MODERATION_RESOLVE_REPORT,
+    KIND_BOARD_LOCK_THREAD,
+    KIND_BOARD_UNLOCK_THREAD,
+    KIND_BOARD_PIN_THREAD,
+    KIND_BOARD_UNPIN_THREAD,
+    KIND_BOARD_MUTE,
+    KIND_BOARD_UNMUTE,
+    KIND_BOARD_SET_RULES,
+    KIND_BOARD_APPOINT_MODERATOR,
+    KIND_BOARD_REMOVE_MODERATOR,
     RELAY_ADMIN_ADD_MEMBER,
     RELAY_ADMIN_REMOVE_MEMBER,
     RELAY_ADMIN_CHANGE_ROLE,
@@ -1108,6 +1172,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_THREAD_SUMMARY,
     KIND_WINDOW_BOUNDS,
     KIND_THREAD_WINDOW_BOUNDS,
+    KIND_BOARD_STATE,
     KIND_PRESENCE_UPDATE,
     KIND_TYPING_INDICATOR,
     KIND_WIKI_SYNC,
@@ -1149,6 +1214,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_ARTIFACT_REMOVAL,
     KIND_FORUM_VOTE,
     KIND_FORUM_COMMENT,
+    KIND_BOARD_MODERATION_LOG,
     KIND_WORKFLOW_TRIGGER,
     KIND_APPROVAL_GRANT,
     KIND_APPROVAL_DENY,
@@ -1323,6 +1389,8 @@ pub const fn is_relay_only_kind(kind: u32) -> bool {
             | KIND_THREAD_SUMMARY
             | KIND_WINDOW_BOUNDS
             | KIND_THREAD_WINDOW_BOUNDS
+            | KIND_BOARD_STATE
+            | KIND_BOARD_MODERATION_LOG
     )
 }
 
@@ -1403,6 +1471,14 @@ const _: () = assert!(!is_ephemeral(KIND_REPORT));
 const _: () = assert!(is_moderation_command_kind(KIND_MODERATION_BAN));
 const _: () = assert!(is_moderation_command_kind(KIND_MODERATION_RESOLVE_REPORT));
 const _: () = assert!(!is_moderation_command_kind(KIND_REPORT));
+const _: () = assert!(is_board_moderation_command_kind(KIND_BOARD_LOCK_THREAD));
+const _: () = assert!(is_board_moderation_command_kind(
+    KIND_BOARD_REMOVE_MODERATOR
+));
+const _: () = assert!(!is_moderation_command_kind(KIND_BOARD_MUTE));
+const _: () = assert!(!is_board_moderation_command_kind(KIND_MODERATION_TIMEOUT));
+const _: () = assert!(is_parameterized_replaceable(KIND_BOARD_STATE));
+const _: () = assert!(!is_replaceable(KIND_BOARD_MODERATION_LOG));
 
 #[cfg(test)]
 mod tests {
@@ -1482,6 +1558,13 @@ mod tests {
     fn nip43_membership_snapshot_is_relay_only() {
         assert!(is_relay_only_kind(KIND_NIP43_MEMBERSHIP_LIST));
         assert!(!is_relay_only_kind(KIND_NIP43_LEAVE_REQUEST));
+    }
+
+    #[test]
+    fn board_state_and_log_are_relay_only() {
+        assert!(is_relay_only_kind(KIND_BOARD_STATE));
+        assert!(is_relay_only_kind(KIND_BOARD_MODERATION_LOG));
+        assert!(!is_relay_only_kind(KIND_BOARD_LOCK_THREAD));
     }
 
     #[test]

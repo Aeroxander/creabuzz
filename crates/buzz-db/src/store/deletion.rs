@@ -81,6 +81,9 @@ pub const EXPECTED_SCOPED_TABLES: &[&str] = &[
     "artifact_heads",
     "artifact_revisions",
     "audit_log",
+    "board_people",
+    "board_settings",
+    "board_thread_state",
     "budget_approvals",
     "budget_consumption",
     "channel_members",
@@ -123,6 +126,11 @@ pub const PURGE_SCOPED_TABLES: &[&str] = &[
     "budget_approvals",
     "budget_consumption",
     "evm_identities",
+    // Board moderation tables (migration 0064) reference only `communities` and
+    // `channels`; nothing references them, so they go before `channels`.
+    "board_people",
+    "board_settings",
+    "board_thread_state",
     "workflow_approvals",
     "scheduled_workflow_fires",
     "workflow_runs",

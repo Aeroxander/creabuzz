@@ -527,6 +527,9 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // Scope only proves the transport can submit message writes; the
         // command handler owns role/capability authorization.
         k if buzz_core::kind::is_moderation_command_kind(k) => Ok(Scope::MessagesWrite),
+        // Board moderation commands: the same transport proof; the handler owns
+        // the board-standing authorization.
+        k if buzz_core::kind::is_board_moderation_command_kind(k) => Ok(Scope::MessagesWrite),
         // NIP-51 standard lists and NIP-65 relay list — user-owned global state,
         // same ownership shape as kind:3 (contacts) and kind:0 (profile).
         KIND_MUTE_LIST
@@ -948,9 +951,11 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
 
 /// Kinds that require an `h` tag for channel scoping.
 pub(crate) fn requires_h_channel_scope(kind: u32) -> bool {
-    matches!(
-        kind,
-        KIND_STREAM_MESSAGE
+    // Board moderation commands act on the board their `h` tag names.
+    buzz_core::kind::is_board_moderation_command_kind(kind)
+        || matches!(
+            kind,
+            KIND_STREAM_MESSAGE
             | KIND_STREAM_MESSAGE_V2
             | KIND_STREAM_MESSAGE_EDIT
             | KIND_STREAM_REMINDER
@@ -972,7 +977,7 @@ pub(crate) fn requires_h_channel_scope(kind: u32) -> bool {
             | KIND_HUDDLE_PARTICIPANT_LEFT
             | KIND_HUDDLE_ENDED
             | KIND_HUDDLE_GUIDELINES
-    )
+        )
 }
 
 /// Check channel membership: member OR open-visibility channel.
@@ -4426,6 +4431,27 @@ async fn ingest_event_inner(
         Some(ch_id) => load_channel_for_write(tenant, state, ch_id).await?,
         None => None,
     };
+    // Board moderation commands (9045–9053) are direct board mutations, never
+    // stored or fanned out themselves. They run here, once the board is
+    // resolved under the tenant and the token's channel access is checked, and
+    // before the membership gate: an open board's moderator need not have
+    // joined it, and the handler decides standing itself. The community
+    // ban/timeout gate above has already applied.
+    if buzz_core::kind::is_board_moderation_command_kind(kind_u32) {
+        let message = super::board_moderation::handle_board_command(
+            tenant,
+            state,
+            &event,
+            channel_row.as_ref(),
+        )
+        .await
+        .map_err(IngestError::Rejected)?;
+        return Ok(IngestResult {
+            event_id: event_id_hex,
+            accepted: true,
+            message,
+        });
+    }
     // E1 phase-2 (§4.8 phase-2 addendum): resolve the fan-out visibility once,
     // here, through the same `channel_visibility_cached` gate fan-out uses
     // (fence 2: cached `private` wins over the prefetched row; a `private`
@@ -5079,6 +5105,15 @@ async fn ingest_event_inner(
 
     if NEW_ACCOUNT_LIMITED_KINDS.contains(&kind_u32) {
         check_new_account_limit(state, tenant, &event).await?;
+    }
+
+    // Board mutes and locked threads (D93): a muted person cannot post, reply,
+    // vote or react on that board, and only moderators and above reply in a
+    // locked thread.
+    if let Some(channel) = &channel_row {
+        super::board_moderation::enforce_board_write(tenant, state, kind_u32, &event, channel)
+            .await
+            .map_err(IngestError::Rejected)?;
     }
 
     if kind_u32 == KIND_NIP29_JOIN_REQUEST {

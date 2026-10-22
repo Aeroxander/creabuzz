@@ -26,6 +26,7 @@ import { toast } from "sonner";
 
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import type { Channel } from "@/features/channels/use-channels";
+import { useCommunityPeople } from "@/features/communities/use-access";
 import { usePeople } from "@/features/social/use-people";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
@@ -37,13 +38,27 @@ import {
   keepRemovals,
   unfamiliarRemovers,
 } from "../lib/board-model";
+import {
+  activeModerators,
+  activeMutes,
+  mayActAgainst,
+  muteChoices,
+  muteEnd,
+  removedReplies,
+  STANDING,
+  standingOf,
+} from "../lib/board-moderation";
 import { canAddMembers } from "../lib/members";
 import type { PostStatus } from "../lib/post-status";
 import { useBoardRecords } from "../use-board";
 import { useBoardActions } from "../use-board-actions";
 import { useChannelRemovers, useRosterSync } from "../use-board-members";
-import { BoardList } from "./BoardList";
-import { PostThread } from "./PostThread";
+import {
+  useBoardModerationActions,
+  useBoardModerationRecords,
+} from "../use-board-moderation";
+import { BoardList, type BoardListModeration } from "./BoardList";
+import { PostThread, type ThreadModeration } from "./PostThread";
 
 /** What a thread about something outside the board adds to it. */
 export interface PostExtras {
@@ -104,10 +119,54 @@ export function BoardView({
   const records = useBoardRecords(channel.id);
   const me = existingUserPubkey();
   const actions = useBoardActions(channel.id, records.add);
-  // Who may remove other people's words here: the board's owners and admins, and the community's. A removal sent by anyone
-  // else is not applied.
-  const { members, removers } = useChannelRemovers(channel.id);
-  const canModerate = canAddMembers(members, me);
+  // Who may remove other people's words here: the board's owners and admins, the community's, and the board's appointed
+  // moderators. A removal sent by anyone else is not applied.
+  const { members, removers: rosterRemovers } = useChannelRemovers(channel.id);
+  const ownsOrAdministers = canAddMembers(members, me);
+  const moderationRecords = useBoardModerationRecords(channel.id);
+  const moderationActions = useBoardModerationActions(channel.id);
+  const community = useCommunityPeople();
+  const moderators = useMemo(
+    () =>
+      activeModerators(moderationRecords.state, Math.floor(Date.now() / 1000)),
+    [moderationRecords.state],
+  );
+  const removers = useMemo(
+    () => new Set([...rosterRemovers, ...moderators]),
+    [rosterRemovers, moderators],
+  );
+  const roles = useMemo(
+    () => ({
+      communityRoles: new Map(
+        community.people.map((person) => [person.pubkey, person.role]),
+      ),
+      boardRoles: new Map(
+        members.map((member) => [member.pubkey, member.role]),
+      ),
+      moderators,
+    }),
+    [community.people, members, moderators],
+  );
+  const myStanding = standingOf(me, roles);
+  const canModerate = myStanding >= STANDING.moderator;
+  const canManage = myStanding >= STANDING.boardAdmin;
+  const mutedUntil =
+    me === null
+      ? null
+      : (activeMutes(moderationRecords.log, Math.floor(Date.now() / 1000)).get(
+          me,
+        )?.until ?? null);
+  const outranks = (author: string) =>
+    mayActAgainst(myStanding, standingOf(author, roles));
+  const listModeration: BoardListModeration = {
+    state: moderationRecords.state,
+    log: moderationRecords.log,
+    me,
+    canModerate,
+    canManage,
+    mutedUntil,
+    actions: moderationActions,
+  };
   // What moderators have removed stays removed for this reader even if that moderator's role is later withdrawn.
   const removedSoFar = useRef<{ board: string; ids: ReadonlySet<string> }>({
     board: channel.id,
@@ -195,11 +254,37 @@ export function BoardView({
         </div>
       );
     }
+    const threadModeration: ThreadModeration = {
+      locked: moderationRecords.state.locked.has(open.id),
+      pinned: moderationRecords.state.pinned.includes(open.id),
+      canModerate,
+      // The server lets a board's owners and admins remove anything on it, and others with standing only what someone of
+      // lower standing wrote.
+      canRemove: (author) =>
+        ownsOrAdministers || (canModerate && outranks(author)),
+      canMute: (author) => canModerate && author !== me && outranks(author),
+      muteChoices: muteChoices(myStanding),
+      onThread: (action) => moderationActions.thread(open.id, action),
+      onMute: async (person, days, reason) => {
+        await moderationActions.mute(
+          person,
+          muteEnd(Date.now() / 1000, days),
+          reason,
+        );
+        toast.success(
+          myStanding === STANDING.moderator && days > 7
+            ? "Muted for 7 days. Another moderator can make it longer within a day."
+            : "Muted on this board.",
+        );
+      },
+      removed: removedReplies(moderationRecords.log, open.id),
+      mutedUntil,
+    };
     const thread = (extras: PostExtras) => (
       <PostThread
         actions={actions}
         badges={extras.badges}
-        canModerate={canModerate}
+        moderation={threadModeration}
         comments={board.comments.get(open.id) ?? []}
         header={extras.header}
         key={open.id}
@@ -231,6 +316,7 @@ export function BoardView({
       board={board}
       channel={channel}
       me={me}
+      moderation={listModeration}
       onOpenPost={onOpenPost}
       profiles={profiles}
       records={records}

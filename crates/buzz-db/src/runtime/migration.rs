@@ -771,7 +771,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 63);
+        assert_eq!(migrations.len(), 64);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1536,6 +1536,38 @@ mod postgres_tests {
             !d_tag_backfill.contains("BETWEEN 30000"),
             "0062 is about the non-NIP-33 kinds; NIP-33 rows are already populated"
         );
+
+        // Board moderation (0064): its tenant tables are fenced and declared in
+        // the desired-state schema, and the audit CHECK admits the board actions
+        // in both the migration and the desired state.
+        assert_eq!(migrations[63].version, 64);
+        let board_moderation = migrations[63].sql.as_str();
+        for table in ["board_settings", "board_thread_state", "board_people"] {
+            assert!(
+                board_moderation.contains(&format!("attach_community_write_fence('{table}')")),
+                "migration 0064 must fence {table}"
+            );
+            assert!(
+                desired_schema.contains(&format!("attach_community_write_fence('{table}')")),
+                "schema.sql must fence {table}"
+            );
+            assert!(
+                desired_schema.contains(&format!("CREATE TABLE {table} (")),
+                "schema.sql must declare {table}"
+            );
+        }
+        for action in crate::moderation::BOARD_MODERATION_ACTION_VOCAB {
+            assert!(
+                board_moderation.contains(&format!("'{action}'")),
+                "migration 0064 moderation_actions.action CHECK must allow {action}"
+            );
+            assert!(
+                desired_schema.contains(&format!("'{action}'")),
+                "schema.sql moderation_actions.action CHECK must allow {action}"
+            );
+        }
+        assert!(board_moderation.contains("'board_moderator'"));
+        assert!(desired_schema.contains("'board_moderator'"));
     }
 
     #[test]
@@ -2390,6 +2422,21 @@ mod postgres_tests {
             "0061 fences exactly the three fork tenant tables: {fork_fences:?}"
         );
         expected_fences.extend(fork_fences);
+        // Board moderation's tenant tables (0064) attach their fences in that
+        // migration.
+        let migration_0064: &str = MIGRATOR
+            .iter()
+            .find(|migration| migration.version == 64)
+            .expect("embedded migration 0064")
+            .sql
+            .as_ref();
+        let board_fences = surface(migration_0064).fence_attachments;
+        assert_eq!(
+            board_fences.len(),
+            3,
+            "0064 fences exactly the three board moderation tables: {board_fences:?}"
+        );
+        expected_fences.extend(board_fences);
         assert_eq!(
             expected_fences, schema.fence_attachments,
             "write-fence attachment targets differ after recovery policy"
@@ -3465,8 +3512,8 @@ mod postgres_tests {
 
         assert_eq!(
             applied_versions(&pool).await,
-            (1_i64..=63).collect::<Vec<i64>>(),
-            "every migration through 0063 is applied exactly once"
+            (1_i64..=64).collect::<Vec<i64>>(),
+            "every migration through 0064 is applied exactly once"
         );
         let renumbered: Vec<(i64, String)> = sqlx::query_as(
             "SELECT version, description FROM _sqlx_migrations \
@@ -3504,7 +3551,7 @@ mod postgres_tests {
     }
 
     /// A database that never ran the fork must be untouched by the repair: a
-    /// fresh migrate applies 0001-0063 in order and succeeds.
+    /// fresh migrate applies 0001-0064 in order and succeeds.
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn fresh_database_is_unaffected_by_fork_row_repair() {
@@ -3512,7 +3559,7 @@ mod postgres_tests {
         run_migrations(&pool).await.expect("fresh migrate succeeds");
         assert_eq!(
             applied_versions(&pool).await,
-            (1_i64..=63).collect::<Vec<i64>>(),
+            (1_i64..=64).collect::<Vec<i64>>(),
             "a fresh database applies every migration in order"
         );
         drop_probe_database(&admin, &probe_db).await;

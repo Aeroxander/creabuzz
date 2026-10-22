@@ -140,6 +140,9 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 \i tables/public/budget_consumption.sql
 \i tables/public/budget_approvals.sql
 \i tables/public/evm_identities.sql
+\i tables/public/board_settings.sql
+\i tables/public/board_thread_state.sql
+\i tables/public/board_people.sql
 
 -- partitions
 \i partitions/events.sql
@@ -185,6 +188,9 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 \i triggers/budget_consumption.sql
 \i triggers/budget_approvals.sql
 \i triggers/evm_identities.sql
+\i triggers/board_settings.sql
+\i triggers/board_thread_state.sql
+\i triggers/board_people.sql
 
 -- seeds
 \i seeds/communities.sql

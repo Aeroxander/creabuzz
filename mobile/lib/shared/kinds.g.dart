@@ -342,6 +342,41 @@ class Kinds {
   /// `handlers/moderation_commands.rs` for the pinned vocabulary).
   static const int KIND_MODERATION_RESOLVE_REPORT = 9044;
 
+  // Board moderation commands (signed by someone with standing on the board: its
+  // moderators, owners and admins, or the community's owners and admins). Like
+  // 9040–9044 they are validated and run directly, never stored as events; each
+  // accepted command writes a `moderation_actions` audit row and a relay-signed
+  // public log entry (kind 45004) in the same transaction. All carry the board's
+  // `h` tag and an optional public `reason` tag.
+  /// Board moderation: lock a thread (`e` = the post), so no new replies.
+  static const int KIND_BOARD_LOCK_THREAD = 9045;
+
+  /// Board moderation: unlock a thread (`e` = the post).
+  static const int KIND_BOARD_UNLOCK_THREAD = 9046;
+
+  /// Board moderation: pin a thread to the top of the board (`e` = the post).
+  static const int KIND_BOARD_PIN_THREAD = 9047;
+
+  /// Board moderation: unpin a thread (`e` = the post).
+  static const int KIND_BOARD_UNPIN_THREAD = 9048;
+
+  /// Board moderation: mute a pubkey on this board only, until an `expiration`
+  /// tag timestamp (`p` tag target).
+  static const int KIND_BOARD_MUTE = 9049;
+
+  /// Board moderation: lift a board mute early (`p` tag target).
+  static const int KIND_BOARD_UNMUTE = 9050;
+
+  /// Board moderation: set the board's rules (content; empty clears them).
+  static const int KIND_BOARD_SET_RULES = 9051;
+
+  /// Board moderation: appoint a board moderator (`p` tag) until an optional
+  /// `expiration` tag (the end of their term).
+  static const int KIND_BOARD_APPOINT_MODERATOR = 9052;
+
+  /// Board moderation: end a board moderator's appointment (`p` tag).
+  static const int KIND_BOARD_REMOVE_MODERATOR = 9053;
+
   // NIP-43 relay membership announcement events (relay-signed)
   /// NIP-43: Relay membership list snapshot (relay-signed, replaceable by convention).
   static const int KIND_NIP43_MEMBERSHIP_LIST = 13534;
@@ -399,6 +434,12 @@ class Kinds {
 
   /// NIP-CW thread-mode query-time bounds, bound to a normalized newest-first thread request.
   static const int KIND_THREAD_WINDOW_BOUNDS = 39007;
+
+  /// Board moderation state (relay-signed, addressable, `d` and `h` = board channel id):
+  /// the board's rules (content), pinned and locked threads, and its appointed
+  /// moderators with their term ends. Rebuilt from the database in the same
+  /// transaction as every board moderation command.
+  static const int KIND_BOARD_STATE = 39008;
 
   /// Workflow definition (parameterized replaceable, d=workflow_uuid).
   static const int KIND_WORKFLOW_DEF = 30620;
@@ -626,6 +667,13 @@ class Kinds {
 
   /// A comment reply on a forum post.
   static const int KIND_FORUM_COMMENT = 45003;
+
+  /// A board's public moderation log entry (relay-signed, `h` = the board): what
+  /// was done (`action`), by whom (`actor`, with their standing in `role`), to
+  /// which post (`e`, and `thread` for a removed reply) or person (`p`), until
+  /// when (`until`, never `expiration`, so the entry outlives the mute), and the
+  /// public reason (content).
+  static const int KIND_BOARD_MODERATION_LOG = 45004;
 
   // Workflow engine (46000–46999)
   /// Trigger workflow execution.

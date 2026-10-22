@@ -1,7 +1,9 @@
 # Board moderation run by a project's holders: a design to decide on (2026-10-22)
 
-Status: **proposal, nothing built.** Once you decide, the parts you accept get a decision number in
-[DECISIONS.md](DECISIONS.md) and are built in the order of section 6.
+Status: **accepted as written (D93, 2026-10-22). Steps 1 and 2 of section 6 are built (D94).** Step 3 (the record
+reader) and step 4 (moderators elected by the DAO) come later, step 4 only if the pilot shows it is needed. One change
+from the text below: a board's rules live in its board state record (with its pins, locks and moderators), not in its
+NIP-29 metadata.
 
 You asked for decentralized moderation of boards, especially the boards of contributor projects, where no money moves
 and the project's holders could run the board themselves: people vote on who moderates, and holders can overturn an

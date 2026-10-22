@@ -5,9 +5,15 @@
  * selected parent. Only the author can delete their own
  * post or reply, after a confirmation. A slot above the text takes the header
  * for a post that is about a DAO decision.
+ *
+ * Moderation: a locked thread says so and takes no new replies (moderators,
+ * owners and admins can still answer in it); the board's moderators, owners and
+ * admins can lock or pin it here, and remove words or mute their author on this
+ * board. Replies moderators removed are counted, with their reasons, from the
+ * board's public log.
  */
 
-import { ArrowLeft, ScrollText } from "lucide-react";
+import { ArrowLeft, Lock, Pin, ScrollText } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -20,6 +26,11 @@ import { Button } from "@/shared/ui/button";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 
 import type { BoardComment, BoardPost } from "../lib/board-model";
+import type {
+  LogEntry,
+  MuteChoice,
+  ThreadAction,
+} from "../lib/board-moderation";
 import { commentThreads } from "../lib/comment-threads";
 import type { BoardActions } from "../use-board-actions";
 import { AuthorChip } from "./AuthorChip";
@@ -33,6 +44,38 @@ interface Target {
   id: string;
 }
 
+/** What the thread needs to show and offer moderation. */
+export interface ThreadModeration {
+  locked: boolean;
+  pinned: boolean;
+  /** The reader moderates this board (lock, pin, remove, mute), as a moderator, owner or admin. */
+  canModerate: boolean;
+  /** Whether the reader may remove this author's words. */
+  canRemove: (author: string) => boolean;
+  /** Whether the reader may mute this author on the board. */
+  canMute: (author: string) => boolean;
+  muteChoices: MuteChoice[];
+  onThread: (action: ThreadAction) => Promise<unknown>;
+  onMute: (person: string, days: number, reason: string) => Promise<unknown>;
+  /** Replies removed from this thread, from the board's log, newest first. */
+  removed: LogEntry[];
+  /** When the reader's mute on this board ends (unix seconds), if they are muted. */
+  mutedUntil: number | null;
+}
+
+export const NO_MODERATION: ThreadModeration = {
+  locked: false,
+  pinned: false,
+  canModerate: false,
+  canRemove: () => false,
+  canMute: () => false,
+  muteChoices: [],
+  onThread: async () => undefined,
+  onMute: async () => undefined,
+  removed: [],
+  mutedUntil: null,
+};
+
 export function PostThread({
   post,
   comments,
@@ -43,7 +86,7 @@ export function PostThread({
   onBack,
   header,
   badges,
-  canModerate = false,
+  moderation = NO_MODERATION,
 }: {
   post: BoardPost;
   comments: BoardComment[];
@@ -56,8 +99,7 @@ export function PostThread({
   header?: ReactNode;
   /** A short fact beside a person's name, by public key. */
   badges?: Record<string, string>;
-  /** The reader owns or administers this board: they may remove other people's posts and replies. */
-  canModerate?: boolean;
+  moderation?: ThreadModeration;
 }) {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -74,6 +116,10 @@ export function PostThread({
   const replyingTo = replyTo ? byId.get(replyTo) : undefined;
   const threads = useMemo(() => commentThreads(comments), [comments]);
   const focusTarget = replyTo === null ? null : (replyingTo?.id ?? post.id);
+  // A locked thread takes replies only from its moderators, owners and admins.
+  const canReply =
+    (!moderation.locked || moderation.canModerate) &&
+    moderation.mutedUntil === null;
 
   useEffect(() => {
     if (focusTarget !== null || focusRequested.current)
@@ -275,12 +321,71 @@ export function PostThread({
                 Delete
               </button>
             ) : null}
+            {moderation.canModerate ? (
+              <>
+                <button
+                  className="underline"
+                  data-testid="board-thread-lock"
+                  onClick={() =>
+                    void run(
+                      moderation.locked
+                        ? "unlock the thread"
+                        : "lock the thread",
+                      async () => {
+                        await moderation.onThread(
+                          moderation.locked ? "unlock" : "lock",
+                        );
+                        toast.success(
+                          moderation.locked
+                            ? "Thread unlocked."
+                            : "Thread locked. No new replies.",
+                        );
+                      },
+                    )
+                  }
+                  type="button"
+                >
+                  {moderation.locked ? "Unlock" : "Lock"}
+                </button>
+                <button
+                  className="underline"
+                  data-testid="board-thread-pin"
+                  onClick={() =>
+                    void run(
+                      moderation.pinned ? "unpin the thread" : "pin the thread",
+                      async () => {
+                        await moderation.onThread(
+                          moderation.pinned ? "unpin" : "pin",
+                        );
+                        toast.success(
+                          moderation.pinned
+                            ? "Thread unpinned."
+                            : "Thread pinned to the top of the board.",
+                        );
+                      },
+                    )
+                  }
+                  type="button"
+                >
+                  {moderation.pinned ? "Unpin" : "Pin"}
+                </button>
+              </>
+            ) : null}
             <BoardModeration
               author={post.author}
-              canRemove={canModerate}
+              canRemove={moderation.canRemove(post.author)}
               id={post.id}
               kind="post"
               me={me}
+              mute={
+                moderation.canMute(post.author)
+                  ? {
+                      choices: moderation.muteChoices,
+                      onMute: (days, reason) =>
+                        moderation.onMute(post.author, days, reason),
+                    }
+                  : null
+              }
               name={nameOf(post.author)}
               needAccount={needAccount}
               onRemove={(id) => {
@@ -291,6 +396,26 @@ export function PostThread({
               }}
             />
           </div>
+          {moderation.pinned || moderation.locked ? (
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              {moderation.pinned ? (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5"
+                  data-testid="board-thread-pinned"
+                >
+                  <Pin aria-hidden className="h-3 w-3" /> Pinned
+                </span>
+              ) : null}
+              {moderation.locked ? (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5"
+                  data-testid="board-thread-locked"
+                >
+                  <Lock aria-hidden className="h-3 w-3" /> Locked
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           <h2
             className="mt-3 text-lg font-bold"
             data-testid="board-thread-title"
@@ -303,23 +428,65 @@ export function PostThread({
               <BoardMarkdown text={post.body} />
             </div>
           ) : null}
-          <button
-            className="mt-2 text-xs text-muted-foreground underline disabled:opacity-50"
-            data-testid="board-reply-post"
-            disabled={busy}
-            onClick={() => selectReply(null)}
-            type="button"
-          >
-            Reply to post
-          </button>
+          {canReply ? (
+            <button
+              className="mt-2 text-xs text-muted-foreground underline disabled:opacity-50"
+              data-testid="board-reply-post"
+              disabled={busy}
+              onClick={() => selectReply(null)}
+              type="button"
+            >
+              Reply to post
+            </button>
+          ) : null}
         </div>
       </article>
 
-      {!replyingTo ? <div className="px-4 pb-4">{replyForm}</div> : null}
+      {moderation.mutedUntil !== null ? (
+        <p
+          className="mx-4 mb-4 rounded-lg border bg-secondary/30 p-3 text-sm"
+          data-testid="board-thread-muted-note"
+          role="status"
+        >
+          You are muted on this board until{" "}
+          {new Date(moderation.mutedUntil * 1000).toLocaleString()}. You can
+          still read it, and post everywhere else.
+        </p>
+      ) : moderation.locked ? (
+        <p
+          className="mx-4 mb-4 rounded-lg border bg-secondary/30 p-3 text-sm"
+          data-testid="board-thread-locked-note"
+          role="status"
+        >
+          {moderation.canModerate
+            ? "This thread is locked. Only moderators, owners and admins can reply."
+            : "This thread is locked by the board's moderators. No new replies."}
+        </p>
+      ) : null}
+      {canReply && !replyingTo ? (
+        <div className="px-4 pb-4">{replyForm}</div>
+      ) : null}
       <section aria-label="Replies" className="border-t px-4 py-3">
         <h3 className="text-sm font-semibold">
           {comments.length === 1 ? "1 reply" : `${comments.length} replies`}
         </h3>
+        {moderation.removed.length > 0 ? (
+          <div
+            className="mt-2 text-xs text-muted-foreground"
+            data-testid="board-thread-removed"
+          >
+            {moderation.removed.length === 1
+              ? "1 reply was removed by moderators"
+              : `${moderation.removed.length} replies were removed by moderators`}
+            {moderation.removed.some((entry) => entry.reason.trim())
+              ? `: ${moderation.removed
+                  .map((entry) => entry.reason.trim())
+                  .filter((reason) => reason !== "")
+                  .join("; ")}.`
+              : "."}{" "}
+            The board's moderation log says who and when.
+          </div>
+        ) : null}
         <CommentReplies
           context={{
             profiles,
@@ -331,7 +498,11 @@ export function PostThread({
             onVote: vote,
             onReply: selectReply,
             onDelete: (id) => setDeleting({ kind: "reply", id }),
-            canModerate,
+            canRemove: moderation.canRemove,
+            canMute: moderation.canMute,
+            muteChoices: moderation.muteChoices,
+            onMute: moderation.onMute,
+            canReply,
             needAccount,
             onRemove: (id) =>
               void run("remove that reply", () => actions.moderate(id)),
