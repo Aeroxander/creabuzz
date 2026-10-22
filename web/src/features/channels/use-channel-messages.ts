@@ -90,6 +90,8 @@ export function useChannelMessages(channelId: string | null) {
   );
   /** Transport state of this channel's live subscription. */
   const [liveStatus, setLiveStatus] = useState<SubscriptionStatus | null>(null);
+  /** The server's reason when it refused live updates for good. */
+  const [liveRefusal, setLiveRefusal] = useState<string | null>(null);
   /**
    * Pages fetched by walking backwards from the first page. Without this the
    * timeline can only ever show the newest page, so anything older than that is
@@ -127,7 +129,10 @@ export function useChannelMessages(channelId: string | null) {
             return next;
           });
         },
-        onStatus: setLiveStatus,
+        onStatus: (status, reason) => {
+          setLiveStatus(status);
+          setLiveRefusal(status === "refused" ? (reason ?? null) : null);
+        },
       },
     );
     return unsubscribe;
@@ -225,5 +230,7 @@ export function useChannelMessages(channelId: string | null) {
     loadOlder,
     /** `open` once the live socket is up; null before the first attempt. */
     liveStatus,
+    /** The server's reason when `liveStatus` is `refused`. */
+    liveRefusal,
   };
 }

@@ -35,6 +35,28 @@ function tagValue(event: StoredEvent, name: string): string[] {
   return event.tags.filter((tag) => tag[0] === name).map((tag) => tag[1]);
 }
 
+/**
+ * The room or board a record is kept under, as the real server keeps it: its `h` tag, or for the server's own NIP-29
+ * group records and board state (which name their board in `d`) that board. Null for a record kept under none.
+ */
+function keptUnder(event: StoredEvent): string | null {
+  const h = tagValue(event, "h")[0];
+  if (h) return h;
+  if ((event.kind >= 39000 && event.kind <= 39003) || event.kind === 39008)
+    return tagValue(event, "d")[0] ?? null;
+  return null;
+}
+
+/**
+ * Whether a live subscription hears a record, by the real server's rule (`buzz-relay/src/subscription.rs`): one tied
+ * to rooms or boards (every filter names them with `#h`) hears only records kept under them; an untied one hears only
+ * records kept under none. A subscription on the wrong side never fires, however well its filter matches.
+ */
+export function liveScopeAllows(filter: Filter, event: StoredEvent): boolean {
+  const tied = Array.isArray(filter["#h"]);
+  return tied === (keptUnder(event) !== null);
+}
+
 /** The relay's p-gated kinds: reading them needs `#p` equal to your pubkey. */
 const P_GATED_KINDS = [44100, 44101, 1059, 44200];
 
@@ -181,6 +203,10 @@ export function createMockRelay({
    */
   const authRetries = { live: 0, query: 0 };
   const subscriptions = new WeakMap<Socket, Map<string, Filter>>();
+  /** Set by `ban`: the reason every login is refused with from then on, as the real server refuses a banned key. */
+  let bannedReason: string | null = null;
+  /** Rooms and boards the reader was removed from (`revoke`): subscriptions to them are refused. */
+  const revokedChannels = new Set<string>();
 
   const deliver = (event: StoredEvent) => {
     // A delivered event is an accepted one: store it before fanning out, or a
@@ -190,7 +216,7 @@ export function createMockRelay({
       const subs = subscriptions.get(socket);
       if (!subs) continue;
       for (const [subId, filter] of subs) {
-        if (matches(filter, event)) {
+        if (matches(filter, event) && liveScopeAllows(filter, event)) {
           socket.send(JSON.stringify(["EVENT", subId, event]));
         }
       }
@@ -236,6 +262,8 @@ export function createMockRelay({
       if (requireAuth && challengeDelayMs > 0) {
         setTimeout(sendChallenge, challengeDelayMs);
       }
+      // A banned reader is challenged at once, and their login refused (below), as the real server does.
+      if (bannedReason !== null) sendChallenge();
       ws.onClose(() => sockets.delete(socket));
       ws.onMessage((message) => {
         let parsed: unknown;
@@ -267,6 +295,11 @@ export function createMockRelay({
         const [type] = parsed;
         if (type === "EVENT" || type === "AUTH") {
           const event = parsed[1] as StoredEvent;
+          if (type === "AUTH" && bannedReason !== null) {
+            ws.send(JSON.stringify(["OK", event.id, false, bannedReason]));
+            ws.close();
+            return;
+          }
           if (type === "AUTH") {
             // NIP-42: this mock accepts any signed auth event, but remembers
             // who signed it, because that is what the gate compares against.
@@ -366,6 +399,19 @@ export function createMockRelay({
             );
             return;
           }
+          const asksRevoked = (filter["#h"] as string[] | undefined)?.some(
+            (id) => revokedChannels.has(id),
+          );
+          if (asksRevoked) {
+            ws.send(
+              JSON.stringify([
+                "CLOSED",
+                subId,
+                "restricted: not a channel member",
+              ]),
+            );
+            return;
+          }
           if (enforcePGate && pGateRefuses(filter, authedPubkey)) {
             ws.send(
               JSON.stringify([
@@ -402,10 +448,48 @@ export function createMockRelay({
     events.push(event);
   };
 
+  /**
+   * Ban the reader, as the real server does: every open socket gets the reason as an `OK false` frame and is closed,
+   * and every later login is refused with the same reason.
+   */
+  const ban = (reason: string) => {
+    bannedReason = reason;
+    for (const socket of [...sockets]) {
+      socket.send(JSON.stringify(["OK", "ban-command", false, reason]));
+      socket.close();
+    }
+  };
+
+  /**
+   * Remove the reader from a room or board, as the real server does: each live subscription tied to it is closed with
+   * `restricted: channel access revoked`, and every later subscription to it is refused.
+   */
+  const revoke = (channelId: string) => {
+    revokedChannels.add(channelId);
+    for (const socket of sockets) {
+      const subs = subscriptions.get(socket);
+      if (!subs) continue;
+      for (const [subId, filter] of [...subs]) {
+        if (!(filter["#h"] as string[] | undefined)?.includes(channelId))
+          continue;
+        subs.delete(subId);
+        socket.send(
+          JSON.stringify([
+            "CLOSED",
+            subId,
+            "restricted: channel access revoked",
+          ]),
+        );
+      }
+    }
+  };
+
   return {
     install,
     deliver,
     seed,
+    ban,
+    revoke,
     dropConnections,
     events,
     /** Sockets the page has opened, across reconnects. */

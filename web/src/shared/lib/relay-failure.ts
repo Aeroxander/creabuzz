@@ -19,6 +19,7 @@
  * and `nostr-client` only supplies the raw material.
  */
 
+import { restrictionText } from "./refusal-text.ts";
 import { isSigningBlockedError } from "./nostr-signer.ts";
 
 /** Success: the relay answered with events (possibly zero). */
@@ -222,5 +223,8 @@ export function relayFailureGuidance(
     const scope = named ? ` (kind ${named})` : "";
     return `This server is running an older build that doesn't know these records${scope}. Restart it from the current build, or point the app at a newer server.`;
   }
-  return "The server answered but refused this request. Its own message is shown above. We're not showing a list, because an empty one would wrongly suggest there's nothing here.";
+  // A restriction on the reader (a ban, a timeout) is said plainly; its raw wording is then not repeated.
+  const restricted = restrictionText(message);
+  if (restricted !== null) return restricted;
+  return "The server answered but refused this request. Its own message is shown below. We're not showing a list, because an empty one would wrongly suggest there's nothing here.";
 }

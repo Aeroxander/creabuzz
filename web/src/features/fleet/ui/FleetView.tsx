@@ -200,7 +200,12 @@ function TaskCard({ task }: { task: FleetTask }) {
 
 export function FleetView({ channels }: { channels: Channel[] }) {
   const { agents, loading, loadError } = useAgentRoster();
-  const { tasks, createTask, loadError: taskLoadError } = useAgentTasks();
+  const channelIds = useMemo(() => channels.map((c) => c.id), [channels]);
+  const {
+    tasks,
+    createTask,
+    loadError: taskLoadError,
+  } = useAgentTasks(channelIds);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskAssignee, setTaskAssignee] = useState("");
   const [creating, setCreating] = useState(false);

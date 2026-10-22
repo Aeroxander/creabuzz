@@ -97,6 +97,16 @@ export function publishEvent(
         } else if (data[2] === true && !sent) {
           // AUTH accepted for the auth-event id — now send EVENT.
           send();
+        } else if (data[2] === false) {
+          // The server refused the login (a ban, a community the reader is not in) or is ending the session with its
+          // reason (a ban arriving now). Either way that is its answer; the hang-up that follows is not.
+          finish({
+            accepted: false,
+            message:
+              typeof data[3] === "string"
+                ? data[3]
+                : "The server refused to sign you in.",
+          });
         }
       } else if (type === "CLOSED") {
         finish({ accepted: false, message: String(data[2] ?? "closed") });
@@ -169,6 +179,18 @@ export function openPublishSession(
   ready.catch(() => {});
   let authId: string | null = null;
   let readyTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The server's reason when it refused the login or ended the session: every record's answer from then on. */
+  let refusal: string | null = null;
+
+  const refuseAll = (reason: string) => {
+    if (refusal === null) refusal = reason;
+    markReady();
+    for (const [id, entry] of waiting) {
+      clearTimeout(entry.timer);
+      waiting.delete(id);
+      entry.resolve({ accepted: false, message: reason });
+    }
+  };
 
   const failAll = (error: Error) => {
     if (closedWith === null) closedWith = error;
@@ -204,12 +226,21 @@ export function openPublishSession(
           failAll(error instanceof Error ? error : new Error(String(error))),
       );
     } else if (type === "OK") {
+      const reason =
+        typeof data[3] === "string"
+          ? data[3]
+          : "The server refused to sign you in.";
       if (data[1] === authId) {
-        markReady();
+        if (data[2] === true) markReady();
+        else refuseAll(reason);
         return;
       }
       const entry = waiting.get(String(data[1]));
-      if (!entry) return;
+      if (!entry) {
+        // Not an answer to a record: the server ending the session with its reason (a ban arriving now).
+        if (data[2] === false) refuseAll(reason);
+        return;
+      }
       clearTimeout(entry.timer);
       waiting.delete(String(data[1]));
       entry.resolve({
@@ -235,13 +266,15 @@ export function openPublishSession(
   ws.addEventListener("error", () =>
     failAll(new Error("WebSocket connection failed")),
   );
-  ws.addEventListener("close", () =>
-    failAll(new Error("The connection closed before the server answered")),
-  );
+  ws.addEventListener("close", () => {
+    if (refusal !== null) refuseAll(refusal);
+    else failAll(new Error("The connection closed before the server answered"));
+  });
 
   return {
     publish: async (event) => {
       await ready;
+      if (refusal !== null) return { accepted: false, message: refusal };
       if (closedWith !== null) throw closedWith;
       return new Promise<PublishResult>((resolve, reject) => {
         const timer = setTimeout(() => {

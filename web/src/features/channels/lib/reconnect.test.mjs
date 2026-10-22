@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ReconnectBackoff, reconnectDelay } from "./reconnect.ts";
+import {
+  isFinalRefusal,
+  ReconnectBackoff,
+  reconnectDelay,
+} from "./reconnect.ts";
 
 const noJitter = () => 0;
 
@@ -67,4 +71,17 @@ test("a working subscription resets the backoff", () => {
   backoff.onClose();
   assert.equal(backoff.attempt, 1, "back to the first step after a good run");
   assert.equal(backoff.onClose(), 2_000);
+});
+
+test("a ban or missing access is final; a server error while checking is worth retrying", () => {
+  assert.equal(
+    isFinalRefusal("blocked: you are banned from this community"),
+    true,
+  );
+  assert.equal(isFinalRefusal("restricted: not a community member"), true);
+  assert.equal(
+    isFinalRefusal("error: internal error checking restriction state"),
+    false,
+  );
+  assert.equal(isFinalRefusal(""), false);
 });

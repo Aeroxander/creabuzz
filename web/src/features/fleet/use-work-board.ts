@@ -23,6 +23,7 @@ import {
 } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { userPubkey } from "@/shared/lib/identity";
+import { liveFiltersFor } from "@/features/channels/lib/live-scope";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_AGENT_TASK, KIND_GIT_ISSUE } from "@/shared/constants/kinds";
 import {
@@ -304,23 +305,18 @@ export function useWorkBoard(channels?: { id: string }[]): {
     const cleanups: (() => void)[] = [];
 
     // --- fleet tasks (live + history) ---
-    // Global sub for scope-less rows + one per channel: the relay walls
-    // channel-scoped events off from global subscriptions, so drops on
+    // Untied for scope-less rows + one per channel: the relay walls
+    // channel-scoped events off from untied subscriptions, so drops on
     // channel-tied tasks must be delivered per-channel or the board never
     // re-renders.
-    const taskUnsub = subscribeChannel(
-      wsUrl,
+    for (const filter of liveFiltersFor(
       { kinds: [KIND_AGENT_TASK] } satisfies NostrFilter,
-      { onEvent: (event) => upsertTask(event) },
-    );
-    cleanups.push(taskUnsub);
-    for (const channel of channelIds) {
+      channelIds,
+    )) {
       cleanups.push(
-        subscribeChannel(
-          wsUrl,
-          { kinds: [KIND_AGENT_TASK], "#h": [channel] } satisfies NostrFilter,
-          { onEvent: (event) => upsertTask(event) },
-        ),
+        subscribeChannel(wsUrl, filter, {
+          onEvent: (event) => upsertTask(event),
+        }),
       );
     }
 

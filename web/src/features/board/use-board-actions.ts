@@ -18,7 +18,6 @@ import {
   voteDraft,
 } from "./lib/board-events";
 import type { BoardEvent } from "./lib/board-model";
-import { boardRefusalText, isModerationRefusal } from "./lib/board-moderation";
 import type { ProposalRef } from "./lib/proposal-link";
 
 /** The reader's current vote on something, as the board model reports it. */
@@ -33,15 +32,7 @@ export function useBoardActions(
 ) {
   return useMemo(() => {
     const send = async (draft: Draft, failure: string) => {
-      let signed: Awaited<ReturnType<typeof publishAsUser>>;
-      try {
-        signed = await publishAsUser(draft, failure);
-      } catch (error) {
-        // A board moderator's refusals (a mute, a locked thread) in plain words; others as the server said them.
-        if (error instanceof Error && isModerationRefusal(error.message))
-          throw new Error(boardRefusalText(error.message));
-        throw error;
-      }
+      const signed = await publishAsUser(draft, failure);
       add(signed);
       return signed;
     };

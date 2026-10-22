@@ -7,7 +7,6 @@ import {
   activeMutes,
   appointDraft,
   boardRefusalText,
-  isModerationRefusal,
   KIND_BOARD_MODERATION_LOG,
   KIND_BOARD_STATE,
   logSentence,
@@ -301,27 +300,22 @@ test("board refusals read as sentences with dates", () => {
     boardRefusalText(
       "restricted: you are muted on this board until 1893456000",
     ),
-    /^You are muted on this board until .*2030\.$/,
+    /^You are muted on this board until .*2030.*\. You can still read it, and post everywhere else\.$/,
   );
   assert.equal(
     boardRefusalText("restricted: this thread is locked"),
-    "This thread is locked.",
+    "This thread is locked. Only the board's moderators, owners and admins can reply.",
   );
   assert.equal(
     boardRefusalText("rate-limited: a moderator may take 20 actions an hour"),
     "A moderator may take 20 actions an hour.",
   );
   assert.equal(
+    boardRefusalText("restricted: you cannot mute yourself"),
+    "You cannot mute yourself.",
+  );
+  assert.equal(
     boardRefusalText("error: database error: down"),
     "error: database error: down",
-  );
-  assert.equal(isModerationRefusal("restricted: this thread is locked"), true);
-  assert.equal(
-    isModerationRefusal("restricted: you are muted on this board until 5"),
-    true,
-  );
-  assert.equal(
-    isModerationRefusal("restricted: only members can post here"),
-    false,
   );
 });

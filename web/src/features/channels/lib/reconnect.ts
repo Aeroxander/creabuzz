@@ -10,8 +10,24 @@
  *
  * `open` means the transport is up (the relay accepted the socket); the relay
  * does not ack a REQ here, so this is the strongest signal available.
+ * `refused` is final: the relay said no to this reader (a ban, a community they
+ * are not in) and retrying would only be refused again.
  */
-export type SubscriptionStatus = "connecting" | "open" | "reconnecting";
+export type SubscriptionStatus =
+  | "connecting"
+  | "open"
+  | "reconnecting"
+  | "refused";
+
+/**
+ * Whether the relay's refusal of a login or session is final for this reader.
+ * Buzz says `blocked:` for a ban and `restricted:` for access the reader does
+ * not have; both stay true on the next attempt. Anything else (an `error:`
+ * while checking, a hang-up) is worth retrying.
+ */
+export function isFinalRefusal(reason: string): boolean {
+  return /^(blocked|restricted):/i.test(reason.trim());
+}
 
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;

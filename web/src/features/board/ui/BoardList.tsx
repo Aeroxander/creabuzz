@@ -14,6 +14,7 @@ import type { Channel } from "@/features/channels/use-channels";
 import type { Profile } from "@/features/profiles/use-profiles";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { liveRefusalText } from "@/shared/lib/refusal-text";
 import { Button } from "@/shared/ui/button";
 
 import {
@@ -279,9 +280,11 @@ export function BoardList({
           data-testid="board-live-status"
           role="status"
         >
-          {records.liveStatus === "connecting"
-            ? "Connecting for live updates…"
-            : "Live updates paused. Reconnecting…"}
+          {records.liveStatus === "refused"
+            ? liveRefusalText(records.liveRefusal)
+            : records.liveStatus === "connecting"
+              ? "Connecting for live updates…"
+              : "Live updates paused. Reconnecting…"}
         </p>
       ) : null}
 

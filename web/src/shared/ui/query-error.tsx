@@ -6,6 +6,7 @@ import {
   relayFailureOutcome,
   relayMessageOf,
 } from "@/shared/lib/relay-failure";
+import { restrictionText } from "@/shared/lib/refusal-text";
 
 /** What the reader can do right now when a query failed (Review-Proven Rule 6). */
 export type QueryRecovery = (onUnlocked: () => void) => ReactNode;
@@ -87,8 +88,14 @@ export function QueryError({
     : answered
       ? relayFailureGuidance(relayMessageOf(error) ?? "", kinds)
       : description;
-  const shownMessage =
-    answered || authRequired ? (relayMessageOf(error) ?? message) : message;
+  // A refusal said in plain words above (a ban, a timeout) is not repeated in the server's own wording.
+  const restricted =
+    answered && restrictionText(relayMessageOf(error) ?? "") !== null;
+  const shownMessage = restricted
+    ? undefined
+    : answered || authRequired
+      ? (relayMessageOf(error) ?? message)
+      : message;
   const retryNow = () => {
     onRetry?.();
   };

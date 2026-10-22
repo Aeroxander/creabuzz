@@ -96,7 +96,10 @@ const roomWatched = (relay: Relay) =>
     )
     .toBe(true);
 
-/** The room has asked to hear about roster changes, so one delivered now will reach it. */
+/**
+ * The room has asked to hear about roster changes, so one delivered now will reach it. By `#h`: the real server delivers
+ * a room's records live only to subscriptions that name the room that way (D95).
+ */
 const rosterWatched = (relay: Relay) =>
   expect
     .poll(() =>
@@ -105,7 +108,7 @@ const rosterWatched = (relay: Relay) =>
         .some(
           (f) =>
             f.kinds?.includes(39002) &&
-            (f["#d"] as string[] | undefined)?.includes(CHANNEL_ID),
+            (f["#h"] as string[] | undefined)?.includes(CHANNEL_ID),
         ),
     )
     .toBe(true);

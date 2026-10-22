@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-import { asSentence, refusalText } from "./refusal-text.ts";
+import {
+  asSentence,
+  liveRefusalText,
+  refusalText,
+  restrictionText,
+} from "./refusal-text.ts";
+
+const relay = (path) =>
+  readFileSync(
+    new URL(`../../../../crates/buzz-relay/src/${path}`, import.meta.url),
+    "utf8",
+  );
 
 describe("refusalText", () => {
   it("reads a rate limit as a sentence and passes other reasons on", () => {
@@ -25,5 +37,72 @@ describe("refusalText", () => {
 
   it("makes words a sentence", () => {
     assert.equal(asSentence(" already done. "), "Already done.");
+  });
+});
+
+describe("restrictions on the reader", () => {
+  it("say what happened, until when, and what still works", () => {
+    assert.equal(
+      refusalText("blocked: you are banned from this community", "x"),
+      "You are banned from this community.",
+    );
+    assert.match(
+      refusalText("restricted: you are timed out until 1893456000", "x"),
+      /^You are timed out in this community until .*2030.*\. You can still read; you can post again then\.$/,
+    );
+    assert.match(
+      refusalText(
+        "restricted: you are muted on this board until 1893456000",
+        "x",
+      ),
+      /^You are muted on this board until .*2030.*\. You can still read it, and post everywhere else\.$/,
+    );
+    assert.equal(
+      refusalText("restricted: this thread is locked", "x"),
+      "This thread is locked. Only the board's moderators, owners and admins can reply.",
+    );
+    // Not a restriction: passed on as it is.
+    assert.equal(restrictionText("restricted: not a channel member"), null);
+  });
+
+  it("match the server's own wording", () => {
+    // If the server's words change, these sentences stop matching and people see the raw text again.
+    assert.match(
+      relay("handlers/auth.rs"),
+      /"blocked: you are banned from this community"/,
+    );
+    assert.match(
+      relay("handlers/ingest.rs"),
+      /"restricted: you are timed out until \{\}"/,
+    );
+    const board = relay("handlers/board_moderation.rs");
+    assert.match(board, /"you are muted on this board until \{\}"/);
+    assert.match(board, /restricted\("this thread is locked"\)/);
+  });
+});
+
+describe("liveRefusalText", () => {
+  it("names the restriction, or says live updates stopped and what to do", () => {
+    assert.equal(
+      liveRefusalText("blocked: you are banned from this community"),
+      "You are banned from this community.",
+    );
+    for (const removed of [
+      "restricted: channel access revoked",
+      "restricted: not a channel member",
+    ]) {
+      assert.equal(
+        liveRefusalText(removed),
+        "You no longer have access to this room or board. Live updates stopped.",
+      );
+    }
+    assert.equal(
+      liveRefusalText("restricted: not a community member"),
+      "Live updates stopped: the server refused this account. Reload the page to try again.",
+    );
+    assert.equal(
+      liveRefusalText(null),
+      "Live updates stopped: the server refused this account. Reload the page to try again.",
+    );
   });
 });

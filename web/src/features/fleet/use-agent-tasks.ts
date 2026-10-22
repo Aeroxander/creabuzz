@@ -15,6 +15,7 @@ import {
   type NostrEvent,
 } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
+import { liveFiltersFor } from "@/features/channels/lib/live-scope";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_AGENT_TASK } from "@/shared/constants/kinds";
 import { readMilestone, readReward } from "./lib/task-planning";
@@ -117,7 +118,11 @@ export function parseTask(event: NostrEvent): FleetTask | null {
   };
 }
 
-export function useAgentTasks(): {
+/**
+ * The fleet's tasks: read once, then followed live, both untied and in each of `channelIds` (a task tied to a room is
+ * delivered live only to a subscription tied to that room).
+ */
+export function useAgentTasks(channelIds: readonly string[] = []): {
   tasks: FleetTask[];
   loading: boolean;
   /** Set when the read failed; the view reports it rather than showing none. */
@@ -137,6 +142,8 @@ export function useAgentTasks(): {
   const [loading, setLoading] = useState(true);
   /** Set when the task read failed, so the list can say so instead of "none". */
   const [loadError, setLoadError] = useState<unknown>(null);
+  // A stable key, so a new array with the same rooms does not resubscribe.
+  const channelKey = channelIds.join(",");
 
   useEffect(() => {
     const wsUrl = relayWsUrl();
@@ -174,14 +181,17 @@ export function useAgentTasks(): {
         }
       });
 
-    const unsubscribe = subscribeChannel(wsUrl, filter, {
-      onEvent: (event) => upsert(event),
-    });
+    const stops = liveFiltersFor(
+      { kinds: [KIND_AGENT_TASK] } satisfies NostrFilter,
+      channelKey === "" ? [] : channelKey.split(","),
+    ).map((live) =>
+      subscribeChannel(wsUrl, live, { onEvent: (event) => upsert(event) }),
+    );
     return () => {
       disposed = true;
-      unsubscribe();
+      for (const stop of stops) stop();
     };
-  }, []);
+  }, [channelKey]);
 
   const createTask = useCallback(
     (input: NewTaskInput) => publishNewTask(input),

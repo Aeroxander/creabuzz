@@ -30,6 +30,7 @@ import {
 import type { NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { userPubkey } from "@/shared/lib/identity";
+import { liveRefusalText } from "@/shared/lib/refusal-text";
 import {
   resolveUserName,
   useProfiles,
@@ -620,13 +621,24 @@ export function ChannelTimeline({
           <span
             className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-800 dark:text-amber-300"
             data-testid="live-status-chip"
-            role="status"
-            title="Live updates from the server have stopped; the client keeps retrying."
+            role={messages.liveStatus === "refused" ? undefined : "status"}
+            title={
+              messages.liveStatus === "refused"
+                ? liveRefusalText(messages.liveRefusal)
+                : "Live updates from the server have stopped; the client keeps retrying."
+            }
           >
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-            {messages.liveStatus === "connecting"
-              ? "Connecting…"
-              : "Reconnecting…"}
+            {messages.liveStatus === "refused" ? (
+              // Stopped for good: no pulse, a short label, and the reason in full in the line under the header.
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            ) : (
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+            )}
+            {messages.liveStatus === "refused"
+              ? "Live updates stopped"
+              : messages.liveStatus === "connecting"
+                ? "Connecting…"
+                : "Reconnecting…"}
           </span>
         ) : null}
         <span className="ml-auto flex items-center gap-2">
@@ -652,6 +664,15 @@ export function ChannelTimeline({
           </button>
         </span>
       </header>
+      {messages.liveStatus === "refused" ? (
+        <p
+          className="border-b border-black/10 px-4 py-2 text-xs text-amber-800 dark:border-white/10 dark:text-amber-300"
+          data-testid="live-refusal"
+          role="status"
+        >
+          {liveRefusalText(messages.liveRefusal)}
+        </p>
+      ) : null}
 
       {/*
         Two invitation cards under the header, the desktop's treatment: they are

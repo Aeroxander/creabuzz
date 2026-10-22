@@ -74,7 +74,12 @@ test("answered failures show the relay's wording plus guidance, not 'did not ans
   );
   assert.match(
     source,
-    /answered \|\| authRequired \? \(relayMessageOf\(error\) \?\? message\) : message/,
+    /answered \|\| authRequired\s*\?\s*\(relayMessageOf\(error\) \?\? message\)\s*:\s*message/,
     "an answered refusal must replace the caller's unanswered copy",
+  );
+  // Except a restriction on the reader (a ban, a timeout): the guidance already says it in plain words.
+  assert.match(
+    source,
+    /answered && restrictionText\(relayMessageOf\(error\) \?\? ""\) !== null/,
   );
 });

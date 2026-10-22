@@ -17,15 +17,22 @@ import { signForRelay } from "@/shared/lib/relay-auth";
 import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
 import type { NostrFilter } from "@/shared/lib/nostr-client";
 
-import { ReconnectBackoff, type SubscriptionStatus } from "./lib/reconnect";
+import {
+  isFinalRefusal,
+  ReconnectBackoff,
+  type SubscriptionStatus,
+} from "./lib/reconnect";
 
 export { ReconnectBackoff };
 export type { SubscriptionStatus };
 
 export interface ChannelSubscriptionCallbacks {
   onEvent: (event: SignedNostrEvent) => void;
-  /** Called on every state change, including the first connect attempt. */
-  onStatus?: (status: SubscriptionStatus) => void;
+  /**
+   * Called on every state change, including the first connect attempt. With `refused`, `reason` is the relay's own
+   * words; the subscription has stopped for good.
+   */
+  onStatus?: (status: SubscriptionStatus, reason?: string) => void;
 }
 
 export function subscribeChannel(
@@ -111,6 +118,14 @@ export function subscribeChannel(
             subSent = false;
           }
           sendReq();
+        } else if (type === "OK" && data[2] === false) {
+          // The relay refused our login or is ending the session, with its reason (a ban arriving now, or a community
+          // the reader is not in). When that is final, stop and say so; reconnecting would be refused the same way.
+          const reason = typeof data[3] === "string" ? data[3] : "";
+          if (isFinalRefusal(reason)) {
+            cleanup();
+            callbacks.onStatus?.("refused", reason);
+          }
         } else if (type === "EVENT" && data[1] === subId && data[2]) {
           backoff.onHealthy();
           callbacks.onEvent(data[2] as SignedNostrEvent);
@@ -134,7 +149,10 @@ export function subscribeChannel(
             }
             return;
           }
+          // Refused for good (removed from the room or board, or the server will not serve this filter): stop, and
+          // say so, instead of looking live while nothing will ever arrive.
           cleanup();
+          callbacks.onStatus?.("refused", reason);
         }
       });
       callbacks.onStatus?.("open");

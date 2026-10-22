@@ -51,6 +51,8 @@ export interface BoardRecords {
   refetch: () => void;
   /** `open` once the live connection is up; null before the first attempt. */
   liveStatus: SubscriptionStatus | null;
+  /** The server's reason when it refused live updates for good (`liveStatus` is `refused`). */
+  liveRefusal: string | null;
   /** Merge in a record the server just accepted. */
   add: (event: BoardEvent) => void;
   /** The newest posts only: the board has more than one read returns. */
@@ -66,11 +68,13 @@ export function useBoardRecords(boardId: string | null): BoardRecords {
   });
   const [live, setLive] = useState<Map<string, BoardEvent>>(() => new Map());
   const [liveStatus, setLiveStatus] = useState<SubscriptionStatus | null>(null);
+  const [liveRefusal, setLiveRefusal] = useState<string | null>(null);
 
   // A different board starts with nothing live.
   useEffect(() => {
     setLive(new Map());
     setLiveStatus(null);
+    setLiveRefusal(null);
     if (boardId === null) return;
     // A few seconds before now, so nothing sent while the history read was in
     // flight is missed; whatever the history also holds is merged by id.
@@ -92,7 +96,10 @@ export function useBoardRecords(boardId: string | null): BoardRecords {
       {
         onEvent: (event) =>
           setLive((previous) => new Map(previous).set(event.id, event)),
-        onStatus: setLiveStatus,
+        onStatus: (status, reason) => {
+          setLiveStatus(status);
+          setLiveRefusal(status === "refused" ? (reason ?? null) : null);
+        },
       },
     );
   }, [boardId]);
@@ -123,6 +130,7 @@ export function useBoardRecords(boardId: string | null): BoardRecords {
     error: query.error,
     refetch: () => void query.refetch(),
     liveStatus,
+    liveRefusal,
     add,
     truncated,
   };

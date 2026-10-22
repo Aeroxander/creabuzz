@@ -11,7 +11,11 @@
  * Alias-free; `board-moderation.test.mjs` drives it under `node --test`.
  */
 
-import { asSentence } from "../../../shared/lib/refusal-text.ts";
+import {
+  asSentence,
+  restrictionText,
+  whenText,
+} from "../../../shared/lib/refusal-text.ts";
 import type { Draft } from "./board-events.ts";
 import type { BoardEvent } from "./board-model.ts";
 
@@ -465,25 +469,20 @@ export function pinnedFirst<T extends { id: string }>(
   return [...top, ...posts.filter((post) => !rank.has(post.id))];
 }
 
-/** Whether an ordinary board write was refused by board moderation: a mute, or a locked thread. */
-export function isModerationRefusal(message: string): boolean {
-  return /^restricted: (you are muted on this board|this thread is locked)/.test(
-    message.trim(),
-  );
-}
-
 /**
- * A board refusal in plain words: without the server's `restricted:`/`invalid:` prefix, and with a date where the
- * server gave a unix time (`you are muted on this board until 1730000000`).
+ * A refusal of a moderation command in plain words: a restriction on the reader as `refusalText` says it; otherwise
+ * without the server's `restricted:`/`invalid:` prefix, and with a date and time where the server gave a unix time.
  */
 export function boardRefusalText(message: string): string {
   if (/^error:/.test(message.trim())) return message;
+  const restricted = restrictionText(message);
+  if (restricted !== null) return restricted;
   const words = message
     .trim()
     .replace(/^(restricted|invalid|rate-limited|blocked|duplicate):\s*/, "")
     .replace(
       /\buntil (\d{9,11})\b/g,
-      (_, unix: string) => `until ${dateWords(Number(unix))}`,
+      (_, unix: string) => `until ${whenText(Number(unix))}`,
     );
   return words === "" ? message : asSentence(words);
 }

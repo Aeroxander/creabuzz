@@ -180,3 +180,14 @@ test("unknown-kind guidance names the kinds and the relay-side fix", () => {
   assert.match(generic, /refused this request/);
   assert.doesNotMatch(generic, /older build/);
 });
+
+test("a refusal that restricts the reader is said plainly, and the generic one points the right way", () => {
+  assert.equal(
+    relayFailureGuidance("blocked: you are banned from this community"),
+    "You are banned from this community.",
+  );
+  assert.match(
+    relayFailureGuidance("restricted: not a channel member"),
+    /Its own message is shown below\./,
+  );
+});
