@@ -1165,3 +1165,15 @@ own browser:
 
 Working looks like: every action appears once in the Moderation log in plain words, the server refuses what the app
 does not offer (with a sentence, not a code), and a reload shows the same state.
+
+## 4at. A board's roster changes reach an open board live (D95, 2026-10-22)
+
+```bash
+. ./bin/activate-hermit
+cargo test -p buzz-relay --lib board_roster_records     # only an #h subscription hears a roster change
+pnpm --dir web exec playwright test --project=smoke tests/e2e/board.spec.ts -g "roster|newly appointed admin"
+```
+
+By hand, on a local server with two accounts: the first opens an open board and stays on it. The second presses **Join**
+on the same board, then **Joined** to leave. Working looks like: the first account's board re-reads its members each
+time without a reload (in the browser's network panel, a new request for kind 39002 right after each change).

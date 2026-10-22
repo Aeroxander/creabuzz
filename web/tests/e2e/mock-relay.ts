@@ -84,7 +84,17 @@ export function matches(filter: Filter, event: StoredEvent): boolean {
     const tagName = key.slice(1);
     const wanted = Array.isArray(value) ? (value as string[]) : [];
     if (wanted.length === 0) continue;
-    const present = tagValue(event, tagName);
+    let present = tagValue(event, tagName);
+    // As the real server does (`buzz-core/src/filter.rs`): a record with no `h` tag matches `#h` by the board it is
+    // stored under. For the server's NIP-29 group records (39000–39003) that is the board their `d` names.
+    if (
+      tagName === "h" &&
+      present.length === 0 &&
+      event.kind >= 39000 &&
+      event.kind <= 39003
+    ) {
+      present = tagValue(event, "d");
+    }
     if (!present.some((v) => wanted.includes(v))) return false;
   }
   return true;

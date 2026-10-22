@@ -1411,7 +1411,10 @@ test("a removal reaches another reader's open board at once, and only when an ow
   await expectRows(page, ["Fine post"]);
 });
 
-/** A reader's board has asked to hear about roster changes, so a change delivered now will reach it. */
+/**
+ * A reader's board has asked to hear about roster changes, so a change delivered now will reach it. It must ask by `#h`:
+ * the real server delivers a board's records live only to subscriptions that name the board that way, never to `#d`.
+ */
 const rosterWatched = (relay: ReturnType<typeof createMockRelay>) =>
   expect
     .poll(() =>
@@ -1420,7 +1423,7 @@ const rosterWatched = (relay: ReturnType<typeof createMockRelay>) =>
         .some(
           (f) =>
             f.kinds?.includes(39002) &&
-            (f["#d"] as string[] | undefined)?.includes(BOARD),
+            (f["#h"] as string[] | undefined)?.includes(BOARD),
         ),
     )
     .toBe(true);

@@ -1383,6 +1383,52 @@ mod tests {
     }
 
     #[test]
+    fn board_roster_records_reach_h_subscriptions_but_not_d_only_ones() {
+        // A board's roster records (kinds 39001/39002) are relay-signed, stored
+        // under the board, and name it only in `d`. A live subscription that
+        // names the board with `#h` gets them: the request path scopes it to the
+        // board, and an `#h` filter falls back to the stored channel for records
+        // with no `h` tag. One that names it only with `#d` never does: the
+        // request path leaves it unscoped, and channel events skip unscoped
+        // subscriptions. The web's roster sync depends on the first.
+        let registry = SubscriptionRegistry::new();
+        let board = Uuid::new_v4();
+        let (by_h, by_d) = (Uuid::new_v4(), Uuid::new_v4());
+        let kinds = [Kind::Custom(39001), Kind::Custom(39002)];
+        let h_filter = Filter::new().kinds(kinds).custom_tag(
+            nostr::SingleLetterTag::lowercase(nostr::Alphabet::H),
+            board.to_string(),
+        );
+        let d_filter = Filter::new().kinds(kinds).custom_tag(
+            nostr::SingleLetterTag::lowercase(nostr::Alphabet::D),
+            board.to_string(),
+        );
+        // Scoped the way the request path scopes a live REQ: from `#h` only.
+        let h_scope =
+            crate::handlers::req::extract_channel_ids_from_filters(std::slice::from_ref(&h_filter));
+        let d_scope =
+            crate::handlers::req::extract_channel_ids_from_filters(std::slice::from_ref(&d_filter));
+        assert_eq!(h_scope, Some(vec![board]));
+        assert_eq!(d_scope, None);
+        registry.register(by_h, "roster-h".to_string(), vec![h_filter], Some(board));
+        registry.register(by_d, "roster-d".to_string(), vec![d_filter], None);
+
+        let event = EventBuilder::new(Kind::Custom(39002), "")
+            .tags([
+                Tag::parse(["d", &board.to_string()]).expect("d tag"),
+                Tag::parse(["p", &"ab".repeat(32), "", "admin"]).expect("p tag"),
+            ])
+            .sign_with_keys(&Keys::generate())
+            .expect("sign");
+        let roster = StoredEvent::with_received_at(event, Utc::now(), Some(board), true);
+        assert_eq!(
+            registry.fan_out(&roster),
+            vec![(by_h, "roster-h".to_string())],
+            "only the #h subscription hears a roster change"
+        );
+    }
+
+    #[test]
     fn test_empty_kinds_array_remove_is_noop() {
         // Removing a kinds:[] subscription should not panic or corrupt the index.
         let registry = SubscriptionRegistry::new();

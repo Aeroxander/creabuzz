@@ -90,7 +90,9 @@ export function useRosterSync(boardId: string): () => void {
         relayWsUrl(),
         {
           kinds: [KIND_GROUP_ADMINS, KIND_GROUP_MEMBERS],
-          "#d": [boardId],
+          // By `#h`, not `#d`: the server delivers a board's records live only to subscriptions that name the board with
+          // `#h`, and matches these roster records (which carry no `h` tag) by the board they are stored under.
+          "#h": [boardId],
           since,
         },
         { onEvent: refresh },
