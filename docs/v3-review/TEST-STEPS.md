@@ -1177,3 +1177,41 @@ pnpm --dir web exec playwright test --project=smoke tests/e2e/board.spec.ts -g "
 By hand, on a local server with two accounts: the first opens an open board and stays on it. The second presses **Join**
 on the same board, then **Joined** to leave. Working looks like: the first account's board re-reads its members each
 time without a reload (in the browser's network panel, a new request for kind 39002 right after each change).
+
+## 4au. Access changing while the app is open: timeouts, bans, removal (D96, 2026-10-22)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test   # refusal-text, reconnect, live-scope, relay-failure
+pnpm --dir web exec playwright test --project=smoke tests/e2e/access-refused.spec.ts tests/e2e/live-scope.spec.ts
+```
+
+By hand, on a local server with two accounts, the first a community admin (`buzz-admin add-member --role admin`, with
+`RELAY_URL` set to the server's address). The second opens a board and leaves it open throughout.
+
+1. **Timeout.** The admin reports the second account's profile and, in the community's Moderation queue, presses
+   **Time out** → 1 hour. The second account tries to post: "You are timed out in this community until (date and
+   time). You can still read; you can post again then." No unix numbers, no `restricted:`.
+2. **Ban.** The admin presses **Ban** on one of their posts, 1 day. Without reloading, the second account's board says
+   "You are banned from this community." under the header within a few seconds, and still says it later (no
+   "Reconnecting…"). Posting says the same. Reloading shows "Couldn't load this board / You are banned from this
+   community." The admin lifts it under Org → People; the board loads again.
+
+Removal from a private board while it is open is step 2 of 4av.
+
+## 4av. Taking someone off a private board (D97, 2026-10-22)
+
+```bash
+. ./bin/activate-hermit
+cargo test -p buzz-relay --lib channel_authz
+cargo test -p buzz-relay --lib board_moderation_tests -- --ignored   # needs Postgres and Redis
+pnpm --dir web exec playwright test --project=smoke tests/e2e/board.spec.ts -g "takes someone off"
+```
+
+By hand, with two accounts and a private board where the first is owner or admin and the second a member (a community
+with no boards offers a private founders board):
+
+1. The first opens the board, **People**: **Remove** shows beside the member, never beside the owner (for an admin) or
+   themself. Pressing it asks first.
+2. The second has the board open. After the first confirms, the second's board says "You no longer have access to this
+   room or board. Live updates stopped." without a reload, and the first's list no longer shows them.

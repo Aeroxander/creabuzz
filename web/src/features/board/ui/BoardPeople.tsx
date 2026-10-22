@@ -1,5 +1,6 @@
 /**
- * Who can read a private board, and a way to add someone.
+ * Who can read a private board, a way to add someone, and, for the board's owners and admins, a way to take someone off
+ * it (they are told at once if they have it open).
  *
  * Shown only on a private board: an open board is for everyone in the
  * community. Anyone who can read the board sees who else can. The form to add a
@@ -12,13 +13,14 @@
 import { useState } from "react";
 
 import { useMentionCandidates } from "@/features/fleet/use-mention-candidates";
-import { useProfiles } from "@/features/profiles/use-profiles";
+import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { Input } from "@/shared/ui/input";
 
-import { parsePersonInput } from "../lib/members";
+import { canRemoveMember, parsePersonInput } from "../lib/members";
 import { useBoardMembers } from "../use-board-members";
 import { AuthorChip } from "./AuthorChip";
 
@@ -30,7 +32,8 @@ export function BoardPeople({
   /** A channel whose speakers are offered as people to add. */
   suggestFromChannelId: string | null;
 }) {
-  const { members, add } = useBoardMembers(boardId, true);
+  const { members, add, remove } = useBoardMembers(boardId, true);
+  const [removing, setRemoving] = useState<string | null>(null);
   const me = existingUserPubkey();
   const profiles = useProfiles(members.map((m) => m.pubkey)).data;
   const candidates = useMentionCandidates(suggestFromChannelId);
@@ -58,6 +61,22 @@ export function BoardPeople({
         error instanceof Error && error.message
           ? error.message
           : "Couldn't add them. Try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removePerson = async (pubkey: string) => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await remove(pubkey);
+    } catch (error) {
+      setProblem(
+        error instanceof Error && error.message
+          ? error.message
+          : "Couldn't remove them. Try again.",
       );
     } finally {
       setBusy(false);
@@ -100,6 +119,18 @@ export function BoardPeople({
             />
             {member.role !== "member" ? (
               <span className="text-muted-foreground">({member.role})</span>
+            ) : null}
+            {canRemoveMember(members, me, member.pubkey) ? (
+              <button
+                aria-label={`Remove ${resolveUserName(profiles?.[member.pubkey], member.pubkey)} from this board`}
+                className="underline disabled:opacity-50"
+                data-testid="board-remove-person"
+                disabled={busy}
+                onClick={() => setRemoving(member.pubkey)}
+                type="button"
+              >
+                Remove
+              </button>
             ) : null}
           </li>
         ))}
@@ -158,6 +189,18 @@ export function BoardPeople({
           {problem}
         </p>
       ) : null}
+      <ConfirmDialog
+        confirmLabel="Remove"
+        description="They will no longer be able to read this board. If they have it open, they are told at once."
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          const pubkey = removing;
+          setRemoving(null);
+          if (pubkey !== null) void removePerson(pubkey);
+        }}
+        open={removing !== null}
+        title={`Remove ${removing ? resolveUserName(profiles?.[removing], removing) : ""} from this board?`}
+      />
     </section>
   );
 }

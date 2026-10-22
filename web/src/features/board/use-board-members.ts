@@ -9,7 +9,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { buildAddMemberEvent } from "@/features/channels/lib/channel-create-events";
+import {
+  buildAddMemberEvent,
+  buildRemoveMemberEvent,
+} from "@/features/channels/lib/channel-create-events";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_MEMBER_LIST } from "@/features/communities/lib/access";
 import { queryEvents } from "@/shared/lib/nostr-client";
@@ -43,14 +46,17 @@ export function useBoardMembers(boardId: string, enabled: boolean) {
   });
   /** People added in this session, shown at once; the server's own record takes over on the next read. */
   const [added, setAdded] = useState<BoardMember[]>([]);
+  /** People removed in this session, hidden at once until the server's record no longer lists them. */
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set());
 
   const members = useMemo(() => {
     const byKey = new Map<string, BoardMember>();
     for (const member of [...(query.data ?? []), ...added]) {
-      if (!byKey.has(member.pubkey)) byKey.set(member.pubkey, member);
+      if (!byKey.has(member.pubkey) && !removed.has(member.pubkey))
+        byKey.set(member.pubkey, member);
     }
     return [...byKey.values()];
-  }, [query.data, added]);
+  }, [query.data, added, removed]);
 
   const add = useCallback(
     async (pubkey: string) => {
@@ -59,6 +65,26 @@ export function useBoardMembers(boardId: string, enabled: boolean) {
         "The server didn't add them.",
       );
       setAdded((previous) => [...previous, { pubkey, role: "member" }]);
+      setRemoved((previous) => {
+        if (!previous.has(pubkey)) return previous;
+        const next = new Set(previous);
+        next.delete(pubkey);
+        return next;
+      });
+      void client.invalidateQueries({ queryKey: ["board-members", boardId] });
+    },
+    [boardId, client],
+  );
+
+  /** Take someone off the board. The server refuses anyone but its owners and admins, and admins removing their equals. */
+  const remove = useCallback(
+    async (pubkey: string) => {
+      await publishAsUser(
+        buildRemoveMemberEvent({ channelId: boardId, pubkey }),
+        "The server didn't remove them.",
+      );
+      setAdded((previous) => previous.filter((m) => m.pubkey !== pubkey));
+      setRemoved((previous) => new Set([...previous, pubkey]));
       void client.invalidateQueries({ queryKey: ["board-members", boardId] });
     },
     [boardId, client],
@@ -69,6 +95,7 @@ export function useBoardMembers(boardId: string, enabled: boolean) {
     isLoading: query.isLoading,
     error: query.error,
     add,
+    remove,
   };
 }
 

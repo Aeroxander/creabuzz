@@ -40,6 +40,23 @@ export function boardRemovers(
   );
 }
 
+/**
+ * Whether `me` may take `target` off a board, as the server decides it: the board's owners may remove anyone else; its
+ * admins anyone below admin; nobody else, and nobody removes themself here (that is leaving).
+ */
+export function canRemoveMember(
+  members: readonly BoardMember[],
+  me: string | null,
+  target: string,
+): boolean {
+  if (me === null || me === target) return false;
+  const mine = members.find((member) => member.pubkey === me)?.role;
+  const theirs = members.find((member) => member.pubkey === target)?.role;
+  if (mine === "owner") return true;
+  if (mine === "admin") return theirs !== "owner" && theirs !== "admin";
+  return false;
+}
+
 /** The people who can add others to a board. */
 export function canAddMembers(
   members: readonly BoardMember[],

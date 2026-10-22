@@ -857,6 +857,36 @@ test("a private board says who can read it, and an owner can add people by key o
   await expect(page.getByTestId("board-suggest-person")).toHaveCount(0);
 });
 
+test("a private board's owner takes someone off it after confirming; an admin is not offered to remove the owner", async ({
+  page,
+}) => {
+  const relay = privateBoard("owner");
+  await open(page, relay, { board: SECRET });
+  await page.getByTestId("board-people-toggle").click();
+  await expect(page.getByTestId("board-members").locator("li")).toHaveCount(2);
+  // Offered for the other person only: removing yourself is leaving.
+  await expect(page.getByTestId("board-remove-person")).toHaveCount(1);
+  await page.getByTestId("board-remove-person").click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Remove", exact: true })
+    .click();
+  await expect
+    .poll(() => relay.events.find((e) => e.kind === 9001)?.tags)
+    .toEqual([
+      ["h", SECRET],
+      ["p", ANN],
+    ]);
+  await expect(page.getByTestId("board-members").locator("li")).toHaveCount(1);
+
+  const asAdmin = privateBoard("admin");
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await open(page, asAdmin, { board: SECRET });
+  await page.getByTestId("board-people-toggle").click();
+  await expect(page.getByTestId("board-members")).toContainText("(owner)");
+  await expect(page.getByTestId("board-remove-person")).toHaveCount(0);
+});
+
 test("when the server will not let someone add people, its reason is shown", async ({
   page,
 }) => {

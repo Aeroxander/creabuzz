@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildAddMemberEvent,
+  buildRemoveMemberEvent,
   buildCreateChannelEvent,
   canonicalChannelName,
   KIND_ADD_MEMBER,
@@ -150,4 +151,19 @@ test("groupAgentsByTeam buckets unteamed agents under the empty key", () => {
   const groups = groupAgentsByTeam(roster);
   assert.equal(groups.get("core")?.length, 2);
   assert.equal(groups.get("")?.length, 1);
+});
+
+test("removing someone names the room and the person, nothing else", () => {
+  const pubkey = "AB".repeat(32);
+  assert.deepEqual(buildRemoveMemberEvent({ channelId: "room", pubkey }), {
+    kind: 9001,
+    content: "",
+    tags: [
+      ["h", "room"],
+      ["p", pubkey.toLowerCase()],
+    ],
+  });
+  assert.throws(() =>
+    buildRemoveMemberEvent({ channelId: "room", pubkey: "not-hex" }),
+  );
 });

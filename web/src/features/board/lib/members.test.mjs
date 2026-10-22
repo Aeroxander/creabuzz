@@ -8,6 +8,7 @@ import {
   canAddMembers,
   parseMembers,
   parsePersonInput,
+  canRemoveMember,
 } from "./members.ts";
 
 const A = "a".repeat(64);
@@ -121,5 +122,28 @@ describe("joinedBoards", () => {
       ME,
     );
     assert.equal(joined.size, 0);
+  });
+});
+
+describe("canRemoveMember", () => {
+  it("lets owners remove anyone else, admins only those below admin, others nobody", () => {
+    const members = [
+      { pubkey: "o", role: "owner" },
+      { pubkey: "a", role: "admin" },
+      { pubkey: "b", role: "admin" },
+      { pubkey: "m", role: "member" },
+    ];
+    assert.equal(canRemoveMember(members, "o", "a"), true);
+    assert.equal(canRemoveMember(members, "o", "m"), true);
+    assert.equal(canRemoveMember(members, "a", "m"), true);
+    assert.equal(canRemoveMember(members, "a", "o"), false);
+    assert.equal(canRemoveMember(members, "a", "b"), false);
+    assert.equal(canRemoveMember(members, "m", "a"), false);
+    assert.equal(
+      canRemoveMember(members, "o", "o"),
+      false,
+      "leaving is not removing",
+    );
+    assert.equal(canRemoveMember(members, null, "m"), false);
   });
 });

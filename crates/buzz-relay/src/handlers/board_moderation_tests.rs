@@ -41,7 +41,11 @@ async fn ingest(
 ) -> Result<IngestResult, IngestError> {
     let auth = IngestAuth::Nip42 {
         pubkey: event.pubkey,
-        scopes: vec![Scope::ChannelsWrite, Scope::MessagesWrite],
+        scopes: vec![
+            Scope::ChannelsWrite,
+            Scope::MessagesWrite,
+            Scope::AdminChannels,
+        ],
         channel_ids: None,
         conn_id: Uuid::new_v4(),
     };
@@ -868,4 +872,92 @@ async fn a_community_admin_removes_on_any_board_and_a_member_cannot() {
     assert_eq!(log.len(), 1);
     assert!(has_tag(&log[0], "action", "remove") && has_tag(&log[0], "role", "community_admin"));
     assert_eq!(log[0].content, "spam");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_board_admin_removes_members_but_not_the_owner_or_a_fellow_admin() {
+    let (owner, admin, other_admin, member) = (
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+    );
+    let (state, tenant) = community(&[
+        (&owner, "member"),
+        (&admin, "member"),
+        (&other_admin, "member"),
+        (&member, "member"),
+    ])
+    .await;
+    let b = board(&state, &tenant, &owner, "staff").await;
+    let put = |keys: &Keys, person: &Keys, role: &str| {
+        signed(
+            keys,
+            9000,
+            "",
+            &[
+                &["h", &b.to_string()],
+                &["p", &person.public_key().to_hex()],
+                &["role", role],
+            ],
+        )
+    };
+    let remove = |keys: &Keys, person: &Keys| {
+        signed(
+            keys,
+            9001,
+            "",
+            &[
+                &["h", &b.to_string()],
+                &["p", &person.public_key().to_hex()],
+            ],
+        )
+    };
+    accept(&state, &tenant, put(&owner, &admin, "admin"), "make admin").await;
+    accept(
+        &state,
+        &tenant,
+        put(&owner, &other_admin, "admin"),
+        "make second admin",
+    )
+    .await;
+    accept(
+        &state,
+        &tenant,
+        put(&owner, &member, "member"),
+        "add member",
+    )
+    .await;
+
+    refuse(
+        &state,
+        &tenant,
+        remove(&admin, &owner),
+        "an admin cannot remove an owner or a fellow admin",
+        "admin removes owner",
+    )
+    .await;
+    refuse(
+        &state,
+        &tenant,
+        remove(&admin, &other_admin),
+        "an admin cannot remove an owner or a fellow admin",
+        "admin removes admin",
+    )
+    .await;
+    accept(
+        &state,
+        &tenant,
+        remove(&admin, &member),
+        "admin removes member",
+    )
+    .await;
+    accept(
+        &state,
+        &tenant,
+        remove(&owner, &other_admin),
+        "owner removes admin",
+    )
+    .await;
 }

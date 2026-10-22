@@ -52,6 +52,10 @@ pub enum ChannelAuthzError {
     /// `nobody` policy — the agent has opted out of third-party adds.
     #[error("policy:nobody — this agent has disabled external channel additions")]
     PolicyNobody,
+    /// An admin tried to remove an owner or a fellow admin (D97: the board
+    /// guard rails of D93 apply to removal too).
+    #[error("an admin cannot remove an owner or a fellow admin")]
+    AdminCannotRemoveOwnerOrAdmin,
 }
 
 /// Whether `pubkey` is the channel's only remaining `owner`.
@@ -196,8 +200,11 @@ pub fn decide_channel_add_policy(
 /// What authority `actor` holds to remove *somebody else* (kind:9001).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoveOtherDecision {
-    /// Channel owner or admin — authorized for any target.
+    /// Channel owner (any target) or admin (a target below admin).
     Allow,
+    /// A channel admin removing an owner or a fellow admin: refused, as an
+    /// admin may not act against them on a board (D93) or in the community.
+    Outranked,
     /// An active non-elevated member. Authorized only if they own the target
     /// agent, which the caller must confirm with a database read.
     CheckAgentOwner,
@@ -206,10 +213,23 @@ pub enum RemoveOtherDecision {
     Deny,
 }
 
-/// Classify `actor`'s authority to remove another member (NIP-29 kind:9001).
-pub fn classify_remove_other(members: &[MemberRecord], actor: &[u8]) -> RemoveOtherDecision {
+/// Classify `actor`'s authority to remove `target`, another member (NIP-29
+/// kind:9001).
+pub fn classify_remove_other(
+    members: &[MemberRecord],
+    actor: &[u8],
+    target: &[u8],
+) -> RemoveOtherDecision {
+    let target_role = members
+        .iter()
+        .find(|m| m.pubkey == target)
+        .map(|m| m.role.as_str());
     match members.iter().find(|m| m.pubkey == actor) {
-        Some(m) if m.role == "owner" || m.role == "admin" => RemoveOtherDecision::Allow,
+        Some(m) if m.role == "owner" => RemoveOtherDecision::Allow,
+        Some(m) if m.role == "admin" => match target_role {
+            Some("owner") | Some("admin") => RemoveOtherDecision::Outranked,
+            _ => RemoveOtherDecision::Allow,
+        },
         Some(_) => RemoveOtherDecision::CheckAgentOwner,
         None => RemoveOtherDecision::Deny,
     }
@@ -248,7 +268,8 @@ mod tests {
     /// `(roster, actor, expected_error)`.
     type DepartureCase<'a> = (Roster<'a>, u8, Option<ChannelAuthzError>);
     /// `(roster, actor, expected_decision)`.
-    type RemoveOtherCase<'a> = (Roster<'a>, u8, RemoveOtherDecision);
+    /// `(roster, actor, target, expected_decision)`.
+    type RemoveOtherCase<'a> = (Roster<'a>, u8, u8, RemoveOtherDecision);
     /// `(policy, owner_tag, actor, expected_error)`.
     type AddPolicyCase<'a> = (&'a str, Option<u8>, u8, Option<ChannelAuthzError>);
 
@@ -614,28 +635,36 @@ mod tests {
     /// database read the caller performs.
     #[test]
     fn remove_other_table() {
-        use RemoveOtherDecision::{Allow, CheckAgentOwner, Deny};
+        use RemoveOtherDecision::{Allow, CheckAgentOwner, Deny, Outranked};
 
         let cases: &[RemoveOtherCase] = &[
-            // Owners and admins may remove anyone.
-            (&[(1, "owner"), (2, "member")], 1, Allow),
-            (&[(1, "owner"), (2, "admin")], 2, Allow),
+            // An owner may remove anyone, another owner included.
+            (&[(1, "owner"), (2, "member")], 1, 2, Allow),
+            (&[(1, "owner"), (2, "admin")], 1, 2, Allow),
+            (&[(1, "owner"), (2, "owner")], 1, 2, Allow),
+            // An admin may remove someone below admin, or someone not listed,
+            // but never an owner or a fellow admin.
+            (&[(1, "owner"), (2, "admin"), (3, "member")], 2, 3, Allow),
+            (&[(2, "admin"), (3, "guest")], 2, 3, Allow),
+            (&[(2, "admin")], 2, 9, Allow),
+            (&[(1, "owner"), (2, "admin")], 2, 1, Outranked),
+            (&[(2, "admin"), (3, "admin")], 2, 3, Outranked),
             // A plain member, guest, or bot may only remove an agent they own.
-            (&[(1, "owner"), (2, "member")], 2, CheckAgentOwner),
-            (&[(1, "owner"), (2, "guest")], 2, CheckAgentOwner),
-            (&[(1, "owner"), (2, "bot")], 2, CheckAgentOwner),
+            (&[(1, "owner"), (2, "member")], 2, 9, CheckAgentOwner),
+            (&[(1, "owner"), (2, "guest")], 2, 9, CheckAgentOwner),
+            (&[(1, "owner"), (2, "bot")], 2, 9, CheckAgentOwner),
             // Non-members are denied without an agent-owner read: you must be
             // in the channel to remove anyone, even your own bot.
-            (&[(1, "owner")], 9, Deny),
-            (&[], 9, Deny),
+            (&[(1, "owner")], 9, 1, Deny),
+            (&[], 9, 1, Deny),
         ];
 
-        for (entries, actor, expected) in cases {
+        for (entries, actor, target, expected) in cases {
             let members = roster(entries);
             assert_eq!(
-                classify_remove_other(&members, &pk(*actor)),
+                classify_remove_other(&members, &pk(*actor), &pk(*target)),
                 *expected,
-                "roster {entries:?} actor {actor}"
+                "roster {entries:?} actor {actor} target {target}"
             );
         }
     }
@@ -684,6 +713,10 @@ mod tests {
             (
                 ChannelAuthzError::PolicyNobody,
                 "policy:nobody — this agent has disabled external channel additions",
+            ),
+            (
+                ChannelAuthzError::AdminCannotRemoveOwnerOrAdmin,
+                "an admin cannot remove an owner or a fellow admin",
             ),
         ];
 

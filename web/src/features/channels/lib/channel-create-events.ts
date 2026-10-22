@@ -19,6 +19,8 @@ export type MemberRoleChoice = "owner" | "admin" | "member" | "guest" | "bot";
 export const KIND_CREATE_CHANNEL = 9007;
 /** NIP-29 add-member. The relay folds it into kind:39002 membership. */
 export const KIND_ADD_MEMBER = 9000;
+/** NIP-29 remove-user: take someone off a room or board. The server lets only its owners and admins remove others. */
+export const KIND_REMOVE_MEMBER = 9001;
 
 export type EventTemplate = {
   kind: number;
@@ -108,4 +110,20 @@ export function buildAddMemberEvent(input: AddMemberEventInput): EventTemplate {
     tags.push(["role", input.role]);
   }
   return { kind: KIND_ADD_MEMBER, content: "", tags };
+}
+
+/** Build the signed-event template for removing someone from a room or board (kind 9001). */
+export function buildRemoveMemberEvent(input: {
+  channelId: string;
+  pubkey: string;
+}): EventTemplate {
+  checkHexPubkey(input.pubkey);
+  return {
+    kind: KIND_REMOVE_MEMBER,
+    content: "",
+    tags: [
+      ["h", input.channelId],
+      ["p", input.pubkey.toLowerCase()],
+    ],
+  };
 }
