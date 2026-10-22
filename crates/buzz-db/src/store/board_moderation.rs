@@ -71,11 +71,12 @@ pub struct BoardSnapshot {
     pub rules: String,
     /// When the rules were last set.
     pub rules_set_at: Option<DateTime<Utc>>,
-    /// Pinned threads whose post still exists, newest pin first.
-    pub pinned: Vec<(Vec<u8>, DateTime<Utc>)>,
+    /// Pinned threads whose post still exists, newest pin first: the post, when,
+    /// and who pinned it.
+    pub pinned: Vec<(Vec<u8>, DateTime<Utc>, Vec<u8>)>,
     /// Locked threads whose post still exists, newest lock first, at most
-    /// [`BOARD_STATE_LOCKED_LIMIT`].
-    pub locked: Vec<(Vec<u8>, DateTime<Utc>)>,
+    /// [`BOARD_STATE_LOCKED_LIMIT`]: the post, when, and who locked it.
+    pub locked: Vec<(Vec<u8>, DateTime<Utc>, Vec<u8>)>,
     /// Moderators whose term has not ended, with their term ends, in order of appointment.
     pub moderators: Vec<(Vec<u8>, DateTime<Utc>)>,
 }
@@ -459,7 +460,7 @@ async fn read_snapshot(
     // path having to clear its lock or pin.
     let mut pinned = Vec::new();
     for row in sqlx::query(
-        "SELECT s.root_event_id, s.pinned_at AS at FROM board_thread_state s \
+        "SELECT s.root_event_id, s.pinned_at AS at, s.pinned_by AS by FROM board_thread_state s \
          WHERE s.community_id = $1 AND s.channel_id = $2 AND s.pinned_at IS NOT NULL \
            AND EXISTS (SELECT 1 FROM events e WHERE e.community_id = s.community_id \
                        AND e.id = s.root_event_id AND e.deleted_at IS NULL) \
@@ -471,11 +472,15 @@ async fn read_snapshot(
     .fetch_all(tx.conn())
     .await?
     {
-        pinned.push((row.try_get("root_event_id")?, row.try_get("at")?));
+        pinned.push((
+            row.try_get("root_event_id")?,
+            row.try_get("at")?,
+            row.try_get("by")?,
+        ));
     }
     let mut locked = Vec::new();
     for row in sqlx::query(
-        "SELECT s.root_event_id, s.locked_at AS at FROM board_thread_state s \
+        "SELECT s.root_event_id, s.locked_at AS at, s.locked_by AS by FROM board_thread_state s \
          WHERE s.community_id = $1 AND s.channel_id = $2 AND s.locked_at IS NOT NULL \
            AND EXISTS (SELECT 1 FROM events e WHERE e.community_id = s.community_id \
                        AND e.id = s.root_event_id AND e.deleted_at IS NULL) \
@@ -487,7 +492,11 @@ async fn read_snapshot(
     .fetch_all(tx.conn())
     .await?
     {
-        locked.push((row.try_get("root_event_id")?, row.try_get("at")?));
+        locked.push((
+            row.try_get("root_event_id")?,
+            row.try_get("at")?,
+            row.try_get("by")?,
+        ));
     }
     let mut moderators = Vec::new();
     for row in sqlx::query(

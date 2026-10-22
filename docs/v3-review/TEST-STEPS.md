@@ -1215,3 +1215,26 @@ with no boards offers a private founders board):
    themself. Pressing it asks first.
 2. The second has the board open. After the first confirms, the second's board says "You no longer have access to this
    room or board. Live updates stopped." without a reload, and the first's list no longer shows them.
+
+## 4aw. Board moderation, easier to use (D98, 2026-10-22)
+
+```bash
+. ./bin/activate-hermit
+cargo test -p buzz-relay --lib board_moderation -- --include-ignored   # needs Postgres and Redis
+pnpm --dir web test   # board-moderation.test.mjs, board-events.test.mjs
+pnpm --dir web exec playwright test --project=smoke tests/e2e/board-moderation.spec.ts tests/e2e/board.spec.ts tests/e2e/home-timeline.spec.ts
+```
+
+By hand, with an owner or admin and an appointed moderator of one board:
+
+1. **The menu.** Open someone else's post: **Moderate ▾** lists what you may do. With the keyboard: Enter opens it, the
+   arrows move, Escape closes it and leaves focus on the button. On your own post you see only Pin and Lock.
+2. **Only what will work.** The owner locks a thread. The moderator opens it: no Unlock in the menu (and no menu at all
+   on the owner's own post).
+3. **Reasons.** Lock a thread and remove a reply, each with a reason: the Moderation log says `locked the thread "…"`
+   and `removed a reply in the thread "…"` with the reasons, and **Open** goes to the thread.
+4. **Where people are.** The locked thread says Locked on Home. A thread shows "This board's rules". Muted someone: on
+   that board their New post and vote arrows are greyed with the reason.
+5. **Second moderator.** One moderator mutes someone for 30 days (it starts at 7). The other opens Moderation: **Confirm
+   until (date)** makes it 30 days.
+6. **Appointing.** As an owner, Moderation lists **Appoint (name)** for the board's people.

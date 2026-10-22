@@ -14,7 +14,7 @@ import type { Channel } from "@/features/channels/use-channels";
 import type { Profile } from "@/features/profiles/use-profiles";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { liveRefusalText } from "@/shared/lib/refusal-text";
+import { liveRefusalText, whenText } from "@/shared/lib/refusal-text";
 import { Button } from "@/shared/ui/button";
 
 import {
@@ -60,6 +60,13 @@ export interface BoardListModeration {
   /** When the reader's mute on this board ends (unix seconds), if they are muted. */
   mutedUntil: number | null;
   actions: BoardModerationActions;
+  /** May the reader undo what this person did (lift their mute)? */
+  mayUndoBy: (placer: string | undefined) => boolean;
+  /** A post's title, when the board has it. */
+  titleOf: (post: string) => string | null;
+  onOpenPost: (id: string) => void;
+  /** People the reader could appoint as moderators. */
+  candidates: string[];
 }
 
 function sameOrder(a: readonly string[] | null, b: readonly string[]): boolean {
@@ -98,6 +105,10 @@ export function BoardList({
   const [composing, setComposing] = useState(false);
   const [showingPeople, setShowingPeople] = useState(false);
   const [showingModeration, setShowingModeration] = useState(false);
+  const mutedReason =
+    moderation.mutedUntil !== null
+      ? `You are muted on this board until ${whenText(moderation.mutedUntil)}.`
+      : null;
   const [frozen, setFrozen] = useState<string[] | null>(null);
 
   const proposalsView = filter === "proposals";
@@ -245,11 +256,16 @@ export function BoardList({
             <JoinBoardButton boardId={channel.id} boardName={channel.name} />
           ) : null}
           <Button
+            aria-describedby={
+              mutedReason !== null ? "board-muted-note" : undefined
+            }
             data-testid="board-new-post"
+            disabled={mutedReason !== null}
             onClick={() => {
               if (needAccount("post")) setComposing(true);
             }}
             size="sm"
+            title={mutedReason ?? undefined}
           >
             New post
           </Button>
@@ -268,9 +284,13 @@ export function BoardList({
           actions={moderation.actions}
           canManage={moderation.canManage}
           canModerate={moderation.canModerate}
+          candidates={moderation.candidates}
           log={moderation.log}
+          mayUndoBy={moderation.mayUndoBy}
           me={moderation.me}
+          onOpenPost={moderation.onOpenPost}
           state={moderation.state}
+          titleOf={moderation.titleOf}
         />
       ) : null}
 
@@ -298,6 +318,7 @@ export function BoardList({
           <p
             className="rounded-xl border bg-secondary/30 p-3 text-sm"
             data-testid="board-muted-note"
+            id="board-muted-note"
             role="status"
           >
             You are muted on this board until{" "}
@@ -351,6 +372,7 @@ export function BoardList({
               (post) => (
                 <PostRow
                   key={post.id}
+                  voteDisabledReason={mutedReason}
                   locked={moderation.state.locked.has(post.id)}
                   pinned={moderation.state.pinned.includes(post.id)}
                   onOpen={() => onOpenPost(post.id)}

@@ -40,6 +40,8 @@ export const MODERATOR_TERM_DAYS = 90;
 export const BOARD_PIN_LIMIT = 3;
 export const BOARD_RULES_MAX_CHARS = 4000;
 export const REASON_MAX_CHARS = 280;
+/** How long a moderator's request for a longer mute waits for a second moderator. */
+export const SECOND_MODERATOR_WINDOW_SECONDS = 24 * 3600;
 
 const DAY = 86_400;
 
@@ -166,6 +168,10 @@ export interface BoardState {
   pinned: string[];
   /** Locked threads (the newest 500; the server enforces older locks too). */
   locked: ReadonlySet<string>;
+  /** Who pinned each pinned thread, when the server said. */
+  pinnedBy: ReadonlyMap<string, string>;
+  /** Who locked each locked thread, when the server said. */
+  lockedBy: ReadonlyMap<string, string>;
   /** Appointed moderators and when their term ends (unix seconds). */
   moderators: ReadonlyMap<string, number>;
 }
@@ -174,6 +180,8 @@ export const EMPTY_BOARD_STATE: BoardState = {
   rules: "",
   pinned: [],
   locked: new Set(),
+  pinnedBy: new Map(),
+  lockedBy: new Map(),
   moderators: new Map(),
 };
 
@@ -199,18 +207,32 @@ export function parseBoardState(
   if (!newest) return EMPTY_BOARD_STATE;
   const pinned: string[] = [];
   const locked = new Set<string>();
+  const pinnedBy = new Map<string, string>();
+  const lockedBy = new Map<string, string>();
   const moderators = new Map<string, number>();
   for (const tag of newest.tags) {
     const value = tag[1] ?? "";
     if (!HEX64.test(value)) continue;
-    if (tag[0] === "pinned" && !pinned.includes(value)) pinned.push(value);
-    else if (tag[0] === "locked") locked.add(value);
-    else if (tag[0] === "moderator") {
+    const placer = HEX64.test(tag[3] ?? "") ? tag[3] : null;
+    if (tag[0] === "pinned" && !pinned.includes(value)) {
+      pinned.push(value);
+      if (placer) pinnedBy.set(value, placer);
+    } else if (tag[0] === "locked") {
+      locked.add(value);
+      if (placer) lockedBy.set(value, placer);
+    } else if (tag[0] === "moderator") {
       const until = Number(tag[2]);
       if (Number.isFinite(until)) moderators.set(value, until);
     }
   }
-  return { rules: newest.content, pinned, locked, moderators };
+  return {
+    rules: newest.content,
+    pinned,
+    locked,
+    pinnedBy,
+    lockedBy,
+    moderators,
+  };
 }
 
 /** Moderators whose term has not ended at `now` (unix seconds). */
@@ -267,6 +289,8 @@ export interface LogEntry {
   until: number | null;
   /** `awaiting_second_moderator` or `confirmed_by_second_moderator` for a long mute. */
   status: string | null;
+  /** For a longer mute waiting for a second moderator: the end asked for (unix seconds). */
+  askedUntil: number | null;
   reason: string;
 }
 
@@ -290,6 +314,7 @@ export function parseLog(
     if (action === null || !LOG_ACTIONS.has(action)) continue;
     if (actor === null || !HEX64.test(actor)) continue;
     const until = Number(tagOf(event.tags, "until"));
+    const asked = Number(tagOf(event.tags, "asked_until"));
     entries.push({
       id: event.id,
       at: event.created_at,
@@ -304,6 +329,10 @@ export function parseLog(
           ? until
           : null,
       status: tagOf(event.tags, "status"),
+      askedUntil:
+        tagOf(event.tags, "asked_until") !== null && Number.isFinite(asked)
+          ? asked
+          : null,
       reason: event.content,
     });
   }
@@ -330,20 +359,25 @@ function dateWords(unix: number): string {
 export function logSentence(
   entry: LogEntry,
   nameOf: (pubkey: string) => string,
+  titleOf: (post: string) => string | null = () => null,
 ): string {
   const who = `${nameOf(entry.actor)}${ROLE_WORDS[entry.role] ? ` (${ROLE_WORDS[entry.role]})` : ""}`;
   const person = entry.person ? nameOf(entry.person) : "someone";
   const until = entry.until !== null ? ` until ${dateWords(entry.until)}` : "";
+  const named = (post: string | null) => {
+    const title = post ? titleOf(post) : null;
+    return title ? `the thread "${title}"` : "a thread";
+  };
   const done = (() => {
     switch (entry.action) {
       case "lock":
-        return "locked a thread";
+        return `locked ${named(entry.post)}`;
       case "unlock":
-        return "unlocked a thread";
+        return `unlocked ${named(entry.post)}`;
       case "pin":
-        return "pinned a thread";
+        return `pinned ${named(entry.post)}`;
       case "unpin":
-        return "unpinned a thread";
+        return `unpinned ${named(entry.post)}`;
       case "mute":
         return `muted ${person} on this board${until}`;
       case "unmute":
@@ -356,8 +390,13 @@ export function logSentence(
         return entry.person === entry.actor
           ? "stepped down as a moderator"
           : `ended ${person}'s time as a moderator`;
-      case "remove":
-        return entry.thread ? "removed a reply" : "removed a post";
+      case "remove": {
+        if (!entry.thread) return "removed a post";
+        const title = titleOf(entry.thread);
+        return title
+          ? `removed a reply in the thread "${title}"`
+          : "removed a reply";
+      }
     }
   })();
   const second =
@@ -368,7 +407,8 @@ export function logSentence(
         : "";
   const reason = entry.reason.trim() ? `. Reason: ${entry.reason.trim()}` : "";
   const sentence = `${who} ${done}${second}${reason}.`;
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+  // "you" opens a sentence with a capital; a name is left as it is written (a short key must not change case).
+  return sentence.startsWith("you ") ? `Y${sentence.slice(1)}` : sentence;
 }
 
 /** Mutes that are still in force at `now`, by person: the newest mute or unmute of each decides. */
@@ -434,6 +474,29 @@ export function standingOf(
 /** May someone of `actor` standing act against someone of `target` standing (mute them, lock or remove their post)? */
 export function mayActAgainst(actor: Standing, target: Standing): boolean {
   return actor === STANDING.communityOwner || actor > target;
+}
+
+/** May someone of `actor` standing undo (unlock, unpin, unmute) what someone of `placer` standing did? */
+export function mayUndo(actor: Standing, placer: Standing): boolean {
+  return actor >= placer;
+}
+
+/**
+ * Longer mutes waiting for a second moderator: the newest mute of each person, still in force at `now`, asked for less
+ * than a day ago, with the longer end it asked for. Another moderator confirms one by muting until that end.
+ */
+export function pendingLongerMutes(
+  log: readonly LogEntry[],
+  now: number,
+): LogEntry[] {
+  const current = activeMutes(log, now);
+  return [...current.values()].filter(
+    (entry) =>
+      entry.status === "awaiting_second_moderator" &&
+      entry.askedUntil !== null &&
+      entry.askedUntil > now &&
+      entry.at > now - SECOND_MODERATOR_WINDOW_SECONDS,
+  );
 }
 
 export interface MuteChoice {

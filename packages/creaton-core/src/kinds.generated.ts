@@ -433,8 +433,9 @@ export const KIND_WINDOW_BOUNDS = 39006;
 export const KIND_THREAD_WINDOW_BOUNDS = 39007;
 
 /// Board moderation state (relay-signed, addressable, `d` and `h` = board channel id):
-/// the board's rules (content), pinned and locked threads, and its appointed
-/// moderators with their term ends. Rebuilt from the database in the same
+/// the board's rules (content), pinned and locked threads with who placed each
+/// (`["locked", post, at, by]`), and its appointed moderators with their term
+/// ends. Rebuilt from the database in the same
 /// transaction as every board moderation command.
 export const KIND_BOARD_STATE = 39008;
 
@@ -668,7 +669,8 @@ export const KIND_FORUM_COMMENT = 45003;
 /// A board's public moderation log entry (relay-signed, `h` = the board): what
 /// was done (`action`), by whom (`actor`, with their standing in `role`), to
 /// which post (`e`, and `thread` for a removed reply) or person (`p`), until
-/// when (`until`, never `expiration`, so the entry outlives the mute), and the
+/// when (`until`, never `expiration`, so the entry outlives the mute; and
+/// `asked_until` for a longer mute waiting for a second moderator), and the
 /// public reason (content).
 export const KIND_BOARD_MODERATION_LOG = 45004;
 

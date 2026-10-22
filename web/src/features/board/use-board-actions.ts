@@ -95,9 +95,9 @@ export function useBoardActions(
           "The server didn't delete that.",
         ),
       /** Remove someone else's post or reply; the server refuses anyone who does not own or administer the board. */
-      moderate: (target: string) =>
+      moderate: (target: string, reason?: string) =>
         send(
-          moderationDeletionDraft({ boardId, target }),
+          moderationDeletionDraft({ boardId, target, reason }),
           "The server didn't remove that.",
         ),
     };

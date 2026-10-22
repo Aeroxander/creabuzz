@@ -1,17 +1,34 @@
 /**
- * What a reader can do about someone else's post or reply: report it to the moderators; for the board's moderators,
- * owners and admins, remove it or mute its author on this board; for the community's owners and admins, ban the person.
- * Nobody is offered these on their own words (they have Delete). Each says what it does before it is done.
+ * What a reader can do about a post or reply: report someone else's words to the moderators, and, in one Moderate menu,
+ * whatever the server would let this reader do here. For a thread: pin or unpin it, lock or unlock it (an undo only for
+ * someone of at least the standing of whoever did it). For someone else's words: remove them, mute their author on
+ * this board, or ban them from the community. Locking and removing ask for an optional public reason first; muting and
+ * banning have their own dialogs.
  */
 
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
-import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 
-import type { MuteChoice } from "../lib/board-moderation";
+import type { MuteChoice, ThreadAction } from "../lib/board-moderation";
+import { type ModerateItem, ModerateMenu } from "./ModerateMenu";
 import { MuteDialog } from "./MuteDialog";
+import { ReasonDialog } from "./ReasonDialog";
+
+/** What the menu offers for a thread (a post only), as the server decides it for this reader. */
+export interface ThreadControls {
+  locked: boolean;
+  pinned: boolean;
+  /** Lock it, or (when locked) unlock it: false when the lock was placed by someone of higher standing. */
+  canToggleLock: boolean;
+  /** Pin it, or (when pinned) unpin it. */
+  canTogglePin: boolean;
+  onThread: (action: ThreadAction, reason?: string) => Promise<unknown>;
+}
+
+type Dialog = "report" | "remove" | "lock" | "mute" | null;
 
 export function BoardModeration({
   kind,
@@ -23,6 +40,7 @@ export function BoardModeration({
   needAccount,
   onRemove,
   mute,
+  thread = null,
   disabled = false,
 }: {
   kind: "post" | "reply";
@@ -39,85 +57,139 @@ export function BoardModeration({
   } | null;
   /** Tells a signed-out reader to make an account; true when they have one. */
   needAccount: (action: string) => boolean;
-  onRemove: (id: string) => void;
+  /** Remove it, with the public reason (empty for none). */
+  onRemove: (id: string, reason: string) => Promise<unknown>;
+  thread?: ThreadControls | null;
   disabled?: boolean;
 }) {
-  const [reporting, setReporting] = useState(false);
-  const [removing, setRemoving] = useState(false);
-  const [muting, setMuting] = useState(false);
+  const [dialog, setDialog] = useState<Dialog>(null);
   const ban = useBanAuthor(author, name);
-  if (me !== null && me === author) return null;
+  const mine = me !== null && me === author;
   const noun = kind === "post" ? "post" : "reply";
-  const button = "underline disabled:opacity-50";
+
+  const threadAction = (action: ThreadAction, done: string) => {
+    thread
+      ?.onThread(action)
+      .then(() => toast.success(done))
+      .catch((error: unknown) =>
+        toast.error("That did not go through", {
+          description: error instanceof Error ? error.message : String(error),
+        }),
+      );
+  };
+
+  const items: ModerateItem[] = [];
+  if (thread?.canTogglePin) {
+    items.push(
+      thread.pinned
+        ? {
+            label: "Unpin thread",
+            testId: "board-thread-pin",
+            onSelect: () => threadAction("unpin", "Thread unpinned."),
+          }
+        : {
+            label: "Pin to the top of the board",
+            testId: "board-thread-pin",
+            onSelect: () =>
+              threadAction("pin", "Thread pinned to the top of the board."),
+          },
+    );
+  }
+  if (thread?.canToggleLock) {
+    items.push(
+      thread.locked
+        ? {
+            label: "Unlock thread",
+            testId: "board-thread-lock",
+            onSelect: () => threadAction("unlock", "Thread unlocked."),
+          }
+        : {
+            label: "Lock thread…",
+            testId: "board-thread-lock",
+            onSelect: () => setDialog("lock"),
+          },
+    );
+  }
+  if (!mine && canRemove) {
+    items.push({
+      label: `Remove ${noun}…`,
+      testId: `board-remove-${kind}`,
+      onSelect: () => setDialog("remove"),
+      destructive: true,
+    });
+  }
+  if (!mine && mute) {
+    items.push({
+      label: `Mute ${name} on this board…`,
+      testId: `board-mute-${kind}`,
+      onSelect: () => setDialog("mute"),
+    });
+  }
+  if (!mine && ban.allowed) {
+    items.push({
+      label: `Ban ${name} from the community…`,
+      testId: `board-ban-${kind}`,
+      onSelect: ban.start,
+      destructive: true,
+    });
+  }
+
   return (
     <>
-      <button
-        className={button}
-        data-testid={`board-report-${kind}`}
+      {!mine ? (
+        <button
+          className="underline disabled:opacity-50"
+          data-testid={`board-report-${kind}`}
+          disabled={disabled}
+          onClick={() => {
+            if (needAccount("report")) setDialog("report");
+          }}
+          type="button"
+        >
+          Report
+        </button>
+      ) : null}
+      <ModerateMenu
         disabled={disabled}
-        onClick={() => {
-          if (needAccount("report")) setReporting(true);
-        }}
-        type="button"
-      >
-        Report
-      </button>
-      {canRemove ? (
-        <button
-          className={button}
-          data-testid={`board-remove-${kind}`}
-          disabled={disabled}
-          onClick={() => setRemoving(true)}
-          type="button"
-        >
-          Remove
-        </button>
-      ) : null}
-      {mute ? (
-        <button
-          className={button}
-          data-testid={`board-mute-${kind}`}
-          disabled={disabled}
-          onClick={() => setMuting(true)}
-          type="button"
-        >
-          Mute here
-        </button>
-      ) : null}
-      {ban.allowed ? (
-        <button
-          className={button}
-          data-testid={`board-ban-${kind}`}
-          disabled={disabled}
-          onClick={ban.start}
-          type="button"
-        >
-          Ban
-        </button>
-      ) : null}
-      {reporting ? (
+        items={items}
+        testId={`board-moderate-${kind}`}
+      />
+      {dialog === "report" ? (
         <ReportDialog
-          onClose={() => setReporting(false)}
+          onClose={() => setDialog(null)}
           target={{ kind: "message", eventId: id, authorPubkey: author }}
           what={`this ${noun}`}
         />
       ) : null}
-      <ConfirmDialog
-        confirmLabel="Remove"
-        description={`This ${noun} will be removed for everyone on this board.`}
-        onCancel={() => setRemoving(false)}
-        onConfirm={() => {
-          setRemoving(false);
-          onRemove(id);
-        }}
-        open={removing}
-        title={`Remove this ${noun}?`}
-      />
-      {muting && mute ? (
+      {dialog === "remove" ? (
+        <ReasonDialog
+          confirmLabel="Remove"
+          description={`This ${noun} will be removed for everyone on this board. The removal and your reason go in the board's moderation log.`}
+          destructive
+          onClose={() => setDialog(null)}
+          onConfirm={(reason) => onRemove(id, reason)}
+          testId="board-remove-dialog"
+          title={`Remove this ${noun}?`}
+        />
+      ) : null}
+      {dialog === "lock" && thread ? (
+        <ReasonDialog
+          confirmLabel="Lock"
+          description="Nobody below moderator can reply any more; everyone can still read it and vote. It goes in the board's moderation log with your reason."
+          onClose={() => setDialog(null)}
+          onConfirm={async (reason) => {
+            await thread.onThread("lock", reason);
+            toast.success("Thread locked. No new replies.");
+          }}
+          testId="board-lock-dialog"
+          title="Lock this thread?"
+        />
+      ) : null}
+      {dialog === "mute" && mute ? (
         <MuteDialog
           choices={mute.choices}
           name={name}
-          onClose={() => setMuting(false)}
+          onClose={() => setDialog(null)}
           onMute={mute.onMute}
         />
       ) : null}

@@ -36,9 +36,12 @@ export function PostRow({
   board,
   pinned = false,
   locked = false,
+  voteDisabledReason = null,
   onOpen,
   onVote,
 }: {
+  /** Why the reader cannot vote here (muted on this board). */
+  voteDisabledReason?: string | null;
   post: BoardPost;
   /** Pinned to the top of its board by a moderator. */
   pinned?: boolean;
@@ -69,6 +72,7 @@ export function PostRow({
         </div>
       ) : (
         <VoteButtons
+          disabledReason={voteDisabledReason}
           myVote={post.myVote}
           onVote={onVote}
           score={post.score}

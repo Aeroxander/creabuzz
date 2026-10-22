@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ExternalLink,
+  Lock,
   MessageCircle,
   ScrollText,
   Share,
@@ -23,13 +24,15 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { type FeedPost, postMedia, previewText } from "../lib/board-feed";
 import type { BoardEvent } from "../lib/board-model";
 import { useBoardActions } from "../use-board-actions";
+import { useBoardStateRecord } from "../use-board-moderation";
 
 /**
  * A board post in the timeline, looking like every other post there: picture, name and time, then which board it is
  * on, its title, the first lines of its text and its first picture, and the same action bar with Reddit votes. It
  * opens on its board's page, where the discussion is.
  *
- * A post about a DAO decision has no vote arrows, as on the board: a vote here is not the DAO's vote.
+ * A post about a DAO decision has no vote arrows, as on the board: a vote here is not the DAO's vote. A thread its
+ * board's moderators locked says so, as it does on the board.
  */
 export function BoardPostCard({
   post,
@@ -45,6 +48,7 @@ export function BoardPostCard({
 }) {
   const navigate = useNavigate();
   const actions = useBoardActions(post.boardId, add);
+  const locked = useBoardStateRecord(post.boardId).locked.has(post.id);
   const name = resolveUserName(author, post.author);
   const handle = resolveUserSecondaryName(author, post.author);
   const media = postMedia(post.body);
@@ -130,6 +134,14 @@ export function BoardPostCard({
             <Users aria-hidden className="h-3 w-3 shrink-0" />
             <span className="truncate">{board.name}</span>
           </Link>
+          {locked ? (
+            <span
+              className="ml-1.5 inline-flex items-center gap-1 text-xs text-black/60 dark:text-white/60"
+              data-testid="social-board-post-locked"
+            >
+              <Lock aria-hidden className="h-3 w-3" /> Locked
+            </span>
+          ) : null}
           <h3
             className="mt-1 text-base font-bold leading-snug text-black dark:text-white"
             data-testid="social-board-post-title"

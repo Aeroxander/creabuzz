@@ -31,8 +31,11 @@ interface ReplyContext {
   onMute: (author: string, days: number, reason: string) => Promise<unknown>;
   /** False in a locked thread for readers below moderator: no Reply buttons. */
   canReply: boolean;
+  /** Why the reader cannot vote here (muted on this board). */
+  voteDisabledReason: string | null;
   needAccount: (action: string) => boolean;
-  onRemove: (id: string) => void;
+  /** Remove someone else's reply, with the public reason (empty for none). */
+  onRemove: (id: string, reason: string) => Promise<unknown>;
 }
 
 /** Nested comment branches; deeper levels keep their order without narrowing the text further. */
@@ -60,6 +63,7 @@ export function CommentReplies({
     muteChoices,
     onMute,
     canReply,
+    voteDisabledReason,
     needAccount,
     onRemove,
   } = context;
@@ -80,6 +84,7 @@ export function CommentReplies({
               data-testid={`board-reply-content-${comment.id}`}
             >
               <VoteButtons
+                disabledReason={voteDisabledReason}
                 myVote={comment.myVote}
                 onVote={(direction) => onVote(comment, direction)}
                 score={comment.score}

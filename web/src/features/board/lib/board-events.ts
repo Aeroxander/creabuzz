@@ -100,15 +100,16 @@ export function voteDraft(input: {
 export function moderationDeletionDraft(input: {
   boardId: string;
   target: string;
+  /** Public reason, shown in the board's moderation log and the removed reply's thread. */
+  reason?: string;
 }): Draft {
-  return {
-    kind: KIND_MODERATION_DELETE,
-    tags: [
-      ["h", input.boardId],
-      ["e", input.target],
-    ],
-    content: "",
-  };
+  const tags = [
+    ["h", input.boardId],
+    ["e", input.target],
+  ];
+  const reason = (input.reason ?? "").trim().slice(0, 280);
+  if (reason !== "") tags.push(["public_reason", reason]);
+  return { kind: KIND_MODERATION_DELETE, tags, content: "" };
 }
 
 /** Delete one of the author's own records (same shape the chat uses). */

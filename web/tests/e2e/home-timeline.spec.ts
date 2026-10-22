@@ -186,6 +186,34 @@ test("Everyone mixes short posts and every board's posts, and New and Top reorde
     .toBe("Keeping a character steady");
 });
 
+test("a board thread its moderators locked says Locked on Home too", async ({
+  page,
+}) => {
+  const { relay, loved } = seeded();
+  relay.seed({
+    id: eid(),
+    pubkey: "b".repeat(64),
+    created_at: now() - 60,
+    kind: 39008,
+    tags: [
+      ["d", FILM],
+      ["h", FILM],
+      ["locked", loved.id, String(now() - 60), ANN],
+    ],
+    content: "",
+    sig: "sig",
+  });
+  await open(page, relay);
+  const card = (title: string) =>
+    page.getByTestId("social-board-post").filter({ hasText: title });
+  await expect(
+    card("Keeping a character steady").getByTestId("social-board-post-locked"),
+  ).toHaveText("Locked");
+  await expect(
+    card("Splitting album royalties").getByTestId("social-board-post-locked"),
+  ).toHaveCount(0);
+});
+
 test("a vote on a short post is an up or down reaction, and pressing it again takes it back", async ({
   page,
 }) => {

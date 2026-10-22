@@ -285,6 +285,16 @@ async fn a_locked_thread_refuses_replies_below_moderator_whatever_the_marker_and
         has_tag(&record, "h", &b.to_string()),
         "state names its board in h"
     );
+    // Who locked it, so a client offers Unlock only to someone of at least their standing.
+    assert!(
+        record.tags.iter().any(|t| {
+            let parts = t.as_slice();
+            parts[0] == "locked"
+                && parts[1] == thread.id.to_hex()
+                && parts.get(3) == Some(&owner.public_key().to_hex())
+        }),
+        "the lock names who placed it"
+    );
     assert_eq!(record.pubkey, state.relay_keypair.public_key());
     let log = relay_events(&state, &tenant, b, KIND_BOARD_MODERATION_LOG).await;
     assert_eq!(log.len(), 1, "one entry per accepted action");
@@ -553,6 +563,17 @@ async fn appointed_moderators_act_within_the_guard_rails() {
     )
     .await;
     assert!(message.contains("second moderator"), "{message}");
+    // The log says how long was asked for, so another moderator can confirm it.
+    let asked = relay_events(&state, &tenant, b, KIND_BOARD_MODERATION_LOG).await;
+    assert!(asked.iter().any(|e| {
+        has_tag(e, "status", "awaiting_second_moderator")
+            && e.tags.iter().any(|t| {
+                t.as_slice()[0] == "asked_until"
+                    && t.as_slice()[1]
+                        .parse::<i64>()
+                        .is_ok_and(|v| v > in_days(19))
+            })
+    }));
     let person = state
         .db
         .board_person(tenant.community(), b, &member.public_key().to_bytes())

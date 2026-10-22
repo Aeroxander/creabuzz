@@ -138,6 +138,21 @@ describe("moderationDeletionDraft", () => {
       },
     );
   });
+
+  it("carries a public reason, trimmed and cut, only when there is one", () => {
+    const draft = moderationDeletionDraft({
+      boardId: BOARD,
+      target: ROOT,
+      reason: `  spam link${"!".repeat(400)}`,
+    });
+    assert.equal(draft.tags[2][0], "public_reason");
+    assert.equal(draft.tags[2][1].length, 280);
+    assert.equal(
+      moderationDeletionDraft({ boardId: BOARD, target: ROOT, reason: "  " })
+        .tags.length,
+      2,
+    );
+  });
 });
 
 describe("membershipDraft", () => {

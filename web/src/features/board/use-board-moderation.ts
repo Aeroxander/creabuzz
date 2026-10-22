@@ -46,6 +46,28 @@ async function fetchModeration(boardId: string): Promise<BoardEvent[]> {
   return [...state, ...log];
 }
 
+/**
+ * Just the board's state record, read once and shared by every caller for the same board (a timeline with many posts
+ * from one board reads it once). For places that only show the state, like the Home timeline; the board page follows
+ * it live with `useBoardModerationRecords`.
+ */
+export function useBoardStateRecord(boardId: string): BoardState {
+  const query = useQuery({
+    queryKey: ["board-state", boardId],
+    queryFn: () =>
+      queryEvents(relayWsUrl(), {
+        kinds: [KIND_BOARD_STATE],
+        "#h": [boardId],
+        limit: 5,
+      }),
+    staleTime: 60_000,
+  });
+  return useMemo(
+    () => parseBoardState(query.data ?? [], boardId),
+    [query.data, boardId],
+  );
+}
+
 export interface BoardModeration {
   state: BoardState;
   log: LogEntry[];

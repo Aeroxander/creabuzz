@@ -135,6 +135,8 @@ struct Plan<'a> {
     target_event: Option<&'a [u8]>,
     target_pubkey: Option<&'a [u8]>,
     until: Option<DateTime<Utc>>,
+    /// For a longer mute waiting for a second moderator: the end asked for.
+    asked_until: Option<DateTime<Utc>>,
     reason_code: Option<&'static str>,
     message: String,
 }
@@ -396,7 +398,7 @@ pub async fn handle_board_command(
                     ),
                     None => {
                         let first = alone.max(person.muted_until.unwrap_or(alone));
-                        Plan::mute(
+                        let mut plan = Plan::mute(
                             vec![
                                 BoardChange::Mute { pubkey: target, until: first, reason: reason.as_deref() },
                                 BoardChange::AskLongerMute { pubkey: target, until: *until },
@@ -409,7 +411,10 @@ pub async fn handle_board_command(
                                 first.timestamp(),
                                 until.timestamp()
                             ),
-                        )
+                        );
+                        // The log says how long was asked for, so another moderator can confirm it.
+                        plan.asked_until = Some(*until);
+                        plan
                     }
                 }
             }
@@ -451,6 +456,7 @@ pub async fn handle_board_command(
             target_event: None,
             target_pubkey: None,
             until: None,
+            asked_until: None,
             reason_code: None,
             message: if rules.is_empty() {
                 "Rules cleared.".into()
@@ -529,6 +535,7 @@ pub async fn handle_board_command(
             thread: None,
             target_pubkey: plan.target_pubkey,
             until: plan.until,
+            asked_until: plan.asked_until,
             status: plan.reason_code,
             action_id,
             reason: reason.as_deref().unwrap_or(""),
@@ -593,6 +600,7 @@ impl<'a> Plan<'a> {
             target_event: Some(root),
             target_pubkey: None,
             until: None,
+            asked_until: None,
             reason_code: None,
             message: message.into(),
         }
@@ -613,6 +621,7 @@ impl<'a> Plan<'a> {
             target_event: None,
             target_pubkey: Some(pubkey),
             until,
+            asked_until: None,
             reason_code: None,
             message: message.into(),
         }
@@ -632,6 +641,7 @@ impl<'a> Plan<'a> {
             target_event: None,
             target_pubkey: Some(pubkey),
             until: Some(until),
+            asked_until: None,
             reason_code,
             message,
         }
@@ -709,6 +719,7 @@ pub async fn remove_board_post(
             thread: root.filter(|root| *root != target_id),
             target_pubkey: None,
             until: None,
+            asked_until: None,
             status: None,
             action_id,
             reason: reason.as_deref().unwrap_or(""),
@@ -825,6 +836,8 @@ struct LogEntry<'a> {
     thread: Option<&'a [u8]>,
     target_pubkey: Option<&'a [u8]>,
     until: Option<DateTime<Utc>>,
+    /// A longer mute waiting for a second moderator: the end asked for.
+    asked_until: Option<DateTime<Utc>>,
     status: Option<&'a str>,
     action_id: Uuid,
     reason: &'a str,
@@ -857,6 +870,9 @@ fn log_event(state: &AppState, entry: LogEntry<'_>) -> Result<Event, String> {
     if let Some(status) = entry.status {
         tags.push(tag(["status", status])?);
     }
+    if let Some(asked) = entry.asked_until {
+        tags.push(tag(["asked_until", &asked.timestamp().to_string()])?);
+    }
     EventBuilder::new(Kind::Custom(KIND_BOARD_MODERATION_LOG as u16), entry.reason)
         .tags(tags)
         .custom_created_at(nostr::Timestamp::from(entry.at.timestamp().max(0) as u64))
@@ -882,18 +898,22 @@ fn board_state_event(
     if let Some(at) = snapshot.rules_set_at {
         tags.push(tag(["rules_set_at", &at.timestamp().to_string()])?);
     }
-    for (id, at) in &snapshot.pinned {
+    // Who placed each pin and lock, so a client offers an undo only to someone
+    // of at least their standing (`board_may_undo`), as the server decides.
+    for (id, at, by) in &snapshot.pinned {
         tags.push(tag([
             "pinned",
             &hex::encode(id),
             &at.timestamp().to_string(),
+            &hex::encode(by),
         ])?);
     }
-    for (id, at) in &snapshot.locked {
+    for (id, at, by) in &snapshot.locked {
         tags.push(tag([
             "locked",
             &hex::encode(id),
             &at.timestamp().to_string(),
+            &hex::encode(by),
         ])?);
     }
     for (pubkey, until) in &snapshot.moderators {

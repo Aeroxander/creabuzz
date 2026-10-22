@@ -42,6 +42,7 @@ import {
   activeModerators,
   activeMutes,
   mayActAgainst,
+  mayUndo,
   muteChoices,
   muteEnd,
   removedReplies,
@@ -158,15 +159,6 @@ export function BoardView({
         )?.until ?? null);
   const outranks = (author: string) =>
     mayActAgainst(myStanding, standingOf(author, roles));
-  const listModeration: BoardListModeration = {
-    state: moderationRecords.state,
-    log: moderationRecords.log,
-    me,
-    canModerate,
-    canManage,
-    mutedUntil,
-    actions: moderationActions,
-  };
   // What moderators have removed stays removed for this reader even if that moderator's role is later withdrawn.
   const removedSoFar = useRef<{ board: string; ids: ReadonlySet<string> }>({
     board: channel.id,
@@ -185,6 +177,37 @@ export function BoardView({
     () => buildBoard(records.events, me, removers, kept),
     [records.events, me, removers, kept],
   );
+  /** May the reader undo (unlock, unpin, unmute) what `placer` did? Unknown placer: offer it and let the server decide. */
+  const mayUndoBy = (placer: string | undefined) =>
+    placer === undefined || mayUndo(myStanding, standingOf(placer, roles));
+  const titles = useMemo(
+    () => new Map(board.posts.map((post) => [post.id, post.title])),
+    [board.posts],
+  );
+  // People to offer as moderators: the board's members and whoever has written here, below moderator and not the reader.
+  const candidates = useMemo(() => {
+    const people = new Set<string>(roles.boardRoles.keys());
+    for (const post of board.posts) people.add(post.author);
+    for (const list of board.comments.values())
+      for (const comment of list) people.add(comment.author);
+    return [...people].filter(
+      (pubkey) => pubkey !== me && standingOf(pubkey, roles) === STANDING.none,
+    );
+  }, [roles, board, me]);
+  const listModeration: BoardListModeration = {
+    state: moderationRecords.state,
+    log: moderationRecords.log,
+    me,
+    canModerate,
+    canManage,
+    mutedUntil,
+    actions: moderationActions,
+    mayUndoBy,
+    titleOf: (id) => titles.get(id) ?? null,
+    onOpenPost,
+    candidates,
+  };
+
   // The roster is read once and goes stale: keep it current, and look again when someone not known to be an owner or admin
   // sends a removal (they may have been appointed since). Their removal is still ignored until the roster says otherwise.
   const refreshRoster = useRosterSync(channel.id);
@@ -258,13 +281,26 @@ export function BoardView({
       locked: moderationRecords.state.locked.has(open.id),
       pinned: moderationRecords.state.pinned.includes(open.id),
       canModerate,
+      // Pinning is not against anyone; an undo needs at least the standing of whoever did it; a lock is against the
+      // author unless it is the reader's own thread (`board_moderation.rs`).
+      canTogglePin:
+        canModerate &&
+        (!moderationRecords.state.pinned.includes(open.id) ||
+          mayUndoBy(moderationRecords.state.pinnedBy.get(open.id))),
+      canToggleLock:
+        canModerate &&
+        (moderationRecords.state.locked.has(open.id)
+          ? mayUndoBy(moderationRecords.state.lockedBy.get(open.id))
+          : open.author === me || outranks(open.author)),
+      rules: moderationRecords.state.rules,
       // The server lets a board's owners and admins remove anything on it, and others with standing only what someone of
       // lower standing wrote.
       canRemove: (author) =>
         ownsOrAdministers || (canModerate && outranks(author)),
       canMute: (author) => canModerate && author !== me && outranks(author),
       muteChoices: muteChoices(myStanding),
-      onThread: (action) => moderationActions.thread(open.id, action),
+      onThread: (action, reason) =>
+        moderationActions.thread(open.id, action, reason),
       onMute: async (person, days, reason) => {
         await moderationActions.mute(
           person,

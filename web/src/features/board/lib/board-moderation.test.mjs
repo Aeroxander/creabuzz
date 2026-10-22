@@ -11,10 +11,12 @@ import {
   KIND_BOARD_STATE,
   logSentence,
   mayActAgainst,
+  mayUndo,
   muteChoices,
   muteDraft,
   parseBoardState,
   parseLog,
+  pendingLongerMutes,
   pinnedFirst,
   removedReplies,
   rulesDraft,
@@ -317,5 +319,163 @@ test("board refusals read as sentences with dates", () => {
   assert.equal(
     boardRefusalText("error: database error: down"),
     "error: database error: down",
+  );
+});
+
+test("the state record says who placed each pin and lock", () => {
+  const state = parseBoardState(
+    [
+      record(
+        KIND_BOARD_STATE,
+        [
+          ["d", BOARD],
+          ["pinned", POST, "9", ALEX],
+          ["locked", POST2, "8", BEA],
+          ["locked", POST, "7"],
+        ],
+        "",
+      ),
+    ],
+    BOARD,
+  );
+  assert.equal(state.pinnedBy.get(POST), ALEX);
+  assert.equal(state.lockedBy.get(POST2), BEA);
+  assert.equal(state.lockedBy.has(POST), false, "an older record without it");
+  assert.equal(state.locked.has(POST), true);
+});
+
+test("an undo needs at least the standing of whoever did it", () => {
+  assert.equal(mayUndo(STANDING.moderator, STANDING.moderator), true);
+  assert.equal(mayUndo(STANDING.moderator, STANDING.boardOwner), false);
+  assert.equal(mayUndo(STANDING.communityAdmin, STANDING.boardOwner), true);
+  assert.equal(mayUndo(STANDING.boardAdmin, STANDING.none), true);
+});
+
+test("the log names the thread when the board has it", () => {
+  const log = parseLog(
+    [
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "lock"],
+          ["actor", ALEX],
+          ["e", POST],
+        ],
+        "",
+        { id: "a" },
+      ),
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "remove"],
+          ["actor", ALEX],
+          ["e", POST2],
+          ["thread", POST],
+        ],
+        "",
+        { id: "b" },
+      ),
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "pin"],
+          ["actor", ALEX],
+          ["e", POST2],
+        ],
+        "",
+        { id: "c" },
+      ),
+    ],
+    BOARD,
+  );
+  const names = () => "Alex";
+  const titles = (id) => (id === POST ? "Welcome" : null);
+  const sentences = new Map(
+    log.map((e) => [e.id, logSentence(e, names, titles)]),
+  );
+  assert.equal(sentences.get("a"), 'Alex locked the thread "Welcome".');
+  assert.equal(
+    sentences.get("b"),
+    'Alex removed a reply in the thread "Welcome".',
+  );
+  assert.equal(sentences.get("c"), "Alex pinned a thread.");
+});
+
+test("a longer mute waits a day for a second moderator, and only while it is the newest word on that person", () => {
+  const now = 2_000_000_000;
+  const asking = record(
+    KIND_BOARD_MODERATION_LOG,
+    [
+      ["h", BOARD],
+      ["action", "mute"],
+      ["actor", ALEX],
+      ["p", BEA],
+      ["until", String(now + 7 * 86_400)],
+      ["status", "awaiting_second_moderator"],
+      ["asked_until", String(now + 20 * 86_400)],
+    ],
+    "",
+    { id: "ask", at: now - 3600 },
+  );
+  const log = parseLog([asking], BOARD);
+  assert.equal(log[0].askedUntil, now + 20 * 86_400);
+  assert.deepEqual(
+    pendingLongerMutes(log, now).map((e) => e.id),
+    ["ask"],
+  );
+  assert.deepEqual(
+    pendingLongerMutes(log, now + 86_400).length,
+    0,
+    "a day later it lapses",
+  );
+  const lifted = parseLog(
+    [
+      asking,
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "unmute"],
+          ["actor", ALEX],
+          ["p", BEA],
+        ],
+        "",
+        { id: "u", at: now - 60 },
+      ),
+    ],
+    BOARD,
+  );
+  assert.deepEqual(
+    pendingLongerMutes(lifted, now),
+    [],
+    "lifted: nothing to confirm",
+  );
+});
+
+test("a log sentence keeps a name's own case, and capitalises only you", () => {
+  const [entry] = parseLog(
+    [
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "pin"],
+          ["actor", ALEX],
+        ],
+        "",
+      ),
+    ],
+    BOARD,
+  );
+  assert.equal(
+    logSentence(entry, () => "b2b2b2b2…b2b2"),
+    "b2b2b2b2…b2b2 pinned a thread.",
+  );
+  assert.equal(
+    logSentence(entry, () => "you"),
+    "You pinned a thread.",
   );
 });

@@ -1362,7 +1362,8 @@ test("only a board's owners and admins are offered Remove, and never on their ow
   await open(page, relay);
   await openThread(page, theirs.id);
   await expect(page.getByTestId("board-report-post")).toBeVisible();
-  await expect(page.getByTestId("board-remove-post")).toHaveCount(0);
+  // An ordinary member has nothing to moderate: no menu at all.
+  await expect(page.getByTestId("board-moderate-post")).toHaveCount(0);
 
   const admin = relayWithBoard();
   admin.seed(boardMembers("admin"));
@@ -1370,9 +1371,14 @@ test("only a board's owners and admins are offered Remove, and never on their ow
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await open(page, admin);
   await openThread(page, theirs.id);
+  await page.getByTestId("board-moderate-post").click();
   await expect(page.getByTestId("board-remove-post")).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.getByTestId("board-back").click();
   await openThread(page, mine.id);
+  // On their own post an admin may pin or lock the thread, but not remove it as a moderator (they have Delete).
+  await page.getByTestId("board-moderate-post").click();
+  await expect(page.getByTestId("board-thread-pin")).toBeVisible();
   await expect(page.getByTestId("board-remove-post")).toHaveCount(0);
 });
 
@@ -1390,19 +1396,15 @@ test("a board owner removes someone else's reply and post, and they stay gone af
   await openThread(page, theirs.id);
   await page
     .getByTestId(`board-reply-content-${theirReply.id}`)
-    .getByTestId("board-remove-reply")
+    .getByTestId("board-moderate-reply")
     .click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Remove", exact: true })
-    .click();
+  await page.getByTestId("board-remove-reply").click();
+  await page.getByTestId("board-remove-dialog-submit").click();
   await expect(page.getByTestId(`board-reply-${theirReply.id}`)).toHaveCount(0);
 
+  await page.getByTestId("board-moderate-post").click();
   await page.getByTestId("board-remove-post").click();
-  await page
-    .getByRole("alertdialog")
-    .getByRole("button", { name: "Remove", exact: true })
-    .click();
+  await page.getByTestId("board-remove-dialog-submit").click();
   await expect(page.getByTestId("board-posts")).toBeVisible();
   await expectRows(page, ["Keep this"]);
 

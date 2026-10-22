@@ -175,7 +175,12 @@ test("a board owner locks and pins a thread and mutes someone, and each is one c
   const relay = relayWith(boardMembers("owner"), theirs);
   await open(page, relay, theirs.id);
 
+  // Locking asks for an optional public reason; pinning is immediate.
+  await page.getByTestId("board-moderate-post").click();
   await page.getByTestId("board-thread-lock").click();
+  await page.getByTestId("board-lock-dialog-reason").fill("Off topic");
+  await page.getByTestId("board-lock-dialog-submit").click();
+  await page.getByTestId("board-moderate-post").click();
   await page.getByTestId("board-thread-pin").click();
   await expect
     .poll(
@@ -187,9 +192,11 @@ test("a board owner locks and pins a thread and mutes someone, and each is one c
   expect(lock?.tags).toEqual([
     ["h", BOARD],
     ["e", theirs.id],
+    ["reason", "Off topic"],
   ]);
   expect(relay.events.find((e) => e.kind === 9047)?.pubkey).toBe(OWNER);
 
+  await page.getByTestId("board-moderate-post").click();
   await page.getByTestId("board-mute-post").click();
   await expect(page.getByTestId("board-mute-days-30")).toBeVisible();
   // An owner sets a long mute alone: nothing about a second moderator.
@@ -218,6 +225,7 @@ test("an appointed moderator is told a long mute needs a second moderator, and c
   );
   await open(page, relay, theirs.id);
 
+  await page.getByTestId("board-moderate-post").click();
   await expect(page.getByTestId("board-thread-lock")).toBeVisible();
   await page.getByTestId("board-mute-post").click();
   await page.getByTestId("board-mute-days-30").check();
@@ -367,6 +375,183 @@ test("a pin, a lock and a log entry arrive while the board is open, followed by 
   ).toBeVisible();
   await page.getByTestId("board-moderation-toggle").click();
   await expect(page.getByTestId("board-log-entry")).toContainText(
-    "pinned a thread",
+    'pinned the thread "Live thread"',
   );
+});
+
+/** A roster where BOB owns the board and the reader is an ordinary member. */
+function rosterWithOwner(owner: string) {
+  return record(39002, [
+    ["d", BOARD],
+    ["p", ANN, "", "member"],
+    ["p", OWNER, "", "member"],
+    ["p", owner, "", "owner"],
+  ]);
+}
+
+test("the Moderate menu works from the keyboard and gives focus back when closed", async ({
+  page,
+}) => {
+  const theirs = post(ANN, now() - 600, "Keyboard thread");
+  const relay = relayWith(boardMembers("owner"), theirs);
+  await open(page, relay, theirs.id);
+
+  const trigger = page.getByTestId("board-moderate-post");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  const items = page.getByRole("menuitem");
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(items.nth(1)).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(items.last()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
+test("a moderator is not offered to undo the owner's lock, and a removal carries its reason", async ({
+  page,
+}) => {
+  const lockedByOwner = post(ANN, now() - 700, "Closed by the owner");
+  const spam = post(ANN, now() - 600, "Cheap followers");
+  const relay = relayWith(
+    rosterWithOwner(BOB),
+    lockedByOwner,
+    spam,
+    boardState([
+      ["locked", lockedByOwner.id, String(now() - 100), BOB],
+      ["moderator", OWNER, String(now() + 30 * 86_400)],
+    ]),
+  );
+  await open(page, relay, lockedByOwner.id);
+
+  // The owner locked it: a moderator gets Pin, but no Unlock the server would refuse.
+  await page.getByTestId("board-moderate-post").click();
+  await expect(page.getByTestId("board-thread-pin")).toBeVisible();
+  await expect(page.getByTestId("board-thread-lock")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("board-back").click();
+  await page
+    .getByTestId(`board-post-${spam.id}`)
+    .getByTestId("board-post-title")
+    .click();
+  await page.getByTestId("board-moderate-post").click();
+  await page.getByTestId("board-remove-post").click();
+  await page.getByTestId("board-remove-dialog-reason").fill("Spam");
+  await page.getByTestId("board-remove-dialog-submit").click();
+  await expect
+    .poll(() => relay.events.find((e) => e.kind === 9005)?.tags)
+    .toEqual([
+      ["h", BOARD],
+      ["e", spam.id],
+      ["public_reason", "Spam"],
+    ]);
+});
+
+test("a second moderator confirms a longer mute from the log, and the log names and opens the thread", async ({
+  page,
+}) => {
+  const thread = post(ANN, now() - 900, "The flame war");
+  const asked = now() + 20 * 86_400;
+  const relay = relayWith(
+    boardMembers("member"),
+    thread,
+    boardState([["moderator", OWNER, String(now() + 30 * 86_400)]]),
+    logEntry([
+      ["action", "lock"],
+      ["actor", ANN],
+      ["role", "moderator"],
+      ["e", thread.id],
+    ]),
+    logEntry(
+      [
+        ["action", "mute"],
+        ["actor", ANN],
+        ["role", "moderator"],
+        ["p", BOB],
+        ["until", String(now() + 7 * 86_400)],
+        ["status", "awaiting_second_moderator"],
+        ["asked_until", String(asked)],
+      ],
+      "Insults",
+      now() - 20,
+    ),
+  );
+  await open(page, relay);
+  await page.getByTestId("board-moderation-toggle").click();
+
+  await expect(
+    page.getByTestId("board-log-entry").filter({ hasText: "locked" }),
+  ).toContainText('locked the thread "The flame war"');
+  await page.getByTestId("board-log-confirm").click();
+  await expect
+    .poll(() => relay.events.find((e) => e.kind === 9049)?.tags)
+    .toEqual([
+      ["h", BOARD],
+      ["p", BOB],
+      ["expiration", String(asked)],
+      ["reason", "Insults"],
+    ]);
+
+  await page.getByTestId("board-log-open").first().click();
+  await expect(page.getByTestId("board-thread-title")).toHaveText(
+    "The flame war",
+  );
+});
+
+test("a thread shows the board's rules, and a muted reader cannot vote or start a post", async ({
+  page,
+}) => {
+  const thread = post(ANN, now() - 900, "Ruled thread");
+  const relay = relayWith(
+    boardMembers("member"),
+    thread,
+    boardState([], "No spam. Be kind."),
+    logEntry([
+      ["action", "mute"],
+      ["actor", ANN],
+      ["role", "moderator"],
+      ["p", OWNER],
+      ["until", String(now() + 86_400)],
+    ]),
+  );
+  await open(page, relay);
+
+  await expect(page.getByTestId("board-new-post")).toBeDisabled();
+  await expect(
+    page.getByTestId(`board-post-${thread.id}`).getByTestId("board-upvote"),
+  ).toBeDisabled();
+
+  await page
+    .getByTestId(`board-post-${thread.id}`)
+    .getByTestId("board-post-title")
+    .click();
+  await page.getByTestId("board-thread-rules").locator("summary").click();
+  await expect(page.getByTestId("board-thread-rules")).toContainText(
+    "No spam. Be kind.",
+  );
+  await expect(
+    page.getByTestId("board-thread").getByTestId("board-upvote").first(),
+  ).toBeDisabled();
+});
+
+test("an owner appoints a moderator from the people on the board", async ({
+  page,
+}) => {
+  const theirs = post(ANN, now() - 600, "Hello");
+  const relay = relayWith(boardMembers("owner"), theirs);
+  await open(page, relay);
+  await page.getByTestId("board-moderation-toggle").click();
+  const candidates = page.getByTestId("board-appoint-candidate");
+  // The board's members and authors, below moderator and not the reader.
+  await expect(candidates).toHaveCount(2);
+  await candidates.first().click();
+  await expect
+    .poll(() => relay.events.find((e) => e.kind === 9052)?.tags?.[1]?.[1])
+    .toMatch(/^(a1|b2)+$/);
 });

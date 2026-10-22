@@ -1,8 +1,10 @@
 /**
  * Who moderates this board and what they have done: the appointed moderators with the end of their term, and the
- * board's public moderation log in plain words. Everyone sees both. The board's owners and admins can appoint and
- * dismiss moderators here; a moderator can step down; moderators can lift a mute that is still in force. The server
- * decides each of these and its reason is shown when it refuses.
+ * board's public moderation log in plain words, each thread named and one tap away. Everyone sees both. The board's
+ * owners and admins appoint (from the people on the board, or by key) and dismiss moderators; a moderator can step
+ * down. Moderators can lift a mute that is still in force, when they stand at least as high as whoever set it, and
+ * confirm another moderator's request for a longer mute. The server decides each of these and its reason is shown
+ * when it refuses.
  */
 
 import { useState } from "react";
@@ -18,6 +20,7 @@ import {
   type LogEntry,
   logSentence,
   MODERATOR_TERM_DAYS,
+  pendingLongerMutes,
 } from "../lib/board-moderation";
 import { parsePersonInput } from "../lib/members";
 import type { BoardModerationActions } from "../use-board-moderation";
@@ -38,6 +41,10 @@ export function BoardModerationPanel({
   canModerate,
   canManage,
   actions,
+  mayUndoBy,
+  titleOf,
+  onOpenPost,
+  candidates,
 }: {
   state: BoardState;
   log: LogEntry[];
@@ -45,13 +52,23 @@ export function BoardModerationPanel({
   canModerate: boolean;
   canManage: boolean;
   actions: BoardModerationActions;
+  /** May the reader undo what this person did? */
+  mayUndoBy: (placer: string | undefined) => boolean;
+  /** A post's title, when the board has it. */
+  titleOf: (post: string) => string | null;
+  onOpenPost: (id: string) => void;
+  /** People the reader could appoint, below moderator. */
+  candidates: string[];
 }) {
   const now = Math.floor(Date.now() / 1000);
   const moderators = [...state.moderators].filter(([, until]) => until > now);
   const mutes = activeMutes(log, now);
+  const pending = new Set(pendingLongerMutes(log, now).map((e) => e.id));
+  const shownCandidates = candidates.slice(0, 8);
   const people = [
     ...new Set([
       ...moderators.map(([pubkey]) => pubkey),
+      ...shownCandidates,
       ...log.flatMap((entry) =>
         entry.person ? [entry.actor, entry.person] : [entry.actor],
       ),
@@ -191,6 +208,28 @@ export function BoardModerationPanel({
             </Button>
           </form>
         ) : null}
+        {canManage && shownCandidates.length > 0 ? (
+          <p className="mt-2 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            People on this board:
+            {shownCandidates.map((pubkey) => (
+              <button
+                className="rounded-full border px-2 py-0.5 hover:bg-secondary disabled:opacity-50"
+                data-testid="board-appoint-candidate"
+                disabled={busy}
+                key={pubkey}
+                onClick={() =>
+                  void run(
+                    () => actions.appoint(pubkey),
+                    "Moderator appointed.",
+                  )
+                }
+                type="button"
+              >
+                Appoint {nameOf(pubkey)}
+              </button>
+            ))}
+          </p>
+        ) : null}
         {problem ? (
           <p className="mt-1 text-xs text-destructive" role="alert">
             {problem}
@@ -217,7 +256,18 @@ export function BoardModerationPanel({
                 canModerate &&
                 entry.person !== null &&
                 entry.person !== me &&
-                mutes.get(entry.person)?.id === entry.id;
+                mutes.get(entry.person)?.id === entry.id &&
+                mayUndoBy(entry.actor);
+              // Another moderator (or an owner or admin) may make a waiting longer mute take effect.
+              const confirmable =
+                canModerate &&
+                pending.has(entry.id) &&
+                entry.actor !== me &&
+                entry.person !== me &&
+                entry.askedUntil !== null;
+              const opens =
+                entry.action === "remove" ? entry.thread : entry.post;
+              const openable = opens !== null && titleOf(opens) !== null;
               return (
                 <li
                   className="text-xs"
@@ -227,7 +277,35 @@ export function BoardModerationPanel({
                   <span className="text-muted-foreground">
                     {dateWords(entry.at)}:{" "}
                   </span>
-                  {logSentence(entry, nameOf)}
+                  {logSentence(entry, nameOf, titleOf)}
+                  {openable && opens ? (
+                    <button
+                      className="ml-2 underline"
+                      data-testid="board-log-open"
+                      onClick={() => onOpenPost(opens)}
+                      type="button"
+                    >
+                      Open
+                    </button>
+                  ) : null}
+                  {confirmable && entry.person && entry.askedUntil ? (
+                    <button
+                      className="ml-2 underline disabled:opacity-50"
+                      data-testid="board-log-confirm"
+                      disabled={busy}
+                      onClick={() => {
+                        const { person, askedUntil, reason } = entry;
+                        if (person && askedUntil)
+                          void run(
+                            () => actions.mute(person, askedUntil, reason),
+                            "Longer mute confirmed.",
+                          );
+                      }}
+                      type="button"
+                    >
+                      Confirm until {dateWords(entry.askedUntil)}
+                    </button>
+                  ) : null}
                   {liftable && entry.person ? (
                     <button
                       className="ml-2 underline disabled:opacity-50"
