@@ -20,13 +20,15 @@ import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { communityHostName, relayHttpBaseUrl } from "@/shared/lib/relay-url";
 
 import {
-  afterOutcomes,
   type ChannelUnread,
   type MarkRead,
+  markKey,
   parsePendingMarks,
   parseSidebarPage,
   readStateBase,
+  settledMarks,
   withMark,
+  withoutSettled,
 } from "./lib/read-state";
 
 const POLL_MS = 30_000;
@@ -88,6 +90,9 @@ export function useUnreadRooms(): {
   rows: ReadonlyMap<string, ChannelUnread>;
   /** The reader has read this room or board through what the server last counted in it. */
   markRead: (channelId: string) => void;
+  /** The counts stopped refreshing (the poll pauses after a while): they may be out of date until `refresh`. */
+  paused: boolean;
+  refresh: () => void;
 } {
   const me = existingUserPubkey();
   const baseQuery = useQuery({
@@ -111,6 +116,9 @@ export function useUnreadRooms(): {
   const sending = useRef(false);
   // Anchors already marked this session ("room:message"), so reopening a room does not send the same mark again.
   const marked = useRef<Set<string>>(new Set());
+  // Marks a full queue refused, the newest per room, waiting in memory for room in the queue (never in place of a
+  // mark the queue already holds).
+  const waiting = useRef<Map<string, MarkRead>>(new Map());
 
   // Marks left from an earlier visit are sent with the next ones.
   useEffect(() => {
@@ -118,20 +126,32 @@ export function useUnreadRooms(): {
   }, [me]);
 
   const flush = useCallback(async () => {
-    if (!root || !me || sending.current || marks.current.length === 0) return;
+    if (!root || !me || sending.current) return;
     sending.current = true;
-    const sent = marks.current.slice(0, 100);
     try {
-      const body = JSON.stringify({ intents: sent });
-      const response = await signedFetch(`${root}/read-state`, {
-        method: "POST",
-        body,
-      });
-      if (!response.ok) return; // Kept, to be sent again on the next refresh.
-      const left = afterOutcomes(sent, await response.json());
-      const later = marks.current.slice(sent.length);
-      marks.current = [...left, ...later];
-      saveMarks(me, marks.current);
+      // Batch after batch until the queue is empty, so a mark that joined while one was in flight goes at once. A batch
+      // the server settled nothing of stops it (an unknown outcome is sent again on the next refresh, not in a loop).
+      while (marks.current.length > 0) {
+        const sent = marks.current.slice(0, 100);
+        const response = await signedFetch(`${root}/read-state`, {
+          method: "POST",
+          body: JSON.stringify({ intents: sent }),
+        });
+        if (!response.ok) return; // Kept, to be sent again on the next refresh.
+        // Only what the server settled goes, matched by identity: a mark added while this batch was in flight stays.
+        const settled = settledMarks(sent, await response.json());
+        marks.current = withoutSettled(marks.current, settled);
+        // Room freed: the marks a full queue refused join it now, oldest refusal first.
+        for (const [room, mark] of waiting.current) {
+          const queued = withMark(marks.current, mark);
+          if (!queued.accepted) break;
+          marks.current = queued.marks;
+          marked.current.add(markKey(mark));
+          waiting.current.delete(room);
+        }
+        saveMarks(me, marks.current);
+        if (settled.size === 0) return;
+      }
     } catch {
       // Kept, to be sent again on the next refresh.
     } finally {
@@ -162,22 +182,55 @@ export function useUnreadRooms(): {
     if (mine === generation.current) setRows(next);
   }, [root, flush]);
 
-  useBoundedPoll(load, on, POLL_MS);
+  const poll = useBoundedPoll(load, on, POLL_MS);
+  // The poll pauses after a while without anyone asking, as every poll here does. Opening a room or coming back to the
+  // page asks again, so a count is never left stale while someone is using the app.
+  const pollRef = useRef(poll);
+  pollRef.current = poll;
+  const resume = useCallback(() => {
+    if (pollRef.current.paused) void pollRef.current.refresh();
+  }, []);
+  useEffect(() => {
+    if (!on) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") resume();
+    };
+    window.addEventListener("focus", resume);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", resume);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [on, resume]);
 
   const markRead = useCallback(
     (channelId: string) => {
       if (!me) return;
+      resume();
       const row = rowsRef.current.get(channelId);
       if (!row?.latest) return;
       // Marked even when nothing is counted as unread: the server starts counting for an account at its first mark.
       const key = `${channelId}:${row.latest}`;
       if (marked.current.has(key)) return;
-      marked.current.add(key);
-      marks.current = withMark(marks.current, {
+      const queued = withMark(marks.current, {
         type: "mark_channel_read",
         channel_id: channelId,
         message_id: row.latest,
       });
+      // A full queue (the server has not answered for a long time) refuses the mark: it waits in memory and joins the
+      // queue once the server settles earlier marks; until then the count is left as the server gave it.
+      if (!queued.accepted) {
+        waiting.current.delete(channelId);
+        waiting.current.set(channelId, {
+          type: "mark_channel_read",
+          channel_id: channelId,
+          message_id: row.latest,
+        });
+        void flush();
+        return;
+      }
+      marked.current.add(key);
+      marks.current = queued.marks;
       saveMarks(me, marks.current);
       // Shown as read at once; the next refresh says what the server holds.
       setRows((current) => {
@@ -191,11 +244,18 @@ export function useUnreadRooms(): {
       });
       void flush();
     },
-    [me, flush],
+    [me, flush, resume],
   );
 
+  const { paused, refresh } = poll;
   return useMemo(
-    () => ({ available: on, rows: on ? rows : NONE, markRead }),
-    [on, rows, markRead],
+    () => ({
+      available: on,
+      rows: on ? rows : NONE,
+      markRead,
+      paused: on && paused,
+      refresh: () => void refresh(),
+    }),
+    [on, rows, markRead, paused, refresh],
   );
 }

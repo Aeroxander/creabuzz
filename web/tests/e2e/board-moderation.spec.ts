@@ -9,7 +9,7 @@ import { createMockRelay } from "./mock-relay";
  *
  * The server is a mock that keeps what it is sent, so what is checked is what the page shows from the server's own
  * records (the board state, kind 39008, and log entries, kind 45004) and the commands it writes (kinds 9045–9053). The
- * real server's decisions are covered by `crates/buzz-relay/src/handlers/board_moderation_tests.rs`.
+ * real server's decisions are covered by `crates/buzz-relay/src/handlers/board_moderation_postgres_tests.rs`.
  */
 
 const BOARD = "b0a4d000-1111-2222-3333-555555555555";

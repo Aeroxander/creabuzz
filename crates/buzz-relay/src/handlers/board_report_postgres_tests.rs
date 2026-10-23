@@ -3,7 +3,7 @@
 //! read that board's reports without who sent them, and close reports within
 //! the board's rules. Removing the notice, the board read or the resolve rule
 //! fails these tests. Ignored without infrastructure; run with
-//! `cargo test -p buzz-relay --lib -- board_report_tests -- --ignored`.
+//! `cargo test -p buzz-relay --lib -- board_report_postgres_tests -- --ignored`.
 
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ use buzz_core::tenant::TenantContext;
 use nostr::{Event, Keys};
 use uuid::Uuid;
 
-use super::board_moderation_tests::{
+use super::board_moderation_postgres_tests::{
     accept, board, community, has_tag, on_person, post, refuse, relay_events, reply, signed,
 };
 use crate::state::AppState;
@@ -444,4 +444,317 @@ async fn a_board_moderator_closes_reports_within_the_boards_rules() {
         2,
         "the removal and the dismissal count; closing after the removal does not count again"
     );
+}
+
+/// A private board created by `owner`, with `members` added to it.
+async fn private_board(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    owner: &Keys,
+    members: &[&Keys],
+) -> Uuid {
+    let id = Uuid::new_v4();
+    accept(
+        state,
+        tenant,
+        signed(
+            owner,
+            9007,
+            "",
+            &[
+                &["h", &id.to_string()],
+                &["name", "private-board"],
+                &["visibility", "private"],
+                &["channel_type", "forum"],
+            ],
+        ),
+        "create a private board",
+    )
+    .await;
+    for person in members {
+        accept(
+            state,
+            tenant,
+            signed(
+                owner,
+                9000,
+                "",
+                &[
+                    &["h", &id.to_string()],
+                    &["p", &person.public_key().to_hex()],
+                    &["role", "member"],
+                ],
+            ),
+            "add to the private board",
+        )
+        .await;
+    }
+    id
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_moderator_removed_from_a_private_board_keeps_no_authority_there() {
+    let (owner, moderator, kept, author, reporter) = (
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+    );
+    let (state, tenant) = community(&[
+        (&owner, "member"),
+        (&moderator, "member"),
+        (&kept, "member"),
+        (&author, "member"),
+        (&reporter, "member"),
+    ])
+    .await;
+    let b = private_board(
+        &state,
+        &tenant,
+        &owner,
+        &[&moderator, &kept, &author, &reporter],
+    )
+    .await;
+    for person in [&moderator, &kept] {
+        accept(
+            &state,
+            &tenant,
+            on_person(&owner, KIND_BOARD_APPOINT_MODERATOR, b, person, None),
+            "appoint",
+        )
+        .await;
+    }
+    let before = post(&state, &tenant, &author, b).await;
+    let before_report = report(&reporter, &before);
+    accept(
+        &state,
+        &tenant,
+        before_report.clone(),
+        "report before removal",
+    )
+    .await;
+    assert_eq!(
+        board_reports(&state, &tenant, b, &moderator).await.0,
+        axum::http::StatusCode::OK,
+        "a moderator on the board reads its reports"
+    );
+
+    // The owner removes the moderator from the board; the appointment itself is left as it was.
+    accept(
+        &state,
+        &tenant,
+        signed(
+            &owner,
+            9001,
+            "",
+            &[
+                &["h", &b.to_string()],
+                &["p", &moderator.public_key().to_hex()],
+            ],
+        ),
+        "remove the moderator from the private board",
+    )
+    .await;
+    let after = post(&state, &tenant, &author, b).await;
+    let after_report = report(&reporter, &after);
+    accept(
+        &state,
+        &tenant,
+        after_report.clone(),
+        "report after removal",
+    )
+    .await;
+
+    // No report read, no closing (of a report filed before or after), no command.
+    assert_eq!(
+        board_reports(&state, &tenant, b, &moderator).await.0,
+        axum::http::StatusCode::FORBIDDEN,
+        "a removed moderator reads no private reports"
+    );
+    for r in [&before_report, &after_report] {
+        refuse(
+            &state,
+            &tenant,
+            resolve(&moderator, r, "dismiss"),
+            "restricted:",
+            "a removed moderator closes a report",
+        )
+        .await;
+    }
+    for kind in [
+        buzz_core::kind::KIND_BOARD_LOCK_THREAD,
+        buzz_core::kind::KIND_BOARD_PIN_THREAD,
+    ] {
+        assert!(
+            !matches!(
+                super::board_moderation_postgres_tests::ingest(
+                    &state,
+                    &tenant,
+                    super::board_moderation_postgres_tests::on_post(&moderator, kind, b, &after),
+                )
+                .await,
+                Ok(ref result) if result.accepted
+            ),
+            "a removed moderator still moderates (kind {kind})"
+        );
+    }
+    let removal = remove(&moderator, b, &after, "spam");
+    assert!(
+        !matches!(
+            super::board_moderation_postgres_tests::ingest(&state, &tenant, removal).await,
+            Ok(ref result) if result.accepted
+        ),
+        "a removed moderator still removes posts"
+    );
+    assert_eq!(report_status(&state, &tenant, &before_report).await, "open");
+    assert_eq!(report_status(&state, &tenant, &after_report).await, "open");
+
+    // The moderator still on the board keeps every power, the report filed after the removal included.
+    let (status, rows) = board_reports(&state, &tenant, b, &kept).await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    assert_eq!(rows.as_array().map_or(0, Vec::len), 2, "{rows}");
+    accept(
+        &state,
+        &tenant,
+        super::board_moderation_postgres_tests::on_post(
+            &kept,
+            buzz_core::kind::KIND_BOARD_LOCK_THREAD,
+            b,
+            &after,
+        ),
+        "a moderator still on the board locks",
+    )
+    .await;
+    accept(
+        &state,
+        &tenant,
+        resolve(&kept, &after_report, "dismiss"),
+        "a moderator still on the board closes the later report",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_moderators_actions_sent_together_stop_at_the_hourly_limit_across_paths() {
+    let (owner, moderator, author, reporter) = (
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+    );
+    let (state, tenant) = community(&[
+        (&owner, "member"),
+        (&moderator, "member"),
+        (&author, "member"),
+        (&reporter, "member"),
+    ])
+    .await;
+    let b = board(&state, &tenant, &owner, "rate-race").await;
+    // A second board: the allowance spans the community's boards.
+    let other_board = board(&state, &tenant, &owner, "rate-race-two").await;
+    for board in [b, other_board] {
+        accept(
+            &state,
+            &tenant,
+            on_person(
+                &owner,
+                KIND_BOARD_APPOINT_MODERATOR,
+                board,
+                &moderator,
+                None,
+            ),
+            "appoint",
+        )
+        .await;
+    }
+    // Nineteen of the twenty, one at a time.
+    let seed = post(&state, &tenant, &author, b).await;
+    for round in 0..19 {
+        let kind = if round % 2 == 0 {
+            buzz_core::kind::KIND_BOARD_LOCK_THREAD
+        } else {
+            buzz_core::kind::KIND_BOARD_UNLOCK_THREAD
+        };
+        accept(
+            &state,
+            &tenant,
+            super::board_moderation_postgres_tests::on_post(&moderator, kind, b, &seed),
+            &format!("action {round}"),
+        )
+        .await;
+    }
+    // Then ten together, on both boards and by all three paths: locks, removals and dismissals.
+    let mut together = Vec::new();
+    let mut reports = Vec::new();
+    for i in 0..4 {
+        let board = if i % 2 == 0 { b } else { other_board };
+        let thread = post(&state, &tenant, &author, board).await;
+        together.push(super::board_moderation_postgres_tests::on_post(
+            &moderator,
+            buzz_core::kind::KIND_BOARD_LOCK_THREAD,
+            board,
+            &thread,
+        ));
+    }
+    let mut removable = Vec::new();
+    for _ in 0..3 {
+        let words = post(&state, &tenant, &author, other_board).await;
+        together.push(remove(&moderator, other_board, &words, "spam"));
+        removable.push(words);
+    }
+    for _ in 0..3 {
+        let words = post(&state, &tenant, &author, b).await;
+        let r = report(&reporter, &words);
+        accept(&state, &tenant, r.clone(), "report").await;
+        together.push(resolve(&moderator, &r, "dismiss"));
+        reports.push(r);
+    }
+    futures_util::future::join_all(
+        together
+            .into_iter()
+            .map(|event| super::board_moderation_postgres_tests::ingest(&state, &tenant, event)),
+    )
+    .await;
+
+    let counted = state
+        .db
+        .board_moderator_actions_since(
+            tenant.community(),
+            &moderator.public_key().to_bytes(),
+            chrono::Utc::now() - chrono::Duration::hours(1),
+        )
+        .await
+        .expect("count");
+    assert_eq!(counted, 20, "the hour's actions");
+    // Exactly one of the ten took effect, and only what was counted did.
+    let mut effects = 0;
+    for words in &removable {
+        if state
+            .db
+            .get_event_by_id(tenant.community(), &words.id.to_bytes())
+            .await
+            .expect("read")
+            .is_none()
+        {
+            effects += 1;
+        }
+    }
+    for r in &reports {
+        if report_status(&state, &tenant, r).await != "open" {
+            effects += 1;
+        }
+    }
+    let locked: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM board_thread_state WHERE community_id = $1 AND locked_at IS NOT NULL",
+    )
+    .bind(tenant.community().as_uuid())
+    .fetch_one(state.db.pool())
+    .await
+    .expect("count locks");
+    // The seed thread ends locked (the nineteenth action was a lock).
+    effects += usize::try_from(locked - 1).expect("locks");
+    assert_eq!(effects, 1, "one of the ten took effect");
 }

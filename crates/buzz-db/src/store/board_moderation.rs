@@ -29,6 +29,74 @@ use crate::{AdmittedTx, CommunityId, Db};
 /// still hold: the server enforces them from the table, not from the record.
 pub const BOARD_STATE_LOCKED_LIMIT: i64 = 500;
 
+/// How many threads may be pinned on a board at once. Checked under the
+/// board's lock in [`Db::apply_board_action`], so concurrent pins cannot pass it
+/// together.
+pub const BOARD_PIN_LIMIT: i64 = 3;
+
+/// How many actions an appointed moderator may take in an hour, on all of a
+/// community's boards together: a check on a captured account. Checked where
+/// each counted action is written, under a lock on the moderator (see
+/// [`admit_moderator_action`]).
+pub const BOARD_MODERATOR_ACTIONS_PER_HOUR: i64 = 20;
+
+/// The audit authority of an appointed board moderator's actions.
+pub const BOARD_MODERATOR_AUTHORITY: &str = "board_moderator";
+
+/// What counts toward a moderator's hourly allowance. Closing a report after
+/// removing what it was about is the same act, already counted as the removal.
+const MODERATOR_ACTIONS_SINCE_SQL: &str = "SELECT count(*) FROM moderation_actions \
+     WHERE community_id = $1 AND actor_pubkey = $2 AND actor_authority = 'board_moderator' \
+     AND created_at > $3 AND action <> 'resolve:delete'";
+
+/// Transaction-scoped advisory-lock key serializing one person's counted
+/// moderator actions in a community. The allowance spans boards, so a board's
+/// own lock cannot guard it.
+fn moderator_quota_lock_key(community: CommunityId, actor: &[u8]) -> i64 {
+    event_replacement_lock_key(
+        community,
+        buzz_core::kind::KIND_BOARD_STATE as i32,
+        b"board-moderator-quota",
+        Some(actor),
+    )
+}
+
+/// Admit one more counted action by an appointed moderator, inside the
+/// transaction that writes it: take the moderator's lock, then count what is
+/// committed (writer transactions read committed rows statement by statement).
+/// Requests sent together queue on the lock, so together they never pass the
+/// allowance. Refuses with [`DbError::ModeratorRateLimited`].
+pub(crate) async fn admit_moderator_action(
+    conn: &mut sqlx::PgConnection,
+    community: CommunityId,
+    actor: &[u8],
+    at: DateTime<Utc>,
+) -> Result<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(moderator_quota_lock_key(community, actor))
+        .execute(&mut *conn)
+        .await?;
+    let recent: i64 = sqlx::query_scalar(MODERATOR_ACTIONS_SINCE_SQL)
+        .bind(community.as_uuid())
+        .bind(actor)
+        .bind(at - chrono::Duration::hours(1))
+        .fetch_one(&mut *conn)
+        .await?;
+    if recent >= BOARD_MODERATOR_ACTIONS_PER_HOUR {
+        return Err(DbError::ModeratorRateLimited(
+            BOARD_MODERATOR_ACTIONS_PER_HOUR,
+        ));
+    }
+    Ok(())
+}
+
+/// Live pinned threads on a board: pins of removed posts do not count.
+const PINNED_COUNT_SQL: &str =
+    "SELECT count(*) FROM board_thread_state s WHERE s.community_id = $1 \
+     AND s.channel_id = $2 AND s.pinned_at IS NOT NULL \
+     AND EXISTS (SELECT 1 FROM events e WHERE e.community_id = s.community_id \
+                 AND e.id = s.root_event_id AND e.deleted_at IS NULL)";
+
 /// Lock and pin state of one thread on a board.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ThreadState {
@@ -242,7 +310,17 @@ async fn apply_change(
         .execute(tx.conn())
         .await?
         .rows_affected(),
-        BoardChange::Pin { root } => sqlx::query(
+        BoardChange::Pin { root } => {
+            // Under the board's lock: concurrent pins see each other here.
+            let pinned: i64 = sqlx::query_scalar(PINNED_COUNT_SQL)
+                .bind(community)
+                .bind(channel_id)
+                .fetch_one(tx.conn())
+                .await?;
+            if pinned >= BOARD_PIN_LIMIT {
+                return Err(DbError::BoardPinLimit(BOARD_PIN_LIMIT));
+            }
+            sqlx::query(
             r#"
             INSERT INTO board_thread_state (community_id, channel_id, root_event_id, pinned_at, pinned_by)
             VALUES ($1, $2, $3, $4, $5)
@@ -258,7 +336,8 @@ async fn apply_change(
         .bind(actor)
         .execute(tx.conn())
         .await?
-        .rows_affected(),
+        .rows_affected()
+        }
         BoardChange::Unpin { root } => sqlx::query(
             r#"
             UPDATE board_thread_state SET pinned_at = NULL, pinned_by = NULL
@@ -585,6 +664,11 @@ impl Db {
             .bind(board_lock_key(community, channel_id))
             .execute(tx.conn())
             .await?;
+        // Board lock first, then the moderator's: every path takes them in this
+        // order (a report closing takes only the moderator's).
+        if audit.actor_authority == BOARD_MODERATOR_AUTHORITY {
+            admit_moderator_action(tx.conn(), community, audit.actor_pubkey, audit.at).await?;
+        }
 
         let mut changed = false;
         for change in changes {
@@ -778,16 +862,11 @@ impl Db {
         community: CommunityId,
         channel_id: Uuid,
     ) -> Result<i64> {
-        Ok(sqlx::query_scalar(
-            "SELECT count(*) FROM board_thread_state s WHERE s.community_id = $1 \
-             AND s.channel_id = $2 AND s.pinned_at IS NOT NULL \
-             AND EXISTS (SELECT 1 FROM events e WHERE e.community_id = s.community_id \
-                         AND e.id = s.root_event_id AND e.deleted_at IS NULL)",
-        )
-        .bind(community.as_uuid())
-        .bind(channel_id)
-        .fetch_one(&self.pool)
-        .await?)
+        Ok(sqlx::query_scalar(PINNED_COUNT_SQL)
+            .bind(community.as_uuid())
+            .bind(channel_id)
+            .fetch_one(&self.pool)
+            .await?)
     }
 
     /// How many actions `actor` took on the authority of a board moderator
@@ -799,17 +878,11 @@ impl Db {
         actor: &[u8],
         since: DateTime<Utc>,
     ) -> Result<i64> {
-        Ok(sqlx::query_scalar(
-            // Closing a report after removing what it was about is the same act,
-            // already counted as the removal.
-            "SELECT count(*) FROM moderation_actions WHERE community_id = $1 \
-             AND actor_pubkey = $2 AND actor_authority = 'board_moderator' AND created_at > $3 \
-             AND action <> 'resolve:delete'",
-        )
-        .bind(community.as_uuid())
-        .bind(actor)
-        .bind(since)
-        .fetch_one(&self.pool)
-        .await?)
+        Ok(sqlx::query_scalar(MODERATOR_ACTIONS_SINCE_SQL)
+            .bind(community.as_uuid())
+            .bind(actor)
+            .bind(since)
+            .fetch_one(&self.pool)
+            .await?)
     }
 }

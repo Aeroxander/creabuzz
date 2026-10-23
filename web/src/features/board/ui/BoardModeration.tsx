@@ -175,11 +175,13 @@ export function BoardModeration({
       {dialog === "lock" && thread ? (
         <ReasonDialog
           confirmLabel="Lock"
-          description="Nobody below moderator can reply any more; everyone can still read it and vote. It goes in the board's moderation log with your reason."
+          description="Only this board's moderators, owners and admins can reply now; everyone can still read it and vote. It goes in the board's moderation log with your reason."
           onClose={() => setDialog(null)}
           onConfirm={async (reason) => {
             await thread.onThread("lock", reason);
-            toast.success("Thread locked. No new replies.");
+            toast.success(
+              "Thread locked. Only moderators, owners and admins can reply.",
+            );
           }}
           testId="board-lock-dialog"
           title="Lock this thread?"

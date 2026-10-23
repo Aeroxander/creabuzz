@@ -87,6 +87,17 @@ pub enum DbError {
     /// Operator before demoting or deleting the current one.
     #[error("operation would remove the last relay operator")]
     LastOperator,
+
+    /// An appointed board moderator already took the hour's allowance of
+    /// actions ([`crate::board_moderation::BOARD_MODERATOR_ACTIONS_PER_HOUR`]).
+    /// Checked inside the transaction that writes the action; nothing was written.
+    #[error("a moderator may take {0} actions an hour")]
+    ModeratorRateLimited(i64),
+
+    /// The board already has its most pinned threads
+    /// ([`crate::board_moderation::BOARD_PIN_LIMIT`]). Nothing was written.
+    #[error("a board can have {0} pinned threads")]
+    BoardPinLimit(i64),
 }
 
 impl DbError {

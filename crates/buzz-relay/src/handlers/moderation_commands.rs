@@ -487,6 +487,9 @@ pub(crate) async fn handle_resolve(
         Err(crate::handlers::report_resolution::ResolutionError::NotOpen(_)) => Err(invalid(
             "report is not open (already resolved or dismissed)",
         )),
+        Err(crate::handlers::report_resolution::ResolutionError::RateLimited(msg)) => {
+            Err(format!("restricted: {msg}"))
+        }
         Err(e) => Err(error(format!("resolution failed: {e:?}"))),
     }
 }

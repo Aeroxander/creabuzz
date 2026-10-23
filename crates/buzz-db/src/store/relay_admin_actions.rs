@@ -165,6 +165,21 @@ pub async fn resolve_report_decision_atomic(
         return Ok(false);
     }
 
+    // A board moderator's closing counts toward their hourly allowance, checked
+    // under their lock with the write (D93); closing as removed was counted as
+    // the removal. A refusal rolls back the closing too.
+    if actor_authority == crate::store::board_moderation::BOARD_MODERATOR_AUTHORITY
+        && audit_action != "resolve:delete"
+    {
+        crate::store::board_moderation::admit_moderator_action(
+            &mut tx,
+            community_id,
+            actor_pubkey,
+            chrono::Utc::now(),
+        )
+        .await?;
+    }
+
     // Insert the decision audit row in the same transaction.
     sqlx::query(
         r#"

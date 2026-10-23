@@ -241,11 +241,15 @@ pub enum BoardCapability {
 }
 
 /// Standing from the resolved roles. `moderator_until` counts only while it is
-/// in the future: a term that ended grants nothing.
+/// in the future: a term that ended grants nothing. On a private board
+/// (`private_board`) it counts only for someone who is still a member of the
+/// board (`board_role` is some role): a moderator removed from a private board
+/// keeps no authority there. On an open board a moderator need not join.
 pub fn board_standing_from_roles(
     community_role: Option<&str>,
     board_role: Option<&str>,
     moderator_until: Option<chrono::DateTime<chrono::Utc>>,
+    private_board: bool,
     now: chrono::DateTime<chrono::Utc>,
 ) -> BoardStanding {
     match (community_role, board_role) {
@@ -253,6 +257,7 @@ pub fn board_standing_from_roles(
         (Some("admin"), _) => BoardStanding::CommunityAdmin,
         (_, Some("owner")) => BoardStanding::BoardOwner,
         (_, Some("admin")) => BoardStanding::BoardAdmin,
+        (_, None) if private_board => BoardStanding::None,
         _ if moderator_until.is_some_and(|until| until > now) => BoardStanding::Moderator,
         _ => BoardStanding::None,
     }
@@ -302,6 +307,7 @@ pub async fn board_standing(
             community_role.as_deref(),
             None,
             None,
+            false,
             now,
         ));
     }
@@ -318,10 +324,21 @@ pub async fn board_standing(
             .await?
             .and_then(|person| person.moderator_until)
     };
+    // Whether the board is private matters only to an appointment held without
+    // a place on the board, so it is read only then.
+    let private_board = board_role.is_none()
+        && moderator_until.is_some_and(|until| until > now)
+        && state
+            .db
+            .get_channel(community, channel_id)
+            .await?
+            .visibility
+            == "private";
     Ok(board_standing_from_roles(
         community_role.as_deref(),
         board_role.as_deref(),
         moderator_until,
+        private_board,
         now,
     ))
 }
@@ -495,8 +512,9 @@ mod tests {
         let now = chrono::Utc::now();
         let later = now + chrono::Duration::days(1);
         let earlier = now - chrono::Duration::seconds(1);
-        let standing =
-            |community, board, until| board_standing_from_roles(community, board, until, now);
+        let standing = |community, board, until| {
+            board_standing_from_roles(community, board, until, false, now)
+        };
         assert_eq!(
             standing(Some("owner"), Some("member"), None),
             BoardStanding::CommunityOwner
@@ -526,6 +544,22 @@ mod tests {
         assert_eq!(standing(None, None, Some(now)), BoardStanding::None);
         assert_eq!(standing(None, Some("guest"), None), BoardStanding::None);
         assert_eq!(standing(None, Some("bot"), None), BoardStanding::None);
+        // On a private board an appointment counts only for someone still on it.
+        let private =
+            |community, board, until| board_standing_from_roles(community, board, until, true, now);
+        assert_eq!(private(None, None, Some(later)), BoardStanding::None);
+        assert_eq!(
+            private(None, Some("member"), Some(later)),
+            BoardStanding::Moderator
+        );
+        assert_eq!(
+            private(Some("admin"), None, None),
+            BoardStanding::CommunityAdmin
+        );
+        assert_eq!(
+            private(Some("owner"), None, None),
+            BoardStanding::CommunityOwner
+        );
     }
 
     #[test]

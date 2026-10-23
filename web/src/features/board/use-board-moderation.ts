@@ -28,6 +28,7 @@ import {
   type ThreadAction,
   threadDraft,
   unmuteDraft,
+  withLiveRecord,
 } from "./lib/board-moderation";
 
 /** The newest log entries a board shows. */
@@ -87,7 +88,9 @@ export function useBoardModerationRecords(boardId: string): BoardModeration {
     setLive(new Map());
     const since = Math.floor(Date.now() / 1000) - 10;
     const keep = (event: BoardEvent) =>
-      setLive((previous) => new Map(previous).set(event.id, event));
+      setLive((previous) =>
+        withLiveRecord(previous, event, boardId, LOG_LIMIT),
+      );
     const stops = [
       subscribeChannel(
         relayWsUrl(),

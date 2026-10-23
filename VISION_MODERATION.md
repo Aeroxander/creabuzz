@@ -66,13 +66,23 @@ member can add an ordinary member back. Making "apply again and be declined" rea
 admins may admit people.
 
 **A community ban cuts a person off from the whole community**, including reading its public records. Moderation of
-conversation must never stand between a token holder and the evidence they need to object, vote or exit, so the launchpad needs
-a record reader that does not depend on community membership. Room-scoped restrictions are not built yet.
+conversation must never stand between a token holder and the evidence they need to object, vote or exit, so the launchpad
+needs a record reader that does not depend on community membership. On boards there are restrictions that stop at the board: a
+board mute (at most 30 days; an appointed moderator sets up to 7 alone, longer only with a second moderator) and a locked
+thread hold on that board only, and the person can still read it and take part everywhere else. Chat rooms have no such step
+yet.
 
 
 **Escalation is a hook today, not a pipeline.** Escalating writes a durable, queryable record for the platform operator — but the platform-side inbox that consumes it is a separate build. The substrate is there; the tooling above it comes next.
 
-**Two roles, not three.** Owners and admins moderate. There is no volunteer-moderator tier yet — deliberately. Authority is structured as capabilities, so adding a moderator tier later is a policy change, not a rewrite. The relay/platform layer has its own operator-and-moderator roster, distinct from community owner and admin roles. We'd rather ship a loop that works and grow the org chart when communities ask for it.
+**Community moderators, and board moderators below them.** The community's owners and admins moderate everywhere. A board's
+owners and admins can appoint moderators for that board alone, for up to 90 days. A board moderator can lock, pin, mute on the
+board, remove posts and replies, read the board's reports (without who sent them) and dismiss them, within guard rails the
+server enforces: never against someone of the same or higher standing, at most 20 actions an hour across the community's
+boards, and on a private board only while they are still a member of it. Everything they do goes in the board's public log
+with its reason. Bans, timeouts and community-wide removals stay with the community's owners and admins. Moderators chosen by
+a DAO vote are a later step, after pilots show how appointed ones are used. The relay/platform layer has its own
+operator-and-moderator roster, distinct from community owner and admin roles.
 
 **Notices are best-effort.** The DMs that close the loop never block enforcement — a ban lands even if the notice fails. Enforcement is the promise; notification is the courtesy. A later platform-escalation pass should also make escalated reports say exactly that, instead of reusing the generic handled message.
 

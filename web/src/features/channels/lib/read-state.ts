@@ -107,39 +107,61 @@ export interface MarkRead {
   message_id: string;
 }
 
-/** At most this many marks wait to be sent; beyond it the oldest go (a later one reads further anyway). */
+/**
+ * At most this many marks wait to be sent. A full queue refuses the next mark rather than dropping one it holds: nobody
+ * outside the server can tell which of two anchors reads further, so every unsent mark is kept until the server answers.
+ */
 export const MAX_PENDING_MARKS = 100;
 
-/** The marks waiting to be sent, with one more. The same mark twice is kept once; nothing else is dropped. */
-export function withMark(
-  pending: readonly MarkRead[],
-  mark: MarkRead,
-): MarkRead[] {
-  const same = pending.some(
-    (p) => p.channel_id === mark.channel_id && p.message_id === mark.message_id,
-  );
-  const next = same ? [...pending] : [...pending, mark];
-  return next.slice(-MAX_PENDING_MARKS);
+/** One mark's identity: the same room read through the same message. */
+export function markKey(mark: MarkRead): string {
+  return `${mark.channel_id}:${mark.message_id}`;
 }
 
 /**
- * The marks still to send after the server answered a batch, in order: an applied, blocked or invalid mark is settled
- * and goes; one whose outcome is unknown (or missing) stays to be sent again with the same operands.
+ * The marks waiting to be sent, with one more. The same mark twice is kept once. When the queue is full the new mark is
+ * refused (`accepted: false`) and nothing already waiting is dropped.
  */
-export function afterOutcomes(
+export function withMark(
+  pending: readonly MarkRead[],
+  mark: MarkRead,
+): { marks: MarkRead[]; accepted: boolean } {
+  const key = markKey(mark);
+  if (pending.some((p) => markKey(p) === key))
+    return { marks: [...pending], accepted: true };
+  if (pending.length >= MAX_PENDING_MARKS)
+    return { marks: [...pending], accepted: false };
+  return { marks: [...pending, mark], accepted: true };
+}
+
+/**
+ * The marks of a sent batch the server settled (applied, blocked or invalid), by identity. A mark whose outcome is
+ * unknown (or missing) is not settled and is sent again with the same operands.
+ */
+export function settledMarks(
   sent: readonly MarkRead[],
   json: unknown,
-): MarkRead[] {
+): ReadonlySet<string> {
   const outcomes = (json as { outcomes?: unknown } | null)?.outcomes;
   const list = Array.isArray(outcomes) ? outcomes : [];
-  return sent.filter((_, index) => {
+  const settled = new Set<string>();
+  sent.forEach((mark, index) => {
     const status = (list[index] as { status?: unknown } | undefined)?.status;
-    return !(
-      status === "applied" ||
-      status === "blocked" ||
-      status === "invalid"
-    );
+    if (status === "applied" || status === "blocked" || status === "invalid")
+      settled.add(markKey(mark));
   });
+  return settled;
+}
+
+/**
+ * The queue after an answer: only the marks the server settled go, matched by identity, so a mark added while the batch
+ * was in flight (or one that was never sent) stays wherever it is in the queue.
+ */
+export function withoutSettled(
+  pending: readonly MarkRead[],
+  settled: ReadonlySet<string>,
+): MarkRead[] {
+  return pending.filter((mark) => !settled.has(markKey(mark)));
 }
 
 /** Pending marks read back from the browser, ignoring anything that is not one. */
@@ -155,7 +177,7 @@ export function parsePendingMarks(raw: string | null): MarkRead[] {
           typeof (m as MarkRead).channel_id === "string" &&
           HEX64.test(String((m as MarkRead).message_id)),
       )
-      .slice(-MAX_PENDING_MARKS);
+      .slice(0, MAX_PENDING_MARKS);
   } catch {
     return [];
   }

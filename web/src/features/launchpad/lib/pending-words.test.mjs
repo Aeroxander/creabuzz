@@ -133,3 +133,76 @@ test("storage that refuses keeps every job it already had, and says the new one 
   garbage.setItem(PENDING_WORDS_KEY, JSON.stringify([{ scope }, 7, null]));
   assert.deepEqual(pendingIn(garbage, scope), []);
 });
+
+test("jobs saved before jobs had a revision (D91) are kept, given one, and published through the current reader", () => {
+  const storage = memory();
+  // The list exactly as D91 wrote it: no revision.
+  const legacy = {
+    scope,
+    mandate: `0x${"b1".repeat(20)}`,
+    id: "0xa",
+    check: "the guide is in Spanish",
+    createdAt: 1_700_000_000_000,
+  };
+  storage.setItem(PENDING_WORDS_KEY, JSON.stringify([legacy]));
+  const [found] = pendingIn(storage, scope);
+  assert.equal(found.check, legacy.check);
+  assert.equal(typeof found.revision, "string");
+  // Written back with that revision, and read the same again.
+  assert.equal(
+    JSON.parse(storage.getItem(PENDING_WORDS_KEY))[0].revision,
+    found.revision,
+  );
+  assert.deepEqual(pendingIn(storage, scope), [found]);
+  // A retry publishes it and acknowledges that revision: the job goes.
+  dropPending(storage, found);
+  assert.deepEqual(pendingIn(storage, scope), []);
+});
+
+test("a legacy job whose migration cannot be written keeps its words and the same revision on every read", () => {
+  const items = new Map();
+  const legacy = {
+    scope,
+    mandate: `0x${"b1".repeat(20)}`,
+    id: "0xa",
+    check: "the guide is in Spanish",
+    createdAt: 1_700_000_000_000,
+  };
+  items.set(PENDING_WORDS_KEY, JSON.stringify([legacy]));
+  const readOnly = {
+    getItem: (key) => items.get(key) ?? null,
+    setItem: () => {
+      throw new Error("storage refused");
+    },
+  };
+  const first = pendingIn(readOnly, scope);
+  const again = pendingIn(readOnly, scope);
+  assert.equal(first.length, 1);
+  assert.equal(first[0].check, legacy.check);
+  assert.equal(first[0].revision, again[0].revision);
+  // Still stored as it was: nothing was dropped.
+  assert.deepEqual(JSON.parse(items.get(PENDING_WORDS_KEY)), [legacy]);
+});
+
+test("newer words saved over a legacy job are not removed by the legacy job's late acknowledgement", () => {
+  const storage = memory();
+  storage.setItem(
+    PENDING_WORDS_KEY,
+    JSON.stringify([
+      {
+        scope,
+        mandate: `0x${"b1".repeat(20)}`,
+        id: "0xa",
+        check: "old words",
+        createdAt: 1,
+      },
+    ]),
+  );
+  const [old] = pendingIn(storage, scope);
+  keepPending(storage, job("0xa", "new words", "r-new"));
+  dropPending(storage, old);
+  assert.deepEqual(
+    pendingIn(storage, scope).map((j) => j.check),
+    ["new words"],
+  );
+});

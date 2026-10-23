@@ -2,7 +2,7 @@
 //! pins, rules, board-only mutes, appointed moderators and their guard rails,
 //! and the public log. Removing the routing, the write enforcement or a guard
 //! rail fails these tests. Ignored without infrastructure; run with
-//! `cargo test -p buzz-relay --lib -- board_moderation_tests -- --ignored`.
+//! `cargo test -p buzz-relay --lib -- board_moderation_postgres_tests -- --ignored`.
 
 use std::sync::Arc;
 
@@ -771,6 +771,42 @@ async fn a_moderator_is_held_to_twenty_actions_an_hour_and_owners_are_not() {
         )
         .await;
     }
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn pins_sent_together_stop_at_the_boards_limit() {
+    let owner = Keys::generate();
+    let (state, tenant) = community(&[(&owner, "member")]).await;
+    let b = board(&state, &tenant, &owner, "pin-race").await;
+    let mut pins = Vec::new();
+    for _ in 0..8 {
+        let thread = post(&state, &tenant, &owner, b).await;
+        pins.push(on_post(&owner, KIND_BOARD_PIN_THREAD, b, &thread));
+    }
+    // All eight pass the early check together; the count under the board's lock holds.
+    let results = futures_util::future::join_all(
+        pins.into_iter().map(|event| ingest(&state, &tenant, event)),
+    )
+    .await;
+    let accepted = results
+        .iter()
+        .filter(|result| matches!(result, Ok(r) if r.accepted))
+        .count();
+    let pinned = state
+        .db
+        .board_pinned_count(tenant.community(), b)
+        .await
+        .expect("count pins");
+    assert_eq!(pinned, 3, "pins on the board");
+    let answers: Vec<String> = results
+        .iter()
+        .map(|result| match result {
+            Ok(r) => r.message.clone(),
+            Err(e) => format!("{e:?}"),
+        })
+        .collect();
+    assert_eq!(accepted, 3, "pins accepted: {answers:?}");
 }
 
 #[tokio::test]

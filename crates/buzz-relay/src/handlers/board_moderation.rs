@@ -48,10 +48,11 @@ pub const BOARD_MUTE_MAX_DAYS: i64 = 30;
 pub const SECOND_MODERATOR_WINDOW_HOURS: i64 = 24;
 /// The longest (and default) term of an appointed moderator.
 pub const MODERATOR_TERM_DAYS: i64 = 90;
-/// How many actions an appointed moderator may take in an hour.
-pub const MODERATOR_ACTIONS_PER_HOUR: i64 = 20;
-/// How many threads may be pinned on a board at once.
-pub const BOARD_PIN_LIMIT: i64 = 3;
+/// How many actions an appointed moderator may take in an hour (enforced where
+/// each action is written; the checks here only refuse early).
+pub use buzz_db::board_moderation::BOARD_MODERATOR_ACTIONS_PER_HOUR as MODERATOR_ACTIONS_PER_HOUR;
+/// How many threads may be pinned on a board at once (likewise).
+pub use buzz_db::board_moderation::BOARD_PIN_LIMIT;
 /// The longest rules text, in characters.
 pub const BOARD_RULES_MAX_CHARS: usize = 4000;
 /// The longest public reason, in characters; longer is cut.
@@ -204,9 +205,7 @@ pub async fn handle_board_command(
             .await
             .map_err(db_error)?;
         if recent >= MODERATOR_ACTIONS_PER_HOUR {
-            return Err(format!(
-                "rate-limited: a moderator may take {MODERATOR_ACTIONS_PER_HOUR} actions an hour"
-            ));
+            return Err(rate_limited());
         }
     }
 
@@ -257,9 +256,7 @@ pub async fn handle_board_command(
                     .await
                     .map_err(db_error)?;
                 if pinned >= BOARD_PIN_LIMIT {
-                    return Err(invalid(format!(
-                        "a board can have {BOARD_PIN_LIMIT} pinned threads; unpin one first"
-                    )));
+                    return Err(pin_limit());
                 }
                 Plan::thread(
                     BoardChange::Pin { root },
@@ -565,7 +562,13 @@ pub async fn handle_board_command(
             |snapshot, min| board_state_event(state, board, snapshot, min, now),
         )
         .await
-        .map_err(db_error)?
+        .map_err(|e| match e {
+            // The limits again, checked with the write: requests sent together
+            // all pass the early checks above.
+            buzz_db::DbError::ModeratorRateLimited(_) => rate_limited(),
+            buzz_db::DbError::BoardPinLimit(_) => pin_limit(),
+            e => db_error(e),
+        })?
         .ok_or_else(|| invalid("nothing to change"))?;
     dispatch_board_events(tenant, state, &applied).await;
 
@@ -1177,6 +1180,16 @@ fn error(message: impl std::fmt::Display) -> String {
 
 fn db_error(e: buzz_db::DbError) -> String {
     error(format!("database error: {e}"))
+}
+
+fn rate_limited() -> String {
+    format!("rate-limited: a moderator may take {MODERATOR_ACTIONS_PER_HOUR} actions an hour")
+}
+
+fn pin_limit() -> String {
+    invalid(format!(
+        "a board can have {BOARD_PIN_LIMIT} pinned threads; unpin one first"
+    ))
 }
 
 #[cfg(test)]

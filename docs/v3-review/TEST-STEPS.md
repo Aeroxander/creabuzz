@@ -1139,7 +1139,7 @@ step 1.
 ```bash
 . ./bin/activate-hermit
 cargo test -p buzz-relay --lib moderation_authz          # the standing order and guard rails, table-tested
-cargo test -p buzz-relay --lib board_moderation_tests -- --ignored   # needs Postgres and Redis: the real ingest path
+cargo test -p buzz-relay --lib board_moderation_postgres_tests -- --ignored   # needs Postgres and Redis: the real ingest path
 pnpm --dir web test                                      # board-moderation.test.mjs
 pnpm --dir web exec playwright test --project=smoke tests/e2e/board-moderation.spec.ts
 ```
@@ -1204,7 +1204,7 @@ Removal from a private board while it is open is step 2 of 4av.
 ```bash
 . ./bin/activate-hermit
 cargo test -p buzz-relay --lib channel_authz
-cargo test -p buzz-relay --lib board_moderation_tests -- --ignored   # needs Postgres and Redis
+cargo test -p buzz-relay --lib board_moderation_postgres_tests -- --ignored   # needs Postgres and Redis
 pnpm --dir web exec playwright test --project=smoke tests/e2e/board.spec.ts -g "takes someone off"
 ```
 
@@ -1323,3 +1323,28 @@ By hand, on a local chain:
 2. **The bond.** In a project made by either kit, propose a work budget with a reviewer bond: "The project's own token"
    is not among the choices, and the form says why. In a contributor project with no payment currency, the bond asks
    for another token's address.
+3. **Another token, typed.** Choose "Another token" and paste the project's own Shares address: the form says the Shares
+   are locked against transfers and offers no way to send the vote (D105).
+
+## 4bc. Fixes from the outside review of D100 to D104 (D105, D106, 2026-10-23)
+
+```bash
+. ./bin/activate-hermit
+pnpm --dir web test   # read-state, pending-words, board-moderation
+pnpm --dir web exec playwright test --project=smoke tests/e2e/unread-rooms.spec.ts tests/e2e/board-moderation.spec.ts
+cargo test -p buzz-relay --lib -- --ignored board_   # needs Postgres and Redis
+scripts/test-postgres-test-discovery.sh   # the board suites are no longer listed (older entries remain)
+scripts/web-paid-work-e2e.sh   # a real chain: the locked Shares cannot be the bond, even typed in
+```
+
+By hand:
+
+1. **Unread counts come back.** Leave the app open on a room for more than fifteen minutes without touching it. The
+   sidebar says "Unread counts may be out of date" with **Refresh**. Post in another room from a second account, then
+   press Refresh (or switch to the tab, or open a room): the count appears and the line goes.
+2. **A removed moderator.** On a private board, appoint a member as moderator, then take them off the board (People,
+   Remove). From their account, with the board still open: the Moderate menu's actions are refused and the board's
+   reports cannot be read, including a report filed after they were taken off. A moderator still on the board keeps
+   every action.
+3. **Saved words from before.** In a browser that still has work-area words saved by an older build (before D92), open
+   the project's Work tab: the words are still listed as waiting, and publishing them clears them.

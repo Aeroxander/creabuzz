@@ -10,7 +10,8 @@
  *
  * Nothing unpublished is ever dropped to make room: the list is bounded, and a full list refuses a new job (and says
  * so) rather than evicting an older one. Each job carries a revision, and only the publish of that exact revision
- * removes it, so a slower publish of older words can never remove newer words that replaced them.
+ * removes it, so a slower publish of older words can never remove newer words that replaced them. Jobs saved before
+ * revisions existed are kept and given one (`legacyRevision`).
  *
  * Pure apart from the injected storage; alias-free so `pending-words.test.mjs` drives it under `node --test`.
  */
@@ -56,22 +57,47 @@ export function pendingScope(input: {
     .join("|");
 }
 
+/**
+ * The revision of a job saved before jobs had one (D91): derived from what the job already holds, so every read gives
+ * the same one whether or not the migration below could be written back. Within a work area a saved job is unique (a
+ * newer keep replaces it, with a revision of its own), so its time and words identify it.
+ */
+function legacyRevision(job: { createdAt: number; check: string }): string {
+  // FNV-1a over the words: short, and the same on every read.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < job.check.length; i += 1) {
+    hash ^= job.check.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `legacy-${job.createdAt}-${hash.toString(16)}`;
+}
+
 function readAll(storage: WordsStorage): PendingWords[] {
   try {
     const raw = storage.getItem(PENDING_WORDS_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (entry): entry is PendingWords =>
-        entry !== null &&
-        typeof entry === "object" &&
-        typeof entry.scope === "string" &&
-        typeof entry.mandate === "string" &&
-        typeof entry.id === "string" &&
-        typeof entry.check === "string" &&
-        typeof entry.createdAt === "number" &&
-        typeof entry.revision === "string",
-    );
+    let migrated = false;
+    const jobs = parsed.flatMap((entry): PendingWords[] => {
+      if (
+        entry === null ||
+        typeof entry !== "object" ||
+        typeof entry.scope !== "string" ||
+        typeof entry.mandate !== "string" ||
+        typeof entry.id !== "string" ||
+        typeof entry.check !== "string" ||
+        typeof entry.createdAt !== "number"
+      )
+        return [];
+      if (typeof entry.revision === "string") return [entry as PendingWords];
+      if (entry.revision !== undefined) return [];
+      // Saved before jobs had a revision: kept, with one that stays the same on every read.
+      migrated = true;
+      return [{ ...(entry as PendingWords), revision: legacyRevision(entry) }];
+    });
+    // Written back when it can be; when the write is refused, the next read derives the same revisions.
+    if (migrated) writeAll(storage, jobs);
+    return jobs;
   } catch {
     return [];
   }

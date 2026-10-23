@@ -3,13 +3,13 @@ pub mod admin_action_worker;
 pub mod admin_outbox_worker;
 pub mod auth;
 #[cfg(test)]
-mod board_limit_tests;
+mod board_limit_postgres_tests;
 /// Board moderation (kinds 9045–9053): lock, pin, rules, board mutes, board moderators.
 pub mod board_moderation;
 #[cfg(test)]
-mod board_moderation_tests;
+mod board_moderation_postgres_tests;
 #[cfg(test)]
-mod board_report_tests;
+mod board_report_postgres_tests;
 /// NIP-ORG budget enforcement — relay-side ingest gate.
 pub mod budget_enforcement;
 /// Pure NIP-29 channel membership-authority decisions (kinds 9000/9001/9022).

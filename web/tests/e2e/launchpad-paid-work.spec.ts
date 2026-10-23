@@ -215,6 +215,23 @@ test("a DAO pays a contributor money for a claim, with a deposit, all from the p
   await founder
     .getByTestId("budget-reviewers")
     .fill(`${REVIEWER1}\n${REVIEWER2}`);
+  // The kit locked this DAO's Shares against transfers at birth, so they can never be a reviewer's bond: not offered as
+  // "the project's own token", and refused when pasted as "another token" too, read from the chain (D103).
+  await founder.getByTestId("budget-bond").fill("10");
+  await expect(founder.getByTestId("budget-bond-shares-locked")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(
+    founder.getByTestId("budget-bond-token").locator("option[value='project']"),
+  ).toHaveCount(0);
+  await founder.getByTestId("budget-bond-token").selectOption("other");
+  await founder.getByTestId("budget-bond-other").fill(SHARES);
+  await expect(founder.getByTestId("decision-draft-problem")).toContainText(
+    "locked against transfers",
+    { timeout: 20_000 },
+  );
+  await expect(founder.getByTestId("decision-draft-submit")).toHaveCount(0);
+  await founder.getByTestId("budget-bond").fill("");
   await expect(founder.getByTestId("decision-draft-title")).toHaveText(
     "Set aside a work budget",
   );

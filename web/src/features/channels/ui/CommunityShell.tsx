@@ -265,13 +265,23 @@ export function CommunityShell({
   const onScreenLatest =
     onScreen === null ? null : (unread.rows.get(onScreen)?.latest ?? null);
   const { markRead } = unread;
+  // Only while the page is in view: a page that comes back into view starts the moment again.
+  const [pageVisible, setPageVisible] = useState(
+    () => document.visibilityState === "visible",
+  );
   useEffect(() => {
-    if (onScreen === null || onScreenLatest === null) return;
+    const onChange = () =>
+      setPageVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
+  useEffect(() => {
+    if (!pageVisible || onScreen === null || onScreenLatest === null) return;
     const timer = window.setTimeout(() => {
       if (document.visibilityState === "visible") markRead(onScreen);
     }, READ_AFTER_MS);
     return () => window.clearTimeout(timer);
-  }, [onScreen, onScreenLatest, markRead]);
+  }, [pageVisible, onScreen, onScreenLatest, markRead]);
 
   /** Exactly one sidebar view is on at a time (or none → chat). */
   const setView = (view: "wiki" | "fleet" | "work" | "org") => {
@@ -523,6 +533,8 @@ export function CommunityShell({
             onLoadMore={onLoadMoreChannels}
             selectedId={activeChannel?.id ?? null}
             unread={unread.rows}
+            unreadPaused={unread.paused}
+            onRefreshUnread={unread.refresh}
             onSelect={(id) => {
               selectChannel(id);
               setSearchTerm("");

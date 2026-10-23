@@ -187,6 +187,39 @@ export const EMPTY_BOARD_STATE: BoardState = {
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
+/** Newer first, as `parseBoardState` picks: the later record, and between two of the same second the smaller id. */
+const newerFirst = (a: BoardEvent, b: BoardEvent) =>
+  b.created_at - a.created_at || (a.id < b.id ? -1 : 1);
+
+/**
+ * The records a board view followed live, with one more. Only what is read is kept: the board's newest state record
+ * and its newest `logLimit` log entries, so a tab left open for days holds no more than its first read did.
+ */
+export function withLiveRecord(
+  previous: ReadonlyMap<string, BoardEvent>,
+  event: BoardEvent,
+  boardId: string,
+  logLimit: number,
+): Map<string, BoardEvent> {
+  const all = [
+    ...[...previous.values()].filter((other) => other.id !== event.id),
+    event,
+  ];
+  const state = all
+    .filter(
+      (record) =>
+        record.kind === KIND_BOARD_STATE &&
+        record.tags.some((tag) => tag[0] === "d" && tag[1] === boardId),
+    )
+    .sort(newerFirst)
+    .slice(0, 1);
+  const log = all
+    .filter((record) => record.kind === KIND_BOARD_MODERATION_LOG)
+    .sort(newerFirst)
+    .slice(0, logLimit);
+  return new Map([...state, ...log].map((record) => [record.id, record]));
+}
+
 /**
  * The board's state from its newest state record. Only records the server signed count: `relayPubkey` when known
  * (the server also refuses state records from anyone else, so a record from another key is ignored either way).
@@ -203,7 +236,7 @@ export function parseBoardState(
         event.tags.some((tag) => tag[0] === "d" && tag[1] === boardId) &&
         (relayPubkey === null || event.pubkey === relayPubkey),
     )
-    .sort((a, b) => b.created_at - a.created_at || (a.id < b.id ? -1 : 1))[0];
+    .sort(newerFirst)[0];
   if (!newest) return EMPTY_BOARD_STATE;
   const pinned: string[] = [];
   const locked = new Set<string>();

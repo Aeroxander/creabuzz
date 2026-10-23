@@ -64,14 +64,16 @@ export function WorkBudgetForm({
   // What the bond is paid in: the claim currency when there is one (the safest), the project's own token, or another.
   const hasCurrency = ctx.currencyDecimals !== null;
   // Shares locked against transfers (every project the kits make starts that way) can move only to and from the DAO,
-  // so a bond in them could never be posted and the budget's reviewers could never judge: not offered while locked.
+  // so a bond in them could never be posted and the budget's reviewers could never judge. They are offered, and
+  // accepted by any route, only once the chain has said they can move: a read still pending or failed proves nothing.
   const shareRules = useShareRules(ctx.sharesToken || null, ctx.dao);
   const sharesLocked = shareRules.data?.rules?.transfersLocked === true;
+  const sharesTransferable = shareRules.data?.rules?.transfersLocked === false;
   const [bondIn, setBondIn] = useState<"currency" | "project" | "other">(
     hasCurrency ? "currency" : "project",
   );
   const bondChoice =
-    bondIn === "project" && sharesLocked
+    bondIn === "project" && !sharesTransferable
       ? hasCurrency
         ? "currency"
         : "other"
@@ -144,6 +146,24 @@ export function WorkBudgetForm({
             reviewerBondDecimals: otherDecimals.data,
           };
         };
+        const bondTermsChosen = bondTerms();
+        // The token the bond is finally in, however it was chosen: never the project's Shares unless they can move.
+        const bondToken =
+          "reviewerBondToken" in bondTermsChosen
+            ? (bondTermsChosen.reviewerBondToken ?? "")
+            : "";
+        if (
+          bondToken !== "" &&
+          bondToken.toLowerCase() === ctx.sharesToken.toLowerCase() &&
+          !sharesTransferable
+        ) {
+          throw new DecisionInputError(
+            "reviewerBondToken",
+            sharesLocked
+              ? "The project's own Shares cannot be the bond: they are locked against transfers, so a reviewer could never post them."
+              : "Could not read whether the project's Shares can move, so they cannot be the bond yet. Try again, or choose another token.",
+          );
+        }
         return mandateDecision({
           dao: ctx.dao,
           factory: ctx.factory,
@@ -167,7 +187,7 @@ export function WorkBudgetForm({
           quorum: quorum.trim()
             ? Number(quorum)
             : Math.floor(list.length / 2) + 1,
-          ...bondTerms(),
+          ...bondTermsChosen,
           now: ctx.chainTime,
         });
       }),
@@ -182,6 +202,8 @@ export function WorkBudgetForm({
       quorum,
       bond,
       bondChoice,
+      sharesLocked,
+      sharesTransferable,
       bondOther,
       otherDecimals.data,
       otherDecimals.isError,
@@ -295,9 +317,9 @@ export function WorkBudgetForm({
                     },
                   ]
                 : []),
-              ...(sharesLocked
-                ? []
-                : [{ value: "project", label: "The project's own token" }]),
+              ...(sharesTransferable
+                ? [{ value: "project", label: "The project's own token" }]
+                : []),
               { value: "other", label: "Another token" },
             ]}
             testId="budget-bond-token"

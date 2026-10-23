@@ -620,6 +620,7 @@ async fn resolve_report(
                     tracing::error!(report_id = %report_id, error = %msg, "resolve_report internal error");
                     ApiError::internal()
                 }
+                ResolutionError::RateLimited(msg) => ApiError::bad_request("rate_limited", &msg),
             })?;
 
             // Re-read the report so the resolve response carries the same

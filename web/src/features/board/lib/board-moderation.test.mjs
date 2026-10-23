@@ -23,6 +23,7 @@ import {
   STANDING,
   standingOf,
   threadDraft,
+  withLiveRecord,
 } from "./board-moderation.ts";
 
 const BOARD = "7b0e5a1c-4b1e-4f7e-9a51-2a7c0c1d9e01";
@@ -558,4 +559,47 @@ test("a log sentence keeps a name's own case, and capitalises only you", () => {
     logSentence(entry, () => "you"),
     "You pinned a thread.",
   );
+});
+
+test("records followed live keep only what is read: the newest state and the newest log entries", () => {
+  let live = new Map();
+  for (let i = 0; i < 30; i += 1) {
+    live = withLiveRecord(
+      live,
+      record(KIND_BOARD_STATE, [["d", BOARD]], "", {
+        id: `s${i}`,
+        at: 100 + i,
+      }),
+      BOARD,
+      5,
+    );
+    live = withLiveRecord(
+      live,
+      record(KIND_BOARD_MODERATION_LOG, [["h", BOARD]], "", {
+        id: `l${i}`,
+        at: 100 + i,
+      }),
+      BOARD,
+      5,
+    );
+  }
+  const ids = [...live.keys()].sort();
+  assert.deepEqual(ids, ["l25", "l26", "l27", "l28", "l29", "s29"]);
+  // An older state arriving late changes nothing; another board's state is not kept.
+  const late = withLiveRecord(
+    live,
+    record(KIND_BOARD_STATE, [["d", BOARD]], "", { id: "s-old", at: 50 }),
+    BOARD,
+    5,
+  );
+  assert.deepEqual([...late.keys()].sort(), ids);
+  const elsewhere = withLiveRecord(
+    live,
+    record(KIND_BOARD_STATE, [["d", "other"]], "", { id: "s-x", at: 999 }),
+    BOARD,
+    5,
+  );
+  assert.equal(elsewhere.has("s-x"), false);
+  // The same record twice is kept once.
+  assert.equal(withLiveRecord(live, live.get("l29"), BOARD, 5).size, live.size);
 });

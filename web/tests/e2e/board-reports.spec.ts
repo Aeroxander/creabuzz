@@ -10,7 +10,7 @@ import { createMockRelay } from "./mock-relay";
  *
  * The server is a mock that keeps what it is sent, and the report queue read is answered here, so what is checked is
  * what the page shows and what it sends. The real server's decisions (who may read and close a board's reports, the
- * notice to the author) are covered by `crates/buzz-relay/src/handlers/board_report_tests.rs`.
+ * notice to the author) are covered by `crates/buzz-relay/src/handlers/board_report_postgres_tests.rs`.
  */
 
 const BOARD = "b0a4d000-1111-2222-3333-666666666666";

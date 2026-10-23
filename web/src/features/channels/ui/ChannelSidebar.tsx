@@ -146,11 +146,16 @@ export function ChannelSidebar({
   moreError = null,
   onLoadMore,
   unread,
+  unreadPaused = false,
+  onRefreshUnread,
 }: {
   channels: Channel[];
   selectedId: string | null;
   /** Unread counts by room or board, when the server offers them. */
   unread?: ReadonlyMap<string, ChannelUnread>;
+  /** The unread counts stopped refreshing and may be out of date. */
+  unreadPaused?: boolean;
+  onRefreshUnread?: () => void;
   onSelect: (id: string) => void;
   /** A community can have more channels than one relay page. */
   hasMore?: boolean;
@@ -289,6 +294,18 @@ export function ChannelSidebar({
           ) : null}
         </nav>
       )}
+      {unreadPaused && onRefreshUnread ? (
+        <p
+          className="border-t border-black/10 px-4 py-2 text-xs text-black/60 dark:border-white/10 dark:text-white/60"
+          data-testid="unread-paused"
+          role="status"
+        >
+          Unread counts may be out of date.{" "}
+          <button className="underline" onClick={onRefreshUnread} type="button">
+            Refresh
+          </button>
+        </p>
+      ) : null}
       <p className="border-t border-black/10 px-4 py-2 text-xs text-black/60 dark:border-white/10 dark:text-white/60">
         {chats.length} channel{chats.length === 1 ? "" : "s"}
         {boards.length > 0

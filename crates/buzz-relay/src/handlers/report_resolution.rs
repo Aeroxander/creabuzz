@@ -72,11 +72,19 @@ pub enum ResolutionError {
     },
     /// Internal database or infrastructure error.
     Internal(String),
+    /// A board moderator already took the hour's allowance of actions; checked
+    /// with the write, so nothing was closed.
+    RateLimited(String),
 }
 
 impl From<buzz_db::DbError> for ResolutionError {
     fn from(e: buzz_db::DbError) -> Self {
-        ResolutionError::Internal(e.to_string())
+        match e {
+            buzz_db::DbError::ModeratorRateLimited(_) => {
+                ResolutionError::RateLimited(e.to_string())
+            }
+            e => ResolutionError::Internal(e.to_string()),
+        }
     }
 }
 
