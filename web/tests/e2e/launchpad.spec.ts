@@ -584,6 +584,37 @@ test("a founder can commit the longer story on create", async ({ page }) => {
     );
 });
 
+test("Quick start prices the supply on the form, so a sale that must sell out can still launch", async ({
+  page,
+}) => {
+  // Found by the economy journey: Quick start set the default raise target (priced for the default supply) whatever
+  // supply the founder had typed, and the launch was refused later because the target was not the whole sale at the
+  // floor price (D74).
+  await page.getByRole("button", { name: "Set up a sale" }).first().click();
+  const step = page.getByTestId("wizard-step-token");
+  await step
+    .getByRole("textbox", { name: "Name", exact: true })
+    .fill("Nebula Quick");
+  await step.getByLabel("Symbol").fill("NQK");
+  await step.getByLabel(/supply/i).fill("1000000000");
+  await page.getByTestId("launch-advanced").locator("> summary").click();
+  await page.getByLabel("Launch id").fill("nebula-quick");
+  await wizardToPublish(page);
+  await page.getByRole("button", { name: /Publish launch/ }).click();
+  const record = () =>
+    published.find(
+      (e) =>
+        e.kind === 37001 &&
+        e.tags.some(([k, v]) => k === "d" && v === "nebula-quick"),
+    );
+  await expect.poll(record).toBeTruthy();
+  const terms = JSON.parse(record()?.content ?? "{}");
+  const tranche = BigInt(terms.tokenPlan.supply) * 10n ** 18n;
+  // The whole sale at the floor price, as the launch planner checks it.
+  const wholeSale = (BigInt(terms.floorPrice) * tranche) >> 96n;
+  expect(BigInt(terms.requiredRaised)).toBe(wholeSale);
+});
+
 test("a published score root is shown as a community data plane", async ({
   page,
 }) => {

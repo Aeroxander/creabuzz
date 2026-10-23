@@ -308,7 +308,9 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   const step = founder.page.getByTestId("wizard-step-token");
   await step.getByRole("textbox", { name: "Name", exact: true }).fill("Nebula");
   await step.getByLabel("Symbol").fill("NEB");
-  await step.getByLabel(/supply/i).fill("1000000000");
+  // Since D74 a sale sells out or refunds: 40 million Shares put 30 million on sale, at the default cent a Share a
+  // $300,000 sale, which the backer's $400,000 bid below buys outright.
+  await step.getByLabel(/supply/i).fill("40000000");
   await wizardToPublish(founder.page);
   await founder.page
     .getByTestId("launch-advanced")
@@ -505,13 +507,19 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     await rpc("anvil_increaseTime", [seconds]);
     await rpc("anvil_mine", ["0x1"]);
   };
+  /** What both of them back together, in whole Shares, read from the chain: what each holds now (a reviewer's posted
+   *  bond, held by the panel, no longer counts). Read, not written down: how the sale fills decides the exact number. */
+  const togetherNow = async () => {
+    const held = async (address: string) =>
+      callWord(shares, `0x70a08231${word(address)}`);
+    const sum =
+      (await held(founder.wallet.address)) +
+      (await held(capital.wallet.address));
+    return `Backing ${(sum / 10n ** 18n).toLocaleString("en-US")}`;
+  };
   /** Both the founder and the capital contributor hold Shares, so both back it; then the waits pass and it runs. */
-  const carryOut = async (
-    approveAfter: number,
-    waitFor: number,
-    // What both of them back together: the reviewer's bond (100 Shares, held by the panel) no longer votes once posted.
-    together = "Backing 240,000,000",
-  ) => {
+  const carryOut = async (approveAfter: number, waitFor: number) => {
+    const together = await togetherNow();
     await Promise.all(
       [founder, capital].map(async (person) => {
         await open(person, "Decisions");
@@ -574,16 +582,23 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   ).toHaveCount(1, { timeout: 30_000 });
   await reviewerPicker.selectOption(capital.wallet.address.toLowerCase());
   await founder.page.getByTestId("budget-bond").fill("100");
-  // The bond is paid in the project's own Shares this time: the vote names the token, and says plainly what that means.
-  await founder.page.getByTestId("budget-bond-token").selectOption("project");
-  await expect(founder.page.getByTestId("budget-bond-warning")).toContainText(
-    "worth least when the project struggles",
-  );
+  // The project's own Shares are locked against transfers from birth (D77), so a bond in them could never be posted:
+  // the form does not offer them and says why (D103). The bond is in the payment currency, the recommended choice.
+  await expect(
+    founder.page.getByTestId("budget-bond-shares-locked"),
+  ).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(
+    founder.page
+      .getByTestId("budget-bond-token")
+      .locator("option[value='project']"),
+  ).toHaveCount(0);
   await expect(founder.page.getByTestId("decision-draft")).toContainText(
     "1 reviewer, 1 must agree on each claim",
   );
   await expect(founder.page.getByTestId("decision-draft")).toContainText(
-    "Each reviewer posts a bond of 100 of the project's own token",
+    "bond of 100",
   );
   await founder.page.getByTestId("decision-draft-submit").click();
   await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
@@ -651,14 +666,14 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     { timeout: 60_000 },
   );
   await open(capital, "Work");
-  // The reviewer is on two panels: the milestone panel the launch named (a 25 USDC bond) and this budget's (100 Shares).
+  // The reviewer is on two panels: the milestone panel the launch named (a 25 USDC bond) and this budget's (100 USDC).
   const budgetCard = capital.page
     .getByTestId("work-mandate")
     .filter({ hasText: "Work budget" });
   await expect(budgetCard.getByTestId("work-bond")).toContainText("100", {
     timeout: 30_000,
   });
-  await expect(budgetCard.getByTestId("work-bond")).not.toContainText("USDC");
+  await expect(budgetCard.getByTestId("work-bond")).toContainText("USDC");
   // Nothing to judge with until the bond is in; posting it is an approval and then the bond, from their own wallet.
   await expect(budgetCard.getByTestId("work-approve")).toHaveCount(0);
   const capitalBefore = await dollarsOf(capital.wallet.address);
@@ -669,12 +684,12 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await expect(budgetCard.getByTestId("work-bond-owed")).toHaveCount(0, {
     timeout: 90_000,
   });
-  // The bond left in Shares, not in dollars.
-  expect(sharesBefore - (await sharesOf(capital.wallet.address))).toBe(
-    100n * 10n ** 18n,
+  // The bond left in dollars, from their own wallet; their Shares did not move.
+  expect(capitalBefore - (await dollarsOf(capital.wallet.address))).toBe(
+    dollars(100),
   );
-  expect(await dollarsOf(capital.wallet.address)).toBe(capitalBefore);
-  say("the reviewer posted their bond of 100 Shares");
+  expect(await sharesOf(capital.wallet.address)).toBe(sharesBefore);
+  say("the reviewer posted their bond of 100 USDC");
   await shot(capital.page, "5-reviewer-work");
   await budgetCard.getByTestId("work-approve").click();
   await expect(budgetCard.getByTestId("work-claim-next")).not.toContainText(
@@ -769,7 +784,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
     timeout: 60_000,
   });
-  await carryOut(175_000, 90_000, "Backing 239,999,900");
+  await carryOut(175_000, 90_000);
   await open(labor, "Work");
   const secondOnLabor = labor.page
     .getByTestId("work-claim")
@@ -793,7 +808,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
     timeout: 60_000,
   });
-  await carryOut(175_000, 90_000, "Backing 239,999,900");
+  await carryOut(175_000, 90_000);
   await open(labor, "Work");
   await expect(
     labor.page
@@ -817,7 +832,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     "100",
     { timeout: 60_000 },
   );
-  const daoSharesBefore = await sharesOf(dao);
+  const daoDollarsBefore = await dollarsOf(dao);
   await open(founder, "Decisions");
   await founder.page.getByTestId("decision-new").click();
   await founder.page.getByTestId("decision-kind-slash").click();
@@ -840,8 +855,8 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
     timeout: 60_000,
   });
-  await carryOut(175_000, 90_000, "Backing 239,999,900");
-  expect((await sharesOf(dao)) - daoSharesBefore).toBe(40n * 10n ** 18n);
+  await carryOut(175_000, 90_000);
+  expect((await dollarsOf(dao)) - daoDollarsBefore).toBe(dollars(40));
   await open(capital, "Work");
   await expect(
     capital.page
@@ -849,7 +864,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
       .filter({ hasText: "Work budget" })
       .getByTestId("work-unbond-pending"),
   ).toContainText("60", { timeout: 60_000 });
-  say("the DAO took 40 Shares of the reviewer's bond");
+  say("the DAO took 40 USDC of the reviewer's bond");
 
   const treasuryBeforeClose = await dollarsOf(dao);
   await open(founder, "Decisions");
@@ -863,7 +878,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
     timeout: 60_000,
   });
-  await carryOut(175_000, 90_000, "Backing 239,999,900");
+  await carryOut(175_000, 90_000);
   // Of the 20,000 set aside, 4,000 was paid to the claim; the rest (the recovered claim's 1,000 included) comes back.
   expect((await dollarsOf(dao)) - treasuryBeforeClose).toBe(dollars(16_000));
   await open(founder, "Work");
@@ -877,7 +892,9 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
 
   // ── What everyone is left holding, on the chain and on the server ───────────────────────────────────
   expect(await dollarsOf(dao)).toBe(
-    treasuryBefore - dollars(4_000), // 20,000 went into the work budget, 4,000 of it to the claim; the rest came back
+    // 20,000 went into the work budget, 4,000 of it to the claim, the rest came back; and the 40 the DAO took from the
+    // careless reviewer's bond (paid in dollars since D103).
+    treasuryBefore - dollars(4_000) + dollars(40),
   );
   expect(cleoShares).toBeGreaterThan(0n);
   expect(await dollarsOf(capital.wallet.address)).toBeLessThanOrEqual(
@@ -929,13 +946,23 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await shot(founder.page, "12-portfolio");
 
   // ── A backer leaves: what the screen says they take back is what the chain pays them ──────────────────
-  // The DAO's own Shares (the reserve and the slashed bond) are not counted when the treasury is split, so the share
-  // is the backer's Shares over everything outstanding except the DAO's.
+  // The DAO's own Shares (its reserve) are not counted when the treasury is split, and since D72 neither are the team's
+  // Shares the milestone lock still holds back: they cannot leave, so they take no share. The backer's share is their
+  // Shares over what is left, read from the chain here, not from the app.
   const outstanding = await callWord(shares, "0x18160ddd");
   const heldByDao = await sharesOf(dao);
+  const guard = await callWord(shares, "0x36bc529d"); // lockGuard()
+  const stillLocked =
+    guard === 0n
+      ? 0n
+      : await callWord(
+          `0x${guard.toString(16).padStart(40, "0")}`,
+          "0x56891412",
+        ); // totalLocked()
   const toGiveUp = await sharesOf(capital.wallet.address);
   const treasuryNow = await dollarsOf(dao);
-  const owed = (treasuryNow * toGiveUp) / (outstanding - heldByDao);
+  const owed =
+    (treasuryNow * toGiveUp) / (outstanding - heldByDao - stillLocked);
   expect(owed).toBeGreaterThan(0n);
   const capitalBeforeExit = await dollarsOf(capital.wallet.address);
   // First the sale's currency cannot be read: leaving must not even be offered, because an exit that leaves the

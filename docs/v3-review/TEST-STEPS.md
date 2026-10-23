@@ -1307,3 +1307,19 @@ Runs `web/tests/e2e-real/social.spec.ts` (22 cases: posting, following, votes, r
 search, notifications, profiles, mute, direct messages, launch updates, deleting) and `board-moderation.spec.ts` (an
 appointed moderator removes a reported post from the board's queue; the author is told; a mute hides her next post).
 `SKIP_BUILD=1 WEB_DIST=<dir>` reuses a build; `SPECS=...` runs a subset.
+
+## 4bb. Quick start and the reviewer's bond (D102, D103, 2026-10-23)
+
+```bash
+pnpm --dir web exec playwright test --project=smoke tests/e2e/launchpad.spec.ts -g "Quick start prices"
+scripts/web-economy-e2e.sh   # a real chain and server: the sale sells out, a bond in dollars is posted and partly taken
+```
+
+By hand, on a local chain:
+
+1. **Quick start.** Set up a sale, type a total supply of 1,000,000,000, press Quick start defaults, publish, and open
+   Manage: Launch project is enabled (before D102 it said the raise target had to be the whole sale at the starting
+   price).
+2. **The bond.** In a project made by either kit, propose a work budget with a reviewer bond: "The project's own token"
+   is not among the choices, and the form says why. In a contributor project with no payment currency, the bond asks
+   for another token's address.

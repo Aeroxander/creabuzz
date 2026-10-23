@@ -8,6 +8,7 @@ import {
   parseUnits,
 } from "../lib/dao-actions";
 import { decodeWord } from "../lib/work";
+import { useShareRules } from "../use-share-rules";
 import {
   PeoplePicker,
   SelectField,
@@ -62,12 +63,22 @@ export function WorkBudgetForm({
   const [bond, setBond] = useState("");
   // What the bond is paid in: the claim currency when there is one (the safest), the project's own token, or another.
   const hasCurrency = ctx.currencyDecimals !== null;
+  // Shares locked against transfers (every project the kits make starts that way) can move only to and from the DAO,
+  // so a bond in them could never be posted and the budget's reviewers could never judge: not offered while locked.
+  const shareRules = useShareRules(ctx.sharesToken || null, ctx.dao);
+  const sharesLocked = shareRules.data?.rules?.transfersLocked === true;
   const [bondIn, setBondIn] = useState<"currency" | "project" | "other">(
     hasCurrency ? "currency" : "project",
   );
+  const bondChoice =
+    bondIn === "project" && sharesLocked
+      ? hasCurrency
+        ? "currency"
+        : "other"
+      : bondIn;
   const [bondOther, setBondOther] = useState("");
   const otherDecimals = useTokenDecimals(
-    bondIn === "other" ? bondOther.trim() : "",
+    bondChoice === "other" ? bondOther.trim() : "",
   );
   const dirty = [
     shareBudget,
@@ -88,7 +99,7 @@ export function WorkBudgetForm({
         // The bond's token, its decimals and how the summary names it. The claim currency needs no words.
         const bondTerms = () => {
           if (!bond.trim()) return { reviewerBond: 0n };
-          if (bondIn === "currency") {
+          if (bondChoice === "currency") {
             return {
               reviewerBond: parseUnits(
                 bond,
@@ -98,7 +109,7 @@ export function WorkBudgetForm({
               ),
             };
           }
-          if (bondIn === "project") {
+          if (bondChoice === "project") {
             return {
               reviewerBond: parseUnits(bond, 18, "reviewerBond", "The bond"),
               reviewerBondToken: ctx.sharesToken,
@@ -170,7 +181,7 @@ export function WorkBudgetForm({
       reviewers,
       quorum,
       bond,
-      bondIn,
+      bondChoice,
       bondOther,
       otherDecimals.data,
       otherDecimals.isError,
@@ -284,13 +295,24 @@ export function WorkBudgetForm({
                     },
                   ]
                 : []),
-              { value: "project", label: "The project's own token" },
+              ...(sharesLocked
+                ? []
+                : [{ value: "project", label: "The project's own token" }]),
               { value: "other", label: "Another token" },
             ]}
             testId="budget-bond-token"
-            value={bondIn}
+            value={bondChoice}
           />
-          {bondIn === "other" ? (
+          {sharesLocked ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="budget-bond-shares-locked"
+            >
+              The project's own Shares cannot be the bond: they are locked
+              against transfers, so a reviewer could never post them.
+            </p>
+          ) : null}
+          {bondChoice === "other" ? (
             <TextField
               hint="The address of the token on this network."
               label="Token address"
@@ -300,12 +322,12 @@ export function WorkBudgetForm({
               value={bondOther}
             />
           ) : null}
-          {bondIn !== "currency" ? (
+          {bondChoice !== "currency" ? (
             <p
               className="text-xs text-amber-700 dark:text-amber-300"
               data-testid="budget-bond-warning"
             >
-              {bondIn === "project"
+              {bondChoice === "project"
                 ? "A bond in the project's own token is worth least when the project struggles, and the people steering the project help set its price. Reviewers may not accept it."
                 : "Any token works, but a bond only deters if it keeps its value and nobody involved can freeze or inflate it. Check the token before you vote."}
             </p>
