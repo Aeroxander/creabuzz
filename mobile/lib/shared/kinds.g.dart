@@ -501,6 +501,7 @@ class Kinds {
   static const int KIND_CANVAS = 40100;
 
   /// System message for channel state changes (join, leave, rename, etc.).
+  /// Signed by the relay keypair; client submission is rejected (relay-only).
   static const int KIND_SYSTEM_MESSAGE = 40099;
 
   // Relay-only sidecar kinds (never client-submitted)

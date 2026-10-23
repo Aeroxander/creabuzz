@@ -260,6 +260,82 @@ async fn test_client_submitted_nip43_membership_snapshots_are_rejected() {
 
 #[tokio::test]
 #[ignore]
+async fn test_member_submitted_room_notes_are_rejected() {
+    // Room notes (kind:40099, "X was added by Y") are relay-signed. A member
+    // posting a note-shaped record must be refused, or clients would show it
+    // as a server notice.
+    let url = relay_url();
+    let keys = Keys::generate();
+    let channel = create_test_channel(&keys).await;
+    let forged = EventBuilder::new(
+        Kind::Custom(40_099),
+        serde_json::json!({
+            "type": "member_joined",
+            "actor": keys.public_key().to_hex(),
+            "target": Keys::generate().public_key().to_hex(),
+        })
+        .to_string(),
+    )
+    .tags([Tag::parse(["h", &channel]).unwrap()])
+    .sign_with_keys(&keys)
+    .expect("sign forged room note");
+
+    let mut ws = BuzzTestClient::connect(&url, &keys).await.expect("connect");
+    // Same member, same room, ordinary message: accepted, so the rejection
+    // below is the relay-only invariant and not a membership failure.
+    let ok = ws
+        .send_text_message(&keys, &channel, "ordinary message", 9)
+        .await
+        .expect("send ordinary message");
+    assert!(ok.accepted, "member message rejected: {}", ok.message);
+
+    let ok = ws
+        .send_event(forged.clone())
+        .await
+        .expect("submit forged room note via websocket");
+    assert!(!ok.accepted, "forged WebSocket room note must be rejected");
+    assert_eq!(ok.message, "restricted: relay-only kind");
+
+    let response = reqwest::Client::new()
+        .post(format!("{}/events", relay_http_url()))
+        .header("X-Pubkey", keys.public_key().to_hex())
+        .header("Content-Type", "application/json")
+        .body(serde_json::to_string(&forged).unwrap())
+        .send()
+        .await
+        .expect("submit forged room note via HTTP");
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body = response.text().await.expect("read HTTP rejection");
+    assert!(
+        body.contains("restricted: relay-only kind"),
+        "unexpected HTTP rejection: {body}"
+    );
+
+    // The room still has the relay's own notes, and none signed by the member.
+    let sid = sub_id("room-notes");
+    let filter = Filter::new()
+        .kind(Kind::Custom(40_099))
+        .custom_tags(SingleLetterTag::lowercase(Alphabet::H), [channel.as_str()]);
+    ws.subscribe(&sid, vec![filter]).await.expect("subscribe");
+    let notes = ws
+        .collect_until_eose(&sid, Duration::from_secs(5))
+        .await
+        .expect("room notes EOSE");
+    assert!(
+        notes
+            .iter()
+            .any(|note| note.content.contains("channel_created")),
+        "the relay's channel_created note is missing: {notes:?}"
+    );
+    assert!(
+        notes.iter().all(|note| note.pubkey != keys.public_key()),
+        "a member-signed room note was stored"
+    );
+    ws.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
+#[ignore]
 async fn test_invite_mint_and_claim_admits_new_pubkey() {
     let owner = test_owner_keys();
     let joiner = Keys::generate();
