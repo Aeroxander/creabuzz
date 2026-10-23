@@ -33,6 +33,8 @@ export default defineConfig({
         "**/community-access.spec.ts",
         "**/report.spec.ts",
         "**/chat-removal.spec.ts",
+        // DM threads only under Messages; the server's room notes as sentences.
+        "**/room-notes.spec.ts",
         "**/social-safety.spec.ts",
         "**/launchpad-empty.spec.ts",
         "**/social-mention.spec.ts",

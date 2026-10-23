@@ -1,67 +1,25 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
+import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
-import { getTag } from "@/shared/lib/event-fields";
 
-/** A NIP-29 channel resolved from its kind:39000 metadata event. */
-export interface Channel {
-  /** Channel uuid (the `d` tag / h-tag used by timeline filters). */
-  id: string;
-  name: string;
-  description: string;
-  visibility: "public" | "private";
-  /**
-   * What the channel is for: live chat (`stream`) or a board of posts and
-   * replies (`forum`, the server's name for it). The server tags it `t` on the
-   * channel's metadata record.
-   */
-  type: "stream" | "forum";
-  /** A direct-message thread (the server tags its metadata `t=dm`), not a room anyone is added to. */
-  direct: boolean;
-  /** Metadata timestamp, used as the cursor when walking older pages. */
-  createdAt: number;
-}
+import {
+  type Channel,
+  channelsFromRecords,
+  listedRooms,
+} from "./lib/channel-records";
+
+export type { Channel } from "./lib/channel-records";
 
 const KIND_CHANNEL_METADATA = 39000;
-
-/** Deduplicate addressable events, keeping the latest per (pubkey, kind, d). */
-function dedupLatest(events: NostrEvent[]): NostrEvent[] {
-  const best = new Map<string, NostrEvent>();
-  for (const event of events) {
-    const d = getTag(event, "d") ?? "";
-    const key = `${event.pubkey}:${event.kind}:${d}`;
-    const previous = best.get(key);
-    if (!previous || event.created_at > previous.created_at) {
-      best.set(key, event);
-    }
-  }
-  return [...best.values()];
-}
-
-function eventToChannel(event: NostrEvent): Channel {
-  const id = getTag(event, "d") ?? event.id;
-  const name = getTag(event, "name") || id.slice(0, 8);
-  const description = getTag(event, "about") ?? "";
-  const isPrivate = event.tags.some((t) => t[0] === "private");
-  return {
-    id,
-    name,
-    description,
-    visibility: isPrivate ? "private" : "public",
-    type: event.tags.some((t) => t[0] === "t" && t[1] === "forum")
-      ? "forum"
-      : "stream",
-    direct: event.tags.some((t) => t[0] === "t" && t[1] === "dm"),
-    createdAt: event.created_at,
-  };
-}
 
 const CHANNEL_PAGE_SIZE = 200;
 
 /**
  * One page of channel metadata, newest first from the relay's point of view.
+ * DM threads stay in the page (the walk back pages by record); `useChannels`
+ * leaves them out of what it lists.
  *
  * `until` walks back past the first page: a community with more channels than
  * one page would otherwise hide the older ones with no way to reach them.
@@ -72,12 +30,13 @@ async function fetchChannels(until?: number): Promise<Channel[]> {
     limit: CHANNEL_PAGE_SIZE,
     ...(until === undefined ? {} : { until }),
   });
-  return dedupLatest(events)
-    .map(eventToChannel)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  return channelsFromRecords(events);
 }
 
-/** Public channel list for the current community (kind:39000 metadata). */
+/**
+ * The rooms of the current community (kind:39000 metadata). Direct-message
+ * threads are left out of `channels` and `data` alike: Messages lists them.
+ */
 export function useChannels() {
   const query = useQuery({
     queryKey: ["channels"],
@@ -98,8 +57,15 @@ export function useChannels() {
     for (const channel of [...(query.data ?? []), ...olderChannels]) {
       byId.set(channel.id, channel);
     }
-    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return listedRooms([...byId.values()]).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
   }, [query.data, olderChannels]);
+
+  const firstPageRooms = useMemo(
+    () => (query.data === undefined ? undefined : listedRooms(query.data)),
+    [query.data],
+  );
 
   const oldestLoadedAt = useMemo(() => {
     const times = [...(query.data ?? []), ...olderChannels].map(
@@ -137,6 +103,7 @@ export function useChannels() {
 
   return {
     ...query,
+    data: firstPageRooms,
     channels,
     loadingMore,
     moreError,

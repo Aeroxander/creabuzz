@@ -36,6 +36,8 @@ export interface DmConversation {
   /** Participant public keys (includes the viewer). */
   participants: string[];
   createdAt: number;
+  /** Who signed the conversation's notice: the server's key, which also signs its notes. */
+  serverKey: string;
 }
 
 /** One conversation-list query key, shared by the list and its refetches. */
@@ -109,6 +111,7 @@ export function useDmConversations() {
           id: notice.dmId,
           participants: notice.participants,
           createdAt: notice.createdAt,
+          serverKey: event.pubkey,
         });
       }
     }

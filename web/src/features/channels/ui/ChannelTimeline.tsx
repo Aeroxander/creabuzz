@@ -22,6 +22,11 @@ import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 
 import type { Channel } from "../use-channels";
+import {
+  isServerNote,
+  parseSystemNote,
+  systemNoteText,
+} from "../lib/system-notes";
 import { useModeratorRemovals } from "../use-moderator-removals";
 import {
   isOverlayKind,
@@ -48,6 +53,7 @@ import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { BoardPeople } from "@/features/board/ui/BoardPeople";
+import { SystemNoteRow } from "./SystemNoteRow";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"];
 
@@ -520,10 +526,30 @@ export function ChannelTimeline({
     }),
     [authorOverlays, moderation.removed],
   );
-  const authors = useMemo(
-    () => [...new Set(messages.ordered.map((e) => e.pubkey))],
-    [messages.ordered],
+  // The server's notes are read as sentences about people, so their names are looked up instead of the server's.
+  const serverKey = channel.serverKey;
+  const notes = useMemo(
+    () =>
+      new Map(
+        messages.ordered
+          .filter((e) => isServerNote(e, serverKey))
+          .map((e) => [e.id, parseSystemNote(e.content)]),
+      ),
+    [messages.ordered, serverKey],
   );
+  const authors = useMemo(() => {
+    const people = new Set<string>();
+    for (const event of messages.ordered) {
+      const note = notes.get(event.id);
+      if (!note) {
+        people.add(event.pubkey);
+        continue;
+      }
+      if (note.actor) people.add(note.actor);
+      if (note.target) people.add(note.target);
+    }
+    return [...people];
+  }, [messages.ordered, notes]);
   const { data: profiles } = useProfiles(authors);
   const { agents: rosterAgents } = useAgentRoster();
   const agentsOnline = rosterAgents.filter((a) => a.alive).length;
@@ -545,6 +571,9 @@ export function ChannelTimeline({
   /** Message a moderator is about to remove, awaiting confirmation. */
   const [pendingRemove, setPendingRemove] = useState<string | null>(null);
   const ownPubkey = userPubkey();
+  const nameOf = (pubkey: string) =>
+    agentByPubkey.get(pubkey)?.name ??
+    resolveUserName(profileByPubkey.get(pubkey), pubkey);
 
   const startEdit = (event: NostrEvent) => {
     setReplyTo(null);
@@ -604,6 +633,7 @@ export function ChannelTimeline({
     const seen = new Set<string>();
     for (const event of messages.ordered) {
       if (seen.size >= 24) break;
+      if (notes.has(event.id)) continue;
       seen.add(event.pubkey.toLowerCase());
     }
     try {
@@ -612,7 +642,7 @@ export function ChannelTimeline({
       // Not signed in: presence for the viewer is unavailable, fine.
     }
     return [...seen];
-  }, [messages.ordered]);
+  }, [messages.ordered, notes]);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
@@ -837,29 +867,41 @@ export function ChannelTimeline({
           </div>
         ) : (
           <div className="space-y-conversation-list">
-            {roots.map((root) => (
-              <ThreadTree
-                key={root.id}
-                event={root}
-                messages={messages}
-                reactionsByTarget={reactionsByTarget}
-                onReply={(id) => setReplyTo(id)}
-                onEdit={(event) => startEdit(event)}
-                onDelete={(id) => setPendingDelete(id)}
-                onRemove={
-                  moderation.canRemove
-                    ? (id) => setPendingRemove(id)
-                    : undefined
-                }
-                depth={0}
-                profileByPubkey={profileByPubkey}
-                agentByPubkey={agentByPubkey}
-                ownPubkey={ownPubkey}
-                overlays={overlays}
-                channelId={channel.id}
-                highlightedId={highlightedId}
-              />
-            ))}
+            {roots.map((root) => {
+              const note = notes.get(root.id);
+              if (note) {
+                return (
+                  <SystemNoteRow
+                    event={root}
+                    key={root.id}
+                    text={systemNoteText(note, { nameOf, self: ownPubkey })}
+                  />
+                );
+              }
+              return (
+                <ThreadTree
+                  key={root.id}
+                  event={root}
+                  messages={messages}
+                  reactionsByTarget={reactionsByTarget}
+                  onReply={(id) => setReplyTo(id)}
+                  onEdit={(event) => startEdit(event)}
+                  onDelete={(id) => setPendingDelete(id)}
+                  onRemove={
+                    moderation.canRemove
+                      ? (id) => setPendingRemove(id)
+                      : undefined
+                  }
+                  depth={0}
+                  profileByPubkey={profileByPubkey}
+                  agentByPubkey={agentByPubkey}
+                  ownPubkey={ownPubkey}
+                  overlays={overlays}
+                  channelId={channel.id}
+                  highlightedId={highlightedId}
+                />
+              );
+            })}
           </div>
         )}
         <div ref={bottomRef} />
