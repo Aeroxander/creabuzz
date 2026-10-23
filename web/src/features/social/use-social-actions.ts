@@ -63,6 +63,17 @@ export function useMutedPeople() {
   });
 }
 
+const NOBODY: ReadonlySet<string> = new Set();
+
+/**
+ * The people the reader has muted, empty while signed out or before the list is read. A mute hides a person from the
+ * reader everywhere they meet them (Home, boards, rooms, notifications, messages); it never hides anything from anyone
+ * else, and never what is about the reader's own access (a moderator's notice).
+ */
+export function useMutedSet(): ReadonlySet<string> {
+  return useMutedPeople().data ?? NOBODY;
+}
+
 /**
  * Mute or unmute a person. The mute list replaces itself on every write, so
  * the newest copy is re-read first and the write is refused if it no longer

@@ -1,5 +1,7 @@
 # Screen audit, 2026-10-19
 
+> **History (noted 2026-10-23).** A record of one screen pass on 2026-10-19; the screens have changed since (one timeline, D71; contributor pages, D88 to D92).
+
 A pass over the screens a newcomer meets, looking for too much text, two words for one thing, things that cannot be
 reached, and empty states that say nothing useful. It is a record of what was looked at and what was done, not a rulebook.
 

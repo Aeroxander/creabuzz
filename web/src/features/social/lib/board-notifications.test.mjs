@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   buildBoardNotifications,
   groupNotifications,
+  withoutMuted,
 } from "./notifications.ts";
 
 const ME = "a".repeat(64);
@@ -137,5 +138,19 @@ describe("buildBoardNotifications", () => {
       "hi",
     );
     assert.deepEqual(buildBoardNotifications([theirs], [reply], ME), []);
+  });
+});
+
+describe("withoutMuted", () => {
+  it("leaves out what a muted person caused, whatever the case of their key", () => {
+    const items = [
+      { id: "1", kind: "reply", actor: ANN, at: 1 },
+      { id: "2", kind: "vote", actor: BOB.toUpperCase(), at: 2 },
+    ];
+    assert.deepEqual(
+      withoutMuted(items, new Set([BOB])).map((item) => item.id),
+      ["1"],
+    );
+    assert.equal(withoutMuted(items, new Set()).length, 2);
   });
 });

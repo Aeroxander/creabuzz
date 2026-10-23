@@ -68,6 +68,7 @@ trap 'exit 130' INT TERM
 
 ALL=(
   cli-no-raise-e2e
+  web-contributor-e2e
   cli-milestone-e2e
   web-record-e2e
   web-milestone-e2e

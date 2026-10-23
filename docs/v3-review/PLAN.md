@@ -1,5 +1,7 @@
 # v3 review and implementation plan
 
+> **History (noted 2026-10-23).** This was the v3 review plan. Its decisions are D1 to D15 in [DECISIONS.md](DECISIONS.md) and almost all of it has been built since; where it says "nothing in this plan has been implemented" read it as of 2026-10-07. What is built and what is open now: [STATUS-2026-10-22.md](STATUS-2026-10-22.md).
+
 `draft` `review` `plan` `contracts` `web` `desktop` `cli` `indexer`
 
 **Status: for your review. Nothing in this plan has been implemented.** The only files I added are under

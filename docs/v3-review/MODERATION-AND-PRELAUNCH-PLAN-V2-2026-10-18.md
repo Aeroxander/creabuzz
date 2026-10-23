@@ -1,6 +1,6 @@
 # Moderation and pre-launch plan, version 2 — 18 October 2026
 
-Status: **revision for the checker; no code, test or contract changed.** It answers the checker's review of
+Status: **revision for the checker; no code, test or contract changed** (when written; see the dated note at the top of section 3 for where things stand now). It answers the checker's review of
 `MODERATION-AND-PRELAUNCH-PLAN-2026-10-18.md` (version 1). Version 1 stays as written so the F1–F16 and V1–V8 numbering still
 means something; where this document and version 1 disagree, this one wins.
 
@@ -60,6 +60,17 @@ reviewer ran it"), the invariant-test and bid-badge findings (source reading onl
 8. No automod, no model in the decision path.
 
 ## 3. Phase A: before public social content
+
+> **Where each item stands on 2026-10-23** (the paragraphs below are as written on 18 October):
+> **A0** open: the terms and privacy note exist as drafts shown at sign-up (D83); no appeal route is named yet.
+> **A1** partly: a board's own moderators now read its reports without who sent them (D99); the community queue still
+> shows the reporter to every owner and admin. **A2** dropped, as below. **A3** built, and its chat counterpart (D62);
+> board moderation went much further (D93 to D99: locks, pins, rules, board mutes, appointed moderators, a public log).
+> **A4** mute is built and, since D100, applies on boards, in notifications and in rooms as well as Home; Block is still
+> undefined. **A5** a board's public log and removal notes are built (D94, D98); chat rooms show "removed by a moderator"
+> on the message but keep no room log. **A6** built (the Testnet tag). **A7** starter boards with first posts and "Who to
+> follow" are built; copying posts to public relays is off until a person turns it on, and since 2026-10-23 the box says a copy
+> there cannot be taken back; the honest Team, Backer and Reviewer labels were not re-checked.
 
 **Current scope, in one place (supersedes anything below that says otherwise).** Built: A3 (board report and removal).
 Open: A0 (operator and appeal route), the chat counterpart of A3 (a room owner removing other people's messages),

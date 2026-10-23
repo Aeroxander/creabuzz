@@ -1,5 +1,10 @@
 import type { Page } from "@playwright/test";
 
+/** The preview the specs run against (`playwright.config.ts`): its sockets are this mock. */
+const PREVIEW_ORIGIN = new RegExp(
+  `127\\.0\\.0\\.1:${process.env.E2E_PORT ?? "4173"}`,
+);
+
 /**
  * A small in-memory relay for browser tests.
  *
@@ -240,7 +245,7 @@ export function createMockRelay({
         body: JSON.stringify({ communities: [] }),
       });
     });
-    await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
       connectionsOpened += 1;
       openedAt.push(Date.now());
       const socket: Socket = {

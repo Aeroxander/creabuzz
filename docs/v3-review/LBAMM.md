@@ -1,5 +1,7 @@
 # LBAMM and apptokens: what was read, what it means for Creaton
 
+> **History (noted 2026-10-23).** Background reading for a market venue. No market is planned for contributor projects or the first raises (D77, [CONTRIBUTOR-TOKEN-TRADING.md](CONTRIBUTOR-TOKEN-TRADING.md)); LBAMM stays evaluation-only.
+
 Read on 2026-10-08 from two repositories cloned into a scratch directory outside this repo (never copied in):
 
 | Repo | Commit | What it is |

@@ -70,6 +70,8 @@ export interface ThreadModeration {
   mutedUntil: number | null;
 }
 
+const NO_ONE: ReadonlySet<string> = new Set();
+
 export const NO_MODERATION: ThreadModeration = {
   locked: false,
   pinned: false,
@@ -97,6 +99,7 @@ export function PostThread({
   header,
   badges,
   moderation = NO_MODERATION,
+  muted = NO_ONE,
 }: {
   post: BoardPost;
   comments: BoardComment[];
@@ -110,6 +113,8 @@ export function PostThread({
   /** A short fact beside a person's name, by public key. */
   badges?: Record<string, string>;
   moderation?: ThreadModeration;
+  /** People the reader muted: their replies are folded, and a post of theirs says so. */
+  muted?: ReadonlySet<string>;
 }) {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -300,6 +305,15 @@ export function PostThread({
           <ArrowLeft aria-hidden className="mr-1 h-4 w-4" /> All posts
         </Button>
       </div>
+      {post.author !== me && muted.has(post.author) ? (
+        <p
+          className="px-4 pb-2 text-xs text-muted-foreground"
+          data-testid="board-thread-muted-author"
+        >
+          You muted {nameOf(post.author)}. You see this post because you opened
+          it.
+        </p>
+      ) : null}
       <article className="flex gap-2 px-4 pb-4">
         {post.proposal ? (
           <div
@@ -489,6 +503,7 @@ export function PostThread({
             voteDisabledReason: mutedReason,
             needAccount,
             onRemove: (id, reason) => actions.moderate(id, reason),
+            muted,
           }}
           threads={threads}
         />

@@ -139,6 +139,16 @@ export function buildBoardNotifications(
 }
 
 /** Events that tag `viewer` → notifications, newest first. */
+/** Notifications without the ones a muted person caused: a mute hides them here too, so the count does not count them. */
+export function withoutMuted<T extends { actor: string }>(
+  items: readonly T[],
+  muted: ReadonlySet<string>,
+): T[] {
+  return muted.size === 0
+    ? [...items]
+    : items.filter((item) => !muted.has(item.actor.toLowerCase()));
+}
+
 export function buildNotifications(
   events: readonly SignedEventLike[],
   viewer: string,

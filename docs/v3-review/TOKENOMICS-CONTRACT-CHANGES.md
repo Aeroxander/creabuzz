@@ -2,7 +2,7 @@
 
 You accepted T1 to T8 of [TOKENOMICS-PROPOSAL.md](TOKENOMICS-PROPOSAL.md) as written (D72–D79). As the plan asks of any
 contract change, this says exactly what changes (revised after a second review the same day, D80, §0a), in which contract, what it must not break, how it is tested and what it
-does to the audit, before any code is written. Nothing here is built yet.
+does to the audit, before any code is written. Built since: D81 (contracts) and D82 (app pieces); [AUDIT-SCOPE.md](AUDIT-SCOPE.md) is updated for them.
 
 | Decision | What | Contracts |
 |---|---|---|

@@ -1,6 +1,6 @@
 # When can a contributor project's token be traded? (recommendation, 2026-10-19)
 
-Written for D65. Nothing here is built. It answers the roadmap's open question for contributor projects (section 4 of
+Written for D65. Recommendation 1 (lock transfers at birth) is built (D66, and D77 for the raise); the rest is not. It answers the roadmap's open question for contributor projects (section 4 of
 [SOCIAL-MVP-ROADMAP-2026-10-19.md](SOCIAL-MVP-ROADMAP-2026-10-19.md)): when, if ever, should Shares that were earned for
 work become something people can buy and sell?
 

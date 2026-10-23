@@ -88,9 +88,12 @@ export function BoardList({
   statuses,
   statusesReady,
   moderation,
+  mutedHidden = null,
 }: {
   channel: Channel;
   moderation: BoardListModeration;
+  /** Posts left out because the reader muted their authors, and how to show them anyway. */
+  mutedHidden?: { count: number; onShow: () => void } | null;
   board: Board;
   records: BoardRecords;
   actions: BoardActions;
@@ -402,6 +405,27 @@ export function BoardList({
             )}
           </ul>
         )}
+        {mutedHidden ? (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="board-muted-hidden"
+          >
+            {mutedHidden.count === 1
+              ? "1 post from someone you muted is not shown."
+              : `${mutedHidden.count} posts from people you muted are not shown.`}{" "}
+            <button
+              className="underline"
+              onClick={() => {
+                mutedHidden.onShow();
+                // The reader asked for them: put them in place now, not behind "new posts".
+                setFrozen(null);
+              }}
+              type="button"
+            >
+              Show
+            </button>
+          </p>
+        ) : null}
         {records.truncated ? (
           <p className="text-xs text-muted-foreground">
             Showing the newest {POST_LIMIT} posts.

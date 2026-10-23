@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 import {
   type Profile,
   resolveUserName,
 } from "@/features/profiles/use-profiles";
+import { MutedLine } from "@/features/social/ui/MutedLine";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import type { BoardComment } from "../lib/board-model";
 import type { MuteChoice } from "../lib/board-moderation";
@@ -36,6 +37,8 @@ interface ReplyContext {
   needAccount: (action: string) => boolean;
   /** Remove someone else's reply, with the public reason (empty for none). */
   onRemove: (id: string, reason: string) => Promise<unknown>;
+  /** People the reader muted: their replies are folded to one line (the replies to them stay). */
+  muted: ReadonlySet<string>;
 }
 
 /** Nested comment branches; deeper levels keep their order without narrowing the text further. */
@@ -66,7 +69,9 @@ export function CommentReplies({
     voteDisabledReason,
     needAccount,
     onRemove,
+    muted,
   } = context;
+  const [shown, setShown] = useState<ReadonlySet<string>>(() => new Set());
   return (
     <ol
       className={`mt-4 space-y-4 ${depth > 0 && depth <= 3 ? "ml-2 border-l border-border pl-2 sm:ml-4 sm:pl-3" : ""}`}
@@ -79,77 +84,88 @@ export function CommentReplies({
         );
         return (
           <li data-testid={`board-reply-${comment.id}`} key={comment.id}>
-            <article
-              className="flex gap-2"
-              data-testid={`board-reply-content-${comment.id}`}
-            >
-              <VoteButtons
-                disabledReason={voteDisabledReason}
-                myVote={comment.myVote}
-                onVote={(direction) => onVote(comment, direction)}
-                score={comment.score}
-                subject={`reply by ${name}`}
+            {comment.author !== me &&
+            muted.has(comment.author) &&
+            !shown.has(comment.id) ? (
+              <MutedLine
+                onShow={() =>
+                  setShown((previous) => new Set([...previous, comment.id]))
+                }
+                what="A reply"
               />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  <AuthorChip
-                    badge={badges?.[comment.author]}
-                    profile={profiles?.[comment.author]}
-                    pubkey={comment.author}
-                    size="md"
-                  />
-                  <span>{shortRelativeTime(comment.createdAt)}</span>
-                </div>
-                <div className="mt-1.5">
-                  <BoardMarkdown text={comment.body} />
-                </div>
-                <div className="mt-1 flex gap-3 text-xs text-muted-foreground">
-                  {canReply ? (
-                    <button
-                      aria-label={`Reply to ${name}`}
-                      className="underline disabled:opacity-50"
-                      data-testid="board-reply-to"
+            ) : (
+              <article
+                className="flex gap-2"
+                data-testid={`board-reply-content-${comment.id}`}
+              >
+                <VoteButtons
+                  disabledReason={voteDisabledReason}
+                  myVote={comment.myVote}
+                  onVote={(direction) => onVote(comment, direction)}
+                  score={comment.score}
+                  subject={`reply by ${name}`}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <AuthorChip
+                      badge={badges?.[comment.author]}
+                      profile={profiles?.[comment.author]}
+                      pubkey={comment.author}
+                      size="md"
+                    />
+                    <span>{shortRelativeTime(comment.createdAt)}</span>
+                  </div>
+                  <div className="mt-1.5">
+                    <BoardMarkdown text={comment.body} />
+                  </div>
+                  <div className="mt-1 flex gap-3 text-xs text-muted-foreground">
+                    {canReply ? (
+                      <button
+                        aria-label={`Reply to ${name}`}
+                        className="underline disabled:opacity-50"
+                        data-testid="board-reply-to"
+                        disabled={busy}
+                        onClick={() => onReply(comment.id)}
+                        type="button"
+                      >
+                        Reply
+                      </button>
+                    ) : null}
+                    {me !== null && me === comment.author ? (
+                      <button
+                        className="underline disabled:opacity-50"
+                        data-testid="board-delete-reply"
+                        disabled={busy}
+                        onClick={() => onDelete(comment.id)}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                    <BoardModeration
+                      author={comment.author}
+                      canRemove={canRemove(comment.author)}
                       disabled={busy}
-                      onClick={() => onReply(comment.id)}
-                      type="button"
-                    >
-                      Reply
-                    </button>
-                  ) : null}
-                  {me !== null && me === comment.author ? (
-                    <button
-                      className="underline disabled:opacity-50"
-                      data-testid="board-delete-reply"
-                      disabled={busy}
-                      onClick={() => onDelete(comment.id)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  ) : null}
-                  <BoardModeration
-                    author={comment.author}
-                    canRemove={canRemove(comment.author)}
-                    disabled={busy}
-                    id={comment.id}
-                    kind="reply"
-                    me={me}
-                    mute={
-                      canMute(comment.author)
-                        ? {
-                            choices: muteChoices,
-                            onMute: (days, reason) =>
-                              onMute(comment.author, days, reason),
-                          }
-                        : null
-                    }
-                    name={name}
-                    needAccount={needAccount}
-                    onRemove={onRemove}
-                  />
+                      id={comment.id}
+                      kind="reply"
+                      me={me}
+                      mute={
+                        canMute(comment.author)
+                          ? {
+                              choices: muteChoices,
+                              onMute: (days, reason) =>
+                                onMute(comment.author, days, reason),
+                            }
+                          : null
+                      }
+                      name={name}
+                      needAccount={needAccount}
+                      onRemove={onRemove}
+                    />
+                  </div>
                 </div>
-              </div>
-            </article>
+              </article>
+            )}
             {replyTo === comment.id ? (
               <div className="mt-3">{replyForm}</div>
             ) : null}

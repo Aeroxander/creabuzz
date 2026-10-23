@@ -1,5 +1,7 @@
 # The pilot: what Creaton is for the first testers
 
+> **Order (noted 2026-10-23).** This describes the raise pilot, which is the third step of release, after the social MVP and contributor projects ([SOCIAL-MVP-ROADMAP-2026-10-19.md](SOCIAL-MVP-ROADMAP-2026-10-19.md)). Where this file says "the one format" or "what testers meet first", read it as "what a raise pilot tests". The pilots that come first are in [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md).
+
 This replaces the long list of what the product could be with one thing it is: **back a team, understand the agreement,
 follow its work, and see its locked tokens unlock as its milestones are reached, unless holders object.** It comes from the third review
 (`FIRST-PRINCIPLES-REVIEW-2026-10-17.md`) and is where the decision documents disagree, this wins. The decision documents

@@ -1,7 +1,7 @@
 # Tokenomics for fundraising projects: a proposal (2026-10-21)
 
 Status: **decided 2026-10-21**: you accepted T1 to T8 as written; they are D72 to D79 in [DECISIONS.md](DECISIONS.md), and
-the contract changes are written up in [TOKENOMICS-CONTRACT-CHANGES.md](TOKENOMICS-CONTRACT-CHANGES.md). Nothing is built yet.
+the contract changes are written up in [TOKENOMICS-CONTRACT-CHANGES.md](TOKENOMICS-CONTRACT-CHANGES.md). Built since: the contracts (D81) and the app pieces (D82).
 The text below is the proposal as you accepted it. A second review the same day corrected four things in it, marked where they
 appear: the exit pays per Share, not per dollar (auction buyers pay different prices); the notice before a decision runs
 is at least 3 days, not 3.5; the yearly cap is measured against the Shares that count on exit; two more ways to take

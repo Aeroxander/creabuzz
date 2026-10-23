@@ -56,6 +56,7 @@ import { useBoardRecords } from "../use-board";
 import { useBoardActions } from "../use-board-actions";
 import { useChannelRemovers, useRosterSync } from "../use-board-members";
 import { useBoardReports } from "../use-board-reports";
+import { useMutedSet } from "@/features/social/use-social-actions";
 import {
   useBoardModerationActions,
   useBoardModerationRecords,
@@ -181,6 +182,28 @@ export function BoardView({
   const board = useMemo(
     () => buildBoard(records.events, me, removers, kept),
     [records.events, me, removers, kept],
+  );
+  // The reader's own mutes: posts by people they muted are left out of the list (with a count and a way to show them),
+  // and their replies are folded in a thread.
+  const muted = useMutedSet();
+  const [showMuted, setShowMuted] = useState(false);
+  const mutedPosts = useMemo(
+    () =>
+      board.posts.filter((post) => post.author !== me && muted.has(post.author))
+        .length,
+    [board.posts, muted, me],
+  );
+  const listBoard = useMemo(
+    () =>
+      showMuted || mutedPosts === 0
+        ? board
+        : {
+            ...board,
+            posts: board.posts.filter(
+              (post) => post.author === me || !muted.has(post.author),
+            ),
+          },
+    [board, showMuted, mutedPosts, muted, me],
   );
   /** May the reader undo (unlock, unpin, unmute) what `placer` did? Unknown placer: offer it and let the server decide. */
   const mayUndoBy = (placer: string | undefined) =>
@@ -327,6 +350,7 @@ export function BoardView({
         actions={actions}
         badges={extras.badges}
         moderation={threadModeration}
+        muted={muted}
         comments={board.comments.get(open.id) ?? []}
         header={extras.header}
         key={open.id}
@@ -355,7 +379,12 @@ export function BoardView({
   ) => (
     <BoardList
       actions={actions}
-      board={board}
+      board={listBoard}
+      mutedHidden={
+        mutedPosts > 0 && !showMuted
+          ? { count: mutedPosts, onShow: () => setShowMuted(true) }
+          : null
+      }
       channel={channel}
       me={me}
       moderation={listModeration}

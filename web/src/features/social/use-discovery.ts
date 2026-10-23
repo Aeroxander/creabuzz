@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 import {
   KIND_CONTACT_LIST,
@@ -18,7 +19,9 @@ import {
 import {
   buildBoardNotifications,
   buildNotifications,
+  type NotificationItem,
   readSeenAt,
+  withoutMuted,
   writeSeenAt,
 } from "./lib/notifications";
 import { buildRows, sortNewestFirst, type SignedEvent } from "./lib/timeline";
@@ -30,6 +33,7 @@ import {
 } from "./lib/trending";
 import { usePriorityNotifications } from "./use-launch-updates";
 import { readEvents } from "./read";
+import { useMutedSet } from "./use-social-actions";
 import { socialKeys, useFollowing } from "./use-social-data";
 
 /** How far back trending looks: communities are small, so three days. */
@@ -61,8 +65,14 @@ async function fetchBoardNotifications(me: string) {
 /** Up votes, reposts, quotes, replies, mentions, new followers, and board replies and up votes, aimed at you. */
 export function useNotifications() {
   const me = existingUserPubkey();
+  const muted = useMutedSet();
+  const hideMuted = useCallback(
+    (items: NotificationItem[]) => withoutMuted(items, muted),
+    [muted],
+  );
   return useQuery({
     queryKey: [...socialKeys.all, "notifications", me],
+    select: hideMuted,
     enabled: Boolean(me),
     staleTime: 30_000,
     // The relay does not fan out `#p` filters, so polling is how they arrive.

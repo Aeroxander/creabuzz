@@ -47,6 +47,8 @@ import { DecisionEmbeds } from "@/features/launchpad/ui/DecisionEmbeds";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
+import { MutedLine } from "@/features/social/ui/MutedLine";
+import { useMutedSet } from "@/features/social/use-social-actions";
 import { BoardPeople } from "@/features/board/ui/BoardPeople";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"];
@@ -168,9 +170,12 @@ function MessageRow({
   agent,
   highlighted,
   channelId,
+  muted = false,
 }: {
   event: NostrEvent;
   isReply?: boolean;
+  /** Written by someone the reader muted: folded to one line until they choose to look. */
+  muted?: boolean;
   /** Channel the message belongs to; makes the permalink open this thread. */
   channelId: string;
   /** True when this row is the target of a permalink. */
@@ -191,10 +196,18 @@ function MessageRow({
 }) {
   const isOwn = event.pubkey === ownPubkey;
   const [reporting, setReporting] = useState(false);
+  const [shownAnyway, setShownAnyway] = useState(false);
   const ban = useBanAuthor(
     event.pubkey,
     resolveUserName(profile, event.pubkey),
   );
+  if (muted && !isOwn && !shownAnyway) {
+    return (
+      <div className={isReply ? "ml-8 px-2" : "px-2"}>
+        <MutedLine onShow={() => setShownAnyway(true)} what="A message" />
+      </div>
+    );
+  }
   const content = isDeleted
     ? ""
     : (overlayContent ??
@@ -410,9 +423,12 @@ function ThreadTree({
   overlays,
   channelId,
   highlightedId,
+  muted,
 }: {
   event: NostrEvent;
   messages: ChannelMessages;
+  /** People the reader muted. */
+  muted: ReadonlySet<string>;
   reactionsByTarget: Map<string, NostrEvent[]>;
   onReply: (eventId: string) => void;
   onEdit?: (event: NostrEvent) => void;
@@ -453,6 +469,7 @@ function ThreadTree({
         agent={agentByPubkey.get(event.pubkey)}
         channelId={channelId}
         highlighted={event.id === highlightedId}
+        muted={muted.has(event.pubkey.toLowerCase())}
       />
       {children.map((child) => (
         <ThreadTree
@@ -471,6 +488,7 @@ function ThreadTree({
           overlays={overlays}
           channelId={channelId}
           highlightedId={highlightedId}
+          muted={muted}
         />
       ))}
     </div>
@@ -493,6 +511,7 @@ export function ChannelTimeline({
   suggestPeopleFrom?: string | null;
 }) {
   const messages = useChannelMessages(channel.id);
+  const muted = useMutedSet();
   // A direct-message thread is private too, but nobody is added to or taken off it.
   const privateRoom = channel.visibility === "private" && !channel.direct;
   // A private room's people: who can read it, adding someone, and taking someone off it.
@@ -852,6 +871,7 @@ export function ChannelTimeline({
                     : undefined
                 }
                 depth={0}
+                muted={muted}
                 profileByPubkey={profileByPubkey}
                 agentByPubkey={agentByPubkey}
                 ownPubkey={ownPubkey}

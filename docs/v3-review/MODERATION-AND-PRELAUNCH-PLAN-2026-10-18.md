@@ -1,5 +1,7 @@
 # Moderation, social launch and launchpad pre-audit plan — 18 October 2026
 
+> **History (noted 2026-10-23).** Version 1, replaced by [version 2](MODERATION-AND-PRELAUNCH-PLAN-V2-2026-10-18.md), which says where each Phase A item stands as of 2026-10-23.
+
 Status: **proposal, for the other agent to check before anything is built.** No code, test or contract was changed to write
 it. Written against `HEAD 494b84180` plus the uncommitted working tree as read on 18 October (the other agent's D60 work,
 the user's board/pitch/template edits). Part 1 lists what was verified in the source and where; part 2 lists what was

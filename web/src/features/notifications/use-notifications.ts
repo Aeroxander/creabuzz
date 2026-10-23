@@ -11,6 +11,7 @@ import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages";
+import { useMutedSet } from "@/features/social/use-social-actions";
 
 import {
   KIND_BOARD_MODERATION_LOG,
@@ -32,6 +33,8 @@ const POLL_MS = 15_000;
 export interface NotificationItem {
   id: string;
   kind: "mention" | "task" | "member" | "moderation";
+  /** Who wrote it, for a mention: a person the reader muted is left out. */
+  author?: string;
   title: string;
   preview: string;
   channelId: string | null;
@@ -93,6 +96,7 @@ export function useNotifications(): {
           out.push({
             id: e.id,
             kind: "mention",
+            author: e.pubkey.toLowerCase(),
             title: "Mentioned you",
             preview: e.content.slice(0, 120),
             channelId: e.tags.find((t) => t[0] === "h")?.[1] ?? null,
@@ -173,9 +177,19 @@ export function useNotifications(): {
     };
   }, [me, refresh]);
 
+  // A mention from someone the reader muted is not shown or counted. A moderator's notice about the reader always is.
+  const muted = useMutedSet();
+  const shown = useMemo(
+    () =>
+      items.filter(
+        (item) => item.author === undefined || !muted.has(item.author),
+      ),
+    [items, muted],
+  );
+
   const unread = useMemo(
-    () => items.filter((i) => i.at > lastSeen).length,
-    [items, lastSeen],
+    () => shown.filter((i) => i.at > lastSeen).length,
+    [shown, lastSeen],
   );
 
   const markRead = useCallback(() => {
@@ -188,5 +202,5 @@ export function useNotifications(): {
     setLastSeen(now);
   }, []);
 
-  return { items, unread, markRead, lastSeen };
+  return { items: shown, unread, markRead, lastSeen };
 }

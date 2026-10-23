@@ -1,5 +1,7 @@
 # Connected project overview and social progress — 18 October 2026
 
+> **History (noted 2026-10-23).** A progress note of 2026-10-18. The navigation it describes was renamed since (Workspaces became Communities, D92); for what is built now see [STATUS-2026-10-22.md](STATUS-2026-10-22.md).
+
 The user selected Project first and asked me to work on the unfinished social and DAO OS features. This increment connects the existing project, relay work, agent and onchain claim surfaces. It does not replace the relay architecture or add a trading dependency to coordination features.
 
 ## What is implemented

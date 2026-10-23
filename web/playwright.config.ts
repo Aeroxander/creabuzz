@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// The preview's port, and optionally a build folder of its own: lets the mocked specs run beside a journey script that
+// holds :4173 and web/dist. Specs that name :4173 themselves need the default.
+const PORT = process.env.E2E_PORT ?? "4173";
+const DIST = process.env.E2E_DIST;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
@@ -10,7 +15,7 @@ export default defineConfig({
     ["html", { open: "never", outputFolder: "playwright-report" }],
   ],
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: `http://127.0.0.1:${PORT}`,
     screenshot: "only-on-failure",
     trace: "on-first-retry",
     video: "retain-on-failure",
@@ -76,6 +81,7 @@ export default defineConfig({
         "**/board.spec.ts",
         "**/board-moderation.spec.ts",
         "**/board-reports.spec.ts",
+        "**/mute-everywhere.spec.ts",
         "**/access-refused.spec.ts",
         "**/live-scope.spec.ts",
         "**/home-timeline.spec.ts",
@@ -126,9 +132,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm exec vite preview --port 4173 --strictPort --host 127.0.0.1",
+    command: `pnpm exec vite preview --port ${PORT} --strictPort --host 127.0.0.1${DIST ? ` --outDir ${DIST}` : ""}`,
     cwd: ".",
     reuseExistingServer: !process.env.CI,
-    url: "http://127.0.0.1:4173",
+    url: `http://127.0.0.1:${PORT}`,
   },
 });

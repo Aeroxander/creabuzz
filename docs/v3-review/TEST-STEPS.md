@@ -1264,3 +1264,20 @@ By hand, with a board's owner (or an appointed moderator), a member who posts th
 5. **A private chat room.** As the room's owner, **People** in the room's header (or **Add people**) lists who can read
    it; **Remove** takes someone off after a confirmation. If they have the room open they are told at once. An admin
    is not offered Remove for the owner or a fellow admin.
+
+## 4ay. A personal mute applies wherever you meet the person (D100, 2026-10-23)
+
+```bash
+pnpm --dir web test   # board-notifications.test.mjs (withoutMuted)
+pnpm --dir web exec playwright test --project=smoke tests/e2e/mute-everywhere.spec.ts
+```
+
+By hand, with two accounts: A mutes B from B's profile (Mute).
+
+1. **Boards.** B posts on a board and replies in a thread of A's. A sees "1 post from someone you muted is not shown.
+   Show" under the board's posts; in the thread, B's reply is one line ("A reply from someone you muted. Show") and
+   the replies to it are still there.
+2. **Rooms.** B writes in a room A reads: one line per message, with Show.
+3. **Notifications.** B mentions A and replies to A's post: nothing from B in Notifications or the community bell, and
+   no count. A moderator removing one of A's posts still shows.
+4. **Nobody else.** A third account sees everything as before.

@@ -1,5 +1,7 @@
 # Progress on the v3 review plan
 
+> **History (noted 2026-10-23).** Frozen at 2026-10-19; [STATUS-2026-10-22.md](STATUS-2026-10-22.md) replaced it as the index. Since then: Home and the social feed are one timeline (D61, D71); the two log-range issues under "Known open issues" are fixed (log reads fall back to pages from the build's starting block, `ethGetLogs` in `web/src/features/launchpad/chain.ts`).
+
 Branch `v4-governance-rework`, local commits only. Decisions D1 to D10 are in [DECISIONS.md](DECISIONS.md). This file
 says what is built, how it was checked, and what is not done, so nobody has to read the commit log to find out.
 

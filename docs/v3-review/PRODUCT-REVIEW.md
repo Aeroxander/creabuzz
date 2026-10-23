@@ -1,5 +1,7 @@
 # Does the product make sense? (2026-10-09)
 
+> **History (noted 2026-10-23).** A product pass of 2026-10-09 and 2026-10-10. The order of release has changed since (social, then contributor projects, then the raise: [SOCIAL-MVP-ROADMAP-2026-10-19.md](SOCIAL-MVP-ROADMAP-2026-10-19.md)); for what is built now see [STATUS-2026-10-22.md](STATUS-2026-10-22.md).
+
 Written after reading the first-run screens as a newcomer would meet them (screenshots from `web/tests/e2e/tour.spec.ts`)
 and the DAO's own pages on a real local chain (the journey specs, run with `E2E_SHOTS=<dir>`), not from the code alone.
 
