@@ -138,6 +138,12 @@ describe("queue rows", () => {
     assert.equal(reportTypeLabel(rows[0].reportType), "Spam");
   });
 
+  it("keeps a row read without who reported it (a board's moderators' read)", () => {
+    const [row] = parseModerationReports([rawRow({ reporter_pubkey: null })]);
+    assert.equal(row.reporterPubkey, null);
+    assert.equal(row.note, "ads everywhere");
+  });
+
   it("sorts open rows first and by severity", () => {
     const rows = parseModerationReports([
       rawRow({

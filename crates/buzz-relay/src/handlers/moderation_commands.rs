@@ -412,7 +412,7 @@ pub(crate) async fn handle_resolve(
         ));
     }
 
-    authorize_moderation_action(
+    let community_authz = authorize_moderation_action(
         tenant,
         state,
         actor,
@@ -420,8 +420,7 @@ pub(crate) async fn handle_resolve(
         ModerationTarget::Event(&report_event_id),
         ModerationAction::ResolveReport,
     )
-    .await
-    .map_err(authz_denial)?;
+    .await;
 
     // Resolve the report row under this tenant only. The `report` tag carries
     // the signed 1984 event id (pinned contract); look the row up by it.
@@ -429,8 +428,24 @@ pub(crate) async fn handle_resolve(
         .db
         .get_moderation_report_by_event(tenant.community(), &report_event_id)
         .await
-        .map_err(|e| error(format!("database error: {e}")))?
-        .ok_or_else(|| invalid("report not found in this community"))?;
+        .map_err(|e| error(format!("database error: {e}")))?;
+
+    // A community moderator closes any report; a board's moderator closes one
+    // about words on their board, within the board's rules (D99). Anyone else
+    // is refused as before, without learning whether the report exists.
+    let actor_authority = match (community_authz, &report) {
+        (Ok(_), _) => "community",
+        // Boxed so this rarely taken path does not grow every ingest's future.
+        (Err(denial), Some(report)) => {
+            Box::pin(crate::handlers::board_moderation::board_report_authority(
+                tenant, state, actor, report, &action,
+            ))
+            .await?
+            .ok_or_else(|| authz_denial(denial))?
+        }
+        (Err(denial), None) => return Err(authz_denial(denial)),
+    };
+    let report = report.ok_or_else(|| invalid("report not found in this community"))?;
 
     // Carry the report's own target into the audit row so `delete`/`kick`/`ban`
     // resolutions record what they acted on.
@@ -444,7 +459,8 @@ pub(crate) async fn handle_resolve(
     // - CAS `open → terminal` AND decision audit row in ONE transaction.
     // - No orphan audit row on concurrent close (transaction rolls back both).
     // - Preserves the event's signed `status` field verbatim (resolved|dismissed).
-    // - `actor_authority = "community"` marks this as a 9044 community-path resolution.
+    // - `actor_authority` is `"community"` on the community path, or the board
+    //   moderator's own authority, so their closings count toward their rate.
     let audit_action = enforcement_audit_action(&action);
     let reporter_pubkey = report.reporter_pubkey.clone();
     let report_id = report.id;
@@ -455,7 +471,7 @@ pub(crate) async fn handle_resolve(
         &status,
         audit_action,
         actor,
-        "community",
+        actor_authority,
         target_pubkey,
         target_event_id,
         report.channel_id,

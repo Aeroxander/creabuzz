@@ -688,20 +688,159 @@ pub async fn authorize_board_removal(
     Ok(())
 }
 
+/// Whether `actor` may close a report as one of the board's moderators, and the
+/// audit authority to record it under (D99). `Ok(None)` when the report is not
+/// about a post or reply on a board the actor moderates: the community's rule
+/// then stands alone.
+///
+/// A board's moderators may dismiss a report, or close it as removed once the
+/// post or reply is gone (removed through the board's own path, with its guard
+/// rails and public log). Anything more (a ban, a timeout, handing it on) is
+/// for the community's moderators, who see every report.
+pub async fn board_report_authority(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    actor: &[u8],
+    report: &buzz_db::moderation::ReportRecord,
+    action: &str,
+) -> Result<Option<&'static str>, String> {
+    let (Some(channel_id), buzz_db::moderation::ReportTarget::Event(target_id)) =
+        (report.channel_id, &report.target)
+    else {
+        return Ok(None);
+    };
+    let standing_error = |e: anyhow::Error| error(format!("database error: {e}"));
+    let community = tenant.community();
+    let channel = state
+        .db
+        .get_channel_for_event_write(community, channel_id)
+        .await
+        .map_err(db_error)?;
+    if channel.channel_type != "forum" {
+        return Ok(None);
+    }
+    let now = Utc::now();
+    let standing = board_standing(tenant, state, channel_id, actor, now)
+        .await
+        .map_err(standing_error)?;
+    if !board_capability_allowed(standing, BoardCapability::Moderate) {
+        return Ok(None);
+    }
+    let Some(target) = state
+        .db
+        .get_event_by_id_including_deleted(community, target_id)
+        .await
+        .map_err(db_error)?
+    else {
+        return Ok(None);
+    };
+    if !matches!(action, "dismiss" | "delete") {
+        return Err(restricted(
+            "a board's moderators can remove what was reported or dismiss the report; \
+             anything more is for the community's moderators",
+        ));
+    }
+    if let Some(until) = state
+        .db
+        .board_mute_until(community, channel_id, actor)
+        .await
+        .map_err(db_error)?
+    {
+        return Err(restricted(format!(
+            "you are muted on this board until {}",
+            until.timestamp()
+        )));
+    }
+    let author =
+        super::ingest::effective_message_author(&target.event, &state.relay_keypair.public_key());
+    if author == actor {
+        return Err(restricted("you cannot close a report about your own words"));
+    }
+    let author_standing = board_standing(tenant, state, channel_id, &author, now)
+        .await
+        .map_err(standing_error)?;
+    if !board_may_act_against(standing, author_standing) {
+        return Err(restricted(
+            "you cannot close a report about someone with the same or higher standing",
+        ));
+    }
+    if action == "delete"
+        && state
+            .db
+            .get_event_by_id(community, target_id)
+            .await
+            .map_err(db_error)?
+            .is_some()
+    {
+        return Err(invalid(
+            "remove the post or reply first, then close the report",
+        ));
+    }
+    if action == "dismiss"
+        && standing == BoardStanding::Moderator
+        && state
+            .db
+            .board_moderator_actions_since(community, actor, now - Duration::hours(1))
+            .await
+            .map_err(db_error)?
+            >= MODERATOR_ACTIONS_PER_HOUR
+    {
+        return Err(restricted(format!(
+            "a moderator may take {MODERATOR_ACTIONS_PER_HOUR} actions an hour"
+        )));
+    }
+    Ok(Some(standing.audit_authority()))
+}
+
+/// The words a moderator removes from a board, as stored, with where they sit.
+pub struct RemovedWords<'a> {
+    /// The post or reply.
+    pub event: &'a Event,
+    /// Who wrote it.
+    pub author: &'a [u8],
+    /// For a reply: what it answered.
+    pub parent: Option<&'a [u8]>,
+    /// For a reply: the thread it is in.
+    pub root: Option<&'a [u8]>,
+}
+
+/// The longest start of removed words quoted back to their author.
+const REMOVED_EXCERPT_CHARS: usize = 80;
+
+/// The start of removed words to quote back to their author: the first line,
+/// without a heading's `#`s, cut at [`REMOVED_EXCERPT_CHARS`].
+fn removed_excerpt(content: &str) -> String {
+    let line = content
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("")
+        .trim_start_matches('#')
+        .trim();
+    if line.chars().count() <= REMOVED_EXCERPT_CHARS {
+        line.to_string()
+    } else {
+        let cut: String = line.chars().take(REMOVED_EXCERPT_CHARS).collect();
+        format!("{}…", cut.trim_end())
+    }
+}
+
 /// Remove someone else's post or reply on a board (the kind:9005 side effect),
-/// writing the removal, its audit row and the public log entry together.
+/// writing the removal, its audit row and the public log entry together, then
+/// telling the author.
 ///
 /// Returns `false` when it was already gone.
 pub async fn remove_board_post(
     tenant: &TenantContext,
     state: &Arc<AppState>,
-    channel_id: Uuid,
+    board: &ChannelRecord,
     delete_event: &Event,
-    target_id: &[u8],
-    parent: Option<&[u8]>,
-    root: Option<&[u8]>,
+    words: RemovedWords<'_>,
 ) -> anyhow::Result<bool> {
     let now = Utc::now();
+    let channel_id = board.id;
+    let target_bytes = words.event.id.to_bytes();
+    let target_id = target_bytes.as_slice();
     let actor = delete_event.pubkey.to_bytes().to_vec();
     let standing = board_standing(tenant, state, channel_id, &actor, now).await?;
     let reason = tag_value(delete_event, "public_reason").map(|r| clip_reason(&r));
@@ -716,8 +855,9 @@ pub async fn remove_board_post(
             actor: &actor,
             standing,
             target_event: Some(target_id),
-            thread: root.filter(|root| *root != target_id),
-            target_pubkey: None,
+            thread: words.root.filter(|root| *root != target_id),
+            // Whose words: the author finds the removal in the log by it.
+            target_pubkey: Some(words.author),
             until: None,
             asked_until: None,
             status: None,
@@ -732,7 +872,7 @@ pub async fn remove_board_post(
         at: now,
         actor_pubkey: &actor,
         action: "delete_message",
-        target_pubkey: None,
+        target_pubkey: Some(words.author),
         target_event_id: Some(target_id),
         reason_code: None,
         public_reason: reason.as_deref(),
@@ -740,10 +880,10 @@ pub async fn remove_board_post(
     };
     let changes = [BoardChange::RemovePost {
         event_id: target_id,
-        parent,
-        root,
+        parent: words.parent,
+        root: words.root,
     }];
-    let applied = state
+    let Some(applied) = state
         .db
         .apply_board_action(
             tenant.community(),
@@ -753,14 +893,34 @@ pub async fn remove_board_post(
             &log,
             |snapshot, min| board_state_event(state, channel_id, snapshot, min, now),
         )
-        .await?;
-    match applied {
-        Some(applied) => {
-            dispatch_board_events(tenant, state, &applied).await;
-            Ok(true)
+        .await?
+    else {
+        return Ok(false);
+    };
+    dispatch_board_events(tenant, state, &applied).await;
+
+    let notice = ModerationNotice::BoardRemoval {
+        action_id,
+        board: board.name.clone(),
+        what: if event_kind_u32(words.event) == KIND_FORUM_POST {
+            "post"
+        } else {
+            "reply"
+        },
+        excerpt: removed_excerpt(&words.event.content),
+        public_reason: reason.unwrap_or_default(),
+    };
+    // Its own task: the removal is already applied and logged, and the notice's
+    // writes would otherwise run at the bottom of the deep ingest stack.
+    let (tenant, state, author) = (tenant.clone(), Arc::clone(state), words.author.to_vec());
+    tokio::spawn(async move {
+        if let Err(e) = send_moderation_notice(&tenant, &state, &author, notice, now).await {
+            // The removal holds and is in the board's public log, under the
+            // author's key, where the app finds it; the notice is a courtesy copy.
+            info!(error = %e, "board removal notice delivery failed (removal still applied)");
         }
-        None => Ok(false),
-    }
+    });
+    Ok(true)
 }
 
 /// Refuse an ordinary write on a board when its author is muted there, or when
@@ -1033,6 +1193,17 @@ mod tests {
             .tags(tags)
             .sign_with_keys(&Keys::generate())
             .expect("sign")
+    }
+
+    #[test]
+    fn removed_excerpt_quotes_the_first_line_cut_short() {
+        assert_eq!(removed_excerpt("# Title here\n\nbody"), "Title here");
+        assert_eq!(removed_excerpt("\n\n  hello  \nmore"), "hello");
+        assert_eq!(removed_excerpt(""), "");
+        let long = "é".repeat(REMOVED_EXCERPT_CHARS + 5);
+        let cut = removed_excerpt(&long);
+        assert_eq!(cut.chars().count(), REMOVED_EXCERPT_CHARS + 1);
+        assert!(cut.ends_with('…'));
     }
 
     #[test]

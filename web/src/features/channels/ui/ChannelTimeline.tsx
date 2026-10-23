@@ -12,6 +12,7 @@ import {
   Smile,
   Trash2,
   ListChecks,
+  Users,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -46,6 +47,7 @@ import { DecisionEmbeds } from "@/features/launchpad/ui/DecisionEmbeds";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
+import { BoardPeople } from "@/features/board/ui/BoardPeople";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"];
 
@@ -480,14 +482,21 @@ export function ChannelTimeline({
   onShowFleet,
   onShowWork,
   highlightedId,
+  suggestPeopleFrom = null,
 }: {
   channel: Channel;
   onShowFleet?: () => void;
   onShowWork?: () => void;
   /** Message id from a permalink: scrolled to and highlighted by the shell. */
   highlightedId?: string | null;
+  /** For a private room: a channel whose speakers are offered as people to add. */
+  suggestPeopleFrom?: string | null;
 }) {
   const messages = useChannelMessages(channel.id);
+  // A direct-message thread is private too, but nobody is added to or taken off it.
+  const privateRoom = channel.visibility === "private" && !channel.direct;
+  // A private room's people: who can read it, adding someone, and taking someone off it.
+  const [showingPeople, setShowingPeople] = useState(false);
   // Bring a permalinked message into view once it has rendered — the history
   // page may still be arriving, so re-run as the message set changes.
   useEffect(() => {
@@ -643,6 +652,18 @@ export function ChannelTimeline({
         ) : null}
         <span className="ml-auto flex items-center gap-2">
           <PresenceStrip memberPubkeys={memberPubkeys} />
+          {privateRoom ? (
+            <button
+              aria-expanded={showingPeople}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              data-testid="room-people-toggle"
+              onClick={() => setShowingPeople((value) => !value)}
+              type="button"
+            >
+              <Users className="h-3.5 w-3.5" />
+              People
+            </button>
+          ) : null}
           {agentsOnline > 0 && (
             <span
               className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2 py-1 text-xs font-medium text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60"
@@ -673,6 +694,13 @@ export function ChannelTimeline({
           {liveRefusalText(messages.liveRefusal)}
         </p>
       ) : null}
+      {privateRoom && showingPeople ? (
+        <BoardPeople
+          boardId={channel.id}
+          place="room"
+          suggestFromChannelId={suggestPeopleFrom}
+        />
+      ) : null}
 
       {/*
         Two invitation cards under the header, the desktop's treatment: they are
@@ -696,6 +724,11 @@ export function ChannelTimeline({
         <button
           type="button"
           onClick={() => {
+            // Only the people on a private room's list can read it: a link lets nobody in, so open the list instead.
+            if (privateRoom) {
+              setShowingPeople(true);
+              return;
+            }
             const url = window.location.href;
             if (navigator.clipboard) {
               void navigator.clipboard
@@ -712,7 +745,9 @@ export function ChannelTimeline({
           <span className="text-xs font-semibold text-foreground">
             Add people
           </span>
-          <span className="text-xs text-muted-foreground">Invite members.</span>
+          <span className="text-xs text-muted-foreground">
+            {privateRoom ? "Choose who can read it." : "Invite members."}
+          </span>
         </button>
       </div>
 

@@ -606,6 +606,9 @@ impl Db {
                 "board moderation log entry already exists".into(),
             ));
         }
+        // The person an entry is about finds it by their key (`#p`), which reads
+        // the mention index: write it with the entry (D99).
+        crate::insert_mentions_in_transaction(&mut tx, log_event, Some(channel_id)).await?;
 
         let snapshot = read_snapshot(&mut tx, channel_id, audit.at).await?;
         let head: Option<DateTime<Utc>> = sqlx::query_scalar(
@@ -797,8 +800,11 @@ impl Db {
         since: DateTime<Utc>,
     ) -> Result<i64> {
         Ok(sqlx::query_scalar(
+            // Closing a report after removing what it was about is the same act,
+            // already counted as the removal.
             "SELECT count(*) FROM moderation_actions WHERE community_id = $1 \
-             AND actor_pubkey = $2 AND actor_authority = 'board_moderator' AND created_at > $3",
+             AND actor_pubkey = $2 AND actor_authority = 'board_moderator' AND created_at > $3 \
+             AND action <> 'resolve:delete'",
         )
         .bind(community.as_uuid())
         .bind(actor)

@@ -2749,7 +2749,8 @@ async fn synthesize_presence(
 // force a synthetic event shape and thread a privileged branch onto the shared
 // read hot path). Gated on `ModerationAction::ViewQueue` via the one capability
 // helper — never an inline role check. Host-scoped: community from the request
-// host, no channel context (queue reads are community-wide).
+// host. Queue reads are community-wide, except the report queue narrowed to one
+// board (`?channel=`), which that board's moderators may read too (D99).
 
 /// Shared prelude for a moderation read: bind tenant, verify NIP-98 GET auth,
 /// replay-check, and confirm the caller may view the queue.
@@ -2769,6 +2770,22 @@ async fn authorize_moderation_read(
     path: &str,
     raw_query: Option<&str>,
 ) -> Result<TenantContext, Response> {
+    let (tenant, pubkey_bytes) = admit_moderation_read(state, headers, path, raw_query).await?;
+    if !may_view_queue(state, &tenant, &pubkey_bytes).await {
+        return Err(moderator_access_required());
+    }
+    Ok(tenant)
+}
+
+/// The admission half of [`authorize_moderation_read`]: tenant, NIP-98 GET
+/// auth, replay check and community membership. Returns the caller's key.
+#[allow(clippy::result_large_err)] // Response is the natural error type for axum handlers
+async fn admit_moderation_read(
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
+    path: &str,
+    raw_query: Option<&str>,
+) -> Result<(TenantContext, Vec<u8>), Response> {
     let tenant = crate::nip_fi_shadow::bind_tenant(state, headers)
         .await
         .ok_or_else(|| {
@@ -2823,33 +2840,60 @@ async fn authorize_moderation_read(
     .await
     .map_err(|e| e.into_response())?;
 
+    Ok((tenant, pubkey_bytes))
+}
+
+/// Whether the caller may view the whole community's queue.
+async fn may_view_queue(state: &Arc<AppState>, tenant: &TenantContext, pubkey: &[u8]) -> bool {
     crate::handlers::moderation_authz::authorize_moderation_action(
-        &tenant,
+        tenant,
         state,
-        &pubkey_bytes,
+        pubkey,
         None,
         crate::handlers::moderation_authz::ModerationTarget::None,
         crate::handlers::moderation_authz::ModerationAction::ViewQueue,
     )
     .await
-    .map_err(|_| {
-        api_error(
-            StatusCode::FORBIDDEN,
-            "restricted: moderator access required",
-        )
-        .into_response()
-    })?;
+    .is_ok()
+}
 
-    Ok(tenant)
+/// Whether the caller moderates the board `channel_id` (D99): it is a board,
+/// and their standing there is moderator or above.
+async fn moderates_board(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    channel_id: uuid::Uuid,
+    pubkey: &[u8],
+) -> bool {
+    use crate::handlers::moderation_authz::{
+        board_capability_allowed, board_standing, BoardCapability,
+    };
+    let is_board = state
+        .db
+        .get_channel_for_event_write(tenant.community(), channel_id)
+        .await
+        .is_ok_and(|channel| channel.channel_type == "forum");
+    is_board
+        && board_standing(tenant, state, channel_id, pubkey, chrono::Utc::now())
+            .await
+            .is_ok_and(|standing| board_capability_allowed(standing, BoardCapability::Moderate))
+}
+
+fn moderator_access_required() -> Response {
+    api_error(
+        StatusCode::FORBIDDEN,
+        "restricted: moderator access required",
+    )
+    .into_response()
 }
 
 /// Cap on rows returned by a single moderation read.
 const MODERATION_READ_LIMIT: i64 = 500;
 
-/// Optional `?status=` and `?limit=` query for moderation reads.
+/// Optional `?limit=` query for the audit read (the report queue reads
+/// [`ModerationReportsQuery`]).
 #[derive(serde::Deserialize, Default)]
 pub struct ModerationReadQuery {
-    status: Option<String>,
     limit: Option<i64>,
 }
 
@@ -2860,13 +2904,26 @@ fn clamp_limit(requested: Option<i64>) -> i64 {
         .unwrap_or(MODERATION_READ_LIMIT)
 }
 
+/// `?status=`, `?limit=` and `?channel=` for the report queue.
+#[derive(serde::Deserialize, Default)]
+pub struct ModerationReportsQuery {
+    status: Option<String>,
+    limit: Option<i64>,
+    /// One board's reports, readable by that board's moderators too (D99).
+    channel: Option<uuid::Uuid>,
+}
+
 /// `GET /moderation/reports` — the moderation queue (NIP-98 + mod-authz).
+///
+/// With `?channel=<board>`, one board's reports, which that board's moderators
+/// may read as well as the community's. They see what was reported and why,
+/// never who reported it: that stays with the community's moderators.
 pub async fn moderation_reports(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     RawQuery(raw_query): RawQuery,
 ) -> Response {
-    let tenant = match authorize_moderation_read(
+    let (tenant, pubkey) = match admit_moderation_read(
         &state,
         &headers,
         "/moderation/reports",
@@ -2874,7 +2931,7 @@ pub async fn moderation_reports(
     )
     .await
     {
-        Ok(t) => t,
+        Ok(admitted) => admitted,
         Err(r) => return r,
     };
     // Parse query after admission so malformed params cannot 400 before the
@@ -2882,20 +2939,44 @@ pub async fn moderation_reports(
     // (400), not an auth failure; defaulting silently would change query
     // semantics (e.g. drop a valid `status=` together with a bad `limit=`).
     // [FI-TRACE-HTTP-INGRESS]
-    let q: ModerationReadQuery = match parse_query_or_400(raw_query.as_deref()) {
+    let q: ModerationReportsQuery = match parse_query_or_400(raw_query.as_deref()) {
         Ok(q) => q,
         Err(e) => return e.into_response(),
     };
-    match state
-        .db
-        .list_moderation_reports(
-            tenant.community(),
-            q.status.as_deref(),
-            clamp_limit(q.limit),
-        )
-        .await
-    {
-        Ok(rows) => Json(Value::Array(rows.iter().map(report_json).collect())).into_response(),
+    let community_moderator = may_view_queue(&state, &tenant, &pubkey).await;
+    let rows = match q.channel {
+        None if community_moderator => {
+            state
+                .db
+                .list_moderation_reports(
+                    tenant.community(),
+                    q.status.as_deref(),
+                    clamp_limit(q.limit),
+                )
+                .await
+        }
+        Some(channel)
+            if community_moderator || moderates_board(&state, &tenant, channel, &pubkey).await =>
+        {
+            state
+                .db
+                .list_moderation_reports_for_channel(
+                    tenant.community(),
+                    channel,
+                    q.status.as_deref(),
+                    clamp_limit(q.limit),
+                )
+                .await
+        }
+        _ => return moderator_access_required(),
+    };
+    match rows {
+        Ok(rows) => Json(Value::Array(
+            rows.iter()
+                .map(|r| report_json(r, community_moderator))
+                .collect(),
+        ))
+        .into_response(),
         Err(e) => internal_error(&format!("list reports: {e}")).into_response(),
     }
 }
@@ -2955,7 +3036,9 @@ pub async fn moderation_restricted(
     }
 }
 
-fn report_json(r: &buzz_db::moderation::ReportRecord) -> Value {
+/// One report row. `with_reporter` is for the community's moderators only: a
+/// board's moderators get the row without who reported it.
+fn report_json(r: &buzz_db::moderation::ReportRecord, with_reporter: bool) -> Value {
     let (target_kind, target) = match &r.target {
         buzz_db::moderation::ReportTarget::Event(id) => ("event", hex::encode(id)),
         buzz_db::moderation::ReportTarget::Pubkey(pk) => ("pubkey", hex::encode(pk)),
@@ -2964,7 +3047,7 @@ fn report_json(r: &buzz_db::moderation::ReportRecord) -> Value {
     serde_json::json!({
         "id": r.id,
         "report_event_id": hex::encode(&r.report_event_id),
-        "reporter_pubkey": hex::encode(&r.reporter_pubkey),
+        "reporter_pubkey": with_reporter.then(|| hex::encode(&r.reporter_pubkey)),
         "target_kind": target_kind,
         "target": target,
         "channel_id": r.channel_id,

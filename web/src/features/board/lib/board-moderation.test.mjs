@@ -404,6 +404,86 @@ test("the log names the thread when the board has it", () => {
   assert.equal(sentences.get("c"), "Alex pinned a thread.");
 });
 
+test("the reader's own mute and term read as yours", () => {
+  const [lifted, ended] = parseLog(
+    [
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "unmute"],
+          ["actor", ALEX],
+          ["p", BEA],
+        ],
+        "",
+        { id: "u", at: 20 },
+      ),
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "dismiss"],
+          ["actor", ALEX],
+          ["p", BEA],
+        ],
+        "",
+        { id: "d", at: 10 },
+      ),
+    ],
+    BOARD,
+  );
+  const me = (pubkey) => (pubkey === BEA ? "you" : "Alex");
+  assert.equal(logSentence(lifted, me), "Alex lifted your mute.");
+  assert.equal(logSentence(ended, me), "Alex ended your time as a moderator.");
+  const named = (pubkey) => (pubkey === BEA ? "Bea" : "Alex");
+  assert.equal(logSentence(lifted, named), "Alex lifted Bea's mute.");
+});
+
+test("a removal names whose words they were, when the entry says", () => {
+  const [post, reply] = parseLog(
+    [
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "remove"],
+          ["actor", ALEX],
+          ["e", POST],
+          ["p", BEA],
+        ],
+        "Spam",
+        { id: "p", at: 20 },
+      ),
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "remove"],
+          ["actor", ALEX],
+          ["e", POST2],
+          ["thread", POST],
+          ["p", BEA],
+        ],
+        "",
+        { id: "r", at: 10 },
+      ),
+    ],
+    BOARD,
+  );
+  const names = (pubkey) => (pubkey === ALEX ? "Alex" : "Bea");
+  const titles = (id) => (id === POST ? "Welcome" : null);
+  assert.equal(
+    logSentence(post, names, titles),
+    "Alex removed a post by Bea. Reason: Spam.",
+  );
+  assert.equal(
+    logSentence(reply, names, titles),
+    'Alex removed a reply by Bea in the thread "Welcome".',
+  );
+  // A removal never reads as a mute in force.
+  assert.equal(activeMutes([post, reply], 0).size, 0);
+});
+
 test("a longer mute waits a day for a second moderator, and only while it is the newest word on that person", () => {
   const now = 2_000_000_000;
   const asking = record(

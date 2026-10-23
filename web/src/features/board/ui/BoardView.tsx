@@ -17,6 +17,7 @@ import {
   type LazyExoticComponent,
   type ReactNode,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -54,6 +55,7 @@ import type { PostStatus } from "../lib/post-status";
 import { useBoardRecords } from "../use-board";
 import { useBoardActions } from "../use-board-actions";
 import { useChannelRemovers, useRosterSync } from "../use-board-members";
+import { useBoardReports } from "../use-board-reports";
 import {
   useBoardModerationActions,
   useBoardModerationRecords,
@@ -157,8 +159,11 @@ export function BoardView({
       : (activeMutes(moderationRecords.log, Math.floor(Date.now() / 1000)).get(
           me,
         )?.until ?? null);
-  const outranks = (author: string) =>
-    mayActAgainst(myStanding, standingOf(author, roles));
+  const outranks = useCallback(
+    (author: string) => mayActAgainst(myStanding, standingOf(author, roles)),
+    [myStanding, roles],
+  );
+  const reports = useBoardReports(channel.id, canModerate, outranks);
   // What moderators have removed stays removed for this reader even if that moderator's role is later withdrawn.
   const removedSoFar = useRef<{ board: string; ids: ReadonlySet<string> }>({
     board: channel.id,
@@ -206,6 +211,7 @@ export function BoardView({
     titleOf: (id) => titles.get(id) ?? null,
     onOpenPost,
     candidates,
+    reports,
   };
 
   // The roster is read once and goes stale: keep it current, and look again when someone not known to be an owner or admin

@@ -1992,7 +1992,8 @@ async fn handle_delete_event_side_effect(
     // Verify the target event belongs to the same channel as the h-tag.
     // Without this check, an admin of channel A could delete events in channel B
     // by sending h=A, e=<event-in-B>.
-    let mut removes_someone_else = false;
+    // Someone else's words being removed: the stored event and its author.
+    let mut someone_elses = None;
     if let Some(target_event) = state
         .db
         .get_event_by_id_including_deleted_for_event_write(tenant.community(), &target_id)
@@ -2012,17 +2013,24 @@ async fn handle_delete_event_side_effect(
         }
         let author =
             effective_message_author(&target_event.event, &state.relay_keypair.public_key());
-        removes_someone_else = author != event.pubkey.to_bytes().as_slice();
+        if author != event.pubkey.to_bytes().as_slice() {
+            someone_elses = Some((target_event, author));
+        }
     }
     // Removing someone else's words from a board is a moderation action: it goes
-    // in the board's public log, written with the removal itself (D93).
-    let board_removal = removes_someone_else
-        && state
-            .db
-            .get_channel_for_event_write(tenant.community(), channel_id)
-            .await
-            .map(|channel| channel.channel_type == "forum")
-            .map_err(|e| anyhow::anyhow!("get_channel failed: {e}"))?;
+    // in the board's public log, written with the removal itself (D93), and the
+    // author is told (D99).
+    let board_removal = match someone_elses {
+        Some((target_event, author)) => {
+            let channel = state
+                .db
+                .get_channel_for_event_write(tenant.community(), channel_id)
+                .await
+                .map_err(|e| anyhow::anyhow!("get_channel failed: {e}"))?;
+            (channel.channel_type == "forum").then_some((channel, target_event, author))
+        }
+        None => None,
+    };
 
     // Look up thread metadata so we can pass parent/root IDs to the
     // transactional delete function.
@@ -2037,16 +2045,21 @@ async fn handle_delete_event_side_effect(
 
     // Atomically soft-delete the event and decrement thread counters in one
     // transaction (with the board log entry, for a removal on a board).
-    let deleted = if board_removal {
-        super::board_moderation::remove_board_post(
+    let deleted = if let Some((board, target_event, author)) = &board_removal {
+        // Boxed: the removal, its log and the author's notice make a large
+        // future, and the ingest path that holds it runs on worker stacks.
+        Box::pin(super::board_moderation::remove_board_post(
             tenant,
             state,
-            channel_id,
+            board,
             event,
-            &target_id,
-            parent_id.as_deref(),
-            root_id.as_deref(),
-        )
+            super::board_moderation::RemovedWords {
+                event: &target_event.event,
+                author,
+                parent: parent_id.as_deref(),
+                root: root_id.as_deref(),
+            },
+        ))
         .await
         .map_err(|e| anyhow::anyhow!("board removal failed: {e}"))?
     } else {

@@ -81,6 +81,22 @@ pub enum ModerationNotice {
         /// When the mute lifts.
         until: chrono::DateTime<chrono::Utc>,
     },
+    /// To a person whose post or reply a board's moderator removed: which
+    /// board, which of their words, and why.
+    BoardRemoval {
+        /// The audit action row.
+        action_id: Uuid,
+        /// The board's name.
+        board: String,
+        /// `post` or `reply`.
+        what: &'static str,
+        /// The start of the removed words, so the author knows which ones.
+        /// They are the recipient's own words, so this is no one else's
+        /// private context.
+        excerpt: String,
+        /// The moderator's public reason (also in the board's public log).
+        public_reason: String,
+    },
 }
 
 /// Deliver a moderation notice to `recipient` in this community's
@@ -238,6 +254,7 @@ impl ModerationNotice {
             ModerationNotice::ContentActioned { action_id, .. } => *action_id,
             ModerationNotice::Restriction { action_id, .. } => *action_id,
             ModerationNotice::BoardMute { action_id, .. } => *action_id,
+            ModerationNotice::BoardRemoval { action_id, .. } => *action_id,
         }
     }
 
@@ -305,6 +322,28 @@ impl ModerationNotice {
                     "You have been muted on the board {board} in {community} until {}. \
                      You can still read it, and post everywhere else.\n\nReason: {reason}",
                     until.to_rfc3339()
+                )
+            }
+            ModerationNotice::BoardRemoval {
+                board,
+                what,
+                excerpt,
+                public_reason,
+                ..
+            } => {
+                let reason = if public_reason.is_empty() {
+                    "none given"
+                } else {
+                    public_reason.as_str()
+                };
+                let words = if excerpt.is_empty() {
+                    String::new()
+                } else {
+                    format!(": \"{excerpt}\"")
+                };
+                format!(
+                    "A moderator removed your {what} on the board {board} in {community}{words}.\n\n\
+                     Reason: {reason}\n\nThe removal is in the board's public moderation log."
                 )
             }
         }
@@ -412,5 +451,34 @@ mod tests {
         .body(&t);
         assert!(body.contains("took action on your content"));
         assert!(body.contains("Off-topic."));
+    }
+
+    #[test]
+    fn board_removal_body_names_the_board_the_words_and_the_reason() {
+        let t = tenant();
+        let action_id = Uuid::new_v4();
+        let notice = ModerationNotice::BoardRemoval {
+            action_id,
+            board: "ideas".into(),
+            what: "reply",
+            excerpt: "Buy cheap watches".into(),
+            public_reason: "Spam".into(),
+        };
+        assert_eq!(notice.source_id(), action_id);
+        let body = notice.body(&t);
+        assert!(body.contains("removed your reply on the board ideas in example.org"));
+        assert!(body.contains("\"Buy cheap watches\""));
+        assert!(body.contains("Reason: Spam"));
+
+        let bare = ModerationNotice::BoardRemoval {
+            action_id,
+            board: "ideas".into(),
+            what: "post",
+            excerpt: String::new(),
+            public_reason: String::new(),
+        }
+        .body(&t);
+        assert!(bare.contains("removed your post on the board ideas in example.org."));
+        assert!(bare.contains("Reason: none given"));
     }
 }

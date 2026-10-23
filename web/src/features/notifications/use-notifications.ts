@@ -1,6 +1,7 @@
 /**
  * Notification feed for the current user: mentions (p-tag matches on channel
- * messages), task assignments needing action, and member-added events.
+ * messages), task assignments needing action, member-added events, and a
+ * board moderator's action on them (their post or reply removed, a mute).
  * Mirrors the desktop's feed categories with the same mention convention.
  */
 
@@ -10,6 +11,11 @@ import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages";
+
+import {
+  KIND_BOARD_MODERATION_LOG,
+  moderationItem,
+} from "./lib/moderation-items";
 
 const SEEN_KEY = "buzz.notifications.seen";
 
@@ -25,7 +31,7 @@ const POLL_MS = 15_000;
 
 export interface NotificationItem {
   id: string;
-  kind: "mention" | "task" | "member";
+  kind: "mention" | "task" | "member" | "moderation";
   title: string;
   preview: string;
   channelId: string | null;
@@ -74,8 +80,14 @@ export function useNotifications(): {
       }),
       // Relay-authored membership notifications.
       queryEvents(relayWsUrl(), { kinds: [44100], "#p": [me], limit: 20 }),
+      // A board's public log entries about me (the server writes these).
+      queryEvents(relayWsUrl(), {
+        kinds: [KIND_BOARD_MODERATION_LOG],
+        "#p": [me],
+        limit: 20,
+      }),
     ])
-      .then(([mentions, tasks, members]) => {
+      .then(([mentions, tasks, members, moderation]) => {
         const out: NotificationItem[] = [];
         for (const e of mentions) {
           out.push({
@@ -125,6 +137,18 @@ export function useNotifications(): {
             title: "Community event",
             preview: e.content.slice(0, 120),
             channelId: null,
+            at: e.created_at * 1000,
+          });
+        }
+        for (const e of moderation) {
+          const item = moderationItem(e, me);
+          if (item === null) continue;
+          out.push({
+            id: e.id,
+            kind: "moderation",
+            title: item.title,
+            preview: item.preview.slice(0, 160),
+            channelId: e.tags.find((t) => t[0] === "h")?.[1] ?? null,
             at: e.created_at * 1000,
           });
         }

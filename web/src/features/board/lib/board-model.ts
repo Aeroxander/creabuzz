@@ -88,7 +88,7 @@ function tagValue(tags: readonly string[][], name: string): string | undefined {
 }
 
 /** Where a comment points: the post (`root`) and what it directly answers (`parent`). */
-function replyTarget(
+export function replyTarget(
   tags: readonly string[][],
 ): { root: string; parent: string } | null {
   const refs = tags.filter(

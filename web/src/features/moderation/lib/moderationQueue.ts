@@ -4,8 +4,9 @@
  * the queue panel dispatches on. Pure and hook-free so it is unit-testable
  * without a connection.
  *
- * Privacy invariant: `reporterPubkey` is moderator-only. Nothing in this
- * module may feed a surface the reported author can see.
+ * Privacy invariant: `reporterPubkey` is for the community's moderators only
+ * (a board's moderators get rows without it). Nothing in this module may feed a
+ * surface the reported author can see.
  */
 
 /** NIP-56 report categories accepted at ingest. */
@@ -34,7 +35,8 @@ export type ModerationReport = {
   id: string;
   /** Event id of the kind:1984 report — the resolve command's reference. */
   reportEventId: string;
-  reporterPubkey: string;
+  /** Who reported it: only in the community moderators' read. */
+  reporterPubkey: string | null;
   targetKind: ReportTargetKind;
   target: string;
   channelId: string | null;
@@ -82,7 +84,7 @@ function parseReport(raw: unknown): ModerationReport | null {
   const reportEventId = asString(row.report_event_id);
   const reporterPubkey = asString(row.reporter_pubkey);
   const target = asString(row.target);
-  if (!id || !reportEventId || !reporterPubkey || !target) return null;
+  if (!id || !reportEventId || !target) return null;
   const targetKind = asString(row.target_kind);
   const reportType = asString(row.report_type);
   const status = asString(row.status);

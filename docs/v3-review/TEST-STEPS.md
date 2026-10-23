@@ -1238,3 +1238,29 @@ By hand, with an owner or admin and an appointed moderator of one board:
 5. **Second moderator.** One moderator mutes someone for 30 days (it starts at 7). The other opens Moderation: **Confirm
    until (date)** makes it 30 days.
 6. **Appointing.** As an owner, Moderation lists **Appoint (name)** for the board's people.
+
+## 4ax. A board's reports, telling the author, and people in a private room (D99, 2026-10-23)
+
+```bash
+. ./bin/activate-hermit
+cargo test -p buzz-relay --lib -- --include-ignored board_report board_moderation moderation_notices   # needs Postgres and Redis
+pnpm --dir web test   # board-reports.test.mjs, moderation-items.test.mjs, board-moderation.test.mjs
+pnpm --dir web exec playwright test --project=smoke tests/e2e/board-reports.spec.ts tests/e2e/board-moderation.spec.ts tests/e2e/report.spec.ts
+```
+
+By hand, with a board's owner (or an appointed moderator), a member who posts there, and someone to report:
+
+1. **Reports reach the board.** The third person reports the member's post (Report, Spam, a note). The owner's board
+   shows a count on **Moderation**; the panel's **Reports** section shows "Spam · a post by (name)", the post's title
+   and the note, and never who reported it.
+2. **Remove from the report.** **Remove post…**, with a reason: the post is gone for everyone, the report leaves the
+   list, and the log says `removed a post by (name). Reason: …`. The reporter gets "Your report was reviewed and acted
+   on" in Messages.
+3. **The author is told.** As the member: the bell shows "A moderator removed your post" with the reason, and Messages
+   has a note from "(host) Moderation" naming the board, the start of the post and the reason.
+4. **Only what will work.** A moderator sees no Remove or Dismiss on a report about a fellow moderator, an owner or
+   their own post, only who decides it. A report about a post already removed offers **Close the report**. A member
+   who does not moderate the board sees no Reports at all.
+5. **A private chat room.** As the room's owner, **People** in the room's header (or **Add people**) lists who can read
+   it; **Remove** takes someone off after a confirmation. If they have the room open they are told at once. An admin
+   is not offered Remove for the owner or a fellow admin.

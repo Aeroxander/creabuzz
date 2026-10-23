@@ -363,6 +363,8 @@ export function logSentence(
 ): string {
   const who = `${nameOf(entry.actor)}${ROLE_WORDS[entry.role] ? ` (${ROLE_WORDS[entry.role]})` : ""}`;
   const person = entry.person ? nameOf(entry.person) : "someone";
+  // "your mute", not "you's mute".
+  const persons = person === "you" ? "your" : `${person}'s`;
   const until = entry.until !== null ? ` until ${dateWords(entry.until)}` : "";
   const named = (post: string | null) => {
     const title = post ? titleOf(post) : null;
@@ -381,7 +383,7 @@ export function logSentence(
       case "mute":
         return `muted ${person} on this board${until}`;
       case "unmute":
-        return `lifted ${person}'s mute`;
+        return `lifted ${persons} mute`;
       case "rules":
         return "changed the board's rules";
       case "appoint":
@@ -389,13 +391,15 @@ export function logSentence(
       case "dismiss":
         return entry.person === entry.actor
           ? "stepped down as a moderator"
-          : `ended ${person}'s time as a moderator`;
+          : `ended ${persons} time as a moderator`;
       case "remove": {
-        if (!entry.thread) return "removed a post";
+        // Whose words: older entries do not say.
+        const whose = entry.person ? ` by ${nameOf(entry.person)}` : "";
+        if (!entry.thread) return `removed a post${whose}`;
         const title = titleOf(entry.thread);
         return title
-          ? `removed a reply in the thread "${title}"`
-          : "removed a reply";
+          ? `removed a reply${whose} in the thread "${title}"`
+          : `removed a reply${whose}`;
       }
     }
   })();

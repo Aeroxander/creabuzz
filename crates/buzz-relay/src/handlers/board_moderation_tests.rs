@@ -21,7 +21,7 @@ use uuid::Uuid;
 use super::ingest::{ingest_event, IngestAuth, IngestError, IngestResult};
 use crate::state::AppState;
 
-fn signed(keys: &Keys, kind: u32, content: &str, tags: &[&[&str]]) -> Event {
+pub(super) fn signed(keys: &Keys, kind: u32, content: &str, tags: &[&[&str]]) -> Event {
     let tags: Vec<Tag> = tags
         .iter()
         .map(|parts| Tag::parse(parts.to_vec()).expect("parse tag"))
@@ -34,7 +34,7 @@ fn signed(keys: &Keys, kind: u32, content: &str, tags: &[&[&str]]) -> Event {
         .expect("sign")
 }
 
-async fn ingest(
+pub(super) async fn ingest(
     state: &Arc<AppState>,
     tenant: &TenantContext,
     event: Event,
@@ -52,7 +52,7 @@ async fn ingest(
     ingest_event(state, tenant, event, auth).await
 }
 
-async fn community(people: &[(&Keys, &str)]) -> (Arc<AppState>, TenantContext) {
+pub(super) async fn community(people: &[(&Keys, &str)]) -> (Arc<AppState>, TenantContext) {
     let state = crate::test_support::test_state_with(|c| c.new_account_posts_per_hour = 0).await;
     let host = format!("board-moderation-{}.example", Uuid::new_v4().simple());
     let community = state
@@ -71,7 +71,12 @@ async fn community(people: &[(&Keys, &str)]) -> (Arc<AppState>, TenantContext) {
     (state, TenantContext::resolved(community, host))
 }
 
-async fn accept(state: &Arc<AppState>, tenant: &TenantContext, event: Event, what: &str) -> String {
+pub(super) async fn accept(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: Event,
+    what: &str,
+) -> String {
     match ingest(state, tenant, event).await {
         Ok(r) => {
             assert!(r.accepted, "{what}: not accepted: {}", r.message);
@@ -81,7 +86,7 @@ async fn accept(state: &Arc<AppState>, tenant: &TenantContext, event: Event, wha
     }
 }
 
-async fn refuse(
+pub(super) async fn refuse(
     state: &Arc<AppState>,
     tenant: &TenantContext,
     event: Event,
@@ -103,7 +108,12 @@ async fn refuse(
 }
 
 /// An open board created by `owner`, who becomes its owner.
-async fn board(state: &Arc<AppState>, tenant: &TenantContext, owner: &Keys, name: &str) -> Uuid {
+pub(super) async fn board(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    owner: &Keys,
+    name: &str,
+) -> Uuid {
     let id = Uuid::new_v4();
     accept(
         state,
@@ -125,7 +135,12 @@ async fn board(state: &Arc<AppState>, tenant: &TenantContext, owner: &Keys, name
     id
 }
 
-async fn post(state: &Arc<AppState>, tenant: &TenantContext, keys: &Keys, board: Uuid) -> Event {
+pub(super) async fn post(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    keys: &Keys,
+    board: Uuid,
+) -> Event {
     // A different text each time: two posts signed in the same second must not share an id.
     let text = format!("A title\n\n{}", Uuid::new_v4());
     let event = signed(keys, KIND_FORUM_POST, &text, &[&["h", &board.to_string()]]);
@@ -133,7 +148,7 @@ async fn post(state: &Arc<AppState>, tenant: &TenantContext, keys: &Keys, board:
     event
 }
 
-fn reply(keys: &Keys, board: Uuid, root: &Event, marker: &str) -> Event {
+pub(super) fn reply(keys: &Keys, board: Uuid, root: &Event, marker: &str) -> Event {
     signed(
         keys,
         KIND_FORUM_COMMENT,
@@ -145,7 +160,7 @@ fn reply(keys: &Keys, board: Uuid, root: &Event, marker: &str) -> Event {
     )
 }
 
-fn on_post(keys: &Keys, kind: u32, board: Uuid, target: &Event) -> Event {
+pub(super) fn on_post(keys: &Keys, kind: u32, board: Uuid, target: &Event) -> Event {
     signed(
         keys,
         kind,
@@ -154,7 +169,13 @@ fn on_post(keys: &Keys, kind: u32, board: Uuid, target: &Event) -> Event {
     )
 }
 
-fn on_person(keys: &Keys, kind: u32, board: Uuid, target: &Keys, until: Option<i64>) -> Event {
+pub(super) fn on_person(
+    keys: &Keys,
+    kind: u32,
+    board: Uuid,
+    target: &Keys,
+    until: Option<i64>,
+) -> Event {
     let board = board.to_string();
     let person = target.public_key().to_hex();
     match until {
@@ -171,11 +192,11 @@ fn on_person(keys: &Keys, kind: u32, board: Uuid, target: &Keys, until: Option<i
     }
 }
 
-fn in_days(days: i64) -> i64 {
+pub(super) fn in_days(days: i64) -> i64 {
     (Utc::now() + Duration::days(days)).timestamp()
 }
 
-async fn relay_events(
+pub(super) async fn relay_events(
     state: &Arc<AppState>,
     tenant: &TenantContext,
     board: Uuid,
@@ -198,14 +219,18 @@ async fn relay_events(
     events
 }
 
-async fn board_state(state: &Arc<AppState>, tenant: &TenantContext, board: Uuid) -> Event {
+pub(super) async fn board_state(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    board: Uuid,
+) -> Event {
     relay_events(state, tenant, board, KIND_BOARD_STATE)
         .await
         .pop()
         .expect("a board state record")
 }
 
-fn has_tag(event: &Event, name: &str, value: &str) -> bool {
+pub(super) fn has_tag(event: &Event, name: &str, value: &str) -> bool {
     event.tags.iter().any(|t| {
         let parts = t.as_slice();
         parts.len() >= 2 && parts[0] == name && parts[1] == value

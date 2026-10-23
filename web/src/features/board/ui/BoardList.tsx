@@ -35,6 +35,7 @@ import { type PostStatus, priorityMap } from "../lib/post-status";
 import { type BoardRecords, POST_LIMIT } from "../use-board";
 import type { BoardActions } from "../use-board-actions";
 import type { BoardModerationActions } from "../use-board-moderation";
+import type { BoardReports } from "../use-board-reports";
 import { BoardModerationPanel } from "./BoardModerationPanel";
 import { BoardPeople } from "./BoardPeople";
 import { BoardRules } from "./BoardRules";
@@ -67,6 +68,8 @@ export interface BoardListModeration {
   onOpenPost: (id: string) => void;
   /** People the reader could appoint as moderators. */
   candidates: string[];
+  /** Open reports about this board, for a reader who moderates it. */
+  reports: BoardReports;
 }
 
 function sameOrder(a: readonly string[] | null, b: readonly string[]): boolean {
@@ -251,6 +254,19 @@ export function BoardList({
             variant="outline"
           >
             Moderation
+            {moderation.canModerate && moderation.reports.rows.length > 0 ? (
+              <span
+                className="ml-1.5 rounded-full bg-destructive px-1.5 text-2xs font-semibold text-destructive-foreground"
+                data-testid="board-report-count"
+              >
+                {moderation.reports.rows.length}
+                <span className="sr-only">
+                  {moderation.reports.rows.length === 1
+                    ? " open report"
+                    : " open reports"}
+                </span>
+              </span>
+            ) : null}
           </Button>
           {channel.visibility === "public" ? (
             <JoinBoardButton boardId={channel.id} boardName={channel.name} />
@@ -289,6 +305,7 @@ export function BoardList({
           mayUndoBy={moderation.mayUndoBy}
           me={moderation.me}
           onOpenPost={moderation.onOpenPost}
+          reports={moderation.reports}
           state={moderation.state}
           titleOf={moderation.titleOf}
         />

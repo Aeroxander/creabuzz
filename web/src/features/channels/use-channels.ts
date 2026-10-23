@@ -18,6 +18,8 @@ export interface Channel {
    * channel's metadata record.
    */
   type: "stream" | "forum";
+  /** A direct-message thread (the server tags its metadata `t=dm`), not a room anyone is added to. */
+  direct: boolean;
   /** Metadata timestamp, used as the cursor when walking older pages. */
   createdAt: number;
 }
@@ -51,6 +53,7 @@ function eventToChannel(event: NostrEvent): Channel {
     type: event.tags.some((t) => t[0] === "t" && t[1] === "forum")
       ? "forum"
       : "stream",
+    direct: event.tags.some((t) => t[0] === "t" && t[1] === "dm"),
     createdAt: event.created_at,
   };
 }

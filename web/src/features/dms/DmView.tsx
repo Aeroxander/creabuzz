@@ -168,6 +168,7 @@ export function DmView() {
                 description: "",
                 visibility: "private",
                 type: "stream",
+                direct: true,
                 createdAt: selected.createdAt,
               } satisfies Channel
             }

@@ -50,7 +50,8 @@ function Row({
     options?: { expiresAt?: number },
   ) => void;
 }) {
-  const nameOf = useUserNames([row.report.reporterPubkey]);
+  const reporter = row.report.reporterPubkey;
+  const nameOf = useUserNames(reporter ? [reporter] : []);
   const [pickingTimeout, setPickingTimeout] = useState(false);
   const [confirmingBan, setConfirmingBan] = useState(false);
   const { report, actions, locallyResolved } = row;
@@ -72,7 +73,7 @@ function Row({
         </span>
       </div>
       <p className="text-2xs text-black/60 dark:text-white/60">
-        Reported by {nameOf(report.reporterPubkey)}
+        {reporter ? `Reported by ${nameOf(reporter)}` : "Reported"}
         {report.createdAt
           ? ` · ${new Date(report.createdAt).toLocaleString()}`
           : ""}

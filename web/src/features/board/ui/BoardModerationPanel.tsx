@@ -1,6 +1,7 @@
 /**
  * Who moderates this board and what they have done: the appointed moderators with the end of their term, and the
- * board's public moderation log in plain words, each thread named and one tap away. Everyone sees both. The board's
+ * board's public moderation log in plain words, each thread named and one tap away. Everyone sees both. Above them, for
+ * the board's moderators only, the open reports about its posts and replies. The board's
  * owners and admins appoint (from the people on the board, or by key) and dismiss moderators; a moderator can step
  * down. Moderators can lift a mute that is still in force, when they stand at least as high as whoever set it, and
  * confirm another moderator's request for a longer mute. The server decides each of these and its reason is shown
@@ -24,7 +25,9 @@ import {
 } from "../lib/board-moderation";
 import { parsePersonInput } from "../lib/members";
 import type { BoardModerationActions } from "../use-board-moderation";
+import type { BoardReports } from "../use-board-reports";
 import { AuthorChip } from "./AuthorChip";
+import { BoardReportsSection } from "./BoardReports";
 
 function dateWords(unix: number): string {
   return new Date(unix * 1000).toLocaleDateString(undefined, {
@@ -45,6 +48,7 @@ export function BoardModerationPanel({
   titleOf,
   onOpenPost,
   candidates,
+  reports,
 }: {
   state: BoardState;
   log: LogEntry[];
@@ -59,6 +63,8 @@ export function BoardModerationPanel({
   onOpenPost: (id: string) => void;
   /** People the reader could appoint, below moderator. */
   candidates: string[];
+  /** Open reports about the board, shown to a reader who moderates it. */
+  reports: BoardReports;
 }) {
   const now = Math.floor(Date.now() / 1000);
   const moderators = [...state.moderators].filter(([, until]) => until > now);
@@ -72,6 +78,9 @@ export function BoardModerationPanel({
       ...log.flatMap((entry) =>
         entry.person ? [entry.actor, entry.person] : [entry.actor],
       ),
+      ...(canModerate
+        ? reports.rows.flatMap((row) => (row.words ? [row.words.author] : []))
+        : []),
     ]),
   ];
   const profiles = useProfiles(people).data;
@@ -116,6 +125,13 @@ export function BoardModerationPanel({
       className="flex flex-col gap-4 border-b px-4 py-3"
       data-testid="board-moderation-panel"
     >
+      {canModerate ? (
+        <BoardReportsSection
+          nameOf={nameOf}
+          onOpenPost={onOpenPost}
+          reports={reports}
+        />
+      ) : null}
       <div>
         <h3 className="text-sm font-semibold">Moderators</h3>
         <p className="text-xs text-muted-foreground">

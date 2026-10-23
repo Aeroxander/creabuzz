@@ -1,13 +1,14 @@
 /**
- * Who can read a private board, a way to add someone, and, for the board's owners and admins, a way to take someone off
- * it (they are told at once if they have it open).
+ * Who can read a private board or chat room, a way to add someone, and, for its owners and admins, a way to take someone
+ * off it (they are told at once if they have it open).
  *
- * Shown only on a private board: an open board is for everyone in the
- * community. Anyone who can read the board sees who else can. The form to add a
- * person is offered to everyone and the server decides, because a board's
- * owner or an admin is the only one it lets add people; its reason is shown.
- * People can be picked from those who have spoken in the community or named by
- * pasting the public key or `npub…` address they were given.
+ * Shown only where it is private: an open board or room is for everyone in the
+ * community. Anyone who can read it sees who else can. The form to add a
+ * person is offered to everyone and the server decides, because its owner or
+ * an admin is the only one it lets add people; its reason is shown. People can
+ * be picked from those who have spoken in the community or named by pasting the
+ * public key or `npub…` address they were given. The server applies the same
+ * rule to boards and rooms, so this works the same for both.
  */
 
 import { useState } from "react";
@@ -27,10 +28,14 @@ import { AuthorChip } from "./AuthorChip";
 export function BoardPeople({
   boardId,
   suggestFromChannelId,
+  place = "board",
 }: {
+  /** The board's or room's id. */
   boardId: string;
   /** A channel whose speakers are offered as people to add. */
   suggestFromChannelId: string | null;
+  /** What to call it, and the prefix of its test ids. */
+  place?: "board" | "room";
 }) {
   const { members, add, remove } = useBoardMembers(boardId, true);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -92,7 +97,7 @@ export function BoardPeople({
       return;
     }
     if (have.has(pubkey)) {
-      setProblem("They can already read this board.");
+      setProblem(`They can already read this ${place}.`);
       return;
     }
     void addPerson(pubkey);
@@ -100,16 +105,16 @@ export function BoardPeople({
 
   return (
     <section
-      aria-label="People who can read this board"
+      aria-label={`People who can read this ${place}`}
       className="border-b px-4 py-3"
-      data-testid="board-people"
+      data-testid={`${place}-people`}
     >
       <p className="text-xs text-muted-foreground">
-        Only the people below can read this board.
+        Only the people below can read this {place}.
       </p>
       <ul
         className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs"
-        data-testid="board-members"
+        data-testid={`${place}-members`}
       >
         {members.map((member) => (
           <li className="flex items-center gap-1" key={member.pubkey}>
@@ -122,9 +127,9 @@ export function BoardPeople({
             ) : null}
             {canRemoveMember(members, me, member.pubkey) ? (
               <button
-                aria-label={`Remove ${resolveUserName(profiles?.[member.pubkey], member.pubkey)} from this board`}
+                aria-label={`Remove ${resolveUserName(profiles?.[member.pubkey], member.pubkey)} from this ${place}`}
                 className="underline disabled:opacity-50"
-                data-testid="board-remove-person"
+                data-testid={`${place}-remove-person`}
                 disabled={busy}
                 onClick={() => setRemoving(member.pubkey)}
                 type="button"
@@ -143,18 +148,18 @@ export function BoardPeople({
           submit();
         }}
       >
-        <label className="sr-only" htmlFor="board-add-person">
+        <label className="sr-only" htmlFor={`${place}-add-person`}>
           Add someone by their public key
         </label>
         <Input
           className="h-8 max-w-xs text-xs"
-          id="board-add-person"
+          id={`${place}-add-person`}
           onChange={(event) => setText(event.target.value)}
           placeholder="Add someone: paste their public key (npub…)"
           value={text}
         />
         <Button
-          data-testid="board-add-person"
+          data-testid={`${place}-add-person`}
           disabled={busy || text.trim() === ""}
           size="sm"
           type="submit"
@@ -168,7 +173,7 @@ export function BoardPeople({
           {suggestions.slice(0, 8).map((person) => (
             <button
               className="rounded-full border px-2 py-0.5 hover:bg-secondary"
-              data-testid="board-suggest-person"
+              data-testid={`${place}-suggest-person`}
               disabled={busy}
               key={person.pubkey}
               onClick={() => void addPerson(person.pubkey)}
@@ -183,7 +188,7 @@ export function BoardPeople({
       {problem ? (
         <p
           className="mt-2 text-xs text-destructive"
-          data-testid="board-people-problem"
+          data-testid={`${place}-people-problem`}
           role="alert"
         >
           {problem}
@@ -191,7 +196,7 @@ export function BoardPeople({
       ) : null}
       <ConfirmDialog
         confirmLabel="Remove"
-        description="They will no longer be able to read this board. If they have it open, they are told at once."
+        description={`They will no longer be able to read this ${place}. If they have it open, they are told at once.`}
         onCancel={() => setRemoving(null)}
         onConfirm={() => {
           const pubkey = removing;
@@ -199,7 +204,7 @@ export function BoardPeople({
           if (pubkey !== null) void removePerson(pubkey);
         }}
         open={removing !== null}
-        title={`Remove ${removing ? resolveUserName(profiles?.[removing], removing) : ""} from this board?`}
+        title={`Remove ${removing ? resolveUserName(profiles?.[removing], removing) : ""} from this ${place}?`}
       />
     </section>
   );

@@ -75,6 +75,7 @@ export default defineConfig({
         "**/helpers.spec.ts",
         "**/board.spec.ts",
         "**/board-moderation.spec.ts",
+        "**/board-reports.spec.ts",
         "**/access-refused.spec.ts",
         "**/live-scope.spec.ts",
         "**/home-timeline.spec.ts",

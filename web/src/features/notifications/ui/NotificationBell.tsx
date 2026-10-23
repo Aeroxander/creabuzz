@@ -1,10 +1,18 @@
 /**
  * Bell with unread badge + dropdown feed. Clicking an item routes you to the
- * channel (mentions) or the work board (task assignments).
+ * channel (mentions, and a board's moderation of your words) or the work board
+ * (task assignments).
  */
 
 import { Suspense, lazy, useEffect, useState } from "react";
-import { Bell, Bot, ListChecks, MessageSquare, Users } from "lucide-react";
+import {
+  Bell,
+  Bot,
+  ListChecks,
+  MessageSquare,
+  ShieldAlert,
+  Users,
+} from "lucide-react";
 
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 import {
@@ -30,6 +38,7 @@ const KIND_ICON = {
   mention: MessageSquare,
   task: Bot,
   member: Users,
+  moderation: ShieldAlert,
 } as const;
 
 export function NotificationBell({
@@ -64,7 +73,10 @@ export function NotificationBell({
   const route = (item: NotificationItem) => {
     setOpen(false);
     markRead();
-    if (item.kind === "mention" && item.channelId) {
+    if (
+      (item.kind === "mention" || item.kind === "moderation") &&
+      item.channelId
+    ) {
       onOpenChannel(item.channelId);
     } else if (item.kind === "task") {
       onOpenWork();

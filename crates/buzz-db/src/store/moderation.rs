@@ -272,6 +272,36 @@ pub async fn list_reports(
     rows.into_iter().map(row_to_report).collect()
 }
 
+/// List one channel's moderation reports, newest first: the queue a board's
+/// moderators see (D99).
+pub async fn list_reports_for_channel(
+    pool: &PgPool,
+    community: CommunityId,
+    channel_id: Uuid,
+    status: Option<&str>,
+    limit: i64,
+) -> Result<Vec<ReportRecord>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT id, report_event_id, reporter_pubkey, target_kind, target_event_id,
+               target_pubkey, target_blob_sha256, channel_id, report_type, note,
+               status, resolved_by, resolved_at, action_id, created_at
+        FROM moderation_reports
+        WHERE community_id = $1 AND channel_id = $2 AND ($3::text IS NULL OR status = $3)
+        ORDER BY created_at DESC
+        LIMIT $4
+        "#,
+    )
+    .bind(community.as_uuid())
+    .bind(channel_id)
+    .bind(status)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter().map(row_to_report).collect()
+}
+
 /// Fetch one report by row id.
 pub async fn get_report(
     pool: &PgPool,
@@ -850,6 +880,18 @@ impl Db {
         limit: i64,
     ) -> Result<Vec<ReportRecord>> {
         list_reports(&self.pool, community, status, limit).await
+    }
+
+    /// List one channel's moderation reports (a board's queue).
+    #[datastore_span(name = "list_moderation_reports_for_channel", system = "postgresql")]
+    pub async fn list_moderation_reports_for_channel(
+        &self,
+        community: CommunityId,
+        channel_id: Uuid,
+        status: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<ReportRecord>> {
+        list_reports_for_channel(&self.pool, community, channel_id, status, limit).await
     }
 
     /// Fetch one moderation report by row id.

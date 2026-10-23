@@ -648,6 +648,11 @@ export function CommunityShell({
               <ChannelTimeline
                 channel={activeChannel}
                 highlightedId={highlightedMessage}
+                suggestPeopleFrom={
+                  channels.find(
+                    (c) => c.type !== "forum" && c.visibility === "public",
+                  )?.id ?? null
+                }
                 onShowFleet={() => {
                   setShowingWiki(false);
                   setShowingFleet(true);
