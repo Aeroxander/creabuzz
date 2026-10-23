@@ -18,6 +18,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { errorMessage } from "@/shared/ui/query-error";
 
+import { type ChannelUnread, unreadMarker } from "../lib/read-state";
 import type { Channel } from "../use-channels";
 import { CreateChannelDialog } from "./CreateChannelDialog";
 
@@ -26,13 +27,17 @@ function ChannelButton({
   selected,
   onSelect,
   testId,
+  unread = null,
 }: {
   channel: Channel;
   selected: boolean;
   onSelect: () => void;
   testId: string;
+  /** What is unread in it, shown unless it is the one open. */
+  unread?: ReturnType<typeof unreadMarker>;
 }) {
   const board = channel.type === "forum";
+  const marker = selected ? null : unread;
   return (
     <button
       type="button"
@@ -52,10 +57,27 @@ function ChannelButton({
       ) : (
         <Hash className="h-3.5 w-3.5 shrink-0" />
       )}
-      <span className="truncate">{channel.name}</span>
+      <span
+        className={`truncate ${marker ? "font-semibold text-black dark:text-white" : ""}`}
+      >
+        {channel.name}
+      </span>
+      {marker ? (
+        <span
+          className={`ml-auto shrink-0 rounded-full px-1.5 text-2xs font-semibold ${
+            marker.attention
+              ? "bg-destructive text-destructive-foreground"
+              : "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+          }`}
+          data-testid={`${testId}-unread`}
+        >
+          {marker.label ?? <span aria-hidden>•</span>}
+          <span className="sr-only">{`, ${marker.words}`}</span>
+        </span>
+      ) : null}
       {channel.visibility === "private" && (
         <span
-          className="ml-auto shrink-0 text-2xs text-black/60 uppercase dark:text-white/60"
+          className={`${marker ? "" : "ml-auto "}shrink-0 text-2xs text-black/60 uppercase dark:text-white/60`}
           title={
             board
               ? "Private board. Only people who were added can read it."
@@ -123,9 +145,12 @@ export function ChannelSidebar({
   loadingMore = false,
   moreError = null,
   onLoadMore,
+  unread,
 }: {
   channels: Channel[];
   selectedId: string | null;
+  /** Unread counts by room or board, when the server offers them. */
+  unread?: ReadonlyMap<string, ChannelUnread>;
   onSelect: (id: string) => void;
   /** A community can have more channels than one relay page. */
   hasMore?: boolean;
@@ -186,6 +211,7 @@ export function ChannelSidebar({
                 onSelect={() => onSelect(board.id)}
                 selected={board.id === selectedId}
                 testId={`board-nav-${board.name}`}
+                unread={unreadMarker(unread?.get(board.id))}
               />
             ))
           )}
@@ -225,6 +251,7 @@ export function ChannelSidebar({
               onSelect={() => onSelect(channel.id)}
               selected={channel.id === selectedId}
               testId={`channel-${channel.name}`}
+              unread={unreadMarker(unread?.get(channel.id))}
             />
           ))}
 

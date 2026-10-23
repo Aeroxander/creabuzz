@@ -38,19 +38,20 @@ Built since (D64): joining a board and a "Your boards" view; anyone can start a 
 run the community); pictures and links in posts with a thumbnail and the site's name in lists; Top by today, this week,
 this month or all time; older posts a page at a time; a live "N new posts" notice on the Boards tab.
 
-Still missing, in rough order of how much a regular Reddit user would miss each:
+Built since, and so off this list (noted 2026-10-23): pinned and locked threads, a board's rules, appointed moderators,
+a public moderation log and a board's own report queue (D93 to D99); replies to your board posts in notifications and
+board posts in search (D83); a mute that applies on boards, in rooms and in notifications (D100).
 
-1. **Profiles**: board posts and a score are built (D71); still missing is "joined" and post count next to the large
+Still missing, in rough order of how much a regular Reddit or Slack user would miss each:
+
+1. **Unread markers for rooms and boards** that survive a reload. The server has an API for it (`docs/buzz-v1-read-state.md`,
+   off by default); the web app does not use it yet.
+2. **Profiles**: board posts and a score are built (D71); still missing is "joined" and a post count next to the large
    picture, the old forum author panel.
-2. **Pin and lock a thread, board rules** in a side panel, and notifications when someone replies to your post.
-3. **Search** across board posts from the top bar.
+3. **Block**, beyond mute: stopping a person's direct messages and mentions. Not defined yet.
 4. **Work and fun** (you said later): a board says whether it is for work or for fun, and Home can show one, the other or
    both.
 5. **Video and several pictures per post**, and a picture viewer.
-
-The chat and the short-post feed are close to Slack and X already. The gaps worth closing for the MVP: chat threads and
-unread markers that survive a reload, search across posts and boards from the top bar, and replies to board posts in
-notifications (shared with item 7).
 
 ## 3. Launching the social MVP
 

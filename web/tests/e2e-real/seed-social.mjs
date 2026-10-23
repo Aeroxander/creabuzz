@@ -290,3 +290,5 @@ writeFileSync(
   ) + "\n",
 );
 console.log("seeded the social graph");
+// A socket left open by a publish would keep Node running; the work is done.
+process.exit(0);

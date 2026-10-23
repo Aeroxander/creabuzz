@@ -14,12 +14,16 @@ import { useNavigate } from "@tanstack/react-router";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Channel } from "../use-channels";
+import { useUnreadRooms } from "../use-unread-rooms";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChannelTimeline } from "./ChannelTimeline";
 import { PasskeyUnlockGate } from "@/features/identity/ui/PasskeyUnlockGate";
 import { useModerationAccess } from "@/features/moderation/use-moderation-queue";
 import { NotificationBell } from "@/features/notifications/ui/NotificationBell";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
+
+/** How long a room has to be on screen before it counts as read. */
+const READ_AFTER_MS = 1500;
 
 // Sidebar panels load on first use. The wiki alone pulls TipTap, Yjs and the
 // P2P transport; the fleet views pull the kanban and roster, and search pulls
@@ -242,6 +246,32 @@ export function CommunityShell({
   };
 
   const searching = searchTerm.trim().length >= 2;
+
+  // Unread rooms and boards (D101). The room or board on screen is read once it has been there a moment with the page in
+  // view, and again when the server counts something new in it while it is open.
+  const unread = useUnreadRooms();
+  const onScreen =
+    activeChannel !== null &&
+    !showingStart &&
+    !showingDms &&
+    !showingModeration &&
+    !showingOrg &&
+    !showingWork &&
+    !showingFleet &&
+    !showingWiki &&
+    !searching
+      ? activeChannel.id
+      : null;
+  const onScreenLatest =
+    onScreen === null ? null : (unread.rows.get(onScreen)?.latest ?? null);
+  const { markRead } = unread;
+  useEffect(() => {
+    if (onScreen === null || onScreenLatest === null) return;
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === "visible") markRead(onScreen);
+    }, READ_AFTER_MS);
+    return () => window.clearTimeout(timer);
+  }, [onScreen, onScreenLatest, markRead]);
 
   /** Exactly one sidebar view is on at a time (or none → chat). */
   const setView = (view: "wiki" | "fleet" | "work" | "org") => {
@@ -492,6 +522,7 @@ export function CommunityShell({
             moreError={moreChannelsError}
             onLoadMore={onLoadMoreChannels}
             selectedId={activeChannel?.id ?? null}
+            unread={unread.rows}
             onSelect={(id) => {
               selectChannel(id);
               setSearchTerm("");

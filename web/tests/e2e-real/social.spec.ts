@@ -375,7 +375,7 @@ test("bookmarks are private: stored encrypted, listed after a reload", async ({
   await expect(postCard(page, text)).toBeVisible({ timeout: 20_000 });
 });
 
-test("notifications list likes, replies, mentions and follows with an unread badge", async ({
+test("notifications list up votes, replies, mentions and follows with an unread badge", async ({
   page,
 }) => {
   const fixture = fixtureOrSkip();
@@ -390,11 +390,12 @@ test("notifications list likes, replies, mentions and follows with an unread bad
   await expect(kinds.first()).toBeVisible({ timeout: 20_000 });
   // Rows fill in as the posts and profiles they mention arrive.
   const shell = page.getByTestId("social-shell");
-  await expect(shell).toContainText("liked your post", { timeout: 20_000 });
+  // A like is an up vote since D71.
+  await expect(shell).toContainText("upvoted your post", { timeout: 20_000 });
   await expect(shell).toContainText("replied to you", { timeout: 20_000 });
   await expect(shell).toContainText("mentioned you", { timeout: 20_000 });
   await expect(shell).toContainText("followed you", { timeout: 20_000 });
-  // Likes on the same post collapse into one row.
+  // Up votes on the same post collapse into one row.
   await expect(page.locator('[data-kind="like"]')).toHaveCount(1);
   await expect(page.locator('[data-kind="like"]')).toContainText("and 1 other");
 

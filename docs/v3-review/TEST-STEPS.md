@@ -1281,3 +1281,29 @@ By hand, with two accounts: A mutes B from B's profile (Mute).
 3. **Notifications.** B mentions A and replies to A's post: nothing from B in Notifications or the community bell, and
    no count. A moderator removing one of A's posts still shows.
 4. **Nobody else.** A third account sees everything as before.
+
+## 4az. Unread rooms and boards (D101, 2026-10-23)
+
+```bash
+pnpm --dir web test   # read-state.test.mjs
+pnpm --dir web exec playwright test --project=smoke tests/e2e/unread-rooms.spec.ts
+```
+
+By hand, on a server started with `BUZZ_V1_ENABLED=true` (the local `relay-3001` launch config sets it), with two
+accounts that have joined the same board or room:
+
+1. A opens the board once (the server starts counting for an account at its first read), then opens another room.
+2. B posts on the board. Within half a minute, A's sidebar shows the board in bold with "1".
+3. A opens the board: the marker goes after a moment. A reloads while in another room: still no marker.
+4. On a server without the setting, nothing shows and nothing is sent.
+
+## 4ba. The social path on a real server, in one command (D101, 2026-10-23)
+
+```bash
+scripts/web-social-e2e.sh   # needs Postgres and Redis; uses its own database and port 3199
+```
+
+Runs `web/tests/e2e-real/social.spec.ts` (22 cases: posting, following, votes, replies, reposts, quotes, bookmarks,
+search, notifications, profiles, mute, direct messages, launch updates, deleting) and `board-moderation.spec.ts` (an
+appointed moderator removes a reported post from the board's queue; the author is told; a mute hides her next post).
+`SKIP_BUILD=1 WEB_DIST=<dir>` reuses a build; `SPECS=...` runs a subset.

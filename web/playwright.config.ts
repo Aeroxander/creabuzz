@@ -82,6 +82,7 @@ export default defineConfig({
         "**/board-moderation.spec.ts",
         "**/board-reports.spec.ts",
         "**/mute-everywhere.spec.ts",
+        "**/unread-rooms.spec.ts",
         "**/access-refused.spec.ts",
         "**/live-scope.spec.ts",
         "**/home-timeline.spec.ts",

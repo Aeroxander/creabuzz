@@ -384,7 +384,9 @@ export function BoardList({
           >
             {filter === "proposals"
               ? "No decisions are being discussed yet."
-              : "No posts yet. Start the first discussion."}
+              : mutedHidden
+                ? "Nothing here but posts from people you muted."
+                : "No posts yet. Start the first discussion."}
           </p>
         ) : (
           <ul className="flex flex-col gap-3" data-testid="board-posts">

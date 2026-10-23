@@ -93,3 +93,5 @@ console.log(
   `ready: owner ${OWNER_PUBKEY.slice(0, 8)}…, mention identity ${mentionPubkey.slice(0, 8)}… (nsec ${MENTION_NSEC.slice(0, 8)}…)`,
 );
 console.log("wrote tests/e2e-real/.fixture.json");
+// A socket left open by a publish would keep Node running; the work is done.
+process.exit(0);
