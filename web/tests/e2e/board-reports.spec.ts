@@ -337,15 +337,33 @@ test("a direct-message thread is private but offers no people to add or remove",
   const relay = createMockRelay();
   relay.seed(
     record(39000, [
+      ["d", BOARD],
+      ["name", "general"],
+      ["t", "stream"],
+    ]),
+  );
+  relay.seed(
+    record(39000, [
       ["d", ROOM],
       ["name", "DM"],
       ["private"],
       ["hidden"],
       ["t", "dm"],
       ["p", ME],
+      ["p", ANN],
     ]),
   );
-  await open(page, relay, ROOM);
+  // The notice that puts the thread in Messages: it is opened there, not from the channel list.
+  relay.seed(
+    record(41001, [
+      ["d", ROOM],
+      ["p", ME],
+      ["p", ANN],
+    ]),
+  );
+  await open(page, relay);
+  await page.getByTestId("dms-toggle").click();
+  await page.getByTestId(`dm-${ROOM.slice(0, 8)}`).click();
   await expect(page.getByTestId("channel-add-people")).toBeVisible();
   await expect(page.getByTestId("room-people-toggle")).toHaveCount(0);
   await page.getByTestId("channel-add-people").click();

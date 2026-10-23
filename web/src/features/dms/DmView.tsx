@@ -170,6 +170,7 @@ export function DmView() {
                 type: "stream",
                 direct: true,
                 createdAt: selected.createdAt,
+                serverKey: selected.serverKey,
               } satisfies Channel
             }
           />
