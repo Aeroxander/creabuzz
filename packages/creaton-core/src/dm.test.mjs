@@ -13,6 +13,7 @@ import {
   KIND_DM_CREATED,
   KIND_DM_VISIBILITY,
   parseDmCreated,
+  parseDmMetadata,
   parseDmOpenAck,
 } from "./dm.ts";
 
@@ -188,5 +189,39 @@ test("conversation labels prefer resolved names over shortened keys", () => {
   assert.equal(
     dmConversationLabel([PK_A], () => undefined, PK_A),
     "conversation",
+  );
+});
+
+test("a thread the server opened itself is found from its own metadata record", () => {
+  const record = (tags) => ({ kind: 39000, created_at: 50, tags });
+  assert.deepEqual(
+    parseDmMetadata(
+      record([
+        ["d", "dm-1"],
+        ["hidden"],
+        ["t", "dm"],
+        ["p", PK_A.toUpperCase()],
+        ["p", PK_B],
+      ]),
+    ),
+    { dmId: "dm-1", participants: [PK_A, PK_B], createdAt: 50 },
+  );
+  // A thread the server opened with one person: the other side is the server's account, which signed the record.
+  const SERVER = "cc".repeat(32);
+  assert.deepEqual(
+    parseDmMetadata({
+      kind: 39000,
+      created_at: 60,
+      pubkey: SERVER,
+      tags: [["d", "dm-3"], ["hidden"], ["t", "dm"], ["p", PK_A]],
+    }),
+    { dmId: "dm-3", participants: [PK_A, SERVER], createdAt: 60 },
+  );
+  // A room is not a conversation, and a record with nobody in it is nothing.
+  assert.equal(parseDmMetadata(record([["d", "room"], ["name", "general"]])), null);
+  assert.equal(parseDmMetadata(record([["d", "dm-2"], ["t", "dm"]])), null);
+  assert.equal(
+    parseDmMetadata({ kind: 41001, created_at: 1, tags: [["d", "x"], ["t", "dm"], ["p", PK_A]] }),
+    null,
   );
 });

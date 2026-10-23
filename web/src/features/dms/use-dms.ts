@@ -21,6 +21,7 @@ import {
   KIND_DM_OPEN,
   KIND_DM_VISIBILITY,
   parseDmCreated,
+  parseDmMetadata,
   parseDmOpenAck,
 } from "@creaton/core/dm.ts";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
@@ -29,6 +30,9 @@ import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { getTag } from "@/shared/lib/event-fields";
+
+/** A group's metadata record (NIP-29); a direct thread's is marked as a DM. */
+const KIND_GROUP_METADATA = 39000;
 
 export interface DmConversation {
   /** The conversation's channel id, used as the `h` tag of its messages. */
@@ -58,12 +62,23 @@ export function useDmConversations() {
 
   const query = useQuery({
     queryKey: dmConversationsKey(me),
-    queryFn: () =>
-      queryEvents(relayWsUrl(), {
-        kinds: [KIND_DM_CREATED, KIND_DM_VISIBILITY],
-        "#p": [me ?? ""],
-        limit: 50,
-      }),
+    queryFn: async () => {
+      const [notices, threads] = await Promise.all([
+        queryEvents(relayWsUrl(), {
+          kinds: [KIND_DM_CREATED, KIND_DM_VISIBILITY],
+          "#p": [me ?? ""],
+          limit: 50,
+        }),
+        // The threads' own metadata records too: a thread the server opened itself (its moderation notices) is never
+        // announced with a creation notice, and would otherwise be listed nowhere.
+        queryEvents(relayWsUrl(), {
+          kinds: [KIND_GROUP_METADATA],
+          "#p": [me ?? ""],
+          limit: 50,
+        }),
+      ]);
+      return [...notices, ...threads];
+    },
     enabled: me != null,
     staleTime: 30_000,
   });
@@ -103,7 +118,7 @@ export function useDmConversations() {
         }
         continue;
       }
-      const notice = parseDmCreated(event);
+      const notice = parseDmCreated(event) ?? parseDmMetadata(event);
       if (notice == null) continue;
       const previous = byId.get(notice.dmId);
       if (previous == null || notice.createdAt >= previous.createdAt) {

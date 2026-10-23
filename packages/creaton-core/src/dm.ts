@@ -31,6 +31,8 @@ export interface DmTaggedEvent {
   kind: number;
   created_at: number;
   tags: string[][];
+  /** Who signed it, where it matters (a direct thread's metadata record). */
+  pubkey?: string;
 }
 
 const HEX_64 = /^[0-9a-f]{64}$/i;
@@ -183,6 +185,33 @@ export function isDmChannelMetadata(event: DmTaggedEvent): boolean {
   const type = event.tags.find((tag) => tag[0] === "t")?.[1];
   if (type !== undefined) return type === "dm";
   return event.tags.some((tag) => tag[0] === "hidden");
+}
+
+/** A group's metadata record (NIP-29 kind 39000). */
+const GROUP_METADATA = 39000;
+
+/**
+ * A conversation from a direct thread's own metadata record (kind 39000, marked as a DM), for threads the server opened
+ * itself (a moderation notice) and so never announced with a creation notice. Null for anything else.
+ */
+export function parseDmMetadata(event: DmTaggedEvent): DmCreatedNotice | null {
+  if (event.kind !== GROUP_METADATA || !isDmChannelMetadata(event))
+    return null;
+  const dmId = event.tags.find((tag) => tag[0] === "d")?.[1];
+  if (!dmId) return null;
+  const participants = event.tags
+    .filter(
+      (tag) =>
+        tag[0] === "p" && typeof tag[1] === "string" && tag[1].length > 0,
+    )
+    .map((tag) => (tag[1] as string).toLowerCase());
+  if (participants.length === 0) return null;
+  // The record names the thread's members. A thread the server opened with one person lists only them: the other side
+  // is the server's own account, which signs the record (and the notices in it).
+  const signer = event.pubkey?.toLowerCase();
+  if (participants.length === 1 && signer && signer !== participants[0])
+    participants.push(signer);
+  return { dmId, participants, createdAt: event.created_at };
 }
 
 /**

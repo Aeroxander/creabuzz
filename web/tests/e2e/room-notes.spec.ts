@@ -153,6 +153,43 @@ test("a direct-message thread is under Messages and nowhere in the channel list"
   });
 });
 
+test("a thread the server opened itself (its moderation notices) is listed under Messages too", async ({
+  page,
+}) => {
+  // The server opens it without a creation notice: only its metadata record says it exists, naming the reader alone.
+  const MOD_ID = "0e0e0e0e-1111-2222-3333-444444444444";
+  const relay = community();
+  relay.seed(
+    roomRecord(MOD_ID, "DM", [
+      ["private"],
+      ["hidden"],
+      ["p", ME],
+      ["closed"],
+      ["t", "dm"],
+    ]),
+  );
+  relay.seed({
+    id: "mod-notice",
+    pubkey: SERVER,
+    kind: 9,
+    created_at: now() - 20,
+    tags: [["h", MOD_ID]],
+    content: "A moderator removed your post on the board ideas.",
+    sig: "sig",
+  });
+  await open(page, relay);
+  await expect(page.getByTestId("channel-DM")).toHaveCount(0);
+  await page.getByTestId("dms-toggle").click();
+  const thread = page.getByTestId(`dm-${MOD_ID.slice(0, 8)}`);
+  await expect(thread).toContainText("localhost:3001 Moderation", {
+    timeout: 20_000,
+  });
+  await thread.click();
+  await expect(
+    page.getByText("A moderator removed your post on the board ideas."),
+  ).toBeVisible({ timeout: 20_000 });
+});
+
 test("a new private room's notes read as sentences with names, from history and live", async ({
   page,
 }) => {

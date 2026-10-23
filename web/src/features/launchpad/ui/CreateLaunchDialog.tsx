@@ -561,8 +561,7 @@ export function CreateLaunchDialog({
     } else {
       const price = atomicToPrice(BigInt(LAUNCH_DEFAULTS.floorPrice));
       patch({ price, raiseTarget: "", pricingMode: "price" });
-      // The default price, applied to the supply on the form: the default target is for the default supply, and a sale
-      // that must sell out needs its target to be exactly this supply at this price, or the launch is refused later.
+      // The default price on the supply typed: the default target fits only the default supply (D102).
       applyMoney({ price, mode: "price" });
     }
   };
