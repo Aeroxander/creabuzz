@@ -625,6 +625,7 @@ pub const KIND_STREAM_MESSAGE_DIFF: u32 = 40008;
 /// Canvas (shared document) for a channel.
 pub const KIND_CANVAS: u32 = 40100;
 /// System message for channel state changes (join, leave, rename, etc.).
+/// Signed by the relay keypair; client submission is rejected (relay-only).
 pub const KIND_SYSTEM_MESSAGE: u32 = 40099;
 
 // Relay-only sidecar kinds (never client-submitted)
@@ -1393,6 +1394,7 @@ pub const fn is_relay_only_kind(kind: u32) -> bool {
             | KIND_THREAD_WINDOW_BOUNDS
             | KIND_BOARD_STATE
             | KIND_BOARD_MODERATION_LOG
+            | KIND_SYSTEM_MESSAGE
     )
 }
 
@@ -1567,6 +1569,14 @@ mod tests {
         assert!(is_relay_only_kind(KIND_BOARD_STATE));
         assert!(is_relay_only_kind(KIND_BOARD_MODERATION_LOG));
         assert!(!is_relay_only_kind(KIND_BOARD_LOCK_THREAD));
+    }
+
+    #[test]
+    fn system_message_is_relay_only() {
+        // Room notes ("X was added by Y") are written only by the relay;
+        // a member-signed 40099 would render as a server notice.
+        assert!(is_relay_only_kind(KIND_SYSTEM_MESSAGE));
+        assert!(!is_relay_only_kind(KIND_STREAM_MESSAGE_V2));
     }
 
     #[test]
