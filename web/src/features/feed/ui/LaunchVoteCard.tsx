@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { MessageSquare } from "lucide-react";
 
 import type { LaunchRecord } from "@/features/launchpad/models";
+import { isContributorProject } from "@/features/launchpad/lib/funding";
 import { ProgressBar } from "@/features/launchpad/ui/widgets";
 import { KIND_LAUNCH_RECORD } from "@/shared/constants/kinds";
 
@@ -52,9 +53,10 @@ export function LaunchVoteCard({
   tally?: VoteTally;
   comments?: number;
 }) {
+  const contributor = isContributorProject(record);
   return (
     <article
-      aria-label={`Launch ${record.name}`}
+      aria-label={`Project ${record.name}`}
       className="flex gap-2 glass rounded-xl border p-3"
       data-testid="launch-vote-card"
     >
@@ -79,12 +81,17 @@ export function LaunchVoteCard({
         <p className="mt-0.5 line-clamp-2 text-sm text-black/70 dark:text-white/70">
           {record.pitch}
         </p>
-        <div className="mt-1.5">
-          <ProgressBar record={record} />
-        </div>
+        {/* A contributor project raises nothing: no progress bar, and its stage is not a sale's. */}
+        {contributor ? null : (
+          <div className="mt-1.5">
+            <ProgressBar quietWhenUnknown record={record} />
+          </div>
+        )}
         <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-black/60 dark:text-white/60">
           <span className="rounded-full bg-black/5 px-2 py-0.5 dark:bg-white/10">
-            {STAGE_LABEL[record.stage] ?? record.stage}
+            {contributor
+              ? "Looking for contributors"
+              : (STAGE_LABEL[record.stage] ?? record.stage)}
           </span>
           <span className="inline-flex items-center gap-1">
             <MessageSquare aria-hidden className="h-3.5 w-3.5" />

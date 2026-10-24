@@ -206,7 +206,7 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
     "Waiting for a work area's manager",
   );
   await expect(manager.getByTestId("work-claim-status")).toContainText(
-    "asks for no money",
+    "asks for Shares, not money",
   );
   await manager.getByTestId("work-bind").click();
   await expect(claimNext(manager)).toContainText("0 of 2 approvals", {

@@ -31,6 +31,15 @@ test("flags citations and protocol internals in user-visible strings", () => {
   assert.deepEqual(scan('const f = "open /identity-demo first";'), [
     "demo-route",
   ]);
+  assert.deepEqual(scan("const g = <p>Your Nostr account changed.</p>;"), [
+    "plain-words",
+  ]);
+  assert.deepEqual(scan('const h = "Also share on public Nostr";'), [
+    "plain-words",
+  ]);
+  assert.deepEqual(scan('const i = "0x12…ab (no explorer on this chain)";'), [
+    "plain-words",
+  ]);
 });
 
 test("ignores comments, identifiers, imports and console logs", () => {

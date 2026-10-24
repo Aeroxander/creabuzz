@@ -1,4 +1,11 @@
+import { useMemo } from "react";
+
+import { existingUserPubkey } from "@/shared/lib/identity";
+import { hashText } from "@creaton/core/launchpad/work.ts";
+
 import type { ChallengeIntent } from "../lib/challenge";
+import { recordSources } from "../lib/ways-to-help";
+import { useEvidencePackets } from "../use-evidence";
 import type { SponsorIntent } from "../lib/sponsor";
 import { isContributorProject } from "../lib/funding";
 import { Card } from "@/shared/ui/card";
@@ -58,6 +65,19 @@ export function DecisionsTab({
   const chainId = Number(launch.record.chainId);
   const usableChain = Number.isSafeInteger(chainId) && chainId > 0;
   const discussion = useDaoThreads(usableChain ? chainId : null, dao);
+  // A work area's words, for the hash its vote names: from the project's record and the updates posted with its votes.
+  const evidence = useEvidencePackets(launch);
+  const checkWords = useMemo(() => {
+    const byHash = new Map<string, string>();
+    for (const source of [
+      ...recordSources(launch.record.workAreas ?? []),
+      ...evidence.areaWords,
+    ]) {
+      const text = source.text.trim();
+      if (text) byHash.set(hashText(text), text);
+    }
+    return (check: string) => byHash.get(check.toLowerCase()) ?? null;
+  }, [launch.record.workAreas, evidence.areaWords]);
   const { labelOf } = useSpendingSummary({
     dao,
     currency: launch.record.currency,
@@ -71,12 +91,12 @@ export function DecisionsTab({
       <Card className="p-4">
         <h2 className="text-base font-bold">Decisions</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          What this project's holders have put to a vote. Back what you want
-          with your Shares; a decision needs enough Shares taking part and
-          enough of the votes behind it, and that support has to hold before it
-          can run. Oppose as much as you like: it never uses your Shares up.
+          What the project is voting on. Back or oppose a decision with your
+          Shares; voting never uses them up.
         </p>
-        <WalletStrip testIdPrefix="decisions" wallet={wallet} />
+        {existingUserPubkey() ? (
+          <WalletStrip testIdPrefix="decisions" wallet={wallet} />
+        ) : null}
         {gate && wallet.address ? (
           <p
             className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
@@ -171,6 +191,7 @@ export function DecisionsTab({
                     mandates: work.data?.mandates.map((m) => m.address),
                     bonds: bondsOf(work.data),
                     label: labelOf,
+                    checkWords,
                     projectToken: context.data?.shares,
                     amm: exchange?.amm,
                     currency: launch.record.currency ?? undefined,

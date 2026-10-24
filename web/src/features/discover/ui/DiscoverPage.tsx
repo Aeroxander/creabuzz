@@ -92,7 +92,7 @@ function SectionHeading({
     <div className="flex flex-wrap items-baseline justify-between gap-2">
       <h2 className="text-base font-semibold text-black dark:text-white">
         {title}
-        <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
+        <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
           {count} listed
         </span>
       </h2>

@@ -79,6 +79,16 @@ type Tab =
   | "agents"
   | "manage";
 
+/** The tabs a contributor project shows: its work, its votes, who earned what, and the talk around it. */
+const CONTRIBUTOR_TABS: Tab[] = [
+  "overview",
+  "contributions",
+  "decisions",
+  "work",
+  "discussion",
+  "updates",
+];
+
 export function LaunchDetailPage({
   launchId,
   author,
@@ -311,7 +321,16 @@ export function LaunchDetailPage({
           t.id,
         ),
       )
-    : tabs;
+    : contributor
+      ? // No sale, no money and no team allocation: the tabs about those would be empty or say what is not true.
+        tabs.filter((t) => CONTRIBUTOR_TABS.includes(t.id))
+      : tabs;
+  // A link to a tab this project does not show (an old `?tab=treasury`) opens the overview.
+  const shown: Tab = visibleTabs.some(
+    (t) => t.id === tab && (!t.founderOnly || isFounder),
+  )
+    ? tab
+    : "overview";
 
   const raiseOverview = (
     <>
@@ -415,11 +434,11 @@ export function LaunchDetailPage({
             <button
               key={t.id}
               role="tab"
-              aria-selected={tab === t.id}
+              aria-selected={shown === t.id}
               onClick={() => setTab(t.id)}
               className={cn(
                 "-mb-px shrink-0 whitespace-nowrap border-b-[3px] px-1 pb-2 text-sm font-semibold transition-colors",
-                tab === t.id
+                shown === t.id
                   ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground",
               )}
@@ -430,7 +449,7 @@ export function LaunchDetailPage({
           ))}
       </div>
 
-      {tab === "overview" && idea ? (
+      {shown === "overview" && idea ? (
         <>
           <IdeaOverview record={launch.record} />
           <ProjectDeliveryOverview
@@ -441,7 +460,7 @@ export function LaunchDetailPage({
           <ProjectProgressFeed project={launch} compact />
         </>
       ) : null}
-      {tab === "overview" && !idea ? (
+      {shown === "overview" && !idea ? (
         workDao && stage === "graduated" ? (
           <DaoOverview
             dao={workDao}
@@ -470,7 +489,7 @@ export function LaunchDetailPage({
           raiseOverview
         )
       ) : null}
-      {tab === "milestones" && !idea ? (
+      {shown === "milestones" && !idea ? (
         <MilestonesTab
           dao={workDao}
           launch={launch}
@@ -478,7 +497,7 @@ export function LaunchDetailPage({
           onOpenWork={() => setTab("work")}
         />
       ) : null}
-      {tab === "discussion" && !sandbox ? (
+      {shown === "discussion" && !sandbox ? (
         <>
           {stage === "graduated" ? (
             <LaunchChatCard isFounder={isFounder} launch={launch} />
@@ -486,25 +505,25 @@ export function LaunchDetailPage({
           <LaunchDiscussion record={launch.record} updates={launch.updates} />
         </>
       ) : null}
-      {tab === "updates" ? <ProjectProgressFeed project={launch} /> : null}
-      {tab === "agents" ? <ProjectAgents launch={launch} /> : null}
-      {tab === "proposals" ? (
+      {shown === "updates" ? <ProjectProgressFeed project={launch} /> : null}
+      {shown === "agents" ? <ProjectAgents launch={launch} /> : null}
+      {shown === "proposals" ? (
         <ProposalsTab launch={launch} onDissent={() => setTab("treasury")} />
       ) : null}
-      {tab === "mybids" && launch.record.auction ? (
+      {shown === "mybids" && launch.record.auction ? (
         <MyBidsPanel
           record={launch.record}
           rpcEndpoint={getRpcEndpoint()}
           autoAction={mybidsAutoAction}
         />
       ) : null}
-      {tab === "treasury" ? (
+      {shown === "treasury" ? (
         <TreasuryTab
           launch={launch}
           onOpenDecisions={() => setTab("decisions")}
         />
       ) : null}
-      {tab === "decisions" && workDao ? (
+      {shown === "decisions" && workDao ? (
         <DecisionsTab
           challenge={challenge}
           sponsor={sponsor}
@@ -513,7 +532,7 @@ export function LaunchDetailPage({
           launch={launch}
         />
       ) : null}
-      {tab === "work" && workDao ? (
+      {shown === "work" && workDao ? (
         <WorkTab
           dao={workDao}
           launch={launch}
@@ -529,13 +548,13 @@ export function LaunchDetailPage({
           onOpenDecisions={() => setTab("decisions")}
         />
       ) : null}
-      {tab === "contributions" && workDao ? (
+      {shown === "contributions" && workDao ? (
         <ContributionsTab dao={workDao} launch={launch} />
       ) : null}
-      {tab === "record" && workDao ? (
+      {shown === "record" && workDao ? (
         <RecordTab dao={workDao} launch={launch} onOpen={(t) => setTab(t)} />
       ) : null}
-      {tab === "manage" && isFounder ? (
+      {shown === "manage" && isFounder ? (
         <ManagePanel
           launchId={launch.record.id}
           author={launch.record.author}

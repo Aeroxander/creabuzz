@@ -1,5 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import {
+  CREATE_ACCOUNT,
+  SIGN_UP_EVENT,
+} from "@/features/identity/lib/account-copy";
+import { existingUserPubkey } from "@/shared/lib/identity";
 
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
@@ -134,7 +139,7 @@ export function FileClaimCard({
     try {
       id = idWord(name);
     } catch {
-      setProblem("Give the claim a short name of 1 to 32 characters.");
+      setProblem("Give your work a short name, up to 32 characters.");
       return;
     }
     if (evidence.trim() === "" || check.trim() === "") {
@@ -270,15 +275,34 @@ export function FileClaimCard({
     setDeposit("");
   };
 
+  // Someone without an account cannot submit anything: the form would only fail at the end.
+  if (existingUserPubkey() === null) {
+    return (
+      <Card className="p-4" data-testid="work-file-claim-signup" ref={card}>
+        <h3 className="text-sm font-semibold">Submit your work</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Create an account to submit work.
+        </p>
+        <Button
+          className="mt-2"
+          onClick={() => window.dispatchEvent(new Event(SIGN_UP_EVENT))}
+          size="sm"
+          type="button"
+        >
+          {CREATE_ACCOUNT}
+        </Button>
+      </Card>
+    );
+  }
+
   return (
     <Card className="p-4" data-testid="work-file-claim" ref={card}>
       <h3 className="text-sm font-semibold">Submit your work</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Submit what you finished. The manager of a work area accepts it for
-        review, the reviewers check it, and Shareholders can then vote to award
-        you Shares; approval alone gives none.
+        Submit what you finished. The work area's manager accepts it for review,
+        the reviewers check it, and then the project votes on an award.
         {holdsMoney
-          ? " For money, approval is followed by finalizing review, a challenge window, and claiming payment to the wallet that filed this claim."
+          ? " Money is paid after a waiting period, to the wallet you submit from."
           : ""}
       </p>
       {holdsMoney && wallet ? (
@@ -339,7 +363,7 @@ export function FileClaimCard({
         ) : null}
         <div className="flex flex-col gap-1 text-sm">
           <label className="font-medium" htmlFor="work-claim-name-input">
-            Name this claim
+            Name your work
           </label>
           <Input
             data-testid="work-claim-name"
@@ -379,7 +403,7 @@ export function FileClaimCard({
             data-testid="work-claim-check-note"
           >
             {chosenArea?.words && check.trim() === chosenArea.words
-              ? `These are ${chosenArea.name}'s exact words, checked against the network.`
+              ? `These are the words ${chosenArea.name} was set up with.`
               : chosenArea && !chosenArea.words
                 ? `${chosenArea.name}'s words are not published here: ask its manager for them. If yours differ, it cannot be accepted for review.`
                 : "Use the work area's exact words. If they differ, its manager cannot accept your work for review."}

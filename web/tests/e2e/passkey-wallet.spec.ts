@@ -76,9 +76,9 @@ async function start(page: Page) {
 
 async function openLinkDialog(page: Page) {
   await page
-    .getByRole("button", { name: "Link payment wallet", exact: true })
+    .getByRole("button", { name: "Connect payment wallet", exact: true })
     .click();
-  const dialog = page.getByRole("dialog", { name: "Link payment wallet" });
+  const dialog = page.getByRole("dialog", { name: "Connect payment wallet" });
   await dialog.getByRole("checkbox").check();
   return dialog;
 }
@@ -95,7 +95,7 @@ test("a passkey account links with one prompt, is checked by the account, and is
     new RegExp(ACCOUNT, "i"),
     { timeout: 30_000 },
   );
-  await expect(card).toContainText("Both signatures verified");
+  await expect(card).toContainText("Verified");
 
   // What was published: the account's own signature, behind a zero SIWE hash, authored by the Nostr key.
   const records = relay.events.filter((event) => event.kind === 37017);

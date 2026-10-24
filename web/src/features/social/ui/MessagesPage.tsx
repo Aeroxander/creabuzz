@@ -109,8 +109,8 @@ function ReceiveFromOtherAppsBanner() {
       data-testid="social-dm-relay-banner"
     >
       <p className="flex-1 text-sm text-black dark:text-white">
-        Let people on other Nostr apps message you here. This publishes a public
-        note saying you receive direct messages on this server.
+        Let people using other apps message you here. This posts a public note
+        saying where to reach you.
       </p>
       <Button
         className="rounded-full px-4 font-semibold"

@@ -125,16 +125,23 @@ test("the bars are quorum and approval, and support has to hold", () => {
   const watch = votingRuleWatch(rules, short, 1000n);
   assert.equal(watch.status, "needs-votes");
   assert.match(watch.detail, /^In favour 0\.000000000000000062/);
-  assert.match(watch.detail, /more Shares needed to meet the bars/);
+  // 62 for, 38 against: the vote is short of backing, not of people taking part
+  assert.match(watch.detail, /more Shares need to back it/);
   // The "next" part is the missing piece without the counts (a screen that shows them already uses it), and the Shares in
   // it are written the way the caller asks.
   assert.match(
     watch.next,
-    /^.*more Shares needed to meet the bars\. Support stays movable until it runs\.$/,
+    /^.*more Shares need to back it\. Votes can change until it is carried out\.$/,
   );
   assert.doesNotMatch(watch.next, /In favour/);
   const grouped = votingRuleWatch(rules, short, 1000n, (wei) => `<${wei}>`);
-  assert.match(grouped.next, /^<\d+> more Shares needed/);
+  assert.match(grouped.next, /^<\d+> more Shares need to back it/);
+  // Too few Shares taking part says so, rather than asking for more backing.
+  const few = decodeVotingSupport(response(5, 0, 0, 0));
+  assert.match(
+    votingRuleWatch(rules, few, 1000n).next,
+    /more Shares need to take part\./,
+  );
   assert.match(grouped.detail, /In favour <62>/);
   assert.equal(
     votingRuleWatch(rules, short, 1500n).status,

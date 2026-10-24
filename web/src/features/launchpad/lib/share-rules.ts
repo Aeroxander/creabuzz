@@ -125,7 +125,7 @@ export function allowanceText(
   date: (seconds: number) => string,
 ): string | null {
   if (!allowance || allowance.kind === "none") return null;
-  const why = "New Shares are only ever pay for accepted work";
+  const why = "New Shares are only ever given for accepted work";
   if (allowance.kind === "awards-only") return `${why}, with no yearly limit.`;
   if (allowance.resetsAt === null) {
     return `Up to ${whole(allowance.of)} new Shares can be awarded in the year that starts with the next award. ${why}.`;

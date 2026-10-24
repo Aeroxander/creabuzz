@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useWalletLabels } from "../use-wallet-labels";
 import type { SponsorIntent } from "../lib/sponsor";
 import { useMemo, useState } from "react";
 import { PaymentRecipientPicker } from "@/features/identity/ui/PaymentRecipientPicker";
@@ -384,6 +385,7 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
   const key = (a: (typeof awardable)[number]) =>
     `${a.mandate.address}:${a.claim.id}`;
   const chosen = awardable.find((a) => key(a) === which) ?? awardable[0];
+  const who = useWalletLabels(awardable.map((a) => a.claim.record.contributor));
   const project = chosen?.mandate.projects.find(
     (p) => p.id === chosen.claim.project,
   );
@@ -439,7 +441,7 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
           onChange={setWhich}
           options={awardable.map((a) => ({
             value: key(a),
-            label: `“${idLabel(a.claim.id)}” by ${a.claim.record.contributor.slice(0, 8)}… in work area “${a.claim.project ? idLabel(a.claim.project) : ""}”`,
+            label: `“${idLabel(a.claim.id)}” by ${who(a.claim.record.contributor)} in “${a.claim.project ? idLabel(a.claim.project) : ""}”`,
           }))}
           testId="award-claim"
           value={chosen ? key(chosen) : ""}

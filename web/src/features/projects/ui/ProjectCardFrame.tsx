@@ -28,7 +28,7 @@ export function RoleChip({
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium ${
         filled
-          ? "bg-black/5 text-black/50 dark:bg-white/10 dark:text-white/50"
+          ? "bg-black/5 text-black/70 dark:bg-white/10 dark:text-white/70"
           : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
       }`}
       data-testid={filled ? "role-chip-filled" : "role-chip-open"}
@@ -79,13 +79,13 @@ export function ProjectCardFrame({
             <RoleChip filled={false} key={role.slug} role={role} />
           ))}
           {card.filledRoles > 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium text-black/50 dark:bg-white/10 dark:text-white/50">
+            <span className="inline-flex items-center gap-1 rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium text-black/70 dark:bg-white/10 dark:text-white/70">
               <Users className="h-3 w-3" aria-hidden />
               {card.members} {card.members === 1 ? "member" : "members"}
             </span>
           ) : null}
         </div>
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-2xs text-black/50 dark:text-white/50">
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-2xs text-black/70 dark:text-white/70">
           <span className="truncate" title={card.founder}>
             {nameOf(card.founder)}
           </span>

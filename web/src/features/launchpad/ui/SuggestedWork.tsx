@@ -140,12 +140,12 @@ function SuggestForm({
         hint="A word or two; the work area's name if it is approved."
         label="Short name"
         onChange={setName}
-        placeholder="docs-es"
+        placeholder="Spanish guide"
         testId="suggest-name"
         value={name}
       />
       <TextAreaField
-        hint="Your claims will say they meet this, and the reviewers will check the work against it."
+        hint="The reviewers will check your work against these words."
         label="What finished work looks like"
         onChange={setCheck}
         placeholder="All twelve pages are translated and merged"
@@ -357,9 +357,8 @@ export function SuggestedWork({
             <Lightbulb aria-hidden className="h-4 w-4" /> Suggested work
           </h3>
           <p className="text-xs text-muted-foreground">
-            Anyone can suggest work and name their price. Holders can put a
-            suggestion to a vote; once approved, the person files claims like
-            anyone and is paid in Shares as reviewers accept the work.
+            Anyone can suggest work and name their price. If the project votes
+            it in, you submit the work like anyone else.
           </p>
         </div>
         {suggesting ? null : (
@@ -418,7 +417,8 @@ export function SuggestedWork({
             <ProposalCard
               key={row.id}
               name={resolveUserName(profiles?.[row.author], row.author)}
-              onSponsor={onSponsor}
+              // Putting a suggestion to a vote needs an account (and Shares); a visitor is not offered it.
+              onSponsor={existingUserPubkey() ? onSponsor : undefined}
               row={row}
               supplyWhole={supplyWhole}
             />

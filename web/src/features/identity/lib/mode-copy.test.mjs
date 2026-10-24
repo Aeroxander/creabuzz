@@ -12,15 +12,12 @@ import { PASSKEY_MODE_COPY, passkeyModeCopy } from "./mode-copy.ts";
 test("PRF mode says the key is re-derived at each signature", () => {
   assert.equal(
     passkeyModeCopy("prf"),
-    "Your Nostr key is re-derived from Touch ID at each signature (PRF)",
+    "Your passkey signs each time you post or vote",
   );
 });
 
 test("unlock mode says the key lives in this tab only", () => {
-  assert.equal(
-    passkeyModeCopy("unlock"),
-    "Session unlock: your key stays in this tab's memory until you close it",
-  );
+  assert.equal(passkeyModeCopy("unlock"), "Unlocked until you close this tab");
 });
 
 test("no passkey means no mode line", () => {

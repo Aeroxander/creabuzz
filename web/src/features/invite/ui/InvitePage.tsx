@@ -1,4 +1,5 @@
 import { CreatonMark } from "@/shared/ui/CreatonMark";
+import { DESKTOP_APP } from "@/shared/lib/desktop-app";
 import { claimInviteInBrowser } from "@/features/invite/invite-api";
 import {
   BUZZ_RELEASES_URL,
@@ -311,7 +312,7 @@ export function InvitePage({ code }: { code: string }) {
                 </Button>
               </div>
             )}
-            {policy === null ? (
+            {!DESKTOP_APP ? null : policy === null ? (
               <Button
                 asChild
                 className="h-10 w-full border border-black bg-white text-black hover:bg-black/5"
@@ -336,36 +337,38 @@ export function InvitePage({ code }: { code: string }) {
             ) : null}
           </div>
         </div>
-        <p className="flex h-[3.125rem] items-center justify-center rounded-2xl bg-white text-sm text-black/60">
-          Don&apos;t have the app?{" "}
-          <a
-            aria-expanded={needsMacChoice ? showMacChoice : undefined}
-            aria-haspopup={needsMacChoice ? "dialog" : undefined}
-            className="ml-1 font-medium text-black underline-offset-4 hover:text-black/70 hover:underline focus-visible:underline"
-            href={downloadUrl}
-            ref={downloadTriggerRef}
-            rel="noreferrer"
-            target="_blank"
-            onClick={(event) => {
-              if (!needsMacChoice) return;
-              event.preventDefault();
-              setShowMacChoice(true);
-            }}
-          >
-            Download it now
-          </a>
-          <span aria-hidden="true" className="mx-1.5 text-black/30">
-            ·
-          </span>
-          <a
-            className="font-medium text-black underline-offset-4 hover:text-black/70 hover:underline focus-visible:underline"
-            href={BUZZ_RELEASES_URL}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Browse releases
-          </a>
-        </p>
+        {DESKTOP_APP ? (
+          <p className="flex h-[3.125rem] items-center justify-center rounded-2xl bg-white text-sm text-black/60">
+            Don&apos;t have the app?{" "}
+            <a
+              aria-expanded={needsMacChoice ? showMacChoice : undefined}
+              aria-haspopup={needsMacChoice ? "dialog" : undefined}
+              className="ml-1 font-medium text-black underline-offset-4 hover:text-black/70 hover:underline focus-visible:underline"
+              href={downloadUrl}
+              ref={downloadTriggerRef}
+              rel="noreferrer"
+              target="_blank"
+              onClick={(event) => {
+                if (!needsMacChoice) return;
+                event.preventDefault();
+                setShowMacChoice(true);
+              }}
+            >
+              Download it now
+            </a>
+            <span aria-hidden="true" className="mx-1.5 text-black/30">
+              ·
+            </span>
+            <a
+              className="font-medium text-black underline-offset-4 hover:text-black/70 hover:underline focus-visible:underline"
+              href={BUZZ_RELEASES_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Browse releases
+            </a>
+          </p>
+        ) : null}
       </div>
 
       {showMacChoice && (

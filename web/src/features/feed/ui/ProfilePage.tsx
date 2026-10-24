@@ -48,7 +48,7 @@ const TABS: readonly { id: Tab; label: string }[] = [
   { id: "replies", label: "Replies" },
   { id: "media", label: "Media" },
   { id: "likes", label: "Upvoted" },
-  { id: "launches", label: "Launches" },
+  { id: "launches", label: "Projects" },
 ];
 
 /** A stable banner colour for people who have not set a header image. */

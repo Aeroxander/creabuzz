@@ -142,10 +142,8 @@ export function DecisionCard({
       )}
       <p className="mt-2 text-xs text-muted-foreground">
         Proposed by{" "}
-        <span className="font-mono">
-          {describeContext.label?.(decision.proposer) ??
-            `${decision.proposer.slice(0, 8)}…`}
-        </span>{" "}
+        {describeContext.label?.(decision.proposer) ??
+          `${decision.proposer.slice(0, 8)}…`}{" "}
         · {when(decision.openedAt)}
       </p>
 
@@ -154,18 +152,16 @@ export function DecisionCard({
           className="mt-2 text-xs text-muted-foreground"
           data-testid="decision-rules"
         >
-          To pass, at least {shares(rules.quorum)} Shares must take part and{" "}
-          {Number(rules.approvalBps) / 100}% of the votes cast must back it.
-          Support has to hold for {duration(rules.hold)} without a break
-          {rules.bounded ? ", inside a budget the DAO already voted" : ""}, and
-          after that there is a {duration(rules.delay)} wait before it can run.
-          It expires {when(rules.expiresAt)}.
+          Passes when at least {shares(rules.quorum)} Shares take part and{" "}
+          {Number(rules.approvalBps) / 100}% of them back it, for{" "}
+          {duration(rules.hold)} in a row. It then waits {duration(rules.delay)}{" "}
+          before it can run. Open until {when(rules.expiresAt)}.
         </p>
       ) : null}
 
       <p className="mt-2 text-sm" data-testid="decision-support">
         Backing {shares(decision.support.yes)} · Against{" "}
-        {shares(decision.support.no)} · No side{" "}
+        {shares(decision.support.no)} · Neutral{" "}
         {shares(decision.support.abstain)}
       </p>
       {watch ? (

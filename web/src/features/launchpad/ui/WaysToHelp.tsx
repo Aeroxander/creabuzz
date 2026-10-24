@@ -38,9 +38,7 @@ export function WaysToHelp({
     <Card className="p-4" data-testid="ways-to-help">
       <h3 className="text-sm font-semibold">Ways to help</h3>
       <p className="text-xs text-muted-foreground">
-        Work areas open for submissions. Submit work that meets what finished
-        work looks like; once it is reviewed, Shareholders can vote to award
-        Shares for it. Approval alone gives none.
+        Each says what finished work looks like.
       </p>
       {areas.length === 0 ? (
         <p

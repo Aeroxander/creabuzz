@@ -16,12 +16,11 @@ import {
 import {
   existingUserPubkey,
   hasStoredIdentity,
-  rotateIdentity,
+  forgetIdentity,
   StoredIdentityUnreadableError,
   storedIdentityHex,
 } from "@/shared/lib/identity";
 import { IdentityRecoveryBanner } from "./IdentityRecoveryBanner";
-import { WebIdentityHandoffCard } from "./WebIdentityHandoffCard";
 import {
   useProfiles,
   resolveUserName,
@@ -136,11 +135,14 @@ export function ProfileMenu({
   const pubkey = existingUserPubkey() ?? "";
   const { data: profiles } = useProfiles(pubkey ? [pubkey] : []);
   const profile = pubkey ? profiles?.[pubkey] : undefined;
-  const displayName = resolveUserName(profile, pubkey);
+  const resolvedName = resolveUserName(profile, pubkey);
   // The community username when this identity has claimed one; the recognisable
   // pubkey otherwise. The full pubkey stays available as a tooltip so the
   // username never hides the identity that actually signs.
   const secondaryName = resolveUserSecondaryName(profile, pubkey);
+  // An account with no name yet would show its short key twice: say what it is instead.
+  const displayName =
+    resolvedName === secondaryName ? "Your account" : resolvedName;
 
   // Other surfaces (the Home welcome) ask for the sign-up dialog rather than
   // owning a second copy of it.
@@ -356,7 +358,7 @@ export function ProfileMenu({
             style={popoverStyle}
           >
             {!hasBackedUp() ? (
-              <p className="mb-2 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-700 dark:text-amber-300">
+              <p className="mb-2 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-2xs text-amber-900 dark:text-amber-200">
                 <AlertTriangle className="h-3 w-3 shrink-0" />
                 Save a recovery key. Your account only exists in this browser.
               </p>
@@ -430,11 +432,7 @@ export function ProfileMenu({
                 />
                 <MenuItem
                   icon={<KeyRound className="h-3.5 w-3.5" />}
-                  label={
-                    hasBackedUp()
-                      ? "Recovery key"
-                      : "Save a recovery key (recommended)"
-                  }
+                  label={hasBackedUp() ? "Recovery key" : "Save a recovery key"}
                   onClick={() => setShowBackup(true)}
                 />
                 <div className="px-2 py-1.5">
@@ -536,13 +534,9 @@ export function ProfileMenu({
                       className="mb-1 px-2 text-2xs leading-4 text-black/55 dark:text-white/55"
                       data-testid="recovery-export-note"
                     >
-                      Copy recovery key to set up another device (the desktop
-                      app's Settings → Identity). This secret key is the full
-                      account: anyone holding it can sign as you, so store it
-                      somewhere safe. Passkey-native sharing (same Touch ID on
-                      web and desktop) arrives with app signing activation.
-                      Until then, this key handoff is the interim path. The
-                      passkey itself never leaves your device.
+                      Your recovery key signs you in on another device. Anyone
+                      who has it can act as you, so keep it private. The passkey
+                      itself stays on this device.
                     </p>
                     <MenuItem
                       icon={<LogOut className="h-3.5 w-3.5" />}
@@ -597,12 +591,12 @@ export function ProfileMenu({
                   <Wallet className="h-3 w-3" />
                   <span className="truncate">
                     Wallet {walletBinding.address.slice(0, 6)}…
-                    {walletBinding.address.slice(-4)} bound
+                    {walletBinding.address.slice(-4)} connected
                   </span>
                 </div>
                 <MenuItem
                   icon={<Wallet className="h-3.5 w-3.5" />}
-                  label={walletBusy ? "Unbinding…" : "Unbind wallet"}
+                  label={walletBusy ? "Disconnecting…" : "Disconnect wallet"}
                   onClick={() => setConfirmUnbind(true)}
                 />
               </div>
@@ -612,13 +606,23 @@ export function ProfileMenu({
                 {walletError}
               </p>
             ) : null}
+            <div className="mt-2 border-t border-black/10 pt-2 dark:border-white/10">
+              <MenuItem
+                icon={<LogOut className="h-3.5 w-3.5" />}
+                label="Sign out"
+                onClick={() => {
+                  setOpen(false);
+                  setConfirmSignOut(true);
+                }}
+              />
+            </div>
           </div>
         </Portal>
       ) : null}
 
       <ConfirmDialog
-        confirmLabel="Unbind wallet"
-        description="The wallet stops being able to act for this identity, and its server membership is removed. The binding is kept for audit and cannot be re-registered by this key."
+        confirmLabel="Disconnect"
+        description="It can no longer act for your account here, and it cannot be connected to this account again."
         onCancel={() => setConfirmUnbind(false)}
         onConfirm={() => {
           setConfirmUnbind(false);
@@ -634,7 +638,7 @@ export function ProfileMenu({
             .finally(() => setWalletBusy(false));
         }}
         open={confirmUnbind}
-        title="Unbind this wallet?"
+        title="Disconnect this wallet?"
       />
 
       {showBackup ? (
@@ -698,7 +702,6 @@ export function ProfileMenu({
                 Close
               </button>
             </div>
-            <WebIdentityHandoffCard />
           </div>
         </Overlay>
       ) : null}
@@ -710,32 +713,46 @@ export function ProfileMenu({
         >
           <div className="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl">
             <h3 className="text-base font-semibold text-black dark:text-white">
-              Sign out and start fresh?
+              Sign out of this browser?
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Your account is removed from this browser and a new, empty one is
-              created. Save your recovery key first if you want to get back to
-              this one.
+              {hasBackedUp()
+                ? "To sign back in, you need your recovery key."
+                : "You have not saved your recovery key. Without it you cannot get back into this account."}
             </p>
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setConfirmSignOut(false)}
                 className="rounded-md px-3 py-1.5 text-sm text-muted-foreground"
               >
-                Keep my account
+                Cancel
               </button>
+              {hasBackedUp() ? null : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmSignOut(false);
+                    setShowBackup(true);
+                  }}
+                  className="rounded-full border border-input px-4 py-1.5 text-sm font-medium"
+                  data-testid="signout-save-key"
+                >
+                  Save recovery key
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
-                  rotateIdentity();
+                  removePasskeyIdentity();
+                  forgetIdentity();
                   localStorage.removeItem(BACKED_UP_KEY);
-                  window.location.reload();
+                  window.location.assign("/");
                 }}
                 className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
                 data-testid="signout-confirm"
               >
-                Sign out
+                {hasBackedUp() ? "Sign out" : "Sign out anyway"}
               </button>
             </div>
           </div>
@@ -758,7 +775,7 @@ function MenuItem({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
     >
       {icon}
       {label}

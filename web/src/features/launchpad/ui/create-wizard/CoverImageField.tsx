@@ -77,6 +77,7 @@ export function CoverImageField({
           <div className="flex items-center gap-2">
             <input
               accept="image/*"
+              aria-label="Upload a cover image"
               className="sr-only"
               data-testid="launch-cover-file"
               onChange={(event) => void onFile(event.target.files?.[0])}

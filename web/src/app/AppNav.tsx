@@ -5,6 +5,7 @@ import {
   Home,
   type LucideIcon,
   MessagesSquare,
+  PlusCircle,
   Search,
 } from "lucide-react";
 
@@ -18,7 +19,14 @@ import { Button } from "@/shared/ui/button";
 import { CreatonMark } from "@/shared/ui/CreatonMark";
 
 interface NavItem {
-  to: "/" | "/social" | "/c" | "/discover" | "/launchpad" | "/portfolio";
+  to:
+    | "/"
+    | "/social"
+    | "/c"
+    | "/discover"
+    | "/launchpad"
+    | "/portfolio"
+    | "/start";
   label: string;
   icon: LucideIcon;
   /** Whether a pathname belongs to this section. */
@@ -60,6 +68,14 @@ const NAV_ITEMS: readonly NavItem[] = [
     matches: (p) => p.startsWith("/portfolio"),
   },
 ];
+
+/** Start, as a tab on phones (wide screens have the Start button in the top bar). */
+const START_TAB: NavItem = {
+  to: "/start",
+  label: "Start",
+  icon: PlusCircle,
+  matches: (p) => p.startsWith("/start"),
+};
 
 /** Pages people land on from outside the app, shown without app chrome. */
 export function hidesAppNav(pathname: string): boolean {
@@ -139,14 +155,17 @@ export function AppNav() {
       className="flex h-14 w-full shrink-0 items-stretch justify-around border-t border-border/60 bg-sidebar px-1"
       data-testid="app-nav"
     >
-      {NAV_ITEMS.filter((item) => !item.wideOnly).map((item) => (
-        <NavLink
-          active={item.matches(pathname)}
-          item={item}
-          key={item.to}
-          variant="tab"
-        />
-      ))}
+      {/* Start sits in the middle, as the wide bar's Start button does at its end. */}
+      {[...NAV_ITEMS.slice(0, 2), START_TAB, ...NAV_ITEMS.slice(2)]
+        .filter((item) => !item.wideOnly)
+        .map((item) => (
+          <NavLink
+            active={item.matches(pathname)}
+            item={item}
+            key={item.to}
+            variant="tab"
+          />
+        ))}
       <div className="flex items-center">
         <ProfileMenu placement="tabbar" />
       </div>
@@ -216,7 +235,7 @@ function NavLink({
   return (
     <Link
       aria-current={active ? "page" : undefined}
-      className={`flex min-w-14 flex-col items-center justify-center gap-0.5 rounded-lg px-1.5 py-1.5 text-2xs font-semibold transition-colors ${
+      className={`flex min-w-0 max-w-20 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-2xs font-semibold transition-colors ${
         active
           ? "bg-primary/15 text-primary-ink"
           : "text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
@@ -224,8 +243,8 @@ function NavLink({
       data-testid={`app-nav-${item.to === "/c" ? "communities" : item.label.toLowerCase()}`}
       to={item.to}
     >
-      <Icon aria-hidden className="h-5 w-5" />
-      {item.label}
+      <Icon aria-hidden className="h-5 w-5 shrink-0" />
+      <span className="max-w-full truncate">{item.label}</span>
     </Link>
   );
 }

@@ -1,4 +1,5 @@
 import { type ChallengeIntent, challengeFor } from "../lib/challenge";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import type { SponsorIntent } from "../lib/sponsor";
 import { useContributions } from "../use-contributions";
 import { SuggestedWork } from "./SuggestedWork";
@@ -6,11 +7,11 @@ import { PendingWordsNote } from "./PendingWordsNote";
 import { WaysToHelp } from "./WaysToHelp";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { formatAtomic } from "../lib/amounts";
+import { isContributorProject } from "../lib/funding";
 import {
   type EvidencePacket,
   evidenceFor,
@@ -178,17 +179,17 @@ export function WorkTab({
       <Card className="p-4">
         <h2 className="text-base font-bold">Work</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Find work under Ways to help, submit what you finished, and follow its
-          review here. Reviewer approval makes work eligible for an award;
-          Shareholders still vote on whether to award Shares. Work that asks for
-          money waits out a challenge window before it can be paid.
+          Pick something under Ways to help, do it, and submit it here.
         </p>
         <AllowanceNote
           dao={dao}
           now={work.data?.chainTime ?? Math.floor(Date.now() / 1000)}
           shares={context.data?.shares ?? null}
         />
-        <WalletStrip testIdPrefix="work" wallet={wallet} />
+        {/* A wallet matters once someone has an account: a visitor is asked to make one first, further down. */}
+        {existingUserPubkey() ? (
+          <WalletStrip testIdPrefix="work" wallet={wallet} />
+        ) : null}
         <Button
           className="mt-2"
           disabled={work.isFetching}
@@ -197,7 +198,7 @@ export function WorkTab({
           type="button"
           variant="outline"
         >
-          {work.isFetching ? "Refreshing…" : "Refresh work status"}
+          {work.isFetching ? "Refreshing…" : "Refresh"}
         </Button>
         {gate && wallet.address ? (
           <p
@@ -283,7 +284,7 @@ export function WorkTab({
             Nothing has been set aside for work yet. A work budget is created by
             a vote of the DAO.
           </p>
-          <DecisionHelp dao={dao} onOpenDecisions={onOpenDecisions} />
+          <DecisionHelp onOpenDecisions={onOpenDecisions} />
         </Card>
       ) : (
         <>
@@ -322,7 +323,7 @@ export function WorkTab({
               wallet={wallet.address}
             />
           ))}
-          <DecisionHelp dao={dao} onOpenDecisions={onOpenDecisions} />
+          <DecisionHelp onOpenDecisions={onOpenDecisions} />
         </>
       )}
       {failure ? <FailureNote message={failure} testId="work-failure" /> : null}
@@ -330,20 +331,14 @@ export function WorkTab({
   );
 }
 
-function DecisionHelp({
-  dao,
-  onOpenDecisions,
-}: {
-  dao: string;
-  onOpenDecisions?: () => void;
-}) {
+function DecisionHelp({ onOpenDecisions }: { onOpenDecisions?: () => void }) {
   return (
     <p className="mt-2 text-xs text-muted-foreground" data-testid="work-help">
-      A new budget, a project and an award are decisions the DAO votes on
+      New work budgets, work areas and awards are put to a vote
       {onOpenDecisions ? (
         <>
           {" "}
-          — open them on the{" "}
+          on the{" "}
           <button
             className="underline"
             data-testid="work-open-decisions"
@@ -353,8 +348,8 @@ function DecisionHelp({
             Decisions tab
           </button>
         </>
-      ) : null}{" "}
-      (DAO <span className="font-mono">{truncatePubkey(dao)}</span>).
+      ) : null}
+      .
     </p>
   );
 }
@@ -400,6 +395,7 @@ function MandateCard({
   onChallenge?: (intent: ChallengeIntent) => void;
 }) {
   const { created } = mandate;
+  const sharesOnly = isContributorProject(launch.record);
   const decimals = mandate.currency?.decimals ?? 18;
   const unit = mandate.currency?.symbol ?? "";
   // A currency that did not say how many decimals it has is shown as the raw number: a guessed scale misstates it.
@@ -464,9 +460,8 @@ function MandateCard({
     <Card className="p-4" data-testid="work-mandate">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold">
-          {mandate.isMilestonePanel ? "Milestone panel" : "Work budget"}{" "}
-          <span className="font-mono text-xs font-normal text-muted-foreground">
-            {truncatePubkey(mandate.address)}
+          <span title={mandate.address}>
+            {mandate.isMilestonePanel ? "Milestone panel" : "Work budget"}
           </span>
         </h3>
         <span className="text-xs text-muted-foreground">
@@ -510,7 +505,7 @@ function MandateCard({
             ? `${bondMoney(mandate.bond.minBond)} each, which the DAO can take after a disputed approval`
             : mandate.bondUnreadable
               ? "Could not be read. The network did not answer; this is not the same as no bond."
-              : "None: a reviewer risks nothing by approving carelessly"}
+              : "None"}
         </dd>
       </dl>
       {mandate.reviewers.length > 0 ? (
@@ -520,7 +515,7 @@ function MandateCard({
         >
           {mandate.reviewers.map((reviewer) => (
             <li data-testid="work-reviewer" key={reviewer.address}>
-              <span className="font-mono">{labelOf(reviewer.address)}</span>
+              <span>{labelOf(reviewer.address)}</span>
               {mandate.bond
                 ? reviewer.stake === null
                   ? " · bond could not be read"
@@ -597,7 +592,7 @@ function MandateCard({
         </ul>
       )}
 
-      <h4 className="mt-3 text-sm font-semibold">Claims</h4>
+      <h4 className="mt-3 text-sm font-semibold">Submitted work</h4>
       {mandate.claims.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           Nobody has filed a claim yet.
@@ -649,7 +644,9 @@ function MandateCard({
                     {labelOf(claim.record.contributor)}
                     {claim.record.amount > 0n
                       ? ` · asks for ${money(claim.record.amount)}`
-                      : " · asks for no money, only a chance at Shares"}
+                      : sharesOnly
+                        ? null
+                        : " · asks for Shares, not money"}
                   </span>
                 </div>
                 <p className="mt-1" data-testid="work-claim-next">
@@ -657,6 +654,7 @@ function MandateCard({
                 </p>
                 {claim.record.status === "Paid" ? (
                   <PaidLine
+                    sharesOnly={sharesOnly}
                     money={claim.record.amount > 0n}
                     at={payouts?.paidAt.get(
                       claimKey(mandate.address, claim.id),
@@ -862,6 +860,7 @@ function MandateCard({
  * none, so it says it was finished, never paid.
  */
 function PaidLine({
+  sharesOnly,
   money,
   at,
   tx,
@@ -869,6 +868,8 @@ function PaidLine({
   unread,
   reading,
 }: {
+  /** A contributor project, where no claim can ask for money: saying so on each would be noise. */
+  sharesOnly: boolean;
   money: boolean;
   at: number | undefined;
   tx: string | undefined;
@@ -890,7 +891,7 @@ function PaidLine({
         <>
           {money ? "Paid" : "Finished"} {paidOn(at)} ·{" "}
           <TxLink chainId={chainId} tx={tx} />
-          {money ? null : " · No money was asked for."}
+          {money || sharesOnly ? null : " · No money was asked for."}
         </>
       ) : money ? (
         "Paid; its payout transaction was not found in the history this page reads."

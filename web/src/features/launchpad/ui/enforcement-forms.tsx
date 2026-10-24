@@ -22,6 +22,7 @@ import { type ClaimView, idLabel } from "../lib/work";
 import type { MandateView } from "../lib/work-read";
 import { SelectField, TextField } from "./decision-fields";
 import { useStickyPick } from "./use-sticky-pick";
+import { useWalletLabels } from "../use-wallet-labels";
 import {
   attempt,
   DraftPanel,
@@ -50,8 +51,13 @@ function claimsIn(mandates: readonly MandateView[], states: readonly string[]) {
 }
 
 const pickKey = (p: Pick) => `${p.mandate.address}:${p.claim.id}`;
-const pickLabel = (p: Pick) =>
-  `“${idLabel(p.claim.id)}” by ${short(p.claim.record.contributor)} in ${budgetName(p.mandate)}`;
+/** A claim by its name and who submitted it; its budget only when the DAO has more than one. */
+const pickLabel = (
+  p: Pick,
+  who: (address: string) => string,
+  budgets: number,
+) =>
+  `“${idLabel(p.claim.id)}” by ${who(p.claim.record.contributor)}${budgets > 1 ? ` in ${budgetName(p.mandate)}` : ""}`;
 
 function ClaimPickForm({
   ctx,
@@ -77,6 +83,8 @@ function ClaimPickForm({
   make: (pick: Pick) => ReturnType<typeof freezeClaimDecision>;
 }) {
   const options = claimsIn(ctx.work?.mandates ?? [], states);
+  const who = useWalletLabels(options.map((o) => o.claim.record.contributor));
+  const budgets = ctx.work?.mandates.length ?? 0;
   // A claim the person came here for, or was first shown, that is no longer eligible is never swapped for another one.
   const { pick, select: setSelected } = useStickyPick(
     options.map(pickKey),
@@ -120,7 +128,10 @@ function ClaimPickForm({
           onChange={setSelected}
           options={[
             ...(chosen ? [] : [{ value: "", label: "Choose a claim…" }]),
-            ...options.map((o) => ({ value: pickKey(o), label: pickLabel(o) })),
+            ...options.map((o) => ({
+              value: pickKey(o),
+              label: pickLabel(o, who, budgets),
+            })),
           ]}
           testId={`${testId}-claim`}
           value={chosen ? pickKey(chosen) : ""}
@@ -148,7 +159,7 @@ export function FreezeForm(props: FormProps & { initialPick?: string }) {
   return (
     <ClaimPickForm
       {...props}
-      intro="Freeze a claim you doubt. Nothing is paid for it and no Shares are unlocked by it while it is frozen. A freeze is not a verdict: a later decision unwinds it, and nobody's money is taken."
+      intro="Hold back work you doubt. Nothing is paid or awarded for it while it is frozen. A freeze is not a verdict: a later decision can let it go."
       label="Claim to freeze"
       make={make}
       none="No claim is open to freeze. Only a claim that is still being reviewed, or approved and waiting out its challenge window, can be frozen."

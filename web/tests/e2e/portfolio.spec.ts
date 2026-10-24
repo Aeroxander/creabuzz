@@ -279,8 +279,8 @@ test("on a phone, Portfolio is one of the four destinations", async ({
   await signIn(page);
   await page.goto("/");
   await expect(page.getByTestId("app-nav-home")).toBeVisible();
-  // Four destinations plus the account control; projects, launches and markets live under Discover.
-  await expect(page.getByTestId("app-nav").getByRole("link")).toHaveCount(4);
+  // Four destinations and Start, plus the account control; projects, launches and markets live under Discover.
+  await expect(page.getByTestId("app-nav").getByRole("link")).toHaveCount(5);
   await expect(page.getByTestId("app-nav-portfolio")).toBeVisible();
   await expect(page.getByTestId("app-nav-projects")).toHaveCount(0);
   const nav = await page

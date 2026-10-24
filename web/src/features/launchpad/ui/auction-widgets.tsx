@@ -95,8 +95,8 @@ export function WalletStrip({
         className="mt-2 text-sm text-black/60 dark:text-white/60"
         data-testid={`${testIdPrefix}-no-wallet`}
       >
-        No wallet found in this browser. Install a wallet extension, then reload
-        this page.
+        To take part here you need a wallet in this browser. Add one, then
+        reload this page.
       </p>
     );
   }
@@ -127,9 +127,9 @@ export function WalletStrip({
       className="mt-2 text-sm text-black/60 dark:text-white/60"
       data-testid={`${testIdPrefix}-wallet`}
     >
-      Connected as{" "}
+      Your wallet:{" "}
       <span className="font-mono">{truncatePubkey(wallet.address)}</span>
-      {wallet.chainId !== null ? ` on ${networkLabel(wallet.chainId)}` : ""}.
+      {wallet.chainId !== null ? ` (${networkLabel(wallet.chainId)})` : ""}
     </p>
   );
 }

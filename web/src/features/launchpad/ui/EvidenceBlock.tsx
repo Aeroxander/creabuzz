@@ -101,7 +101,7 @@ export function EvidenceBlock({
           </>
         ) : null}
         <p className="mt-2 text-xs text-muted-foreground">
-          This is the text the claim committed to on the network: it matches.
+          These are the words it was submitted with.
         </p>
       </div>
     );

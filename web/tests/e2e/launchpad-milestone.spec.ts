@@ -281,9 +281,9 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
     "1 of 2 milestones reached",
     { timeout: 30_000 },
   );
-  // The team member is shown by name, with the address beside it so the name is never the only thing to go on.
+  // The team member is shown by name (D108: the address beside it was noise for most readers).
   await expect(reader.getByTestId("record-person").first()).toContainText(
-    "Fiona Founder (0xf39f…2266)",
+    "Fiona Founder",
   );
   const tranches = reader.getByTestId("record-tranche");
   await expect(tranches).toHaveCount(2);

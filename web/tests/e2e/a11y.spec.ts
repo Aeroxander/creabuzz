@@ -210,8 +210,8 @@ test("the invite landing is accessible", async ({ page }) => {
     });
   });
   await page.goto("/invite/demo-code");
-  // A link when the relay publishes no join policy, a button when it does.
-  await expect(page.getByText("Accept invite in Creaton").first()).toBeVisible({
+  // The browser join (the first release offers no desktop app).
+  await expect(page.getByTestId("invite-create-and-join")).toBeVisible({
     timeout: 20_000,
   });
   await expectAccessible(page, "invite");

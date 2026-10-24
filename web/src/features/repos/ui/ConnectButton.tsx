@@ -1,11 +1,13 @@
 import { ExternalLink } from "lucide-react";
 
+import { DESKTOP_APP } from "@/shared/lib/desktop-app";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { desktopConnectDeepLink } from "@/shared/lib/desktop-deep-link";
 import { Button } from "@/shared/ui/button";
 
 export function ConnectButton({ className }: { className?: string }) {
   const deepLink = desktopConnectDeepLink(relayWsUrl());
+  if (!DESKTOP_APP) return null;
 
   return (
     <Button

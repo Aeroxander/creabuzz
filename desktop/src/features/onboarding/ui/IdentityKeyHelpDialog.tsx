@@ -130,9 +130,9 @@ function IdentityKeyHelpBody() {
       </p>
       <p>
         This identity belongs to you, not the app, and can move with you to
-        another device or compatible Nostr app. Because only you control the
-        private key, Creaton can’t reset or recover it. Keep a backup somewhere
-        safe, and never share it.
+        another device or another app that supports it. Because only you control
+        the private key, Creaton can’t reset or recover it. Keep a backup
+        somewhere safe, and never share it.
       </p>
     </>
   );

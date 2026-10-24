@@ -170,8 +170,8 @@ function ProgressList({
               : "Project progress"}
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {fresh ? `${fresh} new to you · ` : ""}Signed team reports and
-            submitted evidence. Reading history stays in this browser.
+            {fresh ? `${fresh} new to you · ` : ""}Updates from the team and
+            work people submitted.
           </p>
         </div>
         {!project ? (
@@ -287,8 +287,8 @@ function ProgressList({
             <p className="mt-2 text-xs text-muted-foreground">
               By {names(i.author)} ·{" "}
               {i.evidence
-                ? "Submission does not mean approval or payment."
-                : "Reported by the team; not an independent verification."}
+                ? "Submitted, not yet approved."
+                : "Posted by the team, not checked by anyone else."}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <VoteButtons

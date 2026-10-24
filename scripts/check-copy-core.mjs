@@ -54,6 +54,11 @@ export const COPY_RULES = [
     pattern: /\/identity-demo\b/,
     why: "never send people to the demo page",
   },
+  {
+    id: "plain-words",
+    pattern: /\bNostr (?:account|apps?|key)\b|\bon public Nostr\b|\bno explorer\b/i,
+    why: "say \"account\" and \"other apps\"; a network without a public page needs no apology",
+  },
 ];
 
 const TEST_FILE_RE = /\.test\.(?:m?[jt]sx?)$/;

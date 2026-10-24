@@ -32,58 +32,68 @@ export function Overlay({
   );
 }
 
+/** How close a popover may come to the window's edges. */
+const gapToEdge = 8;
+
+type Box = { top: number; left: number } | { bottom: number; left: number };
+
 /**
  * Place a popover next to an anchor, at the root.
  *
  * Measured from the anchor's own box, so it lands where the reader expects
- * even though it is no longer inside the anchor's stacking context. Recomputed
- * while open, since scrolling and resizing move the anchor.
+ * even though it is no longer inside the anchor's stacking context. Measured
+ * again on every frame while open, since scrolling, resizing and content that
+ * loads late all move the anchor; and kept on screen when the anchor is not.
  */
 export function useAnchoredStyle(
   anchorRef: RefObject<HTMLElement | null>,
   open: boolean,
   place: "below-right" | "below-left" | "above-right" | "above-left" | "right",
 ): React.CSSProperties {
-  const [box, setBox] = useState<{ top: number; left: number } | null>(null);
+  // An "above" popover is pinned by its bottom edge, so it grows upward from the anchor whatever its height.
+  const [box, setBox] = useState<Box | null>(null);
 
   useEffect(() => {
     if (!open) {
       setBox(null);
       return;
     }
-    const measure = () => {
-      const el = anchorRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const width = 288; // the popover is w-72
-      const gap = 8;
+    const width = 288; // the popover is w-72
+    const gap = 8;
+    const at = (r: DOMRect): Box => {
+      // Never past the bottom of the window, even while the anchor is scrolled out of view.
+      const above = Math.max(gapToEdge, window.innerHeight - r.top + gap);
       switch (place) {
         case "below-right":
-          setBox({ top: r.bottom + gap, left: r.right - width });
-          break;
+          return { top: r.bottom + gap, left: r.right - width };
         case "below-left":
-          setBox({ top: r.bottom + gap, left: r.left });
-          break;
+          return { top: r.bottom + gap, left: r.left };
         case "above-right":
-          setBox({ top: r.top - gap, left: r.right - width });
-          break;
+          return { bottom: above, left: r.right - width };
         case "above-left":
-          setBox({ top: r.top - gap, left: r.left });
-          break;
+          return { bottom: above, left: r.left };
         case "right":
-          setBox({ top: r.top, left: r.right + gap });
-          break;
+          return { top: r.top, left: r.right + gap };
       }
     };
-    measure();
-    window.addEventListener("scroll", measure, true);
-    window.addEventListener("resize", measure);
-    return () => {
-      window.removeEventListener("scroll", measure, true);
-      window.removeEventListener("resize", measure);
+    let frame = 0;
+    let last = "";
+    const follow = () => {
+      const el = anchorRef.current;
+      if (el) {
+        const next = at(el.getBoundingClientRect());
+        const key = JSON.stringify(next);
+        if (key !== last) {
+          last = key;
+          setBox(next);
+        }
+      }
+      frame = requestAnimationFrame(follow);
     };
+    follow();
+    return () => cancelAnimationFrame(frame);
   }, [anchorRef, open, place]);
 
   if (!box) return { visibility: "hidden" };
-  return { position: "fixed", top: box.top, left: box.left };
+  return { position: "fixed", ...box, left: Math.max(gapToEdge, box.left) };
 }

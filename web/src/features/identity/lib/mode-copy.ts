@@ -11,9 +11,8 @@
 import type { PasskeyMode } from "./passkey-identity.ts";
 
 export const PASSKEY_MODE_COPY: Record<PasskeyMode, string> = {
-  prf: "Your Nostr key is re-derived from Touch ID at each signature (PRF)",
-  unlock:
-    "Session unlock: your key stays in this tab's memory until you close it",
+  prf: "Your passkey signs each time you post or vote",
+  unlock: "Unlocked until you close this tab",
 };
 
 /** The one-line description of a mode; null when there is no passkey. */

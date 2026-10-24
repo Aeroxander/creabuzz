@@ -90,8 +90,8 @@ function ruleLines(rules: ShareRules | null): string[] {
   if (rules.awardsOnly) {
     lines.push(
       rules.issuanceCapBps === NO_CAP
-        ? "New Shares are only ever pay for work the reviewers accepted. No vote can create Shares any other way."
-        : `New Shares are only ever pay for work the reviewers accepted, and at most ${rules.issuanceCapBps / 100}% more a year of the Shares that count when someone leaves. No vote can raise that limit.`,
+        ? "New Shares are only ever given for work the reviewers accepted. No vote can create Shares any other way."
+        : `New Shares are only ever given for work the reviewers accepted, and at most ${rules.issuanceCapBps / 100}% more a year of the Shares that count when someone leaves. No vote can raise that limit.`,
     );
   }
   if (rules.transfersLocked && rules.unlockNoticeRequired) {

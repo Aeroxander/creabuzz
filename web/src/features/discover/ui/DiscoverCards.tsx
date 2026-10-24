@@ -49,7 +49,7 @@ function AddressLine({
 }) {
   return (
     <div className="min-w-0">
-      <span className="text-2xs font-medium tracking-wide text-black/50 uppercase dark:text-white/50">
+      <span className="text-2xs font-medium tracking-wide text-black/70 uppercase dark:text-white/70">
         {label}
       </span>
       {url ? (
@@ -68,12 +68,12 @@ function AddressLine({
           {address}
         </span>
       )}
-      <span className="text-2xs text-black/50 dark:text-white/50">
+      <span className="text-2xs text-black/70 dark:text-white/70">
         {url
           ? "link opens the block explorer"
           : chainId === null
-            ? "chain unknown: no explorer link"
-            : `no explorer known for chain ${chainId}`}
+            ? "no public page for this network"
+            : "no public page for this network"}
       </span>
     </div>
   );
@@ -154,7 +154,7 @@ export function DiscoverDaoCard({
           </a>
         ) : null}
 
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-2xs text-black/50 dark:text-white/50">
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-2xs text-black/70 dark:text-white/70">
           <span className="truncate" title={card.founder ?? undefined}>
             {card.founder ? nameOf(card.founder) : "founder not recorded"}
           </span>
@@ -265,7 +265,7 @@ export function DiscoverProjectCard({
           className={
             joinable
               ? "shrink-0 rounded-full bg-sky-500/15 px-2 py-0.5 text-2xs font-medium text-sky-700 dark:text-sky-300"
-              : "shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium text-black/50 dark:bg-white/10 dark:text-white/50"
+              : "shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium text-black/70 dark:bg-white/10 dark:text-white/70"
           }
           data-testid="discover-project-hiring"
         >

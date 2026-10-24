@@ -217,19 +217,20 @@ export function votingRuleWatch(
       : lastDay
         ? "at-risk"
         : "needs-votes";
+  // Says which bar is short: too few Shares taking part, or too few backing it.
   const next = !barsHold
-    ? `${format(missing)} more Shares needed to meet the bars`
+    ? `${format(missing)} more Shares need to ${missing === moreQuorum ? "take part" : "back it"}`
     : now < rules.reviewEndsAt &&
         earliest !== 0n &&
         earliest <= rules.reviewEndsAt
-      ? "Minimum review period continues"
+      ? "Enough votes; the review period is still running"
       : earliest !== 0n && now < earliest
-        ? "Support has to hold a little longer"
-        : "Approval bars met; execution needs the full wait";
+        ? "Enough votes; they have to hold a little longer"
+        : "Enough votes; it can run after the wait";
   return {
     status,
-    detail: `In favour ${format(support.yes)} · Against ${format(support.no)} · Abstain ${format(support.abstain)} · ${next}. Support remains movable until execution.`,
-    next: `${next}. Support stays movable until it runs.`,
+    detail: `In favour ${format(support.yes)} · Against ${format(support.no)} · Neutral ${format(support.abstain)} · ${next}. Votes can change until it is carried out.`,
+    next: `${next}. Votes can change until it is carried out.`,
   };
 }
 /** The word a person reads for a watch status. */

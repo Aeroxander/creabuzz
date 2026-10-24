@@ -275,15 +275,13 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   const linkWallet = async (person: Person) => {
     await person.page.goto(`/u/${person.pubkey}`);
     await person.page
-      .getByRole("button", { name: "Link payment wallet", exact: true })
+      .getByRole("button", { name: "Connect payment wallet", exact: true })
       .click();
     const dialog = person.page.getByRole("dialog", {
-      name: "Link payment wallet",
+      name: "Connect payment wallet",
     });
     await dialog.getByRole("checkbox").check();
-    await dialog
-      .getByRole("button", { name: "Sign and publish wallet" })
-      .click();
+    await dialog.getByRole("button", { name: "Connect wallet" }).click();
     await expect(person.page.getByTestId("payment-wallet-address")).toHaveText(
       new RegExp(person.wallet.address, "i"),
       { timeout: 60_000 },
@@ -707,7 +705,9 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   // ── After the challenge window, the labor contributor takes the payment; the deposit comes back ─────────
   await pass(700_000);
   await open(labor, "Work");
-  await labor.page.getByRole("button", { name: "Refresh work status" }).click();
+  await labor.page
+    .getByRole("button", { name: "Refresh", exact: true })
+    .click();
   await labor.page.getByTestId("work-payout").click();
   await expect(labor.page.getByTestId("work-claim-status")).toContainText(
     "Paid",

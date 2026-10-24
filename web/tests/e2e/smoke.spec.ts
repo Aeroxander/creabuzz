@@ -281,30 +281,27 @@ test("invite requires age and legal consent before opening Creaton", async ({
   });
   await page.goto("/invite/demo-code");
 
-  await expect(
-    page.getByRole("link", { name: "Download it now" }),
-  ).toHaveAttribute(
-    "href",
-    "https://github.com/block/buzz/releases/download/v0.4.9/Buzz_0.4.9_x64-setup_alpha-unsigned.exe",
+  // The first release is the web app alone: no desktop download is offered (VITE_DESKTOP_APP is off).
+  await expect(page.getByRole("link", { name: "Download it now" })).toHaveCount(
+    0,
   );
   await expect(
-    page.getByRole("link", { name: "Browse releases" }),
-  ).toHaveAttribute("href", "https://github.com/block/buzz/releases");
+    page.getByRole("button", { name: "Accept invite in Creaton" }),
+  ).toHaveCount(0);
 
   const ageConfirmation = page.getByLabel("I am 18 years of age or older.");
   const agreementConfirmation = page.getByLabel(
-    "I agree to the Creaton Terms of Service and Privacy Policy.",
+    "I agree to the Creaton Terms of use and Privacy note.",
   );
-  const acceptInvite = page.getByRole("button", {
-    name: "Accept invite in Creaton",
-  });
+  await page.getByTestId("invite-name").fill("Sam");
+  const acceptInvite = page.getByTestId("invite-create-and-join");
 
   await expect(ageConfirmation).toBeVisible();
   await expect(agreementConfirmation).toBeVisible();
   await expect(acceptInvite).toBeDisabled();
 
-  const termsLink = page.getByRole("button", { name: "Terms of Service" });
-  const privacyLink = page.getByRole("button", { name: "Privacy Policy" });
+  const termsLink = page.getByRole("button", { name: "Terms of use" });
+  const privacyLink = page.getByRole("button", { name: "Privacy note" });
   await expect(termsLink).toHaveCSS("text-decoration-line", "none");
   await expect(privacyLink).toHaveCSS("text-decoration-line", "none");
   await termsLink.hover();
@@ -322,7 +319,7 @@ test("invite requires age and legal consent before opening Creaton", async ({
   await page
     .locator("label")
     .filter({
-      hasText: "I agree to the Creaton Terms of Service and Privacy Policy.",
+      hasText: "I agree to the Creaton Terms of use and Privacy note.",
     })
     .click({ position: { x: 8, y: 8 } });
   await expect(agreementConfirmation).toBeChecked();
@@ -333,7 +330,6 @@ test("invite requires age and legal consent before opening Creaton", async ({
     .boundingBox();
   const acceptButtonBox = await acceptInvite.boundingBox();
   expect(consentBox?.y).toBeLessThan(acceptButtonBox?.y ?? 0);
-  expect(consentBox?.width).toBe(acceptButtonBox?.width);
 });
 
 test("invite can enroll a NIP-07 identity for browser access", async ({
@@ -420,6 +416,10 @@ test("invite can enroll a NIP-07 identity for browser access", async ({
 test("invite asks Safari users to choose their Mac download", async ({
   browser,
 }) => {
+  test.skip(
+    process.env.VITE_DESKTOP_APP !== "1",
+    "the desktop app is offered only by a build with VITE_DESKTOP_APP=1",
+  );
   const context = await browser.newContext({
     userAgent:
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Version/26.5 Safari/605.1.15",
@@ -487,6 +487,10 @@ test("invite asks Safari users to choose their Mac download", async ({
 test("invite download links to the appropriate platform destination", async ({
   browser,
 }) => {
+  test.skip(
+    process.env.VITE_DESKTOP_APP !== "1",
+    "the desktop app is offered only by a build with VITE_DESKTOP_APP=1",
+  );
   const devices = [
     {
       name: "iPhone Safari",
@@ -1014,7 +1018,7 @@ test("a bound wallet can be unbound, and the proof names the revoke endpoint", a
   await page.getByTestId("user-chip").click();
   await expect(page.getByTestId("wallet-binding")).toContainText("0xabab…abab");
 
-  await page.getByRole("button", { name: "Unbind wallet" }).click();
+  await page.getByRole("button", { name: "Disconnect wallet" }).click();
   await expect(page.getByTestId("confirm-dialog")).toBeVisible();
   await page.getByTestId("confirm-accept").click();
 

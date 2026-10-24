@@ -71,12 +71,15 @@ function AwardStoryLine({
       </span>
       {story.evidence ? (
         <span data-testid="contribution-award-evidence">
-          In their words: “{shortEvidence(story.evidence)}”
+          {/* Evidence that is only a link is shown as the link: quoting a long address tells a reader nothing. */}
+          {link && story.evidence.trim() === link
+            ? null
+            : `In their words: “${shortEvidence(story.evidence)}”`}
           {link ? (
             <>
               {" "}
               <a
-                className="break-all text-primary-ink underline-offset-4 hover:underline"
+                className="break-all text-primary-ink underline underline-offset-4"
                 href={link}
                 rel="noopener noreferrer"
                 target="_blank"
@@ -301,11 +304,9 @@ export function ContributionsTab({
         <h2 className="text-base font-bold">Who earned the Shares</h2>
         <p className="text-sm text-muted-foreground">
           {contributor
-            ? "This project started without a token sale. New Shares come only from awards: the reviewers approve the work, then Shareholders vote to award it. "
+            ? "New Shares come only from awards: the reviewers approve the work, then the project votes to award it. "
             : ""}
-          Every award below is read from the network and checked against the
-          Shares that reached the person, not taken from what anyone wrote about
-          the work. Past awards can differ from what someone holds today.
+          Each award is checked against the Shares the person received.
         </p>
         {testNotice ? (
           <p

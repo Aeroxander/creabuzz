@@ -113,7 +113,7 @@ function AddrLink({ chainId, address }: { chainId: number; address: string }) {
     </a>
   ) : (
     <span className="break-all text-black/60 dark:text-white/60">
-      {truncatePubkey(address)} (onchain read, no explorer on this chain)
+      {truncatePubkey(address)}
     </span>
   );
 }

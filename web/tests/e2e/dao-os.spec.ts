@@ -175,7 +175,7 @@ test("Home connects project reports, reading history, discussion and the four ma
   const progress = page.getByTestId("project-progress");
   await expect(progress).toContainText("Beta demo shipped");
   await expect(progress).not.toContainText("Fake official update");
-  await expect(progress).toContainText("not an independent verification");
+  await expect(progress).toContainText("not checked by anyone else");
   await expectAccessible(page, "Home project progress cards");
   await expect(
     progress.getByRole("link", { name: "Artifact 1" }),
@@ -511,7 +511,8 @@ test("the project-first experience fits a phone and preserves readable actions",
   });
   await page.setViewportSize({ width: 320, height: 740 });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
-  await expect(page.getByTestId("app-nav-start")).toHaveCount(0);
+  // On a phone Start is a tab in the bottom bar (D108), and the bar still fits a 320-wide screen.
+  await expect(page.getByTestId("app-nav-start")).toBeVisible();
   const overflow = await page.evaluate(() => ({
     width: innerWidth,
     scroll: document.documentElement.scrollWidth,

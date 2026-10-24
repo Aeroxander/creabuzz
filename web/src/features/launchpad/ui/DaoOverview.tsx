@@ -165,63 +165,90 @@ export function DaoOverview({
 
   return (
     <div className="flex flex-col gap-4" data-testid="dao-overview">
-      <Card className="p-4" data-testid="dao-needs-you">
-        <h3 className="text-sm font-semibold">Needs you</h3>
-        {wallet === null ? (
-          <p className="mt-1 text-sm text-muted-foreground">
-            Connect your wallet in the Decisions or Work tab to see what is
-            waiting for you.
-          </p>
-        ) : (
-          <>
-            {unread ? (
-              <div
-                className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
-                data-testid="dao-unread"
-                role="status"
+      {/* Without a wallet nothing can be waiting on this person: Ways to help, below, is how they start. */}
+      {wallet === null ? null : (
+        <Card className="p-4" data-testid="dao-needs-you">
+          <h3 className="text-sm font-semibold">Needs you</h3>
+          {unread ? (
+            <div
+              className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+              data-testid="dao-unread"
+              role="status"
+            >
+              <span>
+                {items.length === 0
+                  ? "Could not read this project just now, so we cannot say whether anything is waiting for you."
+                  : "Could not read all of this project just now, so this list may be missing something."}
+              </span>
+              <Button
+                data-testid="dao-unread-retry"
+                onClick={retryReads}
+                size="sm"
+                type="button"
+                variant="outline"
               >
-                <span>
-                  {items.length === 0
-                    ? "Could not read this project just now, so we cannot say whether anything is waiting for you."
-                    : "Could not read all of this project just now, so this list may be missing something."}
-                </span>
-                <Button
-                  data-testid="dao-unread-retry"
-                  onClick={retryReads}
-                  size="sm"
-                  type="button"
-                  variant="outline"
+                Try again
+              </Button>
+            </div>
+          ) : null}
+          {items.length === 0 ? (
+            unread ? null : (
+              <p
+                className="mt-1 text-sm text-muted-foreground"
+                data-testid="dao-nothing"
+              >
+                {loading ? "Checking…" : "Nothing is waiting for you."}
+              </p>
+            )
+          ) : (
+            <ul className="mt-2 divide-y divide-border/60">
+              {items.map((item) => (
+                <li
+                  className="flex items-start justify-between gap-3 py-2"
+                  data-testid="dao-attention"
+                  key={item.key}
                 >
-                  Try again
-                </Button>
-              </div>
-            ) : null}
-            {items.length === 0 ? (
-              unread ? null : (
-                <p
-                  className="mt-1 text-sm text-muted-foreground"
-                  data-testid="dao-nothing"
-                >
-                  {loading ? "Checking…" : "Nothing is waiting for you."}
-                </p>
-              )
-            ) : (
-              <ul className="mt-2 divide-y divide-border/60">
-                {items.map((item) => (
+                  <span className="text-sm">
+                    {item.text}
+                    {item.why || item.ifIgnored || item.due ? (
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {item.due !== undefined && item.due > clock
+                          ? `Closes ${deadline(item.due)}. `
+                          : ""}
+                        {item.why ? `${item.why} ` : ""}
+                        {item.ifIgnored ?? ""}
+                      </span>
+                    ) : null}
+                  </span>
+                  <Button
+                    onClick={() => onOpen(item.tab, item.claim)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {item.action}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {waiting.length > 0 ? (
+            <div className="mt-3" data-testid="dao-waiting-others">
+              <h4 className="text-xs font-semibold text-muted-foreground">
+                Waiting on someone else
+              </h4>
+              <ul className="mt-1 divide-y divide-border/60">
+                {waiting.map((item) => (
                   <li
                     className="flex items-start justify-between gap-3 py-2"
-                    data-testid="dao-attention"
+                    data-testid="dao-waiting"
                     key={item.key}
                   >
                     <span className="text-sm">
                       {item.text}
-                      {item.why || item.ifIgnored || item.due ? (
+                      {item.due !== undefined && item.due > clock ? (
                         <span className="mt-0.5 block text-xs text-muted-foreground">
-                          {item.due !== undefined && item.due > clock
-                            ? `Closes ${deadline(item.due)}. `
-                            : ""}
-                          {item.why ? `${item.why} ` : ""}
-                          {item.ifIgnored ?? ""}
+                          {`Changes ${deadline(item.due)}.`}
                         </span>
                       ) : null}
                     </span>
@@ -229,50 +256,17 @@ export function DaoOverview({
                       onClick={() => onOpen(item.tab, item.claim)}
                       size="sm"
                       type="button"
-                      variant="outline"
+                      variant="ghost"
                     >
                       {item.action}
                     </Button>
                   </li>
                 ))}
               </ul>
-            )}
-            {waiting.length > 0 ? (
-              <div className="mt-3" data-testid="dao-waiting-others">
-                <h4 className="text-xs font-semibold text-muted-foreground">
-                  Waiting on someone else
-                </h4>
-                <ul className="mt-1 divide-y divide-border/60">
-                  {waiting.map((item) => (
-                    <li
-                      className="flex items-start justify-between gap-3 py-2"
-                      data-testid="dao-waiting"
-                      key={item.key}
-                    >
-                      <span className="text-sm">
-                        {item.text}
-                        {item.due !== undefined && item.due > clock ? (
-                          <span className="mt-0.5 block text-xs text-muted-foreground">
-                            {`Changes ${deadline(item.due)}.`}
-                          </span>
-                        ) : null}
-                      </span>
-                      <Button
-                        onClick={() => onOpen(item.tab, item.claim)}
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        {item.action}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </>
-        )}
-      </Card>
+            </div>
+          ) : null}
+        </Card>
+      )}
       {openAreas > 0 || (contributor && work.data) ? (
         <Card
           className="flex flex-wrap items-center justify-between gap-3 p-4"
@@ -309,23 +303,27 @@ export function DaoOverview({
           </span>
         </Card>
       ) : null}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Figure
-          label="In the treasury"
-          note={
-            !launch.record.currency
-              ? "This project did not raise money"
-              : money === null
-                ? "Could not be read"
-                : "What the DAO holds now. Money already set aside for work is not counted."
-          }
-          testId="dao-figure-treasury"
-          value={
-            money === null || money === undefined || !sale
-              ? "—"
-              : `${formatUnits(money, sale.decimals)} ${symbol}`.trim()
-          }
-        />
+      <div
+        className={`grid gap-3 ${contributor ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}
+      >
+        {contributor ? null : (
+          <Figure
+            label="In the treasury"
+            note={
+              !launch.record.currency
+                ? "This project did not raise money"
+                : money === null
+                  ? "Could not be read"
+                  : "What the DAO holds now. Money already set aside for work is not counted."
+            }
+            testId="dao-figure-treasury"
+            value={
+              money === null || money === undefined || !sale
+                ? "—"
+                : `${formatUnits(money, sale.decimals)} ${symbol}`.trim()
+            }
+          />
+        )}
         <Figure
           label="Shares in all"
           testId="dao-figure-shares"
@@ -342,7 +340,10 @@ export function DaoOverview({
           }
         />
       </div>
-      <ProjectDeliveryOverview launch={launch} dao={dao} onOpen={onOpen} />
+      {/* The team's own task board, from the community's workspace: a contributor project's work is on its Work tab. */}
+      {contributor ? null : (
+        <ProjectDeliveryOverview launch={launch} dao={dao} onOpen={onOpen} />
+      )}
       <Card className="p-4">
         <h2 className="text-base font-bold">Where things stand</h2>
         <p
@@ -389,7 +390,7 @@ export function DaoOverview({
         onOpen={() => onOpen("milestones")}
       />
 
-      {spending && sale ? (
+      {spending && sale && !contributor ? (
         <SpendingCard
           chainId={chainId}
           decimals={sale.decimals}
@@ -400,7 +401,7 @@ export function DaoOverview({
           symbol={symbol}
         />
       ) : null}
-      {moneyIn.data && sale ? (
+      {contributor ? null : moneyIn.data && sale ? (
         <MoneyInCard
           chainId={chainId}
           decimals={sale.decimals}
@@ -413,26 +414,28 @@ export function DaoOverview({
         <MoneyInUnavailable onRetry={() => void moneyIn.refetch()} />
       ) : null}
 
-      <Card
-        className="flex flex-wrap items-center justify-between gap-3 p-4"
-        data-testid="dao-record-link"
-      >
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold">Track record</h3>
-          <p className="text-sm text-muted-foreground">
-            What this DAO has paid and to whom, and how much of its team's
-            tokens have unlocked so far. Anyone can check it.
-          </p>
-        </div>
-        <Button
-          onClick={() => onOpen("record")}
-          size="sm"
-          type="button"
-          variant="outline"
+      {contributor ? null : (
+        <Card
+          className="flex flex-wrap items-center justify-between gap-3 p-4"
+          data-testid="dao-record-link"
         >
-          Open the track record
-        </Button>
-      </Card>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold">Track record</h3>
+            <p className="text-sm text-muted-foreground">
+              What this DAO has paid and to whom, and how much of its team's
+              tokens have unlocked so far. Anyone can check it.
+            </p>
+          </div>
+          <Button
+            onClick={() => onOpen("record")}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Open the track record
+          </Button>
+        </Card>
+      )}
 
       {latest.length > 0 ? (
         <Card className="p-4" data-testid="dao-latest">
@@ -467,15 +470,17 @@ export function DaoOverview({
       ) : null}
 
       <ProjectProgressFeed project={launch} compact />
-      <details
-        className="rounded-xl border border-border/60 px-3 py-2"
-        data-testid="dao-raise-details"
-      >
-        <summary className="cursor-pointer text-sm font-medium select-none">
-          About the raise this project came from
-        </summary>
-        <div className="mt-3 flex flex-col gap-4">{children}</div>
-      </details>
+      {contributor ? null : (
+        <details
+          className="rounded-xl border border-border/60 px-3 py-2"
+          data-testid="dao-raise-details"
+        >
+          <summary className="cursor-pointer text-sm font-medium select-none">
+            About the raise this project came from
+          </summary>
+          <div className="mt-3 flex flex-col gap-4">{children}</div>
+        </details>
+      )}
     </div>
   );
 }

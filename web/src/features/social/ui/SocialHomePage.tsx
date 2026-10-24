@@ -81,7 +81,8 @@ export function SocialHomePage() {
         {me ? <HomeYours me={me} /> : null}
         <HomeHero />
       </div>
-      {tab === "boards" ? null : <PostComposer postTo />}
+      {/* Signed out, the welcome above already offers the account: no second offer right under it. */}
+      {tab === "boards" || !me ? null : <PostComposer postTo />}
       {tab === "everyone" ? (
         <SortBar
           onPeriod={setPeriod}

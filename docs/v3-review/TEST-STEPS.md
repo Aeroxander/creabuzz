@@ -1365,3 +1365,34 @@ By hand, before the first hosted start:
 3. `./run.sh backup`, copy the folder to another machine, and practise `./run.sh restore <dir> --yes` there (README,
    "Backups") before inviting anyone.
 
+
+## 4be. Every screen, photographed and read (D108, 2026-10-24)
+
+```bash
+scripts/web-screen-audit.sh            # builds the world, then 118 stops at desktop and phone width (about 45 minutes)
+KEEP=1 scripts/web-screen-audit.sh     # the same, then leaves the world up at http://localhost:3199 for a look by hand
+pnpm --dir web test                    # recovery-key, contributor-status, record-people, share-rules, mode-copy
+node --test scripts/check-copy-core.test.mjs   # the plain-words rule
+```
+
+The pictures, the words on each screen and `index.ndjson` (accessibility findings, sideways scroll) land in
+`test-results/screen-audit-<date>/before/` unless `SHOTS` says otherwise. The people and their keys are in
+`web/tests/e2e-real/audit-people.mjs`; `KEEP=1` writes the server address to `test-results/screen-audit.env`.
+
+By hand, on a phone-sized window:
+
+1. Signed out, open Home: "Find projects. Help build them." The bottom bar has Start; the strip under the top bar has
+   Search.
+2. **Sign up** → the title comes first, then Name and About you (optional), the terms, **Create with a passkey**. Use
+   **Create without a passkey**, give a name. Home's **Get started** asks you to look at a project and follow one;
+   **I'm starting a project** asks you to start yours, and its Go opens the contributor form. Nothing mentions backing or
+   money. Open the account menu (on a phone, the picture at the right of the bottom bar; it opens upward, all on
+   screen): your name, no key. **Sign out**: it says your recovery key
+   is not saved and offers **Save recovery key**. Save it, then **Sign out**: you are back on Home, signed out.
+3. **Sign up** → **I already have an account**, paste the key: you are back as the same person, with the same name.
+   A wrong key says what to check; an `nsec1…` key from another app works too.
+4. Open the Creaton project as a visitor: six tabs (Overview, Contributions, Decisions, Work, Discussion, Updates), no
+   money, no addresses, back link to Discover. Work shows **Create your account** instead of the submit form.
+5. Signed in with a wallet, open Decisions: the award reads in sentences, the vote buttons say Back it, Oppose and Neutral, and
+   the decision picker offers no money decisions.
+6. Open an invite link: no desktop app is offered; the policies are "Terms of use" and "Privacy note".

@@ -958,7 +958,7 @@ export function CreateLaunchDialog({
             >
               <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
                 Advanced
-                <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
+                <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
                   exact values, raw blocks, cliffs and hooks
                 </span>
               </summary>

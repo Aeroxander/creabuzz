@@ -118,6 +118,7 @@ export function PostComposer({
       <div>
         <input
           accept="image/png,image/jpeg,image/gif,image/webp"
+          aria-label="Add a picture"
           className="sr-only"
           data-testid="board-composer-file"
           id="board-post-picture"

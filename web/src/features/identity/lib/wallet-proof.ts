@@ -55,7 +55,7 @@ export function walletAttestationDigest(
     a.npub.length !== 32 ||
     a.npub.some((n) => !Number.isInteger(n) || n < 0 || n > 255)
   ) {
-    throw new Error("Invalid Nostr key in wallet proof");
+    throw new Error("The wallet link names an account that is not valid");
   }
   const domain = keccak_256(
     concatBytes(

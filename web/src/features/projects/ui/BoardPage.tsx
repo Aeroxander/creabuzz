@@ -145,8 +145,8 @@ export function BoardPage() {
             to="/launchpad"
           >
             <span>
-              Form the DAO later. The launchpad turns a recorded ownership map
-              into token allocations at launch.
+              Ready to raise money later? The agreed shares carry over to the
+              project's launch.
             </span>
             <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
           </Link>

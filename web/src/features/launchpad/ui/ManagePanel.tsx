@@ -523,7 +523,7 @@ export function ManagePanel({
         >
           <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
             Milestone attestation
-            <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
+            <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
               for people who settle milestone claims
             </span>
           </summary>
@@ -722,7 +722,7 @@ export function ManagePanel({
         >
           <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
             Trust scores
-            <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
+            <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
               for the person who publishes this community's scores
             </span>
           </summary>

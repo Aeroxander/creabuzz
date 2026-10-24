@@ -113,7 +113,7 @@ export function InviteJoinPolicyNotice({
 
       {policy.terms_markdown || policy.privacy_markdown ? (
         <PolicyCheckbox
-          accessibleLabel="I agree to the Creaton Terms of Service and Privacy Policy."
+          accessibleLabel="I agree to the Creaton Terms of use and Privacy note."
           checked={agreementConfirmed}
           onCheckedChange={onAgreementConfirmedChange}
         >
@@ -125,15 +125,15 @@ export function InviteJoinPolicyNotice({
               onClick={(event) =>
                 stopLabelActivation(
                   event,
-                  "Terms of Service",
+                  "Terms of use",
                   policy.terms_markdown ?? "",
                 )
               }
             >
-              Terms of Service
+              Terms of use
             </button>
           ) : (
-            "Terms of Service"
+            "Terms of use"
           )}{" "}
           and{" "}
           {policy.privacy_markdown ? (
@@ -143,15 +143,15 @@ export function InviteJoinPolicyNotice({
               onClick={(event) =>
                 stopLabelActivation(
                   event,
-                  "Privacy Policy",
+                  "Privacy note",
                   policy.privacy_markdown ?? "",
                 )
               }
             >
-              Privacy Policy
+              Privacy note
             </button>
           ) : (
-            "Privacy Policy"
+            "Privacy note"
           )}
           .
         </PolicyCheckbox>

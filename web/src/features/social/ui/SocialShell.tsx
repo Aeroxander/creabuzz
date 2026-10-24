@@ -6,6 +6,7 @@ import {
   Feather,
   Mail,
   PenLine,
+  Search,
   User,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -22,6 +23,7 @@ type NavLinkTarget =
   | { to: "/social/notifications" }
   | { to: "/social/messages" }
   | { to: "/social/bookmarks" }
+  | { to: "/social/search" }
   | { to: "/u/$pubkey"; params: { pubkey: string } };
 
 interface NavEntry {
@@ -133,7 +135,20 @@ export function SocialShell({
   rail?: boolean;
 }) {
   const entries = useNavEntries();
-  const mobileEntries = entries.filter((entry) => entry.key !== "feed");
+  // On a phone the app's own tab bar has Home but no search box, so the strip carries Search, and is always shown.
+  const mobileEntries: NavEntry[] = [
+    ...entries.filter((entry) => entry.key === "explore"),
+    {
+      key: "search",
+      label: "Search",
+      icon: Search,
+      link: { to: "/social/search" },
+      prefix: "/social/search",
+    },
+    ...entries.filter(
+      (entry) => entry.key !== "feed" && entry.key !== "explore",
+    ),
+  ];
   const compose = useCompose();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -166,9 +181,8 @@ export function SocialShell({
         </nav>
 
         <div className="glass min-h-full min-w-0 border-x">
-          {/* On a phone Home is already in the app's own tab bar, so the strip only carries the rest, and is left out when
-              that is just one thing. */}
-          {mobileEntries.length > 1 ? (
+          {/* On a phone Home is already in the app's own tab bar, so the strip carries the rest. */}
+          {mobileEntries.length > 0 ? (
             <nav
               aria-label="Social"
               className="sticky top-0 z-20 flex gap-1 overflow-x-auto border-b border-border/60 bg-background/70 px-2 py-1 backdrop-blur md:hidden"

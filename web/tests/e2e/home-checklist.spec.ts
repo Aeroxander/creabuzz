@@ -4,9 +4,8 @@ import { getPublicKey } from "nostr-tools/pure";
 import { createMockRelay } from "./mock-relay";
 
 /**
- * Home's "Get started" list for someone who has just signed up. It asks different things of someone who came to back
- * projects and someone who came to build one. Every box is ticked only for something that really happened, the first
- * three are the way in, and the rest are for later and never hold the list open.
+ * Home's "Get started" list for someone who has just signed up. It asks different things of someone who came to help on
+ * projects and someone starting one. Every box is ticked only for something that really happened.
  */
 
 const OWNER_NSEC = "55".repeat(32);
@@ -50,7 +49,7 @@ async function openHome(
   await page.goto("/");
 }
 
-test("a new account starts as a backer: asked to look at a project and follow or back one, never to start a project or run a helper", async ({
+test("a new account starts as a helper: asked to look at a project and follow one, never about money", async ({
   page,
 }) => {
   await openHome(page);
@@ -59,36 +58,29 @@ test("a new account starts as a backer: asked to look at a project and follow or
   // The name is real (the profile above), the rest has not happened.
   await expect(list).toContainText("1 of 3 done");
   await expect(list.getByText("Look at a project")).toBeVisible();
-  await expect(list.getByText("Follow a project, or back one")).toBeVisible();
-  // Backing money is for later and never holds the list open.
-  await expect(
-    list.getByText("Optional, for when you have read"),
-  ).toBeVisible();
-  // A backer is not asked to do a founder's work.
-  await expect(list).not.toContainText("ready-made team");
-  await expect(list).not.toContainText("AI helper");
+  await expect(list.getByText("Follow a project or a person")).toBeVisible();
+  // This release has no sales: nothing asks anyone to back, bid or put money in.
+  await expect(list).not.toContainText(/back a project|bid|sale|money/i);
   await expect(list.getByRole("link", { name: "Go" }).first()).toHaveAttribute(
     "href",
     "/discover",
   );
 });
 
-test("a founder is asked to publish a project and set up its funding agreement; workspace and helper wait", async ({
+test("someone starting a project is sent to start it with the work it needs, and the choice is remembered", async ({
   page,
 }) => {
   await openHome(page);
   const list = page.getByTestId("home-getting-started");
   await expect(list).toBeVisible({ timeout: 20_000 });
   await list.getByTestId("home-role-founder").click();
-  await expect(list).toContainText("1 of 3 done");
-  await expect(list.getByText("Publish your project")).toBeVisible();
-  await expect(list.getByText("Set up your funding agreement")).toBeVisible();
-  // The workspace and the AI helper are still there, marked optional, and not counted.
-  await expect(list.getByTestId("home-step-workspace")).toContainText(
-    "Optional.",
+  await expect(list).toContainText("1 of 2 done");
+  await expect(list.getByText("Start your project")).toBeVisible();
+  await expect(list.getByRole("link", { name: "Go" })).toHaveAttribute(
+    "href",
+    "/start/contributor",
   );
-  await expect(list.getByTestId("home-step-helper")).toContainText("Optional.");
-  // The choice is remembered, and a backer is not shown the founder's list on the next visit by accident.
+  await expect(list).not.toContainText(/funding|tokens|AI helper/i);
   await page.reload();
   await expect(page.getByTestId("home-role-founder")).toHaveAttribute(
     "aria-pressed",
@@ -188,7 +180,7 @@ test.describe("the one door for starting something", () => {
   });
 });
 
-test("someone who is not signed in is told what the product is for: backing teams whose tokens unlock with their milestones", async ({
+test("someone who is not signed in is told what the product is for: projects they can talk about and help build", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -196,14 +188,14 @@ test("someone who is not signed in is told what the product is for: backing team
   await page.goto("/");
   const welcome = page.getByTestId("home-welcome");
   await expect(welcome).toBeVisible({ timeout: 15_000 });
-  // Funding and milestone accountability come first; the helpers are one of three supporting ideas, not the headline.
-  await expect(welcome.getByRole("heading")).toContainText("Back teams.");
-  await expect(welcome.getByRole("heading")).not.toContainText("AI helpers");
-  await expect(welcome).toContainText(
-    "see the team's tokens unlock as its milestones are reached",
-  );
-  await expect(welcome).toContainText(
-    "The team's tokens unlock with its milestones",
-  );
-  await expect(welcome).toContainText("AI helpers do the legwork");
+  // The first release is the conversation and contributor work (D108): no sale, no tokens unlocking, no AI helpers.
+  await expect(welcome.getByRole("heading")).toContainText("Find projects.");
+  await expect(welcome).toContainText("pick up a piece of work");
+  await expect(welcome).toContainText("Do useful work");
+  await expect(welcome).not.toContainText("tokens");
+  await expect(welcome).not.toContainText("AI helpers");
+  // The welcome is the one offer of an account on Home: no second one in the composer's place right under it.
+  await expect(
+    page.getByRole("button", { name: "Create your account" }),
+  ).toHaveCount(1);
 });

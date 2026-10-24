@@ -7,51 +7,47 @@ const none = {
   named: false,
   lookedAtProject: false,
   follows: false,
-  backed: false,
   published: false,
-  setUpMilestones: false,
-  madeWorkspace: false,
-  ranHelper: false,
 };
 
-test("someone starts as a backer until they say otherwise, and a bad stored value does not break it", () => {
-  assert.equal(DEFAULT_ROLE, "backer");
-  assert.equal(parseRole(null), "backer");
+test("someone starts as a helper until they say otherwise, and an old or bad stored value does not break it", () => {
+  assert.equal(DEFAULT_ROLE, "helper");
+  assert.equal(parseRole(null), "helper");
   assert.equal(parseRole("founder"), "founder");
-  assert.equal(parseRole("backer"), "backer");
-  assert.equal(parseRole("admin"), "backer");
+  assert.equal(parseRole("helper"), "helper");
+  assert.equal(parseRole("backer"), "helper");
+  assert.equal(parseRole("admin"), "helper");
 });
 
-test("a backer is never asked to start a project or run an AI helper", () => {
-  const labels = stepsFor("backer", none).map((s) => s.label.toLowerCase());
-  for (const label of labels) {
-    assert.doesNotMatch(
-      label,
-      /start a project|ai helper|ready-made|workspace/,
-    );
+test("neither list asks for money, a sale or an AI helper", () => {
+  for (const role of ["helper", "founder"]) {
+    for (const step of stepsFor(role, none)) {
+      assert.doesNotMatch(
+        `${step.label} ${step.hint}`.toLowerCase(),
+        /back|bid|sale|money|token|funding|ai helper|refund/,
+        `${role}: ${step.label}`,
+      );
+    }
   }
-  assert.deepEqual(
-    stepsFor("backer", none)
-      .filter((s) => !s.optional)
-      .map((s) => s.id),
-    ["name", "look", "follow-or-back"],
-  );
 });
 
-test("a founder is asked to publish and set up the agreement, with the workspace and helper for later", () => {
-  const steps = stepsFor("founder", none);
+test("a helper looks at a project and follows one; a founder starts theirs", () => {
   assert.deepEqual(
-    steps.filter((s) => !s.optional).map((s) => s.id),
-    ["name", "publish", "milestones"],
+    stepsFor("helper", none).map((s) => s.id),
+    ["name", "look", "follow"],
   );
   assert.deepEqual(
-    steps.filter((s) => s.optional).map((s) => s.id),
-    ["workspace", "helper"],
+    stepsFor("founder", none).map((s) => s.id),
+    ["name", "publish"],
+  );
+  assert.equal(
+    stepsFor("founder", none).find((s) => s.id === "publish").to,
+    "/start/contributor",
   );
 });
 
 test("nothing is ticked that has not happened", () => {
-  for (const role of ["backer", "founder"]) {
+  for (const role of ["helper", "founder"]) {
     assert.ok(
       stepsFor(role, none).every((s) => !s.done),
       role,
@@ -59,39 +55,23 @@ test("nothing is ticked that has not happened", () => {
   }
 });
 
-test("a backer's way in is done once they have a name and have followed or backed a project", () => {
-  assert.equal(wayInDone(stepsFor("backer", { ...none, named: true })), false);
+test("a helper's way in is done once they have a name and follow someone", () => {
+  assert.equal(wayInDone(stepsFor("helper", { ...none, named: true })), false);
   assert.equal(
-    wayInDone(stepsFor("backer", { ...none, named: true, follows: true })),
-    true,
-  );
-  assert.equal(
-    wayInDone(stepsFor("backer", { ...none, named: true, backed: true })),
+    wayInDone(stepsFor("helper", { ...none, named: true, follows: true })),
     true,
   );
 });
 
-test("following or backing counts as having looked, so the list never asks for a look that obviously happened", () => {
-  const steps = stepsFor("backer", { ...none, follows: true });
+test("following counts as having looked, so the list never asks for a look that obviously happened", () => {
+  const steps = stepsFor("helper", { ...none, follows: true });
   assert.equal(steps.find((s) => s.id === "look").done, true);
 });
 
-test("a founder's way in needs a published project and its funding agreement, not a workspace or a helper", () => {
-  const base = { ...none, named: true, published: true };
-  assert.equal(wayInDone(stepsFor("founder", base)), false);
+test("a founder's way in is done once they have a name and a published project", () => {
+  assert.equal(wayInDone(stepsFor("founder", { ...none, named: true })), false);
   assert.equal(
-    wayInDone(stepsFor("founder", { ...base, setUpMilestones: true })),
+    wayInDone(stepsFor("founder", { ...none, named: true, published: true })),
     true,
   );
-  assert.equal(
-    wayInDone(
-      stepsFor("founder", { ...base, madeWorkspace: true, ranHelper: true }),
-    ),
-    false,
-  );
-});
-
-test("backing is optional for a backer's way in: the money step never holds the list open", () => {
-  const back = stepsFor("backer", none).find((s) => s.id === "back");
-  assert.equal(back.optional, true);
 });

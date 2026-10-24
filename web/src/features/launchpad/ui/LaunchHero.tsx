@@ -5,6 +5,8 @@
 
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Star } from "lucide-react";
+
+import { isContributorProject } from "../lib/funding";
 import type { ReactNode } from "react";
 
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
@@ -81,11 +83,13 @@ export function LaunchHero({
 
   return (
     <header className="flex flex-col gap-4" data-testid="launch-hero">
+      {/* A contributor project is found on Discover, not among the raises. */}
       <Link
         className="flex items-center gap-1 text-sm text-muted-foreground hover:underline"
-        to="/launchpad"
+        to={isContributorProject(record) ? "/discover" : "/launchpad"}
       >
-        <ArrowLeft aria-hidden className="h-4 w-4" /> Launchpad
+        <ArrowLeft aria-hidden className="h-4 w-4" />{" "}
+        {isContributorProject(record) ? "Discover" : "Launchpad"}
       </Link>
       <div className="relative">
         <div

@@ -119,14 +119,14 @@ async function walletAndServer(
 
 async function publishFromProfile(page: Page) {
   await page
-    .getByRole("button", { name: "Link payment wallet", exact: true })
+    .getByRole("button", { name: "Connect payment wallet", exact: true })
     .click();
-  const dialog = page.getByRole("dialog", { name: "Link payment wallet" });
+  const dialog = page.getByRole("dialog", { name: "Connect payment wallet" });
   await expect(
-    dialog.getByRole("button", { name: "Sign and publish wallet" }),
+    dialog.getByRole("button", { name: "Connect wallet" }),
   ).toBeDisabled();
   await dialog.getByRole("checkbox").check();
-  await dialog.getByRole("button", { name: "Sign and publish wallet" }).click();
+  await dialog.getByRole("button", { name: "Connect wallet" }).click();
 }
 
 test("a public profile offers the full address and network only after verifying both signatures", async ({
@@ -140,8 +140,9 @@ test("a public profile offers the full address and network only after verifying 
   await page.setViewportSize({ width: 390, height: 750 });
   await page.goto(`/u/${ME}`);
   const card = page.getByTestId("payment-wallet");
-  await expect(card).toContainText("Both signatures verified");
-  await expect(card).toContainText("Base · Chain 8453");
+  await expect(card).toContainText("Verified");
+  await expect(card).toContainText("Base");
+  await expect(card).not.toContainText("Chain 8453");
   await expect(card.getByTestId("payment-wallet-address")).toHaveText(
     "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   );
@@ -171,9 +172,7 @@ test("a logged-in person can explicitly publish their wallet proof without chang
   const wallet = await walletAndServer(page);
   await page.goto(`/u/${ME}`);
   await publishFromProfile(page);
-  await expect(page.getByTestId("payment-wallet")).toContainText(
-    "Both signatures verified",
-  );
+  await expect(page.getByTestId("payment-wallet")).toContainText("Verified");
   const record = relay.events.find((e) => e.kind === 37017);
   expect(record?.pubkey).toBe(ME);
   expect(record && verifyEvent(record)).toBe(true);
@@ -185,9 +184,7 @@ test("a logged-in person can explicitly publish their wallet proof without chang
     page.getByRole("link", { name: "Profile", exact: true }),
   ).toHaveAttribute("href", `/u/${ME}`);
   await page.reload();
-  await expect(page.getByTestId("payment-wallet")).toContainText(
-    "Both signatures verified",
-  );
+  await expect(page.getByTestId("payment-wallet")).toContainText("Verified");
 });
 
 test("a refused public proof remains retryable after reload without another wallet signature", async ({
@@ -212,9 +209,7 @@ test("a refused public proof remains retryable after reload without another wall
   ).toBeVisible();
   refuse = false;
   await page.getByRole("button", { name: "Retry wallet update" }).click();
-  await expect(page.getByTestId("payment-wallet")).toContainText(
-    "Both signatures verified",
-  );
+  await expect(page.getByTestId("payment-wallet")).toContainText("Verified");
   expect(
     wallet.calls.filter(
       (m) => m === "personal_sign" || m === "eth_signTypedData_v4",
@@ -254,12 +249,10 @@ test("a failed wallet registration can be linked again without stranding the sav
     .click();
   options.failRegistration = false;
   await page.getByRole("button", { name: "Link again", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Link payment wallet" });
+  const dialog = page.getByRole("dialog", { name: "Connect payment wallet" });
   await dialog.getByRole("checkbox").check();
-  await dialog.getByRole("button", { name: "Sign and publish wallet" }).click();
-  await expect(page.getByTestId("payment-wallet")).toContainText(
-    "Both signatures verified",
-  );
+  await dialog.getByRole("button", { name: "Connect wallet" }).click();
+  await expect(page.getByTestId("payment-wallet")).toContainText("Verified");
   const published = relay.events.find((event) => event.kind === 37017);
   expect(published?.created_at).toBeGreaterThan(pending.created_at);
   expect(wallet.registrations()).toBe(2);
@@ -314,7 +307,7 @@ test("removing the public wallet supersedes the old proof and survives reload", 
     page.getByRole("button", { name: "Copy payment address" }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Link payment wallet", exact: true }),
+    page.getByRole("button", { name: "Connect payment wallet", exact: true }),
   ).toBeVisible();
 });
 
@@ -328,9 +321,7 @@ test("copying checks for a revocation that arrived after the profile loaded", as
   await relay.install(page);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto(`/u/${ME}`);
-  await expect(page.getByTestId("payment-wallet")).toContainText(
-    "Both signatures verified",
-  );
+  await expect(page.getByTestId("payment-wallet")).toContainText("Verified");
   await page.evaluate(() => navigator.clipboard.writeText("unchanged"));
   relay.seed(
     finalizeEvent(
@@ -344,7 +335,7 @@ test("copying checks for a revocation that arrived after the profile loaded", as
     ),
   );
   await page.getByRole("button", { name: "Copy payment address" }).click();
-  await expect(page.getByRole("alert")).toContainText("no longer valid");
+  await expect(page.getByRole("alert")).toContainText("no longer confirmed");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     "unchanged",
   );
@@ -368,7 +359,7 @@ test("a locked passkey has a recovery action inside wallet linking", async ({
   });
   await page.goto(`/u/${"e".repeat(64)}`);
   await publishFromProfile(page);
-  const dialog = page.getByRole("dialog", { name: "Link payment wallet" });
+  const dialog = page.getByRole("dialog", { name: "Connect payment wallet" });
   await expect(dialog.getByTestId("wallet-sign-recovery-action")).toHaveText(
     "Sign in with passkey",
   );
@@ -405,9 +396,9 @@ for (const state of ["forged", "expired", "revoked"] as const) {
     await page.goto(`/u/${ME}`);
     await expect(page.getByTestId("payment-wallet")).toContainText(
       state === "forged"
-        ? "could not be verified"
+        ? "could not be confirmed"
         : state === "expired"
-          ? "expired"
+          ? "needs to be connected again"
           : "removed",
     );
     await expect(

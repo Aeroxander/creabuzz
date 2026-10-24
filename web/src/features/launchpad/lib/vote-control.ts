@@ -243,7 +243,10 @@ export function voteControlLines(input: {
       `${shares(control.waiting)} Shares bought in the sale are still waiting to be claimed and vote only once they are; with all of them claimed, ${who} would hold ${percentOf(weight, control.votingSupply + control.waiting)}.`,
     );
   }
-  const until = now === "alone" ? sharesUntilShared(weight, control) : 0n;
+  // In whole Shares, rounded up: "about 43,515.15 more" reads as false precision.
+  const ONE = 10n ** 18n;
+  const exact = now === "alone" ? sharesUntilShared(weight, control) : 0n;
+  const until = ((exact + ONE - 1n) / ONE) * ONE;
   lines.push(
     kind === "contributors"
       ? `That changes only as Shares are awarded for accepted work, and as holders leave${until > 0n ? `: ${who} stops deciding alone once others hold about ${shares(until)} more Shares` : ""}.`

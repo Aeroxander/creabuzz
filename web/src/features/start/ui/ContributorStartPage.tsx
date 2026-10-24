@@ -94,28 +94,19 @@ function WhatItIs({ testNotice }: { testNotice: string | null }) {
       <h2 className="text-base font-bold">Starts without a token sale</h2>
       <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
         <li>
-          This setup has no token sale, and this app offers no way to start one
-          for this project. The treasury, the project&apos;s shared funds, can
-          still receive payments.
+          You start with Shares, which are votes in the project. At first you
+          may hold every Share that votes.
         </li>
         <li>
-          You start with Shares, the project&apos;s voting tokens, so you can
-          open and back its first votes. At first you may hold every Share that
-          votes.
+          New Shares come only from awards: someone submits work, the reviewers
+          you name check it, then the project votes on an award. Approval alone
+          gives no Shares.
         </li>
         <li>
-          New Shares come only from awards. Someone submits work, you accept it
-          into a work area, the reviewers you name check it, and then
-          Shareholders vote on an award. Approval alone gives no Shares.
+          Shares can&apos;t be sold at first. Opening transfers takes two
+          project votes, at least 30 days apart.
         </li>
-        <li>
-          People can submit work the day the project exists: its first work
-          budget and work areas are set up with it, with no vote to wait for.
-        </li>
-        <li>
-          Shares start with transfers locked, so nobody can sell them. Opening
-          transfers takes two project votes, at least 30 days apart.
-        </li>
+        <li>The project can still receive money into its shared funds.</li>
       </ul>
       {testNotice ? (
         <p
@@ -324,7 +315,7 @@ export function ContributorStartPage() {
             value={draft.pitch}
           />
           <TextField
-            hint="The token's short name, 2 to 8 letters or numbers."
+            hint="A short code for the Shares, 2 to 8 letters or numbers, like CREA."
             label="Short name"
             onChange={set("symbol")}
             testId="contributor-symbol"

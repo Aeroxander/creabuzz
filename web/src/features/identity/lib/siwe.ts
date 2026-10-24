@@ -241,7 +241,7 @@ export async function signInWithWallet(
       ).state !== "verified"
     ) {
       throw new Error(
-        "Wallet proof did not match your Nostr account. Ordinary EVM wallet signatures are required.",
+        "The wallet signature did not match your account. Sign with an ordinary wallet, not a smart-contract one.",
       );
     }
     if (existingUserPubkey() !== login.pubkey || relayWsUrl() !== relay)

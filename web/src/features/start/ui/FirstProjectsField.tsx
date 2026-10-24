@@ -62,11 +62,13 @@ export function FirstProjectsField({
             <div className="min-w-0 flex-1">
               <TextField
                 hint={
-                  index === 0 ? "A word or two, for example: docs." : undefined
+                  index === 0
+                    ? "A word or two, for example: Bug reports."
+                    : undefined
                 }
                 label={several ? `Work area ${index + 1}` : "Name"}
                 onChange={update(index, "name")}
-                placeholder="docs"
+                placeholder="Bug reports"
                 testId={
                   index === 0
                     ? "contributor-project-name"
@@ -100,7 +102,7 @@ export function FirstProjectsField({
           <TextAreaField
             hint={
               index === 0
-                ? "Every claim says it meets this, and the reviewers check the work against these words."
+                ? "The reviewers check each submission against these words. They can't be changed later."
                 : undefined
             }
             label="What finished work looks like"

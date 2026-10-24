@@ -23,8 +23,8 @@ test("a wallet exactly one person bound is shown by their name, beside the addre
     [{ pubkey: ALICE, address: A.toLowerCase() }],
     (pubkey) => (pubkey === ALICE ? "Alice" : null),
   );
-  assert.equal(label(A), "Alice (0xf39f…2266)");
-  assert.equal(label(A.toLowerCase()), "Alice (0xf39f…2266)");
+  assert.equal(label(A), "Alice");
+  assert.equal(label(A.toLowerCase()), "Alice");
 });
 
 test("a wallet nobody bound, or whose owner has no name, stays an address", () => {
@@ -55,7 +55,7 @@ test("the same person listed twice for one wallet still counts as one", () => {
     ],
     () => "Alice",
   );
-  assert.equal(label(A), "Alice (0xf39f…2266)");
+  assert.equal(label(A), "Alice");
 });
 
 test("the wallets a record names are collected once each, from claims, reviewers and the team", () => {

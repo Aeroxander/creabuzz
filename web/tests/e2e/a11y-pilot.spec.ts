@@ -5,7 +5,7 @@ import { expectAccessible } from "../helpers/a11y";
 import { createMockRelay } from "./mock-relay";
 
 /**
- * The pages a pilot tester meets first, scanned by axe in light and dark: Home's checklist for a backer and for a
+ * The pages a pilot tester meets first, scanned by axe in light and dark: Home's checklist for a helper and for a
  * founder, a project's Overview with its milestones, and the Milestones tab.
  */
 
@@ -80,13 +80,13 @@ async function open(
 }
 
 for (const scheme of ["light", "dark"] as const) {
-  test(`Home's checklist is accessible for a backer and for a founder (${scheme})`, async ({
+  test(`Home's checklist is accessible for a helper and for a founder (${scheme})`, async ({
     page,
   }) => {
     await open(page, "/", scheme);
     const list = page.getByTestId("home-getting-started");
     await expect(list).toBeVisible({ timeout: 20_000 });
-    await expectAccessible(page, `home, backer, ${scheme}`);
+    await expectAccessible(page, `home, helper, ${scheme}`);
     await list.getByTestId("home-role-founder").click();
     await expect(list.getByTestId("home-step-publish")).toBeVisible();
     await expectAccessible(page, `home, founder, ${scheme}`);

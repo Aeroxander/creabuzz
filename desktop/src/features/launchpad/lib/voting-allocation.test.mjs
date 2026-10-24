@@ -125,7 +125,7 @@ test("the bars are quorum and approval, and support has to hold", () => {
   const watch = votingRuleWatch(rules, short, 1000n);
   assert.equal(watch.status, "needs-votes");
   assert.match(watch.detail, /^In favour 0\.000000000000000062/);
-  assert.match(watch.detail, /more Shares needed to meet the bars/);
+  assert.match(watch.detail, /more Shares need to back it/);
   assert.equal(
     votingRuleWatch(rules, short, 1500n).status,
     "needs-votes",

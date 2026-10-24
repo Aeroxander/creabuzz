@@ -63,7 +63,7 @@ export function pubkeysToName(
 }
 
 /**
- * How the page writes a wallet: `Name (0xabcd…1234)` when exactly one person bound it and has a name, otherwise just
+ * How the page writes a wallet: the name of the one person who bound it, when they have one, otherwise just
  * `0xabcd…1234`. `nameOf` gives a person's chosen name, or null when they have none.
  */
 export function personLabeler(
@@ -83,6 +83,6 @@ export function personLabeler(
     if (set?.size !== 1) return short;
     const [pubkey] = [...set];
     const name = nameOf(pubkey)?.trim();
-    return name ? `${name} (${short})` : short;
+    return name || short;
   };
 }

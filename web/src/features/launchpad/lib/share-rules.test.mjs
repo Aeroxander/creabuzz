@@ -103,18 +103,18 @@ test("the allowance is said in plain words", async () => {
       { kind: "capped", left: 25n * WAD, of: 65n * WAD, resetsAt: 1000 },
       day,
     ),
-    "25 of this year's 65 new Shares are left to award, until day 1000. New Shares are only ever pay for accepted work.",
+    "25 of this year's 65 new Shares are left to award, until day 1000. New Shares are only ever given for accepted work.",
   );
   assert.equal(
     allowanceText(
       { kind: "capped", left: 65n * WAD, of: 65n * WAD, resetsAt: null },
       day,
     ),
-    "Up to 65 new Shares can be awarded in the year that starts with the next award. New Shares are only ever pay for accepted work.",
+    "Up to 65 new Shares can be awarded in the year that starts with the next award. New Shares are only ever given for accepted work.",
   );
   assert.equal(
     allowanceText({ kind: "awards-only" }, day),
-    "New Shares are only ever pay for accepted work, with no yearly limit.",
+    "New Shares are only ever given for accepted work, with no yearly limit.",
   );
   assert.equal(allowanceText({ kind: "none" }, day), null);
   assert.equal(allowanceText(null, day), null);

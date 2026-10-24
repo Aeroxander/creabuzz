@@ -45,14 +45,18 @@ function CommunityCard({ entry }: { entry: CardEntry }) {
           <h3 className="truncate text-base font-semibold text-black dark:text-white">
             {hostName}
           </h3>
-          <p className="truncate text-xs text-black/60 dark:text-white/60">
-            {entry.host}
-          </p>
+          {hostName === entry.host ? null : (
+            <p className="truncate text-xs text-black/60 dark:text-white/60">
+              {entry.host}
+            </p>
+          )}
         </div>
       </div>
-      <p className="line-clamp-2 text-sm text-black/60 dark:text-white/60">
-        {entry.description}
-      </p>
+      {entry.description ? (
+        <p className="line-clamp-2 text-sm text-black/60 dark:text-white/60">
+          {entry.description}
+        </p>
+      ) : null}
       <p className="mt-auto flex items-center gap-1.5 text-xs text-black/60 dark:text-white/60">
         {entry.member_count !== null ? (
           <>

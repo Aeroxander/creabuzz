@@ -39,10 +39,10 @@ Keep them exactly as you want them judged: they cannot be changed once the proje
 
 | Work area | Shares | What finished work looks like |
 |---|---|---|
-| `first-hour-notes` | 10,000 | A written account of your first hour on Creaton (signing up, finding this project, submitting this work), naming each place you got stuck or unsure, posted on the supporters board. |
-| `plain-guide` | 15,000 | A one-page guide in plain words to how work becomes Shares here (submit, review, the 7-day window, the award vote), posted on the supporters board, that both reviewers find accurate. |
-| `phone-review` | 15,000 | Screenshots of Start, Work and Contributions on a phone, each with what is hard to read or tap and a suggested change, posted on the supporters board. |
-| `bug-report` | 10,000 | A bug found by using Creaton, with the steps to reproduce it, what you expected and what happened, posted on the supporters board and reproduced by a reviewer. |
+| Your first hour | 10,000 | A written account of your first hour on Creaton (signing up, finding this project, submitting this work), naming each place you got stuck or unsure, posted on the supporters board. |
+| A plain guide | 15,000 | A one-page guide in plain words to how work becomes Shares here (submit, review, the 7-day window, the award vote), posted on the supporters board, that both reviewers find accurate. |
+| Phone check | 15,000 | Screenshots of Start, Work and Contributions on a phone, each with what is hard to read or tap and a suggested change, posted on the supporters board. |
+| Bug reports | 10,000 | A bug found by using Creaton, with the steps to reproduce it, what you expected and what happened, posted on the supporters board and reproduced by a reviewer. |
 
 That sets aside 50,000 of the 300,000: the rest is room for suggested work and later work areas, each approved by a vote.
 Three of the four ask for no technical skill, so a newcomer has somewhere to start.
@@ -72,7 +72,7 @@ days. If you cannot keep it, say so in the post.
 ## 3. Two first posts for the supporters board
 
 1. **Where did you get stuck?** "If anything about Creaton confused you, reply here, even with one sentence. If you want
-   Shares for it, the `first-hour-notes` work area is for exactly this."
+   Shares for it, the “Your first hour” work area is for exactly this."
 2. **What should we work on next?** "Suggest a piece of work on the Creaton project's Work tab, under Suggested work: what
    you would do, what finished looks like, and your price. If a holder puts it to a vote and it passes, it becomes a
    work area anyone can submit to."

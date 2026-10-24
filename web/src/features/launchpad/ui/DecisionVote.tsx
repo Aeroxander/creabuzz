@@ -118,6 +118,8 @@ export function DecisionVote({
         ? "abstaining with"
         : "backing this with";
   const disabled = busy !== null || gate !== null || !validOwner || !data;
+  // Nothing to vote with: the buttons go, and voting for someone who gave you their vote (below) stays.
+  const nothingToVote = data?.owned === 0n && onBehalf.trim() === "";
 
   return (
     <section
@@ -140,7 +142,9 @@ export function DecisionVote({
                       : ""
                   }${data.amount > 0n ? `; you are ${sideWord} ${shares(data.amount)}` : ""}.`}
       </p>
-      <div className="flex flex-wrap items-end gap-2">
+      <div
+        className={nothingToVote ? "hidden" : "flex flex-wrap items-end gap-2"}
+      >
         <div>
           <label
             className="block text-xs text-muted-foreground"
@@ -186,7 +190,7 @@ export function DecisionVote({
           type="button"
           variant="outline"
         >
-          Count me in, no side
+          Neutral
         </Button>
         {data && data.amount > 0n ? (
           <Button

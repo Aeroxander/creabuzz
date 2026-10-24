@@ -205,8 +205,8 @@ export function PrivateKeyBackupRow() {
             progress={testProgress}
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            Backups use the standard Nostr encrypted-key format, so this also
-            works for backups made by other Nostr apps.
+            Backups use a standard format, so this also works for backups made
+            by other apps.
           </p>
         </DialogContent>
       </Dialog>

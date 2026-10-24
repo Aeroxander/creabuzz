@@ -634,8 +634,10 @@ export interface DescribeContext {
   bonds?: Readonly<
     Record<string, { token: string; symbol: string; decimals: number }>
   >;
-  /** How a wallet is written (a person's name beside its short address); the full address when not given. */
+  /** How a wallet is written (a person's name, or its short address); the full address when not given. */
   label?: (address: string) => string;
+  /** A work area's published words for the hash of its check, when they are known here. */
+  checkWords?: (check: string) => string | null;
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -770,7 +772,10 @@ function describeCall(
             ? [`May hold up to ${money(amount, ctx)} of the budget's money`]
             : []),
           `Open until ${date(expires)}`,
-          `Judged by the check ${check.slice(0, 10)}…`,
+          // The words, when they were published with it; a bare hash tells a reader nothing.
+          ...(ctx.checkWords?.(check)
+            ? [`Finished looks like: “${ctx.checkWords(check)}”`]
+            : []),
         ],
       };
     }
@@ -783,7 +788,10 @@ function describeCall(
       return {
         kind: "award",
         title: `Award ${shares(amount)} Shares for the claim “${idLabel(claim)}”`,
-        lines: [`In the work budget ${mandate}`],
+        lines:
+          ctx.mandates && ctx.mandates.length > 1
+            ? [`From the work budget ${who(ctx, mandate)}`]
+            : [],
       };
     }
     if (sel === selectorOfSig("transfer")) {

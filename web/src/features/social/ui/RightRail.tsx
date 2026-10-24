@@ -92,7 +92,7 @@ function TrendingLaunchesCard() {
         className="px-4 pb-1 pt-3 text-lg font-bold text-black dark:text-white"
         id="trending-launches-title"
       >
-        Trending launches
+        Trending projects
       </h2>
       <ul
         className="flex flex-col gap-2 p-3 pt-1"

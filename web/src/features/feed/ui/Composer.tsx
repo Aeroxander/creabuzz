@@ -115,8 +115,7 @@ export function Composer({
             onChange={(e) => setMirror(e.target.checked)}
             type="checkbox"
           />
-          Also share outside this server, on public Nostr (a copy there cannot
-          be taken back)
+          Also share with other apps (copies there can&apos;t be deleted)
         </label>
         <span className="flex items-center gap-2">
           {remaining < 200 ? (

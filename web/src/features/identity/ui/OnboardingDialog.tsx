@@ -3,11 +3,11 @@
  */
 
 import { useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
 
 import { saveNewProfile } from "../lib/profile";
-import { getOrCreateIdentity } from "@/shared/lib/identity";
+import { getOrCreateIdentity, importIdentity } from "@/shared/lib/identity";
 import { createPasskeyIdentity } from "../lib/passkey-identity";
+import { parseRecoveryKey } from "../lib/recovery-key";
 import { signInWithWallet, walletAvailable } from "../lib/siwe";
 import { Fingerprint, Wallet } from "lucide-react";
 import { toast } from "sonner";
@@ -194,132 +194,280 @@ export function OnboardingDialog({
       accepted();
       await saveTypedName(name, about);
       onDone();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "couldn't create your account");
+    } catch {
+      setError(
+        "This browser could not save your account. Check that it allows site data, then try again.",
+      );
     } finally {
       setSaving(false);
     }
   };
 
+  const [signingIn, setSigningIn] = useState(false);
+
+  const createWithPasskey = () => {
+    void (async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        await createPasskeyIdentity(name.trim() || "Creaton user");
+        accepted();
+        await saveTypedName(name, about);
+        (onPasskeyDone ?? onDone)();
+      } catch (e) {
+        setError(passkeyProblem(e));
+        setSaving(false);
+      }
+    })();
+  };
+
+  const createWithWallet = () => {
+    void (async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        await signInWithWallet();
+        accepted();
+        await saveTypedName(name, about);
+        (onPasskeyDone ?? onDone)();
+      } catch (e) {
+        setError(
+          e instanceof Error && e.message
+            ? `Your wallet did not sign in: ${e.message}`
+            : "Your wallet did not sign in. Try again.",
+        );
+        setSaving(false);
+      }
+    })();
+  };
+
+  if (signingIn) {
+    return <SignInView onBack={() => setSigningIn(false)} />;
+  }
+
+  const ready = name.trim().length > 0 && allowed && !saving;
   return (
     <Overlay
       className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 dark:bg-black/50"
       data-testid="onboarding-dialog"
     >
-      <div className="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl">
-        <PolicyBoxes
-          ageOk={ageOk}
-          agreed={agreed}
-          onAgeOk={setAgeOk}
-          onAgreed={setAgreed}
-          state={policy}
-        />
+      <div className="max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-background p-6 shadow-2xl">
+        <h1 className="text-lg font-semibold tracking-tight text-black dark:text-white">
+          {CREATE_ACCOUNT}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Pick the name people will see. You can change it later.
+        </p>
+        <div className="mt-4 space-y-3">
+          <label
+            className="block text-sm font-medium"
+            htmlFor="onboarding-name"
+          >
+            Name
+            <input
+              id="onboarding-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoComplete="nickname"
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-normal outline-none focus:ring-1 focus:ring-ring"
+              data-testid="onboarding-name"
+            />
+          </label>
+          <label
+            className="block text-sm font-medium"
+            htmlFor="onboarding-about"
+          >
+            About you{" "}
+            <span className="font-normal text-muted-foreground">
+              (optional)
+            </span>
+            <textarea
+              id="onboarding-about"
+              value={about}
+              onChange={(e) => setAbout(e.target.value)}
+              rows={2}
+              className="mt-1 w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm font-normal outline-none focus:ring-1 focus:ring-ring"
+              data-testid="onboarding-about"
+            />
+          </label>
+        </div>
+        <div className="mt-4">
+          <PolicyBoxes
+            ageOk={ageOk}
+            agreed={agreed}
+            onAgeOk={setAgeOk}
+            onAgreed={setAgreed}
+            state={policy}
+          />
+        </div>
         <button
           type="button"
-          onClick={() => {
-            void (async () => {
-              setSaving(true);
-              setError(null);
-              try {
-                await createPasskeyIdentity(name.trim() || "Creaton user");
-                accepted();
-                await saveTypedName(name, about);
-                (onPasskeyDone ?? onDone)();
-              } catch (e) {
-                setError(e instanceof Error ? e.message : "passkey failed");
-                setSaving(false);
-              }
-            })();
-          }}
-          disabled={saving || !allowed}
-          className="mb-3 flex w-full items-center justify-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+          onClick={createWithPasskey}
+          disabled={!ready}
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
           data-testid="onboarding-passkey"
         >
           <Fingerprint className="h-4 w-4" />
-          Continue with a passkey (nothing to remember)
+          Create with a passkey
+        </button>
+        <p className="mt-1.5 text-center text-xs text-muted-foreground">
+          Sign in with your fingerprint, face or device PIN. Nothing to write
+          down.
+        </p>
+        <button
+          type="button"
+          disabled={!ready}
+          onClick={() => void submit()}
+          className="mt-3 w-full rounded-full border border-black/15 px-4 py-2 text-sm font-medium text-black hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
+          data-testid="onboarding-create"
+        >
+          Create without a passkey
         </button>
         {walletAvailable() ? (
           <button
             type="button"
-            disabled={saving || !allowed}
-            onClick={() => {
-              void (async () => {
-                setSaving(true);
-                setError(null);
-                try {
-                  await signInWithWallet();
-                  accepted();
-                  await saveTypedName(name, about);
-                  (onPasskeyDone ?? onDone)();
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : "wallet failed");
-                  setSaving(false);
-                }
-              })();
-            }}
-            className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-black/15 bg-white px-4 py-2 text-sm font-medium text-black hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+            disabled={!allowed || saving}
+            onClick={createWithWallet}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm text-muted-foreground hover:bg-black/5 hover:text-foreground disabled:opacity-40 dark:hover:bg-white/10"
             data-testid="onboarding-wallet"
           >
             <Wallet className="h-4 w-4" />
-            Sign in with wallet
+            Use my wallet instead
           </button>
         ) : null}
-        <div className="mb-3 flex items-center gap-2 text-2xs text-muted-foreground">
-          <span className="h-px flex-1 bg-black/10 dark:bg-white/10" />
-          or without a passkey
-          <span className="h-px flex-1 bg-black/10 dark:bg-white/10" />
-        </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
-          <Sparkles className="h-5 w-5 text-black/60 dark:text-white/60" />
-        </div>
-        <h1 className="mt-3 text-lg font-semibold tracking-tight text-black dark:text-white">
-          {CREATE_ACCOUNT}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Pick a name and you're in. Your account lives in this browser and
-          signs what you do here: messages, tasks, and what you ask your AI
-          helpers to do. Save a recovery key once you're in, so you can get back
-          to it.
-        </p>
-        <div className="mt-4 space-y-3">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Display name"
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-            data-testid="onboarding-name"
-          />
-          <textarea
-            value={about}
-            onChange={(e) => setAbout(e.target.value)}
-            placeholder="About you (optional)"
-            rows={2}
-            className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-            data-testid="onboarding-about"
-          />
-        </div>
         {error ? (
-          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+          <p
+            className="mt-3 text-xs text-red-600 dark:text-red-400"
+            role="alert"
+          >
+            {error}
+          </p>
         ) : null}
-        <div className="mt-4 flex items-center justify-end gap-2">
+        <div className="mt-4 flex items-center justify-between gap-2 border-t border-black/10 pt-3 text-sm dark:border-white/10">
+          <button
+            type="button"
+            onClick={() => setSigningIn(true)}
+            className="font-medium text-foreground underline underline-offset-2"
+            data-testid="onboarding-signin"
+          >
+            I already have an account
+          </button>
           <button
             type="button"
             onClick={onDone}
-            className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+            className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground"
           >
-            Later
-          </button>
-          <button
-            type="button"
-            disabled={saving || name.trim().length === 0 || !allowed}
-            onClick={() => void submit()}
-            className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
-            data-testid="onboarding-create"
-          >
-            Create account
+            Not now
           </button>
         </div>
       </div>
+    </Overlay>
+  );
+}
+
+/** A passkey that did not work, in words: the browser's own message is often a sentence about "the operation". */
+function passkeyProblem(error: unknown): string {
+  const name = error instanceof Error ? error.name : "";
+  if (name === "NotAllowedError" || name === "AbortError") {
+    return "The passkey was cancelled. Try again, or create without a passkey.";
+  }
+  if (name === "PrfUnavailableError") {
+    return "This browser cannot keep a passkey account. Create without a passkey instead.";
+  }
+  return "The passkey did not work in this browser. Try again, or create without a passkey.";
+}
+
+/**
+ * Signing back in on a browser that has no account: with the recovery key saved earlier (the 64 characters this app
+ * shows, or an `nsec1…` key from another app). A passkey signs in only where it was set up, and that browser keeps the
+ * account, so a new browser needs the key.
+ */
+function SignInView({ onBack }: { onBack: () => void }) {
+  const [key, setKey] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const signIn = () => {
+    const hex = parseRecoveryKey(key);
+    if (!hex) {
+      setProblem(
+        "That is not a recovery key. It is 64 letters and numbers, or starts with nsec1.",
+      );
+      return;
+    }
+    try {
+      importIdentity(hex);
+      localStorage.setItem("buzz.identity.backedUp", "1");
+      window.location.reload();
+    } catch {
+      setProblem(
+        "This browser could not save your account. Check that it allows site data, then try again.",
+      );
+    }
+  };
+  return (
+    <Overlay
+      className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 dark:bg-black/50"
+      data-testid="onboarding-dialog"
+    >
+      <form
+        className="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl"
+        data-testid="onboarding-signin-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          signIn();
+        }}
+      >
+        <h1 className="text-lg font-semibold tracking-tight text-black dark:text-white">
+          Sign in
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Paste the recovery key you saved when you made your account.
+        </p>
+        <label
+          className="mt-4 block text-sm font-medium"
+          htmlFor="onboarding-signin-key"
+        >
+          Recovery key
+          <input
+            id="onboarding-signin-key"
+            value={key}
+            onChange={(e) => {
+              setKey(e.target.value);
+              setProblem(null);
+            }}
+            autoComplete="off"
+            spellCheck={false}
+            type="password"
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm font-normal outline-none focus:ring-1 focus:ring-ring"
+            data-testid="onboarding-signin-key"
+          />
+        </label>
+        {problem ? (
+          <p
+            className="mt-2 text-xs text-red-600 dark:text-red-400"
+            role="alert"
+            data-testid="onboarding-signin-problem"
+          >
+            {problem}
+          </p>
+        ) : null}
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            Back
+          </button>
+          <button
+            type="submit"
+            disabled={key.trim().length === 0}
+            className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+            data-testid="onboarding-signin-submit"
+          >
+            Sign in
+          </button>
+        </div>
+      </form>
     </Overlay>
   );
 }

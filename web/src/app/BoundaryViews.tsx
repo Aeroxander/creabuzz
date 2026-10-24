@@ -78,7 +78,8 @@ export function NotFoundView() {
           Nothing here
         </h1>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          That address does not match a page in this workspace.
+          This page doesn&apos;t exist. It may have moved, or the link may be
+          wrong.
         </p>
         <Link
           className="mt-4 inline-block rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium dark:border-white/15"

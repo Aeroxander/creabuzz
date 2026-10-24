@@ -52,37 +52,35 @@ export function contributorStatus(
 ): { start: string | null; shares: string | null; trading: string | null } {
   const start =
     provenance === "kit"
-      ? "No token sale at setup: it was made by the contributor kit."
+      ? "No token sale."
       : provenance === "record"
-        ? "Its record says it started without a token sale; this page could not confirm that with the contributor kit."
+        ? "Its page says it started without a token sale; this could not be checked."
         : null;
   if (read.kind === "reading") return { start, shares: null, trading: null };
   if (read.kind === "error")
     return {
       start,
-      shares:
-        "Its Shares' rules could not be read just now, so this page cannot say how new Shares are made or whether they can be traded.",
+      shares: "Could not check how this project's Shares work just now.",
       trading: null,
     };
   if (read.kind === "predates")
     return {
       start,
-      shares:
-        "Its Shares were made before the awards-only rule: a vote can create new Shares other than as awards.",
-      trading: "Its Shares were made before trading came with a 30-day notice.",
+      shares: "A vote can also create new Shares, not only awards for work.",
+      trading: "One vote can make Shares sellable, with no notice.",
     };
   const { rules } = read;
   return {
     start,
     shares: rules.awardsOnly
       ? "New Shares come only from awards for reviewed work."
-      : "A vote can create new Shares other than as awards for reviewed work.",
+      : "A vote can also create new Shares, not only awards for work.",
     trading: !rules.transfersLocked
-      ? "Trading is open: Shares can be sent between wallets."
+      ? "Shares can be sold or sent to others."
       : !rules.unlockNoticeRequired
-        ? "Shares are locked, but one vote can open trading, with no notice."
+        ? "Shares can't be sold yet, but one vote can change that."
         : rules.unlockAnnouncedAt === 0
-          ? "Shares are locked: they cannot be sent between wallets."
-          : `Opening trading was announced; a second vote can open it from ${when(rules.unlockAnnouncedAt + UNLOCK_NOTICE)}.`,
+          ? "Shares can't be sold or sent to others."
+          : `A vote announced that Shares will become sellable. A second vote can do it from ${when(rules.unlockAnnouncedAt + UNLOCK_NOTICE)}.`,
   };
 }

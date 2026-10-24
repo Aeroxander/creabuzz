@@ -242,7 +242,7 @@ test("Start offers a contributor project, says it has no token sale, and shows w
   // No promise the treasury can never receive money, the founder's starting Shares said before signing, review and
   // award as separate steps, and the transfer rule as it is.
   await expect(intro).toContainText(
-    "The treasury, the project's shared funds, can still receive payments.",
+    "The project can still receive money into its shared funds.",
   );
   await expect(intro).toContainText(
     "At first you may hold every Share that votes.",
@@ -306,10 +306,10 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
   // This build names no contributor kit and the stub chain cannot answer for the Shares: the header says only what
   // the record says and that the rules could not be read, never "only from awards" or "locked".
   await expect(page.getByTestId("contributor-note")).toHaveText(
-    "Its record says it started without a token sale; this page could not confirm that with the contributor kit.",
+    "Its page says it started without a token sale; this could not be checked.",
   );
   await expect(page.getByTestId("contributor-issuance")).toContainText(
-    "Its Shares' rules could not be read just now",
+    "Could not check how this project's Shares work just now",
     { timeout: 20_000 },
   );
   await expect(page.getByTestId("contributor-transfers")).toHaveCount(0);
@@ -348,9 +348,7 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
   await expect(story).toContainText(
     "Its evidence is on the Work tab with the claim.",
   );
-  await expect(story.getByTestId("tx-link")).toContainText(
-    "no explorer on this chain",
-  );
+  await expect(story.getByTestId("tx-link")).toBeVisible();
   await expect(
     people.nth(1).getByTestId("contribution-person-earned"),
   ).toHaveText("10 Shares awarded");

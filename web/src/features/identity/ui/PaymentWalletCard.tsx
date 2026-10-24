@@ -18,6 +18,21 @@ import { usePaymentWallet } from "../use-payment-wallet";
 import { SignRecovery } from "./SignRecovery";
 
 /** Public, dual-signed payment address on a person's social profile. */
+/** A wallet that did not connect, in words: what happened and what to do next. */
+function walletProblem(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  const message = error instanceof Error ? error.message : "";
+  if (code === 4001 || /reject|denied|cancel/i.test(message)) {
+    return "You cancelled in your wallet. Try again when you are ready.";
+  }
+  if (/chain|network/i.test(message)) {
+    return `Your wallet is on another network. ${message}`;
+  }
+  return message
+    ? `Could not connect the wallet: ${message}`
+    : "Could not connect the wallet. Try again.";
+}
+
 export function PaymentWalletCard({
   pubkey,
   isSelf,
@@ -50,9 +65,7 @@ export function PaymentWalletCard({
       setDialog(null);
       await query.refetch();
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Couldn't update your payment wallet.",
-      );
+      setError(walletProblem(e));
     } finally {
       setPending(readPendingWalletProof(pubkey));
       running.current = false;
@@ -85,7 +98,7 @@ export function PaymentWalletCard({
       );
       if (checked.state !== "verified")
         throw new Error(
-          "This wallet proof is no longer valid. Ask the contributor to confirm their payment wallet.",
+          "This wallet is no longer confirmed. Ask them to connect it again.",
         );
       if (
         checked.wallet.address !== wallet.address ||
@@ -118,12 +131,12 @@ export function PaymentWalletCard({
         {wallet && !query.isError ? (
           <span className="flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
             <Check aria-hidden className="h-3.5 w-3.5" />
-            Both signatures verified
+            Verified
           </span>
         ) : null}
       </div>
       {query.isLoading ? (
-        <p className="mt-2 text-muted-foreground">Checking the wallet proof…</p>
+        <p className="mt-2 text-muted-foreground">Checking the wallet…</p>
       ) : query.isError ? (
         <div className="mt-2">
           <SignRecovery
@@ -143,7 +156,7 @@ export function PaymentWalletCard({
       ) : wallet ? (
         <>
           <p className="mt-2 text-xs text-muted-foreground">
-            {chain?.label ?? "EVM network"} · Chain {wallet.chain}
+            {chain?.label ?? `Network ${wallet.chain}`}
           </p>
           <code
             className="mt-1 block break-all text-sm"
@@ -184,16 +197,15 @@ export function PaymentWalletCard({
             ) : null}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            This wallet signed a link to this Nostr account. Confirm the agreed
-            amount, token and network before paying.
+            Before sending anything, check you are on the same network.
           </p>
         </>
       ) : (
         <p className="mt-2 text-muted-foreground">
           {result?.state === "expired"
-            ? "The wallet proof expired. A new signature is needed before paying."
+            ? "This wallet needs to be connected again before anyone pays it."
             : result?.state === "invalid"
-              ? "This account's latest wallet proof could not be verified. Ask them to link it again before paying."
+              ? "This wallet could not be confirmed. Ask them to connect it again before paying."
               : result?.state === "unreachable"
                 ? "This account linked a smart account, which has to be checked on the network, and that check could not be made just now. Try again in a moment."
                 : result?.state === "revoked"
@@ -236,7 +248,7 @@ export function PaymentWalletCard({
               size="sm"
               variant="outline"
             >
-              {wallet ? "Change payment wallet" : "Link payment wallet"}
+              {wallet ? "Change payment wallet" : "Connect payment wallet"}
             </Button>
           )}
         </div>
@@ -251,21 +263,22 @@ export function PaymentWalletCard({
       {dialog ? (
         <Modal
           label={
-            dialog === "link" ? "Link payment wallet" : "Remove public wallet"
+            dialog === "link"
+              ? "Connect payment wallet"
+              : "Remove public wallet"
           }
           onClose={close}
         >
           <h2 className="text-lg font-semibold">
             {dialog === "link"
-              ? "Link your payment wallet"
+              ? "Connect your payment wallet"
               : "Remove your public wallet?"}
           </h2>
           {dialog === "link" ? (
             <>
               <p className="mt-2 text-sm text-muted-foreground">
-                Your wallet and Nostr account will both sign the link. This
-                proves control of the two keys. It does not give the app
-                permission to spend your funds.
+                Projects send what you earn to this wallet. Connecting it does
+                not let anyone spend from it.
               </p>
               <label className="mt-4 flex items-start gap-2 text-sm">
                 <input
@@ -276,23 +289,20 @@ export function PaymentWalletCard({
                   type="checkbox"
                 />
                 <span>
-                  Show my wallet address publicly on my profile. This connects
-                  my Nostr account to my wallet's public transaction history.
+                  Show the wallet address on my profile. Anyone can then see
+                  this wallet's history.
                 </span>
               </label>
               <p className="mt-2 text-xs text-muted-foreground">
-                Use a browser wallet on the community's network
-                {passkeySetup.ok ? ", or sign with your passkey account" : ""}.
                 {passkeySetup.ok
-                  ? " Your passkey account is checked on the network, so it has to exist there: the first time, it is created for you at no cost."
-                  : ""}
+                  ? "Use your passkey account, or a wallet in this browser. The first time, your passkey account is set up for you at no cost."
+                  : "Use a wallet in this browser."}
               </p>
             </>
           ) : (
             <p className="mt-2 text-sm text-muted-foreground">
-              Your profile will stop offering this address for payment. Existing
-              onchain claims keep the wallet that filed them. The previous
-              public record remains in the event history.
+              Your profile will stop showing this wallet. Work you already
+              submitted keeps the wallet it was submitted from.
             </p>
           )}
           {error ? (
@@ -338,7 +348,7 @@ export function PaymentWalletCard({
               {busy
                 ? "Waiting for signatures…"
                 : dialog === "link"
-                  ? "Sign and publish wallet"
+                  ? "Connect wallet"
                   : "Remove public wallet"}
             </Button>
           </div>

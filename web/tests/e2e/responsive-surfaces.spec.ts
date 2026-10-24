@@ -309,7 +309,38 @@ test("profile menu fits once an identity exists", async ({ page }) => {
   // On a phone the profile menu lives in the app's bottom tab bar.
   await page.getByTestId("user-chip").click();
   await expectNoOverflow(page, "profile");
+  // It opens upward from the bottom bar: all of it on screen, down to Sign out at the end. (It stays hidden until it has
+  // measured its button, so wait for that before measuring it.)
+  const popover = page.getByTestId("profile-popover");
+  await expect(popover).toBeVisible();
+  const box = await popover.boundingBox();
+  expect(
+    box?.y ?? -1,
+    "the menu starts above the screen",
+  ).toBeGreaterThanOrEqual(0);
+  expect(
+    (box?.y ?? 0) + (box?.height ?? MOBILE.height + 1),
+    "the menu runs past the bottom of the screen",
+  ).toBeLessThanOrEqual(MOBILE.height);
   await shot(page, "16b-mobile-profile");
+  // It follows its button when the page moves under it with no scroll or resize, as content that loads late does.
+  await page
+    .getByTestId("app-nav")
+    .evaluate((nav) =>
+      nav.style.setProperty("transform", "translateY(-200px)"),
+    );
+  await expect
+    .poll(async () => {
+      const menu = await page.getByTestId("profile-popover").boundingBox();
+      const chip = await page.getByTestId("user-chip").boundingBox();
+      return (menu?.y ?? 0) + (menu?.height ?? 0) <= (chip?.y ?? 0);
+    })
+    .toBe(true);
+  await page
+    .getByTestId("app-nav")
+    .evaluate((nav) => nav.style.removeProperty("transform"));
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByText("Sign out of this browser?")).toBeVisible();
 });
 
 test("launchpad directory fits", async ({ page }) => {
@@ -493,9 +524,7 @@ test("invite landing fits", async ({ page }) => {
     await route.fulfill({ status: 503, body: "unavailable" });
   });
   await page.goto("/invite/demo-code");
-  await expect(
-    page.getByRole("button", { name: "Accept invite in Creaton" }),
-  ).toBeVisible();
+  await expect(page.getByTestId("invite-create-and-join")).toBeVisible();
   await expectNoOverflow(page, "invite");
   await expectNoClippedControls(page, "main");
   await shot(page, "21-mobile-invite");

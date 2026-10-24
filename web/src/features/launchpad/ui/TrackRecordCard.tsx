@@ -110,9 +110,9 @@ function TxRef({
     return (
       <span
         className="break-all text-black/60 dark:text-white/60"
-        title="This chain has no known explorer, so only the raw hash is shown."
+        title="This network has no public page for transactions, so only its id is shown."
       >
-        tx {truncatePubkey(tx)} (no explorer on this chain)
+        {truncatePubkey(tx)}
       </span>
     );
   }

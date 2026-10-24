@@ -28,6 +28,7 @@ import {
 } from "./enforcement-forms";
 import { TradingForm } from "./TradingForm";
 import { WorkBudgetForm } from "./WorkBudgetForm";
+import { isContributorProject } from "../lib/funding";
 
 type Kind =
   | "budget"
@@ -52,6 +53,9 @@ const WORK_KINDS: ReadonlySet<Kind> = new Set([
   "close",
 ]);
 
+/** The decisions that move money or bonds. */
+const MONEY_KINDS: ReadonlySet<Kind> = new Set(["unwind", "slash", "pay"]);
+
 const KINDS: { id: Kind; label: string; about: string }[] = [
   {
     id: "budget",
@@ -67,7 +71,7 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
   {
     id: "award",
     label: "Award Shares for a claim",
-    about: "Pay out Shares for work the reviewers approved.",
+    about: "Give Shares for work the reviewers approved.",
   },
   {
     id: "market",
@@ -84,7 +88,7 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     id: "freeze",
     label: "Freeze a claim",
     about:
-      "Stop a payment you doubt. Nothing is paid for it until a later decision unwinds it.",
+      "Hold back work you doubt. Nothing is paid or awarded for it until a later decision lets it go.",
   },
   {
     id: "unwind",
@@ -260,7 +264,14 @@ export function DecisionComposer({
           <fieldset className="grid gap-2 sm:grid-cols-3">
             <legend className="sr-only">What kind of decision</legend>
             {KINDS.filter(
-              (k) => ctx.exchange || (k.id !== "market" && k.id !== "fees"),
+              (k) =>
+                (ctx.exchange || (k.id !== "market" && k.id !== "fees")) &&
+                // A contributor project holds no money and asks no bonds: those decisions would have nothing to act on.
+                !(
+                  launch &&
+                  isContributorProject(launch.record) &&
+                  MONEY_KINDS.has(k.id)
+                ),
             ).map((k) => (
               <button
                 aria-pressed={kind === k.id}

@@ -180,7 +180,7 @@ export function CategoryBrowse() {
             >
               Older
             </Button>
-            <span className="text-2xs text-black/50 dark:text-white/50">
+            <span className="text-2xs text-black/70 dark:text-white/70">
               {launches.length} shown
             </span>
           </div>

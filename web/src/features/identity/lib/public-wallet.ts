@@ -52,7 +52,7 @@ export async function publishPendingWalletProof(pubkey: string): Promise<void> {
     signAuth: async (template) => {
       if (existingUserPubkey() !== pubkey)
         throw new Error(
-          "Your Nostr account changed. Try again from the original account.",
+          "You switched accounts. Try again from the account you started with.",
         );
       const proof = await signAsUser(template);
       if (proof.pubkey !== pubkey)
@@ -89,7 +89,7 @@ export async function removePublicWallet(wallet: PaymentWallet): Promise<void> {
     }),
   });
   if (signed.pubkey !== wallet.event.pubkey)
-    throw new Error("Your Nostr account changed. Try again.");
+    throw new Error("You switched accounts. Try again.");
   savePendingWalletProof(signed);
   await publishPendingWalletProof(signed.pubkey);
 }

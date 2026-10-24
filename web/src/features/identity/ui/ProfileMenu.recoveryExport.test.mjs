@@ -6,9 +6,8 @@
  * `PasskeyCeremonyPage` + `exportPasskeyNsec`); what this pins is how it is
  * surfaced in the identity panel: the label the user acts on, the wiring to
  * the real export function (a label with no copy action protects nothing),
- * and the honesty rules — the nsec is the FULL account, the handoff is
- * interim until passkey-native sharing ships with app signing activation, and
- * the passkey itself is never claimed to leave the device.
+ * and the honesty rules — the key is the FULL account, and the passkey itself
+ * is never claimed to leave the device (D108 shortened the note).
  *
  * Source-binding by design: the menu renders behind no tested DOM harness
  * here, so the assertions read the production component (same pattern as
@@ -36,30 +35,18 @@ test("the identity panel surfaces the recovery-key export affordance", () => {
   assert.match(source, /passkeyNsec = exportPasskeyNsec\(\)/);
 });
 
-test("the note names the desktop handoff it exists for", () => {
+test("the note says what the key is for", () => {
   assert.ok(note, "recovery-export-note must render");
-  assert.match(note, /Copy recovery key to set up another device/);
-  assert.match(note, /desktop/);
+  assert.match(note, /signs you in on another device/);
 });
 
 test("the note is honest about the key being the full account", () => {
-  assert.match(note, /secret key is the full account/);
-  assert.match(note, /anyone holding it can sign as you/);
-  assert.match(note, /store it somewhere safe/);
-});
-
-test("the note frames the handoff as interim until passkey-native sharing", () => {
-  assert.match(note, /Passkey-native sharing/);
-  assert.match(
-    note,
-    /app signing activation/,
-    "the note must say what makes this key handoff unnecessary",
-  );
-  assert.match(note, /interim path/);
+  assert.match(note, /Anyone who has it can act as you/);
+  assert.match(note, /keep it private/);
 });
 
 test("the note never claims the passkey itself was exported", () => {
-  assert.match(note, /passkey itself never leaves your device/);
+  assert.match(note, /passkey itself stays on this device/);
   assert.doesNotMatch(
     note,
     /passkey (was |is )?(copied|exported|moved)/i,

@@ -66,8 +66,9 @@ pub(crate) async fn directory(
         .into_iter()
         .map(|record| DirectoryEntry {
             host: record.host,
-            name: "Buzz Relay",
-            description: "Buzz — private team communication relay",
+            // Communities have no display name of their own yet: the app shows the address.
+            name: "",
+            description: "",
             icon: record.icon,
             member_count: record.member_count,
             archived: record.archived,

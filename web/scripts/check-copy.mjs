@@ -18,6 +18,12 @@ const allow = [
     contains: "/identity-demo",
     reason: "the route definition itself; the page is unlisted and dev-facing",
   },
+  {
+    file: "src/features/identity/ui/PasskeyCeremonyPage.tsx",
+    contains: "Nostr key",
+    reason:
+      "the passkey demo page explains its own key derivation to developers",
+  },
 ];
 
 await runCopyCheck({

@@ -402,8 +402,7 @@ export function PostComposer({
                   onChange={(e) => setMirror(e.target.checked)}
                   type="checkbox"
                 />
-                Also share outside this server, on public Nostr (a copy there
-                cannot be taken back)
+                Also share with other apps (copies there can&apos;t be deleted)
               </label>
             )}
           </div>

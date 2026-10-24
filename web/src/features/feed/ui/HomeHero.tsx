@@ -2,14 +2,12 @@
  * The top of Home: what this place is for people who just arrived, and what to
  * do next for people who just signed up.
  *
- * Signed out: a short pitch that leads with what the product is for (back a
- * project early, and watch the team's tokens unlock as its milestones are
- * reached), two doors (make an account, look around) and the three ideas it
- * stands on. Signed in: a checklist built only from things the app can verify,
- * so a ticked box never lies. It asks different things of someone who came to back
- * projects and someone who came to build one (`lib/home-steps.ts`): a backer is
- * never asked to start a project or run an AI helper. It can be dismissed, and goes
- * away on its own when the way in is done.
+ * Signed out: a short pitch that leads with what the product is for (talk
+ * with people, do useful work on their projects, earn a say in them), two
+ * doors (make an account, look around) and the three ideas it stands on. Signed in: a checklist built only from things the app can verify,
+ * so a ticked box never lies. It asks different things of someone who came to help
+ * on projects and someone starting one (`lib/home-steps.ts`). It can be dismissed,
+ * and goes away on its own when the way in is done.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -18,7 +16,6 @@ import { useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
-import { peekAgentPubkey } from "@/shared/lib/agent-identity";
 import { hasFirstStep } from "@/shared/lib/first-steps";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
@@ -59,19 +56,19 @@ function readDismissed(): boolean {
 
 const IDEAS = [
   {
-    icon: Coins,
-    title: "Back a project early",
-    body: "Bid in an open sale. If it misses its minimum, every bid is refunded.",
+    icon: Users,
+    title: "Join the conversation",
+    body: "Post, reply and vote on the boards of the projects you follow.",
   },
   {
     icon: ShieldCheck,
-    title: "The team's tokens unlock with its milestones",
-    body: "The team's own tokens stay locked. The team publishes evidence and posts a bond, and the tokens unlock after an objection period unless holders successfully challenge the claim. A project can instead name reviewers who approve each milestone.",
+    title: "Do useful work",
+    body: "Projects list work anyone can pick up. Reviewers check it, then the project votes on an award.",
   },
   {
-    icon: Users,
-    title: "Build together",
-    body: "Start from a ready-made team. AI helpers do the legwork and ask before they go past their limit.",
+    icon: Coins,
+    title: "Earn a say",
+    body: "Awards come as Shares, which let you vote on what the project does next.",
   },
 ] as const;
 
@@ -95,16 +92,12 @@ function Welcome() {
         className="max-w-xl text-3xl font-black leading-tight tracking-tight sm:text-4xl"
         id="welcome-title"
       >
-        Back teams.{" "}
-        <span className="text-[var(--brand-violet)]">
-          Follow what they build.
-        </span>
+        Find projects.{" "}
+        <span className="text-[var(--brand-violet)]">Help build them.</span>
       </h2>
       <p className="mt-3 max-w-lg text-base text-muted-foreground">
-        Back early projects, follow their progress, and see the team&apos;s
-        tokens unlock as its milestones are reached. A defined part of the
-        team&apos;s tokens stays locked until each agreed milestone has been
-        delivered and judged.
+        Talk with the people behind projects you care about, pick up a piece of
+        work, and earn a say in what they do next.
       </p>
       <div className="mt-6 flex flex-wrap gap-3">
         <Button
@@ -157,13 +150,7 @@ function GettingStarted({ me }: { me: string }) {
       followedPeople(lists.data?.contacts ?? null).size +
         followedLaunches(lists.data?.bookmarks ?? null).size >
       0,
-    backed: (launches.data ?? []).some((l) =>
-      l.bids.some((bid) => bid.author === me),
-    ),
     published: mine.length > 0,
-    setUpMilestones: mine.some((l) => l.record.unlocks?.mode === "milestones"),
-    madeWorkspace: hasFirstStep(localStorage, "project"),
-    ranHelper: peekAgentPubkey() !== null,
   };
 
   // Don't flash a checklist of empty boxes while the answers are still loading.
@@ -173,14 +160,13 @@ function GettingStarted({ me }: { me: string }) {
 
   const steps = stepsFor(role, signals);
   if (wayInDone(steps)) return null;
-  const required = steps.filter((step) => !step.optional);
 
   const chooseRole = (next: Role) => {
     setRole(next);
     try {
       localStorage.setItem(ROLE_KEY, next);
     } catch {
-      // Not remembered; it simply starts as a backer next visit.
+      // Not remembered; it simply starts as a helper next visit.
     }
   };
 
@@ -196,7 +182,7 @@ function GettingStarted({ me }: { me: string }) {
             Get started
           </h2>
           <p className="text-sm text-muted-foreground">
-            {required.filter((s) => s.done).length} of {required.length} done
+            {steps.filter((s) => s.done).length} of {steps.length} done
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -225,8 +211,8 @@ function GettingStarted({ me }: { me: string }) {
         <legend className="sr-only">Why you are here</legend>
         {(
           [
-            ["backer", "I want to back projects"],
-            ["founder", "I'm building a project"],
+            ["helper", "I want to help on projects"],
+            ["founder", "I'm starting a project"],
           ] as const
         ).map(([value, label]) => (
           <button
@@ -274,16 +260,7 @@ function GettingStarted({ me }: { me: string }) {
             </span>
             {!step.done && step.to ? (
               <Button asChild size="sm" variant="outline">
-                <Link
-                  search={
-                    step.to === "/launchpad"
-                      ? { action: undefined, author: undefined }
-                      : undefined
-                  }
-                  to={step.to}
-                >
-                  Go
-                </Link>
+                <Link to={step.to}>Go</Link>
               </Button>
             ) : null}
           </li>

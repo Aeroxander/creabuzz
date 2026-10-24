@@ -308,7 +308,7 @@ test("a contributor project is started from the page, work is claimed the same d
   );
   // The header says what it is and, read from the Shares themselves, that they cannot be traded yet.
   await expect(founder.getByTestId("contributor-note")).toHaveText(
-    "No token sale at setup: it was made by the contributor kit.",
+    "No token sale.",
     { timeout: 30_000 },
   );
   await expect(founder.getByTestId("contributor-issuance")).toHaveText(
@@ -316,7 +316,7 @@ test("a contributor project is started from the page, work is claimed the same d
     { timeout: 30_000 },
   );
   await expect(founder.getByTestId("contributor-transfers")).toHaveText(
-    "Shares are locked: they cannot be sent between wallets.",
+    "Shares can't be sold or sent to others.",
     { timeout: 30_000 },
   );
   const contributor = await context.newPage();
@@ -381,6 +381,17 @@ test("a contributor project is started from the page, work is claimed the same d
     "Finished",
     { timeout: 60_000 },
   );
+  // No claim here can ask for money, so neither line says it did not.
+  await expect(contributor.getByTestId("work-claim-status")).not.toContainText(
+    "money",
+  );
+  await expect(contributor.getByTestId("work-claim-paid")).toContainText(
+    "Finished",
+    { timeout: 30_000 },
+  );
+  await expect(contributor.getByTestId("work-claim-paid")).not.toContainText(
+    "money",
+  );
   expect(await sharesOf(CONTRIBUTOR)).toBe(0n);
 
   // ── 4. the award is still the project's vote ────────────────────────────────────────────────────
@@ -426,9 +437,10 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(story).toContainText("Awarded ", { timeout: 30_000 });
   await expect(story).toContainText("2 approvals, 2 needed");
   await expect(story.getByTestId("tx-link")).toBeVisible();
-  await expect(story.getByTestId("contribution-award-evidence")).toContainText(
-    "In their words: “https://example.com/pr/1”",
-  );
+  // Evidence that is only a link is shown as the link, not quoted (D108).
+  await expect(
+    story.getByTestId("contribution-award-evidence"),
+  ).not.toContainText("In their words");
   await expect(
     story.getByRole("link", { name: "Open what they delivered" }),
   ).toHaveAttribute("href", "https://example.com/pr/1");
@@ -468,7 +480,7 @@ async function submitFromWaysToHelp(
   await way.getByTestId("way-to-help-submit").click();
   await expect(page.getByTestId("work-claim-check")).toHaveValue(words);
   await expect(page.getByTestId("work-claim-check-note")).toContainText(
-    "exact words, checked against the network",
+    "These are the words",
   );
   await page.getByTestId("work-claim-name").fill(name);
   await page.getByTestId("work-claim-evidence").fill(evidence);
@@ -692,6 +704,14 @@ test("several people earn in one contributor project: two first projects, and a 
   await expect(founder.getByTestId("decision-words-unpublished")).toHaveCount(
     0,
   );
+  // The newcomer holds no Shares yet: told so, with no vote buttons to press.
+  await refresh(newcomer, "Decisions");
+  await expect(
+    newcomer.getByTestId("decision-vote-summary").first(),
+  ).toHaveText("You hold no Shares, so you cannot vote on this.", {
+    timeout: 30_000,
+  });
+  await expect(newcomer.getByTestId("decision-vote-for").first()).toBeHidden();
   await carryOut(founder, 90_000, 90_000);
   await refresh(founder, "Work");
   await expect(founder.getByTestId("work-projects")).toContainText("guide-es", {
@@ -796,7 +816,7 @@ test("several people earn in one contributor project: two first projects, and a 
   ).toHaveText("40 Shares for write-guide in the work area guide");
   await expect(
     person(CONTRIBUTOR).getByTestId("contribution-award-evidence"),
-  ).toContainText("In their words: “https://example.com/pr/11”", {
+  ).toContainText("Open what they delivered", {
     timeout: 30_000,
   });
   await expect(
@@ -810,7 +830,7 @@ test("several people earn in one contributor project: two first projects, and a 
   ).toHaveText("11 Shares for translate-es in the work area guide-es");
   await expect(
     person(NEWCOMER).getByTestId("contribution-award-evidence"),
-  ).toContainText("In their words: “https://example.com/pr/12”");
+  ).toContainText("Open what they delivered");
   await expect(reader.getByTestId("contributions-earned")).toHaveText("51");
   await expect(reader.getByTestId("contributions-unconfirmed")).toHaveCount(0);
   await expect(reader.getByTestId("contributions-starting")).toHaveText("200");

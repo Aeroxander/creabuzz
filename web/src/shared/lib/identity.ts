@@ -328,11 +328,16 @@ export function importIdentity(hex: string): string {
   return pubkey;
 }
 
-/** Remove the stored identity (and its wrap key) and replace it with a fresh one. */
-export function rotateIdentity(): string {
+/** Remove the stored identity (and its wrap key) from this browser, leaving it signed out. */
+export function forgetIdentity(): void {
   resetIdentitySecretCache();
   window.localStorage.removeItem(IDENTITY_STORAGE_KEY);
   window.localStorage.removeItem(IDENTITY_WRAP_KEY);
+}
+
+/** Remove the stored identity (and its wrap key) and replace it with a fresh one. */
+export function rotateIdentity(): string {
+  forgetIdentity();
   return userPubkey();
 }
 
