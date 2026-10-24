@@ -1348,3 +1348,20 @@ By hand:
    every action.
 3. **Saved words from before.** In a browser that still has work-area words saved by an older build (before D92), open
    the project's Work tab: the words are still listed as waiting, and publishing them clears them.
+
+## 4bd. The server image, compose setup and backups (D107, 2026-10-24)
+
+```bash
+cd deploy/compose && ./run.sh build && cd ../..   # needs about 15 GB of Docker disk the first time
+scripts/test-compose-backup.sh                     # a scratch stack on port 3417: backup, wipe, restore (about a minute)
+pnpm --dir web test                                # deploy-env.test.mjs
+```
+
+By hand, before the first hosted start:
+
+1. `cat .env.example .env.creaton.example > .env` in `deploy/compose`, fill in every CHANGE_ME, put the finished terms
+   and privacy note in `policies/`. `./run.sh build` prints what the web app will offer; check it says what you meant.
+2. `./run.sh start`, open the site: sign-up shows your terms; posting and unread markers work.
+3. `./run.sh backup`, copy the folder to another machine, and practise `./run.sh restore <dir> --yes` there (README,
+   "Backups") before inviting anyone.
+

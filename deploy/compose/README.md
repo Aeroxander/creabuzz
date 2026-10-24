@@ -64,6 +64,57 @@ For an existing MinIO data volume, follow Silo's
 backup before upgrading. Replacing the container image upgrades the storage
 server as well as changing its registry.
 
+## Creaton
+
+The upstream image (`ghcr.io/block/buzz`) serves Buzz: it has neither the Creaton web app nor Creaton's database
+migrations. A Creaton server builds its own image from this checkout, through `compose.creaton.yml`:
+
+```bash
+cd deploy/compose
+cat .env.example .env.creaton.example > .env
+$EDITOR .env               # every CHANGE_ME; the Creaton part says what each setting does
+./run.sh build             # builds creaton-relay:local (the relay, the web app inside it)
+./run.sh start             # BUZZ_COMPOSE_CREATON=true in .env adds compose.creaton.yml to every command
+```
+
+- The image's build prints what the web app will offer (network, chain node, contributor projects, sponsored gas,
+  error reports) and stops on settings that do not fit together (`web/scripts/check-deploy-env.mjs`). The first release
+  offers contributor projects only: the image takes no setting for test raises, nor the mainnet switch.
+- Contributor projects need the addresses `scripts/sepolia-deploy.sh --broadcast` prints (`docs/sepolia-testnet.md`).
+  Without them the server is the social app alone. Changing them means `./run.sh build` and `./run.sh restart`: they
+  are read when the app is built.
+- The server turns on read state (`BUZZ_V1_ENABLED`, unread markers) and the app's page routes (`BUZZ_WEB_SPA=full`),
+  and shows the terms and privacy note named by `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` at sign-up. `run.sh` refuses
+  a policy file that still has a draft's `[placeholders]`.
+- Building takes a machine with several GB of memory and about 15 GB of disk for Docker (Rust's release build). A small
+  server can load an image built elsewhere instead: `docker save creaton-relay:local | ssh <host> docker load`, built
+  for the server's architecture (`docker build --platform linux/amd64 ...` from an Apple silicon Mac is slow but works).
+- `./run.sh upgrade` on a Creaton stack backs up first, then pulls the other images, builds and restarts.
+
+## Backups
+
+```bash
+./run.sh backup                      # into backups/<UTC time>/ while the server runs
+./run.sh verify-backup backups/<dir> # checks every file against the backup's manifest
+./run.sh restore backups/<dir> --yes # stops the server, restores, starts it, waits until it is ready
+```
+
+A backup is one folder: `postgres.dump` (the whole database), `media/` (the bucket's objects), `git.tar.gz` (the git
+data), `env` (this `.env`), `policies/` (the policy files, if set), `about.txt` (when, which image and revision, the
+database migration, how many events) and `MANIFEST.sha256`. The database is dumped first, so the media and git copies
+taken after it hold everything it refers to. Redis is not backed up (presence, rate windows and caches only); a restore
+empties it.
+
+- **Copy each backup off the machine**, and keep it where only the operator can read it: it holds every secret in
+  `.env` and every message that is not end-to-end encrypted. Nothing here schedules backups or deletes old ones; a
+  cron line such as `0 3 * * * cd /srv/creaton/deploy/compose && ./run.sh backup >>backups/backup.log 2>&1` and a
+  retention you state in the privacy note do that.
+- **Restore on a new machine:** check out the same revision, `cp backups/<dir>/env .env` (and change what differs on
+  this machine), `./run.sh build`, then `./run.sh restore backups/<dir> --yes`. Restore refuses when `.env` has a
+  different `BUZZ_RELAY_PRIVATE_KEY` from the backup's: the server would come back as a different server.
+- **Practise a restore** before you rely on the backups, and after upgrades that change the database: a backup that has
+  never been restored is a hope, not a backup.
+
 ## Validation
 
 Before sharing an install link publicly, verify a fresh install with:

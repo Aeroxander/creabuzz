@@ -20,11 +20,19 @@ web/dist/
 .vscode/
 .idea/
 .scratch/
+# Agent sessions' worktrees: whole copies of the repository (tens of GB)
+.claude/
 
-# Local environment / secrets — never want these in the build context
+# Local environment / secrets — never want these in the build context, at any
+# depth (web/.env.local would otherwise be baked into the web app's build)
 .env
 .env.*
+**/.env
+**/.env.*
 !.env.example
+!**/.env.example
+# A deployment's own state: its secrets and its backups (database dumps)
+deploy/
 *.pem
 *.key
 secrets/
@@ -52,3 +60,10 @@ docs/
 docker-compose.yml
 docker-compose.*.yml
 prometheus.yml
+
+# Not part of the relay image: the contracts (636 MB with their libraries) and
+# the separate services, which build on their own
+contracts/
+services/
+# The Hermit toolchain cache (5 GB); the image brings its own toolchains
+.hermit/

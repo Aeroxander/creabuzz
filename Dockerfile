@@ -119,12 +119,50 @@ ENV COREPACK_INTEGRITY_KEYS=${NPM_REGISTRY:+0}
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches/ patches/
+# The web app's shared logic (@creaton/core) is a workspace package: install it
+# with the app (`buzz-web...` takes the app and its workspace dependencies).
+COPY packages/creaton-core/package.json packages/creaton-core/
 COPY web/package.json web/
 COPY admin-web/package.json admin-web/
-RUN pnpm install --frozen-lockfile --filter buzz-web --filter buzz-admin-web
+RUN pnpm install --frozen-lockfile --filter "buzz-web..." --filter buzz-admin-web
+COPY packages/creaton-core/ packages/creaton-core/
 COPY web/ web/
 COPY admin-web/ admin-web/
-RUN pnpm -C web build && pnpm -C admin-web build
+# The web app's network settings (docs/sepolia-testnet.md). They are read when
+# the app is built and are public in the page. Unset is off: with none of them
+# the image serves the social app, with Sepolia as its network and nothing on
+# chain. Only these may be passed: the first release offers contributor
+# projects only, so the raise's launch kit is not a build argument here, nor
+# are the mainnet switch, a local chain's currency and the exchange; and
+# web/scripts/check-deploy-env.mjs refuses settings that do not fit together.
+ARG VITE_LAUNCHPAD_CHAIN_ID=
+ARG VITE_CHAIN_RPC_URL=
+ARG VITE_CONTRIBUTOR_KITS=
+ARG VITE_HISTORY_FROM_BLOCKS=
+ARG VITE_ZERODEV_PROJECT_ID=
+ARG VITE_ZERODEV_CHAIN_ID=
+ARG VITE_ZERODEV_API_KEY=
+ARG VITE_BUNDLER_URL=
+ARG VITE_ERROR_REPORT_URL=
+ARG VITE_APP_RELEASE=
+ARG VITE_RELAY_URL=
+ARG VITE_COMMUNITY_API_ORIGIN=
+ARG BUZZ_SOURCE_SHA=unknown
+# An empty argument reaches the build as no setting at all, and the release
+# defaults to the source revision.
+RUN set -eu; \
+    for name in VITE_LAUNCHPAD_CHAIN_ID VITE_CHAIN_RPC_URL VITE_CONTRIBUTOR_KITS \
+                VITE_HISTORY_FROM_BLOCKS VITE_ZERODEV_PROJECT_ID \
+                VITE_ZERODEV_CHAIN_ID VITE_ZERODEV_API_KEY VITE_BUNDLER_URL \
+                VITE_ERROR_REPORT_URL VITE_APP_RELEASE VITE_RELAY_URL VITE_COMMUNITY_API_ORIGIN; do \
+        eval "value=\${$name:-}"; \
+        if [ -z "$value" ]; then unset "$name"; fi; \
+    done; \
+    if [ -z "${VITE_APP_RELEASE:-}" ] && [ "$BUZZ_SOURCE_SHA" != "unknown" ]; then \
+        export VITE_APP_RELEASE="$BUZZ_SOURCE_SHA"; \
+    fi; \
+    node --experimental-strip-types web/scripts/check-deploy-env.mjs; \
+    pnpm -C web build && pnpm -C admin-web build
 
 # ─── Stage 5: shared runtime ────────────────────────────────────────────────
 FROM debian:${DEBIAN_VERSION}-slim AS runtime-base

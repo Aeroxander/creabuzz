@@ -4,36 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
-COMPOSE_FILES=(-f compose.yml)
-if [[ "${BUZZ_COMPOSE_TLS:-false}" == "true" ]]; then
-  COMPOSE_FILES+=(-f compose.caddy.yml)
-fi
-if [[ "${BUZZ_COMPOSE_DEV:-false}" == "true" ]]; then
-  COMPOSE_FILES+=(-f compose.dev.yml)
-fi
-
-compose() {
-  docker compose --env-file .env "${COMPOSE_FILES[@]}" "$@"
-}
-
-require_env() {
-  if [[ ! -f .env ]]; then
-    cat >&2 <<'MSG'
-Missing deploy/compose/.env.
-
-Copy .env.example to .env and replace every CHANGE_ME value, or run the bootstrap
-script once it lands. Do not start production with generated secrets missing.
-MSG
-    exit 1
-  fi
-  if grep -Eq '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=.*CHANGE_ME' .env; then
-    cat >&2 <<'MSG'
-deploy/compose/.env still contains CHANGE_ME placeholders.
-Generate stable secrets first; these values must not rotate on restart.
-MSG
-    exit 1
-  fi
-}
+# shellcheck source=compose-env.sh
+. ./compose-env.sh
 
 backup_hint() {
   cat <<'MSG'
@@ -47,6 +19,11 @@ Back up these before upgrades and on a regular schedule:
 - Caddy data/config volumes if using compose.caddy.yml
 
 Keep Postgres + object/git state snapshots from the same maintenance window.
+
+./run.sh backup takes the database, the media bucket, the git data and the
+settings (.env and the policy files) in one folder, in that order; copy that
+folder off this machine. The owner key and Caddy's certificates are not in it
+(Caddy gets new certificates by itself).
 MSG
 }
 
@@ -64,13 +41,32 @@ case "${1:-help}" in
     ;;
   pull)
     require_env
-    compose pull
+    if creaton_on; then
+      # The Creaton relay image is built here (`build`), not pulled.
+      compose pull --ignore-buildable
+    else
+      compose pull
+    fi
+    ;;
+  build)
+    require_env
+    BUZZ_SOURCE_SHA="$(git -C ../.. rev-parse --short HEAD 2>/dev/null || echo unknown)" compose build relay
     ;;
   upgrade)
     require_env
-    compose pull
+    if creaton_on; then
+      # A backup first: an upgrade can run database migrations that an older image cannot undo.
+      ./backup.sh backup
+      compose pull --ignore-buildable
+      BUZZ_SOURCE_SHA="$(git -C ../.. rev-parse --short HEAD 2>/dev/null || echo unknown)" compose build relay
+    else
+      compose pull
+    fi
     compose up -d --wait
     backup_hint
+    ;;
+  backup|restore|verify-backup)
+    ./backup.sh "$@"
     ;;
   logs)
     shift || true
@@ -104,11 +100,20 @@ Commands:
   stop          Stop containers without deleting volumes
   restart       Recreate the relay after env/image changes
   pull          Pull configured images
-  upgrade       Pull and restart, then print backup reminders
+  build         Build the Creaton relay image from this checkout (Creaton only)
+  upgrade       Pull and restart, then print backup reminders (Creaton: back
+                up, then pull, build and restart)
   logs [svc]    Follow logs (default: relay)
   status        Show compose service status
   config        Render merged compose config
   backup-hint   Print the production backup checklist
+  backup [DIR]  Back up the database, media, git data and settings while the
+                server runs (default backups/<UTC time>)
+  restore DIR --yes
+                Replace this stack's data with a backup's (stops the server
+                meanwhile)
+  verify-backup DIR
+                Check a backup's files against its manifest
 
   add-member <npub-or-hex> [--role member|admin]
                 Add a relay member (default role: member)

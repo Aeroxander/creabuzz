@@ -16,5 +16,9 @@ export BUZZ_PRIVACY_POLICY_MARKDOWN="$(cat docs/policies/PRIVACY-DRAFT.md)"
 # BUZZ_AGE_ATTESTATION_REQUIRED=true   # adds an "I am 18 or older" box
 ```
 
+On the compose deployment (`deploy/compose`, Creaton), name the finished files in `.env` instead
+(`BUZZ_TERMS_FILE=policies/terms.md`, `BUZZ_PRIVACY_FILE=policies/privacy.md`): `run.sh` reads them and refuses to start
+while a file still has a `[bracket]` left.
+
 It then serves them at `/api/join-policy/terms` and `/api/join-policy/privacy`, and sign-up asks people to agree before
 an account is made (D83). When neither is set, sign-up shows no terms at all, so set them before inviting anyone.
