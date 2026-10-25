@@ -4,7 +4,8 @@ Status: **a proposal for you to decide on. Nothing here is accepted, built or de
 [DECISIONS.md](DECISIONS.md) until you accept it, and then it would need its own decision rows, contract work and audit
 scope. An outside review on 2026-10-25 recommended it as the direction for a **feasibility specification**, not for
 production as it stood; this revision answers that review (see [What the review changed](#what-the-review-changed)).
-One of its points, which assets leaving pays out, is a decision for you and blocks the rest.
+Its blocking point, which assets leaving pays out, **you decided on 2026-10-25: option A, one claimable asset (D112).**
+The proposal as a whole is still not accepted.
 
 ## In one paragraph
 
@@ -118,7 +119,7 @@ Why this rule and not "the larger of the whole order's schedule cost and `x · B
 - **The quote is not monotonic.** The schedule rises with sales, but the floor follows the treasury: after spending or
   a team unlock it can fall, and the quote with it. The app shows the quote, not "the price only goes up".
 
-## The asset question (blocks everything else)
+## The asset question (decided: option A, D112)
 
 The floor above counts only the sale's currency. Leaving today pays a share of **every** asset the leaver lists, ETH
 and any token included (`MolochPatched.sol`, `ragequit`). So if the DAO holds anything else, a buyer pays the floor in
@@ -129,11 +130,23 @@ be listed, and a dust transfer would stop sales). Three options:
 
 | | What it means | Cost |
 |---|---|---|
-| **A. One claimable asset** (recommended) | For DAOs with a funding curve, leaving pays only the sale's currency, enforced by `ragequit`. Anything else the DAO receives (ETH, other tokens) becomes claimable only once the DAO converts it by vote. | A `ragequit` check against a list fixed at birth. It narrows what leaving pays, though leaving stays always on (D73): a decision of its own. |
+| **A. One claimable asset** (**chosen**, D112) | For DAOs with a funding curve, leaving pays only the sale's currency, enforced by `ragequit`. Anything else the DAO receives (ETH, other tokens) becomes claimable only once the DAO converts it by vote. | A `ragequit` check against a list fixed at birth. It narrows what leaving pays, though leaving stays always on (D73): a decision of its own. |
 | B. Proportional basket | A closed list of claimable assets fixed at birth (say USDC and ETH); a buyer pays their proportional part of **each** in kind, plus the schedule's premium in USDC. No price feed needed. | Buyers must hold every listed asset; more contract and screen complexity. |
 | C. Keep the curve off | No funding curve until A or B is accepted. | None; the feature waits. |
 
 A promise to "hold only USDC" in practice is not a contract guarantee, so it is not an option.
+
+**What option A means in practice** (your choice, 2026-10-25):
+
+- In a DAO born with a funding curve, `ragequit` pays only the sale's currency, fixed at birth; asking for any other
+  asset is refused. DAOs born without a curve keep today's rule (every asset the leaver lists).
+- Leaving stays always on (D73); what changes is what it pays.
+- Anything else the DAO receives (ETH, another token, a grant paid in something else) is for the members who stay
+  until a vote converts it into the sale's currency. Converting needs a swap the DAO can call by proposal; where none
+  exists on that network, the asset stays unclaimable, and the page says so.
+- So the floor is exact: each Share bought pays at least its part of everything leaving can pay out.
+- Shown on the project page and before leaving: "Leaving pays your part of the project's USDC. Anything else the project
+  holds is paid out only after the members vote to convert it."
 
 ## A worked example
 
@@ -252,7 +265,7 @@ What shorting promises (a way for a skeptic to act on doubt) can come from tools
 |---|---|
 | `JoinCurve` (new, one per DAO) | Holds the allocation and its counts; checks the handoff before opening; `buy(shares, maxSpend, deadline)` with the pricing above; forwards each payment; `retire()` for never-sold Shares after the window or a failed auction; no owner. |
 | `Shares` | **A one-way exemption** for the curve (out of it only), beside the auction's two-way one (D77). **One place that computes what counts when leaving**: every Share, less the DAO's own, less what the milestone lock holds (D72), less what the curve may still sell (from its counts, not its balance). The kit keeps the excluded holders apart (the curve can never be a team seat or another system address), and each subtraction is guarded. |
-| `Moloch.ragequit` | Uses that total (today it subtracts the lock's `totalLocked` itself, D72). Under asset option A, also refuses an asset outside the claimable list. Measure first: Moloch has room after D73/D76 removed seven functions. |
+| `Moloch.ragequit` | Uses that total (today it subtracts the lock's `totalLocked` itself, D72), and in a DAO with a curve refuses any asset but the sale's currency, set once at birth (D112). Measure first: Moloch has room after D73/D76 removed seven functions. |
 | Voting policy (`AllocationVoting`) | No code change: the curve joins the existing list of holders that do not count toward a vote's supply (the auction is already on it, D69). |
 | `DaoLaunchKit` | The allocation, schedule, window and limits in its parameters; the curve's predicted address bound once (or an explicit "none"); the exemption, exclusions and read-backs. **Its creation code was 2,626 bytes under the limit at D69**: measure first; the curve may need its own factory. |
 | App and command line | Fund this project screen and the project page (below); `buzz launchpad fund` with machine-readable results that work by direct calls without our server; the simulation (`scripts/simulate-raise.sh`) extended with buying and leaving. |
@@ -266,7 +279,7 @@ What shorting promises (a way for a skeptic to act on doubt) can come from tools
 | **D72** (locked team Shares left out of the exit) | Extended: what the curve may still sell is left out too. |
 | **D69** (the auction does not count toward a vote's supply) | Extended to the curve, through the same list. |
 | **D75** (limits on the split) | **The auction itself keeps at least 60%**; the curve's allocation does not count toward it (it may never sell), and is at most 20%. Example preset: 60 / 15 / 25 (auction / curve / team). Lowering the auction's minimum would be a separate decision, not part of this. |
-| **D73** (leaving cannot be switched off) | Leaving stays always on. Asset option A narrows **what** it pays in these DAOs, which needs your explicit decision. |
+| **D73** (leaving cannot be switched off) | Leaving stays always on. In DAOs with a funding curve it pays only the sale's currency (D112, decided). |
 | **D74, D43** | Unchanged: the auction still sells out or refunds, governance still opens at the claim block. |
 | **D12, D14** (market venue, market by vote) | Unchanged and still on hold. If a project later opens a market, the curve and the market coexist; nobody buys from the curve above the market price. |
 
@@ -300,7 +313,8 @@ differently, or a zero.
   with an unreadable final price: buying refused; a failed auction's allocation retired, never sold.
 - **Hostile cases:** buy then leave in the same block; buy just after money arrives; Shares sent to the curve refused;
   USDC or ETH sent to the curve ignored; a stale browser quote refused by the maximum; per-block limits; retirement that
-  tries to touch held Shares refused; the asset option chosen enforced by `ragequit`.
+  tries to touch held Shares refused; `ragequit` in a DAO with a curve refuses every asset but the sale's currency,
+  and in a DAO without one still pays every listed asset.
 - **Every guard falsified:** each test fails when its check is removed (Review-Proven Rule 3).
 - **The simulation** with buying and leaving over many runs, in dollars per participant; then a public testnet run with
   real people before any public network.
@@ -315,8 +329,8 @@ choice by an administrator can change an exclusion, the schedule or custody, so 
 
 ## Open questions for you
 
-1. **The asset question (blocking).** A (one claimable asset, recommended), B (proportional basket) or C (keep the
-   curve off)?
+1. ~~**The asset question.**~~ Decided 2026-10-25: option A, leaving pays only the sale's currency in DAOs with a
+   funding curve (D112).
 2. **The allocation.** 15% by default, at most 20%, with the auction keeping its own 60%?
 3. **The window.** Finite (say 90 days, recommended) or perpetual?
 4. **The schedule.** "Shares sold" with a 2x endpoint as a starting model, VRGDA later if needed?
@@ -337,7 +351,7 @@ feasibility specification first. Its points and what this revision does:
 
 | Review point | This revision |
 |---|---|
-| A USDC-only floor does not protect a treasury holding other assets (blocking) | [The asset question](#the-asset-question-blocks-everything-else), with three options and a recommendation; no longer a footnote |
+| A USDC-only floor does not protect a treasury holding other assets (blocking) | [The asset question](#the-asset-question-decided-option-a-d112), decided: leaving pays only the sale's currency in these DAOs (D112) |
 | The claim block alone is not a safe start | Opens only after a successful, handed-over auction; never after a failed one |
 | The whole-order price depended on batching | [Pricing](#pricing) applies the floor Share by Share; checked equal for any split |
 | A two-way exemption lets holders send Shares to the curve; counts and exclusions needed exact boundaries | One-way exemption, the curve's own counts, a binding fixed at birth, disjoint exclusions, retirement of never-sold Shares only |
@@ -349,7 +363,7 @@ feasibility specification first. Its points and what this revision does:
 
 ## If you accept it
 
-1. Decide question 1, then the others; decision rows for each; an update to
+1. Question 1 is decided (D112); decide the others, with decision rows for each, and an update to
    [TOKENOMICS-CONTRACT-CHANGES.md](TOKENOMICS-CONTRACT-CHANGES.md).
 2. A feasibility specification: exact state, callers, rounding, asset policy and size measurements, reviewed before
    any contract code.
