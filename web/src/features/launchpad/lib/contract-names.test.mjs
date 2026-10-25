@@ -14,10 +14,7 @@ test("each budget's contracts get plain names, found by lowercase address", () =
   const names = contractNames({ mandates: [mandate(1), mandate(4, true)] });
   assert.equal(names.get(`0x${"1".repeat(40)}`), "A work budget");
   assert.equal(names.get(`0x${"2".repeat(40)}`), "Reviewers' bonds");
-  assert.equal(
-    names.get(`0x${"3".repeat(40)}`),
-    "Contributors' claim deposits",
-  );
+  assert.equal(names.get(`0x${"3".repeat(40)}`), "Contributors' deposits");
   assert.equal(names.get(`0x${"4".repeat(40)}`), "The milestone panel");
 });
 

@@ -35,7 +35,7 @@ import {
 } from "../use-channel-messages";
 import type { NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
-import { userPubkey } from "@/shared/lib/identity";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { liveRefusalText } from "@/shared/lib/refusal-text";
 import {
   resolveUserName,
@@ -589,7 +589,8 @@ export function ChannelTimeline({
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   /** Message a moderator is about to remove, awaiting confirmation. */
   const [pendingRemove, setPendingRemove] = useState<string | null>(null);
-  const ownPubkey = userPubkey();
+  // Read-only: a visitor reading a room has no key and must not be given one by opening it ("" matches no author).
+  const ownPubkey = existingUserPubkey() ?? "";
   const nameOf = (pubkey: string) =>
     agentByPubkey.get(pubkey)?.name ??
     resolveUserName(profileByPubkey.get(pubkey), pubkey);
@@ -655,11 +656,9 @@ export function ChannelTimeline({
       if (notes.has(event.id)) continue;
       seen.add(event.pubkey.toLowerCase());
     }
-    try {
-      seen.add(userPubkey().toLowerCase());
-    } catch {
-      // Not signed in: presence for the viewer is unavailable, fine.
-    }
+    // Not signed in: presence for the viewer is unavailable, fine.
+    const self = existingUserPubkey();
+    if (self) seen.add(self.toLowerCase());
     return [...seen];
   }, [messages.ordered, notes]);
 

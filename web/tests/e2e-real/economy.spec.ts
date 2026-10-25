@@ -593,7 +593,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
       .locator("option[value='project']"),
   ).toHaveCount(0);
   await expect(founder.page.getByTestId("decision-draft")).toContainText(
-    "1 reviewer, 1 must agree on each claim",
+    "1 reviewer, 1 must agree on each submission",
   );
   await expect(founder.page.getByTestId("decision-draft")).toContainText(
     "bond of 100",
@@ -777,7 +777,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     .getByTestId("work-challenge")
     .click();
   await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
-    "Freeze the claim “extra-docs”",
+    "Freeze the submission “extra-docs”",
     { timeout: 30_000 },
   );
   await founder.page.getByTestId("decision-draft-submit").click();
@@ -801,7 +801,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await founder.page.getByTestId("decision-new").click();
   await founder.page.getByTestId("decision-kind-unwind").click();
   await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
-    "Unwind the frozen claim “extra-docs”",
+    "Unwind the frozen submission “extra-docs”",
     { timeout: 30_000 },
   );
   await founder.page.getByTestId("decision-draft-submit").click();
@@ -922,7 +922,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   );
   await shot(founder.page, "6-overview");
   await expect(founder.page.getByTestId("dao-spending-reviewed")).toContainText(
-    "4,000 USDC, of which 4,000 USDC has been paid to claims the reviewers approved",
+    "4,000 USDC, of which 4,000 USDC has been paid for work the reviewers approved",
     { timeout: 30_000 },
   );
   await expect(founder.page.getByTestId("dao-spending-direct")).toContainText(

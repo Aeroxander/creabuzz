@@ -14,6 +14,12 @@ import {
 import { TypingIndicator } from "@/features/presence/ui/TypingIndicator";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
+import { existingUserPubkey } from "@/shared/lib/identity";
+import { hasNip07Provider } from "@/shared/lib/nostr-signer";
+import {
+  CREATE_ACCOUNT,
+  SIGN_UP_EVENT,
+} from "@/features/identity/lib/account-copy";
 
 export interface EditTarget {
   eventId: string;
@@ -163,6 +169,26 @@ export function Composer({
       setUploading(false);
     }
   };
+
+  // Sending would create a key for a visitor, signing them up without the terms: ask them to make an account first.
+  // Someone signing with a browser extension already has one.
+  if (existingUserPubkey() === null && !hasNip07Provider()) {
+    return (
+      <div
+        className="border-t border-black/10 px-4 py-3 text-sm text-black/70 dark:border-white/10 dark:text-white/70"
+        data-testid="room-composer-sign-up"
+      >
+        <button
+          className="font-semibold underline underline-offset-2"
+          onClick={() => window.dispatchEvent(new Event(SIGN_UP_EVENT))}
+          type="button"
+        >
+          {CREATE_ACCOUNT}
+        </button>{" "}
+        to write here. Reading needs no account.
+      </div>
+    );
+  }
 
   return (
     <form

@@ -99,7 +99,7 @@ function ClaimPickForm({
         ? attempt(() => make(chosen))
         : {
             problem: pick.gone
-              ? "That claim is no longer open to this. Choose which claim you mean."
+              ? "That submission is no longer open to this. Choose which one you mean."
               : none,
           },
     [chosen, pick.gone, none, make],
@@ -113,9 +113,9 @@ function ClaimPickForm({
           data-testid={`${testId}-gone`}
           role="status"
         >
-          The claim you chose is no longer open to this. It may have been paid,
-          frozen or closed since you looked.
-          {options.length > 0 ? " Choose the claim you mean below." : ""}
+          The submission you chose is no longer open to this. It may have been
+          paid, frozen or closed since you looked.
+          {options.length > 0 ? " Choose the one you mean below." : ""}
         </p>
       ) : null}
       {options.length === 0 ? (
@@ -127,7 +127,7 @@ function ClaimPickForm({
           label={label}
           onChange={setSelected}
           options={[
-            ...(chosen ? [] : [{ value: "", label: "Choose a claim…" }]),
+            ...(chosen ? [] : [{ value: "", label: "Choose a submission…" }]),
             ...options.map((o) => ({
               value: pickKey(o),
               label: pickLabel(o, who, budgets),
@@ -160,9 +160,9 @@ export function FreezeForm(props: FormProps & { initialPick?: string }) {
     <ClaimPickForm
       {...props}
       intro="Hold back work you doubt. Nothing is paid or awarded for it while it is frozen. A freeze is not a verdict: a later decision can let it go."
-      label="Claim to freeze"
+      label="Submission to freeze"
       make={make}
-      none="No claim is open to freeze. Only a claim that is still being reviewed, or approved and waiting out its challenge window, can be frozen."
+      none="Nothing is open to freeze. Only work that is still being reviewed, or approved and waiting out its challenge window, can be frozen."
       states={["Open", "Approved"]}
       testId="freeze"
     />
@@ -183,9 +183,9 @@ export function UnwindForm(props: FormProps & { initialPick?: string }) {
     <ClaimPickForm
       {...props}
       intro="Unwind a frozen claim. The money set aside for it goes back to the work budget and the contributor's deposit goes back to them. Nothing is taken from anyone."
-      label="Frozen claim to unwind"
+      label="Frozen submission to unwind"
       make={make}
-      none="No claim is frozen."
+      none="No submission is frozen."
       states={["Frozen"]}
       testId="unwind"
     />
@@ -226,11 +226,11 @@ export function CloseBudgetForm({
   return (
     <div className="mt-3 grid gap-3" data-testid="form-close">
       <p className="text-sm text-muted-foreground">
-        Close a work budget early. No new claim can be started in it and the
-        money not set aside for a claim goes back to the DAO. Claims whose money
-        is already set aside keep their own payment rules. The milestone panel
-        is not offered here: closing it would leave the team&apos;s locked
-        Shares with no way to unlock.
+        Close a work budget early. No new work can be submitted in it and the
+        money not set aside for a submission goes back to the DAO. Submissions
+        whose money is already set aside keep their own payment rules. The
+        milestone panel is not offered here: closing it would leave the
+        team&apos;s locked Shares with no way to unlock.
       </p>
       {pick.gone ? (
         <p
@@ -272,7 +272,7 @@ export function CloseBudgetForm({
           </p>
           <p className="mt-1">
             {effects.awardsLost > 0
-              ? `${effects.awardsLost} ${effects.awardsLost === 1 ? "claim that was" : "claims that were"} approved and paid ${effects.awardsLost === 1 ? "is" : "are"} still waiting for a Shares award, and can no longer be awarded. `
+              ? `${effects.awardsLost} ${effects.awardsLost === 1 ? "submission that was" : "submissions that were"} approved and paid ${effects.awardsLost === 1 ? "is" : "are"} still waiting for a Shares award, and can no longer be awarded. `
               : ""}
             {effects.allowanceLost > 0n
               ? `${formatShares(effects.allowanceLost)} Shares of allowance would go unused. `

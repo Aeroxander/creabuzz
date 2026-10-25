@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   channelFromRecord,
   channelsFromRecords,
+  defaultRoom,
   latestRecords,
   listedRooms,
 } from "./channel-records.ts";
@@ -98,4 +99,34 @@ test("the listed rooms leave out DM threads, which the page itself still holds",
     listedRooms(page).map((channel) => channel.id),
     ["general", "ideas"],
   );
+});
+
+test("a community opens on #general, else its first chat room, else its first board, and never on a direct thread", () => {
+  const room = (name, type = "stream", direct = false) => ({
+    id: name,
+    name,
+    description: "",
+    visibility: "public",
+    type,
+    direct,
+    createdAt: 1,
+    serverKey: null,
+  });
+  assert.equal(
+    defaultRoom([room("supporters", "forum"), room("random"), room("General")])
+      ?.name,
+    "General",
+  );
+  assert.equal(
+    defaultRoom([room("supporters", "forum"), room("random"), room("design")])
+      ?.name,
+    "random",
+  );
+  assert.equal(
+    defaultRoom([room("general", "stream", true), room("supporters", "forum")])
+      ?.name,
+    "supporters",
+  );
+  assert.equal(defaultRoom([room("general", "stream", true)]), null);
+  assert.equal(defaultRoom([]), null);
 });

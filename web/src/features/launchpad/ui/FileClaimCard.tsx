@@ -132,7 +132,7 @@ export function FileClaimCard({
     setProblem(null);
     setFiled(null);
     if (!wallet) {
-      setProblem("Connect your wallet to file a claim.");
+      setProblem("Connect your wallet to submit work.");
       return;
     }
     let id: string;
@@ -176,7 +176,7 @@ export function FileClaimCard({
     }
     if ((amount > 0n || stake > 0n) && !holdsMoney) {
       setProblem(
-        "This work budget has no money, so a claim here can only ask to be recognised.",
+        "This work budget has no money, so work here can only ask to be recognised.",
       );
       return;
     }
@@ -442,7 +442,7 @@ export function FileClaimCard({
                 value={deposit}
               />
               <span className="text-xs text-muted-foreground">
-                A deposit shows you stand behind the claim. You get it back with
+                A deposit shows you stand behind the work. You get it back with
                 your payment; it is lost if the reviewers object.
               </span>
             </div>

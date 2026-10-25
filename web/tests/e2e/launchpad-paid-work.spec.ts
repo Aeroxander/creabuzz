@@ -440,7 +440,7 @@ test("a manual treasury payment selects a verified Nostr recipient on the right 
     { timeout: 30_000 },
   );
   await expect(page.getByTestId("dao-spending-reviewed")).toContainText(
-    "has been paid to claims the reviewers approved",
+    "has been paid for work the reviewers approved",
   );
   await expect(page.getByTestId("dao-spending-headline")).toContainText(
     "paid out directly with no reviewer",

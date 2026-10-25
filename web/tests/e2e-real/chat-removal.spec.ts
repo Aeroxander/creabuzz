@@ -115,8 +115,11 @@ test("an owner removes a member's board post; the member's open board shows it g
   await owner.getByTestId("board-nav-supporters").click();
   await expect(post(owner)).toBeVisible({ timeout: 30_000 });
   await post(owner).click();
+  // Removing sits in the Moderate menu and asks for a reason (D98).
+  await owner.getByTestId("board-moderate-post").click();
   await owner.getByTestId("board-remove-post").click();
-  await owner.getByRole("button", { name: "Remove", exact: true }).click();
+  await owner.getByTestId("board-remove-dialog-reason").fill("Spam");
+  await owner.getByTestId("board-remove-dialog-submit").click();
 
   // The member did not reload: it is gone from their board.
   await expect(post(member)).toHaveCount(0, { timeout: 30_000 });

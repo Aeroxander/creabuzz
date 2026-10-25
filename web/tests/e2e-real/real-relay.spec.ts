@@ -112,7 +112,7 @@ test("the client loads from the relay without page errors", async ({
   await page.goto(`/c/${COMMUNITY}`);
   // The shell is served, the SPA route resolves, and the relay's own endpoints
   // answer JSON rather than the shell (the "Unexpected token '<'" failure).
-  await expect(page.getByText(/Creaton|All communities/).first()).toBeVisible({
+  await expect(page.getByText(/creaton|All communities/i).first()).toBeVisible({
     timeout: 20_000,
   });
   expect(pageErrors, pageErrors.join(" | ")).toEqual([]);
@@ -171,8 +171,8 @@ test("a wiki page is stored by the relay and is still there after a reload", asy
   const slug = `verify-${Date.now().toString(36)}`;
   const body = `Wiki body written against a real relay ${slug}`;
 
-  await page.goto(`/c/${COMMUNITY}`);
-  await page.getByTestId("wiki-toggle").click();
+  // The wiki is opened by its link: it is not in a member's sidebar (D108).
+  await page.goto(`/c/${COMMUNITY}?view=wiki`);
   await page.getByTestId("wiki-new-page").click();
   await page.getByTestId("page-name-input").fill(slug);
   await page.getByTestId("page-name-confirm").click();
@@ -339,8 +339,7 @@ test("two people editing one wiki page converge through the real relay", async (
   );
 
   for (const page of [owner, reader]) {
-    await page.goto(`/c/${COMMUNITY}`);
-    await page.getByTestId("wiki-toggle").click();
+    await page.goto(`/c/${COMMUNITY}?view=wiki`);
   }
 
   // The owner creates the page and saves a first version.

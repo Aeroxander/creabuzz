@@ -13,7 +13,7 @@ import {
   profileDisplayName,
 } from "@/features/profiles/use-profiles";
 import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages";
-import { userPubkey } from "@/shared/lib/identity";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 
 export interface MentionCandidate {
@@ -59,7 +59,8 @@ export function useMentionCandidates(
     };
   }, [channelId]);
 
-  const me = userPubkey();
+  // Read-only, so listing who can be mentioned never creates a key for a visitor.
+  const me = existingUserPubkey();
   const { data: profiles } = useProfiles(observed.length ? observed : []);
 
   return useMemo(() => {

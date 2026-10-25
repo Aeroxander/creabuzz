@@ -82,6 +82,12 @@ test.beforeEach(async ({ page }) => {
     ([nsec]) => window.localStorage.setItem("buzz.agent.nsec", nsec),
     [AGENT_NSEC],
   );
+  // Running a helper and writing in its room need an account (D109), as signing up would give.
+  await page.addInitScript(() => {
+    if (!window.localStorage.getItem("buzz.identity.nsec")) {
+      window.localStorage.setItem("buzz.identity.nsec", "a1".repeat(32));
+    }
+  });
 });
 
 test("the tab agent announces itself to the relay when started", async ({

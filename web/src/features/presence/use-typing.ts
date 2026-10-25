@@ -11,7 +11,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { publishEvent } from "@/shared/lib/publish-event";
-import { signAsUser, userPubkey } from "@/shared/lib/identity";
+import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
+import { hasNip07Provider } from "@/shared/lib/nostr-signer";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import {
@@ -27,12 +28,9 @@ import {
   type TypingState,
 } from "./lib/typing";
 
+/** The viewer, without creating a key for someone who has none. */
 function selfPubkey(): string | null {
-  try {
-    return userPubkey().toLowerCase();
-  } catch {
-    return null;
-  }
+  return existingUserPubkey()?.toLowerCase() ?? null;
 }
 
 function buildTypingTags(channelId: string, replyTo: string | null) {
@@ -65,6 +63,8 @@ export function useTypingBroadcast(
       throttleRef.current.reset();
     }
     if (!throttleRef.current.shouldSend()) return;
+    // Typing never mints a key: a visitor typing into a room is not signed up (an extension signer is).
+    if (existingUserPubkey() === null && !hasNip07Provider()) return;
 
     const tags = buildTypingTags(id, replyToRef.current);
     Promise.resolve()

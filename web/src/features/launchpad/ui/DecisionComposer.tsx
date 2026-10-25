@@ -70,7 +70,7 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
   },
   {
     id: "award",
-    label: "Award Shares for a claim",
+    label: "Award Shares for submitted work",
     about: "Give Shares for work the reviewers approved.",
   },
   {
@@ -86,13 +86,13 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
   },
   {
     id: "freeze",
-    label: "Freeze a claim",
+    label: "Freeze a submission",
     about:
       "Hold back work you doubt. Nothing is paid or awarded for it until a later decision lets it go.",
   },
   {
     id: "unwind",
-    label: "Unwind a frozen claim",
+    label: "Unwind a frozen submission",
     about: "Send the money reserved for it back to the budget.",
   },
   {
@@ -103,7 +103,7 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
   {
     id: "close",
     label: "Close a work budget",
-    about: "Stop new claims and take back what is not set aside.",
+    about: "Stop new submissions and take back what is not set aside.",
   },
   {
     id: "trading",
@@ -414,7 +414,7 @@ export function DecisionComposer({
                   This pays straight out of the treasury. No reviewer checks
                   anything before it goes, and nothing checks what the money is
                   spent on. If it is for work someone will do, set aside a work
-                  budget instead: the money then leaves only against claims the
+                  budget instead: the money then leaves only for work the
                   reviewers approve.
                 </p>
                 <Button

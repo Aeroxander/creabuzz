@@ -57,7 +57,7 @@ export function SpendingCard({
           <dd data-testid="dao-spending-reviewed">
             {money(summary.reviewedBudget)}
             {summary.reviewedBudget > 0n
-              ? `, of which ${money(summary.reviewedPaid)} has been paid to claims the reviewers approved`
+              ? `, of which ${money(summary.reviewedPaid)} has been paid for work the reviewers approved`
               : ""}
           </dd>
         </div>
@@ -140,8 +140,8 @@ export function SpendingCard({
           className="mt-2 text-xs text-amber-700 dark:text-amber-300"
           data-testid="dao-spending-work-cut"
         >
-          This DAO has more work budgets or claims than this page reads, so the
-          reviewed-work figures may be low.
+          This DAO has more work budgets or submissions than this page reads, so
+          the reviewed-work figures may be low.
         </p>
       ) : null}
       {summary.otherCurrencyBudgets > 0 ? (
@@ -158,9 +158,9 @@ export function SpendingCard({
         </p>
       ) : null}
       <p className="mt-2 text-xs text-muted-foreground">
-        A work budget pays out only against claims the reviewers approve. A
-        direct payment is an ordinary decision the holders voted for; nothing
-        checks what the money is spent on.
+        A work budget pays out only for work the reviewers approve. A direct
+        payment is an ordinary decision the holders voted for; nothing checks
+        what the money is spent on.
       </p>
       <Button
         className="mt-2"

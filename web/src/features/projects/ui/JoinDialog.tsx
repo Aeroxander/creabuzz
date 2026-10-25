@@ -11,7 +11,7 @@
 
 import { useState } from "react";
 
-import { userPubkey } from "@/shared/lib/identity";
+import { existingUserPubkey, userPubkey } from "@/shared/lib/identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -52,6 +52,8 @@ export function JoinDialog({
   const [pct, setPct] = useState(String(role.pct));
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Read-only, so opening the dialog never creates a key; sending the request (an action) still does.
+  const signedAs = existingUserPubkey();
 
   function submit() {
     setError(null);
@@ -187,9 +189,11 @@ export function JoinDialog({
             {publish.isPending ? "Sending…" : "Send request"}
           </Button>
         </AlertDialogFooter>
-        <p className="text-2xs text-black/40 dark:text-white/40">
-          Signed as {truncatePubkey(userPubkey())}
-        </p>
+        {signedAs ? (
+          <p className="text-2xs text-black/40 dark:text-white/40">
+            Signed as {truncatePubkey(signedAs)}
+          </p>
+        ) : null}
       </AlertDialogContent>
     </AlertDialog>
   );

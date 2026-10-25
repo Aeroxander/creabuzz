@@ -261,7 +261,7 @@ export function buildLedger(input: LedgerInput): LedgerEntry[] {
         key: `filed-${key}`,
         when: events.filedAt.get(key) ?? 0,
         kind: "work",
-        text: `${who} filed a claim${asked}.`,
+        text: `${who} submitted work${asked}.`,
         detail:
           [
             claimOutcome(claim.record.status, claim.approvals, claim.quorum),
@@ -288,7 +288,7 @@ export function buildLedger(input: LedgerInput): LedgerEntry[] {
           key: `approved-${key}`,
           when: claim.record.releasedAt,
           kind: "work",
-          text: `The reviewers approved the claim of ${who}.`,
+          text: `The reviewers approved the work of ${who}.`,
           detail: said.join(" ") || undefined,
           tab: "work",
         });

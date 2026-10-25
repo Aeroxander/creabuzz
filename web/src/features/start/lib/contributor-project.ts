@@ -319,7 +319,7 @@ export function contributorTerms(
   if (founderWallet && lower.includes(founderWallet.toLowerCase()))
     fail(
       "reviewers",
-      "You cannot review the first budget's work yourself. Name other people: they check everyone's claims, yours too.",
+      "You cannot review the first budget's work yourself. Name other people: they check everyone's work, yours too.",
     );
 
   const projects = checkProjects(draft.projects, capWhole, budgetWhole);

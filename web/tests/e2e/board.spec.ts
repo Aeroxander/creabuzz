@@ -1005,11 +1005,27 @@ test("someone without an account is told to make one before boards are added", a
   await relay.install(page);
   await page.goto("/c/alpha.example.com");
   await page.getByTestId("content-pane").waitFor();
+  // Reading #general, which a community opens on, gives a visitor no key: they have not signed up.
+  await expect(page.getByTestId("channel-general")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await page.waitForTimeout(500);
+  expect(
+    await page.evaluate(() =>
+      window.localStorage.getItem("buzz.identity.nsec"),
+    ),
+  ).toBeNull();
   await page.getByTestId("starter-boards").click();
   await expect(
     page.getByText("Create your account (top right) to add boards."),
   ).toBeVisible();
   expect(relay.events.filter((e) => e.kind === 9007)).toEqual([]);
+  // Writing in the room asks for an account too, and opens sign-up.
+  const prompt = page.getByTestId("room-composer-sign-up");
+  await expect(prompt).toContainText("Reading needs no account.");
+  await prompt.getByRole("button", { name: "Create your account" }).click();
+  await expect(page.getByTestId("onboarding-dialog")).toBeVisible();
 });
 
 const STRANGER_DAO = `0x${"cd".repeat(20)}`;

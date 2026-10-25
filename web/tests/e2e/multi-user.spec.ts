@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { createMockRelay } from "./mock-relay";
@@ -28,6 +28,17 @@ function channelEvent() {
   };
 }
 
+/** Writing in a room needs an account (D109): each posting client gets one, as signing up would give it. */
+const AUTHOR_KEY = "a1".repeat(32);
+const READER_KEY = "b2".repeat(32);
+async function withAccount(page: Page, key: string) {
+  await page.addInitScript((nsec) => {
+    if (!window.localStorage.getItem("buzz.identity.nsec")) {
+      window.localStorage.setItem("buzz.identity.nsec", nsec);
+    }
+  }, key);
+}
+
 test("a page published in one client reaches the other live", async ({
   browser,
 }) => {
@@ -35,7 +46,9 @@ test("a page published in one client reaches the other live", async ({
   const first = await browser.newContext();
   const second = await browser.newContext();
   const author = await first.newPage();
+  await withAccount(author, AUTHOR_KEY);
   const reader = await second.newPage();
+  await withAccount(reader, READER_KEY);
 
   // Both clients know the channel (seeded history, like a real relay).
   relay.seed(channelEvent());
@@ -121,7 +134,9 @@ test("an edit and a reaction reach the other client live", async ({
   const first = await browser.newContext();
   const second = await browser.newContext();
   const author = await first.newPage();
+  await withAccount(author, AUTHOR_KEY);
   const reader = await second.newPage();
+  await withAccount(reader, READER_KEY);
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
@@ -199,7 +214,9 @@ test("a client recovers after its connection drops", async ({ browser }) => {
   const first = await browser.newContext();
   const second = await browser.newContext();
   const author = await first.newPage();
+  await withAccount(author, AUTHOR_KEY);
   const reader = await second.newPage();
+  await withAccount(reader, READER_KEY);
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
@@ -286,7 +303,9 @@ test("a deleted message disappears for the other client", async ({
   const first = await browser.newContext();
   const second = await browser.newContext();
   const author = await first.newPage();
+  await withAccount(author, AUTHOR_KEY);
   const reader = await second.newPage();
+  await withAccount(reader, READER_KEY);
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
@@ -319,6 +338,7 @@ test("the composer suggests people seen in the channel, not just agents", async 
   const relay = createMockRelay();
   const context = await browser.newContext();
   const page = await context.newPage();
+  await withAccount(page, AUTHOR_KEY);
   const alice = "d".repeat(64);
   relay.seed(channelEvent());
   relay.seed({
@@ -359,7 +379,9 @@ test("a reply appears threaded for the other client", async ({ browser }) => {
   const first = await browser.newContext();
   const second = await browser.newContext();
   const author = await first.newPage();
+  await withAccount(author, AUTHOR_KEY);
   const reader = await second.newPage();
+  await withAccount(reader, READER_KEY);
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
@@ -458,6 +480,7 @@ test("an accept-then-close relay backs off instead of looping once a second", as
   const relay = createMockRelay();
   relay.seed(channelEvent());
 
+  await withAccount(page, AUTHOR_KEY);
   await relay.install(page);
   // Pin the jitter so the retry rhythm is deterministic.
   await page.addInitScript(() => {
@@ -540,6 +563,7 @@ test("an attachment over the limit is refused without an upload attempt", async 
   // memory and the read time to be told by the relay.
   const relay = createMockRelay();
   relay.seed(channelEvent());
+  await withAccount(page, AUTHOR_KEY);
   await relay.install(page);
 
   const uploads: string[] = [];
@@ -603,6 +627,7 @@ test("a live subscription survives arriving before the AUTH handshake", async ({
   const relay = createMockRelay({ requireAuth: true });
   relay.seed(channelEvent());
 
+  await withAccount(page, AUTHOR_KEY);
   await relay.install(page);
   await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
   await expect(page.getByTestId("composer-input")).toBeVisible({

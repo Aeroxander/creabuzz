@@ -504,3 +504,45 @@ test("a post by someone else on Home can be banned for, by the owner, and the di
   expect(sent[0].tags).toContainEqual(["p", ALICE]);
   expect(sent[0].tags.some((tag) => tag[0] === "expiration")).toBe(false);
 });
+
+test("a member's sidebar is rooms, boards and messages; whoever runs the community also sees the setup, wiki, helpers, work and org pages", async ({
+  page,
+}) => {
+  const relay = chatRelay();
+  let moderator = false;
+  await page.route("**/moderation/reports*", async (route) => {
+    if (moderator) await route.fulfill({ json: { reports: [] } });
+    else await route.fulfill({ status: 403, body: "" });
+  });
+  await relay.install(page);
+  await signIn(page);
+  const runOnly = [
+    "start-project-toggle",
+    "wiki-toggle",
+    "fleet-toggle",
+    "work-toggle",
+    "org-toggle",
+  ];
+
+  // A member: the server refuses the moderator check, and none of them is offered.
+  const refused = page.waitForResponse("**/moderation/reports*");
+  await page.goto("/c/alpha.example.com");
+  await refused;
+  await expect(page.getByTestId("dms-toggle")).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(500);
+  for (const testId of [...runOnly, "moderation-toggle"]) {
+    await expect(page.getByTestId(testId)).toHaveCount(0);
+  }
+  // A link still opens one of those pages for them.
+  await page.goto("/c/alpha.example.com?view=wiki");
+  await expect(page.getByTestId("wiki-page-list")).toBeVisible({
+    timeout: 20_000,
+  });
+
+  // Someone who moderates here sees every one of them.
+  moderator = true;
+  await page.goto("/c/alpha.example.com");
+  for (const testId of [...runOnly, "moderation-toggle"]) {
+    await expect(page.getByTestId(testId)).toBeVisible({ timeout: 20_000 });
+  }
+});

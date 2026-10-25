@@ -88,14 +88,15 @@ function initialResults(entry: TemplateEntry, plan: PlanStep[]): StepResult[] {
   }));
 }
 
-export function useTemplateApply() {
-  const queryClient = useQueryClient();
+/**
+ * Whether the viewer is this community's owner or an admin, read from the relay's member list (which carries
+ * community roles): `allowed`, `denied` (listed with another role), `unknown` (not listed, or no list), `error`,
+ * `checking`, or `anonymous` for someone without an account. A missing list is never read as permission.
+ */
+export function useCommunitySetupAccess() {
   const me = existingUserPubkey();
   const url = relayWsUrl();
-  const [state, setState] = useState<ApplyState>({ phase: "idle" });
-  const applying = useRef(false);
-  // The relay's member list carries community roles. Scope the cache to both
-  // relay and identity, and never interpret a missing list as permission.
+  // Scoped to both relay and identity.
   const accessQuery = useQuery({
     queryKey: ["template-setup-access", url, me],
     queryFn: async () => {
@@ -109,7 +110,6 @@ export function useTemplateApply() {
     enabled: me !== null,
     retry: false,
   });
-  const refreshAccess = accessQuery.refetch;
   const access = !me
     ? "anonymous"
     : accessQuery.isFetching
@@ -117,6 +117,16 @@ export function useTemplateApply() {
       : accessQuery.isError
         ? "error"
         : (accessQuery.data ?? "checking");
+  return { access, refreshAccess: accessQuery.refetch };
+}
+
+export function useTemplateApply() {
+  const queryClient = useQueryClient();
+  const me = existingUserPubkey();
+  const url = relayWsUrl();
+  const [state, setState] = useState<ApplyState>({ phase: "idle" });
+  const applying = useRef(false);
+  const { access, refreshAccess } = useCommunitySetupAccess();
 
   const apply = useCallback(
     async (templateId: string) => {

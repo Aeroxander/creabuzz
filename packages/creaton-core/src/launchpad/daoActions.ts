@@ -274,9 +274,9 @@ export function mandateDecision(input: MandateInput): DecisionDraft {
         ]
       : []),
     `Open until ${new Date(input.expiresAt * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}`,
-    `${reviewers.length} reviewer${reviewers.length === 1 ? "" : "s"}, ${input.quorum} must agree on each claim`,
+    `${reviewers.length} reviewer${reviewers.length === 1 ? "" : "s"}, ${input.quorum} must agree on each submission`,
     input.reviewerBond > 0n
-      ? `Each reviewer posts a bond of ${formatUnits(input.reviewerBond, bondDecimals)}${bondToken === currency ? "" : ` ${input.reviewerBondLabel ?? `of the token ${bondToken}`}`} before judging a claim`
+      ? `Each reviewer posts a bond of ${formatUnits(input.reviewerBond, bondDecimals)}${bondToken === currency ? "" : ` ${input.reviewerBondLabel ?? `of the token ${bondToken}`}`} before judging a submission`
       : "Reviewers post no bond",
   ];
   const base = {
@@ -398,7 +398,7 @@ export function awardDecision(input: AwardInput): DecisionDraft {
   const dao = address(input.dao, "dao", "The DAO");
   const mandate = address(input.mandate, "mandate", "The work budget");
   if (!/^0x[0-9a-fA-F]{64}$/.test(input.claimId))
-    fail("claimId", "Pick the claim to award.");
+    fail("claimId", "Pick the submission to award.");
   if (input.shares === 0n)
     fail("shares", "An award of no Shares is not an award.");
   if (input.shares > U96_MAX) fail("shares", "That amount is too large.");
@@ -410,7 +410,7 @@ export function awardDecision(input: AwardInput): DecisionDraft {
       [mandate, input.claimId, input.shares, false],
     ),
     lane: "bounded",
-    title: `Award ${shares(input.shares)} Shares for the claim “${idLabel(input.claimId)}”`,
+    title: `Award ${shares(input.shares)} Shares for the submission “${idLabel(input.claimId)}”`,
     lines: [
       "The work budget refuses an award larger than the project has left, however the vote goes.",
     ],
@@ -488,7 +488,7 @@ export function payDecision(input: PayInput): DecisionDraft {
 const CLAIM_ID_RE = /^0x[0-9a-fA-F]{64}$/;
 
 function claimWord(value: string): string {
-  if (!CLAIM_ID_RE.test(value)) fail("claimId", "Pick the claim.");
+  if (!CLAIM_ID_RE.test(value)) fail("claimId", "Pick the submission.");
   return value.toLowerCase();
 }
 
@@ -509,7 +509,7 @@ export function freezeClaimDecision(input: ClaimActionInput): DecisionDraft {
       [claimId],
     ),
     lane: "unrestricted",
-    title: `Freeze the claim “${idLabel(claimId)}”`,
+    title: `Freeze the submission “${idLabel(claimId)}”`,
     lines: [
       "While it is frozen nothing is paid for it and no Shares are unlocked by it.",
       "Freezing is not a verdict. A later decision unwinds it, and nobody's money is taken.",
@@ -531,7 +531,7 @@ export function resolveFrozenClaimDecision(
       [claimId],
     ),
     lane: "unrestricted",
-    title: `Unwind the frozen claim “${idLabel(claimId)}”`,
+    title: `Unwind the frozen submission “${idLabel(claimId)}”`,
     lines: [
       "The money set aside for it goes back to the work budget.",
       "The contributor's deposit goes back to them. Nothing is taken from anyone.",
@@ -552,9 +552,9 @@ export function closeBudgetDecision(input: CloseBudgetInput): DecisionDraft {
     lane: "unrestricted",
     title: "Close the work budget",
     lines: [
-      "No new claim can be started in it.",
-      "Money not set aside for a claim goes back to the DAO.",
-      "Claims whose money is already set aside keep their own payment rules.",
+      "No new work can be submitted in it.",
+      "Money not set aside for a submission goes back to the DAO.",
+      "Submissions whose money is already set aside keep their own payment rules.",
       "No more Shares can be awarded through it: work that was approved and paid but not yet awarded Shares loses its award.",
     ],
   };
@@ -740,9 +740,9 @@ function describeCall(
               ]
             : []),
           `Open until ${date(expires)}`,
-          `${reviewers.length} reviewer${reviewers.length === 1 ? "" : "s"}, ${quorum} must agree on each claim`,
+          `${reviewers.length} reviewer${reviewers.length === 1 ? "" : "s"}, ${quorum} must agree on each submission`,
           reviewerBond > 0n
-            ? `Each reviewer posts a bond of ${bondText(reviewerBond, bondToken, currency, ctx)} before judging a claim`
+            ? `Each reviewer posts a bond of ${bondText(reviewerBond, bondToken, currency, ctx)} before judging a submission`
             : "Reviewers post no bond",
         ],
       };
@@ -787,7 +787,7 @@ function describeCall(
       ) as [string, string, bigint, boolean];
       return {
         kind: "award",
-        title: `Award ${shares(amount)} Shares for the claim “${idLabel(claim)}”`,
+        title: `Award ${shares(amount)} Shares for the submission “${idLabel(claim)}”`,
         lines:
           ctx.mandates && ctx.mandates.length > 1
             ? [`From the work budget ${who(ctx, mandate)}`]
@@ -813,7 +813,7 @@ function describeCall(
       const [claim] = decodeParameters(["bytes32"], args) as [string];
       return {
         kind: "freeze",
-        title: `Freeze the claim “${idLabel(claim)}”`,
+        title: `Freeze the submission “${idLabel(claim)}”`,
         lines: [
           "While it is frozen nothing is paid for it and no Shares are unlocked by it.",
           "Freezing is not a verdict. A later decision unwinds it, and nobody's money is taken.",
@@ -826,7 +826,7 @@ function describeCall(
       const [claim] = decodeParameters(["bytes32"], args) as [string];
       return {
         kind: "unwind",
-        title: `Unwind the frozen claim “${idLabel(claim)}”`,
+        title: `Unwind the frozen submission “${idLabel(claim)}”`,
         lines: [
           "The money set aside for it goes back to the work budget.",
           "The contributor's deposit goes back to them. Nothing is taken from anyone.",
@@ -840,9 +840,9 @@ function describeCall(
         kind: "close-budget",
         title: "Close the work budget",
         lines: [
-          "No new claim can be started in it.",
-          "Money not set aside for a claim goes back to the DAO.",
-          "Claims whose money is already set aside keep their own payment rules.",
+          "No new work can be submitted in it.",
+          "Money not set aside for a submission goes back to the DAO.",
+          "Submissions whose money is already set aside keep their own payment rules.",
           "No more Shares can be awarded through it: work that was approved and paid but not yet awarded Shares loses its award.",
         ],
       };

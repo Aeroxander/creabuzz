@@ -90,3 +90,19 @@ export function channelsFromRecords(
 export function listedRooms(channels: readonly Channel[]): Channel[] {
   return channels.filter((channel) => !channel.direct);
 }
+
+/**
+ * The room a community opens on when the link names none: #general when there is one, else its first chat room, else
+ * its first board. Null for a community with no rooms, which then offers to set itself up.
+ */
+export function defaultRoom(channels: readonly Channel[]): Channel | null {
+  const rooms = channels.filter((channel) => !channel.direct);
+  return (
+    rooms.find(
+      (room) => room.type === "stream" && room.name.toLowerCase() === "general",
+    ) ??
+    rooms.find((room) => room.type === "stream") ??
+    rooms[0] ??
+    null
+  );
+}

@@ -402,7 +402,7 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
 
   const result = useMemo<DraftResult>(() => {
     if (!chosen)
-      return { problem: "No approved claim is waiting for an award." };
+      return { problem: "No approved work is waiting for an award." };
     return attempt(() => {
       const amount = shares.trim()
         ? parseUnits(shares, 18, "shares", "The Shares")
@@ -425,19 +425,19 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
   return (
     <div className="mt-3 grid gap-3" data-testid="form-award">
       <p className="text-sm text-muted-foreground">
-        Award Shares to someone whose claim the reviewers approved. The work
+        Award Shares to someone whose work the reviewers approved. The work
         budget refuses an award larger than the work area has left, however the
         vote goes.
       </p>
       {awardable.length === 0 ? (
         <p className="text-sm" data-testid="award-none">
-          No approved claim is waiting for an award. A claim becomes awardable
-          once its work area&apos;s manager has accepted it, its reviewers
-          approve it, and the waiting period has passed.
+          No approved work is waiting for an award. Work can be awarded once its
+          work area&apos;s manager has accepted it, its reviewers approve it,
+          and the waiting period has passed.
         </p>
       ) : (
         <SelectField
-          label="Claim to award"
+          label="Work to award"
           onChange={setWhich}
           options={awardable.map((a) => ({
             value: key(a),

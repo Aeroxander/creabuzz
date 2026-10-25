@@ -292,7 +292,7 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   await expect(tranches.nth(1)).toContainText("mainnet live");
   await expect(tranches.nth(1)).toContainText("Not reached yet");
   const entries = reader.getByTestId("record-entry");
-  await expect(entries.filter({ hasText: "filed a claim" })).toHaveCount(1);
+  await expect(entries.filter({ hasText: "submitted work" })).toHaveCount(1);
   await expect(
     entries.filter({ hasText: "The reviewers approved the claim" }),
   ).toContainText("Approved by");

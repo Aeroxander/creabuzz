@@ -262,7 +262,7 @@ export function RecordTab({
             <Figure
               key={`${f.currency}-waiting`}
               label={`Waiting to be paid${tag(f)}`}
-              note="Work that is filed or approved"
+              note="Work that is submitted or approved"
               testId="record-figure-waiting"
               value={amount(f, f.waiting)}
             />,

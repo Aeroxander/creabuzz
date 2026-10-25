@@ -116,7 +116,7 @@ export function EvidenceBlock({
       >
         <p>
           Could not look for the evidence just now, so it is not shown and this
-          claim cannot be approved yet.
+          submission cannot be approved yet.
         </p>
         <Button
           className="mt-2"
@@ -140,7 +140,7 @@ export function EvidenceBlock({
     }
     if (hashText(evidence) !== claim.record.evidenceHash.toLowerCase()) {
       setProblem(
-        "That is not the text that was submitted with this claim. Paste it exactly as it was.",
+        "That is not the text that was submitted with this work. Paste it exactly as it was.",
       );
       return;
     }
@@ -149,7 +149,7 @@ export function EvidenceBlock({
       hashText(check) !== claim.record.checkHash.toLowerCase()
     ) {
       setProblem(
-        "Those are not the words this claim is judged against. Paste them exactly as they were.",
+        "Those are not the words this work is judged against. Paste them exactly as they were.",
       );
       return;
     }
@@ -171,10 +171,10 @@ export function EvidenceBlock({
     >
       <p>
         {standing.kind === "mismatch"
-          ? "Something was published for this claim, but it is not what the claim committed to. Do not approve it."
+          ? "Something was published for this submission, but it is not what was submitted. Do not approve it."
           : incomplete
-            ? "No evidence for this claim was found in the updates this page reads. This project has more updates than that, so it may be in an older one. A reviewer cannot approve what they cannot read."
-            : "No evidence has been published for this claim. A reviewer cannot approve what they cannot read."}
+            ? "No evidence for this submission was found in the updates this page reads. This project has more updates than that, so it may be in an older one. A reviewer cannot approve what they cannot read."
+            : "No evidence has been published for this submission. A reviewer cannot approve what they cannot read."}
       </p>
       {mine ? (
         <div className="mt-2 grid gap-2">

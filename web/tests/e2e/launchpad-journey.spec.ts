@@ -283,7 +283,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
     "Set aside a work budget",
   );
   await expect(founder.getByTestId("decision-draft")).toContainText(
-    "2 reviewers, 2 must agree on each claim",
+    "2 reviewers, 2 must agree on each submission",
   );
   await shot(founder, "2-composer");
   await founder.getByTestId("decision-draft-submit").click();
@@ -401,7 +401,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await expect(founder.getByTestId("award-none")).toHaveCount(0);
   await founder.getByTestId("award-shares").fill("25");
   await expect(founder.getByTestId("decision-draft-title")).toContainText(
-    "Award 25 Shares for the claim “write-docs”",
+    "Award 25 Shares for the submission “write-docs”",
   );
   await founder.getByTestId("decision-draft-submit").click();
   await expect(founder.getByTestId("decision-opened")).toBeVisible({
@@ -416,7 +416,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
     { timeout: 30_000 },
   );
   await expect(founder.getByTestId("dao-latest")).toContainText(
-    "Award 25 Shares for the claim “write-docs”",
+    "Award 25 Shares for the submission “write-docs”",
   );
   for (const tab of ["Overview", "Decisions", "Treasury"] as const) {
     await founder.getByRole("tab", { name: tab }).click();

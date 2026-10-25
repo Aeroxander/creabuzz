@@ -97,7 +97,7 @@ export function BondReturn({
         <>
           <p>
             Your bond here: {money(walletStake)}. You can ask for it back. It
-            stops counting at once, so you cannot judge claims until you post it
+            stops counting at once, so you cannot judge work until you post it
             again, and it stays at risk for 14 days after you ask.
           </p>
           <Button

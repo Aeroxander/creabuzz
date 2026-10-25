@@ -253,7 +253,7 @@ test("every action this module writes is read back as what it is", () => {
     ctx,
   );
   assert.equal(award.kind, "award");
-  assert.match(award.title, /^Award 25 Shares for the claim/);
+  assert.match(award.title, /^Award 25 Shares for the submission/);
   const fees = describeAction(
     collectFeesDecision({
       amm: AMM,
@@ -504,7 +504,9 @@ test("a bond can be paid in the project's own token or any other, as cast encode
     ctx,
   );
   assert.ok(
-    plain.lines.some((l) => l.endsWith("bond of 50 before judging a claim")),
+    plain.lines.some((l) =>
+      l.endsWith("bond of 50 before judging a submission"),
+    ),
   );
 });
 

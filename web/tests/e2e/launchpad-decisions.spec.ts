@@ -158,7 +158,9 @@ test("a decision opened elsewhere is read from the chain, backed, waited out and
   await expect(card).toContainText(
     "Shares for work: 100 in all, at most 40 per project",
   );
-  await expect(card).toContainText("2 reviewers, 2 must agree on each claim");
+  await expect(card).toContainText(
+    "2 reviewers, 2 must agree on each submission",
+  );
   await expect(page.getByTestId("decision-status")).toHaveText(
     "Collecting support",
   );

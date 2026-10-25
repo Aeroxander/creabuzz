@@ -91,8 +91,8 @@ function AwardStoryLine({
         </span>
       ) : story.evidenceState === "mismatch" ? (
         <span>
-          What was published for it is not what the claim committed to, so it is
-          not shown as theirs.
+          What was published for it is not what was submitted, so it is not
+          shown as theirs.
         </span>
       ) : story.evidenceState === "missing" ? (
         <span>No evidence was published for it.</span>

@@ -1396,3 +1396,24 @@ By hand, on a phone-sized window:
 5. Signed in with a wallet, open Decisions: the award reads in sentences, the vote buttons say Back it, Oppose and Neutral, and
    the decision picker offers no money decisions.
 6. Open an invite link: no desktop app is offered; the policies are "Terms of use" and "Privacy note".
+
+## 4bf. Submissions, #general first, and a member's sidebar (D109, 2026-10-25)
+
+```bash
+pnpm --dir web test                      # channel-records (defaultRoom), contract names, voting wording
+pnpm --dir web exec playwright test --project=smoke tests/e2e/report.spec.ts tests/e2e/start-project.spec.ts
+scripts/web-contributor-e2e.sh           # the award vote reads "for the submission"
+scripts/web-invite-only-e2e.sh           # an invite-only community's owner still reaches People and access
+```
+
+By hand:
+
+1. Open a community with no room in the link: #general is open and highlighted in the list.
+2. As a member (not an owner, admin or moderator), the sidebar shows search, Messages, boards and rooms; no Set up
+   community, Wiki, AI helpers, Work, Org or Moderation. Add `?view=wiki` to the address: the wiki opens.
+3. As the owner: all of them are there, and Org still has People and access.
+4. Signed out, open a community: #general shows, its composer says "Create your account to write here", and nothing
+   is stored for you (no `buzz.identity.nsec` in the browser's storage).
+5. On a project, submit work and open an award vote: the decision reads "Award … Shares for the submission “…”"; Needs
+   you, Work and the record say "submitted", not "filed a claim".
+

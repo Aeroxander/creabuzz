@@ -13,12 +13,14 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 
+import { defaultRoom } from "../lib/channel-records";
 import type { Channel } from "../use-channels";
 import { useUnreadRooms } from "../use-unread-rooms";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChannelTimeline } from "./ChannelTimeline";
 import { PasskeyUnlockGate } from "@/features/identity/ui/PasskeyUnlockGate";
 import { useModerationAccess } from "@/features/moderation/use-moderation-queue";
+import { useCommunitySetupAccess } from "@/features/templates/use-template-apply";
 import { NotificationBell } from "@/features/notifications/ui/NotificationBell";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
@@ -153,7 +155,17 @@ export function CommunityShell({
    * The entry is owner/moderator-gated by the server's access probe.
    */
   const [showingModeration, setShowingModeration] = useState(false);
-  const { access: moderationAccess } = useModerationAccess();
+  const { access: moderationAccess, loading: moderationLoading } =
+    useModerationAccess();
+  const { access: setupAccess } = useCommunitySetupAccess();
+  // Setting up, the wiki, AI helpers, work and the org page are for the people who run a community (D109); a member's
+  // sidebar is rooms, boards and messages. Shown to its owner or an admin (its member list) and to its moderators, and
+  // when either check could not be answered, so an owner keeps the way in. A link to one of these views still opens it.
+  const runsCommunity =
+    setupAccess === "allowed" ||
+    setupAccess === "error" ||
+    moderationAccess === "granted" ||
+    (!moderationLoading && moderationAccess === "unknown");
   /**
    * Slide-over channel list. Below `lg` the panel is off-canvas, so this is the
    * only way to reach it; at `lg` and up it is a static column and this state
@@ -209,8 +221,12 @@ export function CommunityShell({
     writeView(undefined);
   };
 
+  // With no room named in the link, the community opens on #general rather than on an empty page.
   const activeChannel = useMemo(
-    () => channels.find((c) => c.id === selectedId) ?? null,
+    () =>
+      selectedId === null
+        ? defaultRoom(channels)
+        : (channels.find((c) => c.id === selectedId) ?? null),
     [channels, selectedId],
   );
 
@@ -391,83 +407,87 @@ export function CommunityShell({
               </kbd>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => showStart(!showingStart)}
-            className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
-              showingStart
-                ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
-                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
-            }`}
-            data-testid="start-project-toggle"
-          >
-            <Rocket className="h-3.5 w-3.5" />
-            Set up community
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchTerm("");
-              setView("wiki");
-            }}
-            className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
-              showingWiki
-                ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
-                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
-            }`}
-            data-testid="wiki-toggle"
-          >
-            <BookOpen className="h-3.5 w-3.5" />
-            Wiki
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchTerm("");
-              setView("fleet");
-            }}
-            className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
-              showingFleet
-                ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
-                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
-            }`}
-            data-testid="fleet-toggle"
-          >
-            <Bot className="h-3.5 w-3.5" />
-            AI helpers
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchTerm("");
-              setView("work");
-            }}
-            className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
-              showingWork
-                ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
-                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
-            }`}
-            data-testid="work-toggle"
-          >
-            <ListChecks className="h-3.5 w-3.5" />
-            Work
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchTerm("");
-              setView("org");
-            }}
-            className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
-              showingOrg
-                ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
-                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
-            }`}
-            data-testid="org-toggle"
-          >
-            <Users className="h-3.5 w-3.5" />
-            Org
-          </button>
+          {runsCommunity ? (
+            <>
+              <button
+                type="button"
+                onClick={() => showStart(!showingStart)}
+                className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+                  showingStart
+                    ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                    : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
+                }`}
+                data-testid="start-project-toggle"
+              >
+                <Rocket className="h-3.5 w-3.5" />
+                Set up community
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm("");
+                  setView("wiki");
+                }}
+                className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+                  showingWiki
+                    ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                    : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
+                }`}
+                data-testid="wiki-toggle"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                Wiki
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm("");
+                  setView("fleet");
+                }}
+                className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+                  showingFleet
+                    ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                    : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+                }`}
+                data-testid="fleet-toggle"
+              >
+                <Bot className="h-3.5 w-3.5" />
+                AI helpers
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm("");
+                  setView("work");
+                }}
+                className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+                  showingWork
+                    ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                    : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+                }`}
+                data-testid="work-toggle"
+              >
+                <ListChecks className="h-3.5 w-3.5" />
+                Work
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm("");
+                  setView("org");
+                }}
+                className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+                  showingOrg
+                    ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                    : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+                }`}
+                data-testid="org-toggle"
+              >
+                <Users className="h-3.5 w-3.5" />
+                Org
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={() => {

@@ -9,7 +9,7 @@ import type { WorkItem } from "../use-work-board";
 import type { AgentCapabilities } from "../use-agent-roster";
 import { useAgentRoster } from "../use-agent-roster";
 import { useUserNames } from "@/features/profiles/use-profiles";
-import { userPubkey } from "@/shared/lib/identity";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { Badge } from "@/shared/ui/badge";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
@@ -47,7 +47,7 @@ function Card({
   userName: (pubkey: string) => string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const me = userPubkey();
+  const me = existingUserPubkey();
   const agent = agents.find((a) => a.pubkey === item.assignee);
   const isMine = item.assignee === me;
   // A roster agent chooses its own name, so that name outranks any profile the

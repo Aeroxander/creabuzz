@@ -31,7 +31,7 @@ import { useUserNames } from "@/features/profiles/use-profiles";
 import { KIND_AGENT_TASK, KIND_STREAM_MESSAGE } from "@/shared/constants/kinds";
 import type { TaskPriority } from "../use-agent-tasks";
 import type { Channel } from "@/features/channels/use-channels";
-import { userPubkey } from "@/shared/lib/identity";
+import { existingUserPubkey, userPubkey } from "@/shared/lib/identity";
 import { Badge } from "@/shared/ui/badge";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { toast } from "sonner";
@@ -183,7 +183,8 @@ export function WorkBoard({
   const [sendingReply, setSendingReply] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
 
-  const myPubkey = userPubkey();
+  // Read-only: opening the board never creates a key for a visitor; assigning (an action) still does.
+  const myPubkey = existingUserPubkey();
   const selected = items.find((i) => i.key === selectedId) ?? null;
 
   const canReplyToThread =
@@ -493,7 +494,7 @@ export function WorkBoard({
           }}
           onAssignSelf={(item) => {
             if (item.type === "task") {
-              void setTaskAssignee(asTask(item), myPubkey).catch(
+              void setTaskAssignee(asTask(item), userPubkey()).catch(
                 reportActionFailure("Couldn't assign this task"),
               );
             }

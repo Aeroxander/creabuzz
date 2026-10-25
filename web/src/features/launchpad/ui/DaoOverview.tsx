@@ -370,8 +370,8 @@ export function DaoOverview({
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
             A work budget sets aside Shares (and money, if you want) for people
-            to earn by doing work. Holders vote on it, then anyone can file a
-            claim for what they did and reviewers check it.
+            to earn by doing work. Holders vote on it, then anyone can submit
+            what they did and reviewers check it.
           </p>
           <Button
             className="mt-2"

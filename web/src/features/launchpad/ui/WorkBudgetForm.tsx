@@ -214,8 +214,8 @@ export function WorkBudgetForm({
     <div className="mt-3 grid gap-3" data-testid="form-work-budget">
       <p className="text-sm text-muted-foreground">
         Set aside Shares (and, if you want, money) for people to earn by doing
-        work. Reviewers you name check each claim; nothing is paid or awarded
-        without them.
+        work. Reviewers you name check each submission; nothing is paid or
+        awarded without them.
       </p>
       <TextField
         hint="Shares the DAO may award from this budget, in all."
@@ -265,7 +265,7 @@ export function WorkBudgetForm({
         value={open}
       />
       <TextAreaField
-        hint="People who judge claims. Choose people other than the ones who will claim; team members whose Shares are locked cannot be reviewers."
+        hint="People who judge the work. Choose people other than the ones who will submit it; team members whose Shares are locked cannot be reviewers."
         after={
           <PeoplePicker
             onPick={(address) =>
@@ -289,13 +289,13 @@ export function WorkBudgetForm({
       <TextField
         hint="Leave empty for a simple majority of the reviewers."
         inputMode="numeric"
-        label="How many reviewers must agree on a claim"
+        label="How many reviewers must agree on a submission"
         onChange={setQuorum}
         testId="budget-quorum"
         value={quorum}
       />
       <TextField
-        hint="Optional. Each reviewer posts this before judging a claim. The DAO can take it after a disputed approval, so judging carelessly costs them. Leave empty for none."
+        hint="Optional. Each reviewer posts this before judging a submission. The DAO can take it after a disputed approval, so judging carelessly costs them. Leave empty for none."
         inputMode="decimal"
         label="Bond each reviewer must post"
         onChange={setBond}

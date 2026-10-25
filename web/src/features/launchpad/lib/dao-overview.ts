@@ -154,7 +154,7 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
         kind: "bond",
         text: mandate.isMilestonePanel
           ? "You are one of the reviewers for the team's milestones. Post your bond before you judge one."
-          : "You are a reviewer on a work budget. Post your bond before you judge a claim.",
+          : "You are a reviewer on a work budget. Post your bond before you judge a submission.",
         action: "Post your bond",
         tab: "work",
         why: "You are a named reviewer.",
@@ -179,11 +179,11 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           claim: { id: claim.id, mandate: mandate.address },
           text:
             claim.record.amount > 0n
-              ? "Your claim was approved. You can take your payment now."
+              ? "Your submission was approved. You can take your payment now."
               : "Your work was approved. Mark it finished so Shareholders can vote on an award.",
           action: claim.record.amount > 0n ? "Take it" : "Finish it",
           tab: "work",
-          why: "It is your claim.",
+          why: "It is your submission.",
           ifIgnored:
             claim.record.amount > 0n
               ? "The payment waits until you take it."
@@ -199,7 +199,7 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           key: `review-${claim.id}`,
           kind: "review",
           claim: { id: claim.id, mandate: mandate.address },
-          text: `${who(claim.record.contributor)} filed a claim that needs your review.`,
+          text: `${who(claim.record.contributor)} submitted work that needs your review.`,
           action: "Review it",
           tab: "work",
           ...(claim.record.expiresAt > 0
@@ -209,8 +209,8 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           ifIgnored:
             claim.record.expiresAt > 0 &&
             (work?.chainTime ?? 0) > claim.record.expiresAt
-              ? "Anyone can now close this unanswered claim and return its stake and reserved payment."
-              : "After its deadline, anyone can close an unanswered claim and return its stake and reserved payment.",
+              ? "Anyone can now close this unanswered submission and return its stake and reserved payment."
+              : "After its deadline, anyone can close an unanswered submission and return its stake and reserved payment.",
         });
       }
       const target = { id: claim.id, mandate: mandate.address };
@@ -463,7 +463,7 @@ export function summaryLine(counts: OverviewCounts): string {
   }
   if (parts.length === 0) {
     if (counts.workBudgets > 0) {
-      return "Nothing is waiting. Work budgets are open for people to claim.";
+      return "Nothing is waiting. Work budgets are open for people to submit work.";
     }
     // A DAO that has already done things is not "just starting": say that no work budget is open.
     return (counts.carriedOut ?? 0) > 0

@@ -96,8 +96,9 @@ test("a member's board post becomes a task, and they claim the credit once it is
   await expect(
     member.getByTestId("board-posts").locator("li").filter({ hasText: title }),
   ).toContainText("1 reply", { timeout: 30_000 });
-  await member.getByTestId("work-toggle").click();
-  await member.getByTestId("board-ideas-toggle").click();
+  // Work is not in a member's sidebar (D108); its link still opens it.
+  await member.goto(`http://${host}/c/${host}?view=work`);
+  await member.getByTestId("board-ideas-toggle").click({ timeout: 30_000 });
   const mine = member.getByTestId("your-suggestions");
   await expect(mine).toContainText(title, { timeout: 30_000 });
   await expect(mine).toContainText("Done");

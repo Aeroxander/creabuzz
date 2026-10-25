@@ -162,11 +162,11 @@ test("someone with no wallet can read what was set aside, paid and turned down",
     hasText: "The reviewers approved the claim",
   });
   await expect(approval).toContainText("Approved by");
-  const turnedDown = entries.filter({ hasText: "filed a claim for 100" });
+  const turnedDown = entries.filter({ hasText: "submitted work for 100" });
   await expect(turnedDown).toContainText("Turned down by the reviewers");
   await expect(turnedDown).toContainText("Objected to by");
   await expect(
-    entries.filter({ hasText: "filed a claim for 200" }),
+    entries.filter({ hasText: "submitted work for 200" }),
   ).toContainText("Approved by the reviewers and paid");
 
   // Filtering to payments leaves only the payment.

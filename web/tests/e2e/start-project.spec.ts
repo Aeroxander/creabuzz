@@ -18,6 +18,9 @@ const ME = getPublicKey(
 );
 const TEMPLATE = "ai-media-studio";
 
+/** Ephemeral "online" presence, sent while a room is open. */
+const KIND_PRESENCE = 20001;
+
 const general = {
   id: "chan-general",
   pubkey: "b".repeat(64),
@@ -240,9 +243,11 @@ test("a refusal after preflight keeps progress and retry finishes without repeat
 test("someone without an account is asked to create one first", async ({
   page,
 }) => {
+  // Setting up is not in a visitor's sidebar (D108); an empty community offers it in its place.
   const relay = createMockRelay();
-  relay.seed(general);
-  await open(page, relay, { signedIn: false });
+  await relay.install(page);
+  await page.goto("/c/127.0.0.1:4173");
+  await page.getByTestId("empty-community-start").click();
   await expect(page.getByTestId("start-project-confirm")).toHaveCount(0);
   await page.getByTestId("start-project-sign-up").click();
   await expect(page.getByTestId("onboarding-dialog")).toBeVisible();
@@ -300,8 +305,9 @@ test("members see the restriction before setup and can recheck after promotion",
 }) => {
   let writes = 0;
   const relay = createMockRelay({
-    refuse: () => {
-      writes += 1;
+    refuse: (event) => {
+      // Presence, sent once #general is open, is not a setup write.
+      if (event.kind !== KIND_PRESENCE) writes += 1;
       return null;
     },
   });
@@ -330,8 +336,9 @@ test("a missing member list never grants setup permission", async ({
 }) => {
   let writes = 0;
   const relay = createMockRelay({
-    refuse: () => {
-      writes += 1;
+    refuse: (event) => {
+      // Presence, sent once #general is open, is not a setup write.
+      if (event.kind !== KIND_PRESENCE) writes += 1;
       return null;
     },
   });
@@ -349,8 +356,9 @@ test("permission lost after opening the picker is caught before any writes", asy
 }) => {
   let writes = 0;
   const relay = createMockRelay({
-    refuse: () => {
-      writes += 1;
+    refuse: (event) => {
+      // Presence, sent once #general is open, is not a setup write.
+      if (event.kind !== KIND_PRESENCE) writes += 1;
       return null;
     },
   });
@@ -371,8 +379,9 @@ test("a failed permission read disables setup and offers a working retry", async
 }) => {
   let writes = 0;
   const relay = createMockRelay({
-    refuse: () => {
-      writes += 1;
+    refuse: (event) => {
+      // Presence, sent once #general is open, is not a setup write.
+      if (event.kind !== KIND_PRESENCE) writes += 1;
       return null;
     },
   });
@@ -439,8 +448,54 @@ test("a community that has channels does not show the empty prompt", async ({
   await relay.install(page);
   await page.goto("/c/alpha.example.com");
   await page.getByTestId("content-pane").waitFor();
+  // With no room named in the link it opens on #general, not on an empty page.
+  await expect(page.getByTestId("channel-general")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   await expect(
     page.getByText("Select a channel to start reading."),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(page.getByTestId("empty-community")).toHaveCount(0);
 });
+
+for (const role of ["owner", "admin", "member"] as const) {
+  test(`the community's ${role} ${role === "member" ? "does not see" : "sees"} setup, the wiki, helpers, work and the org page, whatever the moderation check says`, async ({
+    page,
+  }) => {
+    // The moderation queue refuses everyone here: being its owner or an admin, from the member list, is enough.
+    await page.route("**/moderation/reports*", (route) =>
+      route.fulfill({ status: 403, body: "" }),
+    );
+    const relay = createMockRelay();
+    relay.seed(general);
+    relay.seed(membership(role));
+    await relay.install(page);
+    await page.addInitScript((nsec) => {
+      window.localStorage.setItem("buzz.identity.nsec", nsec);
+    }, NSEC);
+    const refused = page.waitForResponse("**/moderation/reports*");
+    await page.goto("/c/alpha.example.com");
+    await refused;
+    await expect(page.getByTestId("dms-toggle")).toBeVisible({
+      timeout: 20_000,
+    });
+    // Give the member-list read time to answer, so "not shown" is not just "not answered yet".
+    if (role === "member") await page.waitForTimeout(1_000);
+    for (const testId of [
+      "start-project-toggle",
+      "wiki-toggle",
+      "fleet-toggle",
+      "work-toggle",
+      "org-toggle",
+    ]) {
+      if (role === "member") {
+        await expect(page.getByTestId(testId)).toHaveCount(0);
+      } else {
+        await expect(page.getByTestId(testId)).toBeVisible({
+          timeout: 20_000,
+        });
+      }
+    }
+  });
+}

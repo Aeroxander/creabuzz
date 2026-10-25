@@ -243,6 +243,10 @@ test("landing page has no horizontal overflow", async ({ page }) => {
 });
 
 test("channel view and composer fit", async ({ page }) => {
+  // The composer is for someone with an account (D109); a visitor sees an invitation to make one.
+  await page.addInitScript(() => {
+    window.localStorage.setItem("buzz.identity.nsec", "1".repeat(64));
+  });
   await openCommunity(page);
   await page.getByTestId("open-channel-list").click();
   await page

@@ -496,8 +496,8 @@ function MandateCard({
         <dt className="text-muted-foreground">Reviewers</dt>
         <dd>
           {mandate.reviewers.length > 0
-            ? `${mandate.quorum} of ${mandate.reviewers.length} must agree on a claim`
-            : `${mandate.quorum} must agree on a claim`}
+            ? `${mandate.quorum} of ${mandate.reviewers.length} must agree on a submission`
+            : `${mandate.quorum} must agree on a submission`}
         </dd>
         <dt className="text-muted-foreground">Reviewer bond</dt>
         <dd data-testid="work-bond">
@@ -595,7 +595,7 @@ function MandateCard({
       <h4 className="mt-3 text-sm font-semibold">Submitted work</h4>
       {mandate.claims.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nobody has filed a claim yet.
+          Nobody has submitted work yet.
         </p>
       ) : (
         <ul className="mt-1 flex flex-col gap-2" data-testid="work-claims">
@@ -640,7 +640,7 @@ function MandateCard({
                     className="text-xs text-muted-foreground"
                     data-testid="work-claim-status"
                   >
-                    {claimStatusLabel(claim.record)} · filed by{" "}
+                    {claimStatusLabel(claim.record)} · submitted by{" "}
                     {labelOf(claim.record.contributor)}
                     {claim.record.amount > 0n
                       ? ` · asks for ${money(claim.record.amount)}`
@@ -688,7 +688,7 @@ function MandateCard({
                     <code className="break-all">
                       {claim.record.contributor}
                     </code>
-                    . This is the wallet that filed the claim; changing a
+                    . This is the wallet that submitted the work; changing a
                     profile wallet cannot redirect it.
                   </p>
                 ) : null}
@@ -797,7 +797,7 @@ function MandateCard({
                       type="button"
                     >
                       {claim.record.amount > 0n
-                        ? "Claim payment"
+                        ? "Take payment"
                         : "Mark it finished"}
                     </Button>
                   ) : null}
@@ -808,7 +808,7 @@ function MandateCard({
                     data-testid="work-challenge-help"
                   >
                     {challengeKind === "freeze"
-                      ? "Doubt this claim? Holders can vote to freeze it: nothing is paid and no Shares unlock while it is frozen."
+                      ? "Doubt this submission? Holders can vote to freeze it: nothing is paid and no Shares unlock while it is frozen."
                       : "A vote to unwind it returns the money to the budget and the deposit to the contributor."}{" "}
                     <button
                       className="underline"

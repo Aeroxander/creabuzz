@@ -102,12 +102,19 @@ Nostr" and "no explorer" in text people read (the desktop app's two such sentenc
 - **Names without addresses.** Lists now show "Frida Lund", not "Frida Lund (0xf39f…2266)". An earlier change kept the
   address "so the name is never the only thing to go on". Names are self-chosen, so two people can share one; pickers
   (reviewers, recipients) still show the address. Say if you want it back in lists.
-- **"Claim" or "submission".** The forms now say "Submit your work" and "Submitted work", but statuses and decisions
-  still say "claim" ("Award 8,000 Shares for the claim…"). One word throughout would be plainer; changing it touches many
-  screens.
-- **A community opens on "Select a channel to start reading."** Opening #general by default would be friendlier.
-- **Members see Set up community, Wiki, AI helpers, Work and Org** in a community's sidebar. You chose to keep
-  out-of-scope screens reachable; hiding them from members (not owners) would tidy the sidebar.
+- ~~**"Claim" or "submission".**~~ Done (D109): work submitted for review is a "submission" everywhere people read it.
+  "Claim" stays where it means collecting (tokens after a sale or a milestone), an AI helper taking a task, and taking
+  credit for a board idea, and in code.
+- ~~**A community opens on "Select a channel to start reading."**~~ Done (D109): it opens on #general (else its first
+  room).
+- ~~**Members see Set up community, Wiki, AI helpers, Work and Org.**~~ Done (D109): only the community's owner, its
+  admins and its moderators see them; a member's sidebar is rooms, boards and messages, and links to those pages still
+  work.
+- Found while doing these (D109): opening a room created and stored an account key for a visitor, signing them up
+  without the terms. Reading a page no longer does, and a room asks a visitor to create an account before they write.
+- **Members and the People list.** People and access lives on the Org page, now hidden from members (D109), so a member
+  can no longer find the read-only list of who is in from the sidebar. A "People" entry for everyone, separate from Org,
+  would bring it back.
 - **People and access** said "The list of people is not available here." for the server's owner in this world, and an
   open community offers no invite link. Worth checking on the hosted server before inviting people.
 - **The demo passkey page** (`/identity-demo`) ships in production builds because the passkey tests use it. It is unlisted.

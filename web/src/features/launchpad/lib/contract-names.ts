@@ -20,10 +20,7 @@ export function contractNames(
       mandate.isMilestonePanel ? "The milestone panel" : "A work budget",
     );
     names.set(mandate.verifiersAddress.toLowerCase(), "Reviewers' bonds");
-    names.set(
-      mandate.claimsAddress.toLowerCase(),
-      "Contributors' claim deposits",
-    );
+    names.set(mandate.claimsAddress.toLowerCase(), "Contributors' deposits");
   }
   return names;
 }
