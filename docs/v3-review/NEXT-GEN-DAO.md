@@ -88,15 +88,15 @@ the one-winner mode** at first; contests, rewards for past work and payment in s
   deadline. No deposit. Moderators can hide a claim in the app; the contract treats every claim the same, and a hidden
   claim's page still shows its money state.
 - **Backing, not nomination:** each funder backs at most one claim at a time and can move or withdraw that backing
-  until a payment. A claimant's own funding never counts for their own claim.
-- **Qualifying:** a claim qualifies while its backing is **more than half of all counting weight** (all funded weight,
-  less the claimant's own). Because a funder backs one claim, at most one claim can qualify at a time. Funders who do
-  nothing count as not backing.
+  until a payment. A wallet with an open claim has no weight at all while its claim is open.
+- **Qualifying:** a claim qualifies while its backing is **more than half of the counting money** (what funders with no
+  open claim put in). With one count for everyone and one claim per funder, at most one claim can qualify at a time.
+  Funders who do nothing count as not backing.
 - **48 hours, then 7 days:** a claim must qualify for 48 hours without a break (a dip restarts the clock), then keep
   qualifying through a 7-day hold. Then anyone can trigger payment and the claimant withdraws the pot. New evidence
   during the hold can make funders move their backing, which stops the payment, as poidh's failed Gaza bounty needed.
-- **Late money:** money added while a claim is qualifying or on hold joins the pot (and the prize) but carries no
-  weight until that claim stops qualifying, so nobody can buy or block an outcome others were weighing.
+- **No money in during a run:** while a claim is qualifying or on hold, funding pauses, so nobody can buy or block an
+  outcome others were weighing.
 - **Deadline:** a claim qualifying or on hold at the deadline runs to its end (at most 48 hours plus 7 days after the
   deadline). Otherwise refunds open at the deadline, and each funder withdraws their own amount.
 
@@ -104,8 +104,11 @@ the one-winner mode** at first; contests, rewards for past work and payment in s
 
 `Open` (funding and claims) → `Qualifying(claim)` ⇄ `Open` → `Held(claim)` → `Payable(claim)` → `Paid`; from `Open`
 after the deadline, or when a run ends after it, → `Refunding`. Each transition has one condition and anyone can call
-it. The full state machine, with every boundary written as a strict or inclusive comparison, is written and reviewed
-before any code.
+it. **Specified in [OPEN-BOUNTY-STATES.md](OPEN-BOUNTY-STATES.md)** (for review, nothing built): every action, every
+boundary and the invariants. Writing it out changed five rules: a claimant has no weight at all (otherwise two claims
+can both have a majority), money pauses during a run (instead of late money without weight), the two waits are one
+nine-day run, backing after the deadline can only be withdrawn, and refunds open once the deadline has passed with no
+run on, or at a fixed date.
 
 ### Keep going as a project
 
