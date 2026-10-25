@@ -149,3 +149,12 @@ on an 844 px screen, the second stayed put when the bar under it moved. By hand,
 world: sign up, Get started (both paths), the account menu, sign out with and without a saved key, a wrong key, signing
 back in as the same person. Not run: the desktop app's browser suite (out of this release; one of its expected strings
 was updated to match).
+
+## After the outside review (D111)
+
+An outside review of `da11b22d8` kept the direction and found that some simplification removed things still needed:
+the sign-out backup could save an empty key for a passkey account, contributor projects lost their funds and the way to
+leave, founders lost their settings, and a board removal refused by the hourly limit could still be acknowledged. All
+four are fixed (D111): the backup always saves the active account's own key, contributor projects have **Funds** and a
+small **Manage**, and the relay stores a removal only together with the removal itself.
+

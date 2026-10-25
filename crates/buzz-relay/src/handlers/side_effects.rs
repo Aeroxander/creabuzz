@@ -1961,15 +1961,22 @@ async fn handle_edit_metadata(
     Ok(())
 }
 
-async fn handle_delete_event_side_effect(
-    tenant: &TenantContext,
-    event: &Event,
-    state: &Arc<AppState>,
-) -> anyhow::Result<()> {
+/// A moderator removing someone else's words from a board: the board, the
+/// words and their place in the thread, resolved for [`apply_board_removal`].
+pub(crate) struct BoardRemovalTarget {
+    channel_id: Uuid,
+    target_id: Vec<u8>,
+    board: buzz_db::channel::ChannelRecord,
+    target_event: buzz_core::StoredEvent,
+    author: Vec<u8>,
+    parent_id: Option<Vec<u8>>,
+    root_id: Option<Vec<u8>>,
+}
+
+/// The channel (`h`) and the event (`e`) a kind:9005 deletion names.
+fn delete_event_target(event: &Event) -> anyhow::Result<(Uuid, Vec<u8>)> {
     let channel_id =
         extract_h_tag_channel(event).ok_or_else(|| anyhow::anyhow!("missing h tag"))?;
-
-    // Extract target event ID from e tag
     let target_id = event
         .tags
         .iter()
@@ -1988,50 +1995,137 @@ async fn handle_delete_event_side_effect(
             }
         })
         .ok_or_else(|| anyhow::anyhow!("missing e tag for target event"))?;
+    Ok((channel_id, target_id))
+}
 
+/// Whether this kind:9005 removes someone else's words from a board, and if so
+/// what (D93). Errors on a deletion that names another channel's event.
+pub(crate) async fn board_removal_of(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    event: &Event,
+) -> anyhow::Result<Option<BoardRemovalTarget>> {
+    let (channel_id, target_id) = delete_event_target(event)?;
     // Verify the target event belongs to the same channel as the h-tag.
     // Without this check, an admin of channel A could delete events in channel B
     // by sending h=A, e=<event-in-B>.
-    // Someone else's words being removed: the stored event and its author.
-    let mut someone_elses = None;
-    if let Some(target_event) = state
+    let Some(target_event) = state
         .db
         .get_event_by_id_including_deleted_for_event_write(tenant.community(), &target_id)
         .await
         .map_err(|e| anyhow::anyhow!("get_event_by_id failed: {e}"))?
-    {
-        match target_event.channel_id {
-            Some(target_ch) if target_ch != channel_id => {
-                return Err(anyhow::anyhow!(
-                    "target event belongs to a different channel"
-                ));
-            }
-            None => {
-                return Err(anyhow::anyhow!("target event has no channel"));
-            }
-            _ => {} // Same channel — OK
+    else {
+        return Ok(None);
+    };
+    match target_event.channel_id {
+        Some(target_ch) if target_ch != channel_id => {
+            return Err(anyhow::anyhow!(
+                "target event belongs to a different channel"
+            ));
         }
-        let author =
-            effective_message_author(&target_event.event, &state.relay_keypair.public_key());
-        if author != event.pubkey.to_bytes().as_slice() {
-            someone_elses = Some((target_event, author));
+        None => {
+            return Err(anyhow::anyhow!("target event has no channel"));
         }
+        _ => {} // Same channel — OK
     }
+    let author = effective_message_author(&target_event.event, &state.relay_keypair.public_key());
+    if author == event.pubkey.to_bytes().as_slice() {
+        return Ok(None);
+    }
+    let board = state
+        .db
+        .get_channel_for_event_write(tenant.community(), channel_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("get_channel failed: {e}"))?;
+    if board.channel_type != "forum" {
+        return Ok(None);
+    }
+    let meta = state
+        .db
+        .get_thread_metadata_by_event(tenant.community(), &target_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("get_thread_metadata failed: {e}"))?;
+    Ok(Some(BoardRemovalTarget {
+        channel_id,
+        target_id,
+        board,
+        target_event,
+        author,
+        parent_id: meta.as_ref().and_then(|m| m.parent_event_id.clone()),
+        root_id: meta.as_ref().and_then(|m| m.root_event_id.clone()),
+    }))
+}
+
+/// Remove someone else's words from a board, with the board's public log entry
+/// and (when `store_command`) the deletion event itself in the same commit, then
+/// record and announce it like any deletion. Ingest runs it before acknowledging
+/// a removal (D111), so a removal the board refuses — the hourly limit, raced —
+/// is refused, never acknowledged with the post still there.
+///
+/// Returns `None` when it was already gone, else the deletion event as stored
+/// with it (when it was stored here).
+pub(crate) async fn apply_board_removal(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    event: &Event,
+    removal: BoardRemovalTarget,
+    store_command: bool,
+) -> anyhow::Result<Option<Option<(StoredEvent, bool)>>> {
+    let BoardRemovalTarget {
+        channel_id,
+        target_id,
+        board,
+        target_event,
+        author,
+        parent_id,
+        root_id,
+    } = removal;
+    // Boxed: the removal, its log and the author's notice make a large
+    // future, and the ingest path that holds it runs on worker stacks.
+    let removed = Box::pin(super::board_moderation::remove_board_post(
+        tenant,
+        state,
+        &board,
+        event,
+        super::board_moderation::RemovedWords {
+            event: &target_event.event,
+            author: &author,
+            parent: parent_id.as_deref(),
+            root: root_id.as_deref(),
+        },
+        store_command,
+    ))
+    .await?;
+    let Some(command) = removed else {
+        warn!(target_event = %hex::encode(&target_id), "event already deleted or not found");
+        return Ok(None);
+    };
+    Box::pin(after_deletion(
+        tenant, state, event, channel_id, &target_id, root_id,
+    ))
+    .await?;
+    Ok(Some(command))
+}
+
+async fn handle_delete_event_side_effect(
+    tenant: &TenantContext,
+    event: &Event,
+    state: &Arc<AppState>,
+) -> anyhow::Result<()> {
     // Removing someone else's words from a board is a moderation action: it goes
     // in the board's public log, written with the removal itself (D93), and the
-    // author is told (D99).
-    let board_removal = match someone_elses {
-        Some((target_event, author)) => {
-            let channel = state
-                .db
-                .get_channel_for_event_write(tenant.community(), channel_id)
-                .await
-                .map_err(|e| anyhow::anyhow!("get_channel failed: {e}"))?;
-            (channel.channel_type == "forum").then_some((channel, target_event, author))
-        }
-        None => None,
-    };
+    // author is told (D99). Ingest normally applies it before storing the
+    // deletion (D111); this covers a deletion stored before that.
+    // Boxed: these futures are large and the ingest path runs close to a
+    // worker's stack.
+    if let Some(removal) = Box::pin(board_removal_of(tenant, state, event)).await? {
+        Box::pin(apply_board_removal(tenant, state, event, removal, false))
+            .await
+            .map_err(|e| anyhow::anyhow!("board removal failed: {e}"))?;
+        return Ok(());
+    }
 
+    let (channel_id, target_id) = delete_event_target(event)?;
     // Look up thread metadata so we can pass parent/root IDs to the
     // transactional delete function.
     let meta = state
@@ -2044,42 +2138,38 @@ async fn handle_delete_event_side_effect(
     let root_id = meta.as_ref().and_then(|m| m.root_event_id.clone());
 
     // Atomically soft-delete the event and decrement thread counters in one
-    // transaction (with the board log entry, for a removal on a board).
-    let deleted = if let Some((board, target_event, author)) = &board_removal {
-        // Boxed: the removal, its log and the author's notice make a large
-        // future, and the ingest path that holds it runs on worker stacks.
-        Box::pin(super::board_moderation::remove_board_post(
-            tenant,
-            state,
-            board,
-            event,
-            super::board_moderation::RemovedWords {
-                event: &target_event.event,
-                author,
-                parent: parent_id.as_deref(),
-                root: root_id.as_deref(),
-            },
-        ))
+    // transaction.
+    let deleted = state
+        .db
+        .soft_delete_event_and_update_thread(
+            tenant.community(),
+            &target_id,
+            parent_id.as_deref(),
+            root_id.as_deref(),
+        )
         .await
-        .map_err(|e| anyhow::anyhow!("board removal failed: {e}"))?
-    } else {
-        state
-            .db
-            .soft_delete_event_and_update_thread(
-                tenant.community(),
-                &target_id,
-                parent_id.as_deref(),
-                root_id.as_deref(),
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("soft_delete_event failed: {e}"))?
-    };
+        .map_err(|e| anyhow::anyhow!("soft_delete_event failed: {e}"))?;
 
     if !deleted {
         warn!(target_event = %hex::encode(&target_id), "event already deleted or not found");
         return Ok(()); // No-op: skip system message to avoid false audit records.
     }
+    Box::pin(after_deletion(
+        tenant, state, event, channel_id, &target_id, root_id,
+    ))
+    .await
+}
 
+/// What every landed deletion is followed by: its audit record, the thread's
+/// counts counted down, and the room's "message removed" note.
+async fn after_deletion(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    event: &Event,
+    channel_id: Uuid,
+    target_id: &[u8],
+    root_id: Option<Vec<u8>>,
+) -> anyhow::Result<()> {
     // The soft-delete transaction committed — record it before the cosmetic
     // emits below, so a system-message failure can never leave a landed
     // deletion unaudited. `object_id` is the *deleted* event's id so the
@@ -2088,7 +2178,7 @@ async fn handle_delete_event_side_effect(
         state,
         crate::audit::AuditRecord::new(crate::audit::AuditSite::EventDeleted, tenant)
             .actor(Some(event.pubkey.to_bytes().to_vec()))
-            .object_id(hex::encode(&target_id))
+            .object_id(hex::encode(target_id))
             .detail(serde_json::json!({
                 "event_id": event.id.to_hex(),
                 "channel_id": channel_id,
@@ -2107,7 +2197,7 @@ async fn handle_delete_event_side_effect(
     let mut tombstone = serde_json::json!({
         "type": "message_deleted",
         "actor": actor_hex,
-        "target_event_id": hex::encode(&target_id),
+        "target_event_id": hex::encode(target_id),
     });
     copy_optional_string_field(event, &mut tombstone, "action_id");
     copy_optional_string_field(event, &mut tombstone, "reason_code");
@@ -2115,7 +2205,7 @@ async fn handle_delete_event_side_effect(
 
     emit_system_message(tenant, state, channel_id, tombstone, chrono::Utc::now()).await?;
 
-    info!(target_event = %hex::encode(&target_id), "NIP-29 DELETE_EVENT processed");
+    info!(target_event = %hex::encode(target_id), "NIP-29 DELETE_EVENT processed");
     Ok(())
 }
 

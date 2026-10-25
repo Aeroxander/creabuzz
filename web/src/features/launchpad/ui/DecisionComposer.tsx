@@ -29,6 +29,10 @@ import {
 import { TradingForm } from "./TradingForm";
 import { WorkBudgetForm } from "./WorkBudgetForm";
 import { isContributorProject } from "../lib/funding";
+import { useQuery } from "@tanstack/react-query";
+import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
+import { erc20BalanceOf, getRpcEndpoint } from "../chain";
+import { localUsdcAddress } from "../chain-config";
 
 type Kind =
   | "budget"
@@ -52,9 +56,6 @@ const WORK_KINDS: ReadonlySet<Kind> = new Set([
   "slash",
   "close",
 ]);
-
-/** The decisions that move money or bonds. */
-const MONEY_KINDS: ReadonlySet<Kind> = new Set(["unwind", "slash", "pay"]);
 
 const KINDS: { id: Kind; label: string; about: string }[] = [
   {
@@ -157,6 +158,35 @@ export function DecisionComposer({
   );
   const [done, setDone] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
+
+  // A contributor project sold nothing, so its money decisions are offered for what its DAO actually has (D111): undoing
+  // a freeze always (the way back from one), taking a bond where a budget asks bonds, paying where the DAO holds USDC.
+  const contributor = launch ? isContributorProject(launch.record) : false;
+  const usdc = contributor
+    ? usdcAddress(ctx.chainId ?? null, localUsdcAddress())
+    : null;
+  const usdcHeld = useQuery({
+    queryKey: ["launchpad", "contributor-funds", ctx.dao, usdc ?? "none"],
+    enabled: usdc !== null,
+    queryFn: () => erc20BalanceOf(getRpcEndpoint(), usdc as string, ctx.dao),
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+  });
+  const offered = (id: Kind): boolean => {
+    if (!contributor) return true;
+    if (id === "slash")
+      return (
+        ctx.work?.mandates.some((m) => m.bond !== null || m.bondUnreadable) ??
+        false
+      );
+    if (id === "pay") return usdc !== null && (usdcHeld.data ?? 0n) > 0n;
+    return true;
+  };
+  // A contributor project's work is in Shares, so a payment is in the USDC its DAO holds.
+  const payCtx: FormContext =
+    contributor && usdc
+      ? { ...ctx, currency: usdc, currencyDecimals: 6, currencySymbol: "USDC" }
+      : ctx;
 
   const capacity = snapshot.walletCapacity;
   const blocked =
@@ -266,12 +296,7 @@ export function DecisionComposer({
             {KINDS.filter(
               (k) =>
                 (ctx.exchange || (k.id !== "market" && k.id !== "fees")) &&
-                // A contributor project holds no money and asks no bonds: those decisions would have nothing to act on.
-                !(
-                  launch &&
-                  isContributorProject(launch.record) &&
-                  MONEY_KINDS.has(k.id)
-                ),
+                offered(k.id),
             ).map((k) => (
               <button
                 aria-pressed={kind === k.id}
@@ -283,7 +308,9 @@ export function DecisionComposer({
               >
                 <span className="block font-medium">{k.label}</span>
                 <span className="block text-xs text-muted-foreground">
-                  {k.about}
+                  {contributor && k.id === "unwind"
+                    ? "End a frozen submission for good. Nothing is awarded for it."
+                    : k.about}
                 </span>
               </button>
             ))}
@@ -431,7 +458,7 @@ export function DecisionComposer({
               <PayForm
                 blocked={blocked}
                 busy={busy}
-                ctx={ctx}
+                ctx={payCtx}
                 gate={gate}
                 key={`y${formKey}`}
                 onSubmit={submit}

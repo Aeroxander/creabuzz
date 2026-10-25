@@ -153,7 +153,10 @@ const projectPath = (tab: string, slug = "docs-commons") =>
   `/launchpad/${slug}?author=${FOUNDER}&tab=${tab}`;
 
 /** Re-read the page after the chain's clock moved. */
-async function refresh(page: Page, tab: "Overview" | "Decisions" | "Work") {
+async function refresh(
+  page: Page,
+  tab: "Overview" | "Decisions" | "Work" | "Funds",
+) {
   await page.reload();
   await page.getByRole("tab", { name: tab }).click();
 }
@@ -339,6 +342,18 @@ test("a contributor project is started from the page, work is claimed the same d
     { timeout: 30_000 },
   );
 
+  // Funds (D111): the DAO, checked against the kit's own launch event, what it holds, and the way to leave.
+  await refresh(founder, "Funds");
+  await expect(founder.getByTestId("contributor-funds-eth")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(founder.getByTestId("contributor-funds-unchecked")).toHaveCount(
+    0,
+  );
+  await expect(founder.getByTestId("ragequit-panel")).toContainText(
+    "Leave and take your share",
+  );
+
   // ── 3. the founder (the first project's manager) takes it on, two reviewers approve, it is finished ──
   // "Needs you" names the submission, and its button opens that claim on the Work tab.
   await refresh(founder, "Overview");
@@ -417,6 +432,10 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(person.getByTestId("contribution-person-name")).toContainText(
     CONTRIBUTOR.slice(2, 6),
     { ignoreCase: true },
+  );
+  // No name: the account is the label, shown once (with a name, it shows beside it, D111).
+  await expect(person.getByTestId("contribution-person-account")).toHaveCount(
+    0,
   );
   await expect(person.getByTestId("contribution-person-earned")).toHaveText(
     "25 Shares awarded",

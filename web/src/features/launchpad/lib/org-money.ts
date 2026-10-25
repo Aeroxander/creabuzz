@@ -69,7 +69,8 @@ export function parseOrgBinding(event: NostrEvent): OrgBinding | null {
 /** How the DAO behind the exit surface was found — the UI states it. */
 export interface DaoBinding {
   dao: string;
-  source: "summon-receipt" | "org-root";
+  /** `contributor-kit`: a contributor project's DAO, checked against the kit's launch event (D111). */
+  source: "summon-receipt" | "org-root" | "contributor-kit";
   /** For `org-root`: the bound root's event id; for receipts: the tx. */
   ref: string;
 }

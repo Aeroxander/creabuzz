@@ -34,6 +34,8 @@ import { markSupportersSeen } from "../use-founder-activity";
 import { useSupporters } from "../use-supporters";
 import type { LaunchAction } from "../lib/deep-link";
 import { TreasuryTab } from "./TreasuryTab";
+import { ContributorFundsTab } from "./ContributorFundsTab";
+import { ContributorSettings } from "./ContributorSettings";
 import { LaunchDiscussion } from "@/features/feed/ui/LaunchDiscussion";
 import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
@@ -79,7 +81,10 @@ type Tab =
   | "agents"
   | "manage";
 
-/** The tabs a contributor project shows: its work, its votes, who earned what, and the talk around it. */
+/**
+ * The tabs a contributor project shows: its work, its votes, who earned what, the talk around it, its funds and the way
+ * to leave (D111: no sale is not no treasury), and the founder's settings.
+ */
 const CONTRIBUTOR_TABS: Tab[] = [
   "overview",
   "contributions",
@@ -87,6 +92,8 @@ const CONTRIBUTOR_TABS: Tab[] = [
   "work",
   "discussion",
   "updates",
+  "treasury",
+  "manage",
 ];
 
 export function LaunchDetailPage({
@@ -263,6 +270,19 @@ export function LaunchDetailPage({
     }
   };
 
+  /** Take the project off the directory (Manage, or a contributor project's settings), then go back to Discover. */
+  const removeFromDirectory = async () => {
+    try {
+      await remove.mutateAsync(launch);
+      toast.success("Taken off the directory.");
+      void navigate({ to: "/discover" });
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Couldn't remove it. Try again.",
+      );
+    }
+  };
+
   const daoBinding = resolveDaoBinding({
     receipts: launch.receipts,
     orgBindings: orgMoney.data?.bindings ?? [],
@@ -302,7 +322,7 @@ export function LaunchDetailPage({
     ...(workDao && !contributor ? [contributionsTab] : []),
     { id: "agents", label: "People & agents" },
     ...(workDao ? [{ id: "record" as const, label: "Track record" }] : []),
-    { id: "treasury", label: "Treasury" },
+    { id: "treasury", label: contributor ? "Funds" : "Treasury" },
     // Onchain bids only exist when the launch has an auction linked.
     ...(launch.record.auction
       ? [{ id: "mybids" as const, label: "My bids" }]
@@ -517,7 +537,9 @@ export function LaunchDetailPage({
           autoAction={mybidsAutoAction}
         />
       ) : null}
-      {shown === "treasury" ? (
+      {shown === "treasury" && contributor && workDao ? (
+        <ContributorFundsTab dao={workDao} launch={launch} />
+      ) : shown === "treasury" ? (
         <TreasuryTab
           launch={launch}
           onOpenDecisions={() => setTab("decisions")}
@@ -554,25 +576,18 @@ export function LaunchDetailPage({
       {shown === "record" && workDao ? (
         <RecordTab dao={workDao} launch={launch} onOpen={(t) => setTab(t)} />
       ) : null}
-      {shown === "manage" && isFounder ? (
+      {shown === "manage" && isFounder && contributor ? (
+        <ContributorSettings
+          isDeleting={remove.isPending}
+          launch={launch}
+          onDelete={removeFromDirectory}
+        />
+      ) : shown === "manage" && isFounder ? (
         <ManagePanel
           launchId={launch.record.id}
           author={launch.record.author}
           isDeleting={remove.isPending}
-          onDelete={async () => {
-            const target = launch;
-            try {
-              await remove.mutateAsync(target);
-              toast.success("Launch removed from the directory.");
-              void navigate({ to: "/launchpad" });
-            } catch (err) {
-              toast.error(
-                err instanceof Error
-                  ? err.message
-                  : "Couldn't delete the launch. Try again.",
-              );
-            }
-          }}
+          onDelete={removeFromDirectory}
         />
       ) : null}
 

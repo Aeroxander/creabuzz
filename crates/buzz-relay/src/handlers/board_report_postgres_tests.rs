@@ -688,7 +688,7 @@ async fn a_moderators_actions_sent_together_stop_at_the_hourly_limit_across_path
     }
     // Then ten together, on both boards and by all three paths: locks, removals and dismissals.
     let mut together = Vec::new();
-    let mut reports = Vec::new();
+    let mut threads = Vec::new();
     for i in 0..4 {
         let board = if i % 2 == 0 { b } else { other_board };
         let thread = post(&state, &tenant, &author, board).await;
@@ -698,6 +698,7 @@ async fn a_moderators_actions_sent_together_stop_at_the_hourly_limit_across_path
             board,
             &thread,
         ));
+        threads.push((board, thread));
     }
     let mut removable = Vec::new();
     for _ in 0..3 {
@@ -705,6 +706,7 @@ async fn a_moderators_actions_sent_together_stop_at_the_hourly_limit_across_path
         together.push(remove(&moderator, other_board, &words, "spam"));
         removable.push(words);
     }
+    let mut reports = Vec::new();
     for _ in 0..3 {
         let words = post(&state, &tenant, &author, b).await;
         let r = report(&reporter, &words);
@@ -712,12 +714,22 @@ async fn a_moderators_actions_sent_together_stop_at_the_hourly_limit_across_path
         together.push(resolve(&moderator, &r, "dismiss"));
         reports.push(r);
     }
-    futures_util::future::join_all(
+    let removals = together[4..7].to_vec();
+    let answers = futures_util::future::join_all(
         together
             .into_iter()
             .map(|event| super::board_moderation_postgres_tests::ingest(&state, &tenant, event)),
     )
     .await;
+    // Accepted, and not as a duplicate of something already there.
+    let accepted: Vec<bool> = answers
+        .iter()
+        .map(|answer| {
+            answer
+                .as_ref()
+                .is_ok_and(|r| r.accepted && !r.message.starts_with("duplicate"))
+        })
+        .collect();
 
     let counted = state
         .db
@@ -729,32 +741,55 @@ async fn a_moderators_actions_sent_together_stop_at_the_hourly_limit_across_path
         .await
         .expect("count");
     assert_eq!(counted, 20, "the hour's actions");
-    // Exactly one of the ten took effect, and only what was counted did.
-    let mut effects = 0;
-    for words in &removable {
-        if state
+    // What each of the ten did; every answer must say exactly that (D111: a
+    // removal the board refused is refused, never acknowledged as done).
+    let mut took_effect = Vec::new();
+    for (board, thread) in &threads {
+        let state_row = state
             .db
-            .get_event_by_id(tenant.community(), &words.id.to_bytes())
+            .board_thread_state(tenant.community(), *board, &thread.id.to_bytes())
             .await
-            .expect("read")
-            .is_none()
-        {
-            effects += 1;
-        }
+            .expect("thread state");
+        took_effect.push(state_row.is_some_and(|t| t.locked_at.is_some()));
+    }
+    for words in &removable {
+        took_effect.push(
+            state
+                .db
+                .get_event_by_id(tenant.community(), &words.id.to_bytes())
+                .await
+                .expect("read")
+                .is_none(),
+        );
     }
     for r in &reports {
-        if report_status(&state, &tenant, r).await != "open" {
-            effects += 1;
-        }
+        took_effect.push(report_status(&state, &tenant, r).await != "open");
     }
-    let locked: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM board_thread_state WHERE community_id = $1 AND locked_at IS NOT NULL",
-    )
-    .bind(tenant.community().as_uuid())
-    .fetch_one(state.db.pool())
-    .await
-    .expect("count locks");
-    // The seed thread ends locked (the nineteenth action was a lock).
-    effects += usize::try_from(locked - 1).expect("locks");
-    assert_eq!(effects, 1, "one of the ten took effect");
+    for (i, (did, said)) in took_effect.iter().zip(&accepted).enumerate() {
+        assert_eq!(
+            did,
+            said,
+            "action {i}: took effect {did}, answered {:?}",
+            answers[i].as_ref().map(|r| r.message.clone())
+        );
+    }
+    assert_eq!(
+        took_effect.iter().filter(|did| **did).count(),
+        1,
+        "one of the ten took effect"
+    );
+    // A refused removal stored nothing: the same event sent again is tried again,
+    // and is refused again while the hour is spent, never read as a duplicate.
+    for (removal, did) in removals.iter().zip(&took_effect[4..7]) {
+        if *did {
+            continue;
+        }
+        let again =
+            super::board_moderation_postgres_tests::ingest(&state, &tenant, removal.clone()).await;
+        assert!(
+            again.is_err(),
+            "a refused removal sent again is refused again: {:?}",
+            again.map(|r| r.message)
+        );
+    }
 }

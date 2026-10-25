@@ -4,17 +4,8 @@
  * are made and whether they can be traded, read from the Shares themselves (D76, D77). Unknown is said as unknown.
  */
 
-import { useQuery } from "@tanstack/react-query";
-
-import { contributorKit } from "../chain-config";
-import { ethGetLogs, getRpcEndpoint } from "../chain";
-import {
-  contributorStatus,
-  type Provenance,
-  type RulesRead,
-  TOPIC_CONTRIBUTOR_LAUNCHED,
-} from "../lib/contributor-status";
-import { addressTopic } from "../lib/work";
+import { contributorStatus, type RulesRead } from "../lib/contributor-status";
+import { useContributorProvenance } from "../use-contributor-provenance";
 import { useShareRules } from "../use-share-rules";
 
 export function ContributorStatusNote({
@@ -27,35 +18,8 @@ export function ContributorStatusNote({
   dao: string | null;
   chainId: string | null;
 }) {
-  const kit = contributorKit(chainId);
-  // Made by the contributor kit: its launch event names this DAO. One read, kept: it never changes.
-  const launched = useQuery({
-    queryKey: ["launchpad", "contributor-provenance", chainId, kit, dao],
-    enabled: kit !== null && dao !== null,
-    queryFn: async () =>
-      (
-        await ethGetLogs(getRpcEndpoint(), {
-          address: kit as string,
-          topics: [
-            TOPIC_CONTRIBUTOR_LAUNCHED,
-            null,
-            addressTopic(dao as string),
-          ],
-          fromBlock: "0x0",
-          toBlock: "latest",
-        })
-      ).length > 0,
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnWindowFocus: false,
-  });
-  const provenance: Provenance =
-    kit === null || dao === null
-      ? "record"
-      : launched.isLoading
-        ? "reading"
-        : launched.data === true
-          ? "kit"
-          : "record";
+  // Made by the contributor kit: its launch event names this DAO.
+  const { provenance } = useContributorProvenance(chainId, dao);
   const read = useShareRules(shares, dao);
   const rules: RulesRead =
     shares === null || read.isError

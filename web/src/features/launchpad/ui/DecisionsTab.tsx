@@ -138,6 +138,7 @@ export function DecisionsTab({
             milestoneWords: (launch.record.unlocks?.milestones ?? []).map(
               (m) => m.label,
             ),
+            contributor: isContributorProject(launch.record),
           }}
           gate={gate}
           onSend={send}

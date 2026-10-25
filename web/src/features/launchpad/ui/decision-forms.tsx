@@ -56,6 +56,8 @@ export interface FormContext {
   exchange: ExchangeAddresses | null;
   /** The exact words of each of the team's milestones, in order (empty when the team's Shares are not locked). */
   milestoneWords: readonly string[];
+  /** A contributor project: no sale, Shares-only work, so the forms speak of submissions, not money (D111). */
+  contributor?: boolean;
 }
 
 export type DraftResult = { draft: DecisionDraft } | { problem: string };

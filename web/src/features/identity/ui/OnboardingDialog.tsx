@@ -394,8 +394,9 @@ function SignInView({ onBack }: { onBack: () => void }) {
       return;
     }
     try {
-      importIdentity(hex);
-      localStorage.setItem("buzz.identity.backedUp", "1");
+      // The key was typed in, so this account's key is already saved somewhere (D111: the flag names the account).
+      const account = importIdentity(hex);
+      localStorage.setItem("buzz.identity.backedUp", account);
       window.location.reload();
     } catch {
       setProblem(

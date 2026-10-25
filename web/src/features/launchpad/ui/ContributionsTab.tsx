@@ -27,6 +27,7 @@ import type { Launch } from "../models";
 import { useContributions } from "../use-contributions";
 import { useEvidencePackets } from "../use-evidence";
 import { useWalletLabels } from "../use-wallet-labels";
+import { shortAddress } from "../lib/record-people";
 import { useWork } from "../use-work";
 import { paidOn, TxLink } from "./TxLink";
 import { VoteControlNote } from "./VoteControlNote";
@@ -416,12 +417,24 @@ export function ContributionsTab({
             <li key={person.address}>
               <Card className="p-4" data-testid="contribution-person">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span
-                    className="min-w-0 break-all font-semibold"
-                    data-testid="contribution-person-name"
-                    title={person.address}
-                  >
-                    {label(person.address)}
+                  <span className="min-w-0">
+                    <span
+                      className="block break-all font-semibold"
+                      data-testid="contribution-person-name"
+                      title={person.address}
+                    >
+                      {label(person.address)}
+                    </span>
+                    {/* A name is what someone chose; the account is what was paid. Both, so a record can be checked. */}
+                    {label(person.address) !==
+                    shortAddress(person.address.toLowerCase()) ? (
+                      <span
+                        className="block font-mono text-2xs text-muted-foreground"
+                        data-testid="contribution-person-account"
+                      >
+                        {shortAddress(person.address.toLowerCase())}
+                      </span>
+                    ) : null}
                   </span>
                   <span
                     className="text-sm tabular-nums"

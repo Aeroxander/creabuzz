@@ -450,3 +450,120 @@ test("anyone suggests work with a % ask, and Put to a vote opens Approve a work 
     "true",
   );
 });
+
+test("a contributor project keeps its funds and the way to leave (no sale is not no treasury)", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed(record);
+  await relay.install(page);
+  await installChain(page);
+  // An old link to the treasury opens the project's Funds, not the overview.
+  await page.goto(`/launchpad/docs-commons?author=${ME}&tab=treasury`);
+  const funds = page.getByRole("tab", { name: "Funds", exact: true });
+  await expect(funds).toHaveAttribute("aria-selected", "true", {
+    timeout: 20_000,
+  });
+  // This build names no contributor kit, so the DAO cannot be checked: it says so rather than show unverified money.
+  await expect(page.getByTestId("contributor-funds-unchecked")).toContainText(
+    "could not be checked against the contributor kit",
+  );
+  await expect(page.getByTestId("contributor-funds")).not.toContainText(
+    /graduation|price floor|raise/i,
+  );
+});
+
+test("a contributor project's founder keeps its settings: the words people read, and taking it off Discover", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed({
+    ...record,
+    content: JSON.stringify({
+      ...JSON.parse(record.content),
+      workAreas: [{ name: "docs", check: "The pages are merged and reviewed" }],
+    }),
+  });
+  await relay.install(page);
+  await installChain(page);
+  await signIn(page);
+  await page.goto(`/launchpad/docs-commons?author=${ME}&tab=manage`);
+  await expect(
+    page.getByRole("tab", { name: "Manage", exact: true }),
+  ).toHaveAttribute("aria-selected", "true", { timeout: 20_000 });
+  const settings = page.getByTestId("contributor-settings");
+  await expect(settings).toBeVisible();
+  // None of the sale's set-up.
+  await expect(page.getByTestId("launch-readiness")).toHaveCount(0);
+  await expect(page.getByText("Edit terms")).toHaveCount(0);
+
+  await page.getByTestId("settings-name").fill("");
+  await expect(page.getByTestId("settings-problem")).toHaveText(
+    "Give the project a name.",
+  );
+  await expect(page.getByTestId("settings-save")).toBeDisabled();
+  await page.getByTestId("settings-name").fill("Docs Commons Plus");
+  await page.getByTestId("settings-save").click();
+  await expect
+    .poll(
+      () =>
+        relay.events.filter(
+          (e) =>
+            e.kind === 37001 &&
+            e.tags.some((t) => t[1] === "Docs Commons Plus"),
+        ).length,
+      { timeout: 20_000 },
+    )
+    .toBe(1);
+  // Only the name changed: its DAO, Shares, work areas and how it is funded are republished as they were.
+  const saved = relay.events.find(
+    (e) => e.kind === 37001 && e.tags.some((t) => t[1] === "Docs Commons Plus"),
+  );
+  expect(saved?.tags).toContainEqual(["treasury", DAO]);
+  expect(saved?.tags).toContainEqual(["token", SHARES]);
+  const content = JSON.parse(saved?.content ?? "{}");
+  expect(content.funding?.path).toBe("contributors");
+  expect(content.tokenPlan?.mode).toBe("dao");
+  expect(content.workAreas).toEqual([
+    { name: "docs", check: "The pages are merged and reviewed" },
+  ]);
+  await expect(page.getByTestId("settings-remove")).toBeVisible();
+});
+
+test("a contributor project's decisions keep undoing a freeze, and offer money decisions only for money it has", async ({
+  page,
+}) => {
+  const { selectorOf } = await import(
+    "../../../packages/creaton-core/src/launchpad/evmAbi.ts"
+  );
+  const relay = createMockRelay();
+  relay.seed(record);
+  await relay.install(page);
+  await installChain(page);
+  await signIn(page);
+  await page.route("**/test-rpc", async (route) => {
+    const body = route.request().postDataJSON();
+    let result: unknown;
+    if (body.method === "eth_getBlockByNumber")
+      result = { number: "0x20", timestamp: "0x68000000" };
+    if (
+      body.method === "eth_call" &&
+      [
+        selectorOf("getProposalCount()"),
+        selectorOf("proposalThreshold()"),
+      ].includes(body.params?.[0]?.data)
+    )
+      result = `0x${word(0n)}`;
+    if (result === undefined) return route.fallback();
+    return route.fulfill({ json: { jsonrpc: "2.0", id: body.id, result } });
+  });
+  await page.goto(`/launchpad/docs-commons?author=${ME}&tab=decisions`);
+  await page.getByTestId("decision-new").click({ timeout: 20_000 });
+  await expect(page.getByTestId("decision-kind-freeze")).toBeVisible();
+  // The way back from a freeze is always offered, in words without money.
+  await expect(page.getByTestId("decision-kind-unwind")).toContainText(
+    "End a frozen submission for good",
+  );
+  // This DAO holds no USDC (none on this network here): paying from the treasury is not offered.
+  await expect(page.getByTestId("decision-kind-pay")).toHaveCount(0);
+});

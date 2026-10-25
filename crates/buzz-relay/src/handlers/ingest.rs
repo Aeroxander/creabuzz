@@ -5368,7 +5368,21 @@ async fn ingest_event_inner(
     };
 
     let workflow_deletion = crate::handlers::side_effects::is_workflow_deletion(&event);
-    let (stored_event, was_inserted) = if workflow_deletion {
+    // A moderator removing someone else's words from a board (D111): the
+    // removal, its log entry, the hourly limit and this deletion event are one
+    // commit, applied before anything is acknowledged. A removal the board
+    // refuses (the limit, raced) is refused here, with nothing stored, so a
+    // resend tries again instead of reading as a duplicate.
+    let board_removal = if kind_u32 == KIND_NIP29_DELETE_EVENT && !workflow_deletion {
+        // Boxed: the ingest future already runs close to a worker's stack.
+        Box::pin(remove_from_board_before_storing(tenant, state, &event)).await?
+    } else {
+        None
+    };
+    let removed_on_board = board_removal.is_some();
+    let (stored_event, was_inserted) = if let Some(stored) = board_removal {
+        stored
+    } else if workflow_deletion {
         // A single commit owns public acceptance, domain mutation, and dispatch.
         // Failure rolls everything back; identical concurrent requests cannot
         // divide insertion and repair ownership between two relay workers.
@@ -5478,7 +5492,10 @@ async fn ingest_event_inner(
         });
     }
 
-    if !workflow_deletion && crate::handlers::side_effects::is_side_effect_kind(kind_u32) {
+    if !workflow_deletion
+        && !removed_on_board
+        && crate::handlers::side_effects::is_side_effect_kind(kind_u32)
+    {
         if let Err(e) =
             crate::handlers::side_effects::handle_side_effects(tenant, kind_u32, &event, state)
                 .await
@@ -5553,6 +5570,32 @@ async fn ingest_event_inner(
         accepted: true,
         message: String::new(),
     })
+}
+
+/// Apply a moderator's board removal with its kind:9005 stored in the same
+/// commit (D111). `None` when this deletion is not a board removal, or the
+/// words were already gone: the deletion is then stored as any other.
+async fn remove_from_board_before_storing(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    event: &Event,
+) -> Result<Option<(buzz_core::StoredEvent, bool)>, IngestError> {
+    let removal = match crate::handlers::side_effects::board_removal_of(tenant, state, event).await
+    {
+        Ok(Some(removal)) => removal,
+        Ok(None) => return Ok(None),
+        Err(e) => return Err(IngestError::Rejected(format!("invalid: {e}"))),
+    };
+    let applied =
+        crate::handlers::side_effects::apply_board_removal(tenant, state, event, removal, true)
+            .await
+            .map_err(|e| match e.downcast_ref::<buzz_db::DbError>() {
+                Some(buzz_db::DbError::ModeratorRateLimited(_)) => {
+                    IngestError::Rejected(super::board_moderation::rate_limited())
+                }
+                _ => IngestError::Internal(format!("error: board removal failed: {e}")),
+            })?;
+    Ok(applied.flatten())
 }
 
 #[cfg(test)]

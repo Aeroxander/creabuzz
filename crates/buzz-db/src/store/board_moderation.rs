@@ -258,6 +258,10 @@ pub struct BoardActionOutcome {
     pub log: StoredEvent,
     /// The board's rebuilt state record.
     pub state: StoredEvent,
+    /// The command that asked for the action, when it was stored with it (a
+    /// moderator's removal), and whether this call stored it (false: it was
+    /// already there, and this call made it take effect).
+    pub command: Option<(StoredEvent, bool)>,
 }
 
 /// Transaction-scoped advisory-lock key serializing one board's actions, so
@@ -641,6 +645,7 @@ impl Db {
     ///
     /// Returns `None`, with nothing written, when no change changed anything
     /// (the thread was already locked, the post already removed, …).
+    #[allow(clippy::too_many_arguments)]
     #[datastore_span(name = "apply_board_action", system = "postgresql")]
     pub async fn apply_board_action<F>(
         &self,
@@ -649,6 +654,7 @@ impl Db {
         changes: &[BoardChange<'_>],
         audit: BoardAuditRow<'_>,
         log_event: &nostr::Event,
+        command: Option<&nostr::Event>,
         sign_state: F,
     ) -> Result<Option<BoardActionOutcome>>
     where
@@ -693,6 +699,25 @@ impl Db {
         // The person an entry is about finds it by their key (`#p`), which reads
         // the mention index: write it with the entry (D99).
         crate::insert_mentions_in_transaction(&mut tx, log_event, Some(channel_id)).await?;
+        // The command that asked for it, accepted in the same commit (D111): a
+        // refusal above (the hourly limit, raced) leaves it unstored, so the
+        // relay refuses it instead of acknowledging a removal that never ran.
+        let command = match command {
+            Some(event) => {
+                let stored = crate::event::insert_event_with_thread_metadata_tx(
+                    &mut tx,
+                    event,
+                    Some(channel_id),
+                    None,
+                )
+                .await?;
+                if stored.1 {
+                    crate::insert_mentions_in_transaction(&mut tx, event, Some(channel_id)).await?;
+                }
+                Some(stored)
+            }
+            None => None,
+        };
 
         let snapshot = read_snapshot(&mut tx, channel_id, audit.at).await?;
         let head: Option<DateTime<Utc>> = sqlx::query_scalar(
@@ -727,6 +752,7 @@ impl Db {
         Ok(Some(BoardActionOutcome {
             log,
             state: replaced.event,
+            command,
         }))
     }
 

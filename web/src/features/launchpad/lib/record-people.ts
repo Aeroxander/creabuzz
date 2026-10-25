@@ -3,8 +3,8 @@
  *
  * The chain knows wallets, not people. This server also knows which wallets people bound to their account (the
  * server checks a binding when it is published) and what they call themselves. So a wallet that exactly one person on
- * this server has bound is shown by that name, always beside the start and end of the address: a name is what a
- * person chose, the address is what the chain says, and a reader should see both.
+ * this server has bound is shown by that name in sentences (D108). Records people check (who earned what, pickers)
+ * show the start and end of the address beside it: a name is what a person chose, the address is what the chain says.
  *
  * A wallet that two different people claim, or nobody has bound, stays an address: a name is never guessed.
  * Alias-free for `node --test`.

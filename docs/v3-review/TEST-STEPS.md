@@ -1428,3 +1428,21 @@ By hand: as a member, **People** in the community sidebar lists who is in and ho
 As the owner, **People** also has the invite links, the join setting, roles, removal and bans; **Org** no longer shows
 them. `?view=people` links straight to it.
 
+## 4bh. The review of the screen audit, fixed (D111, 2026-10-25)
+
+```bash
+pnpm --dir web test                      # recovery-key: the right key for each kind of account
+pnpm --dir web exec playwright test --project=smoke tests/e2e/passkey.spec.ts tests/e2e/contributor-project.spec.ts
+cargo test -p buzz-relay --lib -- --ignored board_   # needs Postgres and Redis
+scripts/web-contributor-e2e.sh           # Funds on a real chain, checked against the kit
+```
+
+By hand:
+
+1. Make an account **with a passkey**. **Sign out** → **Save recovery key** → **Download**: the file holds 64 letters and
+   numbers. Sign out, then **I already have an account** with that key: you are back as the same person.
+2. On a contributor project, **Funds**: USDC and ETH held and **Leave and take your share**. As the founder, **Manage**:
+   change **What it is**, **Save**; the header shows the new sentence, and its work areas are unchanged.
+3. On **Decisions** → **New decision**: **Unwind a frozen submission** is offered; **Pay from the treasury** only once
+   the DAO holds USDC.
+

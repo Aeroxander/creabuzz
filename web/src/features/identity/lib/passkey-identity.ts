@@ -325,6 +325,9 @@ export function exportPasskeyNsec(): string | null {
   if (sk) {
     return bytesToHex(sk);
   }
+  // A PRF passkey's key exists only while unlocked. Any browser key is not this account's: exporting it would hand
+  // over an empty or a stranger's backup (D111).
+  if (passkeyMode() === "prf") return null;
   try {
     return storedIdentityHex();
   } catch {

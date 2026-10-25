@@ -14,6 +14,7 @@
 //! cannot post, reply, vote or react on that board, and nobody below moderator
 //! can reply in a locked thread.
 
+use buzz_core::StoredEvent;
 use std::sync::Arc;
 
 use buzz_core::kind::{
@@ -559,6 +560,7 @@ pub async fn handle_board_command(
             &plan.changes,
             audit,
             &log,
+            None,
             |snapshot, min| board_state_event(state, board, snapshot, min, now),
         )
         .await
@@ -828,18 +830,21 @@ fn removed_excerpt(content: &str) -> String {
     }
 }
 
-/// Remove someone else's post or reply on a board (the kind:9005 side effect),
-/// writing the removal, its audit row and the public log entry together, then
-/// telling the author.
+/// Remove someone else's post or reply on a board (a kind:9005), writing the
+/// removal, its audit row and the public log entry together — and, with
+/// `store_command`, the kind:9005 itself, so it is accepted only if the removal
+/// is (D111) — then telling the author.
 ///
-/// Returns `false` when it was already gone.
+/// Returns `None` when it was already gone; otherwise the kind:9005 as stored
+/// with the removal, when it was.
 pub async fn remove_board_post(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     board: &ChannelRecord,
     delete_event: &Event,
     words: RemovedWords<'_>,
-) -> anyhow::Result<bool> {
+    store_command: bool,
+) -> anyhow::Result<Option<Option<(StoredEvent, bool)>>> {
     let now = Utc::now();
     let channel_id = board.id;
     let target_bytes = words.event.id.to_bytes();
@@ -894,11 +899,12 @@ pub async fn remove_board_post(
             &changes,
             audit,
             &log,
+            store_command.then_some(delete_event),
             |snapshot, min| board_state_event(state, channel_id, snapshot, min, now),
         )
         .await?
     else {
-        return Ok(false);
+        return Ok(None);
     };
     dispatch_board_events(tenant, state, &applied).await;
 
@@ -923,7 +929,7 @@ pub async fn remove_board_post(
             info!(error = %e, "board removal notice delivery failed (removal still applied)");
         }
     });
-    Ok(true)
+    Ok(Some(applied.command))
 }
 
 /// Refuse an ordinary write on a board when its author is muted there, or when
@@ -1182,7 +1188,7 @@ fn db_error(e: buzz_db::DbError) -> String {
     error(format!("database error: {e}"))
 }
 
-fn rate_limited() -> String {
+pub(crate) fn rate_limited() -> String {
     format!("rate-limited: a moderator may take {MODERATOR_ACTIONS_PER_HOUR} actions an hour")
 }
 

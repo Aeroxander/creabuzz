@@ -1,4 +1,7 @@
+import { readFile } from "node:fs/promises";
+
 import { expect, test, type Page } from "@playwright/test";
+import { getPublicKey } from "nostr-tools/pure";
 
 import { createMockRelay } from "./mock-relay";
 
@@ -168,4 +171,50 @@ test("signing up with a passkey publishes the name that was typed", async ({
         .map((event) => JSON.parse(event.content).name),
     )
     .toContain("Mira Okafor");
+});
+
+test("signing out of a passkey account offers its own recovery key, and counts it saved only after the export", async ({
+  page,
+}) => {
+  await addVirtualAuthenticator(page);
+  const relay = createMockRelay();
+  await relay.install(page);
+  // A passkey needs a host name, not an IP address: open the app on localhost, still talking to the mock server.
+  await page.addInitScript(() =>
+    localStorage.setItem("buzz.relayUrl", "ws://127.0.0.1:4173"),
+  );
+  await page.goto("http://localhost:4173/");
+  await page.getByTestId("create-identity-cta").first().click();
+  await page.getByTestId("onboarding-name").fill("PRF Reviewer");
+  await page.getByTestId("onboarding-passkey").click();
+  await expect(page.getByTestId("user-chip")).toBeVisible({ timeout: 20_000 });
+  const stored = await page.evaluate(() => ({
+    mode: localStorage.getItem("buzz.passkey.mode"),
+    nsec: localStorage.getItem("buzz.identity.nsec"),
+    account: localStorage.getItem("buzz.passkey.pubkey"),
+  }));
+  // A PRF account keeps no key in the browser: the only key is the passkey's.
+  expect(stored.mode).toBe("prf");
+  expect(stored.nsec).toBeNull();
+
+  await page.getByTestId("user-chip").click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.getByTestId("signout-save-key").click();
+  await expect(page.getByTestId("backup-dialog")).toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.getItem("buzz.identity.backedUp")),
+  ).toBeNull();
+  const downloaded = page.waitForEvent("download");
+  await page.getByTestId("backup-download").click();
+  const key = await readFile((await (await downloaded).path()) ?? "", "utf8");
+  // The file is this account's key: 64 hex characters whose public key is the account.
+  expect(key).toMatch(/^[0-9a-f]{64}$/);
+  expect(
+    getPublicKey(
+      Uint8Array.from(key.match(/../g) ?? [], (b) => Number.parseInt(b, 16)),
+    ),
+  ).toBe(stored.account);
+  expect(
+    await page.evaluate(() => localStorage.getItem("buzz.identity.backedUp")),
+  ).toBe(stored.account);
 });

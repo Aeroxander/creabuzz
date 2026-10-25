@@ -169,7 +169,10 @@ export function FreezeForm(props: FormProps & { initialPick?: string }) {
   );
 }
 
-/** Unwind a frozen claim: the money reserved for it returns to the budget, and the contributor's deposit to them. */
+/**
+ * Unwind a frozen submission: it ends for good, so nothing is awarded for it. Where money was set aside, it returns to the
+ * budget and the deposit to the person who submitted.
+ */
 export function UnwindForm(props: FormProps & { initialPick?: string }) {
   const make = useMemo(
     () => (p: Pick) =>
@@ -182,7 +185,11 @@ export function UnwindForm(props: FormProps & { initialPick?: string }) {
   return (
     <ClaimPickForm
       {...props}
-      intro="Unwind a frozen claim. The money set aside for it goes back to the work budget and the contributor's deposit goes back to them. Nothing is taken from anyone."
+      intro={
+        props.ctx.contributor
+          ? "End a frozen submission for good: nothing is awarded for it, now or later. Nothing is taken from anyone."
+          : "Unwind a frozen submission. It ends for good: the money set aside for it goes back to the work budget and the deposit goes back to the person who submitted it. Nothing is taken from anyone."
+      }
       label="Frozen submission to unwind"
       make={make}
       none="No submission is frozen."

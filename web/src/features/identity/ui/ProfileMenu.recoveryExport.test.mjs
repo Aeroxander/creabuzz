@@ -30,9 +30,10 @@ const note = (
 
 test("the identity panel surfaces the recovery-key export affordance", () => {
   assert.match(source, /label="Copy recovery key"/);
-  // Wiring: the item must copy the exported session key, not a placeholder.
-  assert.match(source, /copyNsec\(passkeyNsec, "Recovery key copied"\)/);
-  assert.match(source, /passkeyNsec = exportPasskeyNsec\(\)/);
+  // Wiring: every export comes from the one account-checked source (D111), never a raw stored or passkey key.
+  assert.match(source, /copyRecoveryKey\(recovery\.hex, pubkey\)/);
+  assert.match(source, /const recovery = currentRecovery\(pubkey\)/);
+  assert.doesNotMatch(source, /exportPasskeyNsec|copyNsec\(/);
 });
 
 test("the note says what the key is for", () => {

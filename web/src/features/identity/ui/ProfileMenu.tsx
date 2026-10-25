@@ -45,12 +45,17 @@ import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { OnboardingDialog } from "./OnboardingDialog";
 import { CREATE_ACCOUNT, SIGN_UP_EVENT } from "../lib/account-copy";
 import {
+  backedUpFor,
+  type RecoveryExport,
+  recoveryExportFor,
+} from "../lib/recovery-key";
+import {
   setupPasskey,
   signInPasskeyIdentity,
   hasPasskeyIdentity,
   isPasskeyActive,
   passkeyMode,
-  exportPasskeyNsec,
+  passkeySecretKey,
   removePasskeyIdentity,
   registerPasskeySigner,
 } from "../lib/passkey-identity";
@@ -63,18 +68,70 @@ const BACKED_UP_KEY = "buzz.identity.backedUp";
 // session is active. Runs on first import of this module (mounted always).
 void registerPasskeySigner();
 
-function copyNsec(value: string, label = "Key copied") {
-  void navigator.clipboard?.writeText(value).then(() => {
-    import("sonner").then(({ toast }) => toast.success(label));
-  });
+/** How a passkey registered here holds the key, or null without one. */
+function passkeyHolding(): "prf" | "unlock" | null {
+  return hasPasskeyIdentity() ? passkeyMode() : null;
 }
 
+/** Whether this account's recovery key was saved from this browser (D111: per account, after a real export). */
 export function hasBackedUp(): boolean {
   try {
-    return localStorage.getItem(BACKED_UP_KEY) === "1";
+    return backedUpFor(
+      localStorage.getItem(BACKED_UP_KEY),
+      existingUserPubkey(),
+      passkeyHolding(),
+    );
   } catch {
     return true;
   }
+}
+
+function markBackedUp(account: string) {
+  try {
+    localStorage.setItem(BACKED_UP_KEY, account.toLowerCase());
+  } catch {
+    // Not remembered: the reminder simply stays.
+  }
+}
+
+/**
+ * This account's recovery key, from wherever this browser holds it (`recoveryExportFor`): the one source for every
+ * backup the menu offers, so none can save an empty key or another identity's.
+ */
+function currentRecovery(account: string): RecoveryExport {
+  let stored: string | null = null;
+  try {
+    stored = storedIdentityHex();
+  } catch {
+    stored = null;
+  }
+  const secret = passkeySecretKey();
+  return recoveryExportFor(account || null, {
+    passkey: passkeyHolding(),
+    passkeySecret: secret
+      ? Array.from(secret, (byte) => byte.toString(16).padStart(2, "0")).join(
+          "",
+        )
+      : null,
+    stored,
+  });
+}
+
+/** Copy the key, and count it as saved only once the clipboard took it. */
+function copyRecoveryKey(hex: string, account: string) {
+  void navigator.clipboard
+    ?.writeText(hex)
+    .then(() => {
+      markBackedUp(account);
+      return import("sonner").then(({ toast }) =>
+        toast.success("Recovery key copied"),
+      );
+    })
+    .catch(() =>
+      import("sonner").then(({ toast }) =>
+        toast.error("Couldn't copy it. Try Download instead."),
+      ),
+    );
 }
 
 /**
@@ -223,7 +280,7 @@ export function ProfileMenu({
   const passkeyActive = isPasskeyActive();
   const passkeySetUp = hasPasskeyIdentity();
   const passkeyModeNow = passkeyMode();
-  const passkeyNsec = exportPasskeyNsec();
+  const recovery = currentRecovery(pubkey);
 
   const runPasskey = async (fn: () => Promise<unknown>) => {
     setPasskeyBusy(true);
@@ -241,10 +298,9 @@ export function ProfileMenu({
   // Render boundary for the always-mounted nav: a stored-but-unreadable key
   // must degrade to the inline recovery banner below, never throw through the
   // root error boundary — where the Import/Reset recovery would be unreachable.
-  let nsec = "";
   let identityUnreadable = false;
   try {
-    nsec = storedIdentityHex() ?? "";
+    storedIdentityHex();
   } catch (error) {
     if (!(error instanceof StoredIdentityUnreadableError)) throw error;
     identityUnreadable = true;
@@ -526,8 +582,9 @@ export function ProfileMenu({
                       icon={<KeyRound className="h-3.5 w-3.5" />}
                       label="Copy recovery key"
                       onClick={() => {
-                        if (passkeyNsec)
-                          copyNsec(passkeyNsec, "Recovery key copied");
+                        if (recovery.kind === "ready")
+                          copyRecoveryKey(recovery.hex, pubkey);
+                        else setShowBackup(true);
                       }}
                     />
                     <p
@@ -655,45 +712,72 @@ export function ProfileMenu({
               Keep it somewhere private. You need it to sign in on another
               device, or if this browser is ever cleared.
             </p>
-            <div className="mt-3 rounded-md border border-input bg-black/[0.03] p-2 font-mono text-2xs break-all text-black/70 dark:bg-white/5 dark:text-white/70">
-              {revealKey ? nsec : `${nsec.slice(0, 12)}…${nsec.slice(-8)}`}
-            </div>
+            {recovery.kind === "ready" ? (
+              <div className="mt-3 rounded-md border border-input bg-black/[0.03] p-2 font-mono text-2xs break-all text-black/70 dark:bg-white/5 dark:text-white/70">
+                {revealKey
+                  ? recovery.hex
+                  : `${recovery.hex.slice(0, 12)}…${recovery.hex.slice(-8)}`}
+              </div>
+            ) : (
+              <p
+                className="mt-3 rounded-md bg-amber-500/10 p-2 text-sm text-amber-900 dark:text-amber-200"
+                data-testid="backup-unavailable"
+                role="status"
+              >
+                {recovery.kind === "locked"
+                  ? "Unlock with your passkey to show your recovery key."
+                  : "Your recovery key can't be read in this browser, so there is nothing to save here. Stay signed in until you have it."}
+              </p>
+            )}
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setRevealKey((v) => !v)}
-                className="rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
-              >
-                {revealKey ? "Hide" : "Reveal"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  copyNsec(nsec);
-                  localStorage.setItem(BACKED_UP_KEY, "1");
-                }}
-                className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
-                data-testid="backup-copy"
-              >
-                <Check className="h-3 w-3" /> Copy
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const blob = new Blob([nsec], { type: "text/plain" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `buzz-identity-${truncatePubkey(pubkey)}.key`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                  localStorage.setItem(BACKED_UP_KEY, "1");
-                }}
-                className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
-                data-testid="backup-download"
-              >
-                <Download className="h-3 w-3" /> Download
-              </button>
+              {recovery.kind === "ready" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setRevealKey((v) => !v)}
+                    className="rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
+                  >
+                    {revealKey ? "Hide" : "Reveal"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => copyRecoveryKey(recovery.hex, pubkey)}
+                    className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
+                    data-testid="backup-copy"
+                  >
+                    <Check className="h-3 w-3" /> Copy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const blob = new Blob([recovery.hex], {
+                        type: "text/plain",
+                      });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `buzz-identity-${truncatePubkey(pubkey)}.key`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      markBackedUp(pubkey);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
+                    data-testid="backup-download"
+                  >
+                    <Download className="h-3 w-3" /> Download
+                  </button>
+                </>
+              ) : recovery.kind === "locked" ? (
+                <button
+                  type="button"
+                  disabled={passkeyBusy}
+                  onClick={() => void runPasskey(() => signInPasskeyIdentity())}
+                  className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
+                  data-testid="backup-unlock"
+                >
+                  <Fingerprint className="h-3 w-3" /> Unlock
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setShowBackup(false)}
