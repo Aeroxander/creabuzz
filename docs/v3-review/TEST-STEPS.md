@@ -1493,3 +1493,26 @@ By hand, on a dev chain (`scripts/dev-chain.sh` prints `VITE_OPEN_BOUNTIES`; bui
 6. Open a second bounty and let the date pass with no majority: **Take back my …** returns exactly what you put in.
 7. Without `VITE_OPEN_BOUNTIES` in the build, a post page shows no bounties at all.
 
+## 4bk. Forecasts and Money on hand (D115, D116, 2026-10-26)
+
+```bash
+cargo test -p buzz-relay --lib forecast    # the server accepts only the forecast shape (with Hermit active)
+cargo test -p buzz-core --lib kind         # the new kind is registered
+pnpm --dir packages/creaton-core test      # forecast: questions, records, cutoffs, outcomes, accuracy, readers
+pnpm --dir web test                        # runway: what counts as spent, the pace; the runway reader
+scripts/web-post-bounty-e2e.sh             # forecasts on a post bounty, closing, settling, a profile's accuracy
+scripts/web-contributor-e2e.sh             # a forecast on a work-area bounty; Money on hand on the front page
+```
+
+By hand (a relay built from this branch, the dev chain, a web build with `VITE_WORK_BOUNTIES` and `VITE_OPEN_BOUNTIES`):
+
+1. Under a bounty, **Will it get done?**: give 70 and a reason, **Publish my forecast**. It shows **Middle forecast:
+   70% · 1 person** and your reason. As someone else, give 30: **Middle forecast: 50% · 2 people**.
+2. **Change my forecast** to 60: it replaces yours (both versions stay on the server).
+3. Once work starts to win it (a post bounty's wait starts, or a work area's submission is approved), the form goes and
+   it says **Forecasts closed on …**. After it is paid: **It got done. The middle forecast was …%.**
+4. On your profile: **Forecasts: … out of 100 over 1 settled bounty. Always saying 50% would score 75.**
+5. On a DAO's front page, **Money on hand**: what the treasury holds, what is set aside for work, what was paid out, money
+   others put behind its work areas, and **Not enough history yet** for a project under three months old. Someone
+   leaving does not change **Paid out**.
+

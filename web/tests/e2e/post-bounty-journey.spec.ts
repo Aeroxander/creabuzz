@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
+import { hexToBytes } from "@noble/hashes/utils.js";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
 
 /**
@@ -36,7 +37,16 @@ const POST = finalizeEvent(
   },
   AUTHOR_KEY,
 );
-const NSEC = "44".repeat(32);
+/** Each person signs as themselves: their forecasts are told apart by these keys. */
+const KEYS = {
+  ben: "44".repeat(32),
+  cara: "55".repeat(32),
+  dev: "66".repeat(32),
+  eve: "77".repeat(32),
+} as const;
+const CARA_PUBKEY = getPublicKey(hexToBytes(KEYS.cara));
+/** What the pages publish (forecasts), served back to every page that asks. */
+const published: (typeof POST)[] = [];
 
 async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
   const res = await fetch(ANVIL_URL, {
@@ -73,6 +83,7 @@ type Filter = {
   kinds?: number[];
   authors?: string[];
   "#e"?: string[];
+  "#t"?: string[];
 };
 
 /** A server that knows one post and answers every other question with nothing. */
@@ -86,10 +97,21 @@ function matches(event: typeof POST, filter: Filter): boolean {
   ) {
     return false;
   }
+  if (
+    filter["#t"] &&
+    !event.tags.some((t) => t[0] === "t" && filter["#t"]?.includes(t[1]))
+  ) {
+    return false;
+  }
   return true;
 }
 
-async function open(page: Page, wallet: string) {
+async function open(
+  page: Page,
+  wallet: string,
+  nsec: string,
+  path = `/social/post/${POST.id}`,
+) {
   await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
@@ -100,14 +122,19 @@ async function open(page: Page, wallet: string) {
       }
       if (!Array.isArray(parsed)) return;
       if (parsed[0] === "EVENT") {
-        const event = parsed[1] as { id: string };
+        const event = parsed[1] as typeof POST;
+        if (!published.some((known) => known.id === event.id)) {
+          published.push(event);
+        }
         ws.send(JSON.stringify(["OK", event.id, true, ""]));
         return;
       }
       if (parsed[0] !== "REQ") return;
       const [, subId, ...filters] = parsed as [string, string, ...Filter[]];
-      if (filters.some((f) => matches(POST, f))) {
-        ws.send(JSON.stringify(["EVENT", subId, POST]));
+      for (const event of [POST, ...published]) {
+        if (filters.some((f) => matches(event, f))) {
+          ws.send(JSON.stringify(["EVENT", subId, event]));
+        }
       }
       ws.send(JSON.stringify(["EOSE", subId]));
     });
@@ -119,12 +146,22 @@ async function open(page: Page, wallet: string) {
       window.localStorage.setItem("buzz.identity.backedUp", "1");
       window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
     },
-    [NSEC, ANVIL_URL],
+    [nsec, ANVIL_URL],
   );
-  await page.goto(`/social/post/${POST.id}`);
-  await expect(page.getByTestId("post-bounty")).toBeVisible({
-    timeout: 30_000,
-  });
+  await page.goto(path);
+  if (path.startsWith("/social/post/")) {
+    await expect(page.getByTestId("post-bounty")).toBeVisible({
+      timeout: 30_000,
+    });
+  }
+}
+
+/** Give a forecast on the first bounty, as whoever's page this is. */
+async function forecast(page: Page, percent: string, reason: string) {
+  const panel = item(page).getByTestId("forecast-panel");
+  await panel.getByTestId("forecast-percent").fill(percent);
+  await panel.getByTestId("forecast-reason").fill(reason);
+  await panel.getByTestId("forecast-submit").click();
 }
 
 const card = (page: Page) => page.getByTestId("post-bounty");
@@ -146,7 +183,7 @@ test("money behind a post is paid to the work most of it backs for nine days, an
 
   // ── Ben puts 50 behind his own post ───────────────────────────────────────────────────────────
   const ben = await context.newPage();
-  await open(ben, BEN);
+  await open(ben, BEN, KEYS.ben);
   await expect(card(ben)).toContainText("None yet.", { timeout: 30_000 });
   await card(ben).getByTestId("post-bounty-open").click();
   await card(ben)
@@ -163,10 +200,16 @@ test("money behind a post is paid to the work most of it backs for nine days, an
   await expect(status(ben)).toContainText("Takes money and work until");
   // While one is open, people add to it rather than start another.
   await expect(card(ben).getByTestId("post-bounty-open")).toHaveCount(0);
+  // Will it get done? Ben thinks it is a coin toss, give or take.
+  await forecast(ben, "40", "Paint shops are slow this month.");
+  await expect(item(ben).getByTestId("forecast-summary")).toHaveText(
+    "Middle forecast: 40% · 1 person",
+    { timeout: 30_000 },
+  );
 
   // ── Cara adds 50 ────────────────────────────────────────────────────────────────────────────────
   const cara = await context.newPage();
-  await open(cara, CARA);
+  await open(cara, CARA, KEYS.cara);
   await item(cara).getByTestId("post-bounty-add").click();
   await item(cara).getByTestId("post-bounty-add-amount").fill("50");
   await item(cara).getByTestId("post-bounty-add-submit").click();
@@ -176,10 +219,15 @@ test("money behind a post is paid to the work most of it backs for nine days, an
   );
   await expect(item(cara)).toContainText("from 2 people");
   expect(await usdcOf(BOUNTY)).toBe(100n * UNIT);
+  await forecast(cara, "80", "Dev painted the crossing last spring.");
+  await expect(item(cara).getByTestId("forecast-summary")).toHaveText(
+    "Middle forecast: 60% · 2 people",
+    { timeout: 30_000 },
+  );
 
   // ── Dev submits work ────────────────────────────────────────────────────────────────────────────
   const dev = await context.newPage();
-  await open(dev, DEV);
+  await open(dev, DEV, KEYS.dev);
   await item(dev).getByTestId("post-bounty-file").click();
   await item(dev)
     .getByTestId("post-bounty-evidence")
@@ -217,6 +265,13 @@ test("money behind a post is paid to the work most of it backs for nine days, an
     timeout: 60_000,
   });
   await expect(item(cara).getByTestId("post-bounty-add")).toHaveCount(0);
+  // Work started to win it, so forecasts close: nobody scores by forecasting what is already decided.
+  await expect(
+    item(cara).getByTestId("forecast-panel").getByTestId("forecast-closed"),
+  ).toContainText("Forecasts closed on");
+  await expect(
+    item(cara).getByTestId("forecast-panel").getByTestId("forecast-form"),
+  ).toHaveCount(0);
 
   // ── A dip stops it: three days in, Cara withdraws, then backs it again ──────────────────────────
   await pass(3 * 86_400);
@@ -234,10 +289,15 @@ test("money behind a post is paid to the work most of it backs for nine days, an
   // ── Nine days with the majority: anyone pays, here Eve, who put nothing in ──────────────────────
   await pass(9 * 86_400);
   const eve = await context.newPage();
-  await open(eve, EVE);
+  await open(eve, EVE, KEYS.eve);
   await expect(status(eve)).toContainText("Anyone can pay it now.", {
     timeout: 30_000,
   });
+  // Someone who never forecast sees the two forecasts, closed since the wait started.
+  await expect(item(eve).getByTestId("forecast-summary")).toHaveText(
+    "Middle forecast: 60% · 2 people",
+    { timeout: 30_000 },
+  );
   if (process.env.E2E_SHOTS) {
     await card(eve).screenshot({
       path: `${process.env.E2E_SHOTS}/post-bounty-payable.png`,
@@ -247,6 +307,18 @@ test("money behind a post is paid to the work most of it backs for nine days, an
   await expect(status(eve)).toContainText("Paid 100", { timeout: 60_000 });
   expect(await usdcOf(DEV)).toBe(devBefore + 100n * UNIT);
   expect(await usdcOf(BOUNTY)).toBe(0n);
+  await expect(item(eve).getByTestId("forecast-outcome")).toHaveText(
+    "It got done. The middle forecast was 60%.",
+    { timeout: 30_000 },
+  );
+
+  // ── Cara's profile shows how accurate her forecast was: 80% on something that got done scores 96 ─────
+  const profile = await context.newPage();
+  await open(profile, EVE, KEYS.eve, `/u/${CARA_PUBKEY}`);
+  await expect(profile.getByTestId("profile-forecasts")).toHaveText(
+    "Forecasts: 96 out of 100 over 1 settled bounty. Always saying 50% would score 75.",
+    { timeout: 30_000 },
+  );
 
   // ── A second bounty nobody earns gives Ben his money back ───────────────────────────────────────
   const benBefore = await usdcOf(BEN);

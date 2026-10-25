@@ -55,6 +55,9 @@ export const TOPIC_POST_CLAIM_FILED = topicOf(
 export const TOPIC_POST_BOUNTY_FUNDED = topicOf(
   "Funded(uint256,address,uint256,uint256)",
 );
+export const TOPIC_POST_RUN_STARTED = topicOf(
+  "RunStarted(uint256,uint32,uint64)",
+);
 
 const bytesOf = (text: string): number => new TextEncoder().encode(text).length;
 
@@ -415,6 +418,8 @@ export interface PostBountyView {
   claimsTruncated: boolean;
   /** How many different wallets put money in. */
   funders: number;
+  /** When its first run started (Unix seconds), or null when none has: where its forecasts close. */
+  firstRunSince: number | null;
   wallet: WalletPosition;
 }
 
@@ -471,7 +476,7 @@ export async function readPostBounties(
       opened
         .slice(-MAX_POST_BOUNTIES)
         .map(async (o): Promise<PostBountyView | null> => {
-          const [recordHex, claimLogs, fundedLogs, position] =
+          const [recordHex, claimLogs, fundedLogs, runLogs, position] =
             await Promise.all([
               chain.call(
                 contract,
@@ -488,6 +493,10 @@ export async function readPostBounties(
               chain.logs({
                 address: contract,
                 topics: [TOPIC_POST_BOUNTY_FUNDED, idTopic(o.id)],
+              }),
+              chain.logs({
+                address: contract,
+                topics: [TOPIC_POST_RUN_STARTED, idTopic(o.id)],
               }),
               wallet
                 ? readPosition(chain, contract, o.id, wallet)
@@ -526,9 +535,14 @@ export async function readPostBounties(
                 : [];
             }),
           );
+          const starts = runLogs.flatMap((log) => {
+            const data = (log as LogLike).data;
+            return typeof data === "string" ? [Number(decodeWord(data))] : [];
+          });
           return {
             id: o.id,
             record,
+            firstRunSince: starts.length > 0 ? Math.min(...starts) : null,
             words:
               keccak(o.words).toLowerCase() === record.wordsHash.toLowerCase()
                 ? o.words

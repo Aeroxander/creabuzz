@@ -36,7 +36,7 @@ export function usePostBounties(post: string | null, wallet: string | null) {
         ),
         chain.now(),
       ]);
-      return { ...read, chainTime };
+      return { ...read, chainTime, chainId };
     },
     staleTime: 10_000,
     refetchOnWindowFocus: false,

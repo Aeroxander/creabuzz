@@ -29,7 +29,7 @@ import { useConnectedWallet } from "../use-connected-wallet";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { usePaymentRuns, useSpendingSummary } from "../use-spending";
 import { useChallengeLock } from "../use-challenge-lock";
-import { useWork } from "../use-work";
+import { useRecordEvents, useWork } from "../use-work";
 import { decisionStage } from "./DecisionCard";
 import { bondsOf, decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
@@ -40,6 +40,9 @@ import { SpendingCard } from "./SpendingCard";
 import { MoneyInCard, MoneyInUnavailable } from "./MoneyInCard";
 import { useMoneyIn } from "../use-money-in";
 import { useWalletLabels } from "../use-wallet-labels";
+import { useRunway } from "../use-runway";
+import { useWorkBounties } from "../use-work-bounties";
+import { RunwayCard } from "./RunwayCard";
 
 export type OverviewTarget =
   | "decisions"
@@ -104,6 +107,29 @@ export function DaoOverview({
     shares: context.data?.shares ?? null,
     budgets: work.data?.mandates.map((m) => m.address),
   });
+  // Money on hand (N4): payout times come from the track record's read, bounties from the work-area bounty contract.
+  const record = useRecordEvents(dao, work.data);
+  const runway = useRunway({
+    dao,
+    currency: launch.record.currency || null,
+    shares: context.data?.shares ?? null,
+    work: work.data,
+    record: record.data,
+    bornAt: launch.record.createdAt,
+  });
+  const bounties = useWorkBounties(
+    launch.record.chainId ?? null,
+    dao,
+    wallet,
+    work.data,
+  );
+  const outsideWaiting = (bounties.data?.bounties ?? []).reduce(
+    (sum, b) =>
+      b.record.paidClaim === null
+        ? sum + b.record.total - b.record.refunded
+        : sum,
+    0n,
+  );
   const payerLabel = useWalletLabels(
     moneyIn.data?.paidIn.map((p) => p.from) ?? [],
   );
@@ -389,6 +415,15 @@ export function DaoOverview({
         launch={launch}
         onOpen={() => onOpen("milestones")}
       />
+
+      {runway.data && sale ? (
+        <RunwayCard
+          decimals={sale.decimals}
+          figures={runway.data}
+          outsideWaiting={outsideWaiting}
+          symbol={symbol}
+        />
+      ) : null}
 
       {spending && sale && !contributor ? (
         <SpendingCard

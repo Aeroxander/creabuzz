@@ -25,6 +25,8 @@ import { useChainSend } from "../use-chain-send";
 import { POST_BOUNTY_QUERY, usePostBounties } from "../use-post-bounties";
 import { useWalletLabels } from "../use-wallet-labels";
 import { FailureNote, WalletStrip } from "./auction-widgets";
+import { ForecastPanel } from "./ForecastPanel";
+import { postBountyQuestion, questionOf } from "../lib/forecast";
 import {
   AddMoneyForm,
   OpenPostBountyForm,
@@ -169,7 +171,7 @@ function BountyItem({
   money,
 }: {
   bounty: PostBountyView;
-  data: PostBounties & { chainTime: number };
+  data: PostBounties & { chainTime: number; chainId: number };
   wallet: string | null;
   gate: string | null;
   busy: string | null;
@@ -388,6 +390,17 @@ function BountyItem({
           })}
         </ul>
       ) : null}
+      <ForecastPanel
+        involved={[record.creator, ...bounty.claims.map((c) => c.claimant)]}
+        now={now}
+        question={questionOf({
+          kind: "postbounty",
+          chainId: data.chainId,
+          contract: data.contract,
+          id: bounty.id,
+        })}
+        state={postBountyQuestion(record, bounty.firstRunSince, now)}
+      />
       {bounty.claimsTruncated ? (
         <p className="text-xs text-muted-foreground" role="status">
           More work was submitted than is shown here.

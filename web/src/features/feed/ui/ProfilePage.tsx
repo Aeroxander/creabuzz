@@ -40,6 +40,7 @@ import { trustTierLabel } from "../lib/trust-weight";
 import { useVoteTallies, useVoteWeights } from "../use-feed";
 import { FollowButton } from "./FollowButton";
 import { launchCoord, LaunchVoteCard } from "./LaunchVoteCard";
+import { ForecastRecordLine } from "@/features/launchpad/ui/ForecastRecordLine";
 
 type Tab = "posts" | "replies" | "media" | "likes" | "launches";
 
@@ -361,6 +362,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
             any project and not Shares.
           </p>
         ) : null}
+        <ForecastRecordLine pubkey={pubkey} />
       </div>
 
       <div className="sticky top-12 z-10 border-b border-border/60 bg-background/45 backdrop-blur-xl max-md:top-[5.75rem]">

@@ -389,6 +389,35 @@ test("a contributor project is started from the page, work is claimed the same d
         path: `${process.env.E2E_SHOTS}/bounty-open.png`,
       });
     }
+    // Will it get done? (N3) The founder forecasts before anyone's work is approved.
+    const forecast = docsArea(founder).getByTestId("forecast-panel");
+    await forecast.getByTestId("forecast-percent").fill("70");
+    await forecast
+      .getByTestId("forecast-reason")
+      .fill("Two people asked for the docs work already.");
+    await forecast.getByTestId("forecast-submit").click();
+    await expect(forecast.getByTestId("forecast-summary")).toHaveText(
+      "Middle forecast: 70% · 1 person",
+      { timeout: 30_000 },
+    );
+    // Money on hand (N4): the outside money shows on the front page; a project this young has no pace yet.
+    await refresh(founder, "Overview");
+    const runway = founder.getByTestId("dao-runway");
+    await expect(runway.getByTestId("runway-outside")).toContainText("25", {
+      timeout: 30_000,
+    });
+    await expect(runway.getByTestId("runway-pace")).toHaveText(
+      "Not enough history yet: it started under three months ago.",
+    );
+    // Nothing was paid out: the money set aside is Shares, and outside money is not the project's spending.
+    await expect(runway.getByTestId("runway-spent")).toHaveText(
+      /^0 d?USDC, of which 0 d?USDC in the last three months$/,
+    );
+    if (process.env.E2E_SHOTS) {
+      await runway.screenshot({
+        path: `${process.env.E2E_SHOTS}/runway.png`,
+      });
+    }
   }
 
   // ── 3. the founder (the first project's manager) takes it on, two reviewers approve, it is finished ──
@@ -455,6 +484,11 @@ test("a contributor project is started from the page, work is claimed the same d
     ).toContainText("Paid 25", { timeout: 60_000 });
     expect(await usdcOf(CONTRIBUTOR)).toBe(contributorMoney + 25n * 10n ** 6n);
     expect(await usdcOf(BOUNTY)).toBe(0n);
+    await expect(
+      docsArea(founder)
+        .getByTestId("forecast-panel")
+        .getByTestId("forecast-outcome"),
+    ).toHaveText("It got done. The middle forecast was 70%.");
     if (process.env.E2E_SHOTS) {
       await docsArea(founder).screenshot({
         path: `${process.env.E2E_SHOTS}/bounty-paid.png`,

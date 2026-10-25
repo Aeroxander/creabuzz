@@ -807,6 +807,13 @@ export const KIND_ROYALTY_SCHEDULE = 47006;
 /// per closed settlement window (revenue, shares, pool, carry).
 export const KIND_ROYALTY_CLOSE = 47007;
 
+/// NIP-LP: a forecast that a bounty will be paid (regular). A whole percent and a
+/// short reason; every revision is a new event, and the latest before the
+/// question's cutoff counts. Carries no money and no vote. Exactly one `t` tag
+/// naming the question (`forecast:<workbounty|postbounty>:<chain>:<contract>:<id>`)
+/// and one `forecast` tag holding 0–100. See `docs/nips/NIP-LP.md`.
+export const KIND_FORECAST = 47008;
+
 /// NIP-LP: trustgraph score root (parameterized replaceable, d = program:epoch).
 /// Published by a scoring operator with its Merkle root and proof pointer;
 /// clients verify individual score claims against the root without a prover.

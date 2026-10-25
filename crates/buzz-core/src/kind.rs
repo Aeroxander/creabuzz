@@ -925,6 +925,12 @@ pub const KIND_ROYALTY_SCHEDULE: u32 = 47006;
 /// NIP-LP: royalty settlement-close mirror (regular). Advisory. One event
 /// per closed settlement window (revenue, shares, pool, carry).
 pub const KIND_ROYALTY_CLOSE: u32 = 47007;
+/// NIP-LP: a forecast that a bounty will be paid (regular). A whole percent and a
+/// short reason; every revision is a new event, and the latest before the
+/// question's cutoff counts. Carries no money and no vote. Exactly one `t` tag
+/// naming the question (`forecast:<workbounty|postbounty>:<chain>:<contract>:<id>`)
+/// and one `forecast` tag holding 0–100. See `docs/nips/NIP-LP.md`.
+pub const KIND_FORECAST: u32 = 47008;
 /// NIP-LP: trustgraph score root (parameterized replaceable, d = program:epoch).
 /// Published by a scoring operator with its Merkle root and proof pointer;
 /// clients verify individual score claims against the root without a prover.
@@ -1281,6 +1287,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_WIKI_CORRECTION,
     KIND_ROYALTY_SCHEDULE,
     KIND_ROYALTY_CLOSE,
+    KIND_FORECAST,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).

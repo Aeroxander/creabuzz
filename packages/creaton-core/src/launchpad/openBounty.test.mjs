@@ -421,6 +421,7 @@ test("the reader finds a post's bounty with its words, claims, funders and the w
     ],
   );
   assert.equal(b.record.runClaim, 1);
+  assert.equal(b.firstRunSince, null, "no run event was served");
 });
 
 test("words that do not hash to the record are not shown as the bounty's words", async () => {

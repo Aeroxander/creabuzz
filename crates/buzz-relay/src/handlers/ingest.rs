@@ -18,19 +18,19 @@ use buzz_core::kind::{
     KIND_BOOKMARK_SET, KIND_BUDGET_SPEND_RECEIPT, KIND_CANVAS, KIND_COMMENT, KIND_CONTACT_LIST,
     KIND_CONTRIBUTION_RECORD, KIND_DELETION, KIND_DEPLOYMENT_RECORD, KIND_DM_ADD_MEMBER,
     KIND_DM_HIDE, KIND_DM_OPEN, KIND_DM_RELAY_LIST, KIND_EMOJI_LIST, KIND_EMOJI_SET,
-    KIND_EVENT_REMINDER, KIND_EVM_BINDING, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST,
-    KIND_FORUM_VOTE, KIND_GENERIC_REPOST, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH,
-    KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE,
-    KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
-    KIND_HIGHLIGHT, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
-    KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
-    KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL, KIND_LAUNCH_RECEIPT,
-    KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM, KIND_MANAGED_AGENT,
-    KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN,
-    KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN,
-    KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT,
-    KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST,
-    KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
+    KIND_EVENT_REMINDER, KIND_EVM_BINDING, KIND_FOLLOW_SET, KIND_FORECAST, KIND_FORUM_COMMENT,
+    KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GENERIC_REPOST, KIND_GIFT_WRAP, KIND_GIT_ISSUE,
+    KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT,
+    KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED,
+    KIND_GIT_STATUS_OPEN, KIND_HIGHLIGHT, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
+    KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED,
+    KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
+    KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
+    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
+    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
+    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
+    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
+    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
     KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_ORG_BUDGET, KIND_ORG_GRANT,
     KIND_ORG_JOIN_REQUEST, KIND_ORG_NODE, KIND_ORG_PITCH, KIND_PERSONA, KIND_PIN_LIST, KIND_POLL,
     KIND_POLL_RESPONSE, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK,
@@ -617,7 +617,9 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_LAUNCH_BID
         | KIND_LAUNCH_UPDATE
         | KIND_LAUNCH_PROPOSAL
-        | KIND_LAUNCH_RECEIPT => Ok(Scope::MessagesWrite),
+        | KIND_LAUNCH_RECEIPT
+        // A forecast on a bounty (N3): an opinion with a reason, no money and no vote.
+        | KIND_FORECAST => Ok(Scope::MessagesWrite),
         // NIP-ORG: org nodes, grants, and budgets are ordinary member writes
         // (same model as forum posts). Structural authorization (grant chains,
         // budget limits) is layered on top; the relay validates envelopes and
@@ -883,6 +885,8 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_LAUNCH_UPDATE
             | KIND_LAUNCH_PROPOSAL
             | KIND_LAUNCH_RECEIPT
+            // A forecast names its bounty in a `t` tag; it belongs to no channel.
+            | KIND_FORECAST
             // NIP-ORG: the org graph is a community-level object, addressed by
             // (pubkey, kind, d_tag) exactly like a project (30621) or a launch
             // record (37001). One org belongs to the whole community, not to a
@@ -3344,6 +3348,90 @@ fn parse_launch_coordinate(coordinate: &str) -> Result<(), String> {
 /// Every mirror names exactly one launch via its `a` tag; receipts additionally
 /// carry the chain tx hash they mirror, and bids name their bucket. Content
 /// must be a JSON object so malformed mirrors cannot pollute launch feeds.
+/// The longest reason a forecast may carry, in characters.
+const MAX_FORECAST_REASON_CHARS: usize = 500;
+
+/// Whether `question` names a bounty: `forecast:<workbounty|postbounty>:<chain id>:<0x contract, lowercase>:<id>`.
+fn is_forecast_question(question: &str) -> bool {
+    let mut parts = question.split(':');
+    let (Some("forecast"), Some(kind), Some(chain), Some(contract), Some(id), None) = (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+    ) else {
+        return false;
+    };
+    let digits = |s: &str, max: usize| {
+        !s.is_empty()
+            && s.len() <= max
+            && s.bytes().all(|b| b.is_ascii_digit())
+            && !s.starts_with('0')
+    };
+    matches!(kind, "workbounty" | "postbounty")
+        && digits(chain, 12)
+        && digits(id, 20)
+        && contract.len() == 42
+        && contract.starts_with("0x")
+        && contract[2..]
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// A forecast (kind 47008, N3): exactly one `t` tag naming a bounty question, exactly one `forecast` tag holding a
+/// whole percent 0–100 written plainly, and a reason of 1 to `MAX_FORECAST_REASON_CHARS` characters.
+fn validate_forecast(event: &Event) -> Result<(), String> {
+    let mut questions = 0usize;
+    let mut percents = 0usize;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "t" => {
+                questions += 1;
+                if !is_forecast_question(value) {
+                    return Err("forecast `t` tag must name a bounty question".to_string());
+                }
+            }
+            "forecast" => {
+                percents += 1;
+                let plain = value == "0" || (!value.starts_with('0') && !value.is_empty());
+                match value.parse::<u8>() {
+                    Ok(p) if plain && p <= 100 && value.bytes().all(|b| b.is_ascii_digit()) => {}
+                    _ => {
+                        return Err(
+                            "forecast tag must hold a whole percent from 0 to 100".to_string()
+                        )
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if questions != 1 {
+        return Err(format!(
+            "forecast must have exactly one `t` tag (got {questions})"
+        ));
+    }
+    if percents != 1 {
+        return Err(format!(
+            "forecast must have exactly one `forecast` tag (got {percents})"
+        ));
+    }
+    let reason = event.content.trim();
+    if reason.is_empty() || reason.chars().count() > MAX_FORECAST_REASON_CHARS {
+        return Err(format!(
+            "forecast reason must be 1 to {MAX_FORECAST_REASON_CHARS} characters"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_launch_mirror_envelope(event: &Event, label: &str) -> Result<(), String> {
     let mut a_tags: Vec<&str> = Vec::new();
     let mut m_count = 0usize;
@@ -4991,6 +5079,10 @@ async fn ingest_event_inner(
     if kind_u32 == KIND_LAUNCH_RECEIPT {
         validate_launch_mirror_envelope(&event, "launch receipt event")
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_FORECAST {
+        validate_forecast(&event).map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
     // Track pre-created channel UUID for compensation on insert failure.
@@ -8493,6 +8585,97 @@ mod postgres_tests {
             ],
         );
         assert!(validate_launch_mirror_envelope(&receipt, "launch receipt event").is_ok());
+    }
+
+    const FORECAST_Q: &str =
+        "forecast:postbounty:31337:0x9d4454b023096f34b160d6b654540c56a1f81688:1";
+
+    #[test]
+    fn a_forecast_with_one_question_one_percent_and_a_reason_is_accepted() {
+        for percent in ["0", "1", "50", "100"] {
+            let ev = make_event_with_tags(
+                KIND_FORECAST,
+                "They have done two like it",
+                &[&["t", FORECAST_Q], &["forecast", percent]],
+            );
+            assert!(validate_forecast(&ev).is_ok(), "{percent}");
+        }
+        let work = "forecast:workbounty:11155111:0x8f86403a4de0bb5791fa46b8e795c547942fe4cf:12";
+        let ev = make_event_with_tags(KIND_FORECAST, "r", &[&["t", work], &["forecast", "7"]]);
+        assert!(validate_forecast(&ev).is_ok());
+        assert!(is_global_only_kind(KIND_FORECAST));
+    }
+
+    #[test]
+    fn a_forecast_percent_outside_0_to_100_or_not_written_plainly_is_refused() {
+        for percent in ["101", "-1", "50.5", "050", "", "1e2", " 5", "256"] {
+            let ev = make_event_with_tags(
+                KIND_FORECAST,
+                "reason",
+                &[&["t", FORECAST_Q], &["forecast", percent]],
+            );
+            let err = validate_forecast(&ev).unwrap_err();
+            assert!(err.contains("whole percent"), "{percent}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_forecast_must_name_one_bounty_question() {
+        for question in [
+            "forecast:raise:31337:0x9d4454b023096f34b160d6b654540c56a1f81688:1",
+            "forecast:postbounty:31337:0x9D4454B023096F34B160D6B654540C56A1F81688:1",
+            "forecast:postbounty:31337:0x9d44:1",
+            "forecast:postbounty:031337:0x9d4454b023096f34b160d6b654540c56a1f81688:1",
+            "forecast:postbounty:31337:0x9d4454b023096f34b160d6b654540c56a1f81688:01",
+            "forecast:postbounty:31337:0x9d4454b023096f34b160d6b654540c56a1f81688:1:extra",
+            "work-proposal:31337:0x9d4454b023096f34b160d6b654540c56a1f81688",
+        ] {
+            let ev =
+                make_event_with_tags(KIND_FORECAST, "r", &[&["t", question], &["forecast", "5"]]);
+            assert!(validate_forecast(&ev).is_err(), "{question}");
+        }
+        let none = make_event_with_tags(KIND_FORECAST, "r", &[&["forecast", "5"]]);
+        assert!(validate_forecast(&none)
+            .unwrap_err()
+            .contains("exactly one `t`"));
+        let two = make_event_with_tags(
+            KIND_FORECAST,
+            "r",
+            &[&["t", FORECAST_Q], &["t", FORECAST_Q], &["forecast", "5"]],
+        );
+        assert!(validate_forecast(&two)
+            .unwrap_err()
+            .contains("exactly one `t`"));
+        let no_percent = make_event_with_tags(KIND_FORECAST, "r", &[&["t", FORECAST_Q]]);
+        assert!(validate_forecast(&no_percent)
+            .unwrap_err()
+            .contains("exactly one `forecast`"));
+    }
+
+    #[test]
+    fn a_forecast_is_an_ordinary_member_write() {
+        let ev = make_event_with_tags(
+            KIND_FORECAST,
+            "r",
+            &[&["t", FORECAST_Q], &["forecast", "5"]],
+        );
+        assert_eq!(
+            required_scope_for_kind(KIND_FORECAST, &ev),
+            Ok(Scope::MessagesWrite)
+        );
+    }
+
+    #[test]
+    fn a_forecast_needs_a_reason_of_at_most_500_characters() {
+        let tags: &[&[&str]] = &[&["t", FORECAST_Q], &["forecast", "40"]];
+        assert!(validate_forecast(&make_event_with_tags(KIND_FORECAST, "   ", tags)).is_err());
+        assert!(
+            validate_forecast(&make_event_with_tags(KIND_FORECAST, &"é".repeat(500), tags)).is_ok()
+        );
+        assert!(
+            validate_forecast(&make_event_with_tags(KIND_FORECAST, &"é".repeat(501), tags))
+                .is_err()
+        );
     }
 
     #[test]

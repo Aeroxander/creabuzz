@@ -1,9 +1,9 @@
 # A next-gen DAO: from an idea to paid work, ownership and staged funding (proposal, 2026-10-25)
 
-Status: **a proposal.** N1 and N2 were accepted on 2026-10-25 and are built for test networks (D113, D114); nothing
-else here is decided or built. Twelve pieces in three stages, each with its own proposed decision row (N1 to N12), its own
-contract work, audit scope and, where money moves, a legal read. Each piece can be released on its own; accepting one
-does not accept the others. It follows the funding curve proposal
+Status: **a proposal.** Stage 1 is built for test networks: N1 and N2 (D113, D114, 2026-10-25), N3 and N4 (D115, D116,
+2026-10-26). Nothing in stages 2 and 3 is decided or built. Twelve pieces in three stages, each with its own proposed
+decision row (N1 to N12), its own contract work, audit scope and, where money moves, a legal read. Each piece can be
+released on its own; accepting one does not accept the others. It follows the funding curve proposal
 ([JOIN-CURVE.md](JOIN-CURVE.md), asset rule decided as D112), the forecasts plan
 ([MARKETS-AND-EXIT-PLAN.md](MARKETS-AND-EXIT-PLAN.md)), three outside reviews and the poidh articles, all on
 2026-10-25 (see [What changed](#what-changed)).

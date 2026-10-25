@@ -23,6 +23,8 @@ import {
 } from "../lib/work-bounty";
 import type { MandateView, ProjectView } from "../lib/work-read";
 import { UnauditedNotice } from "./UnauditedNotice";
+import { ForecastPanel } from "./ForecastPanel";
+import { questionOf, workBountyQuestion } from "../lib/forecast";
 
 const date = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString(undefined, {
@@ -198,6 +200,14 @@ function BountyRow({
 }) {
   const [adding, setAdding] = useState(false);
   const stage = bountyStage(bounty.record, mandate.claims, chainTime);
+  // Its forecasts close when work for its area is first released after it opened (or a day before its deadline).
+  const areaClaims = mandate.claims.filter(
+    (c) => c.project?.toLowerCase() === bounty.record.projectId.toLowerCase(),
+  );
+  const releases = areaClaims
+    .map((c) => c.record.releasedAt)
+    .filter((at) => at > 0 && at >= bounty.record.openedAt);
+  const firstRelease = releases.length > 0 ? Math.min(...releases) : null;
   const held = bounty.record.total - bounty.record.refunded;
   const key = bounty.id.toString();
   const blocked = busy !== null || gate !== null;
@@ -287,6 +297,22 @@ function BountyRow({
             data: encodeFundBounty(bounty.id, amount),
           })}
           window={bounty.record.window}
+        />
+      ) : null}
+      {chainId !== null && /^[1-9][0-9]*$/.test(chainId) ? (
+        <ForecastPanel
+          involved={[
+            ...mandate.reviewers.map((r) => r.address),
+            ...areaClaims.map((c) => c.record.contributor),
+          ]}
+          now={chainTime}
+          question={questionOf({
+            kind: "workbounty",
+            chainId: Number(chainId),
+            contract,
+            id: bounty.id,
+          })}
+          state={workBountyQuestion(bounty.record, firstRelease, chainTime)}
         />
       ) : null}
     </li>

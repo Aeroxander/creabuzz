@@ -49,8 +49,10 @@ semantics (regular events, `a`/`e`/`p`/`d` tags, NIP-09 deletion).
 | `47004` | Proposal record | regular, `a` = launch coordinate | founder/member | proposal: onchain id if any, plain vs futarchy, issue link, state, execution `calls[]` |
 | `47005` | Receipt | regular, `a` = launch coordinate | anyone (usually indexer bot) | chain-state mirror: table kind, tx hash, payload JSON |
 | `37006` | Score root | parameterized replaceable, `d` = `<program>:<epoch>` | scoring operator | trustgraph score Merkle root + proof pointer |
+| `47008` | Forecast | regular, `t` = bounty question | anyone | a whole percent that a bounty will be paid, and a reason |
 
-Kinds `37002`–`37009` (except `37006`) and `47006`–`47009` are reserved for future launchpad use.
+Kinds `37002`–`37009` (except `37006`) and `47009` are reserved for future launchpad use; `47006`–`47007` are the
+royalty mirrors and `47008` the forecasts.
 
 ## `37001`: the launch record
 
@@ -179,6 +181,24 @@ the `dao`, the `shares` token, the `auction`, the graduation `executor` and the 
 `summon` it does not mark the launch graduated (the raise has not happened yet).
 Content is the mirrored payload JSON. Advisory: clients MUST cross-check
 the chain before acting on money.
+
+## `47008`: forecasts
+
+Anyone MAY publish. A forecast says how likely a person thinks a bounty is to be paid (N3 of
+`docs/v3-review/NEXT-GEN-DAO.md`). It carries no money and no vote.
+
+- Exactly one `t` tag naming the question:
+  `forecast:<workbounty|postbounty>:<chain id>:<0x contract, lowercase>:<bounty id>` (decimal numbers, no leading
+  zeros). `workbounty` is a `WorkAreaBounty`, `postbounty` an `OpenBounty`.
+- Exactly one `forecast` tag holding a whole percent, `0`–`100`, written plainly.
+- Content: the reason, 1 to 500 characters.
+
+Relays reject anything else, and an event more than 15 minutes from the relay's clock, so a forecast's `created_at` can
+be trusted to that margin. Every revision is a new event; clients count each author's latest forecast made strictly
+before the question's cutoff: the day before the bounty's deadline, or earlier when work started to win it (an
+`OpenBounty`'s first `RunStarted`; a work-area bounty's first submission released after it opened). The question settles
+on the chain: paid is done; refunds open is not done. Accuracy is `100 × (1 − mean Brier score)`, computed by each
+client from public forecasts and the chain, only for bounties on contracts the client itself trusts.
 
 ## Deletion
 
