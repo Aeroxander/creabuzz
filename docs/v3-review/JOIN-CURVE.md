@@ -27,6 +27,39 @@ put it: a later vote. It is not "auction, then curve, then pool": a pool is itse
 separate curve stage only because a new token starts with no money and no price. After an auction there are both. If a
 project later votes for a market, the pool comes then, under D12 and D14.
 
+## Why leaving, not selling back into the curve
+
+The real choice is where buyers' money lives. Selling back into a curve needs a reserve held by the curve, so that
+sellers can be paid; leaving pays from the treasury. A dollar cannot be in both, so this is a choice, not an add-on.
+
+**Selling back into a curve:**
+
+- The project gets only the fee. On pump.fun nearly all the money ends up in the reserve and then the pool.
+- Each sale lowers the price for the next, so a loss of confidence becomes a race: the first out gets the top price,
+  the last gets the bottom, and those who stay lose value.
+- Sales can be front-run.
+- What you get depends on timing and on everyone else, not on what the project holds.
+
+**Leaving by ragequit:**
+
+- All the money people pay goes to the treasury and funds work, by vote.
+- Leaving is neutral for those who stay: you take exactly your part, so the treasury per remaining Share is unchanged.
+  The first and the last to leave get the same per Share if nothing is spent in between.
+- There is no price to crash and nothing to front-run.
+- What leaving pays is the treasury divided by the Shares that count, readable on chain by anyone.
+- No secondary market, so a simpler legal picture.
+
+It does not stop people leaving all at once. A mass exit drains the treasury, not the value of those who stay; that is
+the accountability: a team that loses its backers loses its runway.
+
+**What it gives up, said openly:**
+
+- No upside above the treasury's value without a market, which stays a later DAO vote (D14).
+- Joiners pay more than leaving pays (in the example: join at $0.15, leave for about $0.094), so the page shows both
+  numbers side by side.
+- Leaving before a voted payment runs, or before a milestone unlocks, pays more than leaving after. That is by design
+  and on a schedule the page shows, not a race between sellers.
+
 ## How it works
 
 1. **At launch** the kit sets aside a join allocation (say 15% of all Shares) and gives it to a new `JoinCurve`
@@ -108,6 +141,34 @@ than "still held": a **VRGDA** (variable-rate gradual Dutch auction, Paradigm), 
 faster than a published schedule and drifts down when they sell slower. It needs only the curve's own sales and the
 clock.
 
+## No shorting on Shares (recommended)
+
+- **Empty voting.** Shorting means borrowing Shares, and borrowed Shares carry votes, so someone can vote while betting
+  against the project. It is a known attack on companies and DAOs, and the worst incentive in a product where Shares
+  decide spending and awards. Banning only naked shorts does not help: covered shorts have the same problem.
+- **Nothing to short.** Shares cannot be transferred (D77) and have no market price. Borrowing needs transfers and a
+  lending market, which bring back everything leaving by ragequit avoids.
+- **Leaving holds a team to account better than a short does.** A short profits from a decline but leaves the
+  project's money where it is; leaving takes money away from a team that is not delivering (the MolochDAO idea).
+
+If a market is ever voted in, shorting through a separate venue could be reconsidered only if Shares held as
+collateral or lent out cannot vote. That is hard to enforce; see the open questions.
+
+## Holding a project to account without a market
+
+What shorting promises (a way for a skeptic to act on doubt) can come from tools that touch neither Shares nor votes:
+
+- **Objections with a deposit (milestones: already built).** A holder who is not on the team posts a deposit and puts
+  a milestone to a vote of holders; if the objection is upheld, they get their deposit back and half the team's bond
+  ([milestone-challenge.md](../milestone-challenge.md)). It is a short aimed at one claim, with no borrowed votes. For
+  work approvals the equivalent exists only partly: freezing or unwinding a submission and taking a reviewer's bond are
+  DAO votes, and the bond goes to the DAO, with no reward for whoever raised it. A bounty there would be a new decision.
+- **Milestone forecasts (proposal).** "Will milestone 2 be delivered by <date>?", settled by the milestone panel's
+  verdict. It brings skeptics' information in without touching Shares or votes. Start with reputation only, no money:
+  real-money prediction markets are regulated in most places.
+- **Visible exit signals (proposal).** The project page shows how many Shares left this month and how the treasury
+  moved. Mass leaving is the verdict, made easy to read.
+
 ## What changes in the contracts
 
 | Where | Change |
@@ -175,6 +236,10 @@ differently, or a zero.
    and its Shares are earned only through reviewed work today.
 7. **Legal.** Selling Shares continuously after the raise is a continuous offering, even without a market. A lawyer
    should read it before any public network.
+8. **Shorting.** Recommended: no, for the reasons above. If a market is ever voted in, would you consider shorting on
+   a separate venue, and only if lent or pledged Shares cannot vote? (Hard to enforce; the default stays no.)
+9. **The accountability tools.** Add a bounty for a challenge to a work approval that is upheld? Milestone forecasts
+   with reputation only? Exit signals on the project page? Each is a small decision of its own.
 
 ## If you accept it
 
