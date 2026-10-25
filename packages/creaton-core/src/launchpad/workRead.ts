@@ -148,7 +148,7 @@ const number = (hex: string): number => Number(decodeWord(hex));
  * `decimalsKnown` is false. Nothing may scale an amount by it: a six-decimal token read as 18 decimals prints (and
  * parses typed amounts) a trillion times off. Callers show raw units and refuse quantity-sensitive actions instead.
  */
-async function readCurrency(
+export async function readCurrency(
   chain: WorkChain,
   token: string,
 ): Promise<{ symbol: string; decimals: number; decimalsKnown: boolean }> {

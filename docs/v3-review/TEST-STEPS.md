@@ -1446,3 +1446,26 @@ By hand:
 3. On **Decisions** → **New decision**: **Unwind a frozen submission** is offered; **Pay from the treasury** only once
    the DAO holds USDC.
 
+## 4bi. Money behind a work area (D113, 2026-10-25)
+
+```bash
+cd contracts && forge test --match-path "{test/WorkAreaBounty.t.sol,test/invariant/WorkAreaBountyInvariant.t.sol}"
+node scripts/contracts-mutation-check.mjs 42 43 44 45 46 47 48 49 50 51 52 53   # each guard broken once, caught
+pnpm --dir packages/creaton-core test     # workBounty: the calls against cast, every stage, the reader
+pnpm --dir web test                       # bounty-copy: one sentence per stage, the deadline from a date
+scripts/web-contributor-e2e.sh            # on a real chain: put money in, pay the approved work, refund a lapsed one
+```
+
+By hand, on a dev chain (`scripts/dev-chain.sh` prints `VITE_WORK_BOUNTIES`; build the web app with it):
+
+1. Start a contributor project. On **Work**, under its work area, **Put money behind this work area**: 25, keep the
+   date, **Put it in**. Your wallet asks twice. The work area shows **25 … from 1 person** and **Takes money until …**.
+2. As another account, **Add money**: the total and the number of people go up.
+3. A contributor submits work for that area; the manager accepts it; two reviewers approve. The bounty says the work
+   was approved and **can be paid from** a date a week later. Move the chain on a week (`cast rpc anvil_increaseTime
+   700000` then `cast rpc anvil_mine`), reload: **Pay …** appears for anyone; press it. The line reads **Paid 25 … to
+   …**, and the contributor's wallet holds 25 more.
+4. Open another bounty and let nobody's work be approved. After the deadline it says **Everyone can take their money
+   back from …**; once that day passes, **Take back my …** returns exactly what you put in.
+5. Without `VITE_WORK_BOUNTIES` in the build, the Work tab shows no bounties at all.
+

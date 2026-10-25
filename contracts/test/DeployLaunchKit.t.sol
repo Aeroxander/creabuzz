@@ -42,6 +42,16 @@ contract DeployLaunchKitTest is Test {
         assertEq(computed, cloned, "the script's address is the implementation a DAO really clones");
     }
 
+    function test_bounties_are_paid_in_the_named_currency_else_sepolia_usdc_and_never_a_guess() public {
+        DeployLaunchKit script = new DeployLaunchKit();
+        address usdc = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
+        assertEq(script.bountyCurrencyFor(11155111, address(0)), usdc);
+        assertEq(script.bountyCurrencyFor(11155111, address(0xCAFE)), address(0xCAFE));
+        assertEq(script.bountyCurrencyFor(84532, address(0xCAFE)), address(0xCAFE));
+        assertEq(script.bountyCurrencyFor(84532, address(0)), address(0));
+        assertEq(script.bountyCurrencyFor(31337, address(0)), address(0));
+    }
+
     function test_the_script_refuses_a_chain_with_no_auction_factory() public {
         DeployLaunchKit script = new DeployLaunchKit();
         vm.setEnv("PRIVATE_KEY", vm.toString(uint256(1)));

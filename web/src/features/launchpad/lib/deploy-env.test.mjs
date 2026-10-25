@@ -35,6 +35,28 @@ test("a contributor-only Sepolia build passes and says what it offers", () => {
   assert.ok(summary.includes("Chain node: sepolia.example"));
 });
 
+test("bounties on work areas are off by default, on with an address, refused with a bad one", () => {
+  assert.ok(
+    checkDeployEnv(SEPOLIA).summary.includes("Bounties on work areas: off"),
+  );
+  const BOUNTY = `0x${"cd".repeat(20)}`;
+  const on = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_WORK_BOUNTIES: JSON.stringify({ 11155111: BOUNTY }),
+  });
+  assert.deepEqual(on.problems, []);
+  assert.ok(on.summary.includes(`Bounties on work areas: on (${BOUNTY})`));
+  const elsewhere = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_WORK_BOUNTIES: JSON.stringify({ 31337: BOUNTY }),
+  });
+  assert.ok(
+    elsewhere.problems.some((p) =>
+      p.startsWith("VITE_WORK_BOUNTIES names no valid address"),
+    ),
+  );
+});
+
 test("a kit without a chain node or a history start is refused", () => {
   const noNode = checkDeployEnv({ ...SEPOLIA, VITE_CHAIN_RPC_URL: "" });
   assert.ok(

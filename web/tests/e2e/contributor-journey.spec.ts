@@ -22,6 +22,8 @@ import { installAnvilWallet } from "../helpers/anvil-wallet";
 
 const ANVIL_URL = process.env.E2E_ANVIL_URL ?? "";
 const KIT = process.env.E2E_KIT ?? "";
+/** The bounty contract on work areas (N1); without one the journey skips the bounty steps. */
+const BOUNTY = process.env.E2E_BOUNTY ?? "";
 const REVIEWER1 = process.env.E2E_REVIEWER1 ?? "";
 const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
 const CONTRIBUTOR = process.env.E2E_CONTRIBUTOR ?? "";
@@ -354,6 +356,41 @@ test("a contributor project is started from the page, work is claimed the same d
     "Leave and take your share",
   );
 
+  // ── 2b. outside money behind the work area (N1): the founder puts 25 behind "docs" before anyone is approved ──
+  const usdcOf = async (holder: string) =>
+    BigInt(await call(currency as string, `0x70a08231${addressArg(holder)}`));
+  const docsArea = (page: Page) =>
+    page
+      .getByTestId("work-projects")
+      .locator(":scope > li")
+      .filter({ hasText: "docs" });
+  const contributorMoney = await usdcOf(CONTRIBUTOR);
+  if (BOUNTY) {
+    await refresh(founder, "Work");
+    await docsArea(founder).getByTestId("work-bounty-open").click();
+    await docsArea(founder).getByTestId("work-bounty-amount").fill("25");
+    await docsArea(founder).getByTestId("work-bounty-submit").click();
+    await expect(
+      docsArea(founder).getByTestId("work-bounty-held"),
+    ).toContainText("25", { timeout: 60_000 });
+    await expect(
+      docsArea(founder).getByTestId("work-bounty-status"),
+    ).toContainText("Takes money until");
+    expect(await usdcOf(BOUNTY)).toBe(25n * 10n ** 6n);
+    // While it takes money, people add to it rather than start a second one.
+    await expect(
+      docsArea(founder).getByTestId("work-bounty-add"),
+    ).toBeVisible();
+    await expect(docsArea(founder).getByTestId("work-bounty-open")).toHaveCount(
+      0,
+    );
+    if (process.env.E2E_SHOTS) {
+      await docsArea(founder).screenshot({
+        path: `${process.env.E2E_SHOTS}/bounty-open.png`,
+      });
+    }
+  }
+
   // ── 3. the founder (the first project's manager) takes it on, two reviewers approve, it is finished ──
   // "Needs you" names the submission, and its button opens that claim on the Work tab.
   await refresh(founder, "Overview");
@@ -408,6 +445,22 @@ test("a contributor project is started from the page, work is claimed the same d
     "money",
   );
   expect(await sharesOf(CONTRIBUTOR)).toBe(0n);
+
+  // ── 3b. the bounty pays the approved work once its wait is over; anyone can press it, here the founder ──
+  if (BOUNTY) {
+    await refresh(founder, "Work");
+    await docsArea(founder).getByTestId("work-bounty-pay").click();
+    await expect(
+      docsArea(founder).getByTestId("work-bounty-status"),
+    ).toContainText("Paid 25", { timeout: 60_000 });
+    expect(await usdcOf(CONTRIBUTOR)).toBe(contributorMoney + 25n * 10n ** 6n);
+    expect(await usdcOf(BOUNTY)).toBe(0n);
+    if (process.env.E2E_SHOTS) {
+      await docsArea(founder).screenshot({
+        path: `${process.env.E2E_SHOTS}/bounty-paid.png`,
+      });
+    }
+  }
 
   // ── 4. the award is still the project's vote ────────────────────────────────────────────────────
   await refresh(founder, "Decisions");
@@ -473,6 +526,39 @@ test("a contributor project is started from the page, work is claimed the same d
     await reader
       .getByTestId("contributions-tab")
       .screenshot({ path: `${process.env.E2E_SHOTS}/contributions.png` });
+  }
+
+  // ── 6. a bounty nobody earns gives everyone their money back (N1) ─────────────────────────────────
+  if (BOUNTY) {
+    const founderMoney = await usdcOf(FOUNDER_WALLET);
+    await refresh(founder, "Work");
+    await docsArea(founder).getByTestId("work-bounty-open").click();
+    await docsArea(founder).getByTestId("work-bounty-amount").fill("10");
+    await docsArea(founder).getByTestId("work-bounty-submit").click();
+    const second = docsArea(founder).getByTestId("work-bounty").last();
+    await expect(second.getByTestId("work-bounty-status")).toContainText(
+      "Takes money until",
+      { timeout: 60_000 },
+    );
+    expect(await usdcOf(FOUNDER_WALLET)).toBe(founderMoney - 10n * 10n ** 6n);
+    // The form's default deadline is the end of the day thirty days ahead; refunds open seven plus fourteen days after.
+    await pass(53 * 86_400);
+    await refresh(founder, "Work");
+    const lapsed = docsArea(founder).getByTestId("work-bounty").last();
+    await expect(lapsed.getByTestId("work-bounty-status")).toContainText(
+      "No work was approved in time.",
+      { timeout: 30_000 },
+    );
+    if (process.env.E2E_SHOTS) {
+      await docsArea(founder).screenshot({
+        path: `${process.env.E2E_SHOTS}/bounty-refunds.png`,
+      });
+    }
+    await lapsed.getByTestId("work-bounty-refund").click();
+    await expect(lapsed.getByTestId("work-bounty-refund")).toHaveCount(0, {
+      timeout: 60_000,
+    });
+    expect(await usdcOf(FOUNDER_WALLET)).toBe(founderMoney);
   }
 });
 

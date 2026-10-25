@@ -54,6 +54,9 @@ import { ChallengeLockedCard } from "./ChallengeLockedCard";
 import { LockedSharesCard } from "./LockedSharesCard";
 import { useDecisionContext } from "../use-decisions";
 import { AllowanceNote } from "./AllowanceNote";
+import type { WorkBounties } from "../lib/work-bounty";
+import { useWorkBounties } from "../use-work-bounties";
+import { WorkAreaBounties } from "./WorkAreaBounties";
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
 const sameAddress = (a: string | null, b: string) =>
@@ -97,6 +100,13 @@ export function WorkTab({
   const payouts = useRecordEvents(dao, work.data);
   const context = useDecisionContext(dao);
   const lock = useMilestoneLock(dao, wallet.address, work.data);
+  // Money people put behind work areas (N1), when this build names a bounty contract for the project's network.
+  const bounties = useWorkBounties(
+    launch.record.chainId ?? null,
+    dao,
+    wallet.address,
+    work.data,
+  );
   const challengeLock = useChallengeLock(dao);
   const lockKind = lockKindOf(dao, challengeLock);
   // What contributors published for their claims: the text a reviewer reads before judging.
@@ -305,6 +315,7 @@ export function WorkTab({
           />
           {work.data?.mandates.map((mandate) => (
             <MandateCard
+              bounties={bounties.data}
               busy={busy}
               chainTime={work.data?.chainTime ?? 0}
               dao={dao}
@@ -356,6 +367,7 @@ function DecisionHelp({ onOpenDecisions }: { onOpenDecisions?: () => void }) {
 
 function MandateCard({
   mandate,
+  bounties,
   chainTime,
   wallet,
   gate,
@@ -385,6 +397,8 @@ function MandateCard({
     refetch: () => void;
   };
   mandate: MandateView;
+  /** The bounties on this DAO's work areas; undefined while read, or when the build names no bounty contract. */
+  bounties: WorkBounties | undefined;
   chainTime: number;
   wallet: string | null;
   gate: string | null;
@@ -587,6 +601,20 @@ function MandateCard({
                   ? ` · ${money(project.record.reserved)} of ${money(project.record.budget)} reserved`
                   : ""}
               </span>
+              {mandate.isMilestonePanel ? null : (
+                <WorkAreaBounties
+                  busy={busy}
+                  chainId={launch.record.chainId ?? null}
+                  chainTime={chainTime}
+                  gate={gate}
+                  labelOf={labelOf}
+                  mandate={mandate}
+                  onSend={onSend}
+                  project={project}
+                  read={bounties}
+                  wallet={wallet}
+                />
+              )}
             </li>
           ))}
         </ul>

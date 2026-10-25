@@ -43,6 +43,7 @@ if [[ "$CHAIN" == "local" ]]; then
   world_up
   CONTRIBUTOR_KIT="$(role "$DEPLOYMENTS/contributor-kit-31337.json" contributor-kit)"
   KIT="$(role "$DEPLOYMENTS/dao-launch-kit-31337.json" launch-kit)"
+  BOUNTY="$(role "$DEPLOYMENTS/work-bounty-31337.json" work-bounty)"
   BUILD_ENV=(VITE_LAUNCHPAD_CHAIN_ID=31337 VITE_LOCAL_USDC="$CURRENCY")
 else
   # The deploy writes chain 11155111's manifest and a broadcast record: both go back as they were.
@@ -58,16 +59,20 @@ else
   sepolia_deploy_kits "$RPC" 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6 "$STATE/deploy.out"
   CONTRIBUTOR_KIT="$(sepolia_role contributor-kit)"
   KIT="$(sepolia_role launch-kit)"
+  BOUNTY="$(sepolia_role work-bounty)"
   FROM_BLOCK="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).block??"")' "$SEPOLIA_MANIFEST")"
   [[ "$FROM_BLOCK" =~ ^[0-9]+$ ]] || fail "the manifest names no deploy block"
   CURRENCY="$SEPOLIA_USDC"
   # Everyone in the story plays one of anvil's public dev accounts. On the real Sepolia strangers have pointed those at
   # contracts of their own (EIP-7702 delegations), so on the fork they would not be what a tester has: a plain account
-  # with a faucet's worth of test ETH. Make them that. Nobody needs test USDC: every claim here asks for no money.
+  # with a faucet's worth of test ETH. Make them that. Every claim here asks for no money; only the founder needs test USDC,
+  # to put money behind a work area (N1): 1,000 of it, written into Circle's balance slot (9) as a faucet would send it.
   for who in "$FOUNDER" "$REVIEWER1" "$REVIEWER2" "$CONTRIBUTOR" "$MANAGER"; do
     cast rpc --rpc-url "$RPC" anvil_setCode "$who" 0x >/dev/null
     cast rpc --rpc-url "$RPC" anvil_setBalance "$who" "$(cast to-hex "$(cast to-wei 0.1)")" >/dev/null
   done
+  cast rpc --rpc-url "$RPC" anvil_setStorageAt "$SEPOLIA_USDC" "$(cast index address "$FOUNDER" 9)" \
+    "$(cast to-uint256 1000000000)" >/dev/null
   # A real node refuses an event read from block 0, so a Sepolia build is told where this chain's history starts.
   BUILD_ENV=(VITE_LAUNCHPAD_CHAIN_ID="$SEPOLIA_CHAIN_ID" VITE_CHAIN_RPC_URL="$RPC"
     VITE_HISTORY_FROM_BLOCKS="{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}")
@@ -75,7 +80,8 @@ fi
 CHAIN_ID="$(cast chain-id --rpc-url "$RPC")"
 [[ "$CONTRIBUTOR_KIT" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no contributor kit was deployed"
 [[ "$KIT" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no launch kit was deployed"
-step "chain ${CHAIN_ID}  contributor kit ${CONTRIBUTOR_KIT}  launch kit ${KIT}  currency ${CURRENCY}"
+[[ "$BOUNTY" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no work bounty was deployed"
+step "chain ${CHAIN_ID}  contributor kit ${CONTRIBUTOR_KIT}  launch kit ${KIT}  work bounty ${BOUNTY}  currency ${CURRENCY}"
 
 # ── the kit refuses the founder limits (D79), whatever page sends it ─────────────────────────────────
 # Three calls from the founder that differ only where D79 draws its lines: a third of the budget with other people on the
@@ -106,12 +112,12 @@ cd "$REPO_ROOT/web"
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   step "building the web app"
   env "${BUILD_ENV[@]}" VITE_CONTRIBUTOR_KITS="{\"${CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}" \
-    VITE_DAO_LAUNCH_KITS="{\"${CHAIN_ID}\":\"${KIT}\"}" \
+    VITE_DAO_LAUNCH_KITS="{\"${CHAIN_ID}\":\"${KIT}\"}" VITE_WORK_BOUNTIES="{\"${CHAIN_ID}\":\"${BOUNTY}\"}" \
     node_modules/.bin/vite build >/dev/null 2>&1 || fail "web build failed"
 fi
 step "running the browser spec"
 FIRST_BLOCK="$(cast block-number --rpc-url "$RPC")"
-E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" \
+E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_BOUNTY="$BOUNTY" E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" \
   E2E_CONTRIBUTOR="$CONTRIBUTOR" E2E_MANAGER="$MANAGER" E2E_FOUNDER="$FOUNDER" \
   node_modules/.bin/playwright test tests/e2e/contributor-journey.spec.ts --project=smoke --reporter=list "$@"
 

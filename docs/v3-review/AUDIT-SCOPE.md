@@ -78,7 +78,10 @@ About 4,250 source lines of first-party code, of which the patched Majeur is the
 **Adjacent, not in the raise path** (review if time allows; they share contracts above): `ContributorKit` (contributor
 projects, no sale, D66; 250 (180) lines, refuses a founder stake above a third of the first budget and a founder on its
 panel, sets the issuance rule with no yearly cap, D79; makes up to eight first projects in a bounded loop, each checked
-and read back, D84), `OrgBinding`, `OrgAllowance`, `RoyaltyDistributor` (only reached through
+and read back, D84), `WorkAreaBounty` (outside money behind a work area, D113; 202 (148) lines: pays the whole pot to
+the first submission of that work area released while it was open and still standing after its challenge window, or
+refunds each funder after `refundsFrom`; reads `TreasuryMandate` and `ClaimStake`, trusts only budgets the summoner's
+factory made, no admin), `OrgBinding`, `OrgAllowance`, `RoyaltyDistributor` (only reached through
 `ClaimStake.submitClaimWithSchedule`, never wired in a raise), `ShareVesting`, `AuctionLauncher`,
 `AppTokenLBPInitializer`, the hooks (`AllowlistHook`, `TrustGatedHook`; a DAO launch passes no hook), the LBAMM and
 market contracts (evaluation only), `DaoURIAdapter`.
@@ -152,8 +155,9 @@ with the web app's own encoders and exit/bid logic. Each invariant was also chec
 | 15 | An award never takes the year's new Shares past the cap of that year's exit base; the cap only goes down (D76) | `IssuanceRule.t.sol` (with a stand-in DAO that says when an award is under way) | — | the count removed |
 | 16 | While transfers are locked, Shares move only to or from the exempt address (the auction), and unlocking runs only 30 days or more after an announcement still standing (D77) | `TransferLock.t.sol` (a fuzz test over senders, receivers and amounts) | every transfer step expects the refusal | the notice check removed; the exemption widened |
 | 17 | The kits refuse terms outside the limits, a team seat that is a system address, and (contributor projects) a founder stake above a third of the first budget or a founder on its panel (D74, D75, D79); a launch with a team either fails or ends with a lock holding every team Share, and the target check reads what the auction decodes however the configuration is encoded (D86) | `DaoLaunchKit.t.sol` (including `testFuzz_a_launch_with_a_team_either_fails_or_locks_every_team_share` and `testFuzz_the_target_check_reads_the_config_wherever_it_is_encoded`), `ContributorKit.t.sol`, `PinnedInterfaces.t.sol` (the kit's copy of `AuctionParameters`) | every launch is inside them, and its lock holds the whole team | each of the ten kit checks removed; the check-per-percentage rule removed; the lock read-back removed; the fixed-offset read restored |
+| 18 | A work-area bounty holds exactly what it still owes (funded, less paid, less refunded); it pays its whole pot or refunds, never both, and only a submission of its work area released while it was open and still approved or paid after its window (D113) | `WorkAreaBountyInvariant.t.sol` (a handler funding, reviewing, freezing, settling, refunding and moving time); `WorkAreaBounty.t.sol` (every boundary on both sides, blocked payees, a fee-keeping currency) | — | each of its twelve guards removed |
 
-The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, 42 guards, all caught on 2026-10-21 after D84 and D86 were merged).
+The mutation run is reproducible (`scripts/contracts-mutation-check.mjs`, 42 guards, all caught on 2026-10-21 after D84 and D86 were merged; 54 since D113, whose twelve were all caught on 2026-10-25).
 
 ## 6. Observations made while preparing (no behaviour changed)
 

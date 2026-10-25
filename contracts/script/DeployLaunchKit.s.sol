@@ -7,7 +7,8 @@ import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 
 /// @notice Put the launch path on a chain that already has Uniswap's auction factory: our patched summoner (the one whose
 /// Shares carry the milestone lock guard), the `DaoLaunchKit` that launches a DAO and its sale in one transaction, and the
-/// `ContributorKit` that starts a contributor project (no sale, ready for work) on the same summoner.
+/// `ContributorKit` that starts a contributor project (no sale, ready for work) on the same summoner, and the
+/// `WorkAreaBounty` that holds outside money behind a work area of any work budget the summoner's factory makes (N1).
 ///
 /// Nothing else is deployed: the auction factory, Permit2 and the sale currency are the chain's own. The script refuses
 /// to run where the factory has no code, and it checks the Shares implementation it computes really exists before it
@@ -16,15 +17,22 @@ import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 /// Run (a rehearsal on a fork first; `scripts/sepolia-deploy.sh` does both):
 ///   PRIVATE_KEY=0x… forge script script/DeployLaunchKit.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast
 /// Env: PRIVATE_KEY (the deployer, a testnet key), CCA_FACTORY (default: the canonical factory, the same address on every
-/// chain), LAUNCH_PROJECT (a label for the manifest).
+/// chain), BOUNTY_CURRENCY (what bounties are paid in; default on Sepolia: Circle's USDC there, required elsewhere),
+/// LAUNCH_PROJECT (a label for the manifest).
 contract DeployLaunchKit is Script {
     /// @dev Uniswap's continuous clearing auction factory v2.1.0: one address on every EVM chain.
     address internal constant CANONICAL_CCA_FACTORY = 0x000000001F26a0044BaA66024e7b6599c61963F8;
+    uint256 internal constant SEPOLIA = 11155111;
+    /// @dev Circle's USDC on Sepolia (the same address `scripts/lib/sepolia-fork.sh` funds).
+    address internal constant SEPOLIA_USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
 
     function run() external returns (address summoner, address sharesImplementation, address kit) {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address ccaFactory = vm.envOr("CCA_FACTORY", CANONICAL_CCA_FACTORY);
         require(ccaFactory.code.length != 0, "DeployLaunchKit: no auction factory on this chain");
+        address bountyCurrency = bountyCurrencyFor(block.chainid, vm.envOr("BOUNTY_CURRENCY", address(0)));
+        require(bountyCurrency != address(0), "DeployLaunchKit: set BOUNTY_CURRENCY (what bounties are paid in)");
+        require(bountyCurrency.code.length != 0, "DeployLaunchKit: no bounty currency at that address");
 
         // The summoner's constructor announces the Moloch implementation it made (`NewDAO(summoner, implementation)`),
         // which is where the Shares implementation comes from.
@@ -43,18 +51,31 @@ contract DeployLaunchKit is Script {
             abi.encode(summoner, ccaFactory, sharesImplementation, lockFactory, challengeFactory)
         );
         address contributorKit = vm.deployCode("ContributorKit.sol:ContributorKit", abi.encode(summoner));
+        address workBounty =
+            vm.deployCode("WorkAreaBounty.sol:WorkAreaBounty", abi.encode(bountyCurrency, made.mandateFactory()));
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");
         require(contributorKit.code.length != 0, "DeployLaunchKit: the contributor kit has no code");
+        require(workBounty.code.length != 0, "DeployLaunchKit: the work bounty has no code");
 
-        _writeManifest(summoner, molochImplementation, sharesImplementation, kit, contributorKit, ccaFactory);
+        _writeManifest(
+            summoner, molochImplementation, sharesImplementation, kit, contributorKit, workBounty, ccaFactory
+        );
         console2.log("chain id:", block.chainid);
         console2.log("Summoner:", summoner);
         console2.log("Moloch implementation:", molochImplementation);
         console2.log("Shares implementation:", sharesImplementation);
         console2.log("DaoLaunchKit:", kit);
         console2.log("ContributorKit:", contributorKit);
+        console2.log("WorkAreaBounty:", workBounty);
         console2.log("Auction factory:", ccaFactory);
+    }
+
+    /// @notice What bounties are paid in on `chainId`: the named currency, else Circle's USDC on Sepolia, else none (the
+    /// script then refuses: a bounty currency is never guessed).
+    function bountyCurrencyFor(uint256 chainId, address named) public pure returns (address) {
+        if (named != address(0)) return named;
+        return chainId == SEPOLIA ? SEPOLIA_USDC : address(0);
     }
 
     /// @notice The Shares implementation a Moloch implementation made for itself: its constructor deploys it with CREATE2
@@ -86,6 +107,7 @@ contract DeployLaunchKit is Script {
         address sharesImplementation,
         address kit,
         address contributorKit,
+        address workBounty,
         address ccaFactory
     ) internal {
         string memory path = string.concat("deployments/dao-launch-kit-", vm.toString(block.chainid), ".json");
@@ -100,6 +122,8 @@ contract DeployLaunchKit is Script {
             vm.toString(kit),
             '"},{"role":"contributor-kit","address":"',
             vm.toString(contributorKit),
+            '"},{"role":"work-bounty","address":"',
+            vm.toString(workBounty),
             '"},{"role":"summoner","address":"',
             vm.toString(summoner),
             '"},{"role":"moloch-implementation","address":"',
