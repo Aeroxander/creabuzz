@@ -4,6 +4,11 @@ Status: **a plan to collect feedback on. Nothing here is decided or built.** It 
 ([JOIN-CURVE.md](JOIN-CURVE.md); its asset rule is decided as D112) and the conversation after it. Each part would
 need its own decision rows, contract work where noted, audit scope and, for real money, a legal read.
 
+**Updated 2026-10-25 after an outside review:** superseded in part by [NEXT-GEN-DAO.md](NEXT-GEN-DAO.md). Money
+forecasts now settle on a $CREATE court's final ruling (N1, N2); the market-size cap and the higher objection bar are
+dropped; the backer-exit rule in Part 4 is dropped, because leaving already removes a backer's support and the vote is
+checked again before a spend runs.
+
 ## What we are trying to do
 
 1. **Let skeptics act on doubt with money**, a way to bet against a project's execution, without borrowing Shares or
