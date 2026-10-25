@@ -15,6 +15,7 @@ import {
   LOCAL_ANVIL_PRESET,
   mainnetEnabled,
   networkLabel,
+  openBounty,
   workBounty,
 } from "../chain-config.ts";
 
@@ -106,6 +107,17 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
     );
   }
   const bounty = workBounty(chainId, env);
+  const postBounty = openBounty(chainId, env);
+  if (value(env, "VITE_OPEN_BOUNTIES") && !postBounty) {
+    problems.push(
+      `VITE_OPEN_BOUNTIES names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+    );
+  }
+  if (postBounty && !rpc) {
+    problems.push(
+      "VITE_OPEN_BOUNTIES is named but VITE_CHAIN_RPC_URL is not: a hosted page has no chain node without it.",
+    );
+  }
   if (value(env, "VITE_WORK_BOUNTIES") && !bounty) {
     problems.push(
       `VITE_WORK_BOUNTIES names no valid address for ${networkLabel(chainId)} (${chainId}).`,
@@ -134,6 +146,9 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   );
   summary.push(`Test raises: ${raise ? `on (kit ${raise})` : "off"}`);
   summary.push(`Bounties on work areas: ${bounty ? `on (${bounty})` : "off"}`);
+  summary.push(
+    `Bounties on posts: ${postBounty ? `on (${postBounty})` : "off"}`,
+  );
 
   const project = value(env, "VITE_ZERODEV_PROJECT_ID");
   const zerodevChain = value(env, "VITE_ZERODEV_CHAIN_ID");

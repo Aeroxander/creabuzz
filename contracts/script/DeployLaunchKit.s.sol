@@ -8,7 +8,8 @@ import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 /// @notice Put the launch path on a chain that already has Uniswap's auction factory: our patched summoner (the one whose
 /// Shares carry the milestone lock guard), the `DaoLaunchKit` that launches a DAO and its sale in one transaction, and the
 /// `ContributorKit` that starts a contributor project (no sale, ready for work) on the same summoner, and the
-/// `WorkAreaBounty` that holds outside money behind a work area of any work budget the summoner's factory makes (N1).
+/// `WorkAreaBounty` that holds outside money behind a work area of any work budget the summoner's factory makes (N1), and
+/// the `OpenBounty` that holds money behind a post until someone's claim keeps a majority of it (N2).
 ///
 /// Nothing else is deployed: the auction factory, Permit2 and the sale currency are the chain's own. The script refuses
 /// to run where the factory has no code, and it checks the Shares implementation it computes really exists before it
@@ -53,13 +54,22 @@ contract DeployLaunchKit is Script {
         address contributorKit = vm.deployCode("ContributorKit.sol:ContributorKit", abi.encode(summoner));
         address workBounty =
             vm.deployCode("WorkAreaBounty.sol:WorkAreaBounty", abi.encode(bountyCurrency, made.mandateFactory()));
+        address openBounty = vm.deployCode("OpenBounty.sol:OpenBounty", abi.encode(bountyCurrency));
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");
         require(contributorKit.code.length != 0, "DeployLaunchKit: the contributor kit has no code");
         require(workBounty.code.length != 0, "DeployLaunchKit: the work bounty has no code");
+        require(openBounty.code.length != 0, "DeployLaunchKit: the open bounty has no code");
 
         _writeManifest(
-            summoner, molochImplementation, sharesImplementation, kit, contributorKit, workBounty, ccaFactory
+            summoner,
+            molochImplementation,
+            sharesImplementation,
+            kit,
+            contributorKit,
+            workBounty,
+            openBounty,
+            ccaFactory
         );
         console2.log("chain id:", block.chainid);
         console2.log("Summoner:", summoner);
@@ -68,6 +78,7 @@ contract DeployLaunchKit is Script {
         console2.log("DaoLaunchKit:", kit);
         console2.log("ContributorKit:", contributorKit);
         console2.log("WorkAreaBounty:", workBounty);
+        console2.log("OpenBounty:", openBounty);
         console2.log("Auction factory:", ccaFactory);
     }
 
@@ -108,6 +119,7 @@ contract DeployLaunchKit is Script {
         address kit,
         address contributorKit,
         address workBounty,
+        address openBounty,
         address ccaFactory
     ) internal {
         string memory path = string.concat("deployments/dao-launch-kit-", vm.toString(block.chainid), ".json");
@@ -124,6 +136,8 @@ contract DeployLaunchKit is Script {
             vm.toString(contributorKit),
             '"},{"role":"work-bounty","address":"',
             vm.toString(workBounty),
+            '"},{"role":"open-bounty","address":"',
+            vm.toString(openBounty),
             '"},{"role":"summoner","address":"',
             vm.toString(summoner),
             '"},{"role":"moloch-implementation","address":"',

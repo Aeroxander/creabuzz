@@ -25,6 +25,7 @@
 #      the DaoLaunchKit (one-transaction DAO launch) + `deployments/dao-launch-kit-<chainid>.json`, and the
 #      ContributorKit (a contributor project, no sale, ready for work) + `deployments/contributor-kit-<chainid>.json`
 #      and the WorkAreaBounty (outside money behind a work area) + `deployments/work-bounty-<chainid>.json`
+#      and the OpenBounty (money behind a post) + `deployments/open-bounty-<chainid>.json`
 #   5. funded dev accounts, printed as a table (keys are DEV ONLY, labeled)
 #
 # ════════════════════════════════════════════════════════════════════════════
@@ -292,6 +293,7 @@ plan_lines() {
   echo "  6. launch kit   deploy DaoLaunchKit (summoner + CCA factory + the Shares implementation)  [skipped: deployments/dao-launch-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner and factory]"
   echo "  6b. contributor kit  deploy ContributorKit (summoner)  [skipped: deployments/contributor-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner]"
   echo "  6c. work bounty  deploy WorkAreaBounty (currency + work budget factory)  [skipped: deployments/work-bounty-$DEV_CHAIN_ID.json names one that still points at both]"
+  echo "  6d. open bounty  deploy OpenBounty (currency)  [skipped: deployments/open-bounty-$DEV_CHAIN_ID.json names one that still pays in it]"
   echo "  7. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
   echo "  8. accounts     print the DEV-ONLY key table to stdout"
 }
@@ -826,6 +828,75 @@ deploy_work_bounty() {
   echo "  ✓ WorkAreaBounty at $address (manifest $(work_bounty_manifest_path))"
 }
 
+open_bounty_manifest_path() {
+  echo "$DEPLOYMENTS_DIR/open-bounty-${CHAIN_ID}.json"
+}
+
+open_bounty_address() {
+  manifest_role "$(open_bounty_manifest_path)" "open-bounty"
+}
+
+# Guard: the manifest exists, its contract has code, and it still pays in THIS chain's currency.
+open_bounty_deployed() {
+  local address currency
+  [[ -f "$(open_bounty_manifest_path)" ]] || return 1
+  address=$(open_bounty_address)
+  [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] || return 1
+  currency=$(cast call "$address" "currency()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  [[ "$(lower "$currency")" == "$(lower "$(currency_address)")" ]]
+}
+
+# The bounties on posts (N2): money behind a post, paid to the claim that keeps a majority of it, refunded otherwise.
+deploy_open_bounty() {
+  echo
+  if open_bounty_deployed; then
+    echo "── open bounty: already at $(open_bounty_address) — skipped (idempotent)"
+    return 0
+  fi
+  local currency bytecode args receipt status address block
+  currency=$(currency_address)
+  [[ -n "$currency" && "$(code_bytes "$currency")" != "0" ]] \
+    || fail_step "open-bounty" "no currency token to pay bounties in (currency step first)"
+  echo "── open bounty: deploying OpenBounty (currency $currency)"
+  if ! (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build src/OpenBounty.sol) >/dev/null; then
+    fail_step "open-bounty" "forge build src/OpenBounty.sol failed"
+  fi
+  bytecode=$(artifact_field "$REPO_ROOT/contracts/out/OpenBounty.sol/OpenBounty.json" bytecode.object) \
+    || fail_step "open-bounty" "cannot read the OpenBounty artifact"
+  args=$(cast abi-encode "constructor(address)" "$currency") \
+    || fail_step "open-bounty" "cast abi-encode constructor args failed"
+  if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
+      --create "0x${bytecode#0x}${args#0x}" 2>&1); then
+    echo "$receipt" >&2
+    fail_step "open-bounty" "cast send --create failed"
+  fi
+  status=$(node -e '
+    const r = JSON.parse(process.argv[1]);
+    console.log(r.status === "0x1" || r.status === 1 ? "success" : String(r.status ?? "?"));
+  ' "$receipt")
+  address=$(node -e 'console.log(JSON.parse(process.argv[1]).contractAddress ?? "")' "$receipt")
+  block=$(node -e 'console.log(Number(BigInt(JSON.parse(process.argv[1]).blockNumber ?? "0x0")))' "$receipt")
+  [[ "$status" == "success" && -n "$address" && "$(code_bytes "$address")" != "0" ]] \
+    || fail_step "open-bounty" "deploy tx mined as ${status:-unknown} (no code at ${address:-<none>})"
+  node -e '
+    const fs = require("fs");
+    const [file, chainId, tx, block, address] = process.argv.slice(1);
+    fs.writeFileSync(file, JSON.stringify({
+      chainId: Number(chainId),
+      project: "buzz-dev-chain",
+      note: "scripts/dev-chain.sh — OpenBounty(currency)",
+      tx,
+      block: Number(block),
+      roles: [{ role: "open-bounty", address }],
+    }) + "\n");
+  ' "$(open_bounty_manifest_path)" "$CHAIN_ID" \
+    "$(node -e 'console.log(JSON.parse(process.argv[1]).transactionHash ?? "")' "$receipt")" \
+    "$block" "$address" \
+    || fail_step "open-bounty" "deployed at $address but could not write $(open_bounty_manifest_path)"
+  open_bounty_deployed || fail_step "open-bounty" "the deployed bounty does not pay in this chain's currency"
+  echo "  ✓ OpenBounty at $address (manifest $(open_bounty_manifest_path))"
+}
+
 fund_accounts() {
   echo
   echo "── fund: minting $CURRENCY_SYMBOL up to 1,000,000 per dev account (6dp)"
@@ -900,6 +971,7 @@ up() {
   deploy_launch_kit
   deploy_contributor_kit
   deploy_work_bounty
+  deploy_open_bounty
   fund_accounts
 
   echo
@@ -914,9 +986,11 @@ up() {
   echo "  launch kit: $(kit_address) (dao-launch-kit-$CHAIN_ID.json)"
   echo "  contributor kit: $(contributor_kit_address) (contributor-kit-$CHAIN_ID.json)"
   echo "  work bounty: $(work_bounty_address) (work-bounty-$CHAIN_ID.json)"
+  echo "  open bounty: $(open_bounty_address) (open-bounty-$CHAIN_ID.json)"
   echo "  web env:    VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
   echo "              VITE_CONTRIBUTOR_KITS='{\"$CHAIN_ID\":\"$(contributor_kit_address)\"}'  (lets the app start a contributor project here)"
   echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
+  echo "              VITE_OPEN_BOUNTIES='{\"$CHAIN_ID\":\"$(open_bounty_address)\"}'  (lets people put money behind a post here)"
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"
@@ -991,7 +1065,7 @@ status() {
     fi
   fi
 
-  for f in "$DEPLOYMENTS_DIR"/org-dao-*.json "$DEPLOYMENTS_DIR"/dev-currency-*.json "$DEPLOYMENTS_DIR"/dao-launch-kit-*.json "$DEPLOYMENTS_DIR"/contributor-kit-*.json "$DEPLOYMENTS_DIR"/work-bounty-*.json; do
+  for f in "$DEPLOYMENTS_DIR"/org-dao-*.json "$DEPLOYMENTS_DIR"/dev-currency-*.json "$DEPLOYMENTS_DIR"/dao-launch-kit-*.json "$DEPLOYMENTS_DIR"/contributor-kit-*.json "$DEPLOYMENTS_DIR"/work-bounty-*.json "$DEPLOYMENTS_DIR"/open-bounty-*.json; do
     [[ -f "$f" ]] || continue
     while read -r role address; do
       [[ -n "$role" && -n "$address" ]] || continue

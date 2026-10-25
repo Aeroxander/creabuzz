@@ -1,6 +1,8 @@
-# Open bounties on posts: the state machine (N2, for review, 2026-10-25)
+# Open bounties on posts: the state machine (N2, 2026-10-25)
 
-Status: **a specification for review. Nothing is built.** It makes N2 of [NEXT-GEN-DAO.md](NEXT-GEN-DAO.md) exact
+Status: **built for test networks as D114** ([OpenBounty.sol](../../contracts/src/OpenBounty.sol)), from this
+specification with one change: the words and each claim's evidence are kept in the contract's own events (see
+[Off chain](#off-chain)). It makes N2 of [NEXT-GEN-DAO.md](NEXT-GEN-DAO.md) exact
 before any code, as the review of the staged proposal asked: every state, every action, every boundary written as a
 strict or inclusive comparison, what each action can do to a decision in progress, and the invariants a test suite
 would hold. The work-area bounty (N1, D113, [WorkAreaBounty.sol](../../contracts/src/WorkAreaBounty.sol)) is the
@@ -187,9 +189,14 @@ could qualify under the old rule; under this one only B does), and a mutation-ch
 
 ## Off chain
 
-- **The words.** A new event (kind to be registered) carries the "done looks like" text, the post it belongs to and
-  the bounty; the app shows the words only when their SHA-256 equals `wordsHash`, as it does for work areas (D89).
-- **Claims.** Evidence is published as an evidence packet (D45) and checked against `evidenceHash`.
+- **The words and the evidence (changed when built).** The spec had them in new server records. Built, they are in the
+  contract's own `BountyOpened` and `ClaimFiled` events (at most 1,000 bytes each), with their keccak-256 hashes in
+  storage; the page shows the words only when they hash to `wordsHash`. Nothing but the chain is needed to read a
+  bounty, no new record kind was registered, and a claim's evidence cannot be changed after it is filed.
+- **One unreachable check removed.** The helper that starts a run in the same step as a backing or a payment had its
+  own deadline check, but every caller (`open`, `fund`, `back`) already refuses after the deadline, so a mutation of it
+  could never be caught; the invariant `runSince < deadline` holds the rule instead. Likewise `withdrawClaim` relies on
+  the run check (a withdrawn claim never qualifies) instead of ending the run itself.
 - **Moderation.** A board's moderators can hide a claim or a post in the app (D94). The contract does not know: a hidden
   claim keeps its backing, can still be paid, and its page shows its money state. Moderation never decides who gets
   money.

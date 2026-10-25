@@ -57,6 +57,34 @@ test("bounties on work areas are off by default, on with an address, refused wit
   );
 });
 
+test("bounties on posts are off by default, on with an address and a node, refused otherwise", () => {
+  assert.ok(checkDeployEnv(SEPOLIA).summary.includes("Bounties on posts: off"));
+  const POSTS = `0x${"ef".repeat(20)}`;
+  const on = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_OPEN_BOUNTIES: JSON.stringify({ 11155111: POSTS }),
+  });
+  assert.deepEqual(on.problems, []);
+  assert.ok(on.summary.includes(`Bounties on posts: on (${POSTS})`));
+  const noNode = checkDeployEnv({
+    VITE_OPEN_BOUNTIES: JSON.stringify({ 11155111: POSTS }),
+  });
+  assert.ok(
+    noNode.problems.some((p) =>
+      p.startsWith("VITE_OPEN_BOUNTIES is named but"),
+    ),
+  );
+  const elsewhere = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_OPEN_BOUNTIES: JSON.stringify({ 31337: POSTS }),
+  });
+  assert.ok(
+    elsewhere.problems.some((p) =>
+      p.startsWith("VITE_OPEN_BOUNTIES names no valid address"),
+    ),
+  );
+});
+
 test("a kit without a chain node or a history start is refused", () => {
   const noNode = checkDeployEnv({ ...SEPOLIA, VITE_CHAIN_RPC_URL: "" });
   assert.ok(

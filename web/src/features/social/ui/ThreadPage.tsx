@@ -3,6 +3,7 @@ import { useParams } from "@tanstack/react-router";
 import { KIND_TEXT_NOTE } from "@/shared/constants/kinds";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { QueryError } from "@/shared/ui/query-error";
+import { PostBountyCard } from "@/features/launchpad/ui/PostBountyCard";
 
 import { useThread } from "../use-social-data";
 import { BackLink } from "./HashtagPage";
@@ -51,6 +52,7 @@ export function ThreadPage() {
           <div data-testid="social-thread-focus">
             <PostList rows={[note]} />
           </div>
+          <PostBountyCard post={note.event.id} />
           <PostComposer
             placeholder="Post your reply"
             replyTo={{ root, parent: note.event }}

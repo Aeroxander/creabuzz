@@ -1469,3 +1469,27 @@ By hand, on a dev chain (`scripts/dev-chain.sh` prints `VITE_WORK_BOUNTIES`; bui
    back from …**; once that day passes, **Take back my …** returns exactly what you put in.
 5. Without `VITE_WORK_BOUNTIES` in the build, the Work tab shows no bounties at all.
 
+## 4bj. Money behind a post (D114, 2026-10-25)
+
+```bash
+cd contracts && forge test --match-path "{test/OpenBounty.t.sol,test/invariant/OpenBountyInvariant.t.sol}"
+node scripts/contracts-mutation-check.mjs 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71   # each guard broken once
+pnpm --dir packages/creaton-core test     # openBounty: calls against cast, every stage, what a wallet can do, the reader
+pnpm --dir web test                       # post-bounty-copy: one sentence per stage, shares, links, order
+scripts/web-post-bounty-e2e.sh            # on a real chain, through the post page
+```
+
+By hand, on a dev chain (`scripts/dev-chain.sh` prints `VITE_OPEN_BOUNTIES`; build the web app with it):
+
+1. Open a post. Under it, **Money behind this post** → **Put money behind this**: what done looks like, 50, keep the
+   date, **Put it in**. Your wallet asks twice. It shows **50 … from 1 person** and **Takes money and work until …**.
+2. As a second wallet, **Add money** 50. As a third, **Submit your work** with a link: it appears with **0% of the money
+   that counts backs this**.
+3. As the first wallet, **Back this**: 50%, still not a majority. As the second, **Back this**: the line becomes **Most
+   of the money backs …'s work**, and **Add money** disappears.
+4. As the second wallet, **Withdraw my backing**: it goes back to **Takes money and work until …**. Back it again.
+5. Move the chain on nine days (`cast rpc anvil_increaseTime 777600`, then `cast rpc anvil_mine`), reload: **Pay now**
+   for anyone. The line reads **Paid 100 … to …** and the worker's wallet holds 100 more.
+6. Open a second bounty and let the date pass with no majority: **Take back my …** returns exactly what you put in.
+7. Without `VITE_OPEN_BOUNTIES` in the build, a post page shows no bounties at all.
+

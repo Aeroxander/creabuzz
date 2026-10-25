@@ -132,6 +132,11 @@ export interface ChainEnv {
    */
   VITE_WORK_BOUNTIES?: string;
   /**
+   * The bounty contract on posts per chain, as JSON: `{"31337":"0x…"}` (N2). It holds money people put behind a post and
+   * pays it to the claim that keeps a majority of it, or back to them. A chain with no entry shows no bounties on posts.
+   */
+  VITE_OPEN_BOUNTIES?: string;
+  /**
    * The block each chain's history starts at, as JSON: `{"11155111":7654321}`. Name the block the launch kit was deployed
    * at: every contract the app reads events from was made after it. Only used when a node refuses a read of the whole
    * history for being too wide; a chain with no entry is then read from block 0, which a long chain cannot finish.
@@ -203,6 +208,14 @@ export function workBounty(
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
   return addressForChain(env?.VITE_WORK_BOUNTIES, chainId);
+}
+
+/** The bounty contract on posts on `chainId`, or null when the build does not name one. Never guessed. */
+export function openBounty(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_OPEN_BOUNTIES, chainId);
 }
 
 function addressForChain(

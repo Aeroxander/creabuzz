@@ -1,7 +1,7 @@
 # A next-gen DAO: from an idea to paid work, ownership and staged funding (proposal, 2026-10-25)
 
-Status: **a proposal.** N1 was accepted on 2026-10-25 and is built for test networks (D113); nothing else here is
-decided or built. Twelve pieces in three stages, each with its own proposed decision row (N1 to N12), its own
+Status: **a proposal.** N1 and N2 were accepted on 2026-10-25 and are built for test networks (D113, D114); nothing
+else here is decided or built. Twelve pieces in three stages, each with its own proposed decision row (N1 to N12), its own
 contract work, audit scope and, where money moves, a legal read. Each piece can be released on its own; accepting one
 does not accept the others. It follows the funding curve proposal
 ([JOIN-CURVE.md](JOIN-CURVE.md), asset rule decided as D112), the forecasts plan
@@ -104,8 +104,8 @@ the one-winner mode** at first; contests, rewards for past work and payment in s
 
 `Open` (funding and claims) → `Qualifying(claim)` ⇄ `Open` → `Held(claim)` → `Payable(claim)` → `Paid`; from `Open`
 after the deadline, or when a run ends after it, → `Refunding`. Each transition has one condition and anyone can call
-it. **Specified in [OPEN-BOUNTY-STATES.md](OPEN-BOUNTY-STATES.md)** (for review, nothing built): every action, every
-boundary and the invariants. Writing it out changed five rules: a claimant has no weight at all (otherwise two claims
+it. **Specified in [OPEN-BOUNTY-STATES.md](OPEN-BOUNTY-STATES.md)** and built as D114: every action, every boundary
+and the invariants. Writing it out changed five rules: a claimant has no weight at all (otherwise two claims
 can both have a majority), money pauses during a run (instead of late money without weight), the two waits are one
 nine-day run, backing after the deadline can only be withdrawn, and refunds open once the deadline has passed with no
 run on, or at a fixed date.

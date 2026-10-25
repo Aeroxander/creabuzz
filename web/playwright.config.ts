@@ -54,6 +54,7 @@ export default defineConfig({
         "**/launchpad-paid-work.spec.ts",
         "**/contributor-project.spec.ts",
         "**/contributor-journey.spec.ts",
+        "**/post-bounty-journey.spec.ts",
         "**/launchpad-market-journey.spec.ts",
         "**/social-cashtag.spec.ts",
         "**/funding-status.spec.ts",
