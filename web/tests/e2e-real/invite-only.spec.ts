@@ -159,11 +159,9 @@ test("an invited person is not offered the owner's controls", async ({
   await member.goto(inviteUrl);
   await member.getByRole("button", { name: "Join in browser" }).click();
   await member.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
-  // Org is not in a member's sidebar (D109); its link still opens People and access.
-  await member.goto(`http://${host}/c/${host}?view=org`);
-  await expect(member.getByTestId("org-people-section")).toBeVisible({
-    timeout: 30_000,
-  });
+  // People is in everyone's sidebar (D110), apart from Org.
+  await member.goto(`http://${host}/c/${host}`);
+  await openPeople(member);
 
   // A member sees who is in and the setting, and nothing to change.
   await expect(member.getByTestId("person")).toHaveCount(2, {

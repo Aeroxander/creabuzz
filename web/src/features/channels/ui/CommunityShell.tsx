@@ -4,6 +4,7 @@ import {
   ListChecks,
   Menu,
   MessageSquare,
+  Network,
   Rocket,
   Search,
   ShieldCheck,
@@ -60,6 +61,11 @@ const StartProject = lazy(() =>
     default: m.StartProject,
   })),
 );
+const PeopleSection = lazy(() =>
+  import("@/features/communities/ui/PeopleSection").then((m) => ({
+    default: m.PeopleSection,
+  })),
+);
 const OrgView = lazy(() =>
   import("@/features/fleet/ui/OrgView").then((m) => ({ default: m.OrgView })),
 );
@@ -105,7 +111,7 @@ export function CommunityShell({
   /** Message permalink target: scrolled to and highlighted, then released. */
   initialMessageId?: string;
   /** Surface from the URL: `wiki`, `work`, `org`, `fleet`, or channels. */
-  initialView?: "wiki" | "work" | "org" | "fleet";
+  initialView?: "wiki" | "work" | "org" | "fleet" | "people";
   /** Wiki page slug from the URL. */
   initialPage?: string;
   /** Work-item id from the URL. */
@@ -143,6 +149,8 @@ export function CommunityShell({
   const [showingFleet, setShowingFleet] = useState(initialView === "fleet");
   const [showingWork, setShowingWork] = useState(initialView === "work");
   const [showingOrg, setShowingOrg] = useState(initialView === "org");
+  /** Who is in the community: open to everyone, unlike Org (D110). */
+  const [showingPeople, setShowingPeople] = useState(initialView === "people");
   /** Start-a-project picker (local state like DMs: not a linkable view). */
   const [showingStart, setShowingStart] = useState(false);
   /**
@@ -215,6 +223,7 @@ export function CommunityShell({
     setShowingFleet(false);
     setShowingWork(false);
     setShowingOrg(false);
+    setShowingPeople(false);
     setShowingDms(false);
     setShowingModeration(false);
     setShowingStart(open);
@@ -272,6 +281,7 @@ export function CommunityShell({
     !showingDms &&
     !showingModeration &&
     !showingOrg &&
+    !showingPeople &&
     !showingWork &&
     !showingFleet &&
     !showingWiki &&
@@ -300,7 +310,7 @@ export function CommunityShell({
   }, [pageVisible, onScreen, onScreenLatest, markRead]);
 
   /** Exactly one sidebar view is on at a time (or none → chat). */
-  const setView = (view: "wiki" | "fleet" | "work" | "org") => {
+  const setView = (view: "wiki" | "fleet" | "work" | "org" | "people") => {
     // The toggles live in the slide-over: dismiss it so the view is visible.
     setSidebarOpen(false);
     setShowingDms(false);
@@ -313,12 +323,15 @@ export function CommunityShell({
           ? showingFleet
           : view === "work"
             ? showingWork
-            : showingOrg;
+            : view === "org"
+              ? showingOrg
+              : showingPeople;
     const next = !active;
     setShowingWiki(view === "wiki" && next);
     setShowingFleet(view === "fleet" && next);
     setShowingWork(view === "work" && next);
     setShowingOrg(view === "org" && next);
+    setShowingPeople(view === "people" && next);
     writeView(next ? view : undefined);
   };
 
@@ -327,7 +340,7 @@ export function CommunityShell({
    * fill the history stack, and `page`/`work` are dropped when leaving their
    * surface so a stale slug never rides along.
    */
-  const writeView = (view?: "wiki" | "work" | "org" | "fleet") => {
+  const writeView = (view?: "wiki" | "work" | "org" | "fleet" | "people") => {
     void navigate({
       search: (previous) => ({
         ...previous,
@@ -380,6 +393,7 @@ export function CommunityShell({
               setShowingFleet(false);
               setShowingWork(false);
               setShowingOrg(false);
+              setShowingPeople(false);
               setShowingDms(false);
               setShowingModeration(false);
               setSidebarOpen(false);
@@ -483,7 +497,7 @@ export function CommunityShell({
                 }`}
                 data-testid="org-toggle"
               >
-                <Users className="h-3.5 w-3.5" />
+                <Network className="h-3.5 w-3.5" />
                 Org
               </button>
             </>
@@ -498,6 +512,7 @@ export function CommunityShell({
               setShowingFleet(false);
               setShowingWork(false);
               setShowingOrg(false);
+              setShowingPeople(false);
               setShowingModeration(false);
               setShowingStart(false);
               setShowingDms(next);
@@ -513,6 +528,22 @@ export function CommunityShell({
             <MessageSquare className="h-3.5 w-3.5" />
             Messages
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchTerm("");
+              setView("people");
+            }}
+            className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+              showingPeople
+                ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
+            }`}
+            data-testid="people-toggle"
+          >
+            <Users className="h-3.5 w-3.5" />
+            People
+          </button>
           {moderationAccess === "granted" ? (
             <button
               type="button"
@@ -524,6 +555,7 @@ export function CommunityShell({
                 setShowingFleet(false);
                 setShowingWork(false);
                 setShowingOrg(false);
+                setShowingPeople(false);
                 setShowingDms(false);
                 setShowingStart(false);
                 setShowingModeration(next);
@@ -562,6 +594,7 @@ export function CommunityShell({
               setShowingFleet(false);
               setShowingWork(false);
               setShowingOrg(false);
+              setShowingPeople(false);
               setShowingDms(false);
               setShowingModeration(false);
               setShowingStart(false);
@@ -629,6 +662,14 @@ export function CommunityShell({
             ) : showingOrg ? (
               <Suspense fallback={<ViewLoadingFallback label="Loading org…" />}>
                 <OrgView />
+              </Suspense>
+            ) : showingPeople ? (
+              <Suspense
+                fallback={<ViewLoadingFallback label="Loading people…" />}
+              >
+                <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+                  <PeopleSection />
+                </div>
               </Suspense>
             ) : showingWork ? (
               <Suspense

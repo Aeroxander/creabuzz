@@ -217,8 +217,8 @@ async function open(
   await page.goto("/c/alpha.example.com");
   await page.getByTestId("content-pane").waitFor();
   if (phone) await page.getByTestId("open-channel-list").click();
-  await page.getByTestId("org-toggle").click();
-  await expect(page.getByTestId("org-people-section")).toBeVisible({
+  await page.getByTestId("people-toggle").click();
+  await expect(page.getByTestId("people-section")).toBeVisible({
     timeout: 20_000,
   });
   return { relay, invites, listRequests, revokeRequests, banListRequests };

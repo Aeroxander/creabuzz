@@ -112,9 +112,8 @@ Nostr" and "no explorer" in text people read (the desktop app's two such sentenc
   work.
 - Found while doing these (D109): opening a room created and stored an account key for a visitor, signing them up
   without the terms. Reading a page no longer does, and a room asks a visitor to create an account before they write.
-- **Members and the People list.** People and access lives on the Org page, now hidden from members (D109), so a member
-  can no longer find the read-only list of who is in from the sidebar. A "People" entry for everyone, separate from Org,
-  would bring it back.
+- ~~**Members and the People list.**~~ Done (D110): **People** is in everyone's sidebar, apart from Org; members see who
+  is in, owners and admins also manage invites, access, roles and bans there.
 - **People and access** said "The list of people is not available here." for the server's owner in this world, and an
   open community offers no invite link. Worth checking on the hosted server before inviting people.
 - **The demo passkey page** (`/identity-demo`) ships in production builds because the passkey tests use it. It is unlisted.

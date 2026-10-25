@@ -24,7 +24,6 @@ import { useUserNames } from "@/features/profiles/use-profiles";
 import { peekAgentPubkey } from "@/shared/lib/agent-identity";
 import { Badge } from "@/shared/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
-import { PeopleSection } from "@/features/communities/ui/PeopleSection";
 import { OrgDiagnosticCard } from "@/features/launchpad/ui/OrgDiagnosticCard";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import {
@@ -340,8 +339,6 @@ export function OrgView() {
       ) : (
         <OrgRosterFallback agents={agents} loading={loading} />
       )}
-      {/* Who is in, who may join, and invite links. */}
-      <PeopleSection />
       {/* Budgets: community spend/usage ceilings with their enforcement
           honesty labels. Owns creation and the active list. */}
       <section

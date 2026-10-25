@@ -279,7 +279,7 @@ scripts/web-invite-only-e2e.sh      # REAL server on a scratch database + a real
 ```
 
 By hand (server started as in 4i, with `BUZZ_REQUIRE_RELAY_MEMBERSHIP=false`): press **Create community**. The dialog offers two buttons side by
-side, **Anyone with the address** (already chosen) and **Only people I invite**; press the second, then create. Open **Org**: **People and access** shows you as the only person. Press **Make invite link** (1 week, one person) and copy it.
+side, **Anyone with the address** (already chosen) and **Only people I invite**; press the second, then create. Open **People** (it was under **Org** before D110): **People and access** shows you as the only person. Press **Make invite link** (1 week, one person) and copy it.
 In a second browser (a different profile, so it is a different person) open `http://<name>.localhost:3000/c/<name>.localhost:3000`: it says **This
 community is invite-only**. Open the invite link there and press **Join in browser**: the community opens, and your **Org** page now
 lists two people. Use the same link in a third browser: it says the invite has reached its use limit. Back as the owner pick
@@ -373,7 +373,7 @@ cd web && pnpm build && npx playwright test --project=smoke tests/e2e/community-
 scripts/web-invite-only-e2e.sh -g "banned person"   # REAL server and browser; needs Postgres and Redis
 ```
 
-By hand, as the owner of a community with two people in it: **Org**, **People and access**. Each other person has **Ban** next to Remove. Press it:
+By hand, as the owner of a community with two people in it: **People** (under **Org** before D110), **People and access**. Each other person has **Ban** next to Remove. Press it:
 the form says they are signed out right away, cannot get back in even with an invite link, and are told your reason. Choose **7 days**, type a reason,
 **Ban**. **Banned (1)** appears under the list with the time left and your reason. In the other person's browser, reload: the page says "You are
 banned from this community" and offers nothing to retry; opening the invite link again does not help. Press **Lift ban**: they can use the community
@@ -1411,9 +1411,20 @@ By hand:
 1. Open a community with no room in the link: #general is open and highlighted in the list.
 2. As a member (not an owner, admin or moderator), the sidebar shows search, Messages, boards and rooms; no Set up
    community, Wiki, AI helpers, Work, Org or Moderation. Add `?view=wiki` to the address: the wiki opens.
-3. As the owner: all of them are there, and Org still has People and access.
+3. As the owner: all of them are there (People and access is under **People**, D110).
 4. Signed out, open a community: #general shows, its composer says "Create your account to write here", and nothing
    is stored for you (no `buzz.identity.nsec` in the browser's storage).
 5. On a project, submit work and open an award vote: the decision reads "Award … Shares for the submission “…”"; Needs
    you, Work and the record say "submitted", not "filed a claim".
+
+## 4bg. People for everyone (D110, 2026-10-25)
+
+```bash
+pnpm --dir web exec playwright test --project=smoke tests/e2e/report.spec.ts tests/e2e/community-access.spec.ts
+scripts/web-invite-only-e2e.sh           # an invited member opens People from their own sidebar
+```
+
+By hand: as a member, **People** in the community sidebar lists who is in and how people join, with nothing to change.
+As the owner, **People** also has the invite links, the join setting, roles, removal and bans; **Org** no longer shows
+them. `?view=people` links straight to it.
 

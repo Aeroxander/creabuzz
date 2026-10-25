@@ -35,10 +35,11 @@ export async function newPerson(browser: Browser): Promise<Page> {
   return page;
 }
 
-export async function openPeople(owner: Page) {
-  await owner.getByTestId("content-pane").waitFor({ timeout: 30_000 });
-  await owner.getByTestId("org-toggle").click();
-  await expect(owner.getByTestId("org-people-section")).toBeVisible({
+/** Open People and access from the sidebar, where everyone has it (D110). */
+export async function openPeople(page: Page) {
+  await page.getByTestId("content-pane").waitFor({ timeout: 30_000 });
+  await page.getByTestId("people-toggle").click();
+  await expect(page.getByTestId("people-section")).toBeVisible({
     timeout: 30_000,
   });
 }

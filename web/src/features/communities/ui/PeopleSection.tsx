@@ -550,7 +550,7 @@ export function PeopleSection() {
   return (
     <section
       className="space-y-4 border-t border-black/10 p-3 dark:border-white/10"
-      data-testid="org-people-section"
+      data-testid="people-section"
     >
       <div>
         <h2 className="text-sm font-semibold text-black dark:text-white">

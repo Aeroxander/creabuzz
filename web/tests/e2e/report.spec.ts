@@ -533,6 +533,15 @@ test("a member's sidebar is rooms, boards and messages; whoever runs the communi
   for (const testId of [...runOnly, "moderation-toggle"]) {
     await expect(page.getByTestId(testId)).toHaveCount(0);
   }
+  // People is theirs too (D110): who is in, with nothing to change.
+  await page.getByTestId("people-toggle").click();
+  await expect(page.getByTestId("people-section")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("invite-maker")).toHaveCount(0);
+  await expect(page.getByTestId("access-control")).toHaveCount(0);
+  await expect(page.getByTestId("org-budgets-section")).toHaveCount(0);
+  await expectAccessible(page, "people, member");
   // A link still opens one of those pages for them.
   await page.goto("/c/alpha.example.com?view=wiki");
   await expect(page.getByTestId("wiki-page-list")).toBeVisible({
@@ -542,7 +551,7 @@ test("a member's sidebar is rooms, boards and messages; whoever runs the communi
   // Someone who moderates here sees every one of them.
   moderator = true;
   await page.goto("/c/alpha.example.com");
-  for (const testId of [...runOnly, "moderation-toggle"]) {
+  for (const testId of [...runOnly, "moderation-toggle", "people-toggle"]) {
     await expect(page.getByTestId(testId)).toBeVisible({ timeout: 20_000 });
   }
 });

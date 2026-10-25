@@ -6,7 +6,13 @@ import { CommunityHomePage } from "@/features/communities/ui/CommunityHomePage";
  * a work item. Without them a page or a task had no address at all: a decision
  * could not be linked to, and a reload lost the surface.
  */
-export type CommunityView = "channels" | "wiki" | "work" | "org" | "fleet";
+export type CommunityView =
+  | "channels"
+  | "wiki"
+  | "work"
+  | "org"
+  | "fleet"
+  | "people";
 
 interface CommunitySearch {
   channel?: string;
@@ -21,7 +27,14 @@ interface CommunitySearch {
   post?: string;
 }
 
-const VIEWS: CommunityView[] = ["channels", "wiki", "work", "org", "fleet"];
+const VIEWS: CommunityView[] = [
+  "channels",
+  "wiki",
+  "work",
+  "org",
+  "fleet",
+  "people",
+];
 
 export const Route = createFileRoute("/c/$host")({
   validateSearch: (search: Record<string, unknown>): CommunitySearch => {
