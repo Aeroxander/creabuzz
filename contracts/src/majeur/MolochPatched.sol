@@ -1602,6 +1602,51 @@ contract Shares {
         emit TransferUnlockCancelled();
     }
     // @@CREABUZZ PATCH END shares-transfer-lock-notice
+    // @@CREABUZZ PATCH BEGIN shares-exit-exchange
+    /// @notice Matched exits (N5): the exchange the DAO named that may move Shares from one holder to another while
+    /// transfers are locked. It moves them only as the caller of `transferFrom`, so only with the seller's own allowance
+    /// to it, and every other check still applies (the lock guard keeps locked team Shares in place, the validator runs).
+    /// Zero while none is named.
+    address public exitExchange;
+    /// @notice An exchange the DAO announced, and when. Anyone can switch it on `UNLOCK_NOTICE` later, the same 30 days
+    /// as opening trading (D77), so a holder who disagrees has that long to leave.
+    address public pendingExitExchange;
+    uint64 public exitExchangeAnnouncedAt;
+
+    event ExitExchangeAnnounced(address indexed exchange, uint64 at);
+    event ExitExchangeSet(address indexed exchange);
+    error ExitExchangeNotDue();
+
+    /// @notice Announce `exchange` (not zero); it can be switched on 30 days after this runs. A new announcement
+    /// replaces a pending one and restarts the 30 days.
+    function announceExitExchange(address exchange) public payable onlyDAO {
+        if (exchange == address(0)) revert Unauthorized();
+        pendingExitExchange = exchange;
+        exitExchangeAnnouncedAt = uint64(block.timestamp);
+        emit ExitExchangeAnnounced(exchange, exitExchangeAnnouncedAt);
+    }
+
+    /// @notice Switch on the announced exchange once its 30 days have passed. Anyone may call it: the vote was the
+    /// announcement.
+    function activateExitExchange() public {
+        address pending = pendingExitExchange;
+        if (pending == address(0) || block.timestamp < uint256(exitExchangeAnnouncedAt) + UNLOCK_NOTICE) {
+            revert ExitExchangeNotDue();
+        }
+        exitExchange = pending;
+        pendingExitExchange = address(0);
+        exitExchangeAnnouncedAt = 0;
+        emit ExitExchangeSet(pending);
+    }
+
+    /// @notice Stop matched exits at once, and withdraw any announcement. Leaving still works.
+    function clearExitExchange() public payable onlyDAO {
+        exitExchange = address(0);
+        pendingExitExchange = address(0);
+        exitExchangeAnnouncedAt = 0;
+        emit ExitExchangeSet(address(0));
+    }
+    // @@CREABUZZ PATCH END shares-exit-exchange
     // @@CREABUZZ PATCH BEGIN erc20c-surface
     /// @notice ERC-20C: the transfer validator the DAO chose (zero until it chooses one, unlike the stock ERC-20C,
     /// which falls back to a default validator that may not exist on a chain). It sees plain transfers only: minting
@@ -1840,6 +1885,12 @@ contract Shares {
         address exempt = transferExempt;
         if (exempt != address(0) && (from == exempt || to == exempt)) return;
     // @@CREABUZZ PATCH END shares-transfer-exempt
+    // @@CREABUZZ PATCH BEGIN shares-exit-exchange-check
+        // The named exchange, calling `transferFrom` with the seller's allowance (N5). `msg.sender` is the caller of the
+        // public transfer function, so a holder's own `transfer` never reaches this.
+        address exchange = exitExchange;
+        if (exchange != address(0) && msg.sender == exchange) return;
+    // @@CREABUZZ PATCH END shares-exit-exchange-check
         if (transfersLocked && from != DAO && to != DAO) {
             revert Locked();
         }

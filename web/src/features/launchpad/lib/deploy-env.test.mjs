@@ -85,6 +85,40 @@ test("bounties on posts are off by default, on with an address and a node, refus
   );
 });
 
+test("sales between members are off by default, on with an address and a node, refused otherwise", () => {
+  assert.ok(
+    checkDeployEnv(SEPOLIA).summary.includes("Sales between members: off"),
+  );
+  const EXITS = `0x${"e1".repeat(20)}`;
+  const on = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_MATCHED_EXITS: JSON.stringify({ 11155111: EXITS }),
+  });
+  assert.deepEqual(on.problems, []);
+  assert.ok(
+    on.summary.includes(
+      `Sales between members: on where a DAO votes for it (${EXITS})`,
+    ),
+  );
+  const noNode = checkDeployEnv({
+    VITE_MATCHED_EXITS: JSON.stringify({ 11155111: EXITS }),
+  });
+  assert.ok(
+    noNode.problems.some((p) =>
+      p.startsWith("VITE_MATCHED_EXITS is named but"),
+    ),
+  );
+  const elsewhere = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_MATCHED_EXITS: JSON.stringify({ 31337: EXITS }),
+  });
+  assert.ok(
+    elsewhere.problems.some((p) =>
+      p.startsWith("VITE_MATCHED_EXITS names no valid address"),
+    ),
+  );
+});
+
 test("a kit without a chain node or a history start is refused", () => {
   const noNode = checkDeployEnv({ ...SEPOLIA, VITE_CHAIN_RPC_URL: "" });
   assert.ok(

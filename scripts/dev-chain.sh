@@ -836,39 +836,57 @@ open_bounty_address() {
   manifest_role "$(open_bounty_manifest_path)" "open-bounty"
 }
 
-# Guard: the manifest exists, its contract has code, and it still pays in THIS chain's currency.
-open_bounty_deployed() {
-  local address currency
-  [[ -f "$(open_bounty_manifest_path)" ]] || return 1
-  address=$(open_bounty_address)
+matched_exit_manifest_path() {
+  echo "$DEPLOYMENTS_DIR/matched-exit-${CHAIN_ID}.json"
+}
+
+matched_exit_address() {
+  manifest_role "$(matched_exit_manifest_path)" "matched-exit"
+}
+
+# Guard: the manifest at $1 names role $2, its contract has code, and it still pays in THIS chain's currency.
+currency_contract_deployed() {
+  local manifest=$1 role=$2 address currency
+  [[ -f "$manifest" ]] || return 1
+  address=$(manifest_role "$manifest" "$role")
   [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] || return 1
   currency=$(cast call "$address" "currency()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ "$(lower "$currency")" == "$(lower "$(currency_address)")" ]]
 }
 
-# The bounties on posts (N2): money behind a post, paid to the claim that keeps a majority of it, refunded otherwise.
-deploy_open_bounty() {
+open_bounty_deployed() {
+  currency_contract_deployed "$(open_bounty_manifest_path)" open-bounty
+}
+
+matched_exit_deployed() {
+  currency_contract_deployed "$(matched_exit_manifest_path)" matched-exit
+}
+
+# Deploy a contract whose only constructor argument is this chain's currency: $1 the role, $2 the contract (its file is
+# src/$2.sol), $3 the manifest path, $4 what it is for (said once in the log).
+deploy_currency_contract() {
+  local role=$1 contract=$2 manifest=$3 purpose=$4
   echo
-  if open_bounty_deployed; then
-    echo "── open bounty: already at $(open_bounty_address) — skipped (idempotent)"
+  if currency_contract_deployed "$manifest" "$role"; then
+    echo "── $role: already at $(manifest_role "$manifest" "$role") — skipped (idempotent)"
     return 0
   fi
   local currency bytecode args receipt status address block
   currency=$(currency_address)
   [[ -n "$currency" && "$(code_bytes "$currency")" != "0" ]] \
-    || fail_step "open-bounty" "no currency token to pay bounties in (currency step first)"
-  echo "── open bounty: deploying OpenBounty (currency $currency)"
-  if ! (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build src/OpenBounty.sol) >/dev/null; then
-    fail_step "open-bounty" "forge build src/OpenBounty.sol failed"
+    || fail_step "$role" "no currency token to pay in (currency step first)"
+  echo "── $role: deploying $contract (currency $currency): $purpose"
+  if ! (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build "src/$contract.sol") >/dev/null; then
+    fail_step "$role" "forge build src/$contract.sol failed"
   fi
-  bytecode=$(artifact_field "$REPO_ROOT/contracts/out/OpenBounty.sol/OpenBounty.json" bytecode.object) \
-    || fail_step "open-bounty" "cannot read the OpenBounty artifact"
+  bytecode=$(artifact_field "$REPO_ROOT/contracts/out/$contract.sol/$contract.json" bytecode.object) \
+    || fail_step "$role" "cannot read the $contract artifact"
   args=$(cast abi-encode "constructor(address)" "$currency") \
-    || fail_step "open-bounty" "cast abi-encode constructor args failed"
+    || fail_step "$role" "cast abi-encode constructor args failed"
   if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
       --create "0x${bytecode#0x}${args#0x}" 2>&1); then
     echo "$receipt" >&2
-    fail_step "open-bounty" "cast send --create failed"
+    fail_step "$role" "cast send --create failed"
   fi
   status=$(node -e '
     const r = JSON.parse(process.argv[1]);
@@ -877,24 +895,34 @@ deploy_open_bounty() {
   address=$(node -e 'console.log(JSON.parse(process.argv[1]).contractAddress ?? "")' "$receipt")
   block=$(node -e 'console.log(Number(BigInt(JSON.parse(process.argv[1]).blockNumber ?? "0x0")))' "$receipt")
   [[ "$status" == "success" && -n "$address" && "$(code_bytes "$address")" != "0" ]] \
-    || fail_step "open-bounty" "deploy tx mined as ${status:-unknown} (no code at ${address:-<none>})"
+    || fail_step "$role" "deploy tx mined as ${status:-unknown} (no code at ${address:-<none>})"
   node -e '
     const fs = require("fs");
-    const [file, chainId, tx, block, address] = process.argv.slice(1);
+    const [file, chainId, tx, block, address, role, contract] = process.argv.slice(1);
     fs.writeFileSync(file, JSON.stringify({
       chainId: Number(chainId),
       project: "buzz-dev-chain",
-      note: "scripts/dev-chain.sh — OpenBounty(currency)",
+      note: `scripts/dev-chain.sh — ${contract}(currency)`,
       tx,
       block: Number(block),
-      roles: [{ role: "open-bounty", address }],
+      roles: [{ role, address }],
     }) + "\n");
-  ' "$(open_bounty_manifest_path)" "$CHAIN_ID" \
+  ' "$manifest" "$CHAIN_ID" \
     "$(node -e 'console.log(JSON.parse(process.argv[1]).transactionHash ?? "")' "$receipt")" \
-    "$block" "$address" \
-    || fail_step "open-bounty" "deployed at $address but could not write $(open_bounty_manifest_path)"
-  open_bounty_deployed || fail_step "open-bounty" "the deployed bounty does not pay in this chain's currency"
-  echo "  ✓ OpenBounty at $address (manifest $(open_bounty_manifest_path))"
+    "$block" "$address" "$role" "$contract" \
+    || fail_step "$role" "deployed at $address but could not write $manifest"
+  currency_contract_deployed "$manifest" "$role" || fail_step "$role" "the deployed $contract does not pay in this chain's currency"
+  echo "  ✓ $contract at $address (manifest $manifest)"
+}
+
+# The bounties on posts (N2): money behind a post, paid to the claim that keeps a majority of it, refunded otherwise.
+deploy_open_bounty() {
+  deploy_currency_contract open-bounty OpenBounty "$(open_bounty_manifest_path)" "money behind posts"
+}
+
+# Matched exits (N5): members sell Shares to people who want in, once their DAO names this exchange by vote.
+deploy_matched_exit() {
+  deploy_currency_contract matched-exit MatchedExit "$(matched_exit_manifest_path)" "sales between members"
 }
 
 fund_accounts() {
@@ -972,6 +1000,7 @@ up() {
   deploy_contributor_kit
   deploy_work_bounty
   deploy_open_bounty
+  deploy_matched_exit
   fund_accounts
 
   echo
@@ -987,10 +1016,12 @@ up() {
   echo "  contributor kit: $(contributor_kit_address) (contributor-kit-$CHAIN_ID.json)"
   echo "  work bounty: $(work_bounty_address) (work-bounty-$CHAIN_ID.json)"
   echo "  open bounty: $(open_bounty_address) (open-bounty-$CHAIN_ID.json)"
+  echo "  matched exit: $(matched_exit_address) (matched-exit-$CHAIN_ID.json)"
   echo "  web env:    VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
   echo "              VITE_CONTRIBUTOR_KITS='{\"$CHAIN_ID\":\"$(contributor_kit_address)\"}'  (lets the app start a contributor project here)"
   echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
   echo "              VITE_OPEN_BOUNTIES='{\"$CHAIN_ID\":\"$(open_bounty_address)\"}'  (lets people put money behind a post here)"
+  echo "              VITE_MATCHED_EXITS='{\"$CHAIN_ID\":\"$(matched_exit_address)\"}'  (lets members sell Shares to each other here, once their DAO votes for it)"
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"

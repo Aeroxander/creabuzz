@@ -1516,3 +1516,31 @@ By hand (a relay built from this branch, the dev chain, a web build with `VITE_W
    others put behind its work areas, and **Not enough history yet** for a project under three months old. Someone
    leaving does not change **Paid out**.
 
+## 4bl. Sales between members (D117, 2026-10-26)
+
+```bash
+cd contracts && forge test --match-contract MatchedExit   # fills, every boundary, the lock, smart accounts, votes
+node scripts/check-majeur-fork.mjs                        # the Shares change stays inside its patch regions
+cargo test -p buzz-relay --lib exit_offer                 # the server accepts only the offer shape (with Hermit active)
+pnpm --dir packages/creaton-core test                     # matchedExit: the digest is the contract's, records, votes
+pnpm --dir web test                                       # the offer form, where sales stand, the build setting
+scripts/web-contributor-e2e.sh                            # vote, 30 days, switch on, a contributor sells to a newcomer
+node scripts/contracts-mutation-check.mjs 72 73 74 75 76 77 78 79 80 81 82 83   # each guard removed is caught
+```
+
+By hand (a relay built from this branch, the dev chain, a web build with `VITE_CONTRIBUTOR_KITS` and
+`VITE_MATCHED_EXITS`; a browser wallet such as MetaMask on the dev chain, since a passkey account can't sign offers yet):
+
+1. On a contributor project's **Funds** tab, **Sales between members** says members can't sell to each other yet.
+2. On **Decisions**, **New decision**, **Sales between members**: the draft reads **Allow sales between members in 30
+   days**. Open it and carry it out. Funds now says when sales can start, and there is no button yet.
+3. Move the dev chain 30 days on (`cast rpc anvil_increaseTime 2592000 && cast rpc anvil_mine`). **Switch on sales**
+   appears for anyone; press it.
+4. As someone holding Shares, **Offer Shares for sale**: try more than you hold and read the refusal, then 10 at 2 USDC
+   for 7 days. It says **Buyers pay 20 USDC in all, to you.** Your wallet asks to allow the exchange, then to sign. The
+   offer shows in the list, and your Shares are still in your wallet.
+5. As someone else with dev USDC, **Buy**: your wallet asks to allow 20 USDC, then to buy. The seller gets 20 USDC, you
+   get 10 Shares, the treasury doesn't change, and you still can't send those Shares to anyone.
+6. Make two offers, then **Cancel all my offers**: both go. A vote **Turn off sales between members** stops any fill at
+   once.
+

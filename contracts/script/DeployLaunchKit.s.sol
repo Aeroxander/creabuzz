@@ -9,7 +9,8 @@ import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 /// Shares carry the milestone lock guard), the `DaoLaunchKit` that launches a DAO and its sale in one transaction, and the
 /// `ContributorKit` that starts a contributor project (no sale, ready for work) on the same summoner, and the
 /// `WorkAreaBounty` that holds outside money behind a work area of any work budget the summoner's factory makes (N1), and
-/// the `OpenBounty` that holds money behind a post until someone's claim keeps a majority of it (N2).
+/// the `OpenBounty` that holds money behind a post until someone's claim keeps a majority of it (N2), and the
+/// `MatchedExit` exchange where a member sells Shares to someone who wants in, once their DAO names it by vote (N5).
 ///
 /// Nothing else is deployed: the auction factory, Permit2 and the sale currency are the chain's own. The script refuses
 /// to run where the factory has no code, and it checks the Shares implementation it computes really exists before it
@@ -18,7 +19,8 @@ import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 /// Run (a rehearsal on a fork first; `scripts/sepolia-deploy.sh` does both):
 ///   PRIVATE_KEY=0x… forge script script/DeployLaunchKit.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast
 /// Env: PRIVATE_KEY (the deployer, a testnet key), CCA_FACTORY (default: the canonical factory, the same address on every
-/// chain), BOUNTY_CURRENCY (what bounties are paid in; default on Sepolia: Circle's USDC there, required elsewhere),
+/// chain), BOUNTY_CURRENCY (what bounties and matched sales are paid in; default on Sepolia: Circle's USDC there,
+/// required elsewhere),
 /// LAUNCH_PROJECT (a label for the manifest).
 contract DeployLaunchKit is Script {
     /// @dev Uniswap's continuous clearing auction factory v2.1.0: one address on every EVM chain.
@@ -55,11 +57,13 @@ contract DeployLaunchKit is Script {
         address workBounty =
             vm.deployCode("WorkAreaBounty.sol:WorkAreaBounty", abi.encode(bountyCurrency, made.mandateFactory()));
         address openBounty = vm.deployCode("OpenBounty.sol:OpenBounty", abi.encode(bountyCurrency));
+        address matchedExit = vm.deployCode("MatchedExit.sol:MatchedExit", abi.encode(bountyCurrency));
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");
         require(contributorKit.code.length != 0, "DeployLaunchKit: the contributor kit has no code");
         require(workBounty.code.length != 0, "DeployLaunchKit: the work bounty has no code");
         require(openBounty.code.length != 0, "DeployLaunchKit: the open bounty has no code");
+        require(matchedExit.code.length != 0, "DeployLaunchKit: the matched exit has no code");
 
         _writeManifest(
             summoner,
@@ -69,6 +73,7 @@ contract DeployLaunchKit is Script {
             contributorKit,
             workBounty,
             openBounty,
+            matchedExit,
             ccaFactory
         );
         console2.log("chain id:", block.chainid);
@@ -79,6 +84,7 @@ contract DeployLaunchKit is Script {
         console2.log("ContributorKit:", contributorKit);
         console2.log("WorkAreaBounty:", workBounty);
         console2.log("OpenBounty:", openBounty);
+        console2.log("MatchedExit:", matchedExit);
         console2.log("Auction factory:", ccaFactory);
     }
 
@@ -120,6 +126,7 @@ contract DeployLaunchKit is Script {
         address contributorKit,
         address workBounty,
         address openBounty,
+        address matchedExit,
         address ccaFactory
     ) internal {
         string memory path = string.concat("deployments/dao-launch-kit-", vm.toString(block.chainid), ".json");
@@ -138,6 +145,8 @@ contract DeployLaunchKit is Script {
             vm.toString(workBounty),
             '"},{"role":"open-bounty","address":"',
             vm.toString(openBounty),
+            '"},{"role":"matched-exit","address":"',
+            vm.toString(matchedExit),
             '"},{"role":"summoner","address":"',
             vm.toString(summoner),
             '"},{"role":"moloch-implementation","address":"',

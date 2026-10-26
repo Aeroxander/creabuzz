@@ -1,7 +1,8 @@
 # A next-gen DAO: from an idea to paid work, ownership and staged funding (proposal, 2026-10-25)
 
 Status: **a proposal.** Stage 1 is built for test networks: N1 and N2 (D113, D114, 2026-10-25), N3 and N4 (D115, D116,
-2026-10-26). Nothing in stages 2 and 3 is decided or built. Twelve pieces in three stages, each with its own proposed
+2026-10-26). Stage 2 has started: N5, matched exits, is built for test networks (D117, 2026-10-26). Nothing else in
+stages 2 and 3 is decided or built. Twelve pieces in three stages, each with its own proposed
 decision row (N1 to N12), its own contract work, audit scope and, where money moves, a legal read. Each piece can be
 released on its own; accepting one does not accept the others. It follows the funding curve proposal
 ([JOIN-CURVE.md](JOIN-CURVE.md), asset rule decided as D112), the forecasts plan
@@ -162,6 +163,9 @@ What it proves: holders can get cash without the treasury paying, and disputes c
 outside the project.
 
 ## 5. Matched exits (N5)
+
+**Built for test networks as D117** (`MatchedExit`, the Shares' named exchange, kind 47009, the Funds tab), without the
+price floor (no DAO whose leaving pays one currency exists yet) and with offers signed by a browser wallet.
 
 Needs neither $CREATE nor the court, so it comes first. Leaving is the only way to cash while transfers are locked
 (D77), so holders who believe in a project still leave when they need money. Leaving does not lower anyone else's part

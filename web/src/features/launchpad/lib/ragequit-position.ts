@@ -335,7 +335,7 @@ export function overdrawsPosition(input: PositionInput): boolean {
 export type ExitRule = "current" | "legacy" | "unknown";
 
 /** A contract that does not have the function: the call reverts, or answers nothing. A network failure is not one. */
-function isRefusal(error: unknown): boolean {
+export function isRefusal(error: unknown): boolean {
   return (
     error instanceof Error &&
     (/revert/i.test(error.message) ||

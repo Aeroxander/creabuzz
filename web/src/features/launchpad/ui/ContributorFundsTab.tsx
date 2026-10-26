@@ -1,5 +1,6 @@
 /**
- * Funds, for a contributor project (D111): what its DAO holds and how a holder leaves with their share.
+ * Funds, for a contributor project (D111): what its DAO holds, how a holder leaves with their share, and, once the DAO
+ * voted for it, how a member sells Shares to someone who wants in (N5).
  *
  * A contributor project has no sale, but its DAO is an ordinary one: anyone can send it money, holders vote on spending
  * it on the Decisions tab, and anyone holding Shares can give them up for their part of what it holds. So the money and
@@ -20,6 +21,7 @@ import type { Launch } from "../models";
 import { useContributorProvenance } from "../use-contributor-provenance";
 import { DelegationCard } from "./DelegationCard";
 import { Figure } from "./Figure";
+import { MatchedExitCard } from "./MatchedExitCard";
 import { RagequitPanel } from "./RagequitPanel";
 import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
 
@@ -123,6 +125,7 @@ export function ContributorFundsTab({
         daoBinding={binding}
         record={exitRecord}
       />
+      <MatchedExitCard dao={dao} />
       <DelegationCard
         author={launch.record.author}
         dao={dao}

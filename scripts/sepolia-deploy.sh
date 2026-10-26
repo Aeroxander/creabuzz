@@ -76,13 +76,14 @@ fi
 step "deploying the summoner, the launch kit and the contributor kit"
 OUT="$BACKUP/forge.out"
 sepolia_deploy_kits "$RPC" "$KEY" "$OUT"
-grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|Auction factory)" "$OUT" || tail -20 "$OUT"
+grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|MatchedExit|Auction factory)" "$OUT" || tail -20 "$OUT"
 
 KIT=$(sepolia_role launch-kit)
 SUMMONER=$(sepolia_role summoner)
 CONTRIBUTOR_KIT=$(sepolia_role contributor-kit)
 WORK_BOUNTY=$(sepolia_role work-bounty)
 OPEN_BOUNTY=$(sepolia_role open-bounty)
+MATCHED_EXIT=$(sepolia_role matched-exit)
 SHARES_IMPL=$(sepolia_role shares-implementation)
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 first() { awk '{print $1}' | head -1; }
@@ -105,6 +106,9 @@ echo "  ✓ the work bounty at $WORK_BOUNTY names the same work budget factory a
 [[ "$(cast codesize "$OPEN_BOUNTY" --rpc-url "$RPC")" != "0" ]] || fail "no code at the open bounty $OPEN_BOUNTY"
 [[ "$(lower "$(cast call "$OPEN_BOUNTY" 'currency()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SEPOLIA_USDC")" ]] || fail "the open bounty is not paid in Sepolia's USDC"
 echo "  ✓ the open bounty at $OPEN_BOUNTY pays in USDC"
+[[ "$(cast codesize "$MATCHED_EXIT" --rpc-url "$RPC")" != "0" ]] || fail "no code at the matched exit $MATCHED_EXIT"
+[[ "$(lower "$(cast call "$MATCHED_EXIT" 'currency()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SEPOLIA_USDC")" ]] || fail "the matched exit is not paid in Sepolia's USDC"
+echo "  ✓ the matched exit at $MATCHED_EXIT pays in USDC"
 
 # What it costs: the gas the deploy used, priced at what Sepolia charges now and at a busy day's 20 gwei. Test ETH has no
 # price, but the deployer needs this much of it from a faucet.
@@ -123,6 +127,6 @@ else
   # The block the deploy ran at is where this chain's history starts for the app: a real node refuses an event read from
   # block 0, so the build is told where to start.
   FROM_BLOCK=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).block)' "$MANIFEST")
-  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_CHAIN_RPC_URL=<a read-only Sepolia node for the page> VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_CONTRIBUTOR_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}' VITE_WORK_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${WORK_BOUNTY}\"}' VITE_OPEN_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${OPEN_BOUNTY}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
+  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_CHAIN_RPC_URL=<a read-only Sepolia node for the page> VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_CONTRIBUTOR_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}' VITE_WORK_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${WORK_BOUNTY}\"}' VITE_OPEN_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${OPEN_BOUNTY}\"}' VITE_MATCHED_EXITS='{\"${SEPOLIA_CHAIN_ID}\":\"${MATCHED_EXIT}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
   echo "  (docs/sepolia-testnet.md lists the rest: the relay URL, passkey accounts, what testers need)"
 fi

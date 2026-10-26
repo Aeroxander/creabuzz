@@ -14,6 +14,8 @@
 # A second journey has several people earn (D84): two first projects at Start, a newcomer with no Shares suggests work
 # for 5% of the project, the founder puts it to a vote filled in from the suggestion, both people's claims are reviewed,
 # paid and awarded by vote, and the Contributions page shows both.
+# The first journey ends with a sale between members (N5): the DAO votes the matched-exit exchange in, 30 days later a
+# newcomer switches it on, the contributor signs an offer for some of the Shares they earned, and the newcomer buys it.
 #
 # ⚠️  DEV ONLY. Anvil's public dev keys, a local chain or a local fork, nothing public.
 #
@@ -44,6 +46,10 @@ if [[ "$CHAIN" == "local" ]]; then
   CONTRIBUTOR_KIT="$(role "$DEPLOYMENTS/contributor-kit-31337.json" contributor-kit)"
   KIT="$(role "$DEPLOYMENTS/dao-launch-kit-31337.json" launch-kit)"
   BOUNTY="$(role "$DEPLOYMENTS/work-bounty-31337.json" work-bounty)"
+  MATCHED_EXIT="$(role "$DEPLOYMENTS/matched-exit-31337.json" matched-exit)"
+  # The newcomer who buys Shares from a member (N5) brings 100 dev USDC.
+  cast send "$CURRENCY" "mint(address,uint256)" "$MANAGER" 100000000 --private-key "$KEY_FOUNDER" --rpc-url "$RPC" >/dev/null \
+    || fail "could not give the newcomer dev USDC"
   BUILD_ENV=(VITE_LAUNCHPAD_CHAIN_ID=31337 VITE_LOCAL_USDC="$CURRENCY")
 else
   # The deploy writes chain 11155111's manifest and a broadcast record: both go back as they were.
@@ -60,6 +66,7 @@ else
   CONTRIBUTOR_KIT="$(sepolia_role contributor-kit)"
   KIT="$(sepolia_role launch-kit)"
   BOUNTY="$(sepolia_role work-bounty)"
+  MATCHED_EXIT="$(sepolia_role matched-exit)"
   FROM_BLOCK="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).block??"")' "$SEPOLIA_MANIFEST")"
   [[ "$FROM_BLOCK" =~ ^[0-9]+$ ]] || fail "the manifest names no deploy block"
   CURRENCY="$SEPOLIA_USDC"
@@ -73,6 +80,9 @@ else
   done
   cast rpc --rpc-url "$RPC" anvil_setStorageAt "$SEPOLIA_USDC" "$(cast index address "$FOUNDER" 9)" \
     "$(cast to-uint256 1000000000)" >/dev/null
+  # The newcomer who buys Shares from a member (N5) brings 100 test USDC.
+  cast rpc --rpc-url "$RPC" anvil_setStorageAt "$SEPOLIA_USDC" "$(cast index address "$MANAGER" 9)" \
+    "$(cast to-uint256 100000000)" >/dev/null
   # A real node refuses an event read from block 0, so a Sepolia build is told where this chain's history starts.
   BUILD_ENV=(VITE_LAUNCHPAD_CHAIN_ID="$SEPOLIA_CHAIN_ID" VITE_CHAIN_RPC_URL="$RPC"
     VITE_HISTORY_FROM_BLOCKS="{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}")
@@ -81,7 +91,8 @@ CHAIN_ID="$(cast chain-id --rpc-url "$RPC")"
 [[ "$CONTRIBUTOR_KIT" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no contributor kit was deployed"
 [[ "$KIT" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no launch kit was deployed"
 [[ "$BOUNTY" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no work bounty was deployed"
-step "chain ${CHAIN_ID}  contributor kit ${CONTRIBUTOR_KIT}  launch kit ${KIT}  work bounty ${BOUNTY}  currency ${CURRENCY}"
+[[ "$MATCHED_EXIT" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no matched exit was deployed"
+step "chain ${CHAIN_ID}  contributor kit ${CONTRIBUTOR_KIT}  launch kit ${KIT}  work bounty ${BOUNTY}  matched exit ${MATCHED_EXIT}  currency ${CURRENCY}"
 
 # ── the kit refuses the founder limits (D79), whatever page sends it ─────────────────────────────────
 # Three calls from the founder that differ only where D79 draws its lines: a third of the budget with other people on the
@@ -113,11 +124,12 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   step "building the web app"
   env "${BUILD_ENV[@]}" VITE_CONTRIBUTOR_KITS="{\"${CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}" \
     VITE_DAO_LAUNCH_KITS="{\"${CHAIN_ID}\":\"${KIT}\"}" VITE_WORK_BOUNTIES="{\"${CHAIN_ID}\":\"${BOUNTY}\"}" \
+    VITE_MATCHED_EXITS="{\"${CHAIN_ID}\":\"${MATCHED_EXIT}\"}" \
     node_modules/.bin/vite build >/dev/null 2>&1 || fail "web build failed"
 fi
 step "running the browser spec"
 FIRST_BLOCK="$(cast block-number --rpc-url "$RPC")"
-E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_BOUNTY="$BOUNTY" E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" \
+E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_BOUNTY="$BOUNTY" E2E_MATCHED_EXIT="$MATCHED_EXIT" E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" \
   E2E_CONTRIBUTOR="$CONTRIBUTOR" E2E_MANAGER="$MANAGER" E2E_FOUNDER="$FOUNDER" \
   node_modules/.bin/playwright test tests/e2e/contributor-journey.spec.ts --project=smoke --reporter=list "$@"
 

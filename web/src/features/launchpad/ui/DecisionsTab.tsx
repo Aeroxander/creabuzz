@@ -4,6 +4,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { hashText } from "@creaton/core/launchpad/work.ts";
 
 import type { ChallengeIntent } from "../lib/challenge";
+import { matchedExit } from "../chain-config";
 import { recordSources } from "../lib/ways-to-help";
 import { useEvidencePackets } from "../use-evidence";
 import type { SponsorIntent } from "../lib/sponsor";
@@ -194,6 +195,8 @@ export function DecisionsTab({
                     label: labelOf,
                     checkWords,
                     projectToken: context.data?.shares,
+                    matchedExit:
+                      matchedExit(launch.record.chainId ?? null) ?? undefined,
                     amm: exchange?.amm,
                     currency: launch.record.currency ?? undefined,
                     currencySymbol:

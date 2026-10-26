@@ -137,6 +137,11 @@ export interface ChainEnv {
    */
   VITE_OPEN_BOUNTIES?: string;
   /**
+   * The matched-exit exchange per chain, as JSON: `{"31337":"0x…"}` (N5). Members of a DAO that voted for it sell Shares
+   * there to people who want in. A chain with no entry offers no sales between members.
+   */
+  VITE_MATCHED_EXITS?: string;
+  /**
    * The block each chain's history starts at, as JSON: `{"11155111":7654321}`. Name the block the launch kit was deployed
    * at: every contract the app reads events from was made after it. Only used when a node refuses a read of the whole
    * history for being too wide; a chain with no entry is then read from block 0, which a long chain cannot finish.
@@ -216,6 +221,14 @@ export function openBounty(
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
   return addressForChain(env?.VITE_OPEN_BOUNTIES, chainId);
+}
+
+/** The matched-exit exchange on `chainId`, or null when the build does not name one. Never guessed: DAOs vote it in. */
+export function matchedExit(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_MATCHED_EXITS, chainId);
 }
 
 function addressForChain(

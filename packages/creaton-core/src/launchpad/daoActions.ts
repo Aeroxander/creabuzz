@@ -630,6 +630,8 @@ export interface DescribeContext {
   currencySymbol?: string;
   /** The DAO's own Shares (18 decimals), so a bond paid in them is described as the project's own token. */
   projectToken?: string;
+  /** The matched-exit exchange this app knows on the DAO's network, so a vote naming it is told apart from one naming anything else. */
+  matchedExit?: string;
   /** Each work budget's bond (its token, name and decimals), by lowercase budget address, so an amount can be put in words. */
   bonds?: Readonly<
     Record<string, { token: string; symbol: string; decimals: number }>
