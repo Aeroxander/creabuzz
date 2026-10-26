@@ -148,11 +148,13 @@ contract CreateCourtTest is Test {
         uint256 id = asker.ask();
         assertEq(usd.balanceOf(address(court)), 3 * FEE);
         uint64 at = uint64(block.timestamp) + court.EVIDENCE();
+        _stake(ANN, 3); // enough jurors: only the evidence time can stop the draw
         vm.warp(at - 1);
         vm.expectRevert(abi.encodeWithSelector(CreateCourt.TooEarly.selector, id, at));
         court.draw(id);
         vm.warp(at);
-        _stake(ANN, 2);
+        vm.prank(ANN);
+        court.unstake(SEAT);
         vm.expectRevert(abi.encodeWithSelector(CreateCourt.NotEnoughJurors.selector, 2, 3));
         court.draw(id);
         _stake(BO, 1);

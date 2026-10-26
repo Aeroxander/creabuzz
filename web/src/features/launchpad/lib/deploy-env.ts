@@ -14,6 +14,7 @@ import {
   createToken,
   daoLaunchKit,
   defaultChainPreset,
+  forecastPool,
   historyFromBlock,
   LOCAL_ANVIL_PRESET,
   mainnetEnabled,
@@ -150,6 +151,12 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       "VITE_COURTS is named but VITE_CREATE_TOKENS is not: jurors could not see what they stake.",
     );
   }
+  const pools = forecastPool(chainId, env);
+  if (value(env, "VITE_FORECAST_POOLS") && !pools) {
+    problems.push(
+      `VITE_FORECAST_POOLS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+    );
+  }
   const exits = matchedExit(chainId, env);
   if (value(env, "VITE_MATCHED_EXITS") && !exits) {
     problems.push(
@@ -199,6 +206,9 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
     `CREATE: ${create ? `on (${create}${faucet ? `, faucet ${faucet}` : ", no faucet"})` : "off"}`,
   );
   summary.push(`Court: ${court ? `on (${court})` : "off"}`);
+  summary.push(
+    `Money forecasts: ${pools ? `on, test money only (${pools})` : "off"}`,
+  );
 
   const project = value(env, "VITE_ZERODEV_PROJECT_ID");
   const zerodevChain = value(env, "VITE_ZERODEV_CHAIN_ID");

@@ -75,6 +75,10 @@ contract DeployLaunchKit is Script {
                 "CreateCourt.sol:CreateCourt", abi.encode(createToken, bountyCurrency, SEAT_STAKE, FEE_PER_SEAT)
             );
         address openBounty = vm.deployCode("OpenBounty.sol:OpenBounty", abi.encode(bountyCurrency, court));
+        // Money forecasts on bounties on posts (N8) are an experiment for test networks only.
+        address pools = court == address(0)
+            ? address(0)
+            : vm.deployCode("ForecastPool.sol:ForecastPool", abi.encode(bountyCurrency, openBounty));
         address matchedExit = vm.deployCode("MatchedExit.sol:MatchedExit", abi.encode(bountyCurrency));
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");
@@ -96,6 +100,7 @@ contract DeployLaunchKit is Script {
             _role("create-token", "CreateToken", createToken);
             _role("create-faucet", "CreateFaucet", createFaucet);
             _role("court", "CreateCourt", court);
+            _role("forecast-pool", "ForecastPool", pools);
         }
         _role("auction-factory", "Auction factory", ccaFactory);
         _writeManifest();

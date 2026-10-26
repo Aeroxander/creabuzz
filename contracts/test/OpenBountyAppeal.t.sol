@@ -227,8 +227,15 @@ contract OpenBountyAppealTest is Test {
     }
 
     function test_only_the_court_rules_and_only_on_an_open_appeal() public {
+        uint256 id = _unbackedClaim();
+        vm.warp(deadline);
+        vm.prank(DEV);
+        usd.approve(address(bounty), type(uint256).max);
+        uint256 dispute = _appeal(id, DEV);
+        vm.prank(DEV); // a real, open appeal: only the court can rule on it
         vm.expectRevert(OpenBounty.NotCourt.selector);
-        bounty.rule(1, 1);
+        bounty.rule(dispute, 1);
+        assertEq(_state(id), 1);
         vm.prank(address(court));
         vm.expectRevert(abi.encodeWithSelector(OpenBounty.UnknownDispute.selector, 7));
         bounty.rule(7, 1);

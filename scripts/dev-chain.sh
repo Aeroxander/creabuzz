@@ -938,6 +938,40 @@ deploy_open_bounty() {
   echo "  ✓ OpenBounty at $address (manifest $(open_bounty_manifest_path))"
 }
 
+forecast_pool_manifest_path() {
+  echo "$DEPLOYMENTS_DIR/forecast-pool-${CHAIN_ID}.json"
+}
+
+forecast_pool_address() {
+  manifest_role "$(forecast_pool_manifest_path)" "forecast-pool"
+}
+
+# Guard: the pools have code and read this chain's bounties on posts.
+forecast_pool_deployed() {
+  local pools named
+  [[ -f "$(forecast_pool_manifest_path)" ]] || return 1
+  pools=$(forecast_pool_address)
+  [[ -n "$pools" && "$(code_bytes "$pools")" != "0" ]] || return 1
+  named=$(cast call "$pools" "bounties()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  [[ "$(lower "$named")" == "$(lower "$(open_bounty_address)")" ]]
+}
+
+# Money forecasts (N8): two pools of people's own money on whether a bounty on a post is paid. Test networks only.
+deploy_forecast_pool() {
+  echo
+  if forecast_pool_deployed; then
+    echo "── forecast-pool: already at $(forecast_pool_address) — skipped (idempotent)"
+    return 0
+  fi
+  local address
+  echo "── forecast-pool: deploying ForecastPool (currency $(currency_address), bounties $(open_bounty_address))"
+  address=$(create_from_artifact forecast-pool ForecastPool "$(cast abi-encode "constructor(address,address)" \
+    "$(currency_address)" "$(open_bounty_address)")")
+  write_one_role_manifest "$(forecast_pool_manifest_path)" forecast-pool "$address" "ForecastPool(currency, open bounty)"
+  forecast_pool_deployed || fail_step "forecast-pool" "the deployed pools do not read this chain's bounties on posts"
+  echo "  ✓ ForecastPool at $address (manifest $(forecast_pool_manifest_path))"
+}
+
 court_manifest_path() {
   echo "$DEPLOYMENTS_DIR/court-${CHAIN_ID}.json"
 }
@@ -1140,6 +1174,7 @@ up() {
   deploy_test_create
   deploy_court
   deploy_open_bounty
+  deploy_forecast_pool
   deploy_matched_exit
   fund_accounts
 
@@ -1159,6 +1194,7 @@ up() {
   echo "  matched exit: $(matched_exit_address) (matched-exit-$CHAIN_ID.json)"
   echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
   echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
+  echo "  forecasts:  $(forecast_pool_address) (forecast-pool-$CHAIN_ID.json)"
   echo "  web env:    VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
   echo "              VITE_CONTRIBUTOR_KITS='{\"$CHAIN_ID\":\"$(contributor_kit_address)\"}'  (lets the app start a contributor project here)"
   echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
@@ -1166,6 +1202,7 @@ up() {
   echo "              VITE_MATCHED_EXITS='{\"$CHAIN_ID\":\"$(matched_exit_address)\"}'  (lets members sell Shares to each other here, once their DAO votes for it)"
   echo "              VITE_CREATE_TOKENS='{\"$CHAIN_ID\":\"$(create_token_address)\"}' VITE_CREATE_FAUCETS='{\"$CHAIN_ID\":\"$(create_faucet_address)\"}'  (test CREATE: stakes and bonds)"
   echo "              VITE_COURTS='{\"$CHAIN_ID\":\"$(court_address)\"}'  (the court claimants appeal to)"
+  echo "              VITE_FORECAST_POOLS='{\"$CHAIN_ID\":\"$(forecast_pool_address)\"}'  (money on whether a post's bounty is paid; test money)"
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"

@@ -2,7 +2,8 @@
 
 Status: **a proposal.** Stage 1 is built for test networks: N1 and N2 (D113, D114, 2026-10-25), N3 and N4 (D115, D116,
 2026-10-26). Stage 2: N5 matched exits (D117), N6 what $CREATE is (D118, [CREATE-TOKEN.md](CREATE-TOKEN.md)) and N7
-the court with bounty appeals (D119, [COURT.md](COURT.md)) are built for test networks (2026-10-26). Twelve pieces in three stages, each with its own proposed
+the court with bounty appeals (D119, [COURT.md](COURT.md)) are built for test networks, and N8 money forecasts as a
+test-network experiment (D120, [MONEY-FORECASTS.md](MONEY-FORECASTS.md)), all on 2026-10-26. Twelve pieces in three stages, each with its own proposed
 decision row (N1 to N12), its own contract work, audit scope and, where money moves, a legal read. Each piece can be
 released on its own; accepting one does not accept the others. It follows the funding curve proposal
 ([JOIN-CURVE.md](JOIN-CURVE.md), asset rule decided as D112), the forecasts plan
@@ -268,6 +269,9 @@ Reviewer and contributor bonds can be posted in $CREATE when a work budget asks 
 - **Someone can still deliver late on purpose.** The court judges what was delivered, not why.
 
 ## 8. Money forecasts, a separate experiment (N8)
+
+**Built for test networks only as D120** ([MONEY-FORECASTS.md](MONEY-FORECASTS.md)): one question per bounty on a
+post, "will it be paid?".
 
 Two-sided pools of the forecasters' own USDC; winners split the losing pool. No market maker, no selling of
 positions, no DAO or platform money, and **no accuracy rewards paid in money**: a fixed reward per point of score pays

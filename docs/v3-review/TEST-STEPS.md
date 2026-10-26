@@ -1571,3 +1571,20 @@ By hand (the dev chain, a web build with `VITE_OPEN_BOUNTIES`, `VITE_COURTS`, `V
    **Withdraw what I'm owed.** On the post, **Pay now** sends the pot to the one who submitted.
 6. Try the other way: seal **against**, settle, and the bounty's funders can take their money back at once.
 
+## 4bn. Money forecasts (D120, 2026-10-26, test networks only)
+
+```bash
+cd contracts && forge test --match-contract ForecastPool
+pnpm --dir packages/creaton-core test        # forecastPool: when bets are open, the bars, payouts
+scripts/web-post-bounty-e2e.sh               # the first journey puts money on both sides and collects
+node scripts/contracts-mutation-check.mjs 101 102 103 104 105 106 107 108
+```
+
+By hand (a web build with `VITE_FORECAST_POOLS` too):
+
+1. Under a bounty on a post, **Money on it**: put 10 on **It will be paid** with one wallet and 5 on **It won't** with
+   another. It reads "10 … says it will be paid · 5 … says it won't."
+2. As the one who opened the bounty, only **It will be paid** is offered, with a line saying why.
+3. Once work's wait starts, the form goes. After the bounty is paid, **Settle it**, then **Collect 15** for the first
+   wallet; the second has nothing to collect.
+
