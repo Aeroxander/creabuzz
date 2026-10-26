@@ -76,7 +76,7 @@ fi
 step "deploying the summoner, the launch kit and the contributor kit"
 OUT="$BACKUP/forge.out"
 sepolia_deploy_kits "$RPC" "$KEY" "$OUT"
-grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|MatchedExit|CreateToken|CreateFaucet|CreateCourt|ForecastPool|Auction factory)" "$OUT" || tail -20 "$OUT"
+grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|MatchedExit|CreateToken|CreateFaucet|CreateCourt|ForecastPool|PayoutsFactory|Auction factory)" "$OUT" || tail -20 "$OUT"
 
 KIT=$(sepolia_role launch-kit)
 SUMMONER=$(sepolia_role summoner)
@@ -88,6 +88,7 @@ CREATE_TOKEN=$(sepolia_role create-token)
 CREATE_FAUCET=$(sepolia_role create-faucet)
 COURT=$(sepolia_role court)
 POOLS=$(sepolia_role forecast-pool)
+PAYOUTS_FACTORY=$(sepolia_role payouts-factory)
 SHARES_IMPL=$(sepolia_role shares-implementation)
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 first() { awk '{print $1}' | head -1; }
@@ -123,6 +124,8 @@ echo "  ✓ test CREATE at $CREATE_TOKEN, all of it in the faucet at $CREATE_FAU
 echo "  ✓ the court at $COURT stakes test CREATE and is paid in USDC; bounties on posts appeal to it"
 [[ "$(lower "$(cast call "$POOLS" 'bounties()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$OPEN_BOUNTY")" ]] || fail "the money forecast pools do not read these bounties on posts"
 echo "  ✓ money forecasts at $POOLS read the bounties on posts"
+[[ "$(cast codesize "$PAYOUTS_FACTORY" --rpc-url "$RPC")" != "0" ]] || fail "no code at the payouts factory $PAYOUTS_FACTORY"
+echo "  ✓ the payouts factory is at $PAYOUTS_FACTORY"
 
 # What it costs: the gas the deploy used, priced at what Sepolia charges now and at a busy day's 20 gwei. Test ETH has no
 # price, but the deployer needs this much of it from a faucet.
@@ -141,6 +144,6 @@ else
   # The block the deploy ran at is where this chain's history starts for the app: a real node refuses an event read from
   # block 0, so the build is told where to start.
   FROM_BLOCK=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).block)' "$MANIFEST")
-  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_CHAIN_RPC_URL=<a read-only Sepolia node for the page> VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_CONTRIBUTOR_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}' VITE_WORK_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${WORK_BOUNTY}\"}' VITE_OPEN_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${OPEN_BOUNTY}\"}' VITE_MATCHED_EXITS='{\"${SEPOLIA_CHAIN_ID}\":\"${MATCHED_EXIT}\"}' VITE_CREATE_TOKENS='{\"${SEPOLIA_CHAIN_ID}\":\"${CREATE_TOKEN}\"}' VITE_CREATE_FAUCETS='{\"${SEPOLIA_CHAIN_ID}\":\"${CREATE_FAUCET}\"}' VITE_COURTS='{\"${SEPOLIA_CHAIN_ID}\":\"${COURT}\"}' VITE_FORECAST_POOLS='{\"${SEPOLIA_CHAIN_ID}\":\"${POOLS}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
+  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_CHAIN_RPC_URL=<a read-only Sepolia node for the page> VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_CONTRIBUTOR_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}' VITE_WORK_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${WORK_BOUNTY}\"}' VITE_OPEN_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${OPEN_BOUNTY}\"}' VITE_MATCHED_EXITS='{\"${SEPOLIA_CHAIN_ID}\":\"${MATCHED_EXIT}\"}' VITE_CREATE_TOKENS='{\"${SEPOLIA_CHAIN_ID}\":\"${CREATE_TOKEN}\"}' VITE_CREATE_FAUCETS='{\"${SEPOLIA_CHAIN_ID}\":\"${CREATE_FAUCET}\"}' VITE_COURTS='{\"${SEPOLIA_CHAIN_ID}\":\"${COURT}\"}' VITE_FORECAST_POOLS='{\"${SEPOLIA_CHAIN_ID}\":\"${POOLS}\"}' VITE_PAYOUTS_FACTORIES='{\"${SEPOLIA_CHAIN_ID}\":\"${PAYOUTS_FACTORY}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
   echo "  (docs/sepolia-testnet.md lists the rest: the relay URL, passkey accounts, what testers need)"
 fi

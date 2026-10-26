@@ -4,7 +4,8 @@ Status: **a proposal.** Stage 1 is built for test networks: N1 and N2 (D113, D11
 2026-10-26). Stage 2: N5 matched exits (D117), N6 what $CREATE is (D118, [CREATE-TOKEN.md](CREATE-TOKEN.md)) and N7
 the court with bounty appeals (D119, [COURT.md](COURT.md)) are built for test networks, and N8 money forecasts as a
 test-network experiment (D120, [MONEY-FORECASTS.md](MONEY-FORECASTS.md)); from stage 3, N11 (where a project comes
-from, D121) is built, all on 2026-10-26. Twelve pieces in three stages, each with its own proposed
+from, D121) and N10 (payouts to holders, test networks and contributor projects, D122, [PAYOUTS.md](PAYOUTS.md))
+are built, all on 2026-10-26. Twelve pieces in three stages, each with its own proposed
 decision row (N1 to N12), its own contract work, audit scope and, where money moves, a legal read. Each piece can be
 released on its own; accepting one does not accept the others. It follows the funding curve proposal
 ([JOIN-CURVE.md](JOIN-CURVE.md), asset rule decided as D112), the forecasts plan
@@ -327,6 +328,8 @@ A pledge **buys future Shares**; it is not a donation. Backers pledge USDC towar
   only after a verified milestone.
 
 ## 10. Payouts (N10)
+
+**Built for test networks as D122** ([PAYOUTS.md](PAYOUTS.md)), for contributor projects (no locked team Shares).
 
 A $10,000 payout lowers the treasury exactly as a $10,000 exit does. What it adds: the DAO controls when and how much,
 and holders get cash without giving up Shares. This revises **D78** (no automatic payouts) and **D82** (the revenue

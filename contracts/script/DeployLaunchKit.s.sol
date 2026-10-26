@@ -79,6 +79,8 @@ contract DeployLaunchKit is Script {
         address pools = court == address(0)
             ? address(0)
             : vm.deployCode("ForecastPool.sol:ForecastPool", abi.encode(bountyCurrency, openBounty));
+        // Payouts to holders (N10) need counsel before any real money: test networks only.
+        address payoutsFactory = court == address(0) ? address(0) : vm.deployCode("Payouts.sol:PayoutsFactory");
         address matchedExit = vm.deployCode("MatchedExit.sol:MatchedExit", abi.encode(bountyCurrency));
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");
@@ -101,6 +103,7 @@ contract DeployLaunchKit is Script {
             _role("create-faucet", "CreateFaucet", createFaucet);
             _role("court", "CreateCourt", court);
             _role("forecast-pool", "ForecastPool", pools);
+            _role("payouts-factory", "PayoutsFactory", payoutsFactory);
         }
         _role("auction-factory", "Auction factory", ccaFactory);
         _writeManifest();

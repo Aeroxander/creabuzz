@@ -15,6 +15,7 @@ import {
 } from "./daoActions.ts";
 import { MARKET_SIGNATURES } from "./marketActions.ts";
 import { describeExitSales } from "./matchedExit.ts";
+import { describePayouts } from "./payouts.ts";
 import { describeTrading } from "./tradingActions.ts";
 
 const sel = (key: keyof typeof MARKET_SIGNATURES) =>
@@ -172,5 +173,7 @@ export function describeDecision(
   if (trading) return trading;
   const sales = describeExitSales(action, ctx);
   if (sales) return sales;
+  const payouts = describePayouts(action, ctx);
+  if (payouts) return payouts;
   return describeAction(action, ctx);
 }

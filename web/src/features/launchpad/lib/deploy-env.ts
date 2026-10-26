@@ -15,6 +15,7 @@ import {
   daoLaunchKit,
   defaultChainPreset,
   forecastPool,
+  payoutsFactory,
   historyFromBlock,
   LOCAL_ANVIL_PRESET,
   mainnetEnabled,
@@ -157,6 +158,12 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       `VITE_FORECAST_POOLS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
     );
   }
+  const payouts = payoutsFactory(chainId, env);
+  if (value(env, "VITE_PAYOUTS_FACTORIES") && !payouts) {
+    problems.push(
+      `VITE_PAYOUTS_FACTORIES names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+    );
+  }
   const exits = matchedExit(chainId, env);
   if (value(env, "VITE_MATCHED_EXITS") && !exits) {
     problems.push(
@@ -208,6 +215,9 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   summary.push(`Court: ${court ? `on (${court})` : "off"}`);
   summary.push(
     `Money forecasts: ${pools ? `on, test money only (${pools})` : "off"}`,
+  );
+  summary.push(
+    `Payouts to holders: ${payouts ? `on where a DAO votes for them (${payouts})` : "off"}`,
   );
 
   const project = value(env, "VITE_ZERODEV_PROJECT_ID");

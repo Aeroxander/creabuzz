@@ -607,6 +607,7 @@ export interface ActionDescription {
     | "slash"
     | "market"
     | "trading"
+    | "payouts"
     | "batch"
     | "unknown";
   title: string;
@@ -632,6 +633,8 @@ export interface DescribeContext {
   projectToken?: string;
   /** The matched-exit exchange this app knows on the DAO's network, so a vote naming it is told apart from one naming anything else. */
   matchedExit?: string;
+  /** The payout module factory this app knows on the DAO's network (N10). */
+  payoutsFactory?: string;
   /** Each work budget's bond (its token, name and decimals), by lowercase budget address, so an amount can be put in words. */
   bonds?: Readonly<
     Record<string, { token: string; symbol: string; decimals: number }>

@@ -47,6 +47,7 @@ if [[ "$CHAIN" == "local" ]]; then
   KIT="$(role "$DEPLOYMENTS/dao-launch-kit-31337.json" launch-kit)"
   BOUNTY="$(role "$DEPLOYMENTS/work-bounty-31337.json" work-bounty)"
   MATCHED_EXIT="$(role "$DEPLOYMENTS/matched-exit-31337.json" matched-exit)"
+  PAYOUTS_FACTORY="$(role "$DEPLOYMENTS/payouts-factory-31337.json" payouts-factory)"
   # The newcomer who buys Shares from a member (N5) brings 100 dev USDC.
   cast send "$CURRENCY" "mint(address,uint256)" "$MANAGER" 100000000 --private-key "$KEY_FOUNDER" --rpc-url "$RPC" >/dev/null \
     || fail "could not give the newcomer dev USDC"
@@ -67,6 +68,7 @@ else
   KIT="$(sepolia_role launch-kit)"
   BOUNTY="$(sepolia_role work-bounty)"
   MATCHED_EXIT="$(sepolia_role matched-exit)"
+  PAYOUTS_FACTORY="$(sepolia_role payouts-factory)"
   FROM_BLOCK="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).block??"")' "$SEPOLIA_MANIFEST")"
   [[ "$FROM_BLOCK" =~ ^[0-9]+$ ]] || fail "the manifest names no deploy block"
   CURRENCY="$SEPOLIA_USDC"
@@ -125,11 +127,12 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   env "${BUILD_ENV[@]}" VITE_CONTRIBUTOR_KITS="{\"${CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}" \
     VITE_DAO_LAUNCH_KITS="{\"${CHAIN_ID}\":\"${KIT}\"}" VITE_WORK_BOUNTIES="{\"${CHAIN_ID}\":\"${BOUNTY}\"}" \
     VITE_MATCHED_EXITS="{\"${CHAIN_ID}\":\"${MATCHED_EXIT}\"}" \
+    VITE_PAYOUTS_FACTORIES="{\"${CHAIN_ID}\":\"${PAYOUTS_FACTORY}\"}" \
     node_modules/.bin/vite build >/dev/null 2>&1 || fail "web build failed"
 fi
 step "running the browser spec"
 FIRST_BLOCK="$(cast block-number --rpc-url "$RPC")"
-E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_BOUNTY="$BOUNTY" E2E_MATCHED_EXIT="$MATCHED_EXIT" E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" \
+E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_BOUNTY="$BOUNTY" E2E_MATCHED_EXIT="$MATCHED_EXIT" E2E_PAYOUTS="$PAYOUTS_FACTORY" E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" \
   E2E_CONTRIBUTOR="$CONTRIBUTOR" E2E_MANAGER="$MANAGER" E2E_FOUNDER="$FOUNDER" \
   node_modules/.bin/playwright test tests/e2e/contributor-journey.spec.ts --project=smoke --reporter=list "$@"
 

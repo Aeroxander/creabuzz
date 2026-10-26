@@ -1602,3 +1602,23 @@ By hand:
 2. Start another and pick the first under **Built on**: the form says the first invites it and what it asks. Its
    overview says **Built on <first>.**, and the first's overview lists it under **Built on this**.
 
+## 4bp. Payouts to holders (D122, 2026-10-26, test networks, contributor projects)
+
+```bash
+cd contracts && forge test --match-contract Payouts
+node scripts/check-majeur-fork.mjs           # the DAO's payout hook stays inside its patch region
+pnpm --dir packages/creaton-core test        # payouts: the two votes, their words, the reader
+scripts/web-contributor-e2e.sh               # vote payouts, revenue arrives, split, the contributor collects
+node scripts/contracts-mutation-check.mjs 109 110 111 112 113 114 115 116 117 118 119
+```
+
+By hand (a web build with `VITE_PAYOUTS_FACTORIES`):
+
+1. On a contributor project, **Funds → Payouts to holders** says none yet. **Decisions → New decision → Pay holders**:
+   50% reads **Pay holders 50% of revenue**. Open it and carry it out.
+2. Funds now shows the revenue address. Send it 100 dev USDC from any wallet: **100 USDC of revenue is waiting to be
+   split.** **Split it now**: the treasury gains 50; each holder's share shows as **You can collect …**.
+3. Transfer or sell some Shares, then split more revenue: the buyer only shares in the second one; the seller keeps the
+   first.
+4. **Pay holders** again now offers an amount from the treasury: 20 reads **Pay holders 20 USDC from the treasury**.
+

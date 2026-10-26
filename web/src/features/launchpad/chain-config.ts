@@ -152,6 +152,8 @@ export interface ChainEnv {
   VITE_COURTS?: string;
   /** The money forecast pools per chain, as JSON (N8): test networks only, on bounties on posts. */
   VITE_FORECAST_POOLS?: string;
+  /** The payout module factory per chain, as JSON (N10): test networks only; DAOs vote to start payouts with it. */
+  VITE_PAYOUTS_FACTORIES?: string;
   /**
    * The block each chain's history starts at, as JSON: `{"11155111":7654321}`. Name the block the launch kit was deployed
    * at: every contract the app reads events from was made after it. Only used when a node refuses a read of the whole
@@ -240,6 +242,14 @@ export function createToken(
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
   return addressForChain(env?.VITE_CREATE_TOKENS, chainId);
+}
+
+/** The payout module factory on `chainId`, or null when the build does not name one (N10, test networks only). */
+export function payoutsFactory(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_PAYOUTS_FACTORIES, chainId);
 }
 
 /** The money forecast pools on `chainId`, or null when the build does not name them (N8, test networks only). */

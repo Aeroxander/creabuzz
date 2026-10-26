@@ -30,6 +30,8 @@ const KIT = process.env.E2E_KIT ?? "";
 const BOUNTY = process.env.E2E_BOUNTY ?? "";
 /** The matched-exit exchange (N5); without one the journey skips the sales between members. */
 const MATCHED_EXIT = process.env.E2E_MATCHED_EXIT ?? "";
+/** The payout module factory (N10); without one the journey skips payouts. */
+const PAYOUTS = process.env.E2E_PAYOUTS ?? "";
 const REVIEWER1 = process.env.E2E_REVIEWER1 ?? "";
 const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
 const CONTRIBUTOR = process.env.E2E_CONTRIBUTOR ?? "";
@@ -710,6 +712,64 @@ test("a contributor project is started from the page, work is claimed the same d
       ]),
     ).rejects.toThrow();
   }
+
+  // ── 8. holders are paid a share of revenue (N10) ──────────────────────────────────────────────────
+  if (PAYOUTS) {
+    await refresh(founder, "Funds");
+    await expect(founder.getByTestId("payouts-none")).toBeVisible({
+      timeout: 30_000,
+    });
+    await refresh(founder, "Decisions");
+    await founder.getByTestId("decision-new").click();
+    await founder.getByTestId("decision-kind-payouts").click();
+    await expect(founder.getByTestId("decision-draft-title")).toHaveText(
+      "Pay holders 50% of revenue",
+      { timeout: 30_000 },
+    );
+    await founder.getByTestId("decision-draft-submit").click();
+    await expect(founder.getByTestId("decision-opened")).toBeVisible({
+      timeout: 60_000,
+    });
+    // It runs on the DAO itself: the full vote.
+    await carryOut(founder, 175_000, 90_000);
+    const revenueAddress = wordAddress(await call(dao, "0xa247bc32"));
+    expect(revenueAddress).not.toBe(`0x${"0".repeat(40)}`);
+    // A customer pays the project 100 USDC at its revenue address.
+    await rpc("eth_sendTransaction", [
+      {
+        from: FOUNDER_WALLET,
+        to: currency,
+        data: `0xa9059cbb${addressArg(revenueAddress)}${100_000_000n.toString(16).padStart(64, "0")}`,
+      },
+    ]);
+    await refresh(founder, "Funds");
+    await expect(founder.getByTestId("payouts-waiting")).toContainText(
+      "100 USDC of revenue is waiting to be split.",
+      { timeout: 30_000 },
+    );
+    const treasuryBefore = await usdcOf(dao);
+    await founder.getByTestId("payouts-distribute").click();
+    await expect(founder.getByTestId("payouts-waiting")).toHaveCount(0, {
+      timeout: 60_000,
+    });
+    expect(await usdcOf(dao)).toBe(treasuryBefore + 50_000_000n);
+    // Half of it is shared by every Share outside the DAO, by how many each holds.
+    const supply = BigInt(await call(shares, "0x18160ddd"));
+    const counting = supply - (await sharesOf(dao));
+    const due = (50_000_000n * (await sharesOf(CONTRIBUTOR))) / counting;
+    await refresh(contributor, "Funds");
+    await expect(contributor.getByTestId("payouts-owed")).toContainText(
+      "You can collect",
+      { timeout: 30_000 },
+    );
+    const before = await usdcOf(CONTRIBUTOR);
+    await contributor.getByTestId("payouts-collect").click();
+    await expect(contributor.getByTestId("payouts-collect")).toHaveCount(0, {
+      timeout: 60_000,
+    });
+    const got = (await usdcOf(CONTRIBUTOR)) - before;
+    expect(got === due || got === due - 1n).toBe(true);
+  }
 });
 
 /** A claim's row on the Work tab, by the name it was filed under. */
@@ -811,14 +871,14 @@ test("several people earn in one contributor project: two first projects, and a 
   await founder.getByTestId("contributor-project-name-1").fill("examples");
   await founder.getByTestId("contributor-project-shares-1").fill("30");
   await founder.getByTestId("contributor-project-check-1").fill(EXAMPLES);
-  // Built on Docs Commons (N11), when the first journey made it in this run.
-  const builtOn =
-    (await founder
-      .getByTestId("contributor-built-on")
-      .locator("option", { hasText: "Docs Commons" })
-      .count()) > 0;
-  expect(builtOn || !docsCommonsPublished).toBe(true);
+  // Built on Docs Commons (N11), whenever the first journey made it in this run: wait for the list to have it.
+  const builtOn = docsCommonsPublished;
   if (builtOn) {
+    await expect(
+      founder
+        .getByTestId("contributor-built-on")
+        .locator("option", { hasText: "Docs Commons" }),
+    ).toHaveCount(1, { timeout: 30_000 });
     await founder
       .getByTestId("contributor-built-on")
       .selectOption({ label: "Docs Commons" });
@@ -847,6 +907,7 @@ test("several people earn in one contributor project: two first projects, and a 
   await founder.getByTestId("contributor-open-project").click();
   if (builtOn) {
     // Both pages say where it comes from: here, and on Docs Commons.
+    await founder.getByRole("tab", { name: "Overview" }).click();
     const remix = founder.getByTestId("remix-card");
     await expect(remix.getByTestId("remix-built-on")).toHaveText(
       "Built on Docs Commons.",

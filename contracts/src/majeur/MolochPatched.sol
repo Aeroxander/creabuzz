@@ -4,6 +4,11 @@ pragma solidity ^0.8.30;
 import {AllocationVoting} from "../AllocationVoting.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../TreasuryMandate.sol";
 import {IVotingWeight} from "../VotingWeight.sol";
+
+/// @notice A payout module (N10) told of every change in who holds the DAO's Shares and Loot.
+interface IPayoutsHook {
+    function ownershipChanged(bool isLoot, address from, address to, uint256 amount) external;
+}
 // @@CREABUZZ PATCH END seam-interface
 
 /**
@@ -64,6 +69,14 @@ contract Moloch {
     address immutable policyImpl;
     bool public castingVote;
     bool public convertingLoot;
+    /// @notice The payout module (N10), chosen once by vote; told of every change in who holds Shares or Loot.
+    address public payouts;
+
+    /// @notice Name the payout module, once. It must name this DAO.
+    function setPayouts(address module) public payable onlyDAO {
+        require(payouts == address(0) && module != address(0), NotOk());
+        payouts = module;
+    }
     // (No `setVotingWeight`: the policy is fixed at creation, and a stub that only reverted cost bytes this contract
     // does not have.)
 
@@ -151,6 +164,8 @@ contract Moloch {
         bool isLoot = msg.sender == address(loot);
         require(isLoot || msg.sender == address(shares), Unauthorized());
         if (votingWeight != address(0)) AllocationVoting(votingWeight).ownershipChanged(isLoot, from, to, amount);
+        address module = payouts;
+        if (module != address(0)) IPayoutsHook(module).ownershipChanged(isLoot, from, to, amount);
     }
 
     /// @notice Authenticate native Shares delegation against the sole allocation ledger.

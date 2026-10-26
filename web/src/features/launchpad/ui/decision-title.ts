@@ -1,5 +1,5 @@
 import { recordSaleCurrency } from "../chain";
-import { matchedExit } from "../chain-config";
+import { matchedExit, payoutsFactory } from "../chain-config";
 import type { DescribeContext } from "../lib/dao-actions";
 import { describeDecision } from "../lib/decision-describe";
 import type { Decision } from "../lib/decisions";
@@ -55,6 +55,7 @@ export function decisionTitler(input: {
     bonds,
     projectToken,
     matchedExit: matchedExit(launch.record.chainId ?? null) ?? undefined,
+    payoutsFactory: payoutsFactory(launch.record.chainId ?? null) ?? undefined,
     label,
     currency: launch.record.currency ?? undefined,
     currencySymbol: sale?.kind === "custom" ? "USDC" : sale?.symbol,

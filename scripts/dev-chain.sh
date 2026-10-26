@@ -972,6 +972,29 @@ deploy_forecast_pool() {
   echo "  ✓ ForecastPool at $address (manifest $(forecast_pool_manifest_path))"
 }
 
+payouts_factory_manifest_path() {
+  echo "$DEPLOYMENTS_DIR/payouts-factory-${CHAIN_ID}.json"
+}
+
+payouts_factory_address() {
+  manifest_role "$(payouts_factory_manifest_path)" "payouts-factory"
+}
+
+# Payouts to holders (N10): the factory DAOs vote to make their payout module with. Test networks only.
+deploy_payouts_factory() {
+  echo
+  local address=""
+  [[ -f "$(payouts_factory_manifest_path)" ]] && address=$(payouts_factory_address)
+  if [[ -n "$address" && "$(code_bytes "$address")" != "0" ]]; then
+    echo "── payouts-factory: already at $address — skipped (idempotent)"
+    return 0
+  fi
+  echo "── payouts-factory: deploying PayoutsFactory"
+  address=$(create_from_artifact payouts-factory Payouts 0x PayoutsFactory)
+  write_one_role_manifest "$(payouts_factory_manifest_path)" payouts-factory "$address" "PayoutsFactory"
+  echo "  ✓ PayoutsFactory at $address (manifest $(payouts_factory_manifest_path))"
+}
+
 court_manifest_path() {
   echo "$DEPLOYMENTS_DIR/court-${CHAIN_ID}.json"
 }
@@ -1049,18 +1072,19 @@ create_deployed() {
   [[ "$(lower "$named")" == "$(lower "$token")" ]]
 }
 
-# Deploy one contract from its artifact with ABI-encoded constructor args; prints the address. $1 role, $2 contract, $3 args.
+# Deploy one contract from its artifact with ABI-encoded constructor args; prints the address. $1 role, $2 the source file's
+# name (src/$2.sol), $3 args, $4 the contract in it when it is not named like the file.
 create_from_artifact() {
-  local role=$1 contract=$2 args=$3 bytecode receipt address
+  local role=$1 contract=$2 args=$3 name=${4:-$2} bytecode receipt address
   if ! (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build "src/$contract.sol") >/dev/null; then
     fail_step "$role" "forge build src/$contract.sol failed"
   fi
-  bytecode=$(artifact_field "$REPO_ROOT/contracts/out/$contract.sol/$contract.json" bytecode.object) \
-    || fail_step "$role" "cannot read the $contract artifact"
+  bytecode=$(artifact_field "$REPO_ROOT/contracts/out/$contract.sol/$name.json" bytecode.object) \
+    || fail_step "$role" "cannot read the $name artifact"
   if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
       --create "0x${bytecode#0x}${args#0x}" 2>&1); then
     echo "$receipt" >&2
-    fail_step "$role" "cast send --create $contract failed"
+    fail_step "$role" "cast send --create $name failed"
   fi
   address=$(node -e 'console.log(JSON.parse(process.argv[1]).contractAddress ?? "")' "$receipt")
   [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] || fail_step "$role" "no code at ${address:-<none>}"
@@ -1175,6 +1199,7 @@ up() {
   deploy_court
   deploy_open_bounty
   deploy_forecast_pool
+  deploy_payouts_factory
   deploy_matched_exit
   fund_accounts
 
@@ -1195,6 +1220,7 @@ up() {
   echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
   echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
   echo "  forecasts:  $(forecast_pool_address) (forecast-pool-$CHAIN_ID.json)"
+  echo "  payouts:    $(payouts_factory_address) (payouts-factory-$CHAIN_ID.json)"
   echo "  web env:    VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
   echo "              VITE_CONTRIBUTOR_KITS='{\"$CHAIN_ID\":\"$(contributor_kit_address)\"}'  (lets the app start a contributor project here)"
   echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
@@ -1203,6 +1229,7 @@ up() {
   echo "              VITE_CREATE_TOKENS='{\"$CHAIN_ID\":\"$(create_token_address)\"}' VITE_CREATE_FAUCETS='{\"$CHAIN_ID\":\"$(create_faucet_address)\"}'  (test CREATE: stakes and bonds)"
   echo "              VITE_COURTS='{\"$CHAIN_ID\":\"$(court_address)\"}'  (the court claimants appeal to)"
   echo "              VITE_FORECAST_POOLS='{\"$CHAIN_ID\":\"$(forecast_pool_address)\"}'  (money on whether a post's bounty is paid; test money)"
+  echo "              VITE_PAYOUTS_FACTORIES='{\"$CHAIN_ID\":\"$(payouts_factory_address)\"}'  (DAOs vote to pay holders a share of revenue)"
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"

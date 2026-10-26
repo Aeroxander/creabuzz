@@ -32,7 +32,8 @@ import { isContributorProject } from "../lib/funding";
 import { useQuery } from "@tanstack/react-query";
 import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
 import { erc20BalanceOf, getRpcEndpoint } from "../chain";
-import { localUsdcAddress, matchedExit } from "../chain-config";
+import { localUsdcAddress, matchedExit, payoutsFactory } from "../chain-config";
+import { PayoutsForm } from "./PayoutsForm";
 import { ExitSalesForm } from "./ExitSalesForm";
 
 type Kind =
@@ -47,7 +48,8 @@ type Kind =
   | "slash"
   | "close"
   | "trading"
-  | "sales";
+  | "sales"
+  | "payouts";
 
 /** The decisions whose forms pick from the DAO's work budgets and claims. */
 const WORK_KINDS: ReadonlySet<Kind> = new Set([
@@ -121,6 +123,12 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
       "Let members who want out sell Shares to people who want in, at a price they choose, or turn that off. It can start only 30 days after the vote.",
   },
   {
+    id: "payouts",
+    label: "Pay holders",
+    about:
+      "Share revenue with everyone holding Shares or Loot, or pay them from the treasury.",
+  },
+  {
     id: "pay",
     label: "Pay from the treasury",
     about:
@@ -185,6 +193,9 @@ export function DecisionComposer({
   const exitExchange = matchedExit(ctx.chainId ?? null);
   const offered = (id: Kind): boolean => {
     if (id === "sales") return exitExchange !== null && contributor;
+    // Payouts count every holder from when they hold; locked team Shares are not handled, so contributor projects only.
+    if (id === "payouts")
+      return payoutsFactory(ctx.chainId ?? null) !== null && contributor;
     if (!contributor) return true;
     if (id === "slash")
       return (
@@ -422,6 +433,15 @@ export function DecisionComposer({
               ctx={ctx}
               gate={gate}
               key={`c${formKey}`}
+              onSubmit={submit}
+            />
+          ) : kind === "payouts" ? (
+            <PayoutsForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`o${formKey}`}
               onSubmit={submit}
             />
           ) : kind === "sales" ? (
