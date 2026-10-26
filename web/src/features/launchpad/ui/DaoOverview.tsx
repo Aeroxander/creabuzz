@@ -43,6 +43,7 @@ import { useWalletLabels } from "../use-wallet-labels";
 import { useRunway } from "../use-runway";
 import { useWorkBounties } from "../use-work-bounties";
 import { RunwayCard } from "./RunwayCard";
+import { RemixCard } from "./RemixCard";
 
 export type OverviewTarget =
   | "decisions"
@@ -415,6 +416,8 @@ export function DaoOverview({
         launch={launch}
         onOpen={() => onOpen("milestones")}
       />
+
+      <RemixCard launch={launch} />
 
       {runway.data && sale ? (
         <RunwayCard

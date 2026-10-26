@@ -41,6 +41,26 @@ function mirror(kind, pubkey, author, slug, createdAt = 110, tags = []) {
   };
 }
 
+test("a record says what it is built on and its remix terms; the link is not a linked project (N11)", () => {
+  const remix = record(BOB, "fork", 100, {
+    builtOn: { author: ALICE, id: "nebula" },
+    remixTerms: { invited: false, asks: "" },
+  });
+  remix.tags.push(["a", `37001:${ALICE}:nebula`, "", "built-on"]);
+  remix.tags.push(["a", `30621:${ALICE}:repo`]);
+  const [launch] = buildLaunches([remix]);
+  assert.deepEqual(launch.record.builtOn, { author: ALICE, id: "nebula" });
+  assert.deepEqual(launch.record.remixTerms, {
+    invited: false,
+    asks: "",
+    offers: [],
+  });
+  assert.deepEqual(launch.record.projects, [`30621:${ALICE}:repo`]);
+  const plain = buildLaunches([record(ALICE, "nebula")])[0];
+  assert.equal(plain.record.builtOn, null);
+  assert.equal(plain.record.remixTerms, null);
+});
+
 test("the newest record per author and slug wins", () => {
   const launches = buildLaunches([
     record(ALICE, "nebula", 100),

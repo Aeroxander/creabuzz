@@ -67,6 +67,8 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     ipRecord: null,
     revenuePledge: null,
     workAreas: [],
+    builtOn: null,
+    remixTerms: null,
     paramsHash: `0x${"ca".repeat(32)}`,
     website: null,
     image: null,

@@ -91,6 +91,9 @@ async function launchedSince(block: bigint) {
   ).filter((log) => log.topics[0] === LAUNCHED);
 }
 
+/** Set once the first journey published Docs Commons, which invites projects built on it: the second must then use it. */
+let docsCommonsPublished = false;
+
 /** Set by a test: the stub server refuses work areas' words until it is cleared. */
 let refuseWorkAreaWords = false;
 
@@ -236,6 +239,12 @@ test("a contributor project is started from the page, work is claimed the same d
     .fill(`${REVIEWER1}\n${REVIEWER2}`);
   await founder.getByTestId("contributor-project-name").fill("docs");
   await founder.getByTestId("contributor-project-check").fill(CHECK);
+  // Others may build on Docs Commons (N11): the second journey's project does.
+  await founder.getByTestId("contributor-remix-invited").check();
+  await founder
+    .getByTestId("contributor-remix-asks")
+    .fill("Credit Docs Commons on your page.");
+  docsCommonsPublished = true;
   await expect(founder.getByTestId("contributor-gate")).toHaveCount(0, {
     timeout: 20_000,
   });
@@ -802,6 +811,21 @@ test("several people earn in one contributor project: two first projects, and a 
   await founder.getByTestId("contributor-project-name-1").fill("examples");
   await founder.getByTestId("contributor-project-shares-1").fill("30");
   await founder.getByTestId("contributor-project-check-1").fill(EXAMPLES);
+  // Built on Docs Commons (N11), when the first journey made it in this run.
+  const builtOn =
+    (await founder
+      .getByTestId("contributor-built-on")
+      .locator("option", { hasText: "Docs Commons" })
+      .count()) > 0;
+  expect(builtOn || !docsCommonsPublished).toBe(true);
+  if (builtOn) {
+    await founder
+      .getByTestId("contributor-built-on")
+      .selectOption({ label: "Docs Commons" });
+    await expect(founder.getByTestId("contributor-built-on-fit")).toHaveText(
+      "Docs Commons invites projects built on it, and asks: Credit Docs Commons on your page.",
+    );
+  }
   await expect(founder.getByTestId("contributor-gate")).toHaveCount(0, {
     timeout: 20_000,
   });
@@ -821,6 +845,27 @@ test("several people earn in one contributor project: two first projects, and a 
     BigInt(await call(shares, `0x70a08231${addressArg(holder)}`));
 
   await founder.getByTestId("contributor-open-project").click();
+  if (builtOn) {
+    // Both pages say where it comes from: here, and on Docs Commons.
+    const remix = founder.getByTestId("remix-card");
+    await expect(remix.getByTestId("remix-built-on")).toHaveText(
+      "Built on Docs Commons.",
+      { timeout: 30_000 },
+    );
+    await expect(remix.getByTestId("remix-terms")).toHaveText(
+      "This project doesn't invite others to build on it.",
+    );
+    await remix.getByRole("link", { name: "Docs Commons" }).click();
+    await expect(
+      founder.getByTestId("remix-card").getByTestId("remix-children"),
+    ).toHaveText("Built on this: Field Guide.", { timeout: 30_000 });
+    await expect(
+      founder.getByTestId("remix-card").getByTestId("remix-terms"),
+    ).toHaveText(
+      "Others may build on this project. It asks: Credit Docs Commons on your page.",
+    );
+    await founder.goto(path("overview"));
+  }
   await founder.getByRole("tab", { name: "Work" }).click();
   await expect(founder.getByTestId("work-projects")).toContainText("guide", {
     timeout: 30_000,

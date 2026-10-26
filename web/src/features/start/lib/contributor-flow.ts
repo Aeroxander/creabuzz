@@ -28,6 +28,7 @@ import {
   CALL_SUMMONER,
   type ContributorDraft,
   contributorRecordInput,
+  remixFromDraft,
   contributorTerms,
   createAddress,
   encodeKitLaunch,
@@ -198,6 +199,7 @@ export async function runContributorStart(
             dao: job.dao as string,
             shares: job.shares as string,
             currency: job.currency,
+            remix: remixFromDraft(job.draft),
           }),
         );
         job = { ...job, recorded: true };

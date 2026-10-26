@@ -68,6 +68,9 @@ Tags:
 - `["a", "30621:<owner-hex>:<project>", ...]` — linked NIP-MP projects.
   A launch asserts grouping only; it gains no authority over member
   repositories (same rule as NIP-MP).
+- `["a", "37001:<author-hex>:<launch-id>", "", "built-on"]` — the launch this one is built on (N11). At most one; it
+  matches the `builtOn` content field. A parent finds the launches built on it with `#a:[its coordinate]`. It claims
+  nothing over the parent.
 - `["team", <hex-pubkey>, <role>]` — founders/team. `role` is a free string
   (`founder`, `engineer`, ...). Clients resolve seed weights offchain; the
   chain never reads this tag.
@@ -123,6 +126,12 @@ display hint; the chain determines the truth. `tokenPlan` (optional) records
 a mint intent — `{mode: "mint", name, symbol, supply}` in whole tokens —
 when the founder chose mint-over-import in the wizard; the `token` tag is
 added later once the apptoken deploys.
+
+`builtOn` (optional, N11) is `{author, id}` of the launch this one is built on, with the `a` tag above. `remixTerms`
+(optional, N11) is `{invited, asks, offers}`: whether the project invites launches built on it, what it asks in return
+in its own words (at most 500 characters; nothing in it is enforced), and what a launch built on it gets (any of
+`name`, `assets`, `announce`, `contributors`). Clients say whether a launch's IP record (D38) fits its parent's
+licence and terms; they never present remix terms as taking back rights an open licence gave.
 
 **Authority.** Replaceable only by its signer. The signer SHOULD be the
 founder key (or a team key whose members are listed in `team` tags).

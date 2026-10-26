@@ -752,7 +752,7 @@ const MUTATIONS = [
     "N8: settles no before refunds open",
     "contracts/src/ForecastPool.sol",
     "else if (bounties.refundsOpen(id)) outcome = NO;",
-    "else outcome = NO;",
+    "else if (true) outcome = NO;",
     "test/ForecastPool.t.sol",
   ],
   [

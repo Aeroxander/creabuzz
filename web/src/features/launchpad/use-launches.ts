@@ -26,6 +26,7 @@ import {
 import { hasChat } from "./lib/launch-chat";
 import { fundingContent, type FundingStatus } from "./lib/funding";
 import { type IpRecord, ipRecordContent } from "./lib/ip-record";
+import { type BuiltOn, builtOnCoordinate, type RemixTerms } from "./lib/remix";
 import { type RevenuePledge, revenuePledgeContent } from "./lib/revenue-pledge";
 import { supersedingTime } from "./lib/record-time";
 import { launchQueryFilter } from "./lib/launch-query";
@@ -366,6 +367,10 @@ export interface CreateLaunchInput {
   revenuePledge?: RevenuePledge;
   /** The first work areas' words, exactly as hashed, so people can see what finished work looks like. */
   workAreas?: { name: string; check: string }[];
+  /** The project this one is built on (N11). */
+  builtOn?: BuiltOn;
+  /** Whether others may build on this project, and on what terms (N11). */
+  remixTerms?: RemixTerms;
 }
 
 /** Every channel the record binds: the picked ones plus the chat rooms, once each. */
@@ -401,6 +406,9 @@ export function useCreateLaunch() {
       if (input.verifierSet) tags.push(["verifier-set", input.verifierSet]);
       for (const channel of boundChannelIds(input))
         tags.push(["buzz-channel", channel]);
+      // The parent's record, so a parent finds the projects built on it with one query (N11).
+      if (input.builtOn)
+        tags.push(["a", builtOnCoordinate(input.builtOn), "", "built-on"]);
       const content: Record<string, unknown> = {
         pitch: input.pitch,
         stage: input.stage,
@@ -441,6 +449,8 @@ export function useCreateLaunch() {
           name: area.name,
           check: area.check,
         }));
+      if (input.builtOn) content.builtOn = input.builtOn;
+      if (input.remixTerms) content.remixTerms = input.remixTerms;
       if (input.asAgent) {
         return publishMirror(
           { kind: KIND_LAUNCH_RECORD, tags, content },

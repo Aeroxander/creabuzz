@@ -1588,3 +1588,17 @@ By hand (a web build with `VITE_FORECAST_POOLS` too):
 3. Once work's wait starts, the form goes. After the bounty is paid, **Settle it**, then **Collect 15** for the first
    wallet; the second has nothing to collect.
 
+## 4bo. Built on another project (D121, 2026-10-26)
+
+```bash
+pnpm --dir web test                # remix: the link, the terms, the licence fit; the record keeps both on save
+scripts/web-contributor-e2e.sh     # Docs Commons invites remixes; Field Guide is built on it; both pages say so
+```
+
+By hand:
+
+1. Start a contributor project and tick **Others may build on this project**, with "Credit us on your page." Its
+   overview says **Others may build on this project. It asks: Credit us on your page.**
+2. Start another and pick the first under **Built on**: the form says the first invites it and what it asks. Its
+   overview says **Built on <first>.**, and the first's overview lists it under **Built on this**.
+

@@ -30,6 +30,7 @@ import {
   remainingToGraduate,
 } from "../lib/amounts";
 import { IpRecordCard } from "./IpRecordCard";
+import { RemixCard } from "./RemixCard";
 import { RevenuePledgeCard } from "./RevenuePledgeCard";
 import { AboutProjectCard } from "./AboutProjectCard";
 import { MilestoneSummaryCard } from "./MilestoneSummaryCard";
@@ -284,6 +285,7 @@ export function OverviewTab({
         <PowersSection record={record} />
       ) : null}
       <IpRecordCard launch={launch} />
+      <RemixCard launch={launch} />
       {record.tokenPlan?.mode === "dao" ? (
         <RevenuePledgeCard launch={launch} />
       ) : null}

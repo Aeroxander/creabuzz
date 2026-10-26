@@ -8,6 +8,13 @@ import { parseWikiTag } from "./lib/draft-proposal.ts";
 import { parseFunding, type FundingStatus } from "./lib/funding.ts";
 import { type IpRecord, parseIpRecord } from "./lib/ip-record.ts";
 import {
+  type BuiltOn,
+  isBuiltOnCoordinate,
+  parseBuiltOn,
+  parseRemixTerms,
+  type RemixTerms,
+} from "./lib/remix.ts";
+import {
   parseRevenuePledge,
   type RevenuePledge,
 } from "./lib/revenue-pledge.ts";
@@ -174,6 +181,10 @@ export interface LaunchRecord {
    * can see what finished work looks like; they count only when they hash to a work area's check on the chain.
    */
   workAreas: { name: string; check: string }[];
+  /** The project this one is built on (N11), or null. */
+  builtOn: BuiltOn | null;
+  /** Whether this project invites projects built on it, what it asks and offers (N11), or null when it never said. */
+  remixTerms: RemixTerms | null;
   tokenPlan: {
     /**
      * "mint": a reserve-backed apptoken minted before the sale. "dao": the project's own Shares, created
@@ -450,7 +461,8 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     docs: strs(body.docs),
     channels: tagValues(event, "buzz-channel"),
     chat: parseLaunchChat(body.chat),
-    projects: tagValues(event, "a"),
+    // Linked projects; a built-on link (a launch record's coordinate) is read as `builtOn` instead.
+    projects: tagValues(event, "a").filter((a) => !isBuiltOnCoordinate(a)),
     agent: tagValue(event, "agent"),
     team: event.tags
       .filter((t) => t[0] === "team" && t.length >= 3)
@@ -475,6 +487,8 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     ipRecord: parseIpRecord(body.ipRecord),
     revenuePledge: parseRevenuePledge(body.revenuePledge),
     workAreas: parseWorkAreas(body.workAreas),
+    builtOn: parseBuiltOn(body.builtOn),
+    remixTerms: parseRemixTerms(body.remixTerms),
     tokenPlan: parseTokenPlan(contentObject(event).tokenPlan),
   };
 }

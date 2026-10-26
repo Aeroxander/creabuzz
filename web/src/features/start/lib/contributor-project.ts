@@ -29,6 +29,12 @@ import { hashText, idWord } from "@creaton/core/launchpad/work.ts";
 import type { CreateLaunchInput } from "../../launchpad/use-launches.ts";
 import { suggestSymbol } from "../../launchpad/models.ts";
 import { slugFromName } from "../../launchpad/lib/wizard.ts";
+import {
+  type BuiltOn,
+  parseBuiltOn,
+  REMIX_ASKS_MAX,
+  type RemixTerms,
+} from "../../launchpad/lib/remix.ts";
 
 export const NAME_MAX = 60;
 export const PITCH_MAX = 140;
@@ -80,6 +86,30 @@ export interface ContributorDraft {
   quorum: string;
   /** The first projects, one to eight. */
   projects: ProjectDraft[];
+  /** The project this one is built on, as "author:id" of its record, or empty (N11). Optional: older drafts lack it. */
+  builtOn?: string;
+  /** Whether others may build on this project (N11). */
+  remixInvited?: boolean;
+  /** What this project asks of projects built on it, in words (N11). */
+  remixAsks?: string;
+}
+
+/** The draft's remix choices as record fields (N11): what it is built on, and whether others may build on it. */
+export function remixFromDraft(
+  draft: Pick<ContributorDraft, "builtOn" | "remixInvited" | "remixAsks">,
+): { builtOn?: BuiltOn; remixTerms: RemixTerms } {
+  const [author, id] = (draft.builtOn ?? "").split(":");
+  const builtOn = parseBuiltOn({ author, id });
+  return {
+    ...(builtOn ? { builtOn } : {}),
+    remixTerms: {
+      invited: draft.remixInvited === true,
+      asks: draft.remixInvited
+        ? (draft.remixAsks ?? "").trim().slice(0, REMIX_ASKS_MAX)
+        : "",
+      offers: [],
+    },
+  };
 }
 
 /** A first project with nothing typed, sized at the per-project limit. */
@@ -564,6 +594,8 @@ export function contributorRecordInput(input: {
   dao: string;
   shares: string;
   currency: string;
+  /** What it is built on and its remix terms (N11). */
+  remix?: { builtOn?: BuiltOn; remixTerms: RemixTerms };
 }): CreateLaunchInput {
   return {
     id: input.launchId,
@@ -599,5 +631,6 @@ export function contributorRecordInput(input: {
       name: p.name,
       check: p.check,
     })),
+    ...(input.remix ?? {}),
   };
 }

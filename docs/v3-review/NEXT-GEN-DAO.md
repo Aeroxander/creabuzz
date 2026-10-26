@@ -3,7 +3,8 @@
 Status: **a proposal.** Stage 1 is built for test networks: N1 and N2 (D113, D114, 2026-10-25), N3 and N4 (D115, D116,
 2026-10-26). Stage 2: N5 matched exits (D117), N6 what $CREATE is (D118, [CREATE-TOKEN.md](CREATE-TOKEN.md)) and N7
 the court with bounty appeals (D119, [COURT.md](COURT.md)) are built for test networks, and N8 money forecasts as a
-test-network experiment (D120, [MONEY-FORECASTS.md](MONEY-FORECASTS.md)), all on 2026-10-26. Twelve pieces in three stages, each with its own proposed
+test-network experiment (D120, [MONEY-FORECASTS.md](MONEY-FORECASTS.md)); from stage 3, N11 (where a project comes
+from, D121) is built, all on 2026-10-26. Twelve pieces in three stages, each with its own proposed
 decision row (N1 to N12), its own contract work, audit scope and, where money moves, a legal read. Each piece can be
 released on its own; accepting one does not accept the others. It follows the funding curve proposal
 ([JOIN-CURVE.md](JOIN-CURVE.md), asset rule decided as D112), the forecasts plan
@@ -349,6 +350,8 @@ pledge is a statement the contracts do not enforce). **This piece needs counsel 
 - **Kept separate from work:** making people forecast to receive a payout does not change what it is.
 
 ## 11. Remixes, step one: where a project comes from (N11)
+
+**Built as D121:** "Built on X" and remix terms in the launch record, both pages, and the licence fit.
 
 No money moves in this step.
 

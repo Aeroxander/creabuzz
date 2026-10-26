@@ -40,6 +40,7 @@ import type { PitchStart } from "../lib/from-pitch";
 import { useContributorStart } from "../use-contributor-start";
 import { useStartFromPitch } from "../use-start-from-pitch";
 import { FirstProjectsField } from "./FirstProjectsField";
+import { RemixFields } from "./RemixFields";
 
 const EMPTY: ContributorDraft = {
   name: "",
@@ -387,6 +388,12 @@ export function ContributorStartPage() {
               tried && issue?.field === "projects" ? issue.index : null
             }
             projects={draft.projects}
+          />
+          <RemixFields
+            draft={draft}
+            onChange={(patch) =>
+              setDraft((current) => ({ ...current, ...patch }))
+            }
           />
 
           {preview ? (

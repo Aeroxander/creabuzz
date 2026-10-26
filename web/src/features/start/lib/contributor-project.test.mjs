@@ -12,6 +12,7 @@ import {
   encodeKitLaunch,
   encodePredictDao,
   formatBps,
+  remixFromDraft,
   KIT_LAUNCH_SIGNATURE,
   sharePreview,
 } from "./contributor-project.ts";
@@ -291,4 +292,30 @@ test("the launch call carries every first project, each managed by the founder",
     data.includes(`${"0".repeat(63)}2${"64657369676e".padEnd(64, "0")}`),
   );
   assert.ok(data.includes("646576".padEnd(64, "0")));
+});
+
+test("what a project is built on, and whether others may build on it, go into its record (N11)", () => {
+  const author = "a".repeat(64);
+  assert.deepEqual(
+    remixFromDraft({
+      builtOn: `${author}:docs-commons`,
+      remixInvited: true,
+      remixAsks: "  Credit us on your page. ",
+    }),
+    {
+      builtOn: { author, id: "docs-commons" },
+      remixTerms: {
+        invited: true,
+        asks: "Credit us on your page.",
+        offers: [],
+      },
+    },
+  );
+  // Nothing picked, or a malformed pick: no link, and the record still says remixes are not invited.
+  assert.deepEqual(remixFromDraft({}), {
+    remixTerms: { invited: false, asks: "", offers: [] },
+  });
+  assert.deepEqual(remixFromDraft({ builtOn: "nope", remixAsks: "ignored" }), {
+    remixTerms: { invited: false, asks: "", offers: [] },
+  });
 });

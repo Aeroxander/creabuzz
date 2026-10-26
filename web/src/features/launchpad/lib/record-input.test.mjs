@@ -187,6 +187,8 @@ test("every field a launch can be created with is carried by a save", () => {
       until: null,
       document: null,
     },
+    builtOn: { author: "a".repeat(64), id: "docs-commons" },
+    remixTerms: { invited: true, asks: "Credit us.", offers: ["name"] },
   });
   const carried = Object.keys(recordToInput(full));
   const missing = fields.filter(
