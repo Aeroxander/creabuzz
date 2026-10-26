@@ -76,7 +76,7 @@ fi
 step "deploying the summoner, the launch kit and the contributor kit"
 OUT="$BACKUP/forge.out"
 sepolia_deploy_kits "$RPC" "$KEY" "$OUT"
-grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|MatchedExit|Auction factory)" "$OUT" || tail -20 "$OUT"
+grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|MatchedExit|CreateToken|CreateFaucet|Auction factory)" "$OUT" || tail -20 "$OUT"
 
 KIT=$(sepolia_role launch-kit)
 SUMMONER=$(sepolia_role summoner)
@@ -84,6 +84,8 @@ CONTRIBUTOR_KIT=$(sepolia_role contributor-kit)
 WORK_BOUNTY=$(sepolia_role work-bounty)
 OPEN_BOUNTY=$(sepolia_role open-bounty)
 MATCHED_EXIT=$(sepolia_role matched-exit)
+CREATE_TOKEN=$(sepolia_role create-token)
+CREATE_FAUCET=$(sepolia_role create-faucet)
 SHARES_IMPL=$(sepolia_role shares-implementation)
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 first() { awk '{print $1}' | head -1; }
@@ -109,6 +111,10 @@ echo "  ✓ the open bounty at $OPEN_BOUNTY pays in USDC"
 [[ "$(cast codesize "$MATCHED_EXIT" --rpc-url "$RPC")" != "0" ]] || fail "no code at the matched exit $MATCHED_EXIT"
 [[ "$(lower "$(cast call "$MATCHED_EXIT" 'currency()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SEPOLIA_USDC")" ]] || fail "the matched exit is not paid in Sepolia's USDC"
 echo "  ✓ the matched exit at $MATCHED_EXIT pays in USDC"
+[[ "$(cast codesize "$CREATE_FAUCET" --rpc-url "$RPC")" != "0" ]] || fail "no code at the CREATE faucet $CREATE_FAUCET"
+[[ "$(lower "$(cast call "$CREATE_FAUCET" 'token()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$CREATE_TOKEN")" ]] || fail "the faucet does not hand out the test CREATE"
+[[ "$(cast call "$CREATE_TOKEN" 'balanceOf(address)(uint256)' "$CREATE_FAUCET" --rpc-url "$RPC" | first)" == "$(cast call "$CREATE_TOKEN" 'totalSupply()(uint256)' --rpc-url "$RPC" | first)" ]] || fail "the faucet does not hold the whole test CREATE supply"
+echo "  ✓ test CREATE at $CREATE_TOKEN, all of it in the faucet at $CREATE_FAUCET"
 
 # What it costs: the gas the deploy used, priced at what Sepolia charges now and at a busy day's 20 gwei. Test ETH has no
 # price, but the deployer needs this much of it from a faucet.
@@ -127,6 +133,6 @@ else
   # The block the deploy ran at is where this chain's history starts for the app: a real node refuses an event read from
   # block 0, so the build is told where to start.
   FROM_BLOCK=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).block)' "$MANIFEST")
-  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_CHAIN_RPC_URL=<a read-only Sepolia node for the page> VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_CONTRIBUTOR_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}' VITE_WORK_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${WORK_BOUNTY}\"}' VITE_OPEN_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${OPEN_BOUNTY}\"}' VITE_MATCHED_EXITS='{\"${SEPOLIA_CHAIN_ID}\":\"${MATCHED_EXIT}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
+  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_CHAIN_RPC_URL=<a read-only Sepolia node for the page> VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_CONTRIBUTOR_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}' VITE_WORK_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${WORK_BOUNTY}\"}' VITE_OPEN_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${OPEN_BOUNTY}\"}' VITE_MATCHED_EXITS='{\"${SEPOLIA_CHAIN_ID}\":\"${MATCHED_EXIT}\"}' VITE_CREATE_TOKENS='{\"${SEPOLIA_CHAIN_ID}\":\"${CREATE_TOKEN}\"}' VITE_CREATE_FAUCETS='{\"${SEPOLIA_CHAIN_ID}\":\"${CREATE_FAUCET}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
   echo "  (docs/sepolia-testnet.md lists the rest: the relay URL, passkey accounts, what testers need)"
 fi

@@ -9,6 +9,8 @@
 import {
   type ChainEnv,
   contributorKit,
+  createFaucet,
+  createToken,
   daoLaunchKit,
   defaultChainPreset,
   historyFromBlock,
@@ -119,6 +121,23 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       "VITE_OPEN_BOUNTIES is named but VITE_CHAIN_RPC_URL is not: a hosted page has no chain node without it.",
     );
   }
+  const create = createToken(chainId, env);
+  const faucet = createFaucet(chainId, env);
+  if (value(env, "VITE_CREATE_TOKENS") && !create) {
+    problems.push(
+      `VITE_CREATE_TOKENS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+    );
+  }
+  if (value(env, "VITE_CREATE_FAUCETS") && !faucet) {
+    problems.push(
+      `VITE_CREATE_FAUCETS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+    );
+  }
+  if (faucet && !create) {
+    problems.push(
+      "VITE_CREATE_FAUCETS is named but VITE_CREATE_TOKENS is not: the faucet's token would not be shown.",
+    );
+  }
   const exits = matchedExit(chainId, env);
   if (value(env, "VITE_MATCHED_EXITS") && !exits) {
     problems.push(
@@ -163,6 +182,9 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   );
   summary.push(
     `Sales between members: ${exits ? `on where a DAO votes for it (${exits})` : "off"}`,
+  );
+  summary.push(
+    `CREATE: ${create ? `on (${create}${faucet ? `, faucet ${faucet}` : ", no faucet"})` : "off"}`,
   );
 
   const project = value(env, "VITE_ZERODEV_PROJECT_ID");

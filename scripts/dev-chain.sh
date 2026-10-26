@@ -925,6 +925,77 @@ deploy_matched_exit() {
   deploy_currency_contract matched-exit MatchedExit "$(matched_exit_manifest_path)" "sales between members"
 }
 
+create_manifest_path() {
+  echo "$DEPLOYMENTS_DIR/create-${CHAIN_ID}.json"
+}
+
+create_token_address() {
+  manifest_role "$(create_manifest_path)" "create-token"
+}
+
+create_faucet_address() {
+  manifest_role "$(create_manifest_path)" "create-faucet"
+}
+
+# Guard: both have code, and the faucet hands out this token.
+create_deployed() {
+  local token faucet named
+  [[ -f "$(create_manifest_path)" ]] || return 1
+  token=$(create_token_address)
+  faucet=$(create_faucet_address)
+  [[ -n "$token" && "$(code_bytes "$token")" != "0" && -n "$faucet" && "$(code_bytes "$faucet")" != "0" ]] || return 1
+  named=$(cast call "$faucet" "token()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  [[ "$(lower "$named")" == "$(lower "$token")" ]]
+}
+
+# Deploy one contract from its artifact with ABI-encoded constructor args; prints the address. $1 role, $2 contract, $3 args.
+create_from_artifact() {
+  local role=$1 contract=$2 args=$3 bytecode receipt address
+  if ! (cd "$REPO_ROOT/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build "src/$contract.sol") >/dev/null; then
+    fail_step "$role" "forge build src/$contract.sol failed"
+  fi
+  bytecode=$(artifact_field "$REPO_ROOT/contracts/out/$contract.sol/$contract.json" bytecode.object) \
+    || fail_step "$role" "cannot read the $contract artifact"
+  if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
+      --create "0x${bytecode#0x}${args#0x}" 2>&1); then
+    echo "$receipt" >&2
+    fail_step "$role" "cast send --create $contract failed"
+  fi
+  address=$(node -e 'console.log(JSON.parse(process.argv[1]).contractAddress ?? "")' "$receipt")
+  [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] || fail_step "$role" "no code at ${address:-<none>}"
+  echo "$address"
+}
+
+# Test $CREATE (N6): the whole supply goes into a faucet with no owner, which hands each wallet 1,000 a day.
+deploy_test_create() {
+  echo
+  if create_deployed; then
+    echo "── create: already at $(create_token_address), faucet $(create_faucet_address) — skipped (idempotent)"
+    return 0
+  fi
+  local deployer token faucet
+  deployer=$(cast wallet address --private-key "$ANVIL_KEY")
+  echo "── create: deploying test CREATE and its faucet"
+  token=$(create_from_artifact create-token CreateToken \
+    "$(cast abi-encode "constructor(string,string,address)" "Test CREATE" tCREATE "$deployer")")
+  faucet=$(create_from_artifact create-faucet CreateFaucet "$(cast abi-encode "constructor(address)" "$token")")
+  cast send "$token" "transfer(address,uint256)" "$faucet" "$(cast call "$token" "totalSupply()(uint256)" --rpc-url "$RPC_URL" | awk '{print $1}')" \
+    --private-key "$ANVIL_KEY" --rpc-url "$RPC_URL" >/dev/null || fail_step "create" "could not fill the faucet"
+  node -e '
+    const fs = require("fs");
+    const [file, chainId, token, faucet] = process.argv.slice(1);
+    fs.writeFileSync(file, JSON.stringify({
+      chainId: Number(chainId),
+      project: "buzz-dev-chain",
+      note: "scripts/dev-chain.sh — test CREATE (whole supply in the faucet)",
+      roles: [{ role: "create-token", address: token }, { role: "create-faucet", address: faucet }],
+    }) + "\n");
+  ' "$(create_manifest_path)" "$CHAIN_ID" "$token" "$faucet" \
+    || fail_step "create" "deployed but could not write $(create_manifest_path)"
+  create_deployed || fail_step "create" "the faucet does not hand out the token it was given"
+  echo "  ✓ test CREATE at $token, faucet $faucet (manifest $(create_manifest_path))"
+}
+
 fund_accounts() {
   echo
   echo "── fund: minting $CURRENCY_SYMBOL up to 1,000,000 per dev account (6dp)"
@@ -1001,6 +1072,7 @@ up() {
   deploy_work_bounty
   deploy_open_bounty
   deploy_matched_exit
+  deploy_test_create
   fund_accounts
 
   echo
@@ -1017,11 +1089,13 @@ up() {
   echo "  work bounty: $(work_bounty_address) (work-bounty-$CHAIN_ID.json)"
   echo "  open bounty: $(open_bounty_address) (open-bounty-$CHAIN_ID.json)"
   echo "  matched exit: $(matched_exit_address) (matched-exit-$CHAIN_ID.json)"
+  echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
   echo "  web env:    VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
   echo "              VITE_CONTRIBUTOR_KITS='{\"$CHAIN_ID\":\"$(contributor_kit_address)\"}'  (lets the app start a contributor project here)"
   echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
   echo "              VITE_OPEN_BOUNTIES='{\"$CHAIN_ID\":\"$(open_bounty_address)\"}'  (lets people put money behind a post here)"
   echo "              VITE_MATCHED_EXITS='{\"$CHAIN_ID\":\"$(matched_exit_address)\"}'  (lets members sell Shares to each other here, once their DAO votes for it)"
+  echo "              VITE_CREATE_TOKENS='{\"$CHAIN_ID\":\"$(create_token_address)\"}' VITE_CREATE_FAUCETS='{\"$CHAIN_ID\":\"$(create_faucet_address)\"}'  (test CREATE: stakes and bonds)"
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"

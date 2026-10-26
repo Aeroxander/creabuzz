@@ -119,6 +119,28 @@ test("sales between members are off by default, on with an address and a node, r
   );
 });
 
+test("CREATE is off by default, on with its token and faucet, refused when the faucet has no token", () => {
+  assert.ok(checkDeployEnv(SEPOLIA).summary.includes("CREATE: off"));
+  const TOKEN = `0x${"c7".repeat(20)}`;
+  const FAUCET = `0x${"fa".repeat(20)}`;
+  const on = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_CREATE_TOKENS: JSON.stringify({ 11155111: TOKEN }),
+    VITE_CREATE_FAUCETS: JSON.stringify({ 11155111: FAUCET }),
+  });
+  assert.deepEqual(on.problems, []);
+  assert.ok(on.summary.includes(`CREATE: on (${TOKEN}, faucet ${FAUCET})`));
+  const faucetOnly = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_CREATE_FAUCETS: JSON.stringify({ 11155111: FAUCET }),
+  });
+  assert.ok(
+    faucetOnly.problems.some((p) =>
+      p.startsWith("VITE_CREATE_FAUCETS is named but VITE_CREATE_TOKENS"),
+    ),
+  );
+});
+
 test("a kit without a chain node or a history start is refused", () => {
   const noNode = checkDeployEnv({ ...SEPOLIA, VITE_CHAIN_RPC_URL: "" });
   assert.ok(

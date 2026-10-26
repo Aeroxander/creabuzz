@@ -142,6 +142,13 @@ export interface ChainEnv {
    */
   VITE_MATCHED_EXITS?: string;
   /**
+   * $CREATE per chain, as JSON: `{"31337":"0x…"}` (N6). The platform's work token: staked to judge cases and posted as a
+   * bond. A chain with no entry offers neither.
+   */
+  VITE_CREATE_TOKENS?: string;
+  /** The test $CREATE faucet per chain, as JSON (N6). Test networks only; a chain with no entry hands out none. */
+  VITE_CREATE_FAUCETS?: string;
+  /**
    * The block each chain's history starts at, as JSON: `{"11155111":7654321}`. Name the block the launch kit was deployed
    * at: every contract the app reads events from was made after it. Only used when a node refuses a read of the whole
    * history for being too wide; a chain with no entry is then read from block 0, which a long chain cannot finish.
@@ -221,6 +228,22 @@ export function openBounty(
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
   return addressForChain(env?.VITE_OPEN_BOUNTIES, chainId);
+}
+
+/** $CREATE on `chainId`, or null when the build does not name it. Never guessed: people stake and post bonds in it. */
+export function createToken(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_CREATE_TOKENS, chainId);
+}
+
+/** The test $CREATE faucet on `chainId`, or null; never on a main network (the build check refuses one there). */
+export function createFaucet(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_CREATE_FAUCETS, chainId);
 }
 
 /** The matched-exit exchange on `chainId`, or null when the build does not name one. Never guessed: DAOs vote it in. */

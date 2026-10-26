@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { ethCall, getRpcEndpoint } from "../chain";
+import { createToken } from "../chain-config";
 import {
   DecisionInputError,
   mandateDecision,
@@ -69,9 +70,11 @@ export function WorkBudgetForm({
   const shareRules = useShareRules(ctx.sharesToken || null, ctx.dao);
   const sharesLocked = shareRules.data?.rules?.transfersLocked === true;
   const sharesTransferable = shareRules.data?.rules?.transfersLocked === false;
-  const [bondIn, setBondIn] = useState<"currency" | "project" | "other">(
-    hasCurrency ? "currency" : "project",
-  );
+  // $CREATE, the platform's work token, where this build names it (N6).
+  const create = createToken(ctx.chainId ?? null);
+  const [bondIn, setBondIn] = useState<
+    "currency" | "project" | "create" | "other"
+  >(hasCurrency ? "currency" : "project");
   const bondChoice =
     bondIn === "project" && !sharesTransferable
       ? hasCurrency
@@ -117,6 +120,14 @@ export function WorkBudgetForm({
               reviewerBondToken: ctx.sharesToken,
               reviewerBondDecimals: 18,
               reviewerBondLabel: "of the project's own token",
+            };
+          }
+          if (bondChoice === "create" && create) {
+            return {
+              reviewerBond: parseUnits(bond, 18, "reviewerBond", "The bond"),
+              reviewerBondToken: create,
+              reviewerBondDecimals: 18,
+              reviewerBondLabel: "CREATE",
             };
           }
           const token = bondOther.trim();
@@ -202,6 +213,7 @@ export function WorkBudgetForm({
       quorum,
       bond,
       bondChoice,
+      create,
       sharesLocked,
       sharesTransferable,
       bondOther,
@@ -320,6 +332,9 @@ export function WorkBudgetForm({
               ...(sharesTransferable
                 ? [{ value: "project", label: "The project's own token" }]
                 : []),
+              ...(create
+                ? [{ value: "create", label: "CREATE, the platform's token" }]
+                : []),
               { value: "other", label: "Another token" },
             ]}
             testId="budget-bond-token"
@@ -351,7 +366,9 @@ export function WorkBudgetForm({
             >
               {bondChoice === "project"
                 ? "A bond in the project's own token is worth least when the project struggles, and the people steering the project help set its price. Reviewers may not accept it."
-                : "Any token works, but a bond only deters if it keeps its value and nobody involved can freeze or inflate it. Check the token before you vote."}
+                : bondChoice === "create"
+                  ? "A bond in CREATE moves with its price. Size it so it still deters if the price halves."
+                  : "Any token works, but a bond only deters if it keeps its value and nobody involved can freeze or inflate it. Check the token before you vote."}
             </p>
           ) : null}
         </>

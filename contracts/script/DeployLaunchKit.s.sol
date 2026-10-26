@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 
 /// @notice Put the launch path on a chain that already has Uniswap's auction factory: our patched summoner (the one whose
@@ -10,7 +11,8 @@ import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 /// `ContributorKit` that starts a contributor project (no sale, ready for work) on the same summoner, and the
 /// `WorkAreaBounty` that holds outside money behind a work area of any work budget the summoner's factory makes (N1), and
 /// the `OpenBounty` that holds money behind a post until someone's claim keeps a majority of it (N2), and the
-/// `MatchedExit` exchange where a member sells Shares to someone who wants in, once their DAO names it by vote (N5).
+/// `MatchedExit` exchange where a member sells Shares to someone who wants in, once their DAO names it by vote (N5). On a
+/// test network it also makes test $CREATE and its faucet (N6).
 ///
 /// Nothing else is deployed: the auction factory, Permit2 and the sale currency are the chain's own. The script refuses
 /// to run where the factory has no code, and it checks the Shares implementation it computes really exists before it
@@ -28,6 +30,9 @@ contract DeployLaunchKit is Script {
     uint256 internal constant SEPOLIA = 11155111;
     /// @dev Circle's USDC on Sepolia (the same address `scripts/lib/sepolia-fork.sh` funds).
     address internal constant SEPOLIA_USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
+
+    string[] internal roleNames;
+    address[] internal roleAddresses;
 
     function run() external returns (address summoner, address sharesImplementation, address kit) {
         uint256 pk = vm.envUint("PRIVATE_KEY");
@@ -58,6 +63,9 @@ contract DeployLaunchKit is Script {
             vm.deployCode("WorkAreaBounty.sol:WorkAreaBounty", abi.encode(bountyCurrency, made.mandateFactory()));
         address openBounty = vm.deployCode("OpenBounty.sol:OpenBounty", abi.encode(bountyCurrency));
         address matchedExit = vm.deployCode("MatchedExit.sol:MatchedExit", abi.encode(bountyCurrency));
+        // A test network gets a test $CREATE and its faucet (N6); this script never makes a real one.
+        (address createToken, address createFaucet) =
+            isTestNetwork(block.chainid) ? _deployTestCreate(vm.addr(pk)) : (address(0), address(0));
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");
         require(contributorKit.code.length != 0, "DeployLaunchKit: the contributor kit has no code");
@@ -65,27 +73,37 @@ contract DeployLaunchKit is Script {
         require(openBounty.code.length != 0, "DeployLaunchKit: the open bounty has no code");
         require(matchedExit.code.length != 0, "DeployLaunchKit: the matched exit has no code");
 
-        _writeManifest(
-            summoner,
-            molochImplementation,
-            sharesImplementation,
-            kit,
-            contributorKit,
-            workBounty,
-            openBounty,
-            matchedExit,
-            ccaFactory
-        );
         console2.log("chain id:", block.chainid);
-        console2.log("Summoner:", summoner);
-        console2.log("Moloch implementation:", molochImplementation);
-        console2.log("Shares implementation:", sharesImplementation);
-        console2.log("DaoLaunchKit:", kit);
-        console2.log("ContributorKit:", contributorKit);
-        console2.log("WorkAreaBounty:", workBounty);
-        console2.log("OpenBounty:", openBounty);
-        console2.log("MatchedExit:", matchedExit);
-        console2.log("Auction factory:", ccaFactory);
+        _role("summoner", "Summoner", summoner);
+        _role("moloch-implementation", "Moloch implementation", molochImplementation);
+        _role("shares-implementation", "Shares implementation", sharesImplementation);
+        _role("launch-kit", "DaoLaunchKit", kit);
+        _role("contributor-kit", "ContributorKit", contributorKit);
+        _role("work-bounty", "WorkAreaBounty", workBounty);
+        _role("open-bounty", "OpenBounty", openBounty);
+        _role("matched-exit", "MatchedExit", matchedExit);
+        if (createToken != address(0)) {
+            _role("create-token", "CreateToken", createToken);
+            _role("create-faucet", "CreateFaucet", createFaucet);
+        }
+        _role("auction-factory", "Auction factory", ccaFactory);
+        _writeManifest();
+    }
+
+    /// @notice A test network: Sepolia, or a local chain. Only these get test $CREATE.
+    function isTestNetwork(uint256 chainId) public pure returns (bool) {
+        return chainId == SEPOLIA || chainId == 31337;
+    }
+
+    /// @dev Test $CREATE: the whole supply is minted to the deployer and moved at once into the faucet, which has no
+    /// owner, so nobody holds any but what the faucet hands out.
+    function _deployTestCreate(address deployer) internal returns (address token, address faucet) {
+        token = vm.deployCode("CreateToken.sol:CreateToken", abi.encode("Test CREATE", "tCREATE", deployer));
+        faucet = vm.deployCode("CreateFaucet.sol:CreateFaucet", abi.encode(token));
+        IERC20(token).transfer(faucet, IERC20(token).totalSupply());
+        require(
+            IERC20(token).balanceOf(faucet) == IERC20(token).totalSupply(), "DeployLaunchKit: the faucet holds less"
+        );
     }
 
     /// @notice What bounties are paid in on `chainId`: the named currency, else Circle's USDC on Sepolia, else none (the
@@ -117,46 +135,41 @@ contract DeployLaunchKit is Script {
     }
 
     /// @dev `deployments/dao-launch-kit-<chainid>.json`, the shape the dev chain writes, with the extra roles a testnet
-    /// needs to be checked later (who the kit points at).
-    function _writeManifest(
-        address summoner,
-        address molochImplementation,
-        address sharesImplementation,
-        address kit,
-        address contributorKit,
-        address workBounty,
-        address openBounty,
-        address matchedExit,
-        address ccaFactory
-    ) internal {
+    /// needs to be checked later (who the kit points at), in the order they were recorded.
+    function _writeManifest() internal {
+        string memory roles;
+        for (uint256 i; i < roleNames.length; ++i) {
+            roles = string.concat(
+                roles,
+                i == 0 ? "" : ",",
+                '{"role":"',
+                roleNames[i],
+                '","address":"',
+                vm.toString(roleAddresses[i]),
+                '"}'
+            );
+        }
         string memory path = string.concat("deployments/dao-launch-kit-", vm.toString(block.chainid), ".json");
-        string memory json = string.concat(
-            '{"chainId":',
-            vm.toString(block.chainid),
-            ',"project":"',
-            vm.envOr("LAUNCH_PROJECT", string("creaton")),
-            '","note":"forge script script/DeployLaunchKit.s.sol --broadcast","block":',
-            vm.toString(block.number),
-            ',"roles":[{"role":"launch-kit","address":"',
-            vm.toString(kit),
-            '"},{"role":"contributor-kit","address":"',
-            vm.toString(contributorKit),
-            '"},{"role":"work-bounty","address":"',
-            vm.toString(workBounty),
-            '"},{"role":"open-bounty","address":"',
-            vm.toString(openBounty),
-            '"},{"role":"matched-exit","address":"',
-            vm.toString(matchedExit),
-            '"},{"role":"summoner","address":"',
-            vm.toString(summoner),
-            '"},{"role":"moloch-implementation","address":"',
-            vm.toString(molochImplementation),
-            '"},{"role":"shares-implementation","address":"',
-            vm.toString(sharesImplementation),
-            '"},{"role":"auction-factory","address":"',
-            vm.toString(ccaFactory),
-            '"}]}'
+        vm.writeFile(
+            path,
+            string.concat(
+                '{"chainId":',
+                vm.toString(block.chainid),
+                ',"project":"',
+                vm.envOr("LAUNCH_PROJECT", string("creaton")),
+                '","note":"forge script script/DeployLaunchKit.s.sol --broadcast","block":',
+                vm.toString(block.number),
+                ',"roles":[',
+                roles,
+                "]}"
+            )
         );
-        vm.writeFile(path, json);
+    }
+
+    /// @dev Record a deployed contract for the manifest and say where it is.
+    function _role(string memory role, string memory label, address at) internal {
+        roleNames.push(role);
+        roleAddresses.push(at);
+        console2.log(string.concat(label, ":"), at);
     }
 }
