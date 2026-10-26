@@ -203,6 +203,13 @@ contract MatchedExitTest is VotingFixture {
         fee.mint(BUYER, 100e6);
         vm.prank(BUYER);
         fee.approve(address(feeExit), type(uint256).max);
+        // Named by the DAO like any exchange, so only the short payment can stop the fill.
+        vm.prank(address(dao));
+        shares.announceExitExchange(address(feeExit));
+        vm.warp(block.timestamp + 30 days);
+        shares.activateExitExchange();
+        vm.prank(seller);
+        shares.approve(address(feeExit), type(uint256).max);
         MatchedExit.Offer memory offer = _offer(1e18, 100e6, 1);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SELLER_KEY, feeExit.digestOf(offer));
         vm.prank(BUYER);
