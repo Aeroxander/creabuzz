@@ -380,10 +380,8 @@ test("a contributor project is started from the page, work is claimed the same d
   const usdcOf = async (holder: string) =>
     BigInt(await call(currency as string, `0x70a08231${addressArg(holder)}`));
   const docsArea = (page: Page) =>
-    page
-      .getByTestId("work-projects")
-      .locator(":scope > li")
-      .filter({ hasText: "docs" });
+    // The area's card wherever it is: under Open work while it takes work, under its budget once it does not.
+    page.getByTestId("work-tab").locator('[data-area="docs"]');
   const contributorMoney = await usdcOf(CONTRIBUTOR);
   if (BOUNTY) {
     await refresh(founder, "Work");

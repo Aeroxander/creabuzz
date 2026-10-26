@@ -159,7 +159,7 @@ test("someone with no wallet can read what was set aside, paid and turned down",
   const entries = page.getByTestId("record-entry");
   await expect(entries.filter({ hasText: "was paid 200" })).toHaveCount(1);
   const approval = entries.filter({
-    hasText: "The reviewers approved the claim",
+    hasText: "The reviewers approved the work",
   });
   await expect(approval).toContainText("Approved by");
   const turnedDown = entries.filter({ hasText: "submitted work for 100" });

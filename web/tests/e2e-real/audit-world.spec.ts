@@ -592,10 +592,8 @@ test("money behind work and a post, with forecasts on both", async ({
     posts: { invitation: string };
   };
   const area = (page: Page) =>
-    page
-      .getByTestId("work-projects")
-      .locator(":scope > li")
-      .filter({ hasText: "plain-guide" });
+    // The area's card wherever it is: under Open work while it takes work, under its budget once it does not.
+    page.getByTestId("work-tab").locator('[data-area="plain-guide"]');
   const give = async (
     panel: ReturnType<Page["getByTestId"]>,
     percent: string,

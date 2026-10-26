@@ -1,11 +1,13 @@
 /**
  * Ways to help: the work areas open for submissions now, as cards. Each says what finished work looks like (verified
  * against the chain), how many Shares it can still award with a bar for how much it already did, who manages it and
- * until when, and has one button that opens the submit form filled in for it. Built on what earns Shares
- * (`lib/ways-to-help.ts`); suggesting new work is the next card down.
+ * until when, and has one button that opens the submit form filled in for it; under it, anything else about the area
+ * (money people put behind it and forecasts on it). Built on what earns Shares (`lib/ways-to-help.ts`); the areas not
+ * taking work are listed under their budget, and suggesting new work is the next card down.
  */
 
 import { Award, CalendarClock, Coins } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -31,6 +33,7 @@ export function WaysToHelp({
   labelOf,
   money,
   onPick,
+  extra,
   truncated = false,
 }: {
   areas: readonly OpenWorkArea[];
@@ -41,6 +44,8 @@ export function WaysToHelp({
   money: (area: OpenWorkArea) => string;
   /** Open the submit form for this work area. */
   onPick: (area: OpenWorkArea) => void;
+  /** More about one area, shown at the bottom of its card (money behind it, forecasts); null for nothing. */
+  extra?: (area: OpenWorkArea) => ReactNode;
 }) {
   return (
     <Card className="p-4" data-testid="ways-to-help">
@@ -55,10 +60,14 @@ export function WaysToHelp({
             : "Nothing is open right now. Suggest work below, or ask the team on the Discussion tab what would help."}
         </p>
       ) : (
-        <ul className="mt-3 grid gap-3 md:grid-cols-2">
+        <ul
+          className="mt-3 grid gap-3 md:grid-cols-2"
+          data-testid="work-projects"
+        >
           {areas.map((area) => (
             <li
-              className="flex flex-col gap-2 rounded-xl border border-border/60 p-3"
+              // Money behind an area (or the form to put some there) takes the full width, so its forecast has room.
+              className="flex flex-col gap-2 rounded-xl border border-border/60 p-3 md:has-[[data-testid=work-bounty-form]]:col-span-2 md:has-[[data-testid=work-bounty]]:col-span-2"
               data-area={area.name}
               data-testid="way-to-help"
               key={`${area.mandate}:${area.id}`}
@@ -125,6 +134,11 @@ export function WaysToHelp({
                   Submit work
                 </Button>
               </div>
+              {extra ? (
+                <div className="border-t border-border/60 pt-2 empty:hidden">
+                  {extra(area)}
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

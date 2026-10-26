@@ -294,7 +294,7 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   const entries = reader.getByTestId("record-entry");
   await expect(entries.filter({ hasText: "submitted work" })).toHaveCount(1);
   await expect(
-    entries.filter({ hasText: "The reviewers approved the claim" }),
+    entries.filter({ hasText: "The reviewers approved the work" }),
   ).toContainText("Approved by");
   await expect(
     entries.filter({ hasText: "reached milestone 1 (alpha shipped)" }),

@@ -12,7 +12,6 @@ import { CalendarClock, RefreshCw } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Chip, type ChipTone } from "@/shared/ui/chip";
-import { Meter } from "@/shared/ui/meter";
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { formatAtomic } from "../lib/amounts";
 import { isContributorProject } from "../lib/funding";
@@ -62,11 +61,10 @@ import { AllowanceNote } from "./AllowanceNote";
 import type { WorkBounties } from "../lib/work-bounty";
 import { useWorkBounties } from "../use-work-bounties";
 import { WorkAreaBounties } from "./WorkAreaBounties";
-import { Person } from "./Face";
 import { HowItWorks } from "./HowItWorks";
+import { BudgetWorkAreas } from "./BudgetWorkAreas";
 import { BudgetFigures } from "./BudgetFigures";
 
-const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
 const sameAddress = (a: string | null, b: string) =>
   a !== null && a.toLowerCase() === b.toLowerCase();
 const date = (seconds: number) =>
@@ -175,6 +173,34 @@ export function WorkTab({
       ? `${formatAtomic(area.moneyLeft, currency.decimals, { maxFractionDigits: 2 })} ${currency.symbol}`.trim()
       : `${area.moneyLeft.toString()} raw units`;
   };
+  // One card per work area: an open one's money and forecasts are on its Open work card, and its budget lists the rest.
+  const openKeys = useMemo(
+    () => new Set(areas.map((area) => `${area.mandate}:${area.id}`)),
+    [areas],
+  );
+  const bountyFor = (area: OpenWorkArea) => {
+    const mandate = work.data?.mandates.find(
+      (m) => m.address.toLowerCase() === area.mandate,
+    );
+    const project = mandate?.projects.find(
+      (p) => p.id.toLowerCase() === area.id,
+    );
+    if (!mandate || !project) return null;
+    return (
+      <WorkAreaBounties
+        busy={busy}
+        chainId={launch.record.chainId ?? null}
+        chainTime={work.data?.chainTime ?? 0}
+        gate={gate}
+        labelOf={labelOf}
+        mandate={mandate}
+        onSend={send}
+        project={project}
+        read={bounties.data}
+        wallet={wallet.address}
+      />
+    );
+  };
   const focusedClaim = useRef<string | null>(null);
   useEffect(() => {
     const focusKey = focusClaim
@@ -243,6 +269,7 @@ export function WorkTab({
       {work.data ? (
         <WaysToHelp
           areas={areas}
+          extra={bountyFor}
           labelOf={labelOf}
           money={areaMoney}
           onPick={(area) => setPicked({ area, at: Date.now() })}
@@ -346,6 +373,7 @@ export function WorkTab({
               labelOf={labelOf}
               onRefresh={() => void work.refetch()}
               onSend={send}
+              openKeys={openKeys}
               payouts={payouts.data}
               payoutsUnread={payouts.isError && !payouts.data}
               wallet={wallet.address}
@@ -398,7 +426,10 @@ function MandateCard({
   onRefresh,
   payouts,
   payoutsUnread,
+  openKeys,
 }: {
+  /** The work areas Open work lists, as `budget:area`, lower case: the budget lists only the others. */
+  openKeys: ReadonlySet<string>;
   /** How to write a wallet: the person's name with the short address, or just the address. */
   labelOf: (address: string) => string;
   /** When and in which transaction claims were paid out; undefined while it is read. */
@@ -546,64 +577,19 @@ function MandateCard({
         onSend={onSend}
       />
 
-      <h4 className="mt-3 text-sm font-semibold">Work areas</h4>
-      {mandate.projects.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No work area has been approved in this budget yet.
-        </p>
-      ) : (
-        <ul
-          className="mt-2 flex flex-col gap-2 text-sm"
-          data-testid="work-projects"
-        >
-          {mandate.projects.map((project) => (
-            <li
-              className="rounded-xl border border-border/60 p-3"
-              key={project.id}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium">{idLabel(project.id)}</span>
-                <span className="text-xs text-muted-foreground">
-                  <Person label={labelOf(project.record.manager)} />
-                </span>
-              </div>
-              {project.record.shareBudget > 0n ? (
-                <div className="mt-2">
-                  <Meter
-                    label={`${idLabel(project.id)}: Shares awarded`}
-                    max={project.record.shareBudget}
-                    value={project.record.sharesAwarded}
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {shares(project.record.sharesAwarded)} of{" "}
-                    {shares(project.record.shareBudget)} Shares awarded
-                  </p>
-                </div>
-              ) : null}
-              {project.record.budget > 0n ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {money(project.record.reserved)} of{" "}
-                  {money(project.record.budget)} reserved
-                </p>
-              ) : null}
-              {mandate.isMilestonePanel ? null : (
-                <WorkAreaBounties
-                  busy={busy}
-                  chainId={launch.record.chainId ?? null}
-                  chainTime={chainTime}
-                  gate={gate}
-                  labelOf={labelOf}
-                  mandate={mandate}
-                  onSend={onSend}
-                  project={project}
-                  read={bounties}
-                  wallet={wallet}
-                />
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <BudgetWorkAreas
+        bounties={bounties}
+        busy={busy}
+        chainId={launch.record.chainId ?? null}
+        chainTime={chainTime}
+        gate={gate}
+        labelOf={labelOf}
+        mandate={mandate}
+        money={money}
+        onSend={onSend}
+        open={openKeys}
+        wallet={wallet}
+      />
 
       <h4 className="mt-3 text-sm font-semibold">Submitted work</h4>
       {mandate.claims.length === 0 ? (

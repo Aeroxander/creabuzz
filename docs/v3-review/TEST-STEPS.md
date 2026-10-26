@@ -1675,3 +1675,16 @@ builder puts 50 behind plain-guide and 30 behind the invitation post, with forec
 5. Portfolio: four tiles under "Your share of the work", **How points work** opens one line, and there is no "Raises
    you backed" section (this server lists no sale).
 
+## 4bu. One card per work area (D127, 2026-10-26)
+
+On the same test world as 4bt:
+
+1. Creaton's Work tab. Working looks like: four cards under **Open work**; plain-guide's card spans the full width and
+   holds its 50 dUSDC and the forecast panel; the other three each have one **Put money behind this work area** button.
+2. The work budget card says "Its 4 work areas are under Open work." and lists no areas.
+3. Put money behind another area: while the form is open, that card spans the full width.
+4. Move the chain past the areas' end (`cast rpc anvil_increaseTime 8640000 --rpc-url http://127.0.0.1:18545`, then
+   `cast rpc anvil_mine --rpc-url http://127.0.0.1:18545`) and reload: Open work says nothing is open, and the budget
+   lists the four under **Not taking work now** with an Ended chip, plain-guide still showing its money and, once
+   refunds open, **Take back my …** for the founder. (This changes the shared world for everyone testing on it.)
+
