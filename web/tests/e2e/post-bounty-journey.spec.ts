@@ -11,6 +11,10 @@ import { installAnvilWallet } from "../helpers/anvil-wallet";
  * adds some, Dev submits work, both back it, a dip stops the wait, the wait runs out and anyone pays; then a second
  * bounty nobody earns is refunded. Stubbed: the server (it only serves the post) and the wallets (`window.ethereum`
  * forwarding to Anvil's unlocked accounts).
+ *
+ * With a court (N7, `E2E_COURT`), a second journey appeals: Dev's work nobody backed goes to the court after the
+ * deadline, Eve takes test CREATE from the faucet, stakes it and is drawn, seals and opens her vote, the case is settled
+ * for the work, and anyone pays Dev the pot.
  */
 
 const ANVIL_URL = process.env.E2E_ANVIL_URL ?? "";
@@ -20,6 +24,8 @@ const BEN = process.env.E2E_BEN ?? "";
 const CARA = process.env.E2E_CARA ?? "";
 const DEV = process.env.E2E_DEV ?? "";
 const EVE = process.env.E2E_EVE ?? "";
+/** The court (N7); without one the appeal journey is skipped. */
+const COURT = process.env.E2E_COURT ?? "";
 const UNIT = 10n ** 6n;
 
 test.skip(
@@ -353,4 +359,137 @@ test("money behind a post is paid to the work most of it backs for nine days, an
     timeout: 60_000,
   });
   expect(await usdcOf(BEN)).toBe(benBefore);
+});
+
+test("work nobody backed is appealed, a juror drawn by stake upholds it, and anyone pays it", async ({
+  context,
+}) => {
+  test.skip(!COURT, "set E2E_COURT (scripts/web-post-bounty-e2e.sh does)");
+  test.setTimeout(Number(process.env.E2E_TIMEOUT_MS ?? 600_000));
+  const latest = (page: Page) =>
+    card(page).getByTestId("post-bounty-item").last();
+
+  // ── Ben puts 20 behind the post; Dev submits work; nobody backs it ─────────────────────────────
+  const ben = await context.newPage();
+  await open(ben, BEN, KEYS.ben);
+  await card(ben).getByTestId("post-bounty-open").click();
+  await card(ben)
+    .getByTestId("post-bounty-words-input")
+    .fill("A photo of the new bench outside the library.");
+  await card(ben).getByTestId("post-bounty-amount").fill("20");
+  await card(ben).getByTestId("post-bounty-submit").click();
+  await expect(latest(ben).getByTestId("post-bounty-status")).toContainText(
+    "Takes money and work until",
+    { timeout: 60_000 },
+  );
+  const dev = await context.newPage();
+  await open(dev, DEV, KEYS.dev);
+  await latest(dev).getByTestId("post-bounty-file").click();
+  await latest(dev)
+    .getByTestId("post-bounty-evidence")
+    .fill("https://example.com/library-bench");
+  await latest(dev).getByTestId("post-bounty-file-submit").click();
+  await expect(latest(dev).getByTestId("post-bounty-claim")).toHaveCount(1, {
+    timeout: 60_000,
+  });
+
+  // ── The deadline passes with nothing agreed: Dev can appeal before refunds open ─────────────────
+  await pass(31 * 86_400);
+  await refresh(dev);
+  await expect(latest(dev).getByTestId("post-bounty-status")).toContainText(
+    "can appeal to the court until",
+    { timeout: 30_000 },
+  );
+  await expect(latest(ben).getByTestId("post-bounty-refund")).toHaveCount(0);
+  const devBefore = await usdcOf(DEV);
+  await latest(dev).getByTestId("post-bounty-appeal").click();
+  await expect(latest(dev).getByTestId("post-bounty-status")).toContainText(
+    "appealed to the court",
+    { timeout: 60_000 },
+  );
+  expect(await usdcOf(DEV)).toBe(devBefore - 3n * UNIT);
+  await expect(latest(dev).getByTestId("post-bounty-case")).toBeVisible();
+
+  // ── Eve takes test CREATE, stakes three seats and is the only juror ─────────────────────────────
+  const eve = await context.newPage();
+  await open(eve, EVE, KEYS.eve, "/court");
+  const juror = eve.getByTestId("court-juror");
+  await expect(juror).toBeVisible({ timeout: 30_000 });
+  await juror.getByTestId("court-drip").click();
+  await expect(juror.getByTestId("court-balance")).toHaveText(
+    "You hold 1,000 CREATE.",
+    { timeout: 60_000 },
+  );
+  await juror.getByTestId("court-amount").fill("300");
+  await juror.getByTestId("court-stake-button").click();
+  await expect(juror.getByTestId("court-stake")).toHaveText(
+    "You stake 300 CREATE: 3 seats, 3 free.",
+    { timeout: 60_000 },
+  );
+  const kase = eve.getByTestId("court-case").first();
+  await expect(kase.getByTestId("court-case-words")).toContainText(
+    "A photo of the new bench outside the library.",
+  );
+  await expect(kase.getByTestId("court-case-evidence")).toContainText(
+    "https://example.com/library-bench",
+  );
+
+  // ── Two days for evidence, then the draw, a sealed vote, and opening it ──────────────────────────
+  await pass(2 * 86_400);
+  await eve.reload();
+  await kase.getByTestId("court-draw").click();
+  await expect(kase.getByTestId("court-case-round")).toContainText(
+    "you hold 3 seats",
+    { timeout: 60_000 },
+  );
+  await kase.getByTestId("court-seal-for").click();
+  await expect(kase.getByTestId("court-case-round")).toContainText(
+    "1 of 1 sealed",
+    { timeout: 60_000 },
+  );
+  await kase.getByTestId("court-move-on").click();
+  await kase.getByTestId("court-open").click({ timeout: 60_000 });
+  await expect(kase.getByTestId("court-case-round")).toContainText("1 opened", {
+    timeout: 60_000,
+  });
+  await kase.getByTestId("court-move-on").click();
+  await expect(kase.getByTestId("court-case-status")).toContainText(
+    "The panel ruled for the work.",
+    { timeout: 60_000 },
+  );
+
+  // ── Nobody appeals in two days: the case is settled, Eve is paid, the bounty can pay Dev ─────────
+  await pass(2 * 86_400);
+  await eve.reload();
+  await kase.getByTestId("court-settle").click();
+  await expect(kase.getByTestId("court-case-status")).toHaveText(
+    "Final ruling: for the work.",
+    { timeout: 60_000 },
+  );
+  await expect(juror.getByTestId("court-owed")).toContainText("3 USDC");
+  if (process.env.E2E_SHOTS) {
+    await eve.screenshot({
+      path: `${process.env.E2E_SHOTS}/court.png`,
+      fullPage: true,
+    });
+  }
+  const eveBefore = await usdcOf(EVE);
+  await juror.getByTestId("court-withdraw").click();
+  await expect(juror.getByTestId("court-withdraw")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  expect(await usdcOf(EVE)).toBe(eveBefore + 3n * UNIT);
+
+  await refresh(ben);
+  await expect(latest(ben).getByTestId("post-bounty-status")).toContainText(
+    "The court found",
+    { timeout: 30_000 },
+  );
+  const devPaid = await usdcOf(DEV);
+  await latest(ben).getByTestId("post-bounty-pay").click();
+  await expect(latest(ben).getByTestId("post-bounty-status")).toContainText(
+    "Paid 20",
+    { timeout: 60_000 },
+  );
+  expect(await usdcOf(DEV)).toBe(devPaid + 20n * UNIT);
 });

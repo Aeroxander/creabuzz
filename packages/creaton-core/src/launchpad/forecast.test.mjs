@@ -20,7 +20,7 @@ import {
   TOPIC_RUN_STARTED,
   workBountyQuestion,
 } from "./forecast.ts";
-import { OPEN_BOUNTY_SIGNATURES } from "./openBounty.ts";
+import { NO_APPEAL, OPEN_BOUNTY_SIGNATURES } from "./openBounty.ts";
 import { encodeCall0, encodeCallId, SIGNATURES } from "./work.ts";
 
 const CONTRACT = `0x${"9d".repeat(20)}`;
@@ -207,6 +207,8 @@ const post = (over = {}) => ({
   runClaim: 0,
   runSince: 0,
   paidClaim: 0,
+  court: false,
+  appeal: NO_APPEAL,
   ...over,
 });
 

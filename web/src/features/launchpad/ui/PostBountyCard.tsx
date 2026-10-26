@@ -1,8 +1,10 @@
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { formatAtomic } from "../lib/amounts";
 import {
+  encodeAppealPostBounty,
   encodeBackClaim,
   encodePayPostBounty,
   encodeRefundPostBounty,
@@ -24,6 +26,7 @@ import { defaultChainPreset } from "../chain-config";
 import { useChainSend } from "../use-chain-send";
 import { POST_BOUNTY_QUERY, usePostBounties } from "../use-post-bounties";
 import { useWalletLabels } from "../use-wallet-labels";
+import { encodeApproveBounty } from "../lib/work-bounty";
 import { FailureNote, WalletStrip } from "./auction-widgets";
 import { ForecastPanel } from "./ForecastPanel";
 import { postBountyQuestion, questionOf } from "../lib/forecast";
@@ -189,6 +192,22 @@ function BountyItem({
   const send = (name: string, call: string) =>
     void onSend(`post-bounty-${name}-${key}`, data.contract, call);
   const toStart = can.start(bounty.claims);
+  // The court's fee, in the bounty's own money when the court is paid in it (the usual case).
+  const courtFee = data.court
+    ? data.court.feeToken.toLowerCase() === data.currency.address.toLowerCase()
+      ? money(data.court.fee)
+      : "the court's fee"
+    : "";
+  /** Allow the bounty to take the court's fee, then appeal: the fee pays the jurors and is not returned. */
+  const appeal = async () => {
+    if (!data.court) return;
+    const allowed = await onSend(
+      `post-bounty-appeal-allow-${key}`,
+      data.court.feeToken,
+      encodeApproveBounty(data.contract, data.court.fee),
+    );
+    if (allowed) send("appeal", encodeAppealPostBounty(bounty.id));
+  };
   const held =
     stage.kind === "paid" ? record.total : record.total - record.refunded;
   return (
@@ -220,7 +239,7 @@ function BountyItem({
         })}
       </p>
       <div className="flex flex-wrap gap-2">
-        {stage.kind === "payable" ? (
+        {stage.kind === "payable" || stage.kind === "upheld" ? (
           <Button
             data-testid="post-bounty-pay"
             disabled={blocked}
@@ -279,6 +298,28 @@ function BountyItem({
             Submit your work
           </Button>
         ) : null}
+        {can.appeal && data.court ? (
+          <Button
+            data-testid="post-bounty-appeal"
+            disabled={blocked}
+            onClick={() => void appeal()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Appeal to the court ({courtFee})
+          </Button>
+        ) : null}
+        {stage.kind === "appealing" && stage.dispute !== null ? (
+          <Link
+            className="self-center text-sm underline"
+            data-testid="post-bounty-case"
+            hash={`case-${stage.dispute}`}
+            to="/court"
+          >
+            See the case
+          </Link>
+        ) : null}
         {can.withdrawClaim ? (
           <Button
             data-testid="post-bounty-withdraw-claim"
@@ -292,6 +333,12 @@ function BountyItem({
           </Button>
         ) : null}
       </div>
+      {can.appeal && data.court ? (
+        <p className="text-xs text-muted-foreground">
+          Jurors drawn by the court judge your work against the words above. The
+          fee pays them and is not returned.
+        </p>
+      ) : null}
       {form === "add" ? (
         <AddMoneyForm
           balance={data.walletBalance}

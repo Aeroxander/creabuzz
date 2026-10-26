@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {OpenBounty} from "../src/OpenBounty.sol";
+import {IArbitrator, OpenBounty} from "../src/OpenBounty.sol";
 import {MandateCurrency} from "./TreasuryMandate.t.sol";
 import {BlockingCurrency, FeeCurrency} from "./WorkAreaBounty.t.sol";
 
@@ -25,7 +25,7 @@ contract OpenBountyTest is Test {
     function setUp() public {
         vm.warp(100 days);
         usd = new MandateCurrency();
-        bounty = new OpenBounty(IERC20(address(usd)));
+        bounty = new OpenBounty(IERC20(address(usd)), IArbitrator(address(0)));
         address[5] memory people = [BEN, CARA, DEV, EVE, ANA];
         for (uint256 i; i < people.length; ++i) {
             usd.mint(people[i], 1_000e6);
@@ -117,7 +117,7 @@ contract OpenBountyTest is Test {
 
     function test_a_currency_that_keeps_a_fee_is_refused() public {
         FeeCurrency fee = new FeeCurrency();
-        OpenBounty b = new OpenBounty(IERC20(address(fee)));
+        OpenBounty b = new OpenBounty(IERC20(address(fee)), IArbitrator(address(0)));
         fee.mint(BEN, 100e6);
         vm.startPrank(BEN);
         fee.approve(address(b), type(uint256).max);
@@ -125,7 +125,7 @@ contract OpenBountyTest is Test {
         b.open(POST, WORDS, deadline, 100e6);
         vm.stopPrank();
         vm.expectRevert(OpenBounty.InvalidSetup.selector);
-        new OpenBounty(IERC20(address(0xBEEF)));
+        new OpenBounty(IERC20(address(0xBEEF)), IArbitrator(address(0)));
     }
 
     // ---- money in ------------------------------------------------------------------------------------------------
@@ -486,7 +486,7 @@ contract OpenBountyTest is Test {
     /// @dev Walked through, case 7.
     function test_a_claimant_the_currency_refuses_is_never_paid_and_funders_get_refunds_at_refundsFrom() public {
         BlockingCurrency blocking = new BlockingCurrency();
-        OpenBounty b = new OpenBounty(IERC20(address(blocking)));
+        OpenBounty b = new OpenBounty(IERC20(address(blocking)), IArbitrator(address(0)));
         blocking.mint(BEN, 50e6);
         vm.startPrank(BEN);
         blocking.approve(address(b), type(uint256).max);
@@ -511,7 +511,7 @@ contract OpenBountyTest is Test {
 
     function test_a_funder_the_currency_refuses_does_not_block_another_funders_refund() public {
         BlockingCurrency blocking = new BlockingCurrency();
-        OpenBounty b = new OpenBounty(IERC20(address(blocking)));
+        OpenBounty b = new OpenBounty(IERC20(address(blocking)), IArbitrator(address(0)));
         blocking.mint(BEN, 50e6);
         blocking.mint(CARA, 30e6);
         vm.startPrank(BEN);

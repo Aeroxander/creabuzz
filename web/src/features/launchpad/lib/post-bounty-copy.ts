@@ -36,7 +36,16 @@ export function postBountyLine(
     case "paid":
       return `Paid ${words.money(bounty.total)} to ${claimantOf(claims, stage.claim, words.who)}.`;
     case "refunds":
-      return "No work kept a majority in time. Everyone can take their money back.";
+      return bounty.appeal.state === "refused" ||
+        bounty.appeal.state === "upheld"
+        ? "The court did not uphold the work in time. Everyone can take their money back."
+        : "No work kept a majority in time. Everyone can take their money back.";
+    case "window":
+      return `Nothing was agreed by the deadline. Anyone whose work is here can appeal to the court until ${words.date(stage.until)}; then everyone can take their money back.`;
+    case "appealing":
+      return `${claimantOf(claims, stage.claim, words.who)} appealed to the court. The money stays here until it rules.`;
+    case "upheld":
+      return `The court found ${claimantOf(claims, stage.claim, words.who)}'s work matches the words. Anyone can pay it now, until ${words.date(stage.payUntil)}.`;
     case "payable":
       return `${claimantOf(claims, stage.claim, words.who)}'s work kept its backing. Anyone can pay it now.`;
     case "agreeing":

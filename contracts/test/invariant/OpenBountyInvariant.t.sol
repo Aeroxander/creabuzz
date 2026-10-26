@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {OpenBounty} from "../../src/OpenBounty.sol";
+import {IArbitrator, OpenBounty} from "../../src/OpenBounty.sol";
 import {MandateCurrency} from "../TreasuryMandate.t.sol";
 
 /// @notice Drives two bounties on posts through random orders of money in, claims, backing, starts, payments, refunds
@@ -163,7 +163,7 @@ contract OpenBountyInvariantTest is Test {
     function setUp() public {
         vm.warp(100 days);
         usd = new MandateCurrency();
-        bounty = new OpenBounty(IERC20(address(usd)));
+        bounty = new OpenBounty(IERC20(address(usd)), IArbitrator(address(0)));
         address[] memory actors = new address[](4);
         for (uint256 i; i < actors.length; ++i) {
             actors[i] = address(uint160(0xA001 + i));

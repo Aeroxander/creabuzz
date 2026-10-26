@@ -4,6 +4,13 @@ pragma solidity ^0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+/// @notice The court a bounty's claimant can appeal to (`CreateCourt`, or any arbitrator of the same shape).
+interface IArbitrator {
+    function feeToken() external view returns (IERC20);
+    function arbitrationCost() external view returns (uint256);
+    function createDispute(uint256 choices, bytes calldata extraData) external returns (uint256);
+}
+
 /// @title OpenBounty
 /// @notice A bounty on a post (N2, specified in docs/v3-review/OPEN-BOUNTY-STATES.md). Anyone opens one with fixed words
 /// for what "done" looks like, a deadline and money; anyone adds money until the deadline; anyone files a claim with
@@ -22,6 +29,12 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///
 /// The words and each claim's evidence are kept in this contract's events (their hashes in storage), so the page needs
 /// nothing but the chain to read them. Every action is constant time. No admin, no pause, no fee, no deposit.
+///
+/// Appeals (N7, when a `court` is named): once the deadline has passed and no run is on, a claimant may take their claim
+/// to the court within `APPEAL_WINDOW`, paying its fee; refunds wait for that window (unless nobody filed a claim). While
+/// the appeal is open nothing
+/// can be refunded. If the court upholds the claim, anyone can pay it the whole pot within `PAY_GRACE` of the ruling;
+/// any other ruling (against, none, or a timeout) leaves the bounty as it was, and refunds open. One appeal per bounty.
 contract OpenBounty {
     using SafeERC20 for IERC20;
 
@@ -35,8 +48,16 @@ contract OpenBounty {
     uint64 public constant MAX_LENGTH = 365 days;
     /// @notice The longest words or evidence, in bytes.
     uint256 public constant MAX_TEXT = 1000;
+    /// @notice How long after the deadline (or after a later run ended) a claimant can appeal, before refunds open.
+    uint64 public constant APPEAL_WINDOW = 3 days;
+
+    uint8 internal constant APPEAL_OPEN = 1;
+    uint8 internal constant APPEAL_UPHELD = 2;
+    uint8 internal constant APPEAL_REFUSED = 3;
 
     IERC20 public immutable currency;
+    /// @notice Where claimants appeal; the zero address means no appeals.
+    IArbitrator public immutable court;
 
     struct Bounty {
         address creator;
@@ -58,6 +79,16 @@ contract OpenBounty {
         uint32 paidClaim;
     }
 
+    /// @dev Kept apart from `Bounty` so its reads keep their shape.
+    struct Appeal {
+        /// @dev When the last run ended, so an appeal window can follow a run that ended after the deadline.
+        uint64 runEndedAt;
+        /// @dev 0 none, 1 open, 2 upheld, 3 refused (any ruling but "for").
+        uint8 state;
+        uint32 claim;
+        uint64 ruledAt;
+    }
+
     struct Claim {
         address claimant;
         bool open;
@@ -71,6 +102,9 @@ contract OpenBounty {
     mapping(uint256 => mapping(address => uint128)) public funded;
     mapping(uint256 => mapping(address => uint32)) public backs;
     mapping(uint256 => mapping(address => uint32)) public openClaim;
+    mapping(uint256 => Appeal) public appeals;
+    /// @notice The bounty each court case is about.
+    mapping(uint256 => uint256) public bountyOfDispute;
     bool private entered;
 
     error InvalidSetup();
@@ -95,6 +129,12 @@ contract OpenBounty {
     error RefundsNotOpen(uint256 id);
     error NothingToRefund(uint256 id, address funder);
     error Reentrancy();
+    error NoCourt();
+    error NotAppealTime(uint256 id);
+    error AlreadyAppealed(uint256 id);
+    error AppealOpen(uint256 id);
+    error NotCourt();
+    error UnknownDispute(uint256 dispute);
 
     event BountyOpened(
         uint256 indexed id,
@@ -116,6 +156,8 @@ contract OpenBounty {
     event RunEnded(uint256 indexed id, uint32 indexed claim);
     event BountyPaid(uint256 indexed id, uint32 indexed claim, address indexed claimant, uint256 amount);
     event Refunded(uint256 indexed id, address indexed funder, uint256 amount);
+    event Appealed(uint256 indexed id, uint32 indexed claim, address indexed claimant, uint256 dispute);
+    event AppealRuled(uint256 indexed id, uint32 indexed claim, uint256 ruling);
 
     modifier nonReentrant() {
         if (entered) revert Reentrancy();
@@ -124,9 +166,11 @@ contract OpenBounty {
         entered = false;
     }
 
-    constructor(IERC20 currency_) {
+    constructor(IERC20 currency_, IArbitrator court_) {
         if (address(currency_).code.length == 0) revert InvalidSetup();
+        if (address(court_) != address(0) && address(court_).code.length == 0) revert InvalidSetup();
         currency = currency_;
+        court = court_;
     }
 
     // ---- opening and money in ------------------------------------------------------------------------------------
@@ -191,6 +235,7 @@ contract OpenBounty {
         if (b.paidClaim != 0) revert AlreadyPaid(id);
         uint32 claim = openClaim[id][msg.sender];
         if (claim == 0) revert NoOpenClaim(id);
+        if (appeals[id].state == APPEAL_OPEN && appeals[id].claim == claim) revert AppealOpen(id);
         claims[id][claim].open = false;
         openClaim[id][msg.sender] = 0;
         b.counting += funded[id][msg.sender];
@@ -242,21 +287,69 @@ contract OpenBounty {
         _startRun(id, b, claim);
     }
 
-    /// @notice Pay the run's claimant the whole pot, once the run is `RUN` old and before `refundsFrom`. Anyone may call
-    /// it. If the currency refuses the claimant, nothing changes and the funders are refunded from `refundsFrom`.
+    /// @notice Pay the run's claimant the whole pot, once the run is `RUN` old and before `refundsFrom`; or the claim the
+    /// court upheld, within `PAY_GRACE` of the ruling. Anyone may call it. If the currency refuses the claimant, nothing
+    /// changes and the funders are refunded once the time to pay is over.
     function pay(uint256 id) external nonReentrant {
         Bounty storage b = _bounty(id);
         if (b.paidClaim != 0) revert AlreadyPaid(id);
+        Appeal storage a = appeals[id];
+        if (a.state == APPEAL_UPHELD) {
+            uint64 until = a.ruledAt + PAY_GRACE;
+            if (block.timestamp >= until) revert PayTooLate(id, until);
+            _payClaim(id, b, a.claim);
+            return;
+        }
         uint32 claim = b.runClaim;
         if (claim == 0) revert NoRun(id);
         uint64 payableAt = b.runSince + RUN;
         if (block.timestamp < payableAt) revert NotPayableYet(id, payableAt);
         if (block.timestamp >= b.refundsFrom) revert PayTooLate(id, b.refundsFrom);
-        b.paidClaim = claim;
-        address claimant = claims[id][claim].claimant;
-        uint256 amount = b.total;
-        emit BountyPaid(id, claim, claimant, amount);
-        currency.safeTransfer(claimant, amount);
+        _payClaim(id, b, claim);
+    }
+
+    // ---- appeals -------------------------------------------------------------------------------------------------
+
+    /// @notice Take your open claim to the court, paying its fee: after the deadline, with no run on, within
+    /// `APPEAL_WINDOW` of the deadline (or of a run that ended after it), before `refundsFrom` and before anything was
+    /// refunded. One appeal per bounty.
+    function appeal(uint256 id) external nonReentrant returns (uint256 dispute) {
+        if (address(court) == address(0)) revert NoCourt();
+        Bounty storage b = _bounty(id);
+        if (b.paidClaim != 0) revert AlreadyPaid(id);
+        uint32 claim = openClaim[id][msg.sender];
+        if (claim == 0) revert NoOpenClaim(id);
+        Appeal storage a = appeals[id];
+        if (a.state != 0) revert AlreadyAppealed(id);
+        if (b.runClaim != 0) revert RunOn(id);
+        uint64 from = _quietSince(b, a);
+        if (
+            block.timestamp < b.deadline || block.timestamp >= from + APPEAL_WINDOW || block.timestamp >= b.refundsFrom
+                || b.refunded != 0
+        ) revert NotAppealTime(id);
+        a.state = APPEAL_OPEN;
+        a.claim = claim;
+        IERC20 feeToken = court.feeToken();
+        uint256 fee = court.arbitrationCost();
+        uint256 before = feeToken.balanceOf(address(this));
+        feeToken.safeTransferFrom(msg.sender, address(this), fee);
+        uint256 received = feeToken.balanceOf(address(this)) - before;
+        if (received != fee) revert ShortTransfer(fee, received);
+        feeToken.forceApprove(address(court), fee);
+        dispute = court.createDispute(2, abi.encode(id, claim));
+        bountyOfDispute[dispute] = id;
+        emit Appealed(id, claim, msg.sender, dispute);
+    }
+
+    /// @notice The court's final ruling on an appeal: 1 upholds the claim; anything else refuses it.
+    function rule(uint256 dispute, uint256 ruling) external {
+        if (msg.sender != address(court)) revert NotCourt();
+        uint256 id = bountyOfDispute[dispute];
+        Appeal storage a = appeals[id];
+        if (id == 0 || a.state != APPEAL_OPEN) revert UnknownDispute(dispute);
+        a.state = ruling == 1 ? APPEAL_UPHELD : APPEAL_REFUSED;
+        a.ruledAt = uint64(block.timestamp);
+        emit AppealRuled(id, a.claim, ruling);
     }
 
     /// @notice Send `funder` back everything they put in, once refunds are open: at `refundsFrom`, or once the deadline
@@ -264,7 +357,7 @@ contract OpenBounty {
     function refund(uint256 id, address funder) external nonReentrant {
         Bounty storage b = _bounty(id);
         if (b.paidClaim != 0) revert AlreadyPaid(id);
-        if (!_refundsOpen(b)) revert RefundsNotOpen(id);
+        if (!_refundsOpen(id, b)) revert RefundsNotOpen(id);
         uint128 weight = funded[id][funder];
         if (weight == 0) revert NothingToRefund(id, funder);
         funded[id][funder] = 0;
@@ -286,7 +379,7 @@ contract OpenBounty {
     /// @notice Whether funders can take their money back now.
     function refundsOpen(uint256 id) external view returns (bool) {
         Bounty storage b = bounties[id];
-        return b.creator != address(0) && b.paidClaim == 0 && _refundsOpen(b);
+        return b.creator != address(0) && b.paidClaim == 0 && _refundsOpen(id, b);
     }
 
     /// @notice What bounty `id` still holds: its total less refunds until it pays; zero once paid.
@@ -308,8 +401,28 @@ contract OpenBounty {
         return c.open && uint256(c.backing) * 2 > b.counting;
     }
 
-    function _refundsOpen(Bounty storage b) private view returns (bool) {
-        return block.timestamp >= b.refundsFrom || (block.timestamp >= b.deadline && b.runClaim == 0);
+    function _refundsOpen(uint256 id, Bounty storage b) private view returns (bool) {
+        Appeal storage a = appeals[id];
+        if (a.state == APPEAL_OPEN) return false;
+        if (a.state == APPEAL_UPHELD) return block.timestamp >= a.ruledAt + PAY_GRACE;
+        if (block.timestamp >= b.refundsFrom) return true;
+        if (block.timestamp < b.deadline || b.runClaim != 0) return false;
+        // With a court, claimants get the appeal window first; with no claim, or a refused appeal, refunds open at once.
+        return address(court) == address(0) || b.claimCount == 0 || a.state == APPEAL_REFUSED
+            || block.timestamp >= _quietSince(b, a) + APPEAL_WINDOW;
+    }
+
+    /// @dev Since when the bounty has had no run after its deadline: the deadline, or a run that ended after it.
+    function _quietSince(Bounty storage b, Appeal storage a) private view returns (uint64) {
+        return a.runEndedAt > b.deadline ? a.runEndedAt : b.deadline;
+    }
+
+    function _payClaim(uint256 id, Bounty storage b, uint32 claim) private {
+        b.paidClaim = claim;
+        address claimant = claims[id][claim].claimant;
+        uint256 amount = b.total;
+        emit BountyPaid(id, claim, claimant, amount);
+        currency.safeTransfer(claimant, amount);
     }
 
     function _fund(uint256 id, Bounty storage b, uint256 amount) private {
@@ -362,5 +475,6 @@ contract OpenBounty {
         emit RunEnded(id, b.runClaim);
         b.runClaim = 0;
         b.runSince = 0;
+        appeals[id].runEndedAt = uint64(block.timestamp);
     }
 }

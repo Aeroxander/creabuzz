@@ -28,6 +28,8 @@ const bounty = {
   runClaim: 0,
   runSince: 0,
   paidClaim: 0,
+  court: true,
+  appeal: { state: "none", claim: 0, ruledAt: 0, runEndedAt: 0, dispute: null },
 };
 const claim = (over = {}) => ({
   claim: 1,
@@ -62,6 +64,18 @@ test("every stage has its own sentence, naming who and when", () => {
       { kind: "open" },
       "Takes money and work until day 1000. The work most of the money backs for nine days is paid.",
     ],
+    [
+      { kind: "window", until: 1_300 },
+      "Nothing was agreed by the deadline. Anyone whose work is here can appeal to the court until day 1300; then everyone can take their money back.",
+    ],
+    [
+      { kind: "appealing", claim: 1, dispute: 4n },
+      "Dev appealed to the court. The money stays here until it rules.",
+    ],
+    [
+      { kind: "upheld", claim: 1, payUntil: 2_000 },
+      "The court found Dev's work matches the words. Anyone can pay it now, until day 2000.",
+    ],
   ];
   for (const [stage, line] of cases) {
     assert.equal(
@@ -73,6 +87,11 @@ test("every stage has its own sentence, naming who and when", () => {
   assert.equal(
     postBountyLine({ kind: "payable", claim: 9 }, bounty, claims, words),
     "Someone's work kept its backing. Anyone can pay it now.",
+  );
+  const refused = { ...bounty, appeal: { ...bounty.appeal, state: "refused" } };
+  assert.equal(
+    postBountyLine({ kind: "refunds" }, refused, claims, words),
+    "The court did not uphold the work in time. Everyone can take their money back.",
   );
 });
 

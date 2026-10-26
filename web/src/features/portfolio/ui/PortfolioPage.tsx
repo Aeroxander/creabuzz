@@ -11,6 +11,10 @@ import { Briefcase } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { recordSaleCurrency } from "@/features/launchpad/chain";
+import {
+  courtAddress,
+  defaultChainPreset,
+} from "@/features/launchpad/chain-config";
 import { formatAtomic, formatMoney } from "@/features/launchpad/lib/amounts";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
 import {
@@ -568,7 +572,27 @@ export function PortfolioPage() {
       <WorkSection />
       <BackingSection />
       <HoldingsSection />
+      <CourtSection />
       <FollowingSection />
     </div>
+  );
+}
+
+/** The court (N7), where people stake CREATE to judge disputes about work: shown where this build names one. */
+function CourtSection() {
+  if (!courtAddress(defaultChainPreset().chainId)) return null;
+  return (
+    <section className="flex flex-col gap-3" data-testid="portfolio-court">
+      <SectionHeader title="Judging" />
+      <Card className="flex flex-col items-start gap-2 p-4">
+        <p className="text-sm">
+          Stake CREATE to be drawn as a juror on disputes about work. Jurors who
+          vote with the final ruling are paid.
+        </p>
+        <Button asChild size="sm" variant="outline">
+          <Link to="/court">Open the court</Link>
+        </Button>
+      </Card>
+    </section>
   );
 }

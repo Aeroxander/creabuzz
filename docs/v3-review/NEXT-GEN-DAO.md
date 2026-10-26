@@ -1,8 +1,8 @@
 # A next-gen DAO: from an idea to paid work, ownership and staged funding (proposal, 2026-10-25)
 
 Status: **a proposal.** Stage 1 is built for test networks: N1 and N2 (D113, D114, 2026-10-25), N3 and N4 (D115, D116,
-2026-10-26). Stage 2 has started: N5, matched exits, is built for test networks (D117, 2026-10-26). Nothing else in
-stages 2 and 3 is decided or built. Twelve pieces in three stages, each with its own proposed
+2026-10-26). Stage 2: N5 matched exits (D117), N6 what $CREATE is (D118, [CREATE-TOKEN.md](CREATE-TOKEN.md)) and N7
+the court with bounty appeals (D119, [COURT.md](COURT.md)) are built for test networks (2026-10-26). Twelve pieces in three stages, each with its own proposed
 decision row (N1 to N12), its own contract work, audit scope and, where money moves, a legal read. Each piece can be
 released on its own; accepting one does not accept the others. It follows the funding curve proposal
 ([JOIN-CURVE.md](JOIN-CURVE.md), asset rule decided as D112), the forecasts plan
@@ -191,6 +191,9 @@ cash. A matched sale keeps the cash in.
 
 ## 6. What $CREATE is, decided first (N6)
 
+**Decided as D118** ([CREATE-TOKEN.md](CREATE-TOKEN.md)): a work token, no claim on any treasury; a test token and
+faucet are built.
+
 Decided before any court code, because transfer rules, economic rights and collateral follow from it. **Recommended:
 a separate token, not the Shares of a Creaton DAO.**
 
@@ -206,6 +209,9 @@ token on testnet is enough to build the court. The example project
 carry over.
 
 ## 7. The $CREATE court (N7)
+
+**Built for test networks as D119** ([COURT.md](COURT.md)): bounty appeals only, and our own small court with Kleros's
+rules rather than a fork, so the fork-or-audit choice stays open for a main network.
 
 ### What it decides, in order
 

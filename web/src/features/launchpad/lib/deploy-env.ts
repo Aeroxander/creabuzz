@@ -9,6 +9,7 @@
 import {
   type ChainEnv,
   contributorKit,
+  courtAddress,
   createFaucet,
   createToken,
   daoLaunchKit,
@@ -138,6 +139,17 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       "VITE_CREATE_FAUCETS is named but VITE_CREATE_TOKENS is not: the faucet's token would not be shown.",
     );
   }
+  const court = courtAddress(chainId, env);
+  if (value(env, "VITE_COURTS") && !court) {
+    problems.push(
+      `VITE_COURTS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+    );
+  }
+  if (court && !create) {
+    problems.push(
+      "VITE_COURTS is named but VITE_CREATE_TOKENS is not: jurors could not see what they stake.",
+    );
+  }
   const exits = matchedExit(chainId, env);
   if (value(env, "VITE_MATCHED_EXITS") && !exits) {
     problems.push(
@@ -186,6 +198,7 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   summary.push(
     `CREATE: ${create ? `on (${create}${faucet ? `, faucet ${faucet}` : ", no faucet"})` : "off"}`,
   );
+  summary.push(`Court: ${court ? `on (${court})` : "off"}`);
 
   const project = value(env, "VITE_ZERODEV_PROJECT_ID");
   const zerodevChain = value(env, "VITE_ZERODEV_CHAIN_ID");

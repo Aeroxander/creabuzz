@@ -148,6 +148,8 @@ export interface ChainEnv {
   VITE_CREATE_TOKENS?: string;
   /** The test $CREATE faucet per chain, as JSON (N6). Test networks only; a chain with no entry hands out none. */
   VITE_CREATE_FAUCETS?: string;
+  /** The $CREATE court per chain, as JSON (N7). Where claimants appeal and jurors judge; a chain with no entry has none. */
+  VITE_COURTS?: string;
   /**
    * The block each chain's history starts at, as JSON: `{"11155111":7654321}`. Name the block the launch kit was deployed
    * at: every contract the app reads events from was made after it. Only used when a node refuses a read of the whole
@@ -236,6 +238,14 @@ export function createToken(
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
   return addressForChain(env?.VITE_CREATE_TOKENS, chainId);
+}
+
+/** The $CREATE court on `chainId`, or null when the build does not name one. */
+export function courtAddress(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_COURTS, chainId);
 }
 
 /** The test $CREATE faucet on `chainId`, or null; never on a main network (the build check refuses one there). */

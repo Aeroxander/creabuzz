@@ -2,6 +2,9 @@
  * Bounties on posts (N2, `contracts/src/OpenBounty.sol`, specified in docs/v3-review/OPEN-BOUNTY-STATES.md): what a
  * bounty looks like on chain, where it stands, what the connected wallet can do with it, and the calls that do it.
  *
+ * Appeals (N7): when the bounty names a court, a claimant can take their claim to it after the deadline, within
+ * `APPEAL_WINDOW`; refunds wait for that window and for any open appeal, and an upheld claim is paid the whole pot.
+ *
  * Pure apart from the reader, whose chain is injected (`openBounty.test.mjs` runs it against a fake one). The encoders
  * are pinned against `cast calldata` in the same test.
  */
@@ -24,6 +27,8 @@ export const PAY_GRACE = 14 * 86_400;
 export const MAX_LENGTH = 365 * 86_400;
 /** The longest words or evidence, in bytes. */
 export const MAX_TEXT = 1000;
+/** How long after the deadline (or a run that ended after it) a claimant can appeal, before refunds open. */
+export const APPEAL_WINDOW = 3 * 86_400;
 /** At most this many bounties are read for one post, and this many claims for one bounty; more are reported. */
 export const MAX_POST_BOUNTIES = 10;
 export const MAX_POST_CLAIMS = 200;
@@ -38,6 +43,9 @@ export const OPEN_BOUNTY_SIGNATURES = {
   start: "start(uint256,uint32)",
   pay: "pay(uint256)",
   refund: "refund(uint256,address)",
+  appeal: "appeal(uint256)",
+  appeals: "appeals(uint256)",
+  court: "court()",
   bounties: "bounties(uint256)",
   claims: "claims(uint256,uint32)",
   funded: "funded(uint256,address)",
@@ -57,6 +65,9 @@ export const TOPIC_POST_BOUNTY_FUNDED = topicOf(
 );
 export const TOPIC_POST_RUN_STARTED = topicOf(
   "RunStarted(uint256,uint32,uint64)",
+);
+export const TOPIC_POST_APPEALED = topicOf(
+  "Appealed(uint256,uint32,address,uint256)",
 );
 
 const bytesOf = (text: string): number => new TextEncoder().encode(text).length;
@@ -154,6 +165,11 @@ export function encodePayPostBounty(id: bigint): string {
   return encodeFunctionData(OPEN_BOUNTY_SIGNATURES.pay, ["uint256"], [id]);
 }
 
+/** Take your claim to the court (the bounty pulls the court's fee from you first). */
+export function encodeAppealPostBounty(id: bigint): string {
+  return encodeFunctionData(OPEN_BOUNTY_SIGNATURES.appeal, ["uint256"], [id]);
+}
+
 export function encodeRefundPostBounty(id: bigint, funder: string): string {
   if (!ADDRESS_RE.test(funder)) throw new Error("not an address (funder)");
   return encodeFunctionData(
@@ -182,6 +198,45 @@ export interface PostBountyRecord {
   runSince: number;
   /** The claim that was paid, or 0. */
   paidClaim: number;
+  /** Whether the bounty names a court its claimants can appeal to (N7). */
+  court: boolean;
+  appeal: PostAppeal;
+}
+
+/** An appeal to the court (N7), from `appeals(uint256)`. */
+export interface PostAppeal {
+  state: "none" | "open" | "upheld" | "refused";
+  /** The appealed claim, or 0. */
+  claim: number;
+  /** When the court ruled (Unix seconds), or 0. */
+  ruledAt: number;
+  /** When the bounty's last run ended, or 0: an appeal window can follow a run that ended after the deadline. */
+  runEndedAt: number;
+  /** The court's case number, or null before an appeal (read from the bounty's `Appealed` event). */
+  dispute: bigint | null;
+}
+
+export const NO_APPEAL: PostAppeal = {
+  state: "none",
+  claim: 0,
+  ruledAt: 0,
+  runEndedAt: 0,
+  dispute: null,
+};
+
+const APPEAL_STATES = ["none", "open", "upheld", "refused"] as const;
+
+/** `appeals(uint256)`: when the last run ended, the state, the claim, when it was ruled. */
+export function decodePostAppeal(hex: string): PostAppeal {
+  const w = wordsOf(hex);
+  if (w.length < 4) return NO_APPEAL;
+  return {
+    runEndedAt: Number(w[0]),
+    state: APPEAL_STATES[Number(w[1])] ?? "none",
+    claim: Number(w[2]),
+    ruledAt: Number(w[3]),
+    dispute: null,
+  };
 }
 
 const wordsOf = (hex: string): bigint[] => {
@@ -215,6 +270,8 @@ export function decodePostBounty(hex: string): PostBountyRecord | null {
     runClaim: Number(w[10]),
     runSince: Number(w[11]),
     paidClaim: Number(w[12]),
+    court: false,
+    appeal: NO_APPEAL,
   };
 }
 
@@ -308,6 +365,12 @@ export type PostBountyStage =
   | { kind: "paid"; claim: number }
   /** Funders can take their money back. */
   | { kind: "refunds" }
+  /** The court upheld claim `claim`: anyone can pay it until `payUntil`. */
+  | { kind: "upheld"; claim: number; payUntil: number }
+  /** Claim `claim` is with the court. */
+  | { kind: "appealing"; claim: number; dispute: bigint | null }
+  /** The deadline passed with nothing paid: a claimant can still appeal until `until`, when refunds open. */
+  | { kind: "window"; until: number }
   /** A run is on and old enough: anyone can pay it. */
   | { kind: "payable"; claim: number }
   /** A run is on, in its first two days. */
@@ -317,11 +380,38 @@ export type PostBountyStage =
   /** Taking money and claims, no run on. */
   | { kind: "open" };
 
+/** Since when the bounty has had no run after its deadline: the deadline, or a run that ended after it. */
+function quietSince(b: PostBountyRecord): number {
+  return b.appeal.runEndedAt > b.deadline ? b.appeal.runEndedAt : b.deadline;
+}
+
 /** Whether funders can take their money back at `now`: the contract's own rule. */
 export function postRefundsOpen(b: PostBountyRecord, now: number): boolean {
+  if (b.paidClaim !== 0) return false;
+  const a = b.appeal;
+  if (a.state === "open") return false;
+  if (a.state === "upheld") return now >= a.ruledAt + PAY_GRACE;
+  if (now >= b.refundsFrom) return true;
+  if (now < b.deadline || b.runClaim !== 0) return false;
   return (
+    !b.court ||
+    b.claimCount === 0 ||
+    a.state === "refused" ||
+    now >= quietSince(b) + APPEAL_WINDOW
+  );
+}
+
+/** Whether a claimant can appeal now (they also need an open claim): the contract's own rule. */
+export function postAppealOpen(b: PostBountyRecord, now: number): boolean {
+  return (
+    b.court &&
     b.paidClaim === 0 &&
-    (now >= b.refundsFrom || (now >= b.deadline && b.runClaim === 0))
+    b.appeal.state === "none" &&
+    b.runClaim === 0 &&
+    b.refunded === 0n &&
+    now >= b.deadline &&
+    now < quietSince(b) + APPEAL_WINDOW &&
+    now < b.refundsFrom
   );
 }
 
@@ -332,12 +422,29 @@ export function postBountyStage(
 ): PostBountyStage {
   if (b.paidClaim !== 0) return { kind: "paid", claim: b.paidClaim };
   if (postRefundsOpen(b, now)) return { kind: "refunds" };
+  if (b.appeal.state === "upheld") {
+    return {
+      kind: "upheld",
+      claim: b.appeal.claim,
+      payUntil: b.appeal.ruledAt + PAY_GRACE,
+    };
+  }
+  if (b.appeal.state === "open") {
+    return {
+      kind: "appealing",
+      claim: b.appeal.claim,
+      dispute: b.appeal.dispute,
+    };
+  }
   if (b.runClaim !== 0) {
     const payableAt = b.runSince + RUN;
     if (now >= payableAt) return { kind: "payable", claim: b.runClaim };
     return now < b.runSince + AGREE
       ? { kind: "agreeing", claim: b.runClaim, payableAt }
       : { kind: "holding", claim: b.runClaim, payableAt };
+  }
+  if (b.court && now >= b.deadline && b.appeal.state === "none") {
+    return { kind: "window", until: quietSince(b) + APPEAL_WINDOW };
   }
   return { kind: "open" };
 }
@@ -381,6 +488,8 @@ export function walletCan(
   unback: boolean;
   withdrawClaim: boolean;
   refund: boolean;
+  /** Take its open claim to the court. */
+  appeal: boolean;
   /** A claim with a majority that no run started yet: anyone can start its run. */
   start: (claims: readonly PostClaimView[]) => PostClaimView | null;
 } {
@@ -397,8 +506,12 @@ export function walletCan(
       me.openClaim === 0 &&
       me.backs !== c.claim,
     unback: unpaid && me.backs !== 0,
-    withdrawClaim: unpaid && me.openClaim !== 0,
+    withdrawClaim:
+      unpaid &&
+      me.openClaim !== 0 &&
+      !(b.appeal.state === "open" && b.appeal.claim === me.openClaim),
     refund: postRefundsOpen(b, now) && me.funded > 0n,
+    appeal: me.openClaim !== 0 && postAppealOpen(b, now),
     start: (claims) =>
       unpaid && before && b.runClaim === 0
         ? (claims.find((c) => c.open && hasMajority(c.backing, b.counting)) ??
@@ -425,6 +538,8 @@ export interface PostBountyView {
 
 export interface PostBounties {
   contract: string;
+  /** The court claimants appeal to, and what an appeal costs in its fee token; null when the bounty names none. */
+  court: { address: string; feeToken: string; fee: bigint } | null;
   currency: {
     address: string;
     symbol: string;
@@ -453,7 +568,7 @@ export async function readPostBounties(
       await chain.call(contract, encodeCall0(OPEN_BOUNTY_SIGNATURES.currency)),
     ),
   );
-  const [currency, walletBalance, openedLogs] = await Promise.all([
+  const [currency, walletBalance, openedLogs, court] = await Promise.all([
     readCurrency(chain, currencyAddress),
     wallet
       ? chain
@@ -464,6 +579,7 @@ export async function readPostBounties(
       address: contract,
       topics: [TOPIC_POST_BOUNTY_OPENED, null, postTopic(post)],
     }),
+    readPostCourt(chain, contract),
   ]);
   const opened = openedLogs
     .flatMap((log) => {
@@ -502,8 +618,15 @@ export async function readPostBounties(
                 ? readPosition(chain, contract, o.id, wallet)
                 : Promise.resolve(NO_POSITION),
             ]);
-          const record = decodePostBounty(recordHex);
-          if (!record) return null;
+          const decoded = decodePostBounty(recordHex);
+          if (!decoded) return null;
+          const record: PostBountyRecord = {
+            ...decoded,
+            court: court !== null,
+            appeal: court
+              ? await readPostAppeal(chain, contract, o.id)
+              : NO_APPEAL,
+          };
           const filed = claimLogs.flatMap((log) => {
             const decoded = decodePostClaimFiled(log as LogLike);
             return decoded ? [decoded] : [];
@@ -557,10 +680,103 @@ export async function readPostBounties(
   ).flatMap((b) => (b ? [b] : []));
   return {
     contract,
+    court,
     currency: { address: currencyAddress, ...currency },
     bounties,
     walletBalance,
     truncated: opened.length > MAX_POST_BOUNTIES,
+  };
+}
+
+/** What a court case about a bounty is judged against: the post, its words, and the appealed claim's evidence. */
+export interface PostBountyCase {
+  post: string;
+  words: string | null;
+  claimant: string | null;
+  evidence: string | null;
+}
+
+/** Read the words and one claim's evidence of bounty `id` from its events. */
+export async function readPostBountyCase(
+  chain: WorkChain,
+  contract: string,
+  id: bigint,
+  claim: number,
+): Promise<PostBountyCase> {
+  const [opened, filed] = await Promise.all([
+    chain.logs({
+      address: contract,
+      topics: [TOPIC_POST_BOUNTY_OPENED, idTopic(id)],
+    }),
+    chain.logs({
+      address: contract,
+      topics: [TOPIC_POST_CLAIM_FILED, idTopic(id), idTopic(BigInt(claim))],
+    }),
+  ]);
+  const o = opened.flatMap((log) => {
+    const d = decodePostBountyOpened(log as LogLike);
+    return d && d.id === id ? [d] : [];
+  })[0];
+  const f = filed.flatMap((log) => {
+    const d = decodePostClaimFiled(log as LogLike);
+    return d && d.claim === claim ? [d] : [];
+  })[0];
+  return {
+    post: o?.post ?? "",
+    words: o?.words ?? null,
+    claimant: f?.claimant ?? null,
+    evidence: f?.evidence ?? null,
+  };
+}
+
+/** The court a bounty contract names and what an appeal costs; null for none, or a contract made before appeals. */
+export async function readPostCourt(
+  chain: WorkChain,
+  contract: string,
+): Promise<PostBounties["court"]> {
+  let address: string;
+  try {
+    address = addressOf(
+      decodeWord(
+        await chain.call(contract, encodeCall0(OPEN_BOUNTY_SIGNATURES.court)),
+      ),
+    );
+  } catch {
+    return null;
+  }
+  if (/^0x0{40}$/.test(address)) return null;
+  const [feeToken, fee] = await Promise.all([
+    chain.call(address, encodeCall0("feeToken()")),
+    chain.call(address, encodeCall0("arbitrationCost()")),
+  ]);
+  return {
+    address,
+    feeToken: addressOf(decodeWord(feeToken)),
+    fee: decodeWord(fee),
+  };
+}
+
+/** A bounty's appeal, with the court's case number from its `Appealed` event once there is one. */
+export async function readPostAppeal(
+  chain: WorkChain,
+  contract: string,
+  id: bigint,
+): Promise<PostAppeal> {
+  const appeal = decodePostAppeal(
+    await chain.call(
+      contract,
+      encodeFunctionData(OPEN_BOUNTY_SIGNATURES.appeals, ["uint256"], [id]),
+    ),
+  );
+  if (appeal.state === "none") return appeal;
+  const logs = await chain.logs({
+    address: contract,
+    topics: [TOPIC_POST_APPEALED, idTopic(id)],
+  });
+  const data = (logs[0] as LogLike | undefined)?.data;
+  return {
+    ...appeal,
+    dispute: typeof data === "string" ? decodeWord(data) : null,
   };
 }
 

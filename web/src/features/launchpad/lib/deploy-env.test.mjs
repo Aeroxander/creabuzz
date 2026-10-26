@@ -141,6 +141,28 @@ test("CREATE is off by default, on with its token and faucet, refused when the f
   );
 });
 
+test("the court is off by default, on with its address, refused without CREATE", () => {
+  assert.ok(checkDeployEnv(SEPOLIA).summary.includes("Court: off"));
+  const COURT = `0x${"c0".repeat(20)}`;
+  const TOKEN = `0x${"c7".repeat(20)}`;
+  const on = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_COURTS: JSON.stringify({ 11155111: COURT }),
+    VITE_CREATE_TOKENS: JSON.stringify({ 11155111: TOKEN }),
+  });
+  assert.deepEqual(on.problems, []);
+  assert.ok(on.summary.includes(`Court: on (${COURT})`));
+  const alone = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_COURTS: JSON.stringify({ 11155111: COURT }),
+  });
+  assert.ok(
+    alone.problems.some((p) =>
+      p.startsWith("VITE_COURTS is named but VITE_CREATE_TOKENS"),
+    ),
+  );
+});
+
 test("a kit without a chain node or a history start is refused", () => {
   const noNode = checkDeployEnv({ ...SEPOLIA, VITE_CHAIN_RPC_URL: "" });
   assert.ok(

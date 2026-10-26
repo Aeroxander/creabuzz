@@ -18,6 +18,8 @@ import {
   OPEN_BOUNTY_SIGNATURES,
   type PostBountyRecord,
   postRefundsOpen,
+  readPostAppeal,
+  readPostCourt,
   TOPIC_POST_RUN_STARTED,
 } from "./openBounty.ts";
 import {
@@ -257,8 +259,17 @@ export async function readPostBountyQuestion(
     chain.logs({ address: contract, topics: [TOPIC_RUN_STARTED, idTopic(id)] }),
     chain.now(),
   ]);
-  const record = decodePostBounty(hex);
-  if (!record) return null;
+  const decoded = decodePostBounty(hex);
+  if (!decoded) return null;
+  // With a court, refunds wait for the appeal window, and an upheld appeal pays: the outcome follows the same rule.
+  const court = await readPostCourt(chain, contract);
+  const record = court
+    ? {
+        ...decoded,
+        court: true,
+        appeal: await readPostAppeal(chain, contract, id),
+      }
+    : decoded;
   const starts = runs.flatMap((raw) => {
     const log = raw as LogLike;
     return typeof log.data === "string" ? [Number(decodeWord(log.data))] : [];

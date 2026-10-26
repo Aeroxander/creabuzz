@@ -854,8 +854,12 @@ currency_contract_deployed() {
   [[ "$(lower "$currency")" == "$(lower "$(currency_address)")" ]]
 }
 
+# The open bounty must also name this chain's court (N7), so its claimants can appeal.
 open_bounty_deployed() {
-  currency_contract_deployed "$(open_bounty_manifest_path)" open-bounty
+  local named
+  currency_contract_deployed "$(open_bounty_manifest_path)" open-bounty || return 1
+  named=$(cast call "$(open_bounty_address)" "court()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  [[ "$(lower "$named")" == "$(lower "$(court_address)")" ]]
 }
 
 matched_exit_deployed() {
@@ -915,9 +919,72 @@ deploy_currency_contract() {
   echo "  ✓ $contract at $address (manifest $manifest)"
 }
 
-# The bounties on posts (N2): money behind a post, paid to the claim that keeps a majority of it, refunded otherwise.
+# The bounties on posts (N2): money behind a post, paid to the claim that keeps a majority of it, refunded otherwise;
+# a claimant can appeal to the court (N7).
 deploy_open_bounty() {
-  deploy_currency_contract open-bounty OpenBounty "$(open_bounty_manifest_path)" "money behind posts"
+  echo
+  if open_bounty_deployed; then
+    echo "── open-bounty: already at $(open_bounty_address) — skipped (idempotent)"
+    return 0
+  fi
+  local currency court address
+  currency=$(currency_address)
+  court=$(court_address)
+  [[ -n "$court" && "$(code_bytes "$court")" != "0" ]] || fail_step "open-bounty" "no court to appeal to (court step first)"
+  echo "── open-bounty: deploying OpenBounty (currency $currency, court $court)"
+  address=$(create_from_artifact open-bounty OpenBounty "$(cast abi-encode "constructor(address,address)" "$currency" "$court")")
+  write_one_role_manifest "$(open_bounty_manifest_path)" open-bounty "$address" "OpenBounty(currency, court)"
+  open_bounty_deployed || fail_step "open-bounty" "the deployed bounty does not pay in this chain's currency or name its court"
+  echo "  ✓ OpenBounty at $address (manifest $(open_bounty_manifest_path))"
+}
+
+court_manifest_path() {
+  echo "$DEPLOYMENTS_DIR/court-${CHAIN_ID}.json"
+}
+
+court_address() {
+  manifest_role "$(court_manifest_path)" "court"
+}
+
+# Guard: the court has code and stakes this chain's test CREATE and takes fees in its currency.
+court_deployed() {
+  local court stake fee
+  [[ -f "$(court_manifest_path)" ]] || return 1
+  court=$(court_address)
+  [[ -n "$court" && "$(code_bytes "$court")" != "0" ]] || return 1
+  stake=$(cast call "$court" "stakeToken()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  fee=$(cast call "$court" "feeToken()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  [[ "$(lower "$stake")" == "$(lower "$(create_token_address)")" && "$(lower "$fee")" == "$(lower "$(currency_address)")" ]]
+}
+
+# The court (N7): jurors stake test CREATE (100 a seat) and are paid in the currency (1 a seat per round).
+deploy_court() {
+  echo
+  if court_deployed; then
+    echo "── court: already at $(court_address) — skipped (idempotent)"
+    return 0
+  fi
+  local address
+  echo "── court: deploying CreateCourt (stake $(create_token_address), fees in $(currency_address))"
+  address=$(create_from_artifact court CreateCourt "$(cast abi-encode "constructor(address,address,uint256,uint256)" \
+    "$(create_token_address)" "$(currency_address)" 100000000000000000000 1000000)")
+  write_one_role_manifest "$(court_manifest_path)" court "$address" "CreateCourt(test CREATE, currency, 100 a seat, 1 a seat)"
+  court_deployed || fail_step "court" "the deployed court does not stake test CREATE or take this currency"
+  echo "  ✓ CreateCourt at $address (manifest $(court_manifest_path))"
+}
+
+# $1 manifest, $2 role, $3 address, $4 note.
+write_one_role_manifest() {
+  node -e '
+    const fs = require("fs");
+    const [file, chainId, role, address, note] = process.argv.slice(1);
+    fs.writeFileSync(file, JSON.stringify({
+      chainId: Number(chainId),
+      project: "buzz-dev-chain",
+      note: `scripts/dev-chain.sh — ${note}`,
+      roles: [{ role, address }],
+    }) + "\n");
+  ' "$1" "$CHAIN_ID" "$2" "$3" "$4" || fail_step "$2" "deployed at $3 but could not write $1"
 }
 
 # Matched exits (N5): members sell Shares to people who want in, once their DAO names this exchange by vote.
@@ -1070,9 +1137,10 @@ up() {
   deploy_launch_kit
   deploy_contributor_kit
   deploy_work_bounty
+  deploy_test_create
+  deploy_court
   deploy_open_bounty
   deploy_matched_exit
-  deploy_test_create
   fund_accounts
 
   echo
@@ -1090,12 +1158,14 @@ up() {
   echo "  open bounty: $(open_bounty_address) (open-bounty-$CHAIN_ID.json)"
   echo "  matched exit: $(matched_exit_address) (matched-exit-$CHAIN_ID.json)"
   echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
+  echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
   echo "  web env:    VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
   echo "              VITE_CONTRIBUTOR_KITS='{\"$CHAIN_ID\":\"$(contributor_kit_address)\"}'  (lets the app start a contributor project here)"
   echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
   echo "              VITE_OPEN_BOUNTIES='{\"$CHAIN_ID\":\"$(open_bounty_address)\"}'  (lets people put money behind a post here)"
   echo "              VITE_MATCHED_EXITS='{\"$CHAIN_ID\":\"$(matched_exit_address)\"}'  (lets members sell Shares to each other here, once their DAO votes for it)"
   echo "              VITE_CREATE_TOKENS='{\"$CHAIN_ID\":\"$(create_token_address)\"}' VITE_CREATE_FAUCETS='{\"$CHAIN_ID\":\"$(create_faucet_address)\"}'  (test CREATE: stakes and bonds)"
+  echo "              VITE_COURTS='{\"$CHAIN_ID\":\"$(court_address)\"}'  (the court claimants appeal to)"
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"

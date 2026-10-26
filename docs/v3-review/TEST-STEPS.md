@@ -1544,3 +1544,30 @@ By hand (a relay built from this branch, the dev chain, a web build with `VITE_C
 6. Make two offers, then **Cancel all my offers**: both go. A vote **Turn off sales between members** stops any fill at
    once.
 
+## 4bm. Test CREATE and the court (D118, D119, 2026-10-26)
+
+```bash
+cd contracts && forge test --match-contract "CreateToken|CreateCourt|OpenBounty"   # token, faucet, court, appeals
+pnpm --dir packages/creaton-core test        # court: calls, the seal, cases; bounties: the appeal window
+pnpm --dir web test                          # the court's words, the appeal stages, the build settings
+scripts/web-post-bounty-e2e.sh               # second journey: an appeal judged by a juror and paid
+node scripts/contracts-mutation-check.mjs 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100
+```
+
+By hand (the dev chain, a web build with `VITE_OPEN_BOUNTIES`, `VITE_COURTS`, `VITE_CREATE_TOKENS`,
+`VITE_CREATE_FAUCETS`; two browser wallets on the dev chain):
+
+1. **Portfolio → Judging → Open the court.** Press **Get 1,000 test CREATE**, then stake 300: it says **You stake 300
+   CREATE: 3 seats, 3 free.** Pressing the faucet again says to come back tomorrow.
+2. On a post, put money behind it with one wallet; with the other, submit work. Move the chain past the deadline
+   (`cast rpc anvil_increaseTime 2678400 && cast rpc anvil_mine`). The bounty says anyone whose work is there can
+   appeal until a date, and nobody can take money back yet.
+3. As the one who submitted, **Appeal to the court (3 USDC)**: two wallet prompts. The bounty says you appealed, with
+   **See the case**.
+4. On the court page the case shows the words and the work. Move the chain 2 days, **Draw the jurors**, **Seal my vote:
+   for the work** (your wallet signs a message, then sends), **Move on**, **Open my vote** (it signs the same message
+   again), **Move on**: **The panel ruled for the work.**
+5. Move the chain 2 days, **Settle the case**: **Final ruling: for the work.** and **The court owes you 3 USDC.**
+   **Withdraw what I'm owed.** On the post, **Pay now** sends the pot to the one who submitted.
+6. Try the other way: seal **against**, settle, and the bounty's funders can take their money back at once.
+

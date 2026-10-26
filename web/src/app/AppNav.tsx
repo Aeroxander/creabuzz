@@ -65,7 +65,8 @@ const NAV_ITEMS: readonly NavItem[] = [
     to: "/portfolio",
     label: "Portfolio",
     icon: Briefcase,
-    matches: (p) => p.startsWith("/portfolio"),
+    // The court is reached from Portfolio's Judging section.
+    matches: (p) => p.startsWith("/portfolio") || p.startsWith("/court"),
   },
 ];
 

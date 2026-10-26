@@ -122,6 +122,32 @@ the page offers to anyone when a claim qualifies and no run is on.
 | `pay` | (the bounty is over) | no |
 | `refund` | yes, harmlessly: no payment is possible once refunds open | no |
 
+## Appeals (N7, added 2026-10-26 with the court, D119)
+
+A bounty contract may name a court (`court ≠ 0`; the test networks' deployment does). Nothing above changes, except
+when refunds open and two new actions. One appeal per bounty, kept in `appeals[id]` beside the bounty's own record.
+
+| Name | Value | Meaning |
+|---|---|---|
+| `APPEAL_WINDOW` | 3 days | After the deadline, or after a run that ended after it (`quiet`), how long a claimant can appeal before refunds open |
+
+| State | When | What can happen |
+|---|---|---|
+| **Appeal window** | court, unpaid, `deadline ≤ t < quiet + APPEAL_WINDOW`, ¬running, no appeal, some claim filed | A claimant appeals; no refunds yet |
+| **With the court** | appeal open | Nothing moves money: no refund, no payment; the appealed claim cannot be withdrawn |
+| **Upheld** | ruling 1, `t < ruledAt + PAY_GRACE` | Anyone pays the appealed claimant the whole pot |
+| **Refunding** | as before, or the appeal refused (any ruling but 1, including a court that times out), or upheld but not paid by `ruledAt + PAY_GRACE` | Each funder's refund |
+
+| Action | Who | Allowed only when | What it does |
+|---|---|---|---|
+| `appeal(id)` | a claimant with an open claim | court; unpaid; no appeal yet; ¬running; `deadline ≤ t < quiet + APPEAL_WINDOW`; `t < refundsFrom`; nothing refunded | Takes the court's fee from the claimant, opens a case for (bounty, claim), records the appeal |
+| `rule(dispute, ruling)` | the court only | the case is this bounty's open appeal | 1 upholds the claim; anything else refuses it |
+
+`refundsOpen(t)` becomes: never while an appeal is open; for an upheld appeal only from `ruledAt + PAY_GRACE`; otherwise
+at `refundsFrom`, or after the deadline with no run when there is no court, no claim, a refused appeal, or the window
+has passed. The two endings still cannot overlap: an upheld claim is payable only before `ruledAt + PAY_GRACE`, which is
+exactly when its refunds open.
+
 ## Every boundary
 
 | Moment | Fund | File a claim | Back | Withdraw backing or claim | Start a run | Pay | Refund |

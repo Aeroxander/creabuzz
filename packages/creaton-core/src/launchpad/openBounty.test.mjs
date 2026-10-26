@@ -30,6 +30,12 @@ import {
   postRefundsOpen,
   readPostBounties,
   walletCan,
+  APPEAL_WINDOW,
+  decodePostAppeal,
+  encodeAppealPostBounty,
+  NO_APPEAL,
+  postAppealOpen,
+  TOPIC_POST_APPEALED,
 } from "./openBounty.ts";
 
 const word = (value) => BigInt(value).toString(16).padStart(64, "0");
@@ -103,6 +109,8 @@ const record = (over = {}) => ({
   runClaim: 0,
   runSince: 0,
   paidClaim: 0,
+  court: false,
+  appeal: NO_APPEAL,
   ...over,
 });
 
@@ -439,4 +447,93 @@ test("words that do not hash to the record are not shown as the bounty's words",
     backs: 0,
     openClaim: 0,
   });
+});
+
+// ---- appeals (N7) -----------------------------------------------------------------------------------
+
+test("the appeal call and its event are the contract's (cast goldens)", () => {
+  assert.equal(
+    encodeAppealPostBounty(7n),
+    "0x7e69b7b00000000000000000000000000000000000000000000000000000000000000007",
+  );
+  assert.equal(
+    TOPIC_POST_APPEALED,
+    "0xe6f546e60f7c7a030212e579e5f3724bb089bd631914ee869f79e9d19e3d61b9",
+  );
+  assert.deepEqual(decodePostAppeal(words(50, 2, 1, 70)), {
+    runEndedAt: 50,
+    state: "upheld",
+    claim: 1,
+    ruledAt: 70,
+    dispute: null,
+  });
+  assert.deepEqual(decodePostAppeal("0x"), NO_APPEAL);
+});
+
+const withCourt = (over = {}) => record({ court: true, ...over });
+const appealed = (state, over = {}) => ({
+  ...NO_APPEAL,
+  state,
+  claim: 1,
+  ...over,
+});
+
+test("with a court, refunds wait for the appeal window after the deadline, or after a later run ended", () => {
+  const b = withCourt();
+  assert.equal(postRefundsOpen(b, b.deadline), false);
+  assert.equal(postAppealOpen(b, b.deadline), true);
+  assert.equal(postAppealOpen(b, b.deadline - 1), false);
+  assert.equal(postRefundsOpen(b, b.deadline + APPEAL_WINDOW - 1), false);
+  assert.equal(postRefundsOpen(b, b.deadline + APPEAL_WINDOW), true);
+  assert.equal(postAppealOpen(b, b.deadline + APPEAL_WINDOW), false);
+  assert.deepEqual(postBountyStage(b, b.deadline + 1), {
+    kind: "window",
+    until: b.deadline + APPEAL_WINDOW,
+  });
+  const late = withCourt({
+    appeal: { ...NO_APPEAL, runEndedAt: b.deadline + 86_400 },
+  });
+  assert.equal(postRefundsOpen(late, b.deadline + APPEAL_WINDOW), false);
+  assert.equal(
+    postRefundsOpen(late, b.deadline + 86_400 + APPEAL_WINDOW),
+    true,
+  );
+  // Nobody filed a claim, so nobody can appeal: refunds open at the deadline.
+  assert.equal(postRefundsOpen(withCourt({ claimCount: 0 }), b.deadline), true);
+  // Without a court, refunds open at the deadline as before.
+  assert.equal(postRefundsOpen(record(), record().deadline), true);
+  assert.equal(postAppealOpen(record(), record().deadline), false);
+});
+
+test("an open appeal holds the money, an upheld one is paid for fourteen days, a refused one opens refunds", () => {
+  const open = withCourt({ appeal: appealed("open", { ruledAt: 0 }) });
+  assert.equal(postRefundsOpen(open, open.refundsFrom + 1), false);
+  assert.equal(postBountyStage(open, open.deadline + 10).kind, "appealing");
+  assert.equal(
+    postAppealOpen(open, open.deadline),
+    false,
+    "one appeal per bounty",
+  );
+  const ruledAt = open.deadline + 5 * 86_400;
+  const upheld = withCourt({ appeal: appealed("upheld", { ruledAt }) });
+  assert.deepEqual(postBountyStage(upheld, ruledAt + 1), {
+    kind: "upheld",
+    claim: 1,
+    payUntil: ruledAt + 14 * 86_400,
+  });
+  assert.equal(postRefundsOpen(upheld, ruledAt + 14 * 86_400 - 1), false);
+  assert.equal(postRefundsOpen(upheld, ruledAt + 14 * 86_400), true);
+  const refused = withCourt({ appeal: appealed("refused", { ruledAt }) });
+  assert.equal(postRefundsOpen(refused, ruledAt), true);
+});
+
+test("only a claimant appeals, and not while their claim is with the court", () => {
+  const b = withCourt();
+  const claimant = { funded: 0n, backs: 0, openClaim: 1 };
+  const funder = { funded: 10n, backs: 0, openClaim: 0 };
+  assert.equal(walletCan(b, claimant, b.deadline).appeal, true);
+  assert.equal(walletCan(b, funder, b.deadline).appeal, false);
+  const open = withCourt({ appeal: appealed("open") });
+  assert.equal(walletCan(open, claimant, open.deadline).withdrawClaim, false);
+  assert.equal(walletCan(open, claimant, open.deadline).appeal, false);
 });

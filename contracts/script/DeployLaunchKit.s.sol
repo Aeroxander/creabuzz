@@ -12,7 +12,7 @@ import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 /// `WorkAreaBounty` that holds outside money behind a work area of any work budget the summoner's factory makes (N1), and
 /// the `OpenBounty` that holds money behind a post until someone's claim keeps a majority of it (N2), and the
 /// `MatchedExit` exchange where a member sells Shares to someone who wants in, once their DAO names it by vote (N5). On a
-/// test network it also makes test $CREATE and its faucet (N6).
+/// test network it also makes test $CREATE and its faucet (N6), and the court that bounties on posts appeal to (N7).
 ///
 /// Nothing else is deployed: the auction factory, Permit2 and the sale currency are the chain's own. The script refuses
 /// to run where the factory has no code, and it checks the Shares implementation it computes really exists before it
@@ -30,6 +30,10 @@ contract DeployLaunchKit is Script {
     uint256 internal constant SEPOLIA = 11155111;
     /// @dev Circle's USDC on Sepolia (the same address `scripts/lib/sepolia-fork.sh` funds).
     address internal constant SEPOLIA_USDC = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
+
+    /// @dev The test court's settings: 100 $CREATE per seat, 1 USDC per seat per round.
+    uint256 internal constant SEAT_STAKE = 100e18;
+    uint256 internal constant FEE_PER_SEAT = 1e6;
 
     string[] internal roleNames;
     address[] internal roleAddresses;
@@ -61,11 +65,17 @@ contract DeployLaunchKit is Script {
         address contributorKit = vm.deployCode("ContributorKit.sol:ContributorKit", abi.encode(summoner));
         address workBounty =
             vm.deployCode("WorkAreaBounty.sol:WorkAreaBounty", abi.encode(bountyCurrency, made.mandateFactory()));
-        address openBounty = vm.deployCode("OpenBounty.sol:OpenBounty", abi.encode(bountyCurrency));
-        address matchedExit = vm.deployCode("MatchedExit.sol:MatchedExit", abi.encode(bountyCurrency));
-        // A test network gets a test $CREATE and its faucet (N6); this script never makes a real one.
+        // A test network gets a test $CREATE, its faucet (N6) and the court that stakes it (N7); this script never makes a
+        // real one. Bounties on posts name the court, so their claimants can appeal.
         (address createToken, address createFaucet) =
             isTestNetwork(block.chainid) ? _deployTestCreate(vm.addr(pk)) : (address(0), address(0));
+        address court = createToken == address(0)
+            ? address(0)
+            : vm.deployCode(
+                "CreateCourt.sol:CreateCourt", abi.encode(createToken, bountyCurrency, SEAT_STAKE, FEE_PER_SEAT)
+            );
+        address openBounty = vm.deployCode("OpenBounty.sol:OpenBounty", abi.encode(bountyCurrency, court));
+        address matchedExit = vm.deployCode("MatchedExit.sol:MatchedExit", abi.encode(bountyCurrency));
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");
         require(contributorKit.code.length != 0, "DeployLaunchKit: the contributor kit has no code");
@@ -85,6 +95,7 @@ contract DeployLaunchKit is Script {
         if (createToken != address(0)) {
             _role("create-token", "CreateToken", createToken);
             _role("create-faucet", "CreateFaucet", createFaucet);
+            _role("court", "CreateCourt", court);
         }
         _role("auction-factory", "Auction factory", ccaFactory);
         _writeManifest();

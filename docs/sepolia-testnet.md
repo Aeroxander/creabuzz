@@ -84,6 +84,8 @@ static host, or from the relay itself (`BUZZ_WEB_DIR`).
 | `VITE_WORK_BOUNTIES` | `{"11155111":"<work-bounty from the manifest>"}` | **Optional.** "Put money behind this work area" on contributor projects (N1). Without it the Work tab shows no bounties |
 | `VITE_OPEN_BOUNTIES` | `{"11155111":"<open-bounty from the manifest>"}` | **Optional.** "Put money behind this" under a post (N2). Without it a post page shows no bounties |
 | `VITE_MATCHED_EXITS` | `{"11155111":"<matched-exit from the manifest>"}` | **Optional.** Sales between members on a project's Funds tab, once its DAO votes them in (N5). Without it the Funds tab shows none |
+| `VITE_CREATE_TOKENS`, `VITE_CREATE_FAUCETS` | `{"11155111":"<create-token>"}`, `{"11155111":"<create-faucet>"}` | **Optional.** Test CREATE and the faucet that gives 1,000 a day (N6): offered as a reviewer bond, and staked in the court |
+| `VITE_COURTS` | `{"11155111":"<court from the manifest>"}` | **Optional.** The court (N7): a Court page reached from Portfolio, and appeals on bounties on posts. Needs `VITE_CREATE_TOKENS` |
 | `VITE_HISTORY_FROM_BLOCKS` | `{"11155111":<the manifest's "block">}` | Reading awards, work and votes: a real node refuses an event read that starts at block 0 |
 | `VITE_DAO_LAUNCH_KITS` | `{"11155111":"<launch-kit from the manifest>"}` | **Optional.** Test raises. Leave it out for the contributor-only first launch: the raise wizard then saves drafts but cannot launch one. With it set, the contributor Start page also checks that both kits name the same summoner |
 | `VITE_RELAY_URL` | `wss://<your relay>` | Only when the page is not served by the relay itself (it otherwise talks to its own origin) |
@@ -104,6 +106,9 @@ VITE_CONTRIBUTOR_KITS={"11155111":"<contributor-kit>"}
 VITE_WORK_BOUNTIES={"11155111":"<work-bounty>"}
 VITE_OPEN_BOUNTIES={"11155111":"<open-bounty>"}
 VITE_MATCHED_EXITS={"11155111":"<matched-exit>"}
+VITE_CREATE_TOKENS={"11155111":"<create-token>"}
+VITE_CREATE_FAUCETS={"11155111":"<create-faucet>"}
+VITE_COURTS={"11155111":"<court>"}
 VITE_HISTORY_FROM_BLOCKS={"11155111":<block>}
 ```
 

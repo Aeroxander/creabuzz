@@ -15,6 +15,7 @@ import { Route as linkDeviceRouteImport } from "./routes/link-device";
 import { Route as launchpadRouteImport } from "./routes/launchpad";
 import { Route as identityDemoRouteImport } from "./routes/identity-demo";
 import { Route as discoverRouteImport } from "./routes/discover";
+import { Route as courtRouteImport } from "./routes/court";
 import { Route as cRouteImport } from "./routes/c";
 import { Route as indexRouteImport } from "./routes/index";
 import { Route as uDotpubkeyRouteImport } from "./routes/u.$pubkey";
@@ -83,6 +84,11 @@ const identityDemoRoute = identityDemoRouteImport.update({
 const discoverRoute = discoverRouteImport.update({
   id: "/discover",
   path: "/discover",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const courtRoute = courtRouteImport.update({
+  id: "/court",
+  path: "/court",
   getParentRoute: () => rootRouteImport,
 } as any);
 const cRoute = cRouteImport.update({
@@ -186,6 +192,7 @@ const reposDotrepoIdDotblobDotsplatRoute =
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
   "/c": typeof cRoute;
+  "/court": typeof courtRoute;
   "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
@@ -217,6 +224,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
   "/c": typeof cRoute;
+  "/court": typeof courtRoute;
   "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
@@ -249,6 +257,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof indexRoute;
   "/c": typeof cRoute;
+  "/court": typeof courtRoute;
   "/discover": typeof discoverRoute;
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
@@ -282,6 +291,7 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/c"
+    | "/court"
     | "/discover"
     | "/identity-demo"
     | "/launchpad"
@@ -313,6 +323,7 @@ export interface FileRouteTypes {
   to:
     | "/"
     | "/c"
+    | "/court"
     | "/discover"
     | "/identity-demo"
     | "/launchpad"
@@ -344,6 +355,7 @@ export interface FileRouteTypes {
     | "__root__"
     | "/"
     | "/c"
+    | "/court"
     | "/discover"
     | "/identity-demo"
     | "/launchpad"
@@ -376,6 +388,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
   cRoute: typeof cRoute;
+  courtRoute: typeof courtRoute;
   discoverRoute: typeof discoverRoute;
   identityDemoRoute: typeof identityDemoRoute;
   launchpadRoute: typeof launchpadRoute;
@@ -475,6 +488,13 @@ declare module "@tanstack/react-router" {
       path: "/discover";
       fullPath: "/discover";
       preLoaderRoute: typeof discoverRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/court": {
+      id: "/court";
+      path: "/court";
+      fullPath: "/court";
+      preLoaderRoute: typeof courtRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/c": {
@@ -616,6 +636,7 @@ declare module "@tanstack/react-router" {
 const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
   cRoute: cRoute,
+  courtRoute: courtRoute,
   discoverRoute: discoverRoute,
   identityDemoRoute: identityDemoRoute,
   launchpadRoute: launchpadRoute,
