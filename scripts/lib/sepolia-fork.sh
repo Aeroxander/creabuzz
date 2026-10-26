@@ -36,7 +36,12 @@ sepolia_fork_up() { # <fork url> <port> <log file>
   anvil --fork-url "$fork_url" --fork-block-number "$((head - 10))" --port "$port" --prune-history=500 --silent >"$log" 2>&1 &
   FORK_PID=$!
   for _ in $(seq 1 60); do
-    [[ "$(cast chain-id --rpc-url "$FORK_RPC" 2>/dev/null || true)" == "$SEPOLIA_CHAIN_ID" ]] && return 0
+    if [[ "$(cast chain-id --rpc-url "$FORK_RPC" 2>/dev/null || true)" == "$SEPOLIA_CHAIN_ID" ]]; then
+      # Forking ten blocks back leaves the fork's clock about two minutes behind; real Sepolia's head is within seconds of
+      # now. Set it to now, or anything stamped by a clock (a forecast's time against a release's) looks out of order.
+      cast rpc anvil_setTime "$(date +%s)" --rpc-url "$FORK_RPC" >/dev/null || fail "could not set the fork's clock"
+      return 0
+    fi
     kill -0 "$FORK_PID" 2>/dev/null || { tail -20 "$log"; fail "anvil exited"; }
     sleep 1
   done
