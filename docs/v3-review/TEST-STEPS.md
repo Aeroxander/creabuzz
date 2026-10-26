@@ -1525,7 +1525,7 @@ cargo test -p buzz-relay --lib exit_offer                 # the server accepts o
 pnpm --dir packages/creaton-core test                     # matchedExit: the digest is the contract's, records, votes
 pnpm --dir web test                                       # the offer form, where sales stand, the build setting
 scripts/web-contributor-e2e.sh                            # vote, 30 days, switch on, a contributor sells to a newcomer
-node scripts/contracts-mutation-check.mjs 72 73 74 75 76 77 78 79 80 81 82 83   # each guard removed is caught
+node scripts/contracts-mutation-check.mjs 72 73 74 75 76 77 78 79 80 81 82   # each guard removed is caught
 ```
 
 By hand (a relay built from this branch, the dev chain, a web build with `VITE_CONTRIBUTOR_KITS` and

@@ -23,9 +23,8 @@ import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/Signa
 contract MatchedExit is EIP712 {
     using SafeERC20 for IERC20;
 
-    bytes32 public constant OFFER_TYPEHASH = keccak256(
-        "Offer(address shares,address seller,uint256 amount,uint256 price,uint64 expiry,uint256 nonce)"
-    );
+    bytes32 public constant OFFER_TYPEHASH =
+        keccak256("Offer(address shares,address seller,uint256 amount,uint256 price,uint64 expiry,uint256 nonce)");
 
     /// @notice What every price is paid in.
     IERC20 public immutable currency;
@@ -87,13 +86,7 @@ contract MatchedExit is EIP712 {
         return _hashTypedDataV4(
             keccak256(
                 abi.encode(
-                    OFFER_TYPEHASH,
-                    offer.shares,
-                    offer.seller,
-                    offer.amount,
-                    offer.price,
-                    offer.expiry,
-                    offer.nonce
+                    OFFER_TYPEHASH, offer.shares, offer.seller, offer.amount, offer.price, offer.expiry, offer.nonce
                 )
             )
         );
@@ -136,12 +129,13 @@ contract MatchedExit is EIP712 {
         emit OfferCancelled(digest, msg.sender);
     }
 
-    /// @dev Signed by the seller's own key, or, for an account with code, accepted by its ERC-1271 check. The key comes
-    /// first so a wallet with delegated code (EIP-7702) still signs as itself; no key exists for a contract's address.
+    /// @dev Signed by the seller's own key, or accepted by the seller's ERC-1271 check (an address with no code never
+    /// accepts). The key comes first so a wallet with delegated code (EIP-7702) still signs as itself; no key exists for
+    /// a contract's address.
     function _signedBy(address seller, bytes32 digest, bytes memory signature) internal view returns (bool) {
         (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, signature);
         if (err == ECDSA.RecoverError.NoError && recovered == seller) return true;
-        return seller.code.length != 0 && SignatureChecker.isValidERC1271SignatureNow(seller, digest, signature);
+        return SignatureChecker.isValidERC1271SignatureNow(seller, digest, signature);
     }
 
     /// @notice Cancel every offer of yours numbered below `nonce`.

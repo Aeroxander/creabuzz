@@ -520,8 +520,8 @@ const MUTATIONS = [
   [
     "N5: the exchange switches on without the 30 days",
     "contracts/src/majeur/MolochPatched.sol",
-    "if (pending == address(0) || block.timestamp < uint256(exitExchangeAnnouncedAt) + UNLOCK_NOTICE) revert ExitExchangeNotDue();",
-    "if (pending == address(0)) revert ExitExchangeNotDue();",
+    "if (pending == address(0) || block.timestamp < uint256(exitExchangeAnnouncedAt) + UNLOCK_NOTICE) {",
+    "if (pending == address(0)) {",
     "test/MatchedExit.t.sol",
   ],
   [
@@ -571,13 +571,6 @@ const MUTATIONS = [
     "contracts/src/MatchedExit.sol",
     "if (msg.sender != offer.seller) revert NotSeller();",
     "// removed",
-    "test/MatchedExit.t.sol",
-  ],
-  [
-    "N5: the smart-account check accepts an account with no code",
-    "contracts/src/MatchedExit.sol",
-    "return seller.code.length != 0 && SignatureChecker",
-    "return SignatureChecker",
     "test/MatchedExit.t.sol",
   ],
   [
