@@ -7,12 +7,15 @@ export function Figure({
   note,
   icon: Icon,
   testId,
+  valueTestId,
 }: {
   label: string;
   value: string;
   note?: string;
   icon?: LucideIcon;
   testId: string;
+  /** For a test that reads the number alone. */
+  valueTestId?: string;
 }) {
   return (
     <div className="rounded-xl bg-secondary/60 px-4 py-3" data-testid={testId}>
@@ -20,7 +23,12 @@ export function Figure({
         {Icon ? <Icon aria-hidden className="h-3.5 w-3.5" /> : null}
         {label}
       </p>
-      <p className="mt-0.5 text-2xl font-bold tabular-nums">{value}</p>
+      <p
+        className="mt-0.5 text-2xl font-bold tabular-nums"
+        data-testid={valueTestId}
+      >
+        {value}
+      </p>
       {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
     </div>
   );

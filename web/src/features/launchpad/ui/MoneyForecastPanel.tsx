@@ -1,8 +1,10 @@
+import { Scale } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { Meter } from "@/shared/ui/meter";
 import { getRpcEndpoint } from "../chain";
 import { forecastPool } from "../chain-config";
 import { parseUnits } from "../lib/dao-actions";
@@ -105,10 +107,13 @@ export function MoneyForecastPanel({
   const mine = data?.mine;
   return (
     <div
-      className="mt-2 rounded-lg bg-black/[0.03] p-2 text-sm dark:bg-white/[0.04]"
+      className="mt-2 rounded-xl bg-secondary/60 p-3 text-sm"
       data-testid="money-forecast"
     >
-      <p className="text-xs font-semibold">Money on it</p>
+      <p className="flex items-center gap-1.5 text-xs font-semibold">
+        <Scale aria-hidden className="h-3.5 w-3.5" />
+        Money on it
+      </p>
       {query.isError ? (
         <p className="text-muted-foreground" role="status">
           The pools could not be read.{" "}
@@ -127,6 +132,14 @@ export function MoneyForecastPanel({
           <p data-testid="money-forecast-pools">
             {poolsLine(data.yes, data.no, money)}
           </p>
+          {data.yes + data.no > 0n ? (
+            <Meter
+              className="mt-1"
+              label="Share of the money on paid"
+              max={data.yes + data.no}
+              value={data.yes}
+            />
+          ) : null}
           {outcomeLine(data.outcome) ? (
             <p
               className="text-muted-foreground"

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 import {
   expect as baseExpect,
@@ -572,4 +572,88 @@ test("the screen audit's world", async ({ browser }) => {
       2,
     ),
   );
+});
+
+/**
+ * With bounties in the build (`WEB_FEATURES=mvp+forecasts`): money behind a work area and behind a post, and
+ * "Will it get done?" forecasts on both, so the capture shows those panels with something in them. Runs on the world
+ * the test above made, read back from its fixture.
+ */
+test("money behind work and a post, with forecasts on both", async ({
+  browser,
+}) => {
+  test.skip(
+    process.env.E2E_AUDIT_MONEY !== "1",
+    "set E2E_AUDIT_MONEY=1 (WEB_FEATURES=mvp+forecasts does)",
+  );
+  test.setTimeout(10 * 60_000);
+  const world = JSON.parse(readFileSync(FIXTURE, "utf8")) as {
+    projectPath: string;
+    posts: { invitation: string };
+  };
+  const area = (page: Page) =>
+    page
+      .getByTestId("work-projects")
+      .locator(":scope > li")
+      .filter({ hasText: "plain-guide" });
+  const give = async (
+    panel: ReturnType<Page["getByTestId"]>,
+    percent: string,
+    reason: string,
+  ) => {
+    await panel.getByTestId("forecast-percent").fill(percent);
+    await panel.getByTestId("forecast-reason").fill(reason);
+    await panel.getByTestId("forecast-submit").click();
+    // This person's own forecast, not one already there.
+    await expect(panel).toContainText(`Yours: ${percent}%`);
+  };
+
+  // Frida puts 50 behind the plain guide.
+  const frida = await as(browser, "frida", world.projectPath);
+  await openTab(frida, world.projectPath, "Work");
+  await area(frida).getByTestId("work-bounty-open").click();
+  await area(frida).getByTestId("work-bounty-amount").fill("50");
+  await area(frida).getByTestId("work-bounty-submit").click();
+  await expect(area(frida).getByTestId("work-bounty-held")).toContainText(
+    "50",
+    { timeout: 90_000 },
+  );
+  await frida.context().close();
+
+  // Two people say whether they think it gets done.
+  for (const [who, percent, reason] of [
+    ["nia", "60", "Two people asked for a plain guide on the board already."],
+    ["cora", "75", "Most of it is in my first-hour notes."],
+  ] as const) {
+    const page = await as(browser, who, world.projectPath);
+    await openTab(page, world.projectPath, "Work");
+    await give(area(page).getByTestId("forecast-panel"), percent, reason);
+    await page.context().close();
+  }
+
+  // Rui puts 30 behind the invitation post, for a newcomer's first board post; Mo gives a forecast on it.
+  const postPath = `/social/post/${world.posts.invitation}`;
+  const rui = await as(browser, "rui", postPath);
+  const card = rui.getByTestId("post-bounty");
+  await card.getByTestId("post-bounty-open").click();
+  await card
+    .getByTestId("post-bounty-words-input")
+    .fill(
+      "A first post on the supporters board by someone who joined this month, saying what they want to build.",
+    );
+  await card.getByTestId("post-bounty-amount").fill("30");
+  await card.getByTestId("post-bounty-submit").click();
+  const item = (page: Page) =>
+    page.getByTestId("post-bounty").getByTestId("post-bounty-item").first();
+  await expect(item(rui).getByTestId("post-bounty-held")).toContainText("30", {
+    timeout: 90_000,
+  });
+  await rui.context().close();
+  const mo = await as(browser, "mo", postPath);
+  await give(
+    item(mo).getByTestId("forecast-panel"),
+    "55",
+    "New people post when someone asks them directly.",
+  );
+  await mo.context().close();
 });

@@ -33,6 +33,7 @@ import { buildRepost, buildUndo } from "../lib/post-events";
 import type { Row } from "../lib/timeline";
 import { useSocialPublish, useToggleBookmark } from "../use-social-actions";
 import { PostContent } from "./PostContent";
+import { PostMoneyChip } from "./PostMoneyChip";
 import { PostVotes } from "./PostVotes";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { QuoteDialog } from "./QuoteDialog";
@@ -292,6 +293,9 @@ export function PostCard({
               })}
             </div>
           ) : null}
+          <div className="mt-2 flex flex-wrap gap-2 empty:hidden">
+            <PostMoneyChip post={note.id} />
+          </div>
           <div className="mt-1 flex max-w-md items-center justify-between">
             <ActionButton
               count={engagement.replies}

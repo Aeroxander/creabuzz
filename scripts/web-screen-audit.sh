@@ -159,6 +159,8 @@ keep_up() {
   step "to run a spec against it: source test-results/screen-audit.env"
   wait "$RELAY_PID"
 }
+# With bounties in the build, the world also gets money behind a work area and a post, and forecasts on both.
+[[ "${WEB_FEATURES:-audit}" == "mvp+forecasts" ]] && export E2E_AUDIT_MONEY=1
 if ! node_modules/.bin/playwright test --config=playwright.real-relay.config.ts tests/e2e-real/audit-world.spec.ts \
   --reporter=list --retries=0; then
   grep -v '^{"timestamp"' "$STATE/relay.log" | tail -20 || true

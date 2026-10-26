@@ -29,6 +29,7 @@ import {
   postBountyStage,
   postRefundsOpen,
   readPostBounties,
+  readPostBountyIndex,
   walletCan,
   APPEAL_WINDOW,
   decodePostAppeal,
@@ -446,6 +447,97 @@ test("words that do not hash to the record are not shown as the bounty's words",
     funded: 0n,
     backs: 0,
     openClaim: 0,
+  });
+});
+
+test("a timeline's money chips come from one log read and a call per bounty, the newest first kept", async () => {
+  const OTHER = `0x${"bb".padStart(64, "0")}`;
+  // id: [post, total, refunded, paidClaim]
+  const bounties = {
+    1: [POST, 100, 0, 0],
+    2: [OTHER, 80, 0, 1],
+    3: [POST, 50, 20, 0],
+  };
+  const chain = {
+    call: async (to, data) => {
+      if (
+        to === BOUNTY &&
+        data === encodeCall0(OPEN_BOUNTY_SIGNATURES.currency)
+      )
+        return words(BigInt(USDC));
+      if (to === USDC && data === encodeCall0("decimals()")) return words(6);
+      if (to === USDC && data === encodeCall0("symbol()")) {
+        return `0x${word(32)}${word(4)}${Buffer.from("USDC").toString("hex").padEnd(64, "0")}`;
+      }
+      for (const [id, [post, total, refunded, paid]] of Object.entries(
+        bounties,
+      )) {
+        if (
+          data ===
+          encodeFunctionData(
+            OPEN_BOUNTY_SIGNATURES.bounties,
+            ["uint256"],
+            [BigInt(id)],
+          )
+        ) {
+          return words(
+            BigInt(BEN),
+            1,
+            100_000,
+            200_000,
+            BigInt(post),
+            1,
+            total,
+            refunded,
+            0,
+            0,
+            0,
+            0,
+            paid,
+          );
+        }
+      }
+      throw new Error(`unexpected call ${to} ${data}`);
+    },
+    logs: async ({ address, topics }) => {
+      assert.equal(address, BOUNTY);
+      // Every bounty on every post: no post in the filter.
+      assert.deepEqual(topics, [TOPIC_POST_BOUNTY_OPENED]);
+      return Object.entries(bounties).map(([id, [post]]) => ({
+        topics: [
+          TOPIC_POST_BOUNTY_OPENED,
+          `0x${word(BigInt(id))}`,
+          post,
+          `0x${word(BigInt(BEN))}`,
+        ],
+        data: encodeParameters(
+          ["bytes32", "uint64", "uint64", "string"],
+          [keccak("w"), 100_000n, 200_000n, "w"],
+        ),
+      }));
+    },
+  };
+  const all = await readPostBountyIndex(chain, BOUNTY);
+  assert.equal(all.currency.symbol, "USDC");
+  assert.equal(all.truncated, false);
+  // Post one: 100 held, plus 50 less the 20 taken back; post two: all 80 of a paid bounty.
+  assert.deepEqual(all.posts.get(POST), {
+    held: 130n,
+    paid: false,
+    bounties: 2,
+  });
+  assert.deepEqual(all.posts.get(OTHER), {
+    held: 80n,
+    paid: true,
+    bounties: 1,
+  });
+  // Only the newest two: bounty 1 is left out and the read says so.
+  const newest = await readPostBountyIndex(chain, BOUNTY, 2);
+  assert.equal(newest.truncated, true);
+  assert.deepEqual(newest.posts.get(POST), {
+    held: 30n,
+    paid: false,
+    bounties: 1,
   });
 });
 

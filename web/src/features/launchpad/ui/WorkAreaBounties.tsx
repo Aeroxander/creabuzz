@@ -1,7 +1,8 @@
-import { Coins } from "lucide-react";
+import { CalendarClock, Coins, Users } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
+import { Chip } from "@/shared/ui/chip";
 import { Input } from "@/shared/ui/input";
 import { formatAtomic } from "../lib/amounts";
 import {
@@ -230,20 +231,26 @@ function BountyRow({
   });
   return (
     <li className="text-xs" data-testid="work-bounty">
-      <p>
-        <span className="font-medium" data-testid="work-bounty-held">
+      <p className="flex flex-wrap items-center gap-2">
+        <span
+          className="text-base font-bold tabular-nums"
+          data-testid="work-bounty-held"
+        >
           {money(stage.kind === "paid" ? bounty.record.total : held)}
         </span>
-        <span className="text-muted-foreground">
-          {" "}
-          from {bounty.funders === 1 ? "1 person" : `${bounty.funders} people`}
-          {bounty.walletFunded > 0n
-            ? ` · you put in ${money(bounty.walletFunded)}`
-            : ""}
-        </span>
+        <Chip icon={Users}>
+          {bounty.funders === 1 ? "1 person" : `${bounty.funders} people`}
+        </Chip>
+        {bounty.walletFunded > 0n ? (
+          <Chip tone="success">You put in {money(bounty.walletFunded)}</Chip>
+        ) : null}
       </p>
-      <p className="text-muted-foreground" data-testid="work-bounty-status">
-        {line}
+      <p
+        className="mt-1 flex gap-1.5 text-muted-foreground"
+        data-testid="work-bounty-status"
+      >
+        <CalendarClock aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
+        <span>{line}</span>
       </p>
       <div className="mt-1 flex flex-wrap gap-2">
         {stage.kind === "payable" ? (
@@ -451,10 +458,9 @@ function FundForm({
         </div>
       ) : null}
       <p className="text-xs text-muted-foreground">
-        It goes to whoever's work for this area the reviewers approve in time,
-        after the {waitDays(window)} wait. If nobody's is, you get it back. It
-        stays in until then. Your wallet asks twice: once to allow the amount,
-        once to put it in.
+        Paid to the work the reviewers approve in time, after the{" "}
+        {waitDays(window)} wait; if none is, it comes back to you. Your wallet
+        asks twice: to allow the amount, then to put it in.
       </p>
       <UnauditedNotice chainId={chainId} />
       {gate ? <p className="text-xs text-muted-foreground">{gate}</p> : null}

@@ -1660,3 +1660,18 @@ http://localhost:3199):
    shows a green Finished chip and a blue Open chip.
 5. At phone width (390 px) nothing scrolls sideways and the cards stack in one column.
 
+## 4bt. Forecasts, money behind posts, Home and Portfolio (D126, 2026-10-26)
+
+On a test world with money in it (`KEEP=1 CAPTURE=0 WEB_FEATURES=mvp+forecasts scripts/web-screen-audit.sh`; the world
+builder puts 50 behind plain-guide and 30 behind the invitation post, with forecasts):
+
+1. Home: the invitation post shows a green chip "30 dUSDC behind this". Other posts show none.
+2. Open that post. Working looks like: the amount large with a "1 person" chip; "Done when" above the words; a
+   "Will it get done?" panel with a blue bar, Mo Haddad with a 55% chip, and one row of fields (Your %, Why, Publish).
+   **How the money decides** opens the majority rule.
+3. Creaton's Work tab: plain-guide's work area shows 50 dUSDC with a chip, and the forecast panel the same way.
+4. As someone with something waiting (the founder), Home's **Waiting on you** shows the project as a chip, an amber
+   "Closes …" chip, the reason in one muted line, and the action as a button.
+5. Portfolio: four tiles under "Your share of the work", **How points work** opens one line, and there is no "Raises
+   you backed" section (this server lists no sale).
+

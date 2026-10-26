@@ -688,6 +688,74 @@ export async function readPostBounties(
   };
 }
 
+/** At most this many bounties, the newest, are read for a timeline's money chips. */
+export const MAX_INDEXED_BOUNTIES = 50;
+
+/** What is behind one post, over all its bounties: what they hold now (all of a paid one), and whether one was paid. */
+export interface PostMoney {
+  held: bigint;
+  paid: boolean;
+  bounties: number;
+}
+
+/**
+ * The money behind every post that has a bounty (N2), for chips in a timeline: one log read finds each bounty's post,
+ * one call per bounty reads what it holds now, for the newest `max`. Posts are keyed by their 32-byte word, lower case.
+ */
+export async function readPostBountyIndex(
+  chain: WorkChain,
+  contract: string,
+  max = MAX_INDEXED_BOUNTIES,
+): Promise<{
+  currency: { symbol: string; decimals: number; decimalsKnown: boolean };
+  posts: Map<string, PostMoney>;
+  truncated: boolean;
+}> {
+  const currencyAddress = addressOf(
+    decodeWord(
+      await chain.call(contract, encodeCall0(OPEN_BOUNTY_SIGNATURES.currency)),
+    ),
+  );
+  const [currency, openedLogs] = await Promise.all([
+    readCurrency(chain, currencyAddress),
+    chain.logs({ address: contract, topics: [TOPIC_POST_BOUNTY_OPENED] }),
+  ]);
+  const opened = openedLogs
+    .flatMap((log) => {
+      const decoded = decodePostBountyOpened(log as LogLike);
+      return decoded ? [decoded] : [];
+    })
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const newest = opened.slice(-max);
+  const records = await Promise.all(
+    newest.map(async (o) => ({
+      post: o.post.toLowerCase(),
+      record: decodePostBounty(
+        await chain.call(
+          contract,
+          encodeFunctionData(
+            OPEN_BOUNTY_SIGNATURES.bounties,
+            ["uint256"],
+            [o.id],
+          ),
+        ),
+      ),
+    })),
+  );
+  const posts = new Map<string, PostMoney>();
+  for (const { post, record } of records) {
+    if (!record) continue;
+    const paid = record.paidClaim !== 0;
+    const was = posts.get(post) ?? { held: 0n, paid: false, bounties: 0 };
+    posts.set(post, {
+      held: was.held + (paid ? record.total : record.total - record.refunded),
+      paid: was.paid || paid,
+      bounties: was.bounties + 1,
+    });
+  }
+  return { currency, posts, truncated: opened.length > newest.length };
+}
+
 /** What a court case about a bounty is judged against: the post, its words, and the appealed claim's evidence. */
 export interface PostBountyCase {
   post: string;

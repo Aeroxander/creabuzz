@@ -229,16 +229,31 @@ test("your share of the work counts only what a reviewer accepted, and Following
   const work = page.getByTestId("portfolio-work");
   await expect(work.getByTestId("portfolio-work-points")).toHaveText("30");
   await expect(work.getByTestId("portfolio-work-share")).toHaveText("25%");
-  await expect(work.getByTestId("portfolio-work-counts")).toHaveText(
-    "1 piece accepted · 2 waiting for review",
+  await expect(work.getByTestId("portfolio-work-accepted")).toHaveText(
+    /^Accepted\s*1$/,
+  );
+  await expect(work.getByTestId("portfolio-work-waiting")).toHaveText(
+    /^Waiting for review\s*2$/,
   );
 
-  // No wallet in this browser: ask to connect, never claim "no raises".
-  await expect(page.getByTestId("portfolio-backing-no-wallet")).toBeVisible();
+  // No launch on this server has a sale and this build offers none: no raises section at all.
+  await expect(page.getByTestId("portfolio-backing")).toHaveCount(0);
 
   const followed = page.getByTestId("portfolio-followed");
   await expect(followed).toHaveCount(1);
   await expect(followed).toContainText("Nebula DAO");
+});
+
+test("with a raise on the server and no wallet, Portfolio asks for the wallet and never says none were backed", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed(launch("nebula", "Nebula DAO", NEBULA_AUCTION, 1_700_000_700));
+  await relay.install(page);
+  await signIn(page);
+  await page.goto("/portfolio");
+  await expect(page.getByTestId("portfolio-backing-no-wallet")).toBeVisible();
+  await expect(page.getByTestId("portfolio-backing-empty")).toHaveCount(0);
 });
 
 test("raises you backed come from your wallet's bids, and a raise that can't be read says so", async ({

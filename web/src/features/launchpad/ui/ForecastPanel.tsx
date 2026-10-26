@@ -1,9 +1,12 @@
+import { Gauge } from "lucide-react";
 import { useId, useState } from "react";
 
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
+import { Chip } from "@/shared/ui/chip";
 import { Input } from "@/shared/ui/input";
+import { Meter } from "@/shared/ui/meter";
 import {
   countingForecasts,
   MAX_REASON,
@@ -12,6 +15,7 @@ import {
 } from "../lib/forecast";
 import { useForecasts } from "../use-forecasts";
 import { usePeopleWithWallets } from "../use-people";
+import { Person } from "./Face";
 
 const date = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString(undefined, {
@@ -84,56 +88,82 @@ export function ForecastPanel({
   const shown = showAll ? counted : counted.slice(0, MOST_SHOWN);
   return (
     <div
-      className="mt-2 rounded-lg bg-black/[0.03] p-2 text-sm dark:bg-white/[0.04]"
+      className="mt-2 rounded-xl bg-secondary/60 p-3 text-sm"
       data-testid="forecast-panel"
     >
-      <p className="text-xs font-semibold">Will it get done?</p>
-      <p data-testid="forecast-summary">
-        {query.isError ? (
-          <>
-            Forecasts could not be read.{" "}
-            <button
-              className="underline"
-              onClick={() => void query.refetch()}
-              type="button"
-            >
-              Try again
-            </button>
-          </>
-        ) : query.data === undefined ? (
-          "Reading forecasts…"
-        ) : middle === null ? (
-          "No forecasts yet."
-        ) : (
-          `Middle forecast: ${middle}% · ${counted.length === 1 ? "1 person" : `${counted.length} people`}`
-        )}
-      </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-semibold">
+          <Gauge aria-hidden className="h-3.5 w-3.5" />
+          Will it get done?
+        </p>
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="forecast-summary"
+        >
+          {query.isError ? (
+            <>
+              Forecasts could not be read.{" "}
+              <button
+                className="underline"
+                onClick={() => void query.refetch()}
+                type="button"
+              >
+                Try again
+              </button>
+            </>
+          ) : query.data === undefined ? (
+            "Reading forecasts…"
+          ) : middle === null ? (
+            "No forecasts yet."
+          ) : (
+            `Middle forecast: ${middle}% · ${counted.length === 1 ? "1 person" : `${counted.length} people`}`
+          )}
+        </p>
+      </div>
+      {middle !== null ? (
+        <Meter
+          className="mt-2"
+          label="Middle forecast"
+          max={100n}
+          tone="info"
+          value={BigInt(middle)}
+        />
+      ) : null}
       {state.outcome !== null && middle !== null ? (
-        <p className="text-muted-foreground" data-testid="forecast-outcome">
+        <p
+          className={
+            state.outcome === "done"
+              ? "mt-2 flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300"
+              : "mt-2 flex items-center gap-1.5 text-amber-800 dark:text-amber-300"
+          }
+          data-testid="forecast-outcome"
+        >
           {state.outcome === "done"
             ? `It got done. The middle forecast was ${middle}%.`
             : `It was not done in time. The middle forecast was ${middle}%.`}
         </p>
       ) : !open ? (
-        <p className="text-muted-foreground" data-testid="forecast-closed">
+        <p
+          className="mt-2 text-xs text-muted-foreground"
+          data-testid="forecast-closed"
+        >
           Forecasts closed on {date(state.cutoff)}.
         </p>
       ) : null}
       {shown.length > 0 ? (
-        <ul className="mt-1 flex flex-col gap-1" data-testid="forecast-list">
+        <ul className="mt-2 flex flex-col gap-2" data-testid="forecast-list">
           {shown.map((f) => (
             <li className="text-xs" data-testid="forecast-item" key={f.id}>
-              <span className="font-medium">{nameOf(f.author)}</span>
-              {` · ${f.percent}%`}
-              {isInvolved(f.author) ? (
-                <span
-                  className="text-muted-foreground"
-                  data-testid="forecast-involved"
-                >
-                  {" · involved"}
-                </span>
-              ) : null}
-              <span className="block text-muted-foreground">{f.reason}</span>
+              <span className="flex flex-wrap items-center gap-1.5">
+                <Person label={nameOf(f.author)} />
+                <Chip tone="info">{f.percent}%</Chip>
+                {isInvolved(f.author) ? (
+                  <Chip data-testid="forecast-involved">Involved</Chip>
+                ) : null}
+              </span>
+              <span className="mt-0.5 block pl-7 text-muted-foreground">
+                {f.reason}
+              </span>
             </li>
           ))}
         </ul>
@@ -148,46 +178,35 @@ export function ForecastPanel({
         </button>
       ) : null}
       {open && me ? (
-        <div className="mt-2 flex flex-col gap-2" data-testid="forecast-form">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium" htmlFor={`${id}-percent`}>
-              {mine
-                ? `Your forecast is ${mine.percent}%. Change it (%)`
-                : "How likely is it to be done? (%)"}
-            </label>
-            <Input
-              className="w-24"
-              data-testid="forecast-percent"
-              id={`${id}-percent`}
-              inputMode="numeric"
-              onChange={(e) => setPercentText(e.target.value)}
-              placeholder="60"
-              value={percentText}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium" htmlFor={`${id}-reason`}>
-              Why
-            </label>
-            <Input
-              data-testid="forecast-reason"
-              id={`${id}-reason`}
-              maxLength={MAX_REASON}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="What makes you think so"
-              value={reason}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Your forecast and reason are public, with your name. No money and no
-            vote: it only helps people judge. It closes on {date(state.cutoff)}.
-          </p>
-          {problem ? (
-            <p className="text-xs text-red-700 dark:text-red-300" role="alert">
-              {problem}
-            </p>
-          ) : null}
-          <div>
+        <div className="mt-3 flex flex-col gap-2" data-testid="forecast-form">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium" htmlFor={`${id}-percent`}>
+                {mine ? `Yours: ${mine.percent}%` : "Your %"}
+              </label>
+              <Input
+                className="w-20"
+                data-testid="forecast-percent"
+                id={`${id}-percent`}
+                inputMode="numeric"
+                onChange={(e) => setPercentText(e.target.value)}
+                placeholder="60"
+                value={percentText}
+              />
+            </div>
+            <div className="flex min-w-40 flex-1 flex-col gap-1">
+              <label className="text-xs font-medium" htmlFor={`${id}-reason`}>
+                Why
+              </label>
+              <Input
+                data-testid="forecast-reason"
+                id={`${id}-reason`}
+                maxLength={MAX_REASON}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="What makes you think so"
+                value={reason}
+              />
+            </div>
             <Button
               data-testid="forecast-submit"
               disabled={sending}
@@ -196,16 +215,21 @@ export function ForecastPanel({
               type="button"
               variant="outline"
             >
-              {sending
-                ? "Publishing…"
-                : mine
-                  ? "Change my forecast"
-                  : "Publish my forecast"}
+              {sending ? "Publishing…" : mine ? "Change it" : "Publish"}
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Public, with your name. No money, no vote. Closes{" "}
+            {date(state.cutoff)}.
+          </p>
+          {problem ? (
+            <p className="text-xs text-red-700 dark:text-red-300" role="alert">
+              {problem}
+            </p>
+          ) : null}
         </div>
       ) : open ? (
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-2 text-xs text-muted-foreground">
           Make an account to give a forecast.
         </p>
       ) : null}

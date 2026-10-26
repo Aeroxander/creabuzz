@@ -8,9 +8,11 @@
  */
 
 import { Link } from "@tanstack/react-router";
+import { Clock, Rocket } from "lucide-react";
 
 import { deadline } from "@/features/launchpad/lib/challenge-copy";
 import { Button } from "@/shared/ui/button";
+import { Chip } from "@/shared/ui/chip";
 
 import { useWaitingOnMe } from "../use-waiting-on-me";
 
@@ -58,45 +60,54 @@ export function WaitingOnYou() {
           const timed = item.due !== undefined && item.due > now;
           return (
             <li
-              className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 py-2"
+              className="flex flex-wrap items-center justify-between gap-3 py-3"
               data-testid="home-waiting-item"
               key={`${launch.record.id}:${item.key}`}
             >
-              <span className="min-w-0 text-sm">
-                <span className="font-semibold">{launch.record.name}</span>
-                {": "}
-                {item.text}
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-2 text-sm">
+                  <Chip icon={Rocket}>{launch.record.name}</Chip>
+                  <span>{item.text}</span>
+                </p>
                 {item.why || item.ifIgnored || timed ? (
-                  <span
-                    className="mt-0.5 block text-xs text-muted-foreground"
+                  <p
+                    className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
                     data-testid="home-waiting-why"
                   >
-                    {timed && item.due !== undefined
-                      ? `Closes ${deadline(item.due)}. `
-                      : ""}
-                    {item.why ? `${item.why} ` : ""}
-                    {item.ifIgnored ?? ""}
-                  </span>
+                    {timed && item.due !== undefined ? (
+                      <Chip icon={Clock} tone="warning">
+                        Closes {deadline(item.due)}
+                      </Chip>
+                    ) : null}
+                    {item.why || item.ifIgnored ? (
+                      <span>
+                        {item.why ? `${item.why} ` : ""}
+                        {item.ifIgnored ?? ""}
+                      </span>
+                    ) : null}
+                  </p>
                 ) : null}
-              </span>
-              <Link
-                className="shrink-0 text-sm font-medium underline underline-offset-2"
-                data-testid="home-waiting-open"
-                params={{ launchId: launch.record.id }}
-                search={{
-                  action: undefined,
-                  author: launch.record.author,
-                  // The tab where the thing is acted on: a reviewer's bond or review is on Work, a vote on Decisions.
-                  tab: item.tab,
-                  // And the claim itself, when it is about one: the Work tab opens on it.
-                  ...(item.claim
-                    ? { claim: item.claim.id, mandate: item.claim.mandate }
-                    : {}),
-                }}
-                to="/launchpad/$launchId"
-              >
-                {item.action}
-              </Link>
+              </div>
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  className="shrink-0"
+                  data-testid="home-waiting-open"
+                  params={{ launchId: launch.record.id }}
+                  search={{
+                    action: undefined,
+                    author: launch.record.author,
+                    // The tab where the thing is acted on: a reviewer's bond or review is on Work, a vote on Decisions.
+                    tab: item.tab,
+                    // And the claim itself, when it is about one: the Work tab opens on it.
+                    ...(item.claim
+                      ? { claim: item.claim.id, mandate: item.claim.mandate }
+                      : {}),
+                  }}
+                  to="/launchpad/$launchId"
+                >
+                  {item.action}
+                </Link>
+              </Button>
             </li>
           );
         })}

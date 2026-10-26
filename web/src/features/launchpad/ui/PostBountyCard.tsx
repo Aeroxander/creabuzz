@@ -1,7 +1,11 @@
 import { Link } from "@tanstack/react-router";
+import { CalendarClock, Coins, Users } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
+import { Chip } from "@/shared/ui/chip";
+import { Meter } from "@/shared/ui/meter";
+import { MoreInfo } from "@/shared/ui/more-info";
 import { formatAtomic } from "../lib/amounts";
 import {
   encodeAppealPostBounty,
@@ -28,6 +32,7 @@ import { POST_BOUNTY_QUERY, usePostBounties } from "../use-post-bounties";
 import { useWalletLabels } from "../use-wallet-labels";
 import { encodeApproveBounty } from "../lib/work-bounty";
 import { FailureNote, WalletStrip } from "./auction-widgets";
+import { Person } from "./Face";
 import { ForecastPanel } from "./ForecastPanel";
 import { MoneyForecastPanel } from "./MoneyForecastPanel";
 import { postBountyQuestion, questionOf } from "../lib/forecast";
@@ -79,7 +84,11 @@ export function PostBountyCard({ post }: { post: string }) {
       className="border-b border-black/10 p-4 dark:border-white/10"
       data-testid="post-bounty"
     >
-      <h2 className="text-sm font-semibold" id="post-bounty-title">
+      <h2
+        className="flex items-center gap-1.5 text-sm font-semibold"
+        id="post-bounty-title"
+      >
+        <Coins aria-hidden className="h-4 w-4" />
         Money behind this post
       </h2>
       {query.isError ? (
@@ -101,9 +110,9 @@ export function PostBountyCard({ post }: { post: string }) {
       ) : (
         <>
           {data.bounties.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              None yet. Put some behind it, and whoever does it is paid once
-              most of the money agrees, or everyone gets theirs back.
+            <p className="mt-1 text-xs text-muted-foreground">
+              None yet. Whoever does it is paid once most of the money agrees,
+              or everyone gets theirs back.
             </p>
           ) : (
             <div className="mt-2 flex flex-col gap-4">
@@ -120,10 +129,10 @@ export function PostBountyCard({ post }: { post: string }) {
                   wallet={sender.wallet.address}
                 />
               ))}
-              <p className="text-xs text-muted-foreground">
+              <MoreInfo label="How the money decides">
                 Whoever put in more than half the money decides alone, and
                 people who put money in but back nothing count as not agreeing.
-              </p>
+              </MoreInfo>
             </div>
           )}
           {anyLive ? null : opening ? (
@@ -216,28 +225,38 @@ function BountyItem({
       className="flex flex-col gap-1 text-sm"
       data-testid="post-bounty-item"
     >
-      <p>
-        <span className="font-semibold" data-testid="post-bounty-held">
+      <p className="flex flex-wrap items-center gap-2">
+        <span
+          className="text-xl font-bold tabular-nums"
+          data-testid="post-bounty-held"
+        >
           {money(held)}
         </span>
-        <span className="text-muted-foreground">
-          {" "}
-          from {bounty.funders === 1 ? "1 person" : `${bounty.funders} people`}
-          {bounty.wallet.funded > 0n
-            ? ` · you put in ${money(bounty.wallet.funded)}`
-            : ""}
+        <Chip icon={Users}>
+          {bounty.funders === 1 ? "1 person" : `${bounty.funders} people`}
+        </Chip>
+        {bounty.wallet.funded > 0n ? (
+          <Chip tone="success">You put in {money(bounty.wallet.funded)}</Chip>
+        ) : null}
+      </p>
+      <div>
+        <p className="text-xs font-medium text-muted-foreground">Done when</p>
+        <p data-testid="post-bounty-words">
+          {bounty.words ?? "The words could not be checked against the bounty."}
+        </p>
+      </div>
+      <p
+        className="flex gap-1.5 text-xs text-muted-foreground"
+        data-testid="post-bounty-status"
+      >
+        <CalendarClock aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
+        <span>
+          {postBountyLine(stage, record, bounty.claims, {
+            money,
+            date,
+            who: labelOf,
+          })}
         </span>
-      </p>
-      <p data-testid="post-bounty-words">
-        <span className="text-muted-foreground">Done looks like: </span>
-        {bounty.words ?? "The words could not be checked against the bounty."}
-      </p>
-      <p className="text-muted-foreground" data-testid="post-bounty-status">
-        {postBountyLine(stage, record, bounty.claims, {
-          money,
-          date,
-          who: labelOf,
-        })}
       </p>
       <div className="flex flex-wrap gap-2">
         {stage.kind === "payable" || stage.kind === "upheld" ? (
@@ -375,19 +394,26 @@ function BountyItem({
             const mine = bounty.wallet.backs === claim.claim;
             return (
               <li
-                className="rounded-lg border border-black/10 p-2 dark:border-white/10"
+                className="rounded-xl border border-border/60 p-3"
                 data-testid="post-bounty-claim"
                 key={claim.claim}
               >
-                <p>
-                  <span className="font-medium">{labelOf(claim.claimant)}</span>
-                  <span className="text-muted-foreground">
-                    {" · "}
-                    <span data-testid="post-bounty-claim-share">
-                      {claimShareLine(claim, record.counting)}
-                    </span>
-                    {mine ? " · you back this" : ""}
-                  </span>
+                <p className="flex flex-wrap items-center gap-2">
+                  <Person label={labelOf(claim.claimant)} />
+                  {mine ? <Chip tone="success">You back this</Chip> : null}
+                </p>
+                <Meter
+                  className="mt-2"
+                  label={`Money backing ${labelOf(claim.claimant)}'s work`}
+                  max={record.counting}
+                  tone="info"
+                  value={claim.backing}
+                />
+                <p
+                  className="mt-1 text-xs text-muted-foreground"
+                  data-testid="post-bounty-claim-share"
+                >
+                  {claimShareLine(claim, record.counting)}
                 </p>
                 <p className="break-words">
                   {link ? (

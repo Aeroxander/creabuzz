@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getRpcEndpoint } from "./chain";
 import { defaultChainPreset, openBounty } from "./chain-config";
-import { readPostBounties } from "./lib/open-bounty";
+import { readPostBounties, readPostBountyIndex } from "./lib/open-bounty";
 import { endpointChain } from "./use-work";
 
 const keccakText = (text: string) =>
@@ -42,4 +42,20 @@ export function usePostBounties(post: string | null, wallet: string | null) {
     refetchOnWindowFocus: false,
   });
   return { chainId, contract, postWord, query };
+}
+
+/**
+ * The money behind every post that has a bounty, for chips in a timeline: one read shared by every post on the page, and
+ * none at all when this build names no bounty contract for its network.
+ */
+export function usePostMoney() {
+  const contract = openBounty(defaultChainPreset().chainId);
+  return useQuery({
+    queryKey: [...POST_BOUNTY_QUERY, "index", contract],
+    enabled: contract !== null,
+    queryFn: () =>
+      readPostBountyIndex(endpointChain(getRpcEndpoint()), contract as string),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
 }

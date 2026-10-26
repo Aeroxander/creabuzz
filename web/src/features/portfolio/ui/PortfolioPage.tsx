@@ -7,16 +7,27 @@
  * your share moves only because everyone else's does.
  */
 import { Link } from "@tanstack/react-router";
-import { Briefcase } from "lucide-react";
+import {
+  Briefcase,
+  CircleCheck,
+  Clock,
+  Hourglass,
+  Lock,
+  PieChart,
+  Star,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import { recordSaleCurrency } from "@/features/launchpad/chain";
 import {
   courtAddress,
+  daoLaunchKit,
   defaultChainPreset,
 } from "@/features/launchpad/chain-config";
 import { formatAtomic, formatMoney } from "@/features/launchpad/lib/amounts";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
+import { useLaunches } from "@/features/launchpad/use-launches";
+import { Figure } from "@/features/launchpad/ui/Figure";
 import {
   ProgressBar,
   StageBadge,
@@ -27,6 +38,8 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Chip } from "@/shared/ui/chip";
+import { MoreInfo } from "@/shared/ui/more-info";
 import { PageHeader, SectionHeader } from "@/shared/ui/PageHeader";
 import { errorMessage, QueryError } from "@/shared/ui/query-error";
 
@@ -127,47 +140,44 @@ function WorkSection() {
     const nothingYet = standing.accepted === 0 && standing.waiting === 0;
     body = (
       <Card className="flex flex-col gap-3 p-4">
-        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-          <p>
-            <span
-              className="text-2xl font-semibold tabular-nums"
-              data-testid="portfolio-work-points"
-            >
-              {standing.points.toLocaleString()}
-            </span>{" "}
-            <span className="text-sm text-black/60 dark:text-white/60">
-              points
-            </span>
-          </p>
-          <p>
-            <span
-              className="text-2xl font-semibold tabular-nums"
-              data-testid="portfolio-work-share"
-            >
-              {formatShare(standing.share)}
-            </span>{" "}
-            <span className="text-sm text-black/60 dark:text-white/60">
-              of all accepted work
-            </span>
-          </p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Figure
+            icon={Star}
+            label="Points"
+            testId="portfolio-work-points-tile"
+            value={standing.points.toLocaleString()}
+            valueTestId="portfolio-work-points"
+          />
+          <Figure
+            icon={PieChart}
+            label="Of all accepted work"
+            testId="portfolio-work-share-tile"
+            value={formatShare(standing.share)}
+            valueTestId="portfolio-work-share"
+          />
+          <Figure
+            icon={CircleCheck}
+            label="Accepted"
+            testId="portfolio-work-accepted"
+            value={String(standing.accepted)}
+          />
+          <Figure
+            icon={Hourglass}
+            label="Waiting for review"
+            testId="portfolio-work-waiting"
+            value={String(standing.waiting)}
+          />
         </div>
-        <p
-          className="text-sm text-black/70 dark:text-white/70"
-          data-testid="portfolio-work-counts"
-        >
-          {plural(standing.accepted, "piece")} accepted · {standing.waiting}{" "}
-          waiting for review
-        </p>
         {nothingYet ? (
           <Muted>
             Finish a task on your community's work board and claim it. Once a
             reviewer accepts it, it counts here.
           </Muted>
         ) : null}
-        <p className="text-xs text-black/50 dark:text-white/50">
+        <MoreInfo label="How points work">
           Points never expire. Your share only shrinks when others keep
           contributing and you don't.
-        </p>
+        </MoreInfo>
         {standing.partial ? (
           <p className="text-xs text-amber-700 dark:text-amber-300">
             Only the most recent records were counted, so older work may be
@@ -179,7 +189,7 @@ function WorkSection() {
   }
   return (
     <Section
-      description="Work a reviewer accepted, across this server."
+      description="Work a reviewer accepted, on this server."
       id="portfolio-work"
       title="Your share of the work"
     >
@@ -370,36 +380,39 @@ function HoldingRow({ held }: { held: HeldInDao }) {
         <div className="flex items-start gap-2">
           <LaunchLink launch={launch} />
         </div>
-        <p className="text-sm">
-          <span
-            className="font-semibold tabular-nums"
-            data-testid="portfolio-holding-shares"
-          >
-            {formatAtomic(held.balance, TOKEN_DECIMALS, {
-              symbol,
-              maxFractionDigits: 0,
-            })}
-          </span>{" "}
-          <span className="text-black/60 dark:text-white/60">
-            held for{" "}
+        <p
+          className="text-2xl font-bold tabular-nums"
+          data-testid="portfolio-holding-shares"
+        >
+          {formatAtomic(held.balance, TOKEN_DECIMALS, {
+            symbol,
+            maxFractionDigits: 0,
+          })}
+        </p>
+        <p className="flex flex-wrap gap-1.5">
+          <Chip icon={Clock}>
+            Held for{" "}
             <span data-testid="portfolio-holding-age">
               {describeAge(held.age)}
             </span>
-          </span>
+          </Chip>
         </p>
         {held.locked > 0n ? (
           <p
-            className="text-xs text-black/60 dark:text-white/60"
+            className="flex gap-1.5 text-xs text-amber-800 dark:text-amber-300"
             data-testid="portfolio-holding-locked"
           >
-            {formatAtomic(held.locked, TOKEN_DECIMALS, {
-              maxFractionDigits: 0,
-            })}{" "}
-            of them are locked until milestones are reached
-            {free > 0n
-              ? `; ${formatAtomic(free, TOKEN_DECIMALS, { maxFractionDigits: 0 })} are free`
-              : ""}
-            .
+            <Lock aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span>
+              {formatAtomic(held.locked, TOKEN_DECIMALS, {
+                maxFractionDigits: 0,
+              })}{" "}
+              of them are locked until milestones are reached
+              {free > 0n
+                ? `; ${formatAtomic(free, TOKEN_DECIMALS, { maxFractionDigits: 0 })} are free`
+                : ""}
+              .
+            </span>
           </p>
         ) : null}
       </Card>
@@ -476,7 +489,7 @@ function HoldingsSection() {
   }
   return (
     <Section
-      description="Shares you hold in DAOs, and for how long. The time counts from the day the Shares reached your wallet, and moving them to another wallet does not carry it over."
+      description="Shares you hold in each DAO. Time held counts from the day they reached this wallet."
       id="portfolio-holdings"
       title="What you hold"
     >
@@ -555,14 +568,28 @@ function FollowingSection() {
   );
 }
 
+/** Raises are shown where this server lists a sale, or this build offers one; a contributor-only server has neither. */
+function useRaisesHere(): boolean {
+  const launches = useLaunches();
+  return (
+    daoLaunchKit(defaultChainPreset().chainId) !== null ||
+    (launches.data ?? []).some((launch) => Boolean(launch.record.auction))
+  );
+}
+
 export function PortfolioPage() {
+  const raises = useRaisesHere();
   return (
     <div
       className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8"
       data-testid="portfolio-page"
     >
       <PageHeader
-        description="What you've backed, what you've built, and your share of each."
+        description={
+          raises
+            ? "What you've backed, what you've built, and your share of each."
+            : "What you've built and what you hold."
+        }
         title={
           <span className="flex items-center gap-2">
             <Briefcase aria-hidden className="h-5 w-5" /> Portfolio
@@ -570,7 +597,7 @@ export function PortfolioPage() {
         }
       />
       <WorkSection />
-      <BackingSection />
+      {raises ? <BackingSection /> : null}
       <HoldingsSection />
       <CourtSection />
       <FollowingSection />

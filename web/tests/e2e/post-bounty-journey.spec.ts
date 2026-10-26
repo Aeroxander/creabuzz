@@ -225,7 +225,7 @@ test("money behind a post is paid to the work most of it backs for nine days, an
     "100",
     { timeout: 60_000 },
   );
-  await expect(item(cara)).toContainText("from 2 people");
+  await expect(item(cara)).toContainText("2 people");
   expect(await usdcOf(BOUNTY)).toBe(100n * UNIT);
   await forecast(cara, "80", "Dev painted the crossing last spring.");
   await expect(item(cara).getByTestId("forecast-summary")).toHaveText(
