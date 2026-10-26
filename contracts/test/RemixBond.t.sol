@@ -87,6 +87,7 @@ contract RemixBondTest is Test {
 
     function test_an_upheld_case_makes_the_bond_the_parents() public {
         uint256 id = _post(90 days);
+        _post(90 days); // another bond held here: a second payment could only come out of it
         vm.prank(CRITIC);
         uint256 dispute = bonds.openCase(id);
         assertEq(usd.balanceOf(CRITIC), 97e6, "the critic paid the court's fee");
