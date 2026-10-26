@@ -18,7 +18,10 @@
 # Usage:  scripts/web-screen-audit.sh [playwright args for the capture]
 # Env:    SHOTS=<dir> (default test-results/screen-audit-<date>/before), KEEP=1 (leave the world running for a look in
 #         a browser; Ctrl-C ends it), SKIP_BUILD=1 (reuse target/debug/buzz-relay; the web app is always built here),
-#         ONLY=<substring> (capture only stops whose name contains it), POSTGRES_ADMIN_URL, ANVIL_PORT
+#         ONLY=<substring> (capture only stops whose name contains it), POSTGRES_ADMIN_URL, ANVIL_PORT,
+#         CAPTURE=0 (build the world, take no screenshots; with KEEP=1, a world to test by hand),
+#         WEB_FEATURES=audit (default: both kits) | mvp (as the hosted image is built: contributor projects, no sale) |
+#         mvp+forecasts (mvp plus money behind work areas and posts, where "Will it get done?" forecasts are given)
 
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -87,10 +90,20 @@ LAUNCH_KIT="$(manifest_role "$DEPLOYMENTS/dao-launch-kit-31337.json" launch-kit)
 CONTRIBUTOR_KIT="$(manifest_role "$DEPLOYMENTS/contributor-kit-31337.json" contributor-kit)"
 CURRENCY="$(manifest_role "$DEPLOYMENTS/dev-currency-31337.json" currency)"
 [[ -n "$LAUNCH_KIT" && -n "$CONTRIBUTOR_KIT" && -n "$CURRENCY" ]] || fail "the dev chain did not report both kits and a currency"
+FEATURES=("VITE_CONTRIBUTOR_KITS={\"31337\":\"${CONTRIBUTOR_KIT}\"}")
+case "${WEB_FEATURES:-audit}" in
+  audit) FEATURES+=("VITE_DAO_LAUNCH_KITS={\"31337\":\"${LAUNCH_KIT}\"}") ;;
+  mvp) ;;
+  mvp+forecasts)
+    WORK_BOUNTY="$(manifest_role "$DEPLOYMENTS/work-bounty-31337.json" work-bounty)"
+    OPEN_BOUNTY="$(manifest_role "$DEPLOYMENTS/open-bounty-31337.json" open-bounty)"
+    [[ -n "$WORK_BOUNTY" && -n "$OPEN_BOUNTY" ]] || fail "the dev chain did not report both bounty contracts"
+    FEATURES+=("VITE_WORK_BOUNTIES={\"31337\":\"${WORK_BOUNTY}\"}" "VITE_OPEN_BOUNTIES={\"31337\":\"${OPEN_BOUNTY}\"}") ;;
+  *) fail "WEB_FEATURES is audit, mvp or mvp+forecasts, not ${WEB_FEATURES}" ;;
+esac
 
-step "building the web app for that chain (a production build: no preview numbers)"
-(cd web && VITE_LAUNCHPAD_CHAIN_ID=31337 VITE_CHAIN_RPC_URL="$RPC" VITE_LOCAL_USDC="$CURRENCY" \
-  VITE_CONTRIBUTOR_KITS="{\"31337\":\"${CONTRIBUTOR_KIT}\"}" VITE_DAO_LAUNCH_KITS="{\"31337\":\"${LAUNCH_KIT}\"}" \
+step "building the web app for that chain (a production build: no preview numbers; features: ${WEB_FEATURES:-audit})"
+(cd web && env VITE_LAUNCHPAD_CHAIN_ID=31337 VITE_CHAIN_RPC_URL="$RPC" VITE_LOCAL_USDC="$CURRENCY" "${FEATURES[@]}" \
   node_modules/.bin/vite build --outDir "$WEB_DIST" --emptyOutDir >"$STATE/web-build.log" 2>&1) \
   || { tail -30 "$STATE/web-build.log"; fail "web build failed"; }
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
@@ -152,6 +165,11 @@ if ! node_modules/.bin/playwright test --config=playwright.real-relay.config.ts 
   grep -E '"level":"(WARN|ERROR)"' "$STATE/relay.log" | tail -10 | cut -c1-400 || true
   [[ "${KEEP:-}" == "1" ]] && keep_up
   fail "the world could not be built"
+fi
+
+if [[ "${CAPTURE:-1}" == "0" ]]; then
+  [[ "${KEEP:-}" == "1" ]] && keep_up
+  exit 0
 fi
 
 step "capturing every screen into ${SHOTS}"
