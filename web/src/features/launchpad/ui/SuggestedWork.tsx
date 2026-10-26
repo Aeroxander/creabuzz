@@ -357,8 +357,8 @@ export function SuggestedWork({
             <Lightbulb aria-hidden className="h-4 w-4" /> Suggested work
           </h3>
           <p className="text-xs text-muted-foreground">
-            Anyone can suggest work and name their price. If the project votes
-            it in, you submit the work like anyone else.
+            Suggest work and name your price. If it's voted in, it opens to
+            everyone.
           </p>
         </div>
         {suggesting ? null : (

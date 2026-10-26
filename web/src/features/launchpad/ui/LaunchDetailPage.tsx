@@ -404,7 +404,7 @@ export function LaunchDetailPage({
             ? (supporterCounts.data?.get(supporterCoord) ?? null)
             : null
         }
-        note={
+        chips={
           contributor ? (
             <ContributorStatusNote
               chainId={launch.record.chainId ?? null}
@@ -415,7 +415,10 @@ export function LaunchDetailPage({
                   : null
               }
             />
-          ) : (
+          ) : null
+        }
+        note={
+          contributor ? null : (
             /* §7 "Launch page copy": what a buyer acquires, said before the
                bid button — ownership only, never a yield. */
             <OwnershipOnlyNote className="max-w-60 text-right" />

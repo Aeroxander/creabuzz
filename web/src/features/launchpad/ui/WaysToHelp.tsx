@@ -1,14 +1,20 @@
 /**
- * Ways to help: the work areas open for submissions now, each with what finished work looks like (verified against the
- * chain), who manages it and how much it can still award, and one button that opens the submit form filled in for it.
- * Built on what earns Shares (`lib/ways-to-help.ts`); suggesting new work is the next card down.
+ * Ways to help: the work areas open for submissions now, as cards. Each says what finished work looks like (verified
+ * against the chain), how many Shares it can still award with a bar for how much it already did, who manages it and
+ * until when, and has one button that opens the submit form filled in for it. Built on what earns Shares
+ * (`lib/ways-to-help.ts`); suggesting new work is the next card down.
  */
+
+import { Award, CalendarClock, Coins } from "lucide-react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Chip } from "@/shared/ui/chip";
+import { Meter } from "@/shared/ui/meter";
 
 import { formatUnits } from "../lib/dao-actions";
 import type { OpenWorkArea } from "../lib/ways-to-help";
+import { Person } from "./Face";
 
 function day(seconds: number): string {
   return new Date(seconds * 1000).toLocaleDateString(undefined, {
@@ -17,6 +23,8 @@ function day(seconds: number): string {
     year: "numeric",
   });
 }
+
+const whole = (wei: bigint) => formatUnits(wei, 18, 0);
 
 export function WaysToHelp({
   areas,
@@ -36,49 +44,66 @@ export function WaysToHelp({
 }) {
   return (
     <Card className="p-4" data-testid="ways-to-help">
-      <h3 className="text-sm font-semibold">Ways to help</h3>
-      <p className="text-xs text-muted-foreground">
-        Each says what finished work looks like.
-      </p>
+      <h3 className="text-base font-semibold">Open work</h3>
       {areas.length === 0 ? (
         <p
-          className="mt-3 text-sm text-muted-foreground"
+          className="mt-2 text-sm text-muted-foreground"
           data-testid="ways-to-help-none"
         >
           {truncated
-            ? "No work area open for submissions was found in the work this page could read (the newest is read). Suggest work below, or ask the team on the Discussion tab what would help."
-            : "No work area is open for submissions right now. Suggest work below, or ask the team on the Discussion tab what would help."}
+            ? "No open work was found in the work this page could read (the newest is read). Suggest work below, or ask the team on the Discussion tab what would help."
+            : "Nothing is open right now. Suggest work below, or ask the team on the Discussion tab what would help."}
         </p>
       ) : (
-        <ul className="mt-3 flex flex-col gap-2">
+        <ul className="mt-3 grid gap-3 md:grid-cols-2">
           {areas.map((area) => (
             <li
-              className="rounded-lg border p-3"
+              className="flex flex-col gap-2 rounded-xl border border-border/60 p-3"
               data-area={area.name}
               data-testid="way-to-help"
               key={`${area.mandate}:${area.id}`}
             >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div className="flex flex-wrap items-start justify-between gap-2">
                 <span className="font-semibold">{area.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {area.sharesLeft > 0n
-                    ? `Up to ${formatUnits(area.sharesLeft, 18)} Shares left`
-                    : "No Shares"}
-                  {area.moneyLeft > 0n ? ` · ${money(area)} left` : ""} ·
-                  managed by {labelOf(area.manager)} · open until{" "}
-                  {day(area.expiresAt)}
+                <span className="flex flex-wrap gap-1.5">
+                  {area.sharesLeft > 0n ? (
+                    <Chip icon={Award} tone="success">
+                      {whole(area.sharesLeft)} Shares left
+                    </Chip>
+                  ) : null}
+                  {area.moneyLeft > 0n ? (
+                    <Chip icon={Coins} tone="success">
+                      {money(area)} left
+                    </Chip>
+                  ) : null}
                 </span>
               </div>
+              {area.shareBudget > 0n ? (
+                <div>
+                  <Meter
+                    label={`${area.name}: Shares awarded`}
+                    max={area.shareBudget}
+                    value={area.sharesAwarded}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {area.sharesAwarded > 0n
+                      ? `${whole(area.sharesAwarded)} of ${whole(area.shareBudget)} awarded`
+                      : "Nothing awarded yet. Be the first"}
+                  </p>
+                </div>
+              ) : null}
               {area.words ? (
-                <p className="mt-1 text-sm" data-testid="way-to-help-words">
-                  <span className="text-muted-foreground">
-                    Finished looks like:{" "}
-                  </span>
-                  {area.words}
-                </p>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Done when
+                  </p>
+                  <p className="text-sm" data-testid="way-to-help-words">
+                    {area.words}
+                  </p>
+                </div>
               ) : (
                 <p
-                  className="mt-1 text-sm text-amber-700 dark:text-amber-300"
+                  className="text-sm text-amber-700 dark:text-amber-300"
                   data-testid="way-to-help-no-words"
                 >
                   Its exact words are not published here. Ask its manager for
@@ -86,16 +111,20 @@ export function WaysToHelp({
                   be accepted for review.
                 </p>
               )}
-              <Button
-                className="mt-2"
-                data-testid="way-to-help-submit"
-                onClick={() => onPick(area)}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Submit work for this
-              </Button>
+              <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Person label={labelOf(area.manager)} />
+                  <Chip icon={CalendarClock}>Until {day(area.expiresAt)}</Chip>
+                </span>
+                <Button
+                  data-testid="way-to-help-submit"
+                  onClick={() => onPick(area)}
+                  size="sm"
+                  type="button"
+                >
+                  Submit work
+                </Button>
+              </div>
             </li>
           ))}
         </ul>

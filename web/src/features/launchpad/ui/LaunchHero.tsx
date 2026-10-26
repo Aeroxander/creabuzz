@@ -30,6 +30,7 @@ export function LaunchHero({
   showFollow,
   actions,
   note,
+  chips,
   idea = false,
   supporters = null,
 }: {
@@ -43,6 +44,8 @@ export function LaunchHero({
   showFollow: boolean;
   actions: ReactNode;
   note: ReactNode;
+  /** Short facts about the project, shown under its pitch. */
+  chips?: ReactNode;
   /** No sale terms yet: shown as an idea rather than a draft. */
   idea?: boolean;
   /** People following this launch; null while unknown. */
@@ -167,6 +170,7 @@ export function LaunchHero({
           <p className="mt-3 max-w-2xl text-base">
             {record.pitch || "No pitch yet."}
           </p>
+          {chips ? <div className="mt-3">{chips}</div> : null}
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex gap-2">

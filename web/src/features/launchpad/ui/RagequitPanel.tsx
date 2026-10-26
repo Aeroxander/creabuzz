@@ -217,7 +217,7 @@ export function RagequitPanel({
         project, you can give them up and take your part of the treasury back.
         Shares the DAO keeps for itself do not count, so they never shrink what
         you get.{" "}
-        <span className="text-black/45 dark:text-white/45">
+        <span className="text-muted-foreground">
           DAO {truncatePubkey(daoBinding.dao)}.
         </span>
       </p>
@@ -433,7 +433,7 @@ function PositionBody({
           />
         ))}
       </ul>
-      <p className="mt-2 text-xs text-black/50 dark:text-white/50">
+      <p className="mt-2 text-xs text-muted-foreground">
         This is worked out from the treasury as it is now. The exact amount is
         fixed when the exit goes through.
       </p>
@@ -550,7 +550,7 @@ function RagequitDialog({
         the treasury at {holder ? truncatePubkey(holder) : "this account"}, in
         one step. A record of it is then saved on this project.
       </p>
-      <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+      <p className="mt-1 text-xs text-muted-foreground">
         You receive:{" "}
         {tokens
           .map((t) => (t === ETH_TOKEN ? "ETH" : truncatePubkey(t)))

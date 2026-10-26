@@ -26,14 +26,21 @@ export function AllowanceNote({
   shares,
   dao,
   now,
+  awardsOnlyShown = false,
 }: {
   shares: string | null;
   dao: string;
   /** The chain's clock, in seconds. */
   now: number;
+  /** The page already says new Shares come only from awards (a contributor project's header): no yearly limit adds nothing. */
+  awardsOnlyShown?: boolean;
 }) {
   const read = useShareRules(shares, dao);
-  const text = allowanceText(useAllowance(shares, dao, now), date);
+  const allowance = useAllowance(shares, dao, now);
+  const text =
+    awardsOnlyShown && allowance?.kind === "awards-only"
+      ? null
+      : allowanceText(allowance, date);
   if (read.isError && !read.data) {
     return (
       <p className="mt-2 text-sm" data-testid="work-allowance-unavailable">

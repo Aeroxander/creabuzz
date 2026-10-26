@@ -46,41 +46,57 @@ const when = (seconds: number) =>
     day: "numeric",
   });
 
+/** One header chip: a short label, and whether it is a plain fact or something to be careful about. */
+export interface StatusChip {
+  label: string;
+  /** "caution": unchecked, unreadable, or something one vote can change. */
+  tone: "plain" | "caution";
+}
+
+const plain = (label: string): StatusChip => ({ label, tone: "plain" });
+const caution = (label: string): StatusChip => ({ label, tone: "caution" });
+
 export function contributorStatus(
   provenance: Provenance,
   read: RulesRead,
-): { start: string | null; shares: string | null; trading: string | null } {
+): {
+  start: StatusChip | null;
+  shares: StatusChip | null;
+  trading: StatusChip | null;
+} {
   const start =
     provenance === "kit"
-      ? "No token sale."
+      ? plain("No token sale")
       : provenance === "record"
-        ? "Its page says it started without a token sale; this could not be checked."
+        ? caution("No token sale (not checked)")
         : null;
   if (read.kind === "reading") return { start, shares: null, trading: null };
   if (read.kind === "error")
     return {
       start,
-      shares: "Could not check how this project's Shares work just now.",
+      shares: caution("Couldn't check its Shares"),
       trading: null,
     };
   if (read.kind === "predates")
     return {
       start,
-      shares: "A vote can also create new Shares, not only awards for work.",
-      trading: "One vote can make Shares sellable, with no notice.",
+      shares: caution("A vote can create Shares"),
+      trading: caution("One vote can make Shares sellable"),
     };
   const { rules } = read;
   return {
     start,
     shares: rules.awardsOnly
-      ? "New Shares come only from awards for reviewed work."
-      : "A vote can also create new Shares, not only awards for work.",
+      ? plain("New Shares only for reviewed work")
+      : caution("A vote can create Shares"),
     trading: !rules.transfersLocked
-      ? "Shares can be sold or sent to others."
+      ? plain("Shares can be sold")
       : !rules.unlockNoticeRequired
-        ? "Shares can't be sold yet, but one vote can change that."
+        ? caution("One vote can make Shares sellable")
         : rules.unlockAnnouncedAt === 0
-          ? "Shares can't be sold or sent to others."
-          : `A vote announced that Shares will become sellable. A second vote can do it from ${when(rules.unlockAnnouncedAt + UNLOCK_NOTICE)}.`,
+          ? plain("Shares can't be sold")
+          : caution(
+              `Can become sellable from ${when(rules.unlockAnnouncedAt + UNLOCK_NOTICE)}`,
+            ),
   };
 }

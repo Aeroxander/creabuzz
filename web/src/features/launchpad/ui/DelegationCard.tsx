@@ -188,7 +188,7 @@ export function DelegationCard({
               {error}
             </p>
           ) : null}
-          <p className="mt-1 text-xs text-black/50 dark:text-white/50">
+          <p className="mt-1 text-xs text-muted-foreground">
             Who holds your votes is public, and you can always take them back.
           </p>
         </div>

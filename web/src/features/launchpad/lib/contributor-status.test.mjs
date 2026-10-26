@@ -31,54 +31,64 @@ const rules = (over = {}) => ({
 });
 
 test("the start is said as checked: by the kit's event, or only as the record says", () => {
-  assert.match(contributorStatus("kit", rules()).start, /^No token sale\.$/);
-  assert.match(
-    contributorStatus("record", rules()).start,
-    /started without a token sale; this could not be checked/,
-  );
+  assert.deepEqual(contributorStatus("kit", rules()).start, {
+    label: "No token sale",
+    tone: "plain",
+  });
+  assert.deepEqual(contributorStatus("record", rules()).start, {
+    label: "No token sale (not checked)",
+    tone: "caution",
+  });
   assert.equal(contributorStatus("reading", rules()).start, null);
 });
 
-test("new Shares 'only from awards' only when the Shares say so", () => {
-  assert.equal(
-    contributorStatus("kit", rules()).shares,
-    "New Shares come only from awards for reviewed work.",
-  );
-  assert.equal(
+test("new Shares 'only for reviewed work' only when the Shares say so", () => {
+  assert.deepEqual(contributorStatus("kit", rules()).shares, {
+    label: "New Shares only for reviewed work",
+    tone: "plain",
+  });
+  assert.deepEqual(
     contributorStatus("kit", rules({ awardsOnly: false })).shares,
-    "A vote can also create new Shares, not only awards for work.",
+    {
+      label: "A vote can create Shares",
+      tone: "caution",
+    },
   );
   // A read that failed, Shares made before the rule, and one still reading never keep the promise.
-  assert.match(
-    contributorStatus("kit", { kind: "error" }).shares,
-    /Could not check/,
-  );
-  assert.match(
-    contributorStatus("kit", { kind: "predates" }).shares,
-    /A vote can also create new Shares/,
-  );
+  assert.deepEqual(contributorStatus("kit", { kind: "error" }).shares, {
+    label: "Couldn't check its Shares",
+    tone: "caution",
+  });
+  assert.deepEqual(contributorStatus("kit", { kind: "predates" }).shares, {
+    label: "A vote can create Shares",
+    tone: "caution",
+  });
   assert.equal(contributorStatus("kit", { kind: "reading" }).shares, null);
 });
 
 test("trading as the lock says, with no announcement invented and no browser clock", () => {
-  assert.equal(
-    contributorStatus("kit", rules()).trading,
-    "Shares can't be sold or sent to others.",
-  );
+  assert.deepEqual(contributorStatus("kit", rules()).trading, {
+    label: "Shares can't be sold",
+    tone: "plain",
+  });
   // Locked, but needing no notice: one vote opens it, and nothing was announced.
-  assert.equal(
+  assert.deepEqual(
     contributorStatus("kit", rules({ unlockNoticeRequired: false })).trading,
-    "Shares can't be sold yet, but one vote can change that.",
+    { label: "One vote can make Shares sellable", tone: "caution" },
   );
   // Announced: the date it can open, the same whether that date has passed or not.
   const announced = Date.UTC(2026, 9, 1) / 1000;
-  assert.match(
+  assert.deepEqual(
     contributorStatus("kit", rules({ unlockAnnouncedAt: announced })).trading,
-    /^A vote announced that Shares will become sellable\. A second vote can do it from October 31, 2026\.$/,
+    { label: "Can become sellable from October 31, 2026", tone: "caution" },
   );
-  assert.equal(
+  assert.deepEqual(
     contributorStatus("kit", rules({ transfersLocked: false })).trading,
-    "Shares can be sold or sent to others.",
+    { label: "Shares can be sold", tone: "plain" },
   );
   assert.equal(contributorStatus("kit", { kind: "error" }).trading, null);
+  assert.deepEqual(contributorStatus("kit", { kind: "predates" }).trading, {
+    label: "One vote can make Shares sellable",
+    tone: "caution",
+  });
 });

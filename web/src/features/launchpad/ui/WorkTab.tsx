@@ -7,8 +7,12 @@ import { PendingWordsNote } from "./PendingWordsNote";
 import { WaysToHelp } from "./WaysToHelp";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { CalendarClock, RefreshCw } from "lucide-react";
+
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Chip, type ChipTone } from "@/shared/ui/chip";
+import { Meter } from "@/shared/ui/meter";
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { formatAtomic } from "../lib/amounts";
 import { isContributorProject } from "../lib/funding";
@@ -20,6 +24,7 @@ import {
 import {
   bondShortfall,
   canAcceptClaim,
+  type ClaimStatus,
   claimStatusLabel,
   encodeAttest,
   encodeBind,
@@ -57,6 +62,9 @@ import { AllowanceNote } from "./AllowanceNote";
 import type { WorkBounties } from "../lib/work-bounty";
 import { useWorkBounties } from "../use-work-bounties";
 import { WorkAreaBounties } from "./WorkAreaBounties";
+import { Person } from "./Face";
+import { HowItWorks } from "./HowItWorks";
+import { BudgetFigures } from "./BudgetFigures";
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
 const sameAddress = (a: string | null, b: string) =>
@@ -187,11 +195,30 @@ export function WorkTab({
   return (
     <div className="flex flex-col gap-4" data-testid="work-tab">
       <Card className="p-4">
-        <h2 className="text-base font-bold">Work</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Pick something under Ways to help, do it, and submit it here.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-bold">Work</h2>
+          <Button
+            disabled={work.isFetching}
+            onClick={() => void work.refetch()}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <RefreshCw aria-hidden className="h-3.5 w-3.5" />
+            {work.isFetching ? "Refreshing…" : "Refresh"}
+          </Button>
+        </div>
+        {isContributorProject(launch.record) ? (
+          <div className="mt-3">
+            <HowItWorks />
+          </div>
+        ) : (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pick open work, do it, and submit it here.
+          </p>
+        )}
         <AllowanceNote
+          awardsOnlyShown={isContributorProject(launch.record)}
           dao={dao}
           now={work.data?.chainTime ?? Math.floor(Date.now() / 1000)}
           shares={context.data?.shares ?? null}
@@ -200,16 +227,6 @@ export function WorkTab({
         {existingUserPubkey() ? (
           <WalletStrip testIdPrefix="work" wallet={wallet} />
         ) : null}
-        <Button
-          className="mt-2"
-          disabled={work.isFetching}
-          onClick={() => void work.refetch()}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          {work.isFetching ? "Refreshing…" : "Refresh"}
-        </Button>
         {gate && wallet.address ? (
           <p
             className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
@@ -408,7 +425,6 @@ function MandateCard({
   onOpenDecisions?: () => void;
   onChallenge?: (intent: ChallengeIntent) => void;
 }) {
-  const { created } = mandate;
   const sharesOnly = isContributorProject(launch.record);
   const decimals = mandate.currency?.decimals ?? 18;
   const unit = mandate.currency?.symbol ?? "";
@@ -472,15 +488,17 @@ function MandateCard({
   };
   return (
     <Card className="p-4" data-testid="work-mandate">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-base font-semibold">
           <span title={mandate.address}>
             {mandate.isMilestonePanel ? "Milestone panel" : "Work budget"}
           </span>
         </h3>
-        <span className="text-xs text-muted-foreground">
-          {mandate.closed ? "Closed" : `Open until ${date(mandate.expiresAt)}`}
-        </span>
+        {mandate.closed ? (
+          <Chip>Closed</Chip>
+        ) : (
+          <Chip icon={CalendarClock}>Open until {date(mandate.expiresAt)}</Chip>
+        )}
       </div>
       {mandate.isMilestonePanel ? (
         <p
@@ -491,62 +509,12 @@ function MandateCard({
           team's Shares. It holds no money, and nobody can swap its reviewers.
         </p>
       ) : null}
-      <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-        {created.shareBudget > 0n ? (
-          <>
-            <dt className="text-muted-foreground">Shares for work</dt>
-            <dd data-testid="work-share-budget">
-              {shares(mandate.sharesAllocated)} of {shares(created.shareBudget)}{" "}
-              given to projects
-            </dd>
-          </>
-        ) : null}
-        {created.budget > 0n ? (
-          <>
-            <dt className="text-muted-foreground">Money for work</dt>
-            <dd>{money(created.budget)}</dd>
-          </>
-        ) : null}
-        <dt className="text-muted-foreground">Reviewers</dt>
-        <dd>
-          {mandate.reviewers.length > 0
-            ? `${mandate.quorum} of ${mandate.reviewers.length} must agree on a submission`
-            : `${mandate.quorum} must agree on a submission`}
-        </dd>
-        <dt className="text-muted-foreground">Reviewer bond</dt>
-        <dd data-testid="work-bond">
-          {mandate.bond
-            ? `${bondMoney(mandate.bond.minBond)} each, which the DAO can take after a disputed approval`
-            : mandate.bondUnreadable
-              ? "Could not be read. The network did not answer; this is not the same as no bond."
-              : "None"}
-        </dd>
-      </dl>
-      {mandate.reviewers.length > 0 ? (
-        <ul
-          className="mt-1 flex flex-col gap-0.5 text-xs text-muted-foreground"
-          data-testid="work-reviewers"
-        >
-          {mandate.reviewers.map((reviewer) => (
-            <li data-testid="work-reviewer" key={reviewer.address}>
-              <span>{labelOf(reviewer.address)}</span>
-              {mandate.bond
-                ? reviewer.stake === null
-                  ? " · bond could not be read"
-                  : reviewer.stake >= mandate.bond.minBond
-                    ? " · bond posted"
-                    : " · bond not posted yet"
-                : ""}
-              {reviewer.pending
-                ? ` · ${bondMoney(reviewer.pending.amount)} waiting to be taken back`
-                : ""}
-              {reviewer.pendingUnreadable
-                ? " · a bond waiting to be taken back could not be read"
-                : ""}
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <BudgetFigures
+        bondMoney={bondMoney}
+        labelOf={labelOf}
+        mandate={mandate}
+        money={money}
+      />
       {owes > 0n ? (
         <div
           className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
@@ -585,22 +553,39 @@ function MandateCard({
         </p>
       ) : (
         <ul
-          className="mt-1 flex flex-col gap-1 text-sm"
+          className="mt-2 flex flex-col gap-2 text-sm"
           data-testid="work-projects"
         >
           {mandate.projects.map((project) => (
-            <li key={project.id}>
-              <span className="font-medium">{idLabel(project.id)}</span>
-              <span className="text-muted-foreground">
-                {" "}
-                · managed by {labelOf(project.record.manager)}
-                {project.record.shareBudget > 0n
-                  ? ` · ${shares(project.record.sharesAwarded)} of ${shares(project.record.shareBudget)} Shares awarded`
-                  : ""}
-                {project.record.budget > 0n
-                  ? ` · ${money(project.record.reserved)} of ${money(project.record.budget)} reserved`
-                  : ""}
-              </span>
+            <li
+              className="rounded-xl border border-border/60 p-3"
+              key={project.id}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">{idLabel(project.id)}</span>
+                <span className="text-xs text-muted-foreground">
+                  <Person label={labelOf(project.record.manager)} />
+                </span>
+              </div>
+              {project.record.shareBudget > 0n ? (
+                <div className="mt-2">
+                  <Meter
+                    label={`${idLabel(project.id)}: Shares awarded`}
+                    max={project.record.shareBudget}
+                    value={project.record.sharesAwarded}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {shares(project.record.sharesAwarded)} of{" "}
+                    {shares(project.record.shareBudget)} Shares awarded
+                  </p>
+                </div>
+              ) : null}
+              {project.record.budget > 0n ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {money(project.record.reserved)} of{" "}
+                  {money(project.record.budget)} reserved
+                </p>
+              ) : null}
               {mandate.isMilestonePanel ? null : (
                 <WorkAreaBounties
                   busy={busy}
@@ -656,20 +641,22 @@ function MandateCard({
               claim.record.status === "Approved" && step.kind === "payout";
             return (
               <li
-                className="rounded-lg border border-black/10 p-2 text-sm dark:border-white/10"
+                className="rounded-xl border border-border/60 p-3 text-sm"
                 id={`claim-${mandate.address.toLowerCase()}-${claim.id.toLowerCase()}`}
                 tabIndex={-1}
                 data-testid="work-claim"
                 key={claim.id}
               >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-medium">{label}</span>
                   <span
                     className="text-xs text-muted-foreground"
                     data-testid="work-claim-status"
                   >
-                    {claimStatusLabel(claim.record)} · submitted by{" "}
-                    {labelOf(claim.record.contributor)}
+                    <Chip tone={statusTone(claim.record.status)}>
+                      {claimStatusLabel(claim.record)}
+                    </Chip>{" "}
+                    · submitted by {labelOf(claim.record.contributor)}
                     {claim.record.amount > 0n
                       ? ` · asks for ${money(claim.record.amount)}`
                       : sharesOnly
@@ -836,7 +823,7 @@ function MandateCard({
                     data-testid="work-challenge-help"
                   >
                     {challengeKind === "freeze"
-                      ? "Doubt this submission? Holders can vote to freeze it: nothing is paid and no Shares unlock while it is frozen."
+                      ? "Doubt it? Holders can freeze it: nothing is paid while it is frozen."
                       : "A vote to unwind it returns the money to the budget and the deposit to the contributor."}{" "}
                     <button
                       className="underline"
@@ -929,6 +916,18 @@ function PaidLine({
     </p>
   );
 }
+
+/** A submission's status as a chip colour: settled well, stopped, run out, or still moving. */
+const STATUS_TONES: Record<ClaimStatus, ChipTone> = {
+  Open: "info",
+  Approved: "success",
+  Paid: "success",
+  Rejected: "danger",
+  Frozen: "danger",
+  Recovered: "danger",
+  Expired: "neutral",
+};
+const statusTone = (status: ClaimStatus) => STATUS_TONES[status];
 
 function bindData(projectId: string, claimId: string, contributor: string) {
   return encodeBind(projectId, claimId, contributor);

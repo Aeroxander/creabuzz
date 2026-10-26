@@ -59,6 +59,9 @@ export interface OpenWorkArea {
   manager: string;
   /** Shares it may still award (18 decimals). */
   sharesLeft: bigint;
+  /** All the Shares it may award, and those awarded so far (18 decimals). */
+  shareBudget: bigint;
+  sharesAwarded: bigint;
   /** Money it may still reserve (the budget's currency units), when it holds money. */
   moneyLeft: bigint;
   expiresAt: number;
@@ -116,6 +119,8 @@ export function openWorkAreas(
             name: idLabel(project.id),
             manager: record.manager,
             sharesLeft: sharesLeft > 0n ? sharesLeft : 0n,
+            shareBudget: record.shareBudget,
+            sharesAwarded: record.sharesAwarded,
             moneyLeft: moneyLeft > 0n ? moneyLeft : 0n,
             expiresAt: record.expiresAt,
             checkHash: record.checkHash.toLowerCase(),
@@ -166,7 +171,7 @@ export function wordsProblem(
 ): string | null {
   if (!area || hashText(words) === area.checkHash.toLowerCase()) return null;
   return area.words
-    ? `These are not ${area.name}'s exact words, so its manager could not accept your work. Use the words shown under Ways to help.`
+    ? `These are not ${area.name}'s exact words, so its manager could not accept your work. Use the words shown under Open work.`
     : `These are not ${area.name}'s words as it was approved, so its manager could not accept your work. Ask its manager for the exact words.`;
 }
 

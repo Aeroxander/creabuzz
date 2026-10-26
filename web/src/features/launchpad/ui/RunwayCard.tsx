@@ -1,6 +1,9 @@
+import { Gift, HandCoins, Landmark, PiggyBank } from "lucide-react";
+
 import { Card } from "@/shared/ui/card";
 import { formatAtomic } from "../lib/amounts";
 import { paceLine, type Runway } from "../lib/runway";
+import { Figure } from "./Figure";
 
 /**
  * Money on hand (N4): what the treasury holds, what work budgets hold for work not paid yet, what was paid out, money
@@ -26,27 +29,37 @@ export function RunwayCard({
   return (
     <Card className="p-4" data-testid="dao-runway">
       <h3 className="text-sm font-semibold">Money on hand</h3>
-      <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-        <dt className="text-muted-foreground">In the treasury</dt>
-        <dd data-testid="runway-free">{money(figures.free)}</dd>
-        <dt className="text-muted-foreground">
-          Set aside for work, not yet paid
-        </dt>
-        <dd data-testid="runway-set-aside">{money(figures.setAside)}</dd>
-        <dt className="text-muted-foreground">Paid out</dt>
-        <dd data-testid="runway-spent">
-          {money(figures.spentTotal)}, of which {money(figures.spentRecent)} in
-          the last three months
-        </dd>
+      <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Figure
+          icon={Landmark}
+          label="In the treasury"
+          testId="runway-free"
+          value={money(figures.free)}
+        />
+        <Figure
+          icon={PiggyBank}
+          label="Set aside for work"
+          note="Not paid yet"
+          testId="runway-set-aside"
+          value={money(figures.setAside)}
+        />
+        <Figure
+          icon={HandCoins}
+          label="Paid out"
+          note={`${money(figures.spentRecent)} in the last three months`}
+          testId="runway-spent"
+          value={money(figures.spentTotal)}
+        />
         {outsideWaiting > 0n ? (
-          <>
-            <dt className="text-muted-foreground">
-              Put behind its work areas by others
-            </dt>
-            <dd data-testid="runway-outside">{money(outsideWaiting)}</dd>
-          </>
+          <Figure
+            icon={Gift}
+            label="Behind its work areas"
+            note="Put there by others"
+            testId="runway-outside"
+            value={money(outsideWaiting)}
+          />
         ) : null}
-      </dl>
+      </div>
       <p className="mt-2 text-sm" data-testid="runway-pace">
         {paceLine(figures.pace)}
       </p>
@@ -65,5 +78,19 @@ export function RunwayCard({
         paid out.
       </p>
     </Card>
+  );
+}
+
+/** Nothing held, set aside, paid or put behind work: a contributor project with no money says nothing about money. */
+export function runwayIsEmpty(
+  figures: Runway,
+  outsideWaiting: bigint,
+): boolean {
+  return (
+    figures.free === 0n &&
+    figures.setAside === 0n &&
+    figures.spentTotal === 0n &&
+    outsideWaiting === 0n &&
+    !figures.incomplete
   );
 }

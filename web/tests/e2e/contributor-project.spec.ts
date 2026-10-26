@@ -306,10 +306,10 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
   // This build names no contributor kit and the stub chain cannot answer for the Shares: the header says only what
   // the record says and that the rules could not be read, never "only from awards" or "locked".
   await expect(page.getByTestId("contributor-note")).toHaveText(
-    "Its page says it started without a token sale; this could not be checked.",
+    "No token sale (not checked)",
   );
   await expect(page.getByTestId("contributor-issuance")).toContainText(
-    "Could not check how this project's Shares work just now",
+    "Couldn't check its Shares",
     { timeout: 20_000 },
   );
   await expect(page.getByTestId("contributor-transfers")).toHaveCount(0);

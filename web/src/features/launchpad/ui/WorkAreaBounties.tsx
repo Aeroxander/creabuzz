@@ -1,3 +1,4 @@
+import { Coins } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
@@ -83,17 +84,27 @@ export function WorkAreaBounties({
     read.currency.decimalsKnown &&
     !mine.some((b) => bountyTakesMoney(b.record, chainTime));
   if (mine.length === 0 && !canOpen) return null;
+  // With nothing behind it yet, the button is enough: the form says where the money goes.
+  const empty = mine.length === 0;
   return (
     <div
-      className="mt-1 rounded-lg border border-black/10 p-2 dark:border-white/10"
+      className={
+        empty && !open
+          ? "mt-2"
+          : "mt-2 rounded-lg border border-black/10 p-2 dark:border-white/10"
+      }
       data-testid="work-bounties"
     >
-      <p className="text-xs font-semibold">Money behind this work area</p>
-      {mine.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          None yet. Money put here goes to the work the reviewers approve, or
-          back to you.
-        </p>
+      {empty && !open ? null : (
+        <p className="text-xs font-semibold">Money behind this work area</p>
+      )}
+      {empty ? (
+        open ? (
+          <p className="text-xs text-muted-foreground">
+            Money put here goes to the work the reviewers approve, or back to
+            you.
+          </p>
+        ) : null
       ) : (
         <ul className="mt-1 flex flex-col gap-2">
           {mine.map((bounty) => (
@@ -154,13 +165,14 @@ export function WorkAreaBounties({
           />
         ) : (
           <Button
-            className="mt-2"
+            className={empty ? undefined : "mt-2"}
             data-testid="work-bounty-open"
             onClick={() => setOpen(true)}
             size="sm"
             type="button"
             variant="outline"
           >
+            <Coins aria-hidden className="h-3.5 w-3.5" />
             Put money behind this work area
           </Button>
         )

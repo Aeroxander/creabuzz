@@ -349,7 +349,7 @@ test("the screen audit's world", async ({ browser }) => {
   await reply(
     "cora",
     stuck,
-    "Same here. Ways to help made it clear once I found it.",
+    "Same here. Open work made it clear once I found it.",
   );
   const spam = await post(
     "carol",
@@ -372,7 +372,7 @@ test("the screen audit's world", async ({ browser }) => {
     kind: 1,
     tags: [["t", "creaton"]],
     content:
-      "Help build Creaton. Four pieces of work are open on the Creaton project, and you need no Shares and no crypto experience to do them: notes on your first hour here, a plain guide, a phone review, or a bug you found. Open the project and look under Ways to help. #creaton",
+      "Help build Creaton. Four pieces of work are open on the Creaton project, and you need no Shares and no crypto experience to do them: notes on your first hour here, a plain guide, a phone review, or a bug you found. Open the project and look under Open work. #creaton",
   });
 
   // ── Wallets linked, so pages show names instead of addresses ───────────────────────────────────────
@@ -438,7 +438,7 @@ test("the screen audit's world", async ({ browser }) => {
   await frida
     .locator("#update-body")
     .fill(
-      "Four pieces of work are open under Ways to help, and anyone can suggest more. Tell us when something is unclear: that is the most useful thing you can tell us.",
+      "Four pieces of work are open under Open work, and anyone can suggest more. Tell us when something is unclear: that is the most useful thing you can tell us.",
     );
   await frida.getByRole("button", { name: "Publish update" }).click();
   await expect(frida.getByRole("dialog", { name: "Post update" })).toHaveCount(

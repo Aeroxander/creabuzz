@@ -1644,3 +1644,19 @@ By hand (a web build with `VITE_REMIX_BONDS`, `VITE_COURTS`, `VITE_CREATE_TOKENS
 
 Specified only (PLEDGES-STATES.md); it needs the funding curve.
 
+## 4bs. Project pages from components (D125, 2026-10-26)
+
+On the local test world (`KEEP=1 CAPTURE=0 WEB_FEATURES=mvp+forecasts scripts/web-screen-audit.sh`, then
+http://localhost:3199):
+
+1. Open the Creaton project. Working looks like: three chips under the pitch; the three steps with **See open work**
+   and **Join the discussion**; four number tiles; Latest decisions with coloured chips; no "Where it comes from" and no
+   "Money on hand" card.
+2. Press **How it works**: one short paragraph opens, and closes again. Tab to it and press Enter: the same.
+3. Work tab: **Open work** shows four cards; first-hour-notes has a bar about four-fifths full and "8,000 of 10,000
+   awarded". **Submit work** on a card opens the form with that card's words filled in.
+4. Further down, the work budget shows three tiles (Shares for work with a bar, Reviewers "2 of 2" with two faces,
+   Reviewer bond None); each work area has a bar and one **Put money behind this work area** button; submitted work
+   shows a green Finished chip and a blue Open chip.
+5. At phone width (390 px) nothing scrolls sideways and the cards stack in one column.
+

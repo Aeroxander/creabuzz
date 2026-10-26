@@ -333,15 +333,15 @@ test("a contributor project is started from the page, work is claimed the same d
   );
   // The header says what it is and, read from the Shares themselves, that they cannot be traded yet.
   await expect(founder.getByTestId("contributor-note")).toHaveText(
-    "No token sale.",
+    "No token sale",
     { timeout: 30_000 },
   );
   await expect(founder.getByTestId("contributor-issuance")).toHaveText(
-    "New Shares come only from awards for reviewed work.",
+    "New Shares only for reviewed work",
     { timeout: 30_000 },
   );
   await expect(founder.getByTestId("contributor-transfers")).toHaveText(
-    "Shares can't be sold or sent to others.",
+    "Shares can't be sold",
     { timeout: 30_000 },
   );
   const contributor = await context.newPage();
@@ -431,7 +431,7 @@ test("a contributor project is started from the page, work is claimed the same d
     );
     // Nothing was paid out: the money set aside is Shares, and outside money is not the project's spending.
     await expect(runway.getByTestId("runway-spent")).toHaveText(
-      /^0 d?USDC, of which 0 d?USDC in the last three months$/,
+      /^Paid out\s*0 d?USDC\s*0 d?USDC in the last three months$/,
     );
     if (process.env.E2E_SHOTS) {
       await runway.screenshot({
@@ -791,10 +791,9 @@ async function submitFromWaysToHelp(
   evidence: string,
 ) {
   const way = page.locator(`[data-testid="way-to-help"][data-area="${area}"]`);
-  await expect(way.getByTestId("way-to-help-words")).toHaveText(
-    `Finished looks like: ${words}`,
-    { timeout: 30_000 },
-  );
+  await expect(way.getByTestId("way-to-help-words")).toHaveText(words, {
+    timeout: 30_000,
+  });
   await way.getByTestId("way-to-help-submit").click();
   await expect(page.getByTestId("work-claim-check")).toHaveValue(words);
   await expect(page.getByTestId("work-claim-check-note")).toContainText(

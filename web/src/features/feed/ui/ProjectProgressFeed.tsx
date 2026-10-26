@@ -12,6 +12,7 @@ import { useFeedNotes, useMyLists, useVoteTallies } from "../use-feed";
 import { progressScope, useProgressSeen } from "../use-progress-seen";
 import { EMPTY_TALLY } from "../lib/ranking";
 import { VoteButtons } from "./VoteButtons";
+import { Chip } from "@/shared/ui/chip";
 
 /** Public project reports and evidence. Private task/agent activity is never copied into this feed. */
 export function ProjectProgressFeed({
@@ -284,11 +285,13 @@ function ProgressList({
                 </a>
               ))}
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              By {names(i.author)} ·{" "}
-              {i.evidence
-                ? "Submitted, not yet approved."
-                : "Posted by the team, not checked by anyone else."}
+            <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>By {names(i.author)}</span>
+              {i.evidence ? (
+                <Chip tone="warning">Not approved yet</Chip>
+              ) : (
+                <Chip>Not checked by anyone else</Chip>
+              )}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <VoteButtons

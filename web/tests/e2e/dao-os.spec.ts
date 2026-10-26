@@ -175,7 +175,7 @@ test("Home connects project reports, reading history, discussion and the four ma
   const progress = page.getByTestId("project-progress");
   await expect(progress).toContainText("Beta demo shipped");
   await expect(progress).not.toContainText("Fake official update");
-  await expect(progress).toContainText("not checked by anyone else");
+  await expect(progress).toContainText("Not checked by anyone else");
   await expectAccessible(page, "Home project progress cards");
   await expect(
     progress.getByRole("link", { name: "Artifact 1" }),

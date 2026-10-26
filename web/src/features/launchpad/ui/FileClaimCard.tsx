@@ -9,6 +9,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { isContributorProject } from "../lib/funding";
 import { Input } from "@/shared/ui/input";
 import { ethCall, getRpcEndpoint } from "../chain";
 import { formatUnits, parseUnits } from "../lib/dao-actions";
@@ -299,8 +300,10 @@ export function FileClaimCard({
     <Card className="p-4" data-testid="work-file-claim" ref={card}>
       <h3 className="text-sm font-semibold">Submit your work</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Submit what you finished. The work area's manager accepts it for review,
-        the reviewers check it, and then the project votes on an award.
+        {/* A contributor project shows how work is reviewed and awarded above, as three steps. */}
+        {isContributorProject(launch.record)
+          ? "Submit what you finished."
+          : "Submit what you finished. The work area's manager accepts it for review, the reviewers check it, and then the project votes on an award."}
         {holdsMoney
           ? " Money is paid after a waiting period, to the wallet you submit from."
           : ""}

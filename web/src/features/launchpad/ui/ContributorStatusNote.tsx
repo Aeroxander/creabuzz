@@ -4,7 +4,14 @@
  * are made and whether they can be traded, read from the Shares themselves (D76, D77). Unknown is said as unknown.
  */
 
-import { contributorStatus, type RulesRead } from "../lib/contributor-status";
+import { Award, Ban, Lock, LockOpen, TriangleAlert } from "lucide-react";
+
+import { Chip } from "@/shared/ui/chip";
+import {
+  contributorStatus,
+  type RulesRead,
+  type StatusChip,
+} from "../lib/contributor-status";
 import { useContributorProvenance } from "../use-contributor-provenance";
 import { useShareRules } from "../use-share-rules";
 
@@ -30,21 +37,25 @@ export function ContributorStatusNote({
           ? { kind: "rules", rules: read.data.rules }
           : { kind: "reading" };
   const status = contributorStatus(provenance, rules);
+  const chip = (item: StatusChip | null, icon: typeof Ban, testId: string) =>
+    item ? (
+      <Chip
+        data-testid={testId}
+        icon={item.tone === "caution" ? TriangleAlert : icon}
+        tone={item.tone === "caution" ? "warning" : "neutral"}
+      >
+        {item.label}
+      </Chip>
+    ) : null;
   return (
-    <div className="max-w-60 text-right text-xs text-muted-foreground">
-      {status.start ? (
-        <p data-testid="contributor-note">{status.start}</p>
-      ) : null}
-      {status.shares ? (
-        <p className="mt-0.5" data-testid="contributor-issuance">
-          {status.shares}
-        </p>
-      ) : null}
-      {status.trading ? (
-        <p className="mt-0.5" data-testid="contributor-transfers">
-          {status.trading}
-        </p>
-      ) : null}
+    <div className="flex flex-wrap gap-1.5" data-testid="contributor-chips">
+      {chip(status.start, Ban, "contributor-note")}
+      {chip(status.shares, Award, "contributor-issuance")}
+      {chip(
+        status.trading,
+        status.trading?.label === "Shares can be sold" ? LockOpen : Lock,
+        "contributor-transfers",
+      )}
     </div>
   );
 }

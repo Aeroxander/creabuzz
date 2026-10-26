@@ -28,7 +28,8 @@ export function RemixCard({ launch }: { launch: Launch }) {
       l.record.builtOn?.id === record.id,
   );
   const terms = record.remixTerms;
-  if (!record.builtOn && children.length === 0 && !terms) return null;
+  // A project that is built on nothing, has nothing built on it and invites nobody has nothing to say here.
+  if (!record.builtOn && children.length === 0 && !terms?.invited) return null;
   const fit = parent
     ? remixFit(
         parent.record.name,

@@ -9,6 +9,8 @@
 
 import type { ReactNode } from "react";
 
+import { Eye, Hammer, PieChart, Vote } from "lucide-react";
+
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { recordSaleCurrency } from "../chain";
@@ -33,6 +35,8 @@ import { useRecordEvents, useWork } from "../use-work";
 import { decisionStage } from "./DecisionCard";
 import { bondsOf, decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
+import { HowItWorks } from "./HowItWorks";
+import { StageChip } from "./StageChip";
 import { ProjectDeliveryOverview } from "./ProjectDeliveryOverview";
 import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 import { MilestoneProgressCard } from "./MilestoneProgressCard";
@@ -42,7 +46,7 @@ import { useMoneyIn } from "../use-money-in";
 import { useWalletLabels } from "../use-wallet-labels";
 import { useRunway } from "../use-runway";
 import { useWorkBounties } from "../use-work-bounties";
-import { RunwayCard } from "./RunwayCard";
+import { RunwayCard, runwayIsEmpty } from "./RunwayCard";
 import { RemixCard } from "./RemixCard";
 
 export type OverviewTarget =
@@ -294,20 +298,9 @@ export function DaoOverview({
           ) : null}
         </Card>
       )}
-      {openAreas > 0 || (contributor && work.data) ? (
-        <Card
-          className="flex flex-wrap items-center justify-between gap-3 p-4"
-          data-testid="dao-ways-to-help"
-        >
-          <span className="text-sm">
-            <span className="font-semibold">Ways to help:</span>{" "}
-            {openAreas === 0
-              ? "No work area is open for submissions yet. Ask the team what would help."
-              : openAreas === 1
-                ? "1 work area is open for submissions. You need no Shares to submit work."
-                : `${openAreas} work areas are open for submissions. You need no Shares to submit work.`}
-          </span>
-          <span className="flex flex-wrap gap-2">
+      {contributor ? (
+        <Card className="p-4" data-testid="dao-ways-to-help">
+          <HowItWorks>
             {openAreas > 0 ? (
               <Button
                 data-testid="dao-ways-to-help-open"
@@ -315,9 +308,40 @@ export function DaoOverview({
                 size="sm"
                 type="button"
               >
-                See ways to help
+                See open work
               </Button>
             ) : null}
+            <Button
+              data-testid="dao-join-discussion"
+              onClick={() => onOpen("discussion")}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Join the discussion
+            </Button>
+          </HowItWorks>
+        </Card>
+      ) : openAreas > 0 ? (
+        <Card
+          className="flex flex-wrap items-center justify-between gap-3 p-4"
+          data-testid="dao-ways-to-help"
+        >
+          <span className="text-sm">
+            <span className="font-semibold">Open work:</span>{" "}
+            {openAreas === 1
+              ? "1 work area is open for submissions. You need no Shares to submit work."
+              : `${openAreas} work areas are open for submissions. You need no Shares to submit work.`}
+          </span>
+          <span className="flex flex-wrap gap-2">
+            <Button
+              data-testid="dao-ways-to-help-open"
+              onClick={() => onOpen("work")}
+              size="sm"
+              type="button"
+            >
+              See open work
+            </Button>
             <Button
               data-testid="dao-join-discussion"
               onClick={() => onOpen("discussion")}
@@ -330,10 +354,52 @@ export function DaoOverview({
           </span>
         </Card>
       ) : null}
-      <div
-        className={`grid gap-3 ${contributor ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}
-      >
-        {contributor ? null : (
+      {contributor ? (
+        <div
+          className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+          data-testid="dao-figures"
+        >
+          <Figure
+            icon={Hammer}
+            label="Open work"
+            testId="dao-figure-open-work"
+            value={work.data ? String(openAreas) : "—"}
+          />
+          <Figure
+            icon={Eye}
+            label="In review"
+            testId="dao-figure-in-review"
+            value={work.data ? String(counts.openClaims) : "—"}
+          />
+          <Figure
+            icon={Vote}
+            label="Open votes"
+            testId="dao-figure-open-votes"
+            value={decisions.data ? String(counts.openDecisions) : "—"}
+          />
+          {wallet === null ? (
+            <Figure
+              icon={PieChart}
+              label="Shares in all"
+              testId="dao-figure-shares"
+              value={shares(holdings.data?.sharesInAll)}
+            />
+          ) : (
+            <Figure
+              icon={PieChart}
+              label="You hold"
+              note={
+                holdings.data?.sharesInAll
+                  ? `${share ? `${share} · ` : ""}${shares(holdings.data.sharesInAll)} in all`
+                  : undefined
+              }
+              testId="dao-figure-yours"
+              value={`${shares(holdings.data?.yourShares)} Shares`}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-3">
           <Figure
             label="In the treasury"
             note={
@@ -350,40 +416,43 @@ export function DaoOverview({
                 : `${formatUnits(money, sale.decimals)} ${symbol}`.trim()
             }
           />
-        )}
-        <Figure
-          label="Shares in all"
-          testId="dao-figure-shares"
-          value={shares(holdings.data?.sharesInAll)}
-        />
-        <Figure
-          label="You hold"
-          note={share}
-          testId="dao-figure-yours"
-          value={
-            wallet === null
-              ? "—"
-              : `${shares(holdings.data?.yourShares)} Shares`
-          }
-        />
-      </div>
+          <Figure
+            label="Shares in all"
+            testId="dao-figure-shares"
+            value={shares(holdings.data?.sharesInAll)}
+          />
+          <Figure
+            label="You hold"
+            note={share}
+            testId="dao-figure-yours"
+            value={
+              wallet === null
+                ? "—"
+                : `${shares(holdings.data?.yourShares)} Shares`
+            }
+          />
+        </div>
+      )}
       {/* The team's own task board, from the community's workspace: a contributor project's work is on its Work tab. */}
       {contributor ? null : (
         <ProjectDeliveryOverview launch={launch} dao={dao} onOpen={onOpen} />
       )}
-      <Card className="p-4">
-        <h2 className="text-base font-bold">Where things stand</h2>
-        <p
-          className="mt-1 text-sm text-muted-foreground"
-          data-testid="dao-summary"
-        >
-          {loading
-            ? "Reading from the network…"
-            : decisions.isError && work.isError
-              ? "Couldn't read this project from the network. Try again in a moment."
-              : summaryLine(counts)}
-        </p>
-      </Card>
+      {/* A contributor project's figures above say where things stand; only a failed read needs words. */}
+      {contributor && !(decisions.isError && work.isError) ? null : (
+        <Card className="p-4">
+          <h2 className="text-base font-bold">Where things stand</h2>
+          <p
+            className="mt-1 text-sm text-muted-foreground"
+            data-testid="dao-summary"
+          >
+            {loading
+              ? "Reading from the network…"
+              : decisions.isError && work.isError
+                ? "Couldn't read this project from the network. Try again in a moment."
+                : summaryLine(counts)}
+          </p>
+        </Card>
+      )}
 
       {!loading &&
       work.data &&
@@ -419,7 +488,9 @@ export function DaoOverview({
 
       <RemixCard launch={launch} />
 
-      {runway.data && sale ? (
+      {runway.data &&
+      sale &&
+      !(contributor && runwayIsEmpty(runway.data, outsideWaiting)) ? (
         <RunwayCard
           decimals={sale.decimals}
           figures={runway.data}
@@ -491,16 +562,16 @@ export function DaoOverview({
           <ul className="mt-2 divide-y divide-border/60">
             {latest.map((decision) => (
               <li
-                className="flex items-baseline justify-between gap-3 py-2 text-sm"
+                className="flex items-center justify-between gap-3 py-2 text-sm"
                 key={decision.id}
               >
                 <span className="min-w-0 truncate">{titleOf(decision)}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {
-                    decisionStage(decision, decisions.data?.chainTime ?? 0)
-                      .label
-                  }
-                </span>
+                <StageChip
+                  stage={decisionStage(
+                    decision,
+                    decisions.data?.chainTime ?? 0,
+                  )}
+                />
               </li>
             ))}
           </ul>
