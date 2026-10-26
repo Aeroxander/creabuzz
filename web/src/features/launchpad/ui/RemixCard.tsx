@@ -4,6 +4,7 @@ import { Card } from "@/shared/ui/card";
 import { offersLine, remixFit } from "../lib/remix";
 import type { Launch } from "../models";
 import { useLaunches } from "../use-launches";
+import { RemixBondPanel } from "./RemixBondPanel";
 
 /**
  * Where a project comes from and what was built on it (N11): the project it is built on, whether its licence fits that
@@ -69,6 +70,7 @@ export function RemixCard({ launch }: { launch: Launch }) {
                 {fit.line}
               </p>
             ) : null}
+            <RemixBondPanel parent={parent} remix={launch} />
           </>
         ) : (
           <p className="text-muted-foreground" data-testid="remix-built-on">

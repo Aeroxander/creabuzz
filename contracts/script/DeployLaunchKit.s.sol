@@ -81,6 +81,9 @@ contract DeployLaunchKit is Script {
             : vm.deployCode("ForecastPool.sol:ForecastPool", abi.encode(bountyCurrency, openBounty));
         // Payouts to holders (N10) need counsel before any real money: test networks only.
         address payoutsFactory = court == address(0) ? address(0) : vm.deployCode("Payouts.sol:PayoutsFactory");
+        // A remix's bond to its parent (N12), cased in the court: test networks only.
+        address remixBonds =
+            court == address(0) ? address(0) : vm.deployCode("RemixBond.sol:RemixBond", abi.encode(createToken, court));
         address matchedExit = vm.deployCode("MatchedExit.sol:MatchedExit", abi.encode(bountyCurrency));
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");
@@ -104,6 +107,7 @@ contract DeployLaunchKit is Script {
             _role("court", "CreateCourt", court);
             _role("forecast-pool", "ForecastPool", pools);
             _role("payouts-factory", "PayoutsFactory", payoutsFactory);
+            _role("remix-bonds", "RemixBond", remixBonds);
         }
         _role("auction-factory", "Auction factory", ccaFactory);
         _writeManifest();

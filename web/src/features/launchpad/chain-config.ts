@@ -154,6 +154,8 @@ export interface ChainEnv {
   VITE_FORECAST_POOLS?: string;
   /** The payout module factory per chain, as JSON (N10): test networks only; DAOs vote to start payouts with it. */
   VITE_PAYOUTS_FACTORIES?: string;
+  /** The remix bond contract per chain, as JSON (N12): test networks only; needs the court and CREATE. */
+  VITE_REMIX_BONDS?: string;
   /**
    * The block each chain's history starts at, as JSON: `{"11155111":7654321}`. Name the block the launch kit was deployed
    * at: every contract the app reads events from was made after it. Only used when a node refuses a read of the whole
@@ -242,6 +244,14 @@ export function createToken(
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
   return addressForChain(env?.VITE_CREATE_TOKENS, chainId);
+}
+
+/** The remix bond contract on `chainId`, or null when the build does not name one (N12, test networks only). */
+export function remixBonds(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_REMIX_BONDS, chainId);
 }
 
 /** The payout module factory on `chainId`, or null when the build does not name one (N10, test networks only). */

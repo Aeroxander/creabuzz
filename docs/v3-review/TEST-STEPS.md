@@ -1622,3 +1622,25 @@ By hand (a web build with `VITE_PAYOUTS_FACTORIES`):
    first.
 4. **Pay holders** again now offers an amount from the treasury: 20 reads **Pay holders 20 USDC from the treasury**.
 
+## 4bq. A remix's bond to its parent (D124, 2026-10-26, test networks)
+
+```bash
+cd contracts && forge test --match-contract RemixBond
+pnpm --dir packages/creaton-core test        # remixBond: the calls, the key, the reader, the steps
+scripts/web-contributor-e2e.sh               # Field Guide posts a 500 CREATE bond for Docs Commons
+node scripts/contracts-mutation-check.mjs 120 121 122 123 124 125 126 127
+```
+
+By hand (a web build with `VITE_REMIX_BONDS`, `VITE_COURTS`, `VITE_CREATE_TOKENS`, `VITE_CREATE_FAUCETS`):
+
+1. Take test CREATE on the court page. On a project built on another, **Where it comes from** offers **Post the bond**:
+   500 for 90 days. It then says the bond is held for the parent until a date.
+2. From another wallet, **It broke the terms: ask the court (3 USDC)**. The case shows on the court page with the
+   parent's words. Judge it for, settle it, then **Send it to <parent>**: the parent's DAO receives the CREATE, and the
+   remix's page says it broke the terms.
+3. On another bond, move the chain past its term: **Return the bond** sends it back.
+
+## 4br. Pledges (D123): nothing to test yet
+
+Specified only (PLEDGES-STATES.md); it needs the funding curve.
+

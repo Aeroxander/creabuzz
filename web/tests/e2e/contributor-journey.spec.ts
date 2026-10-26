@@ -32,6 +32,9 @@ const BOUNTY = process.env.E2E_BOUNTY ?? "";
 const MATCHED_EXIT = process.env.E2E_MATCHED_EXIT ?? "";
 /** The payout module factory (N10); without one the journey skips payouts. */
 const PAYOUTS = process.env.E2E_PAYOUTS ?? "";
+/** Remix bonds (N12) and the test CREATE faucet; without them the journey skips the bond. */
+const REMIX_BONDS = process.env.E2E_REMIX_BONDS ?? "";
+const CREATE_FAUCET = process.env.E2E_CREATE_FAUCET ?? "";
 const REVIEWER1 = process.env.E2E_REVIEWER1 ?? "";
 const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
 const CONTRIBUTOR = process.env.E2E_CONTRIBUTOR ?? "";
@@ -906,6 +909,12 @@ test("several people earn in one contributor project: two first projects, and a 
 
   await founder.getByTestId("contributor-open-project").click();
   if (builtOn) {
+    // The founder takes test CREATE first, to post a bond for Docs Commons (N12).
+    if (REMIX_BONDS && CREATE_FAUCET) {
+      await rpc("eth_sendTransaction", [
+        { from: FOUNDER_WALLET, to: CREATE_FAUCET, data: "0x9f678cca" },
+      ]);
+    }
     // Both pages say where it comes from: here, and on Docs Commons.
     await founder.getByRole("tab", { name: "Overview" }).click();
     const remix = founder.getByTestId("remix-card");
@@ -916,6 +925,15 @@ test("several people earn in one contributor project: two first projects, and a 
     await expect(remix.getByTestId("remix-terms")).toHaveText(
       "This project doesn't invite others to build on it.",
     );
+    if (REMIX_BONDS && CREATE_FAUCET) {
+      await remix.getByTestId("remix-bond-amount").fill("500");
+      await remix.getByTestId("remix-bond-days").fill("90");
+      await remix.getByTestId("remix-bond-post").click();
+      await expect(remix.getByTestId("remix-bond-line")).toContainText(
+        "This project posted a bond of 500 CREATE for Docs Commons, held until",
+        { timeout: 60_000 },
+      );
+    }
     await remix.getByRole("link", { name: "Docs Commons" }).click();
     await expect(
       founder.getByTestId("remix-card").getByTestId("remix-children"),

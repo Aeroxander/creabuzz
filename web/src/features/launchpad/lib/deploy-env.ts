@@ -16,6 +16,7 @@ import {
   defaultChainPreset,
   forecastPool,
   payoutsFactory,
+  remixBonds,
   historyFromBlock,
   LOCAL_ANVIL_PRESET,
   mainnetEnabled,
@@ -164,6 +165,17 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       `VITE_PAYOUTS_FACTORIES names no valid address for ${networkLabel(chainId)} (${chainId}).`,
     );
   }
+  const bonds = remixBonds(chainId, env);
+  if (value(env, "VITE_REMIX_BONDS") && !bonds) {
+    problems.push(
+      `VITE_REMIX_BONDS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+    );
+  }
+  if (bonds && !court) {
+    problems.push(
+      "VITE_REMIX_BONDS is named but VITE_COURTS is not: a bond's case would have nowhere to go.",
+    );
+  }
   const exits = matchedExit(chainId, env);
   if (value(env, "VITE_MATCHED_EXITS") && !exits) {
     problems.push(
@@ -219,6 +231,7 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   summary.push(
     `Payouts to holders: ${payouts ? `on where a DAO votes for them (${payouts})` : "off"}`,
   );
+  summary.push(`Remix bonds: ${bonds ? `on (${bonds})` : "off"}`);
 
   const project = value(env, "VITE_ZERODEV_PROJECT_ID");
   const zerodevChain = value(env, "VITE_ZERODEV_CHAIN_ID");

@@ -163,6 +163,20 @@ test("the court is off by default, on with its address, refused without CREATE",
   );
 });
 
+test("remix bonds need the court", () => {
+  const BONDS = `0x${"b0".repeat(20)}`;
+  assert.ok(checkDeployEnv(SEPOLIA).summary.includes("Remix bonds: off"));
+  const alone = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_REMIX_BONDS: JSON.stringify({ 11155111: BONDS }),
+  });
+  assert.ok(
+    alone.problems.some((p) =>
+      p.startsWith("VITE_REMIX_BONDS is named but VITE_COURTS"),
+    ),
+  );
+});
+
 test("a kit without a chain node or a history start is refused", () => {
   const noNode = checkDeployEnv({ ...SEPOLIA, VITE_CHAIN_RPC_URL: "" });
   assert.ok(

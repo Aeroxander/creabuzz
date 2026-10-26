@@ -88,6 +88,7 @@ static host, or from the relay itself (`BUZZ_WEB_DIR`).
 | `VITE_COURTS` | `{"11155111":"<court from the manifest>"}` | **Optional.** The court (N7): a Court page reached from Portfolio, and appeals on bounties on posts. Needs `VITE_CREATE_TOKENS` |
 | `VITE_FORECAST_POOLS` | `{"11155111":"<forecast-pool from the manifest>"}` | **Optional, test networks only.** Money on whether a bounty on a post is paid (N8) |
 | `VITE_PAYOUTS_FACTORIES` | `{"11155111":"<payouts-factory from the manifest>"}` | **Optional, test networks only.** Contributor projects vote to pay holders a share of revenue (N10) |
+| `VITE_REMIX_BONDS` | `{"11155111":"<remix-bonds from the manifest>"}` | **Optional, test networks only.** A remix's bond to its parent, decided by the court (N12). Needs `VITE_COURTS` |
 | `VITE_HISTORY_FROM_BLOCKS` | `{"11155111":<the manifest's "block">}` | Reading awards, work and votes: a real node refuses an event read that starts at block 0 |
 | `VITE_DAO_LAUNCH_KITS` | `{"11155111":"<launch-kit from the manifest>"}` | **Optional.** Test raises. Leave it out for the contributor-only first launch: the raise wizard then saves drafts but cannot launch one. With it set, the contributor Start page also checks that both kits name the same summoner |
 | `VITE_RELAY_URL` | `wss://<your relay>` | Only when the page is not served by the relay itself (it otherwise talks to its own origin) |
@@ -113,6 +114,7 @@ VITE_CREATE_FAUCETS={"11155111":"<create-faucet>"}
 VITE_COURTS={"11155111":"<court>"}
 VITE_FORECAST_POOLS={"11155111":"<forecast-pool>"}
 VITE_PAYOUTS_FACTORIES={"11155111":"<payouts-factory>"}
+VITE_REMIX_BONDS={"11155111":"<remix-bonds>"}
 VITE_HISTORY_FROM_BLOCKS={"11155111":<block>}
 ```
 

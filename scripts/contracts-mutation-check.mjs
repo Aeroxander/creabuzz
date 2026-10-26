@@ -846,6 +846,62 @@ const MUTATIONS = [
     "// removed",
     "test/Payouts.t.sol",
   ],
+  [
+    "N12: a case is opened after the term",
+    "contracts/src/RemixBond.sol",
+    "if (block.timestamp >= b.releasesAt) revert TermOver(id);",
+    "// removed",
+    "test/RemixBond.t.sol",
+  ],
+  [
+    "N12: two cases at once on one bond",
+    "contracts/src/RemixBond.sol",
+    "        if (b.openCase != 0) revert CaseOpen(id);\n        if (block.timestamp >= b.releasesAt) revert TermOver(id);",
+    "        if (block.timestamp >= b.releasesAt) revert TermOver(id);",
+    "test/RemixBond.t.sol",
+  ],
+  [
+    "N12: a bond comes back while a case is open",
+    "contracts/src/RemixBond.sol",
+    "        if (b.openCase != 0) revert CaseOpen(id);\n        if (block.timestamp < b.releasesAt) revert NotDue(id, b.releasesAt);",
+    "        if (block.timestamp < b.releasesAt) revert NotDue(id, b.releasesAt);",
+    "test/RemixBond.t.sol",
+  ],
+  [
+    "N12: a bond comes back before its term",
+    "contracts/src/RemixBond.sol",
+    "if (block.timestamp < b.releasesAt) revert NotDue(id, b.releasesAt);",
+    "// removed",
+    "test/RemixBond.t.sol",
+  ],
+  [
+    "N12: anyone rules on a bond",
+    "contracts/src/RemixBond.sol",
+    "if (msg.sender != address(court)) revert NotCourt();",
+    "// removed",
+    "test/RemixBond.t.sol",
+  ],
+  [
+    "N12: any ruling forfeits the bond",
+    "contracts/src/RemixBond.sol",
+    "if (ruling == 1) {",
+    "if (true) {",
+    "test/RemixBond.t.sol",
+  ],
+  [
+    "N12: a forfeited bond is paid to the parent twice",
+    "contracts/src/RemixBond.sol",
+    "b.state = PAID;",
+    "// removed",
+    "test/RemixBond.t.sol",
+  ],
+  [
+    "N12: a term shorter than the least",
+    "contracts/src/RemixBond.sol",
+    "if (term < MIN_TERM || term > MAX_TERM) revert BadTerm();",
+    "if (term > MAX_TERM) revert BadTerm();",
+    "test/RemixBond.t.sol",
+  ],
 ];
 
 const only = process.argv.slice(2).map(Number);

@@ -97,6 +97,10 @@ contract PayoutsTest is VotingFixture {
         assertApproxEqAbs(payouts.owed(ALICE), 40e6, 1);
         assertApproxEqAbs(payouts.owed(BOB), 40e6, 1);
         assertEq(payouts.owed(address(dao)), 0);
+        // Even with the treasury's approval in place, only the DAO declares.
+        usd.mint(address(dao), 1);
+        vm.prank(address(dao));
+        usd.approve(address(payouts), 1);
         vm.prank(ALICE);
         vm.expectRevert(Payouts.OnlyDao.selector);
         payouts.declare(1);
@@ -137,12 +141,13 @@ contract PayoutsTest is VotingFixture {
     function test_nobody_counting_refuses_a_payout() public {
         address[] memory tokens = new address[](1);
         tokens[0] = address(usd);
+        // Half a unit left counting: less than the whole unit a payout needs.
         vm.prank(ALICE);
-        dao.ragequit(tokens, 100e18, 0);
+        dao.ragequit(tokens, 99.5e18, 0);
         vm.prank(BOB);
         dao.ragequit(tokens, 0, 100e18);
         usd.mint(address(payouts), 10e6);
-        vm.expectRevert(abi.encodeWithSelector(Payouts.NobodyCounting.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(Payouts.NobodyCounting.selector, 0.5e18));
         payouts.distribute();
     }
 

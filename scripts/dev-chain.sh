@@ -995,6 +995,30 @@ deploy_payouts_factory() {
   echo "  ✓ PayoutsFactory at $address (manifest $(payouts_factory_manifest_path))"
 }
 
+remix_bonds_manifest_path() {
+  echo "$DEPLOYMENTS_DIR/remix-bonds-${CHAIN_ID}.json"
+}
+
+remix_bonds_address() {
+  manifest_role "$(remix_bonds_manifest_path)" "remix-bonds"
+}
+
+# A remix's bond to its parent (N12): CREATE held for a term, cased in the court. Test networks only.
+deploy_remix_bonds() {
+  echo
+  local address=""
+  [[ -f "$(remix_bonds_manifest_path)" ]] && address=$(remix_bonds_address)
+  if [[ -n "$address" && "$(code_bytes "$address")" != "0" ]]; then
+    echo "── remix-bonds: already at $address — skipped (idempotent)"
+    return 0
+  fi
+  echo "── remix-bonds: deploying RemixBond (CREATE $(create_token_address), court $(court_address))"
+  address=$(create_from_artifact remix-bonds RemixBond "$(cast abi-encode "constructor(address,address)" \
+    "$(create_token_address)" "$(court_address)")")
+  write_one_role_manifest "$(remix_bonds_manifest_path)" remix-bonds "$address" "RemixBond(CREATE, court)"
+  echo "  ✓ RemixBond at $address (manifest $(remix_bonds_manifest_path))"
+}
+
 court_manifest_path() {
   echo "$DEPLOYMENTS_DIR/court-${CHAIN_ID}.json"
 }
@@ -1200,6 +1224,7 @@ up() {
   deploy_open_bounty
   deploy_forecast_pool
   deploy_payouts_factory
+  deploy_remix_bonds
   deploy_matched_exit
   fund_accounts
 
@@ -1221,6 +1246,7 @@ up() {
   echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
   echo "  forecasts:  $(forecast_pool_address) (forecast-pool-$CHAIN_ID.json)"
   echo "  payouts:    $(payouts_factory_address) (payouts-factory-$CHAIN_ID.json)"
+  echo "  remix bonds: $(remix_bonds_address) (remix-bonds-$CHAIN_ID.json)"
   echo "  web env:    VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
   echo "              VITE_CONTRIBUTOR_KITS='{\"$CHAIN_ID\":\"$(contributor_kit_address)\"}'  (lets the app start a contributor project here)"
   echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
@@ -1230,6 +1256,7 @@ up() {
   echo "              VITE_COURTS='{\"$CHAIN_ID\":\"$(court_address)\"}'  (the court claimants appeal to)"
   echo "              VITE_FORECAST_POOLS='{\"$CHAIN_ID\":\"$(forecast_pool_address)\"}'  (money on whether a post's bounty is paid; test money)"
   echo "              VITE_PAYOUTS_FACTORIES='{\"$CHAIN_ID\":\"$(payouts_factory_address)\"}'  (DAOs vote to pay holders a share of revenue)"
+  echo "              VITE_REMIX_BONDS='{\"$CHAIN_ID\":\"$(remix_bonds_address)\"}'  (a remix's bond to its parent)"
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"
