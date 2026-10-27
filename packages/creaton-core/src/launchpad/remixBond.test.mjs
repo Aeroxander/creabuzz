@@ -5,6 +5,7 @@ import { encodeParameters, selectorOf } from "./evmAbi.ts";
 import {
   bondActions,
   encodePostBond,
+  readBondCase,
   readRemixBond,
   recordKey,
   REMIX_BOND_SIGNATURES,
@@ -83,35 +84,34 @@ test("a held bond can go to the court until its term ends, then home; a forfeite
   });
 });
 
-test("a remix's latest bond is read from its posting and the bond's record", async () => {
-  const data = (terms) =>
+test("a remix's latest own bond is read from its posting and the bond's record; others' bonds are not its", async () => {
+  const PARENT = `37001:${"b".repeat(64)}:parent`;
+  const STRANGER = `0x${"5e".repeat(20)}`;
+  const data = (terms, poster = FOUNDER, dao = PARENT_DAO) =>
     encodeParameters(
       ["address", "address", "uint256", "uint64", "string"],
-      [FOUNDER, PARENT_DAO, 10n, 1_000n, terms],
+      [poster, dao, 10n, 1_000n, terms],
     );
+  const posting = (id, body, parent = recordKey(PARENT)) => ({
+    topics: [
+      TOPIC_BOND_POSTED,
+      `0x${id.toString(16).padStart(64, "0")}`,
+      recordKey(REMIX),
+      parent,
+    ],
+    data: body,
+  });
   const chain = {
     logs: async ({ topics }) => {
       assert.equal(topics[0], TOPIC_BOND_POSTED);
       assert.equal(topics[2], recordKey(REMIX));
       return [
-        {
-          topics: [
-            TOPIC_BOND_POSTED,
-            `0x${"0".repeat(63)}1`,
-            topics[2],
-            `0x${"0".repeat(64)}`,
-          ],
-          data: data("old"),
-        },
-        {
-          topics: [
-            TOPIC_BOND_POSTED,
-            `0x${"0".repeat(63)}2`,
-            topics[2],
-            `0x${"0".repeat(64)}`,
-          ],
-          data: data("Credit us."),
-        },
+        posting(1, data("old")),
+        posting(2, data("Credit us.")),
+        // Newer, and none of them the project's: a stranger's, one to another DAO, one against another record.
+        posting(3, data("Mine now.", STRANGER)),
+        posting(4, data("Elsewhere.", FOUNDER, STRANGER)),
+        posting(5, data("Other parent."), recordKey(REMIX)),
       ];
     },
     call: async () =>
@@ -141,15 +141,81 @@ test("a remix's latest bond is read from its posting and the bond's record", asy
       ),
   };
   assert.deepEqual(
-    await readRemixBond(chain, BONDS, REMIX),
+    await readRemixBond(chain, BONDS, REMIX, {
+      posters: [FOUNDER.toUpperCase().replace("0X", "0x")],
+      parent: PARENT,
+      parentDao: PARENT_DAO,
+    }),
     bond({ id: 2n, terms: "Credit us." }),
+  );
+  assert.equal(
+    await readRemixBond(chain, BONDS, REMIX, {
+      posters: [],
+      parent: PARENT,
+      parentDao: PARENT_DAO,
+    }),
+    null,
+    "with nobody known to speak for the project, no bond is its",
   );
   assert.equal(
     await readRemixBond(
       { logs: async () => [], call: async () => "0x" },
       BONDS,
       REMIX,
+      { posters: [FOUNDER], parent: PARENT, parentDao: PARENT_DAO },
     ),
+    null,
+  );
+});
+
+test("a bond's case shows the terms it was posted against, only when they match the kept hash", async () => {
+  const terms = "Credit us.";
+  const hash = recordKey(terms); // keccak256 of the words, the same function
+  const chain = (posted) => ({
+    call: async () =>
+      encodeParameters(
+        [
+          "address",
+          "address",
+          "uint64",
+          "uint8",
+          "uint64",
+          "uint128",
+          "bytes32",
+          "bytes32",
+          "bytes32",
+        ],
+        [
+          FOUNDER,
+          PARENT_DAO,
+          1_000n,
+          1n,
+          7n,
+          10n,
+          `0x${"0".repeat(64)}`,
+          `0x${"0".repeat(64)}`,
+          hash,
+        ],
+      ),
+    logs: async ({ topics }) => {
+      assert.equal(BigInt(topics[1]), 4n);
+      return [
+        {
+          data: encodeParameters(
+            ["address", "address", "uint256", "uint64", "string"],
+            [FOUNDER, PARENT_DAO, 10n, 1_000n, posted],
+          ),
+        },
+      ];
+    },
+  });
+  assert.deepEqual(await readBondCase(chain(terms), BONDS, 4n), {
+    terms,
+    amount: 10n,
+    parentDao: PARENT_DAO,
+  });
+  assert.equal(
+    (await readBondCase(chain("Something else."), BONDS, 4n)).terms,
     null,
   );
 });

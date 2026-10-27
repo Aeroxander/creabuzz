@@ -6,15 +6,19 @@ import {
   createFaucet,
   createToken,
   defaultChainPreset,
+  openBounty,
+  remixBonds,
 } from "./chain-config";
 import {
   type CourtView,
   encodeLastDrip,
+  MAX_CASES,
   readCourt,
   saltFromSignature,
   voteKeyMessage,
 } from "./lib/court";
 import { readPostBountyCase, type PostBountyCase } from "./lib/open-bounty";
+import { readBondCase } from "./lib/remix-bond";
 import { walletError } from "./lib/wallet-effects";
 import { decodeWord } from "./lib/work";
 import { encodeAllowance, encodeBalanceOf } from "./lib/work-bounty";
@@ -41,32 +45,59 @@ export interface CourtPageData extends CourtView {
   wallet: CourtWallet | null;
   /** What each case about a bounty on a post is judged against, by case id. */
   about: Record<string, PostBountyCase>;
+  /** What each case about a remix's bond is judged against, by case id. */
+  remix: Record<
+    string,
+    { terms: string | null; amount: bigint; parentDao: string } | null
+  >;
 }
 
 const DAY = 86_400;
 
-/** The court on this build's network, the connected wallet's stake and money, and the cases with what they are about. */
-export function useCourt(wallet: string | null) {
+/**
+ * The court on this build's network, the connected wallet's stake and money, and the cases with what they are about:
+ * the newest `limit`, every case the wallet was drawn in, and `include` (a case a link points at).
+ */
+export function useCourt(
+  wallet: string | null,
+  limit: number = MAX_CASES,
+  include: bigint | null = null,
+) {
   const chainId = defaultChainPreset().chainId;
   const court = courtAddress(chainId);
   const create = createToken(chainId);
   const faucet = createFaucet(chainId);
+  const bonds = remixBonds(chainId);
+  const askers = { bounty: openBounty(chainId), remix: bonds };
   const query = useQuery({
-    queryKey: [...COURT_QUERY, court, wallet],
+    queryKey: [...COURT_QUERY, court, wallet, limit, include?.toString()],
     enabled: court !== null,
     staleTime: 10_000,
     refetchOnWindowFocus: false,
+    // Showing older cases keeps the ones on screen while the rest are read.
+    placeholderData: (previous) => previous,
     queryFn: async (): Promise<CourtPageData> => {
       const chain = endpointChain(getRpcEndpoint());
       const at = court as string;
       const [view, now] = await Promise.all([
-        readCourt(chain, at, wallet),
+        readCourt(chain, at, wallet, {
+          askers,
+          limit,
+          include: include === null ? [] : [include],
+        }),
         chain.now(),
       ]);
       const about: Record<string, PostBountyCase> = {};
+      const remix: CourtPageData["remix"] = {};
       await Promise.all(
         view.cases.map(async (c) => {
-          if (!c.about) return;
+          if (c.about?.kind === "remix") {
+            remix[c.id.toString()] = bonds
+              ? await readBondCase(chain, bonds, c.about.bond).catch(() => null)
+              : null;
+            return;
+          }
+          if (c.about?.kind !== "bounty") return;
           about[c.id.toString()] = await readPostBountyCase(
             chain,
             c.arbitrable,
@@ -111,6 +142,7 @@ export function useCourt(wallet: string | null) {
         faucet,
         wallet: side,
         about,
+        remix,
       };
     },
   });

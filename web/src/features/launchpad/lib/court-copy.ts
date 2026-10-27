@@ -6,20 +6,59 @@
 import { type CourtCase, MAX_ROUNDS, periodEnds } from "./court.ts";
 import { formatUnits } from "./dao-actions.ts";
 
-/** What a ruling means for the work the case is about. */
-export function rulingWords(ruling: number): string {
-  return ruling === 1
-    ? "for the work"
-    : ruling === 2
-      ? "against the work"
-      : "neither way";
+/** What kind of case it is: by the contract that asked the court. */
+export type CaseKind = "bounty" | "remix" | "other";
+
+export const caseKind = (c: Pick<CourtCase, "about">): CaseKind =>
+  c.about?.kind ?? "other";
+
+/** The question a case puts to its jurors, and what each answer is called. Choice 1 is the court's "for". */
+export function caseQuestion(kind: CaseKind): {
+  question: string;
+  yes: string;
+  no: string;
+} {
+  switch (kind) {
+    case "bounty":
+      return {
+        question: "Does the work do what the bounty asked?",
+        yes: "Yes, it does",
+        no: "No, it doesn't",
+      };
+    case "remix":
+      return {
+        question: "Did this project break the terms it was built on?",
+        yes: "Yes, it broke them",
+        no: "No, it kept them",
+      };
+    case "other":
+      return { question: "For or against?", yes: "For", no: "Against" };
+  }
+}
+
+/** What a ruling means for what the case is about. */
+export function rulingWords(ruling: number, kind: CaseKind = "bounty"): string {
+  if (ruling !== 1 && ruling !== 2) return "neither way";
+  switch (kind) {
+    case "bounty":
+      return ruling === 1 ? "for the work" : "against the work";
+    case "remix":
+      return ruling === 1
+        ? "that the project broke its terms, so its bond goes to the parent"
+        : "that the project kept its terms, so its bond stays";
+    case "other":
+      return ruling === 1 ? "for" : "against";
+  }
 }
 
 /** Where a case stands, in one sentence. */
 export function caseStatusLine(
-  c: Pick<CourtCase, "period" | "periodStart" | "rounds" | "ruling">,
+  c: Pick<CourtCase, "period" | "periodStart" | "rounds" | "ruling"> & {
+    kind?: CaseKind;
+  },
   date: (seconds: number) => string,
 ): string {
+  const kind = c.kind ?? "bounty";
   const ends = periodEnds(c) ?? 0;
   switch (c.period) {
     case "evidence":
@@ -32,12 +71,16 @@ export function caseStatusLine(
       return `Jurors open their votes until ${date(ends)}.`;
     case "appeal":
       return c.rounds < MAX_ROUNDS
-        ? `The panel ruled ${rulingWords(c.ruling)}. Anyone can appeal to a larger panel until ${date(ends)}.`
-        : `The last panel ruled ${rulingWords(c.ruling)}. It can be settled now.`;
+        ? `The panel ruled ${rulingWords(c.ruling, kind)}. Anyone can appeal to a larger panel until ${date(ends)}.`
+        : `The last panel ruled ${rulingWords(c.ruling, kind)}. It can be settled now.`;
     case "ruled":
       return c.ruling === 0
-        ? "Final: no ruling, so the bounty stays as it was."
-        : `Final ruling: ${rulingWords(c.ruling)}.`;
+        ? kind === "remix"
+          ? "Final: no ruling, so the bond stays."
+          : kind === "bounty"
+            ? "Final: no ruling, so the bounty stays as it was."
+            : "Final: no ruling."
+        : `Final ruling: ${rulingWords(c.ruling, kind)}.`;
   }
 }
 

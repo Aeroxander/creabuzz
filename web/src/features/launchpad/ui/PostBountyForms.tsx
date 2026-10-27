@@ -4,6 +4,7 @@ import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { deadlineFromDate, defaultDeadlineDate } from "../lib/bounty-copy";
 import { parseUnits } from "../lib/dao-actions";
+import { addMoneyLine } from "../lib/post-bounty-copy";
 import {
   encodeFileClaim,
   encodeFundPostBounty,
@@ -276,10 +277,13 @@ export function AddMoneyForm({
   money,
   deadline,
   refundsFrom,
+  court,
 }: {
-  /** The bounty's deadline and the day refunds open whatever happens (Unix seconds), said beside the money. */
+  /** The bounty's deadline and the backstop day for refunds (Unix seconds), said beside the money. */
   deadline: number;
   refundsFrom: number;
+  /** The bounty names a court, so refunds also wait for appeals. */
+  court: boolean;
   bountyId: bigint;
   contract: string;
   currency: BountyMoney;
@@ -332,10 +336,7 @@ export function AddMoneyForm({
         />
       </div>
       <p className="text-xs text-muted-foreground">
-        The work most of the money backs for nine days is paid. If none is, you
-        can take yours back after {day(deadline)}, or from {day(refundsFrom)} if
-        a piece of work is still running then. If you back a piece of work, this
-        adds to your backing.
+        {addMoneyLine(day(deadline), day(refundsFrom), court)}
       </p>
       <Problem text={problem} />
       <Actions

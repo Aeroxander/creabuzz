@@ -36,6 +36,13 @@ A case that cannot find enough free seats for 14 days times out. A first round n
 fee joins the pool. An appeal no panel could hear leaves the ruling it appealed: earlier rounds are settled against it
 and whoever paid for the appeal is paid back, so appealing into a court too small to hear it cannot undo a ruling (D129).
 
+Each case says what it asks, by the contract that asked: a bounty's appeal asks whether the work does what the bounty
+asked (for means it is paid); a remix bond's case asks whether the project broke the terms it was built on (for means it
+did, and its bond goes to the parent). The case shows the terms or the bounty's words, the work, and every piece of
+evidence given, with who gave it. A juror's own cases are read however old they are, and a link to one case opens it.
+The key that seals a vote is kept in the browser that sealed it and can be copied; opening tries it, then a fresh
+signature, then a pasted key, so a wallet whose signatures differ each time (a passkey) can still open its vote (D130).
+
 Settling never waits on the contract that asked: if it does not take the ruling, the case is still settled and its
 jurors paid and freed, and anyone can hand the ruling over again (**Hand over the ruling**, D129).
 

@@ -27,7 +27,7 @@ Money moves out of the treasury when it is credited, so leaving cannot pay it tw
 | Rule | How |
 |---|---|
 | Chosen once | The DAO names its module with one vote, and cannot rename it: a module that stopped being told of changes would pay the wrong people |
-| Only its own module | The DAO refuses a module that names another DAO: that module would refuse every notice, and so every transfer and exit (D129) |
+| Only a module of known code | The DAO accepts only a module its own work budget factory's payouts factory made for it. A module saying whose it is proves nothing: one that refused every notice would stop every transfer and exit (D129, D130) |
 | Making it early changes nothing | Anyone can make the module before the vote; it is the same contract, and the vote's batch finds it made instead of failing (D129) |
 | Nothing paid before it is told of changes | The module refuses to split or declare until the DAO has named it |
 | The split changes only with notice | A vote announces a new split; it takes effect 30 days later, pressed by anyone |

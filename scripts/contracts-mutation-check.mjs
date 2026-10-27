@@ -945,10 +945,10 @@ const MUTATIONS = [
     "test/CreateCourt.t.sol",
   ],
   [
-    "N10: a DAO names a module for another DAO",
+    "N10: a DAO names a module its own factory did not make",
     "contracts/src/majeur/MolochPatched.sol",
-    "require(payouts == address(0) && IPayoutsHook(module).dao() == address(this), NotOk());",
-    "require(payouts == address(0), NotOk());",
+    "&& AllocationVoting(policyImpl).mandateFactory().payoutsFactory().daoOf(module) == address(this),",
+    "&& module != address(0),",
     "test/Payouts.t.sol",
   ],
   [

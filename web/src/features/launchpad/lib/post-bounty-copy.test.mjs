@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  addMoneyLine,
   claimShareLine,
   claimsInOrder,
   evidenceLink,
@@ -126,4 +127,15 @@ test("claims come most backed first, then newest, withdrawn last", () => {
     ordered.map((c) => c.claim),
     [4, 3, 1, 2],
   );
+});
+
+test("Add money says when refunds open, and that the court can hold them", () => {
+  const plain = addMoneyLine("1 Nov", "15 Nov", false);
+  assert.equal(
+    plain,
+    "The work most of the money backs for nine days is paid. If none is, you can take yours back after 1 Nov, or from 15 Nov if a piece of work is still running then. If you back a piece of work, this adds to your backing.",
+  );
+  const court = addMoneyLine("1 Nov", "15 Nov", true);
+  assert.match(court, /three more days in case it goes to the court/);
+  assert.match(court, /for as long as the court has it/);
 });

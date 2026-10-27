@@ -476,20 +476,60 @@ test("work nobody backed is appealed, a juror drawn by stake upholds it, and any
   await expect(kase.getByTestId("court-case-evidence")).toContainText(
     "https://example.com/library-bench",
   );
+  await expect(kase.getByTestId("court-case-question")).toHaveText(
+    "Does the work do what the bounty asked?",
+  );
+
+  // ── Dev adds evidence from the court page; the juror sees it, with who gave it ──────────────────
+  await dev.goto("/court");
+  const devCase = dev.getByTestId("court-case").first();
+  await devCase
+    .getByTestId("court-evidence")
+    .fill("The bench is up: https://example.com/bench-photo", {
+      timeout: 30_000,
+    });
+  await devCase.getByTestId("court-evidence-submit").click();
+  await expect(devCase.getByTestId("court-evidence")).toHaveValue("", {
+    timeout: 60_000,
+  });
 
   // ── Two days for evidence, then the draw, a sealed vote, and opening it ──────────────────────────
   await pass(2 * 86_400);
   await eve.reload();
+  await expect(kase.getByTestId("court-case-evidence-list")).toContainText(
+    DEV.slice(0, 6).toLowerCase(),
+    { timeout: 30_000 },
+  );
+  await expect(kase.getByTestId("court-case-evidence-list")).toContainText(
+    "The bench is up: https://example.com/bench-photo",
+  );
   await kase.getByTestId("court-draw").click();
   await expect(kase.getByTestId("court-case-round")).toContainText(
     "you hold 3 seats",
     { timeout: 60_000 },
+  );
+  await expect(kase.getByTestId("court-seal-for")).toHaveText(
+    "Seal my vote: Yes, it does",
   );
   await kase.getByTestId("court-seal-for").click();
   await expect(kase.getByTestId("court-case-round")).toContainText(
     "1 of 1 sealed",
     { timeout: 60_000 },
   );
+  await expect(kase.getByTestId("court-vote-key")).toBeVisible();
+  // The key that sealed it stays in this browser: leaving and coming back still opens the vote.
+  expect(
+    await eve.evaluate(
+      () =>
+        Object.keys(localStorage).filter((k) =>
+          k.startsWith("creaton:vote-key:"),
+        ).length,
+    ),
+  ).toBe(1);
+  await eve.reload();
+  await expect(kase.getByTestId("court-case-assigned")).toBeVisible({
+    timeout: 30_000,
+  });
   await kase.getByTestId("court-move-on").click();
   await kase.getByTestId("court-open").click({ timeout: 60_000 });
   await expect(kase.getByTestId("court-case-round")).toContainText("1 opened", {

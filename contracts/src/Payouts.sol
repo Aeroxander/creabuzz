@@ -212,12 +212,16 @@ contract Payouts {
 /// `create(dao, currency, splitBps)` then `dao.setPayouts(predict(...))`, in one batch. Anyone may make a module first;
 /// it is the same contract either way, and `create` then returns it, so making it early cannot make the vote fail.
 contract PayoutsFactory {
+    /// @notice The DAO each module this factory made is for: how a DAO knows a module is this code, made for it.
+    mapping(address => address) public daoOf;
+
     event Created(address indexed dao, address payouts, address currency, uint16 splitBps);
 
     function create(address dao, IERC20 currency, uint16 splitBps) external returns (Payouts module) {
         address made = predict(dao, currency, splitBps);
         if (made.code.length != 0) return Payouts(made);
         module = new Payouts{salt: _salt(dao, currency, splitBps)}(dao, currency, splitBps);
+        daoOf[address(module)] = dao;
         emit Created(dao, address(module), address(currency), splitBps);
     }
 

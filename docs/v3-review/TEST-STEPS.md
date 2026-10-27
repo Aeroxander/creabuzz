@@ -1720,3 +1720,18 @@ On a dev chain with the court (`scripts/dev-chain.sh`, then the Court page):
 4. Payouts: nothing changes on screen. The forge tests cover a module for another DAO, a DAO with no final lock choice and
    a module made before the vote.
 
+## 4bx. The juror's path, payout modules and remix bonds (D130, 2026-10-27, test networks)
+
+On a fresh dev chain (`scripts/dev-chain.sh`; the payouts factory now comes from the work budget factory):
+
+1. On a post's bounty, **Add money** says refunds wait three more days once work is filed, and as long as the court has it.
+2. Appeal a bounty's claim, then on **Court** the case reads "Does the work do what the bounty asked?" and the seal
+   buttons say "Yes, it does" and "No, it doesn't". From another account add evidence on the case: the juror's page
+   lists it with the start of that account's address.
+3. Seal a vote: "Your vote key" appears with **Copy**. Close the tab, open the court again and press **Open my vote**: it
+   opens without asking for a signature that doesn't match. In a private window, with the same wallet, a wallet that
+   signs differently each time gets a box to paste the key.
+4. A remix bond's case asks "Did this project break the terms it was built on?" and shows the terms; "Yes, it broke
+   them" is the side that gives the bond to the parent.
+5. On a remix project, only its founder sees **Post the bond**; anyone else reads "No bond yet".
+

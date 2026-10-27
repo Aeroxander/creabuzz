@@ -1,4 +1,5 @@
-import { useId, useState } from "react";
+import { useLocation } from "@tanstack/react-router";
+import { useEffect, useId, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -9,6 +10,7 @@ import {
   encodeStake,
   encodeUnstake,
   encodeWithdrawCourt,
+  MAX_CASES,
 } from "../lib/court";
 import { owedLine, seatProblem, stakeLine } from "../lib/court-copy";
 import { formatUnits, parseUnits } from "../lib/dao-actions";
@@ -27,8 +29,27 @@ type Send = (key: string, to: string, data: string) => Promise<boolean>;
  */
 export function CourtPage() {
   const sender = useChainSend(defaultChainPreset().chainId, COURT_QUERY);
-  const { court, query } = useCourt(sender.wallet.address);
+  const [limit, setLimit] = useState(MAX_CASES);
+  // A link to one case (`/court#case-7`, from a bond or a bounty) reads it however old it is.
+  const hash = useLocation({ select: (l) => l.hash });
+  const linked = /^case-(\d{1,20})$/.exec(hash ?? "");
+  const include = linked ? BigInt(linked[1]) : null;
+  const { court, query } = useCourt(sender.wallet.address, limit, include);
   const data = query.data;
+  const loaded = data !== undefined;
+  useEffect(() => {
+    if (!loaded || include === null) return;
+    document
+      .getElementById(`case-${include}`)
+      ?.scrollIntoView({ block: "start" });
+  }, [loaded, include]);
+  // The cases you were drawn in come first, newest first within each group.
+  const cases = data
+    ? [
+        ...data.cases.filter((c) => c.assigned),
+        ...data.cases.filter((c) => !c.assigned),
+      ]
+    : [];
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
       <header>
@@ -82,7 +103,7 @@ export function CourtPage() {
                 No cases yet. A case opens when someone appeals a bounty.
               </p>
             ) : (
-              data.cases.map((c) => (
+              cases.map((c) => (
                 <CourtCaseCard
                   busy={sender.busy}
                   data={data}
@@ -94,6 +115,19 @@ export function CourtPage() {
                 />
               ))
             )}
+            {data.truncated ? (
+              <Button
+                className="self-start"
+                data-testid="court-older"
+                disabled={query.isFetching}
+                onClick={() => setLimit((was) => was + MAX_CASES)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {query.isFetching ? "Reading…" : "Show older cases"}
+              </Button>
+            ) : null}
           </section>
         </>
       )}

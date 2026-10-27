@@ -6,6 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ClaimStake} from "./ClaimStake.sol";
 import {VerifierSet} from "./VerifierSet.sol";
 import {MandatePartsFactory} from "./MandatePartsFactory.sol";
+import {PayoutsFactory} from "./Payouts.sol";
 
 interface IMandateDao {
     function shares() external view returns (address);
@@ -330,9 +331,13 @@ contract TreasuryMandateFactory {
     using SafeERC20 for IERC20;
     /// @notice Makes each budget's reviewer panel and claim escrow (see `MandatePartsFactory`).
     MandatePartsFactory public immutable parts;
+    /// @notice The only factory whose payout modules (N10) the DAOs of this summoner accept: its modules are known code,
+    /// so none can refuse the DAO's notices and with them every transfer and exit.
+    PayoutsFactory public immutable payoutsFactory;
 
     constructor() {
         parts = new MandatePartsFactory();
+        payoutsFactory = new PayoutsFactory();
     }
 
     mapping(address => address) public daos;

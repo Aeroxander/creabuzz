@@ -87,3 +87,25 @@ export function claimsInOrder(
     return b.claim - a.claim;
   });
 }
+
+/**
+ * Beside Add money: who decides (the work most of the money backs), and when the money can come back. With a court,
+ * refunds wait for the appeal window after the deadline once work was filed, and while an appeal is open, even past
+ * the backstop day (the contract's `_refundsOpen`).
+ */
+export function addMoneyLine(
+  deadline: string,
+  refundsFrom: string,
+  court: boolean,
+): string {
+  return [
+    "The work most of the money backs for nine days is paid.",
+    `If none is, you can take yours back after ${deadline}, or from ${refundsFrom} if a piece of work is still running then.`,
+    court
+      ? "If work was filed, that waits three more days in case it goes to the court, and for as long as the court has it."
+      : null,
+    "If you back a piece of work, this adds to your backing.",
+  ]
+    .filter((part) => part !== null)
+    .join(" ");
+}

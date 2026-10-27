@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
+import {TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 
 /// @notice Put the launch path on a chain that already has Uniswap's auction factory: our patched summoner (the one whose
 /// Shares carry the milestone lock guard), the `DaoLaunchKit` that launches a DAO and its sale in one transaction, and the
@@ -79,8 +80,10 @@ contract DeployLaunchKit is Script {
         address pools = court == address(0)
             ? address(0)
             : vm.deployCode("ForecastPool.sol:ForecastPool", abi.encode(bountyCurrency, openBounty));
-        // Payouts to holders (N10) need counsel before any real money: test networks only.
-        address payoutsFactory = court == address(0) ? address(0) : vm.deployCode("Payouts.sol:PayoutsFactory");
+        // Payouts to holders (N10) need counsel before any real money: test networks only. The DAOs accept modules only
+        // from the factory their work budget factory made, so that is the one the app is told of.
+        address payoutsFactory =
+            court == address(0) ? address(0) : address(TreasuryMandateFactory(made.mandateFactory()).payoutsFactory());
         // A remix's bond to its parent (N12), cased in the court: test networks only.
         address remixBonds =
             court == address(0) ? address(0) : vm.deployCode("RemixBond.sol:RemixBond", abi.encode(createToken, court));

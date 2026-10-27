@@ -7,10 +7,16 @@ import {Call} from "../src/majeur/MolochPatched.sol";
 import {Payouts, PayoutsFactory} from "../src/Payouts.sol";
 import {MandateCurrency} from "./TreasuryMandate.t.sol";
 
-/// @notice A module that names some other DAO.
-contract OtherDaosModule {
-    function dao() external pure returns (address) {
-        return address(0xBEEF);
+/// @notice A module that says it is the DAO's own, and refuses every notice: naming it would stop every transfer and exit.
+contract LyingModule {
+    address public immutable dao;
+
+    constructor(address dao_) {
+        dao = dao_;
+    }
+
+    function ownershipChanged(bool, address, address, uint256) external pure {
+        revert("no");
     }
 }
 
@@ -24,7 +30,8 @@ contract PayoutsTest is VotingFixture {
     function setUp() public override {
         super.setUp();
         usd = new MandateCurrency();
-        factory = new PayoutsFactory();
+        // The one factory this summoner's DAOs accept modules from.
+        factory = ledger.mandateFactory().payoutsFactory();
         // Contributor projects choose "no lock" at creation, for good.
         vm.prank(address(dao));
         shares.setLockGuard(address(0));
@@ -132,20 +139,28 @@ contract PayoutsTest is VotingFixture {
         payouts.ownershipChanged(false, ALICE, DORA, 1);
     }
 
-    function test_a_dao_names_only_a_module_for_itself() public {
+    function test_a_dao_names_only_a_module_its_own_factory_made_for_it() public {
         // The module is already named here: clear it to check the rule on a DAO's first naming.
-        address other = address(new OtherDaosModule());
+        address lying = address(new LyingModule(address(dao)));
+        PayoutsFactory elsewhere = new PayoutsFactory();
+        address copy = address(elsewhere.create(address(dao), IERC20(address(usd)), 5_000));
         vm.store(address(dao), bytes32(uint256(_payoutsSlot())), bytes32(0));
         assertEq(dao.payouts(), address(0));
         vm.prank(address(dao));
         vm.expectRevert();
-        dao.setPayouts(other);
+        dao.setPayouts(lying);
+        vm.prank(address(dao));
+        vm.expectRevert();
+        dao.setPayouts(copy); // the same code from another factory proves nothing either
         vm.prank(address(dao));
         vm.expectRevert();
         dao.setPayouts(address(0));
         vm.prank(address(dao));
         dao.setPayouts(address(payouts));
         assertEq(dao.payouts(), address(payouts));
+        // The reviewer's case, had it been accepted: a member's exit would fail. With the factory's module it works.
+        vm.prank(ALICE);
+        shares.transfer(DORA, 1e18);
     }
 
     function test_a_dao_that_could_still_add_a_lock_is_refused() public {

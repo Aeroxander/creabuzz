@@ -2,9 +2,10 @@
  * The $CREATE court (N7, `contracts/src/CreateCourt.sol`, docs/v3-review/COURT.md): what a juror has staked, the cases
  * and where each stands, what the connected wallet can do with each, and the calls that do it.
  *
- * A vote is sealed, then opened. The secret that seals it is derived from a signature the juror's wallet makes over a
- * fixed message for that case and round (`voteKeyMessage`), so opening it later only needs the same wallet to sign again;
- * nothing has to survive in the browser.
+ * A vote is sealed, then opened. The secret that seals it (the vote key) is derived from a signature the juror's wallet
+ * makes over a fixed message for that case and round (`voteKeyMessage`). Not every wallet signs the same way twice (a
+ * passkey's signatures differ each time), so the app also keeps the key where it was sealed and lets the juror copy it;
+ * opening tries the kept key, then a fresh signature, then a key pasted in.
  *
  * Pure apart from the reader, whose chain is injected (`court.test.mjs` runs it against a fake one). Selectors and the
  * seal are pinned to `cast` in the same test.
@@ -78,6 +79,10 @@ export function encodeLastDrip(wallet: string): string {
 export const TOPIC_DISPUTE_CREATED = topicOf(
   "DisputeCreated(uint256,address,uint256,bytes)",
 );
+export const TOPIC_EVIDENCE = topicOf("Evidence(uint256,address,string)");
+export const TOPIC_DRAWN = topicOf("Drawn(uint256,uint256,address[])");
+/** The most evidence shown on one case, newest kept. */
+export const MAX_EVIDENCE = 20;
 
 export type Period = "evidence" | "commit" | "reveal" | "appeal" | "ruled";
 const PERIODS: readonly Period[] = [
@@ -218,11 +223,25 @@ export interface CaseRound {
   drawn: string[];
 }
 
+/** What a case is about, by the contract that asked: a bounty's appealed claim, or a remix's bond to its parent. */
+export type CaseAbout =
+  | { kind: "bounty"; bounty: bigint; claim: number }
+  | { kind: "remix"; bond: bigint; termsHash: string };
+
+export interface CaseEvidence {
+  party: string;
+  text: string;
+}
+
 export interface CourtCase {
   id: bigint;
   arbitrable: string;
-  /** What the case is about, when the asking contract is a bounty on a post: its id and the appealed claim. */
-  about: { bounty: bigint; claim: number } | null;
+  /** What the case is about, when the asking contract is one this build knows; null for any other. */
+  about: CaseAbout | null;
+  /** Evidence given so far, oldest first (at most `MAX_EVIDENCE`, the newest). */
+  evidence: CaseEvidence[];
+  /** The connected wallet was drawn in some round of it. */
+  assigned: boolean;
   period: Period;
   periodStart: number;
   /** How many rounds so far (1 to 3). */
@@ -251,7 +270,14 @@ export interface CourtView {
   freeSeats: number;
   juror: CourtJuror | null;
   cases: CourtCase[];
+  /** Older cases exist beyond those read (the connected wallet's own, and any asked for, are always read). */
   truncated: boolean;
+}
+
+/** Which asking contracts this build knows, so a case says what it is about. */
+export interface CourtAskers {
+  bounty?: string | null;
+  remix?: string | null;
 }
 
 const wordsOf = (hex: string): bigint[] => {
@@ -385,14 +411,96 @@ export function caseActions(
   };
 }
 
-/** The extra data a bounty on a post sends the court: abi.encode(bounty id, claim). */
-export function decodeAbout(extraData: string): CourtCase["about"] {
+/**
+ * What the asking contract sent the court, read by who asked: a bounty on a post sends abi.encode(bounty id, claim), a
+ * remix bond abi.encode(bond id, terms hash). An unknown asker's data is not guessed at.
+ */
+export function decodeAbout(
+  extraData: string,
+  arbitrable: string,
+  askers: CourtAskers,
+): CaseAbout | null {
+  const is = (a: string | null | undefined) =>
+    typeof a === "string" && a.toLowerCase() === arbitrable.toLowerCase();
   try {
-    const [bounty, claim] = decodeParameters(["uint256", "uint32"], extraData);
-    return { bounty: bounty as bigint, claim: Number(claim as bigint) };
+    if (is(askers.bounty)) {
+      const [bounty, claim] = decodeParameters(
+        ["uint256", "uint32"],
+        extraData,
+      );
+      return {
+        kind: "bounty",
+        bounty: bounty as bigint,
+        claim: Number(claim as bigint),
+      };
+    }
+    if (is(askers.remix)) {
+      const [bond, termsHash] = decodeParameters(
+        ["uint256", "bytes32"],
+        extraData,
+      );
+      return {
+        kind: "remix",
+        bond: bond as bigint,
+        termsHash: String(termsHash).toLowerCase(),
+      };
+    }
   } catch {
     return null;
   }
+  return null;
+}
+
+const topicsOf = (raw: unknown): string[] => {
+  const t = (raw as LogLike).topics;
+  return Array.isArray(t) ? (t as string[]) : [];
+};
+
+/** Evidence given on each case, by case id, oldest first and at most the newest `MAX_EVIDENCE`. */
+export function evidenceByCase(
+  logs: readonly unknown[],
+): Map<string, CaseEvidence[]> {
+  const out = new Map<string, CaseEvidence[]>();
+  for (const raw of logs) {
+    const t = topicsOf(raw);
+    const data = (raw as LogLike).data;
+    if (t.length !== 3 || typeof data !== "string") continue;
+    try {
+      const [text] = decodeParameters(["string"], data);
+      const key = BigInt(t[1]).toString();
+      const list = out.get(key) ?? [];
+      list.push({ party: addressOf(BigInt(t[2])), text: String(text) });
+      out.set(key, list);
+    } catch {}
+  }
+  for (const [key, list] of out) {
+    if (list.length > MAX_EVIDENCE) out.set(key, list.slice(-MAX_EVIDENCE));
+  }
+  return out;
+}
+
+/** The cases `wallet` was drawn in, in any round. */
+export function casesDrawing(
+  logs: readonly unknown[],
+  wallet: string,
+): Set<string> {
+  const me = wallet.toLowerCase();
+  const out = new Set<string>();
+  for (const raw of logs) {
+    const t = topicsOf(raw);
+    const data = (raw as LogLike).data;
+    if (t.length !== 2 || typeof data !== "string") continue;
+    try {
+      const [, drawn] = decodeParameters(
+        ["uint256", { array: "address" }],
+        data,
+      ) as [bigint, string[]];
+      if (drawn.some((a) => a.toLowerCase() === me)) {
+        out.add(BigInt(t[1]).toString());
+      }
+    } catch {}
+  }
+  return out;
 }
 
 interface LogLike {
@@ -401,23 +509,48 @@ interface LogLike {
 }
 
 /** The court, the connected wallet's stake, and the newest cases (bounded by `MAX_CASES`). */
+/**
+ * The court, the connected wallet's stake, and its cases: the newest `limit`, every case the wallet was drawn in, and
+ * any asked for by id (a link to one), each with its evidence.
+ */
 export async function readCourt(
   chain: Pick<WorkChain, "call" | "logs">,
   court: string,
   wallet: string | null,
+  options: { askers?: CourtAskers; limit?: number; include?: bigint[] } = {},
 ): Promise<CourtView> {
+  const askers = options.askers ?? {};
+  const limit = options.limit ?? MAX_CASES;
   if (!ADDRESS_RE.test(court)) throw new Error("not a court");
   const read = (signature: string) =>
     chain.call(court, encodeCall0(signature)).then(decodeWord);
-  const [stakeToken, feeToken, seatStake, feePerSeat, freeSeats, logs] =
-    await Promise.all([
-      read(COURT_SIGNATURES.stakeToken),
-      read(COURT_SIGNATURES.feeToken),
-      read(COURT_SIGNATURES.seatStake),
-      read(COURT_SIGNATURES.feePerSeat),
-      read(COURT_SIGNATURES.freeSeats),
-      chain.logs({ address: court, topics: [TOPIC_DISPUTE_CREATED] }),
-    ]);
+  const [
+    stakeToken,
+    feeToken,
+    seatStake,
+    feePerSeat,
+    freeSeats,
+    logs,
+    evidenceLogs,
+    drawnLogs,
+  ] = await Promise.all([
+    read(COURT_SIGNATURES.stakeToken),
+    read(COURT_SIGNATURES.feeToken),
+    read(COURT_SIGNATURES.seatStake),
+    read(COURT_SIGNATURES.feePerSeat),
+    read(COURT_SIGNATURES.freeSeats),
+    chain.logs({ address: court, topics: [TOPIC_DISPUTE_CREATED] }),
+    chain.logs({ address: court, topics: [TOPIC_EVIDENCE] }),
+    wallet
+      ? chain.logs({ address: court, topics: [TOPIC_DRAWN] })
+      : Promise.resolve([]),
+  ]);
+  const evidence = evidenceByCase(evidenceLogs);
+  const assigned = wallet ? casesDrawing(drawnLogs, wallet) : new Set<string>();
+  const wanted = new Set([
+    ...assigned,
+    ...(options.include ?? []).map((id) => id.toString()),
+  ]);
   const created = logs
     .flatMap((raw) => {
       const log = raw as LogLike;
@@ -425,13 +558,20 @@ export async function readCourt(
       if (t.length !== 3 || typeof log.data !== "string") return [];
       try {
         const [, extra] = decodeParameters(["uint256", "bytes"], log.data);
-        return [{ id: BigInt(t[1]), about: decodeAbout(String(extra)) }];
+        return [
+          {
+            id: BigInt(t[1]),
+            about: decodeAbout(String(extra), addressOf(BigInt(t[2])), askers),
+          },
+        ];
       } catch {
         return [];
       }
     })
     .sort((a, b) => (a.id > b.id ? -1 : a.id < b.id ? 1 : 0));
-  const shown = created.slice(0, MAX_CASES);
+  const shown = created.filter(
+    (c, i) => i < limit || wanted.has(c.id.toString()),
+  );
   const cases = (
     await Promise.all(
       shown.map(async ({ id, about }): Promise<CourtCase | null> => {
@@ -474,6 +614,8 @@ export async function readCourt(
         return {
           id,
           about,
+          evidence: evidence.get(id.toString()) ?? [],
+          assigned: assigned.has(id.toString()),
           ...d,
           round: decodeRound(roundHex),
           mine:
@@ -522,6 +664,6 @@ export async function readCourt(
     freeSeats: Number(freeSeats),
     juror,
     cases,
-    truncated: created.length > MAX_CASES,
+    truncated: created.length > shown.length,
   };
 }

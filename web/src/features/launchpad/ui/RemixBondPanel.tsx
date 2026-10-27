@@ -39,7 +39,11 @@ export function RemixBondPanel({
   const id = useId();
   const sender = useChainSend(defaultChainPreset().chainId, REMIX_BOND_QUERY);
   const coordinate = `37001:${remix.record.author}:${remix.record.id}`;
-  const { contract, query } = useRemixBond(coordinate, sender.wallet.address);
+  const { contract, query } = useRemixBond(
+    remix,
+    parent,
+    sender.wallet.address,
+  );
   const [amountText, setAmountText] = useState("");
   const [daysText, setDaysText] = useState("365");
   const [problem, setProblem] = useState<string | null>(null);
@@ -181,7 +185,16 @@ export function RemixBondPanel({
             ) : null}
           </div>
         </>
-      ) : sender.wallet.address?.toLowerCase() && data.wallet && parentDao ? (
+      ) : data.founder === null ? (
+        <p className="text-muted-foreground" data-testid="remix-bond-none">
+          No bond yet. Only the project&apos;s founder can post one.
+        </p>
+      ) : sender.wallet.address?.toLowerCase() !== data.founder ? (
+        <p className="text-muted-foreground" data-testid="remix-bond-none">
+          No bond yet. The project&apos;s founder can post one from their
+          wallet.
+        </p>
+      ) : data.wallet && parentDao ? (
         <div className="flex flex-col gap-2" data-testid="remix-bond-form">
           <p className="text-muted-foreground">
             Post a bond in CREATE for {parent.record.name}: if the court finds

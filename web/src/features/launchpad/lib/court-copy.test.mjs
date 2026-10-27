@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  caseKind,
+  caseQuestion,
   caseStatusLine,
   owedLine,
   rulingWords,
@@ -82,4 +84,34 @@ test("stakes and take-outs leave whole seats, as the court asks", () => {
   );
   assert.equal(seatProblem("unstake", 2n * seat, 2n * seat, seat), null);
   assert.equal(seatProblem("unstake", 2n * seat, seat, seat), null);
+});
+
+test("each kind of case asks its own question and says what a ruling does", () => {
+  assert.equal(
+    caseQuestion("remix").yes,
+    "Yes, it broke them",
+    "for, on a remix, means it broke the terms",
+  );
+  assert.equal(caseQuestion("bounty").yes, "Yes, it does");
+  assert.equal(
+    rulingWords(1, "remix"),
+    "that the project broke its terms, so its bond goes to the parent",
+  );
+  assert.equal(
+    rulingWords(2, "remix"),
+    "that the project kept its terms, so its bond stays",
+  );
+  assert.equal(rulingWords(1), "for the work");
+  const ruled = (kind, ruling) =>
+    caseStatusLine(
+      { period: "ruled", periodStart: 0, rounds: 1, ruling, kind },
+      String,
+    );
+  assert.equal(ruled("remix", 0), "Final: no ruling, so the bond stays.");
+  assert.equal(
+    ruled("remix", 1),
+    "Final ruling: that the project broke its terms, so its bond goes to the parent.",
+  );
+  assert.equal(caseKind({ about: null }), "other");
+  assert.equal(caseKind({ about: { kind: "remix" } }), "remix");
 });

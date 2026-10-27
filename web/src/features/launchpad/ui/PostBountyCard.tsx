@@ -368,6 +368,7 @@ function BountyItem({
           currency={data.currency}
           deadline={record.deadline}
           refundsFrom={record.refundsFrom}
+          court={Boolean(data.court)}
           gate={gate}
           money={money}
           onCancel={() => setForm(null)}

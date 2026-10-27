@@ -980,19 +980,20 @@ payouts_factory_address() {
   manifest_role "$(payouts_factory_manifest_path)" "payouts-factory"
 }
 
-# Payouts to holders (N10): the factory DAOs vote to make their payout module with. Test networks only.
+# Payouts to holders (N10): the factory DAOs vote to make their payout module with. Test networks only. It is not
+# deployed here: the work budget factory made it, and the DAOs accept modules from it alone.
 deploy_payouts_factory() {
   echo
-  local address=""
-  [[ -f "$(payouts_factory_manifest_path)" ]] && address=$(payouts_factory_address)
-  if [[ -n "$address" && "$(code_bytes "$address")" != "0" ]]; then
-    echo "── payouts-factory: already at $address — skipped (idempotent)"
-    return 0
-  fi
-  echo "── payouts-factory: deploying PayoutsFactory"
-  address=$(create_from_artifact payouts-factory Payouts 0x PayoutsFactory)
+  local summoner factory address
+  summoner=$(manifest_role "$(org_manifest_path)" summoner)
+  [[ -n "$summoner" && "$(code_bytes "$summoner")" != "0" ]] \
+    || fail_step "payouts-factory" "no deployed Summoner to read the payouts factory from (org dao step first)"
+  factory=$(cast call "$summoner" "mandateFactory()(address)" --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')
+  address=$(cast call "$factory" "payoutsFactory()(address)" --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')
+  [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] \
+    || fail_step "payouts-factory" "the work budget factory $factory names no payouts factory"
   write_one_role_manifest "$(payouts_factory_manifest_path)" payouts-factory "$address" "PayoutsFactory"
-  echo "  ✓ PayoutsFactory at $address (manifest $(payouts_factory_manifest_path))"
+  echo "── payouts-factory: the work budget factory's, at $address (manifest $(payouts_factory_manifest_path))"
 }
 
 remix_bonds_manifest_path() {

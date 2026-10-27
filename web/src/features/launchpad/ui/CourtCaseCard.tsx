@@ -3,6 +3,7 @@ import { useId, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Chip } from "@/shared/ui/chip";
 import { Input } from "@/shared/ui/input";
 import {
   caseActions,
@@ -19,9 +20,20 @@ import {
   encodeTimeout,
   sealedChoice,
 } from "../lib/court";
-import { caseStatusLine, timeoutLabel } from "../lib/court-copy";
+import {
+  caseKind,
+  caseQuestion,
+  caseStatusLine,
+  timeoutLabel,
+} from "../lib/court-copy";
 import { formatUnits } from "../lib/dao-actions";
 import { evidenceLink } from "../lib/post-bounty-copy";
+import {
+  keepVoteKey,
+  keptVoteKey,
+  parseVoteKey,
+  voteKeyName,
+} from "../lib/vote-key";
 import { encodeApproveBounty } from "../lib/work-bounty";
 import type { ConnectedWalletState } from "../use-connected-wallet";
 import { type CourtPageData, voteSalt } from "../use-court";
@@ -56,13 +68,21 @@ export function CourtCaseCard({
   const [problem, setProblem] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
   const [evidence, setEvidence] = useState("");
+  // The vote key just used to seal, shown to copy; and one pasted back when this browser lost it.
+  const [sealedKey, setSealedKey] = useState<string | null>(null);
+  const [pasting, setPasting] = useState(false);
+  const [pastedKey, setPastedKey] = useState("");
   const key = kase.id.toString();
   const round = kase.rounds - 1;
   const can = caseActions(kase, data.freeSeats, data.now);
   const blocked = busy !== null || gate !== null || signing;
   const about = data.about[key];
+  const remix = data.remix[key];
+  const kind = caseKind(kase);
+  const ask = caseQuestion(kind);
   const send = (name: string, call: string, to = data.court) =>
     onSend(`court-${name}-${key}`, to, call);
+  const keyName = (me: string) => voteKeyName(data.court, kase.id, round, me);
 
   const withSecret = async (
     use: (salt: string, me: string) => Promise<void>,
@@ -83,28 +103,65 @@ export function CourtCaseCard({
   };
   const seal = (choice: 1 | 2) =>
     withSecret(async (salt, me) => {
-      await send(
-        "seal",
-        encodeCommit(kase.id, commitHash(choice, salt, me, kase.id, round)),
-      );
-    });
-  const open = () =>
-    withSecret(async (salt, me) => {
-      const choice = sealedChoice(
-        kase.mine?.commit ?? "",
-        salt,
-        me,
-        kase.id,
-        round,
-      );
-      if (choice === null) {
-        setProblem(
-          "This wallet's signature doesn't open the seal. Use the wallet you sealed with.",
-        );
-        return;
+      // Kept before sending, so a seal that lands is never without its key here.
+      const kept = keepVoteKey(keyName(me), salt);
+      if (
+        await send(
+          "seal",
+          encodeCommit(kase.id, commitHash(choice, salt, me, kase.id, round)),
+        )
+      ) {
+        setSealedKey(salt);
+        if (!kept) {
+          setProblem(
+            "This browser could not keep your vote key. Copy it below: you need it to open your vote.",
+          );
+        }
       }
-      await send("open", encodeReveal(kase.id, choice, salt));
     });
+  const reveal = async (salt: string, me: string) => {
+    const choice = sealedChoice(
+      kase.mine?.commit ?? "",
+      salt,
+      me,
+      kase.id,
+      round,
+    );
+    if (choice === null) return false;
+    await send("open", encodeReveal(kase.id, choice, salt));
+    return true;
+  };
+  const open = async () => {
+    setProblem(null);
+    const me = wallet.address;
+    if (!me) return;
+    // The key kept when sealing, then a fresh signature (wallets that sign the same way twice), then a pasted one.
+    const kept = keptVoteKey(keyName(me));
+    if (kept && (await reveal(kept, me))) return;
+    await withSecret(async (salt) => {
+      if (!(await reveal(salt, me))) {
+        setPasting(true);
+        setProblem(
+          "This wallet's signature doesn't open the seal, and this browser has no key for it. Paste the vote key you copied when you sealed, or use the browser you sealed in.",
+        );
+      }
+    });
+  };
+  const openWithPasted = async () => {
+    setProblem(null);
+    const me = wallet.address;
+    const salt = parseVoteKey(pastedKey);
+    if (!me) return;
+    if (!salt) {
+      setProblem("A vote key is 64 letters and digits after 0x.");
+      return;
+    }
+    if (!(await reveal(salt, me))) {
+      setProblem("That key does not open this vote. Check it is this case's.");
+      return;
+    }
+    keepVoteKey(keyName(me), salt);
+  };
   const appeal = async () => {
     setProblem(null);
     if (!data.wallet) return;
@@ -141,10 +198,36 @@ export function CourtCaseCard({
       data-testid="court-case"
       id={`case-${key}`}
     >
-      <p className="font-semibold">
-        Case {key}
-        {kase.about ? ` · a bounty's claim ${kase.about.claim}` : ""}
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-semibold">
+          Case {key}
+          {kase.about?.kind === "bounty"
+            ? ` · a bounty's claim ${kase.about.claim}`
+            : kase.about?.kind === "remix"
+              ? " · a remix's bond"
+              : ""}
+        </p>
+        {kase.assigned ? (
+          <Chip tone="info">
+            <span data-testid="court-case-assigned">You are on this case</span>
+          </Chip>
+        ) : null}
+      </div>
+      <p className="font-medium" data-testid="court-case-question">
+        {ask.question}
       </p>
+      {kind === "remix" ? (
+        <p data-testid="court-case-terms">
+          <span className="text-muted-foreground">The terms: </span>
+          {remix?.terms ?? "The terms could not be read."}
+          {remix ? (
+            <span className="text-muted-foreground">
+              {" "}
+              · bond {formatUnits(remix.amount, 18)} CREATE
+            </span>
+          ) : null}
+        </p>
+      ) : null}
       {about ? (
         <>
           <p data-testid="court-case-words">
@@ -177,7 +260,42 @@ export function CourtCaseCard({
           ) : null}
         </>
       ) : null}
-      <p data-testid="court-case-status">{caseStatusLine(kase, date)}</p>
+      <p data-testid="court-case-status">
+        {caseStatusLine({ ...kase, kind }, date)}
+      </p>
+      {kase.evidence.length > 0 ? (
+        <div data-testid="court-case-evidence-list">
+          <p className="text-xs font-medium text-muted-foreground">
+            Evidence given
+          </p>
+          <ul className="mt-1 flex flex-col gap-1">
+            {kase.evidence.map((e, i) => {
+              const link = evidenceLink(e.text);
+              return (
+                // Evidence never changes once given, so its place in the list is a stable key.
+                // biome-ignore lint/suspicious/noArrayIndexKey: append-only list
+                <li className="break-words" key={i}>
+                  <span className="text-muted-foreground">
+                    {e.party.slice(0, 6)}…{e.party.slice(-4)}:{" "}
+                  </span>
+                  {link ? (
+                    <a
+                      className="underline"
+                      href={link}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      {e.text}
+                    </a>
+                  ) : (
+                    e.text
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
       {kase.period !== "ruled" && kase.round.drawn.length > 0 ? (
         <p className="text-muted-foreground" data-testid="court-case-round">
           Round {kase.rounds} of 3 · {kase.round.seats} seats ·{" "}
@@ -209,7 +327,7 @@ export function CourtCaseCard({
               size="sm"
               type="button"
             >
-              Seal my vote: for the work
+              Seal my vote: {ask.yes}
             </Button>
             <Button
               data-testid="court-seal-against"
@@ -219,7 +337,7 @@ export function CourtCaseCard({
               type="button"
               variant="outline"
             >
-              Seal my vote: against
+              Seal my vote: {ask.no}
             </Button>
           </>
         ) : null}
@@ -297,9 +415,56 @@ export function CourtCaseCard({
       {can.seal ? (
         <p className="text-xs text-muted-foreground">
           Your wallet signs a message to seal the vote; nobody sees which way
-          you voted until the votes are opened. Open it later with the same
-          wallet.
+          you voted until the votes are opened. This browser keeps the key that
+          opens it.
         </p>
+      ) : null}
+      {sealedKey ? (
+        <div className="flex flex-col gap-1" data-testid="court-vote-key">
+          <p className="text-xs text-muted-foreground">
+            Your vote key. Keep a copy if you might open your vote from another
+            browser:
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="break-all text-xs">{sealedKey}</code>
+            <Button
+              data-testid="court-vote-key-copy"
+              onClick={() =>
+                void navigator.clipboard?.writeText(sealedKey).catch(() => {})
+              }
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Copy
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {pasting && can.open ? (
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex grow flex-col gap-1">
+            <label className="text-xs font-medium" htmlFor={`${id}-key`}>
+              Vote key
+            </label>
+            <Input
+              data-testid="court-vote-key-paste"
+              id={`${id}-key`}
+              onChange={(e) => setPastedKey(e.target.value)}
+              placeholder="0x…"
+              value={pastedKey}
+            />
+          </div>
+          <Button
+            data-testid="court-vote-key-open"
+            disabled={blocked || !pastedKey.trim()}
+            onClick={() => void openWithPasted()}
+            size="sm"
+            type="button"
+          >
+            Open with this key
+          </Button>
+        </div>
       ) : null}
       {kase.period !== "ruled" ? (
         <div className="flex flex-wrap items-end gap-2">

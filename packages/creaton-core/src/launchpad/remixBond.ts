@@ -112,12 +112,28 @@ interface LogLike {
   data?: unknown;
 }
 
-/** The latest bond posted for the remix at `coordinate`, or null when it has none. */
+/**
+ * Who a remix's own bond can come from, and what it must be for: anyone can post a bond naming any record, so only one
+ * posted by the remix's DAO or its founder (as the kit's launch event names them), to the parent's DAO and against the
+ * parent's record, is the project's.
+ */
+export interface RemixBondBinding {
+  posters: readonly string[];
+  parent: string;
+  parentDao: string;
+}
+
+/** The latest bond the remix at `coordinate` itself posted to its parent, or null when it has none. */
 export async function readRemixBond(
   chain: Pick<WorkChain, "call" | "logs">,
   contract: string,
   coordinate: string,
+  binding: RemixBondBinding,
 ): Promise<RemixBondView | null> {
+  const posters = new Set(binding.posters.map((a) => a.toLowerCase()));
+  const parentKey = recordKey(binding.parent).toLowerCase();
+  const wantDao = binding.parentDao.toLowerCase();
+  if (posters.size === 0 || !ADDRESS_RE.test(wantDao)) return null;
   const logs = await chain.logs({
     address: contract,
     topics: [TOPIC_BOND_POSTED, null, recordKey(coordinate)],
@@ -128,10 +144,17 @@ export async function readRemixBond(
       const t = Array.isArray(log.topics) ? (log.topics as string[]) : [];
       if (t.length !== 4 || typeof log.data !== "string") return [];
       try {
-        const [, , , , terms] = decodeParameters(
+        const [poster, dao, , , terms] = decodeParameters(
           ["address", "address", "uint256", "uint64", "string"],
           log.data,
-        );
+        ) as [string, string, bigint, bigint, string];
+        if (
+          !posters.has(poster.toLowerCase()) ||
+          dao.toLowerCase() !== wantDao ||
+          t[3].toLowerCase() !== parentKey
+        ) {
+          return [];
+        }
         return [{ id: BigInt(t[1]), terms: String(terms) }];
       } catch {
         return [];
@@ -167,4 +190,48 @@ export async function readRemixBond(
     amount,
     terms: latest.terms,
   };
+}
+
+/** What a court case about bond `id` is judged against: the terms it was posted against (checked against the hash the
+ * bond keeps), its amount and who it goes to if the court finds the terms broken. Null when the bond cannot be read. */
+export async function readBondCase(
+  chain: Pick<WorkChain, "call" | "logs">,
+  contract: string,
+  id: bigint,
+): Promise<{ terms: string | null; amount: bigint; parentDao: string } | null> {
+  const [record, logs] = await Promise.all([
+    chain.call(contract, id1(REMIX_BOND_SIGNATURES.bonds, id)),
+    chain.logs({
+      address: contract,
+      topics: [TOPIC_BOND_POSTED, `0x${id.toString(16).padStart(64, "0")}`],
+    }),
+  ]);
+  const fields = decodeParameters(
+    [
+      "address",
+      "address",
+      "uint64",
+      "uint8",
+      "uint64",
+      "uint128",
+      "bytes32",
+      "bytes32",
+      "bytes32",
+    ],
+    record,
+  ) as [string, string, bigint, bigint, bigint, bigint, string, string, string];
+  if (Number(fields[3]) === 0) return null;
+  let terms: string | null = null;
+  const data = (logs[0] as LogLike | undefined)?.data;
+  if (typeof data === "string") {
+    try {
+      const [, , , , words] = decodeParameters(
+        ["address", "address", "uint256", "uint64", "string"],
+        data,
+      );
+      const hash = `0x${bytesToHex(keccak_256(utf8ToBytes(String(words))))}`;
+      if (hash === fields[8].toLowerCase()) terms = String(words);
+    } catch {}
+  }
+  return { terms, amount: fields[5], parentDao: fields[1].toLowerCase() };
 }

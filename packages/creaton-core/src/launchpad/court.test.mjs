@@ -18,7 +18,12 @@ import {
   readCourt,
   saltFromSignature,
   sealedChoice,
+  casesDrawing,
+  evidenceByCase,
+  MAX_EVIDENCE,
   TOPIC_DISPUTE_CREATED,
+  TOPIC_DRAWN,
+  TOPIC_EVIDENCE,
   voteKeyMessage,
 } from "./court.ts";
 import { encodeFunctionData, encodeParameters, selectorOf } from "./evmAbi.ts";
@@ -127,14 +132,68 @@ test("a case, its round and what it is about decode from the court's answers", (
     againstSeats: 1,
     drawn: [JUROR],
   });
+  const BOUNTY = `0x${"b0".repeat(20)}`;
+  const REMIX = `0x${"e0".repeat(20)}`;
+  const askers = { bounty: BOUNTY, remix: REMIX };
   assert.deepEqual(
-    decodeAbout(encodeParameters(["uint256", "uint32"], [9n, 2n])),
-    {
-      bounty: 9n,
-      claim: 2,
-    },
+    decodeAbout(
+      encodeParameters(["uint256", "uint32"], [9n, 2n]),
+      BOUNTY.toUpperCase().replace("0X", "0x"),
+      askers,
+    ),
+    { kind: "bounty", bounty: 9n, claim: 2 },
   );
-  assert.equal(decodeAbout("0x12"), null);
+  const hash = `0x${"ab".repeat(32)}`;
+  assert.deepEqual(
+    decodeAbout(
+      encodeParameters(["uint256", "bytes32"], [4n, hash]),
+      REMIX,
+      askers,
+    ),
+    { kind: "remix", bond: 4n, termsHash: hash },
+    "a remix bond's case is read as one, not as a bounty's claim",
+  );
+  assert.equal(
+    decodeAbout(
+      encodeParameters(["uint256", "uint32"], [9n, 2n]),
+      `0x${"77".repeat(20)}`,
+      askers,
+    ),
+    null,
+    "an asker this build does not know is not guessed at",
+  );
+  assert.equal(decodeAbout("0x12", BOUNTY, askers), null);
+});
+
+test("evidence is grouped by case, and a juror's own cases are found from the draws", () => {
+  const PARTY = `0x${"9a".repeat(20)}`;
+  const given = (id, text) => ({
+    topics: [TOPIC_EVIDENCE, `0x${word(id)}`, `0x${word(BigInt(PARTY))}`],
+    data: encodeParameters(["string"], [text]),
+  });
+  const logs = [given(1, "first"), given(2, "other"), given(1, "second")];
+  for (let i = 0; i < MAX_EVIDENCE; i++) logs.push(given(3, `n${i}`));
+  logs.push(given(3, "newest"));
+  const by = evidenceByCase(logs);
+  assert.deepEqual(by.get("1"), [
+    { party: PARTY, text: "first" },
+    { party: PARTY, text: "second" },
+  ]);
+  assert.equal(by.get("3").length, MAX_EVIDENCE);
+  assert.equal(by.get("3").at(-1).text, "newest", "the newest are kept");
+  const drawn = (id, jurors) => ({
+    topics: [TOPIC_DRAWN, `0x${word(id)}`],
+    data: encodeParameters(["uint256", { array: "address" }], [0n, jurors]),
+  });
+  assert.deepEqual(
+    [
+      ...casesDrawing(
+        [drawn(1, [PARTY]), drawn(2, [JUROR, PARTY]), drawn(7, [JUROR])],
+        JUROR.toUpperCase().replace("0X", "0x"),
+      ),
+    ],
+    ["2", "7"],
+  );
 });
 
 const kase = (over = {}) => ({
@@ -229,6 +288,9 @@ test("the court, a juror's stake and the newest cases are read from the chain", 
         [encodeCall0(COURT_SIGNATURES.freeSeats)]: words(3),
         [encodeFunctionData(COURT_SIGNATURES.disputes, ["uint256"], [1n])]:
           words(BigInt(COURT), 1, 0, 900, 0),
+        // Case 2 reads as missing here, so only what is read for the juror shows.
+        [encodeFunctionData(COURT_SIGNATURES.disputes, ["uint256"], [2n])]:
+          words(0, 0, 0, 0, 0),
         [encodeFunctionData(
           COURT_SIGNATURES.roundOf,
           ["uint256", "uint256"],
@@ -263,24 +325,77 @@ test("the court, a juror's stake and the newest cases are read from the chain", 
       return answers[data];
     },
     logs: async ({ topics }) => {
+      if (topics[0] === TOPIC_EVIDENCE) {
+        return [
+          {
+            topics: [
+              TOPIC_EVIDENCE,
+              `0x${word(1)}`,
+              `0x${word(BigInt(JUROR))}`,
+            ],
+            data: encodeParameters(["string"], ["See the draft."]),
+          },
+        ];
+      }
+      if (topics[0] === TOPIC_DRAWN) {
+        return [
+          {
+            topics: [TOPIC_DRAWN, `0x${word(1)}`],
+            data: encodeParameters(
+              ["uint256", { array: "address" }],
+              [0n, [JUROR]],
+            ),
+          },
+        ];
+      }
       assert.equal(topics[0], TOPIC_DISPUTE_CREATED);
-      return [
-        {
-          topics: [
-            TOPIC_DISPUTE_CREATED,
-            `0x${word(1)}`,
-            `0x${word(BigInt(COURT))}`,
-          ],
-          data: encodeParameters(["uint256", "bytes"], [3_000_000n, extra]),
-        },
-      ];
+      // Case 1 is the juror's; case 2 is newer and not theirs.
+      return [1, 2].map((id) => ({
+        topics: [
+          TOPIC_DISPUTE_CREATED,
+          `0x${word(id)}`,
+          `0x${word(BigInt(COURT))}`,
+        ],
+        data: encodeParameters(["uint256", "bytes"], [3_000_000n, extra]),
+      }));
     },
   };
-  const view = await readCourt(chain, COURT, JUROR);
+  const askers = { bounty: COURT };
+  const newestOnly = await readCourt(chain, COURT, null, { askers, limit: 1 });
+  assert.equal(
+    newestOnly.cases.length,
+    0,
+    "only case 2 is read, and it is missing",
+  );
+  assert.equal(newestOnly.truncated, true, "and older ones are said to exist");
+  const view = await readCourt(chain, COURT, JUROR, { askers, limit: 1 });
   assert.equal(view.freeSeats, 3);
   assert.equal(view.juror.freeSeats, 3);
-  assert.equal(view.cases.length, 1);
-  assert.deepEqual(view.cases[0].about, { bounty: 5n, claim: 1 });
+  assert.equal(
+    view.cases.length,
+    1,
+    "the juror's older case is read past the newest",
+  );
+  assert.equal(view.cases[0].id, 1n);
+  assert.equal(view.cases[0].assigned, true);
+  assert.deepEqual(view.cases[0].evidence, [
+    { party: JUROR, text: "See the draft." },
+  ]);
+  const asked = await readCourt(chain, COURT, null, {
+    askers,
+    limit: 0,
+    include: [1n],
+  });
+  assert.deepEqual(
+    asked.cases.map((c) => c.id),
+    [1n],
+    "a case asked for by its link is read",
+  );
+  assert.deepEqual(view.cases[0].about, {
+    kind: "bounty",
+    bounty: 5n,
+    claim: 1,
+  });
   assert.equal(view.cases[0].period, "evidence");
   assert.deepEqual(view.cases[0].mine, {
     seats: 0,
