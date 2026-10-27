@@ -38,6 +38,31 @@ contract Asker is IArbitrable {
     }
 }
 
+/// @notice An asking contract that refuses its ruling until told to take it.
+contract RefusingAsker is IArbitrable {
+    CreateCourt internal immutable court;
+    bool public taking;
+    mapping(uint256 => uint256) public ruled;
+
+    constructor(CreateCourt court_, IERC20 fee) {
+        court = court_;
+        fee.approve(address(court_), type(uint256).max);
+    }
+
+    function ask() external returns (uint256) {
+        return court.createDispute(2, "");
+    }
+
+    function take() external {
+        taking = true;
+    }
+
+    function rule(uint256 dispute, uint256 ruling) external {
+        require(taking, "not now");
+        ruled[dispute] = ruling;
+    }
+}
+
 /// @notice The $CREATE court (N7): draws by stake, sealed votes, appeals to larger panels, deadlines, timeouts, and books
 /// that always balance.
 contract CreateCourtTest is Test {
@@ -358,7 +383,7 @@ contract CreateCourtTest is Test {
         _booksBalance(0);
     }
 
-    function test_an_appeal_no_juror_can_take_times_out_and_the_earlier_round_is_settled() public {
+    function test_an_appeal_no_panel_can_hear_leaves_the_ruling_it_appealed_and_repays_the_appeal() public {
         _stake(ANN, 3);
         uint256 id = asker.ask();
         vm.warp(block.timestamp + 2 days);
@@ -369,10 +394,88 @@ contract CreateCourtTest is Test {
         court.draw(id);
         vm.warp(block.timestamp + court.DRAW_TIMEOUT());
         court.timeout(id);
-        assertEq(asker.ruled(id), 0, "no ruling: things stay as they were");
-        // The unused appeal fee joins the pool first, and the round that was judged gets the pool's tenth.
-        assertEq(court.owedFee(ANN), 3 * FEE + 7 * FEE / 10, "the juror who served is paid");
-        assertEq(court.feePool(), 7 * FEE - 7 * FEE / 10);
+        assertTrue(asker.told(id));
+        assertEq(asker.ruled(id), 1, "the ruling appealed stands");
+        assertEq(court.owedFee(ANN), 3 * FEE, "the juror who served is paid");
+        assertEq(court.owedFee(DI), 7 * FEE, "the appeal nobody heard is paid back");
+        assertEq(court.feePool(), 0);
+        _booksBalance(0);
+    }
+
+    function test_an_asker_that_refuses_its_ruling_cannot_hold_its_jurors_and_takes_it_later() public {
+        _stake(ANN, 3);
+        RefusingAsker refusing = new RefusingAsker(court, IERC20(address(usd)));
+        usd.mint(address(refusing), 10 * FEE);
+        uint256 id = refusing.ask();
+        vm.expectRevert(abi.encodeWithSelector(CreateCourt.NothingToDeliver.selector, id));
+        court.deliverRuling(id);
+        vm.warp(block.timestamp + court.EVIDENCE());
+        _runRound(id, 0, 2);
+        vm.warp(block.timestamp + court.APPEAL());
+        court.execute(id);
+        assertEq(uint256(_period(id)), uint256(CreateCourt.Period.Ruled));
+        assertTrue(court.undelivered(id));
+        assertEq(court.owedFee(ANN), 3 * FEE, "the juror is paid");
+        assertEq(court.freeSeatsOf(ANN), 3, "and freed");
+        vm.prank(ANN);
+        court.unstake(3 * SEAT);
+        vm.expectRevert(bytes("not now"));
+        court.deliverRuling(id);
+        assertTrue(court.undelivered(id), "still waiting after a refusal");
+        refusing.take();
+        court.deliverRuling(id);
+        assertEq(refusing.ruled(id), 2);
+        assertFalse(court.undelivered(id));
+        vm.expectRevert(abi.encodeWithSelector(CreateCourt.NothingToDeliver.selector, id));
+        court.deliverRuling(id);
+    }
+
+    function test_a_place_needs_one_seat_and_is_given_back_when_the_stake_is_gone() public {
+        vm.prank(ANN);
+        vm.expectRevert(abi.encodeWithSelector(CreateCourt.BelowOneSeat.selector, 1));
+        court.stake(1);
+        _stake(ANN, 2);
+        vm.prank(ANN);
+        vm.expectRevert(abi.encodeWithSelector(CreateCourt.BelowOneSeat.selector, 1));
+        court.unstake(2 * SEAT - 1);
+        vm.prank(ANN);
+        court.unstake(SEAT); // one seat left is fine
+        assertEq(court.jurorCount(), 1);
+        vm.prank(ANN);
+        court.unstake(SEAT);
+        (,, uint32 index,) = court.jurors(ANN);
+        assertEq(index, 0, "her place is given back");
+        assertEq(court.jurorAt(1), address(0));
+        _stake(BO, 1);
+        (,, index,) = court.jurors(BO);
+        assertEq(index, 1, "and is the next juror's");
+        assertEq(court.jurorCount(), 1, "no new place was used");
+        assertEq(court.freeSeats(), 1);
+        _stake(ANN, 1);
+        (,, index,) = court.jurors(ANN);
+        assertEq(index, 2);
+    }
+
+    function test_a_juror_slashed_to_nothing_gives_their_place_back() public {
+        _stake(ANN, 1);
+        _stake(BO, 1);
+        _stake(CY, 1);
+        uint256 id = asker.ask();
+        vm.warp(block.timestamp + court.EVIDENCE());
+        court.draw(id);
+        _commit(id, 0, ANN, 1);
+        _commit(id, 0, BO, 1);
+        // Cy never seals: against the ruling, and her only seat is taken.
+        vm.warp(block.timestamp + court.COMMIT());
+        court.passPeriod(id);
+        _reveal(id, ANN, 1);
+        _reveal(id, BO, 1);
+        court.passPeriod(id);
+        vm.warp(block.timestamp + court.APPEAL());
+        court.execute(id);
+        (uint128 staked,, uint32 index,) = court.jurors(CY);
+        assertEq(staked, 0);
+        assertEq(index, 0, "her place is given back");
         _booksBalance(0);
     }
 

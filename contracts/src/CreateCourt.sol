@@ -15,11 +15,17 @@ interface IArbitrable {
 /// to judge a case against words fixed in advance. Votes are sealed, then revealed; anyone can appeal a round's ruling
 /// to a larger panel (3, then 7, then 15 seats); the last ruling stands. Jurors who voted with it share the round's fee
 /// and the stake of those who did not (a juror who never reveals counts as against). Every step has a deadline and can be
-/// moved on by anyone, and a case that cannot find jurors times out with no ruling.
+/// moved on by anyone. A case that cannot find jurors times out: with no ruling if nobody judged it, and with the last
+/// ruling if it was an appeal no panel could hear (whoever paid for that appeal is paid back).
 ///
 /// A juror's stake is counted in seats of `seatStake`: each seat drawn locks one, so open cases never take more than a
 /// juror staked, and only free seats can be drawn or taken out. Draws use a tree of free seats (bounded at
-/// `MAX_JURORS`), so each costs the same however many jurors there are. Money owed is withdrawn by each juror.
+/// `MAX_JURORS` places), so each costs the same however many jurors there are. A place needs at least one seat's stake
+/// and is given back when its juror's stake reaches zero, so small stakes cannot fill the court. Money owed is withdrawn
+/// by each juror.
+///
+/// Settling never waits on the asking contract: if its `rule` fails, the case is still ruled and paid out, and anyone
+/// can hand the ruling over again (`deliverRuling`).
 ///
 /// Test-network only as written: the draw's randomness is the block's (`prevrandao`), which a block producer can bend;
 /// a main network needs a random-number service, and the settings below would change only by a platform vote with
@@ -81,6 +87,10 @@ contract CreateCourt {
         uint32 revealed;
         uint128 fee;
         uint32[3] counts;
+        /// @dev The round's ruling once its votes are opened.
+        uint8 ruling;
+        /// @dev Who paid for this round, when it is an appeal.
+        address appellant;
         address[] jurors;
     }
 
@@ -93,7 +103,9 @@ contract CreateCourt {
 
     mapping(address => Juror) public jurors;
     mapping(uint256 => address) public jurorAt;
+    /// @notice Places in the draw tree handed out so far; given-back places are reused first.
     uint256 public jurorCount;
+    uint32[] private freePlaces;
     /// @notice Every free seat across all jurors: what a draw picks from.
     uint256 public freeSeats;
     mapping(uint256 => uint256) private tree;
@@ -110,6 +122,8 @@ contract CreateCourt {
     /// is added to every round that has jurors who voted with the ruling.
     uint256 public feePool;
     uint256 public stakePool;
+    /// @notice Cases whose asking contract did not take the final ruling: `deliverRuling` hands it over again.
+    mapping(uint256 => bool) public undelivered;
 
     bool private entered;
 
@@ -132,6 +146,8 @@ contract CreateCourt {
     error BadText();
     error NothingOwed();
     error NothingToStake();
+    error BelowOneSeat(uint256 left);
+    error NothingToDeliver(uint256 id);
 
     event Staked(address indexed juror, uint256 amount, uint256 staked);
     event Unstaked(address indexed juror, uint256 amount, uint256 staked);
@@ -144,6 +160,7 @@ contract CreateCourt {
     event Appealed(uint256 indexed id, uint256 round, address indexed by, uint256 fee);
     event Ruled(uint256 indexed id, uint256 ruling, bool timedOut);
     event Withdrawn(address indexed juror, uint256 fee, uint256 stake);
+    event RulingUndelivered(uint256 indexed id, uint256 ruling);
 
     modifier nonReentrant() {
         if (entered) revert Reentrancy();
@@ -165,13 +182,21 @@ contract CreateCourt {
 
     // ---- jurors --------------------------------------------------------------------------------------------------
 
-    /// @notice Stake `amount` of $CREATE to be drawn for cases: each `seatStake` of it is one seat.
+    /// @notice Stake `amount` of $CREATE to be drawn for cases: each `seatStake` of it is one seat. A first stake must
+    /// be at least one seat.
     function stake(uint256 amount) external nonReentrant {
         if (amount == 0 || amount > type(uint96).max) revert NothingToStake();
         Juror storage j = jurors[msg.sender];
         if (j.index == 0) {
-            if (jurorCount == MAX_JURORS) revert Full();
-            j.index = uint32(++jurorCount);
+            if (amount < seatStake) revert BelowOneSeat(amount);
+            uint256 given = freePlaces.length;
+            if (given != 0) {
+                j.index = freePlaces[given - 1];
+                freePlaces.pop();
+            } else {
+                if (jurorCount == MAX_JURORS) revert Full();
+                j.index = uint32(++jurorCount);
+            }
             jurorAt[j.index] = msg.sender;
         }
         _pull(stakeToken, amount);
@@ -180,13 +205,16 @@ contract CreateCourt {
         emit Staked(msg.sender, amount, j.staked);
     }
 
-    /// @notice Take out `amount` of your stake that no case holds.
+    /// @notice Take out `amount` of your stake that no case holds: all of it, or as much as leaves at least one seat.
     function unstake(uint256 amount) external nonReentrant {
         Juror storage j = jurors[msg.sender];
         uint256 free = j.staked - j.locked;
         if (amount == 0 || amount > free) revert NotFree(free);
+        uint256 left = j.staked - amount;
+        if (left != 0 && left < seatStake) revert BelowOneSeat(left);
         j.staked -= uint128(amount);
         _sync(j);
+        _release(j);
         emit Unstaked(msg.sender, amount, j.staked);
         stakeToken.safeTransfer(msg.sender, amount);
     }
@@ -307,6 +335,7 @@ contract CreateCourt {
                 revert TooEarly(id, d.periodStart + REVEAL);
             }
             d.ruling = rd.counts[1] > rd.counts[2] ? 1 : rd.counts[2] > rd.counts[1] ? 2 : 0;
+            rd.ruling = d.ruling;
             _setPeriod(id, d, Period.Appeal);
         } else {
             revert WrongPeriod(id, d.period);
@@ -333,6 +362,7 @@ contract CreateCourt {
         Round storage rd = rounds[id][r];
         rd.seats = uint32(seats);
         rd.fee = uint128(fee);
+        rd.appellant = msg.sender;
         d.ruling = 0;
         _setPeriod(id, d, Period.Evidence);
         emit Appealed(id, r, msg.sender, fee);
@@ -349,16 +379,33 @@ contract CreateCourt {
         _rule(id, d, d.ruling, d.rounds, false);
     }
 
-    /// @notice End case `id` with no ruling when a round could not find jurors within `DRAW_TIMEOUT`: the asking contract
-    /// is told 0 (things stay as they were), earlier rounds are settled against that, and the unused fee joins the pool.
+    /// @notice End case `id` when a round could not find jurors within `DRAW_TIMEOUT`. If nobody judged it, the asking
+    /// contract is told 0 (things stay as they were) and the fee joins the pool. If it was an appeal, the ruling appealed
+    /// stands, earlier rounds are settled against it, and whoever paid for the appeal is paid back: an appeal into a
+    /// court too small to hear it cannot undo a ruling.
     function timeout(uint256 id) external nonReentrant {
         Dispute storage d = _dispute(id);
         if (d.period != Period.Evidence) revert WrongPeriod(id, d.period);
         uint256 r = d.rounds - 1;
         uint64 at = _drawableFrom(d, r) + DRAW_TIMEOUT;
         if (block.timestamp < at) revert TooEarly(id, at);
-        feePool += rounds[id][r].fee;
-        _rule(id, d, 0, r, true);
+        Round storage unheard = rounds[id][r];
+        if (r == 0) {
+            feePool += unheard.fee;
+            _rule(id, d, 0, 0, true);
+        } else {
+            owedFee[unheard.appellant] += unheard.fee;
+            _rule(id, d, rounds[id][r - 1].ruling, r, true);
+        }
+    }
+
+    /// @notice Hand case `id`'s final ruling to the asking contract again, after it failed to take it. Anyone may call
+    /// it; it reverts if the asking contract refuses again.
+    function deliverRuling(uint256 id) external nonReentrant {
+        Dispute storage d = _dispute(id);
+        if (!undelivered[id]) revert NothingToDeliver(id);
+        undelivered[id] = false;
+        d.arbitrable.rule(id, d.ruling);
     }
 
     // ---- reads ---------------------------------------------------------------------------------------------------
@@ -413,7 +460,18 @@ contract CreateCourt {
         d.ruling = ruling;
         _setPeriod(id, d, Period.Ruled);
         emit Ruled(id, ruling, timedOut);
-        d.arbitrable.rule(id, ruling);
+        // A plain call that copies nothing back: an asking contract that reverts, burns the gas or answers with a flood of
+        // data cannot stop its jurors being paid or freed. It can take the ruling later.
+        bytes memory data = abi.encodeCall(IArbitrable.rule, (id, uint256(ruling)));
+        address asker = address(d.arbitrable);
+        bool ok;
+        assembly ("memory-safe") {
+            ok := call(gas(), asker, 0, add(data, 0x20), mload(data), 0, 0)
+        }
+        if (!ok) {
+            undelivered[id] = true;
+            emit RulingUndelivered(id, ruling);
+        }
     }
 
     /// @dev A juror who opened a vote matching the ruling (any opened vote when there is no ruling) keeps their stake and
@@ -436,6 +494,7 @@ contract CreateCourt {
                 slashed += held;
             }
             _sync(j);
+            _release(j);
         }
         if (coherent == 0) {
             feePool += rd.fee;
@@ -493,6 +552,15 @@ contract CreateCourt {
                 tree[i] -= sub;
             }
         }
+    }
+
+    /// @dev Give a juror's place in the draw tree back once nothing of theirs is staked (their seats there are then zero
+    /// and no case holds them), for the next new juror.
+    function _release(Juror storage j) private {
+        if (j.staked != 0) return;
+        freePlaces.push(j.index);
+        jurorAt[j.index] = address(0);
+        j.index = 0;
     }
 
     /// @dev The juror holding free seat number `pick` (counting from 0 across all jurors in order).

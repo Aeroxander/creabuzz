@@ -5,7 +5,9 @@ import {
   caseStatusLine,
   owedLine,
   rulingWords,
+  seatProblem,
   stakeLine,
+  timeoutLabel,
 } from "./court-copy.ts";
 
 const date = (s) => `day ${s / 86_400}`;
@@ -59,4 +61,25 @@ test("what the court owes names only what is owed", () => {
     owedLine(1_500_000n, 50n * 10n ** 18n),
     "The court owes you 1.5 USDC and 50 CREATE.",
   );
+});
+
+test("ending an unheard case says what stands", () => {
+  assert.equal(timeoutLabel(1), "End it with no ruling");
+  assert.equal(timeoutLabel(2), "End it: the last ruling stands");
+});
+
+test("stakes and take-outs leave whole seats, as the court asks", () => {
+  const seat = 100n * 10n ** 18n;
+  assert.equal(
+    seatProblem("stake", 0n, seat - 1n, seat),
+    "Stake at least 100 CREATE: one seat.",
+  );
+  assert.equal(seatProblem("stake", 0n, seat, seat), null);
+  assert.equal(seatProblem("stake", seat, 1n, seat), null, "adding to a seat");
+  assert.equal(
+    seatProblem("unstake", 2n * seat, seat + 1n, seat),
+    "Take out all of it, or leave at least 100 CREATE: one seat.",
+  );
+  assert.equal(seatProblem("unstake", 2n * seat, 2n * seat, seat), null);
+  assert.equal(seatProblem("unstake", 2n * seat, seat, seat), null);
 });

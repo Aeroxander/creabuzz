@@ -1704,3 +1704,19 @@ On the test world (`KEEP=1 CAPTURE=0 WEB_FEATURES=mvp+forecasts scripts/web-scre
 4. On a post, **Add money** says the work most of the money backs for nine days is paid, and the dates refunds open.
 5. Portfolio: "Your community points" says they are not Shares in any project; "Project Shares you hold" below it.
 
+## 4bw. The court and payouts after D129 (2026-10-27, test networks)
+
+On a dev chain with the court (`scripts/dev-chain.sh`, then the Court page):
+
+1. With no CREATE staked, type less than one seat (for example 50) and press **Stake**: it says "Stake at least 100
+   CREATE: one seat." and sends nothing. Stake 200, then try **Take out** 150: it asks you to take out all of it or leave
+   at least one seat. Taking out 100 or 200 works.
+2. Appeal a ruled first round when the court has fewer than seven free seats, wait 14 days on the chain clock and press
+   the ending button: it reads "End it: the last ruling stands", the bounty gets the first round's ruling, and the
+   appellant is owed the appeal's fee back.
+3. **Hand over the ruling** shows only on a ruled case whose asking contract refused its ruling; there is no such
+   contract in the app, so the forge test `test_an_asker_that_refuses_its_ruling_cannot_hold_its_jurors_and_takes_it_later`
+   covers it.
+4. Payouts: nothing changes on screen. The forge tests cover a module for another DAO, a DAO with no final lock choice and
+   a module made before the vote.
+

@@ -156,6 +156,7 @@ const kase = (over = {}) => ({
   },
   mine: null,
   appealCost: 7n,
+  undelivered: false,
   ...over,
 });
 
@@ -206,6 +207,12 @@ test("each step is offered exactly when the court allows it", () => {
     caseActions(last, 0, 1_000).settle,
     true,
     "the last round settles at once",
+  );
+  assert.equal(caseActions(kase({ period: "ruled" }), 0, 1_000).deliver, false);
+  assert.equal(
+    caseActions(kase({ period: "ruled", undelivered: true }), 0, 1_000).deliver,
+    true,
+    "a ruling the asking contract did not take can be handed over again",
   );
 });
 
@@ -282,4 +289,5 @@ test("the court, a juror's stake and the newest cases are read from the chain", 
     choice: 0,
   });
   assert.equal(view.cases[0].appealCost, 7_000_000n);
+  assert.equal(view.cases[0].undelivered, false, "only a ruled case is asked");
 });

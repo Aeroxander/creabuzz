@@ -27,6 +27,8 @@ Money moves out of the treasury when it is credited, so leaving cannot pay it tw
 | Rule | How |
 |---|---|
 | Chosen once | The DAO names its module with one vote, and cannot rename it: a module that stopped being told of changes would pay the wrong people |
+| Only its own module | The DAO refuses a module that names another DAO: that module would refuse every notice, and so every transfer and exit (D129) |
+| Making it early changes nothing | Anyone can make the module before the vote; it is the same contract, and the vote's batch finds it made instead of failing (D129) |
 | Nothing paid before it is told of changes | The module refuses to split or declare until the DAO has named it |
 | The split changes only with notice | A vote announces a new split; it takes effect 30 days later, pressed by anyone |
 | Leaving is never blocked | The notice the DAO sends is plain arithmetic bounded so it cannot overflow: a payout that would push the running total past its bound is refused instead |
@@ -36,7 +38,7 @@ Money moves out of the treasury when it is credited, so leaving cannot pay it tw
 ## What differs from the proposal
 
 - **Contributor projects only.** A DAO with locked team Shares needs every unlock and forfeit counted (the milestone
-  lock does not tell anyone today); the module refuses a DAO whose Shares have a lock guard.
+  lock does not tell anyone today); the module refuses a DAO whose Shares have a lock guard, or that has not yet chosen "no lock" for good (D129).
 - **One module per DAO, chosen once.** The split can change with notice; the module cannot.
 - **No expiry on unclaimed payouts** (open question 4 in NEXT-GEN-DAO.md): what was credited stays claimable.
 - **Not tied to work.** As the proposal says, making people forecast or work to receive a payout does not change what

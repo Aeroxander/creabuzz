@@ -44,6 +44,8 @@ export const COURT_SIGNATURES = {
   appeal: "appeal(uint256)",
   execute: "execute(uint256)",
   timeout: "timeout(uint256)",
+  deliverRuling: "deliverRuling(uint256)",
+  undelivered: "undelivered(uint256)",
   submitEvidence: "submitEvidence(uint256,string)",
   jurors: "jurors(address)",
   disputes: "disputes(uint256)",
@@ -119,6 +121,8 @@ export const encodeExecute = (id: bigint): string =>
   id1(COURT_SIGNATURES.execute, id);
 export const encodeTimeout = (id: bigint): string =>
   id1(COURT_SIGNATURES.timeout, id);
+export const encodeDeliverRuling = (id: bigint): string =>
+  id1(COURT_SIGNATURES.deliverRuling, id);
 
 export function encodeCommit(id: bigint, hash: string): string {
   if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("not a seal");
@@ -234,6 +238,8 @@ export interface CourtCase {
     choice: number;
   } | null;
   appealCost: bigint;
+  /** Ruled, but the asking contract did not take the ruling: anyone can hand it over again. */
+  undelivered: boolean;
 }
 
 export interface CourtView {
@@ -334,6 +340,7 @@ export function caseActions(
   moveOn: boolean;
   appeal: boolean;
   settle: boolean;
+  deliver: boolean;
 } {
   const ends = periodEnds(c);
   const drawableFrom =
@@ -374,6 +381,7 @@ export function caseActions(
       ends !== null &&
       now < ends,
     settle: c.period === "appeal" && ends !== null && now >= ends,
+    deliver: c.period === "ruled" && c.undelivered,
   };
 }
 
@@ -432,7 +440,7 @@ export async function readCourt(
         );
         if (!d) return null;
         const r = BigInt(d.rounds - 1);
-        const [roundHex, voteHex, appealCost] = await Promise.all([
+        const [roundHex, voteHex, appealCost, undelivered] = await Promise.all([
           chain.call(
             court,
             encodeFunctionData(
@@ -456,6 +464,11 @@ export async function readCourt(
                 .call(court, id1(COURT_SIGNATURES.appealCost, id))
                 .then(decodeWord)
             : Promise.resolve(0n),
+          d.period === "ruled"
+            ? chain
+                .call(court, id1(COURT_SIGNATURES.undelivered, id))
+                .then((hex) => decodeWord(hex) !== 0n)
+            : Promise.resolve(false),
         ]);
         const vote = voteHex ? wordsOf(voteHex) : null;
         return {
@@ -473,6 +486,7 @@ export async function readCourt(
                 }
               : null,
           appealCost,
+          undelivered,
         };
       }),
     )

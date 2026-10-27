@@ -15,10 +15,11 @@ import {
   encodeExecute,
   encodePassPeriod,
   encodeReveal,
+  encodeDeliverRuling,
   encodeTimeout,
   sealedChoice,
 } from "../lib/court";
-import { caseStatusLine } from "../lib/court-copy";
+import { caseStatusLine, timeoutLabel } from "../lib/court-copy";
 import { formatUnits } from "../lib/dao-actions";
 import { evidenceLink } from "../lib/post-bounty-copy";
 import { encodeApproveBounty } from "../lib/work-bounty";
@@ -278,7 +279,18 @@ export function CourtCaseCard({
             type="button"
             variant="outline"
           >
-            End it with no ruling
+            {timeoutLabel(kase.rounds)}
+          </Button>
+        ) : null}
+        {can.deliver ? (
+          <Button
+            data-testid="court-deliver"
+            disabled={blocked}
+            onClick={() => void send("deliver", encodeDeliverRuling(kase.id))}
+            size="sm"
+            type="button"
+          >
+            Hand over the ruling
           </Button>
         ) : null}
       </div>

@@ -41,6 +41,36 @@ export function caseStatusLine(
   }
 }
 
+/** What ending a case nobody could be drawn for does: a first round ends with no ruling; an appeal leaves the ruling it
+ * appealed. */
+export function timeoutLabel(rounds: number): string {
+  return rounds === 1
+    ? "End it with no ruling"
+    : "End it: the last ruling stands";
+}
+
+/**
+ * Why the court would refuse a stake or a take-out over whole seats, or null: a juror's first stake is at least one seat,
+ * and taking out leaves nothing or at least one seat.
+ */
+export function seatProblem(
+  kind: "stake" | "unstake",
+  staked: bigint,
+  amount: bigint,
+  seatStake: bigint,
+): string | null {
+  const seat = formatUnits(seatStake, 18);
+  if (kind === "stake") {
+    return staked === 0n && amount < seatStake
+      ? `Stake at least ${seat} CREATE: one seat.`
+      : null;
+  }
+  const left = staked - amount;
+  return left > 0n && left < seatStake
+    ? `Take out all of it, or leave at least ${seat} CREATE: one seat.`
+    : null;
+}
+
 /** A juror's stake in a line. */
 export function stakeLine(
   staked: bigint,

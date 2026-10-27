@@ -10,7 +10,7 @@ import {
   encodeUnstake,
   encodeWithdrawCourt,
 } from "../lib/court";
-import { owedLine, stakeLine } from "../lib/court-copy";
+import { owedLine, seatProblem, stakeLine } from "../lib/court-copy";
 import { formatUnits, parseUnits } from "../lib/dao-actions";
 import { encodeApproveBounty } from "../lib/work-bounty";
 import { useChainSend } from "../use-chain-send";
@@ -145,6 +145,16 @@ function JurorCard({
       setProblem(`You have ${formatUnits(side.create, 18)} CREATE to stake.`);
       return;
     }
+    const seats = seatProblem(
+      "stake",
+      juror?.staked ?? 0n,
+      value,
+      data.seatStake,
+    );
+    if (seats) {
+      setProblem(seats);
+      return;
+    }
     if (side.createAllowance < value) {
       const allowed = await onSend(
         "court-allow",
@@ -165,6 +175,11 @@ function JurorCard({
       setProblem(
         `You can take out ${formatUnits(free, 18)} CREATE: the rest is held by open cases.`,
       );
+      return;
+    }
+    const seats = seatProblem("unstake", juror.staked, value, data.seatStake);
+    if (seats) {
+      setProblem(seats);
       return;
     }
     if (await onSend("court-unstake", data.court, encodeUnstake(value))) {

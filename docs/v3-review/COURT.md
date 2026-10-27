@@ -32,15 +32,20 @@ seats. A juror who voted against it, or never opened a vote, loses the stake eac
 (a tie, nobody opening, or a timeout) everyone who opened a vote counts as with it. A round nobody judged well puts its
 fee and the taken stake in a pool; a tenth of each pool is added to every round that has jurors who judged well.
 
-A case that cannot find enough free seats for 14 days times out with no ruling; earlier rounds are settled against no
-ruling and the unused fee joins the pool.
+A case that cannot find enough free seats for 14 days times out. A first round nobody judged ends with no ruling and its
+fee joins the pool. An appeal no panel could hear leaves the ruling it appealed: earlier rounds are settled against it
+and whoever paid for the appeal is paid back, so appealing into a court too small to hear it cannot undo a ruling (D129).
+
+Settling never waits on the contract that asked: if it does not take the ruling, the case is still settled and its
+jurors paid and freed, and anyone can hand the ruling over again (**Hand over the ruling**, D129).
 
 ## Stakes
 
 - 100 CREATE is one seat. A drawn seat holds its 100 until the case is settled, so open cases never take more than a
   juror staked, and only free seats can be drawn or taken out.
 - Draws pick among free seats with a tree (at most 1,024 jurors), so each draw costs the same however many jurors there
-  are.
+  are. A first stake is at least one seat, taking out leaves nothing or at least one seat, and a juror whose stake reaches
+  zero gives their place back for the next one, so small stakes cannot fill the court (D129).
 - Fees and taken stake are owed, and each juror withdraws their own.
 
 ## Sealed votes without keeping secrets in the browser

@@ -8,6 +8,7 @@ import {IVotingWeight} from "../VotingWeight.sol";
 /// @notice A payout module (N10) told of every change in who holds the DAO's Shares and Loot.
 interface IPayoutsHook {
     function ownershipChanged(bool isLoot, address from, address to, uint256 amount) external;
+    function dao() external view returns (address);
 }
 // @@CREABUZZ PATCH END seam-interface
 
@@ -72,9 +73,10 @@ contract Moloch {
     /// @notice The payout module (N10), chosen once by vote; told of every change in who holds Shares or Loot.
     address public payouts;
 
-    /// @notice Name the payout module, once. It must name this DAO.
+    /// @notice Name the payout module, once. It must name this DAO: one for another DAO would refuse every notice, and so
+    /// every transfer and every exit.
     function setPayouts(address module) public payable onlyDAO {
-        require(payouts == address(0) && module != address(0), NotOk());
+        require(payouts == address(0) && IPayoutsHook(module).dao() == address(this), NotOk());
         payouts = module;
     }
     // (No `setVotingWeight`: the policy is fixed at creation, and a stub that only reverted cost bytes this contract

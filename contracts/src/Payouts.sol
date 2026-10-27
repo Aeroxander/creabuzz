@@ -12,6 +12,7 @@ interface IPayoutsDao {
 
 interface ILockGuarded {
     function lockGuard() external view returns (address);
+    function lockGuardSet() external view returns (bool);
 }
 
 /// @title Payouts
@@ -26,8 +27,8 @@ interface ILockGuarded {
 /// them, and what was credited stays theirs after they sell, leave or are banned. Each holder withdraws their own.
 /// Money moves out of the treasury when it is credited, so leaving cannot pay it again.
 ///
-/// Only for DAOs whose Shares have no lock (contributor projects): locked team Shares and their unlocks are not counted
-/// here. The split changes only by a vote with 30 days' notice. No admin, no pause.
+/// Only for DAOs whose Shares have no lock, for good (contributor projects): locked team Shares and their unlocks are not
+/// counted here, so a DAO that could still add a lock is refused. The split changes only by a vote with 30 days' notice. No admin, no pause.
 contract Payouts {
     using SafeERC20 for IERC20;
 
@@ -50,7 +51,7 @@ contract Payouts {
     uint16 public pendingSplitBps;
     uint64 public splitAnnouncedAt;
 
-    /// @notice What one unit has been credited in all, times 2^64.
+    /// @notice What one unit has been credited in all, times 2^96.
     uint256 public perUnit;
     /// @notice Credited to holders and not yet withdrawn: never revenue again.
     uint256 public reserved;
@@ -90,7 +91,9 @@ contract Payouts {
     constructor(address dao_, IERC20 currency_, uint16 splitBps_) {
         if (dao_.code.length == 0 || address(currency_).code.length == 0 || splitBps_ > 10_000) revert InvalidSetup();
         address shares_ = IPayoutsDao(dao_).shares();
-        if (ILockGuarded(shares_).lockGuard() != address(0)) revert InvalidSetup();
+        if (!ILockGuarded(shares_).lockGuardSet() || ILockGuarded(shares_).lockGuard() != address(0)) {
+            revert InvalidSetup();
+        }
         dao = dao_;
         shares = IERC20(shares_);
         loot = IERC20(IPayoutsDao(dao_).loot());
@@ -206,16 +209,19 @@ contract Payouts {
 
 /// @title PayoutsFactory
 /// @notice Makes a DAO's payout module at an address known before it exists, so one vote can make it and name it:
-/// `create(dao, currency, splitBps)` then `dao.setPayouts(predict(...))`, in one batch.
+/// `create(dao, currency, splitBps)` then `dao.setPayouts(predict(...))`, in one batch. Anyone may make a module first;
+/// it is the same contract either way, and `create` then returns it, so making it early cannot make the vote fail.
 contract PayoutsFactory {
     event Created(address indexed dao, address payouts, address currency, uint16 splitBps);
 
     function create(address dao, IERC20 currency, uint16 splitBps) external returns (Payouts module) {
+        address made = predict(dao, currency, splitBps);
+        if (made.code.length != 0) return Payouts(made);
         module = new Payouts{salt: _salt(dao, currency, splitBps)}(dao, currency, splitBps);
         emit Created(dao, address(module), address(currency), splitBps);
     }
 
-    function predict(address dao, IERC20 currency, uint16 splitBps) external view returns (address) {
+    function predict(address dao, IERC20 currency, uint16 splitBps) public view returns (address) {
         bytes32 hash = keccak256(
             abi.encodePacked(
                 bytes1(0xff),

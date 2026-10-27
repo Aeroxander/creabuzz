@@ -7,6 +7,13 @@ import {Call} from "../src/majeur/MolochPatched.sol";
 import {Payouts, PayoutsFactory} from "../src/Payouts.sol";
 import {MandateCurrency} from "./TreasuryMandate.t.sol";
 
+/// @notice A module that names some other DAO.
+contract OtherDaosModule {
+    function dao() external pure returns (address) {
+        return address(0xBEEF);
+    }
+}
+
 /// @notice Payouts (N10) on a real summoned DAO: Alice holds 100 Shares and Bob 100 Loot, so each is half of what counts.
 contract PayoutsTest is VotingFixture {
     address internal constant DORA = address(0xD0A);
@@ -18,6 +25,9 @@ contract PayoutsTest is VotingFixture {
         super.setUp();
         usd = new MandateCurrency();
         factory = new PayoutsFactory();
+        // Contributor projects choose "no lock" at creation, for good.
+        vm.prank(address(dao));
+        shares.setLockGuard(address(0));
         address predicted = factory.predict(address(dao), IERC20(address(usd)), 5_000);
         // One vote makes the module and names it, as the app's decision does.
         Call[] memory calls = new Call[](2);
@@ -120,6 +130,47 @@ contract PayoutsTest is VotingFixture {
         vm.prank(address(0xBAD));
         vm.expectRevert(Payouts.OnlyDao.selector);
         payouts.ownershipChanged(false, ALICE, DORA, 1);
+    }
+
+    function test_a_dao_names_only_a_module_for_itself() public {
+        // The module is already named here: clear it to check the rule on a DAO's first naming.
+        address other = address(new OtherDaosModule());
+        vm.store(address(dao), bytes32(uint256(_payoutsSlot())), bytes32(0));
+        assertEq(dao.payouts(), address(0));
+        vm.prank(address(dao));
+        vm.expectRevert();
+        dao.setPayouts(other);
+        vm.prank(address(dao));
+        vm.expectRevert();
+        dao.setPayouts(address(0));
+        vm.prank(address(dao));
+        dao.setPayouts(address(payouts));
+        assertEq(dao.payouts(), address(payouts));
+    }
+
+    function test_a_dao_that_could_still_add_a_lock_is_refused() public {
+        vm.mockCall(address(shares), abi.encodeWithSignature("lockGuardSet()"), abi.encode(false));
+        vm.expectRevert(Payouts.InvalidSetup.selector);
+        new Payouts(address(dao), IERC20(address(usd)), 5_000);
+    }
+
+    function test_making_the_module_early_cannot_make_the_vote_fail() public {
+        address predicted = factory.predict(address(dao), IERC20(address(usd)), 2_500);
+        vm.prank(address(0xBAD));
+        Payouts early = factory.create(address(dao), IERC20(address(usd)), 2_500);
+        assertEq(address(early), predicted);
+        // The DAO's vote makes it again: it gets the same module back instead of a failed batch.
+        vm.prank(address(dao));
+        assertEq(address(factory.create(address(dao), IERC20(address(usd)), 2_500)), predicted);
+    }
+
+    /// @dev Where the DAO keeps `payouts`, found by reading it back.
+    function _payoutsSlot() internal view returns (uint256 slot) {
+        bytes32 want = bytes32(uint256(uint160(address(payouts))));
+        for (slot = 0; slot < 64; ++slot) {
+            if (vm.load(address(dao), bytes32(slot)) == want) return slot;
+        }
+        revert("payouts slot not found");
     }
 
     function test_the_split_changes_only_after_its_notice() public {
