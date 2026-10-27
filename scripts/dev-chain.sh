@@ -1272,6 +1272,7 @@ up() {
   echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
   echo "              VITE_OPEN_BOUNTIES='{\"$CHAIN_ID\":\"$(open_bounty_address)\"}'  (lets people put money behind a post here)"
   echo "              VITE_MATCHED_EXITS='{\"$CHAIN_ID\":\"$(matched_exit_address)\"}'  (lets members sell Shares to each other here, once their DAO votes for it)"
+  echo "              VITE_WEEKLY_ROUNDS='{\"$CHAIN_ID\":\"$(weekly_rounds_address)\"}'  (weekly rounds between holders and new buyers, once their DAO votes them in)"
   echo "              VITE_CREATE_TOKENS='{\"$CHAIN_ID\":\"$(create_token_address)\"}' VITE_CREATE_FAUCETS='{\"$CHAIN_ID\":\"$(create_faucet_address)\"}'  (test CREATE: stakes and bonds)"
   echo "              VITE_COURTS='{\"$CHAIN_ID\":\"$(court_address)\"}'  (the court claimants appeal to)"
   echo "              VITE_FORECAST_POOLS='{\"$CHAIN_ID\":\"$(forecast_pool_address)\"}'  (money on whether a post's bounty is paid; test money)"

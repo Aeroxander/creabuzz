@@ -1,0 +1,380 @@
+import { expect, test, type Page } from "@playwright/test";
+import { getPublicKey } from "nostr-tools/pure";
+
+import { installAnvilWallet } from "../helpers/anvil-wallet";
+
+/**
+ * Weekly rounds (D131) from pages, against a REAL chain: a member who wants out is matched with two people who want in,
+ * and the treasury keeps its money.
+ *
+ * Opt-in: `scripts/web-rounds-e2e.sh` boots the chain (a local dev chain, or with `--sepolia-fork` a fork of Sepolia
+ * with the Sepolia deploy's contracts), builds the app for it, and runs this spec. The founder starts a contributor
+ * project and puts 200 USDC in its treasury, so leaving pays 1 USDC a Share. The DAO votes weekly rounds in; 30 days
+ * later a newcomer switches them on and opens a round. The founder offers 50 Shares at 1 USDC or more; the newcomer and
+ * a second buyer each bid for 30 at up to 1.30. Three days later the newcomer settles it, and everyone collects: the
+ * founder 62 USDC (65, less a fifth of the 15 gained above what leaving pays), the treasury 3 more and nothing paid out,
+ * each buyer 25 Shares. What is stubbed: the relay and the wallets (`window.ethereum` forwarding to Anvil's accounts).
+ */
+
+const ANVIL_URL = process.env.E2E_ANVIL_URL ?? "";
+const KIT = process.env.E2E_KIT ?? "";
+const ROUNDS = process.env.E2E_WEEKLY_ROUNDS ?? "";
+const CURRENCY = process.env.E2E_CURRENCY ?? "";
+const REVIEWER1 = process.env.E2E_REVIEWER1 ?? "";
+const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
+/** Someone with money and no Shares, who wants in. */
+const NEWCOMER = process.env.E2E_MANAGER ?? "";
+/** A second buyer, with money of their own. */
+const SECOND = process.env.E2E_CONTRIBUTOR ?? "";
+const FOUNDER_WALLET =
+  process.env.E2E_FOUNDER ?? "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+const NSEC = "55".repeat(32);
+const FOUNDER = getPublicKey(
+  Uint8Array.from(NSEC.match(/.{2}/g) ?? [], (b) => Number.parseInt(b, 16)),
+);
+const NEWCOMER_NSEC = "66".repeat(32);
+const SECOND_NSEC = "77".repeat(32);
+/** `ContributorProjectLaunched(address,address,address,bytes32,uint256)`. */
+const LAUNCHED =
+  "0x7f4eb55556e4a4d7639e36b6ec8b0e6d4ab4fcfff92dd9c201bed8e870716583";
+const E18 = 10n ** 18n;
+const USD = 1_000_000n;
+
+test.skip(
+  !ANVIL_URL || !KIT || !ROUNDS || !CURRENCY || !NEWCOMER || !SECOND,
+  "set E2E_ANVIL_URL, E2E_KIT, E2E_WEEKLY_ROUNDS, E2E_CURRENCY, E2E_MANAGER and E2E_CONTRIBUTOR (scripts/web-rounds-e2e.sh does)",
+);
+
+async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
+  const res = await fetch(ANVIL_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const body = (await res.json()) as { result?: unknown; error?: unknown };
+  if (body.error) throw new Error(JSON.stringify(body.error));
+  return body.result;
+}
+
+async function call(to: string, data: string): Promise<string> {
+  return String(await rpc("eth_call", [{ to, data }, "latest"]));
+}
+
+const addressArg = (address: string) =>
+  address.slice(2).toLowerCase().padStart(64, "0");
+const amountArg = (amount: bigint) => amount.toString(16).padStart(64, "0");
+const wordAddress = (hex: string) => `0x${hex.slice(-40)}`;
+const usdcOf = async (who: string) =>
+  BigInt(await call(CURRENCY, `0x70a08231${addressArg(who)}`));
+
+/** Let time pass on the chain, the way waiting would. */
+async function pass(seconds: number) {
+  await rpc("anvil_increaseTime", [seconds]);
+  await rpc("anvil_mine", ["0x1"]);
+}
+
+/** Everything the pages publish, served back to every page that asks for its kind. */
+const published: { id: string; kind: number }[] = [];
+
+async function open(page: Page, wallet: string, path: string, nsec = NSEC) {
+  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    ws.onMessage((message) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(message));
+      } catch {
+        return;
+      }
+      if (!Array.isArray(parsed)) return;
+      if (parsed[0] === "EVENT") {
+        const event = parsed[1] as { id: string; kind: number };
+        if (!published.some((known) => known.id === event.id))
+          published.push(event);
+        ws.send(JSON.stringify(["OK", event.id, true, ""]));
+        return;
+      }
+      if (parsed[0] !== "REQ") return;
+      const [, subId, filter] = parsed as [
+        string,
+        string,
+        { kinds?: number[] },
+      ];
+      for (const event of published) {
+        if (filter.kinds?.includes(event.kind))
+          ws.send(JSON.stringify(["EVENT", subId, event]));
+      }
+      ws.send(JSON.stringify(["EOSE", subId]));
+    });
+  });
+  await installAnvilWallet(page, wallet, { rpcUrl: ANVIL_URL });
+  await page.addInitScript(
+    ([nsec, rpcUrl]) => {
+      window.localStorage.setItem("buzz.identity.nsec", nsec);
+      window.localStorage.setItem("buzz.identity.backedUp", "1");
+      window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
+    },
+    [nsec, ANVIL_URL],
+  );
+  await page.goto(path);
+}
+
+const projectPath = (tab: string) =>
+  `/launchpad/rounds-commons?author=${FOUNDER}&tab=${tab}`;
+
+async function refresh(page: Page, tab: "Decisions" | "Funds") {
+  await page.reload();
+  await page.getByRole("tab", { name: tab }).click();
+}
+
+/** Back the newest decision, let its review pass, start its wait, let that pass, run it: each press the founder's. */
+async function carryOut(page: Page, toApprove: number, toWait: number) {
+  const card = page.getByTestId("decision-card").first();
+  await expect(card.getByTestId("decision-status")).toHaveText(
+    "Collecting support",
+    { timeout: 30_000 },
+  );
+  await card.getByTestId("decision-vote-for").click();
+  await expect(card.getByTestId("decision-support")).toContainText(
+    "Backing 200",
+    { timeout: 30_000 },
+  );
+  await pass(toApprove);
+  await refresh(page, "Decisions");
+  const next = page.getByTestId("decision-card").first();
+  await expect(next.getByTestId("decision-status")).toHaveText("Approved", {
+    timeout: 30_000,
+  });
+  await next.getByTestId("decision-start-wait").click();
+  await expect(next.getByTestId("decision-status")).toHaveText(
+    "Waiting to run",
+    { timeout: 30_000 },
+  );
+  await pass(toWait);
+  await refresh(page, "Decisions");
+  const ready = page.getByTestId("decision-card").first();
+  await expect(ready.getByTestId("decision-status")).toHaveText(
+    "Ready to run",
+    { timeout: 30_000 },
+  );
+  await ready.getByTestId("decision-run").click();
+  await expect(ready.getByTestId("decision-status")).toHaveText("Done", {
+    timeout: 30_000,
+  });
+}
+
+test("a member who wants out is matched with two who want in, and the treasury keeps its money", async ({
+  context,
+}) => {
+  test.setTimeout(Number(process.env.E2E_TIMEOUT_MS ?? 600_000));
+
+  // ── 1. the founder starts a contributor project and puts 200 USDC in its treasury ──────────────────
+  const founder = await context.newPage();
+  await open(founder, FOUNDER_WALLET, "/start");
+  await founder.getByTestId("start-go-contributor").click();
+  await founder.getByTestId("contributor-name").fill("Rounds Commons");
+  await founder
+    .getByTestId("contributor-pitch")
+    .fill("A small project whose members can sell to newcomers each week.");
+  await founder.getByTestId("contributor-founder-shares").fill("200");
+  await founder.getByTestId("contributor-budget-shares").fill("600");
+  await founder.getByTestId("contributor-project-cap").fill("40");
+  await founder
+    .getByTestId("contributor-reviewers")
+    .fill(`${REVIEWER1}\n${REVIEWER2}`);
+  await founder.getByTestId("contributor-project-name").fill("docs");
+  await founder
+    .getByTestId("contributor-project-check")
+    .fill("docs merged and reviewed");
+  await expect(founder.getByTestId("contributor-gate")).toHaveCount(0, {
+    timeout: 20_000,
+  });
+  const blockBefore = BigInt(String(await rpc("eth_blockNumber")));
+  await founder.getByTestId("contributor-submit").click();
+  await expect(founder.getByTestId("contributor-done")).toBeVisible({
+    timeout: 120_000,
+  });
+  const launched = (
+    (await rpc("eth_getLogs", [
+      {
+        address: KIT,
+        fromBlock: `0x${blockBefore.toString(16)}`,
+        toBlock: "latest",
+      },
+    ])) as { topics: string[] }[]
+  ).filter((log) => log.topics[0] === LAUNCHED);
+  expect(launched).toHaveLength(1);
+  const dao = wordAddress(launched[0].topics[2]);
+  const shares = wordAddress(await call(dao, "0x03314efa"));
+  const sharesOf = async (holder: string) =>
+    BigInt(await call(shares, `0x70a08231${addressArg(holder)}`));
+  await rpc("eth_sendTransaction", [
+    {
+      from: FOUNDER_WALLET,
+      to: CURRENCY,
+      data: `0xa9059cbb${addressArg(dao)}${amountArg(200n * USD)}`,
+    },
+  ]);
+  expect(await usdcOf(dao)).toBe(200n * USD);
+
+  // ── 2. the DAO votes weekly rounds in; the vote can't switch them on ──────────────────────────────
+  await founder.getByTestId("contributor-open-project").click();
+  await refresh(founder, "Funds");
+  await expect(founder.getByTestId("rounds-state")).toContainText(
+    "This project has no weekly rounds yet.",
+    { timeout: 30_000 },
+  );
+  await refresh(founder, "Decisions");
+  await founder.getByTestId("decision-new").click();
+  await founder.getByTestId("decision-kind-rounds").click();
+  await expect(founder.getByTestId("decision-draft-title")).toHaveText(
+    "Start weekly rounds in 30 days",
+    { timeout: 30_000 },
+  );
+  await founder.getByTestId("decision-draft-submit").click();
+  await expect(founder.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  // A vote on the Shares takes the full vote: two days' review and twelve hours' hold.
+  await carryOut(founder, 175_000, 90_000);
+  // `pendingExitExchange()` names the rounds.
+  expect(wordAddress(await call(shares, "0x6cb21d83"))).toBe(
+    ROUNDS.toLowerCase(),
+  );
+  await refresh(founder, "Funds");
+  await expect(founder.getByTestId("rounds-state")).toContainText(
+    "A vote started weekly rounds. They can be switched on from",
+    { timeout: 30_000 },
+  );
+  await expect(founder.getByTestId("rounds-switch-on")).toHaveCount(0);
+
+  // ── 3. 30 days later a newcomer switches them on and opens this week's round ────────────────────
+  await pass(30 * 86_400);
+  const buyer = await context.newPage();
+  await open(buyer, NEWCOMER, projectPath("treasury"), NEWCOMER_NSEC);
+  await buyer.getByTestId("rounds-switch-on").click();
+  await expect(buyer.getByTestId("rounds-state")).toContainText(
+    "never below what leaving pays",
+    { timeout: 60_000 },
+  );
+  await buyer.getByTestId("rounds-open").click();
+  await expect(buyer.getByTestId("rounds-round-status")).toContainText(
+    "Taking offers and bids until",
+    { timeout: 60_000 },
+  );
+  await expect(buyer.getByTestId("rounds-round")).toContainText(
+    "Floor 1 USDC a Share",
+  );
+
+  // ── 4. the founder offers 50 Shares at 1 USDC or more; two buyers bid for 30 each at up to 1.30 ────
+  await refresh(founder, "Funds");
+  await founder.getByTestId("rounds-offer-open").click({ timeout: 30_000 });
+  await founder.getByTestId("rounds-offer-amount").fill("201");
+  await founder.getByTestId("rounds-offer-price").fill("1");
+  await expect(founder.getByTestId("rounds-offer-plan-problem")).toHaveText(
+    "You can offer up to 200 Shares.",
+  );
+  await founder.getByTestId("rounds-offer-amount").fill("50");
+  await expect(founder.getByTestId("rounds-offer-plan")).toContainText(
+    "you keep 1 USDC a Share after the treasury's cut",
+  );
+  await founder.getByTestId("rounds-offer-submit").click();
+  await expect(founder.getByTestId("rounds-my-sell")).toHaveText(
+    "You offer 50 Shares at 1 USDC or more.",
+    { timeout: 60_000 },
+  );
+  expect(await sharesOf(FOUNDER_WALLET)).toBe(150n * E18);
+
+  await refresh(buyer, "Funds");
+  await buyer.getByTestId("rounds-bid-open").click({ timeout: 30_000 });
+  await buyer.getByTestId("rounds-bid-amount").fill("30");
+  await buyer.getByTestId("rounds-bid-price").fill("0.9");
+  await expect(buyer.getByTestId("rounds-bid-plan-problem")).toHaveText(
+    "Bid at least 1 USDC a Share: what leaving pays.",
+  );
+  await buyer.getByTestId("rounds-bid-price").fill("1.30");
+  await expect(buyer.getByTestId("rounds-bid-plan")).toContainText(
+    "This bid holds 39 USDC until the round settles.",
+  );
+  await buyer.getByTestId("rounds-bid-submit").click();
+  await expect(buyer.getByTestId("rounds-my-bid")).toHaveText(
+    "You bid for 30 Shares at up to 1.3 USDC.",
+    { timeout: 60_000 },
+  );
+
+  const second = await context.newPage();
+  await open(second, SECOND, projectPath("treasury"), SECOND_NSEC);
+  await second.getByTestId("rounds-bid-open").click({ timeout: 30_000 });
+  await second.getByTestId("rounds-bid-amount").fill("30");
+  await second.getByTestId("rounds-bid-price").fill("1.3");
+  await second.getByTestId("rounds-bid-submit").click();
+  await expect(second.getByTestId("rounds-clearing")).toHaveText(
+    "If bidding ended now: 50 Shares at 1.3 USDC each.",
+    { timeout: 60_000 },
+  );
+  await expect(second.getByTestId("rounds-row")).toHaveCount(2);
+  // While a round takes bids, the next one is not announced yet.
+  await expect(second.getByTestId("rounds")).not.toContainText(
+    "Next round from",
+  );
+  if (process.env.E2E_SHOTS) {
+    await second
+      .getByTestId("rounds")
+      .screenshot({ path: `${process.env.E2E_SHOTS}/rounds-bidding.png` });
+  }
+
+  // ── 5. bidding ends; the newcomer settles it; everyone collects ───────────────────────────────
+  await pass(3 * 86_400);
+  await refresh(buyer, "Funds");
+  await expect(buyer.getByTestId("rounds-round-status")).toContainText(
+    "Bidding is over. Anyone can settle it until",
+    { timeout: 30_000 },
+  );
+  await buyer.getByTestId("rounds-settle").click();
+  await expect(buyer.getByTestId("rounds-clearing")).toHaveText(
+    "50 Shares at 1.3 USDC each changed hands.",
+    { timeout: 60_000 },
+  );
+  await expect(buyer.getByTestId("rounds-my-bid")).toContainText(
+    "Bought: 25 Shares, for 32.5 USDC.",
+  );
+
+  const founderMoney = await usdcOf(FOUNDER_WALLET);
+  await refresh(founder, "Funds");
+  await expect(founder.getByTestId("rounds-my-sell")).toContainText(
+    "Sold: 50 Shares, for 62 USDC after the cut.",
+    { timeout: 30_000 },
+  );
+  await founder.getByTestId("rounds-collect").click();
+  await expect(founder.getByTestId("rounds-my-sell")).toContainText(
+    "Collected.",
+    { timeout: 60_000 },
+  );
+  expect(await usdcOf(FOUNDER_WALLET)).toBe(founderMoney + 62n * USD);
+  expect(await usdcOf(dao)).toBe(203n * USD);
+
+  const buyerMoney = await usdcOf(NEWCOMER);
+  await buyer.getByTestId("rounds-collect").click();
+  await expect(buyer.getByTestId("rounds-my-bid")).toContainText("Collected.", {
+    timeout: 60_000,
+  });
+  expect(await sharesOf(NEWCOMER)).toBe(25n * E18);
+  // 39 held, 32.50 paid: 6.50 comes back.
+  expect(await usdcOf(NEWCOMER)).toBe(buyerMoney + 6_500_000n);
+
+  await refresh(second, "Funds");
+  await second.getByTestId("rounds-collect").click({ timeout: 30_000 });
+  await expect(second.getByTestId("rounds-my-bid")).toContainText(
+    "Collected.",
+    { timeout: 60_000 },
+  );
+  expect(await sharesOf(SECOND)).toBe(25n * E18);
+  expect(await sharesOf(ROUNDS)).toBe(0n);
+  await expect(second.getByTestId("rounds-collect")).toHaveCount(0);
+  if (process.env.E2E_SHOTS) {
+    await second
+      .getByTestId("rounds")
+      .screenshot({ path: `${process.env.E2E_SHOTS}/rounds-settled.png` });
+  }
+  // The next round can open a week after this one did.
+  await expect(second.getByTestId("rounds")).toContainText("Next round from");
+});

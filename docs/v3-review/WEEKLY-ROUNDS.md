@@ -65,7 +65,25 @@ it owes before paying out what remains); the rounds do not provide it.
   at the new value; if it shrinks, buyers pay the old floor at least.
 - One exchange per DAO: a DAO that names the round contract no longer uses matched offers (D117), and the reverse.
 
+## In the app (D132)
+
+A contributor project's Funds tab has a **Weekly rounds** card when the build names the contract (`VITE_WEEKLY_ROUNDS`).
+The DAO starts rounds with the **Weekly rounds** decision (the same 30-day route as sales by signed offers; a DAO uses one
+or the other, and the offers card hides when rounds are chosen). Thirty days later anyone switches them on, and anyone
+opens each week's round. The card shows:
+
+- the round's floor, its deadline, and what would trade if bidding ended now;
+- each price people chose, with what is offered at or below it and wanted at or above it;
+- **Offer Shares** (a lowest price; it says what you keep a Share after the treasury's cut) and **Bid for Shares** (a
+  highest price; it says what the bid holds until the round settles), each allowing the round first when needed;
+- taking an offer or a bid back while bidding is open, or taking the Shares back and leaving at once;
+- **Settle the round** once bidding is over, then **Collect**, or **Collect, and leave with the Shares**.
+
+Checked by `scripts/web-rounds-e2e.sh` on a local chain and with `--sepolia-fork` on a fork of Sepolia with the Sepolia
+deploy's contracts and Sepolia's USDC: the shared doc's example, from pages (the founder receives 62 USDC, the treasury 3
+and pays nobody out, each buyer 25 Shares). On the fork the founder's nine transactions used 7.2M gas in all (the largest,
+starting the project, 5.5M), the newcomer's six 1.3M, the second buyer's three 0.7M.
+
 ## Next
 
-A page for rounds (open, offer, bid, settle, claim, demand shown at each price), the journeys on a fork, and a pilot that
-measures two things: whether people put money into productive projects, and how much runway matching keeps.
+A pilot that measures two things: whether people put money into productive projects, and how much runway matching keeps.

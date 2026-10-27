@@ -12,6 +12,7 @@ import {
   defaultChainPreset,
   localUsdcAddress,
   matchedExit,
+  weeklyRounds,
 } from "./chain-config";
 import { walletError } from "./lib/wallet-effects";
 import {
@@ -86,6 +87,14 @@ export function useMatchedExit(dao: string, wallet: string | null) {
       const read = await readExitSales(chain, shares);
       // Shares made before sales between members have nothing to show.
       if (!read) return null;
+      // A DAO that chose weekly rounds sells through them; the rounds card says so.
+      const rounds = weeklyRounds(chainId)?.toLowerCase();
+      if (
+        rounds &&
+        [read.exchange, read.pending].some((a) => a?.toLowerCase() === rounds)
+      ) {
+        return null;
+      }
       const state = exitSalesState(read, exchangeAddress, now);
       const total = exitDenominator({
         ...position,

@@ -633,6 +633,8 @@ export interface DescribeContext {
   projectToken?: string;
   /** The matched-exit exchange this app knows on the DAO's network, so a vote naming it is told apart from one naming anything else. */
   matchedExit?: string;
+  /** The weekly rounds contract this app knows on the DAO's network (D131), told apart the same way. */
+  weeklyRounds?: string;
   /** The payout module factory this app knows on the DAO's network (N10). */
   payoutsFactory?: string;
   /** Each work budget's bond (its token, name and decimals), by lowercase budget address, so an amount can be put in words. */

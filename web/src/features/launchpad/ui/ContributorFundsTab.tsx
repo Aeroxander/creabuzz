@@ -22,6 +22,7 @@ import { useContributorProvenance } from "../use-contributor-provenance";
 import { DelegationCard } from "./DelegationCard";
 import { Figure } from "./Figure";
 import { MatchedExitCard } from "./MatchedExitCard";
+import { WeeklyRoundsCard } from "./WeeklyRoundsCard";
 import { PayoutsCard } from "./PayoutsCard";
 import { RagequitPanel } from "./RagequitPanel";
 import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
@@ -126,6 +127,7 @@ export function ContributorFundsTab({
         daoBinding={binding}
         record={exitRecord}
       />
+      <WeeklyRoundsCard dao={dao} />
       <MatchedExitCard dao={dao} />
       <PayoutsCard dao={dao} />
       <DelegationCard

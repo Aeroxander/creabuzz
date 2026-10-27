@@ -1735,16 +1735,25 @@ On a fresh dev chain (`scripts/dev-chain.sh`; the payouts factory now comes from
    them" is the side that gives the bond to the parent.
 5. On a remix project, only its founder sees **Post the bond**; anyone else reads "No bond yet".
 
-## 4by. Weekly rounds (D131, 2026-10-27, test networks)
+## 4by. Weekly rounds (D131, D132, 2026-10-27, test networks)
 
-Nothing to click yet: the page comes next. To check the contract by hand:
+The quickest way to see it whole is the journey, which leaves screenshots of the card if asked:
 
 ```bash
-cd contracts && forge test --match-path test/WeeklyRounds.t.sol -vv
+E2E_SHOTS=$PWD/test-results/rounds-shots scripts/web-rounds-e2e.sh
 ```
 
-All 15 pass. The worked example from the shared doc is `test_a_sale_through_a_round_pays_the_seller_more_and_keeps_the_treasury`
-(Ana receives 62, the treasury gains 3 and pays nobody out); the reviewer's scenarios are the tests on thin demand, a
-round nobody settles, the treasury growing during bidding, everyone wanting out, and leaving after the DAO stops naming
-the round.
+By hand, on a dev chain with `VITE_WEEKLY_ROUNDS` set (the dev chain prints it):
 
+1. Start a contributor project and send its DAO some test USDC. On Decisions, **New decision** → **Weekly rounds**: the
+   draft reads "Start weekly rounds in 30 days". Run it; the Funds tab says when they can be switched on.
+2. Thirty days later (move the chain's clock), **Switch on weekly rounds**, then **Open this week's round**: the card
+   shows the floor (what leaving pays a Share).
+3. **Offer Shares**: typing more than you hold says how many you can offer; a price says what you keep a Share after the
+   cut. From another wallet, **Bid for Shares**: a price below the floor is refused before anything is sent; a valid one
+   says what the bid holds. The card shows what would trade if bidding ended now.
+4. **Take my Shares back** or **Take them back and leave** while bidding is open.
+5. Three days later, **Settle the round**, then **Collect** from each wallet: sellers get the price less a fifth of the
+   gain above the floor, buyers get their Shares and the rest of their money back, the DAO gets the cut.
+6. If nobody settles within two days after bidding, the card says everyone takes back what they put in, and **Collect**
+   does that.

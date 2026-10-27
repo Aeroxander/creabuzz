@@ -141,6 +141,8 @@ export interface ChainEnv {
    * there to people who want in. A chain with no entry offers no sales between members.
    */
   VITE_MATCHED_EXITS?: string;
+  /** Weekly rounds between holders and new buyers per chain (D131), as JSON `{ "<chainId>": "0x…" }`. */
+  VITE_WEEKLY_ROUNDS?: string;
   /**
    * $CREATE per chain, as JSON: `{"31337":"0x…"}` (N6). The platform's work token: staked to judge cases and posted as a
    * bond. A chain with no entry offers neither.
@@ -292,6 +294,14 @@ export function matchedExit(
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
   return addressForChain(env?.VITE_MATCHED_EXITS, chainId);
+}
+
+/** The weekly rounds contract on `chainId`, or null when the build does not name one. DAOs vote it in. */
+export function weeklyRounds(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_WEEKLY_ROUNDS, chainId);
 }
 
 function addressForChain(

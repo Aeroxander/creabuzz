@@ -32,9 +32,15 @@ import { isContributorProject } from "../lib/funding";
 import { useQuery } from "@tanstack/react-query";
 import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
 import { erc20BalanceOf, getRpcEndpoint } from "../chain";
-import { localUsdcAddress, matchedExit, payoutsFactory } from "../chain-config";
+import {
+  localUsdcAddress,
+  matchedExit,
+  payoutsFactory,
+  weeklyRounds,
+} from "../chain-config";
 import { PayoutsForm } from "./PayoutsForm";
 import { ExitSalesForm } from "./ExitSalesForm";
+import { RoundsDecisionForm } from "./RoundsDecisionForm";
 
 type Kind =
   | "budget"
@@ -49,6 +55,7 @@ type Kind =
   | "close"
   | "trading"
   | "sales"
+  | "rounds"
   | "payouts";
 
 /** The decisions whose forms pick from the DAO's work budgets and claims. */
@@ -123,6 +130,12 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
       "Let members who want out sell Shares to people who want in, at a price they choose, or turn that off. It can start only 30 days after the vote.",
   },
   {
+    id: "rounds",
+    label: "Weekly rounds",
+    about:
+      "Once a week, match members who want out with people who want in, at one price never below what leaving pays, or turn that off. It can start only 30 days after the vote.",
+  },
+  {
     id: "payouts",
     label: "Pay holders",
     about:
@@ -193,6 +206,8 @@ export function DecisionComposer({
   const exitExchange = matchedExit(ctx.chainId ?? null);
   const offered = (id: Kind): boolean => {
     if (id === "sales") return exitExchange !== null && contributor;
+    if (id === "rounds")
+      return weeklyRounds(ctx.chainId ?? null) !== null && contributor;
     // Payouts count every holder from when they hold; locked team Shares are not handled, so contributor projects only.
     if (id === "payouts")
       return payoutsFactory(ctx.chainId ?? null) !== null && contributor;
@@ -442,6 +457,15 @@ export function DecisionComposer({
               ctx={ctx}
               gate={gate}
               key={`o${formKey}`}
+              onSubmit={submit}
+            />
+          ) : kind === "rounds" ? (
+            <RoundsDecisionForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`w${formKey}`}
               onSubmit={submit}
             />
           ) : kind === "sales" ? (

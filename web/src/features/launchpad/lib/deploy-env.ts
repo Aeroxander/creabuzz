@@ -21,6 +21,7 @@ import {
   LOCAL_ANVIL_PRESET,
   mainnetEnabled,
   matchedExit,
+  weeklyRounds,
   networkLabel,
   openBounty,
   workBounty,
@@ -185,6 +186,17 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   if (exits && !rpc) {
     problems.push(
       "VITE_MATCHED_EXITS is named but VITE_CHAIN_RPC_URL is not: a hosted page has no chain node without it.",
+    );
+  }
+  const rounds = weeklyRounds(chainId, env);
+  if (value(env, "VITE_WEEKLY_ROUNDS") && !rounds) {
+    problems.push(
+      `VITE_WEEKLY_ROUNDS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+    );
+  }
+  if (rounds && !rpc) {
+    problems.push(
+      "VITE_WEEKLY_ROUNDS is named but VITE_CHAIN_RPC_URL is not: a hosted page has no chain node without it.",
     );
   }
   if (value(env, "VITE_WORK_BOUNTIES") && !bounty) {

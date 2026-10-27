@@ -379,6 +379,37 @@ export function allowExitSalesDecision(input: {
   };
 }
 
+/**
+ * The vote that names weekly rounds (D131) as the exchange: members who want out are matched with new buyers once a week
+ * at one price. The same 30-day route as matched offers; a DAO has one exchange or the other.
+ */
+export function allowRoundsDecision(input: {
+  sharesToken: string;
+  exchange: string;
+}): DecisionDraft {
+  if (!ADDRESS_RE.test(input.exchange.trim())) {
+    throw new DecisionInputError(
+      "exchange",
+      "Weekly rounds are not set up on this network.",
+    );
+  }
+  return {
+    to: sharesAddress(input.sharesToken),
+    data: encodeFunctionData(
+      EXIT_EXCHANGE_SIGNATURES.announce,
+      ["address"],
+      [input.exchange.trim().toLowerCase()],
+    ),
+    lane: "unrestricted",
+    title: "Start weekly rounds in 30 days",
+    lines: [
+      "Once a week, members who want out are matched with people who want in, at one price, never below what leaving pays. The treasury keeps its money, and a fifth of a seller's gain above that goes to it.",
+      "Rounds can be switched on 30 days after this runs, and not before. The contracts enforce the wait.",
+      "Shares still locked to work can't be sold, anyone can still leave, and a later vote can turn rounds off at once.",
+    ],
+  };
+}
+
 /** The vote that turns sales between members off: at once, and turning them on again needs another 30 days. */
 export function stopExitSalesDecision(input: {
   sharesToken: string;
@@ -418,6 +449,10 @@ export function describeExitSales(
     /^0{24}/.test(data.slice(10, 34))
   ) {
     const exchange = `0x${data.slice(34, 74)}`;
+    if (ctx.weeklyRounds && same(exchange, ctx.weeklyRounds)) {
+      const draft = allowRoundsDecision({ sharesToken: action.to, exchange });
+      return { kind: "trading", title: draft.title, lines: draft.lines };
+    }
     const known = ctx.matchedExit ? same(exchange, ctx.matchedExit) : false;
     if (known) {
       const draft = allowExitSalesDecision({
