@@ -691,10 +691,13 @@ export async function readPostBounties(
 /** At most this many bounties, the newest, are read for a timeline's money chips. */
 export const MAX_INDEXED_BOUNTIES = 50;
 
-/** What is behind one post, over all its bounties: what they hold now (all of a paid one), and whether one was paid. */
+/**
+ * What is behind one post, over all its bounties, kept apart: what was paid to work, and what unpaid bounties still hold
+ * (less what funders took back). A post can have both: one bounty paid, a later one still open.
+ */
 export interface PostMoney {
+  paid: bigint;
   held: bigint;
-  paid: boolean;
   bounties: number;
 }
 
@@ -746,10 +749,10 @@ export async function readPostBountyIndex(
   for (const { post, record } of records) {
     if (!record) continue;
     const paid = record.paidClaim !== 0;
-    const was = posts.get(post) ?? { held: 0n, paid: false, bounties: 0 };
+    const was = posts.get(post) ?? { paid: 0n, held: 0n, bounties: 0 };
     posts.set(post, {
-      held: was.held + (paid ? record.total : record.total - record.refunded),
-      paid: was.paid || paid,
+      paid: was.paid + (paid ? record.total : 0n),
+      held: was.held + (paid ? 0n : record.total - record.refunded),
       bounties: was.bounties + 1,
     });
   }

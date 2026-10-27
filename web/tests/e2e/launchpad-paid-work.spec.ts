@@ -265,6 +265,7 @@ test("a DAO pays a contributor money for a claim, with a deposit, all from the p
   // ── 3. the contributor asks to be paid, with a deposit ─────────────────────────────────────
   const contributor = await context.newPage();
   await openAs(contributor, CONTRIBUTOR, "Work");
+  await contributor.getByTestId("work-file-open").click();
   await expect(contributor.getByTestId("work-filing-wallet")).toContainText(
     new RegExp(CONTRIBUTOR, "i"),
   );

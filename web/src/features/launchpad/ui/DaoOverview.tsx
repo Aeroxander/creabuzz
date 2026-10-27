@@ -362,25 +362,28 @@ export function DaoOverview({
           <Figure
             icon={Hammer}
             label="Open work"
+            onOpen={() => onOpen("work")}
             testId="dao-figure-open-work"
             value={work.data ? String(openAreas) : "—"}
           />
           <Figure
             icon={Eye}
             label="In review"
+            onOpen={() => onOpen("work")}
             testId="dao-figure-in-review"
             value={work.data ? String(counts.openClaims) : "—"}
           />
           <Figure
             icon={Vote}
             label="Open votes"
+            onOpen={() => onOpen("decisions")}
             testId="dao-figure-open-votes"
             value={decisions.data ? String(counts.openDecisions) : "—"}
           />
           {wallet === null ? (
             <Figure
               icon={PieChart}
-              label="Shares in all"
+              label="Total Shares"
               testId="dao-figure-shares"
               value={shares(holdings.data?.sharesInAll)}
             />
@@ -390,7 +393,7 @@ export function DaoOverview({
               label="You hold"
               note={
                 holdings.data?.sharesInAll
-                  ? `${share ? `${share} · ` : ""}${shares(holdings.data.sharesInAll)} in all`
+                  ? `${share ? `${share} · ` : ""}${shares(holdings.data.sharesInAll)} total`
                   : undefined
               }
               testId="dao-figure-yours"
@@ -417,7 +420,7 @@ export function DaoOverview({
             }
           />
           <Figure
-            label="Shares in all"
+            label="Total Shares"
             testId="dao-figure-shares"
             value={shares(holdings.data?.sharesInAll)}
           />

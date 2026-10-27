@@ -164,6 +164,7 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   const filer = await context.newPage();
   await openWork(filer, CONTRIBUTOR);
   await expect(filer.getByTestId("work-claims")).toHaveCount(0);
+  await filer.getByTestId("work-file-open").click();
   // Words that do not make a claim are refused before the wallet is asked.
   await filer.getByTestId("work-claim-submit").click();
   await expect(filer.getByTestId("work-claim-problem")).toContainText(

@@ -2,9 +2,9 @@ import { Info } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 
 const STEPS = [
-  "Pick open work",
-  "Reviewers check it",
-  "Earn Shares, a say in the project",
+  "Do open work and submit it",
+  "Reviewers check it; others can object",
+  "Holders vote to award you Shares",
 ] as const;
 
 /**
@@ -54,9 +54,10 @@ export function HowItWorks({ children }: { children?: ReactNode }) {
         id={id}
       >
         Anyone can do open work: you need no Shares to start. Each work area
-        says what done looks like. When its reviewers approve your work, the
-        project's holders vote to award you Shares, and Shares are your votes in
-        what the project does next.
+        says what done looks like. Its reviewers check what you submit, and for
+        a few days after they approve it anyone can object. Then the project's
+        holders vote on awarding you Shares. Approval alone gives you none.
+        Shares are your votes in what the project does next.
       </p>
     </div>
   );

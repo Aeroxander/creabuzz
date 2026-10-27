@@ -344,6 +344,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
     timeout: 30_000,
   });
   await shot(contributor, "4-work-tab");
+  await contributor.getByTestId("work-file-open").click();
   await contributor.getByTestId("work-claim-name").fill("write-docs");
   await contributor
     .getByTestId("work-claim-evidence")

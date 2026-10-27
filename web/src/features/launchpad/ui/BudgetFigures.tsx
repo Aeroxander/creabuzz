@@ -32,7 +32,7 @@ export function BudgetFigures({
             <span className="text-lg font-bold tabular-nums">
               {shares(mandate.sharesAllocated)}
             </span>{" "}
-            of {shares(created.shareBudget)} given to projects
+            of {shares(created.shareBudget)} allocated to work areas
           </p>
           <Meter
             className="mt-2"

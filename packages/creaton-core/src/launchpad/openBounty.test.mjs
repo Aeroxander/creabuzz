@@ -457,6 +457,7 @@ test("a timeline's money chips come from one log read and a call per bounty, the
     1: [POST, 100, 0, 0],
     2: [OTHER, 80, 0, 1],
     3: [POST, 50, 20, 0],
+    4: [OTHER, 20, 0, 0],
   };
   const chain = {
     call: async (to, data) => {
@@ -520,23 +521,21 @@ test("a timeline's money chips come from one log read and a call per bounty, the
   const all = await readPostBountyIndex(chain, BOUNTY);
   assert.equal(all.currency.symbol, "USDC");
   assert.equal(all.truncated, false);
-  // Post one: 100 held, plus 50 less the 20 taken back; post two: all 80 of a paid bounty.
-  assert.deepEqual(all.posts.get(POST), {
-    held: 130n,
-    paid: false,
-    bounties: 2,
-  });
-  assert.deepEqual(all.posts.get(OTHER), {
-    held: 80n,
-    paid: true,
-    bounties: 1,
-  });
-  // Only the newest two: bounty 1 is left out and the read says so.
+  // Post one: 100 held, plus 50 less the 20 taken back, nothing paid.
+  assert.deepEqual(all.posts.get(POST), { paid: 0n, held: 130n, bounties: 2 });
+  // Post two: 80 paid by one bounty and 20 still held by a later one, never added together.
+  assert.deepEqual(all.posts.get(OTHER), { paid: 80n, held: 20n, bounties: 2 });
+  // Only the newest two (bounties 3 and 4): the read says it left some out.
   const newest = await readPostBountyIndex(chain, BOUNTY, 2);
   assert.equal(newest.truncated, true);
   assert.deepEqual(newest.posts.get(POST), {
+    paid: 0n,
     held: 30n,
-    paid: false,
+    bounties: 1,
+  });
+  assert.deepEqual(newest.posts.get(OTHER), {
+    paid: 0n,
+    held: 20n,
     bounties: 1,
   });
 });

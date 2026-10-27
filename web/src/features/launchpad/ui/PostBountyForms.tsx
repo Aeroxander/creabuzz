@@ -118,6 +118,13 @@ function Actions({
 }
 
 /** Put money behind a post: the words for what done looks like, an amount and a deadline. */
+const day = (seconds: number) =>
+  new Date(seconds * 1000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
 export function OpenPostBountyForm({
   post,
   contract,
@@ -267,7 +274,12 @@ export function AddMoneyForm({
   onDone,
   onCancel,
   money,
+  deadline,
+  refundsFrom,
 }: {
+  /** The bounty's deadline and the day refunds open whatever happens (Unix seconds), said beside the money. */
+  deadline: number;
+  refundsFrom: number;
   bountyId: bigint;
   contract: string;
   currency: BountyMoney;
@@ -320,8 +332,10 @@ export function AddMoneyForm({
         />
       </div>
       <p className="text-xs text-muted-foreground">
-        It stays in until a piece of work is paid or everyone is refunded. If
-        you back a piece of work, this adds to your backing.
+        The work most of the money backs for nine days is paid. If none is, you
+        can take yours back after {day(deadline)}, or from {day(refundsFrom)} if
+        a piece of work is still running then. If you back a piece of work, this
+        adds to your backing.
       </p>
       <Problem text={problem} />
       <Actions

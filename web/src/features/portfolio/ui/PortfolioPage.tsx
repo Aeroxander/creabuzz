@@ -189,9 +189,9 @@ function WorkSection() {
   }
   return (
     <Section
-      description="Work a reviewer accepted, on this server."
+      description="Points for work a reviewer accepted on this server's work boards. They are not Shares in any project."
       id="portfolio-work"
-      title="Your share of the work"
+      title="Your community points"
     >
       {body}
     </Section>
@@ -491,7 +491,7 @@ function HoldingsSection() {
     <Section
       description="Shares you hold in each DAO. Time held counts from the day they reached this wallet."
       id="portfolio-holdings"
-      title="What you hold"
+      title="Project Shares you hold"
     >
       {body}
       {wallet.error && holdings.owners.length === 0 ? (

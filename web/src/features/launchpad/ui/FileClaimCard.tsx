@@ -78,6 +78,13 @@ export function FileClaimCard({
   const [problem, setProblem] = useState<string | null>(null);
   const [filed, setFiled] = useState<string | null>(null);
   const [areaId, setAreaId] = useState("");
+  // Closed until someone asks for it (here, or by picking an area under Open work): an empty form makes the page long.
+  const [opened, setOpened] = useState(false);
+  const focusName = () =>
+    requestAnimationFrame(() => {
+      card.current?.scrollIntoView({ block: "start" });
+      nameInput.current?.focus({ preventScroll: true });
+    });
   const mandate = open[Math.min(which, open.length - 1)];
   const card = useRef<HTMLDivElement | null>(null);
   const nameInput = useRef<HTMLInputElement | null>(null);
@@ -103,8 +110,8 @@ export function FileClaimCard({
     );
     if (index >= 0) setWhich(index);
     moveTo(picked.area);
-    card.current?.scrollIntoView({ block: "start" });
-    nameInput.current?.focus({ preventScroll: true });
+    setOpened(true);
+    focusName();
   }, [picked]);
   // What the wallet holds of the budget's currency, to check a deposit against before the wallet is asked.
   const held = useQuery({
@@ -291,6 +298,35 @@ export function FileClaimCard({
           type="button"
         >
           {CREATE_ACCOUNT}
+        </Button>
+      </Card>
+    );
+  }
+
+  if (!opened) {
+    return (
+      <Card
+        className="flex flex-wrap items-center justify-between gap-3 p-4"
+        data-testid="work-file-claim"
+        ref={card}
+      >
+        <div>
+          <h3 className="text-sm font-semibold">Submit your work</h3>
+          <p className="text-sm text-muted-foreground">
+            Press Submit work on an open area above, or open the form here.
+          </p>
+        </div>
+        <Button
+          data-testid="work-file-open"
+          onClick={() => {
+            setOpened(true);
+            focusName();
+          }}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Open the form
         </Button>
       </Card>
     );

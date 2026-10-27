@@ -1688,3 +1688,19 @@ On the same test world as 4bt:
    lists the four under **Not taking work now** with an Ended chip, plain-guide still showing its money and, once
    refunds open, **Take back my …** for the founder. (This changes the shared world for everyone testing on it.)
 
+## 4bv. After the outside review of D125 to D127 (D128, 2026-10-27)
+
+On the test world (`KEEP=1 CAPTURE=0 WEB_FEATURES=mvp+forecasts scripts/web-screen-audit.sh`):
+
+1. Creaton's overview: the three steps read "Do open work and submit it", "Reviewers check it; others can object",
+   "Holders vote to award you Shares". **How it works** says approval alone gives no Shares. The tiles say Total Shares,
+   and pressing **Open votes** opens Decisions, **Open work** or **In review** opens Work.
+2. Work tab: "Submit your work" is one line with **Open the form**; Enter on it opens the form with the cursor in the
+   name. **Submit work** on an area card opens it with that area's words filled in. The budget says "allocated to work
+   areas".
+3. A post with one bounty paid and another still open shows "… paid · … available" on its chip, never one sum (on this
+   world no post has a paid bounty, so the unit tests `post-money.test.mjs` and the
+   reader test in `openBounty.test.mjs` cover it).
+4. On a post, **Add money** says the work most of the money backs for nine days is paid, and the dates refunds open.
+5. Portfolio: "Your community points" says they are not Shares in any project; "Project Shares you hold" below it.
+

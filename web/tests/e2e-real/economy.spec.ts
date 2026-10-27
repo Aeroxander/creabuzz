@@ -634,6 +634,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await expect(labor.page.getByTestId("work-projects")).toContainText("docs", {
     timeout: 30_000,
   });
+  await labor.page.getByTestId("work-file-open").click();
   await labor.page.getByTestId("work-claim-name").fill("write-docs");
   await labor.page
     .getByTestId("work-claim-evidence")
@@ -725,6 +726,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await expect(labor.page.getByTestId("work-projects")).toContainText("docs", {
     timeout: 30_000,
   });
+  await labor.page.getByTestId("work-file-open").click();
   await labor.page.getByTestId("work-claim-name").fill("extra-docs");
   await labor.page
     .getByTestId("work-claim-evidence")
