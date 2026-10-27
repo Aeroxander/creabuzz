@@ -124,6 +124,12 @@ contract PayoutsTest is VotingFixture {
     }
 
     function test_the_module_is_named_once_and_pays_nothing_before_it_is_named() public {
+        // Even a module the DAO's own factory made for it cannot replace the one named.
+        address second = address(factory.create(address(dao), IERC20(address(usd)), 2_500));
+        vm.prank(address(dao));
+        vm.expectRevert();
+        dao.setPayouts(second);
+        assertEq(dao.payouts(), address(payouts));
         vm.prank(address(dao));
         vm.expectRevert();
         dao.setPayouts(address(0xBEEF));

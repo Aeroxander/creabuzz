@@ -835,8 +835,8 @@ const MUTATIONS = [
   [
     "N10: the DAO renames its payout module",
     "contracts/src/majeur/MolochPatched.sol",
-    "require(payouts == address(0) && module != address(0), NotOk());",
-    "require(module != address(0), NotOk());",
+    "payouts == address(0)",
+    "true",
     "test/Payouts.t.sol",
   ],
   [
