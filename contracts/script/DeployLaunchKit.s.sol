@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 import {TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 
@@ -88,6 +89,13 @@ contract DeployLaunchKit is Script {
         address remixBonds =
             court == address(0) ? address(0) : vm.deployCode("RemixBond.sol:RemixBond", abi.encode(createToken, court));
         address matchedExit = vm.deployCode("MatchedExit.sol:MatchedExit", abi.encode(bountyCurrency));
+        // Weekly rounds between holders and new buyers: test networks only. Its smallest price step is one cent a unit.
+        address weeklyRounds = court == address(0)
+            ? address(0)
+            : vm.deployCode(
+                "WeeklyRounds.sol:WeeklyRounds",
+                abi.encode(bountyCurrency, 10 ** (uint256(IERC20Metadata(bountyCurrency).decimals()) - 2))
+            );
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");
         require(contributorKit.code.length != 0, "DeployLaunchKit: the contributor kit has no code");
@@ -111,6 +119,7 @@ contract DeployLaunchKit is Script {
             _role("forecast-pool", "ForecastPool", pools);
             _role("payouts-factory", "PayoutsFactory", payoutsFactory);
             _role("remix-bonds", "RemixBond", remixBonds);
+            _role("weekly-rounds", "WeeklyRounds", weeklyRounds);
         }
         _role("auction-factory", "Auction factory", ccaFactory);
         _writeManifest();

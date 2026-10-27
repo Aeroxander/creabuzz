@@ -76,7 +76,7 @@ fi
 step "deploying the summoner, the launch kit and the contributor kit"
 OUT="$BACKUP/forge.out"
 sepolia_deploy_kits "$RPC" "$KEY" "$OUT"
-grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|MatchedExit|CreateToken|CreateFaucet|CreateCourt|ForecastPool|PayoutsFactory|RemixBond|Auction factory)" "$OUT" || tail -20 "$OUT"
+grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|MatchedExit|CreateToken|CreateFaucet|CreateCourt|ForecastPool|PayoutsFactory|RemixBond|WeeklyRounds|Auction factory)" "$OUT" || tail -20 "$OUT"
 
 KIT=$(sepolia_role launch-kit)
 SUMMONER=$(sepolia_role summoner)
@@ -90,6 +90,7 @@ COURT=$(sepolia_role court)
 POOLS=$(sepolia_role forecast-pool)
 PAYOUTS_FACTORY=$(sepolia_role payouts-factory)
 REMIX_BONDS=$(sepolia_role remix-bonds)
+WEEKLY_ROUNDS=$(sepolia_role weekly-rounds)
 SHARES_IMPL=$(sepolia_role shares-implementation)
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 first() { awk '{print $1}' | head -1; }
@@ -126,9 +127,13 @@ echo "  ✓ the court at $COURT stakes test CREATE and is paid in USDC; bounties
 [[ "$(lower "$(cast call "$POOLS" 'bounties()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$OPEN_BOUNTY")" ]] || fail "the money forecast pools do not read these bounties on posts"
 echo "  ✓ money forecasts at $POOLS read the bounties on posts"
 [[ "$(cast codesize "$PAYOUTS_FACTORY" --rpc-url "$RPC")" != "0" ]] || fail "no code at the payouts factory $PAYOUTS_FACTORY"
-echo "  ✓ the payouts factory is at $PAYOUTS_FACTORY"
+[[ "$(lower "$(cast call "$(cast call "$SUMMONER" 'mandateFactory()(address)' --rpc-url "$RPC" | first)" 'payoutsFactory()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$PAYOUTS_FACTORY")" ]] || fail "the payouts factory is not the one the DAOs accept modules from"
+echo "  ✓ the payouts factory at $PAYOUTS_FACTORY is the one the work budget factory made, the only one DAOs accept"
 [[ "$(lower "$(cast call "$REMIX_BONDS" 'court()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$COURT")" ]] || fail "remix bonds do not go to this court"
 echo "  ✓ remix bonds at $REMIX_BONDS go to the court"
+[[ "$(lower "$(cast call "$WEEKLY_ROUNDS" 'currency()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SEPOLIA_USDC")" ]] || fail "weekly rounds are not paid in Sepolia's USDC"
+[[ "$(cast call "$WEEKLY_ROUNDS" 'minStep()(uint256)' --rpc-url "$RPC" | first)" == "10000" ]] || fail "weekly rounds' smallest step is not one cent"
+echo "  ✓ weekly rounds at $WEEKLY_ROUNDS are paid in USDC, a cent a step at the least"
 
 # What it costs: the gas the deploy used, priced at what Sepolia charges now and at a busy day's 20 gwei. Test ETH has no
 # price, but the deployer needs this much of it from a faucet.

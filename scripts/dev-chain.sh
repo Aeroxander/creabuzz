@@ -866,10 +866,10 @@ matched_exit_deployed() {
   currency_contract_deployed "$(matched_exit_manifest_path)" matched-exit
 }
 
-# Deploy a contract whose only constructor argument is this chain's currency: $1 the role, $2 the contract (its file is
-# src/$2.sol), $3 the manifest path, $4 what it is for (said once in the log).
+# Deploy a contract whose first constructor argument is this chain's currency: $1 the role, $2 the contract (its file is
+# src/$2.sol), $3 the manifest path, $4 what it is for (said once in the log), $5 a second, uint256 argument if it takes one.
 deploy_currency_contract() {
-  local role=$1 contract=$2 manifest=$3 purpose=$4
+  local role=$1 contract=$2 manifest=$3 purpose=$4 extra=${5:-}
   echo
   if currency_contract_deployed "$manifest" "$role"; then
     echo "── $role: already at $(manifest_role "$manifest" "$role") — skipped (idempotent)"
@@ -885,8 +885,11 @@ deploy_currency_contract() {
   fi
   bytecode=$(artifact_field "$REPO_ROOT/contracts/out/$contract.sol/$contract.json" bytecode.object) \
     || fail_step "$role" "cannot read the $contract artifact"
-  args=$(cast abi-encode "constructor(address)" "$currency") \
-    || fail_step "$role" "cast abi-encode constructor args failed"
+  if [[ -n "$extra" ]]; then
+    args=$(cast abi-encode "constructor(address,uint256)" "$currency" "$extra")
+  else
+    args=$(cast abi-encode "constructor(address)" "$currency")
+  fi || fail_step "$role" "cast abi-encode constructor args failed"
   if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
       --create "0x${bytecode#0x}${args#0x}" 2>&1); then
     echo "$receipt" >&2
@@ -1074,6 +1077,20 @@ deploy_matched_exit() {
   deploy_currency_contract matched-exit MatchedExit "$(matched_exit_manifest_path)" "sales between members"
 }
 
+weekly_rounds_manifest_path() {
+  echo "$DEPLOYMENTS_DIR/weekly-rounds-${CHAIN_ID}.json"
+}
+
+weekly_rounds_address() {
+  manifest_role "$(weekly_rounds_manifest_path)" "weekly-rounds"
+}
+
+# Weekly rounds between holders and new buyers: its smallest price step is one cent of the currency a whole unit.
+deploy_weekly_rounds() {
+  deploy_currency_contract weekly-rounds WeeklyRounds "$(weekly_rounds_manifest_path)" \
+    "weekly rounds between holders and new buyers" "$((10 ** (CURRENCY_DECIMALS - 2)))"
+}
+
 create_manifest_path() {
   echo "$DEPLOYMENTS_DIR/create-${CHAIN_ID}.json"
 }
@@ -1227,6 +1244,7 @@ up() {
   deploy_payouts_factory
   deploy_remix_bonds
   deploy_matched_exit
+  deploy_weekly_rounds
   fund_accounts
 
   echo
@@ -1243,6 +1261,7 @@ up() {
   echo "  work bounty: $(work_bounty_address) (work-bounty-$CHAIN_ID.json)"
   echo "  open bounty: $(open_bounty_address) (open-bounty-$CHAIN_ID.json)"
   echo "  matched exit: $(matched_exit_address) (matched-exit-$CHAIN_ID.json)"
+  echo "  weekly rounds: $(weekly_rounds_address) (weekly-rounds-$CHAIN_ID.json)"
   echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
   echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
   echo "  forecasts:  $(forecast_pool_address) (forecast-pool-$CHAIN_ID.json)"

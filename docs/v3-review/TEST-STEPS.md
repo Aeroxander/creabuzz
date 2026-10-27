@@ -1735,3 +1735,16 @@ On a fresh dev chain (`scripts/dev-chain.sh`; the payouts factory now comes from
    them" is the side that gives the bond to the parent.
 5. On a remix project, only its founder sees **Post the bond**; anyone else reads "No bond yet".
 
+## 4by. Weekly rounds (D131, 2026-10-27, test networks)
+
+Nothing to click yet: the page comes next. To check the contract by hand:
+
+```bash
+cd contracts && forge test --match-path test/WeeklyRounds.t.sol -vv
+```
+
+All 15 pass. The worked example from the shared doc is `test_a_sale_through_a_round_pays_the_seller_more_and_keeps_the_treasury`
+(Ana receives 62, the treasury gains 3 and pays nobody out); the reviewer's scenarios are the tests on thin demand, a
+round nobody settles, the treasury growing during bidding, everyone wanting out, and leaving after the DAO stops naming
+the round.
+
