@@ -26,17 +26,14 @@ each milestone's words exactly as below (adapted to the project) before the sale
 
 Each milestone holds back a third of the team's tokens.
 
-## The timing (a decision for you)
+## The timing: short waits (decided 2026-10-29, D138)
 
-The launch wizard uses the defaults: a week for objections, five days for a vote on one, and a month after each unlock for
-a late objection, during which the next milestone cannot be published. With those, three milestones take about three
-months. Two ways to run this in weeks:
-
-- **Short windows for the test network** (recommended): one day for objections, one day for a vote, two days for late
-  objections. The contract takes these (1 to 30 days, 1 to 30, 0 to 180); the wizard has no field for them, so this needs a
-  small test-network-only option in its advanced settings. Not a new mechanism: the same rules, shorter. The whole test
-  then takes about two weeks.
-- **The defaults, with two milestones**: the real timing, about seven weeks, and the third deliverable dropped.
+The defaults are a week for objections, five days for a vote on one, and a month after each unlock for a late objection,
+during which the next milestone cannot be published: three milestones would take about three months. The test uses short
+waits instead, the same rules with less time: **1 day for objections, 1 day for a vote, 2 days for late objections**. On a
+test network the launch panel has **Shorter waits, for a test on this test network** under "Holders can object": type
+1, 1 and 2. (A bigger milestone waits longer, and a retry longer again, as with the usual waits.) A launch on a real
+network never shows these fields and always uses the usual waits. The whole test takes about two weeks.
 
 ## The order
 

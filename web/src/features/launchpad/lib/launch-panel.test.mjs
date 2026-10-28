@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   EMPTY_PANEL_DRAFT,
   challengeFromDraft,
+  challengeWaits,
   loadPanelDraft,
   PANEL_OPEN_SECONDS,
   PANEL_OPEN_YEARS,
@@ -258,4 +259,57 @@ test("the holders' challenge asks for nothing but a bond, which is the default u
   assert.ok("problem" in challengeFromDraft({ challengeBond: "-1" }, 6));
   // More decimals than the token has are refused, not rounded.
   assert.ok("problem" in challengeFromDraft({ challengeBond: "1.5" }, 0));
+});
+
+test("on a test network the waits can be shorter, within the lock's limits; a real network keeps the usual ones", () => {
+  const DAY = 86_400;
+  const draft = {
+    ...EMPTY_PANEL_DRAFT,
+    challengeWindow: "1",
+    challengeVote: "1",
+    challengeLate: "2",
+  };
+  assert.deepEqual(challengeFromDraft(draft, 6, true), {
+    challenge: { window: DAY, votePeriod: DAY, clawback: 2 * DAY },
+  });
+  // Typed on a real network, they are ignored: the launch uses the usual waits.
+  assert.deepEqual(challengeFromDraft(draft, 6, false), { challenge: {} });
+  assert.deepEqual(challengeWaits(draft, false), {
+    window: 7 * DAY,
+    votePeriod: 5 * DAY,
+    clawback: 30 * DAY,
+  });
+  assert.deepEqual(challengeWaits(draft, true), {
+    window: DAY,
+    votePeriod: DAY,
+    clawback: 2 * DAY,
+  });
+  // Empty is the usual wait; no late objections at all is allowed.
+  assert.deepEqual(
+    challengeFromDraft({ ...EMPTY_PANEL_DRAFT, challengeLate: "0" }, 6, true),
+    { challenge: { clawback: 0 } },
+  );
+  for (const [field, value, words] of [
+    ["challengeWindow", "0", /1 to 30 days/],
+    ["challengeWindow", "31", /1 to 30 days/],
+    ["challengeVote", "1.5", /1 to 30 days/],
+    ["challengeLate", "181", /0 to 180 days/],
+    ["challengeLate", "-1", /0 to 180 days/],
+  ]) {
+    const result = challengeFromDraft(
+      { ...EMPTY_PANEL_DRAFT, [field]: value },
+      6,
+      true,
+    );
+    assert.match(result.problem, words, `${field} ${value}`);
+  }
+  // The bond and the waits together.
+  assert.deepEqual(
+    challengeFromDraft(
+      { ...EMPTY_PANEL_DRAFT, challengeBond: "5", challengeWindow: "3" },
+      6,
+      true,
+    ),
+    { challenge: { bond: 5_000_000n, window: 3 * DAY } },
+  );
 });

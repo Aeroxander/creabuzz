@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { recordSaleCurrency } from "../chain";
+import { isMainnetChain } from "../chain-config";
 import { formatAtomic } from "../lib/amounts";
 import { stepMarker } from "../lib/auction-copy";
 import { daoLaunchInputsFromRecord } from "../lib/dao-launch";
@@ -90,12 +91,14 @@ export function DaoLaunchPanel({
     panelDraft.bondIn === "other" ? panelDraft.bondOther.trim() : "",
   );
   const challengeMode = needsPanel && panelDraft.review === "challenge";
+  // Shorter waits are for tests on a test network (D138); a real network keeps the usual ones.
+  const testNetwork = !isMainnetChain(record.chainId);
   const challengeResult = useMemo(
     () =>
       challengeMode
-        ? challengeFromDraft(panelDraft, saleCurrency.decimals)
+        ? challengeFromDraft(panelDraft, saleCurrency.decimals, testNetwork)
         : null,
-    [challengeMode, panelDraft, saleCurrency.decimals],
+    [challengeMode, panelDraft, saleCurrency.decimals, testNetwork],
   );
   const challenge =
     challengeResult && "challenge" in challengeResult
@@ -270,6 +273,7 @@ export function DaoLaunchPanel({
               : null
           }
           requiredRaised={record.requiredRaised}
+          testNetwork={testNetwork}
         />
       ) : null}
       {challengeResult && "problem" in challengeResult ? (

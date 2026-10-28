@@ -395,6 +395,48 @@ test("the founder launches a project into its own DAO with one button, and the p
   await expect(page.getByTestId("dao-launch-panel")).toHaveCount(0);
 });
 
+test("on a test network a launch can wait less for objections, and the lock keeps the waits typed (D138)", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const DAY = 86_400;
+  const startBlock = (await head()) + 500;
+  const relay = await mockRelay(page, launchRecord(startBlock));
+  await installAnvilWallet(page, FOUNDER_WALLET, { rpcUrl: ANVIL_URL });
+  await openManage(page);
+  await expect(page.getByTestId("launch-review-challenge")).toBeChecked({
+    timeout: 15_000,
+  });
+  const fields = page.getByTestId("launch-challenge-fields");
+  await expect(page.getByTestId("launch-challenge-waits")).toBeVisible();
+  // Outside the lock's limits is refused before anything is sent.
+  await page.getByTestId("launch-challenge-window").fill("31");
+  await expect(page.getByTestId("dao-launch-panel")).toContainText(
+    "A milestone waits for objections for 1 to 30 days.",
+  );
+  await expect(page.getByTestId("dao-launch-start")).toBeDisabled();
+  await page.getByTestId("launch-challenge-window").fill("1");
+  await page.getByTestId("launch-challenge-vote").fill("1");
+  await page.getByTestId("launch-challenge-late").fill("2");
+  await expect(fields).toContainText("Each milestone waits 1 day for");
+  await expect(fields).toContainText("For 2 days after an unlock");
+  await expect(page.getByTestId("dao-launch-start")).toBeEnabled();
+  await page.getByTestId("dao-launch-start").click();
+  await expect(page.getByTestId("dao-launch-status")).toContainText(
+    "Your project is live",
+    { timeout: 120_000 },
+  );
+  const receipt = relay.published.find(
+    (e) => e.kind === 47005 && tag(e, "kind") === "dao-launch",
+  );
+  const payload = JSON.parse(receipt?.content ?? "{}");
+  expect(payload.challenge.window).toBe(DAY);
+  const lock = payload.lock as string;
+  expect(await callWord(lock, "0x461645bf")).toBe(BigInt(DAY)); // window()
+  expect(await callWord(lock, "0xa7813587")).toBe(BigInt(DAY)); // votePeriod()
+  expect(await callWord(lock, "0x2526d960")).toBe(BigInt(2 * DAY)); // clawback()
+});
+
 test("a server that refuses the record after the DAO exists is retried without sending the money step again", async ({
   page,
 }) => {

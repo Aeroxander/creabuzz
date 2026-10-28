@@ -10,9 +10,10 @@ import {
   DecisionInputError,
   parseUnits,
 } from "@creaton/core/launchpad/daoActions.ts";
-import type {
-  DaoLaunchChallengeInput,
-  DaoLaunchPanelInput,
+import {
+  CHALLENGE_DEFAULTS,
+  type DaoLaunchChallengeInput,
+  type DaoLaunchPanelInput,
 } from "@creaton/core/launchpad/daoLaunch.ts";
 
 /** A panel stays open for two years by default: it has to outlast the last milestone, or nothing can unlock. */
@@ -26,6 +27,13 @@ export interface PanelDraft {
   review: ReviewMode;
   /** For holders' objections: the bond the team posts with each milestone, in whole units of the sale currency; empty for the default. */
   challengeBond: string;
+  /**
+   * Test networks only: whole days a milestone waits for objections, a vote on one runs, and late objections stay open
+   * after an unlock; empty for the defaults. A launch on a real network always uses the defaults.
+   */
+  challengeWindow: string;
+  challengeVote: string;
+  challengeLate: string;
   /** Wallet addresses, one per line (or separated by commas or spaces). */
   reviewers: string;
   /** How many must agree; empty means a simple majority. */
@@ -44,6 +52,9 @@ export interface PanelDraft {
 export const EMPTY_PANEL_DRAFT: PanelDraft = {
   review: "challenge",
   challengeBond: "",
+  challengeWindow: "",
+  challengeVote: "",
+  challengeLate: "",
   reviewers: "",
   quorum: "",
   bond: "",
@@ -169,23 +180,88 @@ export function panelFromDraft(
   };
 }
 
+type ChallengeDraft = Pick<
+  PanelDraft,
+  "challengeBond" | "challengeWindow" | "challengeVote" | "challengeLate"
+>;
+
+const DAY = 86_400;
+
+/** The shorter waits a test network may use, each in whole days within the lock's limits. */
+const WAITS = [
+  [
+    "challengeWindow",
+    "window",
+    1,
+    30,
+    "A milestone waits for objections for 1 to 30 days.",
+  ],
+  [
+    "challengeVote",
+    "votePeriod",
+    1,
+    30,
+    "A vote on an objection runs for 1 to 30 days.",
+  ],
+  [
+    "challengeLate",
+    "clawback",
+    0,
+    180,
+    "Late objections stay open for 0 to 180 days.",
+  ],
+] as const;
+
 /**
- * The holders' challenge a founder asked for: the defaults, and a bond of their own if they typed one. The plan checks the
- * rest (the lock's own limits, and that the sale's currency can pay a bond).
+ * The holders' challenge a founder asked for: the defaults, a bond of their own if they typed one, and on a test network
+ * the waits they typed (D138), so a milestone test fits in weeks. The plan checks the rest (the lock's own limits, and
+ * that the sale's currency can pay a bond).
  */
 export function challengeFromDraft(
-  draft: Pick<PanelDraft, "challengeBond">,
+  draft: ChallengeDraft,
   currencyDecimals: number,
+  testNetwork = false,
 ): { challenge: DaoLaunchChallengeInput } | { problem: string } {
+  const challenge: DaoLaunchChallengeInput = {};
   const text = draft.challengeBond.trim();
-  if (text === "") return { challenge: {} };
-  try {
-    const bond = parseUnits(text, currencyDecimals, "bond", "The bond");
-    return { challenge: { bond } };
-  } catch (error) {
-    if (error instanceof DecisionInputError) return { problem: error.message };
-    throw error;
+  if (text !== "") {
+    try {
+      challenge.bond = parseUnits(text, currencyDecimals, "bond", "The bond");
+    } catch (error) {
+      if (error instanceof DecisionInputError) {
+        return { problem: error.message };
+      }
+      throw error;
+    }
   }
+  if (!testNetwork) return { challenge };
+  for (const [field, key, least, most, problem] of WAITS) {
+    const days = draft[field].trim();
+    if (days === "") continue;
+    if (!/^\d+$/.test(days) || Number(days) < least || Number(days) > most) {
+      return { problem };
+    }
+    challenge[key] = Number(days) * DAY;
+  }
+  return { challenge };
+}
+
+/** The waits a launch would use, in seconds: what was typed where it counts, else the defaults. */
+export function challengeWaits(
+  draft: ChallengeDraft,
+  testNetwork: boolean,
+): { window: number; votePeriod: number; clawback: number } {
+  const result = challengeFromDraft(
+    { ...draft, challengeBond: "" },
+    0,
+    testNetwork,
+  );
+  const typed = "challenge" in result ? result.challenge : {};
+  return {
+    window: typed.window ?? CHALLENGE_DEFAULTS.window,
+    votePeriod: typed.votePeriod ?? CHALLENGE_DEFAULTS.votePeriod,
+    clawback: typed.clawback ?? CHALLENGE_DEFAULTS.clawback,
+  };
 }
 
 const STORAGE_PREFIX = "buzz.launchpad.panel-draft:";
@@ -216,6 +292,9 @@ export function loadPanelDraft(
             ? "panel"
             : "challenge",
       challengeBond: text("challengeBond"),
+      challengeWindow: text("challengeWindow"),
+      challengeVote: text("challengeVote"),
+      challengeLate: text("challengeLate"),
       reviewers: text("reviewers"),
       quorum: text("quorum"),
       bond: text("bond"),

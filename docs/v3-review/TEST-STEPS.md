@@ -1814,3 +1814,11 @@ On top of 4cb:
 3. Leave as the last holder with funding terms past their notice: the exit panel shows no fee and the treasury ends
    empty.
 
+## 4cd. Shorter milestone waits on a test network (D138, 2026-10-29)
+
+1. On a test network, open a launch's Manage tab: under "Holders can object" there is **Shorter waits, for a test on this
+   test network**. Type 31 for objections: the launch is refused with "1 to 30 days".
+2. Type 1, 1 and 2: the list above says "Each milestone waits 1 day" and "For 2 days after an unlock", and the bond's
+   hint says it comes back 2 days after the milestone unlocks. Launch: the project's Powers card shows the same waits.
+3. With the mainnet switch on and a real network chosen, the fields are not there.
+
