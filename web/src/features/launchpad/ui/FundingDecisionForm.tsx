@@ -20,6 +20,7 @@ import {
   units,
 } from "../lib/funding-copy";
 import {
+  acceptTokensDecision,
   closeTrancheDecision,
   feePercent,
   fundingPhase,
@@ -41,7 +42,7 @@ import {
   type FormProps,
 } from "./decision-forms";
 
-type Action = "sell" | "stop" | "raise" | "lower" | "fee" | "watch";
+type Action = "sell" | "stop" | "raise" | "lower" | "fee" | "watch" | "accept";
 
 export function FundingDecisionForm({
   ctx,
@@ -105,6 +106,10 @@ export function FundingDecisionForm({
           value: "watch" as const,
           label: "Stop sales while the treasury holds other tokens",
         },
+        {
+          value: "accept" as const,
+          label: "Sell even while the treasury holds a token",
+        },
       ]
     : [];
   const chosen: Action | null = actions.some((a) => a.value === action)
@@ -164,12 +169,17 @@ export function FundingDecisionForm({
           }),
         );
       }
-      case "watch": {
+      case "watch":
+      case "accept": {
         const tokens = tokensText
           .split(/[\s,]+/)
           .map((t) => t.trim())
           .filter(Boolean);
-        return attempt(() => watchAssetsDecision({ terms, tokens }));
+        return attempt(() =>
+          chosen === "watch"
+            ? watchAssetsDecision({ terms, tokens })
+            : acceptTokensDecision({ terms, tokens, yes: true }),
+        );
       }
       case "lower": {
         const plan = capPlan(capText || "0");
@@ -298,10 +308,14 @@ export function FundingDecisionForm({
           />
         </>
       ) : null}
-      {view?.published && chosen === "watch" ? (
+      {view?.published && (chosen === "watch" || chosen === "accept") ? (
         <TextField
-          hint={`Sales stop while the treasury holds ETH or any of these, so a price set in USDC never gives buyers part of them for nothing. Now watched: ${view.watched.length === 0 ? "none" : view.watched.join(", ")}.`}
-          label="Token addresses (up to 8)"
+          hint={
+            chosen === "watch"
+              ? `Sales stop while the treasury holds ETH or any of these, so a price set in USDC never gives buyers part of them for nothing. Any holder can add one too. Now watched: ${view.watched.length === 0 ? "none" : view.watched.join(", ")}.`
+              : "Sales go ahead although the treasury holds these, and buyers get part of them without paying for it. Only for tokens worth nothing, or when holders agree to share them."
+          }
+          label="Token addresses (up to 16)"
           onChange={setTokensText}
           placeholder="0x…"
           testId="funding-tokens-input"

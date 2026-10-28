@@ -32,6 +32,9 @@ export const FUNDING_SIGNATURES = {
   lowerExitFee: "lowerExitFee(uint16)",
   exitFeeOf: "exitFeeOf(address)",
   watch: "watch(address[])",
+  /** Any holder: stop sales while the treasury holds a token (D136). */
+  flag: "flag(address,address)",
+  accept: "accept(address[],bool)",
   watchedOf: "watchedOf(address)",
   lowerCap: "lowerCap(uint128)",
   openTranche: "openTranche(uint128,uint128,uint64)",
@@ -145,23 +148,36 @@ export function publishFundingDecision(input: {
   };
 }
 
+/** The most tokens checked for one DAO. */
+export const MAX_WATCHED = 16;
+
+function tokenList(tokens: readonly string[]): string[] {
+  if (tokens.length === 0) {
+    throw new DecisionInputError("tokens", "Name at least one token.");
+  }
+  if (tokens.length > MAX_WATCHED) {
+    throw new DecisionInputError(
+      "tokens",
+      `Name at most ${MAX_WATCHED} tokens.`,
+    );
+  }
+  for (const t of tokens) {
+    if (!ADDRESS_RE.test(t)) {
+      throw new DecisionInputError("tokens", `${t} is not an address.`);
+    }
+  }
+  return tokens.map((t) => t.toLowerCase());
+}
+
 /**
  * Stop sales while the treasury holds any of these tokens (besides the round's currency; ETH always stops them): a
- * price set in one asset would otherwise give buyers part of the others for nothing.
+ * price set in one asset would otherwise give buyers part of the others for nothing. It only adds to the list (D136).
  */
 export function watchAssetsDecision(input: {
   terms: string;
   tokens: readonly string[];
 }): DecisionDraft {
-  if (input.tokens.length > 8) {
-    throw new DecisionInputError("tokens", "Name at most 8 tokens.");
-  }
-  for (const t of input.tokens) {
-    if (!ADDRESS_RE.test(t)) {
-      throw new DecisionInputError("tokens", `${t} is not an address.`);
-    }
-  }
-  const tokens = input.tokens.map((t) => t.toLowerCase());
+  const tokens = tokenList(input.tokens);
   return {
     to: contract(input.terms),
     data: encodeFunctionData(
@@ -170,16 +186,58 @@ export function watchAssetsDecision(input: {
       [tokens],
     ),
     lane: "unrestricted",
-    title:
-      tokens.length === 0
-        ? "Check only for ETH before selling"
-        : `Stop sales while the treasury holds ${tokens.length === 1 ? "this token" : `any of ${tokens.length} tokens`}`,
+    title: `Stop sales while the treasury holds ${tokens.length === 1 ? "this token" : `any of ${tokens.length} tokens`}`,
     lines: [
-      tokens.length === 0
-        ? "Sales stop while the treasury holds ETH, and no other token is checked."
-        : `Sales stop while the treasury holds ETH or any of: ${tokens.join(", ")}.`,
+      `Sales stop while the treasury holds ETH or any of: ${tokens.join(", ")}. A token stays on the list until the treasury no longer holds it, or a vote lets sales go ahead anyway.`,
     ],
   };
+}
+
+/**
+ * Let sales go ahead while the treasury holds these tokens (`yes`), or stop them again (D136). Going ahead means buyers
+ * get part of those tokens too, without paying for it: the vote is how holders agree to that.
+ */
+export function acceptTokensDecision(input: {
+  terms: string;
+  tokens: readonly string[];
+  yes: boolean;
+}): DecisionDraft {
+  const tokens = tokenList(input.tokens);
+  const which =
+    tokens.length === 1 ? "this token" : `any of ${tokens.length} tokens`;
+  return {
+    to: contract(input.terms),
+    data: encodeFunctionData(
+      FUNDING_SIGNATURES.accept,
+      [{ array: "address" }, "bool"],
+      [tokens, input.yes],
+    ),
+    lane: "unrestricted",
+    title: input.yes
+      ? `Sell even while the treasury holds ${which}`
+      : `Stop sales again while the treasury holds ${which}`,
+    lines: input.yes
+      ? [
+          `Sales go ahead although the treasury holds ${tokens.join(", ")}. Sale prices count only the round's currency, so buyers get part of these tokens too without paying for it: those who hold now give that up.`,
+        ]
+      : [
+          `Sales stop again while the treasury holds ${tokens.join(", ")}, and any holder can stop them over these tokens again.`,
+        ],
+  };
+}
+
+/** A holder's own call, not a vote: stop `dao`'s sales while its treasury holds `token` (D136). */
+export function encodeFlagToken(dao: string, token: string): string {
+  for (const a of [dao, token]) {
+    if (!ADDRESS_RE.test(a.trim())) {
+      throw new DecisionInputError("token", `${a} is not an address.`);
+    }
+  }
+  return encodeFunctionData(
+    FUNDING_SIGNATURES.flag,
+    ["address", "address"],
+    [dao.trim().toLowerCase(), token.trim().toLowerCase()],
+  );
 }
 
 /** Open a tranche within the terms: sold in funding rounds, at no less than `leastPrice` a unit, until `expiry`. */
@@ -440,6 +498,13 @@ export function describeFunding(
         `0x${data.slice(10)}`,
       ) as [string[]];
       return asDraft(watchAssetsDecision({ terms: action.to, tokens }));
+    }
+    if (sel === selectorOf(FUNDING_SIGNATURES.accept)) {
+      const [tokens, yes] = decodeParameters(
+        [{ array: "address" }, "bool"],
+        `0x${data.slice(10)}`,
+      ) as [string[], boolean];
+      return asDraft(acceptTokensDecision({ terms: action.to, tokens, yes }));
     }
     if (sel === selectorOf(FUNDING_SIGNATURES.openTranche)) {
       return asDraft(

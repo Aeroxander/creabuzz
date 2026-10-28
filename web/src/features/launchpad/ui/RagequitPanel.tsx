@@ -406,7 +406,7 @@ function PositionBody({
           )}
         </dd>
       </dl>
-      {position.exitFeeBps > 0n ? (
+      {position.feeApplies ? (
         <p
           className="mt-2 text-sm text-black/60 dark:text-white/60"
           data-testid="ragequit-exit-fee"

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
@@ -569,4 +572,40 @@ test("a member who wants out is matched with two who want in, and the treasury k
   expect(await usdcOf(NEWCOMER)).toBe(beforeExit + owed);
   expect(await usdcOf(dao)).toBe(366n * USD - owed);
   expect(await sharesOf(NEWCOMER)).toBe(0n);
+
+  // ── 11. another token lands in the treasury: a holder stops sales over it from the Funding card (D136) ──
+  const artifact = JSON.parse(
+    readFileSync(
+      resolve(
+        process.cwd(),
+        "../contracts/out/TreasuryMandate.t.sol/MandateCurrency.json",
+      ),
+      "utf8",
+    ),
+  ) as { bytecode: { object: string } };
+  const deployed = (await rpc("eth_sendTransaction", [
+    { from: FOUNDER_WALLET, data: artifact.bytecode.object },
+  ])) as string;
+  await rpc("anvil_mine", ["0x1"]);
+  const other = (
+    (await rpc("eth_getTransactionReceipt", [deployed])) as {
+      contractAddress: string;
+    }
+  ).contractAddress.toLowerCase();
+  await rpc("eth_sendTransaction", [
+    {
+      from: FOUNDER_WALLET,
+      to: other,
+      data: `0x40c10f19${addressArg(dao)}${amountArg(1000n * E18)}`,
+    },
+  ]);
+  await rpc("anvil_mine", ["0x1"]);
+  await refresh(second, "Funds");
+  const secondCard = second.getByTestId("funding");
+  await secondCard.getByTestId("funding-flag").click({ timeout: 30_000 });
+  await secondCard.getByTestId("funding-flag-input").fill(other);
+  await secondCard.getByTestId("funding-flag-submit").click();
+  await expect(secondCard.getByTestId("funding-watched")).toContainText(other, {
+    timeout: 60_000,
+  });
 });

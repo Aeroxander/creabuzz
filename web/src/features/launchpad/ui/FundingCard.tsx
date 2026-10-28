@@ -20,6 +20,7 @@ import {
 import { useChainSend } from "../use-chain-send";
 import { FUNDING_QUERY, useFunding } from "../use-funding";
 import { FailureNote, WalletStrip } from "./auction-widgets";
+import { FundingFlagForm } from "./FundingFlagForm";
 import { RoundClaims } from "./RoundClaims";
 import { RoundPanel } from "./WeeklyRoundsCard";
 
@@ -94,6 +95,14 @@ export function FundingCard({ dao }: { dao: string }) {
                   {soldLine(data.terms)}
                 </p>
               </div>
+              <FundingFlagForm
+                blocked={blocked}
+                busy={sender.busy}
+                dao={dao}
+                onSend={sender.send}
+                terms={data.terms.contract}
+                watched={data.terms.watched}
+              />
             </div>
           ) : null}
           {data.phase === "selling" ? (
@@ -119,8 +128,9 @@ export function FundingCard({ dao }: { dao: string }) {
             with a quantity, a least price and an end date, and is sold in
             weekly funding rounds: bids set the price, never below a unit's
             share of the treasury plus 2%, and nothing sells while the treasury
-            holds ETH or a token the terms watch. Settling a round creates the
-            units sold and pays the treasury at once.
+            holds ETH or a token on its watch list, which any holder can add to.
+            Settling a round creates the units sold and pays the treasury at
+            once.
           </MoreInfo>
           {data.phase === "selling" && !data.roundsOn ? (
             <p

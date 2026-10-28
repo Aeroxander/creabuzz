@@ -509,8 +509,7 @@ export async function fetchRagequitPosition(
     lockedTotal,
     exitRule,
     exitFeeBps,
-    feeApplies:
-      exitFeeBps > 0n && sharesBurnable < exitDenominator(input),
+    feeApplies: exitFeeBps > 0n && sharesBurnable < exitDenominator(input),
     rows,
     zeroSupply: exitDenominator(input) === 0n,
   };

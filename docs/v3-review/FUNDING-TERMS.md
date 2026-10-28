@@ -56,10 +56,14 @@ A DAO publishes funding terms by vote:
   same 30 days' notice, and can lower it at once.
 - **The seller**: the one rounds contract that may sell under the terms, named in the vote (it must be a contract) and
   fixed for good. Choosing an exchange for holders' sales grants no power to sell new units (D134).
-- **One asset in the treasury while selling** (D134): sales stop while the treasury holds ETH, or any token the DAO
-  asked to be watched (up to eight), besides the round's own currency. A price set in one asset would otherwise give
+- **One asset in the treasury while selling** (D134, D136): sales stop while the treasury holds ETH, or any token on
+  its watch list (up to sixteen), besides the round's own currency. A price set in one asset would otherwise give
   buyers part of the others for nothing: with 200 USDC, 10 ETH and 200 units, 40 Loot at 1.02 USDC would take about
-  1.67 ETH from existing holders.
+  1.67 ETH from existing holders. A contract cannot list the tokens it holds, so the list is kept by the people that
+  underpricing would harm: the DAO adds to it by vote, and **any holder can add any token the treasury holds**, which
+  stops sales at once. Nothing takes a token off the list except the treasury no longer holding it or a vote to **sell
+  anyway** (holders agreeing to give buyers part of it). What is left: a token nobody notices. The Funding card lists
+  what is watched and lets a holder add one.
 - **Tranches**, each its own vote within the cap: a quantity, a least price, and an expiry. Bids decide the price above
   the least. No automatic increase or decrease between tranches; that is revisited after real rounds.
 - **Notice**: the first sale under new terms can happen only 30 days after the vote, as with opening trading (D77), so a
@@ -73,7 +77,9 @@ A DAO publishes funding terms by vote:
   it before paying; a vote can lower it at once but never raise it, and raising the limit keeps it. It is **not charged
   while terms are under notice**, the first 30 days and the 30 days after any raise, so a holder who would be diluted
   can still leave whole. Always on otherwise: a fee only "when there are no buyers" would be lifted by one tiny bid and
-  could be timed by insiders. Selling to a new buyer in a round is not leaving and pays no exit fee. A DAO without terms
+  could be timed by insiders. **The last units that can leave pay none** (D136): with nobody left to keep it, it would
+  be stranded with no holder to vote it out. It is not runway: those who stay own it, and leaving in many small steps
+  pays it on each step but the last. Selling to a new buyer in a round is not leaving and pays no exit fee. A DAO without terms
   charges none, so contributor projects keep a whole exit.
 
 ## Going from contributors-only to funded
@@ -125,7 +131,7 @@ the DAO can sell or close it again (D134). The tranche ends at its expiry or whe
 | New `FundingTerms` | Terms per DAO (instrument, funding limit, the seller, the exit fee, 30 days' notice restarted by raising, sold so far), the tokens it watches, one tranche at a time (quantity, least price, expiry), and what an open funding round holds. Settling creates the units sold. `exitFeeOf(dao)` says the fee leaving pays now (none without terms or under notice); `lowerExitFee` only lowers it. Made by the work budget factory, one per summoner |
 | `Shares`, `Loot` | `mintForFunding`, accepted only from their summoner's `FundingTerms`. The award rule and its yearly allowance are untouched, and under the issuance rule this is the only way Loot appears. Loot also moves through the exchange the DAO named, as Shares do (D134) |
 | The DAO (`MolochPatched`) | Leaving asks its summoner's `FundingTerms` for the exit fee and leaves that part of each payout in the treasury (D135); 591 bytes to spare under the size limit |
-| `WeeklyRounds` | Funding rounds (`openFunding`): the tranche is the only offer; settling checks the floor, has the units created and pays the treasury at once; buyers collect existing units or leave with them; `finishFunding` lets anyone give back a void round's tranche. Holders' rounds are unchanged |
+| `WeeklyRounds` | Funding rounds (`openFunding`): the tranche is the only offer; settling checks the floor, has the units created and pays the treasury at once; buyers collect existing units or leave with them; `finishFunding` lets anyone give back a void round's tranche. Payouts the DAO's payout module credits to units waiting here go to whoever they belong to, as they leave: the seller until settlement, the buyer after (D136) |
 | `TreasuryMandateFactory` | Makes the summoner's `FundingTerms` |
 
 Checked by `FundingTerms.t.sol` (13 tests on a DAO under the issuance rule as the kits make them, including one per issue

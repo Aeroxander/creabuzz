@@ -1802,3 +1802,15 @@ On top of 4ca:
 5. Raise the funding limit: during the new notice, leaving is whole again.
 6. Lower the exit fee with the same decision (**Lower the exit fee**); asking for a higher one is refused.
 
+## 4cc. After the review of D135 (D136, 2026-10-28, test networks)
+
+On top of 4cb:
+
+1. Send the DAO some of another token (any dev token: `cast send <token> "transfer(address,uint256)" <dao> 1000`).
+   With funding terms published, open **Does the treasury hold another token?** on the Funding card, paste the token and
+   press **Stop sales over it** as a holder: the token is listed as watched and **Open a funding round** fails. From a
+   wallet that holds no units it is refused.
+2. The funding decision's **Sell even while the treasury holds a token** for that token: once it runs, sales open again.
+3. Leave as the last holder with funding terms past their notice: the exit panel shows no fee and the treasury ends
+   empty.
+

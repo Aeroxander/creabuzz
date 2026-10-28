@@ -4,7 +4,9 @@ import { test } from "node:test";
 import { describeDecision } from "./decisionDescribe.ts";
 import { encodeFunctionData, encodeParameters, selectorOf } from "./evmAbi.ts";
 import {
+  acceptTokensDecision,
   closeTrancheDecision,
+  encodeFlagToken,
   describeFunding,
   FUNDING_NOTICE,
   FUNDING_SIGNATURES,
@@ -44,6 +46,8 @@ test("the funding calls are the contract's (cast goldens)", () => {
   assert.equal(sig(FUNDING_SIGNATURES.lowerExitFee), "0xb7a84504");
   assert.equal(sig(FUNDING_SIGNATURES.exitFeeOf), "0xecdc9f59");
   assert.equal(sig(FUNDING_SIGNATURES.watch), "0x77825a2d");
+  assert.equal(sig(FUNDING_SIGNATURES.flag), "0x1d2c6717");
+  assert.equal(sig(FUNDING_SIGNATURES.accept), "0xff9ce28a");
   assert.equal(sig(FUNDING_SIGNATURES.watchedOf), "0x11612005");
   assert.equal(sig(FUNDING_SIGNATURES.lowerCap), "0xd36b870c");
   assert.equal(sig(FUNDING_SIGNATURES.openTranche), "0x7fec729a");
@@ -103,10 +107,31 @@ test("watching tokens stops sales while the treasury holds them", () => {
     ),
   );
   assert.equal(draft.title, "Stop sales while the treasury holds this token");
-  assert.equal(
-    watchAssetsDecision({ terms: TERMS, tokens: [] }).title,
-    "Check only for ETH before selling",
+  assert.throws(
+    () => watchAssetsDecision({ terms: TERMS, tokens: [] }),
+    /at least one token/,
   );
+  assert.match(draft.lines[0], /stays on the list until/);
+  const accept = acceptTokensDecision({
+    terms: TERMS,
+    tokens: [TOKEN],
+    yes: true,
+  });
+  assert.equal(accept.title, "Sell even while the treasury holds this token");
+  assert.match(accept.lines[0], /buyers get part of these tokens too/);
+  assert.equal(
+    acceptTokensDecision({ terms: TERMS, tokens: [TOKEN], yes: false }).title,
+    "Stop sales again while the treasury holds this token",
+  );
+  assert.equal(
+    encodeFlagToken(DAO, TOKEN),
+    encodeFunctionData(
+      FUNDING_SIGNATURES.flag,
+      ["address", "address"],
+      [DAO, TOKEN],
+    ),
+  );
+  assert.throws(() => encodeFlagToken(DAO, "nope"), /not an address/);
   assert.throws(
     () => watchAssetsDecision({ terms: TERMS, tokens: ["nope"] }),
     /not an address/,
@@ -142,6 +167,8 @@ test("each funding vote reads back as the decision that made it, and only on thi
     open,
     lowerExitFeeDecision({ terms: TERMS, exitFeeBps: 100 }),
     lowerExitFeeDecision({ terms: TERMS, exitFeeBps: 0 }),
+    acceptTokensDecision({ terms: TERMS, tokens: [TOKEN], yes: true }),
+    acceptTokensDecision({ terms: TERMS, tokens: [TOKEN], yes: false }),
     closeTrancheDecision({ terms: TERMS }),
     lowerCapDecision({ terms: TERMS, cap: 50n * E18 }),
     publish(),
