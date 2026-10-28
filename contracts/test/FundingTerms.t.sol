@@ -273,6 +273,13 @@ contract FundingTermsTest is VotingFixture {
         vm.prank(ALICE);
         vm.expectRevert(abi.encodeWithSelector(FundingTerms.NotHeld.selector, address(other)));
         terms.flag(address(dao), address(other));
+        // Never the DAO's own units, which leaving never pays out.
+        vm.prank(ALICE);
+        vm.expectRevert(FundingTerms.BadTerms.selector);
+        terms.flag(address(dao), address(loot));
+        vm.prank(ALICE);
+        vm.expectRevert(FundingTerms.BadTerms.selector);
+        terms.flag(address(dao), address(shares));
         // A token nobody listed: one Loot holder notices and stops the sale.
         other.mint(address(dao), 1_000e6);
         vm.prank(BOB);

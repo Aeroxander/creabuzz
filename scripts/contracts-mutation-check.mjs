@@ -1240,8 +1240,8 @@ const MUTATIONS = [
   [
     "Untracked assets: an accepted token can be flagged again",
     "contracts/src/FundingTerms.sol",
-    "if (accepted[dao][token]) revert BadTerms();",
-    "// removed",
+    "if (accepted[dao][token] || token == d.shares() || token == d.loot()) revert BadTerms();",
+    "if (token == d.shares() || token == d.loot()) revert BadTerms();",
     "test/FundingTerms.t.sol",
   ],
   [
@@ -1277,6 +1277,13 @@ const MUTATIONS = [
     "web/src/features/launchpad/lib/ragequit-position.ts",
     "const feeBps = amt >= total ? 0n : (input.exitFeeBps ?? 0n);",
     "const feeBps = input.exitFeeBps ?? 0n;",
+  ],
+  [
+    "Untracked assets: a holder flags the DAO's own units",
+    "contracts/src/FundingTerms.sol",
+    "if (accepted[dao][token] || token == d.shares() || token == d.loot()) revert BadTerms();",
+    "if (accepted[dao][token]) revert BadTerms();",
+    "test/FundingTerms.t.sol",
   ],
   [
     "Escrow payouts: a seller's start is not recorded",

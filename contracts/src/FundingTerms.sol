@@ -173,7 +173,8 @@ contract FundingTerms {
         if (IERC20(d.shares()).balanceOf(msg.sender) == 0 && IERC20(d.loot()).balanceOf(msg.sender) == 0) {
             revert NotAHolder();
         }
-        if (accepted[dao][token]) revert BadTerms();
+        // The DAO's own Shares and Loot are never paid out by leaving, so holding them gives buyers nothing.
+        if (accepted[dao][token] || token == d.shares() || token == d.loot()) revert BadTerms();
         if (IERC20(token).balanceOf(dao) == 0) revert NotHeld(token);
         _watch(dao, token);
         emit Flagged(dao, token, msg.sender);
