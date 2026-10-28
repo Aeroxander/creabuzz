@@ -80,8 +80,11 @@ export function FileClaimCard({
   const [areaId, setAreaId] = useState("");
   // Closed until someone asks for it (here, or by picking an area under Open work): an empty form makes the page long.
   const [opened, setOpened] = useState(false);
+  // On the next frame, which a busy or slow device can deliver late: by then someone may already be typing in another
+  // field, and moving the caret would send the rest of what they type into the name.
   const focusName = () =>
     requestAnimationFrame(() => {
+      if (document.activeElement?.matches("input, textarea, select")) return;
       card.current?.scrollIntoView({ block: "start" });
       nameInput.current?.focus({ preventScroll: true });
     });

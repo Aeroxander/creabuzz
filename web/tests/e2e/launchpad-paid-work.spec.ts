@@ -265,7 +265,29 @@ test("a DAO pays a contributor money for a claim, with a deposit, all from the p
   // ── 3. the contributor asks to be paid, with a deposit ─────────────────────────────────────
   const contributor = await context.newPage();
   await openAs(contributor, CONTRIBUTOR, "Work");
+  // Opening the form moves the caret to the name on the next frame. A slow device delivers that frame late, after the
+  // person has already clicked into another field: what they type must stay where they put it.
+  await contributor.evaluate(() => {
+    const frame = window.requestAnimationFrame.bind(window);
+    const late = (callback: FrameRequestCallback) =>
+      window.setTimeout(() => frame(callback), 1_000);
+    Object.assign(window, { __frame: frame });
+    window.requestAnimationFrame = late as typeof window.requestAnimationFrame;
+  });
   await contributor.getByTestId("work-file-open").click();
+  await contributor.getByTestId("work-claim-evidence").click();
+  await contributor.waitForTimeout(1_500);
+  await contributor.keyboard.type("https://example.com/pr/1");
+  await expect(contributor.getByTestId("work-claim-evidence")).toHaveValue(
+    "https://example.com/pr/1",
+  );
+  await expect(contributor.getByTestId("work-claim-name")).toHaveValue("");
+  await contributor.evaluate(() => {
+    const { __frame } = window as unknown as {
+      __frame: typeof window.requestAnimationFrame;
+    };
+    window.requestAnimationFrame = __frame;
+  });
   await expect(contributor.getByTestId("work-filing-wallet")).toContainText(
     new RegExp(CONTRIBUTOR, "i"),
   );
