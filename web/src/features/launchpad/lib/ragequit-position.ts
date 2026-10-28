@@ -22,6 +22,10 @@
  *   amt   = sharesToBurn + lootToBurn
  *   pool  = tk == address(0) ? dao.balance : balanceOfThis(tk)
  *   due   = mulDiv(pool, amt, total)                        // floor
+ *   due  -= mulDiv(due, fee, 10_000)                        // patch (D135): the exit fee stays
+ *
+ * The fee is the one the DAO's funding terms set (`exitFeeOf(dao)`, zero without terms or while they are under
+ * notice), read through `votingWeight() -> mandateFactory() -> fundingTerms()` as the exit itself reads it.
  *
  * DAOs and locks made before D72 have no `totalLocked()`, and their exit never
  * subtracted it: for them the preview uses the old total (`exitRule: "legacy"`).
@@ -56,6 +60,10 @@ export const SELECTOR_LOCK_GUARD = "0x36bc529d"; // lockGuard()
 export const SELECTOR_LOCKED_OF = "0xa5f1e282"; // lockedOf(address)
 export const SELECTOR_TOTAL_LOCKED = "0x56891412"; // totalLocked()
 export const SELECTOR_LEAVING = "0xaf56f7dc"; // leaving() — only DAOs made after D72/D73 have it
+export const SELECTOR_VOTING_WEIGHT = "0x6f533638"; // votingWeight()
+export const SELECTOR_MANDATE_FACTORY = "0xb04b7bdb"; // mandateFactory()
+export const SELECTOR_FUNDING_TERMS = "0xb881228a"; // fundingTerms()
+export const SELECTOR_EXIT_FEE_OF = "0xecdc9f59"; // exitFeeOf(address)
 
 function addressWord(address: string): string {
   return address.toLowerCase().slice(2).padStart(64, "0");
@@ -261,10 +269,12 @@ export interface ClaimableRow {
   /** The DAO's balance of `token` (the pool). */
   pool: bigint;
   /**
-   * What `sharesToBurn + lootToBurn` claims from `pool` right now
-   * (`mulDiv(pool, amt, total)`, floor — Moloch.sol:791).
+   * What `sharesToBurn + lootToBurn` takes from `pool` right now, after the exit fee
+   * (`mulDiv(pool, amt, total)`, floor — Moloch.sol:791 — less {@link afterExitFee}'s part).
    */
   due: bigint;
+  /** What the exit fee leaves in the treasury out of this pool's share. */
+  fee: bigint;
 }
 
 export interface PositionInput {
@@ -292,6 +302,13 @@ export interface PositionInput {
   lockedTotal: bigint;
   /** Per-token DAO pools (token address → balance). */
   pools: ReadonlyArray<{ token: string; pool: bigint }>;
+  /** The exit fee in basis points (`exitFeeOf(dao)`, D135); none when left out. */
+  exitFeeBps?: bigint;
+}
+
+/** What the exit fee (in basis points) leaves in the treasury out of `due`: rounded down, as the chain does. */
+export function exitFeePart(due: bigint, feeBps: bigint): bigint {
+  return feeBps === 0n ? 0n : (due * feeBps) / 10_000n;
 }
 
 /**
@@ -312,11 +329,12 @@ export function exitDenominator(input: PositionInput): bigint {
 export function deriveClaimablePosition(input: PositionInput): ClaimableRow[] {
   const total = exitDenominator(input);
   const amt = input.sharesToBurn + input.lootToBurn;
-  return input.pools.map(({ token, pool }) => ({
-    token,
-    pool,
-    due: total === 0n || amt === 0n ? 0n : (pool * amt) / total,
-  }));
+  const feeBps = input.exitFeeBps ?? 0n;
+  return input.pools.map(({ token, pool }) => {
+    const whole = total === 0n || amt === 0n ? 0n : (pool * amt) / total;
+    const fee = exitFeePart(whole, feeBps);
+    return { token, pool, due: whole - fee, fee };
+  });
 }
 
 /** True when the burn inputs exceed the holder's own position. */
@@ -368,6 +386,8 @@ export interface RagequitPosition {
   lockedTotal: bigint;
   /** How this DAO's exit counts locked Shares; with `unknown` the rows are not what an exit would pay. */
   exitRule: ExitRule;
+  /** The exit fee leaving pays now, in basis points (D135): zero without funding terms or while they are under notice. */
+  exitFeeBps: bigint;
   /** Pools + claimable rows for a full exit of the burnable Shares (loot untouched). */
   rows: ClaimableRow[];
   /** True when nobody but the DAO holds Shares or Loot. */
@@ -444,6 +464,7 @@ export async function fetchRagequitPosition(
   const daoHeld =
     (results.get("dao-shares") as bigint) + (results.get("dao-loot") as bigint);
   const sharesBurnable = burnableShares(sharesBalance, sharesLocked);
+  const exitFeeBps = await readExitFee(endpoint, dao);
   const pools = tokens.map((token) => {
     const key =
       token.toLowerCase() === ETH_TOKEN
@@ -467,6 +488,7 @@ export async function fetchRagequitPosition(
     daoHeld,
     lockedTotal,
     pools,
+    exitFeeBps,
   };
   const rows = deriveClaimablePosition(input);
   return {
@@ -482,9 +504,41 @@ export async function fetchRagequitPosition(
     daoHeld,
     lockedTotal,
     exitRule,
+    exitFeeBps,
     rows,
     zeroSupply: exitDenominator(input) === 0n,
   };
+}
+
+/**
+ * The exit fee this DAO's exit charges now, read the way the exit reads it. A DAO, policy, factory or terms contract from
+ * before the fee has no such call and its exit charges none: a refusal is zero. A network failure throws.
+ */
+export async function readExitFee(
+  endpoint: string,
+  dao: string,
+): Promise<bigint> {
+  try {
+    const policy = decodeAddress(
+      await ethCall(endpoint, dao, SELECTOR_VOTING_WEIGHT),
+    );
+    const factory = decodeAddress(
+      await ethCall(endpoint, policy, SELECTOR_MANDATE_FACTORY),
+    );
+    const terms = decodeAddress(
+      await ethCall(endpoint, factory, SELECTOR_FUNDING_TERMS),
+    );
+    return decodeU256(
+      await ethCall(
+        endpoint,
+        terms,
+        `${SELECTOR_EXIT_FEE_OF}${addressWord(dao)}`,
+      ),
+    );
+  } catch (error) {
+    if (isRefusal(error)) return 0n;
+    throw error;
+  }
 }
 
 /** Whether `to` has the view function `selector`: true when it answers, false when it refuses; a network failure throws. */

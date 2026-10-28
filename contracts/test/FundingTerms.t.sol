@@ -57,8 +57,12 @@ contract FundingTermsTest is VotingFixture {
     // ---- helpers -------------------------------------------------------------------------------------------------
 
     function _publish(bool asShares, uint128 cap) internal {
+        _publishWithFee(asShares, cap, 0);
+    }
+
+    function _publishWithFee(bool asShares, uint128 cap, uint16 exitFeeBps) internal {
         vm.prank(address(dao));
-        terms.publish(asShares, cap, address(rounds));
+        terms.publish(asShares, cap, address(rounds), exitFeeBps);
     }
 
     function _tranche(uint128 quantity, uint128 leastPrice) internal {
@@ -89,11 +93,11 @@ contract FundingTermsTest is VotingFixture {
     }
 
     function _sold() internal view returns (uint128 sold) {
-        (,,,, sold,) = terms.terms(address(dao));
+        (,,,, sold,,) = terms.terms(address(dao));
     }
 
     function _activeFrom() internal view returns (uint64 activeFrom) {
-        (,, activeFrom,,,) = terms.terms(address(dao));
+        (,, activeFrom,,,,) = terms.terms(address(dao));
     }
 
     function _leaveWithUsd() internal view returns (address[] memory tokens) {
@@ -265,7 +269,7 @@ contract FundingTermsTest is VotingFixture {
     function test_only_the_rounds_contract_the_terms_name_reserves_and_settles_and_terms_name_a_contract() public {
         vm.prank(address(dao));
         vm.expectRevert(FundingTerms.BadTerms.selector);
-        terms.publish(false, 100e18, BEN); // a wallet can't be named
+        terms.publish(false, 100e18, BEN, 0); // a wallet can't be named
         _publish(false, 100e18);
         vm.warp(block.timestamp + terms.NOTICE());
         _tranche(40e18, uint128(USD));
@@ -280,7 +284,7 @@ contract FundingTermsTest is VotingFixture {
         // The rounds contract named can't be swapped by widening the terms.
         vm.prank(address(dao));
         vm.expectRevert(FundingTerms.BadTerms.selector);
-        terms.publish(false, 200e18, address(other));
+        terms.publish(false, 200e18, address(other), 0);
         uint256 id = rounds.openFunding(address(dao));
         vm.prank(ALICE);
         vm.expectRevert(WeeklyRounds.NotForFunding.selector);
@@ -293,10 +297,10 @@ contract FundingTermsTest is VotingFixture {
         _publish(false, 100e18);
         vm.prank(address(dao));
         vm.expectRevert(FundingTerms.BadTerms.selector);
-        terms.publish(true, 200e18, address(rounds));
+        terms.publish(true, 200e18, address(rounds), 0);
         vm.prank(address(dao));
         vm.expectRevert(FundingTerms.BadTerms.selector);
-        terms.publish(false, 100e18, address(rounds));
+        terms.publish(false, 100e18, address(rounds), 0);
         vm.warp(block.timestamp + terms.NOTICE());
         _tranche(40e18, uint128(USD));
         uint256 id = rounds.openFunding(address(dao));
@@ -315,6 +319,80 @@ contract FundingTermsTest is VotingFixture {
         vm.prank(address(dao));
         vm.expectRevert(abi.encodeWithSelector(FundingTerms.NotYet.selector, activeFrom));
         terms.openTranche(10e18, uint128(USD), uint64(block.timestamp + 60 days));
+    }
+
+    // ---- the exit fee (D135) -----------------------------------------------------------------------------------
+
+    function test_the_exit_fee_stays_with_those_who_remain_and_is_not_charged_under_notice() public {
+        address[] memory tokens = _leaveWithUsd();
+        assertEq(terms.exitFeeOf(address(dao)), 0, "no terms, no fee");
+        _publishWithFee(false, 100e18, 200);
+        // Under notice leaving is whole: Bob's 50 Loot take 50 of the 200 USDC.
+        assertEq(terms.exitFeeOf(address(dao)), 0, "not under notice");
+        vm.prank(BOB);
+        dao.ragequit(tokens, 0, 50e18);
+        assertEq(usd.balanceOf(BOB), 50 * USD);
+        vm.warp(_activeFrom());
+        assertEq(terms.exitFeeOf(address(dao)), 200);
+        // After it, 2% of what leaving pays stays: Alice's 50 Shares are a third of 150 units, 50 USDC less 1.
+        vm.prank(ALICE);
+        dao.ragequit(tokens, 50e18, 0);
+        assertEq(usd.balanceOf(ALICE), 49 * USD);
+        assertEq(usd.balanceOf(address(dao)), 101 * USD, "the fee stays in the treasury");
+        // Raising the limit restarts the notice, and with it a whole exit for anyone it would dilute.
+        _publishWithFee(false, 150e18, 200);
+        assertEq(terms.exitFeeOf(address(dao)), 0);
+        vm.prank(BOB);
+        dao.ragequit(tokens, 0, 50e18);
+        assertEq(usd.balanceOf(BOB), 50 * USD + 101 * USD / 2);
+    }
+
+    function test_the_exit_fee_is_capped_fixed_when_published_and_can_only_be_lowered() public {
+        vm.prank(address(dao));
+        vm.expectRevert(FundingTerms.NoTerms.selector);
+        terms.lowerExitFee(0);
+        vm.prank(address(dao));
+        vm.expectRevert(FundingTerms.BadTerms.selector);
+        terms.publish(false, 100e18, address(rounds), 501);
+        _publishWithFee(false, 100e18, 300);
+        // Widening keeps the fee: neither raised nor lowered on the way.
+        for (uint16 fee = 299; fee <= 301; fee += 2) {
+            vm.prank(address(dao));
+            vm.expectRevert(FundingTerms.BadTerms.selector);
+            terms.publish(false, 200e18, address(rounds), fee);
+        }
+        vm.prank(address(dao));
+        vm.expectRevert(FundingTerms.BadTerms.selector);
+        terms.lowerExitFee(300);
+        vm.prank(address(dao));
+        terms.lowerExitFee(100);
+        vm.warp(_activeFrom());
+        assertEq(terms.exitFeeOf(address(dao)), 100);
+        vm.prank(address(dao));
+        vm.expectRevert(FundingTerms.BadTerms.selector);
+        terms.lowerExitFee(200);
+        vm.prank(address(dao));
+        terms.lowerExitFee(0);
+        assertEq(terms.exitFeeOf(address(dao)), 0);
+        // Only a DAO's own terms: another caller's call sets its own (empty) terms, not this DAO's.
+        vm.prank(BEN);
+        vm.expectRevert(FundingTerms.NoTerms.selector);
+        terms.lowerExitFee(0);
+    }
+
+    function test_a_buyer_who_leaves_from_a_round_pays_the_exit_fee_too() public {
+        _publishWithFee(false, 100e18, 200);
+        vm.warp(block.timestamp + terms.NOTICE());
+        _tranche(40e18, uint128(110 * USD / 100));
+        uint256 id = rounds.openFunding(address(dao));
+        _bid(id, BEN, 40e18, 10);
+        _settle(id);
+        uint256 before = usd.balanceOf(BEN);
+        vm.prank(BEN);
+        rounds.claimAndLeave(id, _leaveWithUsd());
+        // 200 + 44 USDC over 240 units: 40 units take 40.666666, less 2%.
+        uint256 whole = 244 * USD * 40 / 240;
+        assertEq(usd.balanceOf(BEN) - before, whole - whole * 200 / 10_000);
     }
 
     // ---- Loot through the exchange -------------------------------------------------------------------------------

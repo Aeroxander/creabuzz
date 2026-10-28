@@ -3,6 +3,8 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {Call, Moloch, Summoner, Shares, Loot, newSummoner} from "../../src/majeur/MolochPatched.sol";
+import {AllocationVoting} from "../../src/AllocationVoting.sol";
+import {FundingTerms} from "../../src/FundingTerms.sol";
 import {MilestoneChallenge} from "../../src/MilestoneChallenge.sol";
 import {MockUSDC} from "./MoneyPathsHandler.sol";
 import {ExitPreview} from "./ExitPreview.sol";
@@ -34,6 +36,7 @@ contract RagequitPreviewFfiTest is Test {
         uint256 poolEth;
         uint256 lootSeed;
         bool teamExits;
+        uint16 exitFeeBps;
     }
 
     /// forge-config: default.fuzz.runs = 64
@@ -47,6 +50,7 @@ contract RagequitPreviewFfiTest is Test {
         c.bps1 = uint16(bound(c.bps1, 1, 5000));
         c.poolUsdc = bound(c.poolUsdc, 0, 1e15);
         c.poolEth = bound(c.poolEth, 0, 1e24);
+        c.exitFeeBps = uint16(bound(c.exitFeeBps, 0, 500));
 
         (Moloch dao, MilestoneChallenge lock, MockUSDC usdc) = _launch(c);
         Shares shares = dao.shares();
@@ -64,15 +68,31 @@ contract RagequitPreviewFfiTest is Test {
         uint256 poolUsdc = usdc.balanceOf(address(dao));
         uint256 poolEth = address(dao).balance;
 
+        uint256 fee = AllocationVoting(dao.votingWeight()).mandateFactory().fundingTerms().exitFeeOf(address(dao));
+        assertEq(fee, c.exitFeeBps, "the terms' fee applies");
         (uint256 burnable, uint256 dueUsdc, uint256 dueEth) = _screen(
-            [sharesBalance, locked, lootToBurn, lootBalance, sharesTotal, lootTotal, daoHeld, lockedTotal, poolUsdc, poolEth]
+            [
+                sharesBalance,
+                locked,
+                lootToBurn,
+                lootBalance,
+                sharesTotal,
+                lootTotal,
+                daoHeld,
+                lockedTotal,
+                poolUsdc,
+                poolEth,
+                fee
+            ]
         );
 
         // The Solidity port the invariant handler uses says the same thing as the screen.
         assertEq(burnable, ExitPreview.burnable(sharesBalance, locked), "port: burnable");
         uint256 total = ExitPreview.denominator(sharesTotal, lootTotal, daoHeld, lockedTotal);
-        assertEq(dueUsdc, ExitPreview.due(poolUsdc, burnable + lootToBurn, total), "port: USDC");
-        assertEq(dueEth, ExitPreview.due(poolEth, burnable + lootToBurn, total), "port: ETH");
+        assertEq(
+            dueUsdc, ExitPreview.afterFee(ExitPreview.due(poolUsdc, burnable + lootToBurn, total), fee), "port: USDC"
+        );
+        assertEq(dueEth, ExitPreview.afterFee(ExitPreview.due(poolEth, burnable + lootToBurn, total), fee), "port: ETH");
 
         address[] memory tokens = new address[](2);
         (tokens[0], tokens[1]) = (ETH, address(usdc));
@@ -139,15 +159,21 @@ contract RagequitPreviewFfiTest is Test {
         }
         usdc.mint(address(dao), c.poolUsdc);
         vm.deal(address(dao), c.poolEth);
+        // Funding terms with the case's exit fee, past their notice, so the exit charges it (D135).
+        FundingTerms terms = AllocationVoting(dao.votingWeight()).mandateFactory().fundingTerms();
+        vm.prank(address(dao));
+        terms.publish(false, 1, address(usdc), c.exitFeeBps);
+        // (Read the clock through the cheatcode: via-IR may reuse a `block.timestamp` read from before the warp above.)
+        vm.warp(vm.getBlockTimestamp() + 30 days);
         vm.roll(block.number + 1);
     }
 
-    function _screen(uint256[10] memory v) internal returns (uint256 burnable, uint256 dueUsdc, uint256 dueEth) {
-        string[] memory cmd = new string[](13);
+    function _screen(uint256[11] memory v) internal returns (uint256 burnable, uint256 dueUsdc, uint256 dueEth) {
+        string[] memory cmd = new string[](14);
         cmd[0] = "node";
         cmd[1] = "--experimental-strip-types";
         cmd[2] = "test/ffi/exit-preview.mjs";
-        for (uint256 i; i < 10; ++i) {
+        for (uint256 i; i < 11; ++i) {
             cmd[3 + i] = vm.toString(v[i]);
         }
         (burnable, dueUsdc, dueEth) = abi.decode(vm.ffi(cmd), (uint256, uint256, uint256));

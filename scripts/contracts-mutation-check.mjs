@@ -1175,6 +1175,54 @@ const MUTATIONS = [
     "// removed",
     "test/FundingTerms.t.sol",
   ],
+  [
+    "web exit preview leaves out the exit fee (D135)",
+    "web/src/features/launchpad/lib/ragequit-position.ts",
+    "return feeBps === 0n ? 0n : (due * feeBps) / 10_000n;",
+    "return 0n;",
+  ],
+  [
+    "Exit fee: leaving charges none",
+    "contracts/src/majeur/MolochPatched.sol",
+    "if (fee != 0) due -= mulDiv(due, fee, 10_000);",
+    "// removed",
+    "test/FundingTerms.t.sol",
+  ],
+  [
+    "Exit fee: charged under notice",
+    "contracts/src/FundingTerms.sol",
+    "return t.published && block.timestamp >= t.activeFrom ? t.exitFeeBps : 0;",
+    "return t.exitFeeBps;",
+    "test/FundingTerms.t.sol",
+  ],
+  [
+    "Exit fee: no cap",
+    "contracts/src/FundingTerms.sol",
+    "if (cap == 0 || rounds.code.length == 0 || exitFeeBps > MAX_EXIT_FEE_BPS) revert BadTerms();",
+    "if (cap == 0 || rounds.code.length == 0) revert BadTerms();",
+    "test/FundingTerms.t.sol",
+  ],
+  [
+    "Exit fee: widening changes it",
+    "contracts/src/FundingTerms.sol",
+    "if (asShares != t.asShares || rounds != t.rounds || exitFeeBps != t.exitFeeBps || cap <= t.cap) {",
+    "if (asShares != t.asShares || rounds != t.rounds || cap <= t.cap) { t.exitFeeBps = exitFeeBps;",
+    "test/FundingTerms.t.sol",
+  ],
+  [
+    "Exit fee: lowering can raise it",
+    "contracts/src/FundingTerms.sol",
+    "if (exitFeeBps >= t.exitFeeBps) revert BadTerms();",
+    "// removed",
+    "test/FundingTerms.t.sol",
+  ],
+  [
+    "Exit fee: the first publication sets none",
+    "contracts/src/FundingTerms.sol",
+    "t.exitFeeBps = exitFeeBps;\n        }",
+    "}",
+    "test/FundingTerms.t.sol",
+  ],
 ];
 
 const only = process.argv.slice(2).map(Number);

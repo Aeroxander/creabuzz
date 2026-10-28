@@ -1158,6 +1158,11 @@ contract Moloch {
                 tstore(LEAVING_SLOT, 0)
             }
     // @@CREABUZZ PATCH END ragequit-leaving-flag-clear
+    // @@CREABUZZ PATCH BEGIN ragequit-exit-fee
+            // The exit fee the DAO's funding terms set (D135): that part of each payout stays here, for those who
+            // remain. Zero without terms and while they are under notice. The factory is immutable and always deployed.
+            uint256 fee = AllocationVoting(policyImpl).mandateFactory().fundingTerms().exitFeeOf(address(this));
+    // @@CREABUZZ PATCH END ragequit-exit-fee
 
             address prev;
             address tk;
@@ -1175,6 +1180,9 @@ contract Moloch {
 
                 pool = tk == address(0) ? address(this).balance : balanceOfThis(tk);
                 due = mulDiv(pool, amt, total);
+    // @@CREABUZZ PATCH BEGIN ragequit-exit-fee-apply
+                if (fee != 0) due -= mulDiv(due, fee, 10_000);
+    // @@CREABUZZ PATCH END ragequit-exit-fee-apply
                 if (due == 0) continue;
 
                 _payout(tk, msg.sender, due);

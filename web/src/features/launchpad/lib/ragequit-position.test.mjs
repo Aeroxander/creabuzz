@@ -31,16 +31,21 @@ import {
   decodeSymbol,
   deriveClaimablePosition,
   exitDenominator,
+  exitFeePart,
   fetchRagequitPosition,
   overdrawsPosition,
   SELECTOR_BALANCE_OF,
+  SELECTOR_EXIT_FEE_OF,
+  SELECTOR_FUNDING_TERMS,
   SELECTOR_LOCK_GUARD,
   SELECTOR_LOCKED_OF,
   SELECTOR_LOOT,
+  SELECTOR_MANDATE_FACTORY,
   SELECTOR_RAGEQUITTABLE,
   SELECTOR_SHARES,
   SELECTOR_TOTAL_LOCKED,
   SELECTOR_TOTAL_SUPPLY,
+  SELECTOR_VOTING_WEIGHT,
 } from "./ragequit-position.ts";
 import { ETH_TOKEN } from "./ragequit-tx.ts";
 
@@ -264,8 +269,8 @@ test("full-shares exit: due = pool * shares / (sharesTotal + lootTotal)", () => 
   });
   // total = 1500, amt = 100 → 1/15 of each pool, floored.
   assert.deepEqual(rows, [
-    { token: ETH_TOKEN, pool: 300n, due: 20n }, // 300*100/1500
-    { token: ERC20, pool: 7n, due: 0n }, // 7*100/1500 = 0.46 → floor 0
+    { token: ETH_TOKEN, pool: 300n, due: 20n, fee: 0n }, // 300*100/1500
+    { token: ERC20, pool: 7n, due: 0n, fee: 0n }, // 7*100/1500 = 0.46 → floor 0
   ]);
 });
 
@@ -478,4 +483,53 @@ test("a network failure reading the lock is an error, never a smaller or larger 
   } finally {
     restore();
   }
+});
+
+test("the exit fee the DAO's funding terms set is read the way the exit reads it, and taken off each row", async () => {
+  const POLICY = `0x${"a1".repeat(20)}`;
+  const FACTORY = `0x${"fa".repeat(20)}`;
+  const TERMS = `0x${"f7".repeat(20)}`;
+  assert.equal(SELECTOR_VOTING_WEIGHT, "0x6f533638"); // cast sig 'votingWeight()'
+  assert.equal(SELECTOR_MANDATE_FACTORY, "0xb04b7bdb"); // cast sig 'mandateFactory()'
+  assert.equal(SELECTOR_FUNDING_TERMS, "0xb881228a"); // cast sig 'fundingTerms()'
+  assert.equal(SELECTOR_EXIT_FEE_OF, "0xecdc9f59"); // cast sig 'exitFeeOf(address)'
+  const restore = daoChain({
+    [`${DAO} ${SELECTOR_VOTING_WEIGHT}`]: addrWord(POLICY),
+    [`${POLICY} ${SELECTOR_MANDATE_FACTORY}`]: addrWord(FACTORY),
+    [`${FACTORY} ${SELECTOR_FUNDING_TERMS}`]: addrWord(TERMS),
+    [`${TERMS} ${SELECTOR_EXIT_FEE_OF}${word(BigInt(DAO))}`]: u(200),
+  });
+  try {
+    const position = await fetchRagequitPosition(ENDPOINT, DAO, HOLDER, [USDC]);
+    assert.equal(position.exitFeeBps, 200n);
+    const whole = (650n * 40n) / 660n;
+    assert.equal(position.rows[0].fee, (whole * 200n) / 10_000n);
+    assert.equal(position.rows[0].due, whole - position.rows[0].fee);
+  } finally {
+    restore();
+  }
+  // A DAO from before the fee has no such calls: its exit charges none.
+  const before = daoChain();
+  try {
+    const position = await fetchRagequitPosition(ENDPOINT, DAO, HOLDER, [USDC]);
+    assert.equal(position.exitFeeBps, 0n);
+    assert.equal(position.rows[0].fee, 0n);
+  } finally {
+    before();
+  }
+  // A network failure is an error, never a whole exit.
+  const failing = daoChain({
+    [`${DAO} ${SELECTOR_VOTING_WEIGHT}`]: new Error("header not found"),
+  });
+  try {
+    await assert.rejects(fetchRagequitPosition(ENDPOINT, DAO, HOLDER, [USDC]));
+  } finally {
+    failing();
+  }
+});
+
+test("the fee rounds down, as the chain does", () => {
+  assert.equal(exitFeePart(99n, 200n), 1n);
+  assert.equal(exitFeePart(49n, 200n), 0n);
+  assert.equal(exitFeePart(1_000n, 0n), 0n);
 });

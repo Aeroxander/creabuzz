@@ -32,11 +32,18 @@ interface IFundingRounds {
 /// above what leaving pays (so nothing arriving later changes what they were sold against). A sale needs a treasury that
 /// holds only the round's currency: no ETH, and nothing of the tokens the DAO says it watches, because a price set
 /// against one asset would otherwise give buyers a share of the others for nothing. No admin, no pause.
+///
+/// The terms also fix a small exit fee (D135, at most 5%): the part of what leaving pays that stays in the treasury, for
+/// the people who remain, so buying just before money lands and leaving just after it costs something. Only a vote can
+/// lower it, never raise it, and it is not charged while terms are under notice, so a holder who would be diluted by a
+/// higher funding limit can still leave whole. The DAO's exit reads it from `exitFeeOf`.
 contract FundingTerms {
     /// @notice How long after terms are published, or widened, before anything under them sells.
     uint64 public constant NOTICE = 30 days;
     /// @notice The most tokens a DAO can ask to be checked for.
     uint256 public constant MAX_WATCHED = 8;
+    /// @notice The highest exit fee terms can set, in basis points.
+    uint16 public constant MAX_EXIT_FEE_BPS = 500;
 
     struct Terms {
         bool published;
@@ -48,6 +55,8 @@ contract FundingTerms {
         uint128 sold;
         /// @dev Fixed at the first publication: the one rounds contract that sells under these terms.
         address rounds;
+        /// @dev Set at the first publication; only ever lowered after.
+        uint16 exitFeeBps;
     }
 
     struct Tranche {
@@ -76,8 +85,11 @@ contract FundingTerms {
     error TooMuch();
     error OtherAssets(address token);
 
-    event TermsPublished(address indexed dao, bool asShares, uint256 cap, address rounds, uint64 activeFrom);
+    event TermsPublished(
+        address indexed dao, bool asShares, uint256 cap, address rounds, uint16 exitFeeBps, uint64 activeFrom
+    );
     event CapLowered(address indexed dao, uint256 cap);
+    event ExitFeeLowered(address indexed dao, uint16 exitFeeBps);
     event Watching(address indexed dao, address[] tokens);
     event TrancheOpened(address indexed dao, uint256 quantity, uint256 leastPrice, uint64 expiry);
     event TrancheClosed(address indexed dao);
@@ -86,20 +98,33 @@ contract FundingTerms {
 
     // ---- the DAO's votes -----------------------------------------------------------------------------------------
 
-    /// @notice Publish terms, or raise the limit of terms already published (instrument and rounds stay). By the DAO.
-    function publish(bool asShares, uint128 cap, address rounds) external {
+    /// @notice Publish terms, or raise the limit of terms already published (instrument, rounds and exit fee stay). By
+    /// the DAO.
+    function publish(bool asShares, uint128 cap, address rounds, uint16 exitFeeBps) external {
         Terms storage t = terms[msg.sender];
-        if (cap == 0 || rounds.code.length == 0) revert BadTerms();
+        if (cap == 0 || rounds.code.length == 0 || exitFeeBps > MAX_EXIT_FEE_BPS) revert BadTerms();
         if (t.published) {
-            if (asShares != t.asShares || rounds != t.rounds || cap <= t.cap) revert BadTerms();
+            if (asShares != t.asShares || rounds != t.rounds || exitFeeBps != t.exitFeeBps || cap <= t.cap) {
+                revert BadTerms();
+            }
         } else {
             t.published = true;
             t.asShares = asShares;
             t.rounds = rounds;
+            t.exitFeeBps = exitFeeBps;
         }
         t.cap = cap;
         t.activeFrom = uint64(block.timestamp) + NOTICE;
-        emit TermsPublished(msg.sender, asShares, cap, rounds, t.activeFrom);
+        emit TermsPublished(msg.sender, asShares, cap, rounds, exitFeeBps, t.activeFrom);
+    }
+
+    /// @notice Lower the exit fee, at once.
+    function lowerExitFee(uint16 exitFeeBps) external {
+        Terms storage t = terms[msg.sender];
+        if (!t.published) revert NoTerms();
+        if (exitFeeBps >= t.exitFeeBps) revert BadTerms();
+        t.exitFeeBps = exitFeeBps;
+        emit ExitFeeLowered(msg.sender, exitFeeBps);
     }
 
     /// @notice Lower the limit, at once: never below what was sold or is reserved.
@@ -182,6 +207,13 @@ contract FundingTerms {
 
     function watchedOf(address dao) external view returns (address[] memory) {
         return watched[dao];
+    }
+
+    /// @notice The part of what leaving pays that stays in `dao`'s treasury now, in basis points: none without terms,
+    /// and none while they are under notice.
+    function exitFeeOf(address dao) external view returns (uint256) {
+        Terms storage t = terms[dao];
+        return t.published && block.timestamp >= t.activeFrom ? t.exitFeeBps : 0;
     }
 
     /// @dev The treasury holds no ETH and none of the watched tokens, other than the round's own currency.
