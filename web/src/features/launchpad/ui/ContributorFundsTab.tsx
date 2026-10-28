@@ -22,6 +22,7 @@ import { useContributorProvenance } from "../use-contributor-provenance";
 import { DelegationCard } from "./DelegationCard";
 import { Figure } from "./Figure";
 import { MatchedExitCard } from "./MatchedExitCard";
+import { FundingCard } from "./FundingCard";
 import { WeeklyRoundsCard } from "./WeeklyRoundsCard";
 import { PayoutsCard } from "./PayoutsCard";
 import { RagequitPanel } from "./RagequitPanel";
@@ -127,6 +128,7 @@ export function ContributorFundsTab({
         daoBinding={binding}
         record={exitRecord}
       />
+      <FundingCard dao={dao} />
       <WeeklyRoundsCard dao={dao} />
       <MatchedExitCard dao={dao} />
       <PayoutsCard dao={dao} />

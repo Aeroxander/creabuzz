@@ -70,7 +70,9 @@ export function roundStatusLine(
 
 /** What the round trades at its price, said plainly: settled, or as it would be if bidding ended now. */
 export function clearingLine(
-  round: Pick<RoundView, "phase" | "clearing" | "floor" | "step">,
+  round: Pick<RoundView, "phase" | "clearing" | "floor" | "step"> & {
+    funding?: boolean;
+  },
 ): string {
   const price = round.floor + BigInt(round.clearing.step) * round.step;
   if (round.clearing.volume === 0n) {
@@ -78,10 +80,14 @@ export function clearingLine(
       ? "Nothing traded: everyone takes back theirs."
       : "Nothing would trade yet.";
   }
-  const what = `${shares(round.clearing.volume)} Shares at ${usdc(price)} each`;
-  return round.phase === "settled"
-    ? `${what} changed hands.`
-    : `If bidding ended now: ${what}.`;
+  // A funding round creates new units for the project; a holders' round moves Shares that exist.
+  const what = `${shares(round.clearing.volume)} ${round.funding ? "new units" : "Shares"} at ${usdc(price)} each`;
+  if (round.phase === "settled") {
+    return round.funding
+      ? `${what} were sold for the project.`
+      : `${what} changed hands.`;
+  }
+  return `If bidding ended now: ${what}.`;
 }
 
 /** A seller's form: the step their lowest price means, and what they keep per Share at it after the treasury's cut. */

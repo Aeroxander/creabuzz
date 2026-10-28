@@ -1,7 +1,8 @@
 # A project's journey, and funding terms (D133, 2026-10-28)
 
-Status: **specified, not built.** It decides how a project that started with contributors only can take investors'
-money, and what new units may ever be created and why. It follows an outside review of the weekly-rounds plan
+Status: **built for test networks, contributor projects first** (contracts, the app, and a journey on a local chain and a
+Sepolia fork). It decides how a project that started with contributors only can take investors' money, and what new units
+may ever be created and why. It follows an outside review of the weekly-rounds plan
 (2026-10-28), which found the transition from a contributor project to a funded one missing and the issuance story
 inconsistent. The calls below are mine, made on your instruction to decide; each is a row in [DECISIONS.md](DECISIONS.md).
 
@@ -9,10 +10,9 @@ inconsistent. The calls below are mine, made on your instruction to decide; each
 
 1. **Start a project.** No money; Shares are earned through reviewed work (built: contributor projects, D65/D66).
 2. **Earn ownership through reviewed work.** Work budgets, reviewers, award votes (built).
-3. **Publish funding terms**, by vote, before anyone pays: what investors get, how much can ever be sold, at what least
-   price, until when (this document; not built).
-4. **Optionally raise** under those terms, in weekly rounds (the round contract is built, D131/D132; selling under terms
-   is not).
+3. **Publish funding terms**, by vote, before anyone pays: what investors get and how much can ever be sold (built, D133).
+4. **Optionally raise** under those terms: each sale its own vote (quantity, least price, end date), sold in weekly funding
+   rounds (built, D133).
 5. **Scheduled trading between holders** in the same rounds (built, D131/D132).
 6. **Continuous trading** when demand supports it: a pool, by vote, beside the rounds (not built; see the end).
 
@@ -96,21 +96,22 @@ with it on price, as now, so a holder asking less fills first. The tranche ends 
 - **Weekly rounds gather demand; they do not create it.** When buyers are scarce, leaving is the fallback and it costs
   runway.
 
-## What would change in the contracts
+## What was built
 
-| Contract | Change | Room |
-|---|---|---|
-| Patched DAO (`Moloch`) | Name a funding contract by vote, switched on 30 days later (as the exit exchange is); a transient `funding()` flag set only while that contract creates units | 1,912 bytes spare |
-| `Loot` | Under the issuance rule, accept a mint only while `funding()` is up | 21,059 bytes spare |
-| `Shares` | The same, only when the terms chose Shares | 13,044 bytes spare |
-| New `FundingTerms` | Terms per DAO: instrument, lifetime cap, tranches (quantity, least price, expiry), the notice; it is what the DAO names | new |
-| `WeeklyRounds` | A primary order type: offered by the funding contract, units created at the claim, money to the treasury, no cut | redeploy (test networks) |
-| `DaoLaunchKit` | Nothing for the first raise; later tranches use the same terms | 701 bytes spare: no room to add anything |
+| Contract | Change |
+|---|---|
+| New `FundingTerms` | Terms per DAO (instrument, lifetime cap, 30 days' notice restarted by widening, sold so far), one tranche at a time (quantity, least price, expiry), and the accounting of what an open funding round holds and what was sold and not yet delivered. Made by the work budget factory, one per summoner |
+| `Shares`, `Loot` | `mintForFunding`, accepted only from their summoner's `FundingTerms`. The DAO contract itself is unchanged (its 1,912 spare bytes stay), the award rule and its yearly allowance are untouched, and under the issuance rule this is the only way Loot appears |
+| `WeeklyRounds` | Funding rounds (`openFunding`): the tranche is the only offer, at its least price and two steps above the floor or more; at each buyer's claim their units are created and what they paid goes to the treasury; a round settles only at two steps above what leaving pays at that moment; a void round gives the tranche back. Holders' rounds are unchanged |
+| `TreasuryMandateFactory` | Makes the summoner's `FundingTerms` |
 
-Tests that would decide it: no unit is created outside an award or a live tranche; a tranche never sells below the floor
-plus 2% at the moment of sale nor past its quantity, cap or expiry; terms cannot be widened, and nothing sells within 30
-days of the vote; holders' offers and a tranche in the same round settle at one price with each paid where it should be;
-investors' Loot cannot vote. The audit scope grows by `FundingTerms` and the three patches.
+The rounds contract that reserved a tranche is the only one that can settle and deliver it, so naming another exchange
+meanwhile cannot strand buyers. Checked by `FundingTerms.t.sol` (7 tests, on a DAO under the issuance rule as the kits make
+them) and thirteen mutation entries, and from pages by `scripts/web-rounds-e2e.sh` on a local chain and a Sepolia fork.
+
+In the app: a **Sell new units for the project** decision (publish terms; then open a sale, stop it, or raise or lower the
+most) and a **Funding the project** card on contributor projects' Funds tab (the terms, how much has sold, the sale open
+now, and its funding rounds, where people bid and collect). Fundraising-kit projects are not offered it yet.
 
 ## Later: continuous trading
 

@@ -174,7 +174,11 @@ export function WeeklyRoundsCard({ dao }: { dao: string }) {
   );
 }
 
-function RoundPanel({
+/**
+ * One round: its status, prices, your orders and the steps it allows. A funding round (D133) sells the project's new
+ * units: there is nothing to offer or leave from, only bids and collecting.
+ */
+export function RoundPanel({
   round,
   contract,
   currency,
@@ -197,6 +201,8 @@ function RoundPanel({
 }) {
   const [form, setForm] = useState<"offer" | "bid" | null>(null);
   const { sell, bid } = round.mine;
+  const holders = !round.funding;
+  const what = holders ? "Shares" : "new units";
   const bidding = round.phase === "bidding";
   const over = round.phase === "settled" || round.phase === "void";
   const unclaimed =
@@ -216,7 +222,9 @@ function RoundPanel({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">Round {round.id.toString()}</span>
-        <Chip icon={Scale}>Floor {usdc(round.floor)} a Share</Chip>
+        <Chip icon={Scale}>
+          Floor {usdc(round.floor)} a {holders ? "Share" : "unit"}
+        </Chip>
       </div>
       <p className="text-sm" data-testid="rounds-round-status">
         {roundStatusLine(round, round.closesAt + SETTLE_WINDOW)}
@@ -228,7 +236,9 @@ function RoundPanel({
         <table className="text-sm" data-testid="rounds-rows">
           <thead>
             <tr className="text-left text-xs text-muted-foreground">
-              <th className="pr-4 font-medium">Price a Share</th>
+              <th className="pr-4 font-medium">
+                Price a {holders ? "Share" : "unit"}
+              </th>
               <th className="pr-4 font-medium">Offered at or below</th>
               <th className="font-medium">Wanted at or above</th>
             </tr>
@@ -259,11 +269,11 @@ function RoundPanel({
       {bid ? (
         <OrderLine
           testId="rounds-my-bid"
-          text={`You bid for ${sharesText(bid.amount)} Shares at up to ${usdc(round.floor + BigInt(bid.step) * round.step)}.${over && bought ? ` Bought: ${sharesText(bought.units)} Shares, for ${usdc(bought.money)}.` : ""}${bid.claimed ? " Collected." : ""}`}
+          text={`You bid for ${sharesText(bid.amount)} ${what} at up to ${usdc(round.floor + BigInt(bid.step) * round.step)}.${over && bought ? ` Bought: ${sharesText(bought.units)} ${what}, for ${usdc(bought.money)}.` : ""}${bid.claimed ? " Collected." : ""}`}
         />
       ) : null}
       <div className="flex flex-wrap gap-2">
-        {bidding && sell ? (
+        {holders && bidding && sell ? (
           <>
             <Button
               data-testid="rounds-cancel-sell"
@@ -317,7 +327,12 @@ function RoundPanel({
             Take my bid back
           </Button>
         ) : null}
-        {bidding && side && !sell && side.free > 0n && form !== "offer" ? (
+        {holders &&
+        bidding &&
+        side &&
+        !sell &&
+        side.free > 0n &&
+        form !== "offer" ? (
           <Button
             data-testid="rounds-offer-open"
             onClick={() => setForm("offer")}
@@ -336,7 +351,7 @@ function RoundPanel({
             type="button"
             variant="outline"
           >
-            Bid for Shares
+            {holders ? "Bid for Shares" : "Bid for new units"}
           </Button>
         ) : null}
         {round.phase === "settling" ? (
@@ -373,7 +388,7 @@ function RoundPanel({
             >
               {busy === "rounds-collect" ? "Collecting…" : "Collect"}
             </Button>
-            {unitsBack > 0n ? (
+            {holders && unitsBack > 0n ? (
               <Button
                 data-testid="rounds-collect-leave"
                 disabled={blocked}
@@ -413,6 +428,7 @@ function RoundPanel({
           busy={busy}
           contract={contract}
           currency={currency}
+          funding={!holders}
           grid={round}
           id={round.id}
           onDone={() => setForm(null)}

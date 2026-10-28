@@ -1,0 +1,147 @@
+import { Coins, Vote } from "lucide-react";
+
+import { Button } from "@/shared/ui/button";
+import { Card } from "@/shared/ui/card";
+import { Chip } from "@/shared/ui/chip";
+import { Meter } from "@/shared/ui/meter";
+import { MoreInfo } from "@/shared/ui/more-info";
+import { defaultChainPreset } from "../chain-config";
+import {
+  fundingStateLine,
+  instrumentLine,
+  soldLine,
+} from "../lib/funding-copy";
+import { encodeOpenFundingRound } from "../lib/weekly-rounds";
+import { useChainSend } from "../use-chain-send";
+import { FUNDING_QUERY, useFunding } from "../use-funding";
+import { FailureNote, WalletStrip } from "./auction-widgets";
+import { RoundPanel } from "./WeeklyRoundsCard";
+
+/**
+ * Funding the project (D133), on a contributor project's Funds tab: the funding terms the DAO published (what buyers get,
+ * the most it can ever sell, how much has sold), the sale open now, and its funding rounds, where people bid for the new
+ * units and every payment goes to the treasury. Shown where this build names the weekly rounds, which the sales use.
+ */
+export function FundingCard({ dao }: { dao: string }) {
+  const sender = useChainSend(defaultChainPreset().chainId, FUNDING_QUERY);
+  const { rounds, query } = useFunding(dao, sender.wallet.address);
+  const data = query.data;
+  if (!rounds || data === null) return null;
+  const blocked = sender.busy !== null || sender.gate !== null;
+  const round = data?.funding.round ?? null;
+  const roundOver =
+    round === null || round.phase === "settled" || round.phase === "void";
+  const canOpen =
+    data !== undefined &&
+    data.phase === "selling" &&
+    data.roundsOn &&
+    roundOver &&
+    data.now >= data.funding.nextOpensAt;
+
+  return (
+    <Card className="p-4" data-testid="funding">
+      <h2 className="text-base font-semibold">Funding the project</h2>
+      {query.isError ? (
+        <p className="mt-1 text-sm text-muted-foreground" role="status">
+          The network did not answer, so funding can&apos;t be shown.{" "}
+          <button
+            className="underline"
+            onClick={() => void query.refetch()}
+            type="button"
+          >
+            Try again
+          </button>
+        </p>
+      ) : data === undefined ? (
+        <p className="mt-1 text-sm text-muted-foreground" role="status">
+          Reading…
+        </p>
+      ) : (
+        <>
+          <p className="mt-1 text-sm" data-testid="funding-state">
+            {fundingStateLine(data.phase, data.terms)}
+          </p>
+          {data.terms.published ? (
+            <div className="mt-2 flex flex-col gap-2">
+              <div className="flex flex-wrap gap-2">
+                <Chip icon={data.terms.asShares ? Vote : Coins}>
+                  <span data-testid="funding-instrument">
+                    {instrumentLine(data.terms.asShares)}
+                  </span>
+                </Chip>
+              </div>
+              <div>
+                <Meter
+                  label="Sold of the most the project can sell"
+                  max={data.terms.cap}
+                  value={data.terms.sold}
+                />
+                <p
+                  className="mt-1 text-xs text-muted-foreground"
+                  data-testid="funding-sold"
+                >
+                  {soldLine(data.terms)}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          <MoreInfo label="How funding works" testId="funding-how">
+            Holders vote funding terms first: whether buyers get Loot (no vote)
+            or Shares, and the most the project can ever sell. Nothing sells
+            until 30 days later, so anyone who disagrees can leave. Each sale is
+            then its own vote, with a quantity, a least price and an end date,
+            and is sold in weekly funding rounds: bids set the price, never
+            below what leaving pays plus 2%, and every payment goes to the
+            treasury.
+          </MoreInfo>
+          {data.phase === "selling" && !data.roundsOn ? (
+            <p
+              className="mt-2 text-sm text-muted-foreground"
+              data-testid="funding-needs-rounds"
+            >
+              Sales happen in weekly rounds, which this project hasn&apos;t
+              switched on yet.
+            </p>
+          ) : null}
+          {canOpen ? (
+            <Button
+              className="mt-2"
+              data-testid="funding-open-round"
+              disabled={blocked}
+              onClick={() =>
+                void sender.send(
+                  "funding-open",
+                  data.rounds,
+                  encodeOpenFundingRound(dao),
+                )
+              }
+              size="sm"
+              type="button"
+            >
+              {sender.busy === "funding-open"
+                ? "Opening…"
+                : "Open a funding round"}
+            </Button>
+          ) : null}
+          {round ? (
+            <RoundPanel
+              blocked={blocked}
+              busy={sender.busy}
+              contract={data.rounds}
+              currency={data.usdc}
+              me={sender.wallet.address}
+              onSend={sender.send}
+              round={round}
+              shares={round.shares}
+              side={data.wallet}
+            />
+          ) : null}
+        </>
+      )}
+      <WalletStrip testIdPrefix="funding" wallet={sender.wallet} />
+      {sender.failure ? (
+        <FailureNote message={sender.failure} testId="funding-failure" />
+      ) : null}
+    </Card>
+  );
+}

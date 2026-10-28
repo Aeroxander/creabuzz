@@ -3,6 +3,7 @@ import { keepIfSame } from "./keep-previous";
 
 import { ethCall, ethTransactionInput, getRpcEndpoint } from "./chain";
 import { type DecisionChain, readDecisions } from "./lib/decisions";
+import { readFundingContract } from "./lib/funding-terms";
 import { decodeAddress, encodeCall0, SIGNATURES } from "./lib/work";
 import { endpointChain } from "./use-work";
 
@@ -51,10 +52,16 @@ export function decisionContextQuery(dao: string | null) {
         ethCall(endpoint, policy, encodeCall0(SIGNATURES.factory)),
         ethCall(endpoint, dao as string, encodeCall0("shares()")),
       ]);
+      const factoryAddress = decodeAddress(factory);
       return {
         policy,
-        factory: decodeAddress(factory),
+        factory: factoryAddress,
         shares: decodeAddress(shares),
+        // The funding-terms contract of this DAO's summoner (D133); null on a factory from before it.
+        fundingTerms: await readFundingContract(
+          endpointChain(endpoint),
+          factoryAddress,
+        ),
       };
     },
     staleTime: 300_000,

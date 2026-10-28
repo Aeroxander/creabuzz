@@ -125,7 +125,12 @@ export function BidForm({
   busy,
   onSend,
   onDone,
-}: FormProps & { currency: string }) {
+  funding = false,
+}: FormProps & {
+  currency: string;
+  /** A funding round: new units for the project, not Shares between holders. */
+  funding?: boolean;
+}) {
   const formId = useId();
   const [amountText, setAmountText] = useState("");
   const [priceText, setPriceText] = useState("");
@@ -158,7 +163,7 @@ export function BidForm({
       <div className="flex flex-wrap items-end gap-2">
         <Field
           id={`${formId}-amount`}
-          label="Shares to buy"
+          label={funding ? "New units to buy" : "Shares to buy"}
           onChange={setAmountText}
           placeholder="30"
           testId="rounds-bid-amount"
@@ -166,7 +171,11 @@ export function BidForm({
         />
         <Field
           id={`${formId}-price`}
-          label="Highest price a Share (USDC)"
+          label={
+            funding
+              ? "Highest price a unit (USDC)"
+              : "Highest price a Share (USDC)"
+          }
           onChange={setPriceText}
           placeholder="1.30"
           testId="rounds-bid-price"

@@ -1757,3 +1757,20 @@ By hand, on a dev chain with `VITE_WEEKLY_ROUNDS` set (the dev chain prints it):
    gain above the floor, buyers get their Shares and the rest of their money back, the DAO gets the cut.
 6. If nobody settles within two days after bidding, the card says everyone takes back what they put in, and **Collect**
    does that.
+
+## 4bz. Funding terms and funding rounds (D133, 2026-10-28, test networks)
+
+The journey covers it end to end, after the weekly round (`scripts/web-rounds-e2e.sh`, screenshots with `E2E_SHOTS`).
+By hand, on a contributor project with weekly rounds switched on and some USDC in its treasury:
+
+1. Funds tab: **Funding the project** says the project sells no new units.
+2. Decisions → **Sell new units for the project**: "What buyers get" defaults to Loot (no vote); type the most that can
+   be sold. The draft says it as a share of the units there are now, and that nothing sells for 30 days. Run it; the card
+   says when sales can start.
+3. Thirty days later, the same decision offers **Open a sale within the terms**: a quantity, a least price and the days
+   it stays open. A quantity above the terms' room is refused before anything is sent. Run it.
+4. **Open a funding round** on the card; bid from other wallets (the bid form says what it holds). The card still says
+   the sale is open while the round holds it.
+5. Three days later, **Settle the round**, then **Collect**: buyers get Loot, every payment is in the treasury, and the
+   card shows how much has sold of the most.
+

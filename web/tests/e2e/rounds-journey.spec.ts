@@ -127,7 +127,12 @@ async function refresh(page: Page, tab: "Decisions" | "Funds") {
 }
 
 /** Back the newest decision, let its review pass, start its wait, let that pass, run it: each press the founder's. */
-async function carryOut(page: Page, toApprove: number, toWait: number) {
+async function carryOut(
+  page: Page,
+  toApprove: number,
+  toWait: number,
+  backing = 200,
+) {
   const card = page.getByTestId("decision-card").first();
   await expect(card.getByTestId("decision-status")).toHaveText(
     "Collecting support",
@@ -135,7 +140,7 @@ async function carryOut(page: Page, toApprove: number, toWait: number) {
   );
   await card.getByTestId("decision-vote-for").click();
   await expect(card.getByTestId("decision-support")).toContainText(
-    "Backing 200",
+    `Backing ${backing}`,
     { timeout: 30_000 },
   );
   await pass(toApprove);
@@ -377,4 +382,147 @@ test("a member who wants out is matched with two who want in, and the treasury k
   }
   // The next round can open a week after this one did.
   await expect(second.getByTestId("rounds")).toContainText("Next round from");
+
+  // ── 6. the DAO publishes funding terms: Loot for buyers, at most 100 new units ever (D133) ────────────
+  // More money in the treasury first, so leaving pays 1.50 a unit (300 USDC, 200 units).
+  await rpc("eth_sendTransaction", [
+    {
+      from: FOUNDER_WALLET,
+      to: CURRENCY,
+      data: `0xa9059cbb${addressArg(dao)}${amountArg(97n * USD)}`,
+    },
+  ]);
+  expect(await usdcOf(dao)).toBe(300n * USD);
+  await refresh(founder, "Funds");
+  await expect(
+    founder.getByTestId("funding").getByTestId("funding-state"),
+  ).toContainText("This project sells no new units.", { timeout: 30_000 });
+  await refresh(founder, "Decisions");
+  await founder.getByTestId("decision-new").click();
+  await founder.getByTestId("decision-kind-funding").click();
+  await founder
+    .getByTestId("funding-cap-input")
+    .fill("100", { timeout: 30_000 });
+  await expect(founder.getByTestId("decision-draft-title")).toHaveText(
+    "Let the project sell up to 100 new Loot",
+  );
+  await founder.getByTestId("decision-draft-submit").click();
+  await expect(founder.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(founder, 175_000, 90_000, 150);
+  await refresh(founder, "Funds");
+  const funding = founder.getByTestId("funding");
+  await expect(funding.getByTestId("funding-state")).toContainText(
+    "Funding terms were published. Sales can start from",
+    { timeout: 30_000 },
+  );
+  await expect(funding.getByTestId("funding-instrument")).toHaveText(
+    "Buyers get Loot, with no vote",
+  );
+
+  // ── 7. 30 days later, a vote opens a sale: 40 new units at 1.65 or more, for 60 days ────────────
+  await pass(30 * 86_400);
+  await refresh(founder, "Decisions");
+  await founder.getByTestId("decision-new").click();
+  await founder.getByTestId("decision-kind-funding").click();
+  await founder.getByTestId("funding-quantity-input").fill("40", {
+    timeout: 30_000,
+  });
+  await founder.getByTestId("funding-price-input").fill("1.65");
+  await founder.getByTestId("funding-days-input").fill("60");
+  await expect(founder.getByTestId("decision-draft-title")).toHaveText(
+    "Sell up to 40 new units for the project",
+  );
+  await founder.getByTestId("decision-draft-submit").click();
+  await expect(founder.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(founder, 175_000, 90_000, 150);
+
+  // ── 8. a funding round: the newcomer opens it and bids; the second buyer too ────────────────────
+  await refresh(buyer, "Funds");
+  const buyerFunding = buyer.getByTestId("funding");
+  await expect(buyerFunding.getByTestId("funding-state")).toContainText(
+    "On sale for the project: 40 new units at 1.65 USDC each or more",
+    { timeout: 30_000 },
+  );
+  await buyerFunding.getByTestId("funding-open-round").click();
+  await expect(buyerFunding.getByTestId("rounds-round-status")).toContainText(
+    "Taking offers and bids until",
+    { timeout: 60_000 },
+  );
+  await buyerFunding.getByTestId("rounds-bid-open").click();
+  await buyerFunding.getByTestId("rounds-bid-amount").fill("30");
+  await buyerFunding.getByTestId("rounds-bid-price").fill("1.80");
+  await expect(buyerFunding.getByTestId("rounds-bid-plan")).toContainText(
+    "This bid holds 54 USDC until the round settles.",
+  );
+  await buyerFunding.getByTestId("rounds-bid-submit").click();
+  await expect(buyerFunding.getByTestId("rounds-my-bid")).toHaveText(
+    "You bid for 30 new units at up to 1.8 USDC.",
+    { timeout: 60_000 },
+  );
+  await refresh(second, "Funds");
+  const secondFunding = second.getByTestId("funding");
+  await secondFunding.getByTestId("rounds-bid-open").click({ timeout: 30_000 });
+  await secondFunding.getByTestId("rounds-bid-amount").fill("30");
+  await secondFunding.getByTestId("rounds-bid-price").fill("1.65");
+  await secondFunding.getByTestId("rounds-bid-submit").click();
+  await expect(secondFunding.getByTestId("rounds-clearing")).toHaveText(
+    "If bidding ended now: 40 new units at 1.65 USDC each.",
+    { timeout: 60_000 },
+  );
+  // The round holds the whole sale, and it is still on sale until the round settles.
+  await expect(secondFunding.getByTestId("funding-state")).toContainText(
+    "On sale for the project: 40 new units at 1.65 USDC each or more",
+  );
+  if (process.env.E2E_SHOTS) {
+    await secondFunding.screenshot({
+      path: `${process.env.E2E_SHOTS}/funding-bidding.png`,
+    });
+  }
+
+  // ── 9. settled at 1.65: the newcomer gets 30 Loot, the second buyer the 10 left; 66 USDC to the treasury ──
+  await pass(3 * 86_400);
+  await refresh(buyer, "Funds");
+  await buyer
+    .getByTestId("funding")
+    .getByTestId("rounds-settle")
+    .click({ timeout: 30_000 });
+  await expect(
+    buyer.getByTestId("funding").getByTestId("rounds-clearing"),
+  ).toHaveText("40 new units at 1.65 USDC each were sold for the project.", {
+    timeout: 60_000,
+  });
+  const loot = wordAddress(await call(dao, "0x9b7b2ab0"));
+  const lootOf = async (holder: string) =>
+    BigInt(await call(loot, `0x70a08231${addressArg(holder)}`));
+  const newcomerMoney = await usdcOf(NEWCOMER);
+  await buyer.getByTestId("funding").getByTestId("rounds-collect").click();
+  await expect(
+    buyer.getByTestId("funding").getByTestId("rounds-my-bid"),
+  ).toContainText("Collected.", { timeout: 60_000 });
+  expect(await lootOf(NEWCOMER)).toBe(30n * E18);
+  // 54 held, 49.50 paid: 4.50 comes back.
+  expect(await usdcOf(NEWCOMER)).toBe(newcomerMoney + 4_500_000n);
+  await refresh(second, "Funds");
+  await second
+    .getByTestId("funding")
+    .getByTestId("rounds-collect")
+    .click({ timeout: 30_000 });
+  await expect(
+    second.getByTestId("funding").getByTestId("rounds-my-bid"),
+  ).toContainText("Collected.", { timeout: 60_000 });
+  expect(await lootOf(SECOND)).toBe(10n * E18);
+  expect(await usdcOf(dao)).toBe(366n * USD);
+  await refresh(second, "Funds");
+  await expect(
+    second.getByTestId("funding").getByTestId("funding-sold"),
+  ).toHaveText("40 of at most 100 sold", { timeout: 30_000 });
+  if (process.env.E2E_SHOTS) {
+    await second.getByTestId("funding").screenshot({
+      path: `${process.env.E2E_SHOTS}/funding-settled.png`,
+    });
+  }
 });

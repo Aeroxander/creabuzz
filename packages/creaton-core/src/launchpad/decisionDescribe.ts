@@ -14,6 +14,7 @@ import {
   formatUnits,
 } from "./daoActions.ts";
 import { MARKET_SIGNATURES } from "./marketActions.ts";
+import { describeFunding } from "./fundingTerms.ts";
 import { describeExitSales } from "./matchedExit.ts";
 import { describePayouts } from "./payouts.ts";
 import { describeTrading } from "./tradingActions.ts";
@@ -175,5 +176,7 @@ export function describeDecision(
   if (sales) return sales;
   const payouts = describePayouts(action, ctx);
   if (payouts) return payouts;
+  const funding = describeFunding(action, ctx);
+  if (funding) return funding;
   return describeAction(action, ctx);
 }

@@ -36,6 +36,8 @@ export const ROUND_SIGNATURES = {
   claimAndLeave: "claimAndLeave(uint256,address[])",
   rounds: "rounds(uint256)",
   lastRound: "lastRound(address)",
+  openFunding: "openFunding(address)",
+  lastFunding: "lastFunding(address)",
   sells: "sells(uint256,address)",
   bids: "bids(uint256,address)",
   clearingStep: "clearingStep(uint256)",
@@ -71,6 +73,14 @@ function assertUnits(amount: bigint): bigint {
 }
 
 // ---- calls ---------------------------------------------------------------------------------------
+
+export function encodeOpenFundingRound(dao: string): string {
+  return encodeFunctionData(
+    ROUND_SIGNATURES.openFunding,
+    ["address"],
+    [assertAddress(dao, "the DAO")],
+  );
+}
 
 export function encodeOpenRound(dao: string): string {
   return encodeFunctionData(
@@ -215,6 +225,8 @@ export interface RoundView extends RoundGrid {
   asked: bigint;
   wanted: bigint;
   settled: boolean;
+  /** A funding round (D133): the DAO's tranche is the only offer, and buyers' units are created at their claims. */
+  funding: boolean;
   phase: RoundPhase;
   /**
    * The step it settled at, or would settle at if bidding ended now, what that trades, which side shares at it, and the
@@ -283,21 +295,26 @@ export function orderSteps(logs: readonly unknown[]): number[] {
   return [...steps].sort((a, b) => a - b);
 }
 
-/** A DAO's latest round, the price steps people chose, and the connected wallet's orders. */
+/**
+ * A DAO's latest round between holders (or, with `which` "funding", its latest funding round), the price steps people
+ * chose, and the connected wallet's orders.
+ */
 export async function readRounds(
   chain: Pick<WorkChain, "call" | "logs">,
   contract: string,
   dao: string,
   wallet: string | null,
   now: number,
+  which: "holders" | "funding" = "holders",
 ): Promise<RoundsRead> {
   const at = assertAddress(contract, "the rounds contract");
   const daoAddress = assertAddress(dao, "the DAO");
+  const latest =
+    which === "funding"
+      ? ROUND_SIGNATURES.lastFunding
+      : ROUND_SIGNATURES.lastRound;
   const [last, floorHex] = await Promise.all([
-    chain.call(
-      at,
-      encodeFunctionData(ROUND_SIGNATURES.lastRound, ["address"], [daoAddress]),
-    ),
+    chain.call(at, encodeFunctionData(latest, ["address"], [daoAddress])),
     chain
       .call(
         at,
@@ -406,6 +423,7 @@ export async function readRounds(
       asked: w[6],
       wanted: w[7],
       settled,
+      funding: (w[15] ?? 0n) !== 0n,
       phase: roundPhase({ settled, closesAt }, now),
       clearing: { ...clearing, offeredBelow, wantedAbove },
       rows,

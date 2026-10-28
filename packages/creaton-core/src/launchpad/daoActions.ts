@@ -635,6 +635,8 @@ export interface DescribeContext {
   matchedExit?: string;
   /** The weekly rounds contract this app knows on the DAO's network (D131), told apart the same way. */
   weeklyRounds?: string;
+  /** The funding-terms contract of the DAO's summoner (D133), so its votes are put in words. */
+  fundingTerms?: string;
   /** The payout module factory this app knows on the DAO's network (N10). */
   payoutsFactory?: string;
   /** Each work budget's bond (its token, name and decimals), by lowercase budget address, so an amount can be put in words. */

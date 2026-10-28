@@ -135,6 +135,7 @@ export function DecisionsTab({
                 : null,
             policy: context.data.policy,
             sharesToken: context.data.shares,
+            fundingTerms: context.data.fundingTerms,
             exchange,
             milestoneWords: (launch.record.unlocks?.milestones ?? []).map(
               (m) => m.label,
@@ -195,6 +196,7 @@ export function DecisionsTab({
                     label: labelOf,
                     checkWords,
                     projectToken: context.data?.shares,
+                    fundingTerms: context.data?.fundingTerms ?? undefined,
                     matchedExit:
                       matchedExit(launch.record.chainId ?? null) ?? undefined,
                     weeklyRounds:

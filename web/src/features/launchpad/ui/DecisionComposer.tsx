@@ -40,6 +40,7 @@ import {
 } from "../chain-config";
 import { PayoutsForm } from "./PayoutsForm";
 import { ExitSalesForm } from "./ExitSalesForm";
+import { FundingDecisionForm } from "./FundingDecisionForm";
 import { RoundsDecisionForm } from "./RoundsDecisionForm";
 
 type Kind =
@@ -56,6 +57,7 @@ type Kind =
   | "trading"
   | "sales"
   | "rounds"
+  | "funding"
   | "payouts";
 
 /** The decisions whose forms pick from the DAO's work budgets and claims. */
@@ -136,6 +138,12 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
       "Once a week, match members who want out with people who want in, at one price never below what leaving pays, or turn that off. It can start only 30 days after the vote.",
   },
   {
+    id: "funding",
+    label: "Sell new units for the project",
+    about:
+      "Publish funding terms (what buyers get, and the most the project can ever sell), or open a sale within them. Nothing sells until 30 days after terms are published.",
+  },
+  {
     id: "payouts",
     label: "Pay holders",
     about:
@@ -208,6 +216,13 @@ export function DecisionComposer({
     if (id === "sales") return exitExchange !== null && contributor;
     if (id === "rounds")
       return weeklyRounds(ctx.chainId ?? null) !== null && contributor;
+    // Sales happen in weekly rounds, and need the summoner's funding-terms contract.
+    if (id === "funding")
+      return (
+        weeklyRounds(ctx.chainId ?? null) !== null &&
+        contributor &&
+        Boolean(ctx.fundingTerms)
+      );
     // Payouts count every holder from when they hold; locked team Shares are not handled, so contributor projects only.
     if (id === "payouts")
       return payoutsFactory(ctx.chainId ?? null) !== null && contributor;
@@ -457,6 +472,15 @@ export function DecisionComposer({
               ctx={ctx}
               gate={gate}
               key={`o${formKey}`}
+              onSubmit={submit}
+            />
+          ) : kind === "funding" ? (
+            <FundingDecisionForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`f${formKey}`}
               onSubmit={submit}
             />
           ) : kind === "rounds" ? (

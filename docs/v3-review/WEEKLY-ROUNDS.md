@@ -87,3 +87,10 @@ starting the project, 5.5M), the newcomer's six 1.3M, the second buyer's three 0
 ## Next
 
 A pilot that measures two things: whether people put money into productive projects, and how much runway matching keeps.
+
+## Funding rounds (D133)
+
+Beside the holders' rounds, a DAO with funding terms sells its new units in funding rounds: the tranche is the only
+offer, buyers bid as in any round, and at each buyer's claim their units are created and what they paid goes to the
+treasury. See [FUNDING-TERMS.md](FUNDING-TERMS.md).
+

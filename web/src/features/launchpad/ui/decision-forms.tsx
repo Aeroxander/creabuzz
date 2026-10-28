@@ -52,6 +52,8 @@ export interface FormContext {
   /** The DAO's voting policy and its Shares. */
   policy: string;
   sharesToken: string;
+  /** The funding-terms contract of the DAO's summoner (D133), or null where it has none. */
+  fundingTerms?: string | null;
   /** The exchange's contracts on this chain, or null when there is no market here. */
   exchange: ExchangeAddresses | null;
   /** The exact words of each of the team's milestones, in order (empty when the team's Shares are not locked). */
