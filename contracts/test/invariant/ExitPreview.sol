@@ -30,6 +30,11 @@ library ExitPreview {
         return total == 0 || amt == 0 ? 0 : Math.mulDiv(pool, amt, total);
     }
 
+    /// @dev The exit fee an exit of `amt` of `total` pays: none for the last units that can leave (D136).
+    function feeFor(uint256 amt, uint256 total, uint256 feeBps) internal pure returns (uint256) {
+        return amt >= total ? 0 : feeBps;
+    }
+
     /// @dev The same row after the exit fee (D135): `due - exitFeePart(due, feeBps)`, the fee rounded down.
     function afterFee(uint256 owed, uint256 feeBps) internal pure returns (uint256) {
         return owed - owed * feeBps / 10_000;

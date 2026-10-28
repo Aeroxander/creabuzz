@@ -30,8 +30,11 @@ interface IFundingRounds {
 /// Only the rounds contract the terms name can reserve a tranche for a funding round and settle it. Settling creates the
 /// units sold at once, for the rounds contract to hand to its buyers, in the same transaction as its check that they sell
 /// above what leaving pays (so nothing arriving later changes what they were sold against). A sale needs a treasury that
-/// holds only the round's currency: no ETH, and nothing of the tokens the DAO says it watches, because a price set
-/// against one asset would otherwise give buyers a share of the others for nothing. No admin, no pause.
+/// holds only the round's currency: no ETH, and nothing of the tokens on its watch list, because a price set against one
+/// asset would otherwise give buyers a share of the others for nothing. A contract cannot list the tokens it holds, so the
+/// people that underpricing would harm keep the list (D136): the DAO can set it by vote, and any holder can add any token
+/// the treasury holds, which stops sales at once. Only a vote can let sales go ahead while the treasury holds a token
+/// (`accept`): holders then agree to sell part of it with the units. No admin, no pause.
 ///
 /// The terms also fix a small exit fee (D135, at most 5%): the part of what leaving pays that stays in the treasury, for
 /// the people who remain, so buying just before money lands and leaving just after it costs something. Only a vote can
@@ -40,8 +43,8 @@ interface IFundingRounds {
 contract FundingTerms {
     /// @notice How long after terms are published, or widened, before anything under them sells.
     uint64 public constant NOTICE = 30 days;
-    /// @notice The most tokens a DAO can ask to be checked for.
-    uint256 public constant MAX_WATCHED = 8;
+    /// @notice The most tokens checked for a DAO.
+    uint256 public constant MAX_WATCHED = 16;
     /// @notice The highest exit fee terms can set, in basis points.
     uint16 public constant MAX_EXIT_FEE_BPS = 500;
 
@@ -73,6 +76,8 @@ contract FundingTerms {
     /// @notice Units an open funding round holds.
     mapping(address => uint256) public reserved;
     mapping(address => address[]) private watched;
+    /// @notice Tokens a DAO voted to sell units while holding, so that buyers get part of them too.
+    mapping(address => mapping(address => bool)) public accepted;
 
     error BadTerms();
     error NoTerms();
@@ -84,6 +89,9 @@ contract FundingTerms {
     error NothingToSell();
     error TooMuch();
     error OtherAssets(address token);
+    error NotAHolder();
+    error NotHeld(address token);
+    error ListFull();
 
     event TermsPublished(
         address indexed dao, bool asShares, uint256 cap, address rounds, uint16 exitFeeBps, uint64 activeFrom
@@ -91,6 +99,8 @@ contract FundingTerms {
     event CapLowered(address indexed dao, uint256 cap);
     event ExitFeeLowered(address indexed dao, uint16 exitFeeBps);
     event Watching(address indexed dao, address[] tokens);
+    event Flagged(address indexed dao, address indexed token, address indexed by);
+    event Accepted(address indexed dao, address indexed token, bool yes);
     event TrancheOpened(address indexed dao, uint256 quantity, uint256 leastPrice, uint64 expiry);
     event TrancheClosed(address indexed dao);
     event Reserved(address indexed dao, uint256 units);
@@ -136,12 +146,40 @@ contract FundingTerms {
         emit CapLowered(msg.sender, cap);
     }
 
-    /// @notice Tokens the treasury must not hold while selling (besides the round's currency; ETH is always checked).
+    /// @notice Add tokens the treasury must not hold while selling (besides the round's currency; ETH is always
+    /// checked). Nothing is taken off the list this way: only accepting a token, or the treasury no longer holding it.
     function watch(address[] calldata tokens) external {
-        if (tokens.length > MAX_WATCHED) revert BadTerms();
-        watched[msg.sender] = tokens;
+        for (uint256 i; i < tokens.length; ++i) {
+            _watch(msg.sender, tokens[i]);
+        }
         emit Watching(msg.sender, tokens);
     }
+
+    /// @notice Let sales go ahead while the treasury holds `tokens` (`yes`), or stop them again. By the DAO's vote.
+    function accept(address[] calldata tokens, bool yes) external {
+        for (uint256 i; i < tokens.length; ++i) {
+            accepted[msg.sender][tokens[i]] = yes;
+            emit Accepted(msg.sender, tokens[i], yes);
+        }
+    }
+
+    // ---- any holder ----------------------------------------------------------------------------------------------
+
+    /// @notice Stop `dao`'s sales while its treasury holds `token`. Any holder of its Shares or Loot, for a token the
+    /// treasury holds now and the DAO has not accepted. A full list makes room by dropping a token the treasury no
+    /// longer holds or the DAO accepted.
+    function flag(address dao, address token) external {
+        IFundingDao d = IFundingDao(dao);
+        if (IERC20(d.shares()).balanceOf(msg.sender) == 0 && IERC20(d.loot()).balanceOf(msg.sender) == 0) {
+            revert NotAHolder();
+        }
+        if (accepted[dao][token]) revert BadTerms();
+        if (IERC20(token).balanceOf(dao) == 0) revert NotHeld(token);
+        _watch(dao, token);
+        emit Flagged(dao, token, msg.sender);
+    }
+
+    // ---- the DAO's votes, continued ------------------------------------------------------------------------------
 
     /// @notice Open a tranche within the limit: `quantity` units at no less than `leastPrice` each, until `expiry`. It
     /// replaces any earlier tranche, while no round holds one.
@@ -205,6 +243,21 @@ contract FundingTerms {
 
     // ---- reads ---------------------------------------------------------------------------------------------------
 
+    /// @dev Put `token` on `dao`'s list, once. A full list makes room by dropping a token the treasury no longer holds or
+    /// the DAO accepted.
+    function _watch(address dao, address token) private {
+        address[] storage list = watched[dao];
+        uint256 room = type(uint256).max;
+        for (uint256 i; i < list.length; ++i) {
+            address t = list[i];
+            if (t == token) return;
+            if (room == type(uint256).max && (accepted[dao][t] || IERC20(t).balanceOf(dao) == 0)) room = i;
+        }
+        if (list.length < MAX_WATCHED) list.push(token);
+        else if (room != type(uint256).max) list[room] = token;
+        else revert ListFull();
+    }
+
     function watchedOf(address dao) external view returns (address[] memory) {
         return watched[dao];
     }
@@ -216,14 +269,17 @@ contract FundingTerms {
         return t.published && block.timestamp >= t.activeFrom ? t.exitFeeBps : 0;
     }
 
-    /// @dev The treasury holds no ETH and none of the watched tokens, other than the round's own currency.
+    /// @dev The treasury holds no ETH and none of the watched tokens the DAO has not accepted, other than the round's own
+    /// currency.
     function _oneAsset(address dao, address rounds) private view {
         if (dao.balance != 0) revert OtherAssets(address(0));
         address currency = address(IFundingRounds(rounds).currency());
         address[] storage list = watched[dao];
         for (uint256 i; i < list.length; ++i) {
             address token = list[i];
-            if (token != currency && IERC20(token).balanceOf(dao) != 0) revert OtherAssets(token);
+            if (token != currency && !accepted[dao][token] && IERC20(token).balanceOf(dao) != 0) {
+                revert OtherAssets(token);
+            }
         }
     }
 }

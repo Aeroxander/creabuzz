@@ -23,6 +23,7 @@
  *   pool  = tk == address(0) ? dao.balance : balanceOfThis(tk)
  *   due   = mulDiv(pool, amt, total)                        // floor
  *   due  -= mulDiv(due, fee, 10_000)                        // patch (D135): the exit fee stays
+ *                                                           //   (none for the last units that can leave, D136)
  *
  * The fee is the one the DAO's funding terms set (`exitFeeOf(dao)`, zero without terms or while they are under
  * notice), read through `votingWeight() -> mandateFactory() -> fundingTerms()` as the exit itself reads it.
@@ -329,7 +330,8 @@ export function exitDenominator(input: PositionInput): bigint {
 export function deriveClaimablePosition(input: PositionInput): ClaimableRow[] {
   const total = exitDenominator(input);
   const amt = input.sharesToBurn + input.lootToBurn;
-  const feeBps = input.exitFeeBps ?? 0n;
+  // The last units that can leave leave no one to keep a fee (D136).
+  const feeBps = amt >= total ? 0n : (input.exitFeeBps ?? 0n);
   return input.pools.map(({ token, pool }) => {
     const whole = total === 0n || amt === 0n ? 0n : (pool * amt) / total;
     const fee = exitFeePart(whole, feeBps);
@@ -388,6 +390,8 @@ export interface RagequitPosition {
   exitRule: ExitRule;
   /** The exit fee leaving pays now, in basis points (D135): zero without funding terms or while they are under notice. */
   exitFeeBps: bigint;
+  /** Whether this exit pays it: not when it takes every unit that can leave (D136). */
+  feeApplies: boolean;
   /** Pools + claimable rows for a full exit of the burnable Shares (loot untouched). */
   rows: ClaimableRow[];
   /** True when nobody but the DAO holds Shares or Loot. */
@@ -505,6 +509,8 @@ export async function fetchRagequitPosition(
     lockedTotal,
     exitRule,
     exitFeeBps,
+    feeApplies:
+      exitFeeBps > 0n && sharesBurnable < exitDenominator(input),
     rows,
     zeroSupply: exitDenominator(input) === 0n,
   };

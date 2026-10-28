@@ -6,6 +6,7 @@ import {VotingFixture} from "./helpers/VotingFixture.sol";
 import {FundingTerms} from "../src/FundingTerms.sol";
 import {WeeklyRounds} from "../src/WeeklyRounds.sol";
 import {MandateCurrency} from "./TreasuryMandate.t.sol";
+import {Payouts, PayoutsFactory} from "../src/Payouts.sol";
 
 /// @notice A stand-in rounds contract: any contract can be named, so the terms must not trust whichever is the exchange.
 contract OtherRounds {
@@ -98,6 +99,23 @@ contract FundingTermsTest is VotingFixture {
 
     function _activeFrom() internal view returns (uint64 activeFrom) {
         (,, activeFrom,,,,) = terms.terms(address(dao));
+    }
+
+    /// @dev The DAO's payout module, made and named as the app's decision does.
+    function _payouts() internal returns (Payouts module) {
+        PayoutsFactory factory = ledger.mandateFactory().payoutsFactory();
+        module = factory.create(address(dao), IERC20(address(usd)), 5_000);
+        vm.prank(address(dao));
+        dao.setPayouts(address(module));
+    }
+
+    /// @dev A payout the DAO votes, with the money added first so the treasury, and so the floor, stay as they were.
+    function _payout(Payouts module, uint256 amount) internal {
+        usd.mint(address(dao), amount);
+        vm.prank(address(dao));
+        usd.approve(address(module), amount);
+        vm.prank(address(dao));
+        module.declare(amount);
     }
 
     function _leaveWithUsd() internal view returns (address[] memory tokens) {
@@ -241,6 +259,133 @@ contract FundingTermsTest is VotingFixture {
         rounds.settle(id, step);
     }
 
+    function test_any_holder_can_stop_sales_over_any_token_the_treasury_holds_and_only_a_vote_lets_them_go_ahead()
+        public
+    {
+        _publish(false, 100e18);
+        vm.warp(block.timestamp + terms.NOTICE());
+        _tranche(40e18, uint128(USD));
+        MandateCurrency other = new MandateCurrency();
+        // Only a holder, and only for a token the treasury holds.
+        vm.prank(BEN);
+        vm.expectRevert(FundingTerms.NotAHolder.selector);
+        terms.flag(address(dao), address(other));
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(FundingTerms.NotHeld.selector, address(other)));
+        terms.flag(address(dao), address(other));
+        // A token nobody listed: one Loot holder notices and stops the sale.
+        other.mint(address(dao), 1_000e6);
+        vm.prank(BOB);
+        terms.flag(address(dao), address(other));
+        vm.expectRevert(abi.encodeWithSelector(FundingTerms.OtherAssets.selector, address(other)));
+        rounds.openFunding(address(dao));
+        // Flagging again changes nothing, and no vote takes it off the list by watching others.
+        vm.prank(ALICE);
+        terms.flag(address(dao), address(other));
+        vm.prank(address(dao));
+        terms.watch(new address[](0));
+        assertEq(terms.watchedOf(address(dao)).length, 1);
+        // Only a vote to sell while holding it lets the sale go ahead; it can't be flagged then.
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(other);
+        vm.prank(address(dao));
+        terms.accept(tokens, true);
+        assertGt(rounds.openFunding(address(dao)), 0);
+        vm.prank(ALICE);
+        vm.expectRevert(FundingTerms.BadTerms.selector);
+        terms.flag(address(dao), address(other));
+    }
+
+    function test_a_full_watch_list_makes_room_only_from_tokens_no_longer_held_or_accepted() public {
+        MandateCurrency[] memory held = new MandateCurrency[](16);
+        for (uint256 i; i < 16; ++i) {
+            held[i] = new MandateCurrency();
+            held[i].mint(address(dao), 1);
+            vm.prank(ALICE);
+            terms.flag(address(dao), address(held[i]));
+        }
+        MandateCurrency late = new MandateCurrency();
+        late.mint(address(dao), 1);
+        vm.prank(ALICE);
+        vm.expectRevert(FundingTerms.ListFull.selector);
+        terms.flag(address(dao), address(late));
+        // The treasury spends one: its place is free.
+        vm.prank(address(dao));
+        held[3].transfer(address(0xdead), 1);
+        vm.prank(ALICE);
+        terms.flag(address(dao), address(late));
+        assertEq(terms.watchedOf(address(dao))[3], address(late));
+        // Or the DAO accepts one.
+        MandateCurrency later = new MandateCurrency();
+        later.mint(address(dao), 1);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(held[7]);
+        vm.prank(address(dao));
+        terms.accept(tokens, true);
+        vm.prank(ALICE);
+        terms.flag(address(dao), address(later));
+        assertEq(terms.watchedOf(address(dao))[7], address(later));
+    }
+
+    // ---- payouts while units wait in a round (D136) --------------------------------------------------------------
+
+    function test_a_payout_before_buyers_collect_goes_to_the_buyers() public {
+        Payouts module = _payouts();
+        uint256 id = _selling(40e18, uint128(110 * USD / 100));
+        _bid(id, BEN, 40e18, 10);
+        _settle(id);
+        // 24 USDC over 240 units, 40 of them held for Ben: 4 are his.
+        _payout(module, 24 * USD);
+        uint256 before = usd.balanceOf(BEN);
+        rounds.claim(id, BEN);
+        assertApproxEqAbs(usd.balanceOf(BEN) - before, 4 * USD, 1);
+        assertEq(module.owed(address(rounds)), 0, "nothing left credited to the exchange");
+        assertLe(usd.balanceOf(address(rounds)), 1, "only rounding stays");
+    }
+
+    function test_a_payout_during_a_round_goes_to_the_seller_until_it_settles_and_to_the_buyer_after() public {
+        Payouts module = _payouts();
+        // A payout before anything is offered belongs to whoever held then, not to what is offered later.
+        _payout(module, 20 * USD);
+        uint256 id = rounds.open(address(dao));
+        vm.prank(ALICE);
+        shares.approve(address(rounds), 50e18);
+        vm.prank(ALICE);
+        rounds.sell(id, 50e18, 0);
+        // 0.10 a unit while bidding: all 50 of Alice's offered Shares are still hers.
+        _payout(module, 20 * USD);
+        _bid(id, BEN, 30e18, 0);
+        assertEq(_settle(id), 0);
+        // 0.10 a unit after: the 30 that sold are Ben's, the 20 that did not are Alice's.
+        _payout(module, 20 * USD);
+        uint256 alice = usd.balanceOf(ALICE);
+        rounds.claim(id, ALICE);
+        // 30 sold at 1.00, and payouts of 50 x 0.10 + 20 x 0.10.
+        assertApproxEqAbs(usd.balanceOf(ALICE) - alice, 37 * USD, 2);
+        uint256 ben = usd.balanceOf(BEN);
+        rounds.claim(id, BEN);
+        assertApproxEqAbs(usd.balanceOf(BEN) - ben, 3 * USD, 1);
+        assertEq(module.owed(address(rounds)), 0);
+        assertLe(usd.balanceOf(address(rounds)), 2);
+    }
+
+    function test_a_seller_who_takes_an_offer_back_gets_its_payouts() public {
+        Payouts module = _payouts();
+        // A payout before anything is offered belongs to whoever held then, not to what is offered later.
+        _payout(module, 20 * USD);
+        uint256 id = rounds.open(address(dao));
+        vm.prank(ALICE);
+        shares.approve(address(rounds), 50e18);
+        vm.prank(ALICE);
+        rounds.sell(id, 50e18, 0);
+        _payout(module, 20 * USD);
+        uint256 alice = usd.balanceOf(ALICE);
+        vm.prank(ALICE);
+        rounds.cancelSell(id, new address[](0));
+        assertApproxEqAbs(usd.balanceOf(ALICE) - alice, 5 * USD, 1);
+        assertEq(module.owed(address(rounds)), 0);
+    }
+
     // ---- recovery (the review's third case) ---------------------------------------------------------------------
 
     function test_a_void_round_is_finished_by_anyone_and_frees_the_tranche() public {
@@ -378,6 +523,20 @@ contract FundingTermsTest is VotingFixture {
         vm.prank(BEN);
         vm.expectRevert(FundingTerms.NoTerms.selector);
         terms.lowerExitFee(0);
+    }
+
+    function test_the_last_units_that_can_leave_pay_no_exit_fee() public {
+        address[] memory tokens = _leaveWithUsd();
+        _publishWithFee(false, 100e18, 200);
+        vm.warp(_activeFrom());
+        vm.prank(BOB);
+        dao.ragequit(tokens, 0, 100e18);
+        assertEq(usd.balanceOf(BOB), 98 * USD);
+        // Alice holds every unit left: nobody remains to keep a fee, so she takes it all.
+        vm.prank(ALICE);
+        dao.ragequit(tokens, 100e18, 0);
+        assertEq(usd.balanceOf(ALICE), 102 * USD);
+        assertEq(usd.balanceOf(address(dao)), 0);
     }
 
     function test_a_buyer_who_leaves_from_a_round_pays_the_exit_fee_too() public {

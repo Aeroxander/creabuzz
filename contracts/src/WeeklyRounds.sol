@@ -8,7 +8,16 @@ interface IRoundDao {
     function shares() external view returns (address);
     function loot() external view returns (address);
     function votingWeight() external view returns (address);
+    function payouts() external view returns (address);
     function ragequit(address[] calldata tokens, uint256 sharesToBurn, uint256 lootToBurn) external;
+}
+
+/// @notice The DAO's payout module (N10, `Payouts`): what one unit has been credited in all, and the money it holds.
+interface IRoundPayouts {
+    function perUnit() external view returns (uint256);
+    function owed(address who) external view returns (uint256);
+    function withdraw(address who) external;
+    function currency() external view returns (IERC20);
 }
 
 interface IRoundPolicy {
@@ -62,6 +71,11 @@ interface IRoundLockGuard {
 /// one transaction, checks the price is two steps above what leaving pays at that moment, has the terms create the units
 /// sold (Loot, or Shares if the terms chose them) into this contract, and pays the treasury for them, with no cut. Buyers
 /// then collect those units like any others. A void round gives the tranche back; anyone can finish it.
+///
+/// Payouts while units wait here (D136): the DAO's payout module credits them to this contract, which passes them on to
+/// whoever the units belong to, as they leave. A seller's Shares are theirs from the offer until the round settles (and
+/// after, for any that did not sell); what sold is its buyers' from then on. Each gets what the module credited per unit
+/// over the time the units were theirs, rounded down.
 contract WeeklyRounds {
     using SafeERC20 for IERC20;
 
@@ -80,6 +94,8 @@ contract WeeklyRounds {
     /// @notice How many steps above the floor the DAO must sell at.
     uint256 public constant DAO_MIN_STEPS = 2;
     uint256 internal constant UNIT = 1e18;
+    /// @dev The payout module's scale for its running total per unit.
+    uint256 internal constant MAG = 2 ** 96;
 
     /// @notice What every price is paid in.
     IERC20 public immutable currency;
@@ -128,6 +144,10 @@ contract WeeklyRounds {
     /// @dev Per round, units offered and bid by step, as trees of running totals.
     mapping(uint256 => mapping(uint256 => uint256)) private askTree;
     mapping(uint256 => mapping(uint256 => uint256)) private bidTree;
+    /// @notice The DAO's payouts per unit (its module's running total) when each seller's Shares came in, and when each
+    /// round settled: what units earned here is the difference to when they leave.
+    mapping(uint256 => mapping(address => uint256)) public sellPerUnit;
+    mapping(uint256 => uint256) public settlePerUnit;
     bool private entered;
 
     error InvalidSetup();
@@ -264,6 +284,7 @@ contract WeeklyRounds {
         if (o.amount != 0) revert AlreadyOrdered();
         o.amount = uint128(amount);
         o.step = uint16(lowest);
+        sellPerUnit[id][msg.sender] = _perUnit(r.dao);
         r.asked += amount;
         _add(askTree[id], lowest, amount);
         emit SellPlaced(id, msg.sender, amount, lowest);
@@ -307,6 +328,7 @@ contract WeeklyRounds {
         _sub(askTree[id], o.step, amount);
         delete sells[id][msg.sender];
         emit SellCancelled(id, msg.sender, leaveWith.length != 0);
+        _passPayouts(r.dao, msg.sender, amount * (_perUnit(r.dao) - sellPerUnit[id][msg.sender]));
         _giveUnits(r, msg.sender, amount, leaveWith);
     }
 
@@ -337,7 +359,9 @@ contract WeeklyRounds {
         if (r.funding) {
             // Units are created only at two steps above what leaving pays now, so a sale never lowers it.
             uint256 floorNow = floorOf(r.dao);
-            if (priceAt(id, step) * 10_000 < floorNow * (10_000 + STEP_BPS * DAO_MIN_STEPS)) revert BelowFloor(floorNow);
+            if (priceAt(id, step) * 10_000 < floorNow * (10_000 + STEP_BPS * DAO_MIN_STEPS)) {
+                revert BelowFloor(floorNow);
+            }
         }
         uint256 supply = supplyAt(id, step);
         uint256 demand = demandAt(id, step);
@@ -365,6 +389,7 @@ contract WeeklyRounds {
         }
         r.settled = true;
         r.price = uint16(step);
+        settlePerUnit[id] = _perUnit(r.dao);
         emit Settled(id, step, priceAt(id, step), r.volume, r.sellersShare);
         _finishFunding(r);
     }
@@ -450,6 +475,9 @@ contract WeeklyRounds {
         uint256 money;
         uint256 cut;
         bool any;
+        // Payouts the units earned here, times the module's scale.
+        uint256 earned;
+        uint256 perUnitNow = _perUnit(r.dao);
         if (r.funding) _finishFunding(r);
         Order storage s = sells[id][who];
         // A funding round's only offer is the tranche, which nobody claims: its units are created at the buyers' claims.
@@ -458,6 +486,9 @@ contract WeeklyRounds {
             s.claimed = true;
             uint256 filled = void_ ? 0 : _sellFilled(r, s);
             units += s.amount - filled;
+            uint256 since = sellPerUnit[id][who];
+            earned += (s.amount - filled) * (perUnitNow - since);
+            if (filled != 0) earned += filled * (settlePerUnit[id] - since);
             if (filled != 0) {
                 uint256 value = filled * price / UNIT;
                 if (who != r.dao) cut = filled * (price - r.floor) * CUT_BPS / (UNIT * 10_000);
@@ -471,12 +502,14 @@ contract WeeklyRounds {
             uint256 escrow = _up(uint256(b.amount) * priceAt(id, b.step), UNIT);
             uint256 filled = void_ ? 0 : _bidFilled(r, b);
             units += filled;
+            if (filled != 0) earned += filled * (perUnitNow - settlePerUnit[id]);
             money += escrow - _up(filled * price, UNIT);
         }
         if (!any) revert NothingToClaim();
         emit Claimed(id, who, units, money, cut, leaveWith.length != 0);
         if (cut != 0) currency.safeTransfer(r.dao, cut);
         if (money != 0) currency.safeTransfer(who, money);
+        _passPayouts(r.dao, who, earned);
         if (units != 0) _giveUnits(r, who, units, leaveWith);
     }
 
@@ -550,6 +583,22 @@ contract WeeklyRounds {
             uint256 got = IERC20(leaveWith[i]).balanceOf(address(this)) - before[i];
             if (got != 0) IERC20(leaveWith[i]).safeTransfer(who, got);
         }
+    }
+
+    /// @dev The DAO's payouts per unit so far: its payout module's running total, or zero without one.
+    function _perUnit(address dao) private view returns (uint256) {
+        address module = IRoundDao(dao).payouts();
+        return module == address(0) ? 0 : IRoundPayouts(module).perUnit();
+    }
+
+    /// @dev Pass `to` the payouts its units earned here (`earned`, at the module's scale), rounded down. The module
+    /// credited this contract at least the sum of every such part, so what is passed on never exceeds what it holds.
+    function _passPayouts(address dao, address to, uint256 earned) private {
+        uint256 due = earned / MAG;
+        if (due == 0) return;
+        IRoundPayouts module = IRoundPayouts(IRoundDao(dao).payouts());
+        if (module.owed(address(this)) != 0) module.withdraw(address(this));
+        module.currency().safeTransfer(to, due);
     }
 
     function _add(mapping(uint256 => uint256) storage tree, uint256 step, uint256 amount) private {

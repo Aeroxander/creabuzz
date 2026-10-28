@@ -37,6 +37,8 @@ contract RagequitPreviewFfiTest is Test {
         uint256 lootSeed;
         bool teamExits;
         uint16 exitFeeBps;
+        /// @dev The backer holds every unit that can leave and leaves with all of it (D136).
+        bool lastOut;
     }
 
     /// forge-config: default.fuzz.runs = 64
@@ -51,6 +53,11 @@ contract RagequitPreviewFfiTest is Test {
         c.poolUsdc = bound(c.poolUsdc, 0, 1e15);
         c.poolEth = bound(c.poolEth, 0, 1e24);
         c.exitFeeBps = uint16(bound(c.exitFeeBps, 0, 500));
+        if (c.lastOut) {
+            // The team's Shares all locked, nobody else holding Loot: the backer's units are all that can leave.
+            (c.teamExits, c.otherLoot, c.bps0, c.bps1, c.firstStood) = (false, 0, 5000, 5000, false);
+            c.teamShares -= c.teamShares % 10_000; // so the two halves lock every one of them
+        }
 
         (Moloch dao, MilestoneChallenge lock, MockUSDC usdc) = _launch(c);
         Shares shares = dao.shares();
@@ -60,7 +67,7 @@ contract RagequitPreviewFfiTest is Test {
         uint256 sharesBalance = shares.balanceOf(exiter);
         uint256 locked = lock.lockedOf(exiter);
         uint256 lootBalance = loot.balanceOf(exiter);
-        uint256 lootToBurn = bound(c.lootSeed, 0, lootBalance);
+        uint256 lootToBurn = c.lastOut ? lootBalance : bound(c.lootSeed, 0, lootBalance);
         uint256 sharesTotal = shares.totalSupply();
         uint256 lootTotal = loot.totalSupply();
         uint256 daoHeld = shares.balanceOf(address(dao)) + loot.balanceOf(address(dao));
@@ -89,10 +96,15 @@ contract RagequitPreviewFfiTest is Test {
         // The Solidity port the invariant handler uses says the same thing as the screen.
         assertEq(burnable, ExitPreview.burnable(sharesBalance, locked), "port: burnable");
         uint256 total = ExitPreview.denominator(sharesTotal, lootTotal, daoHeld, lockedTotal);
+        uint256 charged = ExitPreview.feeFor(burnable + lootToBurn, total, fee);
         assertEq(
-            dueUsdc, ExitPreview.afterFee(ExitPreview.due(poolUsdc, burnable + lootToBurn, total), fee), "port: USDC"
+            dueUsdc,
+            ExitPreview.afterFee(ExitPreview.due(poolUsdc, burnable + lootToBurn, total), charged),
+            "port: USDC"
         );
-        assertEq(dueEth, ExitPreview.afterFee(ExitPreview.due(poolEth, burnable + lootToBurn, total), fee), "port: ETH");
+        assertEq(
+            dueEth, ExitPreview.afterFee(ExitPreview.due(poolEth, burnable + lootToBurn, total), charged), "port: ETH"
+        );
 
         address[] memory tokens = new address[](2);
         (tokens[0], tokens[1]) = (ETH, address(usdc));
@@ -113,6 +125,10 @@ contract RagequitPreviewFfiTest is Test {
         assertEq(exiter.balance - ethBefore, dueEth, "chain paid other ETH than the screen showed");
         assertEq(shares.balanceOf(exiter), sharesBalance - burnable, "burned other Shares than offered");
         assertEq(shares.balanceOf(exiter), locked < sharesBalance ? locked : sharesBalance, "the locked Shares stay");
+        if (burnable + lootToBurn == total) {
+            assertEq(usdc.balanceOf(address(dao)), 0, "the last one out takes everything, fee or not");
+        }
+        if (c.lastOut) assertEq(burnable + lootToBurn, total, "the case is the last one out");
     }
 
     function _launch(Case memory c) internal returns (Moloch dao, MilestoneChallenge lock, MockUSDC usdc) {
