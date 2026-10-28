@@ -2519,6 +2519,11 @@ contract Loot {
     }
 
     function _checkUnlocked(address from, address to) internal view {
+    // @@CREABUZZ PATCH BEGIN loot-exit-exchange-check
+        // The exchange the DAO named for its Shares (N5, D131) moves Loot too, as the caller of `transfer` or
+        // `transferFrom`: the Loot a funding round sold (D133) and, with its holder's allowance, Loot a holder sells.
+        if (msg.sender == Moloch(DAO).shares().exitExchange() && msg.sender != address(0)) return;
+    // @@CREABUZZ PATCH END loot-exit-exchange-check
         if (transfersLocked && from != DAO && to != DAO) {
             revert Locked();
         }

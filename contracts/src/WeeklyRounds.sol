@@ -19,11 +19,10 @@ interface IRoundFactory {
     function fundingTerms() external view returns (address);
 }
 
-/// @notice The DAO's funding terms (D133, `FundingTerms`): what a funding round sells, and who creates the units.
+/// @notice The DAO's funding terms (D133, `FundingTerms`): what a funding round sells; settling creates what sold.
 interface IRoundFunding {
     function reserve(address dao) external returns (uint256 units, uint256 leastPrice, address token);
     function settle(address dao, uint256 sold) external;
-    function deliver(address dao, address to, uint256 units) external;
 }
 
 interface IRoundShares {
@@ -59,10 +58,10 @@ interface IRoundLockGuard {
 /// pause.
 ///
 /// Funding rounds (D133) sell a tranche the DAO's funding terms authorised, beside the holders' rounds: the tranche is the
-/// only offer, at no less than its least price and two steps above the floor; buyers bid as in any round; and at each
-/// buyer's claim the units are created for them (Loot, or Shares if the terms chose them) and what they paid goes to the
-/// treasury, with no cut. A funding round settles only at two steps above what leaving pays at that moment. A void one
-/// gives the tranche back.
+/// only offer, at no less than its least price and two steps above the floor; buyers bid as in any round. Settling, in
+/// one transaction, checks the price is two steps above what leaving pays at that moment, has the terms create the units
+/// sold (Loot, or Shares if the terms chose them) into this contract, and pays the treasury for them, with no cut. Buyers
+/// then collect those units like any others. A void round gives the tranche back; anyone can finish it.
 contract WeeklyRounds {
     using SafeERC20 for IERC20;
 
@@ -151,6 +150,7 @@ contract WeeklyRounds {
     error ShortTransfer(uint256 expected, uint256 received);
     error BadToken(address token);
     error NotForFunding();
+    error NotOver(uint256 id);
     error BelowFloor(uint256 floor);
 
     event RoundOpened(uint256 indexed id, address indexed dao, uint256 floor, uint256 step, uint64 closesAt);
@@ -449,12 +449,8 @@ contract WeeklyRounds {
         uint256 units;
         uint256 money;
         uint256 cut;
-        uint256 toTreasury;
         bool any;
-        if (r.funding) {
-            if (leaveWith.length != 0) revert NotForFunding();
-            _finishFunding(r);
-        }
+        if (r.funding) _finishFunding(r);
         Order storage s = sells[id][who];
         // A funding round's only offer is the tranche, which nobody claims: its units are created at the buyers' claims.
         if (!r.funding && s.amount != 0 && !s.claimed) {
@@ -474,28 +470,38 @@ contract WeeklyRounds {
             b.claimed = true;
             uint256 escrow = _up(uint256(b.amount) * priceAt(id, b.step), UNIT);
             uint256 filled = void_ ? 0 : _bidFilled(r, b);
-            uint256 cost = _up(filled * price, UNIT);
             units += filled;
-            money += escrow - cost;
-            if (r.funding) toTreasury = cost;
+            money += escrow - _up(filled * price, UNIT);
         }
         if (!any) revert NothingToClaim();
-        emit Claimed(id, who, units, money, r.funding ? toTreasury : cut, leaveWith.length != 0);
+        emit Claimed(id, who, units, money, cut, leaveWith.length != 0);
         if (cut != 0) currency.safeTransfer(r.dao, cut);
-        if (toTreasury != 0) currency.safeTransfer(r.dao, toTreasury);
         if (money != 0) currency.safeTransfer(who, money);
-        if (units == 0) return;
-        if (r.funding) IRoundFunding(r.terms).deliver(r.dao, who, units);
-        else _giveUnits(r, who, units, leaveWith);
+        if (units != 0) _giveUnits(r, who, units, leaveWith);
     }
 
-    /// @dev Tell the funding terms how much of a funding round's tranche sold, once: at settling, or when a void round is
-    /// next touched. Not before a round is settled or void.
+    /// @notice Finish funding round `id` once it is void: its tranche goes back to the terms, so the DAO can sell or close
+    /// it again. Anyone may call it; settling a round finishes it already.
+    function finishFunding(uint256 id) external nonReentrant {
+        Round storage r = _round(id);
+        if (!r.funding || r.fundingDone) revert NothingToClaim();
+        if (!r.settled && block.timestamp < uint256(r.closesAt) + SETTLE_WINDOW) revert NotOver(id);
+        _finishFunding(r);
+    }
+
+    /// @dev Tell the funding terms how much of a funding round's tranche sold, once. Settled: the terms create those units
+    /// here, in the same transaction as the floor check in `settle`, and the treasury is paid for them now. Void: the
+    /// tranche goes back. Not before a round is settled or void.
     function _finishFunding(Round storage r) private {
         if (!r.funding || r.fundingDone) return;
         if (!r.settled && block.timestamp < uint256(r.closesAt) + SETTLE_WINDOW) return;
         r.fundingDone = true;
-        IRoundFunding(r.terms).settle(r.dao, r.settled ? r.volume : 0);
+        uint256 sold = r.settled ? r.volume : 0;
+        IRoundFunding(r.terms).settle(r.dao, sold);
+        if (sold == 0) return;
+        // Each buyer pays the price rounded up at their claim, so what is held here always covers this.
+        uint256 paid = sold * (uint256(r.floor) + uint256(r.price) * r.step) / UNIT;
+        if (paid != 0) currency.safeTransfer(r.dao, paid);
     }
 
     /// @dev Units a sell order sold: all of it below the price, a share of what is left at the price when sellers are the
@@ -537,7 +543,9 @@ contract WeeklyRounds {
             if (token == address(0) || token == r.shares) revert BadToken(token);
             before[i] = IERC20(token).balanceOf(address(this));
         }
-        IRoundDao(r.dao).ragequit(leaveWith, units, 0);
+        // A funding round's buyers may hold Loot: leave with whichever the round moved.
+        bool loot = r.shares != IRoundDao(r.dao).shares();
+        IRoundDao(r.dao).ragequit(leaveWith, loot ? 0 : units, loot ? units : 0);
         for (uint256 i; i < leaveWith.length; ++i) {
             uint256 got = IERC20(leaveWith[i]).balanceOf(address(this)) - before[i];
             if (got != 0) IERC20(leaveWith[i]).safeTransfer(who, got);

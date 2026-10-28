@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 interface IFundingDao {
     function shares() external view returns (address);
     function loot() external view returns (address);
@@ -10,8 +12,8 @@ interface IFundingToken {
     function mintForFunding(address to, uint256 amount) external;
 }
 
-interface IFundingShares {
-    function exitExchange() external view returns (address);
+interface IFundingRounds {
+    function currency() external view returns (IERC20);
 }
 
 /// @title FundingTerms
@@ -19,28 +21,33 @@ interface IFundingShares {
 /// issuance rule can sell new units, and only as its own votes said in advance. Units earned through reviewed work are
 /// untouched; these are units sold for money for the project.
 ///
-/// A DAO publishes terms by vote: the instrument (non-voting Loot by default, or voting Shares) and a lifetime cap on the
-/// units that can ever be sold under them. Nothing sells until 30 days after the vote, so a holder who disagrees can
-/// leave first; raising the cap restarts that notice, and the instrument never changes. Within the cap the DAO opens one
-/// tranche at a time by vote: a quantity, a least price per whole unit, an expiry.
+/// A DAO publishes terms by vote: the instrument (non-voting Loot by default, or voting Shares), a funding limit on the
+/// units that can be sold under them, and the one rounds contract that may sell them. Nothing sells until 30 days after
+/// the vote, so a holder who disagrees can leave first; raising the limit restarts that notice; the instrument and the
+/// rounds contract never change. Within the limit the DAO opens one tranche at a time by vote: a quantity, a least price
+/// per whole unit, an expiry.
 ///
-/// A tranche is sold only through the weekly rounds the DAO named as its exchange: a funding round reserves what is left
-/// of it, settles how much sold, and delivers each buyer's units, which the DAO's Shares or Loot create at that moment
-/// (`mintForFunding`, which accepts only their summoner's funding-terms contract). The rounds contract that reserved a
-/// round is the only one that can settle and deliver it, even if the DAO names another exchange meanwhile. No admin, no
-/// pause.
+/// Only the rounds contract the terms name can reserve a tranche for a funding round and settle it. Settling creates the
+/// units sold at once, for the rounds contract to hand to its buyers, in the same transaction as its check that they sell
+/// above what leaving pays (so nothing arriving later changes what they were sold against). A sale needs a treasury that
+/// holds only the round's currency: no ETH, and nothing of the tokens the DAO says it watches, because a price set
+/// against one asset would otherwise give buyers a share of the others for nothing. No admin, no pause.
 contract FundingTerms {
     /// @notice How long after terms are published, or widened, before anything under them sells.
     uint64 public constant NOTICE = 30 days;
+    /// @notice The most tokens a DAO can ask to be checked for.
+    uint256 public constant MAX_WATCHED = 8;
 
     struct Terms {
         bool published;
         /// @dev Fixed at the first publication: voting Shares, or non-voting Loot.
         bool asShares;
         uint64 activeFrom;
-        /// @dev The most units ever sold under these terms, and how many have been.
+        /// @dev The funding limit, and how many units have been sold under it.
         uint128 cap;
         uint128 sold;
+        /// @dev Fixed at the first publication: the one rounds contract that sells under these terms.
+        address rounds;
     }
 
     struct Tranche {
@@ -54,11 +61,9 @@ contract FundingTerms {
 
     mapping(address => Terms) public terms;
     mapping(address => Tranche) public tranches;
-    /// @notice Units an open funding round reserved, and the rounds contract that holds them.
+    /// @notice Units an open funding round holds.
     mapping(address => uint256) public reserved;
-    mapping(address => address) public reservedBy;
-    /// @notice Units sold and not yet delivered, by DAO and by the rounds contract that sold them.
-    mapping(address => mapping(address => uint256)) public owed;
+    mapping(address => address[]) private watched;
 
     error BadTerms();
     error NoTerms();
@@ -66,36 +71,38 @@ contract FundingTerms {
     error BadTranche();
     error OverCap(uint256 room);
     error RoundOpen();
-    error NotTheExchange();
+    error NotTheRounds();
     error NothingToSell();
     error TooMuch();
+    error OtherAssets(address token);
 
-    event TermsPublished(address indexed dao, bool asShares, uint256 cap, uint64 activeFrom);
+    event TermsPublished(address indexed dao, bool asShares, uint256 cap, address rounds, uint64 activeFrom);
     event CapLowered(address indexed dao, uint256 cap);
+    event Watching(address indexed dao, address[] tokens);
     event TrancheOpened(address indexed dao, uint256 quantity, uint256 leastPrice, uint64 expiry);
     event TrancheClosed(address indexed dao);
-    event Reserved(address indexed dao, address indexed rounds, uint256 units);
-    event RoundSettled(address indexed dao, address indexed rounds, uint256 reserved, uint256 sold);
-    event Delivered(address indexed dao, address indexed to, uint256 units);
+    event Reserved(address indexed dao, uint256 units);
+    event RoundSettled(address indexed dao, uint256 reserved, uint256 sold);
 
     // ---- the DAO's votes -----------------------------------------------------------------------------------------
 
-    /// @notice Publish terms, or widen the cap of terms already published (the instrument stays). Called by the DAO.
-    function publish(bool asShares, uint128 cap) external {
+    /// @notice Publish terms, or raise the limit of terms already published (instrument and rounds stay). By the DAO.
+    function publish(bool asShares, uint128 cap, address rounds) external {
         Terms storage t = terms[msg.sender];
-        if (cap == 0) revert BadTerms();
+        if (cap == 0 || rounds.code.length == 0) revert BadTerms();
         if (t.published) {
-            if (asShares != t.asShares || cap <= t.cap) revert BadTerms();
+            if (asShares != t.asShares || rounds != t.rounds || cap <= t.cap) revert BadTerms();
         } else {
             t.published = true;
             t.asShares = asShares;
+            t.rounds = rounds;
         }
         t.cap = cap;
         t.activeFrom = uint64(block.timestamp) + NOTICE;
-        emit TermsPublished(msg.sender, asShares, cap, t.activeFrom);
+        emit TermsPublished(msg.sender, asShares, cap, rounds, t.activeFrom);
     }
 
-    /// @notice Lower the cap, at once: never below what was sold or is reserved.
+    /// @notice Lower the limit, at once: never below what was sold or is reserved.
     function lowerCap(uint128 cap) external {
         Terms storage t = terms[msg.sender];
         if (!t.published) revert NoTerms();
@@ -104,7 +111,14 @@ contract FundingTerms {
         emit CapLowered(msg.sender, cap);
     }
 
-    /// @notice Open a tranche within the cap: `quantity` units at no less than `leastPrice` each, until `expiry`. It
+    /// @notice Tokens the treasury must not hold while selling (besides the round's currency; ETH is always checked).
+    function watch(address[] calldata tokens) external {
+        if (tokens.length > MAX_WATCHED) revert BadTerms();
+        watched[msg.sender] = tokens;
+        emit Watching(msg.sender, tokens);
+    }
+
+    /// @notice Open a tranche within the limit: `quantity` units at no less than `leastPrice` each, until `expiry`. It
     /// replaces any earlier tranche, while no round holds one.
     function openTranche(uint128 quantity, uint128 leastPrice, uint64 expiry) external {
         Terms storage t = terms[msg.sender];
@@ -124,49 +138,60 @@ contract FundingTerms {
         emit TrancheClosed(msg.sender);
     }
 
-    // ---- the rounds contract the DAO named -----------------------------------------------------------------------
+    // ---- the rounds contract the terms name ----------------------------------------------------------------------
 
     /// @notice Reserve what is left of `dao`'s live tranche for a funding round: its units, least price and the token
-    /// buyers get. Only the exchange the DAO named, and one round at a time.
+    /// buyers get. Only the rounds contract the terms name, one round at a time, with a treasury of one asset.
     function reserve(address dao) external returns (uint256 units, uint256 leastPrice, address token) {
-        if (msg.sender != IFundingShares(IFundingDao(dao).shares()).exitExchange()) revert NotTheExchange();
         Terms storage t = terms[dao];
+        if (msg.sender != t.rounds) revert NotTheRounds();
         Tranche storage tr = tranches[dao];
         if (block.timestamp < t.activeFrom || block.timestamp >= tr.expiry || reserved[dao] != 0) {
             revert NothingToSell();
         }
+        _oneAsset(dao, msg.sender);
         units = tr.quantity - tr.taken;
         uint256 room = t.cap - t.sold;
         if (units > room) units = room;
         if (units == 0) revert NothingToSell();
         tr.taken += uint128(units);
         reserved[dao] = units;
-        reservedBy[dao] = msg.sender;
         leastPrice = tr.leastPrice;
         token = t.asShares ? IFundingDao(dao).shares() : IFundingDao(dao).loot();
-        emit Reserved(dao, msg.sender, units);
+        emit Reserved(dao, units);
     }
 
-    /// @notice The round that reserved `dao`'s tranche sold `sold` of it; the rest goes back to the tranche.
+    /// @notice The round sold `sold` of what it reserved: those units are created now, for the rounds contract to hand
+    /// to its buyers, and the rest goes back to the tranche. Releasing (`sold` zero) is always possible.
     function settle(address dao, uint256 sold) external {
-        if (msg.sender != reservedBy[dao]) revert NotTheExchange();
+        Terms storage t = terms[dao];
+        if (msg.sender != t.rounds) revert NotTheRounds();
         uint256 held = reserved[dao];
         if (sold > held) revert TooMuch();
         reserved[dao] = 0;
-        reservedBy[dao] = address(0);
         tranches[dao].taken -= uint128(held - sold);
-        terms[dao].sold += uint128(sold);
-        owed[dao][msg.sender] += sold;
-        emit RoundSettled(dao, msg.sender, held, sold);
+        t.sold += uint128(sold);
+        emit RoundSettled(dao, held, sold);
+        if (sold == 0) return;
+        _oneAsset(dao, msg.sender);
+        IFundingDao d = IFundingDao(dao);
+        IFundingToken(t.asShares ? d.shares() : d.loot()).mintForFunding(msg.sender, sold);
     }
 
-    /// @notice Create `units` of what the rounds contract sold, for the buyer `to`.
-    function deliver(address dao, address to, uint256 units) external {
-        uint256 due = owed[dao][msg.sender];
-        if (units > due) revert TooMuch();
-        owed[dao][msg.sender] = due - units;
-        emit Delivered(dao, to, units);
-        IFundingDao d = IFundingDao(dao);
-        IFundingToken(terms[dao].asShares ? d.shares() : d.loot()).mintForFunding(to, units);
+    // ---- reads ---------------------------------------------------------------------------------------------------
+
+    function watchedOf(address dao) external view returns (address[] memory) {
+        return watched[dao];
+    }
+
+    /// @dev The treasury holds no ETH and none of the watched tokens, other than the round's own currency.
+    function _oneAsset(address dao, address rounds) private view {
+        if (dao.balance != 0) revert OtherAssets(address(0));
+        address currency = address(IFundingRounds(rounds).currency());
+        address[] storage list = watched[dao];
+        for (uint256 i; i < list.length; ++i) {
+            address token = list[i];
+            if (token != currency && IERC20(token).balanceOf(dao) != 0) revert OtherAssets(token);
+        }
     }
 }
