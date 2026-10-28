@@ -1768,6 +1768,21 @@ contract Shares {
         _autoSelfDelegate(to);
         _afterVotingBalanceChange(to, int256(amount));
     }
+    // @@CREABUZZ PATCH BEGIN shares-funding-mint
+
+    /// @notice Shares sold under the DAO's funding terms (D133): only its summoner's funding-terms contract, which sells
+    /// only what the DAO's own votes authorised, and only when those terms chose voting Shares. Not an award, so it
+    /// counts against no yearly allowance.
+    function mintForFunding(address to, uint256 amount) public {
+        require(
+            msg.sender == address(AllocationVoting(Moloch(DAO).votingWeight()).mandateFactory().fundingTerms()),
+            Unauthorized()
+        );
+        _mint(to, amount);
+        _autoSelfDelegate(to);
+        _afterVotingBalanceChange(to, int256(amount));
+    }
+    // @@CREABUZZ PATCH END shares-funding-mint
     // @@CREABUZZ PATCH BEGIN shares-issuance-rule
 
     /// @notice "Awards only, with no yearly limit": the setting contributor projects use (D79).
@@ -2435,6 +2450,18 @@ contract Loot {
         // @@CREABUZZ PATCH END loot-issuance-closed
         _mint(to, amount);
     }
+    // @@CREABUZZ PATCH BEGIN loot-funding-mint
+
+    /// @notice Loot sold under the DAO's funding terms (D133): only its summoner's funding-terms contract, which sells
+    /// only what the DAO's own votes authorised. The one way Loot appears under the issuance rule.
+    function mintForFunding(address to, uint256 amount) public {
+        require(
+            msg.sender == address(AllocationVoting(Moloch(DAO).votingWeight()).mandateFactory().fundingTerms()),
+            Unauthorized()
+        );
+        _mint(to, amount);
+    }
+    // @@CREABUZZ PATCH END loot-funding-mint
 
     function burnFromMoloch(address from, uint256 amount) public payable onlyDAO {
         // @@CREABUZZ PATCH BEGIN loot-burn-leaving

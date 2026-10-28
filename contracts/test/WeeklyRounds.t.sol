@@ -78,7 +78,7 @@ contract WeeklyRoundsTest is VotingFixture {
     }
 
     function _close(uint256 id) internal {
-        (,,, uint64 closesAt,,,,,,,,,,,) = rounds.rounds(id);
+        (,,, uint64 closesAt,,,,,,,,,,,,,,) = rounds.rounds(id);
         vm.warp(closesAt);
     }
 
@@ -205,7 +205,7 @@ contract WeeklyRoundsTest is VotingFixture {
         _sell(id, ANA, 50e18, 0);
         _bid(id, BEN, 50e18, 10);
         _close(id);
-        (,,, uint64 closesAt,,,,,,,,,,,) = rounds.rounds(id);
+        (,,, uint64 closesAt,,,,,,,,,,,,,,) = rounds.rounds(id);
         vm.expectRevert(abi.encodeWithSelector(WeeklyRounds.NotYet.selector, closesAt + rounds.SETTLE_WINDOW()));
         rounds.claim(id, ANA);
         vm.warp(closesAt + rounds.SETTLE_WINDOW());
@@ -296,7 +296,8 @@ contract WeeklyRoundsTest is VotingFixture {
 
     // ---- the DAO, locks, opening -----------------------------------------------------------------------------------
 
-    function test_the_dao_sells_shares_it_holds_two_steps_up_and_keeps_all_the_money() public {
+    /// @dev Only a DAO without the issuance rule (D76) can do this; the kits set that rule, so see the test after.
+    function test_a_dao_without_the_issuance_rule_sells_shares_it_holds_two_steps_up_and_keeps_all_the_money() public {
         vm.startPrank(address(dao));
         shares.mintFromMoloch(address(dao), 40e18);
         shares.approve(address(rounds), 40e18);
@@ -315,6 +316,24 @@ contract WeeklyRoundsTest is VotingFixture {
         assertEq(usd.balanceOf(address(dao)), 242 * USD, "40 at 1.05, and no cut to itself");
         assertEq(shares.balanceOf(BEN), 40e18);
         assertEq(rounds.floorOf(address(dao)), 242 * USD * 1e18 / 240e18, "sold above the floor, so the floor rose");
+    }
+
+    /// @dev Both kits set the issuance rule (D76): Shares leave the DAO's own holding only as awards for reviewed work, so
+    /// a DAO a kit made cannot sell Shares through a round. Funding a project needs its own terms (FUNDING-TERMS.md).
+    function test_a_dao_under_the_issuance_rule_cannot_sell_its_own_shares_in_a_round() public {
+        vm.startPrank(address(dao));
+        shares.mintFromMoloch(address(dao), 40e18);
+        shares.setIssuanceRule(type(uint16).max);
+        shares.approve(address(rounds), 40e18);
+        vm.stopPrank();
+        assertTrue(shares.awardsOnly());
+        uint256 id = rounds.open(address(dao));
+        vm.prank(address(dao));
+        vm.expectRevert();
+        rounds.sell(id, 40e18, 2);
+        // Holders still sell to new buyers as before.
+        _sell(id, ANA, 10e18, 0);
+        assertEq(rounds.supplyAt(id, 0), 10e18);
     }
 
     function test_locked_team_shares_cannot_enter_a_round() public {
@@ -336,7 +355,7 @@ contract WeeklyRoundsTest is VotingFixture {
         vm.warp(block.timestamp + 30 days);
         shares.activateExitExchange();
         uint256 id = rounds.open(address(dao));
-        (,, uint64 opensAt,,,,,,,,,,,,) = rounds.rounds(id);
+        (,, uint64 opensAt,,,,,,,,,,,,,,,) = rounds.rounds(id);
         vm.expectRevert(abi.encodeWithSelector(WeeklyRounds.TooSoon.selector, opensAt + rounds.EVERY()));
         rounds.open(address(dao));
         vm.warp(opensAt + rounds.EVERY());

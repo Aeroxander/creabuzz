@@ -7,6 +7,7 @@ import {ClaimStake} from "./ClaimStake.sol";
 import {VerifierSet} from "./VerifierSet.sol";
 import {MandatePartsFactory} from "./MandatePartsFactory.sol";
 import {PayoutsFactory} from "./Payouts.sol";
+import {FundingTerms} from "./FundingTerms.sol";
 
 interface IMandateDao {
     function shares() external view returns (address);
@@ -334,10 +335,13 @@ contract TreasuryMandateFactory {
     /// @notice The only factory whose payout modules (N10) the DAOs of this summoner accept: its modules are known code,
     /// so none can refuse the DAO's notices and with them every transfer and exit.
     PayoutsFactory public immutable payoutsFactory;
+    /// @notice The only funding-terms contract whose sales the DAOs of this summoner turn into new units (D133).
+    FundingTerms public immutable fundingTerms;
 
     constructor() {
         parts = new MandatePartsFactory();
         payoutsFactory = new PayoutsFactory();
+        fundingTerms = new FundingTerms();
     }
 
     mapping(address => address) public daos;

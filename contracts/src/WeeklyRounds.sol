@@ -7,7 +7,23 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 interface IRoundDao {
     function shares() external view returns (address);
     function loot() external view returns (address);
+    function votingWeight() external view returns (address);
     function ragequit(address[] calldata tokens, uint256 sharesToBurn, uint256 lootToBurn) external;
+}
+
+interface IRoundPolicy {
+    function mandateFactory() external view returns (address);
+}
+
+interface IRoundFactory {
+    function fundingTerms() external view returns (address);
+}
+
+/// @notice The DAO's funding terms (D133, `FundingTerms`): what a funding round sells, and who creates the units.
+interface IRoundFunding {
+    function reserve(address dao) external returns (uint256 units, uint256 leastPrice, address token);
+    function settle(address dao, uint256 sold) external;
+    function deliver(address dao, address to, uint256 units) external;
 }
 
 interface IRoundShares {
@@ -32,14 +48,21 @@ interface IRoundLockGuard {
 /// shares what is left, in proportion. Each person then claims their own Shares and money; nothing loops over orders.
 /// A round nobody settles in time is void, and everyone takes back exactly what they put in.
 ///
-/// A fifth of each seller's gain above the floor goes to the DAO. The DAO itself may sell Shares it holds, at least two
-/// steps above the floor, and pays no cut. Units move as they are: buyers get Shares.
+/// A fifth of each seller's gain above the floor goes to the DAO. A DAO without the issuance rule may sell Shares it
+/// holds, at least two steps above the floor, and pays no cut; both kits set that rule (D76), so their DAOs cannot, and
+/// funding a project needs terms of its own (docs/v3-review/FUNDING-TERMS.md). Units move as they are: buyers get Shares.
 ///
 /// Leaving is never taken away: a seller can cancel during bidding, and anyone with units to collect can collect them
 /// by leaving instead (`cancelSell` or `claimAndLeave` with the tokens to leave with), which works even if the DAO stops
 /// naming this contract as its exchange. Shares move only because the DAO named this contract as its exit exchange, 30
 /// days ahead; every other check of the Shares still applies, so locked team Shares cannot enter a round. No admin, no
 /// pause.
+///
+/// Funding rounds (D133) sell a tranche the DAO's funding terms authorised, beside the holders' rounds: the tranche is the
+/// only offer, at no less than its least price and two steps above the floor; buyers bid as in any round; and at each
+/// buyer's claim the units are created for them (Loot, or Shares if the terms chose them) and what they paid goes to the
+/// treasury, with no cut. A funding round settles only at two steps above what leaving pays at that moment. A void one
+/// gives the tranche back.
 contract WeeklyRounds {
     using SafeERC20 for IERC20;
 
@@ -84,6 +107,10 @@ contract WeeklyRounds {
         uint256 marginTotal;
         uint256 marginGets;
         uint256 marginClaimed;
+        /// @dev A funding round (D133): the funding-terms contract that holds the tranche, and whether its count is in.
+        bool funding;
+        bool fundingDone;
+        address terms;
     }
 
     struct Order {
@@ -94,8 +121,9 @@ contract WeeklyRounds {
 
     uint256 public roundCount;
     mapping(uint256 => Round) public rounds;
-    /// @notice Each DAO's latest round, or 0.
+    /// @notice Each DAO's latest round between holders, and its latest funding round, or 0.
     mapping(address => uint256) public lastRound;
+    mapping(address => uint256) public lastFunding;
     mapping(uint256 => mapping(address => Order)) public sells;
     mapping(uint256 => mapping(address => Order)) public bids;
     /// @dev Per round, units offered and bid by step, as trees of running totals.
@@ -122,6 +150,8 @@ contract WeeklyRounds {
     error NothingToClaim();
     error ShortTransfer(uint256 expected, uint256 received);
     error BadToken(address token);
+    error NotForFunding();
+    error BelowFloor(uint256 floor);
 
     event RoundOpened(uint256 indexed id, address indexed dao, uint256 floor, uint256 step, uint64 closesAt);
     event SellPlaced(uint256 indexed id, address indexed seller, uint256 amount, uint256 step);
@@ -157,6 +187,43 @@ contract WeeklyRounds {
             uint64 at = rounds[last].opensAt + EVERY;
             if (block.timestamp < at) revert TooSoon(at);
         }
+        id = _openRound(dao, shares);
+        lastRound[dao] = id;
+    }
+
+    /// @notice Open a funding round for `dao`: what is left of the tranche its funding terms authorised, offered at no
+    /// less than the tranche's least price and two steps above the floor. A week after its last funding round opened;
+    /// anyone may call it.
+    function openFunding(address dao) external nonReentrant returns (uint256 id) {
+        if (IRoundShares(IRoundDao(dao).shares()).exitExchange() != address(this)) revert NotNamed();
+        uint256 last = lastFunding[dao];
+        if (last != 0) {
+            Round storage prev = rounds[last];
+            uint64 at = prev.opensAt + EVERY;
+            if (block.timestamp < at) revert TooSoon(at);
+            // A void earlier round gives its tranche back first.
+            _finishFunding(prev);
+        }
+        address terms = IRoundFactory(IRoundPolicy(IRoundDao(dao).votingWeight()).mandateFactory()).fundingTerms();
+        (uint256 units, uint256 least, address token) = IRoundFunding(terms).reserve(dao);
+        id = _openRound(dao, token);
+        lastFunding[dao] = id;
+        Round storage r = rounds[id];
+        r.funding = true;
+        r.terms = terms;
+        uint256 lowest = DAO_MIN_STEPS;
+        if (least > r.floor) {
+            uint256 atLeast = (least - r.floor + r.step - 1) / r.step;
+            if (atLeast > lowest) lowest = atLeast;
+        }
+        if (lowest >= STEPS || units > type(uint128).max) revert BadStep(lowest);
+        sells[id][terms] = Order(uint128(units), uint16(lowest), false);
+        r.asked = units;
+        _add(askTree[id], lowest, units);
+        emit SellPlaced(id, terms, units, lowest);
+    }
+
+    function _openRound(address dao, address token) private returns (uint256 id) {
         uint256 floor = floorOf(dao);
         uint256 step = floor * STEP_BPS / 10_000;
         if (step < minStep) step = minStep;
@@ -164,12 +231,11 @@ contract WeeklyRounds {
         id = ++roundCount;
         Round storage r = rounds[id];
         r.dao = dao;
-        r.shares = shares;
+        r.shares = token;
         r.opensAt = uint64(block.timestamp);
         r.closesAt = uint64(block.timestamp) + BIDDING;
         r.floor = uint128(floor);
         r.step = uint128(step);
-        lastRound[dao] = id;
         emit RoundOpened(id, dao, floor, step, r.closesAt);
     }
 
@@ -191,6 +257,7 @@ contract WeeklyRounds {
     /// until you cancel (during bidding) or claim.
     function sell(uint256 id, uint256 amount, uint256 lowest) external nonReentrant {
         Round storage r = _bidding(id);
+        if (r.funding) revert NotForFunding();
         if (amount == 0 || amount > type(uint128).max) revert BadAmount();
         if (lowest >= STEPS || (msg.sender == r.dao && lowest < DAO_MIN_STEPS)) revert BadStep(lowest);
         Order storage o = sells[id][msg.sender];
@@ -232,6 +299,7 @@ contract WeeklyRounds {
     /// tokens, you leave the DAO with them at once, as leaving pays.
     function cancelSell(uint256 id, address[] calldata leaveWith) external nonReentrant {
         Round storage r = _bidding(id);
+        if (r.funding) revert NotForFunding();
         Order storage o = sells[id][msg.sender];
         uint256 amount = o.amount;
         if (amount == 0) revert NoOrder();
@@ -266,6 +334,11 @@ contract WeeklyRounds {
         if (block.timestamp >= uint256(r.closesAt) + SETTLE_WINDOW) revert SettleOver(id);
         if (r.settled) revert AlreadySettled(id);
         if (step >= STEPS) revert BadStep(step);
+        if (r.funding) {
+            // Units are created only at two steps above what leaving pays now, so a sale never lowers it.
+            uint256 floorNow = floorOf(r.dao);
+            if (priceAt(id, step) * 10_000 < floorNow * (10_000 + STEP_BPS * DAO_MIN_STEPS)) revert BelowFloor(floorNow);
+        }
         uint256 supply = supplyAt(id, step);
         uint256 demand = demandAt(id, step);
         if (demand >= supply) {
@@ -293,6 +366,7 @@ contract WeeklyRounds {
         r.settled = true;
         r.price = uint16(step);
         emit Settled(id, step, priceAt(id, step), r.volume, r.sellersShare);
+        _finishFunding(r);
     }
 
     // ---- claiming --------------------------------------------------------------------------------------------------
@@ -375,9 +449,15 @@ contract WeeklyRounds {
         uint256 units;
         uint256 money;
         uint256 cut;
+        uint256 toTreasury;
         bool any;
+        if (r.funding) {
+            if (leaveWith.length != 0) revert NotForFunding();
+            _finishFunding(r);
+        }
         Order storage s = sells[id][who];
-        if (s.amount != 0 && !s.claimed) {
+        // A funding round's only offer is the tranche, which nobody claims: its units are created at the buyers' claims.
+        if (!r.funding && s.amount != 0 && !s.claimed) {
             any = true;
             s.claimed = true;
             uint256 filled = void_ ? 0 : _sellFilled(r, s);
@@ -394,14 +474,28 @@ contract WeeklyRounds {
             b.claimed = true;
             uint256 escrow = _up(uint256(b.amount) * priceAt(id, b.step), UNIT);
             uint256 filled = void_ ? 0 : _bidFilled(r, b);
+            uint256 cost = _up(filled * price, UNIT);
             units += filled;
-            money += escrow - _up(filled * price, UNIT);
+            money += escrow - cost;
+            if (r.funding) toTreasury = cost;
         }
         if (!any) revert NothingToClaim();
-        emit Claimed(id, who, units, money, cut, leaveWith.length != 0);
+        emit Claimed(id, who, units, money, r.funding ? toTreasury : cut, leaveWith.length != 0);
         if (cut != 0) currency.safeTransfer(r.dao, cut);
+        if (toTreasury != 0) currency.safeTransfer(r.dao, toTreasury);
         if (money != 0) currency.safeTransfer(who, money);
-        if (units != 0) _giveUnits(r, who, units, leaveWith);
+        if (units == 0) return;
+        if (r.funding) IRoundFunding(r.terms).deliver(r.dao, who, units);
+        else _giveUnits(r, who, units, leaveWith);
+    }
+
+    /// @dev Tell the funding terms how much of a funding round's tranche sold, once: at settling, or when a void round is
+    /// next touched. Not before a round is settled or void.
+    function _finishFunding(Round storage r) private {
+        if (!r.funding || r.fundingDone) return;
+        if (!r.settled && block.timestamp < uint256(r.closesAt) + SETTLE_WINDOW) return;
+        r.fundingDone = true;
+        IRoundFunding(r.terms).settle(r.dao, r.settled ? r.volume : 0);
     }
 
     /// @dev Units a sell order sold: all of it below the price, a share of what is left at the price when sellers are the
