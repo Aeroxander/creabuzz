@@ -35,7 +35,7 @@ export function fundingStateLine(
 ): string {
   switch (phase) {
     case "none":
-      return "This project sells no new units. A vote on the Decisions tab can publish funding terms: what buyers get, and the most it can ever sell.";
+      return "This project sells no new units. A vote on the Decisions tab can publish funding terms: what buyers get, and a funding limit.";
     case "notice":
       return `Funding terms were published. Sales can start from ${date(view?.activeFrom ?? 0)}.`;
     case "ready":
@@ -48,17 +48,33 @@ export function fundingStateLine(
   }
 }
 
-/** How much has been sold of the most that can ever be. */
+/** How much has been sold of the current authorised funding limit (a later vote can raise it). */
 export const soldLine = (view: FundingTermsView) =>
-  `${units(view.sold)} of at most ${units(view.cap)} sold`;
+  `${units(view.sold)} sold of a current funding limit of ${units(view.cap)}`;
+
+/**
+ * What a buyer should know before paying, about a contributor project: the things that differ from a fundraising
+ * project's promises, each in one line.
+ */
+export function beforeYouBuy(view: FundingTermsView): string[] {
+  return [
+    "The funding limit is the current one: a later vote can raise it, with 30 days' notice.",
+    "Contributors can still be awarded new Shares for reviewed work, with no yearly limit.",
+    "Shares already earned can leave with part of the money raised, as yours can.",
+    "This project's team has no milestone locks.",
+    view.asShares
+      ? "You get Shares, with a vote."
+      : "You get Loot: the same part of the treasury and payouts as a Share, but no vote. For now you can leave with it at any time; selling it to a new buyer in a round comes later.",
+  ];
+}
 
 /** A cap typed in whole units. */
 export function capPlan(text: string): { problem: string } | { cap: bigint } {
   try {
-    const cap = parseUnits(text, 18, "amount", "The most that can be sold");
+    const cap = parseUnits(text, 18, "amount", "The funding limit");
     return cap > 0n
       ? { cap }
-      : { problem: "The most that can be sold must be above zero." };
+      : { problem: "The funding limit must be above zero." };
   } catch (error) {
     return { problem: error instanceof Error ? error.message : String(error) };
   }

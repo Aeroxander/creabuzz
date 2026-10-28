@@ -14,7 +14,11 @@ import {
   readFundingTerms,
 } from "./lib/funding-terms";
 import { exitSalesState, readExitSales } from "./lib/matched-exit";
-import { readRounds } from "./lib/weekly-rounds";
+import {
+  type OpenClaim,
+  readOpenClaims,
+  readRounds,
+} from "./lib/weekly-rounds";
 import { decodeAddress, decodeWord, encodeCall0, SIGNATURES } from "./lib/work";
 import { encodeAllowance, encodeBalanceOf } from "./lib/work-bounty";
 import type { RoundsWallet } from "./use-weekly-rounds";
@@ -58,6 +62,13 @@ export function useFunding(dao: string, wallet: string | null) {
       const roundsOn =
         exchange !== null && exitSalesState(exchange, at, now).phase === "on";
       const funding = await readRounds(chain, at, dao, wallet, now, "funding");
+      // Earlier funding rounds where this wallet still has something to collect; the latest is shown on its own.
+      const latest = funding.round?.id ?? null;
+      const claims: OpenClaim[] = wallet
+        ? (await readOpenClaims(chain, at, dao, wallet, now)).filter(
+            (c) => c.funding && c.id !== latest,
+          )
+        : [];
       let side: RoundsWallet | null = null;
       if (wallet) {
         const [usdcBalance, usdcAllowance] = await Promise.all([
@@ -75,6 +86,7 @@ export function useFunding(dao: string, wallet: string | null) {
         phase: fundingPhase(terms, now),
         roundsOn,
         funding,
+        claims,
         wallet: side,
       };
     },

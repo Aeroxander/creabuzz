@@ -11,6 +11,7 @@ import {
   orderOutcome,
   orderSteps,
   priceOfStep,
+  readOpenClaims,
   readRounds,
   ROUND_SIGNATURES,
   roundPhase,
@@ -239,4 +240,68 @@ test("a DAO's latest round is read with its grid, the price it would settle at, 
     5,
   );
   assert.deepEqual(none, { round: null, nextOpensAt: 5, floorNow: 0n });
+});
+
+test("every round with something left to collect is found from the wallet's own orders", async () => {
+  const OTHER_DAO = `0x${"0d".repeat(20)}`;
+  // Rounds 1 (settled, a bid left), 2 (void, an offer left), 3 (still bidding), 4 (another DAO's).
+  const record = (dao, closesAt, settled, funding) =>
+    words(
+      BigInt(dao),
+      BigInt(SHARES),
+      0,
+      closesAt,
+      USD,
+      USD / 100n,
+      0,
+      0,
+      settled,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      funding,
+      0,
+      0,
+    );
+  const rounds = new Map([
+    [1n, record(DAO, 100, 1, 1)],
+    [2n, record(DAO, 100, 0, 0)],
+    [3n, record(DAO, 1e9, 0, 0)],
+    [4n, record(OTHER_DAO, 100, 1, 0)],
+  ]);
+  const roundsSel = selectorOf(ROUND_SIGNATURES.rounds);
+  const sellsSel = selectorOf(ROUND_SIGNATURES.sells);
+  const chain = {
+    logs: async ({ topics }) => {
+      assert.equal(BigInt(topics[2]), BigInt(ME), "only this wallet's orders");
+      const ids = topics[0] === TOPIC_BID_PLACED ? [1n, 3n, 4n] : [2n];
+      return ids.map((id) => ({
+        topics: [topics[0], `0x${word(id)}`, topics[2]],
+      }));
+    },
+    call: async (_to, data) => {
+      const id = BigInt(`0x${data.slice(10, 74)}`);
+      if (data.startsWith(roundsSel)) return rounds.get(id);
+      if (data.startsWith(sellsSel))
+        return words(id === 2n ? 5n * E18 : 0, 0, 0);
+      return words(id === 2n ? 0 : 3n * E18, 7, 0);
+    },
+  };
+  const claims = await readOpenClaims(chain, ROUNDS, DAO, ME, 1_000_000);
+  assert.deepEqual(
+    claims.map((c) => [
+      c.id,
+      c.phase,
+      c.funding,
+      c.sell?.amount ?? 0n,
+      c.bid?.amount ?? 0n,
+    ]),
+    [
+      [2n, "void", false, 5n * E18, 0n],
+      [1n, "settled", true, 0n, 3n * E18],
+    ],
+  );
 });

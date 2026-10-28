@@ -45,14 +45,21 @@ simply impossible until terms exist, which is the safe default.
 
 ## Funding terms
 
-A DAO publishes funding terms by vote. They hold, and cannot later be widened:
+A DAO publishes funding terms by vote:
 
 - **The instrument.** By default investors receive **Loot**: the same exit and payouts as a Share, no vote. A project may
   instead choose voting Shares, decided in the terms and shown as "buyers get a vote". Decided this way because
   contributors would otherwise lose voting control as money arrives, even with their work allocation intact; reserving
   contributor tokens protects an allocation, not a share of control.
-- **A lifetime cap**: the most units that can ever be sold under these terms, shown as a number and as a share of all
-  units at publication. Raising it means new terms, with the same notice.
+- **A funding limit**: the units that may be sold under these terms for now, shown as a number and as a share of all
+  units at publication. It is the current authorised limit, not a lifetime promise: a later vote can raise it, with the
+  same 30 days' notice, and can lower it at once.
+- **The seller**: the one rounds contract that may sell under the terms, named in the vote (it must be a contract) and
+  fixed for good. Choosing an exchange for holders' sales grants no power to sell new units (D134).
+- **One asset in the treasury while selling** (D134): sales stop while the treasury holds ETH, or any token the DAO
+  asked to be watched (up to eight), besides the round's own currency. A price set in one asset would otherwise give
+  buyers part of the others for nothing: with 200 USDC, 10 ETH and 200 units, 40 Loot at 1.02 USDC would take about
+  1.67 ETH from existing holders.
 - **Tranches**, each its own vote within the cap: a quantity, a least price, and an expiry. Bids decide the price above
   the least. No automatic increase or decrease between tranches; that is revisited after real rounds.
 - **Notice**: the first sale under new terms can happen only 30 days after the vote, as with opening trading (D77), so a
@@ -74,9 +81,15 @@ What contributors should know, said on the page when terms are proposed:
 
 ## How a tranche is sold
 
-In a weekly round, as its own kind of order: the funding contract offers the tranche at its least price; at the claim,
-the units are created for the buyer and the money goes straight to the treasury, with no cut. Holders' offers compete
-with it on price, as now, so a holder asking less fills first. The tranche ends at its expiry or when it is sold.
+In a funding round of the weekly rounds the terms name: the tranche is the only offer, at its least price and two steps
+above the floor or more, and buyers bid as in any round. Settling does three things in one transaction (D134): it checks
+the price is at least two steps above what leaving pays at that moment and that the treasury holds one asset, has the
+terms create the units sold, and pays the treasury for them, with no cut. Buyers then collect existing units, or leave
+with them at once. Nothing arriving between settling and collecting changes what they were sold against: revenue that
+lands then is shared by every holder, the new ones included.
+
+A round nobody settles is void: buyers take back their money, and anyone can finish it, which gives the tranche back so
+the DAO can sell or close it again (D134). The tranche ends at its expiry or when it is sold.
 
 ## Corrections to what I said earlier (2026-10-27)
 
@@ -100,18 +113,25 @@ with it on price, as now, so a holder asking less fills first. The tranche ends 
 
 | Contract | Change |
 |---|---|
-| New `FundingTerms` | Terms per DAO (instrument, lifetime cap, 30 days' notice restarted by widening, sold so far), one tranche at a time (quantity, least price, expiry), and the accounting of what an open funding round holds and what was sold and not yet delivered. Made by the work budget factory, one per summoner |
-| `Shares`, `Loot` | `mintForFunding`, accepted only from their summoner's `FundingTerms`. The DAO contract itself is unchanged (its 1,912 spare bytes stay), the award rule and its yearly allowance are untouched, and under the issuance rule this is the only way Loot appears |
-| `WeeklyRounds` | Funding rounds (`openFunding`): the tranche is the only offer, at its least price and two steps above the floor or more; at each buyer's claim their units are created and what they paid goes to the treasury; a round settles only at two steps above what leaving pays at that moment; a void round gives the tranche back. Holders' rounds are unchanged |
+| New `FundingTerms` | Terms per DAO (instrument, funding limit, the seller, 30 days' notice restarted by raising, sold so far), the tokens it watches, one tranche at a time (quantity, least price, expiry), and what an open funding round holds. Settling creates the units sold. Made by the work budget factory, one per summoner |
+| `Shares`, `Loot` | `mintForFunding`, accepted only from their summoner's `FundingTerms`. The DAO contract itself is unchanged (its 1,912 spare bytes stay), the award rule and its yearly allowance are untouched, and under the issuance rule this is the only way Loot appears. Loot also moves through the exchange the DAO named, as Shares do (D134) |
+| `WeeklyRounds` | Funding rounds (`openFunding`): the tranche is the only offer; settling checks the floor, has the units created and pays the treasury at once; buyers collect existing units or leave with them; `finishFunding` lets anyone give back a void round's tranche. Holders' rounds are unchanged |
 | `TreasuryMandateFactory` | Makes the summoner's `FundingTerms` |
 
-The rounds contract that reserved a tranche is the only one that can settle and deliver it, so naming another exchange
-meanwhile cannot strand buyers. Checked by `FundingTerms.t.sol` (7 tests, on a DAO under the issuance rule as the kits make
-them) and thirteen mutation entries, and from pages by `scripts/web-rounds-e2e.sh` on a local chain and a Sepolia fork.
+Checked by `FundingTerms.t.sol` (10 tests on a DAO under the issuance rule as the kits make them, including one per issue
+the outside review found), twenty mutation entries, and from pages by `scripts/web-rounds-e2e.sh` on a local chain and a
+Sepolia fork.
 
-In the app: a **Sell new units for the project** decision (publish terms; then open a sale, stop it, or raise or lower the
-most) and a **Funding the project** card on contributor projects' Funds tab (the terms, how much has sold, the sale open
-now, and its funding rounds, where people bid and collect). Fundraising-kit projects are not offered it yet.
+In the app: a **Sell new units for the project** decision (publish terms; then open a sale, stop it, raise or lower the
+funding limit, or name tokens to watch) and a **Funding the project** card on contributor projects' Funds tab: the terms,
+how much has sold of the current limit, the sale open now with a **Before you buy** list (the limit can be raised;
+contributor awards have no yearly limit; earned Shares can leave with money raised; no milestone locks; what Loot is and
+that it can't yet be sold in a round), its funding rounds, a button to give back a void round's tranche, and every earlier
+round where you still have something to collect (the holders' card lists those too). Fundraising-kit projects are not
+offered it yet.
+
+Not yet: Loot holders selling in holders' rounds, which trade Shares. Their way out today is leaving. Loot can now move
+through the exchange, which is the step that makes Loot rounds possible.
 
 ## Later: continuous trading
 

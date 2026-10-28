@@ -404,7 +404,7 @@ test("a member who wants out is matched with two who want in, and the treasury k
     .getByTestId("funding-cap-input")
     .fill("100", { timeout: 30_000 });
   await expect(founder.getByTestId("decision-draft-title")).toHaveText(
-    "Let the project sell up to 100 new Loot",
+    "Set a funding limit of 100 new Loot",
   );
   await founder.getByTestId("decision-draft-submit").click();
   await expect(founder.getByTestId("decision-opened")).toBeVisible({
@@ -447,6 +447,9 @@ test("a member who wants out is matched with two who want in, and the treasury k
     "On sale for the project: 40 new units at 1.65 USDC each or more",
     { timeout: 30_000 },
   );
+  await expect(
+    buyerFunding.getByTestId("funding-before-you-buy"),
+  ).toContainText("no yearly limit");
   await buyerFunding.getByTestId("funding-open-round").click();
   await expect(buyerFunding.getByTestId("rounds-round-status")).toContainText(
     "Taking offers and bids until",
@@ -495,6 +498,8 @@ test("a member who wants out is matched with two who want in, and the treasury k
   ).toHaveText("40 new units at 1.65 USDC each were sold for the project.", {
     timeout: 60_000,
   });
+  // Settling created the 40 units and paid the treasury, before anyone collects.
+  expect(await usdcOf(dao)).toBe(366n * USD);
   const loot = wordAddress(await call(dao, "0x9b7b2ab0"));
   const lootOf = async (holder: string) =>
     BigInt(await call(loot, `0x70a08231${addressArg(holder)}`));
@@ -519,7 +524,9 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await refresh(second, "Funds");
   await expect(
     second.getByTestId("funding").getByTestId("funding-sold"),
-  ).toHaveText("40 of at most 100 sold", { timeout: 30_000 });
+  ).toHaveText("40 sold of a current funding limit of 100", {
+    timeout: 30_000,
+  });
   if (process.env.E2E_SHOTS) {
     await second.getByTestId("funding").screenshot({
       path: `${process.env.E2E_SHOTS}/funding-settled.png`,

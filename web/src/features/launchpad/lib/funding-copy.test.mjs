@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  beforeYouBuy,
   capPlan,
   fundingStateLine,
   instrumentLine,
@@ -13,6 +14,8 @@ const E18 = 10n ** 18n;
 const view = {
   contract: "0x",
   published: true,
+  rounds: "0x",
+  watched: [],
   asShares: false,
   activeFrom: Date.UTC(2026, 11, 1) / 1000,
   cap: 100n * E18,
@@ -37,7 +40,13 @@ test("where funding terms stand, in one sentence each", () => {
     fundingStateLine("selling", view),
     "On sale for the project: 40 new units at 1.1 USDC each or more, until Jan 31, 2027.",
   );
-  assert.equal(soldLine(view), "40 of at most 100 sold");
+  assert.equal(soldLine(view), "40 sold of a current funding limit of 100");
+  const notes = beforeYouBuy(view);
+  assert.match(notes[0], /a later vote can raise it/);
+  assert.match(notes[1], /no yearly limit/);
+  assert.match(notes[2], /can leave with part of the money raised/);
+  assert.match(notes[3], /no milestone locks/);
+  assert.match(notes[4], /Loot/);
   assert.equal(instrumentLine(false), "Buyers get Loot, with no vote");
   assert.equal(instrumentLine(true), "Buyers get Shares, with a vote");
 });

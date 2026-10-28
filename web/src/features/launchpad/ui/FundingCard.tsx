@@ -7,14 +7,19 @@ import { Meter } from "@/shared/ui/meter";
 import { MoreInfo } from "@/shared/ui/more-info";
 import { defaultChainPreset } from "../chain-config";
 import {
+  beforeYouBuy,
   fundingStateLine,
   instrumentLine,
   soldLine,
 } from "../lib/funding-copy";
-import { encodeOpenFundingRound } from "../lib/weekly-rounds";
+import {
+  encodeFinishFunding,
+  encodeOpenFundingRound,
+} from "../lib/weekly-rounds";
 import { useChainSend } from "../use-chain-send";
 import { FUNDING_QUERY, useFunding } from "../use-funding";
 import { FailureNote, WalletStrip } from "./auction-widgets";
+import { RoundClaims } from "./RoundClaims";
 import { RoundPanel } from "./WeeklyRoundsCard";
 
 /**
@@ -72,7 +77,7 @@ export function FundingCard({ dao }: { dao: string }) {
               </div>
               <div>
                 <Meter
-                  label="Sold of the most the project can sell"
+                  label="Sold of the current funding limit"
                   max={data.terms.cap}
                   value={data.terms.sold}
                 />
@@ -85,14 +90,29 @@ export function FundingCard({ dao }: { dao: string }) {
               </div>
             </div>
           ) : null}
+          {data.phase === "selling" ? (
+            <div
+              className="mt-2 rounded-lg border border-border/60 p-3 text-sm"
+              data-testid="funding-before-you-buy"
+            >
+              <p className="font-medium">Before you buy</p>
+              <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+                {beforeYouBuy(data.terms).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <MoreInfo label="How funding works" testId="funding-how">
             Holders vote funding terms first: whether buyers get Loot (no vote)
-            or Shares, and the most the project can ever sell. Nothing sells
-            until 30 days later, so anyone who disagrees can leave. Each sale is
-            then its own vote, with a quantity, a least price and an end date,
-            and is sold in weekly funding rounds: bids set the price, never
-            below what leaving pays plus 2%, and every payment goes to the
-            treasury.
+            or Shares, a funding limit, and the one rounds contract that may
+            sell. Nothing sells until 30 days later, so anyone who disagrees can
+            leave. Each sale is then its own vote, with a quantity, a least
+            price and an end date, and is sold in weekly funding rounds: bids
+            set the price, never below what leaving pays plus 2%, and nothing
+            sells while the treasury holds ETH or a token the terms watch.
+            Settling a round creates the units sold and pays the treasury at
+            once.
           </MoreInfo>
           {data.phase === "selling" && !data.roundsOn ? (
             <p
@@ -123,6 +143,30 @@ export function FundingCard({ dao }: { dao: string }) {
                 : "Open a funding round"}
             </Button>
           ) : null}
+          {round &&
+          round.phase === "void" &&
+          !round.fundingDone &&
+          data.roundsOn ? (
+            <Button
+              className="mt-2"
+              data-testid="funding-finish"
+              disabled={blocked}
+              onClick={() =>
+                void sender.send(
+                  "funding-finish",
+                  data.rounds,
+                  encodeFinishFunding(round.id),
+                )
+              }
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {sender.busy === "funding-finish"
+                ? "Giving back…"
+                : "Give the unsold units back to the sale"}
+            </Button>
+          ) : null}
           {round ? (
             <RoundPanel
               blocked={blocked}
@@ -136,6 +180,14 @@ export function FundingCard({ dao }: { dao: string }) {
               side={data.wallet}
             />
           ) : null}
+          <RoundClaims
+            blocked={blocked}
+            busy={sender.busy}
+            claims={data.claims}
+            contract={data.rounds}
+            me={sender.wallet.address}
+            onSend={sender.send}
+          />
         </>
       )}
       <WalletStrip testIdPrefix="funding" wallet={sender.wallet} />

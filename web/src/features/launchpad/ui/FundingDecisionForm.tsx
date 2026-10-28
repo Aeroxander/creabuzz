@@ -23,7 +23,9 @@ import {
   openTrancheDecision,
   publishFundingDecision,
   readFundingTerms,
+  watchAssetsDecision,
 } from "../lib/funding-terms";
+import { weeklyRounds } from "../chain-config";
 import { decodeAddress, decodeWord, encodeCall0 } from "../lib/work";
 import { endpointChain } from "../use-work";
 import { SelectField, TextField } from "./decision-fields";
@@ -34,7 +36,7 @@ import {
   type FormProps,
 } from "./decision-forms";
 
-type Action = "sell" | "stop" | "raise" | "lower";
+type Action = "sell" | "stop" | "raise" | "lower" | "watch";
 
 export function FundingDecisionForm({
   ctx,
@@ -70,6 +72,9 @@ export function FundingDecisionForm({
   const [quantityText, setQuantityText] = useState("");
   const [priceText, setPriceText] = useState("");
   const [daysText, setDaysText] = useState("60");
+  const [tokensText, setTokensText] = useState("");
+  // Terms name the one rounds contract that may sell: this app's, on this network.
+  const rounds = weeklyRounds(ctx.chainId ?? null);
 
   const view = read.data?.view ?? null;
   const phase = view ? fundingPhase(view, ctx.chainTime) : null;
@@ -84,9 +89,13 @@ export function FundingDecisionForm({
           : []),
         {
           value: "raise" as const,
-          label: "Raise the most that can be sold (30 days' notice)",
+          label: "Raise the funding limit (30 days' notice)",
         },
-        { value: "lower" as const, label: "Lower the most that can be sold" },
+        { value: "lower" as const, label: "Lower the funding limit" },
+        {
+          value: "watch" as const,
+          label: "Stop sales while the treasury holds other tokens",
+        },
       ]
     : [];
   const chosen: Action | null = actions.some((a) => a.value === action)
@@ -105,6 +114,7 @@ export function FundingDecisionForm({
           terms,
           asShares: instrument === "shares",
           cap: plan.cap,
+          rounds: rounds ?? "",
           unitsNow: read.data?.unitsNow ?? null,
         }),
       );
@@ -134,9 +144,19 @@ export function FundingDecisionForm({
             terms,
             asShares: view.asShares,
             cap: plan.cap,
+            // Fixed when the terms were first published.
+            rounds: view.rounds ?? rounds ?? "",
             unitsNow: read.data?.unitsNow ?? null,
+            raising: true,
           }),
         );
+      }
+      case "watch": {
+        const tokens = tokensText
+          .split(/[\s,]+/)
+          .map((t) => t.trim())
+          .filter(Boolean);
+        return attempt(() => watchAssetsDecision({ terms, tokens }));
       }
       case "lower": {
         const plan = capPlan(capText || "0");
@@ -158,6 +178,8 @@ export function FundingDecisionForm({
     instrument,
     read.data?.unitsNow,
     chosen,
+    rounds,
+    tokensText,
     quantityText,
     priceText,
     daysText,
@@ -195,9 +217,9 @@ export function FundingDecisionForm({
             value={instrument}
           />
           <TextField
-            hint="The most new units that can ever be sold under these terms. Raising it later takes another vote and 30 days."
+            hint="New units that may be sold under these terms for now. A later vote can raise it, with another 30 days' notice."
             inputMode="decimal"
-            label="The most that can be sold"
+            label="Funding limit (new units)"
             onChange={setCapText}
             placeholder="100"
             testId="funding-cap-input"
@@ -242,10 +264,20 @@ export function FundingDecisionForm({
           />
         </>
       ) : null}
+      {view?.published && chosen === "watch" ? (
+        <TextField
+          hint={`Sales stop while the treasury holds ETH or any of these, so a price set in USDC never gives buyers part of them for nothing. Now watched: ${view.watched.length === 0 ? "none" : view.watched.join(", ")}.`}
+          label="Token addresses (up to 8)"
+          onChange={setTokensText}
+          placeholder="0x…"
+          testId="funding-tokens-input"
+          value={tokensText}
+        />
+      ) : null}
       {view?.published && (chosen === "raise" || chosen === "lower") ? (
         <TextField
           inputMode="decimal"
-          label="The new most that can be sold"
+          label="New funding limit (units)"
           onChange={setCapText}
           testId="funding-cap-input"
           value={capText}

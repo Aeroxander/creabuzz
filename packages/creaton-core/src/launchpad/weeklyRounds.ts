@@ -37,6 +37,7 @@ export const ROUND_SIGNATURES = {
   rounds: "rounds(uint256)",
   lastRound: "lastRound(address)",
   openFunding: "openFunding(address)",
+  finishFunding: "finishFunding(uint256)",
   lastFunding: "lastFunding(address)",
   sells: "sells(uint256,address)",
   bids: "bids(uint256,address)",
@@ -80,6 +81,11 @@ export function encodeOpenFundingRound(dao: string): string {
     ["address"],
     [assertAddress(dao, "the DAO")],
   );
+}
+
+/** Finish a void funding round: its tranche goes back to the terms. */
+export function encodeFinishFunding(id: bigint): string {
+  return encodeFunctionData(ROUND_SIGNATURES.finishFunding, ["uint256"], [id]);
 }
 
 export function encodeOpenRound(dao: string): string {
@@ -225,8 +231,10 @@ export interface RoundView extends RoundGrid {
   asked: bigint;
   wanted: bigint;
   settled: boolean;
-  /** A funding round (D133): the DAO's tranche is the only offer, and buyers' units are created at their claims. */
+  /** A funding round (D133): the DAO's tranche is the only offer; settling creates the units sold. */
   funding: boolean;
+  /** A funding round whose tranche was settled or given back; a void one that isn't can be finished by anyone. */
+  fundingDone: boolean;
   phase: RoundPhase;
   /**
    * The step it settled at, or would settle at if bidding ended now, what that trades, which side shares at it, and the
@@ -424,6 +432,7 @@ export async function readRounds(
       wanted: w[7],
       settled,
       funding: (w[15] ?? 0n) !== 0n,
+      fundingDone: (w[16] ?? 0n) !== 0n,
       phase: roundPhase({ settled, closesAt }, now),
       clearing: { ...clearing, offeredBelow, wantedAbove },
       rows,
@@ -484,4 +493,83 @@ export function orderOutcome(
     }
   }
   return { units: filled, money: escrowFor(filled, p) };
+}
+
+/** A round where the connected wallet still has something to collect. */
+export interface OpenClaim {
+  id: bigint;
+  funding: boolean;
+  phase: RoundPhase;
+  sell: RoundOrder | null;
+  bid: RoundOrder | null;
+}
+
+/** The most rounds read for what is left to collect, newest first. */
+export const MAX_OPEN_CLAIMS = 20;
+
+/**
+ * Every round of `dao` where `wallet` placed an order it has not collected and that can be collected now (settled, or
+ * void): found from the wallet's own placed orders, so an earlier round never disappears when a new one opens.
+ */
+export async function readOpenClaims(
+  chain: Pick<WorkChain, "call" | "logs">,
+  contract: string,
+  dao: string,
+  wallet: string,
+  now: number,
+): Promise<OpenClaim[]> {
+  const at = assertAddress(contract, "the rounds contract");
+  const me = `0x${assertAddress(wallet, "the wallet").slice(2).toLowerCase().padStart(64, "0")}`;
+  const [sellLogs, bidLogs] = await Promise.all([
+    chain.logs({ address: at, topics: [TOPIC_SELL_PLACED, null, me] }),
+    chain.logs({ address: at, topics: [TOPIC_BID_PLACED, null, me] }),
+  ]);
+  const ids = [
+    ...new Set(
+      [...sellLogs, ...bidLogs].flatMap((raw) => {
+        const t = (raw as LogLike).topics;
+        return Array.isArray(t) && typeof t[1] === "string"
+          ? [BigInt(t[1] as string)]
+          : [];
+      }),
+    ),
+  ]
+    .sort((a, b) => (a > b ? -1 : a < b ? 1 : 0))
+    .slice(0, MAX_OPEN_CLAIMS);
+  const found = await Promise.all(
+    ids.map(async (id): Promise<OpenClaim | null> => {
+      const order = (sig: string) =>
+        chain.call(
+          at,
+          encodeFunctionData(sig, ["uint256", "address"], [id, wallet]),
+        );
+      const [record, sellHex, bidHex] = await Promise.all([
+        chain.call(
+          at,
+          encodeFunctionData(ROUND_SIGNATURES.rounds, ["uint256"], [id]),
+        ),
+        order(ROUND_SIGNATURES.sells),
+        order(ROUND_SIGNATURES.bids),
+      ]);
+      const w = words(record);
+      if (addressOf(w[0]).toLowerCase() !== dao.toLowerCase()) return null;
+      const phase = roundPhase(
+        { settled: w[8] !== 0n, closesAt: Number(w[3]) },
+        now,
+      );
+      if (phase !== "settled" && phase !== "void") return null;
+      const sell = decodeOrder(sellHex);
+      const bid = decodeOrder(bidHex);
+      const open = (o: RoundOrder | null) => (o && !o.claimed ? o : null);
+      if (!open(sell) && !open(bid)) return null;
+      return {
+        id,
+        funding: (w[15] ?? 0n) !== 0n,
+        phase,
+        sell: open(sell),
+        bid: open(bid),
+      };
+    }),
+  );
+  return found.flatMap((c) => (c ? [c] : []));
 }

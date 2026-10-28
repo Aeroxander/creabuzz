@@ -10,7 +10,11 @@ import {
 } from "./chain-config";
 import { exitSalesState, readExitSales } from "./lib/matched-exit";
 import { fetchRagequitPosition } from "./lib/ragequit-position";
-import { readRounds } from "./lib/weekly-rounds";
+import {
+  type OpenClaim,
+  readOpenClaims,
+  readRounds,
+} from "./lib/weekly-rounds";
 import { decodeWord } from "./lib/work";
 import { encodeAllowance, encodeBalanceOf } from "./lib/work-bounty";
 import { endpointChain } from "./use-work";
@@ -58,6 +62,13 @@ export function useWeeklyRounds(dao: string, wallet: string | null) {
       const state = exitSalesState(exchange, at, now);
       // Read whatever the exchange: a round already running stays collectable after a vote turns rounds off.
       const rounds = await readRounds(chain, at, dao, wallet, now);
+      // Earlier holders' rounds where this wallet still has something to collect; the latest is shown on its own.
+      const latest = rounds.round?.id ?? null;
+      const claims: OpenClaim[] = wallet
+        ? (await readOpenClaims(chain, at, dao, wallet, now)).filter(
+            (c) => !c.funding && c.id !== latest,
+          )
+        : [];
       let side: RoundsWallet | null = null;
       if (wallet) {
         const [sharesAllowance, usdcBalance, usdcAllowance] = await Promise.all(
@@ -82,6 +93,7 @@ export function useWeeklyRounds(dao: string, wallet: string | null) {
         now,
         state,
         rounds,
+        claims,
         wallet: side,
       };
     },

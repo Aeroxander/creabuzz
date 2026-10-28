@@ -13,7 +13,7 @@ import type {
   DescribeContext,
 } from "./daoActions.ts";
 import { DecisionInputError } from "./daoActions.ts";
-import { encodeFunctionData, selectorOf } from "./evmAbi.ts";
+import { decodeParameters, encodeFunctionData, selectorOf } from "./evmAbi.ts";
 import { decodeAddress, decodeWord, encodeCall0 } from "./work.ts";
 import type { WorkChain } from "./workRead.ts";
 
@@ -26,7 +26,9 @@ const MAX_U128 = (1n << 128n) - 1n;
 export const FUNDING_NOTICE = 30 * DAY;
 
 export const FUNDING_SIGNATURES = {
-  publish: "publish(bool,uint128)",
+  publish: "publish(bool,uint128,address)",
+  watch: "watch(address[])",
+  watchedOf: "watchedOf(address)",
   lowerCap: "lowerCap(uint128)",
   openTranche: "openTranche(uint128,uint128,uint64)",
   closeTranche: "closeTranche()",
@@ -70,15 +72,28 @@ const money = (u: bigint) => {
 
 // ---- the votes -----------------------------------------------------------------------------------
 
-/** Publish funding terms: the instrument and the most that can ever be sold. Nothing sells for 30 days after it runs. */
+/**
+ * Publish funding terms: what buyers get, the current authorised funding limit, and the one rounds contract that may sell
+ * under them. Nothing sells for 30 days after it runs. Raising the limit later is the same call, with new notice.
+ */
 export function publishFundingDecision(input: {
   terms: string;
   asShares: boolean;
   cap: bigint;
-  /** Units that exist now (all Shares and Loot), to say what the cap is as a share of them; null when unknown. */
+  /** The weekly rounds contract that will sell (this app's), named in the vote and fixed for good. */
+  rounds: string;
+  /** Units that exist now (all Shares and Loot), to say what the limit is as a share of them; null when unknown. */
   unitsNow: bigint | null;
+  /** Raising the limit of terms already published. */
+  raising?: boolean;
 }): DecisionDraft {
-  const cap = units128(input.cap, "cap", "The most that can be sold");
+  const cap = units128(input.cap, "cap", "The funding limit");
+  if (!ADDRESS_RE.test(input.rounds.trim())) {
+    throw new DecisionInputError(
+      "rounds",
+      "Weekly rounds are not set up on this network.",
+    );
+  }
   const share =
     input.unitsNow && input.unitsNow > 0n
       ? ` (${((cap * 1000n) / input.unitsNow / 10n).toString()}% of the ${whole(input.unitsNow)} units there are now)`
@@ -87,17 +102,56 @@ export function publishFundingDecision(input: {
     to: contract(input.terms),
     data: encodeFunctionData(
       FUNDING_SIGNATURES.publish,
-      ["bool", "uint128"],
-      [input.asShares, cap],
+      ["bool", "uint128", "address"],
+      [input.asShares, cap, input.rounds.trim().toLowerCase()],
     ),
     lane: "unrestricted",
-    title: `Let the project sell up to ${whole(cap)} new ${input.asShares ? "Shares" : "Loot"}`,
+    title: input.raising
+      ? `Raise the funding limit to ${whole(cap)} new units`
+      : `Set a funding limit of ${whole(cap)} new ${input.asShares ? "Shares" : "Loot"}`,
     lines: [
-      `At most ${whole(cap)} new units can ever be sold for money for the project${share}. Raising that later needs another vote and another 30 days.`,
+      `Up to ${whole(cap)} new units may be sold for money for the project${share}. This is the current limit: a later vote can raise it, with another 30 days' notice.`,
       input.asShares
         ? "Buyers get Shares, with a vote."
         : "Buyers get Loot: the same part of the treasury and of payouts as a Share, but no vote.",
-      "Nothing is sold until 30 days after this runs, so anyone who disagrees can leave first. Each sale then needs its own vote, with a quantity, a least price and an end date.",
+      `Only the weekly rounds at ${input.rounds.trim().toLowerCase()} may sell them, and nothing is sold until 30 days after this runs, so anyone who disagrees can leave first. Each sale then needs its own vote.`,
+    ],
+  };
+}
+
+/**
+ * Stop sales while the treasury holds any of these tokens (besides the round's currency; ETH always stops them): a
+ * price set in one asset would otherwise give buyers part of the others for nothing.
+ */
+export function watchAssetsDecision(input: {
+  terms: string;
+  tokens: readonly string[];
+}): DecisionDraft {
+  if (input.tokens.length > 8) {
+    throw new DecisionInputError("tokens", "Name at most 8 tokens.");
+  }
+  for (const t of input.tokens) {
+    if (!ADDRESS_RE.test(t)) {
+      throw new DecisionInputError("tokens", `${t} is not an address.`);
+    }
+  }
+  const tokens = input.tokens.map((t) => t.toLowerCase());
+  return {
+    to: contract(input.terms),
+    data: encodeFunctionData(
+      FUNDING_SIGNATURES.watch,
+      [{ array: "address" }],
+      [tokens],
+    ),
+    lane: "unrestricted",
+    title:
+      tokens.length === 0
+        ? "Check only for ETH before selling"
+        : `Stop sales while the treasury holds ${tokens.length === 1 ? "this token" : `any of ${tokens.length} tokens`}`,
+    lines: [
+      tokens.length === 0
+        ? "Sales stop while the treasury holds ETH, and no other token is checked."
+        : `Sales stop while the treasury holds ETH or any of: ${tokens.join(", ")}.`,
     ],
   };
 }
@@ -157,8 +211,10 @@ export function lowerCapDecision(input: {
     to: contract(input.terms),
     data: encodeFunctionData(FUNDING_SIGNATURES.lowerCap, ["uint128"], [cap]),
     lane: "unrestricted",
-    title: `Lower the most the project can sell to ${whole(cap)}`,
-    lines: ["This takes effect at once and can only be raised with notice."],
+    title: `Lower the funding limit to ${whole(cap)} new units`,
+    lines: [
+      "This takes effect at once. Raising it again needs a vote and 30 days' notice.",
+    ],
   };
 }
 
@@ -168,6 +224,10 @@ export interface FundingTermsView {
   /** The funding-terms contract the DAO's summoner uses. */
   contract: string;
   published: boolean;
+  /** The one rounds contract that may sell under the terms, or null before any. */
+  rounds: string | null;
+  /** Tokens whose presence in the treasury stops sales (ETH always does). */
+  watched: string[];
   asShares: boolean;
   /** When sales under the terms may start (unix seconds); 0 before any terms. */
   activeFrom: number;
@@ -250,16 +310,25 @@ export async function readFundingTerms(
   const at = contract(terms);
   const of = (sig: string) =>
     encodeFunctionData(sig, ["address"], [dao.toLowerCase()]);
-  const [t, tr, reserved] = await Promise.all([
+  const [t, tr, reserved, watchedHex] = await Promise.all([
     chain.call(at, of(FUNDING_SIGNATURES.terms)),
     chain.call(at, of(FUNDING_SIGNATURES.tranches)),
     chain.call(at, of(FUNDING_SIGNATURES.reserved)).then(decodeWord),
+    chain.call(at, of(FUNDING_SIGNATURES.watchedOf)),
   ]);
-  const [published, asShares, activeFrom, cap, sold] = words(t);
+  const [published, asShares, activeFrom, cap, sold, rounds] = words(t);
+  const [watched] = decodeParameters([{ array: "address" }], watchedHex) as [
+    string[],
+  ];
   const [quantity, taken, leastPrice, expiry] = words(tr);
   return {
     contract: at,
     published: published !== 0n,
+    rounds:
+      rounds && rounds !== 0n
+        ? `0x${rounds.toString(16).padStart(40, "0")}`
+        : null,
+    watched: watched.map((a) => a.toLowerCase()),
     asShares: asShares !== 0n,
     activeFrom: Number(activeFrom ?? 0n),
     cap: cap ?? 0n,
@@ -306,9 +375,17 @@ export function describeFunding(
           terms: action.to,
           asShares: word(0) !== 0n,
           cap: word(1),
+          rounds: `0x${word(2).toString(16).padStart(40, "0")}`,
           unitsNow: null,
         }),
       );
+    }
+    if (sel === selectorOf(FUNDING_SIGNATURES.watch)) {
+      const [tokens] = decodeParameters(
+        [{ array: "address" }],
+        `0x${data.slice(10)}`,
+      ) as [string[]];
+      return asDraft(watchAssetsDecision({ terms: action.to, tokens }));
     }
     if (sel === selectorOf(FUNDING_SIGNATURES.openTranche)) {
       return asDraft(

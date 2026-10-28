@@ -1774,3 +1774,18 @@ By hand, on a contributor project with weekly rounds switched on and some USDC i
 5. Three days later, **Settle the round**, then **Collect**: buyers get Loot, every payment is in the treasury, and the
    card shows how much has sold of the most.
 
+## 4ca. Funding after the outside review (D134, 2026-10-28, test networks)
+
+On top of 4bz:
+
+1. The terms decision says "Set a funding limit of …" and names the weekly rounds contract that may sell. The Funding
+   card says "… sold of a current funding limit of …".
+2. While a sale is open, **Before you buy** lists: the limit can be raised; contributor awards have no yearly limit;
+   earned Shares can leave with money raised; no milestone locks; what Loot is.
+3. Send the DAO a little ETH (anvil `cast send <dao> --value 1ether` from a dev account): **Open a funding round** fails
+   until the ETH is gone. The same decision's **Stop sales while the treasury holds other tokens** adds tokens to check.
+4. Settle a funding round: the treasury is paid at once, before anyone collects.
+5. Let a funding round go void with no bids: **Give the unsold units back to the sale** appears; after it, the DAO can
+   stop or replace the sale.
+6. Bid in one round and don't collect; open the next: the earlier round stays under **Waiting for you to collect**.
+

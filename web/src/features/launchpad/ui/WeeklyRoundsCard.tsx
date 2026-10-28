@@ -32,6 +32,7 @@ import {
   WEEKLY_ROUNDS_QUERY,
 } from "../use-weekly-rounds";
 import { FailureNote, WalletStrip } from "./auction-widgets";
+import { RoundClaims } from "./RoundClaims";
 import { BidForm, OfferForm } from "./RoundOrderForms";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;
@@ -164,6 +165,14 @@ export function WeeklyRoundsCard({ dao }: { dao: string }) {
               side={data.wallet}
             />
           ) : null}
+          <RoundClaims
+            blocked={blocked}
+            busy={sender.busy}
+            claims={data.claims}
+            contract={data.contract}
+            me={sender.wallet.address}
+            onSend={sender.send}
+          />
         </>
       )}
       <WalletStrip testIdPrefix="rounds" wallet={sender.wallet} />
