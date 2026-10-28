@@ -43,6 +43,7 @@ import {
   senderRagequitDeps,
 } from "../lib/ragequit-flow";
 import { buildRagequitTx, ETH_TOKEN } from "../lib/ragequit-tx";
+import { feePercent } from "../lib/funding-terms";
 import {
   exitDenominator,
   fetchRagequitPosition,
@@ -405,6 +406,17 @@ function PositionBody({
           )}
         </dd>
       </dl>
+      {position.exitFeeBps > 0n ? (
+        <p
+          className="mt-2 text-sm text-black/60 dark:text-white/60"
+          data-testid="ragequit-exit-fee"
+        >
+          This project&apos;s funding terms set an exit fee of{" "}
+          {feePercent(Number(position.exitFeeBps))}: that part of your share
+          stays in the treasury, for those who stay. The amounts below are what
+          you get after it.
+        </p>
+      ) : null}
       {position.exitRule === "legacy" ? (
         <p
           className="mt-2 text-sm text-black/60 dark:text-white/60"

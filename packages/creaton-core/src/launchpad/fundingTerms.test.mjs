@@ -9,7 +9,9 @@ import {
   FUNDING_NOTICE,
   FUNDING_SIGNATURES,
   fundingPhase,
+  feePercent,
   lowerCapDecision,
+  lowerExitFeeDecision,
   openTrancheDecision,
   publishFundingDecision,
   readFundingContract,
@@ -31,13 +33,16 @@ const publish = (over = {}) =>
     asShares: false,
     cap: 100n * E18,
     rounds: ROUNDS,
+    exitFeeBps: 200,
     unitsNow: null,
     ...over,
   });
 
 test("the funding calls are the contract's (cast goldens)", () => {
   const sig = (s) => selectorOf(s);
-  assert.equal(sig(FUNDING_SIGNATURES.publish), "0xf4ea866a");
+  assert.equal(sig(FUNDING_SIGNATURES.publish), "0x5175464b");
+  assert.equal(sig(FUNDING_SIGNATURES.lowerExitFee), "0xb7a84504");
+  assert.equal(sig(FUNDING_SIGNATURES.exitFeeOf), "0xecdc9f59");
   assert.equal(sig(FUNDING_SIGNATURES.watch), "0x77825a2d");
   assert.equal(sig(FUNDING_SIGNATURES.watchedOf), "0x11612005");
   assert.equal(sig(FUNDING_SIGNATURES.lowerCap), "0xd36b870c");
@@ -58,8 +63,8 @@ test("publishing terms names the seller, calls the limit current, and says the n
     draft.data,
     encodeFunctionData(
       FUNDING_SIGNATURES.publish,
-      ["bool", "uint128", "address"],
-      [false, 100n * E18, ROUNDS],
+      ["bool", "uint128", "address", "uint16"],
+      [false, 100n * E18, ROUNDS, 200n],
     ),
   );
   assert.equal(draft.title, "Set a funding limit of 100 new Loot");
@@ -68,6 +73,12 @@ test("publishing terms names the seller, calls the limit current, and says the n
   assert.match(draft.lines[1], /no vote/);
   assert.match(draft.lines[2], /Only the weekly rounds at 0xa0a0/);
   assert.match(draft.lines[2], /30 days/);
+  assert.match(draft.lines[3], /^Exit fee 2%: .*stays in the treasury/);
+  assert.match(draft.lines[3], /not charged during the 30 days' notice/);
+  assert.match(publish({ exitFeeBps: 0 }).lines[3], /No exit fee/);
+  assert.throws(() => publish({ exitFeeBps: 501 }), /between 0% and 5%/);
+  assert.throws(() => publish({ exitFeeBps: 1.5 }), /between 0% and 5%/);
+  assert.equal(feePercent(250), "2.5%");
   assert.equal(
     publish({ asShares: true, cap: E18 }).title,
     "Set a funding limit of 1 new Shares",
@@ -118,9 +129,19 @@ test("each funding vote reads back as the decision that made it, and only on thi
     lowerCapDecision({ terms: TERMS, cap: 50n * E18 }).title,
     "Lower the funding limit to 50 new units",
   );
+  assert.equal(
+    lowerExitFeeDecision({ terms: TERMS, exitFeeBps: 100 }).title,
+    "Lower the exit fee to 1%",
+  );
+  assert.equal(
+    lowerExitFeeDecision({ terms: TERMS, exitFeeBps: 0 }).title,
+    "Remove the exit fee",
+  );
   const ctx = { fundingTerms: TERMS.toUpperCase().replace("0X", "0x") };
   for (const draft of [
     open,
+    lowerExitFeeDecision({ terms: TERMS, exitFeeBps: 100 }),
+    lowerExitFeeDecision({ terms: TERMS, exitFeeBps: 0 }),
     closeTrancheDecision({ terms: TERMS }),
     lowerCapDecision({ terms: TERMS, cap: 50n * E18 }),
     publish(),
@@ -152,6 +173,7 @@ test("where terms stand: none, the notice, ready, selling", () => {
     activeFrom: 1000,
     cap: 100n * E18,
     sold: 0n,
+    exitFeeBps: 200,
     tranche: null,
     reserved: 0n,
   };
@@ -191,7 +213,7 @@ test("a DAO's terms, tranche and watched tokens are read from its summoner's fun
   const answers = new Map([
     [
       of(FUNDING_SIGNATURES.terms),
-      words(1, 0, 1000, 100n * E18, 40n * E18, BigInt(ROUNDS)),
+      words(1, 0, 1000, 100n * E18, 40n * E18, BigInt(ROUNDS), 200),
     ],
     [
       of(FUNDING_SIGNATURES.tranches),
@@ -218,6 +240,7 @@ test("a DAO's terms, tranche and watched tokens are read from its summoner's fun
     activeFrom: 1000,
     cap: 100n * E18,
     sold: 40n * E18,
+    exitFeeBps: 200,
     tranche: {
       quantity: 40n * E18,
       taken: 40n * E18,

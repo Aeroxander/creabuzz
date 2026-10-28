@@ -4,6 +4,8 @@ import { test } from "node:test";
 import {
   beforeYouBuy,
   capPlan,
+  exitFeeLine,
+  feePlan,
   fundingStateLine,
   instrumentLine,
   salePlan,
@@ -20,6 +22,7 @@ const view = {
   activeFrom: Date.UTC(2026, 11, 1) / 1000,
   cap: 100n * E18,
   sold: 40n * E18,
+  exitFeeBps: 200,
   tranche: {
     quantity: 60n * E18,
     taken: 20n * E18,
@@ -47,6 +50,13 @@ test("where funding terms stand, in one sentence each", () => {
   assert.match(notes[2], /can leave with part of the money raised/);
   assert.match(notes[3], /no milestone locks/);
   assert.match(notes[4], /Loot/);
+  assert.match(notes[5], /^Leaving keeps 2% of what it pays in the treasury/);
+  assert.match(
+    beforeYouBuy({ ...view, exitFeeBps: 0 })[5],
+    /there is no exit fee/,
+  );
+  assert.equal(exitFeeLine(250), "Exit fee 2.5%");
+  assert.equal(exitFeeLine(0), "No exit fee");
   assert.equal(instrumentLine(false), "Buyers get Loot, with no vote");
   assert.equal(instrumentLine(true), "Buyers get Shares, with a vote");
 });
@@ -54,6 +64,12 @@ test("where funding terms stand, in one sentence each", () => {
 test("a cap and a sale are turned into what the vote carries, or a reason they can't be", () => {
   assert.deepEqual(capPlan("100"), { cap: 100n * E18 });
   assert.match(capPlan("0").problem, /above zero/);
+  assert.deepEqual(feePlan("2"), { bps: 200 });
+  assert.deepEqual(feePlan("2.5"), { bps: 250 });
+  assert.deepEqual(feePlan(""), { bps: 0 });
+  assert.match(feePlan("5.01").problem, /between 0% and 5%/);
+  assert.match(feePlan("1.234").problem, /between 0% and 5%/);
+  assert.match(feePlan("-1").problem, /between 0% and 5%/);
   assert.deepEqual(salePlan("40", "1.10", "60", 1000, 60n * E18), {
     quantity: 40n * E18,
     leastPrice: 1_100_000n,

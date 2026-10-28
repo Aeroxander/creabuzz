@@ -1789,3 +1789,16 @@ On top of 4bz:
    stop or replace the sale.
 6. Bid in one round and don't collect; open the next: the earlier round stays under **Waiting for you to collect**.
 
+## 4cb. The exit fee (D135, 2026-10-28, test networks)
+
+On top of 4ca:
+
+1. Publish funding terms: the decision has **Exit fee (%)**, 2 by default; 6 is refused (at most 5%). The decision's
+   words say the fee stays in the treasury and is not charged during the 30 days' notice.
+2. The Funding card shows **Exit fee 2%**, and **Before you buy** says leaving keeps 2% in the treasury.
+3. During the notice, leave with some Shares from the Funds tab: the exit panel shows no fee and pays a whole share.
+4. After the notice the exit panel says the terms set an exit fee of 2%, and the amounts shown are after it. Leave:
+   you get exactly what it showed, and the treasury keeps the rest.
+5. Raise the funding limit: during the new notice, leaving is whole again.
+6. Lower the exit fee with the same decision (**Lower the exit fee**); asking for a higher one is refused.
+

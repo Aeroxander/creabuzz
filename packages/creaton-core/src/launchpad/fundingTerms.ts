@@ -24,9 +24,13 @@ const MAX_U128 = (1n << 128n) - 1n;
 
 /** How long after terms are published, or widened, before anything under them sells. */
 export const FUNDING_NOTICE = 30 * DAY;
+/** The highest exit fee terms can set (D135), in basis points. */
+export const MAX_EXIT_FEE_BPS = 500;
 
 export const FUNDING_SIGNATURES = {
-  publish: "publish(bool,uint128,address)",
+  publish: "publish(bool,uint128,address,uint16)",
+  lowerExitFee: "lowerExitFee(uint16)",
+  exitFeeOf: "exitFeeOf(address)",
   watch: "watch(address[])",
   watchedOf: "watchedOf(address)",
   lowerCap: "lowerCap(uint128)",
@@ -64,6 +68,21 @@ const whole = (u: bigint) => {
   const frac = (u % UNIT).toString().padStart(18, "0").replace(/0+$/, "");
   return frac ? `${int}.${frac.slice(0, 4)}` : int.toString();
 };
+/** Basis points as a percentage: 200 → "2%", 250 → "2.5%". */
+export function feePercent(bps: number): string {
+  return `${(bps / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
+}
+
+function exitFee(value: number): number {
+  if (!Number.isInteger(value) || value < 0 || value > MAX_EXIT_FEE_BPS) {
+    throw new DecisionInputError(
+      "exitFee",
+      `The exit fee must be between 0% and ${feePercent(MAX_EXIT_FEE_BPS)}.`,
+    );
+  }
+  return value;
+}
+
 const money = (u: bigint) => {
   const int = u / 1_000_000n;
   const frac = (u % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
@@ -73,8 +92,9 @@ const money = (u: bigint) => {
 // ---- the votes -----------------------------------------------------------------------------------
 
 /**
- * Publish funding terms: what buyers get, the current authorised funding limit, and the one rounds contract that may sell
- * under them. Nothing sells for 30 days after it runs. Raising the limit later is the same call, with new notice.
+ * Publish funding terms: what buyers get, the current authorised funding limit, the one rounds contract that may sell
+ * under them, and the exit fee (D135). Nothing sells, and no fee is charged, for 30 days after it runs. Raising the limit
+ * later is the same call, with the same fee and new notice.
  */
 export function publishFundingDecision(input: {
   terms: string;
@@ -82,12 +102,15 @@ export function publishFundingDecision(input: {
   cap: bigint;
   /** The weekly rounds contract that will sell (this app's), named in the vote and fixed for good. */
   rounds: string;
+  /** The part of what leaving pays that stays in the treasury, in basis points; fixed when first published. */
+  exitFeeBps: number;
   /** Units that exist now (all Shares and Loot), to say what the limit is as a share of them; null when unknown. */
   unitsNow: bigint | null;
   /** Raising the limit of terms already published. */
   raising?: boolean;
 }): DecisionDraft {
   const cap = units128(input.cap, "cap", "The funding limit");
+  const fee = exitFee(input.exitFeeBps);
   if (!ADDRESS_RE.test(input.rounds.trim())) {
     throw new DecisionInputError(
       "rounds",
@@ -102,8 +125,8 @@ export function publishFundingDecision(input: {
     to: contract(input.terms),
     data: encodeFunctionData(
       FUNDING_SIGNATURES.publish,
-      ["bool", "uint128", "address"],
-      [input.asShares, cap, input.rounds.trim().toLowerCase()],
+      ["bool", "uint128", "address", "uint16"],
+      [input.asShares, cap, input.rounds.trim().toLowerCase(), BigInt(fee)],
     ),
     lane: "unrestricted",
     title: input.raising
@@ -115,6 +138,9 @@ export function publishFundingDecision(input: {
         ? "Buyers get Shares, with a vote."
         : "Buyers get Loot: the same part of the treasury and of payouts as a Share, but no vote.",
       `Only the weekly rounds at ${input.rounds.trim().toLowerCase()} may sell them, and nothing is sold until 30 days after this runs, so anyone who disagrees can leave first. Each sale then needs its own vote.`,
+      fee === 0
+        ? "No exit fee: leaving pays a whole share."
+        : `Exit fee ${feePercent(fee)}: that part of what leaving pays stays in the treasury, for those who stay. It is not charged during the 30 days' notice, and a vote can lower it but never raise it.`,
     ],
   };
 }
@@ -184,7 +210,7 @@ export function openTrancheDecision(input: {
     title: `Sell up to ${whole(quantity)} new units for the project`,
     lines: [
       `Offered in weekly funding rounds at ${money(least)} a unit or more, until ${date}. Bids set the price above that.`,
-      "Every payment goes to the treasury. Nothing sells below what leaving pays, plus 2%.",
+      "Every payment goes to the treasury. Nothing sells below a unit's share of the treasury, plus 2%.",
     ],
   };
 }
@@ -218,6 +244,30 @@ export function lowerCapDecision(input: {
   };
 }
 
+/** Lower the exit fee, at once (D135); it can never be raised again. */
+export function lowerExitFeeDecision(input: {
+  terms: string;
+  exitFeeBps: number;
+}): DecisionDraft {
+  const fee = exitFee(input.exitFeeBps);
+  return {
+    to: contract(input.terms),
+    data: encodeFunctionData(
+      FUNDING_SIGNATURES.lowerExitFee,
+      ["uint16"],
+      [BigInt(fee)],
+    ),
+    lane: "unrestricted",
+    title:
+      fee === 0
+        ? "Remove the exit fee"
+        : `Lower the exit fee to ${feePercent(fee)}`,
+    lines: [
+      "This takes effect at once, for everyone who leaves after it. No vote can raise it again.",
+    ],
+  };
+}
+
 // ---- reads -----------------------------------------------------------------------------------------
 
 export interface FundingTermsView {
@@ -233,6 +283,8 @@ export interface FundingTermsView {
   activeFrom: number;
   cap: bigint;
   sold: bigint;
+  /** The exit fee the terms set, in basis points; charged only once they are past their notice. */
+  exitFeeBps: number;
   tranche: {
     quantity: bigint;
     taken: bigint;
@@ -316,7 +368,7 @@ export async function readFundingTerms(
     chain.call(at, of(FUNDING_SIGNATURES.reserved)).then(decodeWord),
     chain.call(at, of(FUNDING_SIGNATURES.watchedOf)),
   ]);
-  const [published, asShares, activeFrom, cap, sold, rounds] = words(t);
+  const [published, asShares, activeFrom, cap, sold, rounds, fee] = words(t);
   const [watched] = decodeParameters([{ array: "address" }], watchedHex) as [
     string[],
   ];
@@ -333,6 +385,7 @@ export async function readFundingTerms(
     activeFrom: Number(activeFrom ?? 0n),
     cap: cap ?? 0n,
     sold: sold ?? 0n,
+    exitFeeBps: Number(fee ?? 0n),
     tranche:
       quantity && quantity > 0n
         ? {
@@ -376,6 +429,7 @@ export function describeFunding(
           asShares: word(0) !== 0n,
           cap: word(1),
           rounds: `0x${word(2).toString(16).padStart(40, "0")}`,
+          exitFeeBps: Number(word(3)),
           unitsNow: null,
         }),
       );
@@ -399,6 +453,11 @@ export function describeFunding(
     }
     if (sel === selectorOf(FUNDING_SIGNATURES.closeTranche)) {
       return asDraft(closeTrancheDecision({ terms: action.to }));
+    }
+    if (sel === selectorOf(FUNDING_SIGNATURES.lowerExitFee)) {
+      return asDraft(
+        lowerExitFeeDecision({ terms: action.to, exitFeeBps: Number(word(0)) }),
+      );
     }
     if (sel === selectorOf(FUNDING_SIGNATURES.lowerCap)) {
       return asDraft(lowerCapDecision({ terms: action.to, cap: word(0) }));

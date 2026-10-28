@@ -420,6 +420,10 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await expect(funding.getByTestId("funding-instrument")).toHaveText(
     "Buyers get Loot, with no vote",
   );
+  // The form's default exit fee: 2%, not charged during the notice.
+  await expect(funding.getByTestId("funding-exit-fee")).toHaveText(
+    "Exit fee 2%",
+  );
 
   // ── 7. 30 days later, a vote opens a sale: 40 new units at 1.65 or more, for 60 days ────────────
   await pass(30 * 86_400);
@@ -450,6 +454,9 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await expect(
     buyerFunding.getByTestId("funding-before-you-buy"),
   ).toContainText("no yearly limit");
+  await expect(
+    buyerFunding.getByTestId("funding-before-you-buy"),
+  ).toContainText("Leaving keeps 2% of what it pays in the treasury");
   await buyerFunding.getByTestId("funding-open-round").click();
   await expect(buyerFunding.getByTestId("rounds-round-status")).toContainText(
     "Taking offers and bids until",
@@ -532,4 +539,34 @@ test("a member who wants out is matched with two who want in, and the treasury k
       path: `${process.env.E2E_SHOTS}/funding-settled.png`,
     });
   }
+
+  // ── 10. the newcomer leaves with their 25 Shares: past the notice, the terms' 2% stays in the treasury ──
+  const supplyOf = async (token: string) =>
+    BigInt(await call(token, "0x18160ddd"));
+  const guard = wordAddress(await call(shares, "0x36bc529d"));
+  const lockedTotal = /^0x0{40}$/.test(guard)
+    ? 0n
+    : BigInt(await call(guard, "0x56891412"));
+  const canLeave =
+    (await supplyOf(shares)) +
+    (await supplyOf(loot)) -
+    (await sharesOf(dao)) -
+    (await lootOf(dao)) -
+    lockedTotal;
+  const whole = (366n * USD * 25n * E18) / canLeave;
+  const owed = whole - (whole * 200n) / 10_000n;
+  const beforeExit = await usdcOf(NEWCOMER);
+  await refresh(buyer, "Funds");
+  await expect(buyer.getByTestId("ragequit-exit-fee")).toContainText(
+    "exit fee of 2%",
+    { timeout: 30_000 },
+  );
+  await buyer.getByTestId("ragequit-exit").click();
+  await buyer.getByTestId("ragequit-run").click();
+  await expect(buyer.getByTestId("ragequit-done")).toBeVisible({
+    timeout: 90_000,
+  });
+  expect(await usdcOf(NEWCOMER)).toBe(beforeExit + owed);
+  expect(await usdcOf(dao)).toBe(366n * USD - owed);
+  expect(await sharesOf(NEWCOMER)).toBe(0n);
 });

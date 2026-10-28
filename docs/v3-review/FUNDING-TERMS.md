@@ -65,7 +65,16 @@ A DAO publishes funding terms by vote:
 - **Notice**: the first sale under new terms can happen only 30 days after the vote, as with opening trading (D77), so a
   holder who disagrees with the dilution can leave first.
 - **Never below what leaving pays**: a tranche sells only at or above the floor plus 2% at the moment of sale, so selling
-  units never lowers what an existing unit can take out.
+  units never lowers what an existing unit can take out. The floor is a unit's whole share of the treasury, before any
+  exit fee.
+- **An exit fee** (D135): a part of what leaving pays, at most 5% (the form suggests 2%), stays in the treasury for those
+  who remain. It makes buying just before money lands and leaving just after it cost something; it is the redemption fee
+  of a mutual fund, paid back into the fund, not to the team. It is set when the terms are first published, so buyers see
+  it before paying; a vote can lower it at once but never raise it, and raising the limit keeps it. It is **not charged
+  while terms are under notice**, the first 30 days and the 30 days after any raise, so a holder who would be diluted
+  can still leave whole. Always on otherwise: a fee only "when there are no buyers" would be lifted by one tiny bid and
+  could be timed by insiders. Selling to a new buyer in a round is not leaving and pays no exit fee. A DAO without terms
+  charges none, so contributor projects keep a whole exit.
 
 ## Going from contributors-only to funded
 
@@ -113,20 +122,22 @@ the DAO can sell or close it again (D134). The tranche ends at its expiry or whe
 
 | Contract | Change |
 |---|---|
-| New `FundingTerms` | Terms per DAO (instrument, funding limit, the seller, 30 days' notice restarted by raising, sold so far), the tokens it watches, one tranche at a time (quantity, least price, expiry), and what an open funding round holds. Settling creates the units sold. Made by the work budget factory, one per summoner |
-| `Shares`, `Loot` | `mintForFunding`, accepted only from their summoner's `FundingTerms`. The DAO contract itself is unchanged (its 1,912 spare bytes stay), the award rule and its yearly allowance are untouched, and under the issuance rule this is the only way Loot appears. Loot also moves through the exchange the DAO named, as Shares do (D134) |
+| New `FundingTerms` | Terms per DAO (instrument, funding limit, the seller, the exit fee, 30 days' notice restarted by raising, sold so far), the tokens it watches, one tranche at a time (quantity, least price, expiry), and what an open funding round holds. Settling creates the units sold. `exitFeeOf(dao)` says the fee leaving pays now (none without terms or under notice); `lowerExitFee` only lowers it. Made by the work budget factory, one per summoner |
+| `Shares`, `Loot` | `mintForFunding`, accepted only from their summoner's `FundingTerms`. The award rule and its yearly allowance are untouched, and under the issuance rule this is the only way Loot appears. Loot also moves through the exchange the DAO named, as Shares do (D134) |
+| The DAO (`MolochPatched`) | Leaving asks its summoner's `FundingTerms` for the exit fee and leaves that part of each payout in the treasury (D135); 591 bytes to spare under the size limit |
 | `WeeklyRounds` | Funding rounds (`openFunding`): the tranche is the only offer; settling checks the floor, has the units created and pays the treasury at once; buyers collect existing units or leave with them; `finishFunding` lets anyone give back a void round's tranche. Holders' rounds are unchanged |
 | `TreasuryMandateFactory` | Makes the summoner's `FundingTerms` |
 
-Checked by `FundingTerms.t.sol` (10 tests on a DAO under the issuance rule as the kits make them, including one per issue
-the outside review found), twenty mutation entries, and from pages by `scripts/web-rounds-e2e.sh` on a local chain and a
-Sepolia fork.
+Checked by `FundingTerms.t.sol` (13 tests on a DAO under the issuance rule as the kits make them, including one per issue
+the outside review found and three on the exit fee), the exit-screen fuzz test (`RagequitPreviewFfi.t.sol`, now with a
+fee), twenty-seven mutation entries, and from pages by `scripts/web-rounds-e2e.sh` on a local chain and a Sepolia fork:
+the journey ends with a buyer leaving through the exit screen, paid exactly their share less 2%.
 
-In the app: a **Sell new units for the project** decision (publish terms; then open a sale, stop it, raise or lower the
-funding limit, or name tokens to watch) and a **Funding the project** card on contributor projects' Funds tab: the terms,
-how much has sold of the current limit, the sale open now with a **Before you buy** list (the limit can be raised;
-contributor awards have no yearly limit; earned Shares can leave with money raised; no milestone locks; what Loot is and
-that it can't yet be sold in a round), its funding rounds, a button to give back a void round's tranche, and every earlier
+In the app: a **Sell new units for the project** decision (publish terms with an exit fee; then open a sale, stop it,
+raise or lower the funding limit, lower the exit fee, or name tokens to watch) and a **Funding the project** card on contributor projects' Funds tab: the terms,
+how much has sold of the current limit, the exit fee, the sale open now with a **Before you buy** list (the limit can be
+raised; contributor awards have no yearly limit; earned Shares can leave with money raised; no milestone locks; what Loot
+is and that it can't yet be sold in a round; the exit fee), its funding rounds, a button to give back a void round's tranche, and every earlier
 round where you still have something to collect (the holders' card lists those too). Fundraising-kit projects are not
 offered it yet.
 
@@ -145,3 +156,5 @@ parameters). None of that is designed yet.
 - Whether contributor projects may choose voting Shares for investors at all, or Loot only.
 - Whether a tranche needs a least amount to raise (sell enough or sell nothing), as the first auction has.
 - The 30-day notice for terms, the 2% above the floor and the cap's display: first values, to revisit after a pilot.
+- The exit fee's suggested 2% and its 5% ceiling, and whether a raised limit should be the only free window (an
+  unrelated vote a holder dislikes, such as a large budget, still charges the fee).

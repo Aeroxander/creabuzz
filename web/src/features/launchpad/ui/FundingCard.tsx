@@ -1,4 +1,4 @@
-import { Coins, Vote } from "lucide-react";
+import { Coins, DoorOpen, Vote } from "lucide-react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -8,6 +8,7 @@ import { MoreInfo } from "@/shared/ui/more-info";
 import { defaultChainPreset } from "../chain-config";
 import {
   beforeYouBuy,
+  exitFeeLine,
   fundingStateLine,
   instrumentLine,
   soldLine,
@@ -74,6 +75,11 @@ export function FundingCard({ dao }: { dao: string }) {
                     {instrumentLine(data.terms.asShares)}
                   </span>
                 </Chip>
+                <Chip icon={DoorOpen}>
+                  <span data-testid="funding-exit-fee">
+                    {exitFeeLine(data.terms.exitFeeBps)}
+                  </span>
+                </Chip>
               </div>
               <div>
                 <Meter
@@ -105,14 +111,16 @@ export function FundingCard({ dao }: { dao: string }) {
           ) : null}
           <MoreInfo label="How funding works" testId="funding-how">
             Holders vote funding terms first: whether buyers get Loot (no vote)
-            or Shares, a funding limit, and the one rounds contract that may
-            sell. Nothing sells until 30 days later, so anyone who disagrees can
-            leave. Each sale is then its own vote, with a quantity, a least
-            price and an end date, and is sold in weekly funding rounds: bids
-            set the price, never below what leaving pays plus 2%, and nothing
-            sells while the treasury holds ETH or a token the terms watch.
-            Settling a round creates the units sold and pays the treasury at
-            once.
+            or Shares, a funding limit, an exit fee of at most 5%, and the one
+            rounds contract that may sell. Nothing sells until 30 days later,
+            and leaving costs no fee until then, so anyone who disagrees can
+            leave whole. After that the fee's part of what leaving pays stays in
+            the treasury, for those who stay. Each sale is then its own vote,
+            with a quantity, a least price and an end date, and is sold in
+            weekly funding rounds: bids set the price, never below a unit's
+            share of the treasury plus 2%, and nothing sells while the treasury
+            holds ETH or a token the terms watch. Settling a round creates the
+            units sold and pays the treasury at once.
           </MoreInfo>
           {data.phase === "selling" && !data.roundsOn ? (
             <p

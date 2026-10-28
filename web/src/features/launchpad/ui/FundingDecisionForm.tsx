@@ -1,7 +1,8 @@
 /**
  * "Sell new units for the project" (D133): with no funding terms yet, the vote that publishes them (what buyers get and
- * the most the project can ever sell); once published, a vote that opens a sale within them, stops the open one, or
- * raises or lowers the most. The form reads the terms and offers only what fits where they stand.
+ * the funding limit, and the exit fee, D135); once published, a vote that opens a sale within them, stops the open one,
+ * raises or lowers the limit, or lowers the exit fee. The form reads the terms and offers only what fits where they
+ * stand.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -10,6 +11,8 @@ import { useMemo, useState } from "react";
 import { getRpcEndpoint } from "../chain";
 import {
   capPlan,
+  exitFeeLine,
+  feePlan,
   fundingStateLine,
   instrumentLine,
   salePlan,
@@ -18,8 +21,10 @@ import {
 } from "../lib/funding-copy";
 import {
   closeTrancheDecision,
+  feePercent,
   fundingPhase,
   lowerCapDecision,
+  lowerExitFeeDecision,
   openTrancheDecision,
   publishFundingDecision,
   readFundingTerms,
@@ -36,7 +41,7 @@ import {
   type FormProps,
 } from "./decision-forms";
 
-type Action = "sell" | "stop" | "raise" | "lower" | "watch";
+type Action = "sell" | "stop" | "raise" | "lower" | "fee" | "watch";
 
 export function FundingDecisionForm({
   ctx,
@@ -68,6 +73,7 @@ export function FundingDecisionForm({
   });
   const [instrument, setInstrument] = useState<"loot" | "shares">("loot");
   const [capText, setCapText] = useState("");
+  const [feeText, setFeeText] = useState("2");
   const [action, setAction] = useState<Action>("sell");
   const [quantityText, setQuantityText] = useState("");
   const [priceText, setPriceText] = useState("");
@@ -92,6 +98,9 @@ export function FundingDecisionForm({
           label: "Raise the funding limit (30 days' notice)",
         },
         { value: "lower" as const, label: "Lower the funding limit" },
+        ...(view.exitFeeBps > 0
+          ? [{ value: "fee" as const, label: "Lower the exit fee" }]
+          : []),
         {
           value: "watch" as const,
           label: "Stop sales while the treasury holds other tokens",
@@ -109,12 +118,15 @@ export function FundingDecisionForm({
     if (!view.published) {
       const plan = capPlan(capText || "0");
       if ("problem" in plan) return plan;
+      const fee = feePlan(feeText);
+      if ("problem" in fee) return fee;
       return attempt(() =>
         publishFundingDecision({
           terms,
           asShares: instrument === "shares",
           cap: plan.cap,
           rounds: rounds ?? "",
+          exitFeeBps: fee.bps,
           unitsNow: read.data?.unitsNow ?? null,
         }),
       );
@@ -146,6 +158,7 @@ export function FundingDecisionForm({
             cap: plan.cap,
             // Fixed when the terms were first published.
             rounds: view.rounds ?? rounds ?? "",
+            exitFeeBps: view.exitFeeBps,
             unitsNow: read.data?.unitsNow ?? null,
             raising: true,
           }),
@@ -168,6 +181,18 @@ export function FundingDecisionForm({
         }
         return attempt(() => lowerCapDecision({ terms, cap: plan.cap }));
       }
+      case "fee": {
+        const fee = feePlan(feeText);
+        if ("problem" in fee) return fee;
+        if (fee.bps >= view.exitFeeBps) {
+          return {
+            problem: `Lower it below ${feePercent(view.exitFeeBps)}: no vote can raise it.`,
+          };
+        }
+        return attempt(() =>
+          lowerExitFeeDecision({ terms, exitFeeBps: fee.bps }),
+        );
+      }
       default:
         return { problem: "Choose what to decide." };
     }
@@ -175,6 +200,7 @@ export function FundingDecisionForm({
     terms,
     view,
     capText,
+    feeText,
     instrument,
     read.data?.unitsNow,
     chosen,
@@ -199,7 +225,7 @@ export function FundingDecisionForm({
         <p className="text-sm" data-testid="funding-form-state">
           {fundingStateLine(phase, view)}
           {view.published
-            ? ` ${instrumentLine(view.asShares)}; ${soldLine(view)}.`
+            ? ` ${instrumentLine(view.asShares)}; ${soldLine(view)}; ${exitFeeLine(view.exitFeeBps).toLowerCase()}.`
             : ""}
         </p>
       ) : null}
@@ -225,6 +251,14 @@ export function FundingDecisionForm({
             testId="funding-cap-input"
             value={capText}
           />
+          <TextField
+            hint="The part of what leaving pays that stays in the treasury, for those who stay: at most 5%. It is not charged during the 30 days' notice, and a later vote can lower it but never raise it."
+            inputMode="decimal"
+            label="Exit fee (%)"
+            onChange={setFeeText}
+            testId="funding-fee-input"
+            value={feeText}
+          />
         </>
       ) : null}
       {view?.published && chosen ? (
@@ -247,7 +281,7 @@ export function FundingDecisionForm({
             value={quantityText}
           />
           <TextField
-            hint="Bids set the price above this. Nothing sells below what leaving pays, plus 2%."
+            hint="Bids set the price above this. Nothing sells below a unit's share of the treasury, plus 2%."
             inputMode="decimal"
             label="Least price a unit (USDC)"
             onChange={setPriceText}
@@ -272,6 +306,15 @@ export function FundingDecisionForm({
           placeholder="0x…"
           testId="funding-tokens-input"
           value={tokensText}
+        />
+      ) : null}
+      {view?.published && chosen === "fee" ? (
+        <TextField
+          inputMode="decimal"
+          label="New exit fee (%)"
+          onChange={setFeeText}
+          testId="funding-fee-input"
+          value={feeText}
         />
       ) : null}
       {view?.published && (chosen === "raise" || chosen === "lower") ? (
