@@ -3,7 +3,8 @@
 Local journeys prove the pieces connect; they cannot show that a stranger understands what they are doing. Each run
 below is done with a few people on a hosted server, each on their own account and device, with no walkthrough. They
 come in the order of release ([SOCIAL-MVP-ROADMAP-2026-10-19.md](SOCIAL-MVP-ROADMAP-2026-10-19.md)): the social run
-first, then a contributor project, and the raise last, after its audit.
+first, then a contributor project, then a milestone test on the test network, and the raise last, after its audit. What
+each run finds goes in [PILOT-REPORT.md](PILOT-REPORT.md).
 
 ## First: the social run (three to six people, an hour)
 
@@ -27,35 +28,69 @@ Watch for: anyone who cannot sign up or loses their account; anywhere they wait 
 was taken against. A good run is one in which nobody needs help, and the moderator's removal is understood by its
 author without anyone explaining it.
 
-## Second: a contributor project (a founder, two reviewers, three or four contributors, about a week)
+## Second: a contributor project (a founder, two reviewers, three or four contributors, about ten days)
 
-Before it: the contributor kit on the test network (`scripts/sepolia-deploy.sh --broadcast`, yours to run), a faucet or
-a funded account for gas, passkey sign-in working on the hosted server, and the first project typed in from
-[CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) with its two reviewers chosen. The automated versions on a local
-chain are `scripts/web-contributor-e2e.sh` and the MVP gate (`scripts/mvp-gate.sh`).
+> **Updated 2026-10-28.** The scope is the MVP: the server, the web app and contributor projects, with no raise and no
+> sale. Nothing new gets built for this run (D137); what it finds gets fixed.
 
-- **The founder** (an hour on the first day): start the project from Start, post the invitation in General, answer the
-  first questions on the supporters board, and later put an award to a vote.
-- **Each reviewer** (half an hour, twice): accept a piece of work for review, read the evidence against the work area's
-  exact words, approve one and turn one down with a reason.
-- **The contributors** (at least one new to crypto, one doing non-technical work, one who joins a few days late and knows
-  nobody): find something to do from Ways to help, submit it, follow it through review, the 7-day window and the award
-  vote, and look at the Contributions page afterwards.
+### Before it (yours to do)
 
-Ask each contributor afterwards, without prompting:
+1. **The test network deploy.** Put a testnet-only `DEPLOYER_PRIVATE_KEY` with test ETH in `.env`, run
+   `scripts/sepolia-deploy.sh` (the rehearsal on a fork, no key needed) until it passes, then
+   `scripts/sepolia-deploy.sh --broadcast`. Keep the manifest it writes (`contracts/deployments/`).
+2. **The hosted build**, from [docs/sepolia-testnet.md](../sepolia-testnet.md), with only what this run uses:
+   `VITE_LAUNCHPAD_CHAIN_ID`, `VITE_CHAIN_RPC_URL`, `VITE_CONTRIBUTOR_KITS`, `VITE_HISTORY_FROM_BLOCKS`, the ZeroDev
+   settings (so testers need no test ETH), and `VITE_ERROR_REPORT_URL` with `VITE_APP_RELEASE`. Leave the optional
+   features out (bounties, matched exits, weekly rounds, payouts, the court, CREATE, forecasts, remixes, raises): each one
+   adds a screen people would have to understand, and none is what this run measures.
+3. **The hosted server**: the relay with `BUZZ_V1_ENABLED=true` (unread rooms), Postgres and Redis, and the web app served
+   by it. Check passkey sign-in, losing a device and signing in again with the recovery key, on a phone and a laptop.
+4. **The project**: typed in from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) by the founder themselves, with
+   two work areas whose words a stranger could check, and its two reviewers asked first (who they are, how fast they will
+   answer, any tie to the founder).
+5. **The automated versions**, green on the build you host: `scripts/mvp-gate.sh` (it includes the contributor, work,
+   paid-work and milestone journeys).
+6. **The report**: a copy of [PILOT-REPORT.md](PILOT-REPORT.md) to fill in as it runs.
+
+### The ten days
+
+| Day | Who | What |
+|---|---|---|
+| 1 | Founder | Start the project from Start, post the invitation in General, answer the first questions on the supporters board |
+| 1 to 3 | Contributors | Find something to do from Ways to help, submit it (at least one piece each) |
+| 2 to 4 | Reviewers | Accept each piece for review, read the evidence against the work area's exact words, approve or turn down with a reason |
+| 3 | A late contributor | Joins knowing nobody, finds work, submits |
+| 4 to 10 | Everyone | The 7-day window after approval runs; the founder puts each award to a vote once it is over; holders vote |
+| 10 | Contributors | Look at the Contributions page: what they did, who reviewed it, what it was awarded |
+
+The contributors: at least one new to crypto, one doing non-technical work, and the late one above. Plant one piece of
+work that does not meet its words, so that one turn-down happens for a reason everyone can see.
+
+### Ask each contributor afterwards, without prompting
 
 1. "What could you do here without owning any Shares?" Submit work, suggest work, discuss.
 2. "Who decides right now whether your work is accepted, and who decides the award?" The reviewers judge the work
    against its words; the holders vote the award (and today the founder holds most of the vote, which the header says).
 3. "What did approval give you, and what did the award give you?" Approval is the reviewers' verdict; Shares arrive only
    with the award vote, and they are locked against transfer.
-4. "Can you sell your Shares?" No: they are locked; there is no market.
+4. "Can you sell your Shares?" No: they are locked, and there is no market.
+5. "If you disagreed with a turn-down, what could you do?" Read the reason, fix the work and submit it again, or ask on
+   the board.
 
-Watch for: how long the first review took, what happened to the piece that was turned down, whether Needs you told each
-person their next step, and the visit after a day away. A good run is one useful piece of work reviewed, awarded by vote
-and understood by the person who did it, including someone who had never used a wallet.
+### Watch, and write in the report
 
-## Third: the raise (after the audit)
+How long each review took, what happened to the piece turned down, whether Needs you told each person their next step,
+the visit after a day away, every error message and whether the person knew what to do next, and every word someone asked
+about. A good run is one useful piece of work reviewed, awarded by vote and understood by the person who did it, including
+someone who had never used a wallet.
+
+## Third: the milestone test (a testnet launch, no real money)
+
+Milestone locks belong to raises, which wait for the audit. They can still be tried with test USDC, so that a real team
+has worked through one before any money depends on it. [MILESTONE-TEST-PLAN.md](MILESTONE-TEST-PLAN.md) has the plan:
+small deliverables anyone can check, the order, and what to measure.
+
+## Fourth: the raise (after the audit)
 
 `PILOT.md` says what the raise pilot is. What follows is how to run it. Run it with a small group (three founders, six
 backers, six reviewers is plenty) on a hosted testnet, each person on their own account and device.

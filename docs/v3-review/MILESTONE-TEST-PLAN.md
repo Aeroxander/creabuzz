@@ -1,0 +1,71 @@
+# The milestone test (test network, no real money)
+
+Milestone locks are the team side of a raise, and raises wait for the audit. Nobody has yet worked through one with a
+real team, so before any money depends on them, one small team does, on Sepolia with test USDC. It is the third run in
+[PILOT-RUNBOOK.md](PILOT-RUNBOOK.md); results go in [PILOT-REPORT.md](PILOT-REPORT.md). How a milestone is judged is in
+[PILOT.md](PILOT.md) and `docs/milestone-challenge.md`: the team publishes evidence and a bond, holders can object, an
+objection goes to a vote of holders in which the team's tokens do not count, and with no objection anyone finishes it.
+
+## Who
+
+A team of one or two founders, four to six backers who buy in the test sale, and one person on your side reachable within
+the hour. At least two backers should not know the founders, so that judging the evidence is not a favour.
+
+## The deliverables
+
+Small, dated, and checkable by a stranger in five minutes from what the team publishes, with no access to the team. Write
+each milestone's words exactly as below (adapted to the project) before the sale; the words are what holders judge.
+
+1. **A public page.** "By <date>, a page at <URL> says what the project is, who is on the team by name, and how to reach
+   them; it loads on a phone." (Day 3.)
+2. **One working feature.** "By <date>, at <URL>, a visitor can <one action, such as sign up with an email address> and
+   receives <a confirmation> within ten minutes. The evidence is the link and a recording under two minutes." (Day 7.)
+3. **Outside use**, deliberately left short of its words. "By <date>, ten people outside the team have <done the action>;
+   the evidence lists their first names and dates." The team publishes it with six. This is the one holders should turn
+   down: the test is whether anyone notices, objects with a reason, and whether the vote goes their way.
+
+Each milestone holds back a third of the team's tokens.
+
+## The timing (a decision for you)
+
+The launch wizard uses the defaults: a week for objections, five days for a vote on one, and a month after each unlock for
+a late objection, during which the next milestone cannot be published. With those, three milestones take about three
+months. Two ways to run this in weeks:
+
+- **Short windows for the test network** (recommended): one day for objections, one day for a vote, two days for late
+  objections. The contract takes these (1 to 30 days, 1 to 30, 0 to 180); the wizard has no field for them, so this needs a
+  small test-network-only option in its advanced settings. Not a new mechanism: the same rules, shorter. The whole test
+  then takes about two weeks.
+- **The defaults, with two milestones**: the real timing, about seven weeks, and the third deliverable dropped.
+
+## The order
+
+| Day (short windows) | What |
+|---|---|
+| 0 | The team launches with the three milestones and their words; the sale opens |
+| 1 to 2 | Backers read the page, answer the runbook's raise questions 1, 2 and 6 out loud, bid, collect |
+| 3 | The team publishes evidence for milestone 1 and posts the bond. Holders have a day to object |
+| 4 | Nobody objects: anyone finishes it, the first third unlocks. Write down who noticed it on Home |
+| 6 | The month for late objections (two days here) ends |
+| 7 | Milestone 2 published; one backer is asked, privately, to object to it if anything in the evidence is missing |
+| 8 to 9 | If objected to: the vote. Write down who voted, and whether they read the evidence first |
+| 11 | Milestone 3 published short of its words |
+| 12 to 13 | The objection and vote. A good result: it is turned down, the team understands why, and publishes it again later |
+| 14 | One backer leaves with their share, and says what they got and why they left |
+
+## What to measure (into the report)
+
+- **Noticing:** for each milestone, whether each holder saw it without being told (Home's "waiting on you"), and when.
+- **Judging:** whether holders could tell if the evidence matched the words; any objection's reason, and whether others
+  agreed with it.
+- **The vote:** turnout of what could vote, how long people took, and whether the result matched the evidence in your
+  view.
+- **The team:** whether they could write words a stranger could check, whether they understood the bond and when it can be
+  taken, and what they did after a turn-down.
+- **Leaving:** whether anyone left while a milestone waited, and whether they understood what they got.
+
+## Before starting
+
+The test sale needs `VITE_DAO_LAUNCH_KITS` in the hosted build (left out of the contributor run), the fundraising kit
+deployed by the same broadcast, and test USDC for every backer (Circle's Sepolia faucet, or a funded account you hand it
+out from). Run `scripts/cli-milestone-e2e.sh` and `scripts/web-milestone-e2e.sh` on the build you host first.
