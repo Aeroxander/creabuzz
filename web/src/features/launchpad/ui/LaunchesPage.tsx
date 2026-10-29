@@ -53,6 +53,7 @@ import { useProfiles, resolveUserName } from "@/features/profiles/use-profiles";
 import { LaunchCard } from "./LaunchCard";
 import { StartIdeaDialog } from "./StartIdeaDialog";
 import { isIdea } from "../lib/idea";
+import { raisesOffered } from "../lib/raises-offered";
 import { useSupporters } from "../use-supporters";
 import { ProgressBar } from "./widgets";
 import { cn } from "@/shared/lib/cn";
@@ -116,12 +117,15 @@ function FundingChip({
 export function LaunchesPage() {
   const { data, isLoading, error, refetch } = useLaunches();
   const create = useCreateLaunch();
+  // The contributor-only hosted image cannot launch a sale, so it offers none:
+  // no Set up a sale, no Markets, no raise sandbox, and `?start=sale` opens nothing. Listed launches stay readable.
+  const raises = raisesOffered();
   const [filter, setFilter] = useState<Filter>("all");
   // The Start page links here with `?start=idea` or `?start=sale`: open that dialog once, then drop the parameter so a
   // reload does not open it again.
   const { start } = useSearch({ from: "/launchpad" });
   const navigate = useNavigate();
-  const [createOpen, setCreateOpen] = useState(start === "sale");
+  const [createOpen, setCreateOpen] = useState(start === "sale" && raises);
   const [ideaOpen, setIdeaOpen] = useState(start === "idea");
   useEffect(() => {
     if (start) void navigate({ to: "/launchpad", search: {}, replace: true });
@@ -226,22 +230,30 @@ export function LaunchesPage() {
             <Rocket className="h-5 w-5" /> Launchpad
           </span>
         }
-        description="Find a raise to back, or start one of your own."
+        description={
+          raises
+            ? "Find a raise to back, or start one of your own."
+            : "Find an idea to back, or share one of your own."
+        }
         action={
           <div className="flex items-center gap-2">
-            <Button asChild size="sm" variant="ghost">
-              <Link data-testid="open-markets" to="/markets">
-                <LineChart className="mr-1 h-4 w-4" /> Markets
-              </Link>
-            </Button>
-            <Button
-              onClick={() => setCreateOpen(true)}
-              size="sm"
-              title="Skip the idea stage and set up a sale with your own terms"
-              variant="ghost"
-            >
-              Set up a sale
-            </Button>
+            {raises ? (
+              <>
+                <Button asChild size="sm" variant="ghost">
+                  <Link data-testid="open-markets" to="/markets">
+                    <LineChart className="mr-1 h-4 w-4" /> Markets
+                  </Link>
+                </Button>
+                <Button
+                  onClick={() => setCreateOpen(true)}
+                  size="sm"
+                  title="Skip the idea stage and set up a sale with your own terms"
+                  variant="ghost"
+                >
+                  Set up a sale
+                </Button>
+              </>
+            ) : null}
             <Button
               data-testid="start-idea"
               onClick={() => setIdeaOpen(true)}
@@ -356,7 +368,7 @@ export function LaunchesPage() {
         </fieldset>
       </div>
 
-      {!isLoading && !error ? (
+      {raises && !isLoading && !error ? (
         <Link
           className="mb-4 flex items-center justify-between rounded-2xl border border-violet-500/30 bg-violet-500/5 px-4 py-3 transition-colors hover:bg-violet-500/10"
           to="/launchpad/$launchId"
@@ -472,7 +484,7 @@ export function LaunchesPage() {
       )}
 
       {ideaOpen ? <StartIdeaDialog onClose={() => setIdeaOpen(false)} /> : null}
-      {createOpen ? (
+      {createOpen && raises ? (
         <CreateLaunchDialog
           isCreating={create.isPending}
           onCreate={handleCreate}

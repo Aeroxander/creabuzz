@@ -3,10 +3,12 @@
 `TERMS-DRAFT.md` and `PRIVACY-DRAFT.md` are plain-language drafts for the operator and a lawyer. They are not legal
 advice. Before a public launch:
 
-1. Fill in every `[bracket]`: operator name, address, contact email, minimum age, how long logs are kept, which outside
-   providers are used, governing law.
-2. Check them against how the server is really hosted and configured (logs, backups, error reports, onramp, chain node).
-3. Have a lawyer review them for the countries your users are in.
+1. Fill in every `[bracket]`: operator name, address, contact email, the abuse and takedown email and the appeals
+   contact, minimum age, how long logs are kept, which chain node providers are used, governing law.
+2. Check them against how the server is really hosted and configured (logs, backups, error reports, the chain nodes,
+   ZeroDev for passkey accounts).
+3. Have a lawyer review them for the countries your users are in. The terms' "Work for projects" section and the
+   governing law are marked for the lawyer: settle those before the contributor pilot.
 
 The server shows them at sign-up when they are set as environment values (the whole Markdown text, not a path):
 

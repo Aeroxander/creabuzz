@@ -12,16 +12,17 @@ $EDITOR .env       # replace every CHANGE_ME value
 ./run.sh start
 ```
 
-For a public VPS with automatic Let's Encrypt certificates:
+For a public VPS with automatic Let's Encrypt certificates, set
+`BUZZ_COMPOSE_TLS=true` in `.env` (every command then includes Caddy), or for
+one command:
 
 ```bash
 cd deploy/compose
 BUZZ_COMPOSE_TLS=true ./run.sh start
 ```
 
-The bootstrap script should eventually replace manual `.env` editing for normal
-users. It is responsible for generating stable secrets and, optionally, an owner
-keypair.
+There is no bootstrap script yet. "First start" under Creaton below says how to
+make each secret and the owner key.
 
 ## Production notes
 
@@ -90,6 +91,49 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
   server can load an image built elsewhere instead: `docker save creaton-relay:local | ssh <host> docker load`, built
   for the server's architecture (`docker build --platform linux/amd64 ...` from an Apple silicon Mac is slow but works).
 - `./run.sh upgrade` on a Creaton stack backs up first, then pulls the other images, builds and restarts.
+- Taking down a post and its pictures, illegal content, and a person's request to see or delete their data:
+  [docs/operator-takedown-and-data-requests.md](../../docs/operator-takedown-and-data-requests.md).
+
+### First start
+
+On the server, with the host name's DNS pointing at it and ports 80 and 443 open:
+
+1. `cat .env.example .env.creaton.example > .env`. The Creaton part already has `BUZZ_COMPOSE_TLS=true` (HTTPS through
+   Caddy; passkeys need it).
+2. Make each secret once and paste it over its `CHANGE_ME` line. They must not change later:
+
+   ```bash
+   echo "BUZZ_RELAY_PRIVATE_KEY=$(openssl rand -hex 32)"
+   echo "BUZZ_GIT_HOOK_HMAC_SECRET=$(openssl rand -hex 32)"
+   echo "POSTGRES_PASSWORD=$(openssl rand -hex 32)"
+   echo "REDIS_PASSWORD=$(openssl rand -hex 32)"
+   echo "BUZZ_S3_ACCESS_KEY=$(openssl rand -hex 10)"   # 20 and 40 characters: the sizes
+   echo "BUZZ_S3_SECRET_KEY=$(openssl rand -hex 20)"   # scripts/test-compose-backup.sh runs the media store with
+   ```
+
+3. Put the host name in `BUZZ_DOMAIN`, `RELAY_URL` (`wss://<host>`), `BUZZ_MEDIA_BASE_URL` (`https://<host>/media`),
+   `BUZZ_MEDIA_SERVER_DOMAIN` (`<host>`) and `BUZZ_CORS_ORIGINS` (`https://<host>`), and a Sepolia node in
+   `BUZZ_EVM_RPC_URL`.
+4. `mkdir -p policies && cp ../../docs/policies/TERMS-DRAFT.md policies/terms.md && cp
+   ../../docs/policies/PRIVACY-DRAFT.md policies/privacy.md`, fill in every `[placeholder]` (the privacy note's log
+   and backup periods should match "Logs" and "Backups" below), and set `BUZZ_TERMS_FILE=policies/terms.md` and
+   `BUZZ_PRIVACY_FILE=policies/privacy.md`. The filled-in files are git-ignored: they hold your name and address.
+5. `./run.sh build`. It needs only `.env` to exist, so it runs before the owner key is in.
+6. Make the owner key with the image you just built:
+
+   ```bash
+   docker run --rm --entrypoint buzz-admin creaton-relay:local generate-key   # or the name in CREATON_IMAGE
+   ```
+
+   Put the `Public key` in `RELAY_OWNER_PUBKEY`. Keep the `Secret key` offline, in a password manager, not in `.env` or
+   anywhere on the server: whoever has it owns the server. (Ignore the line about `BUZZ_PRIVATE_KEY`: that is for the
+   command-line tool.)
+7. `./run.sh start`, then open `https://<host>`, choose **Sign up**, then **I already have an account**, and paste the
+   secret key (the 64 characters). You are signed in as the owner; give the account a name. Do this on your own
+   device: the browser keeps the account.
+8. Invite people one at a time: in the community's sidebar, **People** opens People and access. **Make invite link**
+   with "One person", and send each person their own link. Nobody gets in without one.
+9. `./run.sh backup`, and practise a restore on another machine (below) before inviting anyone.
 
 ## Backups
 
@@ -106,14 +150,35 @@ taken after it hold everything it refers to. Redis is not backed up (presence, r
 empties it.
 
 - **Copy each backup off the machine**, and keep it where only the operator can read it: it holds every secret in
-  `.env` and every message that is not end-to-end encrypted. Nothing here schedules backups or deletes old ones; a
-  cron line such as `0 3 * * * cd /srv/creaton/deploy/compose && ./run.sh backup >>backups/backup.log 2>&1` and a
-  retention you state in the privacy note do that.
+  `.env` and every message that is not end-to-end encrypted. `backups/` is git-ignored, so a backup is never
+  committed by accident.
+- **Schedule them, and delete old ones.** The privacy note says how long backups are kept; `./run.sh prune-backups
+  DAYS` deletes the `backups/<UTC time>` folders older than that. A cron line that does both, every night:
+
+  ```cron
+  0 3 * * * cd /srv/creaton/deploy/compose && ./run.sh backup >>backups/backup.log 2>&1 && ./run.sh prune-backups 14 >>backups/backup.log 2>&1
+  ```
+
+  Copies kept off the machine need the same: delete them on the same schedule.
 - **Restore on a new machine:** check out the same revision, `cp backups/<dir>/env .env` (and change what differs on
   this machine), `./run.sh build`, then `./run.sh restore backups/<dir> --yes`. Restore refuses when `.env` has a
   different `BUZZ_RELAY_PRIVATE_KEY` from the backup's: the server would come back as a different server.
 - **Practise a restore** before you rely on the backups, and after upgrades that change the database: a backup that has
   never been restored is a hope, not a backup.
+
+## Logs
+
+Every service keeps at most 5 log files of 10 MB (`x-logging` in `compose.yml`) and drops the oldest first. Docker
+limits logs by size, not by age, and the relay's request log (`tower_http=info` in `RUST_LOG`) has a line for every
+page and API call. So on a quiet server 50 MB can hold more than the privacy note's period. To keep that period true,
+recreate the relay on it (`./run.sh restart` does, with a few seconds offline, and that empties its log), for example
+weekly:
+
+```cron
+0 4 * * 0 cd /srv/creaton/deploy/compose && ./run.sh restart >/dev/null 2>&1
+```
+
+or turn the request log down (`tower_http=warn`) and state the period by size.
 
 ## Validation
 
@@ -128,3 +193,5 @@ $EDITOR .env
 curl -fsS "http://127.0.0.1:$(grep -E '^BUZZ_HTTP_PORT=' .env | cut -d= -f2-)/_liveness"
 ./run.sh status
 ```
+
+With `BUZZ_COMPOSE_TLS=true` the relay's port is not published; check `curl -fsS https://<host>/_liveness` instead.

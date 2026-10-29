@@ -9,8 +9,10 @@ each run finds goes in [PILOT-REPORT.md](PILOT-REPORT.md).
 ## First: the social run (three to six people, an hour)
 
 Before it: the hosted server with the web app, the terms and privacy note finished, two or three boards with real first
-posts (starter boards help), and you reachable while it runs. The automated version of this run on a local server is
-`scripts/web-social-e2e.sh`; it does not replace this one.
+posts (starter boards help), and you reachable while it runs. The server is invite-only, so each person needs their own
+invite link, and a picture upload has to load back before anyone is asked to add one (steps 3 and 4 of the contributor
+run's list below say how). The automated version of this run on a local server is `scripts/web-social-e2e.sh`; it does
+not replace this one.
 
 Ask each person to do these on their own, thinking aloud:
 
@@ -28,40 +30,98 @@ Watch for: anyone who cannot sign up or loses their account; anywhere they wait 
 was taken against. A good run is one in which nobody needs help, and the moderator's removal is understood by its
 author without anyone explaining it.
 
-## Second: a contributor project (a founder, two reviewers, three or four contributors, about ten days)
+## Second: a contributor project (a founder, two reviewers, three or four contributors, about fifteen days)
 
 > **Updated 2026-10-28.** The scope is the MVP: the server, the web app and contributor projects, with no raise and no
 > sale. Nothing new gets built for this run (D137); what it finds gets fixed.
+>
+> **Updated 2026-10-29**, after the readiness audit: contributor steps work from passkey accounts with fees covered
+> (D139), the run is about fifteen days (the contracts' waits), and the list below has the server settings, invite
+> links, the picture check and the reminders you send.
 
 ### Before it (yours to do)
 
 1. **The test network deploy.** Put a testnet-only `DEPLOYER_PRIVATE_KEY` with test ETH in `.env`, run
    `scripts/sepolia-deploy.sh` (the rehearsal on a fork, no key needed) until it passes, then
-   `scripts/sepolia-deploy.sh --broadcast`. Keep the manifest it writes (`contracts/deployments/`).
-2. **The hosted build**, from [docs/sepolia-testnet.md](../sepolia-testnet.md), with only what this run uses:
-   `VITE_LAUNCHPAD_CHAIN_ID`, `VITE_CHAIN_RPC_URL`, `VITE_CONTRIBUTOR_KITS`, `VITE_HISTORY_FROM_BLOCKS`, the ZeroDev
-   settings (so testers need no test ETH), and `VITE_ERROR_REPORT_URL` with `VITE_APP_RELEASE`. Leave the optional
-   features out (bounties, matched exits, weekly rounds, payouts, the court, CREATE, forecasts, remixes, raises): each one
-   adds a screen people would have to understand, and none is what this run measures.
-3. **The hosted server**: the relay with `BUZZ_V1_ENABLED=true` (unread rooms), Postgres and Redis, and the web app served
-   by it. Check passkey sign-in, losing a device and signing in again with the recovery key, on a phone and a laptop.
-4. **The project**: typed in from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) by the founder themselves, with
+   `scripts/sepolia-deploy.sh --broadcast`. Keep the manifest it writes (`contracts/deployments/`). It prints the
+   settings for this run first, ready to paste into `deploy/compose/.env`.
+2. **The hosted build**, the Creaton image from [deploy/compose/README.md](../../deploy/compose/README.md) ("Creaton"),
+   with only what this run uses: `VITE_LAUNCHPAD_CHAIN_ID`, `VITE_CHAIN_RPC_URL`, `VITE_CONTRIBUTOR_KITS`,
+   `VITE_HISTORY_FROM_BLOCKS`, the ZeroDev settings, and `VITE_ERROR_REPORT_URL` (the release defaults to the source
+   revision). The image takes nothing else, which is the point: each optional feature (bounties, matched exits, weekly
+   rounds, payouts, the court, CREATE, forecasts, remixes, raises) adds a screen people would have to understand, and
+   none is what this run measures.
+   - **The ZeroDev project**: one on Sepolia, with a gas policy that sponsors every operation the run sends: starting
+     the project, submitting work, a reviewer's bond, accepting and reviewing, finishing, and opening, voting and running
+     decisions. Contributor steps then work from a passkey account with its fees covered (D139), so nobody needs a
+     browser wallet or test ETH. A policy limited to a list of contract addresses will not do: each project's DAO and
+     work contracts are made when it starts. Set a spending limit sized for the run rather than leaving it open.
+   - **The page's chain node** (`VITE_CHAIN_RPC_URL`): it must allow a wide `eth_getLogs` range. The app reads awards,
+     work and votes from the deploy block onward in pages the size the node allows, and stops after 120 requests. Sepolia
+     makes about 7,200 blocks a day, so a node that allows 10,000 blocks a request lasts about five months; one that
+     allows 1,000 lasts about 17 days, which this run would outlive. Check it with the contributor kit's address from
+     the manifest:
+     `cast logs --from-block $(( $(cast block-number --rpc-url "$NODE") - 20000 )) --to-block latest --address <contributor-kit> --rpc-url "$NODE"`.
+     An empty answer is fine; an error about the block range is not. Its request limit has to cover several people
+     reloading pages at once.
+3. **The hosted server**: the same stack, served over HTTPS (passkeys need it), with the relay's read state
+   (`BUZZ_V1_ENABLED=true`, in the Creaton part of `.env`), Postgres and Redis, and the web app served by it. Add the
+   chain the server checks passkey accounts against, or it refuses to link one to a person:
+   `BUZZ_EVM_AUTH=1`, `BUZZ_EVM_CHAIN_ID=11155111` and `BUZZ_EVM_RPC_URL=<a Sepolia node>`. Then check, on a phone and
+   a laptop: passkey sign-in; losing a device and signing in again with the recovery key; the terms at sign-up
+   (`curl -fsS https://<host>/api/join-policy` names a version); "Show your name with this account" from a brand-new
+   passkey account, before its first step; and one practice project started from a passkey account (one large
+   operation, which a bundler may refuse: [docs/sepolia-testnet.md](../sepolia-testnet.md), section 4).
+4. **Pictures, before inviting anyone.** Upload a profile picture, a picture in a board post and a project cover, then
+   open each picture's own address in a private window. Each must load from your public host (not `localhost` or the
+   storage container's name). No test has yet shown an upload working on a hosted server, and the first thing everyone
+   is asked to do is add a picture.
+5. **Invite links, one per person.** The server is invite-only (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`), so nobody gets in
+   without one. As the community's owner or an admin, open **People** in the community and make one link per person:
+   "One person", lasting a week. Send each link to its person privately; it already names the community's address. Make
+   the late contributor's link on day 3, not before.
+6. **Names with passkey accounts.** A passkey account is a new address nobody knows, so until its owner links it,
+   reviewers and voters see only the address and the founder cannot pick reviewers by name. Ask each person, after
+   signing up, to use "Show your name with this account" in the account strip on the contributor screens (one passkey
+   prompt). The reviewers do it before day 1.
+7. **The project**: typed in from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) by the founder themselves, with
    two work areas whose words a stranger could check, and its two reviewers asked first (who they are, how fast they will
    answer, any tie to the founder).
-5. **The automated versions**, green on the build you host: `scripts/mvp-gate.sh` (it includes the contributor, work,
+8. **The automated versions**, green on the build you host: `scripts/mvp-gate.sh` (it includes the contributor, work,
    paid-work and milestone journeys).
-6. **The report**: a copy of [PILOT-REPORT.md](PILOT-REPORT.md) to fill in as it runs.
+9. **The report**: a copy of [PILOT-REPORT.md](PILOT-REPORT.md) to fill in as it runs.
 
-### The ten days
+### The fifteen days
+
+The waits are the contracts' own and cannot be shortened during the freeze: an approved piece waits **7 days** after its
+approval (time for anyone to dispute it), then its contributor marks it finished, and only then can its award be put to
+a vote. The vote is open at least a day, its support must hold six hours, and it waits one more day before it can run:
+about two and a half days. So a piece approved on day 4 is awarded on day 13 or 14, and the run is about fifteen days.
+
+Nothing reaches people outside the app: no email, no browser notification. Each person sees waiting work only when they
+open it (Needs you, Home). So you message them yourself on the days below, outside the app, saying what is waiting.
 
 | Day | Who | What |
 |---|---|---|
+| Before 1 | Everyone | Sign up from their own invite link, set a name and a picture, show their name with their passkey account |
 | 1 | Founder | Start the project from Start, post the invitation in General, answer the first questions on the supporters board |
+| 1 | You | Message the founder and both reviewers: the project is up, and reviews are due on days 2 to 4 |
 | 1 to 3 | Contributors | Find something to do from Ways to help, submit it (at least one piece each) |
 | 2 to 4 | Reviewers | Accept each piece for review, read the evidence against the work area's exact words, approve or turn down with a reason |
-| 3 | A late contributor | Joins knowing nobody, finds work, submits |
-| 4 to 10 | Everyone | The 7-day window after approval runs; the founder puts each award to a vote once it is over; holders vote |
-| 10 | Contributors | Look at the Contributions page: what they did, who reviewed it, what it was awarded |
+| 2, 3, 4 | You | Message each reviewer: which pieces are waiting for them |
+| 3 | You | Make the late contributor's invite link and send it |
+| 3 | A late contributor | Joins knowing nobody, finds work, submits (reviewed by day 4) |
+| 4 to 11 | Nobody | Each approved piece waits its 7 days |
+| 9 to 11 | Contributors | Once a piece's 7 days are over, Needs you says "Finish it": mark it finished |
+| 9 to 11 | Founder | Put each finished piece's award to a vote |
+| 9, 10, 11 | You | Message each contributor whose piece's 7 days ended, and the founder once it is marked finished |
+| 10 to 12 | Holders | Vote on each award |
+| 10, 11, 12 | You | Message the holders: which awards are open for a vote |
+| 12 to 14 | Founder | Run each award once its wait is over |
+| 12, 13, 14 | You | Message the founder: which awards can run |
+| 15 | Contributors | Look at the Contributions page: what they did, who reviewed it, what it was awarded. Then the questions below |
+
+The invitation in General says the run lasts about fifteen days, and that most of the second week is a wait.
 
 The contributors: at least one new to crypto, one doing non-technical work, and the late one above. Plant one piece of
 work that does not meet its words, so that one turn-down happens for a reason everyone can see.
@@ -89,6 +149,9 @@ someone who had never used a wallet.
 Milestone locks belong to raises, which wait for the audit. They can still be tried with test USDC, so that a real team
 has worked through one before any money depends on it. [MILESTONE-TEST-PLAN.md](MILESTONE-TEST-PLAN.md) has the plan:
 small deliverables anyone can check, the order, and what to measure.
+
+The hosted image takes no raise kit (it offers contributor projects only), so this run needs a separate test-raise build.
+How that build is made is a decision for later, before this run; nothing is built for it now.
 
 ## Fourth: the raise (after the audit)
 

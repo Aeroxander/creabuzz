@@ -63,6 +63,12 @@ pre-commit:
       glob: ["web/**"]
       run: just web-fix
       stage_fixed: true
+    packages-fix:
+      # `just web-check` (and so CI's web lane) checks creaton-core too, but
+      # `just web-fix` only rewrites web/, so the shared package gets its own lane.
+      glob: ["packages/**"]
+      run: cd packages/creaton-core && pnpm exec biome check --write .
+      stage_fixed: true
     mobile-fmt:
       glob: ["mobile/**"]
       run: just mobile-fmt

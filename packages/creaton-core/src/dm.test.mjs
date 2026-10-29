@@ -218,10 +218,34 @@ test("a thread the server opened itself is found from its own metadata record", 
     { dmId: "dm-3", participants: [PK_A, SERVER], createdAt: 60 },
   );
   // A room is not a conversation, and a record with nobody in it is nothing.
-  assert.equal(parseDmMetadata(record([["d", "room"], ["name", "general"]])), null);
-  assert.equal(parseDmMetadata(record([["d", "dm-2"], ["t", "dm"]])), null);
   assert.equal(
-    parseDmMetadata({ kind: 41001, created_at: 1, tags: [["d", "x"], ["t", "dm"], ["p", PK_A]] }),
+    parseDmMetadata(
+      record([
+        ["d", "room"],
+        ["name", "general"],
+      ]),
+    ),
+    null,
+  );
+  assert.equal(
+    parseDmMetadata(
+      record([
+        ["d", "dm-2"],
+        ["t", "dm"],
+      ]),
+    ),
+    null,
+  );
+  assert.equal(
+    parseDmMetadata({
+      kind: 41001,
+      created_at: 1,
+      tags: [
+        ["d", "x"],
+        ["t", "dm"],
+        ["p", PK_A],
+      ],
+    }),
     null,
   );
 });

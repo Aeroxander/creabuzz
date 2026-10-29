@@ -12,7 +12,10 @@ const LABELS = { send: "Send the money", mirror: "Record it" };
 const flow = createStepFlow(["send", "mirror"], LABELS);
 
 test("a fresh plan marks omitted steps skipped and the rest pending", () => {
-  const state = flow.reducer(flow.initial(), { type: "reset", order: ["send"] });
+  const state = flow.reducer(flow.initial(), {
+    type: "reset",
+    order: ["send"],
+  });
   assert.deepEqual(state.steps, { send: "pending", mirror: "skipped" });
   assert.equal(state.phase, "idle");
 });

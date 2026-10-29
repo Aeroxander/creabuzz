@@ -1,9 +1,9 @@
 # Running a Sepolia testnet
 
-Goal: a shared testnet users and advisors can open in a browser, create a community in, start a contributor project on, claim
-and review work in, and earn Shares by vote. That is the first launch (the social MVP and contributor projects, no raise); test
-raises can be switched on in the same build (below). Everything here is test money on Sepolia. Nothing in it is audited, and
-mainnet stays off.
+Goal: a shared testnet invited users and advisors can open in a browser, join with an invite link, start a contributor
+project on, claim and review work in, and earn Shares by vote. That is the first launch (the social MVP and contributor projects, no raise),
+served by the Creaton image (`deploy/compose`). Test raises and the optional features need a build of their own (below).
+Everything here is test money on Sepolia. Nothing in it is audited, and mainnet stays off.
 
 **Shares earned on Sepolia are test records.** They will not move to a real network automatically: a real network gets its own
 contracts and its own DAOs, and nothing carries a Sepolia balance over. The app says so on the Start page of a contributor
@@ -14,9 +14,9 @@ project and on every project's Contributions tab (D85).
 | Piece | Where it comes from | Status |
 |---|---|---|
 | Sale factory, Permit2, Circle's USDC, Limit Break's validators, the TokenMaster router, the passkey-account factory | Already on Sepolia | Used as they are |
-| Our summoner (with its work budget factory and voting policy), the `DaoLaunchKit` with its two lock factories, and the `ContributorKit` | `scripts/sepolia-deploy.sh --broadcast` | One deploy: 7 transactions, about 30.2 million gas |
+| Our summoner (with its work budget factory and voting policy), the `DaoLaunchKit` with its two lock factories, the `ContributorKit`, and the optional features' contracts | `scripts/sepolia-deploy.sh --broadcast` | One deploy: 17 transactions, about 47.6 million gas |
 | The server (relay) with Postgres and Redis | You host it | Needed: communities, boards, records live here |
-| The web app | `pnpm build` with the Sepolia settings below, served as static files | Needed |
+| The web app | The Creaton image (`deploy/compose`, built with the settings below), served by the relay | Needed |
 | LBAMM (the exchange) | Not deployed by anyone on Sepolia | **Not on the testnet.** See below |
 
 ### The market is off on Sepolia, on purpose
@@ -48,19 +48,25 @@ scripts/sepolia-deploy.sh --broadcast
 The rehearsal needs no key: it forks Sepolia into a local anvil, deploys there, checks what came out, prints what the real deploy
 will cost at today's gas price, and leaves the repo as it was. The real deploy checks the chain id and the deployer's balance,
 deploys the summoner, works out the Shares implementation (a deterministic address, checked against a real DAO's clone in
-`contracts/test/DeployLaunchKit.t.sol`), deploys the launch kit with its two lock factories and the contributor kit, checks that
-each kit names the summoner it was given, and writes `contracts/deployments/dao-launch-kit-11155111.json`. Commit that file: it
+`contracts/test/DeployLaunchKit.t.sol`), deploys the launch kit with its two lock factories, the contributor kit and the
+optional features' contracts, checks that each names what it was given, and writes `contracts/deployments/dao-launch-kit-11155111.json`. Commit that file: it
 is public addresses only, and it is the one manifest in that folder git does not ignore.
 
-**What it costs.** Measured on a fork on 2026-10-21: 7 transactions, 30,133,132 gas in all; the largest (the summoner) asks for
-12.3 million, under Sepolia's cap of 16,777,216 for one transaction (the rehearsal checks it). At Sepolia's gas price that day
-(about 0.00000002 gwei) that is well under a millionth of a test ETH; at 1 gwei it is 0.03 ETH, at 20 gwei 0.6 ETH. The rehearsal
-prints the figure for the day you run it: fund the deployer with that plus a margin from a Sepolia faucet. Test ETH has no price.
+**What it costs.** The rehearsal now sends 17 transactions, about 47.6 million gas in all; the largest asks for about
+13.3 million, under Sepolia's cap of 16,777,216 for one transaction (the rehearsal checks it). At 1 gwei that is about
+0.05 ETH, at 20 gwei about 0.95 ETH; on a quiet day Sepolia's gas price is far below 1 gwei. The rehearsal prints the figure
+for the day you run it: fund the deployer with that plus a margin from a Sepolia faucet. Test ETH has no price.
 
 ## 2. Host the server
 
-The server is the existing relay. For a testnet it needs the same things as any deployment (see
-`docs/self-serve-communities.md` and `docs/deployment-identity.md`), plus the chain it reads wallets from:
+The server is the existing relay, run from the Creaton stack in `deploy/compose` (its README, "Creaton", has the steps;
+`.env.creaton.example` has the settings). The first pilot is invited: the stack is invite-only server-wide
+(`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true` in the bundle's `.env.example`), so people join only with an invite link an owner or
+admin makes, and self-serve communities stay off (no `BUZZ_SELF_SERVE_COMMUNITY_DOMAIN`).
+`docs/self-serve-communities.md` says what changes when that is lifted later.
+
+It also needs the chain it checks passkey accounts against. Without these it refuses to link a passkey account to a
+person:
 
 ```
 BUZZ_EVM_AUTH=1
@@ -68,13 +74,17 @@ BUZZ_EVM_CHAIN_ID=11155111
 BUZZ_EVM_RPC_URL=<your Sepolia node>
 ```
 
-Self-serve communities should be on so anyone can start one. The server never holds a user's money and never needs a private key
-for the testnet.
+Serve it over HTTPS: passkeys need it. The server never holds a user's money and never needs a private key for the
+testnet.
 
 ## 3. Build and host the web app
 
-Every setting is read when the app is built (`pnpm build` in `web/`), ends up in the page, and is public. Serve `dist/` from any
-static host, or from the relay itself (`BUZZ_WEB_DIR`).
+Every setting is read when the app is built, ends up in the page, and is public. The hosted path is the Creaton image:
+put the settings in `deploy/compose/.env`, then `./run.sh build` and `./run.sh restart`. The image takes only the chain id,
+the page's node, the contributor kit, the history start, the ZeroDev settings, the error report and release, and
+`VITE_RELAY_URL` and `VITE_COMMUNITY_API_ORIGIN`; `web/scripts/check-deploy-env.mjs` stops a build whose settings do not fit
+together. The rows marked **Optional** are not in the image: they need a build of your own (`pnpm build` in `web/`, with
+`dist/` served from a static host or by the relay with `BUZZ_WEB_DIR`), and none of them is for the first pilot.
 
 | Setting | Value for Sepolia | Needed for |
 |---|---|---|
@@ -91,22 +101,36 @@ static host, or from the relay itself (`BUZZ_WEB_DIR`).
 | `VITE_PAYOUTS_FACTORIES` | `{"11155111":"<payouts-factory from the manifest>"}` | **Optional, test networks only.** Contributor projects vote to pay holders a share of revenue (N10) |
 | `VITE_REMIX_BONDS` | `{"11155111":"<remix-bonds from the manifest>"}` | **Optional, test networks only.** A remix's bond to its parent, decided by the court (N12). Needs `VITE_COURTS` |
 | `VITE_HISTORY_FROM_BLOCKS` | `{"11155111":<the manifest's "block">}` | Reading awards, work and votes: a real node refuses an event read that starts at block 0 |
-| `VITE_DAO_LAUNCH_KITS` | `{"11155111":"<launch-kit from the manifest>"}` | **Optional.** Test raises. Leave it out for the contributor-only first launch: the raise wizard then saves drafts but cannot launch one. With it set, the contributor Start page also checks that both kits name the same summoner |
+| `VITE_DAO_LAUNCH_KITS` | `{"11155111":"<launch-kit from the manifest>"}` | **Optional.** Test raises. Leave it out for the contributor-only first launch. The Creaton image is contributor-only anyway: it sets `VITE_CONTRIBUTOR_ONLY=1` itself, which hides every way to start a sale (D140); a build of your own without it shows the raise wizard, which saves drafts but cannot launch one. With it set, the contributor Start page also checks that both kits name the same summoner |
 | `VITE_RELAY_URL` | `wss://<your relay>` | Only when the page is not served by the relay itself (it otherwise talks to its own origin) |
 | `VITE_COMMUNITY_API_ORIGIN` | `https://<your relay>` | Only when communities live on several hosts (see `docs/self-serve-communities.md`) |
-| `VITE_ZERODEV_PROJECT_ID`, `VITE_ZERODEV_CHAIN_ID=11155111`, `VITE_BUNDLER_URL` (and `VITE_ZERODEV_API_KEY` if the project has one) | A ZeroDev project on Sepolia, with sponsorship turned on in its dashboard (a gas policy) | Passkey accounts, with gas paid by its paymaster: testers then need no test ETH at all. Without them people bring a wallet (a browser wallet or a key made in the app) and pay their own test gas |
-| `VITE_ERROR_REPORT_URL`, `VITE_APP_RELEASE` | Your collector and the build's version | Optional error reports (`docs/error-reporting.md`) |
+| `VITE_ZERODEV_PROJECT_ID`, `VITE_ZERODEV_CHAIN_ID=11155111`, `VITE_BUNDLER_URL` (and `VITE_ZERODEV_API_KEY` if the project has one) | A ZeroDev project on Sepolia, with a gas policy that sponsors every operation (each project's contracts are made when it starts, so a list of addresses cannot cover them) and a spending limit | Passkey accounts, with gas paid by its paymaster: testers then need no test ETH at all. Without them people bring a wallet (a browser wallet or a key made in the app) and pay their own test gas |
+| `VITE_ERROR_REPORT_URL`, `VITE_APP_RELEASE` | Your collector and the build's version | Error reports (`docs/error-reporting.md`); the pilot wants them. The image defaults the release to the source revision |
 
 Leave these **unset** on Sepolia: `VITE_ENABLE_MAINNET` (it would offer real networks and hide the Testnet tag),
 `VITE_LOCAL_USDC` (a local chain's test currency; Sepolia's Circle USDC is built in), `VITE_LBAMM_ADDRESSES` (no exchange there),
 `VITE_PRICE_INDEXER_URL` (no market to price).
 
-The deploy script prints the chain id, kit and history-start settings with the real addresses. A contributor-only build:
+The deploy script prints these with the real addresses, the pilot's first, ready to paste into `deploy/compose/.env`.
+Where a value is yours to fill in it prints `CHANGE_ME_...`, and `run.sh` refuses to build or start until each is
+replaced. It adds the server's `BUZZ_EVM_*` lines from section 2. The contributor pilot, what the hosted image takes:
 
 ```
 VITE_LAUNCHPAD_CHAIN_ID=11155111
 VITE_CHAIN_RPC_URL=<a read-only Sepolia node for the page>
 VITE_CONTRIBUTOR_KITS={"11155111":"<contributor-kit>"}
+VITE_HISTORY_FROM_BLOCKS={"11155111":<block>}
+VITE_ZERODEV_PROJECT_ID=<your ZeroDev project>
+VITE_ZERODEV_CHAIN_ID=11155111
+VITE_BUNDLER_URL=<its bundler URL>
+VITE_ERROR_REPORT_URL=<your collector>
+VITE_APP_RELEASE=<the build's version; the image defaults to the source revision>
+```
+
+Not for the first pilot, and not in the hosted image (a build of your own):
+
+```
+VITE_DAO_LAUNCH_KITS={"11155111":"<launch-kit>"}
 VITE_WORK_BOUNTIES={"11155111":"<work-bounty>"}
 VITE_OPEN_BOUNTIES={"11155111":"<open-bounty>"}
 VITE_MATCHED_EXITS={"11155111":"<matched-exit>"}
@@ -117,7 +141,6 @@ VITE_COURTS={"11155111":"<court>"}
 VITE_FORECAST_POOLS={"11155111":"<forecast-pool>"}
 VITE_PAYOUTS_FACTORIES={"11155111":"<payouts-factory>"}
 VITE_REMIX_BONDS={"11155111":"<remix-bonds>"}
-VITE_HISTORY_FROM_BLOCKS={"11155111":<block>}
 ```
 
 `VITE_HISTORY_FROM_BLOCKS` matters. A real node refuses an event read that starts at block 0 ("exceed maximum block range",
@@ -126,14 +149,28 @@ reads was made after that). Without it a read on Sepolia would need thousands of
 and tells you to set it. The fork journey found this: before the fix, the My bids tab on a Sepolia fork said "Could not read
 bids: exceed maximum block range: 50000".
 
+The page's node still has to allow a wide range. A read takes at most 120 requests, each as wide as the node allows (10,000
+blocks when it names no limit), from the history start to the head. Sepolia makes about 7,200 blocks a day, so at 10,000
+blocks a request reads keep working for about five months after the deploy, at 1,000 for about 17 days, and then fail.
+Check a node before choosing it:
+
+```bash
+cast logs --from-block $(( $(cast block-number --rpc-url "$NODE") - 20000 )) --to-block latest \
+  --address <contributor-kit> --rpc-url "$NODE"
+```
+
+An empty answer is fine; an error about the block range means the node is too narrow for more than a short test.
+
 The command line (`buzz`) and the desktop app read their own event history and have not been given the same page-splitting;
 testers should use the web app on Sepolia.
 
 ## 4. What testers need
 
-**Contributor projects need no test USDC.** A claim asks for no money and an award is paid in Shares, so everyone needs only a
-little Sepolia ETH for gas (or a passkey account whose gas the ZeroDev paymaster pays). Measured on a Sepolia fork for one whole
-project (start it, one claim, two approvals, one award vote):
+**Contributor projects need no test USDC.** A claim asks for no money and an award is paid in Shares. Every contributor
+step works from a passkey account whose fees the ZeroDev paymaster covers (D139), so on a sponsored project nobody needs
+test ETH or a browser wallet. Someone who acts from a browser wallet instead pays their own test gas. Measured on a
+Sepolia fork for one whole project (start it, one claim, two approvals, one award vote), which is also what the gas
+policy has to cover:
 
 | Who | Transactions | Gas | At 20 gwei |
 |---|---|---|---|
@@ -141,16 +178,16 @@ project (start it, one claim, two approvals, one award vote):
 | Contributor (files the claim, states its check, takes it once approved) | 3 | 217,909 | 0.004 ETH |
 | Each reviewer (one approval) | 1 | about 100,000 | 0.002 ETH |
 
-At Sepolia's gas price on 2026-10-21 all of it cost practically nothing, so one faucet visit covers a founder unless gas rises
-to several gwei. Passkey accounts on a sponsored ZeroDev project need no test ETH at all.
+At Sepolia's gas price on 2026-10-21 all of it cost practically nothing, so for someone on a browser wallet one faucet
+visit covers a founder unless gas rises to several gwei.
 
 For test raises, if the build offers them:
 
-- **Sepolia ETH** for gas, from any faucet, unless a paymaster covers gas for passkey accounts.
+- **Sepolia ETH** for gas, from any faucet: raise steps keep the browser wallet, which pays its own gas (D139).
 - **Circle test USDC** from Circle's faucet (faucet.circle.com, pick Ethereum Sepolia). Circle's USDC has no open mint, which is
   why the local tests write balances into a fork instead.
 
-And a short note saying what to try: start a community, start a contributor project from Start (name two or more reviewers other
+And a short note saying what to try: join with your invite link, start a contributor project from Start (name two or more reviewers other
 than yourself, and start with at most a third of the Shares the first budget can award: the form and the contract both refuse
 more), claim a task from a second account, approve it as the reviewers, award it by vote, and look at the Contributions tab.
 `docs/v3-review/TEST-STEPS.md` (4al) has the steps.
@@ -168,7 +205,7 @@ before inviting testers, and tell me if it is refused.
 
 ```bash
 scripts/sepolia-deploy.sh                          # rehearsal: deploy, checks, today's cost
-scripts/web-contributor-e2e.sh --sepolia-fork      # a contributor project in pages on a fork, built like a hosted Sepolia build
+scripts/web-contributor-e2e.sh --sepolia-fork      # a contributor project in pages on a fork (its build also turns on the optional features)
 cd contracts && forge test --match-contract SepoliaLaunchForkTest --fork-url "$SEPOLIA_RPC_URL" -vv   # a raise on a fork
 scripts/web-sepolia-fork-e2e.sh                    # a raise: the whole story in three browsers on a fork
 ```

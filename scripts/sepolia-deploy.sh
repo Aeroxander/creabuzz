@@ -151,10 +151,46 @@ if [[ "$MODE" == "rehearse" ]]; then
 else
   SPENT=$(node -e 'console.log((BigInt(process.argv[1])-BigInt(process.argv[2])).toString())' "$BALANCE" "$(cast balance "$DEPLOYER" --rpc-url "$RPC")")
   echo "  the deploy used ${GAS} gas in ${TXS} transactions and cost $(cast from-wei "$SPENT") test ETH"
-  step "deployed. Commit contracts/deployments/dao-launch-kit-${SEPOLIA_CHAIN_ID}.json, then build the web app with:"
+  step "deployed. Commit contracts/deployments/dao-launch-kit-${SEPOLIA_CHAIN_ID}.json, then set up the web app:"
   # The block the deploy ran at is where this chain's history starts for the app: a real node refuses an event read from
   # block 0, so the build is told where to start.
   FROM_BLOCK=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).block)' "$MANIFEST")
-  echo "  VITE_LAUNCHPAD_CHAIN_ID=${SEPOLIA_CHAIN_ID} VITE_CHAIN_RPC_URL=<a read-only Sepolia node for the page> VITE_DAO_LAUNCH_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${KIT}\"}' VITE_CONTRIBUTOR_KITS='{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}' VITE_WORK_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${WORK_BOUNTY}\"}' VITE_OPEN_BOUNTIES='{\"${SEPOLIA_CHAIN_ID}\":\"${OPEN_BOUNTY}\"}' VITE_MATCHED_EXITS='{\"${SEPOLIA_CHAIN_ID}\":\"${MATCHED_EXIT}\"}' VITE_CREATE_TOKENS='{\"${SEPOLIA_CHAIN_ID}\":\"${CREATE_TOKEN}\"}' VITE_CREATE_FAUCETS='{\"${SEPOLIA_CHAIN_ID}\":\"${CREATE_FAUCET}\"}' VITE_COURTS='{\"${SEPOLIA_CHAIN_ID}\":\"${COURT}\"}' VITE_FORECAST_POOLS='{\"${SEPOLIA_CHAIN_ID}\":\"${POOLS}\"}' VITE_PAYOUTS_FACTORIES='{\"${SEPOLIA_CHAIN_ID}\":\"${PAYOUTS_FACTORY}\"}' VITE_REMIX_BONDS='{\"${SEPOLIA_CHAIN_ID}\":\"${REMIX_BONDS}\"}' VITE_HISTORY_FROM_BLOCKS='{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}'"
-  echo "  (docs/sepolia-testnet.md lists the rest: the relay URL, passkey accounts, what testers need)"
+  C="$SEPOLIA_CHAIN_ID"
+  # The pilot's settings come first and alone, as .env lines: the hosted image takes only these, and each optional
+  # feature is a screen the first pilot does not measure. What is the operator's to fill in is a CHANGE_ME, so run.sh
+  # refuses to build or start until it is replaced.
+  cat <<EOF
+
+# ── The contributor pilot: paste into deploy/compose/.env, replace each CHANGE_ME, then ./run.sh build and ./run.sh restart
+VITE_LAUNCHPAD_CHAIN_ID=${C}
+VITE_CHAIN_RPC_URL=CHANGE_ME_a_read_only_Sepolia_node_for_the_page_that_allows_wide_log_ranges
+VITE_CONTRIBUTOR_KITS={"${C}":"${CONTRIBUTOR_KIT}"}
+VITE_HISTORY_FROM_BLOCKS={"${C}":${FROM_BLOCK}}
+VITE_ZERODEV_PROJECT_ID=CHANGE_ME_your_ZeroDev_project_id
+VITE_ZERODEV_CHAIN_ID=${C}
+VITE_BUNDLER_URL=CHANGE_ME_its_bundler_URL
+# The server checks passkey accounts against this chain; without these it refuses to link one to a person.
+BUZZ_EVM_AUTH=1
+BUZZ_EVM_CHAIN_ID=${C}
+BUZZ_EVM_RPC_URL=CHANGE_ME_a_Sepolia_node_for_the_server
+# Error reports (docs/error-reporting.md); the release defaults to the source revision.
+# VITE_ERROR_REPORT_URL=https://<your collector>
+# VITE_APP_RELEASE=<the build's version>
+
+# ── Not for the first pilot, and not in the hosted image: test raises and the optional features, for a build of your
+# own (pnpm build in web/; docs/sepolia-testnet.md, section 3)
+VITE_DAO_LAUNCH_KITS='{"${C}":"${KIT}"}'
+VITE_WORK_BOUNTIES='{"${C}":"${WORK_BOUNTY}"}'
+VITE_OPEN_BOUNTIES='{"${C}":"${OPEN_BOUNTY}"}'
+VITE_MATCHED_EXITS='{"${C}":"${MATCHED_EXIT}"}'
+VITE_WEEKLY_ROUNDS='{"${C}":"${WEEKLY_ROUNDS}"}'
+VITE_CREATE_TOKENS='{"${C}":"${CREATE_TOKEN}"}'
+VITE_CREATE_FAUCETS='{"${C}":"${CREATE_FAUCET}"}'
+VITE_COURTS='{"${C}":"${COURT}"}'
+VITE_FORECAST_POOLS='{"${C}":"${POOLS}"}'
+VITE_PAYOUTS_FACTORIES='{"${C}":"${PAYOUTS_FACTORY}"}'
+VITE_REMIX_BONDS='{"${C}":"${REMIX_BONDS}"}'
+
+EOF
+  echo "  (docs/sepolia-testnet.md has the rest: the server, the page's node, passkey accounts, what testers need)"
 fi

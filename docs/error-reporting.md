@@ -13,6 +13,29 @@ VITE_ERROR_REPORT_URL=https://errors.example.com/creaton VITE_APP_RELEASE=2026.1
 Only `https` addresses are accepted (and plain `http` for a collector on this machine, for testing). Anything else leaves reporting
 off. `VITE_APP_RELEASE` is optional: any short label for the build, so a note says which build it came from.
 
+## What the collector must answer
+
+The note is sent from the site's own address to the collector's, as JSON, so the browser first asks the collector whether it
+may (a CORS preflight). A collector that does not answer it gets nothing, and nobody is told: the app never waits for a
+reply.
+
+- `OPTIONS` on the collector's address answers `204` (or `200`) with `Access-Control-Allow-Origin: https://<your site>`,
+  `Access-Control-Allow-Methods: POST` and `Access-Control-Allow-Headers: Content-Type`.
+- `POST` answers with the same `Access-Control-Allow-Origin`. The request carries no cookies, so
+  `Access-Control-Allow-Credentials` is not needed (and `*` as the origin works too, for a collector that takes notes from
+  anywhere).
+
+Check it from any machine before you build with it:
+
+```bash
+curl -si -X OPTIONS https://errors.example.com/creaton \
+  -H 'Origin: https://<your site>' -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type' | grep -i '^access-control'
+```
+
+Then trigger an error on the built site (for example `setTimeout(() => { throw new Error("test report") })` in the
+browser console) and look for the note at the collector.
+
 ## What is sent
 
 One small JSON note per error, with exactly these fields and nothing else:

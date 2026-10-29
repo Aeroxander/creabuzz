@@ -4,6 +4,9 @@
  * Making a place to work, sharing an idea and raising money used to be three buttons on three pages with different
  * names. This page puts them in the order most projects take them, says what each is for, ticks the ones the person has
  * really done, and points at the next. Every step still opens the same screens as before; it only gathers them.
+ *
+ * Where the build offers no raises (the contributor-only hosted image), the raise steps and their heading are left out, so
+ * a contributor-only server never sends anyone to a sale it cannot launch.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -11,6 +14,7 @@ import { Check } from "lucide-react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { isIdea } from "@/features/launchpad/lib/idea";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { hasFirstStep } from "@/shared/lib/first-steps";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { cn } from "@/shared/lib/cn";
@@ -116,16 +120,24 @@ export function StartPage() {
   const mine = (launches.data ?? []).filter(
     (launch) => me !== null && launch.record.author === me,
   );
-  const steps = startSteps({
-    madeProject: hasFirstStep(localStorage, "project"),
-    hasIdea: mine.some((launch) => isIdea(launch.record)),
-    hasSale: mine.some((launch) => !isIdea(launch.record)),
-  });
+  const raises = raisesOffered();
+  const steps = startSteps(
+    {
+      madeProject: hasFirstStep(localStorage, "project"),
+      hasIdea: mine.some((launch) => isIdea(launch.record)),
+      hasSale: mine.some((launch) => !isIdea(launch.record)),
+    },
+    raises,
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
       <PageHeader
-        description="Most projects go in this order. You can begin at any step, and come back to the others later."
+        description={
+          raises
+            ? "Most projects go in this order. You can begin at any step, and come back to the others later."
+            : "Build a project with contributors, or begin with a place to work or an idea."
+        }
         title="Start something"
       />
       <section
@@ -145,7 +157,7 @@ export function StartPage() {
         </div>
       </section>
       <h2 className="text-sm font-semibold text-muted-foreground">
-        Or plan a raise, step by step
+        {raises ? "Or plan a raise, step by step" : "Other ways to begin"}
       </h2>
       <ol className="flex flex-col gap-3" data-testid="start-steps">
         {steps.map((step, index) => (

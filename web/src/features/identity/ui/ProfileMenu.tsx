@@ -43,6 +43,7 @@ import {
 import { readWalletBinding, revokeWalletBinding } from "../lib/siwe";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { OnboardingDialog } from "./OnboardingDialog";
+import { PolicyLinks } from "./PolicyLinks";
 import { CREATE_ACCOUNT, SIGN_UP_EVENT } from "../lib/account-copy";
 import {
   backedUpFor,
@@ -663,6 +664,7 @@ export function ProfileMenu({
                 {walletError}
               </p>
             ) : null}
+            <PolicyLinks />
             <div className="mt-2 border-t border-black/10 pt-2 dark:border-white/10">
               <MenuItem
                 icon={<LogOut className="h-3.5 w-3.5" />}

@@ -15,6 +15,11 @@ __pycache__/
 .env.local
 .env.*.local
 
+# A compose server's backups (every secret in .env and the whole database) and its filled-in policies (the operator's
+# name, address and email): deploy/compose/README.md
+deploy/compose/backups/
+deploy/compose/policies/*.md
+
 # Editor / IDE
 .idea/
 .vscode/*

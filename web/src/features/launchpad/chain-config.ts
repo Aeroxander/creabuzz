@@ -107,6 +107,8 @@ export function networkLabel(chainId: number): string {
 
 /** Build-time env this module reads. Both keys are optional and public. */
 export interface ChainEnv {
+  /** "1" in the hosted image: a contributor-only build, which offers no way to start a sale (`lib/raises-offered.ts`). */
+  VITE_CONTRIBUTOR_ONLY?: string;
   /** Overrides the default preset's chain id in every build. */
   VITE_LAUNCHPAD_CHAIN_ID?: string;
   /** Overrides the default RPC endpoint in every build. */

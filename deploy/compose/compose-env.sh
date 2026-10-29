@@ -15,8 +15,16 @@ creaton_on() {
   [[ "$value" == "true" ]]
 }
 
+# HTTPS (compose.caddy.yml) is read the same way: a `restart` that forgot the flag would recreate the relay with its
+# port published and nothing answering on 443, and passkeys need HTTPS.
+tls_on() {
+  local value="${BUZZ_COMPOSE_TLS:-}"
+  [[ -n "$value" ]] || value="$(env_value BUZZ_COMPOSE_TLS)"
+  [[ "$value" == "true" ]]
+}
+
 COMPOSE_FILES=(-f compose.yml)
-if [[ "${BUZZ_COMPOSE_TLS:-false}" == "true" ]]; then
+if tls_on; then
   COMPOSE_FILES+=(-f compose.caddy.yml)
 fi
 if creaton_on; then
@@ -30,16 +38,22 @@ compose() {
   docker compose --env-file .env "${COMPOSE_FILES[@]}" "$@"
 }
 
-require_env() {
+# Only that .env exists: enough to build the image, which takes none of its secrets (and the owner key is made with
+# the built image, so a first start builds before every CHANGE_ME is filled in).
+require_env_file() {
   if [[ ! -f .env ]]; then
     cat >&2 <<'MSG'
 Missing deploy/compose/.env.
 
-Copy .env.example to .env and replace every CHANGE_ME value, or run the bootstrap
-script once it lands. Do not start production with generated secrets missing.
+Copy .env.example to .env and replace every CHANGE_ME value (README.md says how
+to make each one). Do not start production with generated secrets missing.
 MSG
     exit 1
   fi
+}
+
+require_env() {
+  require_env_file
   if grep -Eq '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=.*CHANGE_ME' .env; then
     cat >&2 <<'MSG'
 deploy/compose/.env still contains CHANGE_ME placeholders.
@@ -49,6 +63,28 @@ MSG
   fi
   if creaton_on; then
     load_policies
+  fi
+  if tls_on; then
+    require_private_relay_port
+  fi
+}
+
+# With HTTPS on, Caddy is the only way in: compose.caddy.yml removes the relay's own port. A published relay port (an
+# extra override, or a Compose too old for `!reset`) would serve the site over plain http beside it, so it stops here.
+require_private_relay_port() {
+  local rendered
+  rendered="$(compose config relay)" || exit 1
+  # The relay's block in the rendered services, and a `ports:` key directly under it.
+  if awk '/^[^ ]/ { section = $1 }
+          section == "services:" && /^  [^ ]/ { relay = ($1 == "relay:") }
+          relay && /^    ports:/ { found = 1 }
+          END { exit !found }' <<<"$rendered"; then
+    cat >&2 <<'MSG'
+BUZZ_COMPOSE_TLS=true, but the relay's own port is still published: people could
+reach the site over plain http beside Caddy. Remove the relay's `ports:` from any
+extra compose file, and check `docker compose version` is v2.24.4 or newer.
+MSG
+    exit 1
   fi
 }
 

@@ -161,6 +161,8 @@ RUN set -eu; \
     if [ -z "${VITE_APP_RELEASE:-}" ] && [ "$BUZZ_SOURCE_SHA" != "unknown" ]; then \
         export VITE_APP_RELEASE="$BUZZ_SOURCE_SHA"; \
     fi; \
+    # The image is contributor-only: it takes no raise kit, so it offers no way to start a sale either.
+    export VITE_CONTRIBUTOR_ONLY=1; \
     node --experimental-strip-types web/scripts/check-deploy-env.mjs; \
     pnpm -C web build && pnpm -C admin-web build
 

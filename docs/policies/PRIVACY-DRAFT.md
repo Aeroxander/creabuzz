@@ -35,8 +35,19 @@ browser. Clearing your browser data removes them; save your recovery key first.
 
 ## Other services
 
-If you use them, these services see some of your data under their own privacy policies: [the chain node provider], [the
-card-to-USDC provider], [the passkey or wallet provider]. They are separate companies; we only pass what each step needs.
+Some steps go through other companies, which see what that step needs under their own privacy policies. We pass them
+only what each step needs.
+
+- **The chain node**, [name of the page's chain node provider]: the app in your browser asks it for public blockchain
+  records, so it sees your IP address and which accounts and projects you look at. Our server asks [name of the
+  server's chain node provider] to check a passkey account when you link it to your name.
+- **ZeroDev**, for passkey accounts: each on-chain step you take from a passkey account goes through ZeroDev's bundler,
+  and its paymaster covers the fee. ZeroDev sees your account's address, the step and your IP address.
+- **Your passkey** is kept by your device or password manager (for example Apple, Google or Microsoft) under their own
+  terms. We never see it. If you use a browser wallet instead, its maker's terms apply to it.
+- **Pictures and links hosted elsewhere.** A picture someone posts from another site (in a profile or a post) loads
+  straight from that site when you view it, so that site sees your IP address and when you looked. A link takes you to
+  its site.
 
 ## Your rights
 
@@ -46,4 +57,4 @@ anything on a blockchain. Write to [email]. You can also complain to your data p
 
 ## Changes
 
-If this note changes, the date above changes and we show the new version at sign-in.
+If this note changes, we post the change in General and the date above changes.

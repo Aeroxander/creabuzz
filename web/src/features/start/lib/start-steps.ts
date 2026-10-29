@@ -6,6 +6,9 @@
  * person published. Nothing is ticked on a guess. The last step (running it together) is what happens after a raise, so
  * it is never "done" from here.
  *
+ * A build that offers no raises (the contributor-only hosted image, `raisesOffered`) gets only the steps that need none:
+ * a raise step there would open a sale that cannot be launched.
+ *
  * Alias-free for `node --test`.
  */
 
@@ -76,8 +79,21 @@ export interface StartStepView extends StartStep {
   next: boolean;
 }
 
-/** Each step with whether it is done, and which one is next. */
-export function startSteps(progress: StartProgress): StartStepView[] {
+/** The steps that are about a raise: shown only where the build offers one. */
+const RAISE_STEPS: ReadonlySet<StartStepKey> = new Set(["raise", "run"]);
+
+/** The idea step's words where no raise follows it. */
+const IDEA_BODY_WITHOUT_RAISES =
+  "Say what you are making in a sentence. People can say they would back it, so you see real interest early.";
+
+/**
+ * Each step with whether it is done, and which one is next. `raises` is whether this build offers raises; without them
+ * the raise steps are left out and the idea step does not talk about raising.
+ */
+export function startSteps(
+  progress: StartProgress,
+  raises: boolean,
+): StartStepView[] {
   const done: Record<StartStepKey, boolean> = {
     workspace: progress.madeProject,
     idea: progress.hasIdea || progress.hasSale,
@@ -85,16 +101,23 @@ export function startSteps(progress: StartProgress): StartStepView[] {
     run: false,
   };
   let nextFound = false;
-  return START_STEPS.map((step) => {
-    const isDone = done[step.key];
-    // "Run it together" is what happens after a raise, never a task to tick off.
-    const next = !isDone && !nextFound && step.key !== "run";
-    if (next) nextFound = true;
-    return { ...step, done: isDone, next };
-  });
+  return START_STEPS.filter((step) => raises || !RAISE_STEPS.has(step.key)).map(
+    (step) => {
+      const isDone = done[step.key];
+      // "Run it together" is what happens after a raise, never a task to tick off.
+      const next = !isDone && !nextFound && step.key !== "run";
+      if (next) nextFound = true;
+      const body =
+        !raises && step.key === "idea" ? IDEA_BODY_WITHOUT_RAISES : step.body;
+      return { ...step, body, done: isDone, next };
+    },
+  );
 }
 
-/** The `?start=` of the launchpad link, as the launchpad reads it: anything else opens nothing. */
+/**
+ * The `?start=` of the launchpad link, as the launchpad reads it: anything else opens nothing. The launchpad also opens
+ * nothing for `sale` where the build offers no raises.
+ */
 export function parseStart(value: unknown): "idea" | "sale" | undefined {
   return value === "idea" || value === "sale" ? value : undefined;
 }

@@ -22,11 +22,27 @@ import type { SaleCurrency } from "../../lib/sale-currency";
 import type { FundingStatus } from "../../lib/funding";
 import type { VestingIssue } from "../../lib/vesting-params";
 import { effectiveLaunchId } from "../../lib/wizard";
+import { raisesOffered } from "../../lib/raises-offered";
 import { FundingStatusEditor } from "../FundingStatusEditor";
 import { Field } from "./fields";
 
 /** The relay caps `buzz-channel` tags on a launch record. */
 const MAX_BOUND_CHANNELS = 8;
+
+const TOKEN_MODES = ["dao", "mint", "import"] as const;
+
+/**
+ * The token kinds the form offers. A build that offers raises offers all three. One that does not (the contributor-only
+ * hosted image) offers none to switch to: the only way in there is editing a launch already published, and an edit keeps
+ * the kind the founder published rather than inviting a new sale.
+ */
+function offeredModes(
+  current: (typeof TOKEN_MODES)[number],
+): readonly (typeof TOKEN_MODES)[number][] {
+  return raisesOffered()
+    ? TOKEN_MODES
+    : TOKEN_MODES.filter((mode) => mode === current);
+}
 
 /** Everything the advanced fields read or change — assembled by the dialog. */
 export interface AdvancedFieldsState {
@@ -237,7 +253,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Token</span>
           <div className="flex gap-1 rounded-lg bg-black/5 p-1 dark:bg-white/10">
-            {(["dao", "mint", "import"] as const).map((mode) => (
+            {offeredModes(tokenMode).map((mode) => (
               <button
                 key={mode}
                 aria-pressed={tokenMode === mode}

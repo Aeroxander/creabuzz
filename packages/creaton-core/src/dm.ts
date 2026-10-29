@@ -195,8 +195,7 @@ const GROUP_METADATA = 39000;
  * itself (a moderation notice) and so never announced with a creation notice. Null for anything else.
  */
 export function parseDmMetadata(event: DmTaggedEvent): DmCreatedNotice | null {
-  if (event.kind !== GROUP_METADATA || !isDmChannelMetadata(event))
-    return null;
+  if (event.kind !== GROUP_METADATA || !isDmChannelMetadata(event)) return null;
   const dmId = event.tags.find((tag) => tag[0] === "d")?.[1];
   if (!dmId) return null;
   const participants = event.tags

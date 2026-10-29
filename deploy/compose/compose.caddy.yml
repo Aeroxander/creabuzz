@@ -1,8 +1,16 @@
+# Logs capped as in compose.yml (an anchor does not reach across files).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
 services:
   relay:
     ports: !reset []
 
   caddy:
+    logging: *logging
     image: caddy:2-alpine
     depends_on:
       relay:

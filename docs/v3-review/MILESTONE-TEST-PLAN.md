@@ -63,6 +63,12 @@ network never shows these fields and always uses the usual waits. The whole test
 
 ## Before starting
 
-The test sale needs `VITE_DAO_LAUNCH_KITS` in the hosted build (left out of the contributor run), the fundraising kit
-deployed by the same broadcast, and test USDC for every backer (Circle's Sepolia faucet, or a funded account you hand it
-out from). Run `scripts/cli-milestone-e2e.sh` and `scripts/web-milestone-e2e.sh` on the build you host first.
+**A separate test-raise build, decided later.** The test sale needs `VITE_DAO_LAUNCH_KITS`, and the hosted image does
+not take it: the image in `deploy/compose` offers contributor projects only, on purpose. So this test needs a build of
+its own, for example a static `pnpm build` in `web/` served on a separate address, or a test-network-only setting in the
+image that `web/scripts/check-deploy-env.mjs` allows on Sepolia alone. Which one is a decision for later, before this
+run; nothing is built for it now, and the contributor run does not need it.
+
+It also needs the fundraising kit (deployed by the same broadcast as the contributor kit) and test USDC for every backer
+(Circle's Sepolia faucet, or a funded account you hand it out from). Run `scripts/cli-milestone-e2e.sh` and
+`scripts/web-milestone-e2e.sh` on the build you host first.
