@@ -7,6 +7,7 @@ import {
   MessagesSquare,
   Quote,
   Repeat2,
+  ShieldAlert,
   UserPlus,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -14,8 +15,16 @@ import { useEffect, useRef, useState } from "react";
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
 import { resolveUserName } from "@/features/profiles/use-profiles";
 import { cn } from "@/shared/lib/cn";
+import {
+  KIND_CONTACT_LIST,
+  KIND_REACTION,
+  KIND_REPOST,
+  KIND_TEXT_NOTE,
+} from "@/shared/constants/kinds";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
+import { relayWsUrl } from "@/shared/lib/relay-url";
+import { QueryError } from "@/shared/ui/query-error";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import {
@@ -23,6 +32,13 @@ import {
   type NotificationGroup,
   type NotificationKind,
 } from "../lib/notifications";
+import {
+  KIND_FORUM_COMMENT,
+  KIND_FORUM_POST,
+  KIND_FORUM_VOTE,
+} from "../../board/lib/board-events";
+import { KIND_BOARD_MODERATION_LOG } from "../lib/moderation-notices";
+import { notificationsView } from "../lib/notifications-state";
 import { launchCoordinate } from "../../feed/lib/feed-events";
 import { useLaunches } from "../../launchpad/use-launches";
 import { useNotificationBadge, useNotifications } from "../use-discovery";
@@ -59,6 +75,7 @@ const ICON: Record<
   follow: { Icon: UserPlus, className: "text-sky-600" },
   reply: { Icon: MessageCircle, className: "text-sky-600" },
   mention: { Icon: MessageCircle, className: "text-sky-600" },
+  moderation: { Icon: ShieldAlert, className: "text-amber-600" },
 };
 
 const VERB: Record<NotificationKind, string> = {
@@ -70,7 +87,79 @@ const VERB: Record<NotificationKind, string> = {
   follow: "followed you",
   reply: "replied to you",
   mention: "mentioned you",
+  moderation: "a moderator's notice about you",
 };
+
+/** The kinds the notifications read asks for, named when the server refuses them. */
+const NOTIFICATION_KINDS = [
+  KIND_TEXT_NOTE,
+  KIND_REPOST,
+  KIND_REACTION,
+  KIND_CONTACT_LIST,
+  KIND_FORUM_POST,
+  KIND_FORUM_COMMENT,
+  KIND_FORUM_VOTE,
+  KIND_BOARD_MODERATION_LOG,
+];
+
+/**
+ * A moderator's notice about you: what happened and why, opening the board (and for a removed reply, the conversation
+ * it was in); a removed Home reply opens its Home conversation. Never grouped and never hidden by a mute.
+ */
+function ModerationRow({
+  group,
+  unread,
+}: {
+  group: NotificationGroup;
+  unread: boolean;
+}) {
+  const notice = group.notice;
+  if (!notice) return null;
+  const { Icon, className } = ICON.moderation;
+  return (
+    <div
+      className={cn(
+        "relative flex gap-3 border-b border-black/10 px-4 py-3 transition-colors hover:bg-black/[0.02] dark:border-white/10 dark:hover:bg-white/[0.03]",
+        unread && "bg-sky-500/5",
+      )}
+      data-testid="social-notification"
+      data-kind="moderation"
+    >
+      <Icon aria-hidden className={cn("mt-1 h-6 w-6 shrink-0", className)} />
+      <div className="min-w-0 flex-1 text-sm">
+        <p className="font-bold text-black dark:text-white">
+          {notice.title}
+          <span className="font-normal text-black/60 dark:text-white/60">
+            {" "}
+            · {shortRelativeTime(group.at)}
+          </span>
+        </p>
+        <p
+          className="mt-1 text-black/60 dark:text-white/60"
+          data-testid="social-notification-reason"
+        >
+          {notice.preview}
+        </p>
+      </div>
+      {notice.boardId ? (
+        <Link
+          aria-label={`Open the board: ${notice.title}`}
+          className="absolute inset-0"
+          params={{ boardId: notice.boardId }}
+          search={{ post: notice.threadId ?? undefined }}
+          to="/b/$boardId"
+        />
+      ) : notice.threadId ? (
+        <Link
+          aria-label={`Open the conversation: ${notice.title}`}
+          className="absolute inset-0"
+          params={{ id: notice.threadId }}
+          to="/social/post/$id"
+        />
+      ) : null}
+    </div>
+  );
+}
 
 function ReactionRow({
   group,
@@ -209,7 +298,7 @@ function LaunchUpdatesSection({ visitSeenAt }: { visitSeenAt: number }) {
   );
 }
 
-/** Up votes, reposts, quotes, replies, mentions, new followers, and board replies and up votes. */
+/** Up votes, reposts, quotes, replies, mentions, new followers, board replies and up votes, and moderators' notices. */
 export function NotificationsPage() {
   const me = existingUserPubkey();
   const notifications = useNotifications();
@@ -249,7 +338,12 @@ export function NotificationsPage() {
   const postRows = useNotesById(
     posts.flatMap((g) => (g.noteId ? [g.noteId] : [])),
   ).data;
-  const people = usePeople(groups.flatMap((g) => g.actors));
+  // A moderator's notice is signed by the server, not a person to show.
+  const people = usePeople(
+    groups.flatMap((g) => (g.kind === "moderation" ? [] : g.actors)),
+  );
+  const view = notificationsView(notifications);
+  const retry = () => void notifications.refetch();
 
   return (
     <SocialShell>
@@ -265,12 +359,43 @@ export function NotificationsPage() {
       {me && tab === "all" ? (
         <LaunchUpdatesSection visitSeenAt={visitSeenAt.current ?? 0} />
       ) : null}
+      {me && notifications.error && notifications.data ? (
+        <div
+          className="flex items-center justify-between gap-3 border-b border-black/10 bg-amber-500/10 px-4 py-2 text-sm text-black dark:border-white/10 dark:text-white"
+          data-testid="social-notifications-stale"
+          role="status"
+        >
+          <span>
+            Couldn't check for new notifications. Showing what loaded before.
+          </span>
+          <button
+            className="shrink-0 font-semibold underline"
+            data-testid="social-notifications-stale-retry"
+            onClick={retry}
+            type="button"
+          >
+            Try again
+          </button>
+        </div>
+      ) : null}
       {!me ? (
         <EmptyState title="Sign in to see notifications">
           Votes, replies, reposts and new followers show up here.
         </EmptyState>
-      ) : notifications.isLoading ? (
+      ) : view === "loading" ? (
         <TimelineSkeleton />
+      ) : view === "error" ? (
+        <div className="p-4">
+          <QueryError
+            description="The server did not answer, so your notifications can't be shown. Nothing was lost."
+            error={notifications.error}
+            kinds={NOTIFICATION_KINDS}
+            onRetry={retry}
+            relayUrl={relayWsUrl()}
+            testId="social-notifications-error"
+            title="Couldn't load your notifications"
+          />
+        </div>
       ) : groups.length === 0 &&
         tab === "all" &&
         hasLaunchUpdates ? null : groups.length === 0 ? (
@@ -282,7 +407,13 @@ export function NotificationsPage() {
         </EmptyState>
       ) : (
         groups.map((group) =>
-          group.noteId === null ? (
+          group.kind === "moderation" ? (
+            <ModerationRow
+              group={group}
+              key={group.key}
+              unread={group.at > (visitSeenAt.current ?? 0)}
+            />
+          ) : group.noteId === null ? (
             <ReactionRow
               group={group}
               key={group.key}

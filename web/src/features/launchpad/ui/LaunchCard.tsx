@@ -9,6 +9,7 @@ import { Star, Users } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { ServerImage } from "@/shared/ui/ServerImage";
 import { formatMoney } from "../lib/amounts";
 import { saleCurrencyFor } from "../lib/sale-currency";
 import { launchArt } from "../lib/launch-art";
@@ -103,11 +104,12 @@ export function LaunchCard({
           to="/launchpad/$launchId"
         >
           {record.image ? (
-            <img
+            <ServerImage
               alt=""
               className="h-full w-full object-cover"
               loading="lazy"
               src={record.image}
+              unavailable="hide"
             />
           ) : null}
         </Link>

@@ -13,6 +13,7 @@ import {
 } from "@/features/profiles/use-profiles";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
+import { ServerImage } from "@/shared/ui/ServerImage";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { postMedia, previewText } from "../lib/board-feed";
@@ -163,13 +164,14 @@ export function PostRow({
             ) : null}
           </div>
           {media.image ? (
-            <img
+            <ServerImage
               alt=""
               className="h-20 w-20 shrink-0 rounded-lg border object-cover sm:h-24 sm:w-24"
               data-testid="board-post-thumbnail"
               loading="lazy"
               referrerPolicy="no-referrer"
               src={rewriteRelayUrl(media.image)}
+              unavailable="icon"
             />
           ) : null}
         </div>

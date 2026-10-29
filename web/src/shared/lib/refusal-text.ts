@@ -65,6 +65,8 @@ export function refusalText(
   if (!message) return failure;
   const restricted = restrictionText(message);
   if (restricted !== null) return restricted;
+  const busy = requestLimitText(message);
+  if (busy !== null) return busy;
   const limited = /^rate-limited:\s*(.+)$/s.exec(message.trim());
   return limited ? asSentence(limited[1]) : message;
 }
@@ -78,8 +80,41 @@ export function liveRefusalText(reason: string | null): string {
   if (reason && /channel access revoked|not a channel member/i.test(reason))
     return "You no longer have access to this room or board. Live updates stopped.";
   const restricted = reason ? restrictionText(reason) : null;
-  return (
-    restricted ??
-    "Live updates stopped: the server refused this account. Reload the page to try again."
+  if (restricted !== null) return restricted;
+  // Opening pages too fast is a short wait, not a refusal of the account.
+  const limit = reason ? requestLimit(reason) : null;
+  if (limit === "busy")
+    return "Live updates stopped because the server is busy. Reload the page in a moment.";
+  if (limit !== null)
+    return `Live updates stopped because you're doing that a bit fast. Reload the page in ${waitText(limit)}.`;
+  return "Live updates stopped: the server refused this account. Reload the page to try again.";
+}
+
+/**
+ * The server's general request limit in plain words, or null when `message` is not it. Every read and write a signed-in
+ * person sends counts toward one limit per few seconds (`buzz-relay` `rejection.rs`, `send_admission_result`), and when
+ * the server cannot check that limit it refuses rather than guess. Its wording is the contract, as above.
+ */
+export function requestLimitText(message: string): string | null {
+  const limit = requestLimit(message);
+  if (limit === null) return null;
+  if (limit === "busy") return "The server is busy. Try again in a moment.";
+  return `You're doing that a bit fast. Try again in ${waitText(limit)}.`;
+}
+
+/** The general request limit's refusal: the seconds to wait, `"busy"` when the server could not check it, or null. */
+function requestLimit(message: string): number | "busy" | null {
+  const trimmed = message.trim();
+  const exceeded = /^rate-limited: quota exceeded; retry in (\d+)s$/.exec(
+    trimmed,
   );
+  if (exceeded) return Number(exceeded[1]);
+  if (trimmed === "rate-limited: shared admission unavailable") return "busy";
+  return null;
+}
+
+/** "N seconds", "1 second", or "a moment" when the window rolled over as the refusal was sent (no "0 seconds"). */
+function waitText(seconds: number): string {
+  if (seconds <= 0) return "a moment";
+  return `${seconds} ${seconds === 1 ? "second" : "seconds"}`;
 }

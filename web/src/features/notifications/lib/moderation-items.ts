@@ -1,7 +1,8 @@
 /**
- * A board's public moderation log entry about the reader, as a notification (D99): their post or reply removed, or a mute
- * on that board. The server writes these entries itself (it refuses one written by anyone else) and names the person they
- * are about, so the reader's own entries can be asked for by their key. Anything else is not a notification.
+ * A public moderation log entry about the reader, as a notification: on a board (D99), their post or reply removed or a
+ * mute on that board; on Home (an entry with no board `h` tag), their post or reply removed by one of the community's
+ * owners or admins. The server writes these entries itself (it refuses one written by anyone else) and names the person
+ * they are about, so the reader's own entries can be asked for by their key. Anything else is not a notification.
  *
  * Alias-free; `moderation-items.test.mjs` drives it under `node --test`.
  */
@@ -36,12 +37,17 @@ export function moderationItem(
   const why = reason
     ? `Reason: ${reason}${/[.!?]$/.test(reason) ? "" : "."}`
     : "No reason was given.";
+  const onHome = tagOf(event.tags, "h") === null;
   switch (tagOf(event.tags, "action")) {
-    case "remove":
-      return {
-        title: `A moderator removed your ${tagOf(event.tags, "thread") ? "reply" : "post"}`,
-        preview: `${why} It is in the board's moderation log.`,
-      };
+    case "remove": {
+      const what = tagOf(event.tags, "thread") ? "reply" : "post";
+      return onHome
+        ? { title: `A moderator removed your ${what} from Home`, preview: why }
+        : {
+            title: `A moderator removed your ${what}`,
+            preview: `${why} It is in the board's moderation log.`,
+          };
+    }
     case "mute": {
       // A longer mute still waiting for a second moderator has not changed anything yet.
       if (tagOf(event.tags, "status") === "awaiting_second_moderator")

@@ -35,6 +35,7 @@ import {
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { ServerImage } from "@/shared/ui/ServerImage";
 
 import { EMPTY_TALLY } from "../lib/ranking";
 import { trustTierLabel } from "../lib/trust-weight";
@@ -237,11 +238,12 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
         }
       >
         {profile?.banner ? (
-          <img
+          <ServerImage
             alt=""
             className="h-full w-full object-cover"
             referrerPolicy="no-referrer"
             src={profile.banner}
+            unavailable="hide"
           />
         ) : null}
       </div>

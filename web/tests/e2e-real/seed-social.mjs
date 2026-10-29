@@ -4,7 +4,7 @@
  *   node --experimental-strip-types tests/e2e-real/seed-social.mjs [db-url] [relay-ws-url]
  *
  * Needs the relay running and `seed.mjs` already run (it seeds the community
- * host). Adds alice, bob and carol as relay members, then publishes standard
+ * host). Adds everyone in PEOPLE as relay members, then publishes standard
  * Nostr events as them: profiles, follows, posts with hashtags / a mention /
  * an image, replies, likes, a repost and an end-to-end encrypted DM to the dev
  * identity. Writes `.social-fixture.json` with the ids the tests look for.
@@ -37,21 +37,25 @@ const relay =
 
 const pk = Object.fromEntries(Object.keys(PEOPLE).map((n) => [n, pubkeyOf(n)]));
 
-for (const name of ["alice", "bob", "carol"]) {
-  execFileSync(
-    "psql",
-    [
-      dbUrl,
-      "-v",
-      "ON_ERROR_STOP=1",
-      "-c",
-      `INSERT INTO relay_members (community_id, pubkey, role, added_by)
-         SELECT id, '${pk[name]}', 'member', 'seed' FROM communities
-         WHERE lower(host) = 'localhost:3199' ON CONFLICT DO NOTHING;`,
-    ],
-    { stdio: ["ignore", "ignore", "inherit"] },
-  );
-}
+// Every person in PEOPLE is a member of the server, in one statement: the hosted run (`HOSTED=1
+// scripts/web-social-e2e.sh`) admits only members, like the pilot server, so a person added to PEOPLE for a new spec
+// gets in without another seed step. Dev keeps the owner role seed.sql gave them.
+execFileSync(
+  "psql",
+  [
+    dbUrl,
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-c",
+    `INSERT INTO relay_members (community_id, pubkey, role, added_by)
+       SELECT c.id, p.pubkey, 'member', 'seed' FROM communities c
+       CROSS JOIN (VALUES ${Object.values(pk)
+         .map((key) => `('${key}')`)
+         .join(", ")}) AS p(pubkey)
+       WHERE lower(c.host) = 'localhost:3199' ON CONFLICT DO NOTHING;`,
+  ],
+  { stdio: ["ignore", "ignore", "inherit"] },
+);
 
 const now = Math.floor(Date.now() / 1000);
 // The relay refuses events more than 15 minutes from its clock, so the story

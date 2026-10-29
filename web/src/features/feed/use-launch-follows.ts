@@ -6,10 +6,9 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import {
   coordinatesFromLegacyKeys,
   followedLaunches,
-  withLaunch,
   withMigratedLaunches,
 } from "./lib/lists";
-import { useMyLists, usePublishFeedEvent } from "./use-feed";
+import { useFollowChanges, useMyLists, usePublishFeedEvent } from "./use-feed";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 
 /** Where launch follows lived before they were published (browser only). */
@@ -47,6 +46,7 @@ export function useLaunchFollows() {
   const me = existingUserPubkey();
   const lists = useMyLists();
   const publish = usePublishFeedEvent();
+  const { change, pendingFor } = useFollowChanges();
   // One attempt per visit: a failure keeps the old list (still shown below)
   // and is retried on the next page load, never in a render loop.
   const attempted = useRef(false);
@@ -78,17 +78,14 @@ export function useLaunchFollows() {
       return;
     }
     if (!lists.isSuccess) return;
-    publish.mutate(
-      withLaunch(lists.data.bookmarks, coord, !followed.has(coord)),
-      {
-        onSuccess: onDone,
-        onError: (error) =>
-          toast.error(
-            error instanceof Error
-              ? error.message
-              : "Could not update follows.",
-          ),
-      },
+    // The shared follow queue re-reads the newest list, so this never undoes another follow made a moment ago.
+    if (pendingFor({ launchCoord: coord }) !== undefined) return;
+    change({ launchCoord: coord, follow: !followed.has(coord) }).then(
+      () => onDone?.(),
+      (error: unknown) =>
+        toast.error(
+          error instanceof Error ? error.message : "Could not update follows.",
+        ),
     );
   };
 

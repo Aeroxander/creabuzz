@@ -10,6 +10,7 @@ import { useRef, useState } from "react";
 
 import { uploadBlob } from "@/shared/lib/upload-blob";
 import { Button } from "@/shared/ui/button";
+import { ServerImage } from "@/shared/ui/ServerImage";
 
 export function CoverImageField({
   value,
@@ -51,11 +52,12 @@ export function CoverImageField({
       <div className="mt-1 flex items-center gap-3">
         <div className="grid h-16 w-24 shrink-0 place-items-center overflow-hidden rounded-lg border border-dashed border-border bg-foreground/[0.04]">
           {value && !broken ? (
-            <img
+            <ServerImage
               alt=""
               className="h-full w-full object-cover"
-              onError={() => setBroken(true)}
+              onUnavailable={() => setBroken(true)}
               src={value}
+              unavailable="hide"
             />
           ) : (
             <ImagePlus aria-hidden className="h-5 w-5 text-muted-foreground" />

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import {
   KIND_BOOKMARK_LIST,
@@ -21,8 +21,10 @@ import {
   type EventTemplate,
   type FeedNote,
   parseNote,
+  type SignedEventLike,
 } from "./lib/feed-events";
-import { latestList } from "./lib/lists";
+import { createListWriter, type ListWrite } from "./lib/follow-queue";
+import { latestList, withLaunch, withPerson } from "./lib/lists";
 import { type ThreadSummary, parseThreadSummary } from "./lib/launch-thread";
 import {
   isMirrorable,
@@ -123,6 +125,28 @@ export function useVoteTallies(): {
   return { tallies, isLoading: reactions.isLoading };
 }
 
+/**
+ * Every follow and unfollow in this tab, people and launches, one at a time (`lib/follow-queue.ts`). Lists are scoped
+ * by server and person, so nothing written for one community or account is read back for another; switching
+ * communities reloads the page, which starts this afresh.
+ */
+const listWriter = createListWriter({
+  readLatest: async (write: ListWrite) =>
+    latestList(
+      await queryEvents(relayWsUrl(), {
+        kinds: [write.kind],
+        authors: [write.author],
+        limit: 5,
+      }),
+      write.kind,
+      write.author,
+    ),
+  publish: (template) =>
+    publishAsUser(template, "The server refused this change to your follows."),
+});
+
+const listScope = (me: string) => `${relayWsUrl()}|${me}`;
+
 /** The viewer's own follow (kind 3) and bookmark (kind 10003) lists. */
 export function useMyLists() {
   const me = existingUserPubkey();
@@ -130,18 +154,100 @@ export function useMyLists() {
     queryKey: feedKeys.lists(me ?? ""),
     enabled: Boolean(me),
     queryFn: async () => {
+      const author = me as string;
       const events = await queryEvents(relayWsUrl(), {
         kinds: [KIND_CONTACT_LIST, KIND_BOOKMARK_LIST],
-        authors: [me as string],
+        authors: [author],
         limit: 20,
       });
+      // A read that started before one of this tab's follows landed must not bring the older list back.
+      const scope = listScope(author);
       return {
-        contacts: latestList(events, KIND_CONTACT_LIST, me as string),
-        bookmarks: latestList(events, KIND_BOOKMARK_LIST, me as string),
+        contacts: listWriter.newest(
+          scope,
+          KIND_CONTACT_LIST,
+          latestList(events, KIND_CONTACT_LIST, author),
+        ),
+        bookmarks: listWriter.newest(
+          scope,
+          KIND_BOOKMARK_LIST,
+          latestList(events, KIND_BOOKMARK_LIST, author),
+        ),
       };
     },
     staleTime: 60_000,
   });
+}
+
+/** What is followed: a person (by key) or a launch (by coordinate). */
+export type FollowTarget = { person: string } | { launchCoord: string };
+export type FollowChange = FollowTarget & { follow: boolean };
+
+const changeTarget = (what: FollowTarget) =>
+  "person" in what
+    ? { kind: KIND_CONTACT_LIST, target: what.person.toLowerCase() }
+    : { kind: KIND_BOOKMARK_LIST, target: what.launchCoord };
+
+/**
+ * Follow or unfollow through the shared queue. `pendingFor` is the state a change is waiting for (shown on the button
+ * meanwhile), or undefined. `change` resolves with the written list once the server accepted it, and rejects, with the
+ * list left as it was, when it did not.
+ */
+export function useFollowChanges() {
+  const queryClient = useQueryClient();
+  const me = existingUserPubkey();
+  useSyncExternalStore(listWriter.subscribe, listWriter.version);
+
+  const pendingFor = (what: FollowTarget) => {
+    if (!me) return undefined;
+    const { kind, target } = changeTarget(what);
+    return listWriter.pendingFor(listScope(me), kind, target);
+  };
+
+  const change = useCallback(
+    (next: FollowChange): Promise<SignedEventLike> => {
+      if (!me) return Promise.reject(new Error("Sign in to follow."));
+      const { kind, target } = changeTarget(next);
+      return listWriter
+        .enqueue({
+          scope: listScope(me),
+          author: me,
+          kind,
+          target,
+          follow: next.follow,
+          apply: (latest) =>
+            kind === KIND_CONTACT_LIST
+              ? withPerson(latest, target, next.follow)
+              : withLaunch(latest, target, next.follow),
+          onWritten: (written) => {
+            queryClient.setQueryData<{
+              contacts: SignedEventLike | null;
+              bookmarks: SignedEventLike | null;
+            }>(feedKeys.lists(me), (old) =>
+              old === undefined
+                ? old
+                : kind === KIND_CONTACT_LIST
+                  ? { ...old, contacts: written }
+                  : { ...old, bookmarks: written },
+            );
+            if (kind === KIND_CONTACT_LIST) {
+              // Who you follow and their follower counts, shown on profiles and in Explore.
+              void queryClient.invalidateQueries({
+                queryKey: ["social", "lists"],
+              });
+            }
+          },
+        })
+        .catch((error: unknown) => {
+          // The write may have landed even though no answer came: read the truth again.
+          void queryClient.invalidateQueries({ queryKey: feedKeys.lists(me) });
+          throw error;
+        });
+    },
+    [me, queryClient],
+  );
+
+  return { pendingFor, change };
 }
 
 /**

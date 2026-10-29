@@ -34,11 +34,13 @@ interface NavEntry {
   /** The nav item stays highlighted for any path under this prefix. */
   prefix: string;
   badge?: number;
+  /** The count could not be read: the badge says so instead of showing nothing new. */
+  badgeFailed?: boolean;
 }
 
 function useNavEntries(): NavEntry[] {
   const me = existingUserPubkey();
-  const { unread } = useNotificationBadge();
+  const { unread, failed } = useNotificationBadge();
   return [
     {
       key: "feed",
@@ -63,6 +65,7 @@ function useNavEntries(): NavEntry[] {
             link: { to: "/social/notifications" as const },
             prefix: "/social/notifications",
             badge: unread,
+            badgeFailed: failed,
           },
           {
             key: "messages",
@@ -90,7 +93,18 @@ function useNavEntries(): NavEntry[] {
   ];
 }
 
-function UnreadBadge({ count }: { count?: number }) {
+function UnreadBadge({ count, failed }: { count?: number; failed?: boolean }) {
+  if (failed) {
+    return (
+      <span
+        className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-3xs font-bold text-black"
+        data-testid="social-unread-failed"
+      >
+        <span aria-hidden>!</span>
+        <span className="sr-only">Couldn't check for new notifications</span>
+      </span>
+    );
+  }
   if (!count) return null;
   return (
     <span
@@ -230,7 +244,11 @@ function SocialNavLink({
     <Link
       {...entry.link}
       aria-current={active ? "page" : undefined}
-      aria-label={compact ? entry.label : undefined}
+      aria-label={
+        compact
+          ? `${entry.label}${entry.badgeFailed ? ", couldn't check for new ones" : ""}`
+          : undefined
+      }
       className={cn(
         "flex shrink-0 items-center gap-4 rounded-full text-base transition-colors hover:bg-black/5 dark:hover:bg-white/10",
         compact
@@ -245,7 +263,7 @@ function SocialNavLink({
     >
       <span className="relative">
         <Icon aria-hidden className="h-6 w-6" />
-        <UnreadBadge count={entry.badge} />
+        <UnreadBadge count={entry.badge} failed={entry.badgeFailed} />
       </span>
       {compact ? null : <span className="hidden xl:inline">{entry.label}</span>}
     </Link>

@@ -10,6 +10,7 @@ import {
   Repeat2,
   Rocket,
   Share,
+  ShieldX,
   Trash2,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -20,10 +21,16 @@ import {
   resolveUserSecondaryName,
 } from "@/features/profiles/use-profiles";
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
+import { ReasonDialog } from "@/features/board/ui/ReasonDialog";
 import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
+import {
+  buildDeleteContent,
+  plainRefusal,
+} from "@/features/moderation/lib/moderationEvents";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { cn } from "@/shared/lib/cn";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { relativeTime, shortRelativeTime } from "@/shared/lib/relative-time";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
@@ -144,6 +151,7 @@ export function PostCard({
   const [quoting, setQuoting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [moderating, setModerating] = useState(false);
   const [deleted, setDeleted] = useState(false);
 
   const name = resolveUserName(author, note.pubkey);
@@ -186,6 +194,26 @@ export function PostCard({
         fail(error);
       },
     });
+  };
+
+  // A community owner or admin takes someone else's post off Home (the same
+  // people, by the same rank rule, who are offered Ban). The server decides
+  // again, closes the reports about it and tells the author.
+  const moderatorRemove = async (reason: string) => {
+    try {
+      await publishAsUser(
+        buildDeleteContent({ channelId: null, eventId: note.id, reason }),
+        "The server did not remove the post. Try again.",
+      );
+    } catch (error) {
+      throw new Error(
+        error instanceof Error && error.message
+          ? plainRefusal(error.message)
+          : "The server did not remove the post. Try again.",
+      );
+    }
+    setDeleted(true);
+    toast.success(`Post removed. ${name} is told.`);
   };
 
   if (deleted) return null;
@@ -407,6 +435,16 @@ export function PostCard({
             ) : null}
             {!isMine && me !== null && ban.allowed ? (
               <ActionButton
+                label="Remove post"
+                onClick={() => setModerating(true)}
+                testId="social-moderator-remove"
+                tone="delete"
+              >
+                <ShieldX aria-hidden />
+              </ActionButton>
+            ) : null}
+            {!isMine && me !== null && ban.allowed ? (
+              <ActionButton
                 label={`Ban ${name}`}
                 onClick={ban.start}
                 testId="social-ban"
@@ -440,6 +478,17 @@ export function PostCard({
         />
       ) : null}
       {ban.dialog}
+      {moderating ? (
+        <ReasonDialog
+          confirmLabel="Remove"
+          description={`This post by ${name} will be removed from Home for everyone, and any reports about it closed. ${name} is told, with your reason.`}
+          destructive
+          onClose={() => setModerating(false)}
+          onConfirm={moderatorRemove}
+          testId="social-moderator-remove-dialog"
+          title="Remove this post?"
+        />
+      ) : null}
       <ConfirmDialog
         confirmLabel="Delete"
         description="This removes your post for everyone. Reposts and quotes that already copied it may still show it elsewhere."

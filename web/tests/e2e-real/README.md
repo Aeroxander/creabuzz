@@ -39,7 +39,7 @@ The relay rate-limits writes per identity in two windows: a per-minute message
 quota and a short burst quota on websocket events (defaults 60/min and 10/s). The
 web client is chatty by design — a channel view opens several subscriptions and
 polls — so the fixture raises both above. When a refusal does appear it arrives as
-a toast ("Quota exceeded; retry in 2s.", the server's `rate-limited:` reason as a sentence) that then *covers* whatever
+a toast ("You're doing that a bit fast. Try again in 2 seconds.", the server's `rate-limited:` reason in plain words) that then *covers* whatever
 the test wants to click, which is worth knowing before reading a three-minute
 click timeout as a product bug.
 

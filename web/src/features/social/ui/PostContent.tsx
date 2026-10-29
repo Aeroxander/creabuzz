@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
 
 import { resolveUserName } from "@/features/profiles/use-profiles";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { ServerImage } from "@/shared/ui/ServerImage";
 
 import { displayText } from "../../feed/lib/feed-events";
 import { DecisionEmbeds } from "../../launchpad/ui/DecisionEmbeds";
@@ -122,16 +122,14 @@ function ResolvedCashtag({
 
 /** One inline image; if it cannot load, it disappears instead of leaving an empty frame. */
 function PostImage({ src }: { src: string }) {
-  const [failed, setFailed] = useState(false);
-  if (failed) return null;
   return (
-    <img
+    <ServerImage
       alt=""
       className="max-h-96 w-full object-cover"
       loading="lazy"
-      onError={() => setFailed(true)}
       referrerPolicy="no-referrer"
       src={src}
+      unavailable="hide"
     />
   );
 }

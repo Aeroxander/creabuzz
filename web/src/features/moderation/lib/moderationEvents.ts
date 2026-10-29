@@ -106,20 +106,39 @@ export function buildTimeout(input: {
 /**
  * Content-delete command (kind:9005). The server soft-deletes the target;
  * the `h` tag scopes the delete to the channel the message lives in.
+ *
+ * `channelId: null` removes a Home post, which belongs to no channel: no `h`
+ * tag, and only the community's owners and admins may send it. The server
+ * closes the open reports about the post and tells its author. `reason` is
+ * public (`public_reason`): it goes in the moderation log and to the author.
  */
 export function buildDeleteContent(input: {
-  channelId: string;
+  channelId: string | null;
   eventId: string;
+  reason?: string;
 }): EventTemplate {
-  const channelId = input.channelId.trim();
-  if (!channelId) throw new Error("channel id is required");
-  const eventId = requireHex64(input.eventId, "message id");
-  return {
-    kind: KIND_NIP29_DELETE_EVENT,
-    content: "",
-    tags: [
-      ["h", channelId],
-      ["e", eventId],
-    ],
-  };
+  const tags: string[][] = [];
+  if (input.channelId !== null) {
+    const channelId = input.channelId.trim();
+    if (!channelId) throw new Error("channel id is required");
+    tags.push(["h", channelId]);
+  }
+  tags.push(["e", requireHex64(input.eventId, "message id")]);
+  const reason = input.reason?.trim();
+  if (reason) tags.push(["public_reason", reason]);
+  return { kind: KIND_NIP29_DELETE_EVENT, content: "", tags };
+}
+
+/**
+ * A server refusal as a sentence people can read: the `restricted:` /
+ * `invalid:` / `error:` prefix dropped, a capital first letter and a full stop
+ * (`restricted: an admin cannot remove …` → `An admin cannot remove ….`).
+ * Anything else is returned as it came.
+ */
+export function plainRefusal(message: string): string {
+  const match = /^(?:restricted|invalid|error):\s*(.+)$/s.exec(message.trim());
+  if (!match) return message;
+  const words = match[1].trim();
+  const sentence = words.charAt(0).toUpperCase() + words.slice(1);
+  return /[.!?)]$/.test(sentence) ? sentence : `${sentence}.`;
 }

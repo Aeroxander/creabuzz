@@ -1862,3 +1862,15 @@ On the hosted Sepolia site (ZeroDev set, its gas policy on), in a browser with n
 3. Send part of it to another address of yours: the check says exactly what goes where; one passkey prompt; it arrives,
    and the balance drops. Then "All of it" for the rest.
 
+## 4ch. The social run's blockers (D142)
+
+On the hosted server (or `deploy/compose` locally), with three accounts: A (the community's owner), B and C.
+
+1. B adds a picture to a board post and sets a profile picture by upload (or a link on this server). C sees both, and a
+   private window opening the picture's own address is refused (that is right: pictures are for members).
+2. C posts on Home. B reports it. A opens the post's menu, chooses Remove post, gives a reason: the post is gone for B
+   after a reload, and C's Notifications on Home say a moderator removed it, with the reason, counted in the badge. Do
+   it once more from the moderation queue's Delete.
+3. B follows two people from Explore within a second. After a reload both show under Following, and both were told.
+4. Click around fast in two tabs (Home, a board, Notifications, a profile) for a minute: nothing says "Couldn't load",
+   and if a limit is ever hit it says to try again in a few seconds and then carries on.

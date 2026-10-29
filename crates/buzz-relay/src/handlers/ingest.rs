@@ -4486,6 +4486,18 @@ async fn ingest_event_inner(
         });
     }
 
+    // A community moderator removing a Home post: a kind:9005 with no `h` tag
+    // (rooms and boards name theirs). Run directly, never stored: the removal,
+    // its audit row, the closed reports and the public log entry commit
+    // together before the answer. Boxed: the ingest future runs close to a
+    // worker's stack.
+    if kind_u32 == KIND_NIP29_DELETE_EVENT && super::home_moderation::is_home_removal(&event) {
+        return Box::pin(super::home_moderation::remove_home_post(
+            tenant, state, &event, &auth,
+        ))
+        .await;
+    }
+
     let mut channel_id = if kind_u32 == KIND_REACTION {
         match derive_reaction_channel(tenant.community(), &state.db, &event).await {
             ReactionChannelResult::Channel(ch_id) => Some(ch_id),

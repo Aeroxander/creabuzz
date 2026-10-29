@@ -87,6 +87,10 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - The server turns on read state (`BUZZ_V1_ENABLED`, unread markers) and the app's page routes (`BUZZ_WEB_SPA=full`),
   and shows the terms and privacy note named by `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` at sign-up. `run.sh` refuses
   a policy file that still has a draft's `[placeholders]`.
+- It also raises the per-person request limit (`BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC`, default 40;
+  `BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN`, default 300): the web app's reads count against it, and one person may have
+  two tabs open. Someone over it is told to wait a few seconds. `HOSTED=1 SOCIAL_FRAME_REPORT=1
+  scripts/web-social-e2e.sh` runs the social suite under these values and prints the busiest five seconds it saw.
 - Building takes a machine with several GB of memory and about 15 GB of disk for Docker (Rust's release build). A small
   server can load an image built elsewhere instead: `docker save creaton-relay:local | ssh <host> docker load`, built
   for the server's architecture (`docker build --platform linux/amd64 ...` from an Apple silicon Mac is slow but works).

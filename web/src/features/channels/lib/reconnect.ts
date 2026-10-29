@@ -29,6 +29,26 @@ export function isFinalRefusal(reason: string): boolean {
   return /^(blocked|restricted):/i.test(reason.trim());
 }
 
+/** How many times in a row a subscription waits out the server's request limit before it gives up. */
+export const RATE_LIMIT_RETRIES = 6;
+
+/**
+ * The wait before re-asking after the server closed a subscription for going over the person's request limit
+ * (`rate-limited: quota exceeded; retry in 3s`), or null when `reason` is not that. It waits at least what the server
+ * said, and longer on each attempt in a row (`attempt` is 1-based), so tabs over the limit back off instead of adding
+ * to it. A limit is not a refusal: giving up on it would leave a room looking live while nothing arrives.
+ */
+export function rateLimitRetryDelay(
+  reason: string,
+  attempt: number,
+  random: () => number = Math.random,
+): number | null {
+  if (!/^rate-limited:/i.test(reason.trim())) return null;
+  const said = /retry in (\d+)\s*s/i.exec(reason);
+  const serverMs = said ? Number(said[1]) * 1_000 : 0;
+  return Math.max(serverMs, reconnectDelay(attempt, random));
+}
+
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
 const JITTER_RATIO = 0.3;

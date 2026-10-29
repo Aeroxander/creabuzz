@@ -6,6 +6,7 @@ import {
   relayWsUrl,
   setStoredRelayWsUrl,
 } from "@/shared/lib/relay-url";
+import { ServerImage } from "@/shared/ui/ServerImage";
 import { Button } from "@/shared/ui/button";
 import { looksLikeBanned, looksLikeNotAMember } from "../lib/access";
 import { useCommunities } from "../use-communities";
@@ -261,10 +262,11 @@ export function CommunityHomePage() {
         <div className="rounded-xl border border-black/10 bg-white p-8 shadow-xs dark:border-white/10 dark:bg-white/5">
           <div className="flex items-center gap-4">
             {icon ? (
-              <img
+              <ServerImage
                 alt=""
                 src={icon}
                 className="h-16 w-16 rounded-xl object-cover"
+                unavailable="icon"
               />
             ) : (
               <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-black/5 text-3xl font-semibold text-black/60 dark:bg-white/10 dark:text-white/70">

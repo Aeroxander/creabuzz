@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,7 @@ import * as nip44 from "nostr-tools/nip44";
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 
 import { openGiftWrap } from "../../src/features/social/lib/nip17.ts";
+import { expect, test } from "./frame-meter";
 import { keyFromHex, post, readAs, waitForEvents } from "./social-helpers.mjs";
 
 /**
@@ -872,6 +873,16 @@ test("you can delete your own post; other people's posts have no delete button",
 
 const BASE_URL = process.env.BUZZ_REAL_RELAY_URL ?? "http://localhost:3199";
 
+/**
+ * The hosted build is contributor-only (its Dockerfile sets VITE_CONTRIBUTOR_ONLY=1): it runs no sales, so the tests that
+ * need a sale and its gated backers room are left out when the suite runs as the pilot server does (`HOSTED=1
+ * scripts/web-social-e2e.sh` passes SOCIAL_HOSTED=1). Ideas and their supporters room are open there, so that test
+ * runs and only its sale-button checks are left out.
+ */
+const CONTRIBUTOR_ONLY = process.env.SOCIAL_HOSTED === "1";
+const NO_SALE_PATH =
+  "the hosted build is contributor-only and runs no sales (SOCIAL_HOSTED=1)";
+
 test("an idea starts in one step with an open supporters room, and a supporter joins in one click", async ({
   page,
   browser,
@@ -949,9 +960,12 @@ test("an idea starts in one step with an open supporters room, and a supporter j
   await page.goto(`/launchpad/${launchId}?author=${fixture.people.dev}`);
   await expect(page.getByTestId("idea-progress")).toBeVisible();
 
-  // Until ten people show up, the sale is not the next step (but can be skipped).
-  await expect(page.getByTestId("idea-prepare-sale")).toBeDisabled();
-  await expect(page.getByTestId("idea-prepare-anyway")).toBeVisible();
+  // Until ten people show up, the sale is not the next step (but can be skipped). The contributor-only build runs no
+  // sales, so there these buttons are not checked.
+  if (!CONTRIBUTOR_ONLY) {
+    await expect(page.getByTestId("idea-prepare-sale")).toBeDisabled();
+    await expect(page.getByTestId("idea-prepare-anyway")).toBeVisible();
+  }
 
   // Alice, in her own browser, backs it with one click.
   const aliceContext = await browser.newContext({
@@ -1033,6 +1047,7 @@ test("an idea starts in one step with an open supporters room, and a supporter j
 test("launch chat: the gated backers room admits a backer with one click", async ({
   page,
 }) => {
+  test.skip(CONTRIBUTOR_ONLY, NO_SALE_PATH);
   test.slow();
   const fixture = fixtureOrSkip();
   const errors = await signInAsDev(page, fixture);
@@ -1125,6 +1140,7 @@ test("launch chat: the gated backers room admits a backer with one click", async
 test("preparing the sale keeps the idea's rooms and adds the gated backers room", async ({
   page,
 }) => {
+  test.skip(CONTRIBUTOR_ONLY, NO_SALE_PATH);
   test.slow();
   const fixture = fixtureOrSkip();
   const errors = await signInAsDev(page, fixture);

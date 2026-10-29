@@ -27,6 +27,16 @@ services:
     environment:
       # Unread rooms and boards: the server's private read-state API (D101).
       BUZZ_V1_ENABLED: ${BUZZ_V1_ENABLED:-true}
+      # How much one signed-in person may send. The first counts every read, live update and write the web app sends,
+      # per second, averaged over 5 seconds and shared by all of that person's tabs and devices; the second counts
+      # writes a minute. The relay's own default (10 a second) is sized for chat clients: the web app opens several
+      # reads per page, and one person may have two tabs open. Measured on 2026-10-29: the social suite's busiest five
+      # seconds for one person was 81 requests (the relay's default allows 50); 40 a second allows 200, room for two busy
+      # tabs. To measure again: HOSTED=1 SOCIAL_FRAME_REPORT=1 scripts/web-social-e2e.sh (it reads these values here).
+      # The web app's HTTP reads (/query, unread state) count against a third limit, BUZZ_RATE_LIMIT_HUMAN_API_CALLS_PER_MIN
+      # (relay default 300 a minute), which is left at its default and is not measured by that run.
+      BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC: ${BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC:-40}
+      BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN: ${BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN:-300}
       # Every path the server does not own opens the web app (its own routes, and invites on every community address).
       BUZZ_WEB_SPA: full
       # Shown at sign-up. run.sh fills these from BUZZ_TERMS_FILE and BUZZ_PRIVACY_FILE, and refuses a file that still

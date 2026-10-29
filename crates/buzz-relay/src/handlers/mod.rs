@@ -24,6 +24,10 @@ pub mod community_provisioning;
 pub mod count;
 /// EVENT handler — WS dispatcher → ingest pipeline → fan-out.
 pub mod event;
+/// Removing a Home post as a community moderator (kind:9005 with no `h` tag).
+pub mod home_moderation;
+#[cfg(test)]
+mod home_moderation_postgres_tests;
 /// NIP-IA identity archive request handler (kinds 9035–9036).
 pub mod identity_archive;
 /// imeta tag validation helpers.

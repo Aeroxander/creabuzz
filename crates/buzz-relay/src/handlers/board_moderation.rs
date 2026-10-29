@@ -814,7 +814,7 @@ const REMOVED_EXCERPT_CHARS: usize = 80;
 
 /// The start of removed words to quote back to their author: the first line,
 /// without a heading's `#`s, cut at [`REMOVED_EXCERPT_CHARS`].
-fn removed_excerpt(content: &str) -> String {
+pub(crate) fn removed_excerpt(content: &str) -> String {
     let line = content
         .lines()
         .map(str::trim)
@@ -1128,7 +1128,7 @@ fn public_reason(event: &Event, command: &Command) -> Option<String> {
         .filter(|reason| !reason.is_empty())
 }
 
-fn clip_reason(reason: &str) -> String {
+pub(crate) fn clip_reason(reason: &str) -> String {
     let cleaned: String = reason.chars().filter(|c| !c.is_control()).collect();
     cleaned
         .trim()

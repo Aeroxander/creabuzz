@@ -93,3 +93,30 @@ test("only entries about the reader, and only removals and mutes in force", () =
     null,
   );
 });
+
+test("a Home post removed by the community's moderators says so, with the reason", () => {
+  // A Home removal's log entry carries no board tag.
+  const home = (tags, content = "") => ({
+    kind: KIND_BOARD_MODERATION_LOG,
+    content,
+    tags: [["action", "remove"], ["actor", BEA], ...tags],
+  });
+  assert.deepEqual(moderationItem(home([["p", ME]], "Spam"), ME), {
+    title: "A moderator removed your post from Home",
+    preview: "Reason: Spam.",
+  });
+  assert.deepEqual(
+    moderationItem(
+      home([
+        ["p", ME],
+        ["thread", "c3".repeat(32)],
+      ]),
+      ME,
+    ),
+    {
+      title: "A moderator removed your reply from Home",
+      preview: "No reason was given.",
+    },
+  );
+  assert.equal(moderationItem(home([["p", BEA]], "Spam"), ME), null);
+});

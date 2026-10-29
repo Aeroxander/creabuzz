@@ -3,6 +3,7 @@ import remarkGfm from "remark-gfm";
 
 import { DecisionEmbeds } from "@/features/launchpad/ui/DecisionEmbeds";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
+import { ServerImage } from "@/shared/ui/ServerImage";
 
 /**
  * A post or reply's text. Links open in a new tab and never hand over the opener. Pictures show at most as tall as a
@@ -20,9 +21,10 @@ export function BoardMarkdown({ text }: { text: string }) {
           ),
           img: ({ src, alt }) =>
             typeof src === "string" && /^https?:\/\//i.test(src) ? (
-              <img
+              <ServerImage
                 alt={alt ?? ""}
                 className="my-2 max-h-[28rem] max-w-full rounded-lg border object-contain"
+                data-testid="board-markdown-picture"
                 loading="lazy"
                 referrerPolicy="no-referrer"
                 src={rewriteRelayUrl(src)}

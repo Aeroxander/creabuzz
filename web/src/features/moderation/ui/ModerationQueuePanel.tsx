@@ -9,9 +9,11 @@
 import { useState } from "react";
 import { Ban, Clock, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 
+import { ReasonDialog } from "@/features/board/ui/ReasonDialog";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import {
+  isHomePostReport,
   reportStatusLabel,
   reportTargetLabel,
   reportTypeLabel,
@@ -47,14 +49,16 @@ function Row({
   onPerform: (
     report: ModerationReport,
     action: ResolutionAction,
-    options?: { expiresAt?: number },
-  ) => void;
+    options?: { expiresAt?: number; reason?: string },
+  ) => Promise<string | null>;
 }) {
   const reporter = row.report.reporterPubkey;
   const nameOf = useUserNames(reporter ? [reporter] : []);
   const [pickingTimeout, setPickingTimeout] = useState(false);
   const [confirmingBan, setConfirmingBan] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { report, actions, locallyResolved } = row;
+  const onHome = isHomePostReport(report);
   const open = report.status === "open" && !locallyResolved;
   const buttons: ResolutionAction[] = open ? actions : [];
 
@@ -66,7 +70,7 @@ function Row({
       <div className="flex items-baseline justify-between gap-2">
         <p className="truncate text-xs font-medium text-black dark:text-white">
           {reportTypeLabel(report.reportType)} · about{" "}
-          {reportTargetLabel(report.targetKind)}
+          {onHome ? "a post on Home" : reportTargetLabel(report.targetKind)}
         </p>
         <span className="shrink-0 text-2xs font-medium text-black/70 dark:text-white/70">
           {reportStatusLabel(locallyResolved ? "resolved" : report.status)}
@@ -99,7 +103,7 @@ function Row({
                   key={choice.seconds}
                   onClick={() => {
                     setPickingTimeout(false);
-                    onPerform(report, "timeout", {
+                    void onPerform(report, "timeout", {
                       expiresAt: Math.floor(Date.now() / 1000) + choice.seconds,
                     });
                   }}
@@ -129,8 +133,10 @@ function Row({
                       setPickingTimeout(true);
                     } else if (action === "ban") {
                       setConfirmingBan(true);
+                    } else if (action === "delete") {
+                      setDeleting(true);
                     } else {
-                      onPerform(report, action);
+                      void onPerform(report, action);
                     }
                   }}
                   type="button"
@@ -150,11 +156,31 @@ function Row({
             onCancel={() => setConfirmingBan(false)}
             onConfirm={() => {
               setConfirmingBan(false);
-              onPerform(report, "ban");
+              void onPerform(report, "ban");
             }}
             open={confirmingBan}
             title="Ban this member?"
           />
+          {deleting ? (
+            <ReasonDialog
+              confirmLabel="Delete"
+              description={
+                onHome
+                  ? "This post will be removed from Home for everyone and the report closed. Its author is told, with your reason."
+                  : "This message will be removed for everyone and the report closed."
+              }
+              destructive
+              onClose={() => setDeleting(false)}
+              onConfirm={async (reason) => {
+                const failed = await onPerform(report, "delete", { reason });
+                if (failed !== null) throw new Error(failed);
+              }}
+              testId="moderation-delete-dialog"
+              title={
+                onHome ? "Remove this post from Home?" : "Delete this message?"
+              }
+            />
+          ) : null}
         </div>
       ) : null}
     </li>
@@ -229,13 +255,7 @@ export function ModerationQueuePanel() {
         ) : (
           <ul className="space-y-2">
             {visible.map((row) => (
-              <Row
-                key={row.report.id}
-                onPerform={(report, action, options) => {
-                  void perform(report, action, options);
-                }}
-                row={row}
-              />
+              <Row key={row.report.id} onPerform={perform} row={row} />
             ))}
           </ul>
         )}

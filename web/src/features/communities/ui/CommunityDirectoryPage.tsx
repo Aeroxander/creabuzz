@@ -13,6 +13,7 @@ import {
   type CommunityDirectoryEntry,
 } from "../use-communities";
 import { Button } from "@/shared/ui/button";
+import { ServerImage } from "@/shared/ui/ServerImage";
 import { QueryError } from "@/shared/ui/query-error";
 import { useSelfServe } from "../use-self-serve";
 import { CreateCommunityDialog } from "./CreateCommunityDialog";
@@ -31,10 +32,11 @@ function CommunityCard({ entry }: { entry: CardEntry }) {
     >
       <div className="flex items-center gap-3">
         {entry.icon ? (
-          <img
+          <ServerImage
             alt=""
             src={entry.icon}
             className="h-10 w-10 rounded-lg object-cover"
+            unavailable="icon"
           />
         ) : (
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-black/5 text-lg font-semibold text-black/60 dark:bg-white/10 dark:text-white/70">

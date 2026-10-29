@@ -21,6 +21,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { useActionTracker } from "@/shared/hooks/use-action-tracker";
 import { useBoundedPoll } from "@/shared/hooks/use-bounded-poll";
 import {
+  isHomePostReport,
   parseModerationReports,
   resolvableActions,
   sortQueue,
@@ -32,6 +33,7 @@ import {
   buildDeleteContent,
   buildResolveReport,
   buildTimeout,
+  plainRefusal,
   type EventTemplate,
 } from "./lib/moderationEvents";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
@@ -40,6 +42,7 @@ import { publishAsUser } from "@/shared/lib/publish-as-user";
 const REPORTS_LIMIT = 30;
 const REPORT_EVENTS_LIMIT = 50;
 const POLL_MS = 30_000;
+const FAILED = "Couldn’t apply the action. Try again.";
 
 export type ModerationAccess = "granted" | "denied" | "unknown";
 
@@ -106,11 +109,12 @@ export type ModerationQueueState = {
   /** In-flight action keys ("<report id>:<action>"). */
   acting: ReadonlySet<string>;
   errors: ReadonlyMap<string, string>;
+  /** Resolves to null when it went through, else what went wrong. */
   perform: (
     report: ModerationReport,
     action: ResolutionAction,
     options?: { expiresAt?: number; reason?: string },
-  ) => Promise<void>;
+  ) => Promise<string | null>;
   refresh: () => Promise<void>;
 };
 
@@ -196,7 +200,13 @@ export function useModerationQueue(): ModerationQueueState {
   );
 
   const publishTemplate = useCallback(async (template: EventTemplate) => {
-    await publishAsUser(template, "The server rejected the action.");
+    try {
+      await publishAsUser(template, "The server rejected the action.");
+    } catch (error) {
+      throw error instanceof Error
+        ? new Error(plainRefusal(error.message))
+        : error;
+    }
   }, []);
 
   /**
@@ -209,7 +219,7 @@ export function useModerationQueue(): ModerationQueueState {
       report: ModerationReport,
       action: ResolutionAction,
       options?: { expiresAt?: number; reason?: string },
-    ) => {
+    ): Promise<string | null> => {
       const key = `${report.id}:${action}`;
       setActingFor(key, true);
       clearError(key);
@@ -217,13 +227,13 @@ export function useModerationQueue(): ModerationQueueState {
         const author = authors.get(report.reportEventId) ?? null;
         const target = report.targetKind === "pubkey" ? report.target : author;
         if (action === "delete") {
-          if (!report.channelId) {
-            throw new Error("This report has no channel to delete from.");
-          }
+          // A Home post has no room: its removal closes the open reports
+          // about it on the server, in the same commit.
           await publishTemplate(
             buildDeleteContent({
               channelId: report.channelId,
               eventId: report.target,
+              reason: options?.reason,
             }),
           );
         } else if (action === "timeout") {
@@ -239,21 +249,38 @@ export function useModerationQueue(): ModerationQueueState {
           }
           await publishTemplate(buildBan({ pubkey: target }));
         }
-        await publishTemplate(
-          buildResolveReport({
-            reportEventId: report.reportEventId,
-            action,
-            reason: options?.reason,
-          }),
-        );
+        try {
+          await publishTemplate(
+            buildResolveReport({
+              reportEventId: report.reportEventId,
+              action,
+              reason: options?.reason,
+            }),
+          );
+        } catch (resolveError) {
+          // A Home removal already closed this report; resolving it again is
+          // refused as not open. Still sent, for a post that was gone before
+          // (that removal closed nothing).
+          if (
+            !(
+              action === "delete" &&
+              isHomePostReport(report) &&
+              resolveError instanceof Error &&
+              /report is not open/i.test(resolveError.message)
+            )
+          )
+            throw resolveError;
+        }
         setLocalResolved((current) => {
           const next = new Set(current);
           next.add(report.id);
           return next;
         });
         void refresh();
+        return null;
       } catch (error) {
-        failWith(key, error, "Couldn’t apply the action. Try again.");
+        failWith(key, error, FAILED);
+        return error instanceof Error && error.message ? error.message : FAILED;
       } finally {
         setActingFor(key, false);
       }

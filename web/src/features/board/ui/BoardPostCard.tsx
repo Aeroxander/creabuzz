@@ -19,6 +19,7 @@ import { VoteControl } from "@/features/social/ui/VoteControl";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { relativeTime, shortRelativeTime } from "@/shared/lib/relative-time";
+import { ServerImage } from "@/shared/ui/ServerImage";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { type FeedPost, postMedia, previewText } from "../lib/board-feed";
@@ -154,7 +155,7 @@ export function BoardPostCard({
             </p>
           ) : null}
           {media.image ? (
-            <img
+            <ServerImage
               alt=""
               className="mt-2 max-h-80 w-full rounded-2xl border border-black/10 object-cover dark:border-white/10"
               data-testid="social-board-post-picture"

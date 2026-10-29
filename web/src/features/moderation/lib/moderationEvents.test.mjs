@@ -12,9 +12,11 @@ import {
   buildResolveReport,
   buildTimeout,
   buildUnban,
+  plainRefusal,
 } from "./moderationEvents.ts";
 import {
   enforcementTarget,
+  isHomePostReport,
   parseModerationReports,
   resolvableActions,
   reportTypeLabel,
@@ -111,6 +113,48 @@ describe("enforcement builders (desktop-pinned)", () => {
       /channel id/,
     );
   });
+
+  it("removes a Home post with no room tag, carrying the public reason", () => {
+    // A Home post belongs to no room or board: the server takes a kind:9005
+    // without an `h` tag as the community moderators' Home removal.
+    assert.deepEqual(
+      buildDeleteContent({
+        channelId: null,
+        eventId: REPORT,
+        reason: " Spam ",
+      }),
+      {
+        kind: 9005,
+        content: "",
+        tags: [
+          ["e", REPORT],
+          ["public_reason", "Spam"],
+        ],
+      },
+    );
+    assert.deepEqual(
+      buildDeleteContent({ channelId: null, eventId: REPORT, reason: "  " })
+        .tags,
+      [["e", REPORT]],
+    );
+    // A room delete keeps its room and can carry a reason too.
+    assert.deepEqual(
+      buildDeleteContent({
+        channelId: CHANNEL,
+        eventId: REPORT,
+        reason: "Off topic",
+      }).tags,
+      [
+        ["h", CHANNEL],
+        ["e", REPORT],
+        ["public_reason", "Off topic"],
+      ],
+    );
+    assert.throws(
+      () => buildDeleteContent({ channelId: null, eventId: "nope" }),
+      /message id/,
+    );
+  });
 });
 
 describe("queue rows", () => {
@@ -191,6 +235,24 @@ describe("queue rows", () => {
     assert.deepEqual(resolvableActions(closed, MEMBER), []);
   });
 
+  it("offers Delete for a report about a Home post (no room or board)", () => {
+    const [homeRow] = parseModerationReports([rawRow({ channel_id: null })]);
+    assert.equal(isHomePostReport(homeRow), true);
+    assert.deepEqual(resolvableActions(homeRow, MEMBER), [
+      "delete",
+      "timeout",
+      "ban",
+      "dismiss",
+      "escalate",
+    ]);
+    const [roomRow] = parseModerationReports([rawRow()]);
+    assert.equal(isHomePostReport(roomRow), false);
+    const [pubkeyRow] = parseModerationReports([
+      rawRow({ target_kind: "pubkey", target: MEMBER, channel_id: null }),
+    ]);
+    assert.equal(isHomePostReport(pubkeyRow), false);
+  });
+
   it("resolves the enforcement target from the reported message's signer", () => {
     const [row] = parseModerationReports([rawRow()]);
     assert.equal(enforcementTarget(row, new Map([[REPORT, MEMBER]])), MEMBER);
@@ -213,5 +275,26 @@ describe("buildUnban", () => {
 
   it("refuses anything that is not a 64-character key", () => {
     assert.throws(() => buildUnban({ pubkey: "alice" }));
+  });
+});
+
+describe("plainRefusal", () => {
+  it("says the server's reason as a sentence", () => {
+    assert.equal(
+      plainRefusal(
+        "restricted: only the community's owners and admins can remove someone's post from Home",
+      ),
+      "Only the community's owners and admins can remove someone's post from Home.",
+    );
+    assert.equal(
+      plainRefusal(
+        "invalid: report is not open (already resolved or dismissed)",
+      ),
+      "Report is not open (already resolved or dismissed)",
+    );
+    assert.equal(
+      plainRefusal("You are banned from this community."),
+      "You are banned from this community.",
+    );
   });
 });

@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
-import { expect, type Browser, type Page, test } from "@playwright/test";
+import type { Browser, Page } from "@playwright/test";
 
+import { expect, test } from "./frame-meter";
 import { PEOPLE, post, pubkeyOf, readAs } from "./social-helpers.mjs";
 
 /**

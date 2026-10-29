@@ -4,6 +4,7 @@ import { parseAnimatedAvatarUrl } from "@/shared/lib/animatedAvatar";
 import { cn } from "@/shared/lib/cn";
 import { getInitials } from "@/shared/lib/initials";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
+import { useServerMediaSrc } from "@/shared/lib/use-server-media";
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
 
 type UserAvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
@@ -68,11 +69,15 @@ export function UserAvatar({
   // the animation.
   const animated = parseAnimatedAvatarUrl(avatarUrl);
   const [isHovered, setIsHovered] = React.useState(false);
-  const src = animated
+  const address = animated
     ? rewriteRelayUrl(isHovered ? animated.animationUrl : animated.posterUrl)
     : avatarUrl
       ? rewriteRelayUrl(avatarUrl)
       : null;
+  // A picture on this community's server needs a signed read; until it has
+  // one (or if the reader cannot sign) the initials show.
+  const media = useServerMediaSrc(address);
+  const src = media.status === "ready" ? media.src : null;
   const resolvedShape = shape ?? "circle";
   const radiusClass =
     resolvedShape === "squircle" ? "rounded-[30%]" : "rounded-full";

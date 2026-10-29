@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   isFinalRefusal,
+  RATE_LIMIT_RETRIES,
+  rateLimitRetryDelay,
   ReconnectBackoff,
   reconnectDelay,
 } from "./reconnect.ts";
@@ -84,4 +86,18 @@ test("a ban or missing access is final; a server error while checking is worth r
     false,
   );
   assert.equal(isFinalRefusal(""), false);
+});
+
+test("a request-limit close waits what the server said, longer each time, and nothing else counts", () => {
+  const reason = "rate-limited: quota exceeded; retry in 7s";
+  assert.equal(rateLimitRetryDelay(reason, 1, noJitter), 7_000);
+  // Past the server's own wait, the doubling backoff takes over.
+  assert.equal(rateLimitRetryDelay(reason, 4, noJitter), 8_000);
+  assert.equal(
+    rateLimitRetryDelay("rate-limited: slow down", 1, noJitter),
+    1_000,
+  );
+  assert.equal(rateLimitRetryDelay("restricted: not a member", 1), null);
+  assert.equal(rateLimitRetryDelay("auth-required: sign in", 1), null);
+  assert.ok(RATE_LIMIT_RETRIES > 0 && RATE_LIMIT_RETRIES < 20);
 });

@@ -28,6 +28,8 @@ pub mod event;
 pub mod feed;
 /// Git repository name registry (NIP-34 kind:30617).
 pub mod git_repo;
+/// Removing a Home post as a community moderator, in one transaction.
+pub mod home_moderation;
 /// Community moderation: reports, bans/timeouts, audit actions.
 pub mod moderation;
 /// Deployment-global operator-listener mention registrations and delivery queues.

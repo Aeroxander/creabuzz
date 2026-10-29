@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { cn } from "@/shared/lib/cn";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
+import { ServerImage } from "@/shared/ui/ServerImage";
 import { progressPercent } from "../chain";
 import { formatMoney } from "../lib/amounts";
 import { launchArt } from "../lib/launch-art";
@@ -108,10 +109,11 @@ export function LaunchHero({
           }
         >
           {record.image ? (
-            <img
+            <ServerImage
               alt=""
               className="h-full w-full object-cover"
               src={record.image}
+              unavailable="hide"
             />
           ) : null}
         </div>

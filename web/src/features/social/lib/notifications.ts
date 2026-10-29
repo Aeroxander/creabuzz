@@ -29,7 +29,20 @@ export type NotificationKind =
   | "mention"
   | "follow"
   | "board-reply"
-  | "board-upvote";
+  | "board-upvote"
+  | "moderation";
+
+/**
+ * A moderator's notice about you (a removal, a board mute), worded by `moderationItem`. A board's notice opens the
+ * board, and for a removed reply the conversation it was in; a Home notice has no board, and for a removed reply opens
+ * the Home conversation. A removed post has nothing left to open.
+ */
+export interface ModerationNotice {
+  title: string;
+  preview: string;
+  boardId: string | null;
+  threadId: string | null;
+}
 
 /** Where a board notification opens: the board, the post the conversation is under, and a line to show. */
 export interface BoardRef {
@@ -51,6 +64,8 @@ export interface NotificationItem {
   noteId: string | null;
   /** Set for board replies and votes. */
   board?: BoardRef;
+  /** Set for a moderator's notice about you. */
+  notice?: ModerationNotice;
 }
 
 function tagOf(tags: readonly string[][], name: string): string | null {
@@ -138,16 +153,23 @@ export function buildBoardNotifications(
   return items.sort((a, b) => b.at - a.at);
 }
 
-/** Events that tag `viewer` → notifications, newest first. */
-/** Notifications without the ones a muted person caused: a mute hides them here too, so the count does not count them. */
-export function withoutMuted<T extends { actor: string }>(
+/**
+ * Notifications without the ones a muted person caused: a mute hides them here too, so the count does not count them.
+ * A moderator's notice about you is never hidden: a mute is about whom you hear from, not about your own access.
+ */
+export function withoutMuted<T extends { actor: string; kind?: string }>(
   items: readonly T[],
   muted: ReadonlySet<string>,
 ): T[] {
   return muted.size === 0
     ? [...items]
-    : items.filter((item) => !muted.has(item.actor.toLowerCase()));
+    : items.filter(
+        (item) =>
+          item.kind === "moderation" || !muted.has(item.actor.toLowerCase()),
+      );
 }
+
+/** Events that tag `viewer` → notifications, newest first. */
 
 export function buildNotifications(
   events: readonly SignedEventLike[],
@@ -222,6 +244,7 @@ export interface NotificationGroup {
   targetId: string | null;
   noteId: string | null;
   board?: BoardRef;
+  notice?: ModerationNotice;
 }
 
 /** Collapse up votes and reposts on one post into a single row. */
@@ -251,6 +274,7 @@ export function groupNotifications(
       targetId: item.targetId,
       noteId: item.noteId,
       ...(item.board ? { board: item.board } : {}),
+      ...(item.notice ? { notice: item.notice } : {}),
     };
     byKey.set(key, group);
     groups.push(group);

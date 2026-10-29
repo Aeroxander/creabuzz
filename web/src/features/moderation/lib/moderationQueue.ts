@@ -183,10 +183,19 @@ export function reportTargetLabel(targetKind: ReportTargetKind): string {
 }
 
 /**
+ * Whether a report is about a Home post: a reported message in no room or
+ * board. Deleting one is the community moderators' Home removal (no channel),
+ * which closes the report on the server with the removal.
+ */
+export function isHomePostReport(report: ModerationReport): boolean {
+  return report.targetKind === "event" && report.channelId === null;
+}
+
+/**
  * Which moderator actions this row can carry right now. Delete needs an
- * event target in a channel; ban and timeout need a resolvable author
- * (a member target, or the reported message's signer). Dismiss and escalate
- * are pure decisions and always available on open rows.
+ * event target (in a room or board, or a Home post); ban and timeout need a
+ * resolvable author (a member target, or the reported message's signer).
+ * Dismiss and escalate are pure decisions and always available on open rows.
  */
 export function resolvableActions(
   report: ModerationReport,
@@ -194,7 +203,7 @@ export function resolvableActions(
 ): ResolutionAction[] {
   if (report.status !== "open") return [];
   const actions: ResolutionAction[] = [];
-  if (report.targetKind === "event" && report.channelId) {
+  if (report.targetKind === "event") {
     actions.push("delete");
   }
   if (report.targetKind === "pubkey" || authorPubkey) {

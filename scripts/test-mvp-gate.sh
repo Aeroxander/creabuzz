@@ -3,13 +3,14 @@
 # scripts/test-mvp-gate.sh — proves the journey runner only touches what it started.
 #
 # The runner stops each journey's process group and nothing else, never kills by name or port, reports a port someone else
-# holds as blocked instead of freeing it, and sends the anvil state of the journeys it runs to a directory of its own,
-# which is all it deletes. This runs it against stand-in journeys that leak a child, hold a port, and make scratch state,
-# beside bystanders that must survive: a process, a server on :4173, and state that another actor creates while the run is
-# in progress.
+# holds as blocked instead of freeing it (:4173 for most journeys, :3199 for the social one), and sends the anvil state of
+# the journeys it runs to a directory of its own, which is all it deletes. This runs it against stand-in journeys that
+# leak a child, hold a port, and make scratch state, beside bystanders that must survive: a process, a server on :4173 or
+# :3199, and state that another actor creates while the run is in progress. It also checks the social journey is in the
+# full run and that its script is the social suite with HOSTED=1.
 #
-# Everything here is a stand-in the test started itself, and only those PIDs are ever stopped: if :4173 is already held by
-# something else, that part is skipped rather than risked. No chain, browser or database needed.
+# Everything here is a stand-in the test started itself, and only those PIDs are ever stopped: if :4173 or :3199 is
+# already held by something else, that part is skipped rather than risked. No chain, browser or database needed.
 # Usage: scripts/test-mvp-gate.sh
 
 set -uo pipefail
@@ -51,6 +52,11 @@ anvil --port 1 &
 echo $! >"$LEAKED_PID_FILE"
 sleep 1
 mkdir -p "$FOREIGN_STATE/anvil-state-made-during-the-run"
+exit 0
+JOURNEY
+# The social journey's stand-in: the real one needs Postgres, Redis and :3199.
+cat >"$WORK/journeys/web-social-hosted-e2e.sh" <<'JOURNEY'
+#!/usr/bin/env bash
 exit 0
 JOURNEY
 cat >"$WORK/journeys/failing.sh" <<'JOURNEY'
@@ -100,6 +106,40 @@ else
   kill "$SERVER" 2>/dev/null
   for _ in $(seq 1 20); do lsof -ti tcp:4173 -sTCP:LISTEN >/dev/null 2>&1 || break; sleep 0.5; done
 fi
+
+echo "--- a server already on :3199 blocks the social journey, and only it"
+if lsof -ti tcp:3199 -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "skip port 3199 is already in use by something this test did not start"
+else
+  python3 -m http.server 3199 --bind 127.0.0.1 >/dev/null 2>&1 & SERVER=$!
+  OWN_PIDS+=("$SERVER")
+  for _ in $(seq 1 20); do lsof -ti tcp:3199 -sTCP:LISTEN >/dev/null 2>&1 && break; sleep 0.5; done
+  HOLDER="$(lsof -ti tcp:3199 -sTCP:LISTEN | head -1)"
+  if [[ "$HOLDER" != "$SERVER" ]]; then
+    echo "skip the listener on :3199 is not the server this test started"
+  elif lsof -ti tcp:4173 -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "skip port 4173 is held, so the other journey would be blocked for its own reason"
+  else
+    "$GATE" web-social-hosted-e2e leaky >"$WORK/run4.out" 2>&1; status=$?
+    check "the social journey is reported blocked and the run does not pass" $(yes_if bash -c '[[ $0 -ne 0 ]] && grep -q "BLOCKED.* web-social-hosted-e2e: port 3199 is held by $1" "$2"' "$status" "$SERVER" "$WORK/run4.out")
+    check "a journey that does not need :3199 still runs" $(yes_if grep -q "PASS.* leaky" "$WORK/run4.out")
+    check "the server on :3199 is still running" $(yes_if alive "$SERVER")
+  fi
+  kill "$SERVER" 2>/dev/null
+  for _ in $(seq 1 20); do lsof -ti tcp:3199 -sTCP:LISTEN >/dev/null 2>&1 || break; sleep 0.5; done
+fi
+
+echo "--- the social journey is in the full run, as the social suite with HOSTED=1"
+check "the full run includes web-social-hosted-e2e" $(yes_if grep -qx '  web-social-hosted-e2e' "$GATE")
+mkdir -p "$WORK/wrapper"
+cp "$REPO_ROOT/scripts/web-social-hosted-e2e.sh" "$WORK/wrapper/"
+cat >"$WORK/wrapper/web-social-e2e.sh" <<'SUITE'
+#!/usr/bin/env bash
+echo "HOSTED=${HOSTED:-} args=$*"
+SUITE
+chmod +x "$WORK/wrapper/web-social-e2e.sh"
+HOSTED="" "$WORK/wrapper/web-social-hosted-e2e.sh" --grep feed >"$WORK/wrapper.out" 2>&1
+check "the wrapper runs the social suite with HOSTED=1 and passes its arguments on" $(yes_if grep -qx "HOSTED=1 args=--grep feed" "$WORK/wrapper.out")
 
 echo "--- a failing journey fails the run"
 "$GATE" failing >"$WORK/run3.out" 2>&1; status=$?

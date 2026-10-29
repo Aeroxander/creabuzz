@@ -3,12 +3,14 @@
 # scripts/mvp-gate.sh — every end-to-end journey the launchpad has, one after another, with one verdict at the end.
 #
 # Each journey boots its own throwaway chain (and, for the economy one, a real server and database), builds the web app
-# against it, and plays a story in real browsers: a founder, contributors, reviewers and a backer. This runs them all so
-# "does the whole product still work" is one command. The browser, contract and unit suites run separately (`just ci`);
-# this is the part that needs a chain.
+# against it, and plays a story in real browsers: a founder, contributors, reviewers and a backer. The social journey
+# (web-social-hosted-e2e) needs no chain: it runs the social suite on a real server set up as the pilot server is
+# (invite-only, contributor-only web app, the hosted request limits). This runs them all so "does the whole product still
+# work" is one command. The browser, contract and unit suites run separately (`just ci`); this is the part that needs a
+# chain or a real server.
 #
-# ⚠️  DEV ONLY. Anvil's public dev keys, local chains, nothing else. Needs foundry; the economy journey also needs
-# Postgres and Redis (`just services`). The Sepolia-fork journey forks a public Sepolia node (SEPOLIA_RPC_URL to choose
+# ⚠️  DEV ONLY. Anvil's public dev keys, local chains, nothing else. Needs foundry; the economy and social journeys also
+# need Postgres and Redis (`just services`). The Sepolia-fork journey forks a public Sepolia node (SEPOLIA_RPC_URL to choose
 # one); a public node can drop a read, so a single failure there is worth one rerun before it is called a bug.
 #
 # It only ever stops or deletes what it started. Each journey runs in its own process group, and when it ends (or this is
@@ -67,6 +69,7 @@ trap finish EXIT
 trap 'exit 130' INT TERM
 
 ALL=(
+  web-social-hosted-e2e
   cli-no-raise-e2e
   web-contributor-e2e
   cli-milestone-e2e
@@ -84,6 +87,15 @@ ALL=(
 JOURNEYS=("$@")
 [[ ${#JOURNEYS[@]} -eq 0 ]] && JOURNEYS=("${ALL[@]}")
 
+# The ports a journey serves on, which must be free before it starts. The browser specs of most journeys are served from
+# :4173; the social journey's server is on :3199, the address the real-server specs and their seed scripts use.
+journey_ports() {
+  case "$1" in
+    web-social-hosted-e2e) echo 3199 ;;
+    *) echo 4173 ;;
+  esac
+}
+
 # Who holds a port, as "pid command", or nothing when it is free.
 port_holder() {
   local pid
@@ -99,12 +111,16 @@ for journey in "${JOURNEYS[@]}"; do
   script="${JOURNEY_DIR:-scripts}/${journey}.sh"
   [[ -x "$script" ]] || { printf '\033[31mno such journey: %s\033[0m\n' "$journey" >&2; failed+=("$journey (missing)"); continue; }
   printf '\033[36m=== %s\033[0m\n' "$journey"
-  # The browser specs of several journeys are served from :4173. A server already there is not ours to stop: it may be
-  # another task's, and it would serve an old build, so the journey is not run against it.
-  holder="$(port_holder 4173)"
+  # A server already on a port the journey needs is not ours to stop: it may be another task's, and it would serve an old
+  # build, so the journey is not run against it.
+  holder=""
+  for port in $(journey_ports "$journey"); do
+    holder="$(port_holder "$port")"
+    [[ -n "$holder" ]] && break
+  done
   if [[ -n "$holder" ]]; then
     blocked+=("$journey")
-    printf '\033[33mBLOCKED\033[0m %s: port 4173 is held by %s\n' "$journey" "$holder"
+    printf '\033[33mBLOCKED\033[0m %s: port %s is held by %s\n' "$journey" "$port" "$holder"
     printf '  Stop it yourself (kill %s) or run this journey when it is free. This runner does not stop other processes.\n' "${holder%% *}"
     continue
   fi

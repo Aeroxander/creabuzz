@@ -97,6 +97,18 @@ pub enum ModerationNotice {
         /// The moderator's public reason (also in the board's public log).
         public_reason: String,
     },
+    /// To a person whose post or reply a community moderator removed from
+    /// Home: which of their words, and why.
+    HomeRemoval {
+        /// The audit action row.
+        action_id: Uuid,
+        /// `post` or `reply`.
+        what: &'static str,
+        /// The start of the removed words (the recipient's own).
+        excerpt: String,
+        /// The moderator's public reason (also in the public log entry).
+        public_reason: String,
+    },
 }
 
 /// Deliver a moderation notice to `recipient` in this community's
@@ -255,6 +267,7 @@ impl ModerationNotice {
             ModerationNotice::Restriction { action_id, .. } => *action_id,
             ModerationNotice::BoardMute { action_id, .. } => *action_id,
             ModerationNotice::BoardRemoval { action_id, .. } => *action_id,
+            ModerationNotice::HomeRemoval { action_id, .. } => *action_id,
         }
     }
 
@@ -344,6 +357,26 @@ impl ModerationNotice {
                 format!(
                     "A moderator removed your {what} on the board {board} in {community}{words}.\n\n\
                      Reason: {reason}\n\nThe removal is in the board's public moderation log."
+                )
+            }
+            ModerationNotice::HomeRemoval {
+                what,
+                excerpt,
+                public_reason,
+                ..
+            } => {
+                let reason = if public_reason.is_empty() {
+                    "none given"
+                } else {
+                    public_reason.as_str()
+                };
+                let words = if excerpt.is_empty() {
+                    String::new()
+                } else {
+                    format!(": \"{excerpt}\"")
+                };
+                format!(
+                    "A moderator removed your {what} from Home in {community}{words}.\n\nReason: {reason}"
                 )
             }
         }
@@ -480,5 +513,23 @@ mod tests {
         .body(&t);
         assert!(bare.contains("removed your post on the board ideas in example.org."));
         assert!(bare.contains("Reason: none given"));
+    }
+
+    #[test]
+    fn home_removal_body_names_home_the_words_and_the_reason() {
+        let t = tenant();
+        let action_id = Uuid::new_v4();
+        let notice = ModerationNotice::HomeRemoval {
+            action_id,
+            what: "post",
+            excerpt: "Buy cheap watches".into(),
+            public_reason: "Spam".into(),
+        };
+        assert_eq!(notice.source_id(), action_id);
+        let body = notice.body(&t);
+        assert!(body.contains("removed your post from Home in example.org"));
+        assert!(body.contains("\"Buy cheap watches\""));
+        assert!(body.contains("Reason: Spam"));
+        assert!(!body.contains("board"), "a Home post has no board: {body}");
     }
 }

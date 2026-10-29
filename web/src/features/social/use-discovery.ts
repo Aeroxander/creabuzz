@@ -17,6 +17,12 @@ import {
   KIND_FORUM_VOTE,
 } from "../board/lib/board-events";
 import {
+  buildModerationNotifications,
+  KIND_BOARD_MODERATION_LOG,
+  MODERATION_NOTICE_LIMIT,
+} from "./lib/moderation-notices";
+import { badgeState } from "./lib/notifications-state";
+import {
   buildBoardNotifications,
   buildNotifications,
   type NotificationItem,
@@ -62,7 +68,12 @@ async function fetchBoardNotifications(me: string) {
   return buildBoardNotifications(mine, related, me);
 }
 
-/** Up votes, reposts, quotes, replies, mentions, new followers, and board replies and up votes, aimed at you. */
+/**
+ * Up votes, reposts, quotes, replies, mentions, new followers, board replies and up votes, and a moderator's notices
+ * about you (a removed post or reply, a board mute), aimed at you. A mute hides what a muted person did, never a
+ * moderator's notice. Any read failing fails the whole read, so a partial list is never shown as complete; a failed
+ * refresh keeps the last good list.
+ */
 export function useNotifications() {
   const me = existingUserPubkey();
   const muted = useMutedSet();
@@ -78,7 +89,7 @@ export function useNotifications() {
     // The relay does not fan out `#p` filters, so polling is how they arrive.
     refetchInterval: 30_000,
     queryFn: async () => {
-      const [social, board] = await Promise.all([
+      const [social, board, moderation] = await Promise.all([
         readEvents({
           kinds: [
             KIND_TEXT_NOTE,
@@ -90,19 +101,31 @@ export function useNotifications() {
           limit: 500,
         }),
         fetchBoardNotifications(me as string),
+        // A board's log entries about you, which the server writes and names you in.
+        readEvents({
+          kinds: [KIND_BOARD_MODERATION_LOG],
+          "#p": [me as string],
+          limit: MODERATION_NOTICE_LIMIT,
+        }),
       ]);
-      return [...buildNotifications(social, me as string), ...board].sort(
-        (a, b) => b.at - a.at,
-      );
+      return [
+        ...buildNotifications(social, me as string),
+        ...board,
+        ...buildModerationNotifications(moderation, me as string),
+      ].sort((a, b) => b.at - a.at);
     },
   });
 }
 
-/** The unread count for the nav, plus `markSeen` (kept in this browser). */
+/**
+ * The unread count for the nav, plus `markSeen` (kept in this browser). `failed` is set when the read failed and there
+ * is nothing to count, so the nav can say so instead of showing nothing new.
+ */
 export function useNotificationBadge() {
   const me = existingUserPubkey();
   const queryClient = useQueryClient();
-  const items = useNotifications().data;
+  const notifications = useNotifications();
+  const items = notifications.data;
   const updates = usePriorityNotifications();
   const seenKey = [...socialKeys.all, "notifications-seen", me];
   const seen = useQuery({
@@ -121,13 +144,16 @@ export function useNotificationBadge() {
       queryClient.setQueryData(seenKey, newest);
     },
   });
+  const { unread, failed } = badgeState(
+    items,
+    notifications.error,
+    updates,
+    seen,
+  );
   return {
     seenAt: seen ?? 0,
-    unread:
-      seen === undefined
-        ? 0
-        : (items ?? []).filter((n) => n.at > seen).length +
-          updates.filter((u) => u.at > seen).length,
+    unread,
+    failed,
     markSeen: mark.mutate,
   };
 }

@@ -19,6 +19,8 @@ import type { NostrFilter } from "@/shared/lib/nostr-client";
 
 import {
   isFinalRefusal,
+  RATE_LIMIT_RETRIES,
+  rateLimitRetryDelay,
   ReconnectBackoff,
   type SubscriptionStatus,
 } from "./lib/reconnect";
@@ -53,6 +55,9 @@ export function subscribeChannel(
    */
   const backoff = new ReconnectBackoff();
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Waiting out the server's request limit before asking again, and how many times in a row. */
+  let limitTimer: ReturnType<typeof setTimeout> | null = null;
+  let limitAttempts = 0;
   const subId = `live-${Math.random().toString(36).slice(2)}`;
   const pendingAuthReq: (() => void)[] = [];
 
@@ -62,6 +67,7 @@ export function subscribeChannel(
   const cleanup = () => {
     closed = true;
     if (retryTimer != null) clearTimeout(retryTimer);
+    if (limitTimer != null) clearTimeout(limitTimer);
     try {
       socket?.close();
     } catch {
@@ -78,6 +84,8 @@ export function subscribeChannel(
   const open = () => {
     if (closed) return;
     callbacks.onStatus?.(backoff.attempt === 0 ? "connecting" : "reconnecting");
+    if (limitTimer != null) clearTimeout(limitTimer);
+    limitTimer = null;
     socket = new WebSocket(wsUrl);
     socket.addEventListener("open", () => {
       authAccepted = false;
@@ -128,10 +136,12 @@ export function subscribeChannel(
           }
         } else if (type === "EVENT" && data[1] === subId && data[2]) {
           backoff.onHealthy();
+          limitAttempts = 0;
           callbacks.onEvent(data[2] as SignedNostrEvent);
         } else if (type === "EOSE" && data[1] === subId) {
           // The relay finished replaying for this subscription: it works.
           backoff.onHealthy();
+          limitAttempts = 0;
         } else if (type === "CLOSED" && data[1] === subId) {
           // A relay rejects a subscription sent before our NIP-42 handshake
           // finished (Buzz's relay compares the filter against the
@@ -147,6 +157,24 @@ export function subscribeChannel(
             } else {
               retryAfterAuth = true;
             }
+            return;
+          }
+          // Over the person's request limit: wait what the server says (longer each time in a row) and ask again on the
+          // same socket. Only a limit that never clears ends the subscription.
+          const wait =
+            limitAttempts < RATE_LIMIT_RETRIES
+              ? rateLimitRetryDelay(reason, limitAttempts + 1)
+              : null;
+          if (wait !== null) {
+            limitAttempts += 1;
+            callbacks.onStatus?.("reconnecting");
+            limitTimer = setTimeout(() => {
+              limitTimer = null;
+              if (closed) return;
+              subSent = false;
+              sendReq();
+              callbacks.onStatus?.("open");
+            }, wait);
             return;
           }
           // Refused for good (removed from the room or board, or the server will not serve this filter): stop, and
