@@ -41,6 +41,7 @@ export function DelegationCard({
   members,
   author,
   launchId,
+  followActingAccount = false,
 }: {
   /** The bound DAO; null = not wired (record-only, D8). */
   dao: string | null;
@@ -49,8 +50,10 @@ export function DelegationCard({
   /** The launch record's author + id (the 47005 mirror's `a` binding). */
   author: string;
   launchId: string;
+  /** On a contributor project, send as the account the rest of the page acts as (D139). */
+  followActingAccount?: boolean;
 }) {
-  const picker = useSenderPicker();
+  const picker = useSenderPicker({ followActingAccount });
   const mirror = usePublishMirror();
   const { address: walletAccount } = useConnectedWallet();
   const [delegatee, setDelegatee] = useState("");

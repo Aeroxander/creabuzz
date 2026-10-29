@@ -29,6 +29,7 @@ import {
   wordsProblem,
 } from "../lib/ways-to-help";
 import type { Launch } from "../models";
+import type { SenderCall } from "@/features/identity/lib/sponsoredSender";
 import { usePublishMirror } from "../use-launches";
 
 const sameAddress = (a: string | null, b: string) =>
@@ -49,7 +50,7 @@ export function FileClaimCard({
   wallet,
   gate,
   busy,
-  onSend,
+  onSendBatch,
   areas = [],
   picked = null,
 }: {
@@ -63,8 +64,8 @@ export function FileClaimCard({
   wallet: string | null;
   gate: string | null;
   busy: string | null;
-  /** Sends one transaction; resolves true once it landed. */
-  onSend: (key: string, to: string, data: string) => Promise<boolean>;
+  /** Sends the calls in order as one step (one passkey prompt, or one wallet prompt each); resolves true once they landed. */
+  onSendBatch: (key: string, calls: SenderCall[]) => Promise<boolean>;
 }) {
   // Ordinary work budgets only: a team's milestones are submitted from the milestone card, with the milestone chosen.
   const open = mandates.filter((m) => !m.closed && !m.isMilestonePanel);
@@ -229,32 +230,32 @@ export function FileClaimCard({
       );
       return;
     }
+    // Everything still to send, as one step: with a passkey account one prompt for all of it, with a wallet one prompt
+    // each, in this order, stopping at the first that fails (pressing the button again picks up from there).
+    const calls: SenderCall[] = [];
     if (!existing) {
       if (stake > 0n) {
         // The deposit is pulled from the contributor's own balance, so the claims ledger must be allowed to take it.
-        const approved = await onSend(
-          `approve-${id}`,
-          mandate.created.currency,
-          encodeErc20Approve(mandate.claimsAddress, stake),
-        );
-        if (!approved) return;
+        calls.push({
+          to: mandate.created.currency,
+          data: encodeErc20Approve(mandate.claimsAddress, stake),
+        });
       }
-      const landed = await onSend(
-        `file-${id}`,
-        mandate.claimsAddress,
-        encodeSubmitPaidClaim(id, amount, stake, hashText(evidence)),
-      );
-      if (!landed) return;
+      calls.push({
+        to: mandate.claimsAddress,
+        data: encodeSubmitPaidClaim(id, amount, stake, hashText(evidence)),
+      });
     }
     // State the words, or correct them: a claim no work area has accepted and nobody has reviewed can still change
     // its words (`ClaimStake.setCheck`), so a submission sent with the wrong words is put right, not stuck.
     if (!existing || existing.record.checkHash.toLowerCase() !== wanted) {
-      const landed = await onSend(
-        `check-${id}`,
-        mandate.claimsAddress,
-        encodeSetCheck(id, wanted),
-      );
-      if (!landed) return;
+      calls.push({
+        to: mandate.claimsAddress,
+        data: encodeSetCheck(id, wanted),
+      });
+    }
+    if (calls.length !== 0 && !(await onSendBatch(`file-${id}`, calls))) {
+      return;
     }
     // The text itself, signed, so reviewers can read what the claim committed to. A claim without it cannot be approved,
     // so a failure here is said plainly and retried by pressing the button again (the steps above are skipped).
@@ -344,7 +345,7 @@ export function FileClaimCard({
           ? "Submit what you finished."
           : "Submit what you finished. The work area's manager accepts it for review, the reviewers check it, and then the project votes on an award."}
         {holdsMoney
-          ? " Money is paid after a waiting period, to the wallet you submit from."
+          ? " Money is paid after a waiting period, to the account you submit from."
           : ""}
       </p>
       {holdsMoney && wallet ? (
@@ -352,8 +353,8 @@ export function FileClaimCard({
           className="mt-2 text-xs text-muted-foreground"
           data-testid="work-filing-wallet"
         >
-          Payment will go to <code className="break-all">{wallet}</code>. File
-          from the wallet you want to receive the funds.
+          Payment will go to <code className="break-all">{wallet}</code>, the
+          account you submit from.
         </p>
       ) : null}
       {open.length > 1 ? (

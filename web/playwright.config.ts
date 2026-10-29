@@ -135,6 +135,15 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
       },
     },
+    {
+      // A contributor project from passkey accounts on a Sepolia fork (D139), with a build of its own: run it with
+      // scripts/web-passkey-contributor-e2e.sh.
+      name: "passkey-contributor",
+      testMatch: ["**/passkey-contributor.spec.ts"],
+      use: {
+        ...devices["Desktop Chrome"],
+      },
+    },
   ],
   webServer: {
     command: `pnpm exec vite preview --port ${PORT} --strictPort --host 127.0.0.1${DIST ? ` --outDir ${DIST}` : ""}`,

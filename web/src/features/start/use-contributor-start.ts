@@ -1,7 +1,7 @@
 /**
  * React wiring for starting a contributor project: which network, which contributor kit and currency it has, whether
- * the founder can send, and the run itself (`lib/contributor-flow.ts`) bound to the injected wallet, the chain and the
- * server. The job is kept in this browser per founder, so a reload offers to finish it instead of starting over.
+ * the founder can send, and the run itself (`lib/contributor-flow.ts`) bound to the acting account (D139: a passkey
+ * account with covered fees, or the browser's wallet), the chain and the server. The job is kept in this browser per founder, so a reload offers to finish it instead of starting over.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -21,8 +21,8 @@ import {
 } from "@/features/launchpad/chain";
 import { ideaId } from "@/features/launchpad/lib/idea";
 import { usdcAddress } from "@/features/launchpad/lib/sale-currency";
-import { makeWalletAuctionEffects } from "@/features/launchpad/lib/wallet-effects";
-import { useConnectedWallet } from "@/features/launchpad/use-connected-wallet";
+import { StepRevertedError } from "@/features/launchpad/lib/acting-account";
+import { useActingAccount } from "@/features/launchpad/use-acting-account";
 import {
   useCreateLaunch,
   useLaunches,
@@ -86,7 +86,7 @@ function storeJob(key: string, job: ContributorJob | null) {
 
 export function useContributorStart() {
   const me = existingUserPubkey();
-  const wallet = useConnectedWallet();
+  const wallet = useActingAccount();
   const launches = useLaunches();
   const create = useCreateLaunch().mutateAsync;
   const endpoint = getRpcEndpoint();
@@ -170,31 +170,35 @@ export function useContributorStart() {
         ok: false,
         reason: "wallet",
         message:
-          "Connect a wallet. It holds your starting Shares and sends the one transaction that makes the project.",
+          wallet.kind === "passkey"
+            ? wallet.accountsChecked
+              ? "Your passkey account could not be read. Reload the page to try again."
+              : "Reading your passkey account…"
+            : wallet.kind === null && wallet.passkeyOffered
+              ? "Set up passkey sign-in from your profile menu: your passkey account holds your starting Shares and makes the project, with its fees covered on the test network. Or connect a wallet."
+              : "Connect a wallet. It holds your starting Shares and sends the one transaction that makes the project.",
       };
     if (wallet.chainId !== chainId)
       return {
         ok: false,
         reason: "wrong-chain",
-        message: `Your wallet is on another network. Switch it to ${networkLabel(chainId)}.`,
+        message:
+          wallet.kind === "passkey"
+            ? `Your passkey account works on ${networkLabel(wallet.chainId ?? 0)}, but this site's projects are on ${networkLabel(chainId)}.`
+            : `Your wallet is on another network. Switch it to ${networkLabel(chainId)}.`,
       };
     return { ok: true };
   }, [network.isPending, network.isError, network.data, me, wallet]);
 
   const run = useCallback(
     (start: ContributorJob) => {
-      if (inFlight.current || !storageKey || !wallet.wallet) return;
+      if (inFlight.current || !storageKey || !wallet.address) return;
       inFlight.current = true;
       // Kept before anything is sent: a reload during the first wallet prompt then offers to finish this project.
       storeJob(storageKey, start);
       setJob(start);
       let state = stateForJob(start);
       setFlow(state);
-      const wallets = makeWalletAuctionEffects({
-        provider: wallet.wallet.provider,
-        deployer: wallet.wallet.address,
-        chainId: start.chainId,
-      });
       const chain = endpointChain(endpoint);
       void runContributorStart(
         start,
@@ -204,11 +208,18 @@ export function useContributorStart() {
           // The pending count: a budget another project is making in a block not yet mined is counted too.
           nonceOf: (address) => ethPendingNonce(endpoint, address),
           send: async (to, data) => {
-            const receipt = await wallets.send({ to, data, value: "0x0" });
-            return {
-              txHash: receipt.txHash,
-              status: receipt.status === "success" ? "success" : "reverted",
-            };
+            try {
+              const txHash = await wallet.sendCalls(
+                [{ to, data }],
+                start.chainId,
+              );
+              return { txHash, status: "success" };
+            } catch (error) {
+              if (error instanceof StepRevertedError) {
+                return { txHash: error.txHash, status: "reverted" };
+              }
+              throw error;
+            }
           },
           now: () => chain.now(),
           publish: async (input) => {
@@ -227,7 +238,7 @@ export function useContributorStart() {
         inFlight.current = false;
       });
     },
-    [create, endpoint, storageKey, wallet.wallet],
+    [create, endpoint, storageKey, wallet.address, wallet.sendCalls],
   );
 
   /**

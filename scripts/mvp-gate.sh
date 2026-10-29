@@ -79,6 +79,7 @@ ALL=(
   web-dao-journey-e2e
   web-economy-e2e
   web-sepolia-fork-e2e
+  web-passkey-contributor-e2e
 )
 JOURNEYS=("$@")
 [[ ${#JOURNEYS[@]} -eq 0 ]] && JOURNEYS=("${ALL[@]}")

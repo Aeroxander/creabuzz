@@ -76,6 +76,8 @@ export interface RagequitPanelProps {
   chainId: number;
   /** When null the panel renders the honest "no DAO bound" state. */
   daoBinding: DaoBinding | null;
+  /** On a contributor project, leave as the account the rest of the page acts as (D139). */
+  followActingAccount?: boolean;
 }
 
 /** One claimable pool row: what the exit pays, and from which balance. */
@@ -104,8 +106,9 @@ export function RagequitPanel({
   record,
   chainId,
   daoBinding,
+  followActingAccount = false,
 }: RagequitPanelProps) {
-  const picker = useSenderPicker();
+  const picker = useSenderPicker({ followActingAccount });
   const { address: walletAccount } = useConnectedWallet();
   const [dialogOpen, setDialogOpen] = useState(false);
 

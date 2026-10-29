@@ -31,7 +31,7 @@ import { hashText } from "../lib/work";
 import type { Launch } from "../models";
 import { type LockState, useChallengeViewers } from "../use-challenge-lock";
 import { useChallengeActions } from "../use-challenge-actions";
-import { useConnectedWallet } from "../use-connected-wallet";
+import { useActingAccount } from "../use-acting-account";
 import { useEvidencePackets } from "../use-evidence";
 import { useWalletLabels } from "../use-wallet-labels";
 import { FailureNote, GateNote, WalletStrip } from "./auction-widgets";
@@ -60,7 +60,7 @@ export function ChallengeMilestones({
   onOpenDecisions: () => void;
 }) {
   const { terms } = view;
-  const wallet = useConnectedWallet();
+  const wallet = useActingAccount();
   const me = wallet.address?.toLowerCase() ?? null;
   const viewers = useChallengeViewers(
     view.lock,

@@ -17,6 +17,8 @@ import {
   TextField,
 } from "@/features/launchpad/ui/decision-fields";
 import { testRecordsNotice } from "@/features/launchpad/lib/test-network";
+import { WalletStrip } from "@/features/launchpad/ui/auction-widgets";
+import { usePeopleWithWallets } from "@/features/launchpad/use-people";
 import { cn } from "@/shared/lib/cn";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
@@ -156,7 +158,7 @@ function Steps({
             </span>
             <span className={status === "active" ? "font-semibold" : undefined}>
               {CONTRIBUTOR_STEP_LABELS[step]}
-              {status === "active" ? " (check your wallet)" : ""}
+              {status === "active" ? " (approve it when asked)" : ""}
               {status === "done" ? " (done)" : ""}
               {status === "failed" ? " (stopped)" : ""}
             </span>
@@ -204,7 +206,15 @@ export function ContributorStartPage() {
       if (field === "symbol") setSymbolTouched(true);
     };
 
-  const issue = contributorIssue(draft, wallet.address);
+  // Every address known to be the founder's: the account they act with, and any wallet their name is linked to (D139).
+  const people = usePeopleWithWallets();
+  const founderAddresses = [
+    ...(wallet.address ? [wallet.address] : []),
+    ...(people.data ?? [])
+      .filter((person) => person.pubkey === start.me)
+      .map((person) => person.address),
+  ];
+  const issue = contributorIssue(draft, founderAddresses);
   const preview = sharePreview(draft);
 
   const done = job !== null && flow.phase === "done";
@@ -286,9 +296,13 @@ export function ContributorStartPage() {
               {wallet.address &&
               wallet.address.toLowerCase() !== job.founder ? (
                 <span className="text-xs text-muted-foreground">
-                  Connect the wallet that started it: {job.founder}
+                  Use the account that started it: {job.founder}
                 </span>
               ) : null}
+              <WalletStrip
+                testIdPrefix="contributor-resume-account"
+                wallet={wallet}
+              />
               {job.dao ? null : (
                 <Button onClick={start.clear} type="button" variant="ghost">
                   Discard it
@@ -323,7 +337,7 @@ export function ContributorStartPage() {
             value={draft.symbol}
           />
           <TextField
-            hint="Held by your connected wallet, so you can open and back the first votes."
+            hint="Held by the account you act with, so you can open and back the first votes."
             inputMode="numeric"
             label="Your starting Shares"
             onChange={set("founderShares")}
@@ -361,6 +375,7 @@ export function ContributorStartPage() {
                         : address,
                   }))
                 }
+                exclude={start.me ? [start.me] : []}
                 testId="contributor-reviewers-people"
               />
             }
@@ -431,23 +446,14 @@ export function ContributorStartPage() {
               {issue.message}
             </p>
           ) : null}
-          {gate.ok ? null : (
+          <WalletStrip testIdPrefix="contributor-account" wallet={wallet} />
+          {/* The account strip above says what to do about the account; the gate says the rest. */}
+          {gate.ok || gate.reason === "wallet" ? null : (
             <div
               className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
               data-testid="contributor-gate"
             >
               <span>{gate.message}</span>
-              {gate.reason === "wallet" && wallet.hasProvider ? (
-                <Button
-                  disabled={wallet.connecting}
-                  onClick={() => void wallet.connect()}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Connect wallet
-                </Button>
-              ) : null}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-3">
@@ -464,7 +470,9 @@ export function ContributorStartPage() {
               Start the project
             </Button>
             <span className="text-xs text-muted-foreground">
-              Your wallet is asked once.
+              {wallet.kind === "passkey"
+                ? "Your passkey is asked once, and the fees are covered."
+                : "Your wallet is asked once."}
             </span>
           </div>
         </Card>

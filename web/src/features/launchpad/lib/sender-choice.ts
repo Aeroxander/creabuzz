@@ -11,6 +11,7 @@ import type {
 } from "../../identity/lib/sponsoredSender.ts";
 import { SponsoredSenderUnavailableError } from "../../identity/lib/sponsoredSender.ts";
 import { PaymasterDeniedError } from "../../identity/lib/zerodev.ts";
+import { requireSponsoredSuccess } from "./acting-account.ts";
 import {
   createInjectedWalletSender,
   type Eip1193ProviderLike,
@@ -25,11 +26,29 @@ export interface SenderChoice {
   sponsoredSender: SponsoredSender;
 }
 
-/** Resolve the chosen sender — the only sender-dependent step of a send. */
-export function resolveSender(state: SenderChoice): CallSender {
-  return state.kind === "passkey"
-    ? state.sponsoredSender
-    : createInjectedWalletSender(state.wallet);
+/**
+ * Resolve the chosen sender — the only sender-dependent step of a send. A passkey account's operation is included on
+ * chain even when a call inside it fails, so its result is checked here, once for every screen: a failed operation
+ * throws `StepRevertedError` instead of reading as sent (D139).
+ */
+export function resolveSender(
+  state: SenderChoice,
+): CallSender & { via?: CallSender } {
+  if (state.kind !== "passkey") {
+    return createInjectedWalletSender(state.wallet);
+  }
+  const sponsored = state.sponsoredSender;
+  return {
+    /** The sponsored sender this one sends through. */
+    via: sponsored,
+    getAddress: () => sponsored.getAddress(),
+    isAvailable: () => sponsored.isAvailable(),
+    sendCalls: async (calls) => {
+      const result = await sponsored.sendCalls(calls);
+      requireSponsoredSuccess(result);
+      return result;
+    },
+  };
 }
 
 /** Map a send failure to a human message (the RecordBidDialog error map). */

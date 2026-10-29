@@ -153,6 +153,12 @@ export interface SponsoredSender extends CallSender {
 export interface SponsoredSenderConfig {
   /** base64url passkey credential id. Defaults to `buzz.passkey.credentialId`. */
   credentialId?: string | undefined;
+  /**
+   * The passkey's public key (uncompressed P-256 hex), which fixes the account's address. Defaults to this browser's
+   * passkey sign-in; given when the account is known another way (D139: kept across sign-out, or published with the
+   * person's name link and restored on another device).
+   */
+  r1OwnerKey?: string | undefined;
   /** Sponsored chain id (`VITE_ZERODEV_CHAIN_ID`, e.g. 11155111 for Sepolia). */
   chainId: number;
   /** Chain JSON-RPC URL — sender/nonce/hash-guard reads (NOT the ZeroDev RPC). */
@@ -256,7 +262,10 @@ export function createSponsoredSender(
   } {
     return {
       credentialId: config.credentialId ?? storedCredentialId(),
-      r1OwnerKey: passkeyIdentity()?.evmOwner.r1UncompressedHex ?? null,
+      r1OwnerKey:
+        config.r1OwnerKey ??
+        passkeyIdentity()?.evmOwner.r1UncompressedHex ??
+        null,
     };
   }
 

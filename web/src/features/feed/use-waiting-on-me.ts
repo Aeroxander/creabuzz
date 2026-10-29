@@ -21,7 +21,7 @@ import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { reviewerTargets } from "@/features/launchpad/lib/reviewer-launches";
 import { SANDBOX_ID } from "@/features/launchpad/lib/sandbox";
 import type { Launch } from "@/features/launchpad/models";
-import { useConnectedWallet } from "@/features/launchpad/use-connected-wallet";
+import { useActingAccount } from "@/features/launchpad/use-acting-account";
 import {
   decisionContextQuery,
   decisionsQuery,
@@ -65,7 +65,7 @@ export function useWaitingOnMe(): {
   const me = existingUserPubkey();
   const launches = useLaunches();
   const holdings = useHoldings();
-  const connected = useConnectedWallet().address;
+  const connected = useActingAccount().address;
 
   const targets = useMemo((): Target[] => {
     const byDao = new Map<string, Target>();

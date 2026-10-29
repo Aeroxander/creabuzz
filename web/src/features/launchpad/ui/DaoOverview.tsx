@@ -27,7 +27,7 @@ import { isContributorProject } from "../lib/funding";
 import { openWorkAreas } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
-import { useConnectedWallet } from "../use-connected-wallet";
+import { useActingAccount } from "../use-acting-account";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { usePaymentRuns, useSpendingSummary } from "../use-spending";
 import { useChallengeLock } from "../use-challenge-lock";
@@ -74,7 +74,7 @@ export function DaoOverview({
   /** The raise this project came from, shown folded under "About the raise". */
   children: ReactNode;
 }) {
-  const wallet = useConnectedWallet().address;
+  const wallet = useActingAccount().address;
   const decisions = useDecisions(dao, wallet);
   const work = useWork(dao, wallet);
   const context = useDecisionContext(dao);

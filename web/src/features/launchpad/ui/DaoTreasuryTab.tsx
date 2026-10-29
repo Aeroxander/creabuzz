@@ -13,7 +13,7 @@ import { recordSaleCurrency } from "../chain";
 import type { DaoBinding } from "../lib/org-money";
 import { formatUnits } from "../lib/dao-actions";
 import type { Launch } from "../models";
-import { useConnectedWallet } from "../use-connected-wallet";
+import { useActingAccount } from "../use-acting-account";
 import { useDaoHoldings } from "../use-dao-holdings";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { usePaymentRuns, useSpendingSummary } from "../use-spending";
@@ -37,7 +37,7 @@ export function DaoTreasuryTab({
   /** Go to the Decisions tab, where spending is voted. */
   onOpenDecisions: () => void;
 }) {
-  const wallet = useConnectedWallet().address;
+  const wallet = useActingAccount().address;
   const decisions = useDecisions(dao, wallet);
   const work = useWork(dao, wallet);
   const context = useDecisionContext(dao);

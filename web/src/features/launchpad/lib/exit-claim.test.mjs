@@ -421,7 +421,7 @@ test("resolveSender truth table: kind × wallet × sponsored availability", asyn
           withWallet,
           sponsoredReady,
           available: sender.isAvailable(),
-          isSponsored: sender === sponsored,
+          isSponsored: sender.via === sponsored,
         });
       }
     }

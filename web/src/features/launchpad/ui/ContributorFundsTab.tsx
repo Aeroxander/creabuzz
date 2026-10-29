@@ -126,6 +126,7 @@ export function ContributorFundsTab({
       <RagequitPanel
         chainId={Number(chainId ?? "") || 0}
         daoBinding={binding}
+        followActingAccount
         record={exitRecord}
       />
       <FundingCard dao={dao} />
@@ -135,6 +136,7 @@ export function ContributorFundsTab({
       <DelegationCard
         author={launch.record.author}
         dao={dao}
+        followActingAccount
         launchId={launch.record.id}
         members={[]}
       />

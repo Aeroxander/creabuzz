@@ -36,6 +36,7 @@ import {
 } from "../lib/work";
 import type { MandateView } from "../lib/work-read";
 import type { Launch } from "../models";
+import type { SenderCall } from "@/features/identity/lib/sponsoredSender";
 import { usePublishMirror } from "../use-launches";
 import {
   type OpenWorkArea,
@@ -100,7 +101,10 @@ export function WorkTab({
   /** Someone is putting a suggestion to a vote (D84): open "Approve a work area" filled in from it. */
   onSponsor?: (intent: SponsorIntent) => void;
 }) {
-  const { wallet, gate, busy, failure, send } = useWalletSend(launch, dao);
+  const { wallet, gate, busy, failure, send, sendBatch } = useWalletSend(
+    launch,
+    dao,
+  );
   const work = useWork(dao, wallet.address);
   // When and in which transaction each paid claim was paid out (the same read the Track record tab uses).
   const payouts = useRecordEvents(dao, work.data);
@@ -354,7 +358,7 @@ export function WorkTab({
             busy={busy}
             gate={gate}
             mandates={work.data?.mandates ?? []}
-            onSend={send}
+            onSendBatch={sendBatch}
             wallet={wallet.address}
           />
           {work.data?.mandates.map((mandate) => (
@@ -373,6 +377,7 @@ export function WorkTab({
               labelOf={labelOf}
               onRefresh={() => void work.refetch()}
               onSend={send}
+              onSendBatch={sendBatch}
               openKeys={openKeys}
               payouts={payouts.data}
               payoutsUnread={payouts.isError && !payouts.data}
@@ -418,6 +423,7 @@ function MandateCard({
   gate,
   busy,
   onSend,
+  onSendBatch,
   onOpenDecisions,
   onChallenge,
   launch,
@@ -452,6 +458,8 @@ function MandateCard({
   gate: string | null;
   busy: string | null;
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
+  /** Sends several calls as one step (one passkey prompt); resolves true once they landed. */
+  onSendBatch: (key: string, calls: SenderCall[]) => Promise<boolean>;
   dao: string;
   onOpenDecisions?: () => void;
   onChallenge?: (intent: ChallengeIntent) => void;
@@ -504,18 +512,15 @@ function MandateCard({
     : 0n;
   const postBond = async () => {
     if (!mandate.bond) return;
-    // The approval first (on the bond's own token); the bond only if it went through.
-    const approved = await onSend(
-      `bond-approve-${mandate.address}`,
-      mandate.bond.token,
-      encodeCurrencyApprove(mandate.verifiersAddress, owes),
-    );
-    if (!approved) return;
-    await onSend(
-      `bond-${mandate.address}`,
-      mandate.verifiersAddress,
-      encodeBond(owes),
-    );
+    // The approval first (on the bond's own token), then the bond: one step, and with a wallet the bond only once the
+    // approval went through.
+    await onSendBatch(`bond-${mandate.address}`, [
+      {
+        to: mandate.bond.token,
+        data: encodeCurrencyApprove(mandate.verifiersAddress, owes),
+      },
+      { to: mandate.verifiersAddress, data: encodeBond(owes) },
+    ]);
   };
   return (
     <Card className="p-4" data-testid="work-mandate">

@@ -20,11 +20,8 @@ import {
   publishPendingWalletProof,
   savePendingWalletProof,
 } from "./public-wallet";
-import {
-  PASSKEY_CREDENTIAL_STORAGE_KEY,
-  createSponsoredSender,
-  kernel033ChainRpcUrl,
-} from "./sponsoredSender";
+import { type PasskeyAccountKeys, signInPasskeyKeys } from "./passkey-account";
+import { createSponsoredSender, kernel033ChainRpcUrl } from "./sponsoredSender";
 import { zerodevConfigFromEnv } from "./zerodev";
 import {
   newWalletAttestation,
@@ -35,11 +32,13 @@ import {
 /** No SIWE message stands behind a passkey account's link. */
 const NO_SIWE_MESSAGE = `0x${"00".repeat(32)}`;
 
-/** The passkey account this browser would link, or why there is none. */
-export function passkeyAccountSetup():
+/** The passkey account this browser would link, or why there is none. `known` keys stand in for passkey sign-in (D139). */
+export function passkeyAccountSetup(
+  known: PasskeyAccountKeys | null = null,
+):
   | { ok: true; chainId: number; rpcUrl: string }
   | { ok: false; reason: string } {
-  if (!passkeyIdentity()) {
+  if (!known && !passkeyIdentity()) {
     return {
       ok: false,
       reason:
@@ -70,28 +69,25 @@ export function passkeyAccountSetup():
  * account is created with one sponsored, empty operation (the same one any first action would make) before it signs.
  */
 export async function linkPasskeyAccount(
-  options: { newerThan?: number } = {},
+  options: { newerThan?: number; keys?: PasskeyAccountKeys } = {},
 ): Promise<{ address: string }> {
-  const setup = passkeyAccountSetup();
+  const keys = options.keys ?? signInPasskeyKeys();
+  const setup = passkeyAccountSetup(keys);
   if (!setup.ok) throw new Error(setup.reason);
   const pubkey = existingUserPubkey();
   if (!pubkey) throw new Error("Sign in to your account first.");
-  const credentialId = (() => {
-    try {
-      return window.localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
-    } catch {
-      return null;
-    }
-  })();
-  if (!credentialId) {
+  if (!keys) {
     throw new Error(
       "No passkey is saved in this browser. Set up passkey sign-in first.",
     );
   }
+  const { credentialId } = keys;
 
   const sender = createSponsoredSender({
     chainId: setup.chainId,
     rpcUrl: setup.rpcUrl,
+    credentialId,
+    r1OwnerKey: keys.publicKey,
   });
   const status = sender.availability();
   if (!status.available) {
@@ -147,6 +143,8 @@ export async function linkPasskeyAccount(
       address: account,
       siweMessageHash: NO_SIWE_MESSAGE,
       attestation,
+      // The account's public details, so another device of this person's can find the account again (D139).
+      passkey: keys,
     }),
   });
   if (

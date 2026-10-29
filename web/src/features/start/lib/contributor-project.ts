@@ -267,12 +267,13 @@ function checkProjects(
 }
 
 /**
- * The founder's answers, checked: every refusal names the field and says what to change. `founderWallet` is the
- * connected wallet when there is one.
+ * The founder's answers, checked: every refusal names the field and says what to change. `founderWallet` is the account
+ * the founder acts with when there is one, or every address known to be theirs (the acting account and any wallet their
+ * name is linked to, D139): none of them may review.
  */
 export function contributorTerms(
   draft: ContributorDraft,
-  founderWallet: string | null = null,
+  founderWallet: string | readonly string[] | null = null,
 ): ContributorTerms {
   const name = draft.name.trim();
   if (name.length < 2) fail("name", "Give the project a name.");
@@ -346,7 +347,10 @@ export function contributorTerms(
       `How many reviewers must agree: a whole number from 1 to ${reviewers.length}.`,
     );
   // D79: the founder does not judge the first budget's work; the contributor kit refuses a panel with them on it.
-  if (founderWallet && lower.includes(founderWallet.toLowerCase()))
+  const founderAddresses = (
+    typeof founderWallet === "string" ? [founderWallet] : (founderWallet ?? [])
+  ).map((address) => address.toLowerCase());
+  if (founderAddresses.some((address) => lower.includes(address)))
     fail(
       "reviewers",
       "You cannot review the first budget's work yourself. Name other people: they check everyone's work, yours too.",
@@ -404,7 +408,7 @@ export function sharePreview(
 /** The first refusal for a draft, or null when it can be started. */
 export function contributorIssue(
   draft: ContributorDraft,
-  founderWallet: string | null = null,
+  founderWallet: string | readonly string[] | null = null,
 ): {
   field: keyof ContributorDraft;
   message: string;

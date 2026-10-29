@@ -18,6 +18,7 @@ import { zerodevConfigFromEnv } from "@/features/identity/lib/zerodev";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 
 import type { Eip1193ProviderLike } from "../lib/wallet-sender";
+import { useActingAccount } from "../use-acting-account";
 import {
   resolveSender,
   senderErrorMessage,
@@ -47,8 +48,17 @@ export interface SenderPickerState {
  * passkey account (fenced — a stale derivation must not write state after the
  * user switches away, Review-Proven Rule 2).
  */
-export function useSenderPicker(): SenderPickerState {
-  const [kind, setKind] = useState<SenderKind>("wallet");
+export function useSenderPicker(
+  options: {
+    /**
+     * Follow the account this browser acts as on contributor screens (D139): the same choice, the same passkey account,
+     * and choosing here chooses there. Raise screens leave it off and start on the wallet.
+     */
+    followActingAccount?: boolean;
+  } = {},
+): SenderPickerState {
+  const acting = useActingAccount();
+  const follow = options.followActingAccount === true;
   const [passkeyAccount, setPasskeyAccount] = useState<string | null>(null);
   const [passkeyNote, setPasskeyNote] = useState<string | null>(null);
 
@@ -69,14 +79,19 @@ export function useSenderPicker(): SenderPickerState {
       return "";
     }
   }, [chainId]);
-  const sponsoredSender = useMemo(
+  const ownSender = useMemo(
     () => createSponsoredSender({ chainId, rpcUrl: sponsoredRpcUrl }),
     [chainId, sponsoredRpcUrl],
   );
+  // Following, the passkey account is the acting one, which may come from more than this browser's passkey sign-in.
+  const sponsoredSender = (follow ? acting.sponsored : null) ?? ownSender;
   const sponsoredStatus = useMemo(
     () => sponsoredSender.availability(),
     [sponsoredSender],
   );
+  const [ownKind, setOwnKind] = useState<SenderKind>("wallet");
+  const kind: SenderKind = follow ? (acting.kind ?? "wallet") : ownKind;
+  const setKind = follow ? acting.setKind : setOwnKind;
 
   useEffect(() => {
     if (kind !== "passkey") return;

@@ -160,6 +160,25 @@ test("the founder does not review the first budget's work (D79)", () => {
   assert.equal(contributorIssue(draft({ quorum: "1" }), FOUNDER), null);
 });
 
+test("a founder with two accounts cannot review from the other one (D79, D139)", () => {
+  // Acting from a passkey account while their name is linked to a wallet: the wallet may not review either.
+  const PASSKEY = `0x${"ab".repeat(20)}`;
+  const onPanel = draft({ reviewers: `${FOUNDER}\n${R1}\n${R2}`, quorum: "2" });
+  assert.equal(
+    contributorIssue(onPanel, PASSKEY),
+    null,
+    "one address alone does not see it",
+  );
+  assert.equal(
+    contributorIssue(onPanel, [PASSKEY, FOUNDER])?.field,
+    "reviewers",
+  );
+  assert.equal(
+    contributorIssue(draft({ quorum: "1" }), [PASSKEY, FOUNDER]),
+    null,
+  );
+});
+
 test("the record says contributors only, names the DAO and sells nothing", () => {
   const input = contributorRecordInput({
     launchId: "docs-commons",

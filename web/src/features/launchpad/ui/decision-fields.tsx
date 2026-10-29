@@ -153,11 +153,17 @@ export function SelectField({
 export function PeoplePicker({
   onPick,
   testId,
+  exclude = [],
 }: {
   onPick: (address: string) => void;
   testId: string;
+  /** People not to offer, by public key (the founder, when picking their reviewers). */
+  exclude?: readonly string[];
 }) {
-  const people = usePeopleWithWallets();
+  const all = usePeopleWithWallets();
+  const people = {
+    data: all.data?.filter((person) => !exclude.includes(person.pubkey)),
+  };
   const keys = useMemo(
     () => (people.data ?? []).map((person) => person.pubkey),
     [people.data],
