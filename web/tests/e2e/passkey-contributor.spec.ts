@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
 import {
@@ -473,4 +474,77 @@ test("a founder and a contributor with no wallet start a project, do the work an
   expect(new Set(bundler.sent.map((op) => op.sender))).toEqual(
     new Set([founderAccount, contributorAccount]),
   );
+
+  // ── 7. money in a passkey account can be sent out (D141): paid in here as a faucet would, sent from the profile ──
+  const USDC = "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238";
+  const usdcOf = async (holder: string) =>
+    BigInt(await call(USDC, `0x70a08231${addressArg(holder)}`));
+  const slot = execFileSync(
+    "cast",
+    ["index", "address", contributorAccount, "9"],
+    { encoding: "utf8" },
+  ).trim();
+  await rpc("anvil_setStorageAt", [
+    USDC,
+    slot,
+    `0x${10_000_000n.toString(16).padStart(64, "0")}`,
+  ]);
+  await rpc("anvil_setBalance", [
+    contributorAccount,
+    `0x${(2n * 10n ** 15n).toString(16)}`,
+  ]);
+  const reviewerUsdc = await usdcOf(REVIEWER1);
+  const reviewerEth = BigInt(
+    String(await rpc("eth_getBalance", [REVIEWER1, "latest"])),
+  );
+  const contributorKey = (await contributor.evaluate(() =>
+    window.localStorage.getItem("buzz.passkey.pubkey"),
+  )) as string;
+  // The account line on a project says the account holds money, and where to send it from.
+  await refresh(contributor, "Work");
+  await expect(contributor.getByTestId("work-money")).toContainText(
+    "This account holds 10 USDC and 0.002 ETH.",
+    { timeout: 30_000 },
+  );
+  await contributor.goto(`/u/${contributorKey}`);
+  const money = contributor.getByTestId("account-money");
+  await expect(money.getByTestId("account-money-held")).toContainText(
+    "10 USDC",
+    { timeout: 30_000 },
+  );
+  // Nothing goes until the amount and address make sense, and the person has read what will happen.
+  await money.getByRole("radio", { name: "USDC" }).check();
+  await money.getByTestId("account-money-amount").fill("11");
+  await money.getByTestId("account-money-to").fill(REVIEWER1);
+  await expect(money.getByTestId("account-money-problem")).toContainText(
+    "This account holds 10 USDC.",
+  );
+  await expect(money.getByTestId("account-money-next")).toBeDisabled();
+  await money.getByTestId("account-money-amount").fill("4");
+  await money.getByTestId("account-money-next").click();
+  await expect(money.getByTestId("account-money-review")).toContainText(
+    `Send 4 USDC to ${REVIEWER1.toLowerCase()}. Sending cannot be undone`,
+  );
+  await money.getByTestId("account-money-send").click();
+  await expect(money.getByTestId("account-money-sent")).toContainText("sent.", {
+    timeout: 120_000,
+  });
+  expect(await usdcOf(contributorAccount)).toBe(6_000_000n);
+  expect(await usdcOf(REVIEWER1)).toBe(reviewerUsdc + 4_000_000n);
+  // All of the ETH, its fee covered as for every step.
+  await money.getByRole("radio", { name: "ETH" }).check();
+  await money.getByTestId("account-money-all").click();
+  await money.getByTestId("account-money-to").fill(REVIEWER1);
+  await money.getByTestId("account-money-next").click();
+  await money.getByTestId("account-money-send").click();
+  await expect(money.getByTestId("account-money-held")).toContainText("0 ETH", {
+    timeout: 120_000,
+  });
+  expect(
+    BigInt(String(await rpc("eth_getBalance", [contributorAccount, "latest"]))),
+  ).toBe(0n);
+  expect(
+    BigInt(String(await rpc("eth_getBalance", [REVIEWER1, "latest"]))),
+  ).toBe(reviewerEth + 2n * 10n ** 15n);
+  expect(bundler.sent.every((op) => op.success === true)).toBe(true);
 });

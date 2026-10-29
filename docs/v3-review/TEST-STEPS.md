@@ -1853,3 +1853,12 @@ On the hosted Sepolia site (ZeroDev set, its gas policy on), in a browser with n
 2. On a phone, the Testnet line shows above the tab bar; tapping it explains it.
 3. The profile menu has "Terms of use" and "Privacy note", opening the operator's texts.
 
+## 4cg. Sending money out of a passkey account (D141)
+
+1. Put a little test USDC in your passkey account (a faucet, or have a project pay a claim). A project's account line
+   says "This account holds … USDC" and links to your profile.
+2. On your profile, "Money in your passkey account" shows it. Type more than it holds, or your own address: it says why
+   and the button stays off.
+3. Send part of it to another address of yours: the check says exactly what goes where; one passkey prompt; it arrives,
+   and the balance drops. Then "All of it" for the rest.
+

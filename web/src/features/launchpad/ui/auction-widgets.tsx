@@ -5,6 +5,7 @@ import { Button } from "@/shared/ui/button";
 import { networkLabel } from "../chain";
 import type { ActingAccountState } from "../use-acting-account";
 import type { ConnectedWalletState } from "../use-connected-wallet";
+import { AccountMoneyNote } from "./AccountMoneyNote";
 import { AccountNameLink } from "./AccountNameLink";
 
 /**
@@ -227,11 +228,18 @@ function ActingStrip({
           {other}
         </p>
         {account.address ? (
-          <AccountNameLink
-            account={account.address}
-            keys={account.passkeyKeys}
-            testIdPrefix={testIdPrefix}
-          />
+          <>
+            <AccountNameLink
+              account={account.address}
+              keys={account.passkeyKeys}
+              testIdPrefix={testIdPrefix}
+            />
+            <AccountMoneyNote
+              account={account.address}
+              chainId={account.chainId}
+              testIdPrefix={testIdPrefix}
+            />
+          </>
         ) : null}
       </div>
     );

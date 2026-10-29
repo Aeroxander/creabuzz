@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { PaymentWalletCard } from "@/features/identity/ui/PaymentWalletCard";
+import { AccountMoneyCard } from "@/features/launchpad/ui/AccountMoneyCard";
 import {
   resolveUserName,
   resolveUserSecondaryName,
@@ -321,6 +322,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
           </a>
         ) : null}
         <PaymentWalletCard isSelf={isSelf} key={pubkey} pubkey={pubkey} />
+        {isSelf ? <AccountMoneyCard /> : null}
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
           <button
             aria-controls="profile-points-help"
