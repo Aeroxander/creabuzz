@@ -1357,13 +1357,21 @@ scripts/test-compose-backup.sh                     # a scratch stack on port 341
 pnpm --dir web test                                # deploy-env.test.mjs
 ```
 
-By hand, before the first hosted start:
+By hand, before the first hosted start (`deploy/compose/README.md`, "First start", has every command):
 
-1. `cat .env.example .env.creaton.example > .env` in `deploy/compose`, fill in every CHANGE_ME, put the finished terms
-   and privacy note in `policies/`. `./run.sh build` prints what the web app will offer; check it says what you meant.
-2. `./run.sh start`, open the site: sign-up shows your terms; posting and unread markers work.
-3. `./run.sh backup`, copy the folder to another machine, and practise `./run.sh restore <dir> --yes` there (README,
-   "Backups") before inviting anyone.
+1. In `deploy/compose`: `cat .env.example .env.creaton.example > .env`. Make each secret with `openssl rand -hex 32`
+   (the media store's two keys shorter, as the README shows) and paste it over its CHANGE_ME. Set the host name in
+   `BUZZ_DOMAIN` and the addresses beside it, and a Sepolia node in `BUZZ_EVM_RPC_URL`; `BUZZ_COMPOSE_TLS=true` is
+   already there. Put the finished terms and privacy note in `policies/` and name them in `BUZZ_TERMS_FILE` and
+   `BUZZ_PRIVACY_FILE`. `./run.sh build` prints what the web app will offer; check it says what you meant.
+2. `docker run --rm --entrypoint buzz-admin creaton-relay:local generate-key`: the public key goes in
+   `RELAY_OWNER_PUBKEY`, the secret key into a password manager, never onto the server. `./run.sh start` (no warning
+   about missing terms), open `https://<host>`, **Sign up** → **I already have an account**, paste the secret key:
+   you are signed in as the owner. The sign-up screen showed your terms; posting and unread markers work.
+3. **People** → People and access → **Make invite link** for "One person". Open it in a private window: it shows your
+   terms, and the new account gets in. Without a link, a new account cannot.
+4. `./run.sh backup`, copy the folder to another machine, and practise `./run.sh restore <dir> --yes` there (README,
+   "Backups") before inviting anyone. `./run.sh prune-backups 14` removes only folders older than 14 days.
 
 
 ## 4be. Every screen, photographed and read (D108, 2026-10-24)
@@ -1821,4 +1829,27 @@ On top of 4cb:
 2. Type 1, 1 and 2: the list above says "Each milestone waits 1 day" and "For 2 days after an unlock", and the bond's
    hint says it comes back 2 days after the milestone unlocks. Launch: the project's Powers card shows the same waits.
 3. With the mainnet switch on and a real network chosen, the fields are not there.
+
+## 4ce. Contributor steps from a passkey account (D139, 2026-10-29, test networks)
+
+On the hosted Sepolia site (ZeroDev set, its gas policy on), in a browser with no wallet:
+
+1. Sign up with a passkey. On Start, the account line says "Your account: 0x… (passkey; fees are covered on the test
+   network)". Start a contributor project: one passkey prompt, no wallet asked for.
+2. On the project's Work tab, press "Show your name with this account…", read what it says, tick the box, confirm with
+   the passkey: "Your name now shows with this account."
+3. In another browser, sign up with a passkey as a contributor, submit work: one prompt for the whole submission. As
+   the founder, accept it; as two reviewers (one may use a wallet: "Use my browser wallet instead"), approve it.
+4. Close the passkey prompt once instead of confirming: the message says you closed it and nothing was sent.
+5. After the waiting period, mark it finished as the contributor; as the founder, open the award and vote it through.
+   The contributor's Contributions line shows the Shares.
+6. As the founder, save your recovery key, then on another device where the same passkey is synced, sign in with the
+   recovery key: the same account shows, and you can vote from it.
+
+## 4cf. The hosted image (D140)
+
+1. On the hosted site, Start shows no "Raise money" step and Launchpad no "Set up a sale"; `/launchpad?start=sale`
+   opens nothing.
+2. On a phone, the Testnet line shows above the tab bar; tapping it explains it.
+3. The profile menu has "Terms of use" and "Privacy note", opening the operator's texts.
 
