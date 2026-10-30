@@ -7,9 +7,12 @@
 import { ImagePlus } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { uploadFailureWords } from "@/shared/lib/media-refusal";
+import type { FailureWords } from "@/shared/lib/readable-error";
 import { uploadBlob } from "@/shared/lib/upload-blob";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
 
 import { draftProblem, TITLE_MAX } from "../lib/post-text";
 
@@ -31,7 +34,7 @@ export function PostComposer({
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [body, setBody] = useState(initialBody);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState<FailureWords | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -48,9 +51,11 @@ export function PostComposer({
         return `${before}${before ? "\n\n" : ""}![](${uploaded.url})\n`;
       });
     } catch (error) {
-      const said = error instanceof Error ? error.message.trim() : "";
       setProblem(
-        `That picture didn't upload${said ? ` (the server said: ${said})` : ""}. Try again, or paste a link to a picture.`,
+        uploadFailureWords(
+          error,
+          "That picture didn't upload. Try again, or paste a link to a picture.",
+        ),
       );
     } finally {
       setUploading(false);
@@ -61,7 +66,7 @@ export function PostComposer({
   const submit = async () => {
     const found = draftProblem(title, body);
     if (found) {
-      setProblem(found);
+      setProblem({ text: found, detail: null });
       return;
     }
     setBusy(true);
@@ -69,11 +74,13 @@ export function PostComposer({
     try {
       await onSubmit(title, body);
     } catch (error) {
-      setProblem(
-        error instanceof Error && error.message
-          ? error.message
-          : "Couldn't post that. Try again.",
-      );
+      setProblem({
+        text:
+          error instanceof Error && error.message
+            ? error.message
+            : "Couldn't post that. Try again.",
+        detail: null,
+      });
     } finally {
       setBusy(false);
     }
@@ -145,13 +152,19 @@ export function PostComposer({
       </div>
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       {problem ? (
-        <p
-          className="text-xs text-destructive"
-          data-testid="board-composer-problem"
-          role="alert"
-        >
-          {problem}
-        </p>
+        <>
+          <p
+            className="text-xs text-destructive"
+            data-testid="board-composer-problem"
+            role="alert"
+          >
+            {problem.text}
+          </p>
+          <TechnicalDetails
+            detail={problem.detail}
+            testId="board-composer-problem-details"
+          />
+        </>
       ) : null}
       <div className="flex gap-2">
         <Button

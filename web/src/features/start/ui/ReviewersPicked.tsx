@@ -148,9 +148,10 @@ export function ReviewersPicked({
           data-testid="contributor-quorum-all"
         >
           <span>
-            {named.length === 2 ? "Both" : "All of them"} must agree: if one
-            objects or doesn&apos;t answer, that piece of work stays stuck. Name
-            another reviewer, or let any one of them decide.
+            If they split, or one doesn&apos;t answer, that piece of work stays
+            stuck until its deadline passes. Name another reviewer, or let any
+            one of them decide: then the first answer decides, a turn-down as
+            much as an approval.
           </span>
           <Button
             data-testid="contributor-quorum-one"

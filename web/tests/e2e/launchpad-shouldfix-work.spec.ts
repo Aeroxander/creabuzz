@@ -167,11 +167,38 @@ const evidenceEvent = () =>
     claim: { id: CLAIM, mandate: MANDATE, check: CHECK },
   });
 
-function seedPeople(relay: ReturnType<typeof createMockRelay>) {
+/** A person's link from their account to their wallet (their payment wallet record). */
+const bindingEvent = (who: Who) => {
+  const person = PEOPLE[who];
+  return event(
+    keyOf(person.nsec),
+    37017,
+    [
+      ["d", person.wallet],
+      ["address", person.wallet],
+    ],
+    {
+      v: 1,
+      address: person.wallet,
+      siweMessageHash: "0x",
+      attestation: "x",
+    },
+  );
+};
+
+/** Everyone's name, and everyone's wallet linked to it except `unlinked`'s. */
+function seedPeople(
+  relay: ReturnType<typeof createMockRelay>,
+  unlinked: Who | null = null,
+) {
   relay.seed(record);
-  for (const person of Object.values(PEOPLE)) {
+  for (const [who, person] of Object.entries(PEOPLE) as [
+    Who,
+    (typeof PEOPLE)[Who],
+  ][]) {
     const pubkey = keyOf(person.nsec);
     relay.seed(event(pubkey, 0, [], { name: person.name }));
+    if (who === unlinked) continue;
     relay.seed(
       event(
         pubkey,
@@ -582,6 +609,84 @@ test("a reason published under a reviewer's wallet by someone else is never show
     claimCard(page).getByTestId("work-claim-reviewers"),
   ).toContainText("Turned down by Rui", { timeout: 20_000 });
   await expect(claimCard(page).getByTestId("work-claim-reason")).toHaveCount(0);
+});
+
+test("a reviewer whose account is not linked to their name is told, and no reason nobody would see is published (D145)", async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay();
+  seedPeople(relay, "rui");
+  relay.seed(evidenceEvent());
+  const world: World = { status: STATUS.Open, answers: new Map(), sent: [] };
+  const reasons = () =>
+    relay.events.filter(
+      (e) => e.kind === 47003 && e.content.includes('"review"'),
+    );
+
+  const rui = await openAs(browser, "rui", relay, world);
+  await rui.goto(projectPath("work"));
+  const card = claimCard(rui);
+  await expect(card.getByTestId("work-evidence-text")).toHaveText(EVIDENCE, {
+    timeout: 20_000,
+  });
+  await card.getByTestId("work-object").click();
+  // Said in the form, before anything is written: a reason from this account would not reach the contributor.
+  const unlinked = card.getByTestId("work-object-unlinked");
+  await expect(unlinked).toContainText(
+    "The contributor can't see a reason from this account yet: it isn't linked to your name.",
+    { timeout: 20_000 },
+  );
+  await expect(unlinked).toContainText("Payment wallet on your profile");
+  await card
+    .getByTestId("work-object-reason")
+    .fill("The German page is missing.");
+  await card.getByTestId("work-object-confirm").click();
+  await expect(card.getByTestId("work-object-problem")).toContainText(
+    "This account isn't linked to your name, so the contributor would not see your reason. Nothing was sent.",
+  );
+  expect(reasons()).toHaveLength(0);
+  expect(world.answers.has(PEOPLE.rui.wallet)).toBe(false);
+  await expectAccessible(rui, "turn-down form for an account not linked");
+
+  // Rui links his wallet (on his profile, elsewhere). Pressing again reads the link again: the reason is published,
+  // then the turn-down sent.
+  relay.seed(bindingEvent("rui"));
+  await card.getByTestId("work-object-confirm").click();
+  await expect(card.getByTestId("work-object-form")).toHaveCount(0, {
+    timeout: 20_000,
+  });
+  expect(reasons()).toHaveLength(1);
+  expect(JSON.parse(reasons()[0].content).review.reviewer).toBe(
+    PEOPLE.rui.wallet,
+  );
+  expect(world.answers.get(PEOPLE.rui.wallet)).toBe(false);
+});
+
+test("an unlinked reviewer can still turn work down without a reason (D145)", async ({
+  browser,
+}) => {
+  const relay = createMockRelay();
+  seedPeople(relay, "rui");
+  relay.seed(evidenceEvent());
+  const world: World = { status: STATUS.Open, answers: new Map(), sent: [] };
+  const rui = await openAs(browser, "rui", relay, world);
+  await rui.goto(projectPath("work"));
+  const card = claimCard(rui);
+  await card.getByTestId("work-object").click({ timeout: 20_000 });
+  await expect(card.getByTestId("work-object-unlinked")).toBeVisible({
+    timeout: 20_000,
+  });
+  await card.getByTestId("work-object-confirm").click();
+  await expect(card.getByTestId("work-object-form")).toHaveCount(0, {
+    timeout: 20_000,
+  });
+  expect(world.answers.get(PEOPLE.rui.wallet)).toBe(false);
+  expect(
+    relay.events.filter(
+      (e) => e.kind === 47003 && e.content.includes('"review"'),
+    ),
+  ).toHaveLength(0);
 });
 
 test("Refresh reads the evidence again, so a reviewer is not left with only a turn-down to offer", async ({

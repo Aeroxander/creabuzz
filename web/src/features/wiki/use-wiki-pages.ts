@@ -28,6 +28,7 @@ import {
   pageCoordinate,
   type TombstonedPage,
 } from "./lib/page-index";
+import { renameInTwoWrites } from "./lib/rename-failure";
 import { restorePayload } from "./lib/wiki-history";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 
@@ -330,12 +331,16 @@ export function useWikiPages(enabled: boolean) {
     );
   }, []);
 
-  /** Rename by republishing under the new slug, then tombstoning the old one. */
+  /**
+   * Rename by republishing under the new slug, then tombstoning the old one. A refused tombstone after the save throws
+   * `RenameIncompleteError`: the new page is live and the old one still there.
+   */
   const renamePage = useCallback(
-    async (page: WikiPage, nextSlug: string) => {
-      await savePage(nextSlug, page.content);
-      await deletePage({ ...page, slug: page.slug });
-    },
+    (page: WikiPage, nextSlug: string) =>
+      renameInTwoWrites(
+        () => savePage(nextSlug, page.content),
+        () => deletePage({ ...page, slug: page.slug }),
+      ),
     [deletePage, savePage],
   );
 

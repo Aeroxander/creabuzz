@@ -37,6 +37,8 @@ import {
   buildRagequitPlan,
   confirmedRagequitDeps,
   exitRetry,
+  type ExitCheck,
+  firstExit,
   initialRagequitFlowState,
   onExitLanded,
   type RagequitResume,
@@ -76,6 +78,21 @@ import {
 import { useConnectedWallet } from "../use-connected-wallet";
 
 const SELECTOR_CURRENCY = "0xe5a6b10f"; // currency() — cast sig golden (fund-flow.ts)
+
+/** The page's read of one holder's position: the panel shows it, and the dialog puts a fresh chain read in its place. */
+function ragequitPositionKey(
+  dao: string | undefined,
+  holder: string | null | undefined,
+  tokens: string[] | null,
+) {
+  return [
+    "ragequit-position",
+    dao,
+    holder,
+    tokens?.join(",") ?? null,
+    getRpcEndpoint(),
+  ] as const;
+}
 
 export interface RagequitPanelProps {
   record: LaunchRecord;
@@ -178,13 +195,7 @@ export function RagequitPanel({
       : (currencyInfoQuery.data ?? { symbol: null, decimals: null });
 
   const positionQuery = useQuery({
-    queryKey: [
-      "ragequit-position",
-      daoBinding?.dao,
-      holder,
-      tokens?.join(",") ?? null,
-      getRpcEndpoint(),
-    ],
+    queryKey: ragequitPositionKey(daoBinding?.dao, holder, tokens),
     enabled: Boolean(daoBinding && holder && tokens),
     queryFn: () =>
       fetchRagequitPosition(
@@ -515,6 +526,8 @@ function RagequitDialog({
   );
   const [running, setRunning] = useState(false);
   const [understood, setUnderstood] = useState(false);
+  // Said when what can leave changed between the page's read and the send, so nothing was sent (D145).
+  const [recheck, setRecheck] = useState<string | null>(null);
   // The Shares the last exit sent asked to burn, and the holder's Shares just before: a retry reads the position again
   // and compares, so an exit whose confirmation timed out is never sent twice. The record says what was burned.
   const sent = useRef<{ burn: bigint; balanceBefore: bigint } | null>(null);
@@ -570,16 +583,57 @@ function RagequitDialog({
     }
   };
 
+  /**
+   * What can leave is not what the dialog showed: nothing is sent. The dialog shows the fresh read instead and starts
+   * over, so the person sees the new amount and confirms again (D145).
+   */
+  const refuseChanged = (
+    fresh: RagequitPosition | null,
+    burnable: bigint,
+    afterSend: boolean,
+  ) => {
+    if (fresh) {
+      queryClient.setQueryData(ragequitPositionKey(dao, holder, tokens), fresh);
+    }
+    sent.current = null;
+    sentHash.current = null;
+    setUnderstood(false);
+    dispatch({ type: "reset", order: [] });
+    const now = formatShares(burnable);
+    setRecheck(
+      afterSend
+        ? `Your Shares changed after the exit was sent, so it was not sent again. The first exit may have gone through: ${now} Shares can leave now. Check what this shows before you leave again.`
+        : `Your Shares changed since this page read them: ${now} can leave now, not ${formatShares(sharesToBurn)}. Nothing was sent. Check what this shows, then confirm again.`,
+    );
+  };
+
   const run = async (retrying = false) => {
     setRunning(true);
+    setRecheck(null);
     try {
       let burn = sharesToBurn;
-      let balanceBefore = position?.sharesBalance ?? 0n;
+      let balanceBefore = 0n;
       let resume: RagequitResume | undefined;
       let priorExit: FlowReceipt | undefined;
-      if (retrying) {
+      if (!retrying) {
+        // The position is read from the chain just before the send: the exit burns exactly what the dialog showed.
+        const fresh = await readFresh();
+        const check: ExitCheck = firstExit({ shown: sharesToBurn, fresh });
+        if (check.kind === "unknown") {
+          toast.error(
+            "Couldn't read your Shares just now, so nothing was sent. Try again.",
+          );
+          return;
+        }
+        if (check.kind === "changed") {
+          refuseChanged(fresh, check.burnable, false);
+          return;
+        }
+        burn = check.burn;
+        balanceBefore = check.balanceBefore;
+      } else {
         const exitDone = state.steps.exit === "done";
-        const fresh = exitDone || !sent.current ? null : await readFresh();
+        const fresh = exitDone ? null : await readFresh();
         const next = exitRetry({
           exitDone,
           sent: sent.current,
@@ -590,6 +644,10 @@ function RagequitDialog({
           toast.error(
             "Couldn't check whether your exit went through, so nothing was sent. Refresh the page, then try again.",
           );
+          return;
+        }
+        if (next.kind === "changed") {
+          refuseChanged(fresh, next.burnable, sent.current !== null);
           return;
         }
         if (next.kind === "landed") {
@@ -618,7 +676,7 @@ function RagequitDialog({
           priorExit = state.receipts.exit;
         } else {
           burn = next.burn;
-          if (fresh) balanceBefore = fresh.sharesBalance;
+          balanceBefore = next.balanceBefore;
         }
       }
       if (!resume) {
@@ -721,6 +779,15 @@ function RagequitDialog({
           .join(" and ")}
         . Anything else the DAO holds stays in the treasury.
       </p>
+      {recheck ? (
+        <p
+          className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid="ragequit-recheck"
+          role="alert"
+        >
+          {recheck}
+        </p>
+      ) : null}
       {paysNothing && !exitLanded ? (
         <label
           className="mt-3 flex items-start gap-2 text-sm text-black/80 dark:text-white/80"

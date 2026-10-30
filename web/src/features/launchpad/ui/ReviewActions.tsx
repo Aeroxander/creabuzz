@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from "react";
 
+import type { PasskeyAccountKeys } from "@/features/identity/lib/passkey-account";
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
 
@@ -11,12 +12,16 @@ import {
 import { encodeAttest } from "../lib/work";
 import type { Launch } from "../models";
 import { usePublishMirror } from "../use-launches";
+import { useReasonShown } from "../use-review-reasons";
+import { AccountNameLink } from "./AccountNameLink";
 
 /**
  * A reviewer's two answers on a claim. Approve sends at once (it needs the evidence, which the caller checks). Turning
  * work down opens a short form first: the verdict cannot be taken back, and the contributor deserves to know why. The
  * reason is optional; when there is one it is published first (`lib/review-reasons.ts`), so a turn-down that fails to
- * send never leaves a reason that looks like a verdict, and pressing the button again finishes it.
+ * send never leaves a reason that looks like a verdict, and pressing the button again finishes it. A reason is shown
+ * only when the reviewer's account is linked to their name, so the form checks that first: when it is not, it says so,
+ * offers the link, and publishes no reason (turning it down without one still works).
  */
 export function ReviewActions({
   launch,
@@ -25,6 +30,7 @@ export function ReviewActions({
   mandate,
   verifiers,
   reviewer,
+  passkeyKeys,
   canApprove,
   blocked,
   onSend,
@@ -38,11 +44,14 @@ export function ReviewActions({
   verifiers: string;
   /** The acting wallet: the one the turn-down is sent from, named in the reason so it can be checked against it. */
   reviewer: string;
+  /** The acting passkey account's public details, so it can be linked to the reviewer's name here; null for a wallet. */
+  passkeyKeys: PasskeyAccountKeys | null;
   canApprove: boolean;
   blocked: boolean;
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
 }) {
   const publish = usePublishMirror();
+  const reasonShown = useReasonShown(reviewer);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
@@ -70,6 +79,20 @@ export function ReviewActions({
     setSending(true);
     try {
       if (text && published.current !== text) {
+        // Read again now: a reason the contributor would never be shown is not published.
+        const shown = await reasonShown.check();
+        if (shown === null) {
+          setProblem(
+            "Couldn't check that the contributor can see your reason, so nothing was sent. Try again, or clear the reason to turn it down without one.",
+          );
+          return;
+        }
+        if (!shown) {
+          setProblem(
+            "This account isn't linked to your name, so the contributor would not see your reason. Nothing was sent. Link it first, or clear the reason to turn it down without one.",
+          );
+          return;
+        }
         try {
           await publish.mutateAsync({
             kind: KIND_LAUNCH_UPDATE,
@@ -174,6 +197,27 @@ export function ReviewActions({
               value={reason}
             />
           </label>
+          {reasonShown.shown === false ? (
+            <div
+              className="rounded-md bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+              data-testid="work-object-unlinked"
+            >
+              <p>
+                The contributor can&apos;t see a reason from this account yet:
+                it isn&apos;t linked to your name.{" "}
+                {passkeyKeys
+                  ? "Link it here, or turn it down without a reason."
+                  : "Link this wallet to your name under Payment wallet on your profile, or turn it down without a reason."}
+              </p>
+              {passkeyKeys ? (
+                <AccountNameLink
+                  account={reviewer}
+                  keys={passkeyKeys}
+                  testIdPrefix="work-object"
+                />
+              ) : null}
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <Button
               data-testid="work-object-confirm"

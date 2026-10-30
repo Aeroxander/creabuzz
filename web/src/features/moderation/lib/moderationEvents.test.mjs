@@ -12,8 +12,8 @@ import {
   buildResolveReport,
   buildTimeout,
   buildUnban,
-  plainRefusal,
 } from "./moderationEvents.ts";
+import { failureWords } from "../../../shared/lib/readable-error.ts";
 import {
   isHomePostReport,
   parseModerationReports,
@@ -267,23 +267,45 @@ describe("buildUnban", () => {
   });
 });
 
-describe("plainRefusal", () => {
+// What a moderator reads when an action is refused (`use-moderation-queue.ts` and Home's Remove say failures with
+// `failureWords`): the server's reason as a sentence, and its internal failures as plain words, never `Database error`.
+describe("a refused moderation action", () => {
+  const FAILED = "Couldn’t apply the action. Try again.";
   it("says the server's reason as a sentence", () => {
     assert.equal(
-      plainRefusal(
-        "restricted: only the community's owners and admins can remove someone's post from Home",
-      ),
+      failureWords(
+        new Error(
+          "restricted: only the community's owners and admins can remove someone's post from Home",
+        ),
+        FAILED,
+      ).text,
       "Only the community's owners and admins can remove someone's post from Home.",
     );
     assert.equal(
-      plainRefusal(
-        "invalid: report is not open (already resolved or dismissed)",
-      ),
-      "Report is not open (already resolved or dismissed)",
+      failureWords(
+        new Error(
+          "invalid: report is not open (already resolved or dismissed)",
+        ),
+        FAILED,
+      ).text,
+      "Report is not open (already resolved or dismissed).",
     );
     assert.equal(
-      plainRefusal("You are banned from this community."),
+      failureWords(new Error("You are banned from this community."), FAILED)
+        .text,
       "You are banned from this community.",
     );
+  });
+
+  it("says the server's internal failures and a dropped connection in plain words", () => {
+    for (const raw of [
+      "error: database error: down",
+      "WebSocket connection failed",
+      "Server publish timed out",
+    ])
+      assert.deepEqual(failureWords(new Error(raw), FAILED), {
+        text: FAILED,
+        detail: raw,
+      });
   });
 });

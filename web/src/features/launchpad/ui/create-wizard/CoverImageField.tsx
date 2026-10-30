@@ -5,6 +5,7 @@
  * A bad upload leaves the previous value alone and says what to do next.
  */
 
+import { uploadFailureWords } from "@/shared/lib/media-refusal";
 import { ImagePlus, X } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -34,9 +35,10 @@ export function CoverImageField({
       onChange(uploaded.url);
     } catch (cause) {
       setError(
-        cause instanceof Error
-          ? cause.message
-          : "That upload did not go through. Try again, or paste a link.",
+        uploadFailureWords(
+          cause,
+          "That upload did not go through. Try again, or paste a link.",
+        ).text,
       );
     } finally {
       setBusy(false);

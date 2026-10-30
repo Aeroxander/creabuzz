@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import {
+  ACCESS_REMOVED_TEXT,
   asSentence,
+  NO_ACCESS_TEXT,
   liveRefusalText,
   refusalText,
   restrictionText,
@@ -25,8 +27,8 @@ describe("refusalText", () => {
       "New accounts can post 20 times an hour for their first day; try again later.",
     );
     assert.equal(
-      refusalText("restricted: not a channel member", "x"),
-      "restricted: not a channel member",
+      refusalText("restricted: only an admin can add people", "x"),
+      "restricted: only an admin can add people",
     );
     assert.equal(
       refusalText("", "The server refused this post."),
@@ -62,7 +64,23 @@ describe("restrictions on the reader", () => {
       "This thread is locked. Only the board's moderators, owners and admins can reply.",
     );
     // Not a restriction: passed on as it is.
-    assert.equal(restrictionText("restricted: not a channel member"), null);
+    assert.equal(restrictionText("restricted: not a community member"), null);
+  });
+
+  it("tell someone removed from a private room or board that they were, and someone not on it that they are not", () => {
+    const revoked = "restricted: channel access revoked";
+    assert.equal(restrictionText(revoked), ACCESS_REMOVED_TEXT);
+    assert.equal(refusalText(revoked, "x"), ACCESS_REMOVED_TEXT);
+    // The server says the same to the removed and the never-added, so the words claim neither.
+    const notOn = "restricted: not a channel member";
+    assert.equal(restrictionText(notOn), NO_ACCESS_TEXT);
+    assert.equal(refusalText(notOn, "x"), NO_ACCESS_TEXT);
+    // A live view the reader had open: they were removed.
+    assert.match(liveRefusalText(notOn), /no longer have access/);
+    assert.equal(
+      ACCESS_REMOVED_TEXT,
+      "You no longer have access to this room or board.",
+    );
   });
 
   it("match the server's own wording", () => {
@@ -78,6 +96,19 @@ describe("restrictions on the reader", () => {
     const board = relay("handlers/board_moderation.rs");
     assert.match(board, /"you are muted on this board until \{\}"/);
     assert.match(board, /restricted\("this thread is locked"\)/);
+    // Removed from a private room or board: the read, the write, and the live subscription.
+    assert.match(
+      relay("handlers/req.rs"),
+      /"restricted: not a channel member"/,
+    );
+    assert.match(
+      relay("handlers/ingest.rs"),
+      /"restricted: not a channel member"/,
+    );
+    assert.match(
+      relay("handlers/side_effects.rs"),
+      /"restricted: channel access revoked"/,
+    );
   });
 });
 

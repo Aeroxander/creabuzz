@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { failureWords } from "../../../shared/lib/readable-error.ts";
+import { SERVER_FAILED_TEXT } from "../../../shared/lib/refusal-text.ts";
+
 import {
   activeModerators,
   activeMutes,
   appointDraft,
+  boardFailure,
   boardRefusalText,
   KIND_BOARD_MODERATION_LOG,
   KIND_BOARD_STATE,
@@ -331,6 +335,35 @@ test("board refusals read as sentences with dates", () => {
   assert.equal(
     boardRefusalText("restricted: not a relay member"),
     "This server is invite-only. Open the invite link you were sent.",
+  );
+});
+
+test("a moderation command that failed in transit is said plainly, not as the socket's words", () => {
+  // `useBoardModerationActions` throws `boardFailure(error)`; `BoardModeration` shows `failureWords(thrown).text`.
+  for (const raw of [
+    "WebSocket connection failed",
+    "Server publish timed out",
+  ]) {
+    const thrown = new Error(raw);
+    assert.equal(boardFailure(thrown), thrown);
+    assert.equal(failureWords(boardFailure(thrown)).text, SERVER_FAILED_TEXT);
+  }
+  // A refusal the server stated is said in words, with the server's own kept as the cause.
+  const refused = new Error("restricted: you cannot mute yourself");
+  const said = boardFailure(refused);
+  assert.equal(said.message, "You cannot mute yourself.");
+  assert.equal(said.cause, refused);
+  assert.equal(failureWords(said).text, "You cannot mute yourself.");
+  assert.equal(
+    failureWords(boardFailure(new Error("error: database error: down"))).text,
+    SERVER_FAILED_TEXT,
+  );
+  // Already in plain words (`publishAsUser` says a restriction so): kept.
+  const banned = new Error("You are banned from this community.");
+  assert.equal(boardFailure(banned), banned);
+  assert.equal(
+    failureWords(boardFailure(banned)).text,
+    "You are banned from this community.",
   );
 });
 

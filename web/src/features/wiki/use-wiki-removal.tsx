@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { failureWords } from "@/shared/lib/readable-error";
 import { deleteDialogCopy } from "./lib/delete-copy";
+import { deleteFailureText } from "./lib/rename-failure";
 import type { TombstonedPage } from "./lib/page-index";
 import type { WikiPage } from "./use-wiki-pages";
 import {
@@ -110,8 +111,7 @@ export function useWikiRemoval({
               // "Discarded" and "Deleted" both say the page is gone; a failed
               // read tells us nothing about that, so say nothing was changed.
               toast.error("Couldn't delete page", {
-                description:
-                  "The server did not answer, so the page was not deleted. Try again.",
+                description: deleteFailureText(error),
               });
             }
           })();

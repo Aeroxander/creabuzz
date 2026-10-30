@@ -388,11 +388,15 @@ test("the Home composer adds a picture, and the post shows it", async ({
   await expect(mine.locator("img[src^='blob:']")).toHaveCount(1);
 });
 
-test("a failed upload says so and keeps the draft", async ({ page }) => {
+test("a failed upload says so in plain words and keeps the draft", async ({
+  page,
+}) => {
   const relay = createMockRelay();
   await open(page, relay);
+  // The server's own words for a file over its limit (`buzz-media` `MediaError::FileTooLarge`).
+  const said = "file too large: 99999999 bytes (max 52428800)";
   await page.route("**/upload", (route) =>
-    route.fulfill({ status: 413, json: { error: "file too large" } }),
+    route.fulfill({ status: 413, json: { error: said } }),
   );
   const composer = page.getByTestId("social-composer");
   await composer.getByTestId("social-composer-input").fill("Keep these words");
@@ -401,9 +405,14 @@ test("a failed upload says so and keeps the draft", async ({ page }) => {
     mimeType: "image/png",
     buffer: PNG,
   });
-  await expect(composer.getByRole("alert")).toContainText(
-    "That picture didn't upload (the server said: file too large)",
+  const alert = composer.getByRole("alert");
+  await expect(alert).toHaveText(
+    "This file is too big for this server. Try a smaller one.",
   );
+  // The server's own words are kept, folded away.
+  await expect(
+    composer.getByTestId("social-composer-problem-details"),
+  ).toContainText(said);
   await expect(composer.getByTestId("social-composer-input")).toHaveValue(
     "Keep these words",
   );

@@ -18,8 +18,11 @@ import {
 } from "@/features/profiles/use-profiles";
 import { cn } from "@/shared/lib/cn";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { uploadFailureWords } from "@/shared/lib/media-refusal";
+import type { FailureWords } from "@/shared/lib/readable-error";
 import { uploadBlob } from "@/shared/lib/upload-blob";
 import { Button } from "@/shared/ui/button";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import {
@@ -97,7 +100,7 @@ export function PostComposer({
   const [mirror, setMirror] = useState(readMirrorSetting);
   const [onboarding, setOnboarding] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState<FailureWords | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   // Signed out, "reading needs no account" is said only where it is true: not on an invite-only server, and not
   // before the server has said which it is.
@@ -189,9 +192,11 @@ export function PostComposer({
         if (ref.current) resize(ref.current);
       });
     } catch (error) {
-      const said = error instanceof Error ? error.message.trim() : "";
       setProblem(
-        `That picture didn't upload${said ? ` (the server said: ${said})` : ""}. Try again, or paste a link to a picture.`,
+        uploadFailureWords(
+          error,
+          "That picture didn't upload. Try again, or paste a link to a picture.",
+        ),
       );
     } finally {
       setUploading(false);
@@ -398,13 +403,20 @@ export function PostComposer({
           </div>
         ) : null}
         {problem ? (
-          <p
-            className="pb-1 text-xs text-red-600 dark:text-red-400"
-            data-testid={`${testId}-problem`}
-            role="alert"
-          >
-            {problem}
-          </p>
+          <>
+            <p
+              className="pb-1 text-xs text-red-600 dark:text-red-400"
+              data-testid={`${testId}-problem`}
+              role="alert"
+            >
+              {problem.text}
+            </p>
+            <TechnicalDetails
+              className="pb-1"
+              detail={problem.detail}
+              testId={`${testId}-problem-details`}
+            />
+          </>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-black/10 py-2 dark:border-white/10">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">

@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { ImagePlus, UserRound } from "lucide-react";
 
 import { isSigningBlockedError } from "@/shared/lib/nostr-signer";
-import { requestLimitText } from "@/shared/lib/refusal-text";
+import { uploadFailureWords } from "@/shared/lib/media-refusal";
 import { uploadBlob } from "@/shared/lib/upload-blob";
 import { ServerImage } from "@/shared/ui/ServerImage";
 
@@ -82,10 +82,10 @@ export function ProfilePictureField({
           ? { kind: "locked", text: message, file }
           : {
               kind: "text",
-              text:
-                requestLimitText(message) ??
+              ...uploadFailureWords(
+                error,
                 "Couldn't upload the picture. Try again, or paste a link to one instead.",
-              detail: message,
+              ),
             },
       );
     } finally {

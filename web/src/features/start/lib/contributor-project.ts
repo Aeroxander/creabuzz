@@ -173,9 +173,9 @@ export function reviewQuorum(count: number, quorumText: string): number {
 }
 
 /**
- * Whether every reviewer named must agree (and there is more than one): then a single reviewer who objects or does
- * not answer leaves a piece of work stuck, which the form says before the project is made. Two reviewers with the box
- * left empty is the common case: more than half of two is both.
+ * Whether every reviewer named must agree (and there is more than one): then a split, or one reviewer who does not
+ * answer, leaves a piece of work stuck until its deadline, which the form says before the project is made. Two
+ * reviewers with the box left empty is the common case: more than half of two is both.
  */
 export function everyReviewerMustAgree(
   count: number,
@@ -185,17 +185,21 @@ export function everyReviewerMustAgree(
 }
 
 /**
- * What the form says about how reviewers decide. With one needed of several, an approval wins even over a turn-down:
- * `ClaimStake.settle` checks for enough approvals before it checks for enough objections.
+ * What the form says about how reviewers decide, as `ClaimStake.settle` decides: anyone may settle a piece the moment
+ * enough reviewers approved it, or enough turned it down (approvals are checked first). So with one needed, the first
+ * answer decides, a turn-down as much as an approval; and with every reviewer needed, a split decides nothing.
  */
 export function quorumSentence(count: number, mustAgree: number): string {
   if (count === 1) return "This reviewer decides on each piece of work alone.";
   if (mustAgree === 1) {
-    return count === 2
-      ? "Either of them can decide: one approval is enough, even if the other turns it down."
-      : "Any one of them can decide: one approval is enough, even if others turn it down.";
+    return "The first answer decides: one approval approves it, one turn-down turns it down.";
   }
-  return `${mustAgree} of these ${count} must agree on each piece of work.`;
+  if (mustAgree === count) {
+    return count === 2
+      ? "Both must agree: two approvals approve it, two turn-downs turn it down. If they split, nothing is decided."
+      : `All ${count} must agree: ${count} approvals approve it, ${count} turn-downs turn it down. If they split, nothing is decided.`;
+  }
+  return `${mustAgree} of these ${count} decide: ${mustAgree} approvals approve it, ${mustAgree} turn-downs turn it down.`;
 }
 
 /** The reviewer addresses in a text box: one per line, or separated by commas or spaces. */

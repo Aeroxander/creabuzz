@@ -105,8 +105,9 @@ author without anyone explaining it.
 9. **The project**: typed in from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) by the founder themselves, with
    two work areas whose words a stranger could check, and its two reviewers asked first (who they are, how fast they will
    answer, any tie to the founder). With two reviewers the form asks both to agree; a split then decides nothing until the
-   piece lapses. Either name a third reviewer, or choose "Let any one decide" (one approval is enough, even if the other
-   turns it down), and tell the reviewers which.
+   piece lapses. Either name a third reviewer, or choose "Let any one decide", and tell the reviewers which. With "Let
+   any one decide" the first answer decides: one approval approves a piece, and one turn-down turns it down (anyone can
+   then close it as turned down, and any deposit goes to the treasury), so the other reviewer cannot overrule it.
 10. **The automated versions**, green on the build you host: `scripts/mvp-gate.sh` (it includes the contributor, work,
    paid-work and milestone journeys). They do not cover a reviewer acting from a passkey account or the name link against
    your real server, so in step 3's practice project have one reviewer approve from a passkey account, and have each

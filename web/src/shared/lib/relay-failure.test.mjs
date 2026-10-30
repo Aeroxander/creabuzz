@@ -174,7 +174,7 @@ test("unknown-kind guidance names the kinds and the relay-side fix", () => {
 
   // Any other refusal gets the honest generic line, not the upgrade advice.
   const generic = relayFailureGuidance(
-    "restricted: not a channel member",
+    "restricted: not a community member",
     [37015],
   );
   assert.match(generic, /refused this request/);
@@ -187,7 +187,12 @@ test("a refusal that restricts the reader is said plainly, and the generic one p
     "You are banned from this community.",
   );
   assert.match(
-    relayFailureGuidance("restricted: not a channel member"),
+    relayFailureGuidance("restricted: not a community member"),
     /Its own message is under Technical details\./,
+  );
+  // Not on a private room or board's list: said so, not "refused this request".
+  assert.equal(
+    relayFailureGuidance("restricted: not a channel member"),
+    "You don't have access to this room or board. Its owner can add you.",
   );
 });

@@ -43,5 +43,10 @@ export function useActionTracker() {
     [],
   );
 
-  return { acting, errors, setActingFor, clearError, failWith };
+  /** Keep `text`, already in words for people (`failureWords`), as why the action on `key` failed. */
+  const failSaying = useCallback((key: string, text: string) => {
+    setErrors((current) => new Map(current).set(key, text));
+  }, []);
+
+  return { acting, errors, setActingFor, clearError, failWith, failSaying };
 }

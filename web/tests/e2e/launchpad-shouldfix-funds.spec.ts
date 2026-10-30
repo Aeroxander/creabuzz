@@ -12,6 +12,7 @@ import { createMockRelay } from "./mock-relay";
  *   send until the person ticks that they understand.
  * - A wallet on another network is refused before anything is sent: no transaction, no "Exit confirmed".
  * - Once an exit lands the page reads the position again, so the old Shares and the Leave button do not stay up.
+ * - Shares that arrive after the page read the position are never given up without the person seeing them first.
  *
  * The panel and its send are the same on a contributor project's Funds tab, where the send goes through the acting
  * account (a build without a contributor kit cannot show that tab, so this runs on a raise's Treasury tab). The real
@@ -301,4 +302,50 @@ test("once an exit lands, the page reads the position again", async ({
         .map((e) => JSON.parse(e.content).sharesBurned),
     )
     .toEqual([(300n * E18).toString()]);
+});
+
+test("Shares that arrive after the page read the position are not given up until the person confirms the new amount (D145)", async ({
+  page,
+}) => {
+  const chain: Chain = { shares: 300n, eth: 2n * E18, sent: [] };
+  const relay = await openTreasury(page, chain);
+  const panel = page.getByTestId("ragequit-panel");
+  await expect(panel.getByTestId("ragequit-shares")).toHaveText("300", {
+    timeout: 20_000,
+  });
+  // An award vote runs: 50 more Shares are minted to the holder after the page read the position.
+  chain.shares = 350n;
+  await panel.getByTestId("ragequit-exit").click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByTestId("ragequit-dialog-summary")).toContainText(
+    "Your 300 Shares are destroyed",
+  );
+  await dialog.getByTestId("ragequit-run").click();
+  // Read from the chain just before sending: not what the dialog showed, so nothing is sent.
+  await expect(dialog.getByTestId("ragequit-recheck")).toHaveText(
+    "Your Shares changed since this page read them: 350 can leave now, not 300. Nothing was sent. Check what this shows, then confirm again.",
+  );
+  expect(chain.sent).toHaveLength(0);
+  // The dialog now shows the new amount; confirming it sends the exit for exactly that.
+  await expect(dialog.getByTestId("ragequit-dialog-summary")).toContainText(
+    "Your 350 Shares are destroyed",
+  );
+  await expectAccessible(page, "exit dialog after the Shares changed");
+  await dialog.getByTestId("ragequit-run").click();
+  await expect(dialog.getByTestId("ragequit-done")).toContainText(
+    "Exit confirmed",
+    { timeout: 20_000 },
+  );
+  expect(chain.sent).toHaveLength(1);
+  await expect
+    .poll(() =>
+      relay.events
+        .filter(
+          (e) =>
+            e.kind === 47005 &&
+            e.tags.some((t) => t[0] === "kind" && t[1] === "ragequit"),
+        )
+        .map((e) => JSON.parse(e.content).sharesBurned),
+    )
+    .toEqual([(350n * E18).toString()]);
 });

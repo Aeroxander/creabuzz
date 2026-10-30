@@ -104,6 +104,24 @@ export function reasonProblem(reason: string): string | null {
     : null;
 }
 
+/** How a key's binding to a wallet is named in the set `boundWallets` returns. */
+export function bindingKey(pubkey: string, address: string): string {
+  return `${pubkey}:${address.toLowerCase()}`;
+}
+
+/**
+ * Whether a reason `author` signs, naming `reviewer`'s wallet, would be shown: the check `reasonsFor` makes, asked
+ * before the reason is published, so a reviewer whose account is not linked to their name is told rather than writing
+ * a reason nobody will see.
+ */
+export function reasonWouldShow(
+  bound: ReadonlySet<string>,
+  author: string,
+  reviewer: string,
+): boolean {
+  return bound.has(bindingKey(author, reviewer));
+}
+
 /**
  * The wallets each key has bound, from binding records: the newest record per key and wallet decides (a withdrawn one
  * unbinds it). Keys are `pubkey:address`, lower-case address.
@@ -119,7 +137,7 @@ export function boundWallets(
 ): Set<string> {
   const newest = new Map<string, (typeof records)[number]>();
   for (const record of records) {
-    const key = `${record.pubkey}:${record.address.toLowerCase()}`;
+    const key = bindingKey(record.pubkey, record.address);
     const current = newest.get(key);
     if (
       !current ||
@@ -154,7 +172,7 @@ export function reasonsFor(
   for (const reason of reasons) {
     if (reason.claimId !== id || reason.mandate !== mandate) continue;
     if (!objected.has(reason.reviewer)) continue;
-    if (!bound.has(`${reason.author}:${reason.reviewer}`)) continue;
+    if (!reasonWouldShow(bound, reason.author, reason.reviewer)) continue;
     const current = newest.get(reason.reviewer);
     if (!current || reason.createdAt > current.createdAt) {
       newest.set(reason.reviewer, reason);

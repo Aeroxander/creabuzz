@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { SigningBlockedError } from "./nostr-signer.ts";
 import {
   errorMessage,
   failureWords,
   plainErrorText,
+  READ_REFUSED_TEXT,
+  READ_SIGN_IN_TEXT,
+  READ_UNANSWERED_TEXT,
   readableError,
+  readFailureWords,
 } from "./readable-error.ts";
 import { RelayAnsweredError } from "./relay-failure.ts";
 import { INVITE_ONLY_TEXT, SERVER_FAILED_TEXT } from "./refusal-text.ts";
@@ -38,21 +43,64 @@ test("a server message on any error carrying it is read the same way", () => {
   );
 });
 
-test("anything else is passed on as one sentence, and errorMessage stays untouched", () => {
-  const timeout = new Error("query timed out");
-  assert.equal(plainErrorText(timeout), null);
-  assert.equal(readableError(timeout), "Query timed out.");
-  // Callers that match on the server's words (CommunityHomePage) read the raw text.
+test("errorMessage stays untouched, for callers that match on the server's words", () => {
+  // CommunityHomePage reads the raw text.
   const refused = new RelayAnsweredError("restricted: not a relay member");
   assert.equal(errorMessage(refused), "restricted: not a relay member");
   assert.equal(errorMessage("plain string"), "plain string");
   assert.equal(errorMessage(undefined), "unknown error");
-  // An unknown refusal has no plain words: the server's own, as a sentence, with one full stop.
+  assert.equal(plainErrorText(new Error("query timed out")), null);
+});
+
+// What "Couldn't load older messages." and "Couldn't load more channels." go on to say: never the socket's or the
+// server's own code, which is kept for Technical details.
+
+test("a read that timed out or lost its socket says the server didn't answer", () => {
+  for (const raw of [
+    "Server query timed out after 15000ms",
+    "WebSocket connection failed",
+    "Server query ended without an answer.",
+    "Server closed the connection before finishing the query.",
+    "query timed out",
+  ]) {
+    assert.deepEqual(readFailureWords(new Error(raw)), {
+      text: READ_UNANSWERED_TEXT,
+      detail: raw,
+    });
+    assert.equal(readableError(new Error(raw)), "The server didn't answer.");
+  }
+});
+
+test("a read the server refused without words for people says it couldn't, not its code", () => {
+  for (const raw of ["error: database error: down.", "error: internal"]) {
+    assert.deepEqual(readFailureWords(new RelayAnsweredError(raw)), {
+      text: READ_REFUSED_TEXT,
+      detail: raw,
+    });
+  }
+  // Not on a private room's list (removed, or never added): said so.
   assert.equal(
-    readableError(new RelayAnsweredError("error: database error: down.")),
-    "Error: database error: down.",
+    readableError(new RelayAnsweredError("restricted: not a channel member")),
+    "You don't have access to this room or board. Its owner can add you.",
   );
-  assert.equal(readableError(new Error("")), "");
+  // A refusal with words for people keeps them, without the prefix.
+  assert.equal(
+    readableError(new RelayAnsweredError("restricted: unknown filter field")),
+    "Unknown filter field.",
+  );
+});
+
+test("a read that needs sign-in says so, and a locked passkey's own sentence is kept", () => {
+  const authRequired = new RelayAnsweredError(
+    "auth-required: the server closed the connection before it accepted this browser's authentication.",
+  );
+  assert.equal(readableError(authRequired), READ_SIGN_IN_TEXT);
+  assert.doesNotMatch(readableError(authRequired), /auth-required/i);
+  assert.equal(
+    readableError(new SigningBlockedError()),
+    "Unlock your passkey before this browser can sign.",
+  );
+  assert.equal(readableError(new Error("")), READ_UNANSWERED_TEXT);
 });
 
 // What a failed write says in main copy (create a channel, start a conversation, save a profile), and what it keeps
@@ -76,11 +124,19 @@ test("a server's internal failure is said as the caller's plain words, the serve
   );
 });
 
-test("timeouts, HTTP codes and lowercase codes never reach main copy", () => {
+test("timeouts, HTTP codes, lowercase codes and the browser's network words never reach main copy", () => {
   for (const raw of [
     "query timed out",
     "HTTP 500",
     "profile publish rejected",
+    // Capitalised, some with a full stop, but not the app's words.
+    "WebSocket connection failed.",
+    "WebSocket connection failed",
+    "NetworkError when attempting to fetch resource.",
+    "Failed to fetch",
+    "Load failed",
+    "Server publish timed out.",
+    "Server query timed out after 15000ms.",
   ]) {
     const words = failureWords(
       new Error(raw),

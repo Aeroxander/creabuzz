@@ -8,10 +8,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useCreateChannel } from "@/features/channels/use-create-channel";
+import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
-
-import { plainRefusal } from "../lib/refusal";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
 
 export function StartBoardForm({
   onCancel,
@@ -24,11 +24,11 @@ export function StartBoardForm({
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [about, setAbout] = useState("");
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState<FailureWords | null>(null);
 
   const submit = async () => {
     if (name.trim().replace(/^#+/, "") === "") {
-      setProblem("Give the board a name.");
+      setProblem({ text: "Give the board a name.", detail: null });
       return;
     }
     setProblem(null);
@@ -43,9 +43,9 @@ export function StartBoardForm({
       void queryClient.invalidateQueries({ queryKey: ["my-boards"] });
       onStarted(result.channelId);
     } catch (error) {
-      setProblem(
-        plainRefusal(error instanceof Error ? error.message : String(error)),
-      );
+      // The server's reason in plain words (`you can start 5 boards a day`); its internal failures and a dropped
+      // connection as what did not happen, with its own words under Technical details.
+      setProblem(failureWords(error, "The board wasn't started. Try again."));
     }
   };
 
@@ -90,13 +90,19 @@ export function StartBoardForm({
         posts that don't belong.
       </p>
       {problem ? (
-        <p
-          className="text-xs text-destructive"
-          data-testid="start-board-problem"
-          role="alert"
-        >
-          {problem}
-        </p>
+        <>
+          <p
+            className="text-xs text-destructive"
+            data-testid="start-board-problem"
+            role="alert"
+          >
+            {problem.text}
+          </p>
+          <TechnicalDetails
+            detail={problem.detail}
+            testId="start-board-problem-details"
+          />
+        </>
       ) : null}
       <div className="flex gap-2">
         <Button

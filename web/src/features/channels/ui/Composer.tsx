@@ -2,6 +2,7 @@ import { ArrowUp, AtSign, Paperclip } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { uploadFailureWords } from "@/shared/lib/media-refusal";
 import { uploadBlob } from "@/shared/lib/upload-blob";
 import {
   useMentionCandidates,
@@ -164,7 +165,10 @@ export function Composer({
     } catch (error) {
       console.error("[attach]", error);
       toast.error("Couldn't upload file", {
-        description: failureWords(error).text,
+        description: uploadFailureWords(
+          error,
+          "The file didn't upload. Try again.",
+        ).text,
       });
     } finally {
       setUploading(false);

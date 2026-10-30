@@ -1,3 +1,4 @@
+import type { PasskeyAccountKeys } from "@/features/identity/lib/passkey-account";
 import { reportReadFailure } from "../chain";
 import { type ChallengeIntent, challengeFor } from "../lib/challenge";
 import { existingUserPubkey } from "@/shared/lib/identity";
@@ -429,6 +430,9 @@ export function WorkTab({
               payouts={payouts.data}
               payoutsUnread={payouts.isError && !payouts.data}
               wallet={wallet.address}
+              passkeyKeys={
+                wallet.kind === "passkey" ? wallet.passkeyKeys : null
+              }
             />
           ))}
           <DecisionHelp onOpenDecisions={onOpenDecisions} />
@@ -481,7 +485,10 @@ function MandateCard({
   payoutsUnread,
   openKeys,
   reviewOf,
+  passkeyKeys,
 }: {
+  /** The acting passkey account's public details, so a reviewer can link it to their name; null for a wallet. */
+  passkeyKeys: PasskeyAccountKeys | null;
   /** Who reviewed a claim and why it was turned down, as far as that is known. */
   reviewOf: (mandate: string, claimId: string) => ClaimReview;
   /** The work areas Open work lists, as `budget:area`, lower case: the budget lists only the others. */
@@ -795,6 +802,7 @@ function MandateCard({
                       launch={launch}
                       mandate={mandate.address}
                       onSend={onSend}
+                      passkeyKeys={passkeyKeys}
                       reviewer={wallet}
                       verifiers={mandate.verifiersAddress}
                     />

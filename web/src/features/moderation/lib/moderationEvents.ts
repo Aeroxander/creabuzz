@@ -128,17 +128,3 @@ export function buildDeleteContent(input: {
   if (reason) tags.push(["public_reason", reason]);
   return { kind: KIND_NIP29_DELETE_EVENT, content: "", tags };
 }
-
-/**
- * A server refusal as a sentence people can read: the `restricted:` /
- * `invalid:` / `error:` prefix dropped, a capital first letter and a full stop
- * (`restricted: an admin cannot remove …` → `An admin cannot remove ….`).
- * Anything else is returned as it came.
- */
-export function plainRefusal(message: string): string {
-  const match = /^(?:restricted|invalid|error):\s*(.+)$/s.exec(message.trim());
-  if (!match) return message;
-  const words = match[1].trim();
-  const sentence = words.charAt(0).toUpperCase() + words.slice(1);
-  return /[.!?)]$/.test(sentence) ? sentence : `${sentence}.`;
-}

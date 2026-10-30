@@ -21,6 +21,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { type NostrEvent, queryEvents } from "@/shared/lib/nostr-client";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
+import { failureWords } from "@/shared/lib/readable-error";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
 
 import {
@@ -93,7 +94,7 @@ export function useBoardReports(
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { acting, errors, setActingFor, clearError, failWith } =
+  const { acting, errors, setActingFor, clearError, failSaying } =
     useActionTracker();
   // Only the newest read writes its result (a slower older one must not put back what a newer one cleared).
   const generation = useRef(0);
@@ -125,10 +126,12 @@ export function useBoardReports(
       setError(null);
     } catch (readError) {
       if (mine !== generation.current) return;
+      // This file's own sentences (only moderators may see them) as they are; a timeout or the server's code as what to do.
       setError(
-        readError instanceof Error && readError.message
-          ? readError.message
-          : "Couldn't read the reports. Check your connection, then refresh.",
+        failureWords(
+          readError,
+          "Couldn't read the reports. Check your connection, then refresh.",
+        ).text,
       );
     } finally {
       if (mine === generation.current) setLoading(false);
@@ -166,16 +169,17 @@ export function useBoardReports(
         void refresh();
         return null;
       } catch (actError) {
-        const fallback = "That did not go through. Try again.";
-        failWith(key, actError, fallback);
-        return actError instanceof Error && actError.message
-          ? actError.message
-          : fallback;
+        const said = failureWords(
+          actError,
+          "That did not go through. Try again.",
+        ).text;
+        failSaying(key, said);
+        return said;
       } finally {
         setActingFor(key, false);
       }
     },
-    [clearError, failWith, refresh, setActingFor],
+    [clearError, failSaying, refresh, setActingFor],
   );
 
   const resolve = async (row: BoardReportRow, action: "delete" | "dismiss") => {

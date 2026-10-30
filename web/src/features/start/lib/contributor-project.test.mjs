@@ -339,16 +339,30 @@ test("what a project is built on, and whether others may build on it, go into it
   });
 });
 
-test("one approval needed of several says an approval wins over a turn-down, as ClaimStake.settle decides", async () => {
+test("how reviewers decide is said as ClaimStake.settle decides: with one needed the first answer decides, a turn-down too", async () => {
   const { quorumSentence } = await import("./contributor-project.ts");
+  // settle() takes a single turn-down as a verdict when one is needed, and anyone may call it at once: the form never
+  // promises that an approval wins over a turn-down.
   assert.equal(
     quorumSentence(2, 1),
-    "Either of them can decide: one approval is enough, even if the other turns it down.",
+    "The first answer decides: one approval approves it, one turn-down turns it down.",
   );
-  assert.match(quorumSentence(3, 1), /even if others turn it down/);
+  assert.equal(quorumSentence(3, 1), quorumSentence(2, 1));
+  for (const count of [2, 3, 5]) {
+    assert.doesNotMatch(quorumSentence(count, 1), /even if/);
+  }
+  // Every reviewer needed: a split decides nothing.
+  assert.equal(
+    quorumSentence(2, 2),
+    "Both must agree: two approvals approve it, two turn-downs turn it down. If they split, nothing is decided.",
+  );
+  assert.equal(
+    quorumSentence(3, 3),
+    "All 3 must agree: 3 approvals approve it, 3 turn-downs turn it down. If they split, nothing is decided.",
+  );
   assert.equal(
     quorumSentence(3, 2),
-    "2 of these 3 must agree on each piece of work.",
+    "2 of these 3 decide: 2 approvals approve it, 2 turn-downs turn it down.",
   );
   assert.equal(
     quorumSentence(1, 1),

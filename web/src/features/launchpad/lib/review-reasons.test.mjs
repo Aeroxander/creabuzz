@@ -7,6 +7,7 @@ import {
   REASON_MAX_CHARS,
   reasonProblem,
   reasonsFor,
+  reasonWouldShow,
   reviewReasonContent,
 } from "./review-reasons.ts";
 
@@ -193,4 +194,47 @@ test("only a reason tied to a real turn-down is shown: the wallet turned it down
     },
   ]);
   assert.equal(both.has(`${RUI_KEY}:${RUI}`), true);
+});
+
+test("before a reason is published, the form asks what the filter asks: is the signer's key bound to the acting wallet (D145)", () => {
+  const bound = boundWallets([
+    {
+      pubkey: RUI_KEY,
+      address: RUI.toUpperCase().replace("0X", "0x"),
+      revoked: false,
+      createdAt: 1,
+      eventId: "a",
+    },
+    {
+      pubkey: RAE_KEY,
+      address: RAE,
+      revoked: false,
+      createdAt: 1,
+      eventId: "b",
+    },
+    {
+      pubkey: RAE_KEY,
+      address: RAE,
+      revoked: true,
+      createdAt: 2,
+      eventId: "c",
+    },
+  ]);
+  // Rui is linked to the wallet he acts from, whatever its case.
+  assert.equal(
+    reasonWouldShow(bound, RUI_KEY, RUI.toUpperCase().replace("0X", "0x")),
+    true,
+  );
+  // Acting from another account (a passkey account he never linked): his reason would be filtered out.
+  assert.equal(reasonWouldShow(bound, RUI_KEY, RAE), false);
+  // Rae withdrew her link: not shown.
+  assert.equal(reasonWouldShow(bound, RAE_KEY, RAE), false);
+  // The same answer the filter gives for a published reason.
+  const reasons = [
+    reasonEvent(RUI_KEY, RAE, "from an account not linked", 10),
+  ].map(parseReviewReason);
+  assert.deepEqual(
+    reasonsFor({ id: CLAIM, mandate: BUDGET }, reasons, [RAE], bound),
+    [],
+  );
 });

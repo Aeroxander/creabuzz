@@ -34,6 +34,10 @@ import { useKnowledge } from "../use-knowledge";
 import { useWikiRemoval } from "../use-wiki-removal";
 import { provenanceLine, type KnowledgePage } from "../lib/knowledge";
 import { canDeletePage } from "../lib/page-index";
+import {
+  RenameIncompleteError,
+  renameFailureText,
+} from "../lib/rename-failure";
 import { describeLive } from "../lib/live-status";
 import { useLiveWikiDoc } from "../wiki-sync";
 import { PageDialog } from "./PageDialog";
@@ -851,12 +855,14 @@ export function WikiView({
               } catch (error) {
                 // The server's own words, for whoever looks: the toast says it plainly.
                 console.warn("[wiki] rename failed", error);
-                // The read failed, so we do not know whether the old name is
-                // published. Claiming a rename here left the relay holding the
-                // old page while the tab showed the new one.
+                // Never a rename claimed that did not happen: a failed read or save renamed nothing, and a save whose
+                // old name could not be deleted says the page is now under both names.
+                if (error instanceof RenameIncompleteError)
+                  void queryClient.invalidateQueries({
+                    queryKey: ["wiki-pages"],
+                  });
                 toast.error("Couldn't rename page", {
-                  description:
-                    "The server did not answer, so nothing was renamed. Try again.",
+                  description: renameFailureText(error),
                 });
               }
             })();

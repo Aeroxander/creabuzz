@@ -50,10 +50,10 @@ import {
   buildDeleteContent,
   buildResolveReport,
   buildTimeout,
-  plainRefusal,
   type EventTemplate,
 } from "./lib/moderationEvents";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
+import { failureWords } from "@/shared/lib/readable-error";
 
 /** Bounded reads and polling (deadline + manual refresh as the recovery). */
 const POLL_MS = 30_000;
@@ -183,7 +183,7 @@ export function useModerationQueue(roomPath: string): ModerationQueueState {
   const [decided, setDecided] = useState<
     ReadonlyMap<string, { report: ModerationReport; status: ReportStatus }>
   >(() => new Map());
-  const { acting, errors, setActingFor, clearError, failWith } =
+  const { acting, errors, setActingFor, clearError, failSaying } =
     useActionTracker();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -285,14 +285,10 @@ export function useModerationQueue(roomPath: string): ModerationQueueState {
     [page.reports, words, decided, roomPath],
   );
 
+  // A refusal arrives as `publishAsUser` says it (a restriction in plain words, any other reason as the server gave
+  // it); `perform` puts it in words for people, so the server's internal failures never reach the row.
   const publishTemplate = useCallback(async (template: EventTemplate) => {
-    try {
-      await publishAsUser(template, "The server rejected the action.");
-    } catch (error) {
-      throw error instanceof Error
-        ? new Error(plainRefusal(error.message))
-        : error;
-    }
+    await publishAsUser(template, "The server rejected the action.");
   }, []);
 
   /**
@@ -368,13 +364,14 @@ export function useModerationQueue(roomPath: string): ModerationQueueState {
         void refresh();
         return null;
       } catch (error) {
-        failWith(key, error, FAILED);
-        return error instanceof Error && error.message ? error.message : FAILED;
+        const said = failureWords(error, FAILED).text;
+        failSaying(key, said);
+        return said;
       } finally {
         setActingFor(key, false);
       }
     },
-    [clearError, failWith, publishTemplate, refresh, setActingFor],
+    [clearError, failSaying, publishTemplate, refresh, setActingFor],
   );
 
   return {

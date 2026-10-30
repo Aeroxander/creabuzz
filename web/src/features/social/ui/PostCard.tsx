@@ -23,14 +23,12 @@ import {
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
 import { ReasonDialog } from "@/features/board/ui/ReasonDialog";
 import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
-import {
-  buildDeleteContent,
-  plainRefusal,
-} from "@/features/moderation/lib/moderationEvents";
+import { buildDeleteContent } from "@/features/moderation/lib/moderationEvents";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { cn } from "@/shared/lib/cn";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
+import { failureWords } from "@/shared/lib/readable-error";
 import { relativeTime, shortRelativeTime } from "@/shared/lib/relative-time";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
@@ -206,10 +204,12 @@ export function PostCard({
         "The server did not remove the post. Try again.",
       );
     } catch (error) {
-      throw new Error(
-        error instanceof Error && error.message
-          ? plainRefusal(error.message)
-          : "The server did not remove the post. Try again.",
+      throw Object.assign(
+        new Error(
+          failureWords(error, "The server did not remove the post. Try again.")
+            .text,
+        ),
+        { cause: error },
       );
     }
     setDeleted(true);

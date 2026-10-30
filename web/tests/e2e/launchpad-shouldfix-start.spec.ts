@@ -316,7 +316,7 @@ test("a project set up earlier is not carried on while the passkey is locked: it
   expect(relay.events.filter((event) => event.kind === 37001)).toHaveLength(0);
 });
 
-test("the Start page says who the reviewers are and when both must agree, and one press lets either decide", async ({
+test("the Start page says who the reviewers are and when both must agree, and one press lets the first answer decide", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -343,16 +343,17 @@ test("the Start page says who the reviewers are and when both must agree, and on
   await expect(picked.first()).toHaveAttribute("data-linked", "no");
   await expect(picked.first()).toContainText("Not linked to anyone here");
   await expect(page.getByTestId("contributor-quorum-said")).toHaveText(
-    "2 of these 2 must agree on each piece of work.",
+    "Both must agree: two approvals approve it, two turn-downs turn it down. If they split, nothing is decided.",
   );
   await expect(page.getByTestId("contributor-quorum-all")).toContainText(
-    "Both must agree",
+    "If they split, or one doesn't answer, that piece of work stays stuck until its deadline passes.",
   );
 
   await page.getByTestId("contributor-quorum-one").click();
   await expect(page.getByTestId("contributor-quorum")).toHaveValue("1");
   await expect(page.getByTestId("contributor-quorum-all")).toHaveCount(0);
+  // As ClaimStake.settle decides: a single turn-down closes it as much as a single approval.
   await expect(page.getByTestId("contributor-quorum-said")).toHaveText(
-    "Either of them can decide: one approval is enough, even if the other turns it down.",
+    "The first answer decides: one approval approves it, one turn-down turns it down.",
   );
 });

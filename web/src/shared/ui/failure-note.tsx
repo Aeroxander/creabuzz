@@ -1,5 +1,6 @@
 import type { FailureWords } from "@/shared/lib/readable-error";
 import { cn } from "@/shared/lib/cn";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
 
 /**
  * A failed action, said in plain words, with the raw words behind it under a collapsed "Technical details" for whoever
@@ -21,17 +22,11 @@ export function FailureNote({
       role="alert"
     >
       <p data-testid={testId}>{failure.text}</p>
-      {failure.detail ? (
-        <details
-          className="mt-1 text-xs text-black/60 dark:text-white/60"
-          data-testid={testId ? `${testId}-details` : undefined}
-        >
-          <summary className="cursor-pointer select-none font-medium">
-            Technical details
-          </summary>
-          <p className="mt-1 break-words">{failure.detail}</p>
-        </details>
-      ) : null}
+      <TechnicalDetails
+        className="mt-1"
+        detail={failure.detail}
+        testId={testId ? `${testId}-details` : undefined}
+      />
     </div>
   );
 }

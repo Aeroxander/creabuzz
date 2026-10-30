@@ -59,10 +59,15 @@ import {
   passkeyMode,
   removePasskeyIdentity,
   registerPasskeySigner,
+  onPasskeySessionChange,
 } from "../lib/passkey-identity";
 import { Fingerprint, Wallet } from "lucide-react";
 import { Overlay, Portal, useAnchoredStyle } from "@/shared/ui/portal";
-import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
+import {
+  type FailureWords,
+  failureWords,
+  readableError,
+} from "@/shared/lib/readable-error";
 import { FailureNote } from "@/shared/ui/failure-note";
 
 // Side-effect: make the passkey signer the primary signer while a passkey
@@ -147,6 +152,19 @@ export function ProfileMenu({
     window.addEventListener(SIGN_UP_EVENT, open);
     return () => window.removeEventListener(SIGN_UP_EVENT, open);
   }, []);
+
+  // A passkey account reads its profile while the passkey is still locked (the sign-in prompt below waits for a touch),
+  // and that read is refused: read it again when the passkey session changes, or Edit profile stays off for good.
+  const [passkeySession, setPasskeySession] = useState(0);
+  useEffect(
+    () => onPasskeySessionChange(() => setPasskeySession((n) => n + 1)),
+    [],
+  );
+  const refetchProfile = profilesRead.refetch;
+  const hasAccount = pubkey !== "";
+  useEffect(() => {
+    if (passkeySession > 0 && hasAccount) void refetchProfile();
+  }, [passkeySession, hasAccount, refetchProfile]);
 
   // Auto sign-in on boot for PRF-mode passkeys (one touch; instant in the
   // mock). Unlock mode is left to the PasskeyUnlockGate overlay instead.
@@ -452,6 +470,24 @@ export function ProfileMenu({
                     setEditPicture(profile?.picture ?? "");
                   }}
                 />
+                {profilesRead.isError && !profilesRead.isFetching ? (
+                  <p
+                    className="px-2 pb-1 text-xs text-amber-700 dark:text-amber-300"
+                    data-testid="profile-read-failed"
+                    role="alert"
+                  >
+                    Couldn't read your profile, so it can't be edited yet.{" "}
+                    {readableError(profilesRead.error)}{" "}
+                    <button
+                      className="underline"
+                      data-testid="profile-read-retry"
+                      onClick={() => void profilesRead.refetch()}
+                      type="button"
+                    >
+                      Try again
+                    </button>
+                  </p>
+                ) : null}
                 <MenuItem
                   icon={<KeyRound className="h-3.5 w-3.5" />}
                   label={hasBackedUp() ? "Recovery key" : "Save a recovery key"}

@@ -559,7 +559,9 @@ test("a contributor project is started from the page, work is claimed the same d
   // words, shown because it hashes to what the claim committed to.
   const story = person.getByTestId("contribution-award-story");
   await expect(story).toContainText("Awarded ", { timeout: 30_000 });
-  await expect(story).toContainText("2 approvals, 2 needed");
+  // Who approved it, by name or short account (D144), both reviewers of the two.
+  await expect(story).toContainText("approved by ");
+  await expect(story).toContainText(/approved by [^,]+, [^ ]+/);
   await expect(story.getByTestId("tx-link")).toBeVisible();
   // Evidence that is only a link is shown as the link, not quoted (D108).
   await expect(

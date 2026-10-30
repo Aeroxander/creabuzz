@@ -16,7 +16,8 @@ import { needAccountTo } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
 
 import { Button } from "@/shared/ui/button";
-import { readableError } from "@/shared/ui/query-error";
+import { readFailureWords } from "@/shared/lib/readable-error";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
 
 import { type ChannelUnread, unreadMarker } from "../lib/read-state";
 import type { Channel } from "../use-channels";
@@ -169,6 +170,7 @@ export function ChannelSidebar({
   const boards = channels.filter((channel) => channel.type === "forum");
   const chats = channels.filter((channel) => channel.type !== "forum");
   const starter = useStarterBoards(boards.map((board) => board.name));
+  const moreFailure = moreError != null ? readFailureWords(moreError) : null;
   return (
     <aside className="flex min-h-0 w-full flex-1 flex-col">
       <SectionHeader
@@ -262,21 +264,28 @@ export function ChannelSidebar({
 
           {hasMore || loadingMore || moreError != null ? (
             <div className="px-2 py-2">
-              {moreError != null ? (
-                <p
-                  className="text-xs text-amber-700 dark:text-amber-300"
-                  data-testid="channels-more-error"
-                  role="alert"
-                >
-                  Couldn't load more channels. {readableError(moreError)}{" "}
-                  <button
-                    type="button"
-                    className="underline"
-                    onClick={onLoadMore}
+              {moreFailure !== null ? (
+                <>
+                  <p
+                    className="text-xs text-amber-700 dark:text-amber-300"
+                    data-testid="channels-more-error"
+                    role="alert"
                   >
-                    Try again
-                  </button>
-                </p>
+                    Couldn't load more channels. {moreFailure.text}{" "}
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={onLoadMore}
+                    >
+                      Try again
+                    </button>
+                  </p>
+                  <TechnicalDetails
+                    className="mt-1"
+                    detail={moreFailure.detail}
+                    testId="channels-more-error-details"
+                  />
+                </>
               ) : (
                 <button
                   type="button"

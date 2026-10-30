@@ -28,6 +28,17 @@ export const SERVER_FAILED_TEXT =
 export const INVITE_ONLY_TEXT =
   "This server is invite-only. Open the invite link you were sent.";
 
+/** What someone removed from a private room or board is told when the server closes their live view of it. */
+export const ACCESS_REMOVED_TEXT =
+  "You no longer have access to this room or board.";
+
+/**
+ * What a reader who is not on a private room or board's list is told: they may have been removed, or never been added
+ * (the server says `not a channel member` in both cases), so the words do not claim either.
+ */
+export const NO_ACCESS_TEXT =
+  "You don't have access to this room or board. Its owner can add you.";
+
 /**
  * The restrictions the server puts on a person (`buzz-relay` ingest, auth and board moderation), each said in plain
  * words with what still works. The server's own wording is the contract: a change there must change these.
@@ -55,6 +66,11 @@ const RESTRICTIONS: [RegExp, (match: RegExpExecArray) => string][] = [
     /^(restricted: not a relay member|relay_membership_required)$/,
     () => INVITE_ONLY_TEXT,
   ],
+  // A private room or board the reader is not on: the live subscription of someone removed is closed with `channel
+  // access revoked` (`handlers/side_effects.rs`); every read or write by anyone not on its list, removed or never
+  // added, is refused with `not a channel member` (`handlers/req.rs`, `handlers/ingest.rs`).
+  [/^restricted: channel access revoked$/, () => ACCESS_REMOVED_TEXT],
+  [/^restricted: not a channel member$/, () => NO_ACCESS_TEXT],
 ];
 
 /** A restriction on the reader in plain words, or null when `message` is not one. */
@@ -98,7 +114,7 @@ export function refusalText(
  */
 export function liveRefusalText(reason: string | null): string {
   if (reason && /channel access revoked|not a channel member/i.test(reason))
-    return "You no longer have access to this room or board. Live updates stopped.";
+    return `${ACCESS_REMOVED_TEXT} Live updates stopped.`;
   const restricted = reason ? restrictionText(reason) : null;
   if (restricted !== null) return restricted;
   // Opening pages too fast is a short wait, not a refusal of the account.

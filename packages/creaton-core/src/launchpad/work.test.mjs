@@ -387,6 +387,15 @@ test("enough objections is a step anyone can take: close it as turned down (Clai
   assert.equal(turned.who, "anyone");
   assert.equal(turned.verdict, "turned-down");
   assert.match(turned.text, /turned it down/);
+  // With one needed ("Let any one decide"), the first answer decides: a single turn-down can be closed at once, while
+  // the other reviewer has not answered, which is what the Start form says (D145).
+  const first = nextStep(
+    view({ objections: 1, quorum: 1, panel: 2 }),
+    0,
+    WINDOW,
+  );
+  assert.equal(first.kind, "settle");
+  assert.equal(first.verdict, "turned-down");
   // Approvals win when both reached the quorum, as in the contract (it checks approvals first).
   const both = nextStep(view({ approvals: 2, objections: 2 }), 0, WINDOW);
   assert.equal(both.verdict, "approved");
@@ -517,8 +526,11 @@ test("words that match no open work area are said, unless a reviewer has already
   const unbound = view({ project: null, record: { checkHash: "0xbb" } });
   assert.equal(claimStep(unbound, mandate, 0).kind, "words");
   assert.equal(
-    claimStep(view({ project: null, record: { checkHash: "0xaa" } }), mandate, 0)
-      .kind,
+    claimStep(
+      view({ project: null, record: { checkHash: "0xaa" } }),
+      mandate,
+      0,
+    ).kind,
     "bind",
   );
   // A reviewer's answer locks the words (ClaimStake.setCheck): the manager's step stays.

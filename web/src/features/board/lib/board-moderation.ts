@@ -571,6 +571,19 @@ export function pinnedFirst<T extends { id: string }>(
 }
 
 /**
+ * What a failed moderation command throws on: a refusal the server stated (`restricted: you cannot mute yourself`,
+ * `error: database error: down`) as {@link boardRefusalText} says it, the server's words kept as its `cause`; anything
+ * else (a dropped socket, a timeout, a refusal `publishAsUser` already put in plain words) as it was thrown, so
+ * `failureWords` says it plainly or falls back to its own words rather than showing `WebSocket connection failed.`.
+ */
+export function boardFailure(error: unknown): unknown {
+  const message = error instanceof Error ? error.message.trim() : "";
+  return /^[a-z-]+:/.test(message)
+    ? Object.assign(new Error(boardRefusalText(message)), { cause: error })
+    : error;
+}
+
+/**
  * A refusal of a moderation command in plain words: a restriction on the reader or the general request limit as
  * `refusalText` says it; the server's internal failures (`error: database error: down`), which have no words for people,
  * as `SERVER_FAILED_TEXT`; otherwise without the server's `restricted:`/`invalid:` prefix, and with a date and time

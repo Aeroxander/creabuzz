@@ -37,7 +37,10 @@ describe("an invite-only server's refusal", () => {
   });
 
   it("is not confused with a room or community the reader is not in", () => {
-    assert.equal(restrictionText("restricted: not a channel member"), null);
+    assert.notEqual(
+      restrictionText("restricted: not a channel member"),
+      INVITE_ONLY_TEXT,
+    );
     assert.equal(restrictionText("restricted: not a community member"), null);
   });
 
@@ -61,7 +64,7 @@ describe("plainRefusalText", () => {
   });
 
   it("has nothing to say about a refusal it has no words for", () => {
-    assert.equal(plainRefusalText("restricted: not a channel member"), null);
+    assert.equal(plainRefusalText("restricted: not a community member"), null);
     assert.equal(
       plainRefusalText("rate-limited: you can start 5 boards a day"),
       null,

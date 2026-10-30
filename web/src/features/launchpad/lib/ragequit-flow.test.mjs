@@ -467,7 +467,17 @@ test("a retry after an unconfirmed exit reads the Shares first: gone means it la
     }),
     { kind: "landed" },
   );
-  // Still there: it did not land, and the new send is for what can leave now, not what was asked before.
+  // Still there, unchanged: it did not land, and it is sent again for the same Shares, with the balance read now.
+  assert.deepEqual(
+    exitRetry({
+      exitDone: false,
+      sent,
+      fresh: { sharesBalance: 100n, sharesBurnable: 40n },
+      current: 40n,
+    }),
+    { kind: "send", burn: 40n, balanceBefore: 100n },
+  );
+  // What can leave changed since the send: nothing is sent, the person confirms again (D145).
   assert.deepEqual(
     exitRetry({
       exitDone: false,
@@ -475,7 +485,7 @@ test("a retry after an unconfirmed exit reads the Shares first: gone means it la
       fresh: { sharesBalance: 100n, sharesBurnable: 30n },
       current: 40n,
     }),
-    { kind: "send", burn: 30n },
+    { kind: "changed", burnable: 30n },
   );
   // Could not be read again: whether it landed is unknown, so nothing is sent.
   assert.deepEqual(
@@ -487,10 +497,19 @@ test("a retry after an unconfirmed exit reads the Shares first: gone means it la
     exitRetry({ exitDone: true, sent, fresh: null, current: 0n }),
     { kind: "record", burn: 40n },
   );
-  // Nothing was sent yet: a plain first send.
+  // Nothing was sent yet: the first send's own check, against a fresh read.
+  assert.deepEqual(
+    exitRetry({
+      exitDone: false,
+      sent: null,
+      fresh: { sharesBalance: 50n, sharesBurnable: 40n },
+      current: 40n,
+    }),
+    { kind: "send", burn: 40n, balanceBefore: 50n },
+  );
   assert.deepEqual(
     exitRetry({ exitDone: false, sent: null, fresh: null, current: 40n }),
-    { kind: "send", burn: 40n },
+    { kind: "unknown" },
   );
   // A wallet that timed out names its transaction; one that refused names none.
   const hash = `0x${"ab".repeat(32)}`;
@@ -510,4 +529,49 @@ test("a retry after an unconfirmed exit reads the Shares first: gone means it la
   );
   assert.equal(sentTxHash(wrapped), hash);
   assert.equal(sentTxHash(new Error("You rejected the request")), null);
+});
+
+test("an exit whose confirmation timed out is not sent again for Shares that arrived after the page read them (D145)", async () => {
+  const { exitRetry, firstExit } = await import("./ragequit-flow.ts");
+  // The page read 100 free Shares; an award then minted 50 more. The first send reads the chain and refuses: the
+  // dialog showed 100, and 150 can leave now.
+  assert.deepEqual(
+    firstExit({
+      shown: 100n,
+      fresh: { sharesBalance: 150n, sharesBurnable: 150n },
+    }),
+    { kind: "changed", burnable: 150n },
+  );
+  // Read again and confirmed for 150: the burn and the balance before it come from that read.
+  const check = firstExit({
+    shown: 150n,
+    fresh: { sharesBalance: 150n, sharesBurnable: 150n },
+  });
+  assert.deepEqual(check, { kind: "send", burn: 150n, balanceBefore: 150n });
+  // Could not be read: nothing is sent.
+  assert.deepEqual(firstExit({ shown: 100n, fresh: null }), {
+    kind: "unknown",
+  });
+  // The exit for 100 was sent from a balance of 100 and landed, but its confirmation timed out; then 50 more Shares
+  // were minted. Read again, the balance is 50: more than 100 - 100, so it does not look landed. It is not sent
+  // again for the 50 the person never agreed to give up.
+  assert.deepEqual(
+    exitRetry({
+      exitDone: false,
+      sent: { burn: 100n, balanceBefore: 100n },
+      fresh: { sharesBalance: 50n, sharesBurnable: 50n },
+      current: 100n,
+    }),
+    { kind: "changed", burnable: 50n },
+  );
+  // Nor when the dialog was read again in between and shows another amount than was sent.
+  assert.deepEqual(
+    exitRetry({
+      exitDone: false,
+      sent: { burn: 100n, balanceBefore: 100n },
+      fresh: { sharesBalance: 100n, sharesBurnable: 100n },
+      current: 90n,
+    }),
+    { kind: "changed", burnable: 100n },
+  );
 });

@@ -18,11 +18,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
-import {
-  QueryError,
-  errorMessage,
-  readableError,
-} from "@/shared/ui/query-error";
+import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 
 import type { Channel } from "../use-channels";
@@ -60,7 +57,7 @@ import { MutedLine } from "@/features/social/ui/MutedLine";
 import { useMutedSet } from "@/features/social/use-social-actions";
 import { BoardPeople } from "@/features/board/ui/BoardPeople";
 import { SystemNoteRow } from "./SystemNoteRow";
-import { failureWords } from "@/shared/lib/readable-error";
+import { failureWords, readFailureWords } from "@/shared/lib/readable-error";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"];
 
@@ -666,6 +663,10 @@ export function ChannelTimeline({
     if (self) seen.add(self.toLowerCase());
     return [...seen];
   }, [messages.ordered, notes]);
+  // A failed page of older messages in plain words; the server's or browser's own under Technical details.
+  const olderFailure = messages.olderError
+    ? readFailureWords(messages.olderError)
+    : null;
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
@@ -815,21 +816,26 @@ export function ChannelTimeline({
         (messages.hasOlder || messages.loadingOlder || messages.olderError) ? (
           <div className="flex flex-col items-center gap-1 py-2">
             {messages.olderError ? (
-              <p
-                className="text-xs text-amber-700 dark:text-amber-300"
-                data-testid="older-messages-error"
-                role="alert"
-              >
-                Couldn't load older messages.{" "}
-                {readableError(messages.olderError)}{" "}
-                <button
-                  type="button"
-                  className="underline"
-                  onClick={() => void messages.loadOlder()}
+              <>
+                <p
+                  className="text-xs text-amber-700 dark:text-amber-300"
+                  data-testid="older-messages-error"
+                  role="alert"
                 >
-                  Try again
-                </button>
-              </p>
+                  Couldn't load older messages. {olderFailure?.text}{" "}
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => void messages.loadOlder()}
+                  >
+                    Try again
+                  </button>
+                </p>
+                <TechnicalDetails
+                  detail={olderFailure?.detail ?? null}
+                  testId="older-messages-error-details"
+                />
+              </>
             ) : (
               <button
                 type="button"

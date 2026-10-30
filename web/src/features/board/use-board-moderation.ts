@@ -16,7 +16,7 @@ import type { BoardEvent } from "./lib/board-model";
 import {
   appointDraft,
   type BoardState,
-  boardRefusalText,
+  boardFailure,
   dismissDraft,
   KIND_BOARD_MODERATION_LOG,
   KIND_BOARD_STATE,
@@ -130,9 +130,7 @@ export function useBoardModerationActions(boardId: string) {
       try {
         return await publishAsUser(draft, failure);
       } catch (error) {
-        throw new Error(
-          boardRefusalText(error instanceof Error ? error.message : failure),
-        );
+        throw boardFailure(error);
       }
     },
     [],

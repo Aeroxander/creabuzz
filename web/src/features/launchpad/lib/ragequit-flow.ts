@@ -246,22 +246,53 @@ export function onExitLanded(
   };
 }
 
+/** The holder's Shares as read from the chain: all they hold, and what can leave now (locked team Shares cannot). */
+export interface FreshShares {
+  sharesBalance: bigint;
+  sharesBurnable: bigint;
+}
+
+/** What pressing Leave does, decided from the holder's position read from the chain just before (see {@link firstExit}). */
+export type ExitCheck =
+  /** Send it, burning `burn`; `balanceBefore` is what the holder held just before, so a retry can tell it landed. */
+  | { kind: "send"; burn: bigint; balanceBefore: bigint }
+  /** What can leave now is not what the dialog showed and the person agreed to: nothing is sent, they confirm again. */
+  | { kind: "changed"; burnable: bigint }
+  /** The position could not be read, so nothing is sent. */
+  | { kind: "unknown" };
+
+/**
+ * Before the first send. The dialog shows what the page read earlier, and Shares can arrive since (an award vote that
+ * runs mints them), so the position is read from the chain first: the exit burns exactly what the dialog showed, and
+ * is refused when that is no longer what can leave. The balance read here, not the page's, is what a retry compares.
+ */
+export function firstExit(input: {
+  /** The Shares the dialog showed, and the person agreed to give up. */
+  shown: bigint;
+  /** The holder's position read now; null when it could not be read. */
+  fresh: FreshShares | null;
+}): ExitCheck {
+  const { shown, fresh } = input;
+  if (!fresh) return { kind: "unknown" };
+  if (fresh.sharesBurnable !== shown) {
+    return { kind: "changed", burnable: fresh.sharesBurnable };
+  }
+  return { kind: "send", burn: shown, balanceBefore: fresh.sharesBalance };
+}
+
 /** What pressing Retry does, decided from the holder's position read again just before (see {@link exitRetry}). */
 export type ExitRetry =
   /** The exit is done: only its record is saved, for the Shares that exit burned. */
   | { kind: "record"; burn: bigint }
   /** The exit sent before already burned the Shares, though its confirmation never came: it landed, nothing is sent. */
   | { kind: "landed" }
-  /** It did not land: send it again, for the Shares that can leave now. */
-  | { kind: "send"; burn: bigint }
-  /** The position could not be read again, so whether it landed is not known: nothing is sent. */
-  | { kind: "unknown" };
+  | ExitCheck;
 
 /**
  * Before an exit is sent a second time. A ragequit burns the Shares, so one whose confirmation timed out may well have
- * landed, and sending it again would only be refused (the Shares are gone). So the position is read again first: Shares
- * down by what was sent means it landed. The Shares sent before are used only to record a finished exit; a new send is
- * for what can leave now.
+ * landed. So the position is read again first: Shares down by what was sent means it landed. Otherwise it is sent
+ * again only for exactly what was sent before and what the dialog still shows; anything else (Shares that arrived
+ * since, which a landed exit would leave behind) is refused, and the person confirms again.
  */
 export function exitRetry(input: {
   /** The exit step is confirmed. */
@@ -269,19 +300,23 @@ export function exitRetry(input: {
   /** The Shares the last exit sent asked to burn, and the holder's Shares just before it; null when none was sent. */
   sent: { burn: bigint; balanceBefore: bigint } | null;
   /** The holder's position read again now; null when it could not be read. */
-  fresh: { sharesBalance: bigint; sharesBurnable: bigint } | null;
-  /** What can leave by the position the page holds, for a first send. */
+  fresh: FreshShares | null;
+  /** What the dialog shows can leave. */
   current: bigint;
 }): ExitRetry {
   const { sent, fresh } = input;
   if (input.exitDone)
     return { kind: "record", burn: sent?.burn ?? input.current };
-  if (!sent || sent.burn === 0n) return { kind: "send", burn: input.current };
+  if (!sent || sent.burn === 0n)
+    return firstExit({ shown: input.current, fresh });
   if (!fresh) return { kind: "unknown" };
   if (fresh.sharesBalance <= sent.balanceBefore - sent.burn) {
     return { kind: "landed" };
   }
-  return { kind: "send", burn: fresh.sharesBurnable };
+  if (fresh.sharesBurnable !== sent.burn || input.current !== sent.burn) {
+    return { kind: "changed", burnable: fresh.sharesBurnable };
+  }
+  return { kind: "send", burn: sent.burn, balanceBefore: fresh.sharesBalance };
 }
 
 /** The transaction named in a failed send's words (a wallet whose confirmation timed out says which it sent), or null. */
