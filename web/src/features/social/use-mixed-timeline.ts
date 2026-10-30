@@ -6,21 +6,33 @@
  * becomes known, never on a vote, so the post under the reader's cursor does not move; counts change in place.
  */
 
-import { useMemo, useRef } from "react";
+import { type InfiniteData, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useBoardFeed } from "../board/use-board-feed";
 import { type FeedPeriod, withinPeriod } from "../board/lib/board-feed";
+import {
+  type FreshPosts,
+  orderWithTop,
+  withFreshOnTop,
+} from "./lib/home-fresh";
 import {
   boardEngagement,
   mixChronological,
   mixRanked,
   type TimelineItem,
 } from "./lib/mixed-timeline";
+import type { Row } from "./lib/timeline";
 import type { BoardContext } from "./ui/PostList";
 import { useNoteRanking } from "./use-ranking";
-import { useTimeline } from "./use-social-data";
+import { type RowsPage, timelineKey, useTimeline } from "./use-social-data";
+
+const noteKey = (row: Row) =>
+  `n:${row.event.id}:${row.repostedBy?.pubkey ?? ""}`;
 
 export type TimelineSort = "hot" | "new" | "top";
+
+const NONE: readonly string[] = [];
 
 export function useMixedTimeline({
   tab,
@@ -38,8 +50,9 @@ export function useMixedTimeline({
   period?: FeedPeriod;
 }) {
   const authorKey = authors ? [...authors].sort().join(",") : "all";
+  const notesKey = useMemo(() => [tab, authorKey], [tab, authorKey]);
   const notes = useTimeline({
-    key: [tab, authorKey],
+    key: notesKey,
     authors,
     reposts: true,
     enabled,
@@ -52,8 +65,24 @@ export function useMixedTimeline({
     () => notes.data?.pages.flatMap((page) => page.rows) ?? [],
     [notes.data],
   );
+
+  // New posts the reader asked to see ("N new posts. Show") go on top. Newest first (Following, New) they land there by
+  // themselves and nothing below moves. In Hot they are held on top, newest first, until the order is taken for another
+  // tab or sort: left out of the ranking and of the held order, so showing them never reshuffles what is on screen.
+  const scope = `${tab}|${authorKey}|${sort}|${period}`;
+  const pinsFresh = tab === "everyone" && sort === "hot";
+  const [shownFresh, setShownFresh] = useState<{
+    scope: string;
+    keys: string[];
+  }>({ scope, keys: [] });
+  const top = pinsFresh && shownFresh.scope === scope ? shownFresh.keys : NONE;
+  const onTop = useMemo(() => new Set(top), [top]);
+  const ranked = useMemo(
+    () => (onTop.size ? rows.filter((row) => !onTop.has(noteKey(row))) : rows),
+    [rows, onTop],
+  );
   const ranking = useNoteRanking(
-    rows,
+    ranked,
     tab === "everyone" && sort !== "new" && enabled,
   );
   const notesComplete = !notes.hasNextPage;
@@ -87,12 +116,14 @@ export function useMixedTimeline({
   const held = useRef<{ signature: string; order: string[] } | null>(null);
   const signature = `${tab}|${sort}|${period}|${ranking.ready}|${sorted
     .map((item) => item.key)
+    .filter((key) => !onTop.has(key))
     .sort()
     .join(",")}`;
   if (held.current?.signature !== signature) {
     held.current = { signature, order: sorted.map((item) => item.key) };
   }
-  const order = held.current.order;
+  const heldOrder = held.current.order;
+  const order = useMemo(() => orderWithTop(top, heldOrder), [top, heldOrder]);
   const items = useMemo(() => {
     const byKey = new Map(sorted.map((item) => [item.key, item]));
     return order
@@ -105,9 +136,67 @@ export function useMixedTimeline({
     [board.boards, board.add],
   );
 
+  const queryClient = useQueryClient();
+  const { add: addBoardEvent, refetch: refetchBoards } = board;
+  /**
+   * Put new posts on top of the timeline. When more arrived than one read returns, Home is read again from the top
+   * instead, so no posts are skipped between the new ones and the rest.
+   */
+  const showFresh = useCallback(
+    (fresh: FreshPosts) => {
+      if (fresh.capped) {
+        setShownFresh({ scope, keys: [] });
+        void queryClient.resetQueries({
+          queryKey: timelineKey(notesKey),
+          exact: true,
+        });
+        refetchBoards();
+        return;
+      }
+      if (fresh.rows.length > 0) {
+        queryClient.setQueryData<InfiniteData<RowsPage>>(
+          timelineKey(notesKey),
+          (data) => {
+            const [first, ...rest] = data?.pages ?? [];
+            if (!data || !first) return data;
+            return {
+              ...data,
+              pages: [
+                { ...first, rows: [...fresh.rows, ...first.rows] },
+                ...rest,
+              ],
+            };
+          },
+        );
+      }
+      for (const post of fresh.boardPosts) addBoardEvent(post);
+      const added = [
+        ...fresh.rows.map((row) => ({
+          key: noteKey(row),
+          at: row.repostedBy?.at ?? row.event.created_at,
+        })),
+        ...fresh.boardPosts.map((post) => ({
+          key: `b:${post.id}`,
+          at: post.created_at,
+        })),
+      ]
+        .sort((a, b) => b.at - a.at)
+        .map((entry) => entry.key);
+      setShownFresh((previous) => ({
+        scope,
+        keys: withFreshOnTop(
+          previous.scope === scope ? previous.keys : [],
+          added,
+        ),
+      }));
+    },
+    [scope, queryClient, notesKey, addBoardEvent, refetchBoards],
+  );
+
   return {
     items,
     boards,
+    showFresh,
     isLoading: notes.isLoading || board.isLoading,
     error: notes.error ?? board.error,
     refetch: () => {

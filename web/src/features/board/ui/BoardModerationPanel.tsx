@@ -2,7 +2,8 @@
  * Who moderates this board and what they have done: the appointed moderators with the end of their term, and the
  * board's public moderation log in plain words, each thread named and one tap away. Everyone sees both. Above them, for
  * the board's moderators only, the open reports about its posts and replies. The board's
- * owners and admins appoint (from the people on the board, or by key) and dismiss moderators; a moderator can step
+ * owners and admins appoint (from the people on the board, after a confirmation naming them, or by profile link or key)
+ * and dismiss moderators; a moderator can step
  * down. Moderators can lift a mute that is still in force, when they stand at least as high as whoever set it, and
  * confirm another moderator's request for a longer mute. The server decides each of these and its reason is shown
  * when it refuses.
@@ -11,6 +12,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { Modal } from "@/features/launchpad/ui/Modal";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -23,7 +25,7 @@ import {
   MODERATOR_TERM_DAYS,
   pendingLongerMutes,
 } from "../lib/board-moderation";
-import { parsePersonInput } from "../lib/members";
+import { parsePersonOrLink } from "../lib/person-link";
 import type { BoardModerationActions } from "../use-board-moderation";
 import type { BoardReports } from "../use-board-reports";
 import { AuthorChip } from "./AuthorChip";
@@ -35,6 +37,42 @@ function dateWords(unix: number): string {
     month: "short",
     year: "numeric",
   });
+}
+
+/** Appointing someone from the buttons is one tap: this asks first, naming them. */
+function AppointDialog({
+  name,
+  onConfirm,
+  onClose,
+}: {
+  name: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const title = `Make ${name} a moderator of this board?`;
+  return (
+    <Modal label={title} onClose={onClose}>
+      <h2 className="text-lg font-bold">{title}</h2>
+      <p className="mt-0.5 text-sm text-muted-foreground">
+        For {MODERATOR_TERM_DAYS} days they can lock, pin and remove posts and
+        mute people on this board. It goes in the board's moderation log, and
+        you can dismiss them at any time.
+      </p>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button onClick={onClose} size="sm" type="button" variant="ghost">
+          Cancel
+        </Button>
+        <Button
+          data-testid="board-appoint-confirm"
+          onClick={onConfirm}
+          size="sm"
+          type="button"
+        >
+          Appoint {name}
+        </Button>
+      </div>
+    </Modal>
+  );
 }
 
 export function BoardModerationPanel({
@@ -89,6 +127,7 @@ export function BoardModerationPanel({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const run = async (work: () => Promise<unknown>, done: string) => {
     setBusy(true);
@@ -110,9 +149,9 @@ export function BoardModerationPanel({
   };
 
   const appoint = async () => {
-    const pubkey = parsePersonInput(text);
+    const pubkey = parsePersonOrLink(text);
     if (pubkey === null) {
-      setProblem("Paste their public key or npub… address.");
+      setProblem("Paste their profile link or key.");
       return;
     }
     if (await run(() => actions.appoint(pubkey), "Moderator appointed."))
@@ -211,7 +250,7 @@ export function BoardModerationPanel({
               disabled={busy}
               id="board-appoint-person"
               onChange={(event) => setText(event.target.value)}
-              placeholder="Public key or npub… address"
+              placeholder="Their profile link or key"
               value={text}
             />
             <Button
@@ -233,18 +272,24 @@ export function BoardModerationPanel({
                 data-testid="board-appoint-candidate"
                 disabled={busy}
                 key={pubkey}
-                onClick={() =>
-                  void run(
-                    () => actions.appoint(pubkey),
-                    "Moderator appointed.",
-                  )
-                }
+                onClick={() => setConfirming(pubkey)}
                 type="button"
               >
                 Appoint {nameOf(pubkey)}
               </button>
             ))}
           </p>
+        ) : null}
+        {confirming !== null ? (
+          <AppointDialog
+            name={nameOf(confirming)}
+            onClose={() => setConfirming(null)}
+            onConfirm={() => {
+              const pubkey = confirming;
+              setConfirming(null);
+              void run(() => actions.appoint(pubkey), "Moderator appointed.");
+            }}
+          />
         ) : null}
         {problem ? (
           <p className="mt-1 text-xs text-destructive" role="alert">

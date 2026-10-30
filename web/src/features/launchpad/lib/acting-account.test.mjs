@@ -1,11 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { BundlerRpcError, BundlerTimeoutError } from "../../identity/lib/aa.ts";
+import { Kernel033ChainRpcError } from "../../identity/lib/kernel033.ts";
 import { PaymasterDeniedError } from "../../identity/lib/zerodev.ts";
 import {
   ACTING_KIND_STORAGE_KEY,
+  ActingStepError,
   accountGate,
+  actingErrorDetails,
   actingErrorMessage,
+  actingStepError,
+  COULD_NOT_SEND_MESSAGE,
+  FEE_BUSY_MESSAGE,
+  FEE_REFUSED_MESSAGE,
+  FEE_TOO_LARGE_MESSAGE,
+  FEE_USED_UP_MESSAGE,
+  NETWORK_DOWN_MESSAGE,
+  NO_ANSWER_MESSAGE,
+  NOT_CONFIRMED_MESSAGE,
+  STILL_GOING_MESSAGE,
+  WOULD_FAIL_MESSAGE,
   PartialStepError,
   sendAsAccount,
   StepRevertedError,
@@ -236,5 +251,167 @@ test("a failed send is said in plain words, never a browser's or a vendor's", ()
   assert.equal(
     actingErrorMessage(new Error("Your wallet is on another network.")),
     "Your wallet is on another network.",
+  );
+});
+
+test("a passkey step's machinery is said in plain words, and a fee refusal that cannot pass never says try again", () => {
+  const simulation = new BundlerRpcError(
+    "bundler: zd_sponsorUserOperation RPC error UserOperation reverted during simulation with reason: 0x8baa579f",
+  );
+  assert.equal(actingErrorMessage(simulation), WOULD_FAIL_MESSAGE);
+  assert.equal(
+    actingErrorMessage(
+      new BundlerRpcError(
+        "bundler: eth_estimateUserOperationGas RPC error execution reverted",
+      ),
+    ),
+    WOULD_FAIL_MESSAGE,
+  );
+  assert.equal(
+    actingErrorMessage(
+      new Error("zerodev: no receipt for 0xabc after 90 polls (2000 ms apart)"),
+    ),
+    NOT_CONFIRMED_MESSAGE,
+  );
+  assert.equal(
+    actingErrorMessage(
+      new BundlerRpcError(
+        "bundler: eth_sendUserOperation RPC error AA25 invalid account nonce",
+      ),
+    ),
+    STILL_GOING_MESSAGE,
+  );
+  assert.equal(
+    actingErrorMessage(new BundlerTimeoutError(15_000)),
+    NO_ANSWER_MESSAGE,
+  );
+  assert.equal(
+    actingErrorMessage(
+      new BundlerRpcError("bundler: eth_sendUserOperation HTTP 503: busy", {
+        retryable: true,
+      }),
+    ),
+    NO_ANSWER_MESSAGE,
+  );
+  assert.equal(
+    actingErrorMessage(
+      new Kernel033ChainRpcError("eth_getCode", "HTTP 429: slow down"),
+    ),
+    NETWORK_DOWN_MESSAGE,
+  );
+  // The fee service: a step too big for the covered fee, a spending limit used up, or a refusal it did not explain.
+  // None of them asks the person to try again in a few minutes: none of them passes by waiting.
+  const tooBig = new PaymasterDeniedError("max gas limit exceeded for policy");
+  const usedUp = new PaymasterDeniedError("policy cap reached");
+  const refused = new PaymasterDeniedError("sponsorship denied");
+  assert.equal(actingErrorMessage(tooBig), FEE_TOO_LARGE_MESSAGE);
+  assert.equal(actingErrorMessage(usedUp), FEE_USED_UP_MESSAGE);
+  assert.equal(actingErrorMessage(refused), FEE_REFUSED_MESSAGE);
+  assert.equal(
+    actingErrorMessage(
+      new BundlerRpcError(
+        "bundler: eth_sendUserOperation RPC error AA31 paymaster deposit too low",
+      ),
+    ),
+    FEE_USED_UP_MESSAGE,
+  );
+  for (const error of [
+    simulation,
+    tooBig,
+    usedUp,
+    refused,
+    new Error("zerodev: something new"),
+  ]) {
+    const words = actingErrorMessage(error);
+    assert.doesNotMatch(words, /bundler|zerodev|paymaster|0x|RPC|simulation/i);
+    assert.doesNotMatch(words, /few minutes/);
+  }
+  for (const error of [tooBig, usedUp, refused]) {
+    assert.match(actingErrorMessage(error), /could not cover the fee/);
+    assert.match(
+      actingErrorMessage(error),
+      /Pressing again (will not|is unlikely to) help/,
+    );
+  }
+});
+
+test("the original text is kept for Technical details, and a step error carries both", () => {
+  const raw =
+    "bundler: zd_sponsorUserOperation RPC error UserOperation reverted during simulation with reason: 0x8baa579f";
+  const error = new BundlerRpcError(raw);
+  assert.equal(actingErrorDetails(error), raw);
+  const onward = actingStepError(error);
+  assert.ok(onward instanceof ActingStepError);
+  assert.equal(onward.message, WOULD_FAIL_MESSAGE);
+  assert.equal(onward.technical, raw);
+  // Passing it on again keeps it as it is.
+  assert.equal(actingStepError(onward), onward);
+  assert.equal(actingErrorMessage(onward), WOULD_FAIL_MESSAGE);
+  assert.equal(actingErrorDetails(onward), raw);
+  // Words already written for people have no details, and a refusal on chain stays itself (callers read its hash).
+  assert.equal(
+    actingErrorDetails(new Error("Your wallet is on another network.")),
+    null,
+  );
+  const reverted = new StepRevertedError("0xfeed");
+  assert.equal(actingStepError(reverted), reverted);
+});
+
+test("a fee service asked too often says wait and press again, never that its limit is used up", () => {
+  for (const text of [
+    "rate limit exceeded",
+    "Too Many Requests",
+    "HTTP 429: slow down",
+  ]) {
+    assert.equal(
+      actingErrorMessage(new PaymasterDeniedError(text)),
+      FEE_BUSY_MESSAGE,
+      text,
+    );
+  }
+  assert.match(FEE_BUSY_MESSAGE, /nothing was sent/);
+  assert.match(FEE_BUSY_MESSAGE, /press again/);
+  // A spending limit used up is still that.
+  assert.equal(
+    actingErrorMessage(new PaymasterDeniedError("daily spend limit exceeded")),
+    FEE_USED_UP_MESSAGE,
+  );
+  // The bundler asked too often: whether it went through is not known, so it says to look before pressing again.
+  assert.equal(
+    actingErrorMessage(
+      new BundlerRpcError(
+        "bundler: eth_sendUserOperation RPC error rate limit exceeded",
+      ),
+    ),
+    NO_ANSWER_MESSAGE,
+  );
+});
+
+test("an account that could not be made (AA1x) is not called a step that was already done; AA2x and reverts still are", () => {
+  for (const text of [
+    "bundler: eth_sendUserOperation RPC error AA13 initCode failed or OOG",
+    "bundler: zd_sponsorUserOperation RPC error UserOperation reverted during simulation with reason: AA10 sender already constructed",
+  ]) {
+    assert.equal(
+      actingErrorMessage(new BundlerRpcError(text)),
+      COULD_NOT_SEND_MESSAGE,
+      text,
+    );
+  }
+  assert.equal(
+    actingErrorMessage(
+      new BundlerRpcError(
+        "bundler: eth_sendUserOperation RPC error AA23 reverted (or OOG)",
+      ),
+    ),
+    WOULD_FAIL_MESSAGE,
+  );
+  assert.equal(
+    actingErrorMessage(
+      new BundlerRpcError(
+        "bundler: eth_estimateUserOperationGas RPC error execution reverted",
+      ),
+    ),
+    WOULD_FAIL_MESSAGE,
   );
 });

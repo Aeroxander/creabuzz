@@ -9,14 +9,14 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { kernel033ChainRpcUrl } from "@/features/identity/lib/kernel033";
-import {
-  createSponsoredSender,
-  type SponsoredSender,
-  type SponsoredSenderAvailability,
+import type {
+  SponsoredSender,
+  SponsoredSenderAvailability,
 } from "@/features/identity/lib/sponsoredSender";
 import { zerodevConfigFromEnv } from "@/features/identity/lib/zerodev";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 
+import { makeSponsoredSender } from "../lib/sponsored-sender";
 import type { Eip1193ProviderLike } from "../lib/wallet-sender";
 import { useActingAccount } from "../use-acting-account";
 import {
@@ -80,7 +80,8 @@ export function useSenderPicker(
     }
   }, [chainId]);
   const ownSender = useMemo(
-    () => createSponsoredSender({ chainId, rpcUrl: sponsoredRpcUrl }),
+    // Made where every passkey sender is made, so its refused sponsorships reach the error collector too.
+    () => makeSponsoredSender({ chainId, rpcUrl: sponsoredRpcUrl }),
     [chainId, sponsoredRpcUrl],
   );
   // Following, the passkey account is the acting one, which may come from more than this browser's passkey sign-in.

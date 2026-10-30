@@ -20,6 +20,7 @@ import {
   CREATE_ACCOUNT,
   SIGN_UP_EVENT,
 } from "@/features/identity/lib/account-copy";
+import { failureWords } from "@/shared/lib/readable-error";
 
 export interface EditTarget {
   eventId: string;
@@ -87,7 +88,7 @@ export function Composer({
       toast.error(
         isEditing ? "Couldn't edit message" : "Couldn't send message",
         {
-          description: error instanceof Error ? error.message : String(error),
+          description: failureWords(error).text,
         },
       );
       if (window.localStorage.getItem("buzz.identity.nsec") === null) {
@@ -163,7 +164,7 @@ export function Composer({
     } catch (error) {
       console.error("[attach]", error);
       toast.error("Couldn't upload file", {
-        description: error instanceof Error ? error.message : String(error),
+        description: failureWords(error).text,
       });
     } finally {
       setUploading(false);

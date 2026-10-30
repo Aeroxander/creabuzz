@@ -19,10 +19,9 @@ import {
   rememberPasskeyAccount,
   signInPasskeyKeys,
 } from "@/features/identity/lib/passkey-account";
-import {
-  createSponsoredSender,
-  type SenderCall,
-  type SponsoredSender,
+import type {
+  SenderCall,
+  SponsoredSender,
 } from "@/features/identity/lib/sponsoredSender";
 import { zerodevConfigFromEnv } from "@/features/identity/lib/zerodev";
 import { KIND_EVM_BINDING } from "@/shared/constants/kinds";
@@ -36,11 +35,10 @@ import {
   actingErrorMessage,
   chooseActingKind,
   loadActingKind,
-  PartialStepError,
-  StepRevertedError,
   saveActingKind,
-  sendAsAccount,
+  sendLanded,
 } from "./lib/acting-account";
+import { makeSponsoredSender } from "./lib/sponsored-sender";
 import { makeWalletAuctionEffects } from "./lib/wallet-effects";
 import {
   type ConnectedWalletState,
@@ -138,7 +136,8 @@ export function useActingAccount(): ActingAccountState {
   const sender = useMemo<SponsoredSender | null>(
     () =>
       network && source
-        ? createSponsoredSender({
+        ? // Refused sponsorship and bundler failures reach the error collector (lib/sponsor-report.ts).
+          makeSponsoredSender({
             chainId: network.chainId,
             rpcUrl: network.rpcUrl,
             credentialId: source.keys.credentialId,
@@ -209,35 +208,13 @@ export function useActingAccount(): ActingAccountState {
       ) {
         throw new Error("There is no account in this browser to send this.");
       }
-      let txHash: string;
-      try {
-        txHash = await sendAsAccount({
-          kind,
-          calls,
-          sponsored: sender ?? undefined,
-          walletSend: effects
-            ? async (call) => {
-                const receipt = await effects.send({
-                  to: call.to,
-                  data: call.data,
-                  value: call.value ?? "0x0",
-                });
-                return {
-                  txHash: receipt.txHash,
-                  status: receipt.status === "success" ? "success" : "reverted",
-                };
-              }
-            : undefined,
-        });
-      } catch (error) {
-        if (
-          error instanceof StepRevertedError ||
-          error instanceof PartialStepError
-        ) {
-          throw error;
-        }
-        throw new Error(actingErrorMessage(error));
-      }
+      // Plain words for the person, the original kept for "Technical details" (`sendLanded`).
+      const txHash = await sendLanded({
+        kind,
+        calls,
+        sponsored: sender ?? undefined,
+        wallet: effects ?? undefined,
+      });
       // The account that acted stays the one that acts here, so a passkey set up later, or a wallet added, does not
       // quietly move this person to an account that holds none of what they did.
       if (loadActingKind() === null) setKind(kind);

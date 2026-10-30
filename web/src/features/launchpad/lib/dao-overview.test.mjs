@@ -61,7 +61,9 @@ const mandate = (claims, extra = {}) => ({
   ...extra,
 });
 
+const DAO = `0x${"da".repeat(20)}`;
 const snap = (decisions, extra = {}) => ({
+  dao: DAO,
   chainTime: 10_000,
   walletCapacity: 5n,
   decisions,
@@ -614,4 +616,208 @@ test("a review claim's expiry outranks a later vote and says what inaction risks
     titleOf,
   });
   assert.doesNotMatch(boundary[0].ifIgnored, /can now close/);
+});
+
+test("work the reviewers turned down is closed from Needs you by its manager or a reviewer, and its contributor is told why to look", () => {
+  const DOWN = idWord("down");
+  const down = claim(DOWN, "Open", { objections: 2 });
+  const forWho = (wallet, extra = {}) =>
+    attentionItems({
+      wallet,
+      decisions: undefined,
+      work: {
+        chainTime: 10_000,
+        mandates: [mandate([down], { projects: [managed(ME)], ...extra })],
+      },
+      titleOf,
+    });
+  const manager = forWho(ME).find((i) => i.key === `settle-${DOWN}`);
+  assert.equal(manager?.action, "Close it as turned down");
+  assert.equal(manager?.kind, "settle");
+  assert.equal(manager?.claim?.id, DOWN);
+  assert.match(manager?.text ?? "", /turned down/);
+  // A reviewer on the panel who manages nothing is offered it too.
+  const reviewer = forWho("0x" + "33".repeat(20), { walletIsReviewer: true });
+  assert.equal(
+    reviewer.find((i) => i.key === `settle-${DOWN}`)?.action,
+    "Close it as turned down",
+  );
+  // The contributor is not asked to close their own turned-down work: they are told it was, and where to read why.
+  const mine = forWho(OTHER);
+  assert.equal(
+    mine.find((i) => i.key === `settle-${DOWN}`),
+    undefined,
+  );
+  const told = mine.find((i) => i.key === `waiting-${DOWN}`);
+  assert.equal(told?.actor, "others");
+  // Who turned it down is always shown; a reason only when one was given, so "why" is not promised.
+  assert.match(
+    told?.text ?? "",
+    /turned down your “down”\. The Work tab shows who, and their reasons if they gave any\./,
+  );
+  // Someone with no part in it is asked nothing.
+  assert.equal(
+    forWho("0x" + "44".repeat(20)).find((i) => i.key === `settle-${DOWN}`),
+    undefined,
+  );
+});
+
+test("a claim past its deadline is offered to its contributor and manager as close it as lapsed; a split nobody can break says so", () => {
+  const late = claim("late", "Open", {
+    record: { ...claim("x", "Open").record, expiresAt: 9_000, stake: 5n },
+    approvals: 1,
+    panel: 3,
+  });
+  const items = (wallet) =>
+    attentionItems({
+      wallet,
+      decisions: undefined,
+      work: {
+        chainTime: 10_000,
+        mandates: [mandate([late], { projects: [managed(ME)] })],
+      },
+      titleOf,
+    });
+  const managerItem = items(ME).find((i) => i.key === "expire-late");
+  assert.equal(managerItem?.action, "Close it as lapsed");
+  assert.equal(managerItem?.kind, "expire");
+  const contributorItem = items(OTHER).find((i) => i.key === "expire-late");
+  assert.match(contributorItem?.text ?? "", /your deposit comes back/);
+  // Before the deadline nobody is offered it.
+  const early = attentionItems({
+    wallet: ME,
+    decisions: undefined,
+    work: {
+      chainTime: 8_000,
+      mandates: [mandate([late], { projects: [managed(ME)] })],
+    },
+    titleOf,
+  });
+  assert.equal(
+    early.find((i) => i.key === "expire-late"),
+    undefined,
+  );
+  // Split with nobody left: the contributor reads that it is stuck and when it can be closed.
+  const split = claim("split", "Open", {
+    record: { ...claim("x", "Open").record, expiresAt: 20_000 },
+    approvals: 1,
+    objections: 1,
+    panel: 2,
+  });
+  const stuck = attentionItems({
+    wallet: OTHER,
+    decisions: undefined,
+    work: { chainTime: 10_000, mandates: [mandate([split])] },
+    titleOf,
+  }).find((i) => i.key === "waiting-split");
+  assert.match(stuck?.text ?? "", /is stuck/);
+  assert.equal(stuck?.due, 20_000);
+});
+
+test("the founder is not asked to put an award to a vote while one for the same claim is open", async () => {
+  const { encodeFunctionData } = await import(
+    "@creaton/core/launchpad/evmAbi.ts"
+  );
+  const done = claim("0x" + "ab".repeat(32), "Paid");
+  const awardData = encodeFunctionData(
+    "awardContribution(address,bytes32,uint96,bool)",
+    ["address", "bytes32", "uint96", "bool"],
+    [BUDGET, done.id, 10n, false],
+  );
+  const items = (state, action, to = DAO) =>
+    attentionItems({
+      wallet: ME,
+      decisions: snap([
+        decision("award-vote", state, {
+          action: action
+            ? { op: 0, to, value: 0n, data: action, nonce: "1" }
+            : null,
+        }),
+      ]),
+      work: { chainTime: 10_000, mandates: [mandate([done])] },
+      titleOf,
+    }).filter((i) => i.kind === "award");
+  assert.equal(items("Active", awardData).length, 0);
+  assert.equal(items("Queued", awardData).length, 0);
+  // A vote that failed, or one whose action could not be read, does not count.
+  assert.equal(items("Defeated", awardData).length, 1);
+  assert.equal(items("Active", null).length, 1);
+  // The same bytes sent to anything but the DAO award nothing, so they do not hide the step.
+  assert.equal(items("Active", awardData, OTHER).length, 1);
+});
+
+test("a claim past its deadline that reviewers can still decide says so: settle has no deadline", () => {
+  const late = claim("late", "Open", {
+    record: { ...claim("x", "Open").record, expiresAt: 9_000 },
+    approvals: 1,
+    panel: 3,
+  });
+  const item = attentionItems({
+    wallet: ME,
+    decisions: undefined,
+    work: {
+      chainTime: 10_000,
+      mandates: [mandate([late], { projects: [managed(ME)] })],
+    },
+    titleOf,
+  }).find((i) => i.key === "expire-late");
+  assert.equal(
+    item?.ifIgnored,
+    "It stays open, and the reviewers can still decide it until someone closes it.",
+  );
+  assert.doesNotMatch(item?.ifIgnored ?? "", /no longer be approved/);
+  // Split with nobody left to decide: it only stays open.
+  const split = claim("split", "Open", {
+    record: { ...claim("x", "Open").record, expiresAt: 9_000 },
+    approvals: 1,
+    objections: 1,
+    panel: 2,
+  });
+  const stuck = attentionItems({
+    wallet: ME,
+    decisions: undefined,
+    work: {
+      chainTime: 10_000,
+      mandates: [mandate([split], { projects: [managed(ME)] })],
+    },
+    titleOf,
+  }).find((i) => i.key === "expire-split");
+  assert.equal(stuck?.ifIgnored, "It stays open until someone closes it.");
+});
+
+test("work whose words no open work area uses is not left waiting on a manager who cannot accept it", () => {
+  const OTHER_WORDS = `0x${"ee".repeat(32)}`;
+  const stray = claim("stray", "Open", {
+    project: null,
+    record: {
+      ...claim("x", "Open").record,
+      checkHash: OTHER_WORDS,
+      expiresAt: 20_000,
+    },
+  });
+  const forWho = (wallet, projects) =>
+    attentionItems({
+      wallet,
+      decisions: undefined,
+      work: { chainTime: 10_000, mandates: [mandate([stray], { projects })] },
+      titleOf,
+    });
+  const mine = forWho(OTHER, [managed(ME)]).find(
+    (i) => i.key === "waiting-stray",
+  );
+  assert.match(mine?.text ?? "", /words no open work area uses/);
+  assert.doesNotMatch(mine?.text ?? "", /manager to accept/);
+  // The manager is not asked: none of their areas can take it.
+  assert.equal(
+    forWho(ME, [managed(ME)]).find((i) => i.key === "bind-stray"),
+    undefined,
+  );
+  // Its words are an open area's: it waits for that area's manager, as before.
+  const matching = forWho(OTHER, [
+    managed(ME, { checkHash: OTHER_WORDS }),
+  ]).find((i) => i.key === "waiting-stray");
+  assert.match(matching?.text ?? "", /manager to accept it for review/);
+  // A budget with no open work area yet still waits for one.
+  const none = forWho(OTHER, []).find((i) => i.key === "waiting-stray");
+  assert.match(none?.text ?? "", /manager to accept it for review/);
 });

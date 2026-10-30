@@ -105,6 +105,7 @@ export function DaoTreasuryTab({
       />
       <DelegationCard
         author={launch.record.author}
+        chainId={chainId}
         dao={daoBinding.dao}
         launchId={launch.record.id}
         members={[]}

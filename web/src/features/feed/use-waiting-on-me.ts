@@ -19,6 +19,10 @@ import {
 } from "@/features/launchpad/lib/dao-overview";
 import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { reviewerTargets } from "@/features/launchpad/lib/reviewer-launches";
+import {
+  boundTargets,
+  contributorWorkTargets,
+} from "@/features/launchpad/lib/work-targets";
 import { SANDBOX_ID } from "@/features/launchpad/lib/sandbox";
 import type { Launch } from "@/features/launchpad/models";
 import { useActingAccount } from "@/features/launchpad/use-acting-account";
@@ -97,9 +101,26 @@ export function useWaitingOnMe(): {
         byDao.set(found.dao, { ...found, wallet: connected });
       }
     }
-    return [...byDao.values()]
-      .sort((a, b) => b.launch.record.createdAt - a.launch.record.createdAt)
-      .slice(0, MAX_DAOS);
+    // A contributor project's contributors and reviewers hold no Shares and are named in no receipt: the projects they
+    // submitted work to are theirs, and the newest few are looked at in the slots left (bounded; see `work-targets.ts`).
+    const discovery: Target[] = [];
+    if (connected) {
+      for (const found of contributorWorkTargets(
+        launches.data ?? [],
+        me,
+        (launch) => launch.record.id === SANDBOX_ID,
+      )) {
+        if (byDao.has(found.dao)) continue;
+        const target = {
+          launch: found.launch,
+          dao: found.dao,
+          wallet: connected,
+        };
+        if (found.discovery) discovery.push(target);
+        else byDao.set(found.dao, target);
+      }
+    }
+    return boundTargets([...byDao.values()], discovery, MAX_DAOS);
   }, [holdings.data, launches.data, me, connected]);
 
   const decisions = useQueries({

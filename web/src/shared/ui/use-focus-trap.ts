@@ -11,14 +11,24 @@ const FOCUSABLE =
  * overlay and the user lost their place.
  *
  * `initialFocus` is focused on open when given (a text input should win over
- * the first button); otherwise the first focusable element is.
+ * the first button, or the dialog itself when it should be read from its
+ * title); otherwise the first focusable element is.
+ *
+ * `returnFocus` is where focus goes on close when whatever opened the dialog is
+ * gone by then (an item in a menu that closed behind it).
  */
 export function useFocusTrap<
   T extends HTMLElement,
   I extends HTMLElement = HTMLElement,
 >(
   containerRef: RefObject<T | null>,
-  { initialFocus }: { initialFocus?: RefObject<I | null> } = {},
+  {
+    initialFocus,
+    returnFocus,
+  }: {
+    initialFocus?: RefObject<I | null>;
+    returnFocus?: RefObject<HTMLElement | null>;
+  } = {},
 ) {
   useEffect(() => {
     const container = containerRef.current;
@@ -48,7 +58,10 @@ export function useFocusTrap<
       const first = items[0];
       const last = items[items.length - 1];
       const active = document.activeElement;
-      if (event.shiftKey && (active === first || !container.contains(active))) {
+      // The dialog itself (focused on open) comes before its first control: Shift+Tab from it wraps too.
+      const atStart =
+        active === first || active === container || !container.contains(active);
+      if (event.shiftKey && atStart) {
         event.preventDefault();
         last.focus();
         return;
@@ -63,7 +76,8 @@ export function useFocusTrap<
     return () => {
       container.removeEventListener("keydown", onKeyDown);
       // Returning focus to whatever opened the dialog keeps the keyboard flow.
-      previous?.focus?.();
+      const back = previous?.isConnected ? previous : returnFocus?.current;
+      back?.focus?.();
     };
-  }, [containerRef, initialFocus]);
+  }, [containerRef, initialFocus, returnFocus]);
 }

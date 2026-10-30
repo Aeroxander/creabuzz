@@ -8,6 +8,7 @@ import { ServerImage } from "@/shared/ui/ServerImage";
 import { displayText } from "../../feed/lib/feed-events";
 import { DecisionEmbeds } from "../../launchpad/ui/DecisionEmbeds";
 import { tokenize } from "../lib/content";
+import { quotedPostState } from "../lib/timeline";
 import { q96ToPrice } from "../../launchpad/lib/candles";
 import { saleCurrencyFor } from "../../launchpad/lib/sale-currency";
 import { formatPrice } from "../../launchpad/ui/CandlestickChart";
@@ -136,13 +137,26 @@ function PostImage({ src }: { src: string }) {
 
 /** A quoted post, shown as a compact bordered card that opens the post. */
 function QuoteCard({ id }: { id: string }) {
-  const row = useNotesById([id]).data?.[0];
+  const read = useNotesById([id]);
+  const row = read.data?.[0];
   const author = row?.event.pubkey;
   const people = usePeople(author ? [author] : []);
-  if (!row || !author) {
+  const state = quotedPostState({
+    found: row !== undefined,
+    isPending: read.isPending,
+    isError: read.isError,
+  });
+  if (!row || !author || state !== "shown") {
     return (
-      <div className="relative z-10 mt-3 rounded-xl border border-black/10 p-3 text-sm text-black/60 dark:border-white/10 dark:text-white/60">
-        This post isn't available.
+      <div
+        className="relative z-10 mt-3 rounded-xl border border-black/10 p-3 text-sm text-black/60 dark:border-white/10 dark:text-white/60"
+        data-testid="social-quote-missing"
+      >
+        {state === "loading"
+          ? "Loading the quoted post…"
+          : state === "removed"
+            ? "This post was removed."
+            : "This post isn't available right now."}
       </div>
     );
   }

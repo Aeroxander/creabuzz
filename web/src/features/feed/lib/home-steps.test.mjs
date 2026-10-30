@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DEFAULT_ROLE, parseRole, stepsFor, wayInDone } from "./home-steps.ts";
+import {
+  DEFAULT_ROLE,
+  hasChosenName,
+  parseRole,
+  stepsFor,
+  wayInDone,
+} from "./home-steps.ts";
 
 const none = {
   named: false,
@@ -74,4 +80,17 @@ test("a founder's way in is done once they have a name and a published project",
     wayInDone(stepsFor("founder", { ...none, named: true, published: true })),
     true,
   );
+});
+
+test("the name step is done only for a name the person chose, not for any profile at all", () => {
+  // No profile, or one with only words about them or a picture: the app shows a short key there, which is no name.
+  assert.equal(hasChosenName(undefined), false);
+  assert.equal(hasChosenName(null), false);
+  assert.equal(hasChosenName({}), false);
+  assert.equal(hasChosenName({ about: "I paint." }), false);
+  assert.equal(hasChosenName({ picture: "https://example.com/me.png" }), false);
+  assert.equal(hasChosenName({ name: "   ", display_name: "" }), false);
+  // A name, under either field a profile may use.
+  assert.equal(hasChosenName({ name: "Robin" }), true);
+  assert.equal(hasChosenName({ display_name: "Robin Hale" }), true);
 });

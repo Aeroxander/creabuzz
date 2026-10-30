@@ -4,6 +4,8 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 
+import { RecoveryOfferHost } from "@/features/identity/ui/RecoveryOfferHost";
+
 import { AppNav, hidesAppNav } from "../AppNav";
 import { NotFoundView, RouteErrorView } from "../BoundaryViews";
 
@@ -27,6 +29,8 @@ function RootLayout() {
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Outlet />
       </main>
+      {/* The recovery-key offer after a passkey sign-up: here, so no page's re-render can close it. */}
+      <RecoveryOfferHost />
     </div>
   );
 }

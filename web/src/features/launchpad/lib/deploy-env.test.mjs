@@ -4,6 +4,7 @@ import test from "node:test";
 import { checkDeployEnv } from "./deploy-env.ts";
 
 const KIT = `0x${"ab".repeat(20)}`;
+const ZERODEV_PROJECT = "b5486fa4-e3d9-450b-8428-646e757c10f6";
 const SEPOLIA = {
   VITE_LAUNCHPAD_CHAIN_ID: "11155111",
   VITE_CHAIN_RPC_URL: "https://sepolia.example/v2/read-only",
@@ -226,7 +227,7 @@ test("sponsored gas needs its project and the app's own network", () => {
   assert.deepEqual(
     checkDeployEnv({
       ...SEPOLIA,
-      VITE_ZERODEV_PROJECT_ID: "p",
+      VITE_ZERODEV_PROJECT_ID: ZERODEV_PROJECT,
       VITE_ZERODEV_CHAIN_ID: "11155111",
     }).problems,
     [],
@@ -242,4 +243,85 @@ test("sponsored gas needs its project and the app's own network", () => {
       VITE_ZERODEV_CHAIN_ID: "84532",
     }).problems.some((p) => p.includes("but the app's network is 11155111")),
   );
+});
+
+/** What the hosted image builds with: the Dockerfile sets VITE_CONTRIBUTOR_ONLY=1 itself. */
+const PILOT = {
+  ...SEPOLIA,
+  VITE_CONTRIBUTOR_ONLY: "1",
+  VITE_ZERODEV_PROJECT_ID: ZERODEV_PROJECT,
+  VITE_ZERODEV_CHAIN_ID: "11155111",
+};
+
+test("the contributor-only image passes with its paid gas set, and is refused without it", () => {
+  assert.deepEqual(checkDeployEnv(PILOT).problems, []);
+  assert.ok(
+    checkDeployEnv(PILOT).summary.includes(
+      "Passkey accounts with paid gas: on",
+    ),
+  );
+  // One of the two missing is said once, by the setting that is missing; neither set says what the image needs.
+  for (const missing of ["VITE_ZERODEV_PROJECT_ID", "VITE_ZERODEV_CHAIN_ID"]) {
+    const { problems } = checkDeployEnv({ ...PILOT, [missing]: "" });
+    const zerodev = problems.filter((p) => p.includes("VITE_ZERODEV_"));
+    assert.equal(zerodev.length, 1, `${missing}: ${problems.join(" | ")}`);
+    assert.match(zerodev[0], new RegExp(`without ${missing}`));
+  }
+  const neither = checkDeployEnv({
+    ...PILOT,
+    VITE_ZERODEV_PROJECT_ID: "",
+    VITE_ZERODEV_CHAIN_ID: "",
+  }).problems;
+  assert.deepEqual(neither, [
+    "Contributor projects are on, but VITE_ZERODEV_PROJECT_ID and VITE_ZERODEV_CHAIN_ID are not set: in the contributor-only image every step is sent from a passkey account whose fees ZeroDev pays.",
+  ]);
+  // A build of your own (not contributor-only) may still leave paid gas off: people bring a wallet.
+  assert.deepEqual(
+    checkDeployEnv({
+      ...PILOT,
+      VITE_CONTRIBUTOR_ONLY: "",
+      VITE_ZERODEV_PROJECT_ID: "",
+      VITE_ZERODEV_CHAIN_ID: "",
+    }).problems,
+    [],
+  );
+});
+
+test("a CHANGE_ME placeholder left in any build setting stops the build, naming the setting", () => {
+  const left = checkDeployEnv({
+    ...PILOT,
+    VITE_ZERODEV_PROJECT_ID: "CHANGE_ME_your_ZeroDev_project_id",
+    VITE_BUNDLER_URL: "CHANGE_ME_its_bundler_URL",
+    VITE_CHAIN_RPC_URL:
+      "CHANGE_ME_a_read_only_Sepolia_node_for_the_page_that_allows_wide_log_ranges",
+  });
+  for (const name of [
+    "VITE_ZERODEV_PROJECT_ID",
+    "VITE_BUNDLER_URL",
+    "VITE_CHAIN_RPC_URL",
+  ]) {
+    assert.ok(
+      left.problems.includes(
+        `${name} still holds a CHANGE_ME placeholder: put the real value in .env, then build again.`,
+      ),
+      `${name}: ${left.problems.join(" | ")}`,
+    );
+  }
+  // Server settings are not the page's: the build does not judge them.
+  assert.deepEqual(
+    checkDeployEnv({ ...PILOT, BUZZ_EVM_RPC_URL: "CHANGE_ME_x" }).problems,
+    [],
+  );
+});
+
+test("a ZeroDev project id must look like one", () => {
+  for (const bad of ["p", "https://rpc.zerodev.app/api/v3/x", "not-a-uuid"]) {
+    assert.ok(
+      checkDeployEnv({ ...PILOT, VITE_ZERODEV_PROJECT_ID: bad }).problems.some(
+        (p) =>
+          p.startsWith("VITE_ZERODEV_PROJECT_ID is not a ZeroDev project id"),
+      ),
+      bad,
+    );
+  }
 });

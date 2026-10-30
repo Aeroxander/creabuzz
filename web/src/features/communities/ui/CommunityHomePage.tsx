@@ -31,11 +31,14 @@ import { CommunityShell } from "@/features/channels/ui/CommunityShell";
  */
 function CommunityLoadState({
   host,
+  description,
   error,
   message,
   onRetry,
 }: {
   host: string;
+  /** Plain words that replace "did not answer" when the page already knows why (an archived community). */
+  description?: string;
   error: unknown;
   message: string;
   onRetry: () => void;
@@ -44,7 +47,9 @@ function CommunityLoadState({
     <div className="flex h-dvh min-h-0 w-full flex-1 items-center justify-center px-4">
       <div className="w-full max-w-md rounded-xl border border-black/10 bg-white p-6 dark:border-white/10 dark:bg-white/5">
         <QueryError
-          description={`${host} did not answer the channel query.`}
+          description={
+            description ?? `${host} did not answer the channel query.`
+          }
           error={error}
           message={message}
           onRetry={onRetry}
@@ -210,13 +215,14 @@ export function CommunityHomePage() {
       <CommunityLoadState
         host={host}
         error={channels.error}
-        message={
+        description={
           // An archived community fails its reads by design; saying so turns a
-          // mysterious error into an explanation.
+          // mysterious error into an explanation. The error itself stays under Technical details.
           entry?.archived
-            ? `This community is archived, so its channels are no longer served. ${errorMessage(channels.error)}`
-            : errorMessage(channels.error)
+            ? "This community is archived, so its channels are no longer served."
+            : undefined
         }
+        message={errorMessage(channels.error)}
         onRetry={() => void channels.refetch()}
       />
     );

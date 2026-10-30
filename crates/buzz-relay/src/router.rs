@@ -608,11 +608,22 @@ fn with_admin_csp(mut response: axum::response::Response) -> axum::response::Res
     response
 }
 
+/// The public web bundle's embedder policy. `credentialless`, not
+/// `require-corp`: people's pictures and pictures in posts live on other sites
+/// (GitHub, Gravatar) that send no `Cross-Origin-Resource-Policy`, and
+/// `require-corp` blocks every one of them. `credentialless` loads them without
+/// cookies and still makes the document cross-origin isolated where the browser
+/// supports it (Chromium, Firefox). A browser that does not know the value
+/// (Safari) treats it as no policy: pictures load, the document is not
+/// isolated, and the wiki's local cache, the only thing isolation is for, is
+/// skipped as it is behind a proxy that drops these headers.
+const SPA_COEP: &str = "credentialless";
+
 /// Same-origin isolation for the public web bundle.
 ///
-/// `Cross-Origin-Opener-Policy: same-origin` plus
-/// `Cross-Origin-Embedder-Policy: require-corp` let the web client use
-/// OPFS-backed SQLite-WASM (op-sqlite web): the feature is not available
+/// `Cross-Origin-Opener-Policy: same-origin` plus a cross-origin embedder
+/// policy ([`SPA_COEP`]) let the web client use OPFS-backed SQLite-WASM
+/// (op-sqlite web, the wiki's optional local cache): it is not available
 /// without a cross-origin-isolated document.
 fn with_spa_coi(mut response: axum::response::Response) -> axum::response::Response {
     response.headers_mut().insert(
@@ -621,7 +632,7 @@ fn with_spa_coi(mut response: axum::response::Response) -> axum::response::Respo
     );
     response.headers_mut().insert(
         header::HeaderName::from_static("cross-origin-embedder-policy"),
-        header::HeaderValue::from_static("require-corp"),
+        header::HeaderValue::from_static(SPA_COEP),
     );
     response
 }
@@ -2053,6 +2064,68 @@ mod tests {
                 "{path} on the public host must keep its own headers"
             );
         }
+    }
+
+    /// Pictures from other sites (GitHub, Gravatar) send no
+    /// `Cross-Origin-Resource-Policy`; under `require-corp` the browser blocks
+    /// every one, so the public bundle must say `credentialless` on its
+    /// documents and assets alike.
+    #[tokio::test]
+    async fn the_public_spa_lets_pictures_from_other_sites_load() {
+        let admin_dir = tempfile::tempdir().expect("admin bundle dir");
+        let web_dir = tempfile::tempdir().expect("public bundle dir");
+        write_bundle(admin_dir.path());
+        write_bundle(web_dir.path());
+        let state = spa_state(admin_dir.path(), web_dir.path()).await;
+
+        for path in ["/invite/payload.mac", "/assets/app.js"] {
+            let response = spa_response(state.clone(), "public.example", path).await;
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            let header_of = |name: &str| {
+                response
+                    .headers()
+                    .get(name)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned)
+            };
+            assert_eq!(
+                header_of("cross-origin-embedder-policy").as_deref(),
+                Some("credentialless"),
+                "{path} must not require CORP of outside pictures"
+            );
+            assert_eq!(
+                header_of("cross-origin-opener-policy").as_deref(),
+                Some("same-origin"),
+                "{path} keeps its opener isolation"
+            );
+        }
+
+        // The whole app as the hosted build serves it: every page says the same.
+        let full = state_with(|config| {
+            config.web_dir = Some(web_dir.path().to_path_buf());
+            config.web_spa_full = true;
+        })
+        .await;
+        let response = spa_response(full, "public.example", "/social").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("cross-origin-embedder-policy")
+                .and_then(|value| value.to_str().ok()),
+            Some("credentialless"),
+            "/social must not require CORP of outside pictures"
+        );
+
+        // The root document (the WebSocket route's HTML answer, which needs a
+        // community bound first) goes through the same function.
+        let root = with_spa_coi(StatusCode::OK.into_response());
+        assert_eq!(
+            root.headers()
+                .get("cross-origin-embedder-policy")
+                .and_then(|value| value.to_str().ok()),
+            Some("credentialless")
+        );
     }
 
     #[tokio::test]

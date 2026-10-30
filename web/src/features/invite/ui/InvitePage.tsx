@@ -8,17 +8,31 @@ import {
   resolveBuzzDownloadUrlForPlatform,
 } from "@/shared/lib/buzz-download";
 import { getOrCreateIdentity, hasStoredIdentity } from "@/shared/lib/identity";
-import { publishProfile } from "@/features/identity/lib/profile";
+import { saveNewProfile } from "@/features/identity/lib/profile";
 import { hasNip07Provider } from "@/shared/lib/nostr-signer";
 
-import { hasPasskeyIdentity } from "@/features/identity/lib/passkey-identity";
+import {
+  createPasskeyIdentity,
+  hasPasskeyIdentity,
+  isPasskeyActive,
+  onPasskeySessionChange,
+  signInPasskeyIdentity,
+} from "@/features/identity/lib/passkey-identity";
+import {
+  passkeyCreateProblem,
+  passkeyUnlockProblem,
+} from "@/features/identity/lib/passkey-problem";
+import { RecoveryKeyDialog } from "@/features/identity/ui/RecoveryKeyDialog";
 import { inviteRelayWsUrl, setStoredRelayWsUrl } from "@/shared/lib/relay-url";
 import { desktopJoinDeepLink } from "@/shared/lib/desktop-deep-link";
 import { Button } from "@/shared/ui/button";
+import { Fingerprint } from "lucide-react";
 import * as React from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { acceptJoinPolicy, POLICY_TIMEOUT_MS } from "../accept-policy";
+import { type InviteProblem, inviteProblem } from "../invite-errors";
 import { InviteJoinPolicyNotice } from "./InviteJoinPolicyNotice";
 
 type JoinPolicy = {
@@ -30,35 +44,57 @@ type JoinPolicy = {
 
 type PolicyDocument = { title: string; markdown: string };
 
-/** Convert relay invite sentinels into user-facing recovery guidance. */
-function inviteClaimErrorMessage(message: string): string {
-  if (message.includes("invite_exhausted")) {
-    return "This invite has reached its use limit. Ask for a new invite.";
-  }
-  if (message.includes("invite_expired")) {
-    return "This invite has expired. Ask for a new invite.";
-  }
-  if (message.includes("invite_invalid")) {
-    return "This invite is invalid. Check the link or ask for a new invite.";
-  }
-  return message;
+/** The server's terms as this page has them: still asked for, could not be had, or here (null when it has none). */
+type PolicyLoad =
+  | { status: "loading" }
+  | { status: "failed"; detail: string }
+  | { status: "ready"; policy: JoinPolicy | null };
+
+/** What the join button is waiting for, so it can say so. */
+type JoinStep = "passkey" | "joining" | null;
+
+/** Whether this browser can make a passkey at all (it is offered only where it can work). */
+function passkeysAvailable(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.PublicKeyCredential !== "undefined"
+  );
+}
+
+function problemText(text: string): InviteProblem {
+  return { text, detail: null, reloadTerms: false };
 }
 
 /** Landing page for a community invite link (`/invite/<code>`). */
 export function InvitePage({ code }: { code: string }) {
   const relay = inviteRelayWsUrl();
   const host = relay.replace(/^wss?:\/\//, "");
-  const [policy, setPolicy] = React.useState<JoinPolicy | null | undefined>(
-    undefined,
-  );
+  const [policyLoad, setPolicyLoad] = React.useState<PolicyLoad>({
+    status: "loading",
+  });
+  const policy: JoinPolicy | null | undefined =
+    policyLoad.status === "ready" ? policyLoad.policy : undefined;
   const [document, setDocument] = React.useState<PolicyDocument | null>(null);
   const [ageConfirmed, setAgeConfirmed] = React.useState(false);
   const [agreementConfirmed, setAgreementConfirmed] = React.useState(false);
   const [opening, setOpening] = React.useState(false);
-  const [joiningBrowser, setJoiningBrowser] = React.useState(false);
+  const [joinStep, setJoinStep] = React.useState<JoinStep>(null);
+  const joiningBrowser = joinStep !== null;
   const [newName, setNewName] = React.useState("");
-  const [browserJoinError, setBrowserJoinError] = React.useState<string | null>(
+  const [joinProblem, setJoinProblem] = React.useState<InviteProblem | null>(
     null,
+  );
+  /** A passkey account made here and now in the community: its recovery key is offered before going on. */
+  const [joinedWithPasskey, setJoinedWithPasskey] = React.useState<
+    string | null
+  >(null);
+  /** The passkey account made on this page, kept if the first join attempt failed so a retry still offers its key. */
+  const madePasskeyAccount = React.useRef<string | null>(null);
+  // The passkey session lives outside React: re-render when it is unlocked or made, here or anywhere else.
+  const [, setPasskeySession] = React.useState(0);
+  React.useEffect(
+    () => onPasskeySessionChange(() => setPasskeySession((n) => n + 1)),
+    [],
   );
   const [downloadUrl, setDownloadUrl] = React.useState(BUZZ_RELEASES_URL);
   const [needsMacChoice, setNeedsMacChoice] = React.useState(false);
@@ -86,32 +122,61 @@ export function InvitePage({ code }: { code: string }) {
     };
   }, []);
 
-  React.useEffect(() => {
-    fetch("/api/join-policy")
+  // Only the newest load may set the terms: "Try again" and a reload after the terms changed each start a new one.
+  const policyGeneration = React.useRef(0);
+  const loadPolicy = React.useCallback(() => {
+    const mine = ++policyGeneration.current;
+    setPolicyLoad({ status: "loading" });
+    fetch("/api/join-policy", {
+      signal: AbortSignal.timeout(POLICY_TIMEOUT_MS),
+    })
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const config = (await response.json()) as { policy?: JoinPolicy };
-        setPolicy(config.policy ?? null);
+        return config.policy ?? null;
       })
-      .catch(() => setPolicy(undefined));
+      .then(
+        (loaded) => {
+          if (mine === policyGeneration.current)
+            setPolicyLoad({ status: "ready", policy: loaded });
+        },
+        (error: unknown) => {
+          if (mine === policyGeneration.current)
+            setPolicyLoad({
+              status: "failed",
+              detail: error instanceof Error ? error.message : String(error),
+            });
+        },
+      );
   }, []);
+  React.useEffect(() => {
+    loadPolicy();
+    return () => {
+      policyGeneration.current += 1;
+    };
+  }, [loadPolicy]);
 
   const acceptPolicy = async (): Promise<string | undefined> => {
     if (!policy) return undefined;
-    const response = await fetch("/api/invites/accept-policy", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code,
-        policy_version: policy.version,
-        age_confirmed: ageConfirmed,
-      }),
+    return acceptJoinPolicy({
+      code,
+      version: policy.version,
+      ageConfirmed,
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return ((await response.json()) as { receipt: string }).receipt;
+  };
+
+  /** Say why joining did not work; terms that changed are loaded again, and their boxes asked for again. */
+  const showProblem = (problem: InviteProblem) => {
+    setJoinProblem(problem);
+    if (problem.reloadTerms) {
+      setAgeConfirmed(false);
+      setAgreementConfirmed(false);
+      loadPolicy();
+    }
   };
 
   const openInvite = async () => {
+    setJoinProblem(null);
     setOpening(true);
     try {
       const receipt = await acceptPolicy();
@@ -120,57 +185,98 @@ export function InvitePage({ code }: { code: string }) {
         code,
         policyReceipt: receipt,
       });
+    } catch (error) {
+      showProblem(inviteProblem(error));
     } finally {
       setOpening(false);
     }
   };
 
+  /**
+   * Agree to the terms, claim the invite with the account this browser signs with, and point the browser at the
+   * community. A name typed here is saved after the join (a private community would refuse a profile from a stranger);
+   * if the server does not take it now, it is kept on this device and saved the next time the app opens, and the join
+   * stands either way.
+   */
+  const claimAndJoin = async (name: string) => {
+    setJoinStep("joining");
+    const receipt = await acceptPolicy();
+    await claimInviteInBrowser(code, relay, receipt);
+    // From now on this browser is in the community the invite was for.
+    setStoredRelayWsUrl(relay);
+    if (name) await saveNewProfile({ name });
+  };
+
+  // A passkey account's key exists only while its passkey is unlocked, and nothing else on this page unlocks it.
+  const passkeyLocked = hasPasskeyIdentity() && !isPasskeyActive();
+
   const joinInBrowser = async () => {
-    setBrowserJoinError(null);
-    setJoiningBrowser(true);
+    setJoinProblem(null);
+    if (passkeyLocked) {
+      setJoinStep("passkey");
+      try {
+        await signInPasskeyIdentity();
+      } catch (error) {
+        setJoinProblem(problemText(passkeyUnlockProblem(error)));
+        setJoinStep(null);
+        return;
+      }
+    }
     try {
-      const receipt = await acceptPolicy();
-      await claimInviteInBrowser(code, relay, receipt);
-      // From now on this browser is in the community the invite was for.
-      setStoredRelayWsUrl(relay);
+      // A name typed while making an account here, before a join that failed, is still theirs to save.
+      await claimAndJoin(newName.trim());
+      if (madePasskeyAccount.current)
+        setJoinedWithPasskey(madePasskeyAccount.current);
+      else window.location.assign("/");
+    } catch (error) {
+      showProblem(inviteProblem(error));
+    } finally {
+      setJoinStep(null);
+    }
+  };
+
+  /** For someone with no account yet: make one in this browser, then join with it. */
+  const createAccountAndJoin = async () => {
+    setJoinProblem(null);
+    try {
+      getOrCreateIdentity();
+      await claimAndJoin(newName.trim());
       window.location.assign("/");
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not claim this invite.";
-      setBrowserJoinError(inviteClaimErrorMessage(message));
+      showProblem(inviteProblem(error));
     } finally {
-      setJoiningBrowser(false);
+      setJoinStep(null);
     }
   };
 
   /**
-   * For someone with no account yet: make one in this browser, join with it, and then say who they are. The name is
-   * published only once they are a member (a private community would refuse a profile from a stranger), and a refused
-   * name never undoes the join.
+   * The same with a passkey for an account. A passkey signs in only in this browser, so once they are in, the
+   * recovery key that works everywhere is offered while the passkey is still unlocked.
    */
-  const createAccountAndJoin = async () => {
-    setBrowserJoinError(null);
-    setJoiningBrowser(true);
+  const createPasskeyAndJoin = async () => {
+    setJoinProblem(null);
+    setJoinStep("passkey");
+    let account: string;
     try {
-      getOrCreateIdentity();
-      const receipt = await acceptPolicy();
-      await claimInviteInBrowser(code, relay, receipt);
-      setStoredRelayWsUrl(relay);
-      const name = newName.trim();
-      if (name) {
-        try {
-          await publishProfile({ name });
-        } catch {
-          // They are in; they can name themselves later.
-        }
-      }
-      window.location.assign("/");
+      account = (await createPasskeyIdentity(newName.trim() || "Creaton user"))
+        .pubkey;
+      madePasskeyAccount.current = account;
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not claim this invite.";
-      setBrowserJoinError(inviteClaimErrorMessage(message));
+      setJoinProblem(
+        problemText(
+          passkeyCreateProblem(error, "create an account without one"),
+        ),
+      );
+      setJoinStep(null);
+      return;
+    }
+    try {
+      await claimAndJoin(newName.trim());
+      setJoinedWithPasskey(account);
+    } catch (error) {
+      showProblem(inviteProblem(error));
     } finally {
-      setJoiningBrowser(false);
+      setJoinStep(null);
     }
   };
 
@@ -179,6 +285,8 @@ export function InvitePage({ code }: { code: string }) {
   // extension alone hid the button from browser users entirely.
   const browserSigningAvailable =
     hasNip07Provider() || hasStoredIdentity() || hasPasskeyIdentity();
+  const busyLabel =
+    joinStep === "passkey" ? "Waiting for your passkey…" : "Joining…";
   const disabled =
     policy === undefined ||
     opening ||
@@ -271,15 +379,73 @@ export function InvitePage({ code }: { code: string }) {
             </div>
           </div>
 
+          {policyLoad.status === "loading" ? (
+            <p
+              className="mt-9 text-sm text-black/60"
+              data-testid="invite-policy-loading"
+              role="status"
+            >
+              Loading this server's terms…
+            </p>
+          ) : policyLoad.status === "failed" ? (
+            <div
+              className="mt-9 w-full max-w-md rounded-xl border border-black/10 bg-black/[0.03] p-4 text-left"
+              data-testid="invite-policy-failed"
+            >
+              <p className="text-sm text-black" role="alert">
+                Couldn't load this server's terms. You need to agree to them
+                before you join.
+              </p>
+              <Button
+                className="mt-3 h-9 border border-black bg-white px-4 text-black hover:bg-black/5"
+                data-testid="invite-policy-retry"
+                onClick={loadPolicy}
+              >
+                Try again
+              </Button>
+              <details className="mt-3 text-xs text-black/60">
+                <summary className="cursor-pointer">Technical details</summary>
+                <p className="mt-1 break-words font-mono">
+                  {policyLoad.detail}
+                </p>
+              </details>
+            </div>
+          ) : null}
+
           <div className="mt-9 w-full max-w-md space-y-2">
             {browserSigningAvailable ? (
-              <Button
-                className="h-10 w-full bg-black text-white hover:bg-black/90 focus-visible:ring-black disabled:cursor-not-allowed disabled:bg-black/30 disabled:text-white/70"
-                disabled={disabled}
-                onClick={joinInBrowser}
-              >
-                {joiningBrowser ? "Joining…" : "Join in browser"}
-              </Button>
+              <>
+                {passkeyLocked ? (
+                  <p
+                    className="text-sm text-black/70"
+                    data-testid="invite-passkey-locked"
+                    id="invite-passkey-locked"
+                  >
+                    Your account in this browser uses a passkey. Unlock it to
+                    join.
+                  </p>
+                ) : null}
+                <Button
+                  aria-describedby={
+                    passkeyLocked ? "invite-passkey-locked" : undefined
+                  }
+                  className="h-10 w-full bg-black text-white hover:bg-black/90 focus-visible:ring-black disabled:cursor-not-allowed disabled:bg-black/30 disabled:text-white/70"
+                  data-testid="invite-join"
+                  disabled={disabled}
+                  onClick={joinInBrowser}
+                >
+                  {joiningBrowser ? (
+                    busyLabel
+                  ) : passkeyLocked ? (
+                    <>
+                      <Fingerprint aria-hidden className="h-4 w-4" />
+                      Unlock with your passkey
+                    </>
+                  ) : (
+                    "Join in browser"
+                  )}
+                </Button>
+              </>
             ) : (
               <div
                 className="space-y-2 text-left"
@@ -308,8 +474,38 @@ export function InvitePage({ code }: { code: string }) {
                   disabled={disabled}
                   onClick={createAccountAndJoin}
                 >
-                  {joiningBrowser ? "Joining…" : "Create an account and join"}
+                  {joinStep === "joining"
+                    ? busyLabel
+                    : "Create an account and join"}
                 </Button>
+                {passkeysAvailable() ? (
+                  <>
+                    <Button
+                      aria-describedby="invite-passkey-note"
+                      className="h-10 w-full border border-black bg-white text-black hover:bg-black/5 disabled:cursor-not-allowed disabled:border-black/30 disabled:text-black/40"
+                      data-testid="invite-passkey-create"
+                      disabled={disabled}
+                      onClick={createPasskeyAndJoin}
+                    >
+                      {joinStep === "passkey" ? (
+                        busyLabel
+                      ) : (
+                        <>
+                          <Fingerprint aria-hidden className="h-4 w-4" />
+                          Create with a passkey
+                        </>
+                      )}
+                    </Button>
+                    <p
+                      className="text-center text-xs text-black/60"
+                      id="invite-passkey-note"
+                    >
+                      Sign in here with your fingerprint, face or device PIN. On
+                      another device you need your recovery key, which you can
+                      save next.
+                    </p>
+                  </>
+                ) : null}
               </div>
             )}
             {!DESKTOP_APP ? null : policy === null ? (
@@ -330,10 +526,22 @@ export function InvitePage({ code }: { code: string }) {
                 Accept invite in Creaton
               </Button>
             )}
-            {browserJoinError ? (
-              <p className="text-sm text-red-700" role="alert">
-                {browserJoinError}
-              </p>
+            {joinProblem ? (
+              <div className="text-left" data-testid="invite-join-problem">
+                <p className="text-sm text-red-700" role="alert">
+                  {joinProblem.text}
+                </p>
+                {joinProblem.detail ? (
+                  <details className="mt-1 text-xs text-black/60">
+                    <summary className="cursor-pointer">
+                      Technical details
+                    </summary>
+                    <p className="mt-1 break-words font-mono">
+                      {joinProblem.detail}
+                    </p>
+                  </details>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </div>
@@ -442,6 +650,15 @@ export function InvitePage({ code }: { code: string }) {
           </div>
         </div>
       )}
+
+      {joinedWithPasskey ? (
+        <RecoveryKeyDialog
+          account={joinedWithPasskey}
+          closeLabel="Continue"
+          intro="You're in."
+          onClose={() => window.location.assign("/")}
+        />
+      ) : null}
 
       {document && (
         <div

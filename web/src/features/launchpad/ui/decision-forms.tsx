@@ -23,6 +23,8 @@ import {
 } from "../lib/market-actions";
 import { decodeWord, idLabel } from "../lib/work";
 import type { WorkSnapshot } from "../lib/work-read";
+import type { DecisionsSnapshot } from "../lib/decisions";
+import { awardsUnderVote } from "../lib/dao-overview";
 import { useAllowance } from "./AllowanceNote";
 import {
   PeoplePicker,
@@ -47,6 +49,8 @@ export interface FormContext {
   currencyDecimals: number | null;
   currencySymbol: string;
   work: WorkSnapshot | undefined;
+  /** The DAO's decisions as read, so a form does not offer what an open vote already does. */
+  decisions?: DecisionsSnapshot;
   /** Why the work budgets could not be read, when they could not; null while they are still being read. */
   workError?: string | null;
   /** The DAO's voting policy and its Shares. */
@@ -376,14 +380,20 @@ export function ProjectForm({
 }
 
 export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
+  // Work an open vote would already award is left out: a second vote for it could only fail when it runs.
+  const voting = awardsUnderVote(ctx.decisions);
   const awardable = (ctx.work?.mandates ?? []).flatMap((mandate) =>
     mandate.claims
       .filter(
         (c) =>
-          c.record.status === "Paid" && c.project !== null && !c.sharesAwarded,
+          c.record.status === "Paid" &&
+          c.project !== null &&
+          !c.sharesAwarded &&
+          !voting.has(`${mandate.address}:${c.id}`.toLowerCase()),
       )
       .map((claim) => ({ mandate, claim })),
   );
+  const inVote = voting.size > 0;
   const [which, setWhich] = useState("");
   const [shares, setShares] = useState("");
   const key = (a: (typeof awardable)[number]) =>
@@ -435,9 +445,10 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
       </p>
       {awardable.length === 0 ? (
         <p className="text-sm" data-testid="award-none">
-          No approved work is waiting for an award. Work can be awarded once its
-          work area&apos;s manager has accepted it, its reviewers approve it,
-          and the waiting period has passed.
+          No approved work is waiting for an award.{" "}
+          {inVote
+            ? "Work already in an open award vote is not listed again."
+            : "Work can be awarded once its work area's manager has accepted it, its reviewers approve it, and the waiting period has passed."}
         </p>
       ) : (
         <SelectField

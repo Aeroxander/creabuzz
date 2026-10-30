@@ -20,6 +20,14 @@ export function whenText(unix: number): string {
   });
 }
 
+/** What a server failure with no words for people (`error: database error: down`) is said as. */
+export const SERVER_FAILED_TEXT =
+  "The server couldn't do that just now. Try again.";
+
+/** What someone not on an invite-only server's list is told, wherever the server refuses them. */
+export const INVITE_ONLY_TEXT =
+  "This server is invite-only. Open the invite link you were sent.";
+
 /**
  * The restrictions the server puts on a person (`buzz-relay` ingest, auth and board moderation), each said in plain
  * words with what still works. The server's own wording is the contract: a change there must change these.
@@ -41,6 +49,12 @@ const RESTRICTIONS: [RegExp, (match: RegExpExecArray) => string][] = [
     () =>
       "This thread is locked. Only the board's moderators, owners and admins can reply.",
   ],
+  // An invite-only server refuses someone not on its list: on the socket (`handlers/auth.rs`) and over HTTP
+  // (`api/mod.rs`, whose JSON `error` code is what the app passes on).
+  [
+    /^(restricted: not a relay member|relay_membership_required)$/,
+    () => INVITE_ONLY_TEXT,
+  ],
 ];
 
 /** A restriction on the reader in plain words, or null when `message` is not one. */
@@ -54,6 +68,14 @@ export function restrictionText(message: string): string | null {
 }
 
 /**
+ * A refusal said in plain words, or null when it has none and the server's own wording is all there is: a restriction
+ * on the reader (a ban, a timeout, an invite-only server) or the general request limit.
+ */
+export function plainRefusalText(message: string): string | null {
+  return restrictionText(message) ?? requestLimitText(message);
+}
+
+/**
  * What to show when the server refuses a write: a restriction on the reader (a ban, a timeout, a board mute, a locked
  * thread) and a rate limit are said in plain words; any other reason is passed on as the server gave it, and no reason
  * at all becomes `failure`.
@@ -63,10 +85,8 @@ export function refusalText(
   failure: string,
 ): string {
   if (!message) return failure;
-  const restricted = restrictionText(message);
-  if (restricted !== null) return restricted;
-  const busy = requestLimitText(message);
-  if (busy !== null) return busy;
+  const plain = plainRefusalText(message);
+  if (plain !== null) return plain;
   const limited = /^rate-limited:\s*(.+)$/s.exec(message.trim());
   return limited ? asSentence(limited[1]) : message;
 }

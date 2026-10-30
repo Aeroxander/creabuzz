@@ -1,5 +1,13 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { lazy, Suspense, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   FEED_PERIOD_LABELS,
@@ -11,9 +19,21 @@ import { HomeYours } from "@/features/feed/ui/HomeYours";
 import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 import { KIND_TEXT_NOTE } from "@/shared/constants/kinds";
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { relayWsUrl } from "@/shared/lib/relay-url";
+import { communityHostName, relayWsUrl } from "@/shared/lib/relay-url";
 import { QueryError } from "@/shared/ui/query-error";
 
+import {
+  freshLabel,
+  freshOffered,
+  lastVisitAtLoad,
+  lastVisitDivider,
+  newestAt,
+  notMuted,
+  writeLastVisit,
+} from "../lib/home-fresh";
+import { useHomeFresh } from "../use-home-fresh";
+import { useMutedSet } from "../use-social-actions";
+import { NewPostsBar } from "./HomeFreshParts";
 import { PostComposer } from "./PostComposer";
 import { PostList } from "./PostList";
 import { EmptyState, TimelineSkeleton } from "./Status";
@@ -72,6 +92,65 @@ export function SocialHomePage() {
     enabled: tab === "everyone" || (tab === "following" && following.isSuccess),
   });
 
+  // New posts since Home was opened wait behind "N new posts. Show" (Hot, New and Following; Top is a period's best).
+  const showsTimeline =
+    (tab === "everyone" && sort !== "top") ||
+    (tab === "following" && following.isSuccess);
+  const boardIds = useMemo(
+    () => new Set(timeline.boards.names.keys()),
+    [timeline.boards.names],
+  );
+  const check = useHomeFresh({
+    tab: tab === "following" ? "following" : "everyone",
+    authors,
+    items: timeline.items,
+    boards: boardIds,
+    enabled: showsTimeline && !timeline.isLoading && !timeline.error,
+  });
+  const listTop = useRef<HTMLElement>(null);
+  const [shownNote, setShownNote] = useState<string | null>(null);
+  const { showFresh } = timeline;
+  const { fresh: offered, restart } = check;
+  const showNew = useCallback(() => {
+    const fresh = offered;
+    showFresh(fresh);
+    if (fresh.capped) restart();
+    setShownNote(
+      fresh.capped
+        ? "Showing the newest posts."
+        : `${freshLabel(fresh)} shown at the top.`,
+    );
+    // The button goes away with the posts it offered: the reader is taken to them, and keyboard focus with them.
+    listTop.current?.scrollIntoView({ block: "start" });
+    listTop.current?.focus({ preventScroll: true });
+  }, [offered, showFresh, restart]);
+  // The note about the last Show is said once: new posts on offer replace it, and it does not come back after them.
+  useEffect(() => {
+    if (freshOffered(offered)) setShownNote(null);
+  }, [offered]);
+
+  // Where the reader's last visit ended, read once per page load, and drawn as a line in the newest-first orders (New and
+  // Following), where the newest post shown is the one at the top, so it is the one they saw.
+  const server = communityHostName();
+  const lastVisit = me ? lastVisitAtLoad(server, me) : null;
+  const newestFirst =
+    tab === "following" || (tab === "everyone" && sort === "new");
+  const muted = useMutedSet();
+  const lastVisitBefore = useMemo(
+    () =>
+      newestFirst
+        ? lastVisitDivider(timeline.items.filter(notMuted(muted)), lastVisit)
+        : null,
+    [newestFirst, timeline.items, muted, lastVisit],
+  );
+  useEffect(() => {
+    if (!me || !newestFirst || timeline.isLoading) return;
+    // The newest post drawn: a muted person's post is not shown, so it is not what the reader saw.
+    const newest = newestAt(timeline.items.filter(notMuted(muted)));
+    if (newest !== null)
+      writeLastVisit(server, me, newest, Math.floor(Date.now() / 1000));
+  }, [me, newestFirst, timeline.isLoading, timeline.items, muted, server]);
+
   return (
     <SocialShell>
       <PageBar title="Home">
@@ -89,6 +168,15 @@ export function SocialHomePage() {
           onSort={setSort}
           period={period}
           sort={sort}
+        />
+      ) : null}
+      {showsTimeline ? (
+        <NewPostsBar
+          failed={check.failed}
+          fresh={check.fresh}
+          onRetry={check.retry}
+          onShow={showNew}
+          shown={shownNote}
         />
       ) : null}
       {tab === "boards" ? (
@@ -138,13 +226,21 @@ export function SocialHomePage() {
           Be the first to post.
         </EmptyState>
       ) : (
-        <PostList
-          boards={timeline.boards}
-          hasMore={timeline.hasMore}
-          items={timeline.items}
-          loadingMore={timeline.loadingMore}
-          onLoadMore={timeline.loadMore}
-        />
+        <section
+          aria-label="Posts"
+          className="scroll-mt-36 outline-none"
+          ref={listTop}
+          tabIndex={-1}
+        >
+          <PostList
+            boards={timeline.boards}
+            hasMore={timeline.hasMore}
+            items={timeline.items}
+            lastVisitBefore={lastVisitBefore}
+            loadingMore={timeline.loadingMore}
+            onLoadMore={timeline.loadMore}
+          />
+        </section>
       )}
     </SocialShell>
   );

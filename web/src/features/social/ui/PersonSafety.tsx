@@ -8,6 +8,7 @@ import { Flag, VolumeX } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import type { ReportSetting } from "@/features/moderation/lib/report";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { Button } from "@/shared/ui/button";
 
@@ -56,10 +57,13 @@ export function ReportPersonButton({
   pubkey,
   name,
   testId = "person-report",
+  setting = "community",
 }: {
   pubkey: string;
   name: string;
   testId?: string;
+  /** "conversation" from a private conversation: the report says the messages are not sent with it. */
+  setting?: Extract<ReportSetting, "community" | "conversation">;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -79,6 +83,7 @@ export function ReportPersonButton({
       {open ? (
         <ReportDialog
           onClose={() => setOpen(false)}
+          setting={setting}
           target={{ kind: "person", pubkey }}
           what={name}
         />

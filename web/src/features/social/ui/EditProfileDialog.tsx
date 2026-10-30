@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
+import { ProfilePictureField } from "@/features/identity/ui/ProfilePictureField";
+import { pictureLinkProblem } from "@/features/identity/lib/picture-check";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 
@@ -15,7 +17,6 @@ const FIELDS: {
   { key: "display_name", label: "Display name" },
   { key: "name", label: "Username" },
   { key: "about", label: "Bio", multiline: true },
-  { key: "picture", label: "Avatar link" },
   { key: "banner", label: "Banner link" },
   { key: "website", label: "Website" },
 ];
@@ -46,6 +47,8 @@ export function EditProfileDialog({
   const ref = useRef<HTMLDialogElement>(null);
   const [values, setValues] = useState(() => initial(profile));
   const update = useUpdateProfile();
+  const [pictureUploading, setPictureUploading] = useState(false);
+  const pictureProblem = pictureLinkProblem(values.picture, profile?.picture);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -58,7 +61,8 @@ export function EditProfileDialog({
     }
   }, [open, profile]);
 
-  const save = () =>
+  const save = () => {
+    if (pictureUploading || pictureProblem) return;
     update.mutate(values, {
       onSuccess: () => {
         toast.success("Profile updated");
@@ -71,6 +75,7 @@ export function EditProfileDialog({
             : "Couldn't save your profile.",
         ),
     });
+  };
 
   return (
     <dialog
@@ -94,7 +99,9 @@ export function EditProfileDialog({
           <Button
             className="rounded-full px-5 font-semibold"
             data-testid="social-edit-profile-save"
-            disabled={update.isPending}
+            disabled={
+              update.isPending || pictureUploading || pictureProblem !== null
+            }
             size="sm"
             type="submit"
           >
@@ -102,6 +109,24 @@ export function EditProfileDialog({
           </Button>
         </div>
         <div className="max-h-[70dvh] space-y-4 overflow-y-auto p-4">
+          <fieldset className="text-sm">
+            <legend className="text-black/60 dark:text-white/60">
+              Picture
+            </legend>
+            <div className="mt-1">
+              {open ? (
+                <ProfilePictureField
+                  idPrefix="social-profile-picture"
+                  onChange={(picture) =>
+                    setValues((current) => ({ ...current, picture }))
+                  }
+                  onUploadingChange={setPictureUploading}
+                  saved={profile?.picture}
+                  value={values.picture}
+                />
+              ) : null}
+            </div>
+          </fieldset>
           {FIELDS.map(({ key, label, multiline }) => (
             <div className="text-sm" key={key}>
               <label

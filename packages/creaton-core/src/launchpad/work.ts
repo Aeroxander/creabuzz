@@ -33,12 +33,15 @@ export const SIGNATURES = {
   challengeWindow: "challengeWindow()",
   approvalCount: "approvalCount(bytes32)",
   objectionCount: "objectionCount(bytes32)",
+  approvalsAtSubmit: "approvalsAtSubmit(bytes32)",
+  objectionsAtSubmit: "objectionsAtSubmit(bytes32)",
   quorum: "quorum()",
   reviewer: "verifiers(address)",
   attest: "attest(bytes32,bool)",
   submitClaim: "submitClaim(bytes32,uint256,uint256,bytes32)",
   setCheck: "setCheck(bytes32,bytes32)",
   settle: "settle(bytes32)",
+  expire: "expire(bytes32)",
   payout: "payout(bytes32)",
   bind: "fundMilestone(bytes32,bytes32,address)",
   bindMilestone: "bindMilestone(bytes32)",
@@ -466,20 +469,94 @@ export interface ClaimView {
   record: ClaimRecord;
   /** The project it is bound to, or null while it is not. */
   project: string | null;
+  /**
+   * Approvals and objections that count toward `ClaimStake.settle`: only those made after the claim was submitted (the
+   * contract keeps the counts at submission and subtracts them).
+   */
   approvals: number;
   objections: number;
+  /**
+   * Verdicts given on this claim's id before it was submitted. They do not count toward a verdict, and the reviewers
+   * who gave them cannot answer again. Absent when there were none.
+   */
+  earlyVerdicts?: number;
   quorum: number;
   sharesAwarded: boolean;
+  /**
+   * How many reviewers are on the panel, when the panel could be read: with it, a split that nobody left can break is
+   * told apart from one still waiting on someone. Null or absent when it is not known.
+   */
+  panel?: number | null;
 }
 
 /** What happens to a claim next, and who does it. */
 export type NextStep =
   | { kind: "bind"; who: "manager" | "contributor"; text: string }
   | { kind: "review"; who: "reviewer"; text: string }
-  | { kind: "settle"; who: "anyone"; text: string }
+  /** Enough reviewers agreed one way: anyone can settle it, which approves it or turns it down. */
+  | {
+      kind: "settle";
+      who: "anyone";
+      verdict: "approved" | "turned-down";
+      text: string;
+    }
+  /**
+   * No work area that is open now uses its words, so no manager can accept it: its contributor can put a work area's
+   * words on it (`setCheck`, while no area holds it and nobody has reviewed it).
+   */
+  | { kind: "words"; who: "contributor"; text: string }
+  /** Nobody settled it before its deadline: anyone can close it as lapsed, which returns any deposit. */
+  | { kind: "expire"; who: "anyone"; text: string }
+  /** The reviewers are split and nobody is left to break it: it waits for its deadline (`lapsesAt`, unix seconds). */
+  | { kind: "stuck"; who: "nobody"; text: string; lapsesAt: number }
   | { kind: "payout"; who: "contributor"; text: string }
   | { kind: "award"; who: "dao"; text: string }
   | { kind: "none"; who: "nobody"; text: string };
+
+/**
+ * Whether a split vote can still be decided: with `panel` reviewers on the panel, those who have not answered could
+ * still bring either side to the quorum. Unknown panel sizes are never called stuck.
+ */
+export function cannotReachVerdict(
+  claim: Pick<
+    ClaimView,
+    "approvals" | "objections" | "quorum" | "panel" | "earlyVerdicts"
+  >,
+): boolean {
+  const panel = claim.panel;
+  if (panel === null || panel === undefined || panel <= 0) return false;
+  if (claim.quorum <= 0) return false;
+  // A reviewer who answered before the claim was submitted has used their one answer on a verdict that does not count.
+  const left = Math.max(
+    0,
+    panel - claim.approvals - claim.objections - (claim.earlyVerdicts ?? 0),
+  );
+  return (
+    claim.approvals + left < claim.quorum &&
+    claim.objections + left < claim.quorum
+  );
+}
+
+/**
+ * Whether anyone can close an open claim as lapsed now: what `ClaimStake.expire` checks (still open, and its deadline is
+ * past: `block.timestamp > expiresAt`).
+ */
+export function canExpire(
+  record: Pick<ClaimRecord, "status" | "expiresAt">,
+  now: number,
+): boolean {
+  return (
+    record.status === "Open" && record.expiresAt > 0 && now > record.expiresAt
+  );
+}
+
+/** "1 of 2 approvals", and how many turned it down when any did. */
+function reviewCount(claim: ClaimView): string {
+  const approvals = `${claim.approvals} of ${claim.quorum} approvals`;
+  return claim.objections > 0
+    ? `${approvals}, ${claim.objections} turned it down`
+    : approvals;
+}
 
 /**
  * Whether `wallet` can accept `claim` for review in `project` right now: what `TreasuryMandate.fundMilestone` checks
@@ -518,7 +595,40 @@ export function nextStep(
 ): NextStep {
   const { record } = claim;
   switch (record.status) {
-    case "Open":
+    case "Open": {
+      // What the contract's `settle` checks: enough approvals approves it, enough objections turns it down. It does not
+      // look at the deadline, so a claim that reached a verdict can be settled even after it.
+      if (claim.project !== null && claim.quorum !== 0) {
+        if (claim.approvals >= claim.quorum) {
+          return {
+            kind: "settle",
+            who: "anyone",
+            verdict: "approved",
+            text: "Enough reviewers approved it. Anyone can finish it.",
+          };
+        }
+        if (claim.objections >= claim.quorum) {
+          return {
+            kind: "settle",
+            who: "anyone",
+            verdict: "turned-down",
+            text: "Enough reviewers turned it down. Anyone can close it as turned down.",
+          };
+        }
+      }
+      // Past its deadline anyone can close it as lapsed (`expire`, which returns any deposit). The reviewers can still
+      // answer until someone does, so a claim that can still reach a verdict keeps its review step, and the pages offer
+      // the close beside it (`canExpire`).
+      const lapsed = canExpire(record, now);
+      const lapsedStep: NextStep = {
+        kind: "expire",
+        who: "anyone",
+        text:
+          record.stake > 0n
+            ? "Nobody finished its review in time, so it lapsed. Anyone can close it, and the deposit goes back to the contributor."
+            : "Nobody finished its review in time, so it lapsed. Anyone can close it.",
+      };
+      if (claim.project === null && lapsed) return lapsedStep;
       if (claim.project === null && milestonePanel) {
         return {
           kind: "bind",
@@ -533,18 +643,24 @@ export function nextStep(
           text: "Waiting for a work area's manager to accept it for review.",
         };
       }
-      if (claim.quorum !== 0 && claim.approvals >= claim.quorum) {
-        return {
-          kind: "settle",
-          who: "anyone",
-          text: "Enough reviewers approved it. Anyone can finish it.",
-        };
+      if (cannotReachVerdict(claim)) {
+        return lapsed
+          ? lapsedStep
+          : {
+              kind: "stuck",
+              who: "nobody",
+              lapsesAt: record.expiresAt,
+              text: `The reviewers are split (${reviewCount(claim)}) and nobody is left to decide. It cannot be approved or turned down; once its deadline passes, anyone can close it.`,
+            };
       }
       return {
         kind: "review",
         who: "reviewer",
-        text: `Waiting for reviewers: ${claim.approvals} of ${claim.quorum} approvals.`,
+        text: lapsed
+          ? `Its deadline has passed (${reviewCount(claim)}). Reviewers can still answer, or anyone can close it as lapsed.`
+          : `Waiting for reviewers: ${reviewCount(claim)}.`,
       };
+    }
     case "Approved": {
       const open = record.releasedAt + challengeWindow;
       // A claim that asked for no money is still taken once, to finish it: that is what makes it awardable.
@@ -595,6 +711,19 @@ export function nextStep(
         who: "nobody",
         text: "Frozen. The DAO decides what happens to it.",
       };
+    case "Rejected":
+      return {
+        kind: "none",
+        who: "nobody",
+        // The contract zeroes the stake when it settles, so whether there was a deposit is not readable here.
+        text: "Turned down by the reviewers. To try again, fix the work and submit it under a new name.",
+      };
+    case "Expired":
+      return {
+        kind: "none",
+        who: "nobody",
+        text: "Lapsed: nobody finished its review in time. Any deposit went back to the contributor.",
+      };
     default:
       return {
         kind: "none",
@@ -602,4 +731,44 @@ export function nextStep(
         text: "Closed. Nothing more happens.",
       };
   }
+}
+
+/**
+ * {@link nextStep}, told about the budget's work areas: a claim waiting for a manager whose words no open work area uses
+ * waits on nobody, so it says that instead (the second half of the "Not sure yet" check the submit form makes). While the
+ * budget has no open work area at all it still waits for one, and keeps the manager's step.
+ */
+export function claimStep(
+  claim: ClaimView,
+  mandate: {
+    challengeWindow: number;
+    isMilestonePanel: boolean;
+    closed: boolean;
+    expiresAt: number;
+    projects: readonly {
+      record: Pick<ProjectRecord, "expiresAt" | "checkHash">;
+    }[];
+  },
+  now: number,
+): NextStep {
+  const step = nextStep(
+    claim,
+    now,
+    mandate.challengeWindow,
+    mandate.isMilestonePanel,
+  );
+  if (step.kind !== "bind" || step.who !== "manager") return step;
+  // Once a reviewer has answered, the words are locked (ClaimStake.setCheck), so a different step would mislead.
+  if (claim.approvals + claim.objections + (claim.earlyVerdicts ?? 0) > 0)
+    return step;
+  if (mandate.closed || now >= mandate.expiresAt) return step;
+  const open = mandate.projects.filter((p) => now < p.record.expiresAt);
+  if (open.length === 0) return step;
+  const words = claim.record.checkHash.toLowerCase();
+  if (open.some((p) => p.record.checkHash.toLowerCase() === words)) return step;
+  return {
+    kind: "words",
+    who: "contributor",
+    text: "Its words match no open work area, so no manager can accept it for review. Its contributor can submit it again under the same name and evidence, with a work area's words.",
+  };
 }

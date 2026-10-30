@@ -16,6 +16,7 @@ import type { MuteChoice, ThreadAction } from "../lib/board-moderation";
 import { type ModerateItem, ModerateMenu } from "./ModerateMenu";
 import { MuteDialog } from "./MuteDialog";
 import { ReasonDialog } from "./ReasonDialog";
+import { failureWords } from "@/shared/lib/readable-error";
 
 /** What the menu offers for a thread (a post only), as the server decides it for this reader. */
 export interface ThreadControls {
@@ -73,7 +74,7 @@ export function BoardModeration({
       .then(() => toast.success(done))
       .catch((error: unknown) =>
         toast.error("That did not go through", {
-          description: error instanceof Error ? error.message : String(error),
+          description: failureWords(error).text,
         }),
       );
   };
@@ -157,6 +158,7 @@ export function BoardModeration({
       {dialog === "report" ? (
         <ReportDialog
           onClose={() => setDialog(null)}
+          setting="board"
           target={{ kind: "message", eventId: id, authorPubkey: author }}
           what={`this ${noun}`}
         />

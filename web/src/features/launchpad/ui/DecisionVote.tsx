@@ -129,7 +129,7 @@ export function DecisionVote({
     >
       <p className="text-sm" data-testid="decision-vote-summary" role="status">
         {!account && !onBehalf.trim()
-          ? "Connect your wallet to vote."
+          ? "Sign in with your passkey or connect a wallet to vote."
           : allocation.isError
             ? "Your Shares could not be read. Check the connection and try again."
             : !data
@@ -215,7 +215,7 @@ export function DecisionVote({
           Vote for someone who gave you their vote
         </summary>
         <label className="mt-1 block" htmlFor={`${field}-owner`}>
-          Their wallet address
+          Their account address
         </label>
         <input
           aria-invalid={

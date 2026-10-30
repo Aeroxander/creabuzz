@@ -45,9 +45,11 @@ import {
   type OrgBudget,
   type SpendReceipt,
 } from "./lib/org-money";
+import { readRemovedLaunchIds } from "./lib/launch-removals";
 import {
   buildLaunches,
   launchCoordinate,
+  launchRemovals,
   parseScoreRoot,
   type Launch,
   type LaunchChat,
@@ -60,22 +62,27 @@ export const launchesQueryKey = ["launchpad", "launches"];
 async function fetchTombstones(
   coords: string[],
   ids: string[] = [],
-): Promise<{ coordinates: Set<string>; deletedIds: Set<string> }> {
-  const out = { coordinates: new Set<string>(), deletedIds: new Set<string>() };
+): Promise<{
+  coordinates: Map<string, number>;
+  deletedIds: Set<string>;
+}> {
+  const removals: NostrEvent[] = [];
   for (let i = 0; i < coords.length; i += 100) {
     const group = coords.slice(i, i + 100);
     if (group.length === 0) continue;
-    const events = await queryEvents(relayWsUrl(), {
-      kinds: [5],
-      "#a": group,
-      limit: 200,
-    });
-    for (const event of events) {
-      for (const tag of event.tags) {
-        if (tag[0] === "a" && tag[1]) out.coordinates.add(tag[1]);
-      }
-    }
+    removals.push(
+      ...(await queryEvents(relayWsUrl(), {
+        kinds: [5],
+        "#a": group,
+        limit: 200,
+      })),
+    );
   }
+  // By coordinate and time, the author's own only: a record published again after its removal shows again.
+  const out = {
+    coordinates: launchRemovals(removals),
+    deletedIds: new Set<string>(),
+  };
   // NIP-09 `e`-tag tombstones hide individual mirrors — an agent-draft's
   // Reject disposal (persona-drafting-loop D5).
   for (let i = 0; i < ids.length; i += 100) {
@@ -110,8 +117,33 @@ export async function fetchLaunches(): Promise<Launch[]> {
   const tombstones =
     coords.length + mirrorIds.length > 0
       ? await fetchTombstones(coords, mirrorIds)
-      : { coordinates: new Set<string>(), deletedIds: new Set<string>() };
+      : {
+          coordinates: new Map<string, number>(),
+          deletedIds: new Set<string>(),
+        };
   return buildLaunches(events, tombstones.coordinates, tombstones.deletedIds);
+}
+
+/**
+ * The ids of `author`'s launch records that were ever taken off the list. `useLaunches` drops them, so a new project
+ * named like a removed one would otherwise get the removed one's id, and with it the removed project's DAO address.
+ * Read in pages (`readRemovedLaunchIds`), so the author's other deletions never hide an old removal.
+ */
+export async function fetchRemovedLaunchIds(author: string): Promise<string[]> {
+  return readRemovedLaunchIds(author, (filter) =>
+    queryEvents(relayWsUrl(), { ...filter }),
+  );
+}
+
+export function useRemovedLaunchIds(author: string | null) {
+  return useQuery({
+    queryKey: [...launchesQueryKey, "removed", author],
+    queryFn: () => fetchRemovedLaunchIds(author as string),
+    enabled: author !== null,
+    staleTime: 30_000,
+    // A project removed in another tab or on another device is seen when this one comes back into view.
+    refetchOnWindowFocus: true,
+  });
 }
 
 export function useLaunches() {
@@ -539,7 +571,11 @@ export function useDeleteLaunch() {
     mutationFn: (launch: Launch) =>
       publishMirror({
         kind: 5,
-        tags: [["a", launchCoordinate(launch.record.author, launch.record.id)]],
+        // NIP-09's `k` names the kind removed. The list is not read by it (removals made before it existed lack it).
+        tags: [
+          ["a", launchCoordinate(launch.record.author, launch.record.id)],
+          ["k", String(KIND_LAUNCH_RECORD)],
+        ],
         content: {},
       }),
     onSuccess: () => {

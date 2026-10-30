@@ -4,8 +4,6 @@
  * it under `node --test`.
  */
 
-import { verifyEvent } from "nostr-tools/pure";
-
 import {
   KIND_REPOST,
   KIND_TEXT_NOTE,
@@ -39,44 +37,30 @@ export function activityAt(row: Row): number {
 }
 
 /**
- * The note embedded in a repost's `content`, only when it is authentic: the
- * id must match the repost's `e` tag and the signature must verify. Anything
- * else is ignored and the original is fetched by id instead, so a forged
- * embed can never put words in someone's mouth.
+ * Ids of every reposted note on a page, to look up on the server. A repost carries a signed copy of the note, but that
+ * copy outlives the note: its author can delete it and a moderator can remove it, and the copy would keep showing it
+ * wherever it was reposted. So every original is read from the server, which no longer returns a deleted or removed
+ * note, and a repost is shown only with the server's copy. Bounded by the page: at most one id per repost read.
  */
-export function embeddedRepostTarget(repost: SignedEvent): SignedEvent | null {
-  const targetId = lastTagValue(repost.tags, "e");
-  if (!repost.content || !targetId) return null;
-  try {
-    const parsed = JSON.parse(repost.content) as SignedEvent;
-    return parsed.id === targetId && verifyEvent(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Ids of reposted notes that must be fetched because no authentic embed exists. */
-export function repostTargetsToFetch(events: readonly SignedEvent[]): string[] {
-  const have = new Set<string>();
-  const need = new Set<string>();
+export function repostTargetIds(events: readonly SignedEvent[]): string[] {
+  const ids = new Set<string>();
   for (const e of events) {
     if (e.kind !== KIND_REPOST) continue;
     const id = lastTagValue(e.tags, "e");
-    if (!id) continue;
-    if (embeddedRepostTarget(e)) have.add(id);
-    else need.add(id);
+    if (id) ids.add(id);
   }
-  return [...need].filter((id) => !have.has(id));
+  return [...ids];
 }
 
 /**
- * Rows from raw kind 1 / kind 6 events. `fetched` holds originals the caller
- * looked up for reposts without a usable embed. A note that surfaces several
- * times (its own post plus reposts) keeps only its newest appearance.
+ * Rows from raw kind 1 / kind 6 events. `originals` holds the reposted notes the server returned for
+ * `repostTargetIds`: a repost whose original is not there (deleted, removed, or never looked up) is left out, whatever
+ * its embedded copy says. A note that surfaces several times (its own post plus reposts) keeps only its newest
+ * appearance.
  */
 export function buildRows(
   events: readonly SignedEvent[],
-  fetched: ReadonlyMap<string, SignedEvent> = new Map(),
+  originals: ReadonlyMap<string, SignedEvent> = new Map(),
 ): Row[] {
   const rows: Row[] = [];
   const seen = new Set<string>();
@@ -85,7 +69,7 @@ export function buildRows(
     let repostedBy: Row["repostedBy"];
     if (e.kind === KIND_REPOST) {
       const id = lastTagValue(e.tags, "e") ?? "";
-      original = embeddedRepostTarget(e) ?? fetched.get(id);
+      original = originals.get(id);
       repostedBy = { pubkey: e.pubkey, at: e.created_at };
     }
     if (!original || original.kind !== KIND_TEXT_NOTE) continue;
@@ -100,4 +84,20 @@ export function buildRows(
     });
   }
   return rows.sort((a, b) => activityAt(b) - activityAt(a));
+}
+
+/**
+ * What a quote card shows for the post it quotes: the post when the server returned it; a wait while it is asked;
+ * "unavailable" when it could not be asked; and "removed" when the server answered without it, because it no longer
+ * returns a post its author deleted or a moderator removed (never the quote's own words for it).
+ */
+export function quotedPostState(read: {
+  found: boolean;
+  isPending: boolean;
+  isError: boolean;
+}): "shown" | "loading" | "unavailable" | "removed" {
+  if (read.found) return "shown";
+  if (read.isError) return "unavailable";
+  if (read.isPending) return "loading";
+  return "removed";
 }

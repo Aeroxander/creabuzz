@@ -4,7 +4,9 @@
  * account with covered fees, or the browser's wallet), the chain and the server. The job is kept in this browser per founder, so a reload offers to finish it instead of starting over.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { onPasskeySessionChange } from "@/features/identity/lib/passkey-identity";
 
 import {
   contributorKit,
@@ -19,16 +21,17 @@ import {
   ethPendingNonce,
   networkLabel,
 } from "@/features/launchpad/chain";
-import { ideaId } from "@/features/launchpad/lib/idea";
 import { usdcAddress } from "@/features/launchpad/lib/sale-currency";
 import { StepRevertedError } from "@/features/launchpad/lib/acting-account";
 import { useActingAccount } from "@/features/launchpad/use-acting-account";
 import {
   useCreateLaunch,
   useLaunches,
+  useRemovedLaunchIds,
 } from "@/features/launchpad/use-launches";
 import { endpointChain } from "@/features/launchpad/use-work";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { getUserSigningBlockedReason } from "@/shared/lib/nostr-signer";
 
 import {
   type ContributorFlowState,
@@ -41,6 +44,12 @@ import {
   stateForJob,
 } from "./lib/contributor-flow";
 import {
+  type ContributorGate,
+  canResume,
+  contributorGate,
+  freshLaunchId,
+} from "./lib/contributor-gate";
+import {
   CALL_DECIMALS,
   CALL_SUMMONER,
   type ContributorDraft,
@@ -49,22 +58,7 @@ import {
   wordAddress,
 } from "./lib/contributor-project";
 
-/** What stands between the founder and pressing Start, in words they can act on; null when nothing does. */
-export type ContributorGate =
-  | { ok: true }
-  | {
-      ok: false;
-      reason:
-        | "reading"
-        | "no-network"
-        | "mainnet"
-        | "unavailable"
-        | "no-currency"
-        | "sign-in"
-        | "wallet"
-        | "wrong-chain";
-      message: string;
-    };
+export type { ContributorGate } from "./lib/contributor-gate";
 
 function loadJob(key: string | null): ContributorJob | null {
   if (!key) return null;
@@ -88,7 +82,12 @@ export function useContributorStart() {
   const me = existingUserPubkey();
   const wallet = useActingAccount();
   const launches = useLaunches();
+  const removed = useRemovedLaunchIds(me);
   const create = useCreateLaunch().mutateAsync;
+  // A passkey unlocked anywhere (here, the profile menu, the unlock overlay) changes what this page can do.
+  const [, setSession] = useState(0);
+  useEffect(() => onPasskeySessionChange(() => setSession((n) => n + 1)), []);
+  const signingBlocked = getUserSigningBlockedReason();
   const endpoint = getRpcEndpoint();
 
   // The network is the one the app reads; the wallet has to be on it too.
@@ -124,71 +123,50 @@ export function useContributorStart() {
     job ? stateForJob(job) : contributorFlow.initial(),
   );
   const inFlight = useRef(false);
+  // The last failure's original words, for "Technical details" under the plain ones.
+  const [failureDetails, setFailureDetails] = useState<string | null>(null);
 
-  const gate = useMemo<ContributorGate>(() => {
-    if (network.isPending)
-      return {
-        ok: false,
-        reason: "reading",
-        message: "Reading the network…",
-      };
-    if (network.isError || !network.data)
-      return {
-        ok: false,
-        reason: "no-network",
-        message:
-          "The network could not be reached. Check the network setting and try again.",
-      };
-    const { chainId, kit, currency, decimals } = network.data;
-    if (isMainnetChain(chainId) && !mainnetEnabled())
-      return {
-        ok: false,
-        reason: "mainnet",
-        message:
-          "Contributor projects are only offered on test networks for now.",
-      };
-    if (!kit)
-      return {
-        ok: false,
-        reason: "unavailable",
-        message: `Contributor projects cannot be started on ${networkLabel(chainId)} yet: this app does not know a contract there that makes one.`,
-      };
-    if (!currency || decimals === null)
-      return {
-        ok: false,
-        reason: "no-currency",
-        message: `This app does not know a currency on ${networkLabel(chainId)} for contributors' optional deposits, so it cannot open a work budget there.`,
-      };
-    if (!me)
-      return {
-        ok: false,
-        reason: "sign-in",
-        message: "Sign in first: the project is published under your name.",
-      };
-    if (!wallet.address)
-      return {
-        ok: false,
-        reason: "wallet",
-        message:
-          wallet.kind === "passkey"
-            ? wallet.accountsChecked
-              ? "Your passkey account could not be read. Reload the page to try again."
-              : "Reading your passkey account…"
-            : wallet.kind === null && wallet.passkeyOffered
-              ? "Set up passkey sign-in from your profile menu: your passkey account holds your starting Shares and makes the project, with its fees covered on the test network. Or connect a wallet."
-              : "Connect a wallet. It holds your starting Shares and sends the one transaction that makes the project.",
-      };
-    if (wallet.chainId !== chainId)
-      return {
-        ok: false,
-        reason: "wrong-chain",
-        message:
-          wallet.kind === "passkey"
-            ? `Your passkey account works on ${networkLabel(wallet.chainId ?? 0)}, but this site's projects are on ${networkLabel(chainId)}.`
-            : `Your wallet is on another network. Switch it to ${networkLabel(chainId)}.`,
-      };
-    return { ok: true };
-  }, [network.isPending, network.isError, network.data, me, wallet]);
+  const projects: "reading" | "failed" | "read" =
+    launches.isError || removed.isError
+      ? "failed"
+      : launches.isSuccess && removed.isSuccess
+        ? "read"
+        : "reading";
+  const gate = useMemo<ContributorGate>(
+    () =>
+      contributorGate({
+        network: {
+          pending: network.isPending,
+          failed: network.isError,
+          data: network.data ?? null,
+        },
+        mainnetRefused: Boolean(
+          network.data &&
+            isMainnetChain(network.data.chainId) &&
+            !mainnetEnabled(),
+        ),
+        me,
+        signingBlocked,
+        projects,
+        wallet,
+        label: networkLabel,
+      }),
+    [
+      network.isPending,
+      network.isError,
+      network.data,
+      me,
+      signingBlocked,
+      projects,
+      wallet,
+    ],
+  );
+
+  /** Read the founder's projects again, after a failed read or an unlock. */
+  const rereadProjects = useCallback(() => {
+    void launches.refetch();
+    void removed.refetch();
+  }, [launches.refetch, removed.refetch]);
 
   const run = useCallback(
     (start: ContributorJob) => {
@@ -197,6 +175,7 @@ export function useContributorStart() {
       // Kept before anything is sent: a reload during the first wallet prompt then offers to finish this project.
       storeJob(storageKey, start);
       setJob(start);
+      setFailureDetails(null);
       let state = stateForJob(start);
       setFlow(state);
       const chain = endpointChain(endpoint);
@@ -234,9 +213,13 @@ export function useContributorStart() {
           state = contributorFlow.reducer(state, action);
           setFlow(state);
         },
-      ).finally(() => {
-        inFlight.current = false;
-      });
+      )
+        .then((outcome) => {
+          if (!outcome.ok) setFailureDetails(outcome.technical);
+        })
+        .finally(() => {
+          inFlight.current = false;
+        });
     },
     [create, endpoint, storageKey, wallet.address, wallet.sendCalls],
   );
@@ -250,13 +233,15 @@ export function useContributorStart() {
       if (!gate.ok || !network.data || !me || !wallet.address) return;
       const { chainId, kit, expectedSummoner, currency } = network.data;
       const terms = contributorTerms(draft, wallet.address);
-      const taken = (launches.data ?? [])
-        .filter((launch) => launch.record.author === me)
-        .map((launch) => launch.record.id);
-      const launchId =
-        fromBoard && !taken.includes(fromBoard)
-          ? fromBoard
-          : ideaId(terms.name, taken);
+      // Never a removed project's id: the DAO's address follows from it (the gate waits until both lists are read).
+      const launchId = freshLaunchId({
+        name: terms.name,
+        fromBoard,
+        mine: (launches.data ?? [])
+          .filter((launch) => launch.record.author === me)
+          .map((launch) => launch.record.id),
+        removed: removed.data ?? [],
+      });
       run({
         version: 3,
         author: me,
@@ -274,12 +259,30 @@ export function useContributorStart() {
         recorded: false,
       });
     },
-    [gate.ok, network.data, me, wallet.address, launches.data, run],
+    [
+      gate.ok,
+      network.data,
+      me,
+      wallet.address,
+      launches.data,
+      removed.data,
+      run,
+    ],
   );
 
   /** Carry on with a job from this visit or an earlier one. */
   const resume = useCallback(() => {
-    if (job && wallet.address?.toLowerCase() === job.founder) run(job);
+    // Read the lock now: an unlock that just finished calls this before the page draws again.
+    if (
+      job &&
+      canResume({
+        job,
+        wallet: wallet.address,
+        signingBlocked: getUserSigningBlockedReason(),
+      })
+    ) {
+      run(job);
+    }
   }, [job, wallet.address, run]);
 
   /** Put a finished (or abandoned) job away so the form is fresh. */
@@ -303,5 +306,9 @@ export function useContributorStart() {
     start,
     resume,
     clear,
+    failureDetails,
+    rereadProjects,
+    /** This browser's passkey identity is locked: nothing can be published under the founder's name until it is unlocked. */
+    locked: me !== null && signingBlocked !== null,
   };
 }

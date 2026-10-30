@@ -1,7 +1,8 @@
 /**
  * One board on its own page, in the social column beside Home: the same board the community's workspace shows, so a
  * post can be found, linked to and answered without going into the workspace. The open post is in the address
- * (`?post=`) so it can be shared.
+ * (`?post=`) so it can be shared. Reading it here reads it everywhere: once it has been on screen a moment, the
+ * server is told, as the workspace does for the board it shows (D101).
  */
 
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -9,6 +10,8 @@ import { ArrowLeft } from "lucide-react";
 import { lazy } from "react";
 
 import { useChannels } from "@/features/channels/use-channels";
+import { useReadWhileOnScreen } from "@/features/channels/use-read-while-on-screen";
+import { useUnreadRooms } from "@/features/channels/use-unread-rooms";
 import { PageBar, SocialShell } from "@/features/social/ui/SocialShell";
 import { QueryError } from "@/shared/ui/query-error";
 
@@ -37,6 +40,13 @@ export function BoardPage({
   const channels = useChannels();
   const board = channels.channels.find(
     (channel) => channel.id === boardId && channel.type === "forum",
+  );
+  const unread = useUnreadRooms();
+  const onScreen = board ? board.id : null;
+  useReadWhileOnScreen(
+    unread.markRead,
+    onScreen,
+    onScreen === null ? null : (unread.rows.get(onScreen)?.latest ?? null),
   );
 
   const back = (

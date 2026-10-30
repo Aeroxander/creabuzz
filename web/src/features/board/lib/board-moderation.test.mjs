@@ -317,9 +317,20 @@ test("board refusals read as sentences with dates", () => {
     boardRefusalText("restricted: you cannot mute yourself"),
     "You cannot mute yourself.",
   );
+  // The server's internal failures have no words for people. They used to be passed through verbatim, so a moderator
+  // read "error: database error: down"; now they read as the server not managing it just now.
   assert.equal(
     boardRefusalText("error: database error: down"),
-    "error: database error: down",
+    "The server couldn't do that just now. Try again.",
+  );
+  // The general request limit and an invite-only server say what to do, not the server's words.
+  assert.equal(
+    boardRefusalText("rate-limited: quota exceeded; retry in 4s"),
+    "You're doing that a bit fast. Try again in 4 seconds.",
+  );
+  assert.equal(
+    boardRefusalText("restricted: not a relay member"),
+    "This server is invite-only. Open the invite link you were sent.",
   );
 });
 

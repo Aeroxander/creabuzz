@@ -127,6 +127,7 @@ export function DecisionsTab({
             currencySymbol:
               sale?.kind === "custom" ? "USDC" : (sale?.symbol ?? "units"),
             work: work.data,
+            decisions: snapshot,
             workError:
               work.isError && !work.data
                 ? work.error instanceof Error

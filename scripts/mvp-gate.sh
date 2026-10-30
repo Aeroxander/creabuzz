@@ -68,6 +68,11 @@ finish() {
 trap finish EXIT
 trap 'exit 130' INT TERM
 
+# Not covered here, so the pilot runbook's hand checks are the only ones (docs/v3-review/PILOT-RUNBOOK.md, "Before it"):
+# a reviewer approving or objecting from a passkey account (the passkey journey's reviewers use a wallet), the passkey
+# name link checked by a real invite-only server (that journey stubs the server), and the image's own build (journeys
+# build the web app with vite directly; web/src/features/launchpad/lib/deploy-env-image.test.mjs keeps the image's
+# settings in step with the build check). Error reports reach a collector in web-error-report-e2e, run on its own.
 ALL=(
   web-social-hosted-e2e
   cli-no-raise-e2e

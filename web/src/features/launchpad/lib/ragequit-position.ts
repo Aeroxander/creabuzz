@@ -339,6 +339,14 @@ export function deriveClaimablePosition(input: PositionInput): ClaimableRow[] {
   });
 }
 
+/**
+ * True when leaving now pays nothing: every currency the exit names comes to zero for this holder (an empty treasury, or
+ * a share too small to round to one unit). The exit still destroys the Shares, so the screen must say so and ask (D144).
+ */
+export function exitPaysNothing(rows: readonly ClaimableRow[]): boolean {
+  return rows.every((row) => row.due === 0n);
+}
+
 /** True when the burn inputs exceed the holder's own position. */
 export function overdrawsPosition(input: PositionInput): boolean {
   return (

@@ -15,6 +15,7 @@ import { cn } from "@/shared/lib/cn";
 import { existingUserPubkey } from "@/shared/lib/identity";
 
 import { useNotificationBadge } from "../use-discovery";
+import { useHasNewMessages } from "../use-messages-seen";
 import { RightRail } from "./RightRail";
 
 type NavLinkTarget =
@@ -36,11 +37,14 @@ interface NavEntry {
   badge?: number;
   /** The count could not be read: the badge says so instead of showing nothing new. */
   badgeFailed?: boolean;
+  /** Something new without a count: a dot, and the link's name says so. */
+  dot?: boolean;
 }
 
 function useNavEntries(): NavEntry[] {
   const me = existingUserPubkey();
   const { unread, failed } = useNotificationBadge();
+  const newMessages = useHasNewMessages();
   return [
     {
       key: "feed",
@@ -73,6 +77,7 @@ function useNavEntries(): NavEntry[] {
             icon: Mail,
             link: { to: "/social/messages" as const },
             prefix: "/social/messages",
+            dot: newMessages,
           },
           {
             key: "bookmarks",
@@ -93,7 +98,15 @@ function useNavEntries(): NavEntry[] {
   ];
 }
 
-function UnreadBadge({ count, failed }: { count?: number; failed?: boolean }) {
+function UnreadBadge({
+  count,
+  failed,
+  dot,
+}: {
+  count?: number;
+  failed?: boolean;
+  dot?: boolean;
+}) {
   if (failed) {
     return (
       <span
@@ -105,7 +118,16 @@ function UnreadBadge({ count, failed }: { count?: number; failed?: boolean }) {
       </span>
     );
   }
-  if (!count) return null;
+  if (!count) {
+    // The link's own name says "new messages"; the dot is only what the eye sees.
+    return dot ? (
+      <span
+        aria-hidden
+        className="absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-background"
+        data-testid="social-new-messages-dot"
+      />
+    ) : null;
+  }
   return (
     <span
       className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-3xs font-bold text-primary-foreground"
@@ -199,7 +221,9 @@ export function SocialShell({
           {mobileEntries.length > 0 ? (
             <nav
               aria-label="Social"
-              className="sticky top-0 z-20 flex gap-1 overflow-x-auto border-b border-border/60 bg-background/70 px-2 py-1 backdrop-blur md:hidden"
+              // Solid: inside the timeline's glass card a bar's own blur does not apply (a blur inside a blur), and any
+              // see-through background leaves scrolled text readable under it.
+              className="sticky top-0 z-20 flex gap-1 overflow-x-auto border-b border-border/60 bg-background px-2 py-1 md:hidden"
               data-testid="social-nav-mobile"
             >
               {mobileEntries.map((entry) => (
@@ -245,8 +269,8 @@ function SocialNavLink({
       {...entry.link}
       aria-current={active ? "page" : undefined}
       aria-label={
-        compact
-          ? `${entry.label}${entry.badgeFailed ? ", couldn't check for new ones" : ""}`
+        compact || entry.dot
+          ? `${entry.label}${entry.badgeFailed ? ", couldn't check for new ones" : ""}${entry.dot ? ", new messages" : ""}`
           : undefined
       }
       className={cn(
@@ -263,7 +287,11 @@ function SocialNavLink({
     >
       <span className="relative">
         <Icon aria-hidden className="h-6 w-6" />
-        <UnreadBadge count={entry.badge} failed={entry.badgeFailed} />
+        <UnreadBadge
+          count={entry.badge}
+          dot={entry.dot}
+          failed={entry.badgeFailed}
+        />
       </span>
       {compact ? null : <span className="hidden xl:inline">{entry.label}</span>}
     </Link>
@@ -284,7 +312,9 @@ export function PageBar({
   children?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-10 border-b border-border/60 bg-background/45 backdrop-blur-xl max-md:top-11">
+    // Above the timeline: a post's avatar link is lifted (z-10) over its card's own link, and must still pass under this.
+    // Solid for the same reason as the phone's strip: a blur does not apply inside the glass card.
+    <header className="sticky top-0 z-20 border-b border-border/60 bg-background max-md:top-11">
       <div className="flex min-h-12 items-center gap-3 px-4">
         {back}
         <h1 className="min-w-0 flex-1 truncate text-lg font-bold text-black dark:text-white">

@@ -7,7 +7,10 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { type EvidencePacket, packetsOf } from "./lib/evidence";
 import type { WordsSource } from "./lib/ways-to-help";
 import { readEvidenceEvents } from "./lib/evidence-query";
+import { parseReviewReason, type ReviewReason } from "./lib/review-reasons";
 import { launchCoordinate, parseLaunchUpdate, type Launch } from "./models";
+
+const NO_REASONS: ReviewReason[] = [];
 
 /** The key every launch's evidence is cached under, so a publish can refresh them all. */
 export const evidenceQueryKey = ["launchpad", "evidence"] as const;
@@ -29,6 +32,8 @@ export function useEvidencePackets(launch: Launch): {
   incomplete: boolean;
   /** The separate read has not answered yet. */
   loading: boolean;
+  /** Reasons reviewers published for turning work down, unchecked: `lib/review-reasons.ts` decides which to show. */
+  reasons: ReviewReason[];
   refetch: () => void;
 } {
   const coordinate = launchCoordinate(launch.record.author, launch.record.id);
@@ -44,6 +49,10 @@ export function useEvidencePackets(launch: Launch): {
         updates: events.flatMap((event) => {
           const update = parseLaunchUpdate(event);
           return update ? [update] : [];
+        }),
+        reasons: events.flatMap((event) => {
+          const reason = parseReviewReason(event);
+          return reason ? [reason] : [];
         }),
       };
     },
@@ -96,6 +105,7 @@ export function useEvidencePackets(launch: Launch): {
     error: query.isError,
     loading: query.isLoading,
     incomplete: query.data ? !query.data.complete : false,
+    reasons: query.data?.reasons ?? NO_REASONS,
     refetch: () => void query.refetch(),
   };
 }

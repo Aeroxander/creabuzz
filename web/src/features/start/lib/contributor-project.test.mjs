@@ -338,3 +338,20 @@ test("what a project is built on, and whether others may build on it, go into it
     remixTerms: { invited: false, asks: "", offers: [] },
   });
 });
+
+test("one approval needed of several says an approval wins over a turn-down, as ClaimStake.settle decides", async () => {
+  const { quorumSentence } = await import("./contributor-project.ts");
+  assert.equal(
+    quorumSentence(2, 1),
+    "Either of them can decide: one approval is enough, even if the other turns it down.",
+  );
+  assert.match(quorumSentence(3, 1), /even if others turn it down/);
+  assert.equal(
+    quorumSentence(3, 2),
+    "2 of these 3 must agree on each piece of work.",
+  );
+  assert.equal(
+    quorumSentence(1, 1),
+    "This reviewer decides on each piece of work alone.",
+  );
+});

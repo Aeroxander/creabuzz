@@ -547,4 +547,124 @@ test("a founder and a contributor with no wallet start a project, do the work an
     BigInt(String(await rpc("eth_getBalance", [REVIEWER1, "latest"]))),
   ).toBe(reviewerEth + 2n * 10n ** 15n);
   expect(bundler.sent.every((op) => op.success === true)).toBe(true);
+
+  // ── 8. the contributor leaves from the passkey account (D144): the DAO is sent a little USDC and ETH, the Funds tab
+  //       previews the contributor's part, one passkey prompt burns the 25 Shares, and exactly the previewed amounts
+  //       arrive in the passkey account (the ETH through the DAO's own transfer into it), as the money card then shows. ──
+  const ethOf = async (holder: string) =>
+    BigInt(String(await rpc("eth_getBalance", [holder, "latest"])));
+  const daoUsdc = 2_250_000n;
+  const daoEth = 9n * 10n ** 16n;
+  const daoSlot = execFileSync("cast", ["index", "address", dao, "9"], {
+    encoding: "utf8",
+  }).trim();
+  await rpc("anvil_setStorageAt", [
+    USDC,
+    daoSlot,
+    `0x${daoUsdc.toString(16).padStart(64, "0")}`,
+  ]);
+  await rpc("anvil_setBalance", [dao, `0x${daoEth.toString(16)}`]);
+  // What the exit should pay, as the DAO works it out: the contributor's 25 over every Share outside the DAO (this
+  // project has no lock guard and no loot), with no exit fee (the page says when there is one).
+  const loot = wordAddress(await call(dao, "0x9b7b2ab0"));
+  const outside =
+    BigInt(await call(shares, "0x18160ddd")) +
+    BigInt(await call(loot, "0x18160ddd")) -
+    (await sharesOf(dao)) -
+    BigInt(await call(loot, `0x70a08231${addressArg(dao)}`));
+  const burned = await sharesOf(contributorAccount);
+  expect(burned).toBe(25n * E18);
+  const usdcDue = (daoUsdc * burned) / outside;
+  const ethDue = (daoEth * burned) / outside;
+  const usdcBefore = await usdcOf(contributorAccount);
+  const ethBefore = await ethOf(contributorAccount);
+
+  await contributor.goto(projectPath("treasury"));
+  await contributor.getByRole("tab", { name: "Funds" }).click();
+  const exitPanel = contributor.getByTestId("ragequit-panel");
+  // It acts as the passkey account, like every other step on the project.
+  await expect(exitPanel.getByRole("group", { name: "Act as" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(exitPanel.getByTestId("ragequit-sender-passkey")).toBeChecked();
+  await expect(exitPanel.getByTestId("ragequit-shares")).toHaveText("25", {
+    timeout: 60_000,
+  });
+  await expect(exitPanel.getByTestId("ragequit-exit-fee")).toHaveCount(0);
+  await expect(exitPanel.getByTestId("ragequit-pays-nothing")).toHaveCount(0);
+  const preview = await exitPanel
+    .getByTestId("ragequit-claim-row")
+    .allTextContents();
+  /** "You get 0.25 USDC" read back in base units; the preview cuts USDC off at 2 places and ETH at 4 (it never rounds). */
+  const previewed = (symbol: string, decimals: number) => {
+    const row = preview.find((text) => text.trim().endsWith(` ${symbol}`));
+    const match = row?.match(/You get ([0-9.,]+) /);
+    expect(match, `the preview names ${symbol}`).toBeTruthy();
+    const [whole, fraction = ""] = (match?.[1] ?? "0")
+      .replace(/,/g, "")
+      .split(".");
+    return (
+      BigInt(whole) * 10n ** BigInt(decimals) +
+      BigInt(fraction.padEnd(decimals, "0").slice(0, decimals) || "0")
+    );
+  };
+  // `formatTokenAmount` truncates: what is shown is never more than what is due, and short of it by less than one
+  // shown unit (0.01 USDC, 0.0001 ETH).
+  const close = (
+    shown: bigint,
+    exact: bigint,
+    places: number,
+    decimals: number,
+  ) => shown <= exact && exact - shown < 10n ** BigInt(decimals - places);
+  expect(close(previewed("USDC", 6), usdcDue, 2, 6)).toBe(true);
+  expect(close(previewed("ETH", 18), ethDue, 4, 18)).toBe(true);
+
+  await exitPanel.getByTestId("ragequit-exit").click();
+  const exitDialog = contributor.getByRole("dialog");
+  await expect(exitDialog.getByTestId("ragequit-dialog-summary")).toContainText(
+    "Your 25 Shares are destroyed",
+  );
+  const sentBeforeExit = bundler.sent.length;
+  await exitDialog.getByTestId("ragequit-run").click();
+  await expect(exitDialog.getByTestId("ragequit-done")).toBeVisible({
+    timeout: 180_000,
+  });
+  // One sponsored operation, from the contributor's passkey account, that succeeded.
+  expect(bundler.sent.length - sentBeforeExit).toBe(1);
+  expect(bundler.sent[sentBeforeExit].sender).toBe(contributorAccount);
+  expect(bundler.sent[sentBeforeExit].success).toBe(true);
+  expect(bundler.sent[sentBeforeExit].paymaster).toBe(PAYMASTER.toLowerCase());
+  // Exactly the worked-out part arrived, ETH included, and the Shares are gone.
+  expect(await usdcOf(contributorAccount)).toBe(usdcBefore + usdcDue);
+  expect(await ethOf(contributorAccount)).toBe(ethBefore + ethDue);
+  expect(await sharesOf(contributorAccount)).toBe(0n);
+  expect(
+    published.some(
+      (e) =>
+        e.kind === 47005 &&
+        ((e as { tags?: string[][] }).tags ?? []).some(
+          (t) => t[0] === "kind" && t[1] === "ragequit",
+        ),
+    ),
+  ).toBe(true);
+  // The page reads again: no Shares left, so nothing to leave with.
+  await exitDialog.getByRole("button", { name: "Close" }).click();
+  await expect(exitPanel).toContainText(
+    "This account holds no shares, so there is nothing to leave with.",
+    { timeout: 30_000 },
+  );
+  // The money card shows what the account holds now.
+  const wholeText = (value: bigint, decimals: number) => {
+    const text = value.toString().padStart(decimals + 1, "0");
+    const fraction = text.slice(-decimals).replace(/0+$/, "");
+    return `${text.slice(0, -decimals)}${fraction ? `.${fraction}` : ""}`;
+  };
+  await contributor.goto(`/u/${contributorKey}`);
+  const held = contributor.getByTestId("account-money-held");
+  await expect(held).toContainText(
+    `${wholeText(usdcBefore + usdcDue, 6)} USDC`,
+    { timeout: 30_000 },
+  );
+  await expect(held).toContainText(`${wholeText(ethBefore + ethDue, 18)} ETH`);
+  expect(bundler.sent.every((op) => op.success === true)).toBe(true);
 });

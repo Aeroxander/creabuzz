@@ -7,6 +7,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 
 import { useMyBoards } from "../use-my-boards";
+import { failureWords } from "@/shared/lib/readable-error";
 
 /**
  * Join or leave an open board. Joining puts it in "Your boards" on Home; anyone can read and post on an open board
@@ -68,7 +69,7 @@ export function JoinBoardButton({
           await mine.setJoined(boardId, !joined);
         } catch (error) {
           toast.error(joined ? "Couldn't leave" : "Couldn't join", {
-            description: error instanceof Error ? error.message : String(error),
+            description: failureWords(error).text,
           });
         } finally {
           setBusy(false);

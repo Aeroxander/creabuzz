@@ -19,6 +19,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { failureWords } from "@/shared/lib/readable-error";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import {
@@ -343,7 +344,7 @@ export function WikiView({
           // silently leaving the page unsaved.
           console.warn("[wiki] auto-save failed", error);
           toast.error("Couldn't auto-save this page", {
-            description: errorMessage(error),
+            description: failureWords(error).text,
             id: "wiki-autosave-failed",
           });
         });
@@ -680,7 +681,7 @@ export function WikiView({
                 })
                 .catch((error: unknown) =>
                   toast.error("Couldn't save the page scope", {
-                    description: errorMessage(error),
+                    description: failureWords(error).text,
                   }),
                 )
                 .finally(() => setScopeBusy(false));
@@ -713,7 +714,7 @@ export function WikiView({
                 .then(() => toast.success("Version restored"))
                 .catch((error: unknown) =>
                   toast.error("Couldn't restore that version", {
-                    description: errorMessage(error),
+                    description: failureWords(error).text,
                   }),
                 )
                 .finally(() => setHistoryBusy(false));
@@ -848,11 +849,14 @@ export function WikiView({
                 }
                 toast.success(`Renamed to ${slug}`);
               } catch (error) {
+                // The server's own words, for whoever looks: the toast says it plainly.
+                console.warn("[wiki] rename failed", error);
                 // The read failed, so we do not know whether the old name is
                 // published. Claiming a rename here left the relay holding the
                 // old page while the tab showed the new one.
                 toast.error("Couldn't rename page", {
-                  description: `The server did not answer, so nothing was renamed. ${errorMessage(error)}`,
+                  description:
+                    "The server did not answer, so nothing was renamed. Try again.",
                 });
               }
             })();
@@ -881,7 +885,7 @@ export function WikiView({
               })
               .catch((error: unknown) =>
                 toast.error("Couldn't send your suggestion", {
-                  description: errorMessage(error),
+                  description: failureWords(error).text,
                 }),
               )
               .finally(() => setSuggestBusy(false));

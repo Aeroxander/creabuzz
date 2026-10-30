@@ -41,6 +41,10 @@ export default defineConfig({
         // DM threads only under Messages; the server's room notes as sentences.
         "**/room-notes.spec.ts",
         "**/social-safety.spec.ts",
+        // The social audit's should-fix items (D143), one spec per area.
+        "**/social-shouldfix-*.spec.ts",
+        // The contributor-project audit's fixes (D144), one spec per area.
+        "**/launchpad-shouldfix-*.spec.ts",
         "**/launchpad-empty.spec.ts",
         "**/social-mention.spec.ts",
         "**/invite-join.spec.ts",

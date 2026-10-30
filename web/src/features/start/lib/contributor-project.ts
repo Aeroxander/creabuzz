@@ -166,6 +166,38 @@ function wholeShares(
   return n;
 }
 
+/** How many of `count` reviewers must agree: the number typed, or more than half when the box is empty. */
+export function reviewQuorum(count: number, quorumText: string): number {
+  const typed = quorumText.trim();
+  return typed ? Number(typed) : Math.floor(count / 2) + 1;
+}
+
+/**
+ * Whether every reviewer named must agree (and there is more than one): then a single reviewer who objects or does
+ * not answer leaves a piece of work stuck, which the form says before the project is made. Two reviewers with the box
+ * left empty is the common case: more than half of two is both.
+ */
+export function everyReviewerMustAgree(
+  count: number,
+  quorumText: string,
+): boolean {
+  return count > 1 && reviewQuorum(count, quorumText) === count;
+}
+
+/**
+ * What the form says about how reviewers decide. With one needed of several, an approval wins even over a turn-down:
+ * `ClaimStake.settle` checks for enough approvals before it checks for enough objections.
+ */
+export function quorumSentence(count: number, mustAgree: number): string {
+  if (count === 1) return "This reviewer decides on each piece of work alone.";
+  if (mustAgree === 1) {
+    return count === 2
+      ? "Either of them can decide: one approval is enough, even if the other turns it down."
+      : "Any one of them can decide: one approval is enough, even if others turn it down.";
+  }
+  return `${mustAgree} of these ${count} must agree on each piece of work.`;
+}
+
 /** The reviewer addresses in a text box: one per line, or separated by commas or spaces. */
 export function reviewerList(text: string): string[] {
   return text
@@ -337,10 +369,7 @@ export function contributorTerms(
   if (new Set(lower).size !== lower.length)
     fail("reviewers", "A reviewer is named twice.");
 
-  const quorumText = draft.quorum.trim();
-  const quorum = quorumText
-    ? Number(quorumText)
-    : Math.floor(reviewers.length / 2) + 1;
+  const quorum = reviewQuorum(reviewers.length, draft.quorum);
   if (!Number.isInteger(quorum) || quorum < 1 || quorum > reviewers.length)
     fail(
       "quorum",

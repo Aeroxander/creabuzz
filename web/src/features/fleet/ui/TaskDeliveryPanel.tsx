@@ -9,7 +9,7 @@ import { claimStatusLabel } from "@/features/launchpad/lib/work";
 import { workQuery } from "@/features/launchpad/use-work";
 import { useWalletLabels } from "@/features/launchpad/use-wallet-labels";
 import { Button } from "@/shared/ui/button";
-import { errorMessage } from "@/shared/ui/query-error";
+import { failureWords } from "@/shared/lib/readable-error";
 import { outputUrl, type TaskDelivery } from "../lib/task-delivery";
 import type { WorkItem } from "../use-work-board";
 
@@ -114,7 +114,7 @@ export function TaskDeliveryPanel({
       );
       setMessage("Delivery links saved. No payment was sent.");
     } catch (error) {
-      setMessage(errorMessage(error));
+      setMessage(failureWords(error).text);
     } finally {
       setBusy(false);
     }

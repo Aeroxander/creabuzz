@@ -6,6 +6,7 @@ import {
   MAX_NOTE_LENGTH,
   REPORT_REASONS,
   reportRecord,
+  reportWording,
   tidyNote,
 } from "./report.ts";
 
@@ -118,4 +119,33 @@ test("every reason has words a person can read", () => {
       /nip-?56|kind|relay|nostr/i,
     );
   }
+});
+
+test("a board post's report says the board's moderators see it without the reporter, and the community's with", () => {
+  const { privacy, evidence } = reportWording("board");
+  assert.match(
+    privacy,
+    /^This board's moderators see what you reported and your note, not who you are\. The community's moderators also see who you are\./,
+  );
+  assert.doesNotMatch(privacy, /Only this community's moderators/);
+  assert.equal(evidence, null);
+});
+
+test("elsewhere the report says only the community's moderators see it", () => {
+  const { privacy, evidence } = reportWording("community");
+  assert.match(
+    privacy,
+    /^Only this community's moderators will see this, and who you are\./,
+  );
+  assert.equal(evidence, null);
+});
+
+test("from a private conversation the report says the messages are not sent, and asks what happened", () => {
+  const { privacy, evidence, noteLabel } = reportWording("conversation");
+  assert.match(privacy, /^Only this community's moderators/);
+  assert.equal(
+    evidence,
+    "Your messages with them are not sent with the report. Say in the note what happened.",
+  );
+  assert.equal(noteLabel, "What happened? (optional)");
 });

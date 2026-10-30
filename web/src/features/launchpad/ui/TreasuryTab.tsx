@@ -133,6 +133,7 @@ export function TreasuryTab({
       {daoBinding ? <EnforcementCard dao={daoBinding.dao} /> : null}
       <DelegationCard
         author={launch.record.author}
+        chainId={chainId}
         dao={daoBinding?.dao ?? null}
         launchId={launch.record.id}
         members={(() => {

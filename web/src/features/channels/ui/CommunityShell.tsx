@@ -16,6 +16,7 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 
 import { defaultRoom } from "../lib/channel-records";
 import type { Channel } from "../use-channels";
+import { useReadWhileOnScreen } from "../use-read-while-on-screen";
 import { useUnreadRooms } from "../use-unread-rooms";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChannelTimeline } from "./ChannelTimeline";
@@ -24,9 +25,6 @@ import { useModerationAccess } from "@/features/moderation/use-moderation-queue"
 import { useCommunitySetupAccess } from "@/features/templates/use-template-apply";
 import { NotificationBell } from "@/features/notifications/ui/NotificationBell";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
-
-/** How long a room has to be on screen before it counts as read. */
-const READ_AFTER_MS = 1500;
 
 // Sidebar panels load on first use. The wiki alone pulls TipTap, Yjs and the
 // P2P transport; the fleet views pull the kanban and roster, and search pulls
@@ -290,24 +288,7 @@ export function CommunityShell({
       : null;
   const onScreenLatest =
     onScreen === null ? null : (unread.rows.get(onScreen)?.latest ?? null);
-  const { markRead } = unread;
-  // Only while the page is in view: a page that comes back into view starts the moment again.
-  const [pageVisible, setPageVisible] = useState(
-    () => document.visibilityState === "visible",
-  );
-  useEffect(() => {
-    const onChange = () =>
-      setPageVisible(document.visibilityState === "visible");
-    document.addEventListener("visibilitychange", onChange);
-    return () => document.removeEventListener("visibilitychange", onChange);
-  }, []);
-  useEffect(() => {
-    if (!pageVisible || onScreen === null || onScreenLatest === null) return;
-    const timer = window.setTimeout(() => {
-      if (document.visibilityState === "visible") markRead(onScreen);
-    }, READ_AFTER_MS);
-    return () => window.clearTimeout(timer);
-  }, [pageVisible, onScreen, onScreenLatest, markRead]);
+  useReadWhileOnScreen(unread.markRead, onScreen, onScreenLatest);
 
   /** Exactly one sidebar view is on at a time (or none → chat). */
   const setView = (view: "wiki" | "fleet" | "work" | "org" | "people") => {
@@ -525,8 +506,8 @@ export function CommunityShell({
             }`}
             data-testid="dms-toggle"
           >
-            <MessageSquare className="h-3.5 w-3.5" />
-            Messages
+            <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+            Notices and messages
           </button>
           <button
             type="button"

@@ -13,7 +13,11 @@
  * `error-report.test.mjs`.
  */
 
-export type ReportKind = "error" | "rejection" | "render";
+/**
+ * `handled`: a failure the screen caught and showed in words, but that the people running the site need to hear about
+ * because nobody on the page can fix it (sponsored fees refused, the chain node failing). Told once per cause a visit.
+ */
+export type ReportKind = "error" | "rejection" | "render" | "handled";
 
 export interface ErrorReport {
   kind: ReportKind;
@@ -98,8 +102,11 @@ export function makeReport(input: {
 }
 
 export interface Reporter {
-  /** Report an error. Returns whether it was sent (not limited, not a repeat). */
-  report: (kind: ReportKind, error: unknown) => boolean;
+  /**
+   * Report an error. Returns whether it was sent (not limited, not a repeat). `cause`, when given, is what counts as a
+   * repeat instead of the text: a cause is told once a visit, whatever its error says each time.
+   */
+  report: (kind: ReportKind, error: unknown, cause?: string) => boolean;
 }
 
 /**
@@ -115,7 +122,7 @@ export function createReporter(options: {
   const sentAt: number[] = [];
   const seen = new Set<string>();
   return {
-    report(kind, error) {
+    report(kind, error, cause) {
       const now = options.now();
       const report = makeReport({
         kind,
@@ -125,7 +132,10 @@ export function createReporter(options: {
         release: options.release,
       });
       // The same error is told once, however many times it happens.
-      const identity = `${report.kind}|${report.message}|${report.stack.split("\n")[1] ?? report.stack}`;
+      const identity =
+        cause !== undefined
+          ? `${report.kind}|cause|${cause}`
+          : `${report.kind}|${report.message}|${report.stack.split("\n")[1] ?? report.stack}`;
       if (seen.has(identity)) return false;
       const recent = sentAt.filter((t) => now - t < 60_000);
       if (recent.length >= MAX_PER_MINUTE || sentAt.length >= MAX_PER_SESSION) {
@@ -149,6 +159,24 @@ let installed: Reporter | null = null;
 /** Report a crash that a screen caught (the route error view). Does nothing while reporting is off. */
 export function reportRenderError(error: unknown): void {
   installed?.report("render", error);
+}
+
+/**
+ * Report a failure the screen already handled (it showed the person what happened) but that only the site's organiser can
+ * fix, once a visit per `cause` (for example "sponsor-refused" or "chain-busy"). The message carries `cause` first, so a
+ * note says which it was. Does nothing while reporting is off; never throws.
+ */
+export function reportHandledFailure(cause: string, error: unknown): boolean {
+  if (!installed) return false;
+  const detail =
+    error instanceof Error
+      ? (error as Error & { detail?: unknown }).detail
+      : undefined;
+  const { message, stack } = describe(error);
+  const text = `${cause}: ${typeof detail === "string" && detail ? detail : message}`;
+  const wrapped = new Error(text);
+  wrapped.stack = stack;
+  return installed.report("handled", wrapped, cause);
 }
 
 /**

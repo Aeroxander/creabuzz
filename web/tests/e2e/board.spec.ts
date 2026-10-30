@@ -824,19 +824,20 @@ test("a private board says who can read it, and an owner can add people by key o
   await expect(page.getByTestId("board-members")).toContainText("(owner)");
 
   // A key that is not a key is said so in plain words, and nothing is written.
-  await page.getByLabel("Add someone by their public key").fill("not a key");
+  await page
+    .getByLabel("Add someone by their profile link or key")
+    .fill("not a key");
   await page.getByTestId("board-add-person").click();
   await expect(page.getByTestId("board-people-problem")).toContainText(
-    "doesn't look like a public key",
+    "That isn't a profile link or key.",
   );
   expect(relay.events.filter((e) => e.kind === 9000)).toEqual([]);
 
-  // A pasted npub adds that person.
-  const { nip19 } = await import("nostr-tools");
+  // A pasted link to their profile adds that person (an npub or a bare key works too: `members.test.mjs`).
   const carol = "c3".repeat(32);
   await page
-    .getByLabel("Add someone by their public key")
-    .fill(nip19.npubEncode(carol));
+    .getByLabel("Add someone by their profile link or key")
+    .fill(`https://alpha.example.com/u/${carol}`);
   await page.getByTestId("board-add-person").click();
   await expect
     .poll(() => relay.events.find((e) => e.kind === 9000)?.tags)
@@ -900,11 +901,12 @@ test("when the server will not let someone add people, its reason is shown", asy
   await open(page, refusing, { board: SECRET });
   await page.getByTestId("board-people-toggle").click();
   await page
-    .getByLabel("Add someone by their public key")
+    .getByLabel("Add someone by their profile link or key")
     .fill("d4".repeat(32));
   await page.getByTestId("board-add-person").click();
-  await expect(page.getByTestId("board-people-problem")).toContainText(
-    "only an admin can add people",
+  // The server's reason as a sentence, without its machine prefix.
+  await expect(page.getByTestId("board-people-problem")).toHaveText(
+    "Only an admin can add people.",
   );
   await expect(page.getByTestId("board-members").locator("li")).toHaveCount(2);
 });

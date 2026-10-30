@@ -7,7 +7,7 @@
  * person is offered to everyone and the server decides, because its owner or
  * an admin is the only one it lets add people; its reason is shown. People can
  * be picked from those who have spoken in the community or named by pasting the
- * public key or `npub…` address they were given. The server applies the same
+ * link to their profile, or the key they were given. The server applies the same
  * rule to boards and rooms, so this works the same for both.
  */
 
@@ -16,12 +16,14 @@ import { useState } from "react";
 import { useMentionCandidates } from "@/features/fleet/use-mention-candidates";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { failureWords } from "@/shared/lib/readable-error";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { Input } from "@/shared/ui/input";
 
-import { canRemoveMember, parsePersonInput } from "../lib/members";
+import { canRemoveMember } from "../lib/members";
+import { parsePersonOrLink } from "../lib/person-link";
 import { useBoardMembers } from "../use-board-members";
 import { AuthorChip } from "./AuthorChip";
 
@@ -62,11 +64,7 @@ export function BoardPeople({
       await add(pubkey);
       setText("");
     } catch (error) {
-      setProblem(
-        error instanceof Error && error.message
-          ? error.message
-          : "Couldn't add them. Try again.",
-      );
+      setProblem(failureWords(error, "Couldn't add them. Try again.").text);
     } finally {
       setBusy(false);
     }
@@ -78,21 +76,17 @@ export function BoardPeople({
     try {
       await remove(pubkey);
     } catch (error) {
-      setProblem(
-        error instanceof Error && error.message
-          ? error.message
-          : "Couldn't remove them. Try again.",
-      );
+      setProblem(failureWords(error, "Couldn't remove them. Try again.").text);
     } finally {
       setBusy(false);
     }
   };
 
   const submit = () => {
-    const pubkey = parsePersonInput(text);
+    const pubkey = parsePersonOrLink(text);
     if (pubkey === null) {
       setProblem(
-        "That doesn't look like a public key. Paste the one that starts with npub or is 64 letters and numbers long.",
+        "That isn't a profile link or key. Open their profile, copy the link from the address bar, and paste it here.",
       );
       return;
     }
@@ -149,13 +143,13 @@ export function BoardPeople({
         }}
       >
         <label className="sr-only" htmlFor={`${place}-add-person`}>
-          Add someone by their public key
+          Add someone by their profile link or key
         </label>
         <Input
           className="h-8 max-w-xs text-xs"
           id={`${place}-add-person`}
           onChange={(event) => setText(event.target.value)}
-          placeholder="Add someone: paste their public key (npub…)"
+          placeholder="Add someone: paste their profile link or key"
           value={text}
         />
         <Button

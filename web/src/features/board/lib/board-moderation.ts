@@ -13,8 +13,9 @@
 
 import {
   asSentence,
-  restrictionText,
+  plainRefusalText,
   whenText,
+  SERVER_FAILED_TEXT,
 } from "../../../shared/lib/refusal-text.ts";
 import type { Draft } from "./board-events.ts";
 import type { BoardEvent } from "./board-model.ts";
@@ -570,13 +571,15 @@ export function pinnedFirst<T extends { id: string }>(
 }
 
 /**
- * A refusal of a moderation command in plain words: a restriction on the reader as `refusalText` says it; otherwise
- * without the server's `restricted:`/`invalid:` prefix, and with a date and time where the server gave a unix time.
+ * A refusal of a moderation command in plain words: a restriction on the reader or the general request limit as
+ * `refusalText` says it; the server's internal failures (`error: database error: down`), which have no words for people,
+ * as `SERVER_FAILED_TEXT`; otherwise without the server's `restricted:`/`invalid:` prefix, and with a date and time
+ * where the server gave a unix time.
  */
 export function boardRefusalText(message: string): string {
-  if (/^error:/.test(message.trim())) return message;
-  const restricted = restrictionText(message);
-  if (restricted !== null) return restricted;
+  if (/^error:/.test(message.trim())) return SERVER_FAILED_TEXT;
+  const plain = plainRefusalText(message);
+  if (plain !== null) return plain;
   const words = message
     .trim()
     .replace(/^(restricted|invalid|rate-limited|blocked|duplicate):\s*/, "")

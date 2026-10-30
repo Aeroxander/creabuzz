@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { KIND_DM_RELAY_LIST, KIND_GIFT_WRAP } from "@/shared/constants/kinds";
+import { KIND_DM_RELAY_LIST } from "@/shared/constants/kinds";
 import {
   existingUserPubkey,
   nip44DecryptAsUser,
   nip44EncryptAsUser,
   signAsUser,
 } from "@/shared/lib/identity";
+import { isSigningBlockedError } from "@/shared/lib/nostr-signer";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
@@ -20,11 +21,11 @@ import {
   groupConversations,
   openGiftWrap,
 } from "./lib/nip17";
+import { readInboxWraps } from "./lib/inbox-read";
 import type { SignedEvent } from "./lib/timeline";
 import { readEvents, readLatest } from "./read";
 import { socialKeys } from "./use-social-data";
 
-const WRAP_FETCH_LIMIT = 500;
 const DECRYPT_CONCURRENCY = 4;
 
 /** The durable identity as a DM signer — passkey, extension or stored key. */
@@ -55,29 +56,56 @@ async function mapLimited<T>(
 
 const messagesKey = (me: string | null) => [...socialKeys.all, "dms", me];
 
-/** Your NIP-17 conversations, opened in this browser with your key. */
-export function useConversations() {
+/** How often the inbox is read again: often while Messages is open, slowly elsewhere (for the nav's dot). */
+export const MESSAGES_OPEN_POLL_MS = 5_000;
+const MESSAGES_ELSEWHERE_POLL_MS = 20_000;
+
+/**
+ * Your NIP-17 conversations, opened in this browser with your key. `open` while Messages or a conversation is on
+ * screen: new messages are then read every five seconds instead of every twenty. Never while the page is hidden. Each
+ * read after the first asks only for what can have arrived since the one before.
+ */
+export function useConversations({ open = false }: { open?: boolean } = {}) {
   const me = existingUserPubkey();
   return useQuery({
     queryKey: messagesKey(me),
     enabled: Boolean(me),
     staleTime: 10_000,
-    refetchInterval: 20_000,
+    refetchInterval: open ? MESSAGES_OPEN_POLL_MS : MESSAGES_ELSEWHERE_POLL_MS,
+    refetchIntervalInBackground: false,
     queryFn: async (): Promise<DirectMessage[]> => {
       const self = me as string;
-      const signer = userDmSigner(self);
-      const wraps = (await readEvents({
-        kinds: [KIND_GIFT_WRAP],
-        "#p": [self],
-        limit: WRAP_FETCH_LIMIT,
-      })) as SignedEvent[];
+      const base = userDmSigner(self);
+      // A locked passkey cannot open anything yet. That is not "this wrap is not a message for you": such a wrap is
+      // left unopened (to be opened once it is unlocked) and the read fails with the unlock sentence.
+      let blocked: unknown = null;
+      const signer: DmSigner = {
+        ...base,
+        decrypt: async (peer, text) => {
+          try {
+            return await base.decrypt(peer, text);
+          } catch (error) {
+            if (isSigningBlockedError(error)) blocked = error;
+            throw error;
+          }
+        },
+      };
+      // The full inbox the first time, then only what can have arrived since (merged, bounded): `lib/inbox-read.ts`.
+      const wraps = await readInboxWraps(
+        `${relayWsUrl()}|${self}`,
+        self,
+        (filter) => readEvents(filter) as Promise<SignedEvent[]>,
+      );
       await mapLimited(
         wraps.filter((w) => !opened.has(w.id)),
         DECRYPT_CONCURRENCY,
         async (wrap) => {
-          opened.set(wrap.id, await openGiftWrap(signer, wrap));
+          if (blocked) return;
+          const message = await openGiftWrap(signer, wrap);
+          if (!blocked) opened.set(wrap.id, message);
         },
       );
+      if (blocked) throw blocked;
       return wraps.flatMap((w) => opened.get(w.id) ?? []);
     },
     select: groupConversations,

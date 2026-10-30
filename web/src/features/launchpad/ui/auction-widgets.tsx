@@ -229,6 +229,10 @@ function ActingStrip({
         </p>
         {account.address ? (
           <>
+            <p className="text-xs" data-testid={`${testIdPrefix}-passkey-only`}>
+              Only this passkey can reach what this account holds, so keep it
+              saved in your password manager.
+            </p>
             <AccountNameLink
               account={account.address}
               keys={account.passkeyKeys}

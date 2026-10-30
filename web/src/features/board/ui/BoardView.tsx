@@ -52,6 +52,7 @@ import {
 } from "../lib/board-moderation";
 import { canAddMembers } from "../lib/members";
 import type { PostStatus } from "../lib/post-status";
+import { missingPostText, postRemoval } from "../lib/removed-post";
 import { useBoardRecords } from "../use-board";
 import { useBoardActions } from "../use-board-actions";
 import { useChannelRemovers, useRosterSync } from "../use-board-members";
@@ -284,15 +285,29 @@ export function BoardView({
 
   if (postId) {
     if (!open) {
+      // The board's public log says when a moderator removed it, and why.
+      const missing = missingPostText(
+        postRemoval(moderationRecords.log, postId),
+      );
       return (
         <div className="p-6 text-sm" data-testid="board-missing-post">
-          {records.isLoading ? (
+          {records.isLoading || moderationRecords.isLoading ? (
             <p className="text-muted-foreground" role="status">
               Loading…
             </p>
           ) : (
             <>
-              <p>This post isn't here. It may have been deleted.</p>
+              <p data-testid="board-missing-post-headline">
+                {missing.headline}
+              </p>
+              {missing.reason ? (
+                <p
+                  className="mt-1 text-muted-foreground"
+                  data-testid="board-missing-post-reason"
+                >
+                  Reason: {missing.reason}
+                </p>
+              ) : null}
               <Button
                 className="mt-3"
                 onClick={() => onOpenPost(null)}

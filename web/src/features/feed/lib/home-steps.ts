@@ -9,6 +9,11 @@
  * Pure and alias-free: `home-steps.test.mjs` drives it under `node --test`.
  */
 
+import {
+  pickUserName,
+  type UserNameProfile,
+} from "../../profiles/lib/user-label.ts";
+
 export type Role = "helper" | "founder";
 
 /** Most people come to take part, so that is where someone starts until they say otherwise. */
@@ -31,6 +36,16 @@ export interface Signals {
   published: boolean;
 }
 
+/**
+ * Whether a profile carries a name the person chose. A profile with only an "about" or a picture has none, and the
+ * short key the app shows in its place is not one either.
+ */
+export function hasChosenName(
+  profile: UserNameProfile | undefined | null,
+): boolean {
+  return pickUserName(profile) !== null;
+}
+
 export interface Step {
   id: string;
   done: boolean;
@@ -44,7 +59,7 @@ export function stepsFor(role: Role, signals: Signals): Step[] {
     id: "name",
     done: signals.named,
     label: "Add your name and a picture",
-    hint: "Open your account menu and choose Edit profile.",
+    hint: "Open your account menu and choose Edit profile. The picture is optional.",
     to: null,
   };
   if (role === "helper") {

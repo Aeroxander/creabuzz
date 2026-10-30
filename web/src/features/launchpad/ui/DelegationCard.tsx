@@ -10,13 +10,13 @@ import { usePublishMirror } from "../use-launches";
 import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
 import { encodeDelegate, encodeDelegatesView } from "../lib/vote-tx";
 import {
-  resolveSender,
   senderErrorMessage,
   SenderPickerControls,
   useSenderPicker,
 } from "./SenderPicker";
 import { HashPicker } from "./HashPicker";
 import { useConnectedWallet } from "../use-connected-wallet";
+import { usePickedSend } from "../use-picked-send";
 
 const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 // shares() on the DAO — the votes live on its Shares token (cast sig).
@@ -41,6 +41,7 @@ export function DelegationCard({
   members,
   author,
   launchId,
+  chainId,
   followActingAccount = false,
 }: {
   /** The bound DAO; null = not wired (record-only, D8). */
@@ -50,10 +51,13 @@ export function DelegationCard({
   /** The launch record's author + id (the 47005 mirror's `a` binding). */
   author: string;
   launchId: string;
+  /** The project's network: delegation is sent there only, and counts once it landed (D144). */
+  chainId: number;
   /** On a contributor project, send as the account the rest of the page acts as (D139). */
   followActingAccount?: boolean;
 }) {
   const picker = useSenderPicker({ followActingAccount });
+  const sendCalls = usePickedSend(picker, chainId, followActingAccount);
   const mirror = usePublishMirror();
   const { address: walletAccount } = useConnectedWallet();
   const [delegatee, setDelegatee] = useState("");
@@ -103,14 +107,14 @@ export function DelegationCard({
     setError(null);
     setPending(true);
     try {
-      const sender = resolveSender(picker);
-      const result = await sender.sendCalls([
+      // Resolves only once the delegation landed and succeeded, on the project's network.
+      const txHash = await sendCalls([
         { to: shares, data: encodeDelegate(delegatee), value: "0x0" },
       ]);
-      if (!TX_HASH_RE.test(result.txHash)) {
+      if (!TX_HASH_RE.test(txHash)) {
         throw new Error("The sender returned an invalid hash.");
       }
-      setLastTx(result.txHash);
+      setLastTx(txHash);
       void current.refetch();
       // D4: the assignment is a governance action — mirror it (47005,
       // table `delegate`). A mirror failure is reported; the tx already
@@ -120,11 +124,11 @@ export function DelegationCard({
           kind: KIND_LAUNCH_RECEIPT,
           author,
           launchId,
-          ...delegateReceiptParts({ delegate: delegatee, tx: result.txHash }),
+          ...delegateReceiptParts({ delegate: delegatee, tx: txHash }),
         });
       } catch {
         setError(
-          `Delegation landed (tx ${result.txHash.slice(0, 10)}…) but it could not be saved to this project's record. It still counts.`,
+          `Delegation landed (tx ${txHash.slice(0, 10)}…) but it could not be saved to this project's record. It still counts.`,
         );
       }
     } catch (err) {
@@ -160,14 +164,18 @@ export function DelegationCard({
         </p>
       ) : (
         <div className="mt-2">
-          <SenderPickerControls state={picker} testIdPrefix="delegate-" />
+          <SenderPickerControls
+            legend="Act as"
+            state={picker}
+            testIdPrefix="delegate-"
+          />
           <div className="mt-1">
             <HashPicker
               id="delegate-target"
               label="Delegate to"
               onValueChange={setDelegatee}
               options={options}
-              placeholder="Their wallet address"
+              placeholder="Their account address (0x…)"
               testId="delegate-target"
               value={delegatee}
             />

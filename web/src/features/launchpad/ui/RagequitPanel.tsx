@@ -23,8 +23,8 @@
  * The UX stance (docs/paperclip-ux-reference.md:21-22): every state answers
  * what is happening / does it need me / what do I do about it.
  */
-import { useReducer, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useId, useReducer, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/shared/ui/button";
 import { truncatePubkey } from "@/shared/lib/pubkey";
@@ -35,17 +35,22 @@ import { ethCall, getRpcEndpoint, recordSaleCurrency } from "../chain";
 import type { LaunchRecord } from "../models";
 import {
   buildRagequitPlan,
+  confirmedRagequitDeps,
+  exitRetry,
   initialRagequitFlowState,
+  onExitLanded,
+  type RagequitResume,
   ragequitFlowReducer,
   RAGEQUIT_STEP_LABELS,
-  resumeRagequitFromState,
   runRagequitFlow,
-  senderRagequitDeps,
+  sentTxHash,
 } from "../lib/ragequit-flow";
+import type { FlowReceipt } from "../lib/exit-flow";
 import { buildRagequitTx, ETH_TOKEN } from "../lib/ragequit-tx";
 import { feePercent } from "../lib/funding-terms";
 import {
   exitDenominator,
+  exitPaysNothing,
   fetchRagequitPosition,
   fetchTokenInfo,
   overdrawsPosition,
@@ -60,9 +65,10 @@ import {
 import { formatShares } from "../lib/shares-format";
 import type { DaoBinding } from "../lib/org-money";
 import { usePublishMirror } from "../use-launches";
+import { ACCOUNT_MONEY_QUERY } from "../use-account-money";
+import { usePickedSend } from "../use-picked-send";
 import { Modal } from "./Modal";
 import {
-  resolveSender,
   SenderPickerControls,
   senderErrorMessage,
   useSenderPicker,
@@ -217,17 +223,20 @@ export function RagequitPanel({
         Leave and take your share
       </h3>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        Your shares are a claim on the treasury. If you stop believing in the
-        project, you can give them up and take your part of the treasury back.
-        Shares the DAO keeps for itself do not count, so they never shrink what
-        you get.{" "}
+        Your Shares are a claim on what the treasury holds. If you want out, you
+        can give them up and take your part of it. Shares the DAO keeps for
+        itself do not count, so they never shrink what you get.{" "}
         <span className="text-muted-foreground">
           DAO {truncatePubkey(daoBinding.dao)}.
         </span>
       </p>
       {/* The picker sits here because the position is the SELECTED account's:
           switching wallet ↔ passkey re-reads who is exiting. */}
-      <SenderPickerControls state={picker} testIdPrefix="ragequit-" />
+      <SenderPickerControls
+        legend="Act as"
+        state={picker}
+        testIdPrefix="ragequit-"
+      />
       {holder && exit.status === "reading" ? (
         <p className="mt-2 text-sm text-black/60 dark:text-white/60">
           Checking what currency this project was funded in…
@@ -264,8 +273,7 @@ export function RagequitPanel({
         />
       ) : (
         <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-          Pick the sender above (an injected wallet or the passkey account) to
-          see that account&apos;s claimable position.
+          Choose an account above to see what it could take.
         </p>
       )}
       {dialogOpen && daoBinding && tokens ? (
@@ -274,9 +282,11 @@ export function RagequitPanel({
           chainId={chainId}
           dao={daoBinding.dao}
           tokens={tokens}
+          infoOf={infoOf}
           holder={holder ?? null}
           position={positionQuery.data ?? null}
           picker={picker}
+          followActingAccount={followActingAccount}
           onClose={() => setDialogOpen(false)}
         />
       ) : null}
@@ -367,6 +377,7 @@ function PositionBody({
   }
   // A token the treasury holds none of is not worth a line.
   const payable = position.rows.filter((row) => row.pool > 0n);
+  const paysNothing = exitPaysNothing(position.rows);
   return (
     <>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-black/80 dark:text-white/80">
@@ -448,12 +459,27 @@ function PositionBody({
           />
         ))}
       </ul>
-      <p className="mt-2 text-xs text-muted-foreground">
-        This is worked out from the treasury as it is now. The exact amount is
-        fixed when the exit goes through.
-      </p>
-      <Button className="mt-3" onClick={onExit} data-testid="ragequit-exit">
-        Leave and take my share
+      {paysNothing ? (
+        <p
+          className="mt-2 text-sm text-amber-800 dark:text-amber-200"
+          data-testid="ragequit-pays-nothing"
+        >
+          Leaving now pays you nothing, and your{" "}
+          {formatShares(position.sharesBurnable)} Shares would be destroyed.
+        </p>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">
+          This is worked out from the treasury as it is now. The exact amount is
+          fixed when the exit goes through.
+        </p>
+      )}
+      <Button
+        className="mt-3"
+        data-testid="ragequit-exit"
+        onClick={onExit}
+        variant={paysNothing ? "outline" : "default"}
+      >
+        {paysNothing ? "Leave anyway" : "Leave and take my share"}
       </Button>
     </>
   );
@@ -464,18 +490,22 @@ function RagequitDialog({
   chainId,
   dao,
   tokens,
+  infoOf,
   holder,
   position,
   picker,
+  followActingAccount,
   onClose,
 }: {
   record: LaunchRecord;
   chainId: number;
   dao: string;
   tokens: string[];
+  infoOf: (token: string) => TokenInfo;
   holder: string | null;
   position: RagequitPosition | null;
   picker: ReturnType<typeof useSenderPicker>;
+  followActingAccount: boolean;
   onClose: () => void;
 }) {
   const [state, dispatch] = useReducer(
@@ -484,7 +514,16 @@ function RagequitDialog({
     initialRagequitFlowState,
   );
   const [running, setRunning] = useState(false);
+  const [understood, setUnderstood] = useState(false);
+  // The Shares the last exit sent asked to burn, and the holder's Shares just before: a retry reads the position again
+  // and compares, so an exit whose confirmation timed out is never sent twice. The record says what was burned.
+  const sent = useRef<{ burn: bigint; balanceBefore: bigint } | null>(null);
+  // The transaction a send that was not confirmed named, so a landed exit can still be recorded.
+  const sentHash = useRef<string | null>(null);
+  const ackId = useId();
   const published = usePublishMirror();
+  const queryClient = useQueryClient();
+  const send = usePickedSend(picker, chainId, followActingAccount);
 
   // Locked team Shares cannot be burned: the exit gives up only what is free.
   const sharesToBurn = position?.sharesBurnable ?? 0n;
@@ -501,27 +540,116 @@ function RagequitDialog({
         pools: [],
       })
     : true;
+  // Leaving pays nothing: the Shares are destroyed all the same, so it takes a tick saying so (D144).
+  const paysNothing = position ? exitPaysNothing(position.rows) : false;
+  const paid = (position?.rows ?? []).filter((row) => row.due > 0n);
 
-  const run = async (resume?: ReturnType<typeof resumeRagequitFromState>) => {
+  // Once the exit is confirmed, everything that shows Shares or money is read again (D144).
+  const reread = () => {
+    void queryClient.invalidateQueries({ queryKey: ["ragequit-position"] });
+    void queryClient.invalidateQueries({ queryKey: ["delegates"] });
+    void queryClient.invalidateQueries({
+      queryKey: ["launchpad", "work", dao],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["launchpad", "contributor-funds", dao],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["launchpad", "holders", dao],
+    });
+    void queryClient.invalidateQueries({ queryKey: [...ACCOUNT_MONEY_QUERY] });
+  };
+
+  /** The position as it is now, straight from the chain; null when it could not be read. */
+  const readFresh = async (): Promise<RagequitPosition | null> => {
+    if (!holder) return null;
+    try {
+      return await fetchRagequitPosition(getRpcEndpoint(), dao, holder, tokens);
+    } catch {
+      return null;
+    }
+  };
+
+  const run = async (retrying = false) => {
     setRunning(true);
     try {
-      const sender = resolveSender(picker);
+      let burn = sharesToBurn;
+      let balanceBefore = position?.sharesBalance ?? 0n;
+      let resume: RagequitResume | undefined;
+      let priorExit: FlowReceipt | undefined;
+      if (retrying) {
+        const exitDone = state.steps.exit === "done";
+        const fresh = exitDone || !sent.current ? null : await readFresh();
+        const next = exitRetry({
+          exitDone,
+          sent: sent.current,
+          fresh,
+          current: sharesToBurn,
+        });
+        if (next.kind === "unknown") {
+          toast.error(
+            "Couldn't check whether your exit went through, so nothing was sent. Refresh the page, then try again.",
+          );
+          return;
+        }
+        if (next.kind === "landed") {
+          // It went through: show it and read the page again, and record it rather than send it twice.
+          const receipt: FlowReceipt = {
+            txHash: sentHash.current ?? "",
+            status: "success",
+          };
+          dispatch({ type: "step-done", step: "exit", receipt });
+          reread();
+          if (!sentHash.current) {
+            dispatch({
+              type: "step-failed",
+              step: "mirror",
+              message:
+                "your exit went through, but its transaction is not known here, so no record of it was saved",
+            });
+            return;
+          }
+          burn = sent.current?.burn ?? sharesToBurn;
+          resume = { completed: new Set(["exit"]) };
+          priorExit = receipt;
+        } else if (next.kind === "record") {
+          burn = next.burn;
+          resume = { completed: new Set(["exit"]) };
+          priorExit = state.receipts.exit;
+        } else {
+          burn = next.burn;
+          if (fresh) balanceBefore = fresh.sharesBalance;
+        }
+      }
+      if (!resume) {
+        sent.current = { burn, balanceBefore };
+        sentHash.current = null;
+      }
       const plan = buildRagequitPlan({
         buildTx: () =>
           buildRagequitTx(dao, {
             tokens,
-            sharesToBurn,
+            sharesToBurn: burn,
             lootToBurn: 0n,
             forbidden: position
               ? [position.sharesToken, position.lootToken, dao]
               : [dao],
           }),
-        priorExitReceipt: resume ? state.receipts.exit : undefined,
+        priorExitReceipt: priorExit,
       });
       if (!resume) {
         dispatch({ type: "reset", order: plan.order });
       }
-      const deps = senderRagequitDeps(sender, async (receipt) => {
+      // A send that was not confirmed may name its transaction: kept, so a landed exit can still be recorded.
+      const sendKeepingHash = async (calls: Parameters<typeof send>[0]) => {
+        try {
+          return await send(calls);
+        } catch (error) {
+          sentHash.current = sentTxHash(error) ?? sentHash.current;
+          throw error;
+        }
+      };
+      const deps = confirmedRagequitDeps(sendKeepingHash, async (receipt) => {
         // The NIP-LP `ragequit` word (NIP-LP.md:159) — a record-only write
         // bound to the tx hash the flow already holds. No hash pasting.
         await published.mutateAsync({
@@ -537,13 +665,13 @@ function RagequitDialog({
           content: {
             table: "ragequit",
             dao,
-            sharesBurned: sharesToBurn.toString(),
+            sharesBurned: burn.toString(),
             lootBurned: "0",
             tokens,
           },
         });
       });
-      await runRagequitFlow(plan, deps, dispatch, resume);
+      await runRagequitFlow(plan, deps, onExitLanded(dispatch, reread), resume);
     } catch (err) {
       toast.error(senderErrorMessage(err, "The exit was not sent."));
     } finally {
@@ -551,27 +679,67 @@ function RagequitDialog({
     }
   };
 
-  const canRetry = state.phase === "failed";
   const done = state.phase === "done";
   const exitLanded = state.steps.exit === "done";
+  // A landed exit whose transaction is not known cannot be recorded: nothing is offered that would only fail again.
+  const canRetry =
+    state.phase === "failed" &&
+    (!exitLanded || Boolean(state.receipts.exit?.txHash));
+  const account = holder ? truncatePubkey(holder) : "this account";
 
   return (
     <Modal label="Leave and take your share" onClose={onClose}>
       <h2 className="text-lg font-semibold text-black dark:text-white">
         Leave and take your share
       </h2>
-      <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        You give up {formatShares(sharesToBurn)} shares and receive your part of
-        the treasury at {holder ? truncatePubkey(holder) : "this account"}, in
-        one step. A record of it is then saved on this project.
-      </p>
+      {exitLanded || !position ? null : paysNothing ? (
+        <p
+          className="mt-1 text-sm text-amber-800 dark:text-amber-200"
+          data-testid="ragequit-dialog-nothing"
+        >
+          The treasury holds nothing you can take, so leaving now pays you
+          nothing. Your {formatShares(sharesToBurn)} Shares are destroyed all
+          the same, and you lose their votes.
+        </p>
+      ) : (
+        <p
+          className="mt-1 text-sm text-black/60 dark:text-white/60"
+          data-testid="ragequit-dialog-summary"
+        >
+          Your {formatShares(sharesToBurn)} Shares are destroyed, and you get{" "}
+          {paid
+            .map((row) => formatTokenAmount(row.due, infoOf(row.token)))
+            .join(" and ")}{" "}
+          at {account}, in one step. A record of it is then saved on this
+          project.
+        </p>
+      )}
       <p className="mt-1 text-xs text-muted-foreground">
-        You receive:{" "}
+        Leaving pays out{" "}
         {tokens
-          .map((t) => (t === ETH_TOKEN ? "ETH" : truncatePubkey(t)))
-          .join(", ")}
+          .map((t) => infoOf(t).symbol ?? "the project's currency")
+          .join(" and ")}
         . Anything else the DAO holds stays in the treasury.
       </p>
+      {paysNothing && !exitLanded ? (
+        <label
+          className="mt-3 flex items-start gap-2 text-sm text-black/80 dark:text-white/80"
+          htmlFor={ackId}
+        >
+          <input
+            checked={understood}
+            data-testid="ragequit-nothing-ack"
+            disabled={running}
+            id={ackId}
+            onChange={(e) => setUnderstood(e.target.checked)}
+            type="checkbox"
+          />
+          <span>
+            I understand that my {formatShares(sharesToBurn)} Shares are
+            destroyed and I get nothing back.
+          </span>
+        </label>
+      ) : null}
       <ol className="mt-3 flex flex-col gap-1">
         {state.order.map((step) => (
           <li
@@ -589,9 +757,10 @@ function RagequitDialog({
         <p
           className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200"
           data-testid="ragequit-failure"
+          role="alert"
         >
           {state.errorMessage}
-          {exitLanded && state.receipts.exit ? (
+          {exitLanded && state.receipts.exit?.txHash ? (
             <>
               {" "}
               The exit transaction:{" "}
@@ -604,6 +773,7 @@ function RagequitDialog({
         <p
           className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-800 dark:bg-green-950 dark:text-green-200"
           data-testid="ragequit-done"
+          role="status"
         >
           Exit confirmed
           {state.receipts.exit ? (
@@ -623,20 +793,29 @@ function RagequitDialog({
         {canRetry ? (
           <Button
             data-testid="ragequit-retry"
-            disabled={running}
-            onClick={() => void run(resumeRagequitFromState(state))}
+            disabled={running || (!exitLanded && paysNothing && !understood)}
+            onClick={() => void run(true)}
             size="sm"
           >
             {exitLanded ? "Retry the record" : "Retry"}
           </Button>
-        ) : (
+        ) : exitLanded ? null : (
           <Button
             data-testid="ragequit-run"
-            disabled={running || overdrawn || sharesToBurn === 0n}
+            disabled={
+              running ||
+              overdrawn ||
+              sharesToBurn === 0n ||
+              (paysNothing && !understood)
+            }
             onClick={() => void run()}
             size="sm"
           >
-            {running ? "Working…" : "Leave and take my share"}
+            {running
+              ? "Working…"
+              : paysNothing
+                ? "Leave with nothing"
+                : "Leave and take my share"}
           </Button>
         )}
       </div>

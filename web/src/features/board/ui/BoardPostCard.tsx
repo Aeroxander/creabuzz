@@ -26,6 +26,7 @@ import { type FeedPost, postMedia, previewText } from "../lib/board-feed";
 import type { BoardEvent } from "../lib/board-model";
 import { useBoardActions } from "../use-board-actions";
 import { useBoardStateRecord } from "../use-board-moderation";
+import { failureWords } from "@/shared/lib/readable-error";
 
 /**
  * A board post in the timeline, looking like every other post there: picture, name and time, then which board it is
@@ -70,7 +71,7 @@ export function BoardPostCard({
       .vote(post.id, direction === "+" ? "up" : "down", post)
       .catch((error) =>
         toast.error("Couldn't vote", {
-          description: error instanceof Error ? error.message : String(error),
+          description: failureWords(error).text,
         }),
       );
   };

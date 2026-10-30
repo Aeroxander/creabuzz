@@ -15,7 +15,6 @@ import {
   plainRefusal,
 } from "./moderationEvents.ts";
 import {
-  enforcementTarget,
   isHomePostReport,
   parseModerationReports,
   resolvableActions,
@@ -251,16 +250,6 @@ describe("queue rows", () => {
       rawRow({ target_kind: "pubkey", target: MEMBER, channel_id: null }),
     ]);
     assert.equal(isHomePostReport(pubkeyRow), false);
-  });
-
-  it("resolves the enforcement target from the reported message's signer", () => {
-    const [row] = parseModerationReports([rawRow()]);
-    assert.equal(enforcementTarget(row, new Map([[REPORT, MEMBER]])), MEMBER);
-    assert.equal(enforcementTarget(row, new Map()), null);
-    const [pubkeyRow] = parseModerationReports([
-      rawRow({ target_kind: "pubkey", target: MEMBER }),
-    ]);
-    assert.equal(enforcementTarget(pubkeyRow, new Map()), MEMBER);
   });
 });
 

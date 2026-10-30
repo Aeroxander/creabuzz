@@ -81,9 +81,13 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - The image's build prints what the web app will offer (network, chain node, contributor projects, sponsored gas,
   error reports) and stops on settings that do not fit together (`web/scripts/check-deploy-env.mjs`). The first release
   offers contributor projects only: the image takes no setting for test raises, nor the mainnet switch.
+- The image is contributor-only, and its people act from passkey accounts alone, so with contributor projects on the
+  build stops unless the ZeroDev settings (`VITE_ZERODEV_PROJECT_ID`, a UUID, and `VITE_ZERODEV_CHAIN_ID`) are set. Any
+  `VITE_*` value still holding `CHANGE_ME` stops it too: `./run.sh build` refuses before Docker starts, and the image's
+  own check refuses again. The server's secrets may still be `CHANGE_ME` at a first build; `start` refuses those.
 - Contributor projects need the addresses `scripts/sepolia-deploy.sh --broadcast` prints (`docs/sepolia-testnet.md`).
-  Without them the server is the social app alone. Changing them means `./run.sh build` and `./run.sh restart`: they
-  are read when the app is built.
+  Without them the server is the social app alone. Changing them, or any other `VITE_*` setting, means `./run.sh build`
+  and then `./run.sh restart`: they are read when the app is built, and `restart` alone keeps serving the old page.
 - The server turns on read state (`BUZZ_V1_ENABLED`, unread markers) and the app's page routes (`BUZZ_WEB_SPA=full`),
   and shows the terms and privacy note named by `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` at sign-up. `run.sh` refuses
   a policy file that still has a draft's `[placeholders]`.

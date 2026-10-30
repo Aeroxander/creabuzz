@@ -9,6 +9,7 @@ import { type Engagement, netScore } from "../lib/engagement";
 import { buildUndo } from "../lib/post-events";
 import { useSocialPublish } from "../use-social-actions";
 import { VoteControl } from "./VoteControl";
+import { failureWords } from "@/shared/lib/readable-error";
 
 type Vote = "+" | "-" | null;
 
@@ -69,7 +70,7 @@ export function PostVotes({
     } catch (error) {
       setPending(null);
       toast.error("Your vote was not saved", {
-        description: error instanceof Error ? error.message : String(error),
+        description: failureWords(error).text,
       });
     }
   };

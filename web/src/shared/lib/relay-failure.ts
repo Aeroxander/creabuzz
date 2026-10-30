@@ -226,5 +226,5 @@ export function relayFailureGuidance(
   // A restriction on the reader (a ban, a timeout) is said plainly; its raw wording is then not repeated.
   const restricted = restrictionText(message);
   if (restricted !== null) return restricted;
-  return "The server answered but refused this request. Its own message is shown below. We're not showing a list, because an empty one would wrongly suggest there's nothing here.";
+  return "The server answered but refused this request. Its own message is under Technical details. We're not showing a list, because an empty one would wrongly suggest there's nothing here.";
 }

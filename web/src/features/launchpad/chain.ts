@@ -4,10 +4,13 @@
  */
 
 import {
+  HistoryTooWideError,
   isRangeLimitError,
+  isRateLimitError,
   rangeLimitFrom,
   readInPages,
 } from "./lib/log-pages.ts";
+import { reportHandledFailure } from "../../shared/lib/error-report.ts";
 import {
   type ChainEnv,
   documentedBlockTimeSeconds,
@@ -117,11 +120,79 @@ export function decodeQuantity(hex: string): bigint {
  */
 export const RPC_RETRY = { delaysMs: [300, 900] as number[] };
 
+/**
+ * A chain read that failed for a reason nobody on the page can fix by pressing anything but "try again later": the node
+ * did not answer, could not be reached, or is busy. The message is for the person (what happened, what to do); `detail`
+ * is the node's own words, for the error report.
+ */
+export class ChainReadError extends Error {
+  readonly reason: "busy" | "timeout" | "unreachable";
+  readonly detail: string;
+
+  constructor(
+    reason: ChainReadError["reason"],
+    message: string,
+    detail: string,
+  ) {
+    super(message);
+    this.name = "ChainReadError";
+    this.reason = reason;
+    this.detail = detail;
+  }
+}
+
+/**
+ * Tell the error collector about a failed read, once: a node that was busy, did not answer or could not be reached, and a
+ * history too wide to read, were already told where the chain was asked (`rpc`, `ethGetLogs`), so a page that shows the
+ * same failure does not tell it again under another name. Anything else (a contract that answered nonsense, a bug) is
+ * told under `cause`.
+ */
+export function reportReadFailure(cause: string, error: unknown): void {
+  if (error instanceof ChainReadError || error instanceof HistoryTooWideError) {
+    return;
+  }
+  reportHandledFailure(cause, error);
+}
+
+/** A node's JSON-RPC answer that says it is asked too often. A revert is the contract's answer, never the node's load. */
+function isBusyAnswer(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    !/revert/i.test(error.message) &&
+    (/^rpc http (429|5\d\d)$/.test(error.message) || isRateLimitError(error))
+  );
+}
+
 /** A failure worth asking again about: a timeout, a dropped connection, or a node that is busy. */
 function isPassingFailure(error: unknown): boolean {
   if (error instanceof DOMException && error.name === "AbortError") return true;
   if (error instanceof TypeError) return true;
-  return error instanceof Error && /^rpc http (429|5\d\d)$/.test(error.message);
+  return isBusyAnswer(error);
+}
+
+/** The words a passing failure ends in once the retries are spent, told to the error collector once a visit. */
+function finalPassingFailure(error: unknown): ChainReadError {
+  const detail = error instanceof Error ? error.message : String(error);
+  const failure =
+    error instanceof DOMException && error.name === "AbortError"
+      ? new ChainReadError(
+          "timeout",
+          "The chain node did not answer in time. Try again in a moment.",
+          detail,
+        )
+      : error instanceof TypeError
+        ? new ChainReadError(
+            "unreachable",
+            "Could not reach the chain node. Check your connection and try again.",
+            detail,
+          )
+        : new ChainReadError(
+            "busy",
+            "The chain node is busy. Try again in a minute; if it keeps happening, tell the site's organiser.",
+            detail,
+          );
+  reportHandledFailure(`chain-${failure.reason}`, failure);
+  return failure;
 }
 
 async function rpcOnce(
@@ -172,20 +243,9 @@ async function rpc(
     } catch (error) {
       if (!isPassingFailure(error)) throw error;
       const pause = RPC_RETRY.delaysMs[attempt];
-      if (pause === undefined) {
-        // Say it in words: the raw abort text ("signal is aborted without reason") reaches people's screens.
-        if (error instanceof DOMException && error.name === "AbortError") {
-          throw new Error(
-            "The chain node did not answer in time. Try again in a moment.",
-          );
-        }
-        if (error instanceof TypeError) {
-          throw new Error(
-            "Could not reach the chain node. Check your connection and try again.",
-          );
-        }
-        throw error;
-      }
+      // Say it in words: the raw abort text ("signal is aborted without reason"), "rpc http 429" and a node's own
+      // rate-limit text reach people's screens otherwise.
+      if (pause === undefined) throw finalPassingFailure(error);
       await new Promise((resolve) => setTimeout(resolve, pause));
     }
   }
@@ -373,9 +433,40 @@ export interface RpcLog {
 }
 
 /**
- * `eth_getLogs` (address + topic filtered). Asked once for the whole range; when the node says that is too wide (a real
- * node usually caps the block range of one request) it is read again in pages, from the block the build names as the
- * start of this chain's history (`VITE_HISTORY_FROM_BLOCKS`) instead of block 0. See `lib/log-pages.ts`.
+ * The chain id behind each endpoint, asked once: it is needed before every history read that has a start block to apply,
+ * and it does not change while the page is open. Only answers are kept (a failed ask is asked again next time), and there
+ * are only ever a handful of endpoints, so the map stays small.
+ */
+const endpointChainIds = new Map<string, Promise<bigint>>();
+const MAX_ENDPOINTS_REMEMBERED = 8;
+
+function chainIdOf(endpoint: string): Promise<bigint> {
+  const known = endpointChainIds.get(endpoint);
+  if (known) return known;
+  if (endpointChainIds.size >= MAX_ENDPOINTS_REMEMBERED) {
+    endpointChainIds.clear();
+  }
+  const asked = ethChainId(endpoint).catch((error: unknown) => {
+    if (endpointChainIds.get(endpoint) === asked) {
+      endpointChainIds.delete(endpoint);
+    }
+    throw error;
+  });
+  endpointChainIds.set(endpoint, asked);
+  return asked;
+}
+
+/** Forget the remembered chain ids (tests). */
+export function forgetEndpointChainIds(): void {
+  endpointChainIds.clear();
+}
+
+/**
+ * `eth_getLogs` (address + topic filtered). Starts at the block the build names as the start of this chain's history
+ * (`VITE_HISTORY_FROM_BLOCKS`) whenever the filter asks for earlier, so a read never covers blocks no contract here could
+ * have written in. When the node says even that is too wide (a real node usually caps the block range of one request) it
+ * is read again in pages. See `lib/log-pages.ts`. A busy or failing node is not paged around: its error is the caller's,
+ * in plain words (`rpc`), and a history too long to read is told to the error collector.
  */
 export async function ethGetLogs(
   endpoint: string,
@@ -392,30 +483,43 @@ export async function ethGetLogs(
     if (!Array.isArray(result)) throw new Error("bad eth_getLogs return");
     return result as RpcLog[];
   };
+  // Only a build that names a history start costs the chain id question (asked once per endpoint).
+  const floor = env?.VITE_HISTORY_FROM_BLOCKS?.trim()
+    ? historyFromBlock((await chainIdOf(endpoint)).toString(), env)
+    : 0n;
+  const first =
+    floor > 0n &&
+    filter.fromBlock !== "latest" &&
+    decodeQuantity(filter.fromBlock) < floor
+      ? { ...filter, fromBlock: `0x${floor.toString(16)}` }
+      : filter;
   try {
-    return await read(filter);
+    return await read(first);
   } catch (error) {
     if (!isRangeLimitError(error)) throw error;
-    const [chainId, head] = await Promise.all([
-      ethChainId(endpoint),
-      ethBlockNumber(endpoint),
-    ]);
-    const floor = historyFromBlock(chainId.toString(), env);
+    const head = await ethBlockNumber(endpoint);
     const asked =
-      filter.fromBlock === "latest" ? head : decodeQuantity(filter.fromBlock);
+      first.fromBlock === "latest" ? head : decodeQuantity(first.fromBlock);
     const until =
-      filter.toBlock === "latest" ? head : decodeQuantity(filter.toBlock);
-    return readInPages({
-      from: asked > floor ? asked : floor,
-      to: until < head ? until : head,
-      pageSize: rangeLimitFrom(error) ?? undefined,
-      fetchPage: (from, to) =>
-        read({
-          ...filter,
-          fromBlock: `0x${from.toString(16)}`,
-          toBlock: `0x${to.toString(16)}`,
-        }),
-    });
+      first.toBlock === "latest" ? head : decodeQuantity(first.toBlock);
+    try {
+      return await readInPages({
+        from: asked > floor ? asked : floor,
+        to: until < head ? until : head,
+        pageSize: rangeLimitFrom(error) ?? undefined,
+        fetchPage: (from, to) =>
+          read({
+            ...first,
+            fromBlock: `0x${from.toString(16)}`,
+            toBlock: `0x${to.toString(16)}`,
+          }),
+      });
+    } catch (paged) {
+      if (paged instanceof HistoryTooWideError) {
+        reportHandledFailure("chain-history-too-wide", paged);
+      }
+      throw paged;
+    }
   }
 }
 

@@ -33,7 +33,15 @@ import {
   idWord,
   nextStep,
   claimStatusLabel,
+  cannotReachVerdict,
+  canExpire,
+  claimStep,
 } from "./work.ts";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+
+const keccakSelector = (signature) =>
+  bytesToHex(keccak_256(utf8ToBytes(signature))).slice(0, 8);
 
 const word = (value) => BigInt(value).toString(16).padStart(64, "0");
 const ID = "0x77726974652d646f637300000000000000000000000000000000000000000000";
@@ -370,4 +378,156 @@ test("taking a bond back calls equal what cast encodes, and a pending unbond rea
     availableAt: 0,
   });
   assert.deepEqual(decodeUnbond("0x"), { amount: 0n, availableAt: 0 });
+});
+
+test("enough objections is a step anyone can take: close it as turned down (ClaimStake.settle rejects on an objection quorum)", () => {
+  const WINDOW = 259_200;
+  const turned = nextStep(view({ objections: 2 }), 0, WINDOW);
+  assert.equal(turned.kind, "settle");
+  assert.equal(turned.who, "anyone");
+  assert.equal(turned.verdict, "turned-down");
+  assert.match(turned.text, /turned it down/);
+  // Approvals win when both reached the quorum, as in the contract (it checks approvals first).
+  const both = nextStep(view({ approvals: 2, objections: 2 }), 0, WINDOW);
+  assert.equal(both.verdict, "approved");
+  // The waiting line counts the turn-downs too, so a split is visible.
+  assert.equal(
+    nextStep(view({ approvals: 1, objections: 1, quorum: 3 }), 0, WINDOW).text,
+    "Waiting for reviewers: 1 of 3 approvals, 1 turned it down.",
+  );
+  // A claim nobody has turned down reads as it always did.
+  assert.equal(
+    nextStep(view({ approvals: 1 }), 0, WINDOW).text,
+    "Waiting for reviewers: 1 of 2 approvals.",
+  );
+  // After it is closed: turned down, said plainly, with what to do next.
+  const rejected = nextStep(
+    view({ record: { status: "Rejected" } }),
+    0,
+    WINDOW,
+  );
+  assert.equal(rejected.kind, "none");
+  assert.match(rejected.text, /^Turned down by the reviewers\./);
+  assert.match(rejected.text, /new name/);
+});
+
+test("a split nobody is left to break is said plainly, and past its deadline anyone can close it as lapsed (ClaimStake.expire)", () => {
+  const WINDOW = 259_200;
+  const DEADLINE = 5_000;
+  // Two reviewers, both must agree: one approved, one turned it down, nobody left.
+  const split = view({
+    approvals: 1,
+    objections: 1,
+    panel: 2,
+    record: { expiresAt: DEADLINE },
+  });
+  const stuck = nextStep(split, 1_000, WINDOW);
+  assert.equal(stuck.kind, "stuck");
+  assert.equal(stuck.lapsesAt, DEADLINE);
+  assert.match(stuck.text, /split \(1 of 2 approvals, 1 turned it down\)/);
+  // With a third reviewer still to answer it is only waiting.
+  assert.equal(nextStep({ ...split, panel: 3 }, 1_000, WINDOW).kind, "review");
+  // Without the panel's size it is never called stuck.
+  assert.equal(
+    nextStep({ ...split, panel: null }, 1_000, WINDOW).kind,
+    "review",
+  );
+  // At the deadline itself the contract still refuses (`block.timestamp <= expiresAt`); one second later anyone can close it.
+  assert.equal(nextStep(split, DEADLINE, WINDOW).kind, "stuck");
+  assert.equal(canExpire(split.record, DEADLINE), false);
+  assert.equal(canExpire(split.record, DEADLINE + 1), true);
+  const lapsed = nextStep(split, DEADLINE + 1, WINDOW);
+  assert.equal(lapsed.kind, "expire");
+  assert.equal(lapsed.who, "anyone");
+  // A claim reviewers can still decide keeps its review step past the deadline (the contract still takes answers), and
+  // says it can be closed.
+  const late = nextStep(
+    view({ approvals: 1, panel: 3, record: { expiresAt: DEADLINE } }),
+    DEADLINE + 1,
+    WINDOW,
+  );
+  assert.equal(late.kind, "review");
+  assert.match(late.text, /deadline has passed/);
+  assert.equal(
+    canExpire({ status: "Approved", expiresAt: DEADLINE }, DEADLINE + 1),
+    false,
+  );
+  // A claim nobody accepted for review lapses the same way, and a deposit is said to come back.
+  const unbound = nextStep(
+    view({ project: null, record: { expiresAt: DEADLINE, stake: 5n } }),
+    DEADLINE + 1,
+    WINDOW,
+  );
+  assert.equal(unbound.kind, "expire");
+  assert.match(unbound.text, /deposit goes back/);
+  // A verdict reached in time can still be settled after the deadline: settle does not look at it.
+  assert.equal(
+    nextStep(
+      view({ objections: 2, record: { expiresAt: DEADLINE } }),
+      DEADLINE + 1,
+      WINDOW,
+    ).kind,
+    "settle",
+  );
+  const expired = nextStep(view({ record: { status: "Expired" } }), 0, WINDOW);
+  assert.match(expired.text, /^Lapsed/);
+  // The call is the contract's own.
+  assert.equal(
+    encodeCallId(SIGNATURES.expire, ID),
+    `0x${keccakSelector("expire(bytes32)")}${ID.slice(2)}`,
+  );
+});
+
+test("cannotReachVerdict counts the reviewers who have not answered", () => {
+  assert.equal(
+    cannotReachVerdict({ approvals: 1, objections: 1, quorum: 2, panel: 2 }),
+    true,
+  );
+  assert.equal(
+    cannotReachVerdict({ approvals: 1, objections: 0, quorum: 2, panel: 2 }),
+    false,
+  );
+  assert.equal(
+    cannotReachVerdict({ approvals: 1, objections: 1, quorum: 2, panel: 3 }),
+    false,
+  );
+  assert.equal(
+    cannotReachVerdict({ approvals: 2, objections: 2, quorum: 3, panel: 5 }),
+    false,
+  );
+  assert.equal(
+    cannotReachVerdict({ approvals: 2, objections: 2, quorum: 3, panel: 4 }),
+    true,
+  );
+  assert.equal(
+    cannotReachVerdict({ approvals: 1, objections: 1, quorum: 2 }),
+    false,
+  );
+});
+
+test("words that match no open work area are said, unless a reviewer has already answered", () => {
+  const area = { record: { expiresAt: 10_000, checkHash: "0xaa" } };
+  const mandate = {
+    challengeWindow: 259_200,
+    isMilestonePanel: false,
+    closed: false,
+    expiresAt: 10_000,
+    projects: [area],
+  };
+  const unbound = view({ project: null, record: { checkHash: "0xbb" } });
+  assert.equal(claimStep(unbound, mandate, 0).kind, "words");
+  assert.equal(
+    claimStep(view({ project: null, record: { checkHash: "0xaa" } }), mandate, 0)
+      .kind,
+    "bind",
+  );
+  // A reviewer's answer locks the words (ClaimStake.setCheck): the manager's step stays.
+  assert.equal(
+    claimStep({ ...unbound, objections: 1 }, mandate, 0).kind,
+    "bind",
+  );
+  assert.equal(
+    claimStep({ ...unbound, earlyVerdicts: 1 }, mandate, 0).kind,
+    "bind",
+  );
 });

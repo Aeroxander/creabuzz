@@ -67,6 +67,14 @@ export function AccountMoneyCard() {
         Payments for your work, deposits that come back and what you take when
         you leave a project arrive here.
       </p>
+      <p
+        className="mt-1 text-xs text-muted-foreground"
+        data-testid="account-money-passkey"
+      >
+        Only this passkey can reach this account, its money and its Shares, so
+        keep the passkey in a password manager that syncs it to your other
+        devices.
+      </p>
       {money.isError ? (
         <p className="mt-2 text-sm" role="status">
           The network did not answer, so the balance is not shown.{" "}

@@ -551,6 +551,7 @@ test("an owner appoints a moderator from the people on the board", async ({
   // The board's members and authors, below moderator and not the reader.
   await expect(candidates).toHaveCount(2);
   await candidates.first().click();
+  await page.getByTestId("board-appoint-confirm").click();
   await expect
     .poll(() => relay.events.find((e) => e.kind === 9052)?.tags?.[1]?.[1])
     .toMatch(/^(a1|b2)+$/);

@@ -28,6 +28,8 @@ import {
   KIND_SCORE_ROOT,
 } from "../../shared/constants/kinds.ts";
 
+export { launchRemovals, removedLaunchIds } from "./lib/launch-removals.ts";
+
 export type LaunchStage =
   | "draft"
   | "review"
@@ -786,10 +788,26 @@ export function parseLaunchReceipt(event: NostrEvent): LaunchReceipt | null {
   };
 }
 
-/** Latest record per (author, d) wins; tombstoned coordinates are dropped. */
+/**
+ * Whether a removal hides this record. A set hides every version; a map of coordinate to removal time hides only the
+ * versions published no later than the removal (NIP-09), so a record published again afterwards shows.
+ */
+function removedRecord(
+  tombstoned: ReadonlySet<string> | ReadonlyMap<string, number>,
+  coordinate: string,
+  createdAt: number,
+): boolean {
+  if (tombstoned instanceof Map) {
+    const at = tombstoned.get(coordinate);
+    return at !== undefined && createdAt <= at;
+  }
+  return tombstoned.has(coordinate);
+}
+
+/** Latest record per (author, d) wins; records a removal hides are dropped. */
 export function buildLaunches(
   events: NostrEvent[],
-  tombstoned: ReadonlySet<string> = new Set(),
+  tombstoned: ReadonlySet<string> | ReadonlyMap<string, number> = new Set(),
   deletedIds: ReadonlySet<string> = new Set(),
 ): Launch[] {
   const records = new Map<string, LaunchRecord>();
@@ -804,7 +822,14 @@ export function buildLaunches(
     if (event.kind === KIND_LAUNCH_RECORD) {
       const record = parseLaunchRecord(event);
       if (!record) continue;
-      if (tombstoned.has(launchCoordinate(event.pubkey, record.id))) continue;
+      if (
+        removedRecord(
+          tombstoned,
+          launchCoordinate(event.pubkey, record.id),
+          record.createdAt,
+        )
+      )
+        continue;
       const key = `${event.pubkey}:${record.id}`;
       const prev = records.get(key);
       if (!prev || record.createdAt >= prev.createdAt) records.set(key, record);

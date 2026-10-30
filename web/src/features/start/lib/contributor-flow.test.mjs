@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { ActingStepError } from "../../launchpad/lib/acting-account.ts";
 import {
+  CONTRIBUTOR_STEP_LABELS,
   contributorFlow,
+  DAO_CODE_TRIES,
+  DAO_CODE_WAIT_MS,
   doneSteps,
   parseJob,
   runContributorStart,
@@ -69,9 +73,15 @@ function fakeChain({
   publishFails = 0,
   summoner = SUMMONER,
   nonce = 7n,
+  lag = 0,
+  sendFails = null,
 } = {}) {
   const state = {
     made,
+    // How many more times the page's node says "no code" after the DAO was made (a node a block or two behind).
+    lag,
+    codeReads: 0,
+    waits: [],
     sends: [],
     published: [],
     saved: [],
@@ -89,7 +99,16 @@ function fakeChain({
       throw new Error(`unexpected read ${to} ${data.slice(0, 10)}`);
     },
     async codeAt(address) {
-      return address === DAO && state.made;
+      state.codeReads += 1;
+      if (address !== DAO || !state.made) return false;
+      if (state.lag > 0) {
+        state.lag -= 1;
+        return false;
+      }
+      return true;
+    },
+    async wait(ms) {
+      state.waits.push(ms);
     },
     async nonceOf(address) {
       assert.equal(address, FACTORY);
@@ -98,6 +117,7 @@ function fakeChain({
     async send(to, data) {
       const txHash = `0x${String(state.sends.length + 1).padStart(64, "0")}`;
       state.sends.push({ to, data });
+      if (sendFails) throw sendFails;
       if (state.revert > 0) {
         state.revert -= 1;
         return { txHash, status: "reverted" };
@@ -240,4 +260,56 @@ test("a job saved before several first projects (D84) is converted, not dropped"
     parseJob(JSON.stringify({ ...old, draft: { name: "x" } })),
     null,
   );
+});
+
+test("a node a block behind the confirmation is asked again, a bounded number of times, before anything is said", async () => {
+  const { fx, state } = fakeChain({ lag: 2 });
+  const t = tracker();
+  const out = await runContributorStart(job(), fx, t.dispatch);
+  assert.equal(out.ok, true, out.message);
+  assert.equal(t.state.phase, "done");
+  assert.equal(state.sends.length, 1);
+  // The check before sending, then three after it: two that lagged and the one that saw the DAO.
+  assert.equal(state.codeReads, 4);
+  assert.deepEqual(state.waits, [DAO_CODE_WAIT_MS, DAO_CODE_WAIT_MS]);
+});
+
+test("a DAO that still does not show stops after the last try, says to press again in a minute, and is never made twice", async () => {
+  const { fx, state } = fakeChain({ lag: 1_000 });
+  const first = await runContributorStart(job(), fx, () => {});
+  assert.equal(first.ok, false);
+  assert.equal(first.step, "create");
+  // Bounded: one read before sending and DAO_CODE_TRIES after, with a wait between each of those.
+  assert.equal(state.codeReads, 1 + DAO_CODE_TRIES);
+  assert.equal(state.waits.length, DAO_CODE_TRIES - 1);
+  assert.match(first.message, /Press Try again in a minute/);
+  assert.match(first.message, /never makes a second one/);
+  assert.doesNotMatch(first.message, /no DAO where it should be/);
+  // The node catches up: pressing again finds the DAO and sends nothing.
+  state.lag = 0;
+  const second = await runContributorStart(first.job, fx, () => {});
+  assert.equal(second.ok, true);
+  assert.equal(state.sends.length, 1);
+});
+
+test("a send that fails keeps the original words for Technical details", async () => {
+  const raw =
+    "bundler: zd_sponsorUserOperation RPC error UserOperation reverted during simulation with reason: 0x";
+  const { fx } = fakeChain({
+    sendFails: new ActingStepError(
+      "The network would refuse this step, so nothing was sent.",
+      raw,
+    ),
+  });
+  const t = tracker();
+  const out = await runContributorStart(job(), fx, t.dispatch);
+  assert.equal(out.ok, false);
+  assert.equal(out.technical, raw);
+  assert.match(t.state.errorMessage, /would refuse this step/);
+  assert.doesNotMatch(t.state.errorMessage, /bundler/);
+});
+
+test("the first step is named for what the form calls them: work areas", () => {
+  assert.match(CONTRIBUTOR_STEP_LABELS.create, /work areas/);
+  assert.doesNotMatch(CONTRIBUTOR_STEP_LABELS.create, /first project/);
 });

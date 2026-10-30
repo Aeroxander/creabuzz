@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { saveNewProfile } from "../lib/profile";
 import { getOrCreateIdentity, importIdentity } from "@/shared/lib/identity";
 import { createPasskeyIdentity } from "../lib/passkey-identity";
+import { passkeyCreateProblem } from "../lib/passkey-problem";
 import { parseRecoveryKey } from "../lib/recovery-key";
 import { signInWithWallet, walletAvailable } from "../lib/siwe";
 import { Fingerprint, Wallet } from "lucide-react";
@@ -14,6 +15,8 @@ import { toast } from "sonner";
 import { Overlay } from "@/shared/ui/portal";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 import { CREATE_ACCOUNT } from "../lib/account-copy";
+import { offerRecoveryKey } from "../lib/recovery-offer";
+import { InviteOnlySignUpNotice } from "./InviteOnlySignUpNotice";
 import {
   mayCreateAccount,
   type PolicyState,
@@ -204,18 +207,26 @@ export function OnboardingDialog({
   };
 
   const [signingIn, setSigningIn] = useState(false);
+  /** A passkey account was made and its recovery-key offer handed to the app's root (`lib/recovery-offer.ts`). */
+  const [handedOff, setHandedOff] = useState(false);
 
   const createWithPasskey = () => {
     void (async () => {
       setSaving(true);
       setError(null);
       try {
-        await createPasskeyIdentity(name.trim() || "Creaton user");
+        const { pubkey } = await createPasskeyIdentity(
+          name.trim() || "Creaton user",
+        );
         accepted();
+        // A passkey signs in only in this browser: offer the key that works everywhere while it is unlocked. The offer
+        // is shown by the app's root, not by this dialog, which callers unmount once someone is signed in; the caller's
+        // follow-up runs when it is closed. The name is remembered on this device before saving can be cut short.
+        offerRecoveryKey({ account: pubkey, onClose: onPasskeyDone ?? onDone });
+        setHandedOff(true);
         await saveTypedName(name, about);
-        (onPasskeyDone ?? onDone)();
       } catch (e) {
-        setError(passkeyProblem(e));
+        setError(passkeyCreateProblem(e));
         setSaving(false);
       }
     })();
@@ -245,6 +256,8 @@ export function OnboardingDialog({
     return <SignInView onBack={() => setSigningIn(false)} />;
   }
 
+  if (handedOff) return null;
+
   const ready = name.trim().length > 0 && allowed && !saving;
   return (
     <Overlay
@@ -258,6 +271,7 @@ export function OnboardingDialog({
         <p className="mt-1 text-sm text-muted-foreground">
           Pick the name people will see. You can change it later.
         </p>
+        <InviteOnlySignUpNotice />
         <div className="mt-4 space-y-3">
           <label
             className="block text-sm font-medium"
@@ -310,9 +324,12 @@ export function OnboardingDialog({
           <Fingerprint className="h-4 w-4" />
           Create with a passkey
         </button>
-        <p className="mt-1.5 text-center text-xs text-muted-foreground">
-          Sign in with your fingerprint, face or device PIN. Nothing to write
-          down.
+        <p
+          className="mt-1.5 text-center text-xs text-muted-foreground"
+          data-testid="onboarding-passkey-note"
+        >
+          Sign in here with your fingerprint, face or device PIN. On another
+          device you need your recovery key, which you can save next.
         </p>
         <button
           type="button"
@@ -363,18 +380,6 @@ export function OnboardingDialog({
       </div>
     </Overlay>
   );
-}
-
-/** A passkey that did not work, in words: the browser's own message is often a sentence about "the operation". */
-function passkeyProblem(error: unknown): string {
-  const name = error instanceof Error ? error.name : "";
-  if (name === "NotAllowedError" || name === "AbortError") {
-    return "The passkey was cancelled. Try again, or create without a passkey.";
-  }
-  if (name === "PrfUnavailableError") {
-    return "This browser cannot keep a passkey account. Create without a passkey instead.";
-  }
-  return "The passkey did not work in this browser. Try again, or create without a passkey.";
 }
 
 /**

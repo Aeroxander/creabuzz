@@ -31,6 +31,11 @@ import {
 import type { Launch } from "../models";
 import type { SenderCall } from "@/features/identity/lib/sponsoredSender";
 import { usePublishMirror } from "../use-launches";
+import {
+  nameProblem,
+  noAreaProblem,
+  resubmitProblem,
+} from "../lib/claim-file-checks";
 
 const sameAddress = (a: string | null, b: string) =>
   a !== null && a.toLowerCase() === b.toLowerCase();
@@ -77,7 +82,11 @@ export function FileClaimCard({
   const [pay, setPay] = useState("");
   const [deposit, setDeposit] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
-  const [filed, setFiled] = useState<string | null>(null);
+  const [filed, setFiled] = useState<{
+    name: string;
+    /** It was already accepted for review: it waits for the reviewers, not a manager. */
+    accepted: boolean;
+  } | null>(null);
   const [areaId, setAreaId] = useState("");
   // Closed until someone asks for it (here, or by picking an area under Open work): an empty form makes the page long.
   const [opened, setOpened] = useState(false);
@@ -148,6 +157,11 @@ export function FileClaimCard({
       return;
     }
     let id: string;
+    const badName = nameProblem(name);
+    if (badName) {
+      setProblem(badName);
+      return;
+    }
     try {
       id = idWord(name);
     } catch {
@@ -212,9 +226,22 @@ export function FileClaimCard({
       setProblem(wrongWords);
       return;
     }
+    // "Not sure yet" with words of one's own: only a work area's words can ever be accepted for review.
+    const noArea = chosenArea ? null : noAreaProblem(budgetAreas, check);
+    if (noArea) {
+      setProblem(noArea);
+      return;
+    }
     const existing = mandate.claims.find((c) => c.id === id);
     if (existing && !sameAddress(wallet, existing.record.contributor)) {
       setProblem("Someone else already used that name. Choose another.");
+      return;
+    }
+    // The same name again: only to finish a submission still open with this very evidence. Anything else would send
+    // nothing while saying it was submitted.
+    const reused = resubmitProblem(existing, evidence);
+    if (reused) {
+      setProblem(reused);
       return;
     }
     if (
@@ -223,7 +250,10 @@ export function FileClaimCard({
       existing.record.checkHash.toLowerCase() !== wanted &&
       (existing.project !== null ||
         existing.record.status !== "Open" ||
-        existing.approvals + existing.objections > 0)
+        existing.approvals +
+          existing.objections +
+          (existing.earlyVerdicts ?? 0) >
+          0)
     ) {
       setProblem(
         "Your submission under that name was already accepted for review or reviewed, so its words can no longer change. Submit under a new name.",
@@ -278,7 +308,10 @@ export function FileClaimCard({
       );
       return;
     }
-    setFiled(name.trim());
+    setFiled({
+      name: name.trim(),
+      accepted: existing !== undefined && existing.project !== null,
+    });
     setName("");
     setEvidence("");
     setCheck("");
@@ -412,11 +445,19 @@ export function FileClaimCard({
             data-testid="work-claim-name"
             id="work-claim-name-input"
             ref={nameInput}
+            aria-describedby="work-claim-name-hint"
             maxLength={32}
             onChange={(e) => setName(e.target.value)}
             placeholder="write-the-docs"
             value={name}
           />
+          <span
+            className="text-xs text-muted-foreground"
+            id="work-claim-name-hint"
+          >
+            Plain letters, numbers and dashes, up to 32. Fixed work gets a new
+            name.
+          </span>
         </div>
         <div className="flex flex-col gap-1 text-sm">
           <label className="font-medium" htmlFor="work-claim-evidence-input">
@@ -508,8 +549,9 @@ export function FileClaimCard({
             data-testid="work-claim-filed"
             role="status"
           >
-            Submitted “{filed}”. It is waiting for a work area&apos;s manager to
-            accept it for review.
+            {filed.accepted
+              ? `Submitted “${filed.name}”. It is waiting for the reviewers.`
+              : `Submitted “${filed.name}”. It is waiting for a work area's manager to accept it for review.`}
           </span>
         ) : null}
       </div>

@@ -17,7 +17,7 @@ import { followedPeople } from "../feed/lib/lists";
 import { computeEngagement, lastTagValue } from "./lib/engagement";
 import {
   buildRows,
-  repostTargetsToFetch,
+  repostTargetIds,
   type Row,
   type SignedEvent,
 } from "./lib/timeline";
@@ -32,43 +32,62 @@ export const socialKeys = {
   lists: ["social", "lists"] as const,
 };
 
-interface RowsPage {
+export interface RowsPage {
   rows: Row[];
   next: number | null;
 }
 
-async function fetchRowsPage(options: {
-  authors?: string[] | null;
+/** The cache key of a `useTimeline` read, so Home can put the new posts the reader asked for into it. */
+export function timelineKey(key: readonly unknown[]): unknown[] {
+  return [...socialKeys.all, "timeline", ...key];
+}
+
+/**
+ * One page of rows, newest first: up to `PAGE_SIZE` events before `until`, or since `since` (the posts newer than the
+ * ones shown; `capped` says there were more than one page of them, and `newest` is when the newest event read was
+ * posted, a reply or a left-out repost included).
+ */
+export async function fetchRowsPage(options: {
+  authors?: readonly string[] | null;
   filter?: Record<string, string[]>;
   reposts: boolean;
   until?: number;
-}): Promise<RowsPage> {
+  since?: number;
+}): Promise<RowsPage & { capped: boolean; newest: number | null }> {
   const events = (await readEvents({
     kinds: options.reposts ? [KIND_TEXT_NOTE, KIND_REPOST] : [KIND_TEXT_NOTE],
     limit: PAGE_SIZE,
-    ...(options.authors ? { authors: options.authors } : {}),
+    ...(options.authors ? { authors: [...options.authors] } : {}),
     ...options.filter,
     ...(options.until ? { until: options.until } : {}),
+    ...(options.since ? { since: options.since } : {}),
   })) as SignedEvent[];
 
-  // A repost without an authentic embedded copy needs its original fetched.
-  const missing = repostTargetsToFetch(events);
-  const fetched = missing.length
+  // Every reposted note is read from the server, which no longer returns one its author deleted or a moderator
+  // removed; a repost whose original did not come back is left out (`buildRows`). At most one id per repost read.
+  const targets = repostTargetIds(events);
+  const originals = targets.length
     ? ((await readEvents({
-        ids: missing,
+        ids: targets,
         kinds: [KIND_TEXT_NOTE],
-        limit: missing.length,
+        limit: targets.length,
       })) as SignedEvent[])
     : [];
-  const rows = buildRows(events, new Map(fetched.map((e) => [e.id, e])));
+  const rows = buildRows(events, new Map(originals.map((e) => [e.id, e])));
   const oldest = events.reduce(
     (min, e) => Math.min(min, e.created_at),
     Number.POSITIVE_INFINITY,
   );
+  const newest = events.reduce<number | null>(
+    (max, e) => (max === null || e.created_at > max ? e.created_at : max),
+    null,
+  );
+  const full = events.length >= PAGE_SIZE;
   return {
     rows,
-    next:
-      events.length >= PAGE_SIZE && Number.isFinite(oldest) ? oldest - 1 : null,
+    next: full && Number.isFinite(oldest) ? oldest - 1 : null,
+    capped: full,
+    newest,
   };
 }
 
@@ -100,7 +119,7 @@ export function useTimeline({
     unknown[],
     number | undefined
   >({
-    queryKey: [...socialKeys.all, "timeline", ...key],
+    queryKey: timelineKey(key),
     enabled: enabled && !(authors && authors.length === 0),
     initialPageParam: undefined,
     staleTime: 15_000,
@@ -111,7 +130,7 @@ export function useTimeline({
         reposts,
         until: pageParam,
       });
-      return { ...page, rows: page.rows.filter(select) };
+      return { rows: page.rows.filter(select), next: page.next };
     },
     getNextPageParam: (last) => last.next ?? undefined,
   });

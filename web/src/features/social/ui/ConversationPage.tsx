@@ -11,7 +11,9 @@ import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { parseEntity } from "../lib/entity";
+import { newestIncoming } from "../lib/messages-seen";
 import { useConversations, useSendMessage } from "../use-messages";
+import { useMessagesSeen } from "../use-messages-seen";
 import { usePeople } from "../use-people";
 import { MutePersonButton, ReportPersonButton } from "./PersonSafety";
 import { PageBar, SocialShell } from "./SocialShell";
@@ -23,18 +25,25 @@ export function ConversationPage() {
   const entity = parseEntity(param);
   const peer = entity?.type === "pubkey" ? entity.pubkey : null;
   const me = existingUserPubkey();
-  const conversations = useConversations();
+  const conversations = useConversations({ open: true });
   const people = usePeople(peer ? [peer] : []);
   const send = useSendMessage();
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
 
-  const messages =
-    conversations.data?.find((c) => c.peer === peer)?.messages ?? [];
+  const conversation = conversations.data?.find((c) => c.peer === peer);
+  const messages = conversation?.messages ?? [];
   const lastId = messages[messages.length - 1]?.id;
   useEffect(() => {
     if (lastId) endRef.current?.scrollIntoView({ block: "end" });
   }, [lastId]);
+
+  // What is on screen here is read, including what arrives while it is open.
+  const { markConversationSeen } = useMessagesSeen();
+  const newestFromThem = conversation ? newestIncoming(conversation) : 0;
+  useEffect(() => {
+    if (peer && newestFromThem > 0) markConversationSeen(peer, newestFromThem);
+  }, [peer, newestFromThem, markConversationSeen]);
 
   if (!peer) {
     return (
@@ -75,6 +84,7 @@ export function ConversationPage() {
               <ReportPersonButton
                 name={name}
                 pubkey={peer}
+                setting="conversation"
                 testId="conversation-report"
               />
             </>
@@ -114,6 +124,13 @@ export function ConversationPage() {
           </EmptyState>
         ) : conversations.isLoading ? (
           <TimelineSkeleton />
+        ) : conversations.isError && !conversations.data ? (
+          // Not read is not empty: say why, rather than "No messages yet".
+          <EmptyState title="Couldn't load this conversation">
+            {conversations.error instanceof Error
+              ? conversations.error.message
+              : "Try again."}
+          </EmptyState>
         ) : messages.length === 0 ? (
           <p className="py-16 text-center text-sm text-black/60 dark:text-white/60">
             No messages yet. Say hello. Messages are end-to-end encrypted.

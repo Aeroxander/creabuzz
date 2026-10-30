@@ -39,6 +39,7 @@ import { BoardMarkdown } from "./BoardMarkdown";
 import { BoardModeration } from "./BoardModeration";
 import { CommentReplies } from "./CommentReplies";
 import { VoteButtons } from "./VoteButtons";
+import { failureWords } from "@/shared/lib/readable-error";
 
 interface Target {
   kind: "post" | "reply";
@@ -162,7 +163,7 @@ export function PostThread({
       await work();
     } catch (error) {
       toast.error(`Couldn't ${what}`, {
-        description: error instanceof Error ? error.message : String(error),
+        description: failureWords(error).text,
       });
     }
   };

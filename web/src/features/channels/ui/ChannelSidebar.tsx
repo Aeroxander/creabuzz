@@ -16,7 +16,7 @@ import { needAccountTo } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
 
 import { Button } from "@/shared/ui/button";
-import { errorMessage } from "@/shared/ui/query-error";
+import { readableError } from "@/shared/ui/query-error";
 
 import { type ChannelUnread, unreadMarker } from "../lib/read-state";
 import type { Channel } from "../use-channels";
@@ -268,7 +268,7 @@ export function ChannelSidebar({
                   data-testid="channels-more-error"
                   role="alert"
                 >
-                  Couldn't load more channels. {errorMessage(moreError)}.{" "}
+                  Couldn't load more channels. {readableError(moreError)}{" "}
                   <button
                     type="button"
                     className="underline"

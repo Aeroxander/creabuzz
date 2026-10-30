@@ -1,6 +1,8 @@
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpUrl } from "@/shared/lib/relay-url";
 
+import { InviteRequestError } from "./invite-errors";
+
 const INVITE_REQUEST_TIMEOUT_MS = 15_000;
 
 export type BrowserInviteClaim = {
@@ -44,7 +46,7 @@ export async function claimInviteInBrowser(
   if (!response.ok) {
     const message =
       typeof json.error === "string" ? json.error : `HTTP ${response.status}`;
-    throw new Error(message);
+    throw new InviteRequestError(message, response.status);
   }
 
   return {

@@ -1,7 +1,8 @@
 /**
  * Moderation queue state: report rows from the server's moderator-gated
- * reads, the reported authors recovered from the report events, and the
- * moderator actions. Enforcement publishes before the resolve decision (the
+ * reads (all, open or escalated; a page at a time, "Show older" for more),
+ * the reported words and their authors read by id, and the moderator
+ * actions. Enforcement publishes before the resolve decision (the
  * resolve reports "reviewed and acted on", so it must not fire first —
  * matching the desktop moderation surface), and a failed publish leaves the
  * row open with an inline retry instead of a false resolution.
@@ -14,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { queryEvents } from "@/shared/lib/nostr-client";
+import { type NostrEvent, queryEvents } from "@/shared/lib/nostr-client";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
 import { existingUserPubkey } from "@/shared/lib/identity";
@@ -26,8 +27,24 @@ import {
   resolvableActions,
   sortQueue,
   type ModerationReport,
+  type ReportStatus,
   type ResolutionAction,
 } from "./lib/moderationQueue";
+import {
+  mayHaveOlder,
+  olderLimit,
+  personToAct,
+  QUEUE_PAGE,
+  type QueueFilter,
+  queueUrl,
+  REPORTED_WORD_KINDS,
+  type ReportedSubject,
+  reportedSubject,
+  shownStatus,
+  statusAfter,
+  WORDS_READ_CHUNK,
+  withDecided,
+} from "./lib/queueRow";
 import {
   buildBan,
   buildDeleteContent,
@@ -39,15 +56,16 @@ import {
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 /** Bounded reads and polling (deadline + manual refresh as the recovery). */
-const REPORTS_LIMIT = 30;
-const REPORT_EVENTS_LIMIT = 50;
 const POLL_MS = 30_000;
 const FAILED = "Couldn’t apply the action. Try again.";
 
 export type ModerationAccess = "granted" | "denied" | "unknown";
 
-async function fetchReports(): Promise<ModerationReport[]> {
-  const url = `${relayHttpBaseUrl()}/moderation/reports?limit=${REPORTS_LIMIT}`;
+async function fetchReports(
+  filter: QueueFilter,
+  limit: number,
+): Promise<ModerationReport[]> {
+  const url = queueUrl(relayHttpBaseUrl(), filter, limit);
   const auth = await makeNip98AuthHeader(url, "GET");
   const response = await fetch(url, { headers: { Authorization: auth } });
   if (response.status === 401 || response.status === 403) {
@@ -59,12 +77,32 @@ async function fetchReports(): Promise<ModerationReport[]> {
   return parseModerationReports(await response.json());
 }
 
+/** The reported words still on the server, read by id in bounded chunks. Throws when any read fails. */
+async function readReportedWords(
+  ids: readonly string[],
+): Promise<NostrEvent[]> {
+  const chunks: string[][] = [];
+  for (let at = 0; at < ids.length; at += WORDS_READ_CHUNK) {
+    chunks.push(ids.slice(at, at + WORDS_READ_CHUNK));
+  }
+  const found = await Promise.all(
+    chunks.map((chunk) =>
+      queryEvents(relayWsUrl(), {
+        ids: chunk,
+        kinds: REPORTED_WORD_KINDS,
+        limit: chunk.length,
+      }),
+    ),
+  );
+  return found.flat();
+}
+
 /** Probe once per session: only moderators pass the server's gate. */
 let accessProbe: Promise<ModerationAccess> | null = null;
 
 function probeModerationAccess(): Promise<ModerationAccess> {
   if (!accessProbe) {
-    accessProbe = fetchReports()
+    accessProbe = fetchReports("all", QUEUE_PAGE)
       .then(() => "granted" as const)
       .catch((error: unknown) =>
         error instanceof Error && error.message === "access denied"
@@ -94,11 +132,13 @@ export function useModerationAccess(): {
 
 export type ModerationRow = {
   report: ModerationReport;
-  /** Reported message signer, when resolvable from the report event. */
-  authorPubkey: string | null;
+  /** What it is about: the reported words and their author, the reported person, or why neither is shown. */
+  subject: ReportedSubject;
+  /** Whom a ban or timeout from this row is against, when known. */
+  person: string | null;
   actions: ResolutionAction[];
-  /** Resolution published by this session (never resurrects the row). */
-  locallyResolved: boolean;
+  /** The status shown: the server's, or what this reader just decided. */
+  status: ReportStatus;
 };
 
 export type ModerationQueueState = {
@@ -111,53 +151,78 @@ export type ModerationQueueState = {
   errors: ReadonlyMap<string, string>;
   /** Resolves to null when it went through, else what went wrong. */
   perform: (
-    report: ModerationReport,
+    row: ModerationRow,
     action: ResolutionAction,
     options?: { expiresAt?: number; reason?: string },
   ) => Promise<string | null>;
   refresh: () => Promise<void>;
+  filter: QueueFilter;
+  setFilter: (filter: QueueFilter) => void;
+  /** The server filled the page: there may be older reports. */
+  hasOlder: boolean;
+  /** A read with a bigger page is on its way. */
+  loadingOlder: boolean;
+  showOlder: () => void;
 };
 
-export function useModerationQueue(): ModerationQueueState {
+/** `roomPath` is the community page a reported room message opens on. */
+export function useModerationQueue(roomPath: string): ModerationQueueState {
   const me = existingUserPubkey();
   const { access } = useModerationAccess();
-  const [reports, setReports] = useState<ModerationReport[]>([]);
-  const [authors, setAuthors] = useState<ReadonlyMap<string, string>>(
-    () => new Map(),
-  );
-  const [localResolved, setLocalResolved] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const [filter, setFilterState] = useState<QueueFilter>("all");
+  const [limit, setLimit] = useState(QUEUE_PAGE);
+  const [page, setPage] = useState<{
+    reports: ModerationReport[];
+    limit: number;
+  }>({ reports: [], limit: 0 });
+  const [words, setWords] = useState<{
+    events: ReadonlyMap<string, NostrEvent>;
+    read: ReadonlySet<string>;
+  }>(() => ({ events: new Map(), read: new Set() }));
+  // Reports this reader decided since the filter was chosen, with the status the decision left them in.
+  const [decided, setDecided] = useState<
+    ReadonlyMap<string, { report: ModerationReport; status: ReportStatus }>
+  >(() => new Map());
   const { acting, errors, setActingFor, clearError, failWith } =
     useActionTracker();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const generationRef = useRef(0);
+  // Bumped when the filter changes: a decision still on its way must not land in the new filter's list.
+  const filterGenerationRef = useRef(0);
+  // The reads below also cover the reports decided here that the page may no longer have.
+  const decidedRef = useRef(decided);
+  decidedRef.current = decided;
 
   const load = useCallback(async () => {
     if (!me || access !== "granted") return;
     const generation = ++generationRef.current;
     try {
-      const rows = await fetchReports();
-      if (generation !== generationRef.current) return;
-      setReports(rows);
-      // The queue row drops the reported author at ingest; the report event
-      // still carries it in its `p` tag. A failed author read degrades to
-      // fewer actions rather than failing the queue.
+      const reports = await fetchReports(filter, limit);
+      // The report row names its target, not what it said or who said it: read the reported words by id. A failed read
+      // leaves those rows saying the words could not be read, never that they are gone.
+      const listed = withDecided(
+        reports,
+        [...decidedRef.current.values()].map((entry) => entry.report),
+      );
+      const ids = [
+        ...new Set(
+          listed.filter((r) => r.targetKind === "event").map((r) => r.target),
+        ),
+      ];
+      let found: NostrEvent[] | null = null;
       try {
-        const reportEvents = await queryEvents(relayWsUrl(), {
-          kinds: [1984],
-          limit: REPORT_EVENTS_LIMIT,
-        });
-        if (generation !== generationRef.current) return;
-        const map = new Map<string, string>();
-        for (const event of reportEvents) {
-          const author = event.tags.find((tag) => tag[0] === "p")?.[1];
-          if (author) map.set(event.id, author.toLowerCase());
-        }
-        setAuthors(map);
+        found = ids.length === 0 ? [] : await readReportedWords(ids);
       } catch {
-        // Keep the last known authors.
+        found = null;
+      }
+      if (generation !== generationRef.current) return;
+      setPage({ reports, limit });
+      if (found !== null) {
+        const events = new Map(found.map((event) => [event.id, event]));
+        setWords({ events, read: new Set(ids) });
+      } else {
+        setWords((current) => ({ events: current.events, read: new Set() }));
       }
       setError(null);
     } catch (fetchError) {
@@ -170,7 +235,7 @@ export function useModerationQueue(): ModerationQueueState {
     } finally {
       if (generation === generationRef.current) setLoading(false);
     }
-  }, [access, me]);
+  }, [access, me, filter, limit]);
 
   const { paused: pollPaused, refresh } = useBoundedPoll(
     load,
@@ -182,21 +247,42 @@ export function useModerationQueue(): ModerationQueueState {
     if (access !== "granted") setLoading(false);
   }, [access]);
 
+  const setFilter = useCallback((next: QueueFilter) => {
+    // A read for the old filter still on its way must not land in the new one.
+    generationRef.current += 1;
+    filterGenerationRef.current += 1;
+    setFilterState(next);
+    setLimit(QUEUE_PAGE);
+    setDecided(new Map());
+    setPage({ reports: [], limit: 0 });
+    setLoading(true);
+  }, []);
+
   const rows = useMemo<ModerationRow[]>(
     () =>
-      sortQueue(reports).map((report) => ({
-        report,
-        authorPubkey:
-          report.targetKind === "pubkey"
-            ? report.target
-            : (authors.get(report.reportEventId) ?? null),
-        actions: resolvableActions(
-          report,
-          authors.get(report.reportEventId) ?? null,
+      sortQueue(
+        withDecided(
+          page.reports,
+          [...decided.values()].map((entry) => entry.report),
         ),
-        locallyResolved: localResolved.has(report.id),
-      })),
-    [reports, authors, localResolved],
+      ).map((report) => {
+        const subject = reportedSubject(
+          report,
+          words.events,
+          words.read,
+          roomPath,
+        );
+        const person = personToAct(subject);
+        const status = shownStatus(report, decided.get(report.id)?.status);
+        return {
+          report,
+          subject,
+          person,
+          status,
+          actions: status === "open" ? resolvableActions(report, person) : [],
+        };
+      }),
+    [page.reports, words, decided, roomPath],
   );
 
   const publishTemplate = useCallback(async (template: EventTemplate) => {
@@ -216,16 +302,16 @@ export function useModerationQueue(): ModerationQueueState {
    */
   const perform = useCallback(
     async (
-      report: ModerationReport,
+      row: ModerationRow,
       action: ResolutionAction,
       options?: { expiresAt?: number; reason?: string },
     ): Promise<string | null> => {
+      const { report, person } = row;
       const key = `${report.id}:${action}`;
+      const filterGeneration = filterGenerationRef.current;
       setActingFor(key, true);
       clearError(key);
       try {
-        const author = authors.get(report.reportEventId) ?? null;
-        const target = report.targetKind === "pubkey" ? report.target : author;
         if (action === "delete") {
           // A Home post has no room: its removal closes the open reports
           // about it on the server, in the same commit.
@@ -237,17 +323,17 @@ export function useModerationQueue(): ModerationQueueState {
             }),
           );
         } else if (action === "timeout") {
-          if (!target || !options?.expiresAt) {
+          if (!person || !options?.expiresAt) {
             throw new Error("Couldn’t resolve who to time out.");
           }
           await publishTemplate(
-            buildTimeout({ pubkey: target, expiresAt: options.expiresAt }),
+            buildTimeout({ pubkey: person, expiresAt: options.expiresAt }),
           );
         } else if (action === "ban") {
-          if (!target) {
+          if (!person) {
             throw new Error("Couldn’t resolve who to ban.");
           }
-          await publishTemplate(buildBan({ pubkey: target }));
+          await publishTemplate(buildBan({ pubkey: person }));
         }
         try {
           await publishTemplate(
@@ -271,11 +357,14 @@ export function useModerationQueue(): ModerationQueueState {
           )
             throw resolveError;
         }
-        setLocalResolved((current) => {
-          const next = new Set(current);
-          next.add(report.id);
-          return next;
-        });
+        if (filterGeneration === filterGenerationRef.current) {
+          setDecided((current) =>
+            new Map(current).set(report.id, {
+              report,
+              status: statusAfter(action),
+            }),
+          );
+        }
         void refresh();
         return null;
       } catch (error) {
@@ -285,7 +374,7 @@ export function useModerationQueue(): ModerationQueueState {
         setActingFor(key, false);
       }
     },
-    [authors, clearError, failWith, publishTemplate, refresh, setActingFor],
+    [clearError, failWith, publishTemplate, refresh, setActingFor],
   );
 
   return {
@@ -297,5 +386,10 @@ export function useModerationQueue(): ModerationQueueState {
     errors,
     perform,
     refresh,
+    filter,
+    setFilter,
+    hasOlder: mayHaveOlder(page.reports.length, page.limit),
+    loadingOlder: page.limit > 0 && page.limit < limit,
+    showOlder: () => setLimit((current) => olderLimit(current)),
   };
 }

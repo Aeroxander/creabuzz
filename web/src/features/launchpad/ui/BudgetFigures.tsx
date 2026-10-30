@@ -60,6 +60,14 @@ export function BudgetFigures({
           </span>{" "}
           must agree
         </p>
+        {mandate.reviewersUnreadable ? (
+          <p
+            className="mt-2 text-xs text-amber-700 dark:text-amber-300"
+            data-testid="work-reviewers-unread"
+          >
+            Who they are could not be read just now. Press Refresh to try again.
+          </p>
+        ) : null}
         {mandate.reviewers.length > 0 ? (
           <ul
             className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground"

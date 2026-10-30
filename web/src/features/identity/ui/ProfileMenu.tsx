@@ -5,8 +5,6 @@
 import { useEffect, useState, useRef } from "react";
 import {
   AlertTriangle,
-  Check,
-  Download,
   KeyRound,
   LogOut,
   Pencil,
@@ -27,7 +25,6 @@ import {
   resolveUserSecondaryName,
 } from "@/features/profiles/use-profiles";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   publishProfile,
@@ -46,94 +43,33 @@ import { OnboardingDialog } from "./OnboardingDialog";
 import { PolicyLinks } from "./PolicyLinks";
 import { CREATE_ACCOUNT, SIGN_UP_EVENT } from "../lib/account-copy";
 import {
-  backedUpFor,
-  type RecoveryExport,
-  recoveryExportFor,
-} from "../lib/recovery-key";
+  BACKED_UP_KEY,
+  copyRecoveryKey,
+  currentRecovery,
+  hasBackedUp,
+  RecoveryKeyDialog,
+} from "./RecoveryKeyDialog";
+import { ProfilePictureField } from "./ProfilePictureField";
+import { pictureLinkProblem } from "../lib/picture-check";
 import {
   setupPasskey,
   signInPasskeyIdentity,
   hasPasskeyIdentity,
   isPasskeyActive,
   passkeyMode,
-  passkeySecretKey,
   removePasskeyIdentity,
   registerPasskeySigner,
 } from "../lib/passkey-identity";
 import { Fingerprint, Wallet } from "lucide-react";
 import { Overlay, Portal, useAnchoredStyle } from "@/shared/ui/portal";
-
-const BACKED_UP_KEY = "buzz.identity.backedUp";
+import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
+import { FailureNote } from "@/shared/ui/failure-note";
 
 // Side-effect: make the passkey signer the primary signer while a passkey
 // session is active. Runs on first import of this module (mounted always).
 void registerPasskeySigner();
 
-/** How a passkey registered here holds the key, or null without one. */
-function passkeyHolding(): "prf" | "unlock" | null {
-  return hasPasskeyIdentity() ? passkeyMode() : null;
-}
-
-/** Whether this account's recovery key was saved from this browser (D111: per account, after a real export). */
-export function hasBackedUp(): boolean {
-  try {
-    return backedUpFor(
-      localStorage.getItem(BACKED_UP_KEY),
-      existingUserPubkey(),
-      passkeyHolding(),
-    );
-  } catch {
-    return true;
-  }
-}
-
-function markBackedUp(account: string) {
-  try {
-    localStorage.setItem(BACKED_UP_KEY, account.toLowerCase());
-  } catch {
-    // Not remembered: the reminder simply stays.
-  }
-}
-
-/**
- * This account's recovery key, from wherever this browser holds it (`recoveryExportFor`): the one source for every
- * backup the menu offers, so none can save an empty key or another identity's.
- */
-function currentRecovery(account: string): RecoveryExport {
-  let stored: string | null = null;
-  try {
-    stored = storedIdentityHex();
-  } catch {
-    stored = null;
-  }
-  const secret = passkeySecretKey();
-  return recoveryExportFor(account || null, {
-    passkey: passkeyHolding(),
-    passkeySecret: secret
-      ? Array.from(secret, (byte) => byte.toString(16).padStart(2, "0")).join(
-          "",
-        )
-      : null,
-    stored,
-  });
-}
-
-/** Copy the key, and count it as saved only once the clipboard took it. */
-function copyRecoveryKey(hex: string, account: string) {
-  void navigator.clipboard
-    ?.writeText(hex)
-    .then(() => {
-      markBackedUp(account);
-      return import("sonner").then(({ toast }) =>
-        toast.success("Recovery key copied"),
-      );
-    })
-    .catch(() =>
-      import("sonner").then(({ toast }) =>
-        toast.error("Couldn't copy it. Try Download instead."),
-      ),
-    );
-}
+export { hasBackedUp };
 
 /**
  * Where the menu is mounted. `sidebar` is the full-width chip; `rail` (the
@@ -174,10 +110,11 @@ export function ProfileMenu({
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [editName, setEditName] = useState<string | null>(null);
   const [editAbout, setEditAbout] = useState("");
+  const [editPicture, setEditPicture] = useState("");
+  const [pictureUploading, setPictureUploading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [menuError, setMenuError] = useState<string | null>(null);
+  const [menuError, setMenuError] = useState<FailureWords | null>(null);
   const [showBackup, setShowBackup] = useState(false);
-  const [revealKey, setRevealKey] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
@@ -191,7 +128,8 @@ export function ProfileMenu({
   // `existingUserPubkey` reports the passkey identity when one is registered, so
   // this no longer has to prefer it by hand and drift from the filters.
   const pubkey = existingUserPubkey() ?? "";
-  const { data: profiles } = useProfiles(pubkey ? [pubkey] : []);
+  const profilesRead = useProfiles(pubkey ? [pubkey] : []);
+  const profiles = profilesRead.data;
   const profile = pubkey ? profiles?.[pubkey] : undefined;
   const resolvedName = resolveUserName(profile, pubkey);
   // The community username when this identity has claimed one; the recognisable
@@ -260,19 +198,28 @@ export function ProfileMenu({
   }, [open]);
 
   const saveProfile = async () => {
-    if (!editName?.trim()) return;
+    if (!editName?.trim() || pictureLinkProblem(editPicture, profile?.picture))
+      return;
     setSaving(true);
     setMenuError(null);
     try {
       // Hand over the current profile: kind 0 is replaceable, so anything the
-      // editor does not carry has to be merged back in.
+      // editor does not carry has to be merged back in. An emptied picture is
+      // removed (null), as the editor shows it.
       await publishProfile(
-        { name: editName, about: editAbout || undefined },
+        {
+          name: editName,
+          about: editAbout || undefined,
+          picture: editPicture.trim() || null,
+        },
         profile as Record<string, unknown> | undefined,
       );
       setEditName(null);
+      void queryClient.invalidateQueries({ queryKey: ["profiles"] });
     } catch (e) {
-      setMenuError(e instanceof Error ? e.message : "couldn't save");
+      // A refusal in its plain words (a ban, the request limit); anything else as one plain sentence, with the
+      // server's own words under Technical details.
+      setMenuError(failureWords(e, "Couldn't save your profile. Try again."));
     } finally {
       setSaving(false);
     }
@@ -447,6 +394,7 @@ export function ProfileMenu({
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   placeholder="Display name"
+                  aria-label="Name"
                   className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
                   data-testid="profile-name-input"
                 />
@@ -454,9 +402,17 @@ export function ProfileMenu({
                   value={editAbout}
                   onChange={(e) => setEditAbout(e.target.value)}
                   placeholder="About you"
+                  aria-label="About you"
                   rows={2}
                   className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
                   data-testid="profile-about-input"
+                />
+                <ProfilePictureField
+                  idPrefix="profile-menu-picture"
+                  onChange={setEditPicture}
+                  onUploadingChange={setPictureUploading}
+                  saved={profile?.picture}
+                  value={editPicture}
                 />
                 <div className="flex items-center justify-end gap-2">
                   <button
@@ -468,7 +424,12 @@ export function ProfileMenu({
                   </button>
                   <button
                     type="button"
-                    disabled={saving || editName.trim().length === 0}
+                    disabled={
+                      saving ||
+                      pictureUploading ||
+                      editName.trim().length === 0 ||
+                      pictureLinkProblem(editPicture, profile?.picture) !== null
+                    }
                     onClick={() => void saveProfile()}
                     className="rounded-full bg-black px-3 py-1 text-xs font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
                     data-testid="profile-save"
@@ -481,10 +442,14 @@ export function ProfileMenu({
               <div className="mt-3 space-y-0.5">
                 <MenuItem
                   icon={<Pencil className="h-3.5 w-3.5" />}
+                  // The editor starts from the saved profile and saving merges into it: before it has been read,
+                  // the fields would start empty and a save would drop what the editor does not show.
+                  disabled={!profilesRead.isSuccess}
                   label="Edit profile"
                   onClick={() => {
                     setEditName(profile?.display_name ?? profile?.name ?? "");
                     setEditAbout(profile?.about ?? "");
+                    setEditPicture(profile?.picture ?? "");
                   }}
                 />
                 <MenuItem
@@ -625,9 +590,11 @@ export function ProfileMenu({
               </div>
             )}
             {menuError ? (
-              <p className="mt-2 text-xs text-red-600 dark:text-red-400">
-                {menuError}
-              </p>
+              <FailureNote
+                className="mt-2 text-xs text-red-600 dark:text-red-400"
+                failure={menuError}
+                testId="profile-save-error"
+              />
             ) : null}
             {passkeyError ? (
               <p className="mt-1 text-xs text-red-600 dark:text-red-400">
@@ -689,11 +656,7 @@ export function ProfileMenu({
           setWalletError(null);
           void revokeWalletBinding()
             .then(() => setWalletBinding(null))
-            .catch((error: unknown) =>
-              setWalletError(
-                error instanceof Error ? error.message : String(error),
-              ),
-            )
+            .catch((error: unknown) => setWalletError(failureWords(error).text))
             .finally(() => setWalletBusy(false));
         }}
         open={confirmUnbind}
@@ -701,95 +664,11 @@ export function ProfileMenu({
       />
 
       {showBackup ? (
-        <Overlay
-          className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 dark:bg-black/50"
-          data-testid="backup-dialog"
-        >
-          <div className="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl">
-            <h3 className="text-base font-semibold text-black dark:text-white">
-              Save your recovery key
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              This secret key is your account: anyone who has it can act as you.
-              Keep it somewhere private. You need it to sign in on another
-              device, or if this browser is ever cleared.
-            </p>
-            {recovery.kind === "ready" ? (
-              <div className="mt-3 rounded-md border border-input bg-black/[0.03] p-2 font-mono text-2xs break-all text-black/70 dark:bg-white/5 dark:text-white/70">
-                {revealKey
-                  ? recovery.hex
-                  : `${recovery.hex.slice(0, 12)}…${recovery.hex.slice(-8)}`}
-              </div>
-            ) : (
-              <p
-                className="mt-3 rounded-md bg-amber-500/10 p-2 text-sm text-amber-900 dark:text-amber-200"
-                data-testid="backup-unavailable"
-                role="status"
-              >
-                {recovery.kind === "locked"
-                  ? "Unlock with your passkey to show your recovery key."
-                  : "Your recovery key can't be read in this browser, so there is nothing to save here. Stay signed in until you have it."}
-              </p>
-            )}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {recovery.kind === "ready" ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setRevealKey((v) => !v)}
-                    className="rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
-                  >
-                    {revealKey ? "Hide" : "Reveal"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => copyRecoveryKey(recovery.hex, pubkey)}
-                    className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
-                    data-testid="backup-copy"
-                  >
-                    <Check className="h-3 w-3" /> Copy
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const blob = new Blob([recovery.hex], {
-                        type: "text/plain",
-                      });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `buzz-identity-${truncatePubkey(pubkey)}.key`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                      markBackedUp(pubkey);
-                    }}
-                    className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
-                    data-testid="backup-download"
-                  >
-                    <Download className="h-3 w-3" /> Download
-                  </button>
-                </>
-              ) : recovery.kind === "locked" ? (
-                <button
-                  type="button"
-                  disabled={passkeyBusy}
-                  onClick={() => void runPasskey(() => signInPasskeyIdentity())}
-                  className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
-                  data-testid="backup-unlock"
-                >
-                  <Fingerprint className="h-3 w-3" /> Unlock
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setShowBackup(false)}
-                className="ml-auto rounded-md px-2 py-1 text-xs text-muted-foreground"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </Overlay>
+        <RecoveryKeyDialog
+          account={pubkey}
+          onClose={() => setShowBackup(false)}
+          returnFocus={triggerRef}
+        />
       ) : null}
 
       {confirmSignOut ? (
@@ -852,16 +731,19 @@ function MenuItem({
   icon,
   label,
   onClick,
+  disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-black/70 hover:bg-black/5 disabled:opacity-40 dark:text-white/70 dark:hover:bg-white/10"
     >
       {icon}
       {label}

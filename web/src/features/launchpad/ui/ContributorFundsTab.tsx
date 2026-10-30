@@ -11,14 +11,21 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { pickUserName } from "@/features/profiles/lib/user-label";
+import { useProfiles } from "@/features/profiles/use-profiles";
 import { Card } from "@/shared/ui/card";
 
 import { ethGetBalance, erc20BalanceOf, getRpcEndpoint } from "../chain";
 import { localUsdcAddress } from "../chain-config";
 import { formatUnits } from "../lib/dao-actions";
+import { delegateChoices } from "../lib/delegate-choices";
 import type { DaoBinding } from "../lib/org-money";
+import { pubkeysToName } from "../lib/record-people";
 import type { Launch } from "../models";
+import { useActingAccount } from "../use-acting-account";
 import { useContributorProvenance } from "../use-contributor-provenance";
+import { usePeopleWithWallets } from "../use-people";
+import { useDaoHolders } from "../use-work";
 import { DelegationCard } from "./DelegationCard";
 import { Figure } from "./Figure";
 import { MatchedExitCard } from "./MatchedExitCard";
@@ -79,6 +86,21 @@ export function ContributorFundsTab({
   const chainId = launch.record.chainId ?? null;
   const { provenance, kit } = useContributorProvenance(chainId, dao);
   const usdc = usdcAddress(chainId, localUsdcAddress());
+  // Who a holder can hand their votes to from the list: the named people who hold Shares (D144).
+  const holders = useDaoHolders(dao);
+  const acting = useActingAccount().address;
+  const wallets = usePeopleWithWallets();
+  const holderAddresses = holders.data?.holders.map((h) => h.holder) ?? [];
+  const profiles = useProfiles(
+    pubkeysToName(wallets.data ?? [], holderAddresses),
+  );
+  const delegates = delegateChoices({
+    holders: holderAddresses,
+    people: wallets.data ?? [],
+    nameOf: (pubkey) => pickUserName(profiles.data?.[pubkey]),
+    // Never the DAO, and never the account choosing: handing votes to oneself is the card's own "Back to myself".
+    exclude: [dao, acting],
+  });
 
   if (provenance !== "kit") {
     return (
@@ -135,10 +157,11 @@ export function ContributorFundsTab({
       <PayoutsCard dao={dao} />
       <DelegationCard
         author={launch.record.author}
+        chainId={Number(chainId ?? "") || 0}
         dao={dao}
         followActingAccount
         launchId={launch.record.id}
-        members={[]}
+        members={delegates}
       />
     </div>
   );

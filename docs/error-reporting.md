@@ -44,8 +44,17 @@ One small JSON note per error, with exactly these fields and nothing else:
 { "kind": "error", "message": "…", "stack": "…", "page": "/launchpad", "at": 1760350000, "release": "2026.10.13" }
 ```
 
-- `kind`: `error` (an uncaught error), `rejection` (a promise that failed with nobody listening) or `render` (a screen that crashed and
-  showed "Something went wrong").
+- `kind`: `error` (an uncaught error), `rejection` (a promise that failed with nobody listening), `render` (a screen that crashed and
+  showed "Something went wrong"), or `handled`: a failure the screen showed in words but that only you can fix. Its `message` starts
+  with the cause, then the technical words the person did not see:
+  - `sponsor-refused`: the ZeroDev paymaster refused to pay a passkey step's fee (the gas policy's spending limit is spent, or the
+    policy does not cover that operation). Every passkey step fails until you fix the policy in the ZeroDev dashboard.
+  - `sponsor-failed-<kind>`: a passkey step failed on its way to the bundler (for example `sponsor-failed-BundlerRpcError`).
+  - `chain-busy`, `chain-timeout`, `chain-unreachable`: the page's chain node refused (rate limit, HTTP 429 or 5xx), did not answer,
+    or could not be reached, after the read was asked again twice.
+  - `chain-history-too-wide`: the node allows too few blocks per request to read the history since the deploy block.
+
+  A closed passkey prompt is the person's choice and is not reported.
 - `page`: the page's **path only**. No query string, no fragment. A community's address is part of the path only on `/c/<address>` pages.
 - `message` and `stack`: cut to 300 and 2,000 characters, with anything that looks like a secret key, a public key, a wallet address or a
   64-digit id replaced by `[key]`, `[address]` or `[id]` before it is sent.
@@ -57,7 +66,7 @@ local storage.
 
 ## Limits
 
-The same error is sent once per visit; at most 5 a minute and 30 a visit. A collector that is slow or down changes nothing for the person
+The same error is sent once per visit (a `handled` note once per cause, whatever its words); at most 5 a minute and 30 a visit. A collector that is slow or down changes nothing for the person
 using the app: the request is not waited on, and a failure is forgotten.
 
 ## Checking it

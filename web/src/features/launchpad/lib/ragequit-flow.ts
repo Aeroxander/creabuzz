@@ -29,10 +29,8 @@ import {
   type StepFlowAction,
   type StepFlowState,
 } from "@creaton/core/launchpad/step-flow.ts";
-import type {
-  SendCallsResult,
-  SenderCall,
-} from "../../identity/lib/sponsoredSender.ts";
+import type { SenderCall } from "../../identity/lib/sponsoredSender.ts";
+import { StepRevertedError } from "./acting-account.ts";
 import { flowOutcomeMessage } from "./exit-flow.ts";
 import type { FlowReceipt } from "./exit-flow.ts";
 import type { RagequitTx } from "./ragequit-tx.ts";
@@ -46,8 +44,8 @@ import type { RagequitTx } from "./ragequit-tx.ts";
 export type RagequitStepId = "exit" | "mirror";
 
 export const RAGEQUIT_STEP_LABELS: Record<RagequitStepId, string> = {
-  exit: "Exit onchain: give up your shares and take your part of the treasury",
-  mirror: "Record the exit on the launch",
+  exit: "Leave: your Shares are destroyed and your part is paid out",
+  mirror: "Save a record of it on this project",
 };
 
 export type RagequitFlowState = StepFlowState<RagequitStepId, FlowReceipt>;
@@ -202,22 +200,100 @@ export function buildRagequitPlan(input: {
 }
 
 /**
- * Bind a `CallSender` to this flow's one-call send — the composed bytes reach
- * the sender unmodified (parity test in `ragequit-flow.test.mjs`).
+ * Bind a confirmed send to this flow's one-call send. `send` resolves only once the call landed and succeeded (the
+ * acting account's `sendCalls`, or `sendPicked`), so its hash is a success; a step the chain refused
+ * (`StepRevertedError`) is a reverted receipt, never "Exit confirmed". A sender that only hands back a hash it submitted
+ * cannot be bound here (D144): that is how a wallet on the wrong network once read as a confirmed exit. The composed
+ * bytes reach the send unmodified (parity test in `ragequit-flow.test.mjs`).
  */
-export function senderRagequitDeps(
-  sender: {
-    sendCalls(calls: SenderCall[]): Promise<SendCallsResult>;
-  },
+export function confirmedRagequitDeps(
+  send: (calls: SenderCall[]) => Promise<string>,
   publishReceipt: RagequitFlowDeps["publishReceipt"],
 ): RagequitFlowDeps {
   return {
     async send(call) {
-      const result = await sender.sendCalls([
-        { to: call.to, data: call.data, value: call.value },
-      ]);
-      return { txHash: result.txHash, status: "success" };
+      try {
+        const txHash = await send([
+          { to: call.to, data: call.data, value: call.value },
+        ]);
+        return { txHash, status: "success" };
+      } catch (error) {
+        if (error instanceof StepRevertedError) {
+          return { txHash: error.txHash, status: "reverted" };
+        }
+        throw error;
+      }
     },
     publishReceipt,
   };
+}
+
+/**
+ * Wrap the flow's `dispatch` so `onExitLanded` runs once, the moment the exit step is confirmed: what the page shows
+ * about Shares and money is re-read then, even when saving the record afterwards fails (D144).
+ */
+export function onExitLanded(
+  dispatch: (action: RagequitFlowAction) => void,
+  landed: () => void,
+): (action: RagequitFlowAction) => void {
+  let fired = false;
+  return (action) => {
+    dispatch(action);
+    if (!fired && action.type === "step-done" && action.step === "exit") {
+      fired = true;
+      landed();
+    }
+  };
+}
+
+/** What pressing Retry does, decided from the holder's position read again just before (see {@link exitRetry}). */
+export type ExitRetry =
+  /** The exit is done: only its record is saved, for the Shares that exit burned. */
+  | { kind: "record"; burn: bigint }
+  /** The exit sent before already burned the Shares, though its confirmation never came: it landed, nothing is sent. */
+  | { kind: "landed" }
+  /** It did not land: send it again, for the Shares that can leave now. */
+  | { kind: "send"; burn: bigint }
+  /** The position could not be read again, so whether it landed is not known: nothing is sent. */
+  | { kind: "unknown" };
+
+/**
+ * Before an exit is sent a second time. A ragequit burns the Shares, so one whose confirmation timed out may well have
+ * landed, and sending it again would only be refused (the Shares are gone). So the position is read again first: Shares
+ * down by what was sent means it landed. The Shares sent before are used only to record a finished exit; a new send is
+ * for what can leave now.
+ */
+export function exitRetry(input: {
+  /** The exit step is confirmed. */
+  exitDone: boolean;
+  /** The Shares the last exit sent asked to burn, and the holder's Shares just before it; null when none was sent. */
+  sent: { burn: bigint; balanceBefore: bigint } | null;
+  /** The holder's position read again now; null when it could not be read. */
+  fresh: { sharesBalance: bigint; sharesBurnable: bigint } | null;
+  /** What can leave by the position the page holds, for a first send. */
+  current: bigint;
+}): ExitRetry {
+  const { sent, fresh } = input;
+  if (input.exitDone)
+    return { kind: "record", burn: sent?.burn ?? input.current };
+  if (!sent || sent.burn === 0n) return { kind: "send", burn: input.current };
+  if (!fresh) return { kind: "unknown" };
+  if (fresh.sharesBalance <= sent.balanceBefore - sent.burn) {
+    return { kind: "landed" };
+  }
+  return { kind: "send", burn: fresh.sharesBurnable };
+}
+
+/** The transaction named in a failed send's words (a wallet whose confirmation timed out says which it sent), or null. */
+export function sentTxHash(error: unknown): string | null {
+  const texts = [
+    error instanceof Error ? error.message : "",
+    (error as { technical?: unknown } | null)?.technical,
+  ];
+  for (const text of texts) {
+    if (typeof text !== "string") continue;
+    const match = /\bTransaction (0x[0-9a-fA-F]{64})\b/.exec(text);
+    if (match) return match[1];
+  }
+  return null;
 }

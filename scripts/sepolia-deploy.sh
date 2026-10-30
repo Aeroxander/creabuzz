@@ -168,7 +168,6 @@ VITE_CONTRIBUTOR_KITS={"${C}":"${CONTRIBUTOR_KIT}"}
 VITE_HISTORY_FROM_BLOCKS={"${C}":${FROM_BLOCK}}
 VITE_ZERODEV_PROJECT_ID=CHANGE_ME_your_ZeroDev_project_id
 VITE_ZERODEV_CHAIN_ID=${C}
-VITE_BUNDLER_URL=CHANGE_ME_its_bundler_URL
 # The server checks passkey accounts against this chain; without these it refuses to link one to a person.
 BUZZ_EVM_AUTH=1
 BUZZ_EVM_CHAIN_ID=${C}

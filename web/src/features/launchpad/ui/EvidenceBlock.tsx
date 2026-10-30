@@ -176,6 +176,17 @@ export function EvidenceBlock({
             ? "No evidence for this submission was found in the updates this page reads. This project has more updates than that, so it may be in an older one. A reviewer cannot approve what they cannot read."
             : "No evidence has been published for this submission. A reviewer cannot approve what they cannot read."}
       </p>
+      {/* It may have been published since this page looked: one press reads it again. */}
+      <Button
+        className="mt-2"
+        data-testid="work-evidence-retry"
+        onClick={onRetry}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        Look again
+      </Button>
       {mine ? (
         <div className="mt-2 grid gap-2">
           <label className="grid gap-1 text-xs">

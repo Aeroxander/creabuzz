@@ -9,8 +9,19 @@
  * wallet); it adds no reads and no records of its own. Alias-free so `dao-overview.test.mjs` runs it under `node --test`.
  */
 
+import {
+  decodeParameters,
+  selectorOf,
+} from "@creaton/core/launchpad/evmAbi.ts";
 import type { Decision, DecisionsSnapshot } from "./decisions.ts";
-import { canAcceptClaim, idLabel, nextStep, type ClaimView } from "./work.ts";
+import {
+  canAcceptClaim,
+  canExpire,
+  claimStep,
+  idLabel,
+  nextStep,
+  type ClaimView,
+} from "./work.ts";
 import type { WorkSnapshot } from "./work-read.ts";
 
 /** The tab that holds the answer. */
@@ -26,6 +37,7 @@ export interface AttentionItem {
     | "bind"
     | "review"
     | "settle"
+    | "expire"
     | "payout"
     | "award"
     | "waiting";
@@ -47,6 +59,39 @@ export interface AttentionItem {
    * this person's own work waiting on someone else (a manager, the reviewers, the challenge window, a vote).
    */
   actor?: "you" | "others";
+}
+
+const AWARD_SELECTOR = selectorOf(
+  "awardContribution(address,bytes32,uint96,bool)",
+).toLowerCase();
+
+/**
+ * The claims an open decision would award Shares for, as `budget:claim` in lower case: read from each decision's own
+ * action (its opening transaction, verified against its id). Only a call to the DAO itself is an award: the same bytes
+ * sent anywhere else award nothing. A decision whose action could not be read counts for nothing, so the founder is
+ * still asked: a duplicate vote fails when it runs, a missing one loses the award.
+ */
+export function awardsUnderVote(
+  decisions: DecisionsSnapshot | undefined,
+): Set<string> {
+  const out = new Set<string>();
+  const dao = decisions?.dao.toLowerCase();
+  for (const decision of decisions?.decisions ?? []) {
+    if (!isOpenDecision(decision) || !decision.action) continue;
+    if (decision.action.to.toLowerCase() !== dao) continue;
+    const data = decision.action.data.toLowerCase();
+    if (!data.startsWith(AWARD_SELECTOR)) continue;
+    try {
+      const [mandate, claim] = decodeParameters(
+        ["address", "bytes32", "uint96", "bool"],
+        `0x${data.slice(10)}`,
+      ) as [string, string, bigint, boolean];
+      out.add(`${mandate}:${claim}`.toLowerCase());
+    } catch {
+      // Not an award this app wrote: it counts for nothing.
+    }
+  }
+  return out;
 }
 
 const OPEN_DECISION: readonly Decision["state"][] = [
@@ -94,7 +139,24 @@ function waitingText(
         : null;
     case "review":
       return {
-        text: `Your “${label}” is waiting for reviewers: ${claim.approvals} of ${claim.quorum} approvals.`,
+        text: `Your “${label}” is waiting for reviewers: ${claim.approvals} of ${claim.quorum} approvals${claim.objections > 0 ? `, ${claim.objections} turned it down` : ""}.`,
+      };
+    case "settle":
+      // Approved: the contributor gets the step itself. Turned down: they are told, and pointed at why.
+      // Who turned it down is always on the Work tab; a reason only when a reviewer published one.
+      return step.verdict === "turned-down"
+        ? {
+            text: `The reviewers turned down your “${label}”. The Work tab shows who, and their reasons if they gave any.`,
+          }
+        : null;
+    case "words":
+      return {
+        text: `Your “${label}” has words no open work area uses, so no manager can accept it. Submit it again under the same name and evidence, with a work area's words.`,
+      };
+    case "stuck":
+      return {
+        text: `Your “${label}” is stuck: the reviewers are split and nobody is left to decide. Once its deadline passes, anyone can close it.`,
+        ...(step.lapsesAt > now ? { due: step.lapsesAt } : {}),
       };
     case "award":
       return {
@@ -163,12 +225,7 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
     }
     for (const claim of mandate.claims) {
       // The milestone panel's claims are submitted by the team member who filed them, as the Work tab says too.
-      const step = nextStep(
-        claim,
-        work?.chainTime ?? 0,
-        mandate.challengeWindow,
-        mandate.isMilestonePanel,
-      );
+      const step = claimStep(claim, mandate, work?.chainTime ?? 0);
       if (
         step.kind === "payout" &&
         sameAddress(claim.record.contributor, wallet)
@@ -265,8 +322,58 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           ifIgnored: "The panel cannot judge it until it is submitted.",
         });
       }
+      // Enough turn-downs: anyone may close it, so it is offered to the work area's manager and the reviewers, who are
+      // waiting on it; the contributor is told instead (below).
+      if (
+        step.kind === "settle" &&
+        step.verdict === "turned-down" &&
+        !mine &&
+        (managesItsArea || mandate.walletIsReviewer)
+      ) {
+        items.push({
+          key: `settle-${claim.id}`,
+          kind: "settle",
+          text: `Enough reviewers turned down “${label}” by ${who(claim.record.contributor)}. Anyone can now close it, you included.`,
+          action: "Close it as turned down",
+          tab: "work",
+          claim: target,
+          why: managesItsArea
+            ? "You manage its work area."
+            : "You are a reviewer on this work budget.",
+          ifIgnored:
+            "It stays open as waiting for reviewers until someone closes it.",
+        });
+      }
+      // Past its deadline: anyone may close it as lapsed, which returns any deposit; offered to the contributor and the
+      // manager.
+      if (
+        canExpire(claim.record, work?.chainTime ?? 0) &&
+        step.kind !== "settle" &&
+        (mine || managesItsArea)
+      ) {
+        items.push({
+          key: `expire-${claim.id}`,
+          kind: "expire",
+          text: mine
+            ? `Nobody finished the review of your “${label}” in time. Close it so it stops waiting${claim.record.stake > 0n ? " and your deposit comes back" : ""}.`
+            : `Nobody finished the review of “${label}” by ${who(claim.record.contributor)} in time. Anyone can now close it as lapsed.`,
+          action: "Close it as lapsed",
+          tab: "work",
+          claim: target,
+          why: mine ? "It is your work." : "You manage its work area.",
+          // `settle` has no deadline: until someone closes it, reviewers can still decide it.
+          ifIgnored:
+            step.kind === "review"
+              ? "It stays open, and the reviewers can still decide it until someone closes it."
+              : "It stays open until someone closes it.",
+        });
+      }
       // Enough approvals: anyone may finish the review, so it is offered to the two people who are waiting on it.
-      if (step.kind === "settle" && (mine || managesItsArea)) {
+      if (
+        step.kind === "settle" &&
+        step.verdict === "approved" &&
+        (mine || managesItsArea)
+      ) {
         items.push({
           key: `settle-${claim.id}`,
           kind: "settle",
@@ -341,11 +448,14 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
   }
 
   if (capacity > 0n) {
+    // A vote that would award a claim is already under way: asking for another would only make a duplicate that fails.
+    const voting = awardsUnderVote(decisions);
     for (const mandate of work?.mandates ?? []) {
       for (const claim of mandate.claims) {
         if (
           nextStep(claim, work?.chainTime ?? 0, mandate.challengeWindow)
-            .kind === "award"
+            .kind === "award" &&
+          !voting.has(`${mandate.address}:${claim.id}`.toLowerCase())
         ) {
           items.push({
             key: `award-${claim.id}`,
@@ -370,6 +480,7 @@ const KIND_ORDER: readonly AttentionItem["kind"][] = [
   "review",
   "bind",
   "settle",
+  "expire",
   "vote",
   "move",
   "award",

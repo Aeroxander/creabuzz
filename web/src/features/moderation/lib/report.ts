@@ -119,3 +119,43 @@ export function reportRecord(input: {
     tags: [["p", hex64(input.target.pubkey, "person id"), input.type]],
   };
 }
+
+/**
+ * Where a report is sent from, which decides who reads it: a board post's report is read by that board's moderators
+ * (without the reporter's name) as well as the community's; a person reported from a private conversation is reported
+ * without the conversation.
+ */
+export type ReportSetting = "community" | "board" | "conversation";
+
+const NOTHING_REMOVED =
+  "Nothing is removed because you reported it; they decide what to do.";
+
+/** What the report dialog says about who sees a report, what goes with it, and what to write in the note. */
+export function reportWording(setting: ReportSetting): {
+  privacy: string;
+  /** For a private conversation: what is not sent, and so what the note should say. */
+  evidence: string | null;
+  noteLabel: string;
+} {
+  if (setting === "board") {
+    return {
+      privacy: `This board's moderators see what you reported and your note, not who you are. The community's moderators also see who you are. ${NOTHING_REMOVED}`,
+      evidence: null,
+      noteLabel: "Anything the moderators should know? (optional)",
+    };
+  }
+  const privacy = `Only this community's moderators will see this, and who you are. ${NOTHING_REMOVED} If you are reporting the community's owner, there is no one independent to review it yet.`;
+  if (setting === "conversation") {
+    return {
+      privacy,
+      evidence:
+        "Your messages with them are not sent with the report. Say in the note what happened.",
+      noteLabel: "What happened? (optional)",
+    };
+  }
+  return {
+    privacy,
+    evidence: null,
+    noteLabel: "Anything the moderators should know? (optional)",
+  };
+}

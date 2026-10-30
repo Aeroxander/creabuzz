@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  launchRemovals,
+  removedLaunchIds,
   LAUNCH_DEFAULTS,
   buildLaunches,
   hasFounderCommitments,
@@ -299,4 +301,48 @@ test("how the reviewers will work is read as the founder wrote it, and a huge on
   assert.equal(huge.record.reviewerTerms.length, 2_000);
   const [none] = buildLaunches([record(ALICE, "vega", 100)]);
   assert.equal(none.record.reviewerTerms, null);
+});
+
+test("a removal hides the versions it came after, and a record published after it shows", () => {
+  const coordinate = launchCoordinate(ALICE, "nebula");
+  const removed = new Map([[coordinate, 200]]);
+  assert.deepEqual(
+    buildLaunches([record(ALICE, "nebula", 150)], removed).length,
+    0,
+  );
+  assert.deepEqual(
+    buildLaunches([record(ALICE, "nebula", 200)], removed).length,
+    0,
+  );
+  const again = buildLaunches([record(ALICE, "nebula", 250)], removed);
+  assert.equal(again.length, 1);
+  assert.equal(again[0].record.createdAt, 250);
+});
+
+test("an author's removals are read by coordinate and time, and only their own count", () => {
+  const removal = (pubkey, coordinate, createdAt) => ({
+    id: `${pubkey.slice(0, 4)}${createdAt}`.padEnd(64, "0"),
+    pubkey,
+    created_at: createdAt,
+    kind: 5,
+    tags: [["a", coordinate]],
+    content: "",
+    sig: "sig",
+  });
+  const removals = launchRemovals([
+    removal(ALICE, launchCoordinate(ALICE, "creaton"), 300),
+    removal(ALICE, launchCoordinate(ALICE, "creaton"), 100),
+    removal(ALICE, launchCoordinate(ALICE, "old-idea"), 50),
+    // Someone else's deletion names nothing of Alice's.
+    removal(BOB, launchCoordinate(ALICE, "nebula"), 400),
+    // A deletion of another kind of record is not a launch removal.
+    removal(ALICE, `30023:${ALICE}:creaton`, 500),
+  ]);
+  assert.equal(removals.get(launchCoordinate(ALICE, "creaton")), 300);
+  assert.equal(removals.has(launchCoordinate(ALICE, "nebula")), false);
+  assert.deepEqual(removedLaunchIds(removals, ALICE).sort(), [
+    "creaton",
+    "old-idea",
+  ]);
+  assert.deepEqual(removedLaunchIds(removals, BOB), []);
 });

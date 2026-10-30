@@ -13,6 +13,7 @@ import { SaleProgressCard } from "./SaleProgressCard";
 import { isSetupStage } from "../lib/sale-steps";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
+import { LaunchMissing } from "./LaunchMissing";
 import { PriceChartCard } from "./PriceChartCard";
 import { TradeCard } from "./TradeCard";
 import { Button } from "@/shared/ui/button";
@@ -121,7 +122,12 @@ export function LaunchDetailPage({
   initialDecision?: string;
   initialClaim?: { id: string; mandate: string };
 }) {
-  const { launch: realLaunch, isLoading } = useLaunch(launchId, author);
+  const {
+    launch: realLaunch,
+    isLoading,
+    error: readError,
+    refetch,
+  } = useLaunch(launchId, author);
   const launch = sandbox
     ? {
         record: sandboxRecord(),
@@ -205,9 +211,11 @@ export function LaunchDetailPage({
 
   if (isLoading || !launch) {
     return (
-      <p className="mx-auto w-full max-w-5xl px-4 py-16 text-center text-sm text-black/60 dark:text-white/60">
-        {isLoading ? "Loading launch…" : "Launch not found."}
-      </p>
+      <LaunchMissing
+        error={readError}
+        loading={isLoading}
+        onRetry={() => void refetch()}
+      />
     );
   }
 

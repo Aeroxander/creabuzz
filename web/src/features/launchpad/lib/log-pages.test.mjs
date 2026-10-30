@@ -5,6 +5,7 @@ import {
   HistoryTooWideError,
   MAX_PAGES,
   isRangeLimitError,
+  isRateLimitError,
   rangeLimitFrom,
   readInPages,
 } from "./log-pages.ts";
@@ -157,9 +158,75 @@ test("a history too wide to read is refused with what to set, after a bounded nu
     readInPages({ fetchPage, from: 0n, to: 11_900_000n, pageSize: 50_000n }),
     (error) =>
       error instanceof HistoryTooWideError &&
-      /VITE_HISTORY_FROM_BLOCKS/.test(error.message),
+      // The person is told what to do in plain words; the setting is for whoever runs the site (the error report).
+      !/VITE_|eth_getLogs|\d{4,}/.test(error.message) &&
+      /organiser/.test(error.message) &&
+      /VITE_HISTORY_FROM_BLOCKS/.test(error.detail) &&
+      /0 to 11900000/.test(error.detail),
   );
   assert.equal(calls, MAX_PAGES);
+});
+
+test("a node that is asked too often is busy, not narrow: its refusal is never read as a range limit", () => {
+  for (const words of [
+    "rate limit exceeded",
+    "daily request count exceeded, request rate limited",
+    "429 Too Many Requests",
+    "Your app has exceeded its compute units per second capacity",
+    "project ID request rate exceeded",
+  ]) {
+    assert.equal(isRateLimitError(new Error(words)), true, words);
+    assert.equal(isRangeLimitError(new Error(words)), false, words);
+  }
+  // Range refusals that say "exceed" are still range refusals.
+  assert.equal(
+    isRangeLimitError(new Error("exceed maximum block range: 50000")),
+    true,
+  );
+  assert.equal(
+    isRangeLimitError(new Error("block range exceeds the limit of 2000")),
+    true,
+  );
+  assert.equal(
+    isRateLimitError(new Error("exceed maximum block range: 50000")),
+    false,
+  );
+});
+
+test("a range refusal with words like capacity, quota or credits is a range refusal, not a busy node", () => {
+  for (const words of [
+    "Log response size exceeded the node's capacity: query a smaller block range",
+    "query returned more than 10000 results, which is over this plan's quota",
+    "block range too large for the credits of this request",
+  ]) {
+    assert.equal(isRateLimitError(new Error(words)), false, words);
+    assert.equal(isRangeLimitError(new Error(words)), true, words);
+  }
+});
+
+test("a busy node stops the paged read at once instead of being asked in smaller pieces", async () => {
+  let calls = 0;
+  const fetchPage = async () => {
+    calls += 1;
+    throw new Error("daily request count exceeded, request rate limited");
+  };
+  await assert.rejects(
+    readInPages({ fetchPage, from: 0n, to: 100_000n, pageSize: 10_000n }),
+    /request rate limited/,
+  );
+  assert.equal(calls, 1, "one request, not one per halving");
+});
+
+test("a limit named in thousands is read as blocks, and a cap on logs is not a block range", () => {
+  const alchemy = new Error(
+    "Log response size exceeded. You can make eth_getLogs requests with up to a 2K block range and no limit on the response size, or you can request any block range with a cap of 10K logs in the response.",
+  );
+  assert.equal(isRangeLimitError(alchemy), true);
+  assert.equal(rangeLimitFrom(alchemy), 2000n);
+  assert.equal(
+    rangeLimitFrom(new Error("any block range with a cap of 10K logs")),
+    null,
+  );
 });
 
 test("starting where the chain's history starts keeps a long chain within the budget", async () => {

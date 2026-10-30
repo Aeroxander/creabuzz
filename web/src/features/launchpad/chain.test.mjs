@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { installErrorReporting } from "../../shared/lib/error-report.ts";
 import {
   CHAIN_PRESETS,
   CONFIGURED_DEFAULT_CHAIN_ID,
@@ -23,10 +24,12 @@ import {
   networkLabel,
   ethCall,
   ethGetLogs,
+  forgetEndpointChainIds,
   getRpcEndpoint,
   historyFromBlock,
   isDevBuild,
   priceIndexerUrl,
+  reportReadFailure,
 } from "./chain.ts";
 
 const RECORD = {
@@ -470,10 +473,13 @@ test("an exchange on any chain but the local one needs pinned code, or it is ref
 
 /** A JSON-RPC node that refuses `eth_getLogs` over more than `limit` blocks, as real ones do, and has one log per 1000 blocks. */
 function limitedNode({ head, chainId, limit }) {
+  forgetEndpointChainIds();
   const original = globalThis.fetch;
   const asked = [];
+  const methods = [];
   globalThis.fetch = async (_url, init) => {
     const { method, params } = JSON.parse(init.body);
+    methods.push(method);
     const reply = (result) => ({
       ok: true,
       status: 200,
@@ -517,6 +523,7 @@ function limitedNode({ head, chainId, limit }) {
   };
   return {
     asked,
+    methods,
     restore: () => {
       globalThis.fetch = original;
     },
@@ -593,8 +600,8 @@ test("a node that caps the range is read in pages from the block the build names
       want.push(block);
     assert.deepEqual(blocks, want);
     assert.ok(
-      node.asked.slice(1).every(([from]) => from >= 11_900_000n),
-      "no page asks for history before the block the build names",
+      node.asked.every(([from]) => from >= 11_900_000n),
+      "no request asks for history before the block the build names",
     );
   } finally {
     node.restore();
@@ -610,7 +617,10 @@ test("a capped node with no start named is refused with what to set, not read fo
   try {
     await assert.rejects(
       ethGetLogs("http://node.test", FILTER, {}),
-      /VITE_HISTORY_FROM_BLOCKS/,
+      (error) =>
+        /organiser/.test(error.message) &&
+        !/VITE_/.test(error.message) &&
+        /VITE_HISTORY_FROM_BLOCKS/.test(error.detail),
     );
     assert.ok(node.asked.length < 200, `${node.asked.length} requests`);
   } finally {
@@ -630,7 +640,10 @@ test("a node that fails for another reason is not paged around", async () => {
   try {
     await assert.rejects(
       ethGetLogs("http://node.test", FILTER, {}),
-      /rpc http 503/,
+      (error) =>
+        error.message ===
+          "The chain node is busy. Try again in a minute; if it keeps happening, tell the site's organiser." &&
+        error.detail === "rpc http 503",
     );
     assert.equal(calls, 1);
   } finally {
@@ -752,4 +765,170 @@ test("a chain id is said in words when the app knows the chain, and as a plain n
   assert.equal(networkLabel(11155111), "Sepolia");
   assert.equal(networkLabel(31337), "Local Anvil");
   assert.equal(networkLabel(424242), "network 424242");
+});
+
+test("a read starts at the block the build names straight away, without waiting for the node to refuse block 0", async () => {
+  // No cap at all: before, the first request still asked for 0..head and only a range-worded refusal moved it.
+  const node = limitedNode({
+    head: 11_960_000n,
+    chainId: 11155111,
+    limit: 100_000_000n,
+  });
+  const env = { VITE_HISTORY_FROM_BLOCKS: '{"11155111":11900000}' };
+  try {
+    const logs = await ethGetLogs("http://node.test", FILTER, env);
+    assert.equal(node.asked.length, 1);
+    assert.equal(node.asked[0][0], 11_900_000n);
+    assert.equal(BigInt(logs[0].blockNumber), 11_900_000n);
+    // The chain id is asked once for the endpoint, not once per read.
+    await ethGetLogs("http://node.test", FILTER, env);
+    assert.equal(node.methods.filter((m) => m === "eth_chainId").length, 1);
+    // A filter that already starts later keeps its own start.
+    await ethGetLogs(
+      "http://node.test",
+      { ...FILTER, fromBlock: `0x${(11_950_000).toString(16)}` },
+      env,
+    );
+    assert.equal(node.asked.at(-1)[0], 11_950_000n);
+  } finally {
+    node.restore();
+  }
+});
+
+/** A node that answers every request with a JSON-RPC error carrying `words`. */
+function refusingNode(words) {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ jsonrpc: "2.0", id: 1, error: { message: words } }),
+    };
+  };
+  return {
+    calls: () => calls,
+    restore: () => {
+      globalThis.fetch = original;
+    },
+  };
+}
+
+test("a rate-limited node is asked again after a pause, then said plainly: never paged around, never its raw words", async () => {
+  forgetEndpointChainIds();
+  const delays = RPC_RETRY.delaysMs;
+  RPC_RETRY.delaysMs = [1, 1];
+  const node = refusingNode(
+    "daily request count exceeded, request rate limited",
+  );
+  try {
+    await assert.rejects(
+      ethGetLogs("http://node.test", FILTER, {}),
+      (error) =>
+        error.name === "ChainReadError" &&
+        error.reason === "busy" &&
+        /The chain node is busy\. Try again in a minute/.test(error.message) &&
+        !/request count|rate limited/.test(error.message) &&
+        /request rate limited/.test(error.detail),
+    );
+    // The first ask and its two pauses: three requests, not the eleven of a halving page loop.
+    assert.equal(node.calls(), 3);
+  } finally {
+    node.restore();
+    RPC_RETRY.delaysMs = delays;
+  }
+});
+
+test("a reverted call is never taken for a busy node, even when its words say 'rate limit'", async () => {
+  const delays = RPC_RETRY.delaysMs;
+  RPC_RETRY.delaysMs = [1, 1];
+  const node = refusingNode("execution reverted: rate limit reached");
+  try {
+    await assert.rejects(
+      ethCall("http://node.test", `0x${"11".repeat(20)}`, "0x"),
+      /execution reverted/,
+    );
+    assert.equal(node.calls(), 1);
+  } finally {
+    node.restore();
+    RPC_RETRY.delaysMs = delays;
+  }
+});
+
+test("a chain node failing is told to the error collector once per cause a visit, in its own words, not the person's", async () => {
+  forgetEndpointChainIds();
+  const sent = [];
+  const stop = installErrorReporting({
+    endpoint: "https://errors.example/creaton",
+    target: { addEventListener() {}, removeEventListener() {} },
+    fetchImpl: (_url, init) => {
+      sent.push(JSON.parse(init.body));
+      return Promise.resolve();
+    },
+    page: () => "/launchpad/abc",
+    now: () => 1_760_000_000_000,
+  });
+  const delays = RPC_RETRY.delaysMs;
+  RPC_RETRY.delaysMs = [];
+  const node = refusingNode("rate limit exceeded");
+  try {
+    for (let i = 0; i < 3; i += 1) {
+      await assert.rejects(ethBlockNumber("http://node.test"));
+    }
+    assert.equal(sent.length, 1, "three failures, one note");
+    assert.equal(sent[0].kind, "handled");
+    assert.equal(sent[0].message, "chain-busy: rate limit exceeded");
+  } finally {
+    node.restore();
+    RPC_RETRY.delaysMs = delays;
+  }
+  const limited = limitedNode({
+    head: 11_960_000n,
+    chainId: 11155111,
+    limit: 50_000n,
+  });
+  try {
+    await assert.rejects(ethGetLogs("http://node.test", FILTER, {}));
+    assert.equal(sent.length, 2);
+    assert.match(
+      sent[1].message,
+      /^chain-history-too-wide: reading blocks 0 to/,
+    );
+  } finally {
+    limited.restore();
+    stop();
+  }
+});
+
+test("a page that shows a failed read reports it once: a busy node already told at the rpc is not told again", async () => {
+  forgetEndpointChainIds();
+  const sent = [];
+  const stop = installErrorReporting({
+    endpoint: "https://errors.example/creaton",
+    target: { addEventListener() {}, removeEventListener() {} },
+    fetchImpl: (_url, init) => {
+      sent.push(JSON.parse(init.body));
+      return Promise.resolve();
+    },
+    page: () => "/launchpad/abc",
+    now: () => 1_760_000_000_000,
+  });
+  const delays = RPC_RETRY.delaysMs;
+  RPC_RETRY.delaysMs = [];
+  const node = refusingNode("rate limit exceeded");
+  try {
+    const busy = await ethBlockNumber("http://node.test").catch((e) => e);
+    assert.equal(sent.length, 1);
+    reportReadFailure("work-read", busy);
+    assert.equal(sent.length, 1, "the busy node was already told once");
+    // Anything the rpc did not tell is told under the page's own name.
+    reportReadFailure("work-read", new Error("decoded nonsense"));
+    assert.equal(sent.length, 2);
+    assert.equal(sent[1].message, "work-read: decoded nonsense");
+  } finally {
+    node.restore();
+    RPC_RETRY.delaysMs = delays;
+    stop();
+  }
 });

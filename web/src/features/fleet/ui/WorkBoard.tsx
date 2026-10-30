@@ -33,6 +33,7 @@ import type { TaskPriority } from "../use-agent-tasks";
 import type { Channel } from "@/features/channels/use-channels";
 import { existingUserPubkey, userPubkey } from "@/shared/lib/identity";
 import { Badge } from "@/shared/ui/badge";
+import { failureWords } from "@/shared/lib/readable-error";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { toast } from "sonner";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -126,7 +127,7 @@ function WorkItemRow({
 function reportActionFailure(what: string) {
   return (error: unknown) => {
     console.error(`[work] ${what}`, error);
-    toast.error(what, { description: errorMessage(error) });
+    toast.error(what, { description: failureWords(error).text });
   };
 }
 
@@ -353,13 +354,21 @@ export function WorkBoard({
       />
 
       {degraded ? (
-        <p
+        <div
           className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-300"
           data-testid="work-degraded"
         >
-          Status and approval history could not be loaded, so some items show
-          their default column. ({degraded})
-        </p>
+          <p>
+            Status and approval history could not be loaded, so some items show
+            their default column.
+          </p>
+          <details className="mt-1">
+            <summary className="cursor-pointer select-none font-medium">
+              Technical details
+            </summary>
+            <p className="mt-1 break-words">{degraded}</p>
+          </details>
+        </div>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-1.5">

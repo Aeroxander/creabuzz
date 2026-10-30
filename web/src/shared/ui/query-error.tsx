@@ -6,7 +6,7 @@ import {
   relayFailureOutcome,
   relayMessageOf,
 } from "@/shared/lib/relay-failure";
-import { restrictionText } from "@/shared/lib/refusal-text";
+import { plainRefusalText } from "@/shared/lib/refusal-text";
 
 /** What the reader can do right now when a query failed (Review-Proven Rule 6). */
 export type QueryRecovery = (onUnlocked: () => void) => ReactNode;
@@ -34,14 +34,19 @@ export const AUTH_REQUIRED_DESCRIPTION =
  *   `AUTH_REQUIRED_DESCRIPTION` and the reader's `recovery` action; the
  *   caller's `onRetry` fires automatically when that action succeeds, so the
  *   page reloads itself instead of waiting for a second click.
- * - **answered** — the relay replied *and refused*. Its wording is shown
- *   verbatim plus plain guidance (an unknown-kind refusal means the relay is
+ * - **answered** — the relay replied *and refused*. A refusal with plain
+ *   words (a ban, an invite-only server, the request limit) says them;
+ *   any other gets plain guidance (an unknown-kind refusal means the relay is
  *   older than this build — retrying will not help, upgrading will).
- * - **unanswered** — nobody replied (timeout, refused socket). Shown with the
- *   relay URL that was asked, the "may be offline" line, and a retry: the
- *   reader's network or the relay process is what to check.
+ * - **unanswered** — nobody replied (timeout, refused socket). Shown with
+ *   the "may be offline" line and a retry: the reader's network or the relay
+ *   process is what to check.
  * - **empty** is not here on purpose: success with zero events is the caller's
  *   own empty state, and this component only ever renders on failure.
+ *
+ * The evidence — the server's own wording and the address that was asked —
+ * sits in a collapsed "Technical details" disclosure: people read the plain
+ * words, and whoever helps them can open the rest.
  *
  * Callers keep owning `title` and the unanswered `description` — they know
  * what their page could not load; this component owns which of the four
@@ -80,22 +85,18 @@ export function QueryError({
   const authRequired = outcome === "auth-required";
   const answered = outcome === "answered";
 
+  const relayMessage = error === undefined ? null : relayMessageOf(error);
   // An answered refusal replaces the caller's "did not answer" copy: saying
   // nobody replied about a relay that replied is the lie this component
-  // exists to prevent.
+  // exists to prevent. Its plain words come first; the guidance covers the rest.
   const shownDescription = authRequired
     ? AUTH_REQUIRED_DESCRIPTION
     : answered
-      ? relayFailureGuidance(relayMessageOf(error) ?? "", kinds)
+      ? (plainRefusalText(relayMessage ?? "") ??
+        relayFailureGuidance(relayMessage ?? "", kinds))
       : description;
-  // A refusal said in plain words above (a ban, a timeout) is not repeated in the server's own wording.
-  const restricted =
-    answered && restrictionText(relayMessageOf(error) ?? "") !== null;
-  const shownMessage = restricted
-    ? undefined
-    : answered || authRequired
-      ? (relayMessageOf(error) ?? message)
-      : message;
+  // The server's own wording, or the caller's, is evidence for whoever helps: kept under Technical details.
+  const detailMessage = relayMessage ?? message;
   const retryNow = () => {
     onRetry?.();
   };
@@ -115,22 +116,6 @@ export function QueryError({
       >
         {shownDescription}
       </p>
-      {shownMessage ? (
-        <p
-          className="max-w-md break-words text-xs text-black/60 dark:text-white/60"
-          data-testid={`${testId}-message`}
-        >
-          {shownMessage}
-        </p>
-      ) : null}
-      {relayUrl ? (
-        <p
-          className="max-w-md break-all font-mono text-2xs text-black/80 dark:text-white/80"
-          data-testid={`${testId}-relay`}
-        >
-          Relay: {relayUrl}
-        </p>
-      ) : null}
       {outcome === "unanswered" ? (
         <p
           className="max-w-md text-xs text-black/60 dark:text-white/60"
@@ -138,6 +123,29 @@ export function QueryError({
         >
           The server may be offline or unreachable from this browser.
         </p>
+      ) : null}
+      {detailMessage || relayUrl ? (
+        <details
+          className="max-w-md text-xs text-black/60 dark:text-white/60"
+          data-testid={`${testId}-details`}
+        >
+          <summary className="cursor-pointer select-none font-medium">
+            Technical details
+          </summary>
+          {detailMessage ? (
+            <p className="mt-1 break-words" data-testid={`${testId}-message`}>
+              {detailMessage}
+            </p>
+          ) : null}
+          {relayUrl ? (
+            <p
+              className="mt-1 break-all font-mono text-2xs"
+              data-testid={`${testId}-relay`}
+            >
+              Server: {relayUrl}
+            </p>
+          ) : null}
+        </details>
       ) : null}
       {recovery && error !== undefined ? (
         <div className="mt-1 flex w-full justify-center">
@@ -158,8 +166,5 @@ export function QueryError({
   );
 }
 
-/** Message text for an unknown thrown value. */
-export function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error ?? "unknown error");
-}
+// Message text for an unknown thrown value, and the same failure as plain words for main copy.
+export { errorMessage, readableError } from "@/shared/lib/readable-error";

@@ -38,6 +38,11 @@ author without anyone explaining it.
 > **Updated 2026-10-29**, after the readiness audit: contributor steps work from passkey accounts with fees covered
 > (D139), the run is about fifteen days (the contracts' waits), and the list below has the server settings, invite
 > links, the picture check and the reminders you send.
+>
+> **Updated 2026-10-30**, after the second audit: the founder (not the reviewers) accepts each piece for review, someone
+> must finish each review to start its 7 days, the turn-down is closed by anyone once enough reviewers object, passkeys
+> must be synced before day 1, the picture check matches member-only pictures (D142), and the node check sends the
+> request the app sends.
 
 ### Before it (yours to do)
 
@@ -55,15 +60,19 @@ author without anyone explaining it.
      the project, submitting work, a reviewer's bond, accepting and reviewing, finishing, and opening, voting and running
      decisions. Contributor steps then work from a passkey account with its fees covered (D139), so nobody needs a
      browser wallet or test ETH. A policy limited to a list of contract addresses will not do: each project's DAO and
-     work contracts are made when it starts. Set a spending limit sized for the run rather than leaving it open.
+     work contracts are made when it starts. Set a spending limit sized for the run rather than leaving it open. The
+     build refuses a contributor-only image without the ZeroDev settings, or with any `CHANGE_ME` left in a `VITE_` line.
    - **The page's chain node** (`VITE_CHAIN_RPC_URL`): it must allow a wide `eth_getLogs` range. The app reads awards,
-     work and votes from the deploy block onward in pages the size the node allows, and stops after 120 requests. Sepolia
-     makes about 7,200 blocks a day, so a node that allows 10,000 blocks a request lasts about five months; one that
-     allows 1,000 lasts about 17 days, which this run would outlive. Check it with the contributor kit's address from
-     the manifest:
-     `cast logs --from-block $(( $(cast block-number --rpc-url "$NODE") - 20000 )) --to-block latest --address <contributor-kit> --rpc-url "$NODE"`.
-     An empty answer is fine; an error about the block range is not. Its request limit has to cover several people
-     reloading pages at once.
+     work and votes from the deploy block onward, in pages the size the node allows when it refuses the whole range, and
+     stops after 120 requests. Sepolia makes about 7,200 blocks a day, so a node that allows 10,000 blocks a request lasts
+     about five months; one that allows 1,000 lasts about 17 days, which this run would outlive. Check it with the request
+     the app sends first, using the manifest's `block` and the contributor kit's address:
+     `cast logs --from-block <block> --to-block latest --address <contributor-kit> --rpc-url "$NODE"`.
+     An answer within a few seconds is fine, even an empty one; a timeout is not. An error about the block range means the
+     app will page: [docs/sepolia-testnet.md](../sepolia-testnet.md) (section 3) says how to check that it lasts.
+   - **Its request limit** has to cover every participant opening project pages at once (a page sends a dozen or more
+     reads). A busy node shows people "The chain node is busy. Try again in a minute", and sends you a `chain-busy`
+     error report.
 3. **The hosted server**: the same stack, served over HTTPS (passkeys need it), with the relay's read state
    (`BUZZ_V1_ENABLED=true`, in the Creaton part of `.env`), Postgres and Redis, and the web app served by it. Add the
    chain the server checks passkey accounts against, or it refuses to link one to a person:
@@ -72,10 +81,11 @@ author without anyone explaining it.
    (`curl -fsS https://<host>/api/join-policy` names a version); "Show your name with this account" from a brand-new
    passkey account, before its first step; and one practice project started from a passkey account (one large
    operation, which a bundler may refuse: [docs/sepolia-testnet.md](../sepolia-testnet.md), section 4).
-4. **Pictures, before inviting anyone.** Upload a profile picture, a picture in a board post and a project cover, then
-   open each picture's own address in a private window. Each must load from your public host (not `localhost` or the
-   storage container's name). No test has yet shown an upload working on a hosted server, and the first thing everyone
-   is asked to do is add a picture.
+4. **Pictures, before inviting anyone.** Upload a profile picture, a picture in a board post and a project cover. Then,
+   signed in as a second member on another device, check each one shows. In that browser's network panel, each
+   picture's address must be on your public host (not `localhost` or the storage container's name). Pictures are for
+   members only (D142): opening a picture's address in a private window is refused, and that is right, not a broken
+   upload. The first thing everyone is asked to do is add a picture.
 5. **Invite links, one per person.** The server is invite-only (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`), so nobody gets in
    without one. As the community's owner or an admin, open **People** in the community and make one link per person:
    "One person", lasting a week. Send each link to its person privately; it already names the community's address. Make
@@ -84,33 +94,52 @@ author without anyone explaining it.
    reviewers and voters see only the address and the founder cannot pick reviewers by name. Ask each person, after
    signing up, to use "Show your name with this account" in the account strip on the contributor screens (one passkey
    prompt). The reviewers do it before day 1.
-7. **The project**: typed in from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) by the founder themselves, with
+7. **Synced passkeys.** Awarded Shares and any money in a passkey account can be reached only with that passkey: the
+   recovery key brings back a person's name, not their passkey account. Before day 1, each person confirms their
+   passkey is saved in their phone's or computer's password manager and synced (iCloud Keychain, Google Password
+   Manager, or a password manager they use on two devices), not only on one device or a hardware key. Do not invite
+   someone whose passkey is not synced.
+8. **The error reports**: `VITE_ERROR_REPORT_URL` set and checked (docs/error-reporting.md). During the run, look at the
+   collector and at the ZeroDev project's spending each day: a `sponsor-refused` note means every passkey step is failing
+   for everyone until you raise the limit or widen the policy, and retrying will not help them.
+9. **The project**: typed in from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) by the founder themselves, with
    two work areas whose words a stranger could check, and its two reviewers asked first (who they are, how fast they will
-   answer, any tie to the founder).
-8. **The automated versions**, green on the build you host: `scripts/mvp-gate.sh` (it includes the contributor, work,
-   paid-work and milestone journeys).
-9. **The report**: a copy of [PILOT-REPORT.md](PILOT-REPORT.md) to fill in as it runs.
+   answer, any tie to the founder). With two reviewers the form asks both to agree; a split then decides nothing until the
+   piece lapses. Either name a third reviewer, or choose "Let any one decide" (one approval is enough, even if the other
+   turns it down), and tell the reviewers which.
+10. **The automated versions**, green on the build you host: `scripts/mvp-gate.sh` (it includes the contributor, work,
+   paid-work and milestone journeys). They do not cover a reviewer acting from a passkey account or the name link against
+   your real server, so in step 3's practice project have one reviewer approve from a passkey account, and have each
+   reviewer's name show in the founder's reviewer picker (step 6).
+11. **The report**: a copy of [PILOT-REPORT.md](PILOT-REPORT.md) to fill in as it runs.
 
 ### The fifteen days
 
-The waits are the contracts' own and cannot be shortened during the freeze: an approved piece waits **7 days** after its
-approval (time for anyone to dispute it), then its contributor marks it finished, and only then can its award be put to
-a vote. The vote is open at least a day, its support must hold six hours, and it waits one more day before it can run:
-about two and a half days. So a piece approved on day 4 is awarded on day 13 or 14, and the run is about fifteen days.
+The waits are the contracts' own and cannot be shortened during the freeze. Once enough reviewers approve a piece,
+someone has to finish the review ("Finish the review" in Needs you and on the Work tab; anyone may); its
+**7 days** start only then (time for anyone to dispute it). Then its contributor marks it finished, and only then can its
+award be put to a vote. The vote is open at least a day, its support must hold six hours, and it waits one more day before it can run:
+about two and a half days. So a piece whose review is finished on day 4 is awarded on day 13 or 14, and the run is about
+fifteen days.
 
 Nothing reaches people outside the app: no email, no browser notification. Each person sees waiting work only when they
 open it (Needs you, Home). So you message them yourself on the days below, outside the app, saying what is waiting.
 
 | Day | Who | What |
 |---|---|---|
-| Before 1 | Everyone | Sign up from their own invite link, set a name and a picture, show their name with their passkey account |
+| Before 1 | Everyone | Sign up from their own invite link, set a name and a picture, show their name with their passkey account, confirm the passkey is synced |
 | 1 | Founder | Start the project from Start, post the invitation in General, answer the first questions on the supporters board |
-| 1 | You | Message the founder and both reviewers: the project is up, and reviews are due on days 2 to 4 |
+| 1 | You | Message the founder and both reviewers: the project is up, the founder accepts each piece for review as it comes in, and reviews are due on days 2 to 4 |
 | 1 to 3 | Contributors | Find something to do from Ways to help, submit it (at least one piece each) |
-| 2 to 4 | Reviewers | Accept each piece for review, read the evidence against the work area's exact words, approve or turn down with a reason |
+| 1 to 3 | Founder | Accept each submitted piece for review ("Accept for review" in Needs you): only the founder can, as each work area's manager, and reviewers see nothing to review until then |
+| 1, 2, 3 | You | Message the founder: which pieces are waiting to be accepted for review |
+| 2 to 4 | Reviewers | Read the evidence against the work area's exact words, then Approve, or "Turn it down" and write the reason |
 | 2, 3, 4 | You | Message each reviewer: which pieces are waiting for them |
+| 2 to 4 | Contributor or founder | Once enough reviewers approve a piece, press "Finish the review" (Needs you): its 7 days start only then |
+| 2 to 4 | Anyone | Once enough reviewers object to a piece, press "Close it as turned down" |
 | 3 | You | Make the late contributor's invite link and send it |
-| 3 | A late contributor | Joins knowing nobody, finds work, submits (reviewed by day 4) |
+| 3 | A late contributor | Joins knowing nobody, finds work, submits (accepted by the founder and reviewed by day 4) |
+| 4, 5 | You | Message the founder and contributors about any approved piece whose review is not finished yet |
 | 4 to 11 | Nobody | Each approved piece waits its 7 days |
 | 9 to 11 | Contributors | Once a piece's 7 days are over, Needs you says "Finish it": mark it finished |
 | 9 to 11 | Founder | Put each finished piece's award to a vote |
@@ -120,11 +149,14 @@ open it (Needs you, Home). So you message them yourself on the days below, outsi
 | 12 to 14 | Founder | Run each award once its wait is over |
 | 12, 13, 14 | You | Message the founder: which awards can run |
 | 15 | Contributors | Look at the Contributions page: what they did, who reviewed it, what it was awarded. Then the questions below |
+| 15 | One contributor (optional) | Only if the DAO holds something (you sent it test money): open Funds and try "Leave and take my share" from the passkey account. Before confirming, say aloud what they give up and what they receive. Leaving destroys their Shares; with nothing in the treasury it pays nothing |
 
 The invitation in General says the run lasts about fifteen days, and that most of the second week is a wait.
 
 The contributors: at least one new to crypto, one doing non-technical work, and the late one above. Plant one piece of
-work that does not meet its words, so that one turn-down happens for a reason everyone can see.
+work that does not meet its words, so that one turn-down happens for a reason everyone can see: the founder accepts it
+for review like any other, both reviewers press "Turn it down" and write why, and then anyone presses "Close it as turned
+down". The contributor should find the turn-down and its reason without being told.
 
 ### Ask each contributor afterwards, without prompting
 

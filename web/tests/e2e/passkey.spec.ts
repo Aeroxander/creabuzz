@@ -187,6 +187,8 @@ test("signing out of a passkey account offers its own recovery key, and counts i
   await page.getByTestId("create-identity-cta").first().click();
   await page.getByTestId("onboarding-name").fill("PRF Reviewer");
   await page.getByTestId("onboarding-passkey").click();
+  // The key is offered once right after sign-up (D143); this case is about the offer at sign-out, so pass on it here.
+  await page.getByTestId("backup-close").click({ timeout: 20_000 });
   await expect(page.getByTestId("user-chip")).toBeVisible({ timeout: 20_000 });
   const stored = await page.evaluate(() => ({
     mode: localStorage.getItem("buzz.passkey.mode"),

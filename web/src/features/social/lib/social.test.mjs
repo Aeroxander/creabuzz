@@ -50,12 +50,7 @@ import {
   buildUndo,
   withMentions,
 } from "./post-events.ts";
-import {
-  buildRows,
-  embeddedRepostTarget,
-  repostTargetsToFetch,
-  sortNewestFirst,
-} from "./timeline.ts";
+import { buildRows, repostTargetIds, sortNewestFirst } from "./timeline.ts";
 import {
   mostFollowed,
   scoreNotes,
@@ -310,7 +305,7 @@ describe("timeline rows", () => {
     );
   });
 
-  it("resolves a repost with an authentic embed and keeps who reposted", () => {
+  it("resolves a repost with the server's copy of the note and keeps who reposted", () => {
     const repost = signed(reposterKey, {
       kind: 6,
       created_at: 500,
@@ -320,14 +315,18 @@ describe("timeline rows", () => {
       ],
       content: JSON.stringify(original),
     });
-    const rows = buildRows([repost]);
+    // Even with an authentic embedded copy, the original is looked up.
+    assert.deepEqual(repostTargetIds([repost]), [original.id]);
+    // And when the server no longer returns it (deleted or removed), the repost is not shown from its copy.
+    assert.deepEqual(buildRows([repost]), []);
+    assert.deepEqual(buildRows([repost], new Map()), []);
+    const rows = buildRows([repost], new Map([[original.id, original]]));
     assert.equal(rows.length, 1);
     assert.equal(rows[0].event.content, "the original");
     assert.deepEqual(rows[0].repostedBy, { pubkey: reposter, at: 500 });
-    assert.deepEqual(repostTargetsToFetch([repost]), []);
   });
 
-  it("ignores a forged embed and asks for the real note by id", () => {
+  it("never shows a forged embed: only the server's copy", () => {
     const forged = { ...original, content: "words in your mouth" };
     const repost = signed(reposterKey, {
       kind: 6,
@@ -335,9 +334,7 @@ describe("timeline rows", () => {
       tags: [["e", original.id]],
       content: JSON.stringify(forged),
     });
-    assert.equal(embeddedRepostTarget(repost), null);
-    assert.deepEqual(repostTargetsToFetch([repost]), [original.id]);
-    // Without the fetched original the row is skipped, never the forgery.
+    assert.deepEqual(repostTargetIds([repost]), [original.id]);
     assert.deepEqual(buildRows([repost]), []);
     const rows = buildRows([repost], new Map([[original.id, original]]));
     assert.equal(rows[0].event.content, "the original");
@@ -350,7 +347,10 @@ describe("timeline rows", () => {
       tags: [["e", original.id]],
       content: JSON.stringify(original),
     });
-    const rows = buildRows([original, repost]);
+    const rows = buildRows(
+      [original, repost],
+      new Map([[original.id, original]]),
+    );
     assert.equal(rows.length, 1);
     assert.equal(rows[0].repostedBy.at, 900);
   });

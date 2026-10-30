@@ -12,6 +12,7 @@ import { activityAt, type Row } from "../lib/timeline";
 import { useLaunchUpdates } from "../use-launch-updates";
 import { engagementOf, useEngagementMap, usePeople } from "../use-people";
 import { useBookmarkIds, useMutedPeople } from "../use-social-actions";
+import { LastVisitLine } from "./HomeFreshParts";
 import { PostCard } from "./PostCard";
 import { TimelineSkeleton } from "./Status";
 
@@ -54,6 +55,7 @@ export function PostList({
   hasMore = false,
   loadingMore = false,
   onLoadMore,
+  lastVisitBefore = null,
 }: {
   rows?: readonly Row[];
   items?: readonly TimelineItem[];
@@ -61,6 +63,8 @@ export function PostList({
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
+  /** Home: the item the "New since your last visit" line goes above. */
+  lastVisitBefore?: string | null;
 }) {
   const me = existingUserPubkey();
   const mutedQuery = useMutedPeople();
@@ -134,7 +138,10 @@ export function PostList({
 
   return (
     <div data-testid="social-post-list">
-      {visible.map((item) =>
+      {visible.flatMap((item) => [
+        item.key === lastVisitBefore ? (
+          <LastVisitLine key="last-visit" />
+        ) : null,
         item.kind === "board" ? (
           boards ? (
             <BoardPostCard
@@ -164,7 +171,7 @@ export function PostList({
             row={item.row}
           />
         ),
-      )}
+      ])}
       <div className="flex h-14 items-center justify-center" ref={sentinel}>
         {loadingMore ? (
           <Loader2

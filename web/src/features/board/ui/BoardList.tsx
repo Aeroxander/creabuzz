@@ -42,6 +42,7 @@ import { BoardRules } from "./BoardRules";
 import { JoinBoardButton } from "./JoinBoardButton";
 import { PostComposer } from "./PostComposer";
 import { PostRow } from "./PostRow";
+import { failureWords } from "@/shared/lib/readable-error";
 
 const SORTS = Object.keys(SORT_LABELS) as BoardSort[];
 
@@ -168,7 +169,7 @@ export function BoardList({
     if (!needAccount("vote")) return;
     actions.vote(post.id, direction, post).catch((error) =>
       toast.error("Couldn't vote", {
-        description: error instanceof Error ? error.message : String(error),
+        description: failureWords(error).text,
       }),
     );
   };

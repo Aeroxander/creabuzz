@@ -5,9 +5,12 @@
 
 import { Card } from "@/shared/ui/card";
 
+import { raisesOffered } from "../lib/raises-offered";
 import type { LaunchRecord } from "../models";
 
 export function IdeaOverview({ record }: { record: LaunchRecord }) {
+  // A build that offers no raises has no sale to promise.
+  const raises = raisesOffered();
   return (
     <div className="flex flex-col gap-4" data-testid="idea-overview">
       {record.longPitch ? (
@@ -20,9 +23,10 @@ export function IdeaOverview({ record }: { record: LaunchRecord }) {
         <h2 className="text-sm font-bold">This is an idea</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           There is no token and no money involved yet. Say you would back it to
-          join the supporters chat and help it get going. If the founder opens a
-          sale, you will be able to back it for real, and backers get their own
-          room.
+          join the supporters chat and help it get going.
+          {raises
+            ? " If the founder opens a sale, you will be able to back it for real, and backers get their own room."
+            : null}
         </p>
       </Card>
     </div>

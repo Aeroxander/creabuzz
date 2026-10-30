@@ -69,9 +69,10 @@ const TEST_FILE_RE = /\.test\.(?:m?[jt]sx?)$/;
  * @param {typeof import("typescript")} ts
  * @param {string} fileName
  * @param {string} text
+ * @param {readonly CopyRule[]} [rules] the shared rules, plus any an app adds for itself
  * @returns {{ line: number, rule: string, why: string, snippet: string }[]}
  */
-export function findCopyViolations(ts, fileName, text) {
+export function findCopyViolations(ts, fileName, text, rules = COPY_RULES) {
   const source = ts.createSourceFile(
     fileName,
     text,
@@ -82,7 +83,7 @@ export function findCopyViolations(ts, fileName, text) {
   const found = [];
 
   const inspect = (node, value) => {
-    for (const rule of COPY_RULES) {
+    for (const rule of rules) {
       if (rule.pattern.test(value)) {
         const { line } = source.getLineAndCharacterOfPosition(
           node.getStart(source),
@@ -146,7 +147,8 @@ async function walk(directory, skipDirs) {
  * Scan `roots` under `projectRoot` and exit non-zero on any violation that is
  * not allowlisted. `skipFiles` are generated files (relative paths). `allow` entries are `{ file, contains, reason }`: a
  * violation is accepted when its file matches and its string contains
- * `contains` (stable across line moves, unlike `path:line`).
+ * `contains` (stable across line moves, unlike `path:line`). `extraRules` are an app's own, checked with the shared
+ * ones.
  */
 export async function runCopyCheck({
   ts,
@@ -157,7 +159,9 @@ export async function runCopyCheck({
   allow = [],
   label,
   scriptPath,
+  extraRules = [],
 }) {
+  const rules = [...COPY_RULES, ...extraRules];
   const skip = new Set(["node_modules", ...skipDirs]);
   const violations = [];
   const usedAllow = new Set();
@@ -169,7 +173,7 @@ export async function runCopyCheck({
       const rel = path.relative(projectRoot, file).split(path.sep).join("/");
       if (skipFiles.includes(rel)) continue;
       const text = await fs.readFile(file, "utf8");
-      for (const v of findCopyViolations(ts, rel, text)) {
+      for (const v of findCopyViolations(ts, rel, text, rules)) {
         const entry = allow.find(
           (a) => a.file === rel && v.snippet.includes(a.contains),
         );

@@ -104,7 +104,7 @@ together. The rows marked **Optional** are not in the image: they need a build o
 | `VITE_DAO_LAUNCH_KITS` | `{"11155111":"<launch-kit from the manifest>"}` | **Optional.** Test raises. Leave it out for the contributor-only first launch. The Creaton image is contributor-only anyway: it sets `VITE_CONTRIBUTOR_ONLY=1` itself, which hides every way to start a sale (D140); a build of your own without it shows the raise wizard, which saves drafts but cannot launch one. With it set, the contributor Start page also checks that both kits name the same summoner |
 | `VITE_RELAY_URL` | `wss://<your relay>` | Only when the page is not served by the relay itself (it otherwise talks to its own origin) |
 | `VITE_COMMUNITY_API_ORIGIN` | `https://<your relay>` | Only when communities live on several hosts (see `docs/self-serve-communities.md`) |
-| `VITE_ZERODEV_PROJECT_ID`, `VITE_ZERODEV_CHAIN_ID=11155111`, `VITE_BUNDLER_URL` (and `VITE_ZERODEV_API_KEY` if the project has one) | A ZeroDev project on Sepolia, with a gas policy that sponsors every operation (each project's contracts are made when it starts, so a list of addresses cannot cover them) and a spending limit | Passkey accounts, with gas paid by its paymaster: testers then need no test ETH at all. Without them people bring a wallet (a browser wallet or a key made in the app) and pay their own test gas |
+| `VITE_ZERODEV_PROJECT_ID` (the project's UUID), `VITE_ZERODEV_CHAIN_ID=11155111` (and `VITE_ZERODEV_API_KEY` if the project has one) | A ZeroDev project on Sepolia, with a gas policy that sponsors every operation (each project's contracts are made when it starts, so a list of addresses cannot cover them) and a spending limit | Passkey accounts, with gas paid by its paymaster: testers then need no test ETH at all. **Required by the hosted image** when contributor projects are on (its people have no wallet to fall back on). In a build of your own, without them people bring a wallet and pay their own test gas. Passkey steps send through ZeroDev's own address for the project; `VITE_BUNDLER_URL` is not used by them |
 | `VITE_ERROR_REPORT_URL`, `VITE_APP_RELEASE` | Your collector and the build's version | Error reports (`docs/error-reporting.md`); the pilot wants them. The image defaults the release to the source revision |
 
 Leave these **unset** on Sepolia: `VITE_ENABLE_MAINNET` (it would offer real networks and hide the Testnet tag),
@@ -112,8 +112,8 @@ Leave these **unset** on Sepolia: `VITE_ENABLE_MAINNET` (it would offer real net
 `VITE_PRICE_INDEXER_URL` (no market to price).
 
 The deploy script prints these with the real addresses, the pilot's first, ready to paste into `deploy/compose/.env`.
-Where a value is yours to fill in it prints `CHANGE_ME_...`, and `run.sh` refuses to build or start until each is
-replaced. It adds the server's `BUZZ_EVM_*` lines from section 2. The contributor pilot, what the hosted image takes:
+Where a value is yours to fill in it prints `CHANGE_ME_...`: `run.sh build` refuses one left in a `VITE_*` line (so does
+the image's own check), and `run.sh start` refuses one anywhere. It adds the server's `BUZZ_EVM_*` lines from section 2. The contributor pilot, what the hosted image takes:
 
 ```
 VITE_LAUNCHPAD_CHAIN_ID=11155111
@@ -122,7 +122,6 @@ VITE_CONTRIBUTOR_KITS={"11155111":"<contributor-kit>"}
 VITE_HISTORY_FROM_BLOCKS={"11155111":<block>}
 VITE_ZERODEV_PROJECT_ID=<your ZeroDev project>
 VITE_ZERODEV_CHAIN_ID=11155111
-VITE_BUNDLER_URL=<its bundler URL>
 VITE_ERROR_REPORT_URL=<your collector>
 VITE_APP_RELEASE=<the build's version; the image defaults to the source revision>
 ```
@@ -143,23 +142,30 @@ VITE_PAYOUTS_FACTORIES={"11155111":"<payouts-factory>"}
 VITE_REMIX_BONDS={"11155111":"<remix-bonds>"}
 ```
 
-`VITE_HISTORY_FROM_BLOCKS` matters. A real node refuses an event read that starts at block 0 ("exceed maximum block range",
-usually over 10,000 to 50,000 blocks), so the app reads in pages and starts at the block the kits were deployed (every contract it
-reads was made after that). Without it a read on Sepolia would need thousands of pages, and the app stops after a bounded number
-and tells you to set it. The fork journey found this: before the fix, the My bids tab on a Sepolia fork said "Could not read
+`VITE_HISTORY_FROM_BLOCKS` matters. Every event read starts at the block the kits were deployed (every contract the app reads
+was made after that), from its first request. A real node refuses a read that covers too many blocks ("exceed maximum block
+range", usually over 10,000 to 50,000 blocks), and then the app reads in pages from that block. Without it a read on Sepolia
+would start at block 0 and need thousands of pages; the app stops after a bounded number, and the hosted build refuses to
+build without it. The fork journey found this: before the fix, the My bids tab on a Sepolia fork said "Could not read
 bids: exceed maximum block range: 50000".
 
 The page's node still has to allow a wide range. A read takes at most 120 requests, each as wide as the node allows (10,000
 blocks when it names no limit), from the history start to the head. Sepolia makes about 7,200 blocks a day, so at 10,000
 blocks a request reads keep working for about five months after the deploy, at 1,000 for about 17 days, and then fail.
-Check a node before choosing it:
+Check a node before choosing it, with the request the app sends first (from the deploy block in the manifest to the head):
 
 ```bash
-cast logs --from-block $(( $(cast block-number --rpc-url "$NODE") - 20000 )) --to-block latest \
-  --address <contributor-kit> --rpc-url "$NODE"
+cast logs --from-block <the manifest's "block"> --to-block latest --address <contributor-kit> --rpc-url "$NODE"
 ```
 
-An empty answer is fine; an error about the block range means the node is too narrow for more than a short test.
+An answer (even an empty one) within a few seconds is fine. An error about the block range means the app will read in pages:
+then check one page as wide as the node allows (`--from-block $(( $(cast block-number --rpc-url "$NODE") - 10000 ))`), and
+work out from the paragraph above how long that lasts. A timeout means the node is too slow for the page.
+
+The node's request limit matters as much as its range. A project page sends a dozen or more reads when it opens; a node that
+answers "rate limit exceeded" or HTTP 429 is asked again twice, after a short pause, and then the page says "The chain node is
+busy. Try again in a minute" (a busy node is never read in smaller pages, which would only ask it more often). Pick a limit that
+covers every participant opening pages at once, and watch the error reports for `chain-busy` notes during the run.
 
 The command line (`buzz`) and the desktop app read their own event history and have not been given the same page-splitting;
 testers should use the web app on Sepolia.

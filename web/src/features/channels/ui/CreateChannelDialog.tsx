@@ -20,7 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
-import { errorMessage } from "@/shared/ui/query-error";
+import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
+import { FailureNote } from "@/shared/ui/failure-note";
 
 import {
   CHANNEL_TEMPLATES,
@@ -85,7 +86,7 @@ export function CreateChannelDialog({
   const [selected, setSelected] = React.useState<ReadonlySet<string>>(
     new Set(),
   );
-  const [formError, setFormError] = React.useState<string | null>(null);
+  const [formError, setFormError] = React.useState<FailureWords | null>(null);
   const [pendingMembers, setPendingMembers] = React.useState<
     AttachFailure[] | null
   >(null);
@@ -214,7 +215,7 @@ export function CreateChannelDialog({
         },
         onError: (error) => {
           setFormError(
-            `Couldn't create the channel. ${errorMessage(error)} Try again.`,
+            failureWords(error, "Couldn't create the channel. Try again."),
           );
         },
       },
@@ -462,9 +463,7 @@ export function CreateChannelDialog({
           </fieldset>
 
           {formError && (
-            <p className="text-sm text-red-700 dark:text-red-300" role="alert">
-              {formError}
-            </p>
+            <FailureNote failure={formError} testId="create-channel-error" />
           )}
           {pendingMembers && pendingMembers.length > 0 && (
             <div

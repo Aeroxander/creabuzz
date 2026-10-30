@@ -110,6 +110,8 @@ export interface MandateView {
   bondUnreadable: boolean;
   /** The reviewer panel, as accepted when the mandate was made. */
   reviewers: ReviewerView[];
+  /** The panel could not be read (`reviewers` is then empty, which says nothing): the page says so instead. */
+  reviewersUnreadable?: boolean;
   /** The bond the connected wallet holds as a reviewer (0 when none, or no wallet). */
   walletStake: bigint;
   /** Bond the connected wallet asked back and is waiting to take, with when it can; null when none is pending. */
@@ -249,11 +251,14 @@ async function readPending(
   }
 }
 
-/** The panel and each member's bond, bounded; a bond that cannot be read is reported as unknown, never as zero. */
+/**
+ * The panel and each member's bond, bounded; a bond that cannot be read is reported as unknown, never as zero. Null
+ * when the panel itself could not be read: that is not a panel of nobody (Review-Proven Rule 1).
+ */
 async function readReviewers(
   chain: WorkChain,
   verifiers: string,
-): Promise<ReviewerView[]> {
+): Promise<ReviewerView[] | null> {
   let logs: readonly unknown[] = [];
   try {
     logs = await chain.logs({
@@ -261,7 +266,7 @@ async function readReviewers(
       topics: [TOPIC_VERIFIER_ACCEPTED],
     });
   } catch {
-    return [];
+    return null;
   }
   const seen = new Set<string>();
   const addresses: string[] = [];
@@ -290,6 +295,25 @@ async function readReviewers(
       return { address, stake, ...pending };
     }),
   );
+}
+
+/**
+ * The verdict count `ClaimStake` stored when a claim was submitted (`approvalsAtSubmit`/`objectionsAtSubmit`). A claims
+ * ledger made before it kept them refuses the call, and its `settle` counted every verdict: that reads as zero. A call
+ * that got no answer is thrown, like every other read of the claim, never read as zero.
+ */
+async function countAtSubmit(
+  chain: WorkChain,
+  claims: string,
+  signature: string,
+  claimId: string,
+): Promise<string> {
+  try {
+    return await chain.call(claims, encodeCallId(signature, claimId));
+  } catch (error) {
+    if (isRevert(error)) return "0x0";
+    throw error;
+  }
 }
 
 async function readMandate(
@@ -362,6 +386,8 @@ async function readMandate(
           approvalsHex,
           objectionsHex,
           attestedHex,
+          approvalsAtHex,
+          objectionsAtHex,
         ] = await Promise.all([
           chain.call(mandate, encodeCallId(SIGNATURES.claimProject, s.claimId)),
           chain.call(mandate, encodeCallId(SIGNATURES.awarded, s.claimId)),
@@ -383,9 +409,30 @@ async function readMandate(
                 ),
               )
             : Promise.resolve("0x0"),
+          countAtSubmit(
+            chain,
+            claimsAddress,
+            SIGNATURES.approvalsAtSubmit,
+            s.claimId,
+          ),
+          countAtSubmit(
+            chain,
+            claimsAddress,
+            SIGNATURES.objectionsAtSubmit,
+            s.claimId,
+          ),
         ]);
         if (decodeBool(attestedHex)) walletAttested.push(s.claimId);
         const projectWord = decodeWord(projectHex);
+        // `settle` counts only verdicts given after submission: the counts at that moment are subtracted, as it does.
+        const approvalsAll = number(approvalsHex);
+        const objectionsAll = number(objectionsHex);
+        const approvalsBefore = Math.min(approvalsAll, number(approvalsAtHex));
+        const objectionsBefore = Math.min(
+          objectionsAll,
+          number(objectionsAtHex),
+        );
+        const earlyVerdicts = approvalsBefore + objectionsBefore;
         return {
           id: s.claimId,
           record,
@@ -393,8 +440,9 @@ async function readMandate(
             projectWord === 0n
               ? null
               : `0x${projectWord.toString(16).padStart(64, "0")}`,
-          approvals: number(approvalsHex),
-          objections: number(objectionsHex),
+          approvals: approvalsAll - approvalsBefore,
+          objections: objectionsAll - objectionsBefore,
+          ...(earlyVerdicts > 0 ? { earlyVerdicts } : {}),
           quorum,
           sharesAwarded: decodeBool(awardedHex),
         };
@@ -410,10 +458,11 @@ async function readMandate(
       )
     : { active: false, stake: 0n };
   const walletIsReviewer = walletVerifier.active;
-  const [bondRead, reviewers] = await Promise.all([
+  const [bondRead, reviewerRead] = await Promise.all([
     readBond(chain, verifiersAddress),
     readReviewers(chain, verifiersAddress),
   ]);
+  const reviewers = reviewerRead ?? [];
   const bond = bondRead.status === "set" ? bondRead.bond : null;
   const bondUnreadable = bondRead.status === "unreadable";
   const walletStake = walletVerifier.stake;
@@ -429,6 +478,13 @@ async function readMandate(
     walletUnbond = mine.pending;
     walletBondUnreadable = mine.pendingUnreadable;
   }
+  // The panel's size lets a split nobody can break be told apart from one still waiting on someone. A listing that
+  // could not be read, or reached the bound, says nothing about the size: it is left unknown.
+  const panel =
+    reviewers.length > 0 && reviewers.length < MAX_REVIEWERS
+      ? reviewers.length
+      : null;
+  for (const claim of claims) claim.panel = panel;
   const moves =
     bond !== null ||
     created.budget > 0n ||
@@ -451,6 +507,7 @@ async function readMandate(
     bond,
     bondUnreadable,
     reviewers,
+    reviewersUnreadable: reviewerRead === null,
     walletStake,
     walletUnbond,
     walletBondUnreadable,

@@ -22,7 +22,7 @@ import {
 } from "@/features/profiles/use-profiles";
 import { usePeople } from "@/features/social/use-people";
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { errorMessage } from "@/shared/ui/query-error";
+import { failureWords } from "@/shared/lib/readable-error";
 
 import { escalatePost } from "../escalate-post";
 import { canEscalatePost, defaultFinderReward } from "../lib/task-source";
@@ -120,7 +120,7 @@ function BoardIdeasList({
       });
     } catch (error) {
       toast.error("Couldn't make that a task", {
-        description: errorMessage(error),
+        description: failureWords(error).text,
       });
     } finally {
       setBusy(false);
@@ -238,7 +238,9 @@ function YourSuggestions({
       await planning.claimFinderCredit(item);
       setFiled((prev) => new Set(prev).add(item.key));
     } catch (error) {
-      toast.error("Couldn't claim that", { description: errorMessage(error) });
+      toast.error("Couldn't claim that", {
+        description: failureWords(error).text,
+      });
     } finally {
       setBusy(null);
     }

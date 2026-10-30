@@ -28,7 +28,11 @@ import { useContributions } from "../use-contributions";
 import { useEvidencePackets } from "../use-evidence";
 import { useWalletLabels } from "../use-wallet-labels";
 import { shortAddress } from "../lib/record-people";
-import { useWork } from "../use-work";
+import { useRecordEvents, useWork } from "../use-work";
+import { type ClaimReview, useReviewReasons } from "../use-review-reasons";
+import { idLabel } from "../lib/work";
+import type { WorkSnapshot } from "../lib/work-read";
+import { ClaimReviewNote } from "./ClaimReviewNote";
 import { paidOn, TxLink } from "./TxLink";
 import { VoteControlNote } from "./VoteControlNote";
 
@@ -46,11 +50,14 @@ function AwardStoryLine({
   award,
   chainId,
   onRetryEvidence,
+  approvedBy,
 }: {
   story: AwardStory;
   award: ContributionAward;
   chainId: number;
   onRetryEvidence: () => void;
+  /** The names of the reviewers who approved it, when who answered was read; the count is shown otherwise. */
+  approvedBy: string[] | null;
 }) {
   const link = story.evidence ? firstLink(story.evidence) : null;
   return (
@@ -66,9 +73,15 @@ function AwardStoryLine({
             <TxLink chainId={chainId} tx={award.txHash} />
           </>
         ) : null}
-        {story.review
-          ? ` · ${story.review.approvals} ${story.review.approvals === 1 ? "approval" : "approvals"}, ${story.review.quorum} needed`
-          : ""}
+        {approvedBy && approvedBy.length > 0 ? (
+          <span data-testid="contribution-award-reviewers">
+            {` · approved by ${approvedBy.join(", ")}`}
+          </span>
+        ) : story.review ? (
+          ` · ${story.review.approvals} ${story.review.approvals === 1 ? "approval" : "approvals"}, ${story.review.quorum} needed`
+        ) : (
+          ""
+        )}
       </span>
       {story.evidence ? (
         <span data-testid="contribution-award-evidence">
@@ -115,16 +128,27 @@ function AwardStoryLine({
   );
 }
 
+/** The names of those who approved, or null while who answered is not known. */
+function approvedNames(
+  review: ClaimReview,
+  label: (address: string) => string,
+): string[] | null {
+  if (review.verdicts === null) return null;
+  return review.verdicts.filter((v) => v.approve).map((v) => label(v.reviewer));
+}
+
 function AwardLine({
   award,
   launch,
   story,
   onRetryEvidence,
+  approvedBy,
 }: {
   award: ContributionAward;
   launch: Launch;
   story: AwardStory | null;
   onRetryEvidence: () => void;
+  approvedBy: string[] | null;
 }) {
   return (
     <li className="text-sm" data-testid="contribution-award">
@@ -165,6 +189,7 @@ function AwardLine({
       )}
       {story ? (
         <AwardStoryLine
+          approvedBy={approvedBy}
           award={award}
           chainId={Number(launch.record.chainId ?? "") || 0}
           onRetryEvidence={onRetryEvidence}
@@ -239,7 +264,54 @@ function useAwardStories(
     evidence.error,
     evidence.incomplete,
   ]);
-  return { stories, retryEvidence: evidence.refetch };
+  return {
+    stories,
+    retryEvidence: evidence.refetch,
+    work: work.data,
+    reasons: evidence.reasons,
+  };
+}
+
+/** Work the reviewers turned down, with who did and why: the other half of the record, so a turn-down is never hidden. */
+function TurnedDown({
+  work,
+  reviewOf,
+  labelOf,
+}: {
+  work: WorkSnapshot | undefined;
+  reviewOf: (mandate: string, claimId: string) => ClaimReview;
+  labelOf: (address: string) => string;
+}) {
+  const rejected = (work?.mandates ?? []).flatMap((mandate) =>
+    mandate.claims
+      .filter((claim) => claim.record.status === "Rejected")
+      .map((claim) => ({ mandate: mandate.address, claim })),
+  );
+  if (rejected.length === 0) return null;
+  return (
+    <Card className="p-4" data-testid="contributions-turned-down">
+      <h2 className="text-base font-bold">Turned down</h2>
+      <ul className="mt-2 flex flex-col gap-3">
+        {rejected.map(({ mandate, claim }) => (
+          <li
+            className="text-sm"
+            data-testid="contribution-turned-down"
+            key={`${mandate}:${claim.id}`}
+          >
+            <span className="font-semibold">{idLabel(claim.id)}</span>
+            <span className="text-muted-foreground">
+              {" "}
+              by {labelOf(claim.record.contributor)}
+            </span>
+            <ClaimReviewNote
+              labelOf={labelOf}
+              review={reviewOf(mandate, claim.id)}
+            />
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
 }
 
 export function ContributionsTab({
@@ -251,18 +323,35 @@ export function ContributionsTab({
 }) {
   const contributions = useContributions(dao);
   const snapshot = contributions.data;
-  const addresses = useMemo(
-    () => snapshot?.people.map((p) => p.address) ?? [],
-    [snapshot],
-  );
-  const label = useWalletLabels(addresses);
-  const contributor = isContributorProject(launch.record);
-  const testNotice = testRecordsNotice(launch.record.chainId);
   const allAwards = useMemo(
     () => snapshot?.people.flatMap((p) => p.awards) ?? [],
     [snapshot],
   );
-  const { stories, retryEvidence } = useAwardStories(dao, launch, allAwards);
+  const { stories, retryEvidence, work, reasons } = useAwardStories(
+    dao,
+    launch,
+    allAwards,
+  );
+  // Who reviewed each piece, from the chain, and the reasons published for turning work down.
+  const record = useRecordEvents(dao, work);
+  const { reviewOf } = useReviewReasons(reasons, record.data);
+  const addresses = useMemo(
+    () => [
+      ...(snapshot?.people.map((p) => p.address) ?? []),
+      ...[...(record.data?.verdicts.values() ?? [])].flatMap((list) =>
+        list.map((v) => v.reviewer),
+      ),
+      ...(work?.mandates ?? []).flatMap((m) =>
+        m.claims
+          .filter((c) => c.record.status === "Rejected")
+          .map((c) => c.record.contributor),
+      ),
+    ],
+    [snapshot, record.data, work],
+  );
+  const label = useWalletLabels(addresses);
+  const contributor = isContributorProject(launch.record);
+  const testNotice = testRecordsNotice(launch.record.chainId);
 
   if (contributions.isLoading) {
     return (
@@ -457,6 +546,10 @@ export function ContributionsTab({
                 <ul className="mt-2 flex flex-col gap-1">
                   {person.awards.map((award) => (
                     <AwardLine
+                      approvedBy={approvedNames(
+                        reviewOf(award.budget, award.claimId),
+                        label,
+                      )}
                       award={award}
                       key={`${award.budget}:${award.claimId}`}
                       launch={launch}
@@ -473,6 +566,7 @@ export function ContributionsTab({
           ))}
         </ol>
       )}
+      <TurnedDown labelOf={label} reviewOf={reviewOf} work={work} />
     </div>
   );
 }

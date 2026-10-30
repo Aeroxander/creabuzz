@@ -8,7 +8,8 @@ import test from "node:test";
  * `node --test` — no JSX transform — so the component's source is the seam).
  *
  * Each assertion maps to a user-visible promise:
- * - the relay URL it asked is shown (diagnosability),
+ * - the server address it asked and the server's wording are kept under a
+ *   collapsed "Technical details" (diagnosability without jargon in main copy),
  * - a retry button exists (recovery),
  * - the four outcomes render different copy (auth-required / answered /
  *   unanswered), so "did not answer" can never swallow an auth refusal again.
@@ -22,14 +23,23 @@ const source = readFileSync(
   "utf8",
 );
 
-test("the error state shows the relay URL it asked", () => {
+test("the error state keeps the server address and wording under Technical details", () => {
   assert.match(source, /relayUrl/, "a relayUrl prop must exist");
-  assert.match(
-    source,
-    /Relay: \{relayUrl\}/,
-    "the endpoint must be rendered as evidence",
+  // Collapsed by default: a <details> without `open`, so the plain words come first.
+  assert.match(source, /<details\n\s*className=/);
+  assert.doesNotMatch(source, /<details[^>]*\bopen\b/);
+  assert.match(source, /Technical details/);
+  const details = source.slice(
+    source.indexOf("<details"),
+    source.indexOf("</details>"),
   );
-  assert.match(source, /data-testid=\{`\$\{testId\}-relay`\}/);
+  assert.match(details, /Server: \{relayUrl\}/, "the endpoint is evidence");
+  assert.match(details, /\{detailMessage\}/, "so is the server's wording");
+  assert.match(details, /data-testid=\{`\$\{testId\}-relay`\}/);
+  assert.match(details, /data-testid=\{`\$\{testId\}-message`\}/);
+  // Nothing outside the disclosure prints them.
+  const outside = source.replace(details, "");
+  assert.doesNotMatch(outside, /\{relayUrl\}|\{detailMessage\}|Relay:/);
 });
 
 test("the error state offers a retry", () => {
@@ -67,19 +77,11 @@ test("auth-required has its own copy and is derived from the raw error", () => {
   assert.match(source, /const retryNow = \(\) => \{\s*\n\s*onRetry\?\.\(\);/);
 });
 
-test("answered failures show the relay's wording plus guidance, not 'did not answer'", () => {
+test("answered failures say the refusal in plain words or give guidance, not 'did not answer'", () => {
   assert.match(
     source,
-    /relayFailureGuidance\(relayMessageOf\(error\) \?\? "", kinds\)/,
-  );
-  assert.match(
-    source,
-    /answered \|\| authRequired\s*\?\s*\(relayMessageOf\(error\) \?\? message\)\s*:\s*message/,
+    /plainRefusalText\(relayMessage \?\? ""\) \?\?\s*relayFailureGuidance\(relayMessage \?\? "", kinds\)/,
     "an answered refusal must replace the caller's unanswered copy",
   );
-  // Except a restriction on the reader (a ban, a timeout): the guidance already says it in plain words.
-  assert.match(
-    source,
-    /answered && restrictionText\(relayMessageOf\(error\) \?\? ""\) !== null/,
-  );
+  assert.match(source, /const detailMessage = relayMessage \?\? message;/);
 });

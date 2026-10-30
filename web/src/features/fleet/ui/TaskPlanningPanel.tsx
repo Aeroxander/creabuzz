@@ -2,7 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { errorMessage } from "@/shared/ui/query-error";
+import { failureWords } from "@/shared/lib/readable-error";
 
 import { canClaimTask } from "../lib/task-planning";
 import type { TaskPlanning } from "../use-task-planning";
@@ -32,7 +32,7 @@ export function BackButton({
         (backed ? planning.unback(item) : planning.back(item))
           .catch((error: unknown) =>
             toast.error("Couldn't update your backing", {
-              description: errorMessage(error),
+              description: failureWords(error).text,
             }),
           )
           .finally(() => onBusy(false));
@@ -155,7 +155,7 @@ export function TaskPlanningPanel({
               onUpdate({ milestone: nextMilestone, reward: nextReward })
                 .catch((error: unknown) =>
                   toast.error("Couldn't save the plan", {
-                    description: errorMessage(error),
+                    description: failureWords(error).text,
                   }),
                 )
                 .finally(() => setSaving(false));
@@ -186,7 +186,7 @@ export function TaskPlanningPanel({
                 })
                 .catch((error: unknown) =>
                   toast.error("Couldn't claim this task", {
-                    description: errorMessage(error),
+                    description: failureWords(error).text,
                   }),
                 )
                 .finally(() => setClaiming(false));

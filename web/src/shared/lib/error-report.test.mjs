@@ -10,6 +10,7 @@ import {
   MAX_PER_SESSION,
   MAX_STACK,
   reportEndpoint,
+  reportHandledFailure,
   reportRenderError,
   scrub,
 } from "./error-report.ts";
@@ -219,4 +220,55 @@ test("with a collector, uncaught errors and unhandled rejections are posted as s
   assert.equal(w.has("error"), false);
   reportRenderError(new Error("after stop"));
   assert.equal(calls.length, 3, "nothing is sent once stopped");
+});
+
+test("a handled failure is told once per cause a visit, scrubbed, and not at all while reporting is off", () => {
+  assert.equal(
+    reportHandledFailure("sponsor-refused", new Error("off")),
+    false,
+    "nothing is installed yet",
+  );
+  const sent = [];
+  const stop = installErrorReporting({
+    endpoint: "https://errors.example/creaton",
+    target: { addEventListener() {}, removeEventListener() {} },
+    fetchImpl: (_url, init) => {
+      sent.push(JSON.parse(init.body));
+      return Promise.resolve();
+    },
+    page: () => "/launchpad/abc",
+    now: () => 1_760_000_000_000,
+  });
+  try {
+    const wallet = `0x${"cd".repeat(20)}`;
+    assert.equal(
+      reportHandledFailure(
+        "sponsor-refused",
+        new Error(`policy denied for ${wallet}`),
+      ),
+      true,
+    );
+    // Same cause, different words (another address, another step): still one note.
+    assert.equal(
+      reportHandledFailure(
+        "sponsor-refused",
+        new Error(`spending limit reached for 0x${"ef".repeat(20)}`),
+      ),
+      false,
+    );
+    // An error's `detail` (the technical words) is what the organiser reads.
+    const withDetail = Object.assign(new Error("The chain node is busy."), {
+      detail: "rpc http 429",
+    });
+    assert.equal(reportHandledFailure("chain-busy", withDetail), true);
+    assert.deepEqual(
+      sent.map((note) => [note.kind, note.message]),
+      [
+        ["handled", "sponsor-refused: policy denied for [address]"],
+        ["handled", "chain-busy: rpc http 429"],
+      ],
+    );
+  } finally {
+    stop();
+  }
 });

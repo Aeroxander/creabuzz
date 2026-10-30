@@ -14,7 +14,7 @@ import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
-import { errorMessage } from "@/shared/ui/query-error";
+import { failureWords } from "@/shared/lib/readable-error";
 import { deleteDialogCopy } from "./lib/delete-copy";
 import type { TombstonedPage } from "./lib/page-index";
 import type { WikiPage } from "./use-wiki-pages";
@@ -105,10 +105,13 @@ export function useWikiRemoval({
               toast.success(`Moved ${page.slug} to Recently deleted`);
               void queryClient.invalidateQueries({ queryKey: ["wiki-pages"] });
             } catch (error) {
+              // The server's own words, for whoever looks: the toast says it plainly.
+              console.warn("[wiki] delete failed", error);
               // "Discarded" and "Deleted" both say the page is gone; a failed
               // read tells us nothing about that, so say nothing was changed.
               toast.error("Couldn't delete page", {
-                description: `The server did not answer, so the page was not deleted. ${errorMessage(error)}`,
+                description:
+                  "The server did not answer, so the page was not deleted. Try again.",
               });
             }
           })();
@@ -157,7 +160,7 @@ export function useWikiRemoval({
               });
             } catch (error) {
               toast.error("Couldn't delete the page permanently", {
-                description: errorMessage(error),
+                description: failureWords(error).text,
               });
             } finally {
               setPurgeBusy(false);
@@ -191,7 +194,7 @@ export function useWikiRemoval({
               });
             } catch (error) {
               toast.error("Couldn't restore that page", {
-                description: errorMessage(error),
+                description: failureWords(error).text,
               });
             } finally {
               setRestoreBusy(false);

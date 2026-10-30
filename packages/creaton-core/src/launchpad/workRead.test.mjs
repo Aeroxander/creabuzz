@@ -14,6 +14,7 @@ import {
   encodeUnbonds,
   idWord,
 } from "./work.ts";
+import { cannotReachVerdict, nextStep } from "./work.ts";
 import { MAX_CLAIMS, readWork } from "./workRead.ts";
 
 const word = (value) => BigInt(value).toString(16).padStart(64, "0");
@@ -82,7 +83,24 @@ function chain(claims, over = {}, bond = null) {
       encodeCallId(SIGNATURES.approvalCount, c.id),
       words(c.approvals ?? 0),
     );
-    set(VERIFIERS, encodeCallId(SIGNATURES.objectionCount, c.id), words(0));
+    set(
+      VERIFIERS,
+      encodeCallId(SIGNATURES.objectionCount, c.id),
+      words(c.objections ?? 0),
+    );
+    // What ClaimStake stored at submission; a claims ledger made before it kept them has no such function.
+    if (c.atSubmit) {
+      set(
+        CLAIMS,
+        encodeCallId(SIGNATURES.approvalsAtSubmit, c.id),
+        words(c.atSubmit.approvals),
+      );
+      set(
+        CLAIMS,
+        encodeCallId(SIGNATURES.objectionsAtSubmit, c.id),
+        words(c.atSubmit.objections),
+      );
+    }
     set(
       VERIFIERS,
       encodeFunctionData(
@@ -519,6 +537,12 @@ test("the wallet's own bond does not depend on the panel listing being readable"
   };
   const snapshot = await readWork(noListing, DAO, ALICE);
   assert.equal(snapshot.mandates[0].walletStake, 70_000_000n);
+  // A panel that could not be listed is said to be unreadable, never shown as a panel of nobody.
+  assert.equal(snapshot.mandates[0].reviewersUnreadable, true);
+  assert.deepEqual(snapshot.mandates[0].reviewers, []);
+  const listed = await readWork(base, DAO, ALICE);
+  assert.equal(listed.mandates[0].reviewersUnreadable, false);
+  assert.equal(listed.mandates[0].reviewers.length, 1);
 });
 
 test("every reviewer's pending bond is read beside their stake, so a bond asked back stays visible and slashable", async () => {
@@ -656,4 +680,103 @@ test("a token whose decimals could not be read is marked unknown, never read as 
   // Everything raw still reads: the balance, the stake, the pending bond are untouched by the missing scale.
   assert.equal(mandate.walletStake, 50_000_000n);
   assert.equal(mandate.bondUnreadable, false);
+});
+
+test("each claim carries the panel's size when the panel could be listed, and none when it could not", async () => {
+  const id = idWord("split-claim");
+  const listed = await readWork(
+    chain(
+      [{ id, status: 0, project: PROJECT, approvals: 1 }],
+      {},
+      {
+        min: 0,
+        reviewers: [
+          { address: ALICE, stake: 0 },
+          { address: DAVE, stake: 0 },
+        ],
+      },
+    ),
+    DAO,
+    ALICE,
+  );
+  assert.equal(listed.mandates[0].claims[0].panel, 2);
+  // No reviewers listed (or a listing that failed): the size is unknown, never zero.
+  const unlisted = await readWork(
+    chain([{ id, status: 0, project: PROJECT, approvals: 1 }]),
+    DAO,
+    ALICE,
+  );
+  assert.equal(unlisted.mandates[0].claims[0].panel, null);
+});
+
+test("only verdicts given after submission count, as ClaimStake.settle counts them", async () => {
+  const id = idWord("squatted");
+  // Two approvals were given on the id before it was submitted, one after: settle sees one of the two it needs.
+  const read = await readWork(
+    chain([
+      {
+        id,
+        status: 0,
+        project: PROJECT,
+        approvals: 3,
+        objections: 1,
+        atSubmit: { approvals: 2, objections: 1 },
+      },
+    ]),
+    DAO,
+    ALICE,
+  );
+  const [claim] = read.mandates[0].claims;
+  assert.equal(claim.approvals, 1);
+  assert.equal(claim.objections, 0);
+  assert.equal(claim.earlyVerdicts, 3);
+  const step = nextStep(claim, 1_000, 259_200);
+  assert.equal(
+    step.kind,
+    "review",
+    "no settle is offered that the contract would refuse",
+  );
+  assert.match(step.text, /1 of 2 approvals/);
+  // Three of a panel of four answered before submission and cannot answer again: one left cannot reach two.
+  assert.equal(cannotReachVerdict({ ...claim, panel: 4 }), true);
+  assert.equal(cannotReachVerdict({ ...claim, panel: 5 }), false);
+});
+
+test("a claims ledger with no submission counts reads every verdict, as its settle did", async () => {
+  const id = idWord("old-ledger");
+  const read = await readWork(
+    chain([{ id, status: 0, project: PROJECT, approvals: 2 }]),
+    DAO,
+    ALICE,
+  );
+  const [claim] = read.mandates[0].claims;
+  assert.equal(claim.approvals, 2);
+  assert.equal(claim.earlyVerdicts, undefined);
+  assert.equal(nextStep(claim, 1_000, 259_200).kind, "settle");
+});
+
+test("a submission count that got no answer fails the read, never reads as zero", async () => {
+  const id = idWord("busy");
+  const base = chain([
+    {
+      id,
+      status: 0,
+      project: PROJECT,
+      approvals: 2,
+      atSubmit: { approvals: 2, objections: 0 },
+    },
+  ]);
+  const busy = {
+    ...base,
+    call: async (to, data) => {
+      if (
+        data.startsWith(
+          encodeCallId(SIGNATURES.approvalsAtSubmit, id).slice(0, 10),
+        )
+      )
+        throw new Error("The chain node did not answer in time.");
+      return base.call(to, data);
+    },
+  };
+  await assert.rejects(readWork(busy, DAO, ALICE), /did not answer/);
 });

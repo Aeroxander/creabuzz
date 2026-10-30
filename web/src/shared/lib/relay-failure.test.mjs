@@ -188,6 +188,6 @@ test("a refusal that restricts the reader is said plainly, and the generic one p
   );
   assert.match(
     relayFailureGuidance("restricted: not a channel member"),
-    /Its own message is shown below\./,
+    /Its own message is under Technical details\./,
   );
 });

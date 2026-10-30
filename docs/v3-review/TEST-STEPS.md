@@ -1874,3 +1874,31 @@ On the hosted server (or `deploy/compose` locally), with three accounts: A (the 
 3. B follows two people from Explore within a second. After a reload both show under Following, and both were told.
 4. Click around fast in two tabs (Home, a board, Notifications, a profile) for a minute: nothing says "Couldn't load",
    and if a limit is ever hit it says to try again in a few seconds and then carries on.
+
+## 4ci. The social should-fix items (D143)
+
+On the hosted (invite-only) server, with accounts A (owner), B and C, B on a phone.
+
+1. B opens their invite link on a browser that already has a locked passkey account: "Unlock with your passkey" joins.
+   A new person makes a passkey account on the invite page: right after, the recovery key is offered.
+2. B uploads a profile picture from the account menu's Edit profile; C sees it. A picture linked from another site
+   (a GitHub avatar) shows too.
+3. With Home open on A, B posts: within about a minute "1 new post. Show" appears; Show puts it on top. Reload and
+   choose New: "New since your last visit" marks where A left off.
+4. A reposts B's post, B deletes it: after a reload the repost is gone; a quote of it says the post was removed.
+5. C reports B's Home post; A's moderation queue shows the words, B's name and a link, and Ban names B.
+6. In the community, "Notices and messages" starts a conversation by typing a name, and works on B's phone.
+7. Signed out, open the server's address: it says the server is invite-only and to open the invite link.
+
+## 4cj. The contributor-project fixes (D144)
+
+On the test network, a contributor project with two reviewers and "Let any one decide" off.
+
+1. A contributor submits a piece that does not meet its words. Both reviewers press "Turn it down" and write why.
+   Anyone presses "Close it as turned down": the piece reads turned down, and the contributor sees who and why.
+2. Submitting again under the same name is refused; a new name works.
+3. On Funds with nothing in the treasury, "Leave anyway" needs the tick saying the Shares are destroyed for nothing.
+   Send the DAO 1 USDC, leave from the passkey account: one prompt, the page and the money card update without a reload.
+4. Open the project's link signed out on a phone: "Couldn't load this project" with sign-in and Try again, never
+   "not found".
+5. Put `CHANGE_ME_x` in `VITE_ZERODEV_PROJECT_ID` and run `./run.sh build` in `deploy/compose`: refused, naming it.

@@ -1,7 +1,9 @@
 /**
- * Moderation queue: reported content with its reporter, status, and the
- * moderator actions for open rows — resolve (delete / time out / ban pair an
- * enforcement with the resolution), dismiss, and escalate. Action
+ * Moderation queue: each report with what it is about (the reported words and
+ * who wrote them, or the reported person, with a link to see it in place), who
+ * reported it, its status, and the moderator actions for open rows — resolve
+ * (delete / time out / ban pair an enforcement with the resolution), dismiss,
+ * and escalate. All, open or escalated reports, a page at a time. Action
  * affordances render only for moderators; empty, loading, and error states
  * are explicit, and a failed action keeps the row open with an inline retry.
  */
@@ -15,11 +17,10 @@ import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import {
   isHomePostReport,
   reportStatusLabel,
-  reportTargetLabel,
   reportTypeLabel,
-  type ModerationReport,
   type ResolutionAction,
 } from "../lib/moderationQueue";
+import { QUEUE_FILTERS } from "../lib/queueRow";
 import {
   useModerationAccess,
   useModerationQueue,
@@ -41,26 +42,122 @@ const TIMEOUT_CHOICES: { label: string; seconds: number }[] = [
   { label: "7 days", seconds: 604800 },
 ];
 
+const LINK =
+  "font-medium text-black underline underline-offset-2 dark:text-white";
+
+/** What the report is about: the reported words and who wrote them, the reported person, or why neither is shown. */
+function Subject({
+  row,
+  nameOf,
+}: {
+  row: ModerationRow;
+  nameOf: (pubkey: string) => string;
+}) {
+  const { subject } = row;
+  if (subject.type === "words") {
+    const author = nameOf(subject.author);
+    return (
+      <>
+        <p
+          className="mt-1 whitespace-pre-wrap break-words text-xs text-black dark:text-white"
+          data-testid="moderation-report-words"
+        >
+          {subject.excerpt
+            ? `“${subject.excerpt}”`
+            : "(no words, only a picture or a file)"}
+        </p>
+        <p className="text-2xs text-black/60 dark:text-white/60">
+          Written by{" "}
+          <a
+            className={LINK}
+            data-testid="moderation-report-author"
+            href={`/u/${subject.author}`}
+          >
+            {author}
+          </a>{" "}
+          ·{" "}
+          <a
+            aria-label={`${subject.linkLabel} by ${author}`}
+            className={LINK}
+            data-testid="moderation-report-link"
+            href={subject.href}
+          >
+            {subject.linkLabel}
+          </a>
+        </p>
+      </>
+    );
+  }
+  if (subject.type === "person") {
+    return (
+      <p className="mt-1 text-xs text-black dark:text-white">
+        Reported person:{" "}
+        <a
+          className={LINK}
+          data-testid="moderation-report-person"
+          href={subject.href}
+        >
+          {nameOf(subject.person)}
+        </a>
+      </p>
+    );
+  }
+  if (subject.type === "gone") {
+    return (
+      <p
+        className="mt-1 text-2xs text-black/60 dark:text-white/60"
+        data-testid="moderation-report-gone"
+      >
+        The reported words aren’t here any more. They may have been removed or
+        deleted.
+      </p>
+    );
+  }
+  if (subject.type === "notFound") {
+    return (
+      <p
+        className="mt-1 text-2xs text-black/60 dark:text-white/60"
+        data-testid="moderation-report-not-found"
+      >
+        Couldn’t find the reported words. They may have been removed, or be in a
+        room or board you aren’t in.
+      </p>
+    );
+  }
+  if (subject.type === "unread") {
+    return (
+      <p
+        className="mt-1 text-2xs text-black/60 dark:text-white/60"
+        data-testid="moderation-report-unread"
+      >
+        Couldn’t load the reported words. Refresh to try again.
+      </p>
+    );
+  }
+  return null;
+}
+
 function Row({
   row,
   onPerform,
 }: {
   row: ModerationRow;
   onPerform: (
-    report: ModerationReport,
+    row: ModerationRow,
     action: ResolutionAction,
     options?: { expiresAt?: number; reason?: string },
   ) => Promise<string | null>;
 }) {
   const reporter = row.report.reporterPubkey;
-  const nameOf = useUserNames(reporter ? [reporter] : []);
+  const { report, actions, person, status, subject } = row;
+  const nameOf = useUserNames(
+    [reporter, person].filter((key): key is string => key !== null),
+  );
   const [pickingTimeout, setPickingTimeout] = useState(false);
   const [confirmingBan, setConfirmingBan] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const { report, actions, locallyResolved } = row;
   const onHome = isHomePostReport(report);
-  const open = report.status === "open" && !locallyResolved;
-  const buttons: ResolutionAction[] = open ? actions : [];
+  const personName = person ? nameOf(person) : "this member";
 
   return (
     <li
@@ -69,14 +166,17 @@ function Row({
     >
       <div className="flex items-baseline justify-between gap-2">
         <p className="truncate text-xs font-medium text-black dark:text-white">
-          {reportTypeLabel(report.reportType)} · about{" "}
-          {onHome ? "a post on Home" : reportTargetLabel(report.targetKind)}
+          {reportTypeLabel(report.reportType)} · about {subject.about}
         </p>
-        <span className="shrink-0 text-2xs font-medium text-black/70 dark:text-white/70">
-          {reportStatusLabel(locallyResolved ? "resolved" : report.status)}
+        <span
+          className="shrink-0 text-2xs font-medium text-black/70 dark:text-white/70"
+          data-testid="moderation-report-status"
+        >
+          {reportStatusLabel(status)}
         </span>
       </div>
-      <p className="text-2xs text-black/60 dark:text-white/60">
+      <Subject nameOf={nameOf} row={row} />
+      <p className="mt-1 text-2xs text-black/60 dark:text-white/60">
         {reporter ? `Reported by ${nameOf(reporter)}` : "Reported"}
         {report.createdAt
           ? ` · ${new Date(report.createdAt).toLocaleString()}`
@@ -84,26 +184,34 @@ function Row({
       </p>
       {report.note ? (
         <p className="mt-1 text-2xs text-black/70 dark:text-white/70">
-          “{report.note}”
+          Why: “{report.note}”
         </p>
       ) : null}
-      {buttons.length > 0 ? (
+      {status === "escalated" ? (
+        <p
+          className="mt-1 text-2xs text-black/60 dark:text-white/60"
+          data-testid="moderation-report-escalated"
+        >
+          Passed on to the people who run this server.
+        </p>
+      ) : null}
+      {actions.length > 0 ? (
         <div className="mt-1.5">
           {pickingTimeout ? (
-            <div
+            <fieldset
               className="flex flex-wrap items-center gap-1.5"
               data-testid="timeout-choices"
             >
-              <span className="text-2xs text-black/60 dark:text-white/60">
-                Time out for
-              </span>
+              <legend className="float-left mr-1.5 text-2xs text-black/60 dark:text-white/60">
+                Time out {personName} for
+              </legend>
               {TIMEOUT_CHOICES.map((choice) => (
                 <button
                   className="rounded-md border border-black/10 px-2 py-1 text-2xs font-medium text-black/70 dark:border-white/10 dark:text-white/70"
                   key={choice.seconds}
                   onClick={() => {
                     setPickingTimeout(false);
-                    void onPerform(report, "timeout", {
+                    void onPerform(row, "timeout", {
                       expiresAt: Math.floor(Date.now() / 1000) + choice.seconds,
                     });
                   }}
@@ -119,10 +227,10 @@ function Row({
               >
                 Cancel
               </button>
-            </div>
+            </fieldset>
           ) : (
             <div className="flex flex-wrap items-center gap-1.5">
-              {buttons.map((action) => (
+              {actions.map((action) => (
                 <button
                   aria-label={`${ACTION_LABEL[action]}: ${reportTypeLabel(report.reportType)} report`}
                   className="inline-flex items-center gap-1 rounded-md border border-black/10 px-2 py-1 text-2xs font-medium text-black/70 disabled:opacity-50 dark:border-white/10 dark:text-white/70"
@@ -136,7 +244,7 @@ function Row({
                     } else if (action === "delete") {
                       setDeleting(true);
                     } else {
-                      void onPerform(report, action);
+                      void onPerform(row, action);
                     }
                   }}
                   type="button"
@@ -151,15 +259,15 @@ function Row({
           )}
           <ConfirmDialog
             cancelLabel="Cancel"
-            confirmLabel="Ban member"
-            description="They can no longer post in this community. You can lift the ban later."
+            confirmLabel={`Ban ${personName}`}
+            description={`${personName} can no longer post in this community. You can lift the ban later.`}
             onCancel={() => setConfirmingBan(false)}
             onConfirm={() => {
               setConfirmingBan(false);
-              void onPerform(report, "ban");
+              void onPerform(row, "ban");
             }}
             open={confirmingBan}
-            title="Ban this member?"
+            title={`Ban ${personName}?`}
           />
           {deleting ? (
             <ReasonDialog
@@ -172,7 +280,7 @@ function Row({
               destructive
               onClose={() => setDeleting(false)}
               onConfirm={async (reason) => {
-                const failed = await onPerform(report, "delete", { reason });
+                const failed = await onPerform(row, "delete", { reason });
                 if (failed !== null) throw new Error(failed);
               }}
               testId="moderation-delete-dialog"
@@ -189,9 +297,21 @@ function Row({
 
 export function ModerationQueuePanel() {
   const { access, loading: accessLoading } = useModerationAccess();
-  const { rows, loading, error, pollPaused, acting, errors, perform, refresh } =
-    useModerationQueue();
-  const visible = rows.slice(0, 30);
+  const {
+    rows: visible,
+    loading,
+    error,
+    pollPaused,
+    acting,
+    errors,
+    perform,
+    refresh,
+    filter,
+    setFilter,
+    hasOlder,
+    loadingOlder,
+    showOlder,
+  } = useModerationQueue(window.location.pathname);
   const moderator = access === "granted";
 
   return (
@@ -224,6 +344,23 @@ export function ModerationQueuePanel() {
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {moderator ? (
+          <fieldset className="mb-2 flex flex-wrap items-center gap-1.5">
+            <legend className="sr-only">Show reports</legend>
+            {QUEUE_FILTERS.map((choice) => (
+              <button
+                aria-pressed={filter === choice.value}
+                className="rounded-md border border-black/10 px-2 py-1 text-2xs font-medium text-black/70 aria-pressed:border-black/40 aria-pressed:bg-black/5 aria-pressed:text-black dark:border-white/10 dark:text-white/70 dark:aria-pressed:border-white/40 dark:aria-pressed:bg-white/10 dark:aria-pressed:text-white"
+                data-testid={`moderation-filter-${choice.value}`}
+                key={choice.value}
+                onClick={() => setFilter(choice.value)}
+                type="button"
+              >
+                {choice.label}
+              </button>
+            ))}
+          </fieldset>
+        ) : null}
         {error ? (
           <p
             className="pb-2 text-2xs text-red-600 dark:text-red-400"
@@ -250,7 +387,11 @@ export function ModerationQueuePanel() {
             className="py-6 text-center text-2xs text-black/60 dark:text-white/60"
             data-testid="moderation-empty"
           >
-            No reports right now.
+            {filter === "escalated"
+              ? "No escalated reports."
+              : filter === "open"
+                ? "No open reports."
+                : "No reports right now."}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -259,6 +400,17 @@ export function ModerationQueuePanel() {
             ))}
           </ul>
         )}
+        {moderator && hasOlder ? (
+          <button
+            className="mt-2 rounded-md border border-black/10 px-2 py-1 text-2xs font-medium text-black/70 disabled:opacity-50 dark:border-white/10 dark:text-white/70"
+            data-testid="moderation-show-older"
+            disabled={loadingOlder}
+            onClick={showOlder}
+            type="button"
+          >
+            {loadingOlder ? "Loading older reports…" : "Show older"}
+          </button>
+        ) : null}
         {acting.size > 0 ? (
           <p className="pt-2 text-2xs text-black/60 dark:text-white/60">
             Sending…

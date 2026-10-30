@@ -172,16 +172,6 @@ export function reportStatusLabel(status: ReportStatus): string {
   return REPORT_STATUS_LABEL[status] ?? "Open";
 }
 
-const TARGET_LABEL: Record<ReportTargetKind, string> = {
-  event: "a message",
-  pubkey: "a member",
-  blob: "a file",
-};
-
-export function reportTargetLabel(targetKind: ReportTargetKind): string {
-  return TARGET_LABEL[targetKind] ?? "content";
-}
-
 /**
  * Whether a report is about a Home post: a reported message in no room or
  * board. Deleting one is the community moderators' Home removal (no channel),
@@ -211,13 +201,4 @@ export function resolvableActions(
   }
   actions.push("dismiss", "escalate");
   return actions;
-}
-
-/** The enforcement target for ban/timeout: the member, or the message signer. */
-export function enforcementTarget(
-  report: ModerationReport,
-  authorByReport: ReadonlyMap<string, string>,
-): string | null {
-  if (report.targetKind === "pubkey") return report.target;
-  return authorByReport.get(report.reportEventId) ?? null;
 }

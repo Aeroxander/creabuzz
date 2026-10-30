@@ -11,15 +11,18 @@ import { Link, useSearch } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import {
   PeoplePicker,
   TextAreaField,
   TextField,
 } from "@/features/launchpad/ui/decision-fields";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { testRecordsNotice } from "@/features/launchpad/lib/test-network";
 import { WalletStrip } from "@/features/launchpad/ui/auction-widgets";
 import { usePeopleWithWallets } from "@/features/launchpad/use-people";
 import { cn } from "@/shared/lib/cn";
+import { SIGNING_BLOCKED_MESSAGE } from "@/shared/lib/nostr-signer";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -28,6 +31,7 @@ import {
   CONTRIBUTOR_STEP_LABELS,
   CONTRIBUTOR_STEPS,
 } from "../lib/contributor-flow";
+import { LOCKED_GATE_MESSAGE } from "../lib/contributor-gate";
 import {
   CONTRIBUTOR_DEFAULTS,
   type ContributorDraft,
@@ -43,6 +47,7 @@ import { useContributorStart } from "../use-contributor-start";
 import { useStartFromPitch } from "../use-start-from-pitch";
 import { FirstProjectsField } from "./FirstProjectsField";
 import { RemixFields } from "./RemixFields";
+import { ReviewersPicked } from "./ReviewersPicked";
 
 const EMPTY: ContributorDraft = {
   name: "",
@@ -250,13 +255,36 @@ export function ContributorStartPage() {
           <h2 className="text-base font-bold">{job.draft.name}</h2>
           <Steps flow={flow} />
           {flow.errorMessage ? (
-            <p
-              className="text-sm text-destructive"
-              data-testid="contributor-failure"
-              role="alert"
+            flow.errorMessage.includes(SIGNING_BLOCKED_MESSAGE) ? (
+              // Locked after the DAO was made: unlock here, and the run carries on with the step that is left.
+              <SignRecovery
+                message={flow.errorMessage}
+                messageTestId="contributor-failure"
+                onUnlocked={start.resume}
+                testId="contributor-failure-recovery"
+              />
+            ) : (
+              <p
+                className="text-sm text-destructive"
+                data-testid="contributor-failure"
+                role="alert"
+              >
+                {flow.errorMessage}
+              </p>
+            )
+          ) : null}
+          {flow.errorMessage && start.failureDetails ? (
+            <details
+              className="text-xs text-muted-foreground"
+              data-testid="contributor-failure-details"
             >
-              {flow.errorMessage}
-            </p>
+              <summary className="cursor-pointer select-none font-medium">
+                Technical details
+              </summary>
+              <p className="mt-1 break-words font-mono">
+                {start.failureDetails}
+              </p>
+            </details>
           ) : null}
           {done && projectLink ? (
             <div className="flex flex-col gap-3" data-testid="contributor-done">
@@ -280,11 +308,24 @@ export function ContributorStartPage() {
               </div>
             </div>
           ) : null}
+          {/* Locked before the run picks up again: unlock here first, as the fresh start asks (the failure above already
+              offers its own unlock when the run stopped on it). */}
+          {unfinished &&
+          !start.running &&
+          start.locked &&
+          !flow.errorMessage?.includes(SIGNING_BLOCKED_MESSAGE) ? (
+            <SignRecovery
+              message={LOCKED_GATE_MESSAGE}
+              onUnlocked={start.resume}
+              testId="contributor-resume-unlock"
+            />
+          ) : null}
           {unfinished && !start.running ? (
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 data-testid="contributor-resume"
                 disabled={
+                  start.locked ||
                   !wallet.address ||
                   wallet.address.toLowerCase() !== job.founder
                 }
@@ -379,15 +420,23 @@ export function ContributorStartPage() {
                 testId="contributor-reviewers-people"
               />
             }
-            hint="Wallet addresses of the people who check submitted work, one per line. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
+            hint="The people who check submitted work: pick them from the list, or paste each one's account address on its own line. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
             label="Reviewers"
             onChange={set("reviewers")}
-            placeholder="0x… (one wallet address per line)"
+            placeholder="0x… (one account address per line)"
             testId="contributor-reviewers"
             value={draft.reviewers}
           />
+          <ReviewersPicked
+            me={start.me}
+            onEitherDecides={() =>
+              setDraft((current) => ({ ...current, quorum: "1" }))
+            }
+            quorum={draft.quorum}
+            reviewers={draft.reviewers}
+          />
           <TextField
-            hint="Leave empty for a simple majority of the reviewers."
+            hint="Leave empty for more than half of them."
             inputMode="numeric"
             label="How many reviewers must agree"
             onChange={set("quorum")}
@@ -447,13 +496,38 @@ export function ContributorStartPage() {
             </p>
           ) : null}
           <WalletStrip testIdPrefix="contributor-account" wallet={wallet} />
+          {/* A locked passkey is said, with its unlock, whatever else stands in the way: the project is published under
+              the founder's name, so this is checked before anything is sent, never found after the DAO is made. */}
+          {start.locked ? (
+            <SignRecovery
+              message={LOCKED_GATE_MESSAGE}
+              onUnlocked={() => {
+                start.rereadProjects();
+                void people.refetch();
+              }}
+              testId="contributor-unlock"
+            />
+          ) : null}
           {/* The account strip above says what to do about the account; the gate says the rest. */}
-          {gate.ok || gate.reason === "wallet" ? null : (
+          {gate.ok ||
+          gate.reason === "wallet" ||
+          gate.reason === "locked" ? null : (
             <div
               className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
               data-testid="contributor-gate"
             >
               <span>{gate.message}</span>
+              {gate.reason === "projects-unreadable" ? (
+                <Button
+                  data-testid="contributor-projects-retry"
+                  onClick={start.rereadProjects}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Try again
+                </Button>
+              ) : null}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-3">
@@ -478,13 +552,15 @@ export function ContributorStartPage() {
         </Card>
       )}
 
-      <p className="text-sm text-muted-foreground">
-        Want to raise money instead?{" "}
-        <Link className="underline" to="/start">
-          See the other ways to start
-        </Link>
-        .
-      </p>
+      {raisesOffered() ? (
+        <p className="text-sm text-muted-foreground">
+          Want to raise money instead?{" "}
+          <Link className="underline" to="/start">
+            See the other ways to start
+          </Link>
+          .
+        </p>
+      ) : null}
     </div>
   );
 }

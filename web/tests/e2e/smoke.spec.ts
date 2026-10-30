@@ -1102,8 +1102,9 @@ test("a refused task write says so instead of failing silently", async ({
     .click();
 
   await expect(page.getByText("Couldn't create the task")).toBeVisible();
+  // The server's reason, as a sentence (D143): "blocked: writer denied" reads "Writer denied."
   await expect(
-    page.getByText("blocked: writer denied", { exact: false }),
+    page.getByText("Writer denied.", { exact: false }),
   ).toBeVisible();
 });
 

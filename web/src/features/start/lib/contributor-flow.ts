@@ -21,6 +21,7 @@ import {
   type StepFlowAction,
   type StepFlowState,
 } from "@creaton/core/launchpad/step-flow.ts";
+import { actingErrorDetails } from "../../launchpad/lib/acting-account.ts";
 import type { CreateLaunchInput } from "../../launchpad/use-launches.ts";
 import {
   CALL_BUDGET_FACTORY,
@@ -44,7 +45,7 @@ export const CONTRIBUTOR_STEPS: readonly ContributorStep[] = [
 ];
 
 export const CONTRIBUTOR_STEP_LABELS: Record<ContributorStep, string> = {
-  create: "Make the project: its DAO, first work budget and first project",
+  create: "Make the project: its DAO, first work budget and work areas",
   record: "Publish the project",
 };
 
@@ -95,6 +96,8 @@ export interface ContributorEffects {
   ): Promise<{ txHash: string; status: "success" | "reverted" }>;
   /** The latest block's timestamp. */
   now(): Promise<number>;
+  /** Wait `ms` before asking the network again (`setTimeout` on the page; immediate in tests). */
+  wait?(ms: number): Promise<void>;
   /** Publish the project's record; must throw when the server refuses it. */
   publish(input: CreateLaunchInput): Promise<void>;
   /** Keep the job (local storage on the page). */
@@ -103,7 +106,35 @@ export interface ContributorEffects {
 
 export type ContributorOutcome =
   | { ok: true; job: ContributorJob }
-  | { ok: false; job: ContributorJob; step: ContributorStep; message: string };
+  | {
+      ok: false;
+      job: ContributorJob;
+      step: ContributorStep;
+      message: string;
+      /** The failure's original text, for "Technical details"; null when the message is all there is. */
+      technical: string | null;
+    };
+
+/**
+ * How many times, and how far apart, the page's own network is asked for the new DAO after the send is confirmed. The
+ * confirmation comes from a different node (a passkey step's from the fee service's), so the page's node can be a block
+ * or two behind: about ten seconds covers that without keeping the founder waiting on a real failure.
+ */
+export const DAO_CODE_TRIES = 5;
+export const DAO_CODE_WAIT_MS = 2_000;
+
+const pause = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Whether the DAO shows on the page's node, asking a bounded number of times. */
+async function daoShows(dao: string, fx: ContributorEffects): Promise<boolean> {
+  const wait = fx.wait ?? pause;
+  for (let attempt = 0; attempt < DAO_CODE_TRIES; attempt += 1) {
+    if (await fx.codeAt(dao)) return true;
+    if (attempt + 1 < DAO_CODE_TRIES) await wait(DAO_CODE_WAIT_MS);
+  }
+  return false;
+}
 
 /** Which steps a job has already done, for a page that opens on a job from an earlier visit. */
 export function doneSteps(job: ContributorJob): Set<ContributorStep> {
@@ -165,9 +196,9 @@ async function makeProject(
       throw new Error(
         "the network turned the transaction down, so nothing was made. Most often another project was being set up at the same moment: try again.",
       );
-    if (!(await fx.codeAt(dao)))
+    if (!(await daoShows(dao, fx)))
       throw new Error(
-        `the transaction went through (${sent.txHash}) but there is no DAO where it should be. Check it before trying again.`,
+        `it was sent and confirmed (${sent.txHash}), but this site's view of the network does not show the DAO yet. Press Try again in a minute: it picks up the DAO once it shows, and never makes a second one.`,
       );
   }
   const shares = wordAddress(await fx.call(dao, CALL_SHARES));
@@ -207,7 +238,13 @@ export async function runContributorStart(
     } catch (error) {
       fx.save(job);
       dispatch({ type: "step-failed", step, message: message(error) });
-      return { ok: false, job, step, message: message(error) };
+      return {
+        ok: false,
+        job,
+        step,
+        message: message(error),
+        technical: actingErrorDetails(error),
+      };
     }
     fx.save(job);
     dispatch({ type: "step-done", step });

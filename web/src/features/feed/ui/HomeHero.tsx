@@ -15,7 +15,7 @@ import { Check, Coins, ShieldCheck, Users } from "lucide-react";
 import { useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
-import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
+import { useProfiles } from "@/features/profiles/use-profiles";
 import { hasFirstStep } from "@/shared/lib/first-steps";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
@@ -28,6 +28,7 @@ import {
 import {
   type Role,
   type Signals,
+  hasChosenName,
   parseRole,
   stepsFor,
   wayInDone,
@@ -144,7 +145,7 @@ function GettingStarted({ me }: { me: string }) {
   const profile = profiles?.[me];
   const mine = (launches.data ?? []).filter((l) => l.record.author === me);
   const signals: Signals = {
-    named: Boolean(profile && resolveUserName(profile, me) !== me.slice(0, 8)),
+    named: hasChosenName(profile),
     lookedAtProject: hasFirstStep(localStorage, "looked-at-project"),
     follows:
       followedPeople(lists.data?.contacts ?? null).size +

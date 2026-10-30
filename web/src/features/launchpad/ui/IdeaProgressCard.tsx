@@ -2,8 +2,13 @@
  * The founder's next steps while a launch is still just an idea: say something,
  * gather supporters, then prepare the sale. The sale (token, split, price) is
  * the heavy part, so it waits until people have shown up.
+ *
+ * A build that offers no raises (`raisesOffered`, the contributor-only hosted
+ * image) has no sale to prepare: the last step there is starting a contributor
+ * project, so the idea leads somewhere instead of to a sale that cannot launch.
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -14,6 +19,7 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
 import { gateProgress } from "../lib/idea";
+import { raisesOffered } from "../lib/raises-offered";
 import { recordToInput } from "../lib/record-input";
 import type { Launch } from "../models";
 import { ensureRooms } from "../use-launch-chat";
@@ -34,6 +40,7 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
     launch.updates.length > 0 ||
     (notes.data ?? []).some((note) => note.author === record.author);
   const save = useCreateLaunch();
+  const raises = raisesOffered();
   const [preparing, setPreparing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
 
@@ -68,8 +75,9 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
     <Card className="p-4" data-testid="idea-progress">
       <h2 className="text-sm font-bold">Your idea is live</h2>
       <p className="text-xs text-muted-foreground">
-        No token or price yet. Build interest first; set up the sale when you
-        are ready.
+        {raises
+          ? "No token or price yet. Build interest first; set up the sale when you are ready."
+          : "Build interest first. When people want to help, start a contributor project for it."}
       </p>
       <ul className="mt-2 divide-y divide-border/60">
         <Step done={announced} title="Announce it">
@@ -113,30 +121,47 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
             </span>
           </div>
         </Step>
-        <Step done={false} title="Prepare the sale">
-          <div className="mt-1.5 flex flex-wrap items-center gap-3">
+        {raises ? (
+          <Step done={false} title="Prepare the sale">
+            <div className="mt-1.5 flex flex-wrap items-center gap-3">
+              <Button
+                data-testid="idea-prepare-sale"
+                disabled={!progress.open}
+                onClick={() => setPreparing(true)}
+                size="sm"
+              >
+                Prepare the sale
+              </Button>
+              {!progress.open ? (
+                <button
+                  className="text-xs text-muted-foreground underline"
+                  data-testid="idea-prepare-anyway"
+                  onClick={() => setPreparing(true)}
+                  type="button"
+                >
+                  I already have backers elsewhere. Prepare anyway.
+                </button>
+              ) : null}
+            </div>
+          </Step>
+        ) : (
+          <Step done={false} title="Start a contributor project">
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Set up the work and who reviews it. People who help earn Shares,
+              the project&apos;s voting tokens.
+            </p>
             <Button
-              data-testid="idea-prepare-sale"
-              disabled={!progress.open}
-              onClick={() => setPreparing(true)}
+              asChild
+              className="mt-1.5"
+              data-testid="idea-start-contributor"
               size="sm"
             >
-              Prepare the sale
+              <Link to="/start/contributor">Start a contributor project</Link>
             </Button>
-            {!progress.open ? (
-              <button
-                className="text-xs text-muted-foreground underline"
-                data-testid="idea-prepare-anyway"
-                onClick={() => setPreparing(true)}
-                type="button"
-              >
-                I already have backers elsewhere. Prepare anyway.
-              </button>
-            ) : null}
-          </div>
-        </Step>
+          </Step>
+        )}
       </ul>
-      {preparing ? (
+      {raises && preparing ? (
         <CreateLaunchDialog
           idea={recordToInput(record)}
           isCreating={save.isPending}

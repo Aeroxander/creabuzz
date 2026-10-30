@@ -7,9 +7,10 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { Megaphone } from "lucide-react";
+import { ImagePlus, Megaphone } from "lucide-react";
 import { toast } from "sonner";
 
+import { useCommunityAccess } from "@/features/communities/use-access";
 import { OnboardingDialog } from "@/features/identity/ui/OnboardingDialog";
 import {
   profileDisplayName,
@@ -17,6 +18,7 @@ import {
 } from "@/features/profiles/use-profiles";
 import { cn } from "@/shared/lib/cn";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { uploadBlob } from "@/shared/lib/upload-blob";
 import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
@@ -94,6 +96,13 @@ export function PostComposer({
   const [active, setActive] = useState(0);
   const [mirror, setMirror] = useState(readMirrorSetting);
   const [onboarding, setOnboarding] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  // Signed out, "reading needs no account" is said only where it is true: not on an invite-only server, and not
+  // before the server has said which it is.
+  const access = useCommunityAccess();
+  const readingIsOpen = !me && access.data === "open";
   const ref = useRef<HTMLTextAreaElement>(null);
   const publish = useSocialPublish();
   const myProfile = usePeople(me ? [me] : [])[me ?? ""];
@@ -144,7 +153,8 @@ export function PostComposer({
         >
           {CREATE_ACCOUNT}
         </button>{" "}
-        to post, reply, vote and follow. Reading needs no account.
+        to post, reply, vote and follow.
+        {readingIsOpen ? " Reading needs no account." : null}
         {onboarding ? (
           <OnboardingDialog
             onDone={() => window.location.reload()}
@@ -159,6 +169,35 @@ export function PostComposer({
   const remaining = onBoard
     ? Number.POSITIVE_INFINITY
     : MAX_POST_CHARS - [...text].length;
+
+  /**
+   * Upload a picture to the server and add its address to the text on a line of its own, where the post shows it as
+   * a picture. On a board, where the text is Markdown, it goes in as a Markdown picture, as the board's own form does.
+   */
+  const addPicture = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    setProblem(null);
+    try {
+      const uploaded = await uploadBlob(file);
+      const picture = onBoard ? `![](${uploaded.url})` : uploaded.url;
+      setText((current) => {
+        const before = current.trimEnd();
+        return `${before}${before ? "\n\n" : ""}${picture}\n`;
+      });
+      requestAnimationFrame(() => {
+        if (ref.current) resize(ref.current);
+      });
+    } catch (error) {
+      const said = error instanceof Error ? error.message.trim() : "";
+      setProblem(
+        `That picture didn't upload${said ? ` (the server said: ${said})` : ""}. Try again, or paste a link to a picture.`,
+      );
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
 
   const insertMention = (pubkey: string) => {
     if (!mention) return;
@@ -182,6 +221,7 @@ export function PostComposer({
         .then(() => {
           setText("");
           setTitle("");
+          setProblem(null);
           if (ref.current) ref.current.style.height = "auto";
           toast.success("Posted to the board");
           onPosted?.();
@@ -218,6 +258,7 @@ export function PostComposer({
     publish.mutate(template, {
       onSuccess: () => {
         setText("");
+        setProblem(null);
         setLaunchMode(false);
         if (ref.current) ref.current.style.height = "auto";
         onPosted?.();
@@ -356,8 +397,37 @@ export function PostComposer({
             ))}
           </div>
         ) : null}
+        {problem ? (
+          <p
+            className="pb-1 text-xs text-red-600 dark:text-red-400"
+            data-testid={`${testId}-problem`}
+            role="alert"
+          >
+            {problem}
+          </p>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-black/10 py-2 dark:border-white/10">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <input
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              aria-hidden
+              className="sr-only"
+              data-testid={`${testId}-file`}
+              onChange={(e) => void addPicture(e.target.files?.[0])}
+              ref={fileInput}
+              tabIndex={-1}
+              type="file"
+            />
+            <button
+              className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:text-sky-400 dark:hover:bg-white/10"
+              data-testid={`${testId}-picture`}
+              disabled={uploading || publish.isPending || boardBusy}
+              onClick={() => fileInput.current?.click()}
+              type="button"
+            >
+              <ImagePlus aria-hidden className="h-4 w-4" />
+              {uploading ? "Uploading…" : "Add a picture"}
+            </button>
             {canLaunchMode ? (
               <span className="flex items-center gap-2 text-xs">
                 <label className="flex items-center gap-2 font-semibold text-primary-ink">
@@ -423,9 +493,10 @@ export function PostComposer({
               className="rounded-full px-5 font-semibold"
               data-testid={`${testId}-submit`}
               disabled={
-                onBoard
+                uploading ||
+                (onBoard
                   ? boardBusy || title.trim() === ""
-                  : publish.isPending || text.trim() === "" || remaining < 0
+                  : publish.isPending || text.trim() === "" || remaining < 0)
               }
               size="sm"
               type="submit"

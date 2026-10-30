@@ -31,7 +31,7 @@ import {
   remainingRagequitSteps,
   resumeRagequitFromState,
   runRagequitFlow,
-  senderRagequitDeps,
+  confirmedRagequitDeps,
 } from "./ragequit-flow.ts";
 
 // ------------------------------------------------------------- fixtures ----
@@ -433,7 +433,7 @@ test("the ragequit call reaches both senders byte-identically", async () => {
   clearPasskeyStorage();
 });
 
-test("senderRagequitDeps delivers the composed bytes unmodified", async () => {
+test("confirmedRagequitDeps delivers the composed bytes unmodified", async () => {
   const tx = buildRagequitTx(DAO, {
     tokens: [ETH_TOKEN],
     sharesToBurn: 5n,
@@ -441,15 +441,73 @@ test("senderRagequitDeps delivers the composed bytes unmodified", async () => {
     forbidden: [],
   });
   const walletWire = [];
-  const passthrough = {
-    async sendCalls(calls) {
+  const deps = confirmedRagequitDeps(
+    async (calls) => {
       walletWire.push(...calls);
-      return { txHash: `0x${"22".repeat(32)}`, receipts: [] };
+      return `0x${"22".repeat(32)}`;
     },
-  };
-  const deps = senderRagequitDeps(passthrough, async () => {});
+    async () => {},
+  );
   const sent = await deps.send(tx);
   assert.deepEqual(walletWire, [{ to: tx.to, data: tx.data, value: tx.value }]);
   assert.equal(sent.txHash, `0x${"22".repeat(32)}`);
   assert.equal(sent.status, "success");
+});
+
+test("a retry after an unconfirmed exit reads the Shares first: gone means it landed, and nothing is sent twice", async () => {
+  const { exitRetry, sentTxHash } = await import("./ragequit-flow.ts");
+  const sent = { burn: 40n, balanceBefore: 100n };
+  // The wallet's confirmation timed out, but the Shares are down by what was sent: it landed.
+  assert.deepEqual(
+    exitRetry({
+      exitDone: false,
+      sent,
+      fresh: { sharesBalance: 60n, sharesBurnable: 60n },
+      current: 40n,
+    }),
+    { kind: "landed" },
+  );
+  // Still there: it did not land, and the new send is for what can leave now, not what was asked before.
+  assert.deepEqual(
+    exitRetry({
+      exitDone: false,
+      sent,
+      fresh: { sharesBalance: 100n, sharesBurnable: 30n },
+      current: 40n,
+    }),
+    { kind: "send", burn: 30n },
+  );
+  // Could not be read again: whether it landed is unknown, so nothing is sent.
+  assert.deepEqual(
+    exitRetry({ exitDone: false, sent, fresh: null, current: 40n }),
+    { kind: "unknown" },
+  );
+  // The exit is done: only the record is retried, for the Shares that exit burned.
+  assert.deepEqual(
+    exitRetry({ exitDone: true, sent, fresh: null, current: 0n }),
+    { kind: "record", burn: 40n },
+  );
+  // Nothing was sent yet: a plain first send.
+  assert.deepEqual(
+    exitRetry({ exitDone: false, sent: null, fresh: null, current: 40n }),
+    { kind: "send", burn: 40n },
+  );
+  // A wallet that timed out names its transaction; one that refused names none.
+  const hash = `0x${"ab".repeat(32)}`;
+  assert.equal(
+    sentTxHash(
+      new Error(
+        `Transaction ${hash} was sent but not confirmed within 180s. Check your wallet.`,
+      ),
+    ),
+    hash,
+  );
+  const wrapped = Object.assign(
+    new Error("It was sent but is not confirmed yet."),
+    {
+      technical: `Transaction ${hash} was sent but not confirmed within 180s.`,
+    },
+  );
+  assert.equal(sentTxHash(wrapped), hash);
+  assert.equal(sentTxHash(new Error("You rejected the request")), null);
 });

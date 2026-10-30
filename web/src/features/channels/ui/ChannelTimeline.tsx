@@ -18,7 +18,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
-import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import {
+  QueryError,
+  errorMessage,
+  readableError,
+} from "@/shared/ui/query-error";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 
 import type { Channel } from "../use-channels";
@@ -56,6 +60,7 @@ import { MutedLine } from "@/features/social/ui/MutedLine";
 import { useMutedSet } from "@/features/social/use-social-actions";
 import { BoardPeople } from "@/features/board/ui/BoardPeople";
 import { SystemNoteRow } from "./SystemNoteRow";
+import { failureWords } from "@/shared/lib/readable-error";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"];
 
@@ -155,7 +160,7 @@ async function copyText(value: string, label: string) {
     toast.success(label);
   } catch (error) {
     toast.error("Couldn't copy", {
-      description: error instanceof Error ? error.message : String(error),
+      description: failureWords(error).text,
     });
   }
 }
@@ -235,7 +240,7 @@ function MessageRow({
     } catch (error) {
       console.error("[react]", error);
       toast.error("Couldn't add reaction", {
-        description: error instanceof Error ? error.message : String(error),
+        description: failureWords(error).text,
       });
     }
   };
@@ -621,7 +626,7 @@ export function ChannelTimeline({
     } catch (error) {
       console.error("[delete]", error);
       toast.error("Couldn't delete message", {
-        description: error instanceof Error ? error.message : String(error),
+        description: failureWords(error).text,
       });
     }
   };
@@ -631,7 +636,7 @@ export function ChannelTimeline({
       await moderation.remove(eventId);
     } catch (error) {
       toast.error("Couldn't remove message", {
-        description: error instanceof Error ? error.message : String(error),
+        description: failureWords(error).text,
       });
     }
   };
@@ -816,7 +821,7 @@ export function ChannelTimeline({
                 role="alert"
               >
                 Couldn't load older messages.{" "}
-                {errorMessage(messages.olderError)}.{" "}
+                {readableError(messages.olderError)}{" "}
                 <button
                   type="button"
                   className="underline"

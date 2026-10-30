@@ -2,7 +2,8 @@
  * Whether a hosted build's settings fit together (`docs/sepolia-testnet.md`), read with the parsers the app itself uses,
  * so what this approves is what the page will do. `web/scripts/check-deploy-env.mjs` runs it before the image builds the
  * app (`Dockerfile`), and refuses a build that would offer mainnet before the audit, point a hosted page at a local
- * chain, or start contributor projects the page could not read the history of. It also says, in a few lines, what the
+ * chain, start contributor projects the page could not read the history of or send steps for (no paid gas in the
+ * contributor-only image), or carry a CHANGE_ME placeholder into the page. It also says, in a few lines, what the
  * build will offer, since every one of these settings ends up public in the page.
  */
 
@@ -59,9 +60,23 @@ function hostedUrl(raw: string): { host: string } | { problem: string } {
   return { host: url.host };
 }
 
+/** A ZeroDev project id: a UUID. Anything else (a placeholder, a URL, an API key) makes every passkey step fail. */
+const ZERODEV_PROJECT_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   const problems: string[] = [];
   const summary: string[] = [];
+
+  // The deploy script prints CHANGE_ME_... where a value is the operator's to fill in. One left in would be built into the
+  // page as it is (the build reads these, the server never sees them), so it stops here.
+  for (const [name, raw] of Object.entries(env)) {
+    if (name.startsWith("VITE_") && raw?.includes("CHANGE_ME")) {
+      problems.push(
+        `${name} still holds a CHANGE_ME placeholder: put the real value in .env, then build again.`,
+      );
+    }
+  }
 
   if (mainnetEnabled(env)) {
     problems.push(
@@ -260,6 +275,24 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   if (zerodevChain && Number(zerodevChain) !== chainId) {
     problems.push(
       `VITE_ZERODEV_CHAIN_ID is ${zerodevChain}, but the app's network is ${chainId}.`,
+    );
+  }
+  if (project && !ZERODEV_PROJECT_ID.test(project)) {
+    problems.push(
+      "VITE_ZERODEV_PROJECT_ID is not a ZeroDev project id (a UUID, from the project's page in the ZeroDev dashboard).",
+    );
+  }
+  // The contributor-only image (the Dockerfile sets VITE_CONTRIBUTOR_ONLY=1) is run with passkey accounts alone: nobody
+  // is asked to bring a wallet or test gas, so without paid gas no contributor step could be sent at all.
+  // Only one of the two set is said above already; this is for neither.
+  if (
+    env.VITE_CONTRIBUTOR_ONLY?.trim() === "1" &&
+    contributor &&
+    !project &&
+    !zerodevChain
+  ) {
+    problems.push(
+      "Contributor projects are on, but VITE_ZERODEV_PROJECT_ID and VITE_ZERODEV_CHAIN_ID are not set: in the contributor-only image every step is sent from a passkey account whose fees ZeroDev pays.",
     );
   }
   summary.push(

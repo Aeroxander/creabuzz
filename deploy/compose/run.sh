@@ -90,6 +90,21 @@ remove_media() {
     echo "Removed. Backups taken before now still hold it until they are pruned."'
 }
 
+# The web app's settings (VITE_*) are read when the image is built and end up in the page. The server's secrets may still
+# be CHANGE_ME at a first build (the owner key is made with the built image), but a page setting left as one would be
+# served as it is, and `restart` does not rebuild: fixing .env afterwards changes nothing until the next build.
+require_page_settings() {
+  local left
+  left="$(grep -E '^[[:space:]]*VITE_[A-Za-z0-9_]*=.*CHANGE_ME' .env | sed -E 's/^[[:space:]]*/  /; s/=.*//' || true)"
+  [[ -z "$left" ]] && return 0
+  {
+    echo "deploy/compose/.env still has CHANGE_ME in the web app's settings, which are built into the page:"
+    echo "$left"
+    echo "Put the real values in, then run ./run.sh build again."
+  } >&2
+  exit 1
+}
+
 case "${1:-help}" in
   start|up)
     require_env
@@ -115,6 +130,7 @@ case "${1:-help}" in
     ;;
   build)
     require_env_file
+    require_page_settings
     BUZZ_SOURCE_SHA="$(git -C ../.. rev-parse --short HEAD 2>/dev/null || echo unknown)" compose build relay
     ;;
   upgrade)
@@ -180,7 +196,8 @@ Usage: ./run.sh <command>
 Commands:
   start         Start Buzz with docker compose up -d --wait
   stop          Stop containers without deleting volumes
-  restart       Recreate the relay after env/image changes
+  restart       Recreate the relay after env/image changes (it does not
+                rebuild: after changing a VITE_ setting, run build first)
   pull          Pull configured images
   build         Build the Creaton relay image from this checkout (Creaton only)
   upgrade       Pull and restart, then print backup reminders (Creaton: back

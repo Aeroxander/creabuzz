@@ -1,3 +1,4 @@
+import { reportReadFailure } from "../chain";
 import { type ChallengeIntent, challengeFor } from "../lib/challenge";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import type { SponsorIntent } from "../lib/sponsor";
@@ -23,15 +24,15 @@ import {
 import {
   bondShortfall,
   canAcceptClaim,
+  canExpire,
   type ClaimStatus,
   claimStatusLabel,
-  encodeAttest,
   encodeBind,
   encodeBond,
   encodeCallId,
   encodeCurrencyApprove,
   idLabel,
-  nextStep,
+  claimStep,
   SIGNATURES,
 } from "../lib/work";
 import type { MandateView } from "../lib/work-read";
@@ -65,6 +66,10 @@ import { WorkAreaBounties } from "./WorkAreaBounties";
 import { HowItWorks } from "./HowItWorks";
 import { BudgetWorkAreas } from "./BudgetWorkAreas";
 import { BudgetFigures } from "./BudgetFigures";
+import { ReviewActions } from "./ReviewActions";
+import { ClaimReviewNote } from "./ClaimReviewNote";
+import { type ClaimReview, useReviewReasons } from "../use-review-reasons";
+import { nextMoment, refreshDelay } from "../lib/work-refresh";
 
 const sameAddress = (a: string | null, b: string) =>
   a !== null && a.toLowerCase() === b.toLowerCase();
@@ -205,6 +210,46 @@ export function WorkTab({
       />
     );
   };
+  // Who reviewed each claim, and the reasons published for turning work down, checked against the chain.
+  const reviews = useReviewReasons(evidence.reasons, payouts.data);
+  // Everything the claims show, read again: the claims, what was published for them, and who reviewed them.
+  const refreshAll = () => {
+    void work.refetch();
+    evidence.refetch();
+    void payouts.refetch();
+  };
+  const refreshRef = useRef(refreshAll);
+  refreshRef.current = refreshAll;
+  // Coming back to the page (a phone woken, another tab left) reads it again: reviews and steps move while nobody looks.
+  useEffect(() => {
+    let last = Date.now();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - last < 15_000) return;
+      last = Date.now();
+      refreshRef.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, []);
+  // A claim whose challenge window ends, or whose deadline passes, changes by itself: read the page again just after.
+  const nextChange = work.data ? nextMoment(work.data) : null;
+  const chainTimeNow = work.data?.chainTime ?? 0;
+  useEffect(() => {
+    if (nextChange === null) return;
+    const delay = refreshDelay(nextChange, chainTimeNow);
+    if (delay === null) return;
+    const timer = window.setTimeout(() => refreshRef.current(), delay);
+    return () => window.clearTimeout(timer);
+  }, [nextChange, chainTimeNow]);
+  // A failed read is said in plain words on the page; the node's own text goes to the error report instead.
+  useEffect(() => {
+    if (work.error) reportReadFailure("work-read", work.error);
+  }, [work.error]);
   const focusedClaim = useRef<string | null>(null);
   useEffect(() => {
     const focusKey = focusClaim
@@ -228,8 +273,9 @@ export function WorkTab({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-bold">Work</h2>
           <Button
+            data-testid="work-refresh"
             disabled={work.isFetching}
-            onClick={() => void work.refetch()}
+            onClick={refreshAll}
             size="sm"
             type="button"
             variant="ghost"
@@ -323,7 +369,7 @@ export function WorkTab({
       ) : work.isError ? (
         <Card className="p-4">
           <FailureNote
-            message={`Couldn't read the work from the network: ${work.error instanceof Error ? work.error.message : "unknown error"}`}
+            message="Couldn't read the work from the project's network just now. Try again in a minute."
             testId="work-error"
           />
           <Button
@@ -375,7 +421,8 @@ export function WorkTab({
               onOpenDecisions={onOpenDecisions}
               evidence={evidence}
               labelOf={labelOf}
-              onRefresh={() => void work.refetch()}
+              onRefresh={refreshAll}
+              reviewOf={reviews.reviewOf}
               onSend={send}
               onSendBatch={sendBatch}
               openKeys={openKeys}
@@ -433,7 +480,10 @@ function MandateCard({
   payouts,
   payoutsUnread,
   openKeys,
+  reviewOf,
 }: {
+  /** Who reviewed a claim and why it was turned down, as far as that is known. */
+  reviewOf: (mandate: string, claimId: string) => ClaimReview;
   /** The work areas Open work lists, as `budget:area`, lower case: the budget lists only the others. */
   openKeys: ReadonlySet<string>;
   /** How to write a wallet: the person's name with the short address, or just the address. */
@@ -604,12 +654,7 @@ function MandateCard({
       ) : (
         <ul className="mt-1 flex flex-col gap-2" data-testid="work-claims">
           {mandate.claims.map((claim) => {
-            const step = nextStep(
-              claim,
-              chainTime,
-              mandate.challengeWindow,
-              mandate.isMilestonePanel,
-            );
+            const step = claimStep(claim, mandate, chainTime);
             const mine = sameAddress(wallet, claim.record.contributor);
             // A reviewer's turn: the claim waits for them, they owe no bond, and it is not their own.
             const reviewerTurn =
@@ -657,7 +702,14 @@ function MandateCard({
                 </div>
                 <p className="mt-1" data-testid="work-claim-next">
                   {step.text}
+                  {step.kind === "stuck" && step.lapsesAt > 0
+                    ? ` Its deadline is ${date(step.lapsesAt)}.`
+                    : null}
                 </p>
+                <ClaimReviewNote
+                  labelOf={labelOf}
+                  review={reviewOf(mandate.address, claim.id)}
+                />
                 {claim.record.status === "Paid" ? (
                   <PaidLine
                     sharesOnly={sharesOnly}
@@ -734,42 +786,18 @@ function MandateCard({
                           </Button>
                         ))
                     : null}
-                  {reviewerTurn ? (
-                    <>
-                      {canReview ? (
-                        <Button
-                          data-testid="work-approve"
-                          disabled={busy !== null || gate !== null}
-                          onClick={() =>
-                            void onSend(
-                              `approve-${claim.id}`,
-                              mandate.verifiersAddress,
-                              encodeAttest(claim.id, true),
-                            )
-                          }
-                          size="sm"
-                          type="button"
-                        >
-                          Approve
-                        </Button>
-                      ) : null}
-                      <Button
-                        data-testid="work-object"
-                        disabled={busy !== null || gate !== null}
-                        onClick={() =>
-                          void onSend(
-                            `object-${claim.id}`,
-                            mandate.verifiersAddress,
-                            encodeAttest(claim.id, false),
-                          )
-                        }
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        Object
-                      </Button>
-                    </>
+                  {reviewerTurn && wallet ? (
+                    <ReviewActions
+                      blocked={busy !== null || gate !== null}
+                      canApprove={canReview}
+                      claimId={claim.id}
+                      label={label}
+                      launch={launch}
+                      mandate={mandate.address}
+                      onSend={onSend}
+                      reviewer={wallet}
+                      verifiers={mandate.verifiersAddress}
+                    />
                   ) : null}
                   {step.kind === "settle" ? (
                     <Button
@@ -785,7 +813,28 @@ function MandateCard({
                       size="sm"
                       type="button"
                     >
-                      Finalize review
+                      {step.verdict === "turned-down"
+                        ? "Close it as turned down"
+                        : "Finish the review"}
+                    </Button>
+                  ) : null}
+                  {canExpire(claim.record, chainTime) &&
+                  step.kind !== "settle" ? (
+                    <Button
+                      data-testid="work-expire"
+                      disabled={busy !== null || gate !== null}
+                      onClick={() =>
+                        void onSend(
+                          `expire-${claim.id}`,
+                          mandate.claimsAddress,
+                          encodeCallId(SIGNATURES.expire, claim.id),
+                        )
+                      }
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Close it as lapsed
                     </Button>
                   ) : null}
                   {step.kind === "payout" && mine ? (
