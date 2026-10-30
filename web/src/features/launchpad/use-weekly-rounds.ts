@@ -12,7 +12,9 @@ import { exitSalesState, readExitSales } from "./lib/matched-exit";
 import { fetchRagequitPosition } from "./lib/ragequit-position";
 import {
   type OpenClaim,
+  type RoundHistory,
   readOpenClaims,
+  readRoundHistory,
   readRounds,
 } from "./lib/weekly-rounds";
 import { decodeWord } from "./lib/work";
@@ -35,7 +37,8 @@ export interface RoundsWallet {
 
 /**
  * Weekly rounds for one DAO (D131), when this build names the rounds contract on its network: whether the DAO's Shares
- * name it as their exchange, the latest round with the price steps people chose, and the connected wallet's side.
+ * name it as their exchange, the latest round with the price steps people chose, the earlier rounds' prices and the exit
+ * fee leaving charges now (D147), and the connected wallet's side.
  */
 export function useWeeklyRounds(dao: string, wallet: string | null) {
   const chainId = defaultChainPreset().chainId;
@@ -60,8 +63,15 @@ export function useWeeklyRounds(dao: string, wallet: string | null) {
       // Shares made before exchanges existed have nothing to show.
       if (!exchange) return null;
       const state = exitSalesState(exchange, at, now);
-      // Read whatever the exchange: a round already running stays collectable after a vote turns rounds off.
-      const rounds = await readRounds(chain, at, dao, wallet, now);
+      // Read whatever the exchange: a round already running stays collectable after a vote turns rounds off. The price
+      // history is told apart when it fails, so a node refusing a long log read never hides the round itself.
+      const [rounds, history] = await Promise.all([
+        readRounds(chain, at, dao, wallet, now),
+        readRoundHistory(chain, at, dao, now).then(
+          (read): RoundHistory | null => read,
+          () => null,
+        ),
+      ]);
       // Earlier holders' rounds where this wallet still has something to collect; the latest is shown on its own.
       const latest = rounds.round?.id ?? null;
       const claims: OpenClaim[] = wallet
@@ -93,6 +103,10 @@ export function useWeeklyRounds(dao: string, wallet: string | null) {
         now,
         state,
         rounds,
+        /** Null when the history could not be read: the card says so instead of "No trades yet." */
+        history,
+        /** The exit fee leaving charges now, read the way the exit reads it (zero while the terms are under notice). */
+        exitFeeBps: position.exitFeeBps,
         claims,
         wallet: side,
       };

@@ -8,10 +8,13 @@ import {
   encodeClaimAndLeave,
   encodeSellInRound,
   escrowFor,
+  HISTORY_ROUNDS,
+  MAX_HISTORY_READS,
   orderOutcome,
   orderSteps,
   priceOfStep,
   readOpenClaims,
+  readRoundHistory,
   readRounds,
   ROUND_SIGNATURES,
   roundPhase,
@@ -20,6 +23,7 @@ import {
   stepAtLeast,
   stepAtMost,
   TOPIC_BID_PLACED,
+  TOPIC_ROUND_OPENED,
   TOPIC_SELL_PLACED,
 } from "./weeklyRounds.ts";
 
@@ -48,6 +52,10 @@ test("the round's calls and events are the contract's (cast goldens)", () => {
   assert.equal(
     TOPIC_SELL_PLACED,
     "0xda16a46a24760f2158b3d3dde8302a7c05a3ececa1de06ff0a7303294b42f617",
+  );
+  assert.equal(
+    TOPIC_ROUND_OPENED,
+    "0x6a655185e873028ff101c161206d4f48e6f4d6966bbff8a5ac9c28c5011bccb4",
   );
   assert.equal(
     TOPIC_BID_PLACED,
@@ -303,5 +311,190 @@ test("every round with something left to collect is found from the wallet's own 
       [2n, "void", false, 5n * E18, 0n],
       [1n, "settled", true, 0n, 3n * E18],
     ],
+  );
+});
+
+// ---- price history (D147) ----------------------------------------------------------------------------
+
+const DAY = 86_400;
+const NOW = 100 * DAY;
+const topicWord = (v) => `0x${word(v)}`;
+
+/**
+ * A node holding `RoundOpened` logs as the contract emits them, filtering by topic as a real node does, and each round's
+ * `rounds(id)` record. Counts the record reads.
+ */
+function historyChain(list) {
+  const logs = list.map((r) => ({
+    address: ROUNDS,
+    topics: [TOPIC_ROUND_OPENED, topicWord(r.id), topicWord(BigInt(r.dao))],
+    data: encodeParameters(
+      ["uint256", "uint256", "uint64"],
+      [USD, USD / 100n, BigInt(r.closesAt)],
+    ),
+  }));
+  const records = new Map(
+    list.map((r) => [
+      encodeFunctionData(ROUND_SIGNATURES.rounds, ["uint256"], [r.id]),
+      // dao, shares, opensAt, closesAt, floor, step, asked, wanted, settled, sellersShare, price, volume, margin x3,
+      // funding, fundingDone, terms
+      words(
+        BigInt(r.dao),
+        BigInt(SHARES),
+        r.closesAt - 3 * DAY,
+        r.closesAt,
+        USD,
+        USD / 100n,
+        0,
+        0,
+        r.settled ? 1 : 0,
+        0,
+        r.step ?? 0,
+        r.volume ?? 0n,
+        0,
+        0,
+        0,
+        r.funding ? 1 : 0,
+        0,
+        0,
+      ),
+    ]),
+  );
+  const chain = {
+    reads: 0,
+    call: async (to, data) => {
+      assert.equal(to, ROUNDS);
+      if (!records.has(data)) throw new Error(`unexpected ${data}`);
+      chain.reads += 1;
+      return records.get(data);
+    },
+    logs: async ({ address, topics }) => {
+      assert.equal(address, ROUNDS);
+      return logs.filter((log) =>
+        topics.every(
+          (t, i) => t === null || t === undefined || log.topics[i] === t,
+        ),
+      );
+    },
+  };
+  return chain;
+}
+
+test("the last trade is the newest holders' round that traded: not a quiet one, a void one, a funding one or another DAO's", async () => {
+  const OTHER_DAO = `0x${"0d".repeat(20)}`;
+  const closes = (week) => week * 7 * DAY;
+  const chain = historyChain([
+    // Round 2 traded 40 Shares at step 10 (1.10 USDC).
+    {
+      id: 2n,
+      dao: DAO,
+      closesAt: closes(10),
+      settled: true,
+      step: 10,
+      volume: 40n * E18,
+    },
+    // Newer: another DAO's trade, a funding round that sold, a void round, a round that traded nothing, one still open.
+    {
+      id: 5n,
+      dao: OTHER_DAO,
+      closesAt: closes(11),
+      settled: true,
+      step: 50,
+      volume: E18,
+    },
+    {
+      id: 6n,
+      dao: DAO,
+      closesAt: closes(11),
+      settled: true,
+      step: 20,
+      volume: 9n * E18,
+      funding: true,
+    },
+    { id: 7n, dao: DAO, closesAt: closes(12), settled: false },
+    {
+      id: 9n,
+      dao: DAO,
+      closesAt: closes(13),
+      settled: true,
+      step: 0,
+      volume: 0n,
+    },
+    { id: 11n, dao: DAO, closesAt: NOW + DAY, settled: false },
+  ]);
+  const history = await readRoundHistory(chain, ROUNDS, DAO, NOW);
+  assert.deepEqual(history.lastTrade, {
+    id: 2n,
+    closesAt: closes(10),
+    outcome: "traded",
+    price: (110n * USD) / 100n,
+    volume: 40n * E18,
+  });
+  assert.deepEqual(
+    history.rounds.map((r) => [r.id, r.outcome]),
+    [
+      [9n, "nothing"],
+      [7n, "void"],
+      [2n, "traded"],
+    ],
+    "newest first; the open round and the funding round are left out",
+  );
+  assert.ok(
+    history.rounds.every((r) => r.outcome === "traded" || !("price" in r)),
+    "a round without a trade never carries a price",
+  );
+  assert.equal(history.complete, true);
+});
+
+test("no last trade before any round has traded", async () => {
+  const chain = historyChain([
+    { id: 1n, dao: DAO, closesAt: 10 * DAY, settled: true, volume: 0n },
+    { id: 2n, dao: DAO, closesAt: 20 * DAY, settled: false },
+  ]);
+  const history = await readRoundHistory(chain, ROUNDS, DAO, NOW);
+  assert.equal(history.lastTrade, null);
+  assert.deepEqual(
+    history.rounds.map((r) => r.outcome),
+    ["void", "nothing"],
+  );
+  assert.equal(history.complete, true);
+  const none = await readRoundHistory(historyChain([]), ROUNDS, DAO, NOW);
+  assert.deepEqual(none, { rounds: [], lastTrade: null, complete: true });
+});
+
+test("the last trade is found past the listed rounds, and the search is bounded", async () => {
+  const quiet = (from, count) =>
+    Array.from({ length: count }, (_, i) => ({
+      id: BigInt(from + i),
+      dao: DAO,
+      closesAt: (from + i + 3) * DAY,
+      settled: true,
+      volume: 0n,
+    }));
+  const traded = {
+    id: 1n,
+    dao: DAO,
+    closesAt: 4 * DAY,
+    settled: true,
+    step: 3,
+    volume: E18,
+  };
+  const older = await readRoundHistory(
+    historyChain([traded, ...quiet(2, 12)]),
+    ROUNDS,
+    DAO,
+    NOW,
+  );
+  assert.equal(older.rounds.length, HISTORY_ROUNDS);
+  assert.equal(older.lastTrade?.id, 1n, "twelve quiet weeks never hide it");
+  assert.equal(older.complete, true);
+  const far = historyChain([traded, ...quiet(2, MAX_HISTORY_READS + 5)]);
+  const bounded = await readRoundHistory(far, ROUNDS, DAO, NOW);
+  assert.equal(far.reads, MAX_HISTORY_READS);
+  assert.equal(bounded.lastTrade, null);
+  assert.equal(
+    bounded.complete,
+    false,
+    "so the page does not say no trades yet",
   );
 });

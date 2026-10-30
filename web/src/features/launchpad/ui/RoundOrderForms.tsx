@@ -8,7 +8,7 @@ import { useId, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
-import { bidPlan, sellPlan, usdc } from "../lib/rounds-copy";
+import { bidPlan, offerPlanLine, sellPlan, usdc } from "../lib/rounds-copy";
 import {
   encodeBidInRound,
   encodeSellInRound,
@@ -40,7 +40,12 @@ export function OfferForm({
   busy,
   onSend,
   onDone,
-}: FormProps & { shares: string }) {
+  leavingEach,
+}: FormProps & {
+  shares: string;
+  /** What leaving pays a Share now, after the exit fee (D147), or null when it could not be read. */
+  leavingEach: bigint | null;
+}) {
   const formId = useId();
   const [amountText, setAmountText] = useState("");
   const [priceText, setPriceText] = useState("");
@@ -91,7 +96,7 @@ export function OfferForm({
       <PlanLine
         line={
           plan && !("problem" in plan)
-            ? `If the round settles there, you keep ${usdc(plan.keepsEach)} a Share after the treasury's cut. A higher price pays you more; below it, nothing sells.`
+            ? offerPlanLine(plan.keepsEach, leavingEach)
             : null
         }
         problem={plan && "problem" in plan ? plan.problem : null}

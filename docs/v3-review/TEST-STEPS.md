@@ -1902,3 +1902,20 @@ On the test network, a contributor project with two reviewers and "Let any one d
 4. Open the project's link signed out on a phone: "Couldn't load this project" with sign-in and Try again, never
    "not found".
 5. Put `CHANGE_ME_x` in `VITE_ZERODEV_PROJECT_ID` and run `./run.sh build` in `deploy/compose`: refused, naming it.
+
+## 4cl. Weekly rounds price history (D147, test networks)
+
+The journey checks it on a real chain (`scripts/web-rounds-e2e.sh`; `E2E_SHOTS=…` also saves `rounds-history.png`). By
+hand, on a dev chain with weekly rounds on (§4by):
+
+1. Open a round. On Funds the card says "No trades yet.", the round's chip reads "Floor at opening: …", and under it
+   "Leaving now pays about … a Share." (no fee before funding terms, or while they are under notice).
+2. **Offer Shares** with a price: the line says what you keep after the cut and what leaving pays now.
+3. Bid from another wallet, wait three days, settle. The card reads "Last trade: … Shares at … USDC each, round N
+   (date)", the date being when bidding closed; the list shows that round with its price and amount.
+4. A week after it opened, open the next round, place nothing, wait three days and settle it. The last trade still names
+   the first round and its date; the list shows the new round first as "Nothing traded", with no price.
+5. A round nobody settles within two days shows "Not settled, everything returned".
+6. With funding terms past their notice, the leaving line says "after the 2% exit fee" (or the fee the terms set), on
+   Funds and on the Overview.
+7. Funding rounds never appear in this list or the last trade.

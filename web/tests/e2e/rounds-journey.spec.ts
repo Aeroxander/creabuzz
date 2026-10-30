@@ -16,7 +16,10 @@ import { installAnvilWallet } from "../helpers/anvil-wallet";
  * later a newcomer switches them on and opens a round. The founder offers 50 Shares at 1 USDC or more; the newcomer and
  * a second buyer each bid for 30 at up to 1.30. Three days later the newcomer settles it, and everyone collects: the
  * founder 62 USDC (65, less a fifth of the 15 gained above what leaving pays), the treasury 3 more and nothing paid out,
- * each buyer 25 Shares. What is stubbed: the relay and the wallets (`window.ethereum` forwarding to Anvil's accounts).
+ * each buyer 25 Shares. Later, once funding terms charge a 2% exit fee, a second holders' round trades nothing: the card
+ * keeps round one's trade with its date, lists the second as "Nothing traded", and says what leaving pays after the fee
+ * there and on the Overview (D147). What is stubbed: the relay and the wallets (`window.ethereum` forwarding to Anvil's
+ * accounts).
  */
 
 const ANVIL_URL = process.env.E2E_ANVIL_URL ?? "";
@@ -69,6 +72,28 @@ const amountArg = (amount: bigint) => amount.toString(16).padStart(64, "0");
 const wordAddress = (hex: string) => `0x${hex.slice(-40)}`;
 const usdcOf = async (who: string) =>
   BigInt(await call(CURRENCY, `0x70a08231${addressArg(who)}`));
+
+/** A round's day as the card writes it: when its bidding closed. */
+const dayOf = (seconds: bigint) =>
+  new Date(Number(seconds) * 1000).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+
+/** USDC as the card writes it: at most two decimals, cut, not rounded. */
+const usdcText = (units: bigint) => {
+  const cents = ((units % USD) / 10_000n)
+    .toString()
+    .padStart(2, "0")
+    .replace(/0+$/, "");
+  return `${(units / USD).toLocaleString("en-US")}${cents ? `.${cents}` : ""} USDC`;
+};
+
+/** A round's bidding close, from `rounds(id)` (its fourth word). */
+const closesAtOf = async (id: bigint) =>
+  BigInt(
+    `0x${(await call(ROUNDS, `0x8c65c81f${amountArg(id)}`)).slice(2 + 3 * 64, 2 + 4 * 64)}`,
+  );
 
 /** Let time pass on the chain, the way waiting would. */
 async function pass(seconds: number) {
@@ -270,8 +295,16 @@ test("a member who wants out is matched with two who want in, and the treasury k
     { timeout: 60_000 },
   );
   await expect(buyer.getByTestId("rounds-round")).toContainText(
-    "Floor 1 USDC a Share",
+    "Floor at opening: 1 USDC a Share",
   );
+  // No funding terms yet, so leaving charges no fee.
+  await expect(buyer.getByTestId("rounds-leaving")).toHaveText(
+    "Leaving now pays about 1 USDC a Share.",
+  );
+  await expect(buyer.getByTestId("rounds-last-trade")).toHaveText(
+    "No trades yet.",
+  );
+  const firstRound = BigInt(await call(ROUNDS, `0x61f6b445${addressArg(dao)}`));
 
   // ── 4. the founder offers 50 Shares at 1 USDC or more; two buyers bid for 30 each at up to 1.30 ────
   await refresh(founder, "Funds");
@@ -284,6 +317,9 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await founder.getByTestId("rounds-offer-amount").fill("50");
   await expect(founder.getByTestId("rounds-offer-plan")).toContainText(
     "you keep 1 USDC a Share after the treasury's cut",
+  );
+  await expect(founder.getByTestId("rounds-offer-plan")).toContainText(
+    "Leaving now pays about 1 USDC a Share.",
   );
   await founder.getByTestId("rounds-offer-submit").click();
   await expect(founder.getByTestId("rounds-my-sell")).toHaveText(
@@ -345,6 +381,9 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await expect(buyer.getByTestId("rounds-my-bid")).toContainText(
     "Bought: 25 Shares, for 32.5 USDC.",
   );
+  // The trade is dated by when bidding closed, not by when it was settled.
+  const firstTrade = `Last trade: 50 Shares at 1.3 USDC each, round ${firstRound} (${dayOf(await closesAtOf(firstRound))}).`;
+  await expect(buyer.getByTestId("rounds-last-trade")).toHaveText(firstTrade);
 
   const founderMoney = await usdcOf(FOUNDER_WALLET);
   await refresh(founder, "Funds");
@@ -607,5 +646,46 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await secondCard.getByTestId("funding-flag-submit").click();
   await expect(secondCard.getByTestId("funding-watched")).toContainText(other, {
     timeout: 60_000,
+  });
+
+  // ── 12. a second holders' round trades nothing: round one's trade stays, with its date (D147) ────────────
+  const rounds = second.getByTestId("rounds");
+  await rounds.getByTestId("rounds-open").click({ timeout: 30_000 });
+  await expect(rounds.getByTestId("rounds-round-status")).toContainText(
+    "Taking offers and bids until",
+    { timeout: 60_000 },
+  );
+  const secondRound = BigInt(
+    await call(ROUNDS, `0x61f6b445${addressArg(dao)}`),
+  );
+  expect(secondRound).toBeGreaterThan(firstRound);
+  await pass(3 * 86_400);
+  await refresh(second, "Funds");
+  await rounds.getByTestId("rounds-settle").click({ timeout: 30_000 });
+  await expect(rounds.getByTestId("rounds-clearing")).toHaveText(
+    "Nothing traded: everyone takes back theirs.",
+    { timeout: 60_000 },
+  );
+  await expect(rounds.getByTestId("rounds-last-trade")).toHaveText(firstTrade);
+  const history = rounds.getByTestId("rounds-history-row");
+  await expect(history).toHaveCount(2);
+  await expect(history.nth(0)).toHaveText(
+    `${dayOf(await closesAtOf(secondRound))}Nothing traded`,
+  );
+  await expect(history.nth(1)).toHaveText(
+    `${dayOf(await closesAtOf(firstRound))}1.3 USDC50 Shares`,
+  );
+  // The terms' 2% exit fee is past its notice: what leaving pays is the floor now, less 2%.
+  const floorNow = BigInt(await call(ROUNDS, `0xc2bc92b9${addressArg(dao)}`));
+  const leaving = `Leaving now pays about ${usdcText(floorNow - (floorNow * 200n) / 10_000n)} a Share, after the 2% exit fee.`;
+  await expect(rounds.getByTestId("rounds-leaving")).toHaveText(leaving);
+  if (process.env.E2E_SHOTS) {
+    await rounds.screenshot({
+      path: `${process.env.E2E_SHOTS}/rounds-history.png`,
+    });
+  }
+  await second.getByRole("tab", { name: "Overview" }).click();
+  await expect(second.getByTestId("dao-leaving-now")).toHaveText(leaving, {
+    timeout: 30_000,
   });
 });
