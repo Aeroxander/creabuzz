@@ -29,9 +29,22 @@ import {
 import { TradingForm } from "./TradingForm";
 import { WorkBudgetForm } from "./WorkBudgetForm";
 import { isContributorProject } from "../lib/funding";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
-import { erc20BalanceOf, getRpcEndpoint } from "../chain";
+import { erc20BalanceOf, ethCall, getRpcEndpoint } from "../chain";
+import {
+  type ChallengeAnswers,
+  challengeAnswered,
+  challengeContent,
+  challengeProblem,
+  EMPTY_CHALLENGE,
+  KIND_CHALLENGE,
+} from "@creaton/core/launchpad/challenge.ts";
+import { proposalIdCall } from "@creaton/core/launchpad/decisions.ts";
+import { publishAsUser } from "@/shared/lib/publish-as-user";
+import { launchCoordinate } from "../models";
+import { useReasonShown } from "../use-review-reasons";
+import { ChallengeQuestions } from "./ChallengeQuestions";
 import {
   localUsdcAddress,
   payoutsFactory,
@@ -141,6 +154,14 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
   },
 ];
 
+/** The kinds of vote that commit money or Shares, for which the challenge is asked. */
+const MONEY_KINDS: ReadonlySet<Kind> = new Set([
+  "budget",
+  "project",
+  "award",
+  "pay",
+]);
+
 function nonce(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
@@ -245,8 +266,82 @@ export function DecisionComposer({
       if (result !== "kept") setUnkept(job);
     }
   };
+  // The challenge (CHALLENGER-PLAN.md): for a vote that commits money or Shares, three questions against it, published
+  // before the vote opens and naming it by the id the DAO will give it. A record nobody would be shown is not published.
+  const challenged = launch !== undefined && MONEY_KINDS.has(kind);
+  const [against, setAgainst] = useState<ChallengeAnswers>(EMPTY_CHALLENGE);
+  const [againstFailure, setAgainstFailure] = useState<string | null>(null);
+  const shown = useReasonShown(ctx.wallet ?? "");
+  const queryClient = useQueryClient();
+  const notShown =
+    challenged && challengeAnswered(against) && shown.shown === false
+      ? "This account isn't linked to the wallet that opens the vote, so holders would not see your answers. Link it under Payment wallet on your profile, or clear the answers to open the vote without them."
+      : null;
+  const publishChallenge = async (
+    draft: DecisionDraft,
+    voteNonce: string,
+  ): Promise<boolean> => {
+    if (!challenged || !launch || !challengeAnswered(against)) return true;
+    const problem = challengeProblem(against);
+    if (problem) {
+      setAgainstFailure(problem);
+      return false;
+    }
+    if (!ctx.wallet || (await shown.check()) !== true) {
+      setAgainstFailure(
+        "Holders would not see your answers from this account, so nothing was sent. Link it, or clear the answers.",
+      );
+      return false;
+    }
+    try {
+      const reply = await ethCall(
+        getRpcEndpoint(),
+        snapshot.dao,
+        proposalIdCall({
+          op: 0,
+          to: draft.to,
+          value: 0n,
+          data: draft.data,
+          nonce: voteNonce,
+        }),
+      );
+      await publishAsUser(
+        {
+          kind: KIND_CHALLENGE,
+          tags: [
+            ["a", launchCoordinate(launch.record.author, launch.record.id)],
+          ],
+          content: JSON.stringify(
+            challengeContent({
+              decision: reply.slice(0, 66),
+              proposer: ctx.wallet,
+              title: draft.title,
+              answers: against,
+            }),
+          ),
+        },
+        "The server did not take your answers.",
+      );
+      void queryClient.invalidateQueries({
+        queryKey: [
+          "launchpad",
+          "challenges",
+          launchCoordinate(launch.record.author, launch.record.id),
+        ],
+      });
+      return true;
+    } catch {
+      setAgainstFailure(
+        "Your answers could not be published, so the vote was not opened. Try again, or clear them to open it without.",
+      );
+      return false;
+    }
+  };
   const submit = async (draft: DecisionDraft) => {
     setDone(null);
+    setAgainstFailure(null);
+    const voteNonce = nonce();
+    if (!(await publishChallenge(draft, voteNonce))) return;
     const landed = await onSend(
       "open-decision",
       snapshot.dao,
@@ -255,11 +350,12 @@ export function DecisionComposer({
         to: draft.to,
         value: 0n,
         data: draft.data,
-        nonce: nonce(),
+        nonce: voteNonce,
       }),
     );
     if (landed) {
       setDone(draft.title);
+      setAgainst(EMPTY_CHALLENGE);
       setFormKey((k) => k + 1);
       setOpen(false);
       // The chain keeps only the hash of a work area's words: publish the words, so people can see what to deliver.
@@ -391,6 +487,22 @@ export function DecisionComposer({
               </button>
             ))}
           </fieldset>
+          {challenged ? (
+            <ChallengeQuestions
+              notShown={notShown}
+              onChange={setAgainst}
+              value={against}
+            />
+          ) : null}
+          {againstFailure ? (
+            <p
+              className="mt-2 text-sm text-destructive"
+              data-testid="decision-challenge-failed"
+              role="alert"
+            >
+              {againstFailure}
+            </p>
+          ) : null}
           {WORK_KINDS.has(kind) && !ctx.work ? (
             // These forms pick from the DAO's work budgets and claims. Until those are read they would say
             // there is nothing to pick, which is not true yet.

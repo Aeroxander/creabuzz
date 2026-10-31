@@ -18,6 +18,7 @@ import {
 import { decisionStage, duration, isLive, when } from "../lib/decision-stage";
 import { deadline } from "../lib/challenge-copy";
 import { DecisionVote } from "./DecisionVote";
+import { CHALLENGED_KINDS } from "@creaton/core/launchpad/challenge.ts";
 
 export { decisionStage };
 
@@ -222,9 +223,7 @@ export function DecisionCard({
       {open &&
       beforeMoneyVote &&
       described &&
-      ["work-budget", "project", "award", "payment"].includes(
-        described.kind,
-      ) ? (
+      CHALLENGED_KINDS.has(described.kind) ? (
         <div className="mt-2">{beforeMoneyVote}</div>
       ) : null}
       {open ? (

@@ -20,7 +20,9 @@ const MAX_AUTHORS = 50;
 const MAX_RECORDS = 200;
 
 /** The wallets `authors` have bound, live (a withdrawn binding unbinds), as `boundWallets` names them. */
-async function fetchBoundWallets(authors: string[]): Promise<Set<string>> {
+export async function fetchBoundWallets(
+  authors: string[],
+): Promise<Set<string>> {
   const events = await queryEvents(relayWsUrl(), {
     kinds: [KIND_EVM_BINDING],
     authors,

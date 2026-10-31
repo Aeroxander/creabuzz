@@ -138,7 +138,8 @@ export function openedIntentsIn(input: string): DecisionIntent[] {
   return found;
 }
 
-function proposalIdCall(intent: DecisionIntent): string {
+/** The DAO call that answers a decision's id for an intent, so a record can name a vote before it is opened. */
+export function proposalIdCall(intent: DecisionIntent): string {
   return encodeFunctionData(
     SIGNATURES_DECISIONS.proposalId,
     ["uint8", "address", "uint256", "bytes", "bytes32"],

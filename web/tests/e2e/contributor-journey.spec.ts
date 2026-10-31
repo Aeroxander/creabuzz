@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { getPublicKey } from "nostr-tools/pure";
+import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 
 import { installAnvilWallet } from "../helpers/anvil-wallet";
 
@@ -716,11 +716,42 @@ test("a contributor project is started from the page, work is claimed the same d
     timeout: 30_000,
   });
   await founder.getByTestId("award-shares").fill("25");
+  // Before it goes out, the founder argues against it (CHALLENGER-PLAN.md). Their answers count only when their account
+  // is linked to the wallet that opens the vote, so the link is published first, as the profile's Payment wallet does.
+  published.push(
+    finalizeEvent(
+      {
+        kind: 37017,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["d", FOUNDER_WALLET.toLowerCase()],
+          ["address", FOUNDER_WALLET.toLowerCase()],
+        ],
+        content: JSON.stringify({ address: FOUNDER_WALLET.toLowerCase() }),
+      },
+      Uint8Array.from(NSEC.match(/.{2}/g) ?? [], (b) => Number.parseInt(b, 16)),
+    ),
+  );
+  await expect(founder.getByTestId("decision-challenge")).toBeVisible();
+  await founder
+    .getByTestId("decision-challenge-mustGoRight")
+    .fill("The docs keep matching the app after this award");
+  await founder
+    .getByTestId("decision-challenge-caseAgainst")
+    .fill("Twenty-five Shares is a lot for one page");
   await founder.getByTestId("decision-draft-submit").click();
   await expect(founder.getByTestId("decision-opened")).toBeVisible({
     timeout: 60_000,
   });
   // Before voting on Shares, the latest check note is one click away beside the vote buttons (CHECK-NOTE-PLAN.md).
+  // The vote carries its case against, as the founder answered it; the skipped question says so.
+  const challenged = founder.getByTestId("decision-challenged").first();
+  await expect(challenged).toBeVisible({ timeout: 30_000 });
+  await challenged.locator("summary").click();
+  await expect(challenged).toContainText(
+    "Twenty-five Shares is a lot for one page",
+  );
+  await expect(challenged).toContainText("Skipped.");
   const brief = founder.getByTestId("decision-check-note").first();
   await expect(brief).toContainText(
     "Before you vote: read the latest check note",

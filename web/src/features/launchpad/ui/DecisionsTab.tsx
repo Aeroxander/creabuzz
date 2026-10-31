@@ -21,6 +21,8 @@ import { proposalTopic } from "@/features/board/lib/proposal-link";
 import { decisionUrl } from "../lib/decision-link";
 import { useDaoThreads } from "@/features/board/use-dao-threads";
 import { CheckNoteBrief } from "./CheckNoteCard";
+import { ChallengeBrief } from "./ChallengeQuestions";
+import { useChallenges } from "../use-challenges";
 import { DecisionCard } from "./DecisionCard";
 import { DecisionDiscussion } from "./DecisionDiscussion";
 import { DecisionComposer } from "./DecisionComposer";
@@ -57,6 +59,8 @@ export function DecisionsTab({
   const snapshot = decisions.data;
   const context = useDecisionContext(dao);
   const work = useWork(dao, wallet.address);
+  // The case against each money vote, as its proposer answered before opening it (CHALLENGER-PLAN.md).
+  const challenges = useChallenges(launch);
   // The talk about each decision lives on the community's boards.
   const chainId = Number(launch.record.chainId);
   const usableChain = Number.isSafeInteger(chainId) && chainId > 0;
@@ -181,9 +185,15 @@ export function DecisionsTab({
                 <DecisionCard
                   account={wallet.address}
                   beforeMoneyVote={
-                    isContributorProject(launch.record) ? (
-                      <CheckNoteBrief launch={launch} />
-                    ) : undefined
+                    <div className="flex flex-col gap-1">
+                      <ChallengeBrief
+                        challenge={challenges.challengeOf(decision)}
+                        read={challenges.query.data !== undefined}
+                      />
+                      {isContributorProject(launch.record) ? (
+                        <CheckNoteBrief launch={launch} />
+                      ) : null}
+                    </div>
                   }
                   busy={busy}
                   currencyDecimals={currencyDecimals}
