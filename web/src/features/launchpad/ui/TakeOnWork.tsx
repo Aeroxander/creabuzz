@@ -1,6 +1,6 @@
 /**
  * On an open work area: who has said they are on it, until when, and what they will deliver for whom; and for you, a
- * way to say you are taking it on, change that, or let it go (`lib/project-structure.ts`, kind 37019). Saying so
+ * way to say you are taking it on, change that, or let it go (`projectStructure.ts` in core, kind 37019). Saying so
  * reserves nothing and earns nothing: anyone can still submit, and Shares still come from review and the vote.
  */
 

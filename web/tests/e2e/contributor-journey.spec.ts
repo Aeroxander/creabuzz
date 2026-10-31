@@ -353,8 +353,27 @@ test("a contributor project is started from the page, work is claimed the same d
   // The founder says what the team works on now, and what it will not do (PROJECT-STRUCTURE.md, step 1).
   await refresh(founder, "Overview");
   await founder.getByTestId("focus-set").click({ timeout: 30_000 });
+  await founder
+    .getByTestId("focus-aim-input")
+    .fill("People new to open projects, who get a guide written with them");
   await founder.getByTestId("focus-now-0").fill("Ship the first guide");
   await founder.getByTestId("focus-now-area-0").selectOption({ index: 1 });
+  await founder
+    .getByTestId("focus-now-why-0")
+    .fill("Newcomers can't submit work without it");
+  // A prediction needs a day to check it: the form says so before it can be saved.
+  await founder
+    .getByTestId("focus-now-expect-0")
+    .fill("Two newcomers submit work");
+  await expect(founder.getByTestId("focus-problem")).toContainText("Check by");
+  await expect(founder.getByTestId("focus-save")).toBeDisabled();
+  const checkDay = new Date(Date.now() + 14 * 86_400_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  await founder
+    .getByTestId("focus-now-check-0")
+    .fill(
+      `${checkDay.getFullYear()}-${pad(checkDay.getMonth() + 1)}-${pad(checkDay.getDate())}`,
+    );
   await founder.getByTestId("focus-not-add").click();
   await founder.getByTestId("focus-not-0").fill("A mobile app");
   await founder
@@ -368,6 +387,16 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(nowItem.getByTestId("focus-now-who")).toContainText(
     "nobody has taken this on yet",
   );
+  await expect(founder.getByTestId("focus-aim")).toHaveText(
+    "Aim: People new to open projects, who get a guide written with them",
+  );
+  await expect(nowItem.getByTestId("focus-now-why")).toHaveText(
+    "Why now: Newcomers can't submit work without it",
+  );
+  await expect(nowItem.getByTestId("focus-now-expect")).toContainText(
+    "We expect: Two newcomers submit work, by",
+  );
+  await expect(nowItem.getByTestId("focus-now-check-due")).toHaveCount(0);
   await expect(founder.getByTestId("focus-not-item")).toHaveText(
     "A mobile app (Not before the guide works)",
   );

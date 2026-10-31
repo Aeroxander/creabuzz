@@ -226,6 +226,9 @@ the DAO's vote. Clients show it until `until` passes or it is released.
 **Project focus (`37020`).** Signed by the launch's author: the relay refuses one whose `a` tag names a launch by
 anyone else, or whose `d` is not that launch's id. Content: `now`, at most three `{text, area?}` items (`area` in the
 same form as a `37019` `d`), and `notDoing`, at most ten `{text, why?}` items. Text is 1–280 characters, `why` up to 280.
+Optional `aim` (up to 200 characters) says who the project is for and what it changes for them. A Now item may also
+carry `why` (why this, now) and a prediction: `expect` (what the team expects to see, up to 280 characters) with
+`checkBy` (Unix seconds, the day it will check). `expect` and `checkBy` come together or not at all.
 
 ## Deletion
 

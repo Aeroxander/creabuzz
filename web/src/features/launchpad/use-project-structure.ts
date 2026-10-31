@@ -1,6 +1,6 @@
 /**
  * A project's working structure from the server: who has taken on which work (kind 37019) and the founder's Now and
- * Not doing lists (kind 37020), with a way to publish each (`lib/project-structure.ts`).
+ * Not doing lists (kind 37020), with a way to publish each (`projectStructure.ts` in core).
  */
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,9 +16,8 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import {
   type Focus,
-  type FocusItem,
+  type FocusDraft,
   focusTemplate,
-  type NotDoingItem,
   parseFocus,
   parseTakenOn,
   type TakenOn,
@@ -79,7 +78,7 @@ export function useProjectFocus(launch: Launch) {
     },
   });
   const save = useCallback(
-    async (focus: { now: FocusItem[]; notDoing: NotDoingItem[] }) => {
+    async (focus: FocusDraft) => {
       await publishAsUser(
         focusTemplate({ author, id }, focus),
         "The server did not take the change.",

@@ -23,6 +23,8 @@ const MAX_WHY_CHARS: usize = 280;
 const MAX_NOW: usize = 3;
 /// At most this many Not doing items.
 const MAX_NOT_DOING: usize = 10;
+/// Longest aim (who the project is for and what it changes for them), in characters.
+const MAX_AIM_CHARS: usize = 200;
 
 /// The tags these records use: the `d` value and the single `a` coordinate.
 fn d_and_launch<'a>(event: &'a Event, label: &str) -> Result<(&'a str, &'a str), String> {
@@ -149,6 +151,7 @@ pub(crate) fn validate_project_focus(event: &Event) -> Result<(), String> {
         ));
     }
     let map = content_object(event, LABEL)?;
+    text_field(&map, "aim", MAX_AIM_CHARS, false, LABEL)?;
     let list = |key: &str,
                 max: usize|
      -> Result<Vec<serde_json::Map<String, serde_json::Value>>, String> {
@@ -177,6 +180,24 @@ pub(crate) fn validate_project_focus(event: &Event) -> Result<(), String> {
                     "{LABEL} `area` must be `<budget>:<work-area-id>` in lowercase hex"
                 ))
             }
+        }
+        // Why this now, and what the team expects to see by a day it will check: optional, but a prediction
+        // always carries its day and a day always carries its prediction.
+        text_field(&item, "why", MAX_WHY_CHARS, false, LABEL)?;
+        text_field(&item, "expect", MAX_WHY_CHARS, false, LABEL)?;
+        let check_by = match item.get("checkBy") {
+            None => false,
+            Some(serde_json::Value::Number(n)) if n.as_u64().is_some_and(|v| v > 0) => true,
+            _ => {
+                return Err(format!(
+                    "{LABEL} `checkBy` must be a positive whole number of seconds"
+                ))
+            }
+        };
+        if item.contains_key("expect") != check_by {
+            return Err(format!(
+                "{LABEL} `expect` and `checkBy` must be given together"
+            ));
         }
     }
     for item in list("notDoing", MAX_NOT_DOING)? {
@@ -276,7 +297,7 @@ mod tests {
         let me = founder.public_key().to_hex();
         let a = launch(&me);
         let content = format!(
-            r#"{{"now":[{{"text":"Ship the first guide","area":"{AREA}"}},{{"text":"Find two reviewers"}}],"notDoing":[{{"text":"A mobile app","why":"Not before the guide works"}}]}}"#
+            r#"{{"aim":"Teachers who want open lesson plans","now":[{{"text":"Ship the first guide","area":"{AREA}","why":"Newcomers need it","expect":"Three newcomers submit","checkBy":1767225600}},{{"text":"Find two reviewers"}}],"notDoing":[{{"text":"A mobile app","why":"Not before the guide works"}}]}}"#
         );
         let ok = event(
             &founder,
@@ -316,6 +337,10 @@ mod tests {
         let empty = r#"{"now":[{"text":""}]}"#;
         let bad_area = r#"{"now":[{"text":"a","area":"docs"}]}"#;
         let not_list = r#"{"notDoing":"everything"}"#;
+        let expect_without_day = r#"{"now":[{"text":"a","expect":"ten sign-ups"}]}"#;
+        let day_without_expect = r#"{"now":[{"text":"a","checkBy":1767225600}]}"#;
+        let bad_day = r#"{"now":[{"text":"a","expect":"x","checkBy":"soon"}]}"#;
+        let long_aim = format!(r#"{{"aim":"{}"}}"#, "a".repeat(MAX_AIM_CHARS + 1));
         let long_why = format!(
             r#"{{"notDoing":[{{"text":"a","why":"{}"}}]}}"#,
             "w".repeat(MAX_WHY_CHARS + 1)
@@ -325,6 +350,10 @@ mod tests {
             [r#"{"text":"a"}"#; MAX_NOT_DOING + 1].join(",")
         );
         for content in [
+            expect_without_day,
+            day_without_expect,
+            bad_day,
+            long_aim.as_str(),
             four,
             empty,
             bad_area,

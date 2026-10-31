@@ -5,8 +5,9 @@
  *   deliver, who will use it, and by when. One per person per work area; a newer one replaces it, and letting it go
  *   publishes it again as released. It reserves nothing: anyone may still submit, and Shares still come only from
  *   review and the vote. After its date it is no longer shown, and nobody is blamed.
- * - **Project focus** (kind 37020): the launch author's "Now" (at most three, each optionally naming a work area) and
- *   "Not doing" lists. The server takes it only from the launch's author; this module checks the same again.
+ * - **Project focus** (kind 37020): the launch author's aim (who the project is for and what it changes for them),
+ *   "Now" (at most three, each optionally naming a work area, with why it matters now and what the team expects to
+ *   see by a day it will check) and "Not doing" lists. The server takes it only from the launch's author; this module checks the same again.
  *
  * Pure: inputs in, records or readings out, driven by `projectStructure.test.mjs`.
  */
@@ -22,6 +23,7 @@ const DELIVER_MAX = 280;
 const FOR_MAX = 140;
 const FOCUS_TEXT_MAX = 280;
 const WHY_MAX = 280;
+const AIM_MAX = 200;
 export const MAX_NOW = 3;
 export const MAX_NOT_DOING = 10;
 /** The longest anyone may say they are on a piece of work before saying so again. */
@@ -300,6 +302,12 @@ export interface FocusItem {
   text: string;
   /** The work area it is about, when it names one. */
   area: string | null;
+  /** Why this, now; empty when not said. */
+  why: string;
+  /** What the team expects to see when it works, so it can be checked; empty when not said. */
+  expect: string;
+  /** When to check it (Unix seconds), set together with `expect`. */
+  checkBy: number | null;
 }
 
 export interface NotDoingItem {
@@ -307,10 +315,26 @@ export interface NotDoingItem {
   why: string;
 }
 
-export interface Focus {
+/** What the founder edits: the aim and both lists. */
+export interface FocusDraft {
+  /** Who the project is for and what it changes for them, in a sentence; empty when not said. */
+  aim: string;
   now: FocusItem[];
   notDoing: NotDoingItem[];
+}
+
+export interface Focus extends FocusDraft {
   createdAt: number;
+}
+
+/** A Now row with nothing filled in. */
+export function emptyFocusItem(): FocusItem {
+  return { text: "", area: null, why: "", expect: "", checkBy: null };
+}
+
+/** The end of a day the date box gives (`YYYY-MM-DD`, local time), in Unix seconds; null when it is not a date. */
+export function dayEnd(day: string): number | null {
+  return endOfDay(day);
 }
 
 /** The project's focus from its author's records (the newest well-formed one), or null when there is none. */
@@ -331,17 +355,33 @@ export function parseFocus(
       continue;
     const body = object(event.content);
     if (!body) continue;
+    const aim = text(body.aim, AIM_MAX, false);
     const nowRaw = Array.isArray(body.now) ? body.now : [];
     const notRaw = Array.isArray(body.notDoing) ? body.notDoing : [];
-    if (nowRaw.length > MAX_NOW || notRaw.length > MAX_NOT_DOING) continue;
+    if (
+      aim === null ||
+      nowRaw.length > MAX_NOW ||
+      notRaw.length > MAX_NOT_DOING
+    )
+      continue;
     const now = nowRaw.flatMap((item): FocusItem[] => {
       const entry = item as Record<string, unknown> | null;
       const t = text(entry?.text, FOCUS_TEXT_MAX, true);
+      const why = text(entry?.why, WHY_MAX, false);
+      const expect = text(entry?.expect, WHY_MAX, false);
+      const checkBy =
+        typeof entry?.checkBy === "number" &&
+        Number.isSafeInteger(entry.checkBy) &&
+        entry.checkBy > 0
+          ? entry.checkBy
+          : null;
       const area =
         typeof entry?.area === "string" && isAreaKey(entry.area)
           ? entry.area
           : null;
-      return t === null ? [] : [{ text: t, area }];
+      return t === null || why === null || expect === null
+        ? []
+        : [{ text: t, area, why, expect, checkBy: expect ? checkBy : null }];
     });
     const notDoing = notRaw.flatMap((item): NotDoingItem[] => {
       const entry = item as Record<string, unknown> | null;
@@ -350,24 +390,33 @@ export function parseFocus(
       return t === null || why === null ? [] : [{ text: t, why }];
     });
     if (!best || event.created_at > best.createdAt)
-      best = { now, notDoing, createdAt: event.created_at };
+      best = { aim, now, notDoing, createdAt: event.created_at };
   }
   return best;
 }
 
 /** The first problem with the focus form, or null. Empty rows are left out before checking. */
-export function focusProblem(focus: {
-  now: readonly FocusItem[];
-  notDoing: readonly NotDoingItem[];
-}): string | null {
+export function focusProblem(focus: FocusDraft): string | null {
   const now = focus.now.filter((i) => i.text.trim() !== "");
   const notDoing = focus.notDoing.filter((i) => i.text.trim() !== "");
+  if (chars(focus.aim.trim()) > AIM_MAX)
+    return `Keep the aim under ${AIM_MAX} characters: one sentence.`;
   if (now.length > MAX_NOW)
     return `Keep Now to ${MAX_NOW}: a team gets more done on a few things at a time.`;
   if (notDoing.length > MAX_NOT_DOING)
     return `Keep Not doing to ${MAX_NOT_DOING}.`;
   if (now.some((i) => chars(i.text.trim()) > FOCUS_TEXT_MAX))
     return `Keep each Now item under ${FOCUS_TEXT_MAX} characters.`;
+  if (
+    now.some(
+      (i) => chars(i.why.trim()) > WHY_MAX || chars(i.expect.trim()) > WHY_MAX,
+    )
+  )
+    return `Keep each "why" and "we expect" under ${WHY_MAX} characters.`;
+  if (now.some((i) => i.expect.trim() !== "" && i.checkBy === null))
+    return 'Say when to check what you expect: pick a day under "Check by".';
+  if (now.some((i) => i.expect.trim() === "" && i.checkBy !== null))
+    return 'Say what you expect to see by that day, or clear "Check by".';
   if (notDoing.some((i) => chars(i.text.trim()) > FOCUS_TEXT_MAX))
     return `Keep each Not doing item under ${FOCUS_TEXT_MAX} characters.`;
   if (notDoing.some((i) => chars(i.why.trim()) > WHY_MAX))
@@ -380,7 +429,7 @@ export function focusProblem(focus: {
 /** The focus record: the launch author's own, so `launch.author` must be who signs it. */
 export function focusTemplate(
   launch: { author: string; id: string },
-  focus: { now: readonly FocusItem[]; notDoing: readonly NotDoingItem[] },
+  focus: FocusDraft,
 ): Template {
   const problem = focusProblem(focus);
   if (problem) throw new Error(problem);
@@ -391,11 +440,16 @@ export function focusTemplate(
       ["a", `${KIND_LAUNCH_RECORD}:${launch.author}:${launch.id}`],
     ],
     content: JSON.stringify({
+      ...(focus.aim.trim() ? { aim: focus.aim.trim() } : {}),
       now: focus.now
         .filter((i) => i.text.trim() !== "")
         .map((i) => ({
           text: i.text.trim(),
           ...(i.area ? { area: i.area } : {}),
+          ...(i.why.trim() ? { why: i.why.trim() } : {}),
+          ...(i.expect.trim()
+            ? { expect: i.expect.trim(), checkBy: i.checkBy }
+            : {}),
         })),
       notDoing: focus.notDoing
         .filter((i) => i.text.trim() !== "")
@@ -412,4 +466,9 @@ export function focusDueForReview(focus: Focus, now: number): boolean {
   return (
     focus.now.length > 0 && now - focus.createdAt >= FOCUS_REVIEW_DAYS * DAY
   );
+}
+
+/** Whether a Now item's check day has come: time to look at whether what was expected happened. */
+export function checkDue(item: FocusItem, now: number): boolean {
+  return item.checkBy !== null && item.checkBy <= now;
 }

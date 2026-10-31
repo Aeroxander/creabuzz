@@ -3,7 +3,10 @@ import { test } from "node:test";
 
 import {
   areaKey,
+  checkDue,
+  dayEnd,
   dayOf,
+  emptyFocusItem,
   focusDueForReview,
   focusProblem,
   focusTemplate,
@@ -166,34 +169,55 @@ test("a record for another launch, or not well formed, is not read", () => {
   );
 });
 
+const item = (text, area = null, more = {}) => ({
+  ...emptyFocusItem(),
+  text,
+  area,
+  ...more,
+});
+const draft = (now, notDoing = [], aim = "") => ({ aim, now, notDoing });
+
 test("the focus is the launch author's newest; anyone else's is ignored", () => {
-  const focus = {
-    now: [
-      { text: "Ship the first guide", area: AREA },
-      { text: "Find a second reviewer", area: null },
-      { text: "  ", area: null },
+  const focus = draft(
+    [
+      item("Ship the first guide", AREA, {
+        why: "Newcomers can't submit without it",
+        expect: "Three newcomers submit work",
+        checkBy: NOW + 14 * DAY,
+      }),
+      item("Find a second reviewer"),
+      item("  "),
     ],
-    notDoing: [{ text: "A mobile app", why: "Not before the guide works" }],
-  };
+    [{ text: "A mobile app", why: "Not before the guide works" }],
+    "Teachers who want open lesson plans, written with them",
+  );
   const template = focusTemplate(LAUNCH, focus);
   assert.equal(template.kind, 37020);
   assert.deepEqual(template.tags, [
     ["d", "docs-commons"],
     ["a", COORD],
   ]);
-  const older = focusTemplate(LAUNCH, { now: [], notDoing: [] });
+  const older = focusTemplate(LAUNCH, draft([]));
   const read = parseFocus(
     [
       signed(older, FOUNDER, NOW - 50),
       signed(template, FOUNDER, NOW - 10),
       // Someone else's record for the same launch is not the project's focus, however new.
-      signed(focusTemplate(LAUNCH, { now: [], notDoing: [] }), ANA, NOW),
+      signed(focusTemplate(LAUNCH, draft([])), ANA, NOW),
     ],
     LAUNCH,
   );
+  assert.equal(
+    read.aim,
+    "Teachers who want open lesson plans, written with them",
+  );
   assert.deepEqual(read.now, [
-    { text: "Ship the first guide", area: AREA },
-    { text: "Find a second reviewer", area: null },
+    item("Ship the first guide", AREA, {
+      why: "Newcomers can't submit without it",
+      expect: "Three newcomers submit work",
+      checkBy: NOW + 14 * DAY,
+    }),
+    item("Find a second reviewer"),
   ]);
   assert.deepEqual(read.notDoing, [
     { text: "A mobile app", why: "Not before the guide works" },
@@ -202,22 +226,48 @@ test("the focus is the launch author's newest; anyone else's is ignored", () => 
   assert.equal(parseFocus([], LAUNCH), null);
 });
 
+test("a focus saved before the aim and predictions existed still reads", () => {
+  const old = {
+    kind: 37020,
+    tags: [
+      ["d", "docs-commons"],
+      ["a", COORD],
+    ],
+    content: JSON.stringify({ now: [{ text: "Ship it", area: AREA }] }),
+  };
+  const read = parseFocus([signed(old, FOUNDER, NOW)], LAUNCH);
+  assert.equal(read.aim, "");
+  assert.deepEqual(read.now, [item("Ship it", AREA)]);
+});
+
+test("what we expect needs a day to check it, and the day needs something to check", () => {
+  assert.match(
+    focusProblem(draft([item("a", null, { expect: "Ten sign-ups" })])),
+    /Check by/,
+  );
+  assert.match(
+    focusProblem(draft([item("a", null, { checkBy: NOW })])),
+    /what you expect/,
+  );
+  assert.match(focusProblem(draft([], [], "x".repeat(201))), /aim/);
+  const due = item("a", null, { expect: "Ten sign-ups", checkBy: NOW });
+  assert.equal(checkDue(due, NOW - 1), false);
+  assert.equal(checkDue(due, NOW), true);
+  assert.equal(checkDue(item("a"), NOW), false);
+  // The date box's day is checked at its end, in this computer's time.
+  assert.equal(dayOf(dayEnd(dayOf(NOW))), dayOf(NOW));
+  assert.equal(dayEnd("soon"), null);
+});
+
 test("Now holds three at most, and the founder is asked again after four weeks", () => {
-  const four = Array.from({ length: 4 }, (_, i) => ({
-    text: `item ${i}`,
-    area: null,
-  }));
-  assert.match(focusProblem({ now: four, notDoing: [] }), /Keep Now to 3/);
-  assert.throws(() => focusTemplate(LAUNCH, { now: four, notDoing: [] }));
+  const four = Array.from({ length: 4 }, (_, i) => item(`item ${i}`));
+  assert.match(focusProblem(draft(four)), /Keep Now to 3/);
+  assert.throws(() => focusTemplate(LAUNCH, draft(four)));
   assert.equal(
-    focusProblem({ now: [{ text: "a", area: "docs" }], notDoing: [] }),
+    focusProblem(draft([item("a", "docs")])),
     "Pick the work area again.",
   );
-  const set = {
-    now: [{ text: "a", area: null }],
-    notDoing: [],
-    createdAt: NOW,
-  };
+  const set = { ...draft([item("a")]), createdAt: NOW };
   assert.equal(focusDueForReview(set, NOW + 27 * DAY), false);
   assert.equal(focusDueForReview(set, NOW + 28 * DAY), true);
   assert.equal(focusDueForReview({ ...set, now: [] }, NOW + 60 * DAY), false);

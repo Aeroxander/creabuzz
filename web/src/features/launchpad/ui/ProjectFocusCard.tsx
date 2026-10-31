@@ -1,7 +1,9 @@
 /**
- * "Now" and "Not doing" on a contributor project's Overview (`lib/project-structure.ts`, kind 37020): the few things
- * the team works on now, each with who has taken it on, and what it has decided not to do. The founder sets both;
- * after four weeks they are asked whether each Now item is still worth doing. Everyone else reads them.
+ * The project's aim, "Now" and "Not doing" on a contributor project's Overview (`projectStructure.ts` in core, kind
+ * 37020): who the project is for and what it changes for them; the few things the team works on now, each with who
+ * has taken it on, why it matters now, and what the team expects to see by a day it will check; and what it has
+ * decided not to do. The founder sets them; after four weeks they are asked whether each Now item is still worth
+ * doing, and a Now item says when its check day has come. Everyone else reads them.
  */
 
 import { useMemo, useState } from "react";
@@ -13,6 +15,11 @@ import { Card } from "@/shared/ui/card";
 
 import {
   areaKey,
+  checkDue,
+  dayEnd,
+  dayOf,
+  emptyFocusItem,
+  type FocusDraft,
   type FocusItem,
   focusDueForReview,
   focusProblem,
@@ -24,7 +31,9 @@ import {
 import type { OpenWorkArea } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { useProjectFocus, useTakenOn } from "../use-project-structure";
-import { TextField } from "./decision-fields";
+import { Input } from "@/shared/ui/input";
+
+import { FormField, TextField } from "./decision-fields";
 
 function day(seconds: number): string {
   return new Date(seconds * 1000).toLocaleDateString(undefined, {
@@ -65,15 +74,12 @@ export function ProjectFocusCard({
     );
     return (key: string) => titles.get(key) ?? null;
   }, [areas]);
-  const [editing, setEditing] = useState<{
-    now: FocusItem[];
-    notDoing: NotDoingItem[];
-  } | null>(null);
+  const [editing, setEditing] = useState<FocusDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   const current = focus.query.data ?? null;
-  const save = async (next: { now: FocusItem[]; notDoing: NotDoingItem[] }) => {
+  const save = async (next: FocusDraft) => {
     setBusy(true);
     setFailure(null);
     try {
@@ -136,13 +142,23 @@ export function ProjectFocusCard({
     return (
       <Card className="flex flex-col gap-3 p-4" data-testid="focus-form">
         <div>
-          <h2 className="text-base font-bold">Now and Not doing</h2>
+          <h2 className="text-base font-bold">Aim, Now and Not doing</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Pick at most {MAX_NOW} things the team works on now. A team gets
-            more done on a few things at a time. Then say what you have decided
-            not to do, so nobody keeps working on it.
+            more done on a few things at a time. For each, say what you expect
+            to see and when you will check, so the team learns whether it
+            worked. Then say what you have decided not to do, so nobody keeps
+            working on it.
           </p>
         </div>
+        <TextField
+          hint="One sentence: who the project is for, and what it changes for them."
+          label="Aim"
+          onChange={(aim) => setEditing({ ...editing, aim })}
+          placeholder="Teachers who want open lesson plans, written with them"
+          testId="focus-aim-input"
+          value={editing.aim}
+        />
         {editing.now.map((item, i) => (
           <div
             className="flex flex-col gap-1 rounded-lg bg-secondary/40 p-2"
@@ -178,6 +194,38 @@ export function ProjectFocusCard({
                 })}
               </select>
             ) : null}
+            <TextField
+              label="Why this, now"
+              onChange={(why) => setNow(i, { ...item, why })}
+              placeholder="Newcomers can't submit work without it"
+              testId={`focus-now-why-${i}`}
+              value={item.why}
+            />
+            <TextField
+              hint="Something you can check: a number, a person's answer, a thing that exists."
+              label="What we expect to see"
+              onChange={(expect) => setNow(i, { ...item, expect })}
+              placeholder="Three newcomers submit work"
+              testId={`focus-now-expect-${i}`}
+              value={item.expect}
+            />
+            <FormField label="Check by">
+              {(props) => (
+                <Input
+                  {...props}
+                  className="w-fit"
+                  data-testid={`focus-now-check-${i}`}
+                  onChange={(e) =>
+                    setNow(i, {
+                      ...item,
+                      checkBy: e.target.value ? dayEnd(e.target.value) : null,
+                    })
+                  }
+                  type="date"
+                  value={item.checkBy === null ? "" : dayOf(item.checkBy)}
+                />
+              )}
+            </FormField>
           </div>
         ))}
         {editing.now.length < MAX_NOW ? (
@@ -187,7 +235,7 @@ export function ProjectFocusCard({
             onClick={() =>
               setEditing({
                 ...editing,
-                now: [...editing.now, { text: "", area: null }],
+                now: [...editing.now, emptyFocusItem()],
               })
             }
             size="sm"
@@ -275,7 +323,8 @@ export function ProjectFocusCard({
 
   const startEditing = () =>
     setEditing({
-      now: current?.now.length ? current.now : [{ text: "", area: null }],
+      aim: current?.aim ?? "",
+      now: current?.now.length ? current.now : [emptyFocusItem()],
       notDoing: current?.notDoing ?? [],
     });
   const review = current && founder && focusDueForReview(current, nowSeconds());
@@ -311,7 +360,11 @@ export function ProjectFocusCard({
             data-testid="focus-still-right"
             disabled={busy}
             onClick={() =>
-              void save({ now: current.now, notDoing: current.notDoing })
+              void save({
+                aim: current.aim,
+                now: current.now,
+                notDoing: current.notDoing,
+              })
             }
             size="sm"
             type="button"
@@ -320,6 +373,16 @@ export function ProjectFocusCard({
             Yes, all of them
           </Button>
         </div>
+      ) : null}
+      {current?.aim ? (
+        <p data-testid="focus-aim">
+          <span className="font-medium">Aim:</span> {current.aim}
+        </p>
+      ) : founder ? (
+        <p className="text-sm text-muted-foreground" data-testid="focus-no-aim">
+          Add an aim: one sentence on who the project is for and what it changes
+          for them, so every piece of work can be checked against it.
+        </p>
       ) : null}
       {!current || current.now.length === 0 ? (
         <p className="text-sm text-muted-foreground" data-testid="focus-unset">
@@ -339,6 +402,26 @@ export function ProjectFocusCard({
                 key={`${i}-${item.text}`}
               >
                 <p className="font-medium">{item.text}</p>
+                {item.why ? (
+                  <p className="mt-0.5 text-sm" data-testid="focus-now-why">
+                    <span className="text-muted-foreground">Why now:</span>{" "}
+                    {item.why}
+                  </p>
+                ) : null}
+                {item.expect && item.checkBy !== null ? (
+                  <p className="mt-0.5 text-sm" data-testid="focus-now-expect">
+                    <span className="text-muted-foreground">We expect:</span>{" "}
+                    {item.expect}, by {day(item.checkBy)}.
+                    {checkDue(item, nowSeconds()) ? (
+                      <span
+                        className="ml-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300"
+                        data-testid="focus-now-check-due"
+                      >
+                        Time to check whether it happened
+                      </span>
+                    ) : null}
+                  </p>
+                ) : null}
                 {item.area ? (
                   <p
                     className="mt-0.5 text-xs text-muted-foreground"
