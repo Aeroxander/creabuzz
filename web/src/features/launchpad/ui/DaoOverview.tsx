@@ -49,6 +49,7 @@ import { useWorkBounties } from "../use-work-bounties";
 import { RunwayCard, runwayIsEmpty } from "./RunwayCard";
 import { RemixCard } from "./RemixCard";
 import { ProjectFocusCard } from "./ProjectFocusCard";
+import { CheckNoteCard } from "./CheckNoteCard";
 import { LeavingNowNote } from "./WeeklyRoundsCard";
 
 export type OverviewTarget =
@@ -314,6 +315,9 @@ export function DaoOverview({
           launch={launch}
           onOpenWork={() => onOpen("work")}
         />
+      ) : null}
+      {contributor ? (
+        <CheckNoteCard dao={dao} launch={launch} work={work.data} />
       ) : null}
       {contributor ? (
         <Card className="p-4" data-testid="dao-ways-to-help">

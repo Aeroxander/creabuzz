@@ -442,6 +442,50 @@ test("a contributor project is started from the page, work is claimed the same d
     timeout: 30_000,
   });
   await expect(docsCard.getByTestId("take-on-open")).toBeVisible();
+  // The founder writes a check note (CHECK-NOTE-PLAN.md): the Now item's expectation is filled in, the founder answers
+  // the rest, and the note shows on the Overview for everyone.
+  await refresh(founder, "Overview");
+  await founder.getByTestId("check-note-write").click({ timeout: 30_000 });
+  const noteForm = founder.getByTestId("check-note-form");
+  await expect(noteForm.getByTestId("check-note-item")).toContainText(
+    "We expected: Two newcomers submit work",
+    { timeout: 30_000 },
+  );
+  await expect(founder.getByTestId("check-note-problem")).toContainText(
+    "what changed",
+  );
+  await expect(founder.getByTestId("check-note-publish")).toBeDisabled();
+  await founder
+    .getByTestId("check-note-outside")
+    .fill("Nothing yet: the guide is not out.");
+  await founder.getByTestId("check-note-happened-0").selectOption("not-yet");
+  await founder
+    .getByTestId("check-note-why-0")
+    .fill("Someone took it on and let it go");
+  await founder.getByTestId("check-note-next-0").selectOption("keep");
+  await founder
+    .getByTestId("check-note-change")
+    .fill("Pair each newcomer with a reviewer for their first piece.");
+  await founder.getByTestId("check-note-publish").click();
+  await expect(founder.getByTestId("check-note-last")).toContainText(
+    "Pair each newcomer with a reviewer",
+    { timeout: 30_000 },
+  );
+  await expect(founder.getByTestId("check-note-timing")).toContainText(
+    "Last check:",
+  );
+  const noteEvent = published.find(
+    (e) =>
+      e.kind === 47003 &&
+      (e as { content?: string }).content?.includes('"check"'),
+  ) as { content: string } | undefined;
+  expect(
+    (
+      JSON.parse(noteEvent?.content ?? "{}") as {
+        check?: { items?: { happened?: string }[] };
+      }
+    ).check?.items?.[0]?.happened,
+  ).toBe("not-yet");
   // Nobody told them the words: the project's record published them at launch, and the chain's hash vouches for them.
   await submitFromWaysToHelp(
     contributor,
