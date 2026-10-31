@@ -9,6 +9,8 @@ import { useMemo, useState } from "react";
 
 import {
   type CheckNote,
+  applyCheckToFocus,
+  checkNeedsApplying,
   checkNoteProblem,
   checkTiming,
   coveredClaims,
@@ -64,6 +66,9 @@ export function CheckNoteCard({
   work: WorkSnapshot | undefined;
 }) {
   const notes = useCheckNotes(launch);
+  const focus = useProjectFocus(launch);
+  const [applying, setApplying] = useState(false);
+  const [applyFailed, setApplyFailed] = useState(false);
   const founder = existingUserPubkey() === launch.record.author;
   const [writing, setWriting] = useState(false);
   const last = notes.query.data?.[0] ?? null;
@@ -148,6 +153,42 @@ export function CheckNoteCard({
             <span className="text-muted-foreground">What we change:</span>{" "}
             {last.change}
           </p>
+        </div>
+      ) : null}
+      {founder && last && checkNeedsApplying(last, focus.query.data ?? null) ? (
+        <div
+          className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid="check-note-unapplied"
+          role="status"
+        >
+          <span>
+            {applyFailed
+              ? "Now still could not be updated. Try again in a moment."
+              : "Your last check note's keep, change and drop answers are not in Now yet."}
+          </span>
+          <Button
+            aria-busy={applying}
+            data-testid="check-note-apply"
+            disabled={applying}
+            onClick={async () => {
+              const current = focus.query.data;
+              if (!current) return;
+              setApplying(true);
+              setApplyFailed(false);
+              try {
+                await focus.save(applyCheckToFocus(current, last));
+              } catch {
+                setApplyFailed(true);
+              } finally {
+                setApplying(false);
+              }
+            }}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Apply to Now
+          </Button>
         </div>
       ) : null}
     </Card>
@@ -298,9 +339,17 @@ function CheckNoteForm({
             <select
               className="h-8 w-fit rounded-md border border-input bg-transparent px-2 text-sm"
               data-testid={`check-note-next-${i}`}
-              onChange={(e) =>
-                setItem(i, { next: (e.target.value || null) as Next | null })
-              }
+              onChange={(e) => {
+                const next = (e.target.value || null) as Next | null;
+                // "Change" starts from the item's own words, to edit.
+                setItem(i, {
+                  next,
+                  becomes:
+                    next === "change" && !item.becomes
+                      ? item.text
+                      : item.becomes,
+                });
+              }}
               value={item.next ?? ""}
             >
               <option value="">Choose</option>
@@ -311,6 +360,15 @@ function CheckNoteForm({
               ))}
             </select>
           </label>
+          {item.next === "change" ? (
+            <TextField
+              hint="It replaces this Now item when you publish."
+              label="What it becomes"
+              onChange={(becomes) => setItem(i, { becomes })}
+              testId={`check-note-becomes-${i}`}
+              value={item.becomes}
+            />
+          ) : null}
         </fieldset>
       ))}
       <div
@@ -372,7 +430,14 @@ function CheckNoteForm({
             setBusy(true);
             setFailure(null);
             try {
+              // The note first: it is the record of the decision. Then Now, from it; if that fails, the card offers
+              // "Apply to Now" until it succeeds, so the note is never left half done.
               await notes.publish(note);
+              if (focus.query.data) {
+                await focus
+                  .save(applyCheckToFocus(focus.query.data, note))
+                  .catch(() => undefined);
+              }
               onDone();
             } catch (error) {
               setFailure(

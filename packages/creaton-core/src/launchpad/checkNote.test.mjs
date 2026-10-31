@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  applyCheckToFocus,
   checkEveryDays,
+  checkNeedsApplying,
   checkNoteContent,
   checkNoteProblem,
   checkTiming,
@@ -85,6 +87,7 @@ test("the draft fills in what the records say, and lists each piece of work once
     happened: null,
     why: "",
     next: null,
+    becomes: "",
   });
   // The founder's parts start empty.
   assert.equal(note.outside, "");
@@ -148,4 +151,128 @@ test("a published note reads back, only from the founder, newest first, and its 
   assert.deepEqual(next.finished, []);
   assert.deepEqual(next.turnedDown, []);
   assert.throws(() => checkNoteContent(draft(), START), /what changed/);
+});
+
+const focusItem = (text, more = {}) => ({
+  text,
+  area: null,
+  why: "",
+  expect: "",
+  checkBy: null,
+  ...more,
+});
+
+test("a note is applied to Now: keep stays, change rewrites, drop moves to Not doing, settled expectations clear", () => {
+  const focus = {
+    aim: "Teachers",
+    now: [
+      focusItem("Ship the guide", { expect: "Two submit", checkBy: START }),
+      focusItem("Find a reviewer", { expect: "One says yes", checkBy: START }),
+      focusItem("Run a workshop"),
+    ],
+    notDoing: [{ text: "An app", why: "" }],
+  };
+  const note = {
+    items: [
+      {
+        text: "Ship the guide",
+        expected: "Two submit",
+        checkBy: START,
+        happened: "not-yet",
+        why: "",
+        next: "keep",
+        becomes: "",
+      },
+      {
+        text: "Find a reviewer",
+        expected: "One says yes",
+        checkBy: START,
+        happened: "yes",
+        why: "",
+        next: "change",
+        becomes: "Find two more reviewers",
+      },
+      {
+        text: "Run a workshop",
+        expected: "",
+        checkBy: null,
+        happened: null,
+        why: "Nobody signed up",
+        next: "drop",
+        becomes: "",
+      },
+    ],
+  };
+  const after = applyCheckToFocus(focus, note);
+  assert.equal(after.aim, "Teachers");
+  assert.deepEqual(after.now, [
+    // Not yet: the expectation still stands.
+    focusItem("Ship the guide", { expect: "Two submit", checkBy: START }),
+    // Changed: its old expectation went with it.
+    focusItem("Find two more reviewers"),
+  ]);
+  assert.deepEqual(after.notDoing, [
+    { text: "Run a workshop", why: "Nobody signed up" },
+    { text: "An app", why: "" },
+  ]);
+  // Applying it again changes nothing, so a retry never moves an item twice.
+  assert.deepEqual(applyCheckToFocus(after, note), after);
+});
+
+test("Apply to Now is offered only while the latest note is not in Now yet", () => {
+  const note = {
+    id: "n",
+    createdAt: START + 10,
+    since: START,
+    outside: "x",
+    items: [
+      {
+        text: "Run a workshop",
+        expected: "",
+        checkBy: null,
+        happened: null,
+        why: "",
+        next: "drop",
+        becomes: "",
+      },
+    ],
+    finished: [],
+    turnedDown: [],
+    causes: [],
+    stuck: "",
+    lapsed: 0,
+    change: "y",
+  };
+  const before = {
+    aim: "",
+    now: [focusItem("Run a workshop")],
+    notDoing: [],
+    createdAt: START,
+  };
+  assert.equal(checkNeedsApplying(note, before), true);
+  // Saved after the note: done.
+  assert.equal(
+    checkNeedsApplying(note, { ...before, createdAt: START + 11 }),
+    false,
+  );
+  // Saved in the same second but already applied: nothing left to do.
+  const applied = { ...applyCheckToFocus(before, note), createdAt: START + 10 };
+  assert.equal(checkNeedsApplying(note, applied), false);
+  assert.equal(checkNeedsApplying(note, null), false);
+});
+
+test("a change needs what the item becomes", () => {
+  const note = draft();
+  note.outside = "x";
+  note.change = "y";
+  note.items[0].happened = "yes";
+  note.items[0].next = "keep";
+  note.items[1].next = "change";
+  assert.match(checkNoteProblem(note), /becomes/);
+  note.items[1].becomes = "Find two reviewers";
+  assert.equal(checkNoteProblem(note), null);
+  assert.match(
+    checkNoteContent(note, START).body,
+    /Next: change, to "Find two reviewers"/,
+  );
 });

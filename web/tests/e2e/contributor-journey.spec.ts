@@ -462,7 +462,14 @@ test("a contributor project is started from the page, work is claimed the same d
   await founder
     .getByTestId("check-note-why-0")
     .fill("Someone took it on and let it go");
-  await founder.getByTestId("check-note-next-0").selectOption("keep");
+  // Adjust: the item changes. Its words start from the old ones, and the note says what it becomes.
+  await founder.getByTestId("check-note-next-0").selectOption("change");
+  await expect(founder.getByTestId("check-note-becomes-0")).toHaveValue(
+    "Ship the first guide",
+  );
+  await founder
+    .getByTestId("check-note-becomes-0")
+    .fill("Ship the first guide with a newcomer");
   await founder
     .getByTestId("check-note-change")
     .fill("Pair each newcomer with a reviewer for their first piece.");
@@ -474,6 +481,14 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(founder.getByTestId("check-note-timing")).toContainText(
     "Last check:",
   );
+  // Publishing applied it to Now: the item reads as changed, its old expectation went with it, and nothing is left to
+  // apply.
+  await expect(founder.getByTestId("focus-now-item")).toContainText(
+    "Ship the first guide with a newcomer",
+    { timeout: 30_000 },
+  );
+  await expect(founder.getByTestId("focus-now-expect")).toHaveCount(0);
+  await expect(founder.getByTestId("check-note-unapplied")).toHaveCount(0);
   const noteEvent = published.find(
     (e) =>
       e.kind === 47003 &&

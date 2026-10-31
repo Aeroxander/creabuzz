@@ -13,6 +13,7 @@
  */
 
 import { KIND_LAUNCH_UPDATE } from "../kinds.generated.ts";
+import type { FocusDraft } from "./projectStructure.ts";
 
 const DAY = 86_400;
 /** A project's first month, when the team checks every week. */
@@ -39,6 +40,8 @@ interface CheckItem {
   happened: Happened | null;
   why: string;
   next: Next | null;
+  /** For "change": what the item becomes. Empty otherwise. */
+  becomes: string;
 }
 
 export interface CheckNote {
@@ -141,6 +144,7 @@ export function draftCheckNote(input: {
       happened: null,
       why: "",
       next: null,
+      becomes: "",
     })),
     finished: finished.map(({ key, title }) => ({ key, title })),
     turnedDown: turnedDown.map(({ key, title }) => ({ key, title })),
@@ -168,6 +172,10 @@ export function checkNoteProblem(note: CheckNote): string | null {
       return `Say whether "${item.expected}" happened.`;
     if (item.next === null)
       return `Choose keep, change or drop for "${item.text}".`;
+    if (item.next === "change" && item.becomes.trim() === "")
+      return `Say what "${item.text}" becomes.`;
+    if ([...item.becomes.trim()].length > LINE_MAX)
+      return `Keep what it becomes under ${LINE_MAX} characters.`;
     if ([...item.why.trim()].length > LINE_MAX)
       return `Keep each answer under ${LINE_MAX} characters.`;
   }
@@ -209,7 +217,7 @@ function checkNoteBody(note: CheckNote): string {
       : "";
     const why = item.why.trim() ? ` ${item.why.trim()}` : "";
     lines.push(
-      `- ${item.text}.${expected}${why} Next: ${item.next ? NEXT_WORDS[item.next] : "not decided"}.`,
+      `- ${item.text}.${expected}${why} Next: ${item.next ? NEXT_WORDS[item.next] : "not decided"}${item.next === "change" ? `, to "${item.becomes.trim()}"` : ""}.`,
     );
   }
   if (note.finished.length)
@@ -248,6 +256,7 @@ export function checkNoteContent(
         happened: i.happened,
         ...(i.why.trim() ? { why: i.why.trim() } : {}),
         next: i.next,
+        ...(i.next === "change" ? { becomes: i.becomes.trim() } : {}),
       })),
       finished: note.finished,
       turnedDown: note.turnedDown,
@@ -313,6 +322,7 @@ export function parseCheckNotes(
                 : null,
               why: isStr(i.why) ? i.why : "",
               next: NEXT.includes(i.next as Next) ? (i.next as Next) : null,
+              becomes: isStr(i.becomes) ? i.becomes : "",
             },
           ];
         })
@@ -344,5 +354,67 @@ export function parseCheckNotes(
 export function coveredClaims(notes: readonly CheckNote[]): Set<string> {
   return new Set(
     notes.flatMap((n) => [...n.finished, ...n.turnedDown].map((c) => c.key)),
+  );
+}
+
+// ---- adjust: the note applied to Now ---------------------------------------------------------
+
+/** The most Not doing items the focus record holds (`projectStructure.ts`); the oldest fall off. */
+const NOT_DOING_MAX = 10;
+
+/**
+ * Now and Not doing after the note's answers: "keep" stays, "change" becomes what the founder wrote, "drop" moves to Not
+ * doing with what was seen as the reason. An expectation the note answered (yes, partly or no) is settled and cleared,
+ * as is the one on a changed item; one answered "not yet" stays. Items are matched by their words, so an item changed
+ * since the note was drafted is left as it is.
+ */
+export function applyCheckToFocus(
+  focus: FocusDraft,
+  note: Pick<CheckNote, "items">,
+): FocusDraft {
+  const answers = new Map(note.items.map((i) => [i.text, i]));
+  const now: FocusDraft["now"] = [];
+  const dropped: FocusDraft["notDoing"] = [];
+  for (const item of focus.now) {
+    const answer = answers.get(item.text);
+    if (!answer || answer.next === null) {
+      now.push(item);
+      continue;
+    }
+    if (answer.next === "drop") {
+      dropped.push({
+        text: item.text,
+        why: answer.why.trim() || "Dropped at a check",
+      });
+      continue;
+    }
+    const settled =
+      answer.next === "change" ||
+      (answer.happened !== null && answer.happened !== "not-yet");
+    now.push({
+      ...item,
+      text: answer.next === "change" ? answer.becomes.trim() : item.text,
+      ...(settled ? { expect: "", checkBy: null } : {}),
+    });
+  }
+  return {
+    aim: focus.aim,
+    now,
+    notDoing: [...dropped, ...focus.notDoing].slice(0, NOT_DOING_MAX),
+  };
+}
+
+/**
+ * Whether the latest note still has to be applied to Now: the focus was not saved after it, and applying it would change
+ * something. Then the founder is offered "Apply to Now", so a note whose focus update failed is never left half done.
+ */
+export function checkNeedsApplying(
+  note: CheckNoteRecord,
+  focus: (FocusDraft & { createdAt: number }) | null,
+): boolean {
+  if (!focus || focus.createdAt > note.createdAt) return false;
+  const { createdAt: _, ...draft } = focus;
+  return (
+    JSON.stringify(applyCheckToFocus(draft, note)) !== JSON.stringify(draft)
   );
 }
