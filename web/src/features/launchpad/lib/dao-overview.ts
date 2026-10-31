@@ -28,7 +28,8 @@ import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import { workTitle } from "./work-titles.ts";
 
 /** The tab that holds the answer. */
-type AttentionTab = "decisions" | "work" | "milestones";
+/** Where an item's button goes: a tab, or "overview" for something on the Overview itself (the check note). */
+type AttentionTab = "decisions" | "work" | "milestones" | "overview";
 
 export interface AttentionItem {
   /** Stable, so a list re-renders without flicker. */
@@ -43,7 +44,8 @@ export interface AttentionItem {
     | "expire"
     | "payout"
     | "award"
-    | "waiting";
+    | "waiting"
+    | "check";
   /** One sentence, naming the thing. */
   text: string;
   /** The label of the one button. */

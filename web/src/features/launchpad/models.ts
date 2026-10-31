@@ -239,6 +239,8 @@ export interface LaunchUpdate {
    * hashed. They count only when they hash to the work area's check on the chain (`lib/work-area-words.ts`).
    */
   workArea?: { mandate: string; id: string; check: string };
+  /** Set when this update is a check note (`checkNote.ts` in core); only its author's own counts. */
+  checkNote?: true;
 }
 
 type ProposalKind = "plain" | "futarchy-budget" | "signal";
@@ -646,7 +648,17 @@ export function parseLaunchUpdate(event: NostrEvent): LaunchUpdate | null {
     links: strs(body.links),
     claim: parseUpdateClaim(body.claim),
     workArea: parseUpdateClaim(body.workArea),
+    ...(isCheckNote(body.check) ? { checkNote: true as const } : {}),
   };
+}
+
+/** A check note's `check` object, as far as a list needs to know: its version is one this app reads. */
+function isCheckNote(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as { v?: unknown }).v === 1
+  );
 }
 
 const WORD_RE = /^0x[0-9a-fA-F]{64}$/;

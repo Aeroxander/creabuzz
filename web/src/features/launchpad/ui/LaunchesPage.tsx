@@ -50,6 +50,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
 import { useProfiles, resolveUserName } from "@/features/profiles/use-profiles";
+import { CheckQuietNote } from "./CheckNoteCard";
 import { LaunchCard } from "./LaunchCard";
 import { StartIdeaDialog } from "./StartIdeaDialog";
 import { isContributorProject } from "../lib/funding";
@@ -484,6 +485,9 @@ export function LaunchesPage() {
                   footer={
                     <div className="space-y-2">
                       <ProgressBar quietWhenUnknown record={launch.record} />
+                      {isContributorProject(launch.record) ? (
+                        <CheckQuietNote launch={launch} />
+                      ) : null}
                       {/* A contributor project here is one to open, as on Discover. */}
                       {!raises && isContributorProject(launch.record) ? (
                         <Button

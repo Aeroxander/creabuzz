@@ -20,6 +20,7 @@ import { Button } from "@/shared/ui/button";
 import { proposalTopic } from "@/features/board/lib/proposal-link";
 import { decisionUrl } from "../lib/decision-link";
 import { useDaoThreads } from "@/features/board/use-dao-threads";
+import { CheckNoteBrief } from "./CheckNoteCard";
 import { DecisionCard } from "./DecisionCard";
 import { DecisionDiscussion } from "./DecisionDiscussion";
 import { DecisionComposer } from "./DecisionComposer";
@@ -179,6 +180,11 @@ export function DecisionsTab({
               <li key={decision.id}>
                 <DecisionCard
                   account={wallet.address}
+                  beforeMoneyVote={
+                    isContributorProject(launch.record) ? (
+                      <CheckNoteBrief launch={launch} />
+                    ) : undefined
+                  }
                   busy={busy}
                   currencyDecimals={currencyDecimals}
                   decision={decision}

@@ -681,6 +681,16 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(founder.getByTestId("decision-opened")).toBeVisible({
     timeout: 60_000,
   });
+  // Before voting on Shares, the latest check note is one click away beside the vote buttons (CHECK-NOTE-PLAN.md).
+  const brief = founder.getByTestId("decision-check-note").first();
+  await expect(brief).toContainText(
+    "Before you vote: read the latest check note",
+    {
+      timeout: 30_000,
+    },
+  );
+  await brief.locator("summary").click();
+  await expect(brief).toContainText("Pair each newcomer with a reviewer");
   await carryOut(founder, 90_000, 90_000);
   expect(await sharesOf(CONTRIBUTOR)).toBe(25n * E18);
 

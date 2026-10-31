@@ -46,6 +46,7 @@ export function DecisionCard({
   gate,
   onSend,
   renderDiscussion,
+  beforeMoneyVote,
   highlighted = false,
   link,
 }: {
@@ -60,6 +61,8 @@ export function DecisionCard({
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
   /** The talk about this decision, given what it would do in a few words; shown under it. */
   renderDiscussion?: (headline: string) => ReactNode;
+  /** Shown above the vote buttons of an open decision that spends money or Shares: what to read before voting. */
+  beforeMoneyVote?: ReactNode;
   /** A link pointed at this decision: it is outlined and scrolled into view. */
   highlighted?: boolean;
   /** This decision's address, for "Copy link". */
@@ -215,6 +218,14 @@ export function DecisionCard({
           Votes against and neutral votes count toward the Shares taking part.
           While too few have taken part, voting against can help this pass.
         </p>
+      ) : null}
+      {open &&
+      beforeMoneyVote &&
+      described &&
+      ["work-budget", "project", "award", "payment"].includes(
+        described.kind,
+      ) ? (
+        <div className="mt-2">{beforeMoneyVote}</div>
       ) : null}
       {open ? (
         <DecisionVote

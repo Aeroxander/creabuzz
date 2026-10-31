@@ -17,6 +17,7 @@ import { recordSaleCurrency } from "../chain";
 import { challengeAttention } from "../lib/challenge-attention";
 import { deadline } from "../lib/challenge-copy";
 import {
+  type AttentionItem,
   attentionItems,
   overviewCounts,
   rankAttention,
@@ -50,6 +51,9 @@ import { RunwayCard, runwayIsEmpty } from "./RunwayCard";
 import { RemixCard } from "./RemixCard";
 import { ProjectFocusCard } from "./ProjectFocusCard";
 import { CheckNoteCard } from "./CheckNoteCard";
+import { checkTiming } from "@creaton/core/launchpad/checkNote.ts";
+import { existingUserPubkey } from "@/shared/lib/identity";
+import { useCheckNotes } from "../use-check-notes";
 import { LeavingNowNote } from "./WeeklyRoundsCard";
 
 export type OverviewTarget =
@@ -150,6 +154,37 @@ export function DaoOverview({
     decisions.data?.chainTime ??
     work.data?.chainTime ??
     0;
+  // The founder of a contributor project is asked for the check note when one is due (CHECK-NOTE-PLAN.md).
+  const checkNotes = useCheckNotes(launch);
+  const checkAttention: AttentionItem[] = [];
+  if (
+    isContributorProject(launch.record) &&
+    checkNotes.query.data &&
+    existingUserPubkey() === launch.record.author
+  ) {
+    const timing = checkTiming(
+      launch.record.createdAt,
+      checkNotes.query.data[0]?.createdAt ?? null,
+      Math.floor(Date.now() / 1000),
+    );
+    if (timing.due)
+      checkAttention.push({
+        key: "check-note",
+        kind: "check",
+        text: "A check note is due: what the team expected, what happened, and what changes next.",
+        action: "Write it",
+        tab: "overview",
+        why: "You founded this project.",
+        ifIgnored: "Holders read the latest note before voting on money.",
+      });
+  }
+  // An item's button: its tab, or the check note on this page.
+  const openItem = (item: AttentionItem) =>
+    item.tab === "overview"
+      ? document
+          .querySelector<HTMLElement>('[data-testid="check-note"]')
+          ?.scrollIntoView({ block: "center" })
+      : onOpen(item.tab, item.claim);
   // Most urgent first: what closes soonest comes before what can wait.
   const ranked = rankAttention(
     [
@@ -163,6 +198,7 @@ export function DaoOverview({
       ...(challengeLock.data && wallet
         ? challengeAttention(challengeLock.data, wallet)
         : []),
+      ...checkAttention,
     ],
     clock,
   );
@@ -263,7 +299,7 @@ export function DaoOverview({
                     ) : null}
                   </span>
                   <Button
-                    onClick={() => onOpen(item.tab, item.claim)}
+                    onClick={() => openItem(item)}
                     size="sm"
                     type="button"
                     variant="outline"
@@ -295,7 +331,7 @@ export function DaoOverview({
                       ) : null}
                     </span>
                     <Button
-                      onClick={() => onOpen(item.tab, item.claim)}
+                      onClick={() => openItem(item)}
                       size="sm"
                       type="button"
                       variant="ghost"

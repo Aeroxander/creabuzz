@@ -9,6 +9,7 @@ import {
   hasFounderCommitments,
   launchCoordinate,
   parseLaunchProposal,
+  parseLaunchUpdate,
   parseScoreRoot,
 } from "./models.ts";
 import { hasBlockingIssue, validateLaunchParams } from "./lib/launch-params.ts";
@@ -368,4 +369,32 @@ test("an author's removals are read by coordinate and time, and only their own c
     "old-idea",
   ]);
   assert.deepEqual(removedLaunchIds(removals, BOB), []);
+});
+
+test("an update that carries a check note is marked as one; any other update is not", () => {
+  const author = "f".repeat(64);
+  const update = (content) => ({
+    id: "u",
+    pubkey: author,
+    kind: 47003,
+    created_at: 1,
+    tags: [["a", `37001:${author}:docs`]],
+    content: JSON.stringify(content),
+    sig: "",
+  });
+  assert.equal(
+    parseLaunchUpdate(
+      update({ title: "Check note", body: "x", check: { v: 1 } }),
+    )?.checkNote,
+    true,
+  );
+  assert.equal(
+    parseLaunchUpdate(update({ title: "News", body: "x" }))?.checkNote,
+    undefined,
+  );
+  assert.equal(
+    parseLaunchUpdate(update({ title: "x", body: "x", check: { v: 2 } }))
+      ?.checkNote,
+    undefined,
+  );
 });

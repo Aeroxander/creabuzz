@@ -135,7 +135,7 @@ export function CheckNoteCard({
         role={timing.due ? "status" : undefined}
       >
         {timing.quiet
-          ? `No check since ${day(last?.createdAt ?? launch.record.createdAt)}. One was due on ${day(timing.dueAt)}.`
+          ? `${last ? `No check since ${day(last.createdAt)}` : "No check note yet"}. One was due on ${day(timing.dueAt)}.`
           : timing.due
             ? `A check is due: what did the team expect, what happened, and what changes next?`
             : `${last ? `Last check: ${day(last.createdAt)}. ` : ""}Next check by ${day(timing.dueAt)}.`}
@@ -463,5 +463,75 @@ function CheckNoteForm({
         </Button>
       </div>
     </Card>
+  );
+}
+
+/**
+ * Beside a vote that spends money or Shares (CHECK-NOTE-PLAN.md): the latest check note, folded, so a holder reads what
+ * the team expected and what happened before backing more. A link to read, never a gate.
+ */
+export function CheckNoteBrief({ launch }: { launch: Launch }) {
+  const notes = useCheckNotes(launch);
+  if (!notes.query.data) return null;
+  const last = notes.query.data[0];
+  if (!last) {
+    return (
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="decision-check-none"
+      >
+        No check note yet. Before voting on money, you can ask the founder on
+        the Discussion tab what the team expected and what happened.
+      </p>
+    );
+  }
+  return (
+    <details className="text-sm" data-testid="decision-check-note">
+      <summary className="cursor-pointer text-xs font-medium">
+        Before you vote: read the latest check note ({day(last.createdAt)})
+      </summary>
+      <div className="mt-1 flex flex-col gap-1 rounded-md bg-secondary/40 p-2">
+        <p>
+          <span className="text-muted-foreground">What changed:</span>{" "}
+          {last.outside}
+        </p>
+        {last.items.map((item) => (
+          <p key={item.text}>
+            {item.text}
+            {item.expected
+              ? `: expected ${item.expected}, ${item.happened ? HAPPENED_LABEL[item.happened].toLowerCase() : "not answered"}`
+              : ""}
+            {item.next ? ` (${NEXT_LABEL[item.next].toLowerCase()})` : ""}
+          </p>
+        ))}
+        <p>
+          <span className="text-muted-foreground">What we change:</span>{" "}
+          {last.change}
+        </p>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * On a project's card in a list: "No check since …" once its check note is a week overdue, read from the updates the
+ * list already has (only the founder's own count). Nothing while the project checks in on time.
+ */
+export function CheckQuietNote({ launch }: { launch: Launch }) {
+  const last = launch.updates
+    .filter((u) => u.checkNote && u.author === launch.record.author)
+    .reduce<number | null>(
+      (a, u) => (a === null || u.createdAt > a ? u.createdAt : a),
+      null,
+    );
+  const timing = checkTiming(launch.record.createdAt, last, nowSeconds());
+  if (!timing.quiet) return null;
+  return (
+    <p
+      className="text-xs font-medium text-amber-800 dark:text-amber-300"
+      data-testid="launch-card-check-quiet"
+    >
+      {last === null ? "No check note yet" : `No check since ${day(last)}`}
+    </p>
   );
 }
