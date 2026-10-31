@@ -9,7 +9,7 @@
  */
 
 import { decodeParameters, encodeFunctionData } from "./evmAbi.ts";
-import { decodeWord, topicOf } from "./work.ts";
+import { addressTopic, decodeWord, topicOf } from "./work.ts";
 import type { WorkChain } from "./workRead.ts";
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -51,6 +51,10 @@ export const TOPIC_SELL_PLACED = topicOf(
 );
 export const TOPIC_BID_PLACED = topicOf(
   "BidPlaced(uint256,address,uint256,uint256,uint256)",
+);
+/** Every round's opening, funding rounds' too: topic 1 is the round, topic 2 the DAO. */
+export const TOPIC_ROUND_OPENED = topicOf(
+  "RoundOpened(uint256,address,uint256,uint256,uint64)",
 );
 
 function assertAddress(value: string, what: string): string {
@@ -571,4 +575,105 @@ export async function readOpenClaims(
     }),
   );
   return found.flatMap((c) => (c ? [c] : []));
+}
+
+// ---- price history ---------------------------------------------------------------------------------
+
+/** How many of the DAO's finished holders' rounds the history lists, newest first. */
+export const HISTORY_ROUNDS = 8;
+/** The most rounds read while looking for the last trade, past the listed ones. */
+export const MAX_HISTORY_READS = 48;
+
+/** A finished holders' round: it traded at a price, traded nothing, or nobody settled it in time. */
+export type PastRound =
+  | {
+      id: bigint;
+      closesAt: number;
+      outcome: "traded";
+      price: bigint;
+      volume: bigint;
+    }
+  | { id: bigint; closesAt: number; outcome: "nothing" | "void" };
+
+export interface RoundHistory {
+  /** The DAO's last finished holders' rounds, newest first, at most `HISTORY_ROUNDS`. */
+  rounds: PastRound[];
+  /** The newest of them that traded, however many rounds back (within `MAX_HISTORY_READS`), or null. */
+  lastTrade: Extract<PastRound, { outcome: "traded" }> | null;
+  /** Whether every round the DAO opened was read: without it, no last trade means none in the rounds read. */
+  complete: boolean;
+}
+
+/** One finished holders' round from its `rounds(id)` record, or null for a funding round or one still running. */
+export function pastRoundOf(
+  id: bigint,
+  record: string,
+  now: number,
+): PastRound | null {
+  const w = words(record);
+  // Funding rounds sell new units for the project: never a price for holders' Shares.
+  if ((w[15] ?? 0n) !== 0n) return null;
+  const closesAt = Number(w[3]);
+  const phase = roundPhase({ settled: w[8] !== 0n, closesAt }, now);
+  if (phase === "void") return { id, closesAt, outcome: "void" };
+  if (phase !== "settled") return null;
+  const volume = w[11];
+  if (volume === 0n) return { id, closesAt, outcome: "nothing" };
+  const price = priceOfStep({ floor: w[4], step: w[5] }, Number(w[10]));
+  return { id, closesAt, outcome: "traded", price, volume };
+}
+
+/**
+ * The prices a DAO's holders' rounds traded at (D147): its rounds found from their openings (round ids are shared by
+ * every DAO), read newest first. A round that traded nothing never gets a price, and the last trade is looked for past
+ * the listed rounds, so a quiet week never hides it.
+ */
+export async function readRoundHistory(
+  chain: Pick<WorkChain, "call" | "logs">,
+  contract: string,
+  dao: string,
+  now: number,
+): Promise<RoundHistory> {
+  const at = assertAddress(contract, "the rounds contract");
+  const opened = await chain.logs({
+    address: at,
+    topics: [TOPIC_ROUND_OPENED, null, addressTopic(dao)],
+  });
+  const ids = [
+    ...new Set(
+      opened.flatMap((raw) => {
+        const t = (raw as LogLike).topics;
+        return Array.isArray(t) && typeof t[1] === "string"
+          ? [BigInt(t[1] as string)]
+          : [];
+      }),
+    ),
+  ].sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
+  const rounds: PastRound[] = [];
+  let lastTrade: RoundHistory["lastTrade"] = null;
+  let read = 0;
+  // A batch at a time, until the list is full and a trade is found, or every round (or the most allowed) is read.
+  while (
+    read < ids.length &&
+    read < MAX_HISTORY_READS &&
+    (rounds.length < HISTORY_ROUNDS || lastTrade === null)
+  ) {
+    const batch = ids.slice(read, read + HISTORY_ROUNDS);
+    read += batch.length;
+    const records = await Promise.all(
+      batch.map((id) =>
+        chain.call(
+          at,
+          encodeFunctionData(ROUND_SIGNATURES.rounds, ["uint256"], [id]),
+        ),
+      ),
+    );
+    for (const [i, id] of batch.entries()) {
+      const past = pastRoundOf(id, records[i] as string, now);
+      if (!past) continue;
+      if (rounds.length < HISTORY_ROUNDS) rounds.push(past);
+      if (lastTrade === null && past.outcome === "traded") lastTrade = past;
+    }
+  }
+  return { rounds, lastTrade, complete: read === ids.length };
 }

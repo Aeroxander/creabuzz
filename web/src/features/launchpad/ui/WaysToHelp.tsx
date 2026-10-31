@@ -6,6 +6,7 @@
  * taking work are listed under their budget, and suggesting new work is the next card down.
  */
 
+import { ShortName } from "./ShortName";
 import { Award, CalendarClock, Coins } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -76,12 +77,9 @@ export function WaysToHelp({
                 {/* The short name is what a submission names: quietly beside the title. */}
                 <span className="font-semibold">
                   {area.title}
-                  {area.title !== area.name ? (
-                    <span className="font-mono text-xs font-normal text-muted-foreground">
-                      {" "}
-                      {area.name}
-                    </span>
-                  ) : null}
+                  <ShortName
+                    name={area.title !== area.name ? area.name : null}
+                  />
                 </span>
                 <span className="flex flex-wrap gap-1.5">
                   {area.sharesLeft > 0n ? (

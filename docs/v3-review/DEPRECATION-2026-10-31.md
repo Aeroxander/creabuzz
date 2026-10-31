@@ -59,8 +59,8 @@ where taken. The screen re-check's open items (STILL #10 to STILL #96, NEW1 to N
 - **#37** freeze or history banners on the superseded proposals and review records (JOIN-CURVE, MARKETS-AND-EXIT-PLAN,
   POST-LAUNCH-CURVE-INTEGRATION-PLAN, NEXT-GEN-DAO, CONTRIBUTOR-TOKEN-TRADING, the five October review records, and the
   older plans under `docs/`). The no-desktop scope is written on D9 and in STATUS.md.
-- **#38** [ROUND-PRICE-HISTORY.md](ROUND-PRICE-HISTORY.md) is marked parked until weekly rounds are in a pilot, with no
-  decision number.
+- **#38** [ROUND-PRICE-HISTORY.md](ROUND-PRICE-HISTORY.md) was built on its own branch as D147 and merged on 2026-10-31;
+  weekly rounds stay off in the pilot image.
 - **NEW6** the screen audit captures what each stop is named for: sign-up and sign-in open from the controls a phone
   actually has, the decision forms pick their kind from the phone's list and are photographed on their own, a stop
   fails when it does not reach its state, the hosted build checks that the sale screens are absent or lead elsewhere

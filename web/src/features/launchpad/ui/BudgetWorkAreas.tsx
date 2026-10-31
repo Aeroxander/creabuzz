@@ -8,6 +8,7 @@ import type { WorkBounties } from "../lib/work-bounty";
 import type { MandateView, ProjectView } from "../lib/work-read";
 import { Person } from "./Face";
 import { WorkAreaBounties } from "./WorkAreaBounties";
+import { ShortName } from "./ShortName";
 
 const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
 
@@ -99,12 +100,9 @@ export function BudgetWorkAreas({
                 {/* The short name the chain keys it by, quietly beside the title: it is what a submission names. */}
                 <span className="font-medium">
                   {workTitle(project.id)}
-                  {shortNameBeside(project.id, workTitle(project.id)) ? (
-                    <span className="font-mono text-xs font-normal text-muted-foreground">
-                      {" "}
-                      {shortNameBeside(project.id, workTitle(project.id))}
-                    </span>
-                  ) : null}
+                  <ShortName
+                    name={shortNameBeside(project.id, workTitle(project.id))}
+                  />
                 </span>
                 {mandate.isMilestonePanel ? null : (
                   <Chip>{endedReason(mandate, project, chainTime)}</Chip>

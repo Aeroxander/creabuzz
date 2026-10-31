@@ -1,13 +1,16 @@
 /**
  * The words and the form logic of weekly rounds (D131): whether rounds are on, where this week's round stands, one price
- * row, what an order gets, and turning a typed price into the step it means. Pure, so `rounds-copy.test.mjs` pins it.
+ * row, what an order gets, turning a typed price into the step it means, and the price history and what leaving pays now
+ * (D147). Pure, so `rounds-copy.test.mjs` pins it.
  */
 
 import { formatUnits, parseUnits } from "./dao-actions.ts";
 import type { ExitSalesPhase } from "./matched-exit.ts";
 import {
   escrowFor,
+  type PastRound,
   type RoundGrid,
+  type RoundHistory,
   type RoundView,
   sellerKeeps,
   stepAtLeast,
@@ -22,6 +25,13 @@ const date = (seconds: number) =>
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+  });
+
+/** A round's day, without the time: when its bidding closed, which is when its orders set its price. */
+const day = (seconds: number) =>
+  new Date(seconds * 1000).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
   });
 
 export const usdc = (units: bigint) =>
@@ -149,4 +159,78 @@ export function bidPlan(
     };
   }
   return { amount, step, holds };
+}
+
+// ---- price history and leaving (D147) ----------------------------------------------------------------
+
+/** The round's own floor chip: fixed when the round opened, so it can differ from what leaving pays today. */
+export function floorAtOpeningText(floor: bigint, unit: "Share" | "unit") {
+  return `Floor at opening: ${usdc(floor)} a ${unit}`;
+}
+
+/** What leaving pays per whole Share now, after the exit fee the exit itself would charge (zero while under notice). */
+export function leavingPays(floorNow: bigint, exitFeeBps: bigint): bigint {
+  return floorNow - (floorNow * exitFeeBps) / 10_000n;
+}
+
+const percent = (bps: bigint) => {
+  const whole = bps / 100n;
+  const rest = (bps % 100n).toString().padStart(2, "0").replace(/0+$/, "");
+  return rest ? `${whole}.${rest}` : `${whole}`;
+};
+
+/** "Leaving now pays about X USDC a Share", saying when a fee applies. */
+export function leavingLine(floorNow: bigint, exitFeeBps: bigint): string {
+  const pays = usdc(leavingPays(floorNow, exitFeeBps));
+  return exitFeeBps > 0n
+    ? `Leaving now pays about ${pays} a Share, after the ${percent(exitFeeBps)}% exit fee.`
+    : `Leaving now pays about ${pays} a Share.`;
+}
+
+/** The last price holders traded at, with its round and date, so an older trade never reads as today's price. */
+export function lastTradeLine(
+  history: Pick<RoundHistory, "lastTrade" | "complete">,
+): string {
+  const trade = history.lastTrade;
+  if (trade) {
+    return `Last trade: ${shares(trade.volume)} Shares at ${usdc(trade.price)} each, round ${trade.id} (${day(trade.closesAt)}).`;
+  }
+  // Only when every round was read is "yet" true; otherwise the search stopped short of the oldest.
+  return history.complete ? "No trades yet." : "No trades in recent rounds.";
+}
+
+/** One finished round in the history: its date, and a price and amount only when something traded. */
+export function historyRow(round: PastRound): {
+  date: string;
+  price: string | null;
+  amount: string | null;
+  note: string | null;
+} {
+  const date = day(round.closesAt);
+  switch (round.outcome) {
+    case "traded":
+      return {
+        date,
+        price: usdc(round.price),
+        amount: `${shares(round.volume)} Shares`,
+        note: null,
+      };
+    case "nothing":
+      return { date, price: null, amount: null, note: "Nothing traded" };
+    case "void":
+      return {
+        date,
+        price: null,
+        amount: null,
+        note: "Not settled, everything returned",
+      };
+  }
+}
+
+/** The Offer Shares form: what a seller keeps at their price, beside what leaving pays now. */
+export function offerPlanLine(keepsEach: bigint, leavingEach: bigint | null) {
+  const keeps = `If the round settles there, you keep ${usdc(keepsEach)} a Share after the treasury's cut. A higher price pays you more; below it, nothing sells.`;
+  return leavingEach === null
+    ? keeps
+    : `${keeps} Leaving now pays about ${usdc(leavingEach)} a Share.`;
 }

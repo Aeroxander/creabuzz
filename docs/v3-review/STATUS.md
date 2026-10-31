@@ -105,7 +105,7 @@ device. What to measure is in [PILOT-REPORT.md](PILOT-REPORT.md).
   [POST-LAUNCH-CURVE-INTEGRATION-PLAN.md](POST-LAUNCH-CURVE-INTEGRATION-PLAN.md),
   [CONTRIBUTOR-TOKEN-TRADING.md](CONTRIBUTOR-TOKEN-TRADING.md) (recommendation 3 open: voting Shares or Loot for sale
   between members), [LATER-DESIGN-NOTES.md](LATER-DESIGN-NOTES.md), [ROUND-PRICE-HISTORY.md](ROUND-PRICE-HISTORY.md)
-  (parked until weekly rounds are in a pilot), [LBAMM.md](LBAMM.md) (evaluation only: its licence rules out live use).
+  (built as D147; weekly rounds stay off in the pilot image), [LBAMM.md](LBAMM.md) (evaluation only: its licence rules out live use).
 - **The project helper** (an AI assistant on a project): only if the pilot shows questions that Ways to help and Needs
   you do not answer.
 - **Fundraising explanations and the raise itself:** after the audit, a verified deployment and a legal read

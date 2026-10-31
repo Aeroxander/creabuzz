@@ -74,6 +74,7 @@ import { ReviewActions } from "./ReviewActions";
 import { ClaimReviewNote } from "./ClaimReviewNote";
 import { type ClaimReview, useReviewReasons } from "../use-review-reasons";
 import { nextMoment, refreshDelay } from "../lib/work-refresh";
+import { ShortName } from "./ShortName";
 
 const sameAddress = (a: string | null, b: string) =>
   a !== null && a.toLowerCase() === b.toLowerCase();
@@ -735,12 +736,7 @@ function MandateCard({
                   {/* The short name the chain keys it by, quietly beside the title: it is what a submission names. */}
                   <span className="font-medium">
                     {title}
-                    {shortName ? (
-                      <span className="font-mono text-xs font-normal text-muted-foreground">
-                        {" "}
-                        {shortName}
-                      </span>
-                    ) : null}
+                    <ShortName name={shortName} />
                   </span>
                   <span
                     className="text-xs text-muted-foreground"

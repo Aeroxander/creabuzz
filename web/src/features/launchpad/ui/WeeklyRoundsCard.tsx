@@ -9,6 +9,11 @@ import { defaultChainPreset } from "../chain-config";
 import { encodeActivateExitExchange } from "../lib/matched-exit";
 import {
   clearingLine,
+  floorAtOpeningText,
+  historyRow,
+  lastTradeLine,
+  leavingLine,
+  leavingPays,
   roundStatusLine,
   roundsStateLine,
   shares as sharesText,
@@ -22,6 +27,7 @@ import {
   encodeOpenRound,
   encodeSettleRound,
   orderOutcome,
+  type RoundHistory,
   type RoundView,
   SETTLE_WINDOW,
 } from "../lib/weekly-rounds";
@@ -153,11 +159,22 @@ export function WeeklyRoundsCard({ dao }: { dao: string }) {
             </p>
           ) : null}
           {round ? (
+            <RoundHistoryPanel
+              history={data.history}
+              onRetry={() => void query.refetch()}
+            />
+          ) : null}
+          {round ? (
             <RoundPanel
               blocked={blocked}
               busy={sender.busy}
               contract={data.contract}
               currency={data.usdc}
+              leaving={
+                data.rounds.floorNow === null
+                  ? null
+                  : { floorNow: data.rounds.floorNow, feeBps: data.exitFeeBps }
+              }
               me={sender.wallet.address}
               onSend={sender.send}
               round={round}
@@ -184,6 +201,87 @@ export function WeeklyRoundsCard({ dao }: { dao: string }) {
 }
 
 /**
+ * What leaving pays a Share now (D147), on the project Overview where people first look at its price: the floor less the
+ * exit fee, read with the weekly rounds where this build names them. Nothing where they aren't, or before it is read.
+ */
+export function LeavingNowNote({ dao }: { dao: string }) {
+  const { contract, query } = useWeeklyRounds(dao, null);
+  const floorNow = query.data?.rounds.floorNow ?? null;
+  if (!contract || !query.data || floorNow === null) return null;
+  return (
+    <p className="text-sm" data-testid="dao-leaving-now">
+      {leavingLine(floorNow, query.data.exitFeeBps)}
+    </p>
+  );
+}
+
+/**
+ * The price holders last traded at and the last few finished rounds (D147), newest first. A round that traded nothing
+ * shows no price, and the last trade keeps its own date, so a quiet week never reads as a fall to the floor.
+ */
+function RoundHistoryPanel({
+  history,
+  onRetry,
+}: {
+  history: RoundHistory | null;
+  onRetry: () => void;
+}) {
+  if (history === null) {
+    return (
+      <p
+        className="mt-3 text-sm text-muted-foreground"
+        data-testid="rounds-history-unread"
+        role="status"
+      >
+        Earlier rounds&apos; prices could not be read just now.{" "}
+        <button className="underline" onClick={onRetry} type="button">
+          Try again
+        </button>
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3 flex flex-col gap-2" data-testid="rounds-history">
+      <p className="text-sm font-medium" data-testid="rounds-last-trade">
+        {lastTradeLine(history)}
+      </p>
+      {history.rounds.length > 0 ? (
+        <table className="text-sm" data-testid="rounds-history-rows">
+          <caption className="sr-only">Earlier rounds, newest first</caption>
+          <thead>
+            <tr className="text-left text-xs text-muted-foreground">
+              <th className="pr-4 font-medium">Date</th>
+              <th className="pr-4 font-medium">Price a Share</th>
+              <th className="font-medium">Traded</th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.rounds.map((past) => {
+              const row = historyRow(past);
+              return (
+                <tr data-testid="rounds-history-row" key={past.id.toString()}>
+                  <td className="pr-4">{row.date}</td>
+                  {row.note === null ? (
+                    <>
+                      <td className="pr-4">{row.price}</td>
+                      <td>{row.amount}</td>
+                    </>
+                  ) : (
+                    <td className="text-muted-foreground" colSpan={2}>
+                      {row.note}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * One round: its status, prices, your orders and the steps it allows. A funding round (D133) sells the project's new
  * units: there is nothing to offer or leave from, only bids and collecting.
  */
@@ -197,6 +295,7 @@ export function RoundPanel({
   blocked,
   busy,
   onSend,
+  leaving = null,
 }: {
   round: RoundView;
   contract: string;
@@ -207,6 +306,8 @@ export function RoundPanel({
   blocked: boolean;
   busy: string | null;
   onSend: Send;
+  /** What leaving pays now and the exit fee (D147), shown beside a holders' round's floor; null when unread. */
+  leaving?: { floorNow: bigint; feeBps: bigint } | null;
 }) {
   const [form, setForm] = useState<"offer" | "bid" | null>(null);
   const { sell, bid } = round.mine;
@@ -232,9 +333,14 @@ export function RoundPanel({
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">Round {round.id.toString()}</span>
         <Chip icon={Scale}>
-          Floor {usdc(round.floor)} a {holders ? "Share" : "unit"}
+          {floorAtOpeningText(round.floor, holders ? "Share" : "unit")}
         </Chip>
       </div>
+      {holders && leaving ? (
+        <p className="text-sm" data-testid="rounds-leaving">
+          {leavingLine(leaving.floorNow, leaving.feeBps)}
+        </p>
+      ) : null}
       <p className="text-sm" data-testid="rounds-round-status">
         {roundStatusLine(round, round.closesAt + SETTLE_WINDOW)}
       </p>
@@ -426,6 +532,9 @@ export function RoundPanel({
           grid={round}
           id={round.id}
           onDone={() => setForm(null)}
+          leavingEach={
+            leaving ? leavingPays(leaving.floorNow, leaving.feeBps) : null
+          }
           onSend={onSend}
           shares={shares}
           side={side}
