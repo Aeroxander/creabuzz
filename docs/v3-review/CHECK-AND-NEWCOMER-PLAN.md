@@ -1,8 +1,6 @@
 # Checking work before it is submitted, and a newcomer's first week: plan (2026-10-31)
 
-**Status:** build step 1 ("How you checked it") done as D166; steps 2 and 3 not built. It is step 5 of [PROJECT-CYCLE.md](PROJECT-CYCLE.md) ("build quality in", "remove a step
-before automating it", "a newcomer's first week"), and replaces step 5 of PROJECT-STRUCTURE.md. It uses the same AI
-service as the check note (D162) and the challenge (D165), and works without it.
+**Status:** build steps 1 and 2 done (D166, D167); step 3 (the AI check of work and the AI interviewer) not built.
 
 ## 1. A check before submitting
 

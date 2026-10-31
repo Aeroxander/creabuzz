@@ -380,6 +380,8 @@ test("a contributor project is started from the page, work is claimed the same d
     .getByTestId("focus-not-why-0")
     .fill("Not before the guide works");
   await founder.getByTestId("focus-save").click();
+  // The founder is not new here.
+  await expect(founder.getByTestId("new-here")).toHaveCount(0);
   const nowItem = founder.getByTestId("focus-now-item");
   await expect(nowItem).toContainText("Ship the first guide", {
     timeout: 30_000,
@@ -413,6 +415,8 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(docsCard.getByText("Now", { exact: true })).toBeVisible();
   await expect(docsCard.getByTestId("take-on-nobody")).toBeVisible();
   await docsCard.getByTestId("take-on-open").click();
+  // A first piece here: two worked examples come with the form.
+  await expect(docsCard.getByTestId("take-on-examples")).toBeVisible();
   await docsCard.getByTestId("take-on-save").click();
   await expect(docsCard.getByTestId("take-on-form")).toContainText(
     "Say what you will deliver",
@@ -434,6 +438,13 @@ test("a contributor project is started from the page, work is claimed the same d
     onlooker.getByTestId("focus-now-item").getByTestId("focus-now-who"),
   ).toContainText("until", { timeout: 30_000 });
   await expect(onlooker.getByTestId("focus-set")).toHaveCount(0);
+  // Someone with no Shares here gets the first-week steps; reading the aim and Now ticks the first.
+  const steps = onlooker.getByTestId("new-here-step");
+  await expect(steps).toHaveCount(3, { timeout: 30_000 });
+  await expect(steps.nth(0)).toHaveAttribute("data-done", "no");
+  await onlooker.getByTestId("new-here-read").click();
+  await expect(steps.nth(0)).toHaveAttribute("data-done", "yes");
+  await expect(steps.nth(1)).toHaveAttribute("data-done", "no");
   await expect(onlooker.getByTestId("focus-change")).toHaveCount(0);
   await onlooker.close();
   // Letting it go opens it again for anyone, and the date can be said again later.

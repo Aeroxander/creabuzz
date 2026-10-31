@@ -135,6 +135,28 @@ function TakeOnWork({
           className="flex flex-col gap-2 rounded-lg bg-secondary/40 p-2"
           data-testid="take-on-form"
         >
+          {mine === null ? (
+            // A first piece here: what a good answer looks like, before the boxes.
+            <details className="text-xs" data-testid="take-on-examples">
+              <summary className="cursor-pointer font-medium">
+                See two examples
+              </summary>
+              <ul className="mt-1 flex list-disc flex-col gap-1 pl-4 text-muted-foreground">
+                <li>
+                  Deliver: a one-page guide to submitting work. For: people
+                  joining this week. By: Friday.
+                </li>
+                <li>
+                  Deliver: the three broken links on the help page fixed. For:
+                  readers of the docs. By: in a week.
+                </li>
+              </ul>
+              <p className="mt-1 text-muted-foreground">
+                Small and specific beats big and vague: a piece you can finish
+                in a week is a good first one.
+              </p>
+            </details>
+          ) : null}
           <TextField
             error={errorFor("deliver")}
             label="What you will deliver"

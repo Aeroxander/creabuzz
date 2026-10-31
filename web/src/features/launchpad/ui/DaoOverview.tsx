@@ -51,6 +51,7 @@ import { RunwayCard, runwayIsEmpty } from "./RunwayCard";
 import { RemixCard } from "./RemixCard";
 import { ProjectFocusCard } from "./ProjectFocusCard";
 import { CheckNoteCard } from "./CheckNoteCard";
+import { NewHereCard } from "./NewHereCard";
 import { checkTiming } from "@creaton/core/launchpad/checkNote.ts";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { useCheckNotes } from "../use-check-notes";
@@ -345,6 +346,14 @@ export function DaoOverview({
           ) : null}
         </Card>
       )}
+      {contributor ? (
+        <NewHereCard
+          dao={dao}
+          launch={launch}
+          onOpenWork={() => onOpen("work")}
+          wallet={wallet}
+        />
+      ) : null}
       {contributor ? (
         <ProjectFocusCard
           areas={focusAreas}
