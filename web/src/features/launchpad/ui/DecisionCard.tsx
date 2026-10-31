@@ -3,12 +3,18 @@ import { toast } from "sonner";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
-import type { DescribeContext } from "../lib/dao-actions";
+import type { DescribeContext } from "@creaton/core/launchpad/daoActions.ts";
 import { formatShares } from "../lib/shares-format";
 import { describeDecision } from "../lib/decision-describe";
-import type { Decision, DecisionsSnapshot } from "../lib/decisions";
+import type {
+  Decision,
+  DecisionsSnapshot,
+} from "@creaton/core/launchpad/decisions.ts";
 import { encodeExecuteByVotes, encodeQueue } from "../lib/vote-tx";
-import { votingRuleWatch, votingStatusLabel } from "../lib/voting-allocation";
+import {
+  votingRuleWatch,
+  votingStatusLabel,
+} from "@creaton/core/launchpad/voting-allocation.ts";
 import { decisionStage, duration, isLive, when } from "../lib/decision-stage";
 import { deadline } from "../lib/challenge-copy";
 import { DecisionVote } from "./DecisionVote";

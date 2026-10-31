@@ -6,7 +6,7 @@ import { challengeGateFor, challengePublishBlock } from "./lib/challenge-copy";
 import { challengeUpdateContent } from "./lib/challenge-evidence";
 import { challengeEvidenceHash } from "./lib/challenge-evidence";
 import { evidenceProblem } from "./lib/evidence";
-import { encodeErc20Approve } from "./lib/evmCalls";
+import { encodeErc20Approve } from "@creaton/core/launchpad/evmCalls.ts";
 import {
   type ChallengeLockView,
   encodeChallengeFinish,
@@ -15,8 +15,8 @@ import {
   encodeChallengeResolve,
   encodeChallengeSubmit,
   encodeChallengeVote,
-} from "./lib/milestone-challenge";
-import { hashText } from "./lib/work";
+} from "@creaton/core/launchpad/milestoneChallenge.ts";
+import { hashText } from "@creaton/core/launchpad/work.ts";
 import type { Launch } from "./models";
 import { getRpcEndpoint } from "./chain";
 import { usePublishMirror } from "./use-launches";

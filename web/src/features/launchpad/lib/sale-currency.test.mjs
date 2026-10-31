@@ -7,7 +7,7 @@ import {
   saleCurrencyFor,
   USDC_BY_CHAIN,
   usdcAddress,
-} from "./sale-currency.ts";
+} from "@creaton/core/launchpad/sale-currency.ts";
 
 const SEPOLIA_USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
 const OTHER = "0x9999999999999999999999999999999999999999";

@@ -5,7 +5,10 @@
  * `chain.ts`, which re-exports all of this, so callers import from either.
  */
 
-import { saleCurrencyFor, type SaleCurrency } from "./lib/sale-currency.ts";
+import {
+  saleCurrencyFor,
+  type SaleCurrency,
+} from "@creaton/core/launchpad/sale-currency.ts";
 import { DEFAULT_SECONDS_PER_BLOCK } from "./lib/time-blocks.ts";
 
 export const DEFAULT_RPC_ENDPOINT = "http://127.0.0.1:8545";

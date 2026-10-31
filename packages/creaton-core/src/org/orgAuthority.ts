@@ -5,8 +5,8 @@
 // The Rust module is the source of truth. `scripts/org-authority-corpus.json`
 // is generated from it (`just regen-org-corpus`) and replayed by
 // `orgAuthority.test.mjs`, so a UI that shows "this grant is valid" agrees with
-// the relay that enforced it. This file is self-contained and byte-identical
-// to its web twin (web/src/features/fleet/lib/orgAuthority.ts).
+// the relay that enforced it. This file is self-contained; the web app imports
+// it from here.
 //
 // Nodes, grants and budgets are addressed by (author, d) but *referenced* by
 // the bare `d`. A resolver that takes "the newest record for this d" lets any

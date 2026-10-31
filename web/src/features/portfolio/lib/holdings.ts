@@ -12,15 +12,15 @@
  * Alias-free for `node --test`.
  */
 
-import { readMilestoneLock } from "../../launchpad/lib/milestone-lock.ts";
+import { readMilestoneLock } from "@creaton/core/launchpad/milestoneLock.ts";
 import {
   decodeAddress,
   decodeWord,
   encodeCall0,
   SIGNATURES,
-} from "../../launchpad/lib/work.ts";
+} from "@creaton/core/launchpad/work.ts";
 import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
-import type { WorkChain } from "../../launchpad/lib/work-read.ts";
+import type { WorkChain } from "@creaton/core/launchpad/workRead.ts";
 
 const ZERO_ADDRESS = `0x${"0".repeat(40)}`;
 const HOLDING_AGE = "holdingAge(address)";

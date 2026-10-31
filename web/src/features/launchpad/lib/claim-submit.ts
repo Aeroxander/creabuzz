@@ -22,7 +22,7 @@ import {
   encodePayout,
   encodeSettle,
   encodeSubmitClaim,
-} from "./claim-tx.ts";
+} from "@creaton/core/launchpad/claim-tx.ts";
 import { claimIdWord, trancheAmount } from "./tranche-claims.ts";
 
 /** One sendable call in the `SenderCall` shape (`identity/lib/sponsoredSender`). */

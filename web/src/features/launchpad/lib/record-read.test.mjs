@@ -3,14 +3,17 @@ import { test } from "node:test";
 
 import { selectorOf } from "@creaton/core/launchpad/evmAbi.ts";
 
-import { LOCK_SIGNATURES } from "./milestone-lock.ts";
+import { LOCK_SIGNATURES } from "@creaton/core/launchpad/milestoneLock.ts";
 import {
   claimKey,
   MAX_RECORD_LOGS,
   readRecordEvents,
   readTeamPromises,
 } from "./record-read.ts";
-import { TOPIC_CLAIM_SUBMITTED, topicOf } from "./work.ts";
+import {
+  TOPIC_CLAIM_SUBMITTED,
+  topicOf,
+} from "@creaton/core/launchpad/work.ts";
 
 const DAO = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SHARES = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";

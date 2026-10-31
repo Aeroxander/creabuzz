@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
 
 import { readDelegatorsTo } from "./allocation-delegators.ts";
-import { encodeCall0, SIGNATURES } from "./work.ts";
+import { encodeCall0, SIGNATURES } from "@creaton/core/launchpad/work.ts";
 
 const DAO = `0x${"d0".repeat(20)}`;
 const POLICY = `0x${"e0".repeat(20)}`;

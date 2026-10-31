@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/shared/ui/button";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { runAgentStopAll } from "../lib/agentStopFlow";
-import type { AgentStopReport } from "../lib/agentStopSequence";
+import type { AgentStopReport } from "@creaton/core/org/agentStop.ts";
 
 /** One agent the dialog is about to stop. */
 export type AgentStopTarget = {

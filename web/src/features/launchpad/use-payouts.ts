@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getRpcEndpoint } from "./chain";
-import { readPayouts } from "./lib/payouts";
+import { readPayouts } from "@creaton/core/launchpad/payouts.ts";
 import { endpointChain } from "./use-work";
 
 /** Where every query about payouts lives, so a step sent from one re-reads them all. */

@@ -11,7 +11,7 @@ import {
   type Provenance,
   TOPIC_CONTRIBUTOR_LAUNCHED,
 } from "./lib/contributor-status";
-import { addressTopic } from "./lib/work";
+import { addressTopic } from "@creaton/core/launchpad/work.ts";
 
 export function useContributorProvenance(
   chainId: string | null,

@@ -23,7 +23,7 @@ import {
   type OrgGraph,
   type StoredOrgGrant,
   type StoredOrgNode,
-} from "../../fleet/lib/orgAuthority.ts";
+} from "@creaton/core/org/orgAuthority.ts";
 import {
   KIND_CONTRIBUTION_RECORD,
   KIND_ORG_GRANT,

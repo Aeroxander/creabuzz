@@ -19,7 +19,7 @@ import {
   SELECTOR_PAYOUT,
   SELECTOR_SETTLE,
   SELECTOR_SUBMIT_CLAIM,
-} from "./claim-tx.ts";
+} from "@creaton/core/launchpad/claim-tx.ts";
 
 const CLAIM_STAKE = "0xcccccccccccccccccccccccccccccccccccccccc";
 const TREASURY = "0x1111111111111111111111111111111111111111";

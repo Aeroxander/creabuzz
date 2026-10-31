@@ -33,7 +33,7 @@ import {
   type WizardState,
   type WizardStep,
 } from "../../lib/wizard";
-import type { SaleCurrency } from "../../lib/sale-currency";
+import type { SaleCurrency } from "@creaton/core/launchpad/sale-currency.ts";
 import { presetTarget } from "../../lib/raise-presets";
 import { CurrencyChoice } from "./CurrencyChoice";
 import { PresetPicker } from "./PresetPicker";

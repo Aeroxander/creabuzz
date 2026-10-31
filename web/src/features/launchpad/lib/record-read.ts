@@ -15,13 +15,16 @@ import {
   encodeCall0,
   TOPIC_CLAIM_SUBMITTED,
   topicOf,
-} from "./work.ts";
-import type { WorkChain, WorkSnapshot } from "./work-read.ts";
+} from "@creaton/core/launchpad/work.ts";
+import type {
+  WorkChain,
+  WorkSnapshot,
+} from "@creaton/core/launchpad/workRead.ts";
 import {
   LOCK_SIGNATURES,
   readMilestoneLock,
   type MilestoneTranche,
-} from "./milestone-lock.ts";
+} from "@creaton/core/launchpad/milestoneLock.ts";
 
 /** The newest log entries read for one event on one contract. */
 export const MAX_RECORD_LOGS = 400;

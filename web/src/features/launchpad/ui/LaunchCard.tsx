@@ -11,7 +11,7 @@ import { cn } from "@/shared/lib/cn";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { ServerImage } from "@/shared/ui/ServerImage";
 import { formatMoney } from "../lib/amounts";
-import { saleCurrencyFor } from "../lib/sale-currency";
+import { saleCurrencyFor } from "@creaton/core/launchpad/sale-currency.ts";
 import { launchArt } from "../lib/launch-art";
 import type { LaunchRecord, LaunchStage } from "../models";
 import { isContributorProject, type ResolvedFunding } from "../lib/funding";

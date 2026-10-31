@@ -2,8 +2,8 @@ import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { evidenceProblem, type EvidenceStanding } from "../lib/evidence";
-import { hashText } from "../lib/work";
-import type { ClaimView } from "../lib/work";
+import { hashText } from "@creaton/core/launchpad/work.ts";
+import type { ClaimView } from "@creaton/core/launchpad/work.ts";
 import { linkLabel } from "../lib/link-label";
 
 const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;

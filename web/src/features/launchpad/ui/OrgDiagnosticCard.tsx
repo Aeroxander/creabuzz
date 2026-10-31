@@ -19,7 +19,7 @@ import {
   diagnose,
   type DiagReport,
   type DiagEvent,
-} from "../lib/org-diag";
+} from "@creaton/core/launchpad/org-diag.ts";
 
 function pct(bp: number): string {
   return `${(bp / 100).toFixed(2)}%`;

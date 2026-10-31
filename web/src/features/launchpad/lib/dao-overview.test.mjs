@@ -10,7 +10,7 @@ import {
   rankEntries,
   summaryLine,
 } from "./dao-overview.ts";
-import { idWord } from "./work.ts";
+import { idWord } from "@creaton/core/launchpad/work.ts";
 
 const ME = "0x" + "11".repeat(20);
 const OTHER = "0x" + "22".repeat(20);

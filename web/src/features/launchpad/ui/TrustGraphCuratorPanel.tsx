@@ -6,7 +6,7 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
 
-import { encodeSetScoreRoot } from "../lib/trust-gate";
+import { encodeSetScoreRoot } from "@creaton/core/launchpad/trust-gate.ts";
 import {
   composeRootBundle,
   DEFAULT_PROGRAM,

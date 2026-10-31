@@ -11,7 +11,7 @@ import { CHALLENGE_STAGE_LABEL } from "../lib/challenge-copy";
 import type { TimelineEntry } from "../lib/milestone-timeline";
 import { formatShares } from "../lib/shares-format";
 import type { Launch } from "../models";
-import { hashText } from "../lib/work";
+import { hashText } from "@creaton/core/launchpad/work.ts";
 import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
 import { useMilestoneTimeline } from "../use-milestone-timeline";
 

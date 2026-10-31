@@ -29,7 +29,10 @@ import {
 import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
 
-import { autoFill, milestoneChoices } from "../lib/claim-choices";
+import {
+  autoFill,
+  milestoneChoices,
+} from "@creaton/core/launchpad/claim-choices.ts";
 import { HashPicker } from "./HashPicker";
 import {
   resolveSender,

@@ -5,7 +5,7 @@
 import { useMemo } from "react";
 
 import { knownTitles } from "./lib/work-titles";
-import type { WorkSnapshot } from "./lib/work-read";
+import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import { useWorkProposals } from "./use-work-proposals";
 
 export function useWorkTitles(

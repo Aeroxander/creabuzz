@@ -21,7 +21,7 @@ import {
   ethPendingNonce,
   networkLabel,
 } from "@/features/launchpad/chain";
-import { usdcAddress } from "@/features/launchpad/lib/sale-currency";
+import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
 import { StepRevertedError } from "@/features/launchpad/lib/acting-account";
 import { useActingAccount } from "@/features/launchpad/use-acting-account";
 import {

@@ -15,7 +15,7 @@ import {
   type ChallengeStage,
   type ChallengeTerms,
   objectionCarries,
-} from "./milestone-challenge.ts";
+} from "@creaton/core/launchpad/milestoneChallenge.ts";
 
 const DAY = 86_400;
 const HOUR = 3_600;

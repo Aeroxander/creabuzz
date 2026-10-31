@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { Button } from "@/shared/ui/button";
 import { ethCall, getRpcEndpoint } from "../chain";
 import { encodeCastVote, encodeCastVoteFor } from "../lib/vote-tx";
-import { formatUnits } from "../lib/dao-actions";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import { useAllocationDelegators } from "../use-allocation-delegators";
 import { useWalletLabels } from "../use-wallet-labels";
 import {
@@ -13,7 +13,7 @@ import {
   encodeVotingAllocationFor,
   parseVotingShares,
   VOTING_OWNER_RE,
-} from "../lib/voting-allocation";
+} from "@creaton/core/launchpad/voting-allocation.ts";
 
 const shares = (wei: bigint) => formatUnits(wei, 18, 4);
 

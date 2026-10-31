@@ -16,9 +16,9 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { recordSaleCurrency } from "../chain";
 import { formatAtomic } from "../lib/amounts";
-import { formatUnits } from "../lib/dao-actions";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import { contractNames } from "../lib/contract-names";
-import { hashText } from "../lib/work";
+import { hashText } from "@creaton/core/launchpad/work.ts";
 import {
   buildLedger,
   type CurrencyFigures,

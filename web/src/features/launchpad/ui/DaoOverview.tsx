@@ -22,7 +22,7 @@ import {
   rankAttention,
   summaryLine,
 } from "../lib/dao-overview";
-import { formatUnits } from "../lib/dao-actions";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import { isContributorProject } from "../lib/funding";
 import { openWorkAreas, recordSources } from "../lib/ways-to-help";
 import type { Launch } from "../models";

@@ -3,14 +3,14 @@
  * a typed cap or sale into the numbers a vote carries. Pure, so `funding-copy.test.mjs` pins it.
  */
 
-import { formatUnits, parseUnits } from "./dao-actions.ts";
+import { formatUnits, parseUnits } from "@creaton/core/launchpad/daoActions.ts";
 import {
   type FundingPhase,
   type FundingTermsView,
   feePercent,
   MAX_EXIT_FEE_BPS,
   unsoldOfTranche,
-} from "./funding-terms.ts";
+} from "@creaton/core/launchpad/fundingTerms.ts";
 
 const USDC_DECIMALS = 6;
 const DAY = 86_400;

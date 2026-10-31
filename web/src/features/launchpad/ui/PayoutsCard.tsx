@@ -1,12 +1,12 @@
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { defaultChainPreset, payoutsFactory } from "../chain-config";
-import { formatUnits } from "../lib/dao-actions";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import {
   encodeApplySplit,
   encodeDistribute,
   encodeWithdrawPayout,
-} from "../lib/payouts";
+} from "@creaton/core/launchpad/payouts.ts";
 import { useChainSend } from "../use-chain-send";
 import { PAYOUTS_QUERY, usePayouts } from "../use-payouts";
 import { FailureNote, WalletStrip } from "./account-widgets";

@@ -16,7 +16,7 @@ import { ServerImage } from "@/shared/ui/ServerImage";
 import { progressPercent } from "../chain";
 import { formatMoney } from "../lib/amounts";
 import { launchArt } from "../lib/launch-art";
-import { saleCurrencyFor } from "../lib/sale-currency";
+import { saleCurrencyFor } from "@creaton/core/launchpad/sale-currency.ts";
 import type { LaunchRecord, LaunchStage } from "../models";
 import type { ResolvedFunding } from "../lib/funding";
 import { FundingBadge, StageBadge, useAuctionProgress } from "./widgets";

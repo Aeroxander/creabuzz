@@ -13,8 +13,8 @@ import {
   encodeBidInRound,
   encodeSellInRound,
   type RoundGrid,
-} from "../lib/weekly-rounds";
-import { encodeApproveBounty } from "../lib/work-bounty";
+} from "@creaton/core/launchpad/weeklyRounds.ts";
+import { encodeApproveBounty } from "@creaton/core/launchpad/workBounty.ts";
 import type { RoundsWallet } from "../use-weekly-rounds";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;

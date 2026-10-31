@@ -35,8 +35,8 @@ import {
   idLabel,
   SIGNATURES,
   TOPIC_MANDATE_CREATED,
-} from "./work.ts";
-import type { WorkChain } from "./work-read.ts";
+} from "@creaton/core/launchpad/work.ts";
+import type { WorkChain } from "@creaton/core/launchpad/workRead.ts";
 
 export const MAX_BUDGETS = 32;
 const MAX_AWARDS = 500;

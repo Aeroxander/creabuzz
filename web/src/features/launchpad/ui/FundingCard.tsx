@@ -16,7 +16,7 @@ import {
 import {
   encodeFinishFunding,
   encodeOpenFundingRound,
-} from "../lib/weekly-rounds";
+} from "@creaton/core/launchpad/weeklyRounds.ts";
 import { useChainSend } from "../use-chain-send";
 import { FUNDING_QUERY, useFunding } from "../use-funding";
 import { FailureNote, WalletStrip } from "./account-widgets";

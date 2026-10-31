@@ -4,7 +4,7 @@ import test from "node:test";
 import { formatMoney, formatQ96PerToken } from "./amounts.ts";
 import { Q96 } from "./launch-params.ts";
 import { priceToQ96, unitsToPlain } from "./sale-plans.ts";
-import { ETH, usdcCurrency } from "./sale-currency.ts";
+import { ETH, usdcCurrency } from "@creaton/core/launchpad/sale-currency.ts";
 import { patchForPrice, patchForRaiseTarget } from "./wizard.ts";
 
 // The wizard's money maths for an ETH sale (18 decimals) — the same functions

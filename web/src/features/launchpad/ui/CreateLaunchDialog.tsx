@@ -24,7 +24,7 @@ import {
   ETH,
   saleCurrencyFor,
   type SaleCurrency,
-} from "../lib/sale-currency";
+} from "@creaton/core/launchpad/sale-currency.ts";
 import { describeSaleBlocks } from "../lib/time-blocks";
 import {
   budgetCapMessage,

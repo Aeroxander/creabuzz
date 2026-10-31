@@ -6,9 +6,9 @@ import { Link } from "@tanstack/react-router";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
-import type { DecisionDraft } from "../lib/dao-actions";
-import { formatUnits } from "../lib/dao-actions";
-import type { DecisionsSnapshot } from "../lib/decisions";
+import type { DecisionDraft } from "@creaton/core/launchpad/daoActions.ts";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
+import type { DecisionsSnapshot } from "@creaton/core/launchpad/decisions.ts";
 import { encodeOpenProposalWithAction } from "../lib/vote-tx";
 import type { PendingWords } from "../lib/pending-words";
 import type { Launch } from "../models";

@@ -17,7 +17,7 @@ import type { ReactNode } from "react";
 import { Input } from "@/shared/ui/input";
 import { isEvmAddress, type VestingConfig } from "../../models";
 import type { CreateLaunchInput } from "../../use-launches";
-import type { SaleCurrency } from "../../lib/sale-currency";
+import type { SaleCurrency } from "@creaton/core/launchpad/sale-currency.ts";
 import type { FundingStatus } from "../../lib/funding";
 import type { VestingIssue } from "../../lib/vesting-params";
 import { effectiveLaunchId } from "../../lib/wizard";

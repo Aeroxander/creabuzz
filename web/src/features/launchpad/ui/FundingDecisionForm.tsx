@@ -30,9 +30,13 @@ import {
   publishFundingDecision,
   readFundingTerms,
   watchAssetsDecision,
-} from "../lib/funding-terms";
+} from "@creaton/core/launchpad/fundingTerms.ts";
 import { weeklyRounds } from "../chain-config";
-import { decodeAddress, decodeWord, encodeCall0 } from "../lib/work";
+import {
+  decodeAddress,
+  decodeWord,
+  encodeCall0,
+} from "@creaton/core/launchpad/work.ts";
 import { endpointChain } from "../use-work";
 import { SelectField, TextField } from "./decision-fields";
 import {

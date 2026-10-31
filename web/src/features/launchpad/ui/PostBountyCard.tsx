@@ -19,7 +19,7 @@ import {
   type PostBounties,
   postBountyStage,
   walletCan,
-} from "../lib/open-bounty";
+} from "@creaton/core/launchpad/openBounty.ts";
 import {
   claimShareLine,
   claimsInOrder,
@@ -30,11 +30,14 @@ import { defaultChainPreset } from "../chain-config";
 import { useChainSend } from "../use-chain-send";
 import { POST_BOUNTY_QUERY, usePostBounties } from "../use-post-bounties";
 import { useWalletLabels } from "../use-wallet-labels";
-import { encodeApproveBounty } from "../lib/work-bounty";
+import { encodeApproveBounty } from "@creaton/core/launchpad/workBounty.ts";
 import { FailureNote, WalletStrip } from "./account-widgets";
 import { Person } from "./Face";
 import { ForecastPanel } from "./ForecastPanel";
-import { postBountyQuestion, questionOf } from "../lib/forecast";
+import {
+  postBountyQuestion,
+  questionOf,
+} from "@creaton/core/launchpad/forecast.ts";
 import {
   AddMoneyForm,
   OpenPostBountyForm,

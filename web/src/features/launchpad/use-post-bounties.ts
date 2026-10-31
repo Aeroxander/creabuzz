@@ -4,7 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getRpcEndpoint } from "./chain";
 import { defaultChainPreset, openBounty } from "./chain-config";
-import { readPostBounties, readPostBountyIndex } from "./lib/open-bounty";
+import {
+  readPostBounties,
+  readPostBountyIndex,
+} from "@creaton/core/launchpad/openBounty.ts";
 import { endpointChain } from "./use-work";
 
 const keccakText = (text: string) =>

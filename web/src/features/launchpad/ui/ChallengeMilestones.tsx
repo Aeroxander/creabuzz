@@ -24,10 +24,10 @@ import {
   span,
 } from "../lib/challenge-copy";
 import { challengeEvidenceFor } from "../lib/challenge-evidence";
-import type { ChallengeLockView } from "../lib/milestone-challenge";
+import type { ChallengeLockView } from "@creaton/core/launchpad/milestoneChallenge.ts";
 import { plannedMilestoneTokens } from "../lib/milestone-plan";
 import { formatShares } from "../lib/shares-format";
-import { hashText } from "../lib/work";
+import { hashText } from "@creaton/core/launchpad/work.ts";
 import type { Launch } from "../models";
 import { type LockState, useChallengeViewers } from "../use-challenge-lock";
 import { useChallengeActions } from "../use-challenge-actions";

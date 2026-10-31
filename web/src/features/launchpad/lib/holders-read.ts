@@ -14,15 +14,18 @@
  */
 
 import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
-import { LOCK_SIGNATURES, readMilestoneLock } from "./milestone-lock.ts";
+import {
+  LOCK_SIGNATURES,
+  readMilestoneLock,
+} from "@creaton/core/launchpad/milestoneLock.ts";
 import {
   decodeAddress,
   decodeWord,
   encodeCall0,
   SIGNATURES,
   topicOf,
-} from "./work.ts";
-import type { WorkChain } from "./work-read.ts";
+} from "@creaton/core/launchpad/work.ts";
+import type { WorkChain } from "@creaton/core/launchpad/workRead.ts";
 
 const ZERO_ADDRESS = `0x${"0".repeat(40)}`;
 const TOPIC_TRANSFER = topicOf("Transfer(address,address,uint256)");

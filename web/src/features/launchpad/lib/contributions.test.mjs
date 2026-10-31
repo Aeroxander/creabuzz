@@ -8,7 +8,7 @@ import {
   TOPIC_CONTRIBUTION_CONSUMED,
   TOPIC_TRANSFER,
 } from "./contributions.ts";
-import { TOPIC_MANDATE_CREATED, idWord } from "./work.ts";
+import { TOPIC_MANDATE_CREATED, idWord } from "@creaton/core/launchpad/work.ts";
 
 const a = (byte) => `0x${byte.repeat(20)}`;
 const word = (hex) => `0x${hex.replace(/^0x/, "").padStart(64, "0")}`;

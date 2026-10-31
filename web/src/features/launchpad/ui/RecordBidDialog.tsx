@@ -32,7 +32,7 @@ import {
   toAtomic,
 } from "../lib/amounts";
 import { floorPricePerToken } from "../lib/launch-params";
-import { priceFormat } from "../lib/sale-currency";
+import { priceFormat } from "@creaton/core/launchpad/sale-currency.ts";
 import { priceToAtomic, priceToQ96, unitsToPlain } from "../lib/sale-plans";
 import { TX_HASH_RE } from "../lib/milestone-receipt";
 import type { LaunchRecord } from "../models";

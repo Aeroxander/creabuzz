@@ -12,7 +12,7 @@ import {
   decodeVotingSupport,
   votingRulesSummary,
   votingRuleWatch,
-} from "./voting-allocation.ts";
+} from "@creaton/core/launchpad/voting-allocation.ts";
 import {
   encodeCastVote,
   encodeCastVoteFor,

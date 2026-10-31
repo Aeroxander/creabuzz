@@ -3,8 +3,12 @@
  * `court-copy.test.mjs` pins it.
  */
 
-import { type CourtCase, MAX_ROUNDS, periodEnds } from "./court.ts";
-import { formatUnits } from "./dao-actions.ts";
+import {
+  type CourtCase,
+  MAX_ROUNDS,
+  periodEnds,
+} from "@creaton/core/launchpad/court.ts";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 
 /** What kind of case it is: by the contract that asked the court. */
 export type CaseKind = "bounty" | "remix" | "other";

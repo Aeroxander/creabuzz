@@ -16,7 +16,7 @@ import { ScrollText } from "lucide-react";
 import { TONE_CLASS } from "@/features/board/ui/status-tone";
 import { Button } from "@/shared/ui/button";
 
-import { formatUnits } from "../lib/dao-actions";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import { daoOfLaunch } from "../lib/dao-of-launch";
 import type { DecisionLink } from "../lib/decision-link";
 import { describeDecision } from "../lib/decision-describe";

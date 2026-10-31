@@ -3,9 +3,12 @@ import { useMemo } from "react";
 
 import { getRpcEndpoint } from "./chain";
 import { readExecutions } from "./lib/payment-history";
-import { type SpendingSummary, summariseSpending } from "./lib/spending";
-import type { DecisionsSnapshot } from "./lib/decisions";
-import type { WorkSnapshot } from "./lib/work-read";
+import {
+  type SpendingSummary,
+  summariseSpending,
+} from "@creaton/core/launchpad/spending.ts";
+import type { DecisionsSnapshot } from "@creaton/core/launchpad/decisions.ts";
+import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import { useWalletLabels } from "./use-wallet-labels";
 import { recordChain } from "./use-work";
 

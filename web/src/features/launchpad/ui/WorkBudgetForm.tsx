@@ -7,8 +7,8 @@ import {
   DecisionInputError,
   mandateDecision,
   parseUnits,
-} from "../lib/dao-actions";
-import { decodeWord } from "../lib/work";
+} from "@creaton/core/launchpad/daoActions.ts";
+import { decodeWord } from "@creaton/core/launchpad/work.ts";
 import { useShareRules } from "../use-share-rules";
 import { useWalletLabels } from "../use-wallet-labels";
 import {

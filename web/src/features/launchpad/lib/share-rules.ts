@@ -9,12 +9,12 @@
  * Pure apart from the injected `call`: `share-rules.test.mjs` drives it with a fake chain.
  */
 
-import { formatUnits } from "./dao-actions.ts";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import {
   type issuanceAllowance,
   SHARE_RULE_SIGNATURES,
   type ShareRules,
-} from "./trading-actions.ts";
+} from "@creaton/core/launchpad/tradingActions.ts";
 import { selectorOf } from "@creaton/core/launchpad/evmAbi.ts";
 
 const TOTAL_SUPPLY = "0x18160ddd";

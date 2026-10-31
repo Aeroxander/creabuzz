@@ -11,7 +11,7 @@ import { Card } from "@/shared/ui/card";
 
 import { recordSaleCurrency } from "../chain";
 import type { DaoBinding } from "../lib/org-money";
-import { formatUnits } from "../lib/dao-actions";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import type { Launch } from "../models";
 import { useActingAccount } from "../use-acting-account";
 import { useDaoHoldings } from "../use-dao-holdings";

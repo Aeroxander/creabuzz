@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { selectorOf } from "@creaton/core/launchpad/evmAbi.ts";
 
-import { LOCK_SIGNATURES } from "../../launchpad/lib/milestone-lock.ts";
+import { LOCK_SIGNATURES } from "@creaton/core/launchpad/milestoneLock.ts";
 import { describeAge, readHoldings } from "./holdings.ts";
 
 const DAO = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

@@ -1,5 +1,5 @@
 import { formatAtomic } from "../lib/amounts";
-import type { MandateView } from "../lib/work-read";
+import type { MandateView } from "@creaton/core/launchpad/workRead.ts";
 import { Meter } from "@/shared/ui/meter";
 import { Person } from "./Face";
 

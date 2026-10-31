@@ -1,4 +1,4 @@
-import { CHALLENGE_DEFAULTS } from "../lib/dao-launch";
+import { CHALLENGE_DEFAULTS } from "@creaton/core/launchpad/daoLaunch.ts";
 import { span } from "../lib/challenge-copy";
 import { formatAtomic } from "../lib/amounts";
 import {

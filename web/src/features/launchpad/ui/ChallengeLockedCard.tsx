@@ -1,9 +1,9 @@
 import { Card } from "@/shared/ui/card";
 
 import { CHALLENGE_STAGE_LABEL } from "../lib/challenge-copy";
-import type { ChallengeLockView } from "../lib/milestone-challenge";
+import type { ChallengeLockView } from "@creaton/core/launchpad/milestoneChallenge.ts";
 import { formatShares } from "../lib/shares-format";
-import { hashText } from "../lib/work";
+import { hashText } from "@creaton/core/launchpad/work.ts";
 import type { Launch } from "../models";
 
 /**

@@ -6,7 +6,7 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import type { Launch } from "../models";
 import { useChallengeLock } from "../use-challenge-lock";
-import { hashText } from "../lib/work";
+import { hashText } from "@creaton/core/launchpad/work.ts";
 
 /** The project-first bridge from the next delivery to work, people, agents and money. */
 export function ProjectDeliveryOverview({

@@ -9,15 +9,18 @@ import {
   remixBonds,
 } from "./chain-config";
 import { TOPIC_CONTRIBUTOR_LAUNCHED } from "./lib/contributor-status";
-import { readRemixBond } from "./lib/remix-bond";
+import { readRemixBond } from "@creaton/core/launchpad/remixBond.ts";
 import {
   addressTopic,
   decodeAddress,
   decodeWord,
   encodeCall0,
-} from "./lib/work";
+} from "@creaton/core/launchpad/work.ts";
 import type { Launch } from "./models";
-import { encodeAllowance, encodeBalanceOf } from "./lib/work-bounty";
+import {
+  encodeAllowance,
+  encodeBalanceOf,
+} from "@creaton/core/launchpad/workBounty.ts";
 import { endpointChain } from "./use-work";
 
 /** Where every query about remix bonds lives, so a step sent from one re-reads them all. */

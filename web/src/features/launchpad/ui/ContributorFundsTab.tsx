@@ -18,7 +18,7 @@ import { Card } from "@/shared/ui/card";
 
 import { ethGetBalance, erc20BalanceOf, getRpcEndpoint } from "../chain";
 import { localUsdcAddress } from "../chain-config";
-import { formatUnits } from "../lib/dao-actions";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import { delegateChoices } from "../lib/delegate-choices";
 import type { DaoBinding } from "../lib/org-money";
 import { pubkeysToName } from "../lib/record-people";

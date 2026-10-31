@@ -49,7 +49,7 @@ import {
 } from "../lib/ragequit-flow";
 import type { FlowReceipt } from "../lib/exit-flow";
 import { buildRagequitTx, ETH_TOKEN } from "../lib/ragequit-tx";
-import { feePercent } from "../lib/funding-terms";
+import { feePercent } from "@creaton/core/launchpad/fundingTerms.ts";
 import {
   exitDenominator,
   exitPaysNothing,

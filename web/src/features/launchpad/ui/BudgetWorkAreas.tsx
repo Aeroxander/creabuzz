@@ -2,10 +2,13 @@ import { Chip } from "@/shared/ui/chip";
 import { Meter } from "@/shared/ui/meter";
 
 import { formatAtomic } from "../lib/amounts";
-import { idLabel } from "../lib/work";
+import { idLabel } from "@creaton/core/launchpad/work.ts";
 import { shortNameBeside, workTitle } from "../lib/work-titles";
-import type { WorkBounties } from "../lib/work-bounty";
-import type { MandateView, ProjectView } from "../lib/work-read";
+import type { WorkBounties } from "@creaton/core/launchpad/workBounty.ts";
+import type {
+  MandateView,
+  ProjectView,
+} from "@creaton/core/launchpad/workRead.ts";
 import { Person } from "./Face";
 import { WorkAreaBounties } from "./WorkAreaBounties";
 import { ShortName } from "./ShortName";

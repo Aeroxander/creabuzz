@@ -17,7 +17,7 @@ import {
   parseQuestion,
   readPostBountyQuestion,
   readWorkBountyQuestion,
-} from "./lib/forecast";
+} from "@creaton/core/launchpad/forecast.ts";
 import { endpointChain } from "./use-work";
 
 /** At most this many forecasts are read for one question, and this many questions for one person's record. */

@@ -13,7 +13,7 @@ import { Card } from "@/shared/ui/card";
 
 import { clearingPrice, getRpcEndpoint } from "../chain";
 import { formatPrice, q96ToPrice } from "../lib/candles";
-import { saleCurrencyFor } from "../lib/sale-currency";
+import { saleCurrencyFor } from "@creaton/core/launchpad/sale-currency.ts";
 import type { Launch } from "../models";
 
 export function SalePriceCard({ launch }: { launch: Launch }) {

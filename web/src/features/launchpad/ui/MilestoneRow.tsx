@@ -19,8 +19,8 @@ import {
   submissionKey,
   type SubmitStep,
 } from "../lib/milestone-submission";
-import { encodeUnlock } from "../lib/milestone-lock";
-import type { MilestoneTranche } from "../lib/milestone-lock";
+import { encodeUnlock } from "@creaton/core/launchpad/milestoneLock.ts";
+import type { MilestoneTranche } from "@creaton/core/launchpad/milestoneLock.ts";
 import {
   claimForMilestone,
   MILESTONE_STEPS,
@@ -36,8 +36,8 @@ import {
   idLabel,
   idWord,
   SIGNATURES,
-} from "../lib/work";
-import type { WorkSnapshot } from "../lib/work-read";
+} from "@creaton/core/launchpad/work.ts";
+import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import type { Launch } from "../models";
 import { useEvidencePackets } from "../use-evidence";
 import { usePublishMirror } from "../use-launches";

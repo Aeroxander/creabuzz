@@ -4,15 +4,15 @@ import { useId, useState } from "react";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { defaultChainPreset } from "../chain-config";
-import { formatUnits, parseUnits } from "../lib/dao-actions";
+import { formatUnits, parseUnits } from "@creaton/core/launchpad/daoActions.ts";
 import {
   bondActions,
   encodeOpenBondCase,
   encodePayParent,
   encodePostBond,
   encodeReleaseBond,
-} from "../lib/remix-bond";
-import { encodeApproveBounty } from "../lib/work-bounty";
+} from "@creaton/core/launchpad/remixBond.ts";
+import { encodeApproveBounty } from "@creaton/core/launchpad/workBounty.ts";
 import type { Launch } from "../models";
 import { useChainSend } from "../use-chain-send";
 import { REMIX_BOND_QUERY, useRemixBond } from "../use-remix-bond";

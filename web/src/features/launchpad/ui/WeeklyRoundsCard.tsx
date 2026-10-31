@@ -30,7 +30,7 @@ import {
   type RoundHistory,
   type RoundView,
   SETTLE_WINDOW,
-} from "../lib/weekly-rounds";
+} from "@creaton/core/launchpad/weeklyRounds.ts";
 import { useChainSend } from "../use-chain-send";
 import {
   type RoundsWallet,

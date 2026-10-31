@@ -14,7 +14,10 @@ import { Card } from "@/shared/ui/card";
 
 import { formatAtomic } from "../lib/amounts";
 import type { Execution } from "../lib/payment-history";
-import { type SpendingSummary, spendingHeadline } from "../lib/spending";
+import {
+  type SpendingSummary,
+  spendingHeadline,
+} from "@creaton/core/launchpad/spending.ts";
 import { paidOn, TxLink } from "./TxLink";
 
 const MOST_SHOWN = 5;

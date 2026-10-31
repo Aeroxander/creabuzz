@@ -5,7 +5,7 @@ import { useLaunches } from "@/features/launchpad/use-launches";
 import { launchCoordinate } from "@/features/launchpad/models";
 import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { ethChainId, getRpcEndpoint } from "@/features/launchpad/chain";
-import { claimStatusLabel } from "@/features/launchpad/lib/work";
+import { claimStatusLabel } from "@creaton/core/launchpad/work.ts";
 import { workQuery } from "@/features/launchpad/use-work";
 import { useWalletLabels } from "@/features/launchpad/use-wallet-labels";
 import { Button } from "@/shared/ui/button";

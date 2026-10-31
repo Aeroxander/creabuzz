@@ -3,7 +3,10 @@
  * tests agree on what each stage means; the amounts, dates and names come formatted from the caller.
  */
 
-import type { BountyRecord, BountyStage } from "./work-bounty.ts";
+import type {
+  BountyRecord,
+  BountyStage,
+} from "@creaton/core/launchpad/workBounty.ts";
 
 export interface BountyWords {
   money: (units: bigint) => string;

@@ -9,13 +9,13 @@ import { useMemo, useState } from "react";
 import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
 import { getRpcEndpoint } from "../chain";
 import { localUsdcAddress, payoutsFactory } from "../chain-config";
-import { parseUnits } from "../lib/dao-actions";
+import { parseUnits } from "@creaton/core/launchpad/daoActions.ts";
 import {
   declarePayoutDecision,
   encodePredictPayouts,
   startPayoutsDecision,
-} from "../lib/payouts";
-import { decodeAddress } from "../lib/work";
+} from "@creaton/core/launchpad/payouts.ts";
+import { decodeAddress } from "@creaton/core/launchpad/work.ts";
 import { usePayouts } from "../use-payouts";
 import { endpointChain } from "../use-work";
 import { TextField } from "./decision-fields";

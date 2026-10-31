@@ -27,7 +27,7 @@ import {
   SELECTOR_MIN_SCORE,
   SELECTOR_SCORE_ROOT,
   type BundleEntry,
-} from "../lib/trust-gate";
+} from "@creaton/core/launchpad/trust-gate.ts";
 import {
   resolveSender,
   senderErrorMessage,

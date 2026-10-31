@@ -12,7 +12,7 @@ import {
   MAX_REASON,
   middleForecast,
   type QuestionState,
-} from "../lib/forecast";
+} from "@creaton/core/launchpad/forecast.ts";
 import { useForecasts } from "../use-forecasts";
 import { usePeopleWithWallets } from "../use-people";
 import { Person } from "./Face";

@@ -2,9 +2,16 @@ import { useQuery } from "@tanstack/react-query";
 import { keepIfSame } from "./keep-previous";
 
 import { ethCall, ethTransactionInput, getRpcEndpoint } from "./chain";
-import { type DecisionChain, readDecisions } from "./lib/decisions";
-import { readFundingContract } from "./lib/funding-terms";
-import { decodeAddress, encodeCall0, SIGNATURES } from "./lib/work";
+import {
+  type DecisionChain,
+  readDecisions,
+} from "@creaton/core/launchpad/decisions.ts";
+import { readFundingContract } from "@creaton/core/launchpad/fundingTerms.ts";
+import {
+  decodeAddress,
+  encodeCall0,
+  SIGNATURES,
+} from "@creaton/core/launchpad/work.ts";
 import { endpointChain } from "./use-work";
 
 /** The configured RPC endpoint as the decisions reader's chain: the work reader's, plus a transaction's calldata. */

@@ -13,10 +13,14 @@ import {
   readMilestoneLock,
   type MilestoneLockView,
   type UnlockOffer,
-} from "./lib/milestone-lock";
+} from "@creaton/core/launchpad/milestoneLock.ts";
 import { readHolders } from "./lib/holders-read";
 import { readRecordEvents, type RecordChain } from "./lib/record-read";
-import { readWork, type WorkChain, type WorkSnapshot } from "./lib/work-read";
+import {
+  readWork,
+  type WorkChain,
+  type WorkSnapshot,
+} from "@creaton/core/launchpad/workRead.ts";
 
 /** The configured RPC endpoint as the reader's chain: whole-history log reads for one address and topic filter. */
 export function endpointChain(

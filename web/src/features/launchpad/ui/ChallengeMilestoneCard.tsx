@@ -28,7 +28,7 @@ import {
   type ChallengeLockView,
   type ChallengeMilestone,
   objectionCarries,
-} from "../lib/milestone-challenge";
+} from "@creaton/core/launchpad/milestoneChallenge.ts";
 import { Linked } from "./EvidenceBlock";
 
 export interface ChallengeCardHandlers {

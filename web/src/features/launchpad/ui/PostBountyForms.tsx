@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { deadlineFromDate, defaultDeadlineDate } from "../lib/bounty-copy";
-import { parseUnits } from "../lib/dao-actions";
+import { parseUnits } from "@creaton/core/launchpad/daoActions.ts";
 import { addMoneyLine } from "../lib/post-bounty-copy";
 import {
   encodeFileClaim,
@@ -11,8 +11,8 @@ import {
   encodeOpenPostBounty,
   MAX_LENGTH,
   MAX_TEXT,
-} from "../lib/open-bounty";
-import { encodeApproveBounty } from "../lib/work-bounty";
+} from "@creaton/core/launchpad/openBounty.ts";
+import { encodeApproveBounty } from "@creaton/core/launchpad/workBounty.ts";
 import { UnauditedNotice } from "./UnauditedNotice";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;

@@ -15,7 +15,10 @@
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
-import { type ShareRules, UNLOCK_NOTICE } from "./trading-actions.ts";
+import {
+  type ShareRules,
+  UNLOCK_NOTICE,
+} from "@creaton/core/launchpad/tradingActions.ts";
 
 /**
  * `ContributorProjectLaunched(address indexed founder, address indexed dao, address indexed budget, bytes32 salt,

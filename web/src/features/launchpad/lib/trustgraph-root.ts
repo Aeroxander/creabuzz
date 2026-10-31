@@ -21,7 +21,7 @@ import {
   combineNodeBytes,
   merkleLevels,
   scoreLeafBytes,
-} from "./trust-score.ts";
+} from "@creaton/core/launchpad/trust-score.ts";
 
 /** The canonical program id the launchpad's community track reads. */
 export const DEFAULT_PROGRAM = "trustgraphs.output.nostr-member.v1";

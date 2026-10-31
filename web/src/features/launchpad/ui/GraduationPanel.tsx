@@ -10,13 +10,13 @@ import {
   graduationReadinessText,
   graduationStepStatusText,
   stepMarker,
-} from "../lib/auction-copy";
-import { DEFAULT_RESERVE_BPS } from "../lib/auctionFlow";
-import { GRADUATION_STEPS } from "../lib/graduationFlow";
+} from "@creaton/core/launchpad/auction-copy.ts";
+import { DEFAULT_RESERVE_BPS } from "@creaton/core/launchpad/auctionFlow.ts";
+import { GRADUATION_STEPS } from "@creaton/core/launchpad/graduationFlow.ts";
 import {
   GRADUATION_TX_HASH_RE,
   graduationTxStore,
-} from "../lib/graduation-progress";
+} from "@creaton/core/launchpad/graduation-progress.ts";
 import type { Launch } from "../models";
 import { useGraduationFlow } from "../use-auction-flow";
 import { useConnectedWallet } from "../use-connected-wallet";

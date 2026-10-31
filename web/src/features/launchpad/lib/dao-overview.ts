@@ -13,15 +13,18 @@ import {
   decodeParameters,
   selectorOf,
 } from "@creaton/core/launchpad/evmAbi.ts";
-import type { Decision, DecisionsSnapshot } from "./decisions.ts";
+import type {
+  Decision,
+  DecisionsSnapshot,
+} from "@creaton/core/launchpad/decisions.ts";
 import {
   canAcceptClaim,
   canExpire,
   claimStep,
   nextStep,
   type ClaimView,
-} from "./work.ts";
-import type { WorkSnapshot } from "./work-read.ts";
+} from "@creaton/core/launchpad/work.ts";
+import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import { workTitle } from "./work-titles.ts";
 
 /** The tab that holds the answer. */

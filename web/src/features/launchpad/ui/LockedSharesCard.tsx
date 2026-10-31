@@ -1,7 +1,7 @@
 import { Card } from "@/shared/ui/card";
 import { formatAtomic } from "../lib/amounts";
-import { hashText } from "../lib/work";
-import type { WorkSnapshot } from "../lib/work-read";
+import { hashText } from "@creaton/core/launchpad/work.ts";
+import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import type { Launch } from "../models";
 import type { MilestoneLockState } from "../use-work";
 import { MilestoneRow } from "./MilestoneRow";

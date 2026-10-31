@@ -7,7 +7,7 @@
  */
 
 import type { AttentionItem } from "./dao-overview.ts";
-import type { ChallengeLockView } from "./milestone-challenge.ts";
+import type { ChallengeLockView } from "@creaton/core/launchpad/milestoneChallenge.ts";
 
 const date = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString("en-US", {

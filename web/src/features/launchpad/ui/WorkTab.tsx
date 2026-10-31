@@ -34,8 +34,8 @@ import {
   idLabel,
   claimStep,
   SIGNATURES,
-} from "../lib/work";
-import type { MandateView } from "../lib/work-read";
+} from "@creaton/core/launchpad/work.ts";
+import type { MandateView } from "@creaton/core/launchpad/workRead.ts";
 import type { Launch } from "../models";
 import type { SenderCall } from "@/features/identity/lib/sponsoredSender";
 import { usePublishMirror } from "../use-launches";
@@ -63,7 +63,7 @@ import { FileClaimCard } from "./FileClaimCard";
 import { ChallengeLockedCard } from "./ChallengeLockedCard";
 import { LockedSharesCard } from "./LockedSharesCard";
 import { AllowanceNote } from "./AllowanceNote";
-import type { WorkBounties } from "../lib/work-bounty";
+import type { WorkBounties } from "@creaton/core/launchpad/workBounty.ts";
 import { useWorkBounties } from "../use-work-bounties";
 import { WorkAreaBounties } from "./WorkAreaBounties";
 import { HowItWorks } from "./HowItWorks";

@@ -19,7 +19,7 @@ import {
   storyFor,
   storyKey,
 } from "../lib/contribution-story";
-import { formatUnits } from "../lib/dao-actions";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import type { ContributionAward } from "../lib/contributions";
 import { isContributorProject } from "../lib/funding";
 import { testRecordsNotice } from "../lib/test-network";
@@ -32,7 +32,7 @@ import { useRecordEvents, useWork } from "../use-work";
 import { type ClaimReview, useReviewReasons } from "../use-review-reasons";
 import { readableName, workTitle } from "../lib/work-titles";
 import { useWorkTitles } from "../use-work-titles";
-import type { WorkSnapshot } from "../lib/work-read";
+import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import { ClaimReviewNote } from "./ClaimReviewNote";
 import { paidOn, TxLink } from "./TxLink";
 import { VoteControlNote } from "./VoteControlNote";

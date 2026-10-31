@@ -9,7 +9,7 @@ import {
   type AgentStopEvent,
   type AgentStopRecord,
   type AgentStopReport,
-} from "./agentStopSequence.ts";
+} from "@creaton/core/org/agentStop.ts";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { publishEvent } from "@/shared/lib/publish-event";
 import { relayWsUrl } from "@/shared/lib/relay-url";

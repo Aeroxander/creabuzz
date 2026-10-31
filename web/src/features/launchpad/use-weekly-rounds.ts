@@ -16,9 +16,12 @@ import {
   readOpenClaims,
   readRoundHistory,
   readRounds,
-} from "./lib/weekly-rounds";
-import { decodeWord } from "./lib/work";
-import { encodeAllowance, encodeBalanceOf } from "./lib/work-bounty";
+} from "@creaton/core/launchpad/weeklyRounds.ts";
+import { decodeWord } from "@creaton/core/launchpad/work.ts";
+import {
+  encodeAllowance,
+  encodeBalanceOf,
+} from "@creaton/core/launchpad/workBounty.ts";
 import { endpointChain } from "./use-work";
 
 /** Where every query about weekly rounds lives, so a step sent from one re-reads them all. */

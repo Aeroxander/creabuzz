@@ -13,7 +13,7 @@ import {
   type ChallengeLockView,
   findChallengeLock,
   readChallengeVoter,
-} from "./lib/milestone-challenge";
+} from "@creaton/core/launchpad/milestoneChallenge.ts";
 import { endpointChain } from "./use-work";
 
 /** Every read about a milestone lock lives under this key, so one call re-reads them all. */

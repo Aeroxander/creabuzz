@@ -4,7 +4,7 @@ import { getRpcEndpoint } from "./chain";
 import type { RecordEvents } from "./lib/record-read";
 import { runway } from "./lib/runway";
 import { readRunwayInputs } from "./lib/runway-read";
-import type { WorkSnapshot } from "./lib/work-read";
+import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import { recordChain } from "./use-work";
 
 /**

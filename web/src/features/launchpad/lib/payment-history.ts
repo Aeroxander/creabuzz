@@ -7,7 +7,7 @@
  * `node --test`.
  */
 
-import { topicOf } from "./work.ts";
+import { topicOf } from "@creaton/core/launchpad/work.ts";
 
 /** `Executed(uint256 indexed id, address indexed by, uint8 op, address to, uint256 value)` on the DAO. */
 export const TOPIC_EXECUTED = topicOf(

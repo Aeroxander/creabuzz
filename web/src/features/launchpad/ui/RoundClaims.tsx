@@ -1,5 +1,8 @@
 import { Button } from "@/shared/ui/button";
-import { encodeClaimRound, type OpenClaim } from "../lib/weekly-rounds";
+import {
+  encodeClaimRound,
+  type OpenClaim,
+} from "@creaton/core/launchpad/weeklyRounds.ts";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;
 

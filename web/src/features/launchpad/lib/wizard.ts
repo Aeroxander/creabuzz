@@ -46,7 +46,7 @@ import {
   DEFAULT_PERFORMANCE_TRANCHES,
   validateVesting,
 } from "./vesting-params.ts";
-import { saleCurrencyFor } from "./sale-currency.ts";
+import { saleCurrencyFor } from "@creaton/core/launchpad/sale-currency.ts";
 import {
   durationSecondsFor,
   floorFromPrice,

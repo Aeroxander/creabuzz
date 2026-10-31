@@ -7,7 +7,7 @@ import {
   getRpcEndpoint,
   localUsdcAddress,
 } from "./chain";
-import { usdcAddress } from "./lib/sale-currency";
+import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
 import type { MoneyHeld } from "./lib/send-money";
 
 export const ACCOUNT_MONEY_QUERY = ["launchpad", "account-money"] as const;

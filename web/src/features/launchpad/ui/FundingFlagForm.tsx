@@ -9,7 +9,7 @@ import { useId, useState } from "react";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { MoreInfo } from "@/shared/ui/more-info";
-import { encodeFlagToken } from "../lib/funding-terms";
+import { encodeFlagToken } from "@creaton/core/launchpad/fundingTerms.ts";
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 

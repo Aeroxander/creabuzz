@@ -14,14 +14,14 @@ import {
   parseUnits,
   payDecision,
   projectDecision,
-} from "../lib/dao-actions";
-import { decodeWord } from "../lib/work";
+} from "@creaton/core/launchpad/daoActions.ts";
+import { decodeWord } from "@creaton/core/launchpad/work.ts";
 import { readableQuotes, workTitle } from "../lib/work-titles";
 
 /** The work area name's rule, said the same way as the check that refuses a longer one. */
 const WORK_AREA_NAME_HINT = "A short name, up to 32 characters.";
-import type { WorkSnapshot } from "../lib/work-read";
-import type { DecisionsSnapshot } from "../lib/decisions";
+import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
+import type { DecisionsSnapshot } from "@creaton/core/launchpad/decisions.ts";
 import { awardsUnderVote } from "../lib/dao-overview";
 import { useAllowance } from "./AllowanceNote";
 import {

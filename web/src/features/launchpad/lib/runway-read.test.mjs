@@ -5,8 +5,8 @@ import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
 import { TOPIC_TRANSFER } from "./contributions.ts";
 import { claimKey } from "./record-read.ts";
 import { MAX_RUNWAY_LOGS, readRunwayInputs } from "./runway-read.ts";
-import { encodeBalanceOf } from "./work-bounty.ts";
-import { addressTopic, encodeCall0 } from "./work.ts";
+import { encodeBalanceOf } from "@creaton/core/launchpad/workBounty.ts";
+import { addressTopic, encodeCall0 } from "@creaton/core/launchpad/work.ts";
 
 const word = (v) => BigInt(v).toString(16).padStart(64, "0");
 const DAO = `0x${"d0".repeat(20)}`;

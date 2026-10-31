@@ -8,7 +8,7 @@
 import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
 
 import type { SenderCall } from "../../identity/lib/sponsoredSender.ts";
-import { formatUnits, parseUnits } from "./dao-actions.ts";
+import { formatUnits, parseUnits } from "@creaton/core/launchpad/daoActions.ts";
 
 /** Money the account holds of one kind. `token` is null for ETH. */
 export interface MoneyHeld {

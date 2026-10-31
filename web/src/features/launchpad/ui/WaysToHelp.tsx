@@ -15,7 +15,7 @@ import { Card } from "@/shared/ui/card";
 import { Chip } from "@/shared/ui/chip";
 import { Meter } from "@/shared/ui/meter";
 
-import { formatUnits } from "../lib/dao-actions";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import type { OpenWorkArea } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { useTakingSlot } from "./TakeOnWork";

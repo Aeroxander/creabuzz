@@ -11,7 +11,7 @@
  */
 
 import type { RecordEvents } from "./record-read.ts";
-import type { WorkSnapshot } from "./work-read.ts";
+import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 
 export interface PersonWallet {
   /** The person's key on this server. */

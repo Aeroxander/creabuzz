@@ -20,7 +20,7 @@ import {
   MAX_NOW,
   type NotDoingItem,
   takersByArea,
-} from "../lib/project-structure";
+} from "@creaton/core/launchpad/projectStructure.ts";
 import type { OpenWorkArea } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { useProjectFocus, useTakenOn } from "../use-project-structure";

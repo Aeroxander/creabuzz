@@ -14,7 +14,7 @@
  */
 
 import { type EvidencePacket, evidenceFor } from "./evidence.ts";
-import type { ClaimView } from "./work.ts";
+import type { ClaimView } from "@creaton/core/launchpad/work.ts";
 
 /**
  * How far the contributor's evidence could be checked: `verified` (it is the evidence the claim committed to),

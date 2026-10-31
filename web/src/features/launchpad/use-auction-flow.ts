@@ -28,9 +28,15 @@ import {
   getRpcEndpoint,
   isContractDeployed,
 } from "./chain";
-import { auctionErrorMessage, type AuctionEffects } from "./lib/auctionFlow";
-import { makeGenerationFence, settleIfCurrent } from "./lib/deploy-progress";
-import { buildGraduationCall } from "./lib/evmCalls";
+import {
+  auctionErrorMessage,
+  type AuctionEffects,
+} from "@creaton/core/launchpad/auctionFlow.ts";
+import {
+  makeGenerationFence,
+  settleIfCurrent,
+} from "@creaton/core/launchpad/deploy-progress.ts";
+import { buildGraduationCall } from "@creaton/core/launchpad/evmCalls.ts";
 import {
   buildGraduationsView,
   checkGraduationReadiness,
@@ -46,7 +52,7 @@ import {
   type GraduationReadiness,
   type GraduationRetryPlan,
   type GraduationStepId,
-} from "./lib/graduationFlow";
+} from "@creaton/core/launchpad/graduationFlow.ts";
 import { makeWalletAuctionEffects } from "./lib/wallet-effects";
 import type { Eip1193ProviderLike } from "./lib/wallet-sender";
 

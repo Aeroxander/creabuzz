@@ -8,8 +8,11 @@
 
 import { Button } from "@/shared/ui/button";
 
-import { encodeRequestUnbond, encodeWithdraw } from "../lib/work";
-import type { MandateView } from "../lib/work-read";
+import {
+  encodeRequestUnbond,
+  encodeWithdraw,
+} from "@creaton/core/launchpad/work.ts";
+import type { MandateView } from "@creaton/core/launchpad/workRead.ts";
 
 const day = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString("en-US", {

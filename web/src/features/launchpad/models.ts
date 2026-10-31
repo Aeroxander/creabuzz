@@ -4,7 +4,7 @@ import type { NostrEvent } from "@/shared/lib/nostr-client";
 // Extension included on purpose: this module is driven by `models.test.mjs`
 // under `node --test`, which does not resolve extensionless specifiers.
 import { parseAllocation, type SupplyAllocation } from "./lib/allocation.ts";
-import { parseWikiTag } from "./lib/draft-proposal.ts";
+import { parseWikiTag } from "@creaton/core/launchpad/draft-proposal.ts";
 import { parseFunding, type FundingStatus } from "./lib/funding.ts";
 import { type IpRecord, parseIpRecord } from "./lib/ip-record.ts";
 import {

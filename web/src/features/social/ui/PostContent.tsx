@@ -12,7 +12,7 @@ import { DecisionEmbeds } from "../../launchpad/ui/DecisionEmbeds";
 import { tokenize } from "../lib/content";
 import { quotedPostState } from "../lib/timeline";
 import { formatPrice, q96ToPrice } from "../../launchpad/lib/candles";
-import { saleCurrencyFor } from "../../launchpad/lib/sale-currency";
+import { saleCurrencyFor } from "@creaton/core/launchpad/sale-currency.ts";
 import { cashtagLabel, cashtagPrice } from "../lib/cashtag";
 import { useCashtagOwners } from "../use-cashtags";
 import { usePeople } from "../use-people";

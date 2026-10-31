@@ -12,17 +12,17 @@ import { Card } from "@/shared/ui/card";
 import { isContributorProject } from "../lib/funding";
 import { Input } from "@/shared/ui/input";
 import { ethCall, getRpcEndpoint } from "../chain";
-import { formatUnits, parseUnits } from "../lib/dao-actions";
+import { formatUnits, parseUnits } from "@creaton/core/launchpad/daoActions.ts";
 import { evidenceProblem, evidenceUpdateContent } from "../lib/evidence";
-import { encodeErc20Approve } from "../lib/evmCalls";
+import { encodeErc20Approve } from "@creaton/core/launchpad/evmCalls.ts";
 import {
   encodeSetCheck,
   encodeSubmitPaidClaim,
   hashText,
   idWord,
   ZERO_WORD,
-} from "../lib/work";
-import type { MandateView } from "../lib/work-read";
+} from "@creaton/core/launchpad/work.ts";
+import type { MandateView } from "@creaton/core/launchpad/workRead.ts";
 import {
   type OpenWorkArea,
   wordsAfterMove,

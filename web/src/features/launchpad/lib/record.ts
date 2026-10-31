@@ -11,13 +11,19 @@
  * `node --test`.
  */
 
-import type { Decision, DecisionState } from "./decisions.ts";
+import type {
+  Decision,
+  DecisionState,
+} from "@creaton/core/launchpad/decisions.ts";
 import {
   claimKey,
   type RecordEvents,
   type TeamPromise,
 } from "./record-read.ts";
-import type { MandateView, WorkSnapshot } from "./work-read.ts";
+import type {
+  MandateView,
+  WorkSnapshot,
+} from "@creaton/core/launchpad/workRead.ts";
 
 /** How the page writes a person, an amount and a title. Injected so this file needs no formatting code. */
 export interface Labels {

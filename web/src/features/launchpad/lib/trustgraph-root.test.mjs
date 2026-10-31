@@ -10,13 +10,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { encodeSetScoreRoot } from "./trust-gate.ts";
+import { encodeSetScoreRoot } from "@creaton/core/launchpad/trust-gate.ts";
 import {
   composeRootBundle,
   DEFAULT_PROGRAM,
   scoreRootEventParts,
 } from "./trustgraph-root.ts";
-import { verifyScoreProof } from "./trust-score.ts";
+import { verifyScoreProof } from "@creaton/core/launchpad/trust-score.ts";
 
 // `trustgraph.rs` tests — goldens computed with `cast abi-encode`/`cast keccak`.
 const DEAD = "0x000000000000000000000000000000000000dEaD";

@@ -22,7 +22,7 @@ import {
   parseFocus,
   parseTakenOn,
   type TakenOn,
-} from "./lib/project-structure";
+} from "@creaton/core/launchpad/projectStructure.ts";
 import { type Launch, launchCoordinate } from "./models";
 
 /** At most this many records are read: one per person per work area. */

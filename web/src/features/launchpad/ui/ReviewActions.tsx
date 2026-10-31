@@ -9,7 +9,7 @@ import {
   reasonProblem,
   reviewReasonContent,
 } from "../lib/review-reasons";
-import { encodeAttest } from "../lib/work";
+import { encodeAttest } from "@creaton/core/launchpad/work.ts";
 import type { Launch } from "../models";
 import { usePublishMirror } from "../use-launches";
 import { useReasonShown } from "../use-review-reasons";

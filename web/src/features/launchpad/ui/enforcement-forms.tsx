@@ -14,13 +14,13 @@ import {
   parseUnits,
   resolveFrozenClaimDecision,
   slashReviewerDecision,
-} from "../lib/dao-actions";
+} from "@creaton/core/launchpad/daoActions.ts";
 import { closeEffects } from "../lib/close-effects";
 import { formatShares } from "../lib/shares-format";
 import { slashableReviewers } from "../lib/slashable";
-import type { ClaimView } from "../lib/work";
+import type { ClaimView } from "@creaton/core/launchpad/work.ts";
 import { workTitle } from "../lib/work-titles";
-import type { MandateView } from "../lib/work-read";
+import type { MandateView } from "@creaton/core/launchpad/workRead.ts";
 import { SelectField, TextField } from "./decision-fields";
 import { useStickyPick } from "./use-sticky-pick";
 import { useWalletLabels } from "../use-wallet-labels";

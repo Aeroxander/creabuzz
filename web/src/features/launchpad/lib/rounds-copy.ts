@@ -4,7 +4,7 @@
  * (D147). Pure, so `rounds-copy.test.mjs` pins it.
  */
 
-import { formatUnits, parseUnits } from "./dao-actions.ts";
+import { formatUnits, parseUnits } from "@creaton/core/launchpad/daoActions.ts";
 import type { ExitExchangePhase } from "./exit-exchange.ts";
 import {
   escrowFor,
@@ -15,7 +15,7 @@ import {
   sellerKeeps,
   stepAtLeast,
   stepAtMost,
-} from "./weekly-rounds.ts";
+} from "@creaton/core/launchpad/weeklyRounds.ts";
 
 const USDC_DECIMALS = 6;
 

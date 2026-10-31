@@ -14,7 +14,10 @@ import {
   recordSaleCurrency,
   setRpcEndpoint,
 } from "../chain";
-import { priceFormat, sampleBudget } from "../lib/sale-currency";
+import {
+  priceFormat,
+  sampleBudget,
+} from "@creaton/core/launchpad/sale-currency.ts";
 import { useScoreRoots } from "../use-launches";
 import { useAuctionProgress, ProgressBar } from "./widgets";
 import { floorPricePerToken } from "../lib/launch-params";

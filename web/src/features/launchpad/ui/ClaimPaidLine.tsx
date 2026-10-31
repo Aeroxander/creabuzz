@@ -1,6 +1,6 @@
 import type { ChipTone } from "@/shared/ui/chip";
 
-import type { ClaimStatus } from "../lib/work";
+import type { ClaimStatus } from "@creaton/core/launchpad/work.ts";
 import { paidOn, TxLink } from "./TxLink";
 
 /**

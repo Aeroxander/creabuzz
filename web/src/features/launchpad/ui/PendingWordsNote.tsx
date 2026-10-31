@@ -8,7 +8,7 @@ import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 
-import { idLabel } from "../lib/work";
+import { idLabel } from "@creaton/core/launchpad/work.ts";
 import type { Launch } from "../models";
 import { usePendingWords } from "../use-pending-words";
 

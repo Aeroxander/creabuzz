@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { auctionDeployReducer, initAuctionDeployState } from "./auctionFlow.ts";
+import {
+  auctionDeployReducer,
+  initAuctionDeployState,
+} from "@creaton/core/launchpad/auctionFlow.ts";
 import {
   AUCTION_STEP_COPY,
   auctionFailureMessage,
@@ -12,10 +15,10 @@ import {
   graduationReadinessText,
   graduationStepStatusText,
   stepMarker,
-} from "./auction-copy.ts";
-import { AUCTION_DEPLOY_STEPS } from "./auctionFlow.ts";
-import { GRADUATION_STEPS } from "./graduationFlow.ts";
-import { USER_REJECTED_MESSAGE } from "./wallet-errors.ts";
+} from "@creaton/core/launchpad/auction-copy.ts";
+import { AUCTION_DEPLOY_STEPS } from "@creaton/core/launchpad/auctionFlow.ts";
+import { GRADUATION_STEPS } from "@creaton/core/launchpad/graduationFlow.ts";
+import { USER_REJECTED_MESSAGE } from "@creaton/core/launchpad/wallet-errors.ts";
 
 const short = (hash) => `${hash.slice(0, 6)}…`;
 const TX = `0x${"cd".repeat(32)}`;

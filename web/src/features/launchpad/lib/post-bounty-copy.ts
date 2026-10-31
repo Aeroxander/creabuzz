@@ -8,7 +8,7 @@ import {
   type PostBountyRecord,
   type PostBountyStage,
   type PostClaimView,
-} from "./open-bounty.ts";
+} from "@creaton/core/launchpad/openBounty.ts";
 
 export interface PostBountyWords {
   money: (units: bigint) => string;

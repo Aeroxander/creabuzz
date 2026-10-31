@@ -27,7 +27,10 @@ import {
   DEFAULT_NOTICE,
   noticeText,
 } from "../lib/dao-guarantees";
-import { NO_CAP, type ShareRules } from "../lib/trading-actions";
+import {
+  NO_CAP,
+  type ShareRules,
+} from "@creaton/core/launchpad/tradingActions.ts";
 import { isEvmAddress, type LaunchRecord } from "../models";
 import { useDecisionContext } from "../use-decisions";
 import { useDaoGuarantees } from "../use-dao-guarantees";

@@ -5,7 +5,7 @@
  */
 
 import { allowanceText } from "../lib/share-rules";
-import { issuanceAllowance } from "../lib/trading-actions";
+import { issuanceAllowance } from "@creaton/core/launchpad/tradingActions.ts";
 import { useShareRules } from "../use-share-rules";
 
 const date = (seconds: number) =>

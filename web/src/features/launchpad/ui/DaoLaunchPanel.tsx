@@ -4,8 +4,8 @@ import { Button } from "@/shared/ui/button";
 import { recordSaleCurrency } from "../chain";
 import { isMainnetChain } from "../chain-config";
 import { formatAtomic } from "../lib/amounts";
-import { stepMarker } from "../lib/auction-copy";
-import { daoLaunchInputsFromRecord } from "../lib/dao-launch";
+import { stepMarker } from "@creaton/core/launchpad/auction-copy.ts";
+import { daoLaunchInputsFromRecord } from "@creaton/core/launchpad/daoLaunch.ts";
 import {
   challengeFromDraft,
   EMPTY_PANEL_DRAFT,

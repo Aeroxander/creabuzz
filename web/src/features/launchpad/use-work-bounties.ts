@@ -2,8 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getRpcEndpoint } from "./chain";
 import { workBounty } from "./chain-config";
-import { readWorkBounties } from "./lib/work-bounty";
-import type { WorkSnapshot } from "./lib/work-read";
+import { readWorkBounties } from "@creaton/core/launchpad/workBounty.ts";
+import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import { endpointChain } from "./use-work";
 
 /**

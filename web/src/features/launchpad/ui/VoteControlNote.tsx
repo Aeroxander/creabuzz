@@ -10,7 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/shared/ui/button";
 
 import { ethCall, getRpcEndpoint } from "../chain";
-import { formatUnits } from "../lib/dao-actions";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import {
   aloneUntil,
   controlOf,

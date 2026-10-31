@@ -12,7 +12,7 @@ import { useMemo } from "react";
 
 import { orgGraphFromEvents } from "@/features/feed/lib/trust-weight";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
-import { isAuthorityHolder } from "@/features/fleet/lib/orgAuthority";
+import { isAuthorityHolder } from "@creaton/core/org/orgAuthority.ts";
 import { getRpcEndpoint } from "@/features/launchpad/chain";
 import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { findOwnedBidIds, readBidView } from "@/features/launchpad/lib/my-bids";

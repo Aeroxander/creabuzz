@@ -25,9 +25,9 @@ import type {
   AuctionEffects,
   AuctionSendCall,
   AuctionTxReceiptWithLogs,
-} from "./auctionFlow.ts";
+} from "@creaton/core/launchpad/auctionFlow.ts";
 import { decodeQuantity } from "../chain.ts";
-import { walletError } from "./wallet-errors.ts";
+import { walletError } from "@creaton/core/launchpad/wallet-errors.ts";
 import type { Eip1193ProviderLike } from "./wallet-sender.ts";
 
 // Re-exported: callers (and the tests) have always imported it from here.
