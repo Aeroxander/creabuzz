@@ -17,6 +17,8 @@ import { Meter } from "@/shared/ui/meter";
 
 import { formatUnits } from "../lib/dao-actions";
 import type { OpenWorkArea } from "../lib/ways-to-help";
+import type { Launch } from "../models";
+import { useTakingSlot } from "./TakeOnWork";
 import { Person } from "./Face";
 
 function day(seconds: number): string {
@@ -35,6 +37,7 @@ export function WaysToHelp({
   money,
   onPick,
   extra,
+  launch,
   truncated = false,
 }: {
   areas: readonly OpenWorkArea[];
@@ -47,7 +50,10 @@ export function WaysToHelp({
   onPick: (area: OpenWorkArea) => void;
   /** More about one area, shown at the bottom of its card (money behind it, forecasts); null for nothing. */
   extra?: (area: OpenWorkArea) => ReactNode;
+  /** The project: each card says who has taken its area on, with a way to take it on yourself. */
+  launch: Launch;
 }) {
+  const taking = useTakingSlot(launch);
   return (
     <Card className="p-4" data-testid="ways-to-help">
       <h3 className="text-base font-semibold">Open work</h3>
@@ -127,6 +133,7 @@ export function WaysToHelp({
                   be accepted for review.
                 </p>
               )}
+              {taking(area)}
               <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
                 <span className="flex min-w-0 flex-wrap items-center gap-2">
                   <Person label={labelOf(area.manager)} />

@@ -1102,6 +1102,21 @@ pub const KIND_EVM_BINDING: u32 = 37017;
 /// Summoner's constructor).
 pub const KIND_DEPLOYMENT_RECORD: u32 = 37018;
 
+/// NIP-LP: work taken on — one person's statement that they are doing a piece
+/// of work in a launch's work area: what they will deliver, who will use it,
+/// and by when (parameterized replaceable, d = `<budget>:<work-area-id>`, so
+/// one per person per work area). A later one replaces it; `released` ends it.
+/// It carries no Shares, no rights and no exclusivity: awards still come only
+/// from review and the DAO's vote. Global-only; exactly one `a` tag names the
+/// launch. See `docs/nips/NIP-LP.md`.
+pub const KIND_WORK_TAKEN_ON: u32 = 37019;
+/// NIP-LP: project focus — what a launch's team works on now (at most three
+/// items, each optionally naming a work area) and what it has decided not to
+/// do (parameterized replaceable, d = launch id). Only the launch's author may
+/// publish it: the relay requires the `a` tag's author to be the signer.
+/// Global-only. See `docs/nips/NIP-LP.md`.
+pub const KIND_PROJECT_FOCUS: u32 = 37020;
+
 /// All registered kind constants — used for duplicate detection and iteration.
 pub const ALL_KINDS: &[u32] = &[
     KIND_PROFILE,
@@ -1290,6 +1305,8 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_ROYALTY_SCHEDULE,
     KIND_ROYALTY_CLOSE,
     KIND_FORECAST,
+    KIND_WORK_TAKEN_ON,
+    KIND_PROJECT_FOCUS,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).
@@ -1442,6 +1459,8 @@ const _: () = assert!(is_parameterized_replaceable(KIND_ORG_PITCH)); // 37015 �
 const _: () = assert!(is_parameterized_replaceable(KIND_ORG_JOIN_REQUEST)); // 37016 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_EVM_BINDING)); // 37017 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_DEPLOYMENT_RECORD)); // 37018 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_WORK_TAKEN_ON)); // 37019 ∈ 30000–39999
+const _: () = assert!(is_parameterized_replaceable(KIND_PROJECT_FOCUS)); // 37020 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_THREAD_SUMMARY)); // 39005 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WINDOW_BOUNDS)); // 39006 ∈ 30000–39999
 

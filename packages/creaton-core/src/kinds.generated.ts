@@ -986,3 +986,19 @@ export const KIND_EVM_BINDING = 37017;
 /// implementation the Summoner clones (emitted as `NewDAO` in the
 /// Summoner's constructor).
 export const KIND_DEPLOYMENT_RECORD = 37018;
+
+/// NIP-LP: work taken on — one person's statement that they are doing a piece
+/// of work in a launch's work area: what they will deliver, who will use it,
+/// and by when (parameterized replaceable, d = `<budget>:<work-area-id>`, so
+/// one per person per work area). A later one replaces it; `released` ends it.
+/// It carries no Shares, no rights and no exclusivity: awards still come only
+/// from review and the DAO's vote. Global-only; exactly one `a` tag names the
+/// launch. See `docs/nips/NIP-LP.md`.
+export const KIND_WORK_TAKEN_ON = 37019;
+
+/// NIP-LP: project focus — what a launch's team works on now (at most three
+/// items, each optionally naming a work area) and what it has decided not to
+/// do (parameterized replaceable, d = launch id). Only the launch's author may
+/// publish it: the relay requires the `a` tag's author to be the signer.
+/// Global-only. See `docs/nips/NIP-LP.md`.
+export const KIND_PROJECT_FOCUS = 37020;

@@ -7,7 +7,7 @@
  * where it is acted on. The raise this project came from is still here, folded away underneath.
  */
 
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 
 import { Eye, Hammer, PieChart, Vote } from "lucide-react";
 
@@ -24,7 +24,7 @@ import {
 } from "../lib/dao-overview";
 import { formatUnits } from "../lib/dao-actions";
 import { isContributorProject } from "../lib/funding";
-import { openWorkAreas } from "../lib/ways-to-help";
+import { openWorkAreas, recordSources } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
 import { useActingAccount } from "../use-acting-account";
@@ -48,6 +48,7 @@ import { useRunway } from "../use-runway";
 import { useWorkBounties } from "../use-work-bounties";
 import { RunwayCard, runwayIsEmpty } from "./RunwayCard";
 import { RemixCard } from "./RemixCard";
+import { ProjectFocusCard } from "./ProjectFocusCard";
 import { LeavingNowNote } from "./WeeklyRoundsCard";
 
 export type OverviewTarget =
@@ -165,7 +166,15 @@ export function DaoOverview({
     clock,
   );
   // How many work areas take submissions now (their words are on the Work tab, under Ways to help).
-  const openAreas = work.data ? openWorkAreas(work.data, []).length : 0;
+  // The open work areas, by their readable titles, for the Now card to name and pick from.
+  const focusAreas = useMemo(
+    () =>
+      work.data
+        ? openWorkAreas(work.data, recordSources(launch.record.workAreas))
+        : [],
+    [work.data, launch.record.workAreas],
+  );
+  const openAreas = focusAreas.length;
   // A contributor project always says how to take part, even before a work area is open.
   const contributor = isContributorProject(launch.record);
   // What this person can do now, and their own work waiting on someone else, said apart.
@@ -299,6 +308,13 @@ export function DaoOverview({
           ) : null}
         </Card>
       )}
+      {contributor ? (
+        <ProjectFocusCard
+          areas={focusAreas}
+          launch={launch}
+          onOpenWork={() => onOpen("work")}
+        />
+      ) : null}
       {contributor ? (
         <Card className="p-4" data-testid="dao-ways-to-help">
           <HowItWorks>

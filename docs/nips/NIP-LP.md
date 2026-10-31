@@ -50,6 +50,8 @@ semantics (regular events, `a`/`e`/`p`/`d` tags, NIP-09 deletion).
 | `47005` | Receipt | regular, `a` = launch coordinate | anyone (usually indexer bot) | chain-state mirror: table kind, tx hash, payload JSON |
 | `37006` | Score root | parameterized replaceable, `d` = `<program>:<epoch>` | scoring operator | trustgraph score Merkle root + proof pointer |
 | `47008` | Forecast | regular, `t` = bounty question | anyone | a whole percent that a bounty will be paid, and a reason |
+| `37019` | Work taken on | parameterized replaceable, `d` = `<budget>:<work-area-id>`, `a` = launch coordinate | anyone | what they will deliver in a work area, for whom, and by when |
+| `37020` | Project focus | parameterized replaceable, `d` = launch id, `a` = launch coordinate | launch author | the team's Now (at most three) and Not doing lists |
 
 Kinds `37002`–`37009` (except `37006`) are reserved for future launchpad use; `47006`–`47007` are the royalty
 mirrors and `47008` the forecasts. `47009` carried exit offers for matched exits, retired in D152: relays refuse
@@ -209,6 +211,21 @@ before the question's cutoff: the day before the bounty's deadline, or earlier w
 `OpenBounty`'s first `RunStarted`; a work-area bounty's first submission released after it opened). The question settles
 on the chain: paid is done; refunds open is not done. Accuracy is `100 × (1 − mean Brier score)`, computed by each
 client from public forecasts and the chain, only for bounties on contracts the client itself trusts.
+
+## `37019` and `37020`: working structure
+
+Two records give a project's team its structure without moving money (`docs/v3-review/PROJECT-STRUCTURE.md`).
+
+**Work taken on (`37019`).** Signed by the person doing the work. `d` = `<budget>:<work-area-id>`, both lowercase hex
+(the work budget's address and the 32-byte work area id), so each person has one per work area and a newer one
+replaces it. One `a` tag names the launch. Content is a JSON object: `deliver` (1–280 characters, what they will
+deliver), `for` (1–140, who will use it), `until` (Unix seconds), and optionally `released: true` when they let it go.
+It grants nothing and reserves nothing: anyone may submit work in the area, and awards still come only from review and
+the DAO's vote. Clients show it until `until` passes or it is released.
+
+**Project focus (`37020`).** Signed by the launch's author: the relay refuses one whose `a` tag names a launch by
+anyone else, or whose `d` is not that launch's id. Content: `now`, at most three `{text, area?}` items (`area` in the
+same form as a `37019` `d`), and `notDoing`, at most ten `{text, why?}` items. Text is 1–280 characters, `why` up to 280.
 
 ## Deletion
 

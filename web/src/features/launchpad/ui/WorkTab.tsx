@@ -49,7 +49,7 @@ import { useWalletSend } from "../use-wallet-send";
 import { useMilestoneLock, useRecordEvents, useWork } from "../use-work";
 import { claimKey, type RecordEvents } from "../lib/record-read";
 import { PaidLine, statusTone } from "./ClaimPaidLine";
-import { useDecisions } from "../use-decisions";
+import { useDecisionContext, useDecisions } from "../use-decisions";
 import { mayOfferVote, openVoteFor } from "../lib/proposal-gate";
 import { knownTitles, shortNameBeside, workTitle } from "../lib/work-titles";
 import { managersFor } from "../lib/dao-overview";
@@ -62,7 +62,6 @@ import { EvidenceBlock } from "./EvidenceBlock";
 import { FileClaimCard } from "./FileClaimCard";
 import { ChallengeLockedCard } from "./ChallengeLockedCard";
 import { LockedSharesCard } from "./LockedSharesCard";
-import { useDecisionContext } from "../use-decisions";
 import { AllowanceNote } from "./AllowanceNote";
 import type { WorkBounties } from "../lib/work-bounty";
 import { useWorkBounties } from "../use-work-bounties";
@@ -353,6 +352,7 @@ export function WorkTab({
           labelOf={labelOf}
           money={areaMoney}
           onPick={(area) => setPicked({ area, at: Date.now() })}
+          launch={launch}
           truncated={work.data.truncated}
         />
       ) : null}

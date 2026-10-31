@@ -34,12 +34,12 @@ use buzz_core::kind::{
     KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_ORG_BUDGET, KIND_ORG_GRANT,
     KIND_ORG_JOIN_REQUEST, KIND_ORG_NODE, KIND_ORG_PITCH, KIND_PERSONA, KIND_PIN_LIST, KIND_POLL,
     KIND_POLL_RESPONSE, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK,
-    KIND_PROFILE, KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_REPOST,
-    KIND_SCORE_ROOT, KIND_SKILL, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF,
+    KIND_PROFILE, KIND_PROJECT, KIND_PROJECT_FOCUS, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
+    KIND_REPOST, KIND_SCORE_ROOT, KIND_SKILL, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF,
     KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
     KIND_TEAM_CATALOG, KIND_TEAM_RUN, KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE,
     KIND_USER_STATUS, KIND_WIKI_CORRECTION, KIND_WIKI_PAGE, KIND_WORKFLOW_DEF,
-    KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
+    KIND_WORKFLOW_TRIGGER, KIND_WORK_TAKEN_ON, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
     RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_ACCESS, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
@@ -619,7 +619,10 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_LAUNCH_PROPOSAL
         | KIND_LAUNCH_RECEIPT
         // A forecast on a bounty (N3): an opinion with a reason, no money and no vote.
-        | KIND_FORECAST => Ok(Scope::MessagesWrite),
+        | KIND_FORECAST
+        // Work taken on and a project's focus: statements, no money and no rights.
+        | KIND_WORK_TAKEN_ON
+        | KIND_PROJECT_FOCUS => Ok(Scope::MessagesWrite),
         // NIP-ORG: org nodes, grants, and budgets are ordinary member writes
         // (same model as forum posts). Structural authorization (grant chains,
         // budget limits) is layered on top; the relay validates envelopes and
@@ -887,6 +890,9 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_LAUNCH_RECEIPT
             // A forecast names its bounty in a `t` tag; it belongs to no channel.
             | KIND_FORECAST
+            // Work taken on and a project's focus name their launch in an `a` tag.
+            | KIND_WORK_TAKEN_ON
+            | KIND_PROJECT_FOCUS
             // NIP-ORG: the org graph is a community-level object, addressed by
             // (pubkey, kind, d_tag) exactly like a project (30621) or a launch
             // record (37001). One org belongs to the whole community, not to a
@@ -3315,7 +3321,7 @@ fn validate_launch_record_envelope(event: &Event) -> Result<(), String> {
 
 /// Check that `coordinate` is a canonical launch address:
 /// `37001:<lowercase-64-hex-author>:<non-empty-d>`.
-fn parse_launch_coordinate(coordinate: &str) -> Result<(), String> {
+pub(crate) fn parse_launch_coordinate(coordinate: &str) -> Result<(), String> {
     let mut segments = coordinate.splitn(3, ':');
     let (Some(kind), Some(author), Some(d)) = (segments.next(), segments.next(), segments.next())
     else {
@@ -5102,6 +5108,16 @@ async fn ingest_event_inner(
         validate_forecast(&event).map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
+    if kind_u32 == KIND_WORK_TAKEN_ON {
+        super::project_structure::validate_work_taken_on(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_PROJECT_FOCUS {
+        super::project_structure::validate_project_focus(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
     // Track pre-created channel UUID for compensation on insert failure.
     let mut pre_created_channel: Option<Uuid> = None;
 
@@ -6184,6 +6200,19 @@ mod postgres_tests {
             required_scope_for_kind(KIND_LONG_FORM, &dummy).is_ok(),
             "KIND_LONG_FORM (30023) should be accepted"
         );
+    }
+
+    #[test]
+    fn work_taken_on_and_project_focus_are_member_writes_that_belong_to_no_channel() {
+        let dummy = make_dummy_event();
+        for kind in [KIND_WORK_TAKEN_ON, KIND_PROJECT_FOCUS] {
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "{kind}"
+            );
+            assert!(is_global_only_kind(kind), "{kind}");
+        }
     }
 
     #[test]

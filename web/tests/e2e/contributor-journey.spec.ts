@@ -350,11 +350,69 @@ test("a contributor project is started from the page, work is claimed the same d
     "Shares can't be sold",
     { timeout: 30_000 },
   );
+  // The founder says what the team works on now, and what it will not do (PROJECT-STRUCTURE.md, step 1).
+  await refresh(founder, "Overview");
+  await founder.getByTestId("focus-set").click({ timeout: 30_000 });
+  await founder.getByTestId("focus-now-0").fill("Ship the first guide");
+  await founder.getByTestId("focus-now-area-0").selectOption({ index: 1 });
+  await founder.getByTestId("focus-not-add").click();
+  await founder.getByTestId("focus-not-0").fill("A mobile app");
+  await founder
+    .getByTestId("focus-not-why-0")
+    .fill("Not before the guide works");
+  await founder.getByTestId("focus-save").click();
+  const nowItem = founder.getByTestId("focus-now-item");
+  await expect(nowItem).toContainText("Ship the first guide", {
+    timeout: 30_000,
+  });
+  await expect(nowItem.getByTestId("focus-now-who")).toContainText(
+    "nobody has taken this on yet",
+  );
+  await expect(founder.getByTestId("focus-not-item")).toHaveText(
+    "A mobile app (Not before the guide works)",
+  );
+
   const contributor = await context.newPage();
   await open(contributor, CONTRIBUTOR, projectPath("work"));
   await expect(contributor.getByTestId("work-projects")).toContainText("docs", {
     timeout: 30_000,
   });
+  // Before starting, they say what they will deliver, for whom and by when; the card shows it is under Now.
+  const docsCard = contributor.locator(
+    '[data-testid="way-to-help"][data-area="docs"]',
+  );
+  await expect(docsCard.getByText("Now", { exact: true })).toBeVisible();
+  await expect(docsCard.getByTestId("take-on-nobody")).toBeVisible();
+  await docsCard.getByTestId("take-on-open").click();
+  await docsCard.getByTestId("take-on-save").click();
+  await expect(docsCard.getByTestId("take-on-form")).toContainText(
+    "Say what you will deliver",
+  );
+  await docsCard.getByTestId("take-on-deliver").fill("A first guide");
+  await docsCard.getByTestId("take-on-for").fill("new contributors");
+  await docsCard.getByTestId("take-on-save").click();
+  await expect(docsCard.getByTestId("take-on-person")).toContainText(
+    "You are on this until",
+    { timeout: 30_000 },
+  );
+  await expect(docsCard.getByTestId("take-on-person")).toContainText(
+    "A first guide, for new contributors.",
+  );
+  // Someone else sees who is on it under Now, and cannot change the founder's lists.
+  const onlooker = await context.newPage();
+  await open(onlooker, null, projectPath("overview"), "55".repeat(32));
+  await expect(
+    onlooker.getByTestId("focus-now-item").getByTestId("focus-now-who"),
+  ).toContainText("until", { timeout: 30_000 });
+  await expect(onlooker.getByTestId("focus-set")).toHaveCount(0);
+  await expect(onlooker.getByTestId("focus-change")).toHaveCount(0);
+  await onlooker.close();
+  // Letting it go opens it again for anyone, and the date can be said again later.
+  await docsCard.getByTestId("take-on-release").click();
+  await expect(docsCard.getByTestId("take-on-nobody")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(docsCard.getByTestId("take-on-open")).toBeVisible();
   // Nobody told them the words: the project's record published them at launch, and the chain's hash vouches for them.
   await submitFromWaysToHelp(
     contributor,
