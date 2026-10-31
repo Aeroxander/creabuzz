@@ -399,6 +399,8 @@ export interface CreateLaunchInput {
   revenuePledge?: RevenuePledge;
   /** The first work areas' words, exactly as hashed, so people can see what finished work looks like. */
   workAreas?: { name: string; check: string }[];
+  /** How the founder knows each reviewer, in their words (see `LaunchRecord.reviewerTies`). */
+  reviewerTies?: string;
   /** The project this one is built on (N11). */
   builtOn?: BuiltOn;
   /** Whether others may build on this project, and on what terms (N11). */
@@ -481,6 +483,7 @@ export function useCreateLaunch() {
           name: area.name,
           check: area.check,
         }));
+      if (input.reviewerTies) content.reviewerTies = input.reviewerTies;
       if (input.builtOn) content.builtOn = input.builtOn;
       if (input.remixTerms) content.remixTerms = input.remixTerms;
       if (input.asAgent) {

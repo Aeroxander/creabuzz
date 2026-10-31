@@ -37,6 +37,8 @@ const REMIX_BONDS = process.env.E2E_REMIX_BONDS ?? "";
 const CREATE_FAUCET = process.env.E2E_CREATE_FAUCET ?? "";
 const REVIEWER1 = process.env.E2E_REVIEWER1 ?? "";
 const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
+// A third reviewer nobody acts as: a new project names at least three, two of whom decide (funding review D1).
+const REVIEWER3 = "0x00000000000000000000000000000000000000c3";
 const CONTRIBUTOR = process.env.E2E_CONTRIBUTOR ?? "";
 /** Someone with no Shares who suggests work and names a price (D84). */
 const NEWCOMER = process.env.E2E_MANAGER ?? "";
@@ -241,7 +243,12 @@ test("a contributor project is started from the page, work is claimed the same d
   await founder.getByTestId("contributor-project-cap").fill("40");
   await founder
     .getByTestId("contributor-reviewers")
-    .fill(`${REVIEWER1}\n${REVIEWER2}`);
+    .fill(`${REVIEWER1}\n${REVIEWER2}\n${REVIEWER3}`);
+  await founder
+    .getByTestId("contributor-reviewer-ties")
+    .fill(
+      "Both reviewers are test accounts; the third is a stand-in nobody acts as.",
+    );
   await founder.getByTestId("contributor-project-name").fill("docs");
   await founder.getByTestId("contributor-project-check").fill(CHECK);
   // Others may build on Docs Commons (N11): the second journey's project does.
@@ -265,14 +272,19 @@ test("a contributor project is started from the page, work is claimed the same d
   await founder.getByTestId("contributor-founder-shares").fill("200");
   await founder
     .getByTestId("contributor-reviewers")
-    .fill(`${REVIEWER1}\n${FOUNDER_WALLET}`);
+    .fill(`${REVIEWER1}\n${REVIEWER2}\n${FOUNDER_WALLET}`);
   await founder.getByTestId("contributor-submit").click();
   await expect(founder.getByTestId("contributor-problem")).toContainText(
     "You cannot review the first budget's work yourself",
   );
   await founder
     .getByTestId("contributor-reviewers")
-    .fill(`${REVIEWER1}\n${REVIEWER2}`);
+    .fill(`${REVIEWER1}\n${REVIEWER2}\n${REVIEWER3}`);
+  await founder
+    .getByTestId("contributor-reviewer-ties")
+    .fill(
+      "Both reviewers are test accounts; the third is a stand-in nobody acts as.",
+    );
   await expect(founder.getByTestId("contributor-problem")).toHaveCount(0);
   await expect(founder.getByTestId("contributor-run")).toHaveCount(0);
   expect(BigInt(String(await rpc("eth_blockNumber")))).toBe(refusedFrom);
@@ -575,6 +587,13 @@ test("a contributor project is started from the page, work is claimed the same d
     story.getByRole("link", { name: "Open what they delivered" }),
   ).toHaveAttribute("href", "https://example.com/pr/1");
   await expect(reader.getByTestId("contributions-earned")).toHaveText("25");
+  // Who chose the reviewers, and how the founder knows them, from the published record (funding review D1).
+  await expect(reader.getByTestId("contributions-founder-chose")).toContainText(
+    "The founder chose the first budget's reviewers",
+  );
+  await expect(reader.getByTestId("contributions-reviewer-ties")).toContainText(
+    "the third is a stand-in nobody acts as",
+  );
   // The founder's starting Shares, from the token's own mint at launch.
   await expect(reader.getByTestId("contributions-starting")).toHaveText("200");
   await expect(reader.getByTestId("contributions-test-records")).toContainText(
@@ -869,7 +888,12 @@ test("several people earn in one contributor project: two first projects, and a 
   await founder.getByTestId("contributor-project-cap").fill("60");
   await founder
     .getByTestId("contributor-reviewers")
-    .fill(`${REVIEWER1}\n${REVIEWER2}`);
+    .fill(`${REVIEWER1}\n${REVIEWER2}\n${REVIEWER3}`);
+  await founder
+    .getByTestId("contributor-reviewer-ties")
+    .fill(
+      "Both reviewers are test accounts; the third is a stand-in nobody acts as.",
+    );
   await founder.getByTestId("contributor-project-name").fill("guide");
   await founder.getByTestId("contributor-project-shares-0").fill("40");
   await founder.getByTestId("contributor-project-check").fill(GUIDE);

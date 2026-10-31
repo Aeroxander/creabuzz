@@ -579,9 +579,15 @@ export interface ActionDescription {
     | "trading"
     | "payouts"
     | "batch"
+    | "voting-rules"
     | "unknown";
   title: string;
   lines: string[];
+  /**
+   * For a change to the DAO's voting settings (`votingRules.ts`): true when it is outside the safe range, null when that
+   * cannot be told here. Absent for every other kind.
+   */
+  unsafe?: boolean | null;
 }
 
 export interface DescribeContext {
@@ -608,6 +614,8 @@ export interface DescribeContext {
   fundingTerms?: string;
   /** The payout module factory this app knows on the DAO's network (N10). */
   payoutsFactory?: string;
+  /** The Shares that vote today (18 decimals), so a change to the voting settings can be judged against them. */
+  votingSupply?: bigint;
   /** Each work budget's bond (its token, name and decimals), by lowercase budget address, so an amount can be put in words. */
   bonds?: Readonly<
     Record<string, { token: string; symbol: string; decimals: number }>

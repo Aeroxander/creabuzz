@@ -184,6 +184,11 @@ export interface LaunchRecord {
    * can see what finished work looks like; they count only when they hash to a work area's check on the chain.
    */
   workAreas: { name: string; check: string }[];
+  /**
+   * How the founder knows each reviewer of the first budget, and any tie to them, in the founder's words: a contributor
+   * project publishes it at the start (funding review D1). Null when the record never said.
+   */
+  reviewerTies: string | null;
   /** The project this one is built on (N11), or null. */
   builtOn: BuiltOn | null;
   /** Whether this project invites projects built on it, what it asks and offers (N11), or null when it never said. */
@@ -490,6 +495,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     ipRecord: parseIpRecord(body.ipRecord),
     revenuePledge: parseRevenuePledge(body.revenuePledge),
     workAreas: parseWorkAreas(body.workAreas),
+    reviewerTies: str(body.reviewerTies)?.slice(0, 2_000) ?? null,
     builtOn: parseBuiltOn(body.builtOn),
     remixTerms: parseRemixTerms(body.remixTerms),
     tokenPlan: parseTokenPlan(contentObject(event).tokenPlan),

@@ -28,6 +28,8 @@ const ROUNDS = process.env.E2E_WEEKLY_ROUNDS ?? "";
 const CURRENCY = process.env.E2E_CURRENCY ?? "";
 const REVIEWER1 = process.env.E2E_REVIEWER1 ?? "";
 const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
+// A third reviewer nobody acts as: a new project names at least three, two of whom decide (funding review D1).
+const REVIEWER3 = "0x00000000000000000000000000000000000000c3";
 /** Someone with money and no Shares, who wants in. */
 const NEWCOMER = process.env.E2E_MANAGER ?? "";
 /** A second buyer, with money of their own. */
@@ -213,7 +215,12 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await founder.getByTestId("contributor-project-cap").fill("40");
   await founder
     .getByTestId("contributor-reviewers")
-    .fill(`${REVIEWER1}\n${REVIEWER2}`);
+    .fill(`${REVIEWER1}\n${REVIEWER2}\n${REVIEWER3}`);
+  await founder
+    .getByTestId("contributor-reviewer-ties")
+    .fill(
+      "Both reviewers are test accounts; the third is a stand-in nobody acts as.",
+    );
   await founder.getByTestId("contributor-project-name").fill("docs");
   await founder
     .getByTestId("contributor-project-check")

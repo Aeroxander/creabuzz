@@ -404,7 +404,15 @@ test("the screen audit's world", async ({ browser }) => {
   await frida.getByTestId("contributor-project-cap").fill("25000");
   await frida
     .getByTestId("contributor-reviewers")
-    .fill(`${CAST.rui.wallet}\n${CAST.rae.wallet}`);
+    // A third reviewer nobody acts as: a new project names at least three, two of whom decide (funding review D1).
+    .fill(
+      `${CAST.rui.wallet}\n${CAST.rae.wallet}\n0x00000000000000000000000000000000000000c3`,
+    );
+  await frida
+    .getByTestId("contributor-reviewer-ties")
+    .fill(
+      "Rui and Rae help run the supporters board; neither will claim work here. The third is a placeholder.",
+    );
   for (const [index, area] of AREAS.entries()) {
     if (index > 0) await frida.getByTestId("contributor-project-add").click();
     const suffix = index === 0 ? "" : `-${index}`;

@@ -236,7 +236,9 @@ export function RagequitPanel({
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
         Your Shares are a claim on what the treasury holds. If you want out, you
         can give them up and take your part of it. Shares the DAO keeps for
-        itself do not count, so they never shrink what you get.{" "}
+        itself do not count, so they never shrink what you get. Leaving pays
+        your part of what the treasury holds now; it does not protect your share
+        of the project itself.{" "}
         <span className="text-muted-foreground">
           DAO {truncatePubkey(daoBinding.dao)}.
         </span>

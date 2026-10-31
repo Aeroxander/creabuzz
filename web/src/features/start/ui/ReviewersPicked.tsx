@@ -25,7 +25,7 @@ export function ReviewersPicked({
   reviewers,
   quorum,
   me,
-  onEitherDecides,
+  onMajorityDecides,
 }: {
   /** The reviewers box, as typed or picked. */
   reviewers: string;
@@ -33,8 +33,8 @@ export function ReviewersPicked({
   quorum: string;
   /** The founder, who is never offered as a reviewer. */
   me: string | null;
-  /** Set "how many must agree" to 1. */
-  onEitherDecides: () => void;
+  /** Empty "how many must agree", so more than half of them decide. */
+  onMajorityDecides: () => void;
 }) {
   const people = usePeopleWithWallets();
   const named = useMemo(
@@ -58,6 +58,8 @@ export function ReviewersPicked({
   const others = (people.data ?? []).filter((person) => person.pubkey !== me);
   const mustAgree = reviewQuorum(named.length, quorum);
   const everyone = everyReviewerMustAgree(named.length, quorum);
+  // With two named, more than half is both: only another reviewer helps.
+  const majorityHelps = reviewQuorum(named.length, "") < named.length;
 
   return (
     <div
@@ -154,19 +156,22 @@ export function ReviewersPicked({
         >
           <span>
             If they split, or one doesn&apos;t answer, that piece of work stays
-            stuck until its deadline passes. Name another reviewer, or let any
-            one of them decide: then the first answer decides, a turn-down as
-            much as an approval.
+            stuck until its deadline passes.{" "}
+            {majorityHelps
+              ? "Name another reviewer, or let more than half of them decide."
+              : "Name another reviewer."}
           </span>
-          <Button
-            data-testid="contributor-quorum-one"
-            onClick={onEitherDecides}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Let any one decide
-          </Button>
+          {majorityHelps ? (
+            <Button
+              data-testid="contributor-quorum-majority"
+              onClick={onMajorityDecides}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Let more than half decide
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </div>

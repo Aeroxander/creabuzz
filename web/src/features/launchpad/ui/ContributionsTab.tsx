@@ -495,6 +495,37 @@ export function ContributionsTab({
           dao={dao}
           kind={contributor ? "contributors" : "raise"}
         />
+        {contributor ? (
+          <>
+            <p
+              className="mt-2 text-sm text-muted-foreground"
+              data-testid="contributions-founder-chose"
+            >
+              The founder chose the first budget&apos;s reviewers and runs its
+              work areas: they accept each submission for review. Leaving pays
+              your part of what the treasury holds now; it does not protect your
+              share of the project.
+            </p>
+            {launch.record.reviewerTies ? (
+              <p
+                className="mt-2 whitespace-pre-line text-sm"
+                data-testid="contributions-reviewer-ties"
+              >
+                <span className="font-medium">
+                  How the founder knows the reviewers, in their words:
+                </span>{" "}
+                {launch.record.reviewerTies}
+              </p>
+            ) : (
+              <p
+                className="mt-2 text-sm text-muted-foreground"
+                data-testid="contributions-reviewer-ties-none"
+              >
+                The founder did not say how they know the reviewers.
+              </p>
+            )}
+          </>
+        ) : null}
       </Card>
 
       {people.length === 0 ? (

@@ -53,6 +53,7 @@ export function recordToInput(
     ...(record.ipRecord ? { ipRecord: record.ipRecord } : {}),
     ...(record.revenuePledge ? { revenuePledge: record.revenuePledge } : {}),
     ...(record.workAreas.length > 0 ? { workAreas: record.workAreas } : {}),
+    ...(record.reviewerTies ? { reviewerTies: record.reviewerTies } : {}),
     ...(record.builtOn ? { builtOn: record.builtOn } : {}),
     ...(record.remixTerms ? { remixTerms: record.remixTerms } : {}),
     ...(record.reviewerTerms ? { reviewerTerms: record.reviewerTerms } : {}),

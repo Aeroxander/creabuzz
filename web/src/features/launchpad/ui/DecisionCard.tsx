@@ -69,6 +69,8 @@ export function DecisionCard({
     ? describeDecision(decision.action, {
         ...describeContext,
         currencyDecimals,
+        // A change to the voting settings is judged against the Shares that could vote when it opened.
+        votingSupply: decision.rules?.votingSupply,
       })
     : null;
   const rules = decision.rules;
@@ -115,6 +117,20 @@ export function DecisionCard({
             Read it carefully
           </span>
         )}
+        {described?.kind === "voting-rules" ? (
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+              described.unsafe
+                ? "bg-red-500/15 text-red-800 dark:text-red-300"
+                : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+            }`}
+            data-testid="decision-voting-rules"
+          >
+            {described.unsafe
+              ? "Could stop every later decision"
+              : "Changes how votes work"}
+          </span>
+        ) : null}
         {described?.kind === "payment" ? (
           <span
             className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300"
@@ -153,10 +169,10 @@ export function DecisionCard({
           className="mt-2 text-xs text-muted-foreground"
           data-testid="decision-rules"
         >
-          Passes when at least {shares(rules.quorum)} Shares take part and{" "}
-          {Number(rules.approvalBps) / 100}% of them back it, for{" "}
-          {duration(rules.hold)} in a row. It then waits {duration(rules.delay)}{" "}
-          before it can take effect. Voting closes{" "}
+          Passes when at least {shares(rules.quorum)} Shares take part (for,
+          against or neutral) and {Number(rules.approvalBps) / 100}% of them
+          back it, for {duration(rules.hold)} in a row. It then waits{" "}
+          {duration(rules.delay)} before it can take effect. Voting closes{" "}
           {deadline(Number(rules.expiresAt))}.
         </p>
       ) : null}
@@ -185,6 +201,15 @@ export function DecisionCard({
         {stage.next}
       </p>
 
+      {watch?.againstCounts ? (
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          data-testid="decision-against-counts"
+        >
+          Votes against and neutral votes count toward the Shares taking part.
+          While too few have taken part, voting against can help this pass.
+        </p>
+      ) : null}
       {open ? (
         <DecisionVote
           account={account}

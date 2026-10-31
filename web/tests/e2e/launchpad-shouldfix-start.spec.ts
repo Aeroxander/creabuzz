@@ -316,7 +316,7 @@ test("a project set up earlier is not carried on while the passkey is locked: it
   expect(relay.events.filter((event) => event.kind === 37001)).toHaveLength(0);
 });
 
-test("the Start page says who the reviewers are and when both must agree, and one press lets the first answer decide", async ({
+test("the Start page says who the reviewers are, when all must agree, and one press lets more than half decide", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -345,15 +345,24 @@ test("the Start page says who the reviewers are and when both must agree, and on
   await expect(page.getByTestId("contributor-quorum-said")).toHaveText(
     "Both must agree: two approvals approve it, two turn-downs turn it down. If they split, nothing is decided.",
   );
+  // With two, more than half is both: only another reviewer helps, so no shortcut is offered.
   await expect(page.getByTestId("contributor-quorum-all")).toContainText(
-    "If they split, or one doesn't answer, that piece of work stays stuck until its deadline passes.",
+    "If they split, or one doesn't answer, that piece of work stays stuck until its deadline passes. Name another reviewer.",
   );
-
-  await page.getByTestId("contributor-quorum-one").click();
-  await expect(page.getByTestId("contributor-quorum")).toHaveValue("1");
-  await expect(page.getByTestId("contributor-quorum-all")).toHaveCount(0);
-  // As ClaimStake.settle decides: a single turn-down closes it as much as a single approval.
+  await expect(page.getByTestId("contributor-quorum-majority")).toHaveCount(0);
+  await page
+    .getByTestId("contributor-reviewers")
+    .fill(`0x${"71".repeat(20)}\n0x${"72".repeat(20)}\n0x${"73".repeat(20)}`);
+  await page.getByTestId("contributor-quorum").fill("3");
   await expect(page.getByTestId("contributor-quorum-said")).toHaveText(
-    "The first answer decides: one approval approves it, one turn-down turns it down.",
+    "All 3 must agree: 3 approvals approve it, 3 turn-downs turn it down. If they split, nothing is decided.",
   );
+  await page.getByTestId("contributor-quorum-majority").click();
+  await expect(page.getByTestId("contributor-quorum")).toHaveValue("");
+  await expect(page.getByTestId("contributor-quorum-all")).toHaveCount(0);
+  await expect(page.getByTestId("contributor-quorum-said")).toHaveText(
+    "2 of these 3 decide: 2 approvals approve it, 2 turn-downs turn it down.",
+  );
+  // And the founder is asked how they know them (funding review D1); the form refuses a new project without it.
+  await expect(page.getByTestId("contributor-reviewer-ties")).toBeVisible();
 });

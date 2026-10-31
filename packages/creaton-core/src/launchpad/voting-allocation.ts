@@ -187,12 +187,18 @@ export function votingRuleWatch(
   detail: string;
   /** What is still missing or what happens next, without the counts, for a screen that shows them already. */
   next: string;
+  /**
+   * Too few Shares have taken part yet. Votes against and neutral votes count toward taking part
+   * (`AllocationVoting.sol:467`), so a vote against can be what lets the decision pass; a screen says so by the buttons.
+   */
+  againstCounts: boolean;
 } {
   if (now >= rules.expiresAt)
     return {
       status: "expired",
       detail: "Expired; allocations are available for other proposals.",
       next: "Expired; allocations are available for other proposals.",
+      againstCounts: false,
     };
   const cast = support.yes + support.no + support.abstain;
   const moreQuorum = rules.quorum > cast ? rules.quorum - cast : 0n;
@@ -231,6 +237,7 @@ export function votingRuleWatch(
     status,
     detail: `In favour ${format(support.yes)} · Against ${format(support.no)} · Neutral ${format(support.abstain)} · ${next}. Votes can change until it is carried out.`,
     next: `${next}. Votes can change until it is carried out.`,
+    againstCounts: moreQuorum > 0n,
   };
 }
 /** The word a person reads for a watch status. */

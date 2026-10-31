@@ -511,9 +511,15 @@ stops.
 | 16–24 | $28,000 spent (a security audit, hosting); 2,500,000 more awarded (founder 300,000) | 26% | 71% |
 
 At month 24 there are 5,700,000 Shares. The largest contributor holds 450,000 (7.9%) and could leave with $947 of the
-$12,000 left in the treasury (today, with the founder's 10,000,000, $367). The founder decides alone until about month 6;
-after month 12, a vote the contributors oppose needs a third of them voting against to fail. With option 3 of §6 later,
-new Share budgets would also need a majority of contributors who vote.
+$12,000 left in the treasury (today, with the founder's 10,000,000, $367).
+
+*Corrected 2026-10-31 (funding review D4).* This said the founder "decides alone until about month 6". That holds only if
+the others vote. If nobody else votes, the founder's Shares alone still meet the 20% turnout of a full vote until the
+supply passes 7.5M, which is after month 24 in this example. To stop a decision only the founder backs, this share of
+everyone else's Shares must vote against it: 56.7% (full vote) and 90% (bounded) at month 6, 30.9% and 49.1% at month 12,
+18.4% and 29.2% at month 24 (`docs/v3-review/funding-review-2026-10-31/d/founder-control.mjs`). Leaving does not protect
+anyone's share of the project here, since the treasury holds little money. With option 3 of §6 later, new Share budgets
+would also need a majority of contributors who vote.
 
 ---
 
@@ -550,4 +556,4 @@ a 100% line (T3), and the patched DAO's size after the removals.
 | At most 10% more Shares a year, and only for accepted work | Inflation cap, dilution |
 | Nothing is for sale after the auction; you can always leave with your share | Illiquid |
 | The team pledges X% of what the project earns to the treasury. The contracts do not enforce it. | Revenue share, dividend |
-| The founder decides alone until other people hold a third of the Shares | Founder-controlled governance |
+| The founder can decide alone until others hold enough Shares and use them to vote; the project page says when | Founder-controlled governance |

@@ -164,7 +164,7 @@ async function makeProject(
   job: ContributorJob,
   fx: ContributorEffects,
 ): Promise<ContributorJob> {
-  const terms = contributorTerms(job.draft, job.founder);
+  const terms = contributorTerms(job.draft, job.founder, { resumed: true });
   const dao = wordAddress(
     await fx.call(
       job.kit,
@@ -225,7 +225,9 @@ export async function runContributorStart(
         await fx.publish(
           contributorRecordInput({
             launchId: job.launchId,
-            terms: contributorTerms(job.draft, job.founder),
+            terms: contributorTerms(job.draft, job.founder, {
+              resumed: true,
+            }),
             chainId: job.chainId,
             dao: job.dao as string,
             shares: job.shares as string,

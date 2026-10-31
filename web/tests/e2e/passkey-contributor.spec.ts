@@ -36,6 +36,8 @@ const PAYMASTER = process.env.E2E_PAYMASTER ?? "";
 const SUBMITTER = process.env.E2E_SUBMITTER ?? "";
 const REVIEWER1 = process.env.E2E_REVIEWER1 ?? "";
 const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
+// A third reviewer nobody acts as: a new project names at least three, two of whom decide (funding review D1).
+const REVIEWER3 = "0x00000000000000000000000000000000000000c3";
 const CHECK = "docs merged and reviewed";
 /** `ContributorProjectLaunched(address,address,address,bytes32,uint256)`. */
 const LAUNCHED =
@@ -231,7 +233,12 @@ test("a founder and a contributor with no wallet start a project, do the work an
   await founder.getByTestId("contributor-project-cap").fill("40");
   await founder
     .getByTestId("contributor-reviewers")
-    .fill(`${REVIEWER1}\n${REVIEWER2}`);
+    .fill(`${REVIEWER1}\n${REVIEWER2}\n${REVIEWER3}`);
+  await founder
+    .getByTestId("contributor-reviewer-ties")
+    .fill(
+      "Both reviewers are test accounts; the third is a stand-in nobody acts as.",
+    );
   await founder.getByTestId("contributor-project-name").fill("docs");
   await founder.getByTestId("contributor-project-check").fill(CHECK);
   await expect(founder.getByTestId("contributor-gate")).toHaveCount(0, {

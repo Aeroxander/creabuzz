@@ -59,6 +59,7 @@ const EMPTY: ContributorDraft = {
   ...CONTRIBUTOR_DEFAULTS,
   reviewers: "",
   quorum: "",
+  reviewerTies: "",
   projects: [emptyProject(CONTRIBUTOR_DEFAULTS.projectCap)],
 };
 
@@ -504,7 +505,7 @@ export function ContributorStartPage() {
               />
             }
             error={errorFor("reviewers")}
-            hint="The people who check submitted work: add them from the list. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
+            hint="The people who check submitted work: name at least three, from the list. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
             label="Reviewers"
             onChange={set("reviewers")}
             placeholder="Add people from the list, or paste an account address on each line"
@@ -513,20 +514,30 @@ export function ContributorStartPage() {
           />
           <ReviewersPicked
             me={start.me}
-            onEitherDecides={() =>
-              setDraft((current) => ({ ...current, quorum: "1" }))
+            onMajorityDecides={() =>
+              setDraft((current) => ({ ...current, quorum: "" }))
             }
             quorum={draft.quorum}
             reviewers={draft.reviewers}
           />
           <TextField
             error={errorFor("quorum")}
-            hint="Leave empty for more than half of them."
+            hint="Leave empty for more than half of them. At least two must agree."
             inputMode="numeric"
             label="How many reviewers must agree"
             onChange={set("quorum")}
             testId="contributor-quorum"
             value={draft.quorum}
+          />
+          <TextAreaField
+            error={errorFor("reviewerTies")}
+            hint={
+              'Shown on the project\'s page. Say who each reviewer is and any tie to you or to the people who will do the work: a friend, a colleague, family, another account of yours. Write "none" where there is none.'
+            }
+            label="How you know each reviewer"
+            onChange={set("reviewerTies")}
+            testId="contributor-reviewer-ties"
+            value={draft.reviewerTies ?? ""}
           />
           <FirstProjectsField
             cap={draft.projectCap}

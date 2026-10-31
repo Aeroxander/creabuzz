@@ -180,6 +180,7 @@ test("every field a launch can be created with is carried by a save", () => {
     vesting: { tranches: [{ multiple: 2, fraction: 1 }] },
     unlocks: { kind: "none" },
     reviewerTerms: "Each agreed to answer within 7 days. Unpaid.",
+    reviewerTies: "Ann was my colleague at Acme; I don't know Bo or Cy.",
     revenuePledge: {
       v: 1,
       percent: 10,

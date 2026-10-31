@@ -21,6 +21,8 @@ import { isContributorProject } from "../../launchpad/lib/funding.ts";
 
 const R1 = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
 const R2 = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
+const R3 = "0x90f79bf6eb2c4f870365e785982e1f101e93b906";
+const TIES = "Ann and Bo worked with me at Acme; I have not met Cy.";
 const FOUNDER = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
 const SALT = `0x${"ab".repeat(32)}`;
 
@@ -30,8 +32,9 @@ function draft(overrides = {}) {
     pitch: "Open docs for everyone, written by the people who use them.",
     symbol: "DOCS",
     ...CONTRIBUTOR_DEFAULTS,
-    reviewers: `${R1}\n${R2}`,
+    reviewers: `${R1}\n${R2}\n${R3}`,
     quorum: "",
+    reviewerTies: TIES,
     projects: [
       { name: "docs", check: "docs merged and reviewed", shares: "25000" },
     ],
@@ -43,7 +46,10 @@ test("the kit's launch call is byte-for-byte what cast encodes", () => {
   // Pinned with `cast sig` and `cast calldata` on the same values.
   assert.equal(selectorOf(KIT_LAUNCH_SIGNATURE), "0x57859d36");
   const data = encodeKitLaunch({
-    terms: contributorTerms(draft()),
+    // Two reviewers, as a job started before the panel rules would carry: the encoding pinned with cast.
+    terms: contributorTerms(draft({ reviewers: `${R1}\n${R2}` }), null, {
+      resumed: true,
+    }),
     salt: SALT,
     founder: FOUNDER,
     currency: `0x${"44".repeat(20)}`,
@@ -89,7 +95,7 @@ test("the terms say what share of all Shares contributors would hold", () => {
   const terms = contributorTerms(draft());
   assert.equal(terms.founderWhole, 100_000n);
   assert.equal(terms.budgetWhole, 300_000n);
-  assert.equal(terms.quorum, 2); // a simple majority of two
+  assert.equal(terms.quorum, 2); // a simple majority of three
   assert.equal(formatBps(terms.contributorsAtFullBudgetBps), "75%");
   assert.equal(
     formatBps(
@@ -117,8 +123,14 @@ test("every refusal names its field", () => {
       { reviewers: `${R1}\n${R1.toUpperCase().replace("0X", "0x")}` },
       "reviewers",
     ],
-    [{ quorum: "3" }, "quorum"],
+    [{ quorum: "4" }, "quorum"],
     [{ quorum: "0" }, "quorum"],
+    // Funding review D1, D5: three reviewers at least, two of whom must agree, and how the founder knows them.
+    [{ reviewers: `${R1}\n${R2}` }, "reviewers"],
+    [{ quorum: "1" }, "quorum"],
+    [{ reviewerTies: "" }, "reviewerTies"],
+    [{ reviewerTies: undefined }, "reviewerTies"],
+    [{ reviewerTies: "x".repeat(2_001) }, "reviewerTies"],
     [{ projects: [] }, "projects"],
     [
       { projects: [{ name: "", check: "docs merged", shares: "1" }] },
@@ -154,11 +166,10 @@ test("the founder does not review the first budget's work (D79)", () => {
   const onPanel = draft({ reviewers: `${FOUNDER}\n${R1}\n${R2}`, quorum: "2" });
   assert.equal(contributorIssue(onPanel, FOUNDER)?.field, "reviewers");
   assert.equal(
-    contributorIssue({ ...onPanel, quorum: "1" }, FOUNDER)?.field,
+    contributorIssue({ ...onPanel, quorum: "3" }, FOUNDER)?.field,
     "reviewers",
   );
-  // Without them on the panel one approval is the founder's choice to make.
-  assert.equal(contributorIssue(draft({ quorum: "1" }), FOUNDER), null);
+  assert.equal(contributorIssue(draft(), FOUNDER), null);
 });
 
 test("a founder with two accounts cannot review from the other one (D79, D139)", () => {
@@ -174,10 +185,7 @@ test("a founder with two accounts cannot review from the other one (D79, D139)",
     contributorIssue(onPanel, [PASSKEY, FOUNDER])?.field,
     "reviewers",
   );
-  assert.equal(
-    contributorIssue(draft({ quorum: "1" }), [PASSKEY, FOUNDER]),
-    null,
-  );
+  assert.equal(contributorIssue(draft(), [PASSKEY, FOUNDER]), null);
 });
 
 test("the record says contributors only, names the DAO and sells nothing", () => {
@@ -206,6 +214,32 @@ test("the record says contributors only, names the DAO and sells nothing", () =>
     })),
   );
   assert.ok(input.workAreas.length > 0);
+  // How the founder knows the reviewers is published with it (funding review D1).
+  assert.equal(input.reviewerTies, TIES);
+});
+
+test("a job started before the panel rules can still be finished, and a new one cannot skip them", () => {
+  const old = draft({ reviewers: `${R1}\n${R2}`, reviewerTies: undefined });
+  assert.equal(contributorIssue(old)?.field, "reviewers");
+  const terms = contributorTerms(old, null, { resumed: true });
+  assert.equal(terms.reviewers.length, 2);
+  assert.equal(terms.reviewerTies, "");
+  // Its record then carries no ties line rather than an empty one.
+  const input = contributorRecordInput({
+    launchId: "docs-commons",
+    terms,
+    chainId: 31337,
+    dao: "0xdao",
+    shares: "0xshares",
+    currency: "0xusdc",
+  });
+  assert.equal("reviewerTies" in input, false);
+  // One reviewer deciding alone is refused for a new project, kept for a resumed one.
+  assert.equal(contributorIssue(draft({ quorum: "1" }))?.field, "quorum");
+  assert.equal(
+    contributorTerms(draft({ quorum: "1" }), null, { resumed: true }).quorum,
+    1,
+  );
 });
 
 test("the preview needs only the Share fields, and none while they do not make sense", () => {

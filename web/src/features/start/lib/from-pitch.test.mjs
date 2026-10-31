@@ -4,7 +4,11 @@ import { describe, it } from "node:test";
 import { contributorTerms } from "./contributor-project.ts";
 import { draftFromPitch } from "./from-pitch.ts";
 
-const REVIEWER = `0x${"ab".repeat(20)}`;
+// Three reviewers and how the founder knows them: what the Start page needs besides the pitch (funding review D1).
+const PANEL = {
+  reviewers: ["ab", "ac", "ad"].map((b) => `0x${b.repeat(20)}`).join("\n"),
+  reviewerTies: "None of them is close to me or to the team.",
+};
 const role = (slug, pct, holder = null) => ({
   slug,
   label: slug[0].toUpperCase() + slug.slice(1),
@@ -35,7 +39,7 @@ describe("draftFromPitch", () => {
     assert.equal(draft.projectCap, "400000");
     assert.deepEqual(leftOut, []);
     // And the result is a draft the Start page accepts.
-    const terms = contributorTerms({ ...draft, reviewers: REVIEWER });
+    const terms = contributorTerms({ ...draft, ...PANEL });
     assert.equal(terms.projects.length, 2);
   });
 
@@ -62,7 +66,7 @@ describe("draftFromPitch", () => {
     assert.equal(start.draft.founderShares, "10000");
     assert.equal(start.draft.projects.length, 8);
     assert.deepEqual(start.leftOut, ["R1", "R0"]);
-    contributorTerms({ ...start.draft, reviewers: REVIEWER });
+    contributorTerms({ ...start.draft, ...PANEL });
   });
 
   it("leaves one empty project to fill in when the board has no other roles", () => {

@@ -46,6 +46,15 @@ const SHARE_UNIT = 10n ** 18n;
 /** A ceiling for what one form may create: a billion Shares. */
 const MAX_WHOLE_SHARES = 1_000_000_000n;
 const MAX_REVIEWERS = 32;
+/**
+ * The fewest reviewers, and the fewest who must agree, a new project may start with (funding review D1, D5): with one
+ * reviewer deciding alone, the founder's choice of that one person decides every award.
+ */
+const MIN_REVIEWERS = 3;
+const MIN_REVIEW_QUORUM = 2;
+/** The founder's words on how they know each reviewer, published with the project. */
+const TIES_MIN = 10;
+const TIES_MAX = 2_000;
 /** The most first projects the contributor kit makes in one launch (`ContributorKit.MAX_FIRST_PROJECTS`). */
 export const MAX_FIRST_PROJECTS = 8;
 /** How long the first work budget, and the first project in it, stay open, in days. */
@@ -84,6 +93,11 @@ export interface ContributorDraft {
   reviewers: string;
   /** How many reviewers must agree; empty for a simple majority. */
   quorum: string;
+  /**
+   * How the founder knows each reviewer, and any tie to them or to the people who will do the work, published with the
+   * project. Optional here only because drafts saved before it existed lack it; a new project needs it.
+   */
+  reviewerTies?: string;
   /** The first projects, one to eight. */
   projects: ProjectDraft[];
   /** The project this one is built on, as "author:id" of its record, or empty (N11). Optional: older drafts lack it. */
@@ -230,6 +244,8 @@ export interface ContributorTerms {
   capWhole: bigint;
   reviewers: string[];
   quorum: number;
+  /** The founder's words on how they know the reviewers; empty for a project started before it was asked. */
+  reviewerTies: string;
   projects: { name: string; check: string; sharesWhole: bigint }[];
   /** Basis points of all Shares the contributors would hold if the whole first budget were awarded. */
   contributorsAtFullBudgetBps: number;
@@ -335,6 +351,11 @@ function checkProjects(
 export function contributorTerms(
   draft: ContributorDraft,
   founderWallet: string | readonly string[] | null = null,
+  /**
+   * `resumed`: the job was started under the rules of its day, so rules added since (the panel's size and the ties)
+   * are not applied again; otherwise a job cut short by an update could never be finished.
+   */
+  { resumed = false }: { resumed?: boolean } = {},
 ): ContributorTerms {
   const name = draft.name.trim();
   if (name.length < 2) fail("name", "Give the project a name.");
@@ -383,6 +404,11 @@ export function contributorTerms(
       "reviewers",
       "Name at least one reviewer: the people who check work before Shares are awarded.",
     );
+  if (!resumed && reviewers.length < MIN_REVIEWERS)
+    fail(
+      "reviewers",
+      `Name at least ${MIN_REVIEWERS} reviewers, so no one person decides on everyone's work.`,
+    );
   if (reviewers.length > MAX_REVIEWERS)
     fail("reviewers", `Name at most ${MAX_REVIEWERS} reviewers.`);
   for (const reviewer of reviewers) {
@@ -404,6 +430,11 @@ export function contributorTerms(
       "quorum",
       `How many reviewers must agree: a whole number from 1 to ${reviewers.length}.`,
     );
+  if (!resumed && quorum < MIN_REVIEW_QUORUM)
+    fail(
+      "quorum",
+      `At least ${MIN_REVIEW_QUORUM} reviewers must agree, so no one reviewer decides alone.`,
+    );
   // D79: the founder does not judge the first budget's work; the contributor kit refuses a panel with them on it.
   const founderAddresses = (
     typeof founderWallet === "string" ? [founderWallet] : (founderWallet ?? [])
@@ -413,6 +444,15 @@ export function contributorTerms(
       "reviewers",
       "You cannot review the first budget's work yourself. Name other people: they check everyone's work, yours too.",
     );
+
+  const reviewerTies = (draft.reviewerTies ?? "").trim();
+  if (!resumed && reviewerTies.length < TIES_MIN)
+    fail(
+      "reviewerTies",
+      'Say how you know each reviewer, and any tie to you or to the people who will do the work. Write "none" where there is none.',
+    );
+  if (reviewerTies.length > TIES_MAX)
+    fail("reviewerTies", `Keep this under ${TIES_MAX} characters.`);
 
   const projects = checkProjects(draft.projects, capWhole, budgetWhole);
 
@@ -427,6 +467,7 @@ export function contributorTerms(
     capWhole,
     reviewers,
     quorum,
+    reviewerTies,
     projects,
     contributorsAtFullBudgetBps,
   };
@@ -672,7 +713,7 @@ export function contributorRecordInput(input: {
   launchId: string;
   terms: Pick<
     ContributorTerms,
-    "name" | "pitch" | "symbol" | "founderWhole" | "projects"
+    "name" | "pitch" | "symbol" | "founderWhole" | "projects" | "reviewerTies"
   >;
   chainId: number;
   dao: string;
@@ -715,6 +756,9 @@ export function contributorRecordInput(input: {
       name: p.name,
       check: p.check,
     })),
+    ...(input.terms.reviewerTies
+      ? { reviewerTies: input.terms.reviewerTies }
+      : {}),
     ...(input.remix ?? {}),
   };
 }
