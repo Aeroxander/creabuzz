@@ -15,7 +15,7 @@ import { Input } from "@/shared/ui/input";
 
 import { ideaId, ideaIssue, ideaToInput, IDEA_PITCH_MAX } from "../lib/idea";
 import { LAUNCH_CATEGORIES, type LaunchChat } from "../models";
-import { EMPTY_CHAT, ensureRooms } from "../use-launch-chat";
+import { EMPTY_CHAT, ensureRooms, setupNotice } from "../use-launch-chat";
 import { useCreateLaunch, useLaunches } from "../use-launches";
 import { CoverImageField } from "./create-wizard/CoverImageField";
 import { LaunchCardPreview } from "./create-wizard/LaunchCardPreview";
@@ -69,10 +69,9 @@ export function StartIdeaDialog({ onClose }: { onClose: () => void }) {
           chat: ensured.chat,
         }),
       );
+      const notice = setupNotice(ensured);
       toast.success(
-        ensured.incomplete
-          ? "Your idea is live. Some chat rooms can be added from its page."
-          : "Your idea is live.",
+        notice ? `Your idea is live. ${notice}` : "Your idea is live.",
       );
       onClose();
       void navigate({

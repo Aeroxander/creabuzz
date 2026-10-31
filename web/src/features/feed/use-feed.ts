@@ -9,7 +9,6 @@ import {
   KIND_ORG_NODE,
   KIND_REACTION,
   KIND_TEXT_NOTE,
-  KIND_THREAD_SUMMARY,
 } from "@/shared/constants/kinds";
 import { ethBlockNumber, getRpcEndpoint } from "@/features/launchpad/chain";
 import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
@@ -25,7 +24,6 @@ import {
 } from "./lib/feed-events";
 import { createListWriter, type ListWrite } from "./lib/follow-queue";
 import { latestList, withLaunch, withPerson } from "./lib/lists";
-import { type ThreadSummary, parseThreadSummary } from "./lib/launch-thread";
 import {
   isMirrorable,
   KIND_RELAY_LIST,
@@ -300,29 +298,6 @@ export function useChainBlockHeight(): bigint | null {
     retry: false,
   });
   return height.data ?? null;
-}
-
-/** The launch's agent thread summaries (kind 39005), best first. */
-export function useLaunchSummaries(coord: string | null): {
-  summaries: ThreadSummary[];
-  isLoading: boolean;
-} {
-  const query = useQuery({
-    queryKey: ["feed", "thread-summaries", coord ?? ""],
-    queryFn: async () => {
-      const events = await queryEvents(relayWsUrl(), {
-        kinds: [KIND_THREAD_SUMMARY],
-        "#a": [coord as string],
-        limit: 20,
-      });
-      return events
-        .map((e) => parseThreadSummary(e))
-        .filter((s): s is ThreadSummary => s !== null);
-    },
-    enabled: Boolean(coord),
-    staleTime: 60_000,
-  });
-  return { summaries: query.data ?? [], isLoading: query.isLoading };
 }
 
 /** Publish a note, vote or list and refresh what it affects. */

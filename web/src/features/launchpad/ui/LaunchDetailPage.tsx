@@ -555,7 +555,7 @@ export function LaunchDetailPage({
             <LaunchChatCard isFounder={isFounder} launch={launch} />
           ) : null}
           <LaunchDiscussion
-            record={launch.record}
+            launch={launch}
             // Pinned are the team's own updates: not submitted work, not a work area's words, not someone else's post.
             updates={launch.updates.filter(
               (u) =>

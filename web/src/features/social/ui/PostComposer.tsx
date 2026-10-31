@@ -82,6 +82,8 @@ export function PostComposer({
   autoFocus = false,
   onPosted,
   postTo = false,
+  initialText = "",
+  teamUpdateFor = null,
   testId = "social-composer",
 }: {
   replyTo?: { root: SignedEventLike; parent: SignedEventLike } | null;
@@ -91,10 +93,14 @@ export function PostComposer({
   onPosted?: () => void;
   /** Offer "Post to: General or a board". */
   postTo?: boolean;
+  /** What the box starts with. */
+  initialText?: string;
+  /** Always a team update for this project (its announcement), with no choice to make. */
+  teamUpdateFor?: { author: string; id: string; name: string } | null;
   testId?: string;
 }) {
   const me = existingUserPubkey();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [caret, setCaret] = useState(0);
   const [active, setActive] = useState(0);
   const [mirror, setMirror] = useState(readMirrorSetting);
@@ -252,12 +258,17 @@ export function PostComposer({
               root: replyTo.root,
               parent: replyTo.parent,
             })
-          : launchMode && canLaunchMode && chosenLaunch
+          : teamUpdateFor
             ? buildLaunchUpdate({
                 text,
-                launch: { pubkey: chosenLaunch.author, id: chosenLaunch.id },
+                launch: { pubkey: teamUpdateFor.author, id: teamUpdateFor.id },
               })
-            : buildSocialPost(text);
+            : launchMode && canLaunchMode && chosenLaunch
+              ? buildLaunchUpdate({
+                  text,
+                  launch: { pubkey: chosenLaunch.author, id: chosenLaunch.id },
+                })
+              : buildSocialPost(text);
     } catch (error) {
       // The draft's own problem (empty, too long) in the app's words.
       setProblem(
@@ -455,7 +466,15 @@ export function PostComposer({
               <ImagePlus aria-hidden className="h-4 w-4" />
               {uploading ? "Uploading…" : "Add a picture"}
             </button>
-            {canLaunchMode ? (
+            {teamUpdateFor ? (
+              <span
+                className="flex items-center gap-1.5 text-xs font-semibold text-primary-ink"
+                data-testid={`${testId}-team-update`}
+              >
+                <Megaphone aria-hidden className="h-3.5 w-3.5" />
+                Team update for {teamUpdateFor.name}
+              </span>
+            ) : canLaunchMode ? (
               <span className="flex items-center gap-2 text-xs">
                 <label className="flex items-center gap-2 font-semibold text-primary-ink">
                   <input

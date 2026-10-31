@@ -31,6 +31,8 @@ export function NoteCard({
   tally = EMPTY_TALLY,
   replies = 0,
   onReply,
+  expanded,
+  repliesId,
   compact = false,
 }: {
   note: FeedNote;
@@ -38,7 +40,11 @@ export function NoteCard({
   launchName: (coord: string) => string | null;
   tally?: VoteTally;
   replies?: number;
+  /** Shows or hides the note's replies. */
   onReply?: () => void;
+  /** Whether the replies are shown, and the element that holds them, for screen readers. */
+  expanded?: boolean;
+  repliesId?: string;
   compact?: boolean;
 }) {
   const author = nameOf(note.author);
@@ -120,6 +126,8 @@ export function NoteCard({
           {onReply ? (
             <button
               className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs text-black/60 hover:bg-black/5 hover:text-black dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white"
+              aria-controls={expanded ? repliesId : undefined}
+              aria-expanded={expanded}
               data-testid="note-reply"
               onClick={onReply}
               type="button"

@@ -168,7 +168,7 @@ test("every field a launch can be created with is carried by a save", () => {
     "utf8",
   );
   const start = source.indexOf("export interface CreateLaunchInput");
-  const end = source.indexOf("/** Every channel the record binds");
+  const end = source.indexOf("export function useCreateLaunch");
   const fields = [
     ...source.slice(start, end).matchAll(/^ {2}([a-zA-Z]+)\??:/gm),
   ].map((match) => match[1]);

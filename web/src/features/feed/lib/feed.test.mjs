@@ -175,7 +175,19 @@ describe("tally and ranking", () => {
       }),
     ];
     const tally = tallyVotes(reactions, () => 1, BOB).get(target);
-    assert.deepEqual(tally, { up: 1, down: 1, score: 0, mine: "-" });
+    // Both of Bob's records are his, so taking his vote back deletes them all; Alice's emoji is not a vote.
+    assert.deepEqual(tally, {
+      up: 1,
+      down: 1,
+      score: 0,
+      mine: "-",
+      mineIds: [reactions[0].id, reactions[1].id],
+    });
+    assert.deepEqual(
+      tallyVotes(reactions, () => 1, ALICE).get(target).mineIds,
+      [],
+      "an emoji reaction is never deleted as if it were a vote",
+    );
   });
 
   it("launch votes tally by coordinate across record versions", () => {

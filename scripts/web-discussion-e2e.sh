@@ -2,7 +2,7 @@
 #
 # ⚠️  NOT IN ANY GATE (2026-10-31, docs/v3-review/DEPRECATION-2026-10-31.md): scripts/mvp-gate.sh does not run it and
 # nothing runs it on a schedule, so it may have broken since it was last changed. Run it before relying on it.
-# Raise-era (a launch-kit DAO); contributor-journey covers Join the discussion on a contributor project.
+# Raise-era (a launch-kit DAO). A project's own Discussion tab (its board, D156) is covered by web/tests/e2e/feed.spec.ts.
 #
 # scripts/web-discussion-e2e.sh — talking about a decision in the WEB app, against a REAL local chain.
 #

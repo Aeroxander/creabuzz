@@ -22,9 +22,17 @@ export interface VoteTally {
   score: number;
   /** The viewer's own latest vote on this target, if any. */
   mine: "+" | "-" | null;
+  /** Every vote record of the viewer's on this target, so taking a vote back or changing it can delete them all. */
+  mineIds: readonly string[];
 }
 
-export const EMPTY_TALLY: VoteTally = { up: 0, down: 0, score: 0, mine: null };
+export const EMPTY_TALLY: VoteTally = {
+  up: 0,
+  down: 0,
+  score: 0,
+  mine: null,
+  mineIds: [],
+};
 
 /**
  * The key a reaction counts toward: a launch's `a` coordinate when it names
@@ -47,9 +55,14 @@ export function tallyVotes(
   viewer?: string | null,
 ): Map<string, VoteTally> {
   const latest = new Map<string, SignedEventLike>();
+  const viewerIds = new Map<string, string[]>();
   for (const reaction of reactions) {
     const target = voteTarget(reaction);
     if (!target) continue;
+    const isVote = ["+", "-", ""].includes(reaction.content);
+    if (viewer && reaction.pubkey === viewer && isVote) {
+      viewerIds.set(target, [...(viewerIds.get(target) ?? []), reaction.id]);
+    }
     const key = `${target}\u0000${reaction.pubkey}`;
     const seen = latest.get(key);
     if (
@@ -81,6 +94,13 @@ export function tallyVotes(
     }
     if (viewer && reaction.pubkey === viewer) tally.mine = direction;
     tallies.set(target, tally);
+  }
+  // A viewer whose latest record is not a vote (a removed like) still has records to delete.
+  for (const [target, ids] of viewerIds) {
+    tallies.set(target, {
+      ...(tallies.get(target) ?? EMPTY_TALLY),
+      mineIds: ids,
+    });
   }
   return tallies;
 }

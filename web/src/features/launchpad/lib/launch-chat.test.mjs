@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  boundChannelIds,
   hasChat,
   missingRooms,
   pendingBackers,
@@ -58,10 +59,35 @@ test("an idea needs team and supporters; a sale also needs backers", () => {
 
 test("withRooms fills gaps and never replaces a room that exists", () => {
   const merged = withRooms(
-    { team: "t", supporters: null, backers: null },
-    { team: "other", supporters: "s", backers: "b" },
+    { team: "t", supporters: null, backers: null, board: null },
+    { team: "other", supporters: "s", backers: "b", board: "f" },
   );
-  assert.deepEqual(merged, { team: "t", supporters: "s", backers: "b" });
+  assert.deepEqual(merged, {
+    team: "t",
+    supporters: "s",
+    backers: "b",
+    board: "f",
+  });
+  assert.equal(
+    withRooms({ ...merged, board: "mine" }, { board: "other" }).board,
+    "mine",
+    "a project's board is never swapped for another",
+  );
+});
+
+test("the record binds the project's own rooms and board first, so the server's cap never drops them", () => {
+  const picked = Array.from({ length: 8 }, (_, i) => `picked-${i}`);
+  const chat = { team: "t", supporters: "s", backers: null, board: "f" };
+  const bound = boundChannelIds({ channels: picked, chat });
+  assert.equal(bound.length, 8);
+  assert.deepEqual(bound.slice(0, 3), ["t", "s", "f"]);
+  assert.deepEqual(boundChannelIds({ channels: ["t", "x"], chat }), [
+    "t",
+    "s",
+    "f",
+    "x",
+  ]);
+  assert.deepEqual(boundChannelIds({ channels: ["x"] }), ["x"]);
 });
 
 const base = {

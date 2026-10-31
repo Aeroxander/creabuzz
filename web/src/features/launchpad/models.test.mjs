@@ -63,6 +63,29 @@ test("a record says what it is built on and its remix terms; the link is not a l
   assert.equal(plain.record.remixTerms, null);
 });
 
+test("a record names its project board beside its chat rooms, and an old record has none (D156)", () => {
+  const BOARD = "0f0e0d0c-0b0a-4908-8706-050403020100";
+  const [withBoard] = buildLaunches([
+    record(ALICE, "with-board", 100, {
+      chat: {
+        supporters: "11111111-2222-4333-8444-555555555555",
+        board: BOARD.toUpperCase(),
+      },
+    }),
+  ]);
+  assert.equal(withBoard.record.chat.board, BOARD);
+  assert.equal(
+    withBoard.record.chat.supporters,
+    "11111111-2222-4333-8444-555555555555",
+  );
+  const [old] = buildLaunches([record(ALICE, "old")]);
+  assert.equal(old.record.chat.board, null);
+  const [bad] = buildLaunches([
+    record(ALICE, "bad", 100, { chat: { board: "not-a-channel" } }),
+  ]);
+  assert.equal(bad.record.chat.board, null, "only a channel id is a board");
+});
+
 test("the newest record per author and slug wins", () => {
   const launches = buildLaunches([
     record(ALICE, "nebula", 100),

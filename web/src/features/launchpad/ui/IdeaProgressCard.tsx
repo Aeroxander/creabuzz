@@ -12,8 +12,8 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Composer } from "@/features/feed/ui/Composer";
-import { launchCoord, launchRef } from "@/features/feed/ui/LaunchVoteCard";
+import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
+import { PostComposer } from "@/features/social/ui/PostComposer";
 import { useLaunchNotes } from "@/features/feed/use-feed";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -24,7 +24,7 @@ import { gateProgress } from "../lib/idea";
 import { raisesOffered } from "../lib/raises-offered";
 import { recordToInput } from "../lib/record-input";
 import type { Launch } from "../models";
-import { ensureRooms } from "../use-launch-chat";
+import { ensureRooms, setupNotice } from "../use-launch-chat";
 import { useCreateLaunch, type CreateLaunchInput } from "../use-launches";
 import { useSupporters } from "../use-supporters";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
@@ -58,11 +58,8 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
         sale: true,
       });
       await save.mutateAsync({ ...input, chat: ensured.chat });
-      toast.success(
-        ensured.incomplete
-          ? "Sale prepared. Some chat rooms can be added from this page."
-          : "Sale prepared.",
-      );
+      const notice = setupNotice(ensured);
+      toast.success(notice ? `Sale prepared. ${notice}` : "Sale prepared.");
       setPreparing(false);
     } catch (error) {
       setPublishError(
@@ -85,10 +82,14 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
         <Step done={announced} title="Announce it">
           {writing ? (
             <div className="mt-1.5">
-              <Composer
+              <PostComposer
                 initialText={`I'm starting ${record.name}: ${record.pitch}\n\n${raises ? "Say you'd back it and join the chat." : "Say you're interested and join the chat."}`}
-                launch={launchRef(record)}
                 onPosted={() => setWriting(false)}
+                teamUpdateFor={{
+                  author: record.author,
+                  id: record.id,
+                  name: record.name,
+                }}
                 testId="idea-share"
               />
             </div>

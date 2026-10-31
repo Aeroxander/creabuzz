@@ -15,7 +15,27 @@ import type { LaunchBid, LaunchChat } from "../models";
 
 export type RoomKey = "team" | "supporters" | "backers";
 
-/** True when the launch has at least one room to open. */
+/** The most `buzz-channel` tags the server takes on a launch record. */
+const MAX_BOUND_CHANNELS = 8;
+
+/**
+ * Every channel a launch record binds, once each: the launch's own rooms and board first, so they always fit under the
+ * server's cap, then the channels the founder picked while there is room.
+ */
+export function boundChannelIds(input: {
+  channels: readonly string[];
+  chat?: LaunchChat;
+}): string[] {
+  const own = [
+    input.chat?.team,
+    input.chat?.supporters,
+    input.chat?.backers,
+    input.chat?.board,
+  ].filter((id): id is string => Boolean(id));
+  return [...new Set([...own, ...input.channels])].slice(0, MAX_BOUND_CHANNELS);
+}
+
+/** True when the launch has at least one chat room to open (the board is not a chat room). */
 export function hasChat(chat: LaunchChat): boolean {
   return (
     chat.team !== null || chat.supporters !== null || chat.backers !== null
@@ -46,6 +66,7 @@ export function withRooms(
     team: chat.team ?? rooms.team ?? null,
     supporters: chat.supporters ?? rooms.supporters ?? null,
     backers: chat.backers ?? rooms.backers ?? null,
+    board: chat.board ?? rooms.board ?? null,
   };
 }
 

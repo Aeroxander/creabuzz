@@ -207,10 +207,10 @@ test("a board lists posts by activity, and a reader can re-sort them", async ({
     "Newer and quiet",
   ]);
   await expect(
-    page.getByTestId(`board-post-${loved.id}`).getByTestId("board-score"),
+    page.getByTestId(`board-post-${loved.id}`).getByTestId("board-vote-score"),
   ).toContainText("2");
   await expect(
-    page.getByTestId(`board-post-${quiet.id}`).getByTestId("board-score"),
+    page.getByTestId(`board-post-${quiet.id}`).getByTestId("board-vote-score"),
   ).toContainText("-1");
   await expect(page.getByTestId(`board-post-${busy.id}`)).toContainText(
     "1 reply",
@@ -618,9 +618,9 @@ test("a vote is one record, changing it is another, and pressing it again takes 
   await open(page, relay);
   const row = page.getByTestId(`board-post-${p.id}`);
 
-  await row.getByTestId("board-upvote").click();
-  await expect(row.getByTestId("board-score")).toContainText("1");
-  await expect(row.getByTestId("board-upvote")).toHaveAttribute(
+  await row.getByTestId("board-vote-up").click();
+  await expect(row.getByTestId("board-vote-score")).toContainText("1");
+  await expect(row.getByTestId("board-vote-up")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -631,9 +631,9 @@ test("a vote is one record, changing it is another, and pressing it again takes 
     ["e", p.id],
   ]);
 
-  await row.getByTestId("board-downvote").click();
-  await expect(row.getByTestId("board-score")).toContainText("-1");
-  await expect(row.getByTestId("board-downvote")).toHaveAttribute(
+  await row.getByTestId("board-vote-down").click();
+  await expect(row.getByTestId("board-vote-score")).toContainText("-1");
+  await expect(row.getByTestId("board-vote-down")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -649,9 +649,9 @@ test("a vote is one record, changing it is another, and pressing it again takes 
     (e) => e.kind === 45002 && e.pubkey === OWNER,
   )?.id;
 
-  await row.getByTestId("board-downvote").click();
-  await expect(row.getByTestId("board-score")).toContainText("0");
-  await expect(row.getByTestId("board-downvote")).toHaveAttribute(
+  await row.getByTestId("board-vote-down").click();
+  await expect(row.getByTestId("board-vote-score")).toContainText("0");
+  await expect(row.getByTestId("board-vote-down")).toHaveAttribute(
     "aria-pressed",
     "false",
   );
@@ -671,7 +671,7 @@ test("a vote is one record, changing it is another, and pressing it again takes 
   await page.reload();
   await page.getByTestId("content-pane").waitFor();
   await expect(
-    page.getByTestId(`board-post-${p.id}`).getByTestId("board-score"),
+    page.getByTestId(`board-post-${p.id}`).getByTestId("board-vote-score"),
   ).toContainText("0");
 });
 
@@ -724,7 +724,7 @@ test("someone without an account is told to make one, and nothing is written", a
   ).toBeVisible();
   await page
     .getByTestId(`board-post-${p.id}`)
-    .getByTestId("board-upvote")
+    .getByTestId("board-vote-up")
     .click();
   await expect(
     page.getByText("Create your account (top right) to vote."),
@@ -1202,13 +1202,13 @@ test("proposal posts have no vote arrows and are not ranked by votes", async ({
 
   // Ordinary posts keep their arrows and score; proposals say what they are instead.
   await expect(
-    page.getByTestId(`board-post-${plain.id}`).getByTestId("board-upvote"),
+    page.getByTestId(`board-post-${plain.id}`).getByTestId("board-vote-up"),
   ).toBeVisible();
   await expect(
-    page.getByTestId(`board-post-${loved.id}`).getByTestId("board-upvote"),
+    page.getByTestId(`board-post-${loved.id}`).getByTestId("board-vote-up"),
   ).toHaveCount(0);
   await expect(
-    page.getByTestId(`board-post-${loved.id}`).getByTestId("board-score"),
+    page.getByTestId(`board-post-${loved.id}`).getByTestId("board-vote-score"),
   ).toHaveCount(0);
   await expect(page.getByTestId(`board-post-${loved.id}`)).toContainText(
     "Proposal",

@@ -20,7 +20,7 @@ import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowRight, Lightbulb, Plus, Rocket } from "lucide-react";
 import { toast } from "sonner";
-import { EMPTY_CHAT, ensureRooms } from "../use-launch-chat";
+import { EMPTY_CHAT, ensureRooms, setupNotice } from "../use-launch-chat";
 
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
@@ -216,11 +216,8 @@ export function LaunchesPage() {
         sale: true,
       });
       rooms.current = ensured.chat;
-      if (ensured.incomplete) {
-        toast.error(
-          "Some chat rooms could not be created. You can add them from the launch page.",
-        );
-      }
+      const notice = setupNotice(ensured);
+      if (notice) toast.error(notice);
       await create.mutateAsync({ ...input, chat: ensured.chat });
       rooms.current = null;
       roomsName.current = null;

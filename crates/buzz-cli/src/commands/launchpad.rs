@@ -124,6 +124,8 @@ fn summarize_record(event: &Event) -> serde_json::Value {
         "auction": tag_value(event, "auction"),
         "token": tag_value(event, "token"),
         "treasury": tag_value(event, "treasury"),
+        // The project's own board (D156): post there with `buzz messages send --channel <board> --kind 45001`.
+        "board": body.get("chat").and_then(|chat| chat.get("board")),
     })
 }
 
@@ -1274,6 +1276,25 @@ mod tests {
         tags.iter()
             .map(|t| t.as_slice().iter().map(|s| s.to_string()).collect())
             .collect()
+    }
+
+    #[test]
+    fn a_record_summary_names_the_project_board_when_it_has_one() {
+        let keys = nostr::Keys::generate();
+        let board = "0f0e0d0c-0b0a-4908-8706-050403020100";
+        let event = EventBuilder::new(
+            Kind::Custom(KIND_LAUNCH_RECORD as u16),
+            serde_json::json!({ "pitch": "p", "stage": "live", "chat": { "board": board } })
+                .to_string(),
+        )
+        .tags([Tag::parse(["d", "orbit"]).expect("tag")])
+        .sign_with_keys(&keys)
+        .expect("signed");
+        assert_eq!(summarize_record(&event)["board"], board);
+        let old = EventBuilder::new(Kind::Custom(KIND_LAUNCH_RECORD as u16), r#"{"pitch":"p"}"#)
+            .sign_with_keys(&keys)
+            .expect("signed");
+        assert!(summarize_record(&old)["board"].is_null());
     }
 
     /// The relay refuses a 47005 without exactly one well-formed `tx` tag

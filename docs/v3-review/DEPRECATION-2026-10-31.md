@@ -73,7 +73,7 @@ Rows marked done were removed on 2026-10-31 (D150); the commit before them is ta
 
 | Item | What | Recommendation |
 |---|---|---|
-| #12 | Two discussion systems on one project (feed notes and board posts), three vote widgets, three composers | Merge after the contributor pilot: make Discussion a project-tagged board feed and keep old notes read-only, unless the pilot shows people confused by two places sooner. |
+| #12 | Two discussion systems on one project (feed notes and board posts), three vote widgets, three composers | Done in D156, before the pilot as you asked: each project has its own board, which is its Discussion tab; older notes stay read-only under it. One vote control (take back, change, muted reason) everywhere; the feed composer is gone, leaving Home's and a board's. |
 | #19 | Matched exits and weekly rounds compete for one exchange slot | Done in D152: matched exits retired (contract, kind 47009, screens, deploy steps, the journey's sale step); weekly rounds keep the slot. |
 | #20 | Four send paths and two modules named one hyphen apart | Done in D150: `useWalletSend` wraps `useChainSend`; the passkey sender renamed `passkey-sender.ts`; the picker marked raise-only; an unused governance sender deleted. |
 | #21 | 43 web files that only re-export the core package | Done in D155: the 36 that held nothing else are gone and their importers name the core module; `shared/constants/kinds.ts` stays as the tested way into the event kinds, and six files that add their own code stay. |

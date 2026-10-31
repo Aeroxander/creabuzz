@@ -36,40 +36,61 @@ import type { Launch, LaunchChat } from "./models";
 
 const KIND_CHANNEL_MEMBERS = 39002;
 
+/** What a launch can have made for it: its chat rooms and its board (D156). */
+type SpaceKey = RoomKey | "board";
+
 const ROOM_SPECS: Record<
-  RoomKey,
-  { suffix: string; visibility: "open" | "private"; about: string }
+  SpaceKey,
+  {
+    suffix: string | null;
+    visibility: "open" | "private";
+    channelType: "stream" | "forum";
+    about: (launchName: string) => string;
+  }
 > = {
   team: {
     suffix: "team",
     visibility: "private",
-    about: "The people building this launch.",
+    channelType: "stream",
+    about: () => "The people building this launch.",
   },
   supporters: {
     suffix: "supporters",
     visibility: "open",
-    about: "Everyone excited about this project.",
+    channelType: "stream",
+    about: () => "Everyone excited about this project.",
   },
   backers: {
     suffix: "backers",
     visibility: "private",
-    about: "People who backed this launch with a bid.",
+    channelType: "stream",
+    about: () => "People who backed this launch with a bid.",
+  },
+  board: {
+    suffix: null,
+    visibility: "open",
+    channelType: "forum",
+    about: (launchName) =>
+      `Talk about ${launchName.trim() || "this project"}: ideas, questions and plans.`,
   },
 };
 
-/** Rooms are named for the launch so they are findable in the channel list. */
-function roomName(launchName: string, room: RoomKey): string {
+/** Rooms are named for the launch so they are findable in the channel list; the board takes the launch's own name. */
+function roomName(launchName: string, room: SpaceKey): string {
   const base = launchName.trim().slice(0, 40) || "Launch";
-  return `${base} · ${ROOM_SPECS[room].suffix}`;
+  const suffix = ROOM_SPECS[room].suffix;
+  return suffix ? `${base} · ${suffix}` : base;
 }
 
 export interface CreatedRooms {
   /** The rooms that now exist; a room that failed is absent. */
   created: Partial<LaunchChat>;
   /** Rooms that could not be created; the founder can retry them. */
-  failedRooms: RoomKey[];
+  failedRooms: SpaceKey[];
   /** Team members the founder could not add yet; surfaced, never dropped. */
   failedTeam: string[];
+  /** Why each failed room failed, as the server said it (a refusal such as the daily limit on new boards). */
+  errors: Partial<Record<SpaceKey, unknown>>;
 }
 
 /**
@@ -81,10 +102,11 @@ export interface CreatedRooms {
 async function createLaunchRooms(input: {
   launchName: string;
   team: readonly string[];
-  rooms: readonly RoomKey[];
+  rooms: readonly SpaceKey[];
 }): Promise<CreatedRooms> {
   const created: Partial<LaunchChat> = {};
-  const failedRooms: RoomKey[] = [];
+  const failedRooms: SpaceKey[] = [];
+  const errors: Partial<Record<SpaceKey, unknown>> = {};
   const failedTeam = new Set<string>();
   for (const room of input.rooms) {
     const spec = ROOM_SPECS[room];
@@ -95,12 +117,13 @@ async function createLaunchRooms(input: {
           id,
           name: roomName(input.launchName, room),
           visibility: spec.visibility,
-          channelType: "stream",
-          about: spec.about,
+          channelType: spec.channelType,
+          about: spec.about(input.launchName),
         }),
       );
-    } catch {
+    } catch (error) {
       failedRooms.push(room);
+      errors[room] = error;
       continue;
     }
     created[room] = id;
@@ -116,36 +139,170 @@ async function createLaunchRooms(input: {
       }
     }
   }
-  return { created, failedRooms, failedTeam: [...failedTeam] };
+  return { created, failedRooms, failedTeam: [...failedTeam], errors };
 }
 
 export const EMPTY_CHAT: LaunchChat = {
   team: null,
   supporters: null,
   backers: null,
+  board: null,
 };
 
 /**
- * Make sure a launch has the rooms it needs before its record is published:
- * creates only what is missing and returns the chat to record. `incomplete`
- * means something could not be set up, so the caller can say so; it never
- * blocks the launch, and the founder can create the rest from the launch page.
+ * Make sure a launch has the rooms and the board it needs before its record is published: creates only what is missing
+ * and returns the chat to record. `incomplete` means a chat room or a team member could not be set up, and
+ * `boardMissing` that the board could not be, so the caller can say which (`setupNotice`); neither blocks the launch.
+ * The founder adds missing rooms from the launch page's Chat card and the board from its Discussion tab.
  */
 export async function ensureRooms(input: {
   launchName: string;
   chat: LaunchChat;
   team: readonly string[];
   sale: boolean;
-}): Promise<{ chat: LaunchChat; incomplete: boolean }> {
+}): Promise<{ chat: LaunchChat; incomplete: boolean; boardMissing: boolean }> {
   const rooms = await createLaunchRooms({
     launchName: input.launchName,
     team: input.team,
-    rooms: missingRooms(input.chat, { sale: input.sale }),
+    rooms: [
+      ...missingRooms(input.chat, { sale: input.sale }),
+      ...(input.chat.board ? [] : (["board"] as const)),
+    ],
   });
+  const chat = withRooms(input.chat, rooms.created);
   return {
-    chat: withRooms(input.chat, rooms.created),
-    incomplete: rooms.failedRooms.length > 0 || rooms.failedTeam.length > 0,
+    chat,
+    incomplete:
+      rooms.failedRooms.some((room) => room !== "board") ||
+      rooms.failedTeam.length > 0,
+    boardMissing: chat.board === null,
   };
+}
+
+/** What was not set up when a launch was published, and where to add it; null when everything was. */
+export function setupNotice(ensured: {
+  incomplete: boolean;
+  boardMissing: boolean;
+}): string | null {
+  if (ensured.incomplete && ensured.boardMissing) {
+    return "Some chat rooms and the project's board weren't set up: add the rooms on its page, and the board from its Discussion tab.";
+  }
+  if (ensured.incomplete) return "Some chat rooms can be added from its page.";
+  if (ensured.boardMissing) {
+    return "Its board wasn't set up: open it from the Discussion tab.";
+  }
+  return null;
+}
+
+/** Where a board made for a launch that is not published yet is remembered, so a retried start makes no second one. */
+const boardMemoKey = (launchId: string) => `creaton:launch-board:${launchId}`;
+
+function readBoardMemo(launchId: string): string | null {
+  try {
+    return localStorage.getItem(boardMemoKey(launchId));
+  } catch {
+    return null;
+  }
+}
+
+function forgetBoardMemo(launchId: string): void {
+  try {
+    localStorage.removeItem(boardMemoKey(launchId));
+  } catch {
+    // Nothing was kept.
+  }
+}
+
+/**
+ * A board for the launch, made now unless one was already made for it and not yet recorded: a start that publishes its
+ * record more than once (a contributor project retried after a failed step), or an Open the project board whose record
+ * save failed, reuses the board made the first time instead of leaving another behind. `avoid` is a board that must
+ * not be reused (the record names it, and it is gone). Returns the board, or null and the server's reason.
+ */
+async function boardFor(input: {
+  launchId: string;
+  launchName: string;
+  avoid?: string | null;
+}): Promise<{ board: string | null; error: unknown }> {
+  const remembered = readBoardMemo(input.launchId);
+  if (remembered && remembered !== input.avoid) {
+    return { board: remembered, error: null };
+  }
+  const made = await createLaunchRooms({
+    launchName: input.launchName,
+    team: [],
+    rooms: ["board"],
+  });
+  const board = made.created.board ?? null;
+  if (board) {
+    try {
+      localStorage.setItem(boardMemoKey(input.launchId), board);
+    } catch {
+      // Private mode: a retry may make a second board, which the founder can remove.
+    }
+  }
+  return { board, error: made.errors.board ?? null };
+}
+
+/**
+ * The launch's chat with its board, made now if it has none. A board that cannot be made leaves the chat as it was:
+ * the project still starts, and its founder opens the board from the Discussion tab, where the reason is shown.
+ */
+export async function ensureProjectBoard(input: {
+  launchId: string;
+  launchName: string;
+  chat: LaunchChat;
+}): Promise<LaunchChat> {
+  if (input.chat.board) return input.chat;
+  const { board } = await boardFor(input);
+  return board ? withRooms(input.chat, { board }) : input.chat;
+}
+
+/** How many channels a launch record may name; the server refuses more. */
+const MAX_RECORD_CHANNELS = 8;
+
+/**
+ * Open the board of a launch that has none (one made before D156), or a new one when the board its record names is
+ * gone, then republish the record naming it. The board first, so the record never points at one that does not exist;
+ * a failed save keeps the board for the next try. A refusal (the daily limit on new boards) comes back in the
+ * server's words. `dropped` counts channels the founder picked that no longer fit beside the board.
+ */
+export function useCreateProjectBoard(launch: Launch) {
+  const save = useCreateLaunch();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<{ board: string; dropped: number }> => {
+      const { record } = launch;
+      const { board, error } = await boardFor({
+        launchId: record.id,
+        launchName: record.name,
+        avoid: record.chat.board,
+      });
+      if (!board) {
+        throw error ?? new Error("The board wasn't opened. Try again.");
+      }
+      const chat = { ...record.chat, board };
+      const own = new Set(
+        [chat.team, chat.supporters, chat.backers, board].filter(Boolean),
+      );
+      const picked = record.channels.filter(
+        (id) => !own.has(id) && id !== record.chat.board,
+      );
+      const dropped = Math.max(
+        0,
+        own.size + picked.length - MAX_RECORD_CHANNELS,
+      );
+      await save.mutateAsync(
+        recordToInput(record, {
+          chat,
+          channels: picked.slice(0, picked.length - dropped),
+        }),
+      );
+      forgetBoardMemo(record.id);
+      await queryClient.invalidateQueries({ queryKey: ["channels"] });
+      return { board, dropped };
+    },
+  });
 }
 
 function membersKey(channelId: string | null) {

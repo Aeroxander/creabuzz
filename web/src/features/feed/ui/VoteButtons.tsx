@@ -1,30 +1,13 @@
-import { ArrowBigDown, ArrowBigUp } from "lucide-react";
-import { toast } from "sonner";
+import { useReactionVote } from "@/features/social/use-reaction-vote";
+import { VoteControl } from "@/features/social/ui/VoteControl";
 
-import { existingUserPubkey } from "@/shared/lib/identity";
-
-import {
-  buildVote,
-  type LaunchRef,
-  type SignedEventLike,
-  type VoteDirection,
-} from "../lib/feed-events";
+import type { LaunchRef, SignedEventLike } from "../lib/feed-events";
 import { EMPTY_TALLY, type VoteTally } from "../lib/ranking";
-import { usePublishFeedEvent } from "../use-feed";
-import { needAccountTo } from "@/features/identity/lib/account-copy";
 
 /**
- * The number people see is the plain headcount: people who voted up minus people who voted down. How much
- * each vote counts toward *ranking* is a separate, internal matter (`trust-weight.ts`), so no decimal ever
- * appears and the same like reads the same everywhere.
- */
-function netVotes(tally: Pick<VoteTally, "up" | "down">): number {
-  return tally.up - tally.down;
-}
-
-/**
- * Up/down voting on a note or a launch. The number is the plain headcount (net
- * votes); ranking leans on trusted voters more, but that stays out of sight.
+ * Up/down voting on a note or a project, drawn and behaving like a post's vote on Home (`PostVotes`). The number is
+ * the plain headcount (people up minus people down); how much each vote counts toward *ranking* is a separate,
+ * internal matter (`trust-weight.ts`), so no decimal ever appears and the same like reads the same everywhere.
  */
 export function VoteButtons({
   target,
@@ -40,66 +23,21 @@ export function VoteButtons({
   label: string;
   testId?: string;
 }) {
-  const publish = usePublishFeedEvent();
-  const signedIn = existingUserPubkey() !== null;
-
-  const vote = (direction: VoteDirection) => {
-    if (!signedIn) {
-      toast.error(needAccountTo("vote"));
-      return;
-    }
-    if (tally.mine === direction) return;
-    publish.mutate(buildVote({ target, direction, launch }), {
-      onError: (error) =>
-        toast.error(
-          error instanceof Error ? error.message : "Your vote was not saved.",
-        ),
-    });
-  };
-
-  const button = (direction: VoteDirection) => {
-    const up = direction === "+";
-    const active = tally.mine === direction;
-    const Icon = up ? ArrowBigUp : ArrowBigDown;
-    return (
-      <button
-        aria-label={`${up ? "Upvote" : "Downvote"} ${label}`}
-        aria-pressed={active}
-        className={`rounded-md p-1 transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10 ${
-          active
-            ? up
-              ? "text-orange-600 dark:text-orange-400"
-              : "text-indigo-600 dark:text-indigo-400"
-            : "text-black/60 dark:text-white/60"
-        }`}
-        data-testid={`${testId}-${up ? "up" : "down"}`}
-        disabled={publish.isPending}
-        onClick={() => vote(direction)}
-        title={`${up ? tally.up : tally.down} ${up ? "upvote" : "downvote"}${
-          (up ? tally.up : tally.down) === 1 ? "" : "s"
-        }`}
-        type="button"
-      >
-        <Icon
-          aria-hidden
-          className="h-5 w-5"
-          fill={active ? "currentColor" : "none"}
-        />
-      </button>
-    );
-  };
-
+  const { mine, score, busy, vote } = useReactionVote({
+    target,
+    launch,
+    myVote: tally.mine,
+    myVoteIds: tally.mineIds,
+    score: tally.up - tally.down,
+  });
   return (
-    <div className="flex items-center gap-0.5">
-      {button("+")}
-      <span
-        className="min-w-6 text-center text-sm font-semibold tabular-nums"
-        data-testid={`${testId}-score`}
-      >
-        <span className="sr-only">Score </span>
-        {netVotes(tally)}
-      </span>
-      {button("-")}
-    </div>
+    <VoteControl
+      busy={busy}
+      label={label}
+      mine={mine}
+      onVote={(direction) => void vote(direction)}
+      score={score}
+      testId={testId}
+    />
   );
 }

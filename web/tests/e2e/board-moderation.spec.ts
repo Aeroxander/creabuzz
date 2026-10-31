@@ -523,7 +523,7 @@ test("a thread shows the board's rules, and a muted reader cannot vote or start 
 
   await expect(page.getByTestId("board-new-post")).toBeDisabled();
   await expect(
-    page.getByTestId(`board-post-${thread.id}`).getByTestId("board-upvote"),
+    page.getByTestId(`board-post-${thread.id}`).getByTestId("board-vote-up"),
   ).toBeDisabled();
 
   await page
@@ -535,7 +535,7 @@ test("a thread shows the board's rules, and a muted reader cannot vote or start 
     "No spam. Be kind.",
   );
   await expect(
-    page.getByTestId("board-thread").getByTestId("board-upvote").first(),
+    page.getByTestId("board-thread").getByTestId("board-vote-up").first(),
   ).toBeDisabled();
 });
 

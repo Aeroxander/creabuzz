@@ -29,6 +29,10 @@ import {
   useLaunches,
   useRemovedLaunchIds,
 } from "@/features/launchpad/use-launches";
+import {
+  EMPTY_CHAT,
+  ensureProjectBoard,
+} from "@/features/launchpad/use-launch-chat";
 import { endpointChain } from "@/features/launchpad/use-work";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { getUserSigningBlockedReason } from "@/shared/lib/nostr-signer";
@@ -201,8 +205,15 @@ export function useContributorStart() {
             }
           },
           now: () => chain.now(),
+          // The project's board is made first (D156), so the record names it; a board that can't be made does
+          // not stop the start, and the team opens it later from the Discussion tab.
           publish: async (input) => {
-            await create(input);
+            const chat = await ensureProjectBoard({
+              launchId: input.id,
+              launchName: input.name,
+              chat: input.chat ?? EMPTY_CHAT,
+            });
+            await create({ ...input, chat });
           },
           save: (next) => {
             storeJob(storageKey, next);

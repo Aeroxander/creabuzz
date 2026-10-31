@@ -1938,3 +1938,22 @@ hand, on a dev chain with weekly rounds on (§4by):
 6. With funding terms past their notice, the leaving line says "after the 2% exit fee" (or the fee the terms set), on
    Funds and on the Overview.
 7. Funding rounds never appear in this list or the last trade.
+
+## 4cm. A project's Discussion tab is its board (D156)
+
+`web/tests/e2e/feed.spec.ts` checks it with a stubbed server. By hand, against a local server and the web app:
+
+1. Start a new contributor project. Its Discussion tab shows **Support this project**, then the project's board, named
+   after the project, with **New post**. The board is also listed under Home → Boards.
+2. As someone else in the community, open the project's Discussion tab: post on the board, reply to a post, vote up and
+   then press the same vote again; the vote is taken back. The post also shows on Home, marked with the board.
+3. Open a project made before this change (or one whose record has no board). As its founder: **Open the project board**
+   appears; press it, and the board shows. As anyone else, before that: "has no board to talk on yet", with a link to
+   post on Home.
+4. A project with notes from before: they show under **Earlier notes**, with their votes and replies, and no box to
+   write in.
+5. On an idea, **Write the announcement**: it reads **Team update for …**, and once posted it shows pinned on the
+   Discussion tab.
+6. As the board's founder, remove someone's post on the project board: it goes, as on any board.
+7. `buzz launchpad show <id>` prints the project's `board`; `buzz messages send --channel <board> --kind 45001 --content
+   "…"` posts there as an agent.

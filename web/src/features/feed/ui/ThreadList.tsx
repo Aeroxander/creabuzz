@@ -6,7 +6,6 @@ import { useUserNames } from "@/features/profiles/use-profiles";
 import { type FeedNote, launchCoordinate } from "../lib/feed-events";
 import { EMPTY_TALLY, type SortMode, sortByMode } from "../lib/ranking";
 import { useVoteTallies } from "../use-feed";
-import { Composer } from "./Composer";
 import { NoteCard } from "./NoteCard";
 
 /** Launch coordinate -> launch name, from the launches already loaded. */
@@ -29,8 +28,8 @@ function useLaunchNames(): (coord: string) => string | null {
 }
 
 /**
- * Top-level posts in the chosen order; each opens into its replies (oldest
- * first) with a reply box. Replies live in the same note set, so a thread
+ * Top-level posts in the chosen order; each with replies opens into them (oldest first). Read-only: these are notes
+ * from before a project's board (D156), and new talk goes on the board. Replies live in the same note set, so a thread
  * never needs a second query.
  */
 export function ThreadList({
@@ -91,7 +90,13 @@ export function ThreadList({
               launchName={launchName}
               nameOf={nameOf}
               note={note}
-              onReply={() => setOpen(expanded ? null : note.id)}
+              expanded={replies.length > 0 ? expanded : undefined}
+              onReply={
+                replies.length > 0
+                  ? () => setOpen(expanded ? null : note.id)
+                  : undefined
+              }
+              repliesId={`thread-replies-${note.id}`}
               replies={replies.length}
               tally={tallies.get(note.id) ?? EMPTY_TALLY}
             />
@@ -99,6 +104,7 @@ export function ThreadList({
               <div
                 className="ml-6 mt-2 border-l border-black/10 pl-3 dark:border-white/10"
                 data-testid="thread-replies"
+                id={`thread-replies-${note.id}`}
               >
                 {replies.map((reply) => (
                   <NoteCard
@@ -110,12 +116,6 @@ export function ThreadList({
                     tally={tallies.get(reply.id) ?? EMPTY_TALLY}
                   />
                 ))}
-                <div className="mt-2">
-                  <Composer
-                    replyTo={{ root: note.event, parent: note.event }}
-                    testId="reply-composer"
-                  />
-                </div>
               </div>
             ) : null}
           </li>

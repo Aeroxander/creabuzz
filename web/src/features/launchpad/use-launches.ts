@@ -23,7 +23,7 @@ import {
   KIND_SCORE_ROOT as LAUNCHPAD_SCORE_ROOT_KIND,
   type KIND_LAUNCH_UPDATE,
 } from "@/shared/constants/kinds";
-import { hasChat } from "./lib/launch-chat";
+import { boundChannelIds, hasChat } from "./lib/launch-chat";
 import { fundingContent, type FundingStatus } from "./lib/funding";
 import { type IpRecord, ipRecordContent } from "./lib/ip-record";
 import { type BuiltOn, builtOnCoordinate, type RemixTerms } from "./lib/remix";
@@ -407,17 +407,6 @@ export interface CreateLaunchInput {
   remixTerms?: RemixTerms;
 }
 
-/** Every channel the record binds: the picked ones plus the chat rooms, once each. */
-export function boundChannelIds(
-  input: Pick<CreateLaunchInput, "channels" | "chat">,
-): string[] {
-  const ids = [...input.channels];
-  if (input.chat?.team) ids.push(input.chat.team);
-  if (input.chat?.supporters) ids.push(input.chat.supporters);
-  if (input.chat?.backers) ids.push(input.chat.backers);
-  return [...new Set(ids)];
-}
-
 export function useCreateLaunch() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -454,7 +443,7 @@ export function useCreateLaunch() {
       if (input.updateCadence) content.updateCadence = input.updateCadence;
       if (input.reviewerTerms) content.reviewerTerms = input.reviewerTerms;
       if (input.image) content.image = input.image;
-      if (input.chat && hasChat(input.chat)) {
+      if (input.chat && (hasChat(input.chat) || input.chat.board)) {
         // Only the rooms that exist: a null would read as a promise.
         content.chat = Object.fromEntries(
           Object.entries(input.chat).filter(([, id]) => id !== null),

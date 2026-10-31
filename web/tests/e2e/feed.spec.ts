@@ -167,10 +167,6 @@ test("votes are trust-weighted: an org admin outweighs a swarm of new keys (on a
   // The number is the plain headcount: 1 up (admin) − 5 down (newcomers). Trust only
   // changes ranking, never the figure, so no decimal can appear.
   await expect(card.getByTestId("note-vote-score")).toHaveText(/-4/);
-  await expect(card.getByTestId("note-vote-down")).toHaveAttribute(
-    "title",
-    "5 downvotes",
-  );
 
   await card.getByTestId("note-vote-up").click();
   await expect(card.getByTestId("note-vote-up")).toHaveAttribute(
@@ -178,58 +174,100 @@ test("votes are trust-weighted: an org admin outweighs a swarm of new keys (on a
     "true",
   );
   await expect(card.getByTestId("note-vote-score")).toHaveText(/-3/);
+  // The vote shows at once and reaches the server just after.
+  await expect
+    .poll(() => relay.events.find((e) => e.kind === 7 && e.pubkey === ME))
+    .toBeTruthy();
   const mine = relay.events.find((e) => e.kind === 7 && e.pubkey === ME);
   expect(mine?.tags).toContainEqual(["e", note.id]);
   expect(mine?.content).toBe("+");
 });
 
-test("a launch's discussion is posted with its coordinate and shows on Home", async ({
+test("the founder opens the project's board on its Discussion tab; a post there is a board post and shows on Home", async ({
   page,
 }) => {
-  const relay = createMockRelay();
-  // The team posts to a launch's own feed; this viewer is on the team.
-  relay.seed({ ...LAUNCH, tags: [...LAUNCH.tags, ["team", ME, "member"]] });
+  // The relay derives a new channel's metadata from its create, as the real server does.
+  const relay = createMockRelay({ deriveChannels: true });
+  const mine = event({
+    kind: 37001,
+    pubkey: ME,
+    tags: [
+      ["d", "orbit"],
+      ["name", "Orbit"],
+      ["t", "dao-launchpad"],
+      ["admission", "community"],
+    ],
+    content: JSON.stringify({ pitch: "Round and round.", stage: "live" }),
+  });
+  relay.seed(mine);
   await relay.install(page);
   await signIn(page);
-  await page.goto(`/launchpad/nebula?author=${FOUNDER}`);
+  await page.goto(`/launchpad/orbit?author=${ME}`);
   await page.getByRole("tab", { name: "Discussion" }).click();
-  await expect(page.getByTestId("discussion-empty")).toBeVisible();
 
-  await page.getByTestId("launch-composer-input").fill("Backing this one.");
-  await page.getByTestId("launch-composer-submit").click();
-  await expect(page.getByTestId("discussion-list")).toContainText(
-    "Backing this one.",
+  // A project from before boards has none; its founder opens it in one step.
+  await page.getByTestId("discussion-open-board-button").click();
+  await expect(page.getByTestId("discussion-board")).toBeVisible({
+    timeout: 15_000,
+  });
+  const create = relay.events.find((e) => e.kind === 9007);
+  const boardId = create?.tags.find((t) => t[0] === "h")?.[1] ?? "";
+  expect(create?.tags).toContainEqual(["channel_type", "forum"]);
+  expect(create?.tags).toContainEqual(["visibility", "open"]);
+  // The record is published again naming the board, as a room it binds and in its body.
+  const record = relay.events
+    .filter((e) => e.kind === 37001 && e.pubkey === ME && e.id !== mine.id)
+    .at(-1);
+  expect(record?.tags).toContainEqual(["buzz-channel", boardId]);
+  expect(JSON.parse(record?.content ?? "{}").chat?.board).toBe(boardId);
+
+  // Talk is a board post on the project's board, with the board's own composer.
+  await page.getByTestId("board-new-post").click();
+  await page.getByLabel("Title").fill("Which planet first?");
+  await page.getByTestId("board-composer-submit").click();
+  await expect(page.getByTestId("discussion-board")).toContainText(
+    "Which planet first?",
   );
-  const post = relay.events.find((e) => e.kind === 1);
-  expect(post?.tags).toContainEqual(["a", COORD]);
-  expect(post?.content).toMatch(/nostr:naddr1/);
+  const written = relay.events.find((e) => e.kind === 45001 && e.pubkey === ME);
+  expect(written?.tags).toEqual([["h", boardId]]);
 
-  // The launch vote names the record's event id (the relay requires it) and
-  // its coordinate (so the vote survives edits).
+  // The project vote names the record's event id (the relay requires it) and its coordinate (so the vote survives
+  // edits). Pressing it again takes it back.
   await page.getByTestId("launch-vote-up").click();
   await expect(page.getByTestId("launch-vote-up")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
+  await expect.poll(() => relay.events.find((e) => e.kind === 7)).toBeTruthy();
   const vote = relay.events.find((e) => e.kind === 7);
   expect(vote?.tags).toEqual(
     expect.arrayContaining([
-      ["e", LAUNCH.id],
-      ["a", COORD],
+      ["e", record?.id],
+      ["a", `37001:${ME}:orbit`],
     ]),
   );
-
-  await page.getByTestId("app-nav-home").click();
-  const card = page
-    .getByTestId("social-post")
-    .filter({ hasText: "Backing this one." });
-  await expect(card.getByRole("link", { name: "Nebula DAO" })).toBeVisible();
-  await expect(page.getByTestId("trending-launches")).toContainText(
-    "Nebula DAO",
+  await page.getByTestId("launch-vote-up").click();
+  await expect(page.getByTestId("launch-vote-up")).toHaveAttribute(
+    "aria-pressed",
+    "false",
   );
+  await expect
+    .poll(() =>
+      relay.events.some(
+        (e) =>
+          e.kind === 5 && e.tags.some((t) => t[0] === "e" && t[1] === vote?.id),
+      ),
+    )
+    .toBe(true);
+
+  // The board is a board like any other: its post shows on Home.
+  await page.getByTestId("app-nav-home").click();
+  await expect(page.getByText("Which planet first?")).toBeVisible({
+    timeout: 15_000,
+  });
 });
 
-test("on a launch's feed only the team posts; everyone can reply", async ({
+test("notes from before the board stay readable on the Discussion tab, with no box to write in", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -241,7 +279,19 @@ test("on a launch's feed only the team posts; everyone can reply", async ({
     content: "Milestone one shipped.",
   });
   relay.seed(teamPost);
-  // A supporter's own top-level post about the launch is not in the team feed…
+  relay.seed(
+    event({
+      kind: 1,
+      pubkey: ALICE,
+      tags: [
+        ["e", teamPost.id, "", "root"],
+        ["p", FOUNDER],
+        ["a", COORD],
+      ],
+      content: "Congrats!",
+    }),
+  );
+  // A supporter's own top-level post about the launch was never part of the team's notes.
   relay.seed(
     event({
       kind: 1,
@@ -255,18 +305,18 @@ test("on a launch's feed only the team posts; everyone can reply", async ({
   await page.goto(`/launchpad/nebula?author=${FOUNDER}`);
   await page.getByRole("tab", { name: "Discussion" }).click();
 
-  const list = page.getByTestId("discussion-list");
-  await expect(list).toContainText("Milestone one shipped.");
-  await expect(list).not.toContainText("Loving this project.");
-  // …and a non-team viewer gets no top-level composer, only the pointer.
-  await expect(page.getByTestId("launch-composer")).toHaveCount(0);
-  await expect(page.getByTestId("launch-team-only")).toBeVisible();
+  // Not the founder, and no board yet: said plainly, with Home as the place to post meanwhile.
+  await expect(page.getByTestId("discussion-no-board")).toBeVisible();
+  await expect(page.getByTestId("discussion-open-board-button")).toHaveCount(0);
 
-  // Replying to the team's post is open to everyone.
-  await list.getByTestId("note-reply").first().click();
-  await page.getByTestId("reply-composer-input").fill("Congrats!");
-  await page.getByTestId("reply-composer-submit").click();
-  await expect(page.getByTestId("thread-replies")).toContainText("Congrats!");
+  const earlier = page.getByTestId("discussion-earlier");
+  await expect(earlier).toContainText("Milestone one shipped.");
+  await expect(earlier).not.toContainText("Loving this project.");
+  await earlier.getByTestId("note-reply").click();
+  await expect(earlier.getByTestId("thread-replies")).toContainText(
+    "Congrats!",
+  );
+  await expect(earlier.getByRole("textbox")).toHaveCount(0);
 });
 
 test("following a launch publishes a bookmark list and fills Following", async ({
