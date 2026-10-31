@@ -23,11 +23,16 @@ describe("decisionStage", () => {
       [{ state: "Executed" }, "Done", "done", null],
       [{ state: "Expired" }, "Expired", "bad", null],
       [{ state: "Defeated" }, "Rejected", "bad", null],
-      [{ state: "Queued", queuedAt: 5, rules }, "Waiting to run", "wait", null],
+      [
+        { state: "Queued", queuedAt: 5, rules },
+        "Waiting to take effect",
+        "wait",
+        null,
+      ],
       [{ state: "Succeeded", queuedAt: 0, rules }, "Approved", "good", "start"],
       [
         { state: "Succeeded", queuedAt: 5, rules },
-        "Ready to run",
+        "Ready to take effect",
         "good",
         "run",
       ],
@@ -41,7 +46,7 @@ describe("decisionStage", () => {
     }
   });
 
-  it("says nothing can run before the review ends, then that support has to hold", () => {
+  it("says nothing can take effect before the review ends, then that support has to hold", () => {
     assert.match(
       decisionStage(decision({ rules }), 1_000).next,
       /Nothing can take effect before/,

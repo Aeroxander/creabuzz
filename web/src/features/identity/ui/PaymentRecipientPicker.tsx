@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { KIND_EVM_BINDING } from "@/shared/constants/kinds";
 import { queryEvents } from "@/shared/lib/nostr-client";
+import { failureWords } from "@/shared/lib/readable-error";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import { mapLimit, walletChainChecker } from "../lib/wallet-chain";
@@ -69,7 +70,10 @@ export function PaymentRecipientPicker({
       onPick(wallet.address);
     } catch (e) {
       setError(
-        e instanceof Error ? e.message : "Couldn't verify the payment wallet.",
+        failureWords(
+          e,
+          "Couldn't check that payment wallet. Refresh the list and try again.",
+        ).text,
       );
     } finally {
       running.current = false;

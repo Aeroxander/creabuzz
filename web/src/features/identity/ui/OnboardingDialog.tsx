@@ -12,6 +12,12 @@ import { parseRecoveryKey } from "../lib/recovery-key";
 import { signInWithWallet, walletAvailable } from "../lib/siwe";
 import { Fingerprint, Wallet } from "lucide-react";
 import { toast } from "sonner";
+import {
+  type FailureWords,
+  errorMessage,
+  failureWords,
+} from "@/shared/lib/readable-error";
+import { FailureNote } from "@/shared/ui/failure-note";
 import { Overlay } from "@/shared/ui/portal";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
@@ -185,7 +191,7 @@ export function OnboardingDialog({
   const [name, setName] = useState("");
   const [about, setAbout] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
   const policy = useJoinPolicy();
   const [agreed, setAgreed] = useState(false);
   const [ageOk, setAgeOk] = useState(false);
@@ -205,9 +211,10 @@ export function OnboardingDialog({
       await saveTypedName(name, about);
       onDone();
     } catch {
-      setError(
-        "This browser could not save your account. Check that it allows site data, then try again.",
-      );
+      setError({
+        text: "This browser could not save your account. Check that it allows site data, then try again.",
+        detail: null,
+      });
     } finally {
       setSaving(false);
     }
@@ -233,7 +240,8 @@ export function OnboardingDialog({
         setHandedOff(true);
         await saveTypedName(name, about);
       } catch (e) {
-        setError(passkeyCreateProblem(e));
+        // The browser's own words go under Technical details for whoever helps.
+        setError({ text: passkeyCreateProblem(e), detail: errorMessage(e) });
         setSaving(false);
       }
     })();
@@ -250,9 +258,10 @@ export function OnboardingDialog({
         (onPasskeyDone ?? onDone)();
       } catch (e) {
         setError(
-          e instanceof Error && e.message
-            ? `Your wallet did not sign in: ${e.message}`
-            : "Your wallet did not sign in. Try again.",
+          failureWords(
+            e,
+            "Your wallet did not sign in. Open your wallet, approve the request, then try again.",
+          ),
         );
         setSaving(false);
       }
@@ -405,12 +414,11 @@ export function OnboardingDialog({
           </button>
         ) : null}
         {error ? (
-          <p
+          <FailureNote
             className="mt-3 text-xs text-red-600 dark:text-red-400"
-            role="alert"
-          >
-            {error}
-          </p>
+            failure={error}
+            testId="onboarding-error"
+          />
         ) : null}
         <div className="mt-4 flex items-center justify-between gap-2 border-t border-black/10 pt-3 text-sm dark:border-white/10">
           <button

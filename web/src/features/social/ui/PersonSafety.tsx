@@ -10,6 +10,7 @@ import { toast } from "sonner";
 
 import type { ReportSetting } from "@/features/moderation/lib/report";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
+import { failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
 
 import { useMutedPeople, useToggleMute } from "../use-social-actions";
@@ -38,7 +39,12 @@ export function MutePersonButton({
             onSuccess: () => toast.success(muted ? "Unmuted" : "Muted"),
             onError: (error) =>
               toast.error(
-                error instanceof Error ? error.message : "That didn't work.",
+                failureWords(
+                  error,
+                  muted
+                    ? "The server did not unmute them. Try again."
+                    : "The server did not mute them. Try again.",
+                ).text,
               ),
           },
         )

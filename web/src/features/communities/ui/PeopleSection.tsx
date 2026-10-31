@@ -13,9 +13,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
+import { FailureNote } from "@/shared/ui/failure-note";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
 
 import {
   ACCESS_CHOICES,
@@ -50,16 +52,12 @@ import {
 const OPENING_WARNING =
   "Anyone with the address will be able to read what is here and join.";
 
-function errorText(cause: unknown, fallback: string): string {
-  return cause instanceof Error && cause.message ? cause.message : fallback;
-}
-
 /** The owner's choice of who may join, with a plain warning before either change. */
 function AccessControl({ current }: { current: Access }) {
   const client = useQueryClient();
   const [pending, setPending] = useState<Access | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
 
   const apply = async (next: Access) => {
     setBusy(true);
@@ -74,7 +72,12 @@ function AccessControl({ current }: { current: Access }) {
           : "Anyone with the address can join now.",
       );
     } catch (cause) {
-      setError(errorText(cause, "That did not go through."));
+      setError(
+        failureWords(
+          cause,
+          "The server did not change who can join, so it is as it was. Try again, or ask the community's owner.",
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -143,15 +146,7 @@ function AccessControl({ current }: { current: Access }) {
           </div>
         </div>
       ) : null}
-      {error ? (
-        <p
-          className="text-sm text-red-600 dark:text-red-400"
-          data-testid="access-error"
-          role="alert"
-        >
-          {error}
-        </p>
-      ) : null}
+      {error ? <FailureNote failure={error} testId="access-error" /> : null}
     </fieldset>
   );
 }
@@ -161,7 +156,7 @@ function InviteMaker({ onMade }: { onMade: () => void }) {
   const [lifetime, setLifetime] = useState("week");
   const [uses, setUses] = useState("one");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
   const [made, setMade] = useState<MintedInvite | null>(null);
 
   const make = async () => {
@@ -175,7 +170,12 @@ function InviteMaker({ onMade }: { onMade: () => void }) {
       onMade();
     } catch (cause) {
       setMade(null);
-      setError(errorText(cause, "Could not make an invite."));
+      setError(
+        failureWords(
+          cause,
+          "The server did not make an invite. Try again, or ask the community's owner.",
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -235,15 +235,7 @@ function InviteMaker({ onMade }: { onMade: () => void }) {
           {busy ? "Making…" : "Make invite link"}
         </Button>
       </div>
-      {error ? (
-        <p
-          className="text-sm text-red-600 dark:text-red-400"
-          data-testid="invite-error"
-          role="alert"
-        >
-          {error}
-        </p>
-      ) : null}
+      {error ? <FailureNote failure={error} testId="invite-error" /> : null}
       {made ? (
         <div className="space-y-1.5" data-testid="invite-made">
           <div className="flex gap-2">
@@ -291,7 +283,7 @@ function ActiveInvites({
   onChanged: () => void;
 }) {
   const [ending, setEnding] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
   const now = Math.floor(Date.now() / 1000);
 
   const end = async (id: string) => {
@@ -302,7 +294,12 @@ function ActiveInvites({
       toast.success("That invite no longer works.");
       onChanged();
     } catch (cause) {
-      setError(errorText(cause, "Could not end that invite."));
+      setError(
+        failureWords(
+          cause,
+          "The server did not end that invite. Reload to see if it is still open, then try again.",
+        ),
+      );
     } finally {
       setEnding(null);
     }
@@ -342,15 +339,7 @@ function ActiveInvites({
           </li>
         ))}
       </ul>
-      {error ? (
-        <p
-          className="text-sm text-red-600 dark:text-red-400"
-          data-testid="invite-end-error"
-          role="alert"
-        >
-          {error}
-        </p>
-      ) : null}
+      {error ? <FailureNote failure={error} testId="invite-end-error" /> : null}
     </div>
   );
 }
@@ -379,7 +368,7 @@ function PersonRow({
   const [confirming, setConfirming] = useState(false);
   const [banning, setBanning] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
 
   const giveRole = async (role: "admin" | "member") => {
     setBusy(true);
@@ -393,7 +382,12 @@ function PersonRow({
       );
       onRoleChanged();
     } catch (cause) {
-      setError(errorText(cause, "Could not change their role."));
+      setError(
+        failureWords(
+          cause,
+          "The server did not change their role. Try again, or ask the community's owner.",
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -407,7 +401,12 @@ function PersonRow({
       toast.success(`${name} was removed.`);
       onRemoved();
     } catch (cause) {
-      setError(errorText(cause, "Could not remove them."));
+      setError(
+        failureWords(
+          cause,
+          "The server did not remove them, so they are still here. Try again, or ask the community's owner.",
+        ),
+      );
       setBusy(false);
     }
   };
@@ -504,13 +503,7 @@ function PersonRow({
         />
       ) : null}
       {error ? (
-        <p
-          className="mt-1 text-sm text-red-600 dark:text-red-400"
-          data-testid="person-error"
-          role="alert"
-        >
-          {error}
-        </p>
+        <FailureNote className="mt-1" failure={error} testId="person-error" />
       ) : null}
     </li>
   );

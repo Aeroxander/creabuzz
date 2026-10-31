@@ -19,7 +19,7 @@ import {
 import { cn } from "@/shared/lib/cn";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { uploadFailureWords } from "@/shared/lib/media-refusal";
-import type { FailureWords } from "@/shared/lib/readable-error";
+import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
 import { uploadBlob } from "@/shared/lib/upload-blob";
 import { Button } from "@/shared/ui/button";
 import { TechnicalDetails } from "@/shared/ui/technical-details";
@@ -232,8 +232,11 @@ export function PostComposer({
           onPosted?.();
         })
         .catch((error) =>
-          toast.error(
-            error instanceof Error ? error.message : "Could not post.",
+          setProblem(
+            failureWords(
+              error,
+              "Your post did not reach the board. Your words are still here. Try again.",
+            ),
           ),
         )
         .finally(() => setBoardBusy(false));
@@ -256,7 +259,13 @@ export function PostComposer({
               })
             : buildSocialPost(text);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not post.");
+      // The draft's own problem (empty, too long) in the app's words.
+      setProblem(
+        failureWords(
+          error,
+          "This post can't be sent yet. Check it and try again.",
+        ),
+      );
       return;
     }
     writeMirrorSetting(mirror);
@@ -269,7 +278,12 @@ export function PostComposer({
         onPosted?.();
       },
       onError: (error) =>
-        toast.error(error instanceof Error ? error.message : "Could not post."),
+        setProblem(
+          failureWords(
+            error,
+            "Your post was not sent. Your words are still here. Try again.",
+          ),
+        ),
     });
   };
 

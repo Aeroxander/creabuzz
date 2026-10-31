@@ -73,9 +73,14 @@ import { Fingerprint, Wallet } from "lucide-react";
 import { Overlay, Portal, useAnchoredStyle } from "@/shared/ui/portal";
 import {
   type FailureWords,
+  errorMessage,
   failureWords,
   readableError,
 } from "@/shared/lib/readable-error";
+import {
+  passkeyCreateProblem,
+  passkeyUnlockProblem,
+} from "../lib/passkey-problem";
 import { FailureNote } from "@/shared/ui/failure-note";
 
 // Side-effect: make the passkey signer the primary signer while a passkey
@@ -133,7 +138,7 @@ export function ProfileMenu({
   const [showBackup, setShowBackup] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
-  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [passkeyError, setPasskeyError] = useState<FailureWords | null>(null);
   const { theme, setTheme } = useTheme();
   const { fontSize, density, setFontSize, setDensity } = useTypography();
   const [walletBinding, setWalletBinding] = useState(() => readWalletBinding());
@@ -263,7 +268,11 @@ export function ProfileMenu({
   const passkeyModeNow = passkeyMode();
   const recovery = currentRecovery(pubkey);
 
-  const runPasskey = async (fn: () => Promise<unknown>) => {
+  // What went wrong, by whether the passkey was being unlocked or made; the browser's words under Technical details.
+  const runPasskey = async (
+    fn: () => Promise<unknown>,
+    problem: (error: unknown) => string,
+  ) => {
     setPasskeyBusy(true);
     setPasskeyError(null);
     try {
@@ -271,7 +280,7 @@ export function ProfileMenu({
       setPasskeyBusy(false);
       setOpen(false);
     } catch (e) {
-      setPasskeyError(e instanceof Error ? e.message : "passkey failed");
+      setPasskeyError({ text: problem(e), detail: errorMessage(e) });
       setPasskeyBusy(false);
     }
   };
@@ -667,11 +676,19 @@ export function ProfileMenu({
                         : "Set up passkey sign-in"
                     }
                     onClick={() => {
-                      void runPasskey(
-                        passkeySetUp
-                          ? () => signInPasskeyIdentity()
-                          : () => setupPasskey(displayName),
-                      );
+                      void (passkeySetUp
+                        ? runPasskey(
+                            () => signInPasskeyIdentity(),
+                            passkeyUnlockProblem,
+                          )
+                        : runPasskey(
+                            () => setupPasskey(displayName),
+                            (error) =>
+                              passkeyCreateProblem(
+                                error,
+                                "keep signing in as you do now",
+                              ),
+                          ));
                     }}
                   />
                 )}
@@ -685,9 +702,11 @@ export function ProfileMenu({
               />
             ) : null}
             {passkeyError ? (
-              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                {passkeyError}
-              </p>
+              <FailureNote
+                className="mt-1 text-xs text-red-600 dark:text-red-400"
+                failure={passkeyError}
+                testId="profile-passkey-error"
+              />
             ) : null}
             {passkeyBusy ? (
               <p className="mt-1 text-xs text-black/60 dark:text-white/60">

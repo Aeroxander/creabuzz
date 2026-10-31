@@ -153,14 +153,14 @@ async function carryOut(
   });
   await next.getByTestId("decision-start-wait").click();
   await expect(next.getByTestId("decision-status")).toHaveText(
-    "Waiting to run",
+    "Waiting to take effect",
     { timeout: 30_000 },
   );
   await pass(secondsToWait);
   await refreshDecisions(page);
   const ready = page.getByTestId("decision-card").first();
   await expect(ready.getByTestId("decision-status")).toHaveText(
-    "Ready to run",
+    "Ready to take effect",
     { timeout: 30_000 },
   );
   await ready.getByTestId("decision-run").click();

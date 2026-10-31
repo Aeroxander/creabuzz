@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 import { Modal } from "@/features/launchpad/ui/Modal";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
+import { failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { Input } from "@/shared/ui/input";
@@ -146,9 +147,7 @@ export function BoardModerationPanel({
       return true;
     } catch (error) {
       setProblem(
-        error instanceof Error && error.message
-          ? error.message
-          : "That did not go through. Try again.",
+        failureWords(error, "That did not go through. Try again.").text,
       );
       return false;
     } finally {

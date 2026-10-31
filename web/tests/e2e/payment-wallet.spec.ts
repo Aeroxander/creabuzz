@@ -203,7 +203,14 @@ test("a refused public proof remains retryable after reload without another wall
   const wallet = await walletAndServer(page);
   await page.goto(`/u/${ME}`);
   await publishFromProfile(page);
-  await expect(page.getByRole("alert")).toContainText("Try again later");
+  // Plain words in main copy; the server's own words only under Technical details.
+  await expect(page.getByRole("alert")).toContainText(
+    "Your payment wallet was not linked. Try again.",
+  );
+  const details = page.getByTestId("wallet-sign-recovery-details");
+  await expect(details).toHaveJSProperty("open", false);
+  await details.locator("summary").click();
+  await expect(details).toContainText("Try again later");
   const signedCalls = wallet.calls.filter(
     (m) => m === "personal_sign" || m === "eth_signTypedData_v4",
   ).length;
@@ -236,6 +243,11 @@ test("a failed wallet registration can be linked again without stranding the sav
   await page.goto(`/u/${ME}`);
   await publishFromProfile(page);
   await expect(page.getByRole("alert")).toContainText(
+    "Your payment wallet was not linked. Try again.",
+  );
+  const details = page.getByTestId("wallet-sign-recovery-details");
+  await details.locator("summary").click();
+  await expect(details).toContainText(
     "Wallet registration is temporarily unavailable",
   );
   const pending = await page.evaluate(() => {
@@ -277,7 +289,9 @@ for (const problem of ["wrong chain", "rejected signature"] as const) {
     await page.goto(`/u/${ME}`);
     await publishFromProfile(page);
     await expect(page.getByRole("alert")).toContainText(
-      problem === "wrong chain" ? "Switch your wallet" : "declined",
+      problem === "wrong chain"
+        ? "Switch your wallet"
+        : "You cancelled in your wallet",
     );
     expect(relay.events.filter((e) => e.kind === 37017)).toHaveLength(0);
     expect(wallet.registrations()).toBe(0);

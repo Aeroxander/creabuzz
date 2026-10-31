@@ -6,6 +6,7 @@
 import { useState } from "react";
 
 import { MODAL_FOOTER_CLASS, Modal } from "@/features/launchpad/ui/Modal";
+import { failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
 
 import { REASON_MAX_CHARS } from "../lib/board-moderation";
@@ -40,9 +41,7 @@ export function ReasonDialog({
       onClose();
     } catch (error) {
       setProblem(
-        error instanceof Error && error.message
-          ? error.message
-          : "That did not go through. Try again.",
+        failureWords(error, "That did not go through. Try again.").text,
       );
       setBusy(false);
     }

@@ -58,7 +58,7 @@ export function decisionStage(
       };
     case "Queued":
       return {
-        label: "Waiting to run",
+        label: "Waiting to take effect",
         tone: "wait",
         next: `Approved. It can take effect at ${when(decision.queuedAt + Number(delay))}. Support must hold until then.`,
         step: null,
@@ -72,9 +72,9 @@ export function decisionStage(
             step: "start",
           }
         : {
-            label: "Ready to run",
+            label: "Ready to take effect",
             tone: "good",
-            next: "The wait is over and support held. Anyone can run it now.",
+            next: "The wait is over and support held. Anyone can make it take effect now.",
             step: "run",
           };
     default:
@@ -90,7 +90,7 @@ export function decisionStage(
   }
 }
 
-/** A decision that can still change: it is gathering support, approved and waiting, or waiting to run. */
+/** A decision that can still change: it is gathering support, approved and waiting, or ready to take effect. */
 export function isLive(decision: Pick<Decision, "state">): boolean {
   return (
     decision.state === "Active" ||

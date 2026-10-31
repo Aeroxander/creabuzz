@@ -290,8 +290,9 @@ test("a post needs a title, and a refused post keeps what was written", async ({
   await page.getByLabel("Title").fill("A real title");
   await page.getByLabel("Details (optional)").fill("keep me");
   await page.getByTestId("board-composer-submit").click();
-  await expect(page.getByTestId("board-composer-problem")).toContainText(
-    "only members can post here",
+  // The server's refusal said as a sentence, without its "restricted:" code.
+  await expect(page.getByTestId("board-composer-problem")).toHaveText(
+    "Only members can post here.",
   );
   await expect(page.getByLabel("Details (optional)")).toHaveValue("keep me");
   expect(relay.events.filter((e) => e.kind === 45001)).toEqual([]);
@@ -459,8 +460,8 @@ test("a refused nested reply keeps its draft and parent for retry", async ({
   await branch.getByTestId("board-reply-to").click();
   await page.locator("#board-reply-box").fill("Keep this answer.");
   await page.getByTestId("board-reply-submit").click();
-  await expect(branch.getByTestId("board-reply-problem")).toContainText(
-    "try again later",
+  await expect(branch.getByTestId("board-reply-problem")).toHaveText(
+    "Try again later.",
   );
   await expect(branch.getByTestId("board-reply-form")).toBeVisible();
   await expect(page.locator("#board-reply-box")).toHaveValue(

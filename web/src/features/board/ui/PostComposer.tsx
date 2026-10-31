@@ -8,7 +8,7 @@ import { ImagePlus } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { uploadFailureWords } from "@/shared/lib/media-refusal";
-import type { FailureWords } from "@/shared/lib/readable-error";
+import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
 import { uploadBlob } from "@/shared/lib/upload-blob";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -74,13 +74,12 @@ export function PostComposer({
     try {
       await onSubmit(title, body);
     } catch (error) {
-      setProblem({
-        text:
-          error instanceof Error && error.message
-            ? error.message
-            : "Couldn't post that. Try again.",
-        detail: null,
-      });
+      setProblem(
+        failureWords(
+          error,
+          "Your post did not reach the board. Your words are still here. Try again.",
+        ),
+      );
     } finally {
       setBusy(false);
     }

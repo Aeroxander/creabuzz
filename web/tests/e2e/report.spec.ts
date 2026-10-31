@@ -157,9 +157,14 @@ test("when the server will not take the report, its words are shown and the form
   await theirRow(page).getByTestId("report-button").click();
   await page.getByTestId("report-reason-spam").check();
   await page.getByTestId("report-submit").click();
+  // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("report-error")).toHaveText(
-    "invalid: report target event not found",
+    "Report target event not found.",
   );
+  const details = page.getByTestId("report-error-details");
+  await expect(details).toHaveJSProperty("open", false);
+  await details.locator("summary").click();
+  await expect(details).toContainText("invalid: report target event not found");
   await expect(page.getByTestId("report-form")).toBeVisible();
   // Try again once the reason is changed: the old answer is gone with the next attempt.
   await expect(page.getByTestId("report-submit")).toBeEnabled();
@@ -460,7 +465,14 @@ test("when the server will not ban someone, its words are shown in the dialog", 
   await openChat(page, relay);
   await theirRow(page).getByTestId("ban-author-button").click();
   await page.getByTestId("ban-yes").click();
+  // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("ban-error")).toHaveText(
+    "The server did not ban them. Try again, or ask the community's owner.",
+  );
+  const details = page.getByTestId("ban-error-details");
+  await expect(details).toHaveJSProperty("open", false);
+  await details.locator("summary").click();
+  await expect(details).toContainText(
     "actor not authorized: moderator access required",
   );
   await expect(page.getByTestId("ban-form")).toBeVisible();

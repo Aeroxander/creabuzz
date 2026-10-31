@@ -216,12 +216,12 @@ export function DecisionCard({
               ? "Sending…"
               : stage.step === "start"
                 ? "Start the wait"
-                : "Run it"}
+                : "Make it take effect"}
           </Button>
           {stage.step === "run" && !decision.action ? (
             <p className="mt-1 text-xs text-muted-foreground">
-              Running needs the decision's details, and this one never published
-              them.
+              This decision never published its details, so it cannot be made to
+              take effect from here.
             </p>
           ) : null}
         </div>

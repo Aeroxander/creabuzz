@@ -176,12 +176,12 @@ async function carryOut(page: Page, path: string) {
   await expect(card().getByTestId("decision-status")).toHaveText("Approved");
   await card().getByTestId("decision-start-wait").click();
   await expect(card().getByTestId("decision-status")).toHaveText(
-    "Waiting to run",
+    "Waiting to take effect",
   );
   await pass(90_000);
   await openTab(page, path, "Decisions");
   await expect(card().getByTestId("decision-status")).toHaveText(
-    "Ready to run",
+    "Ready to take effect",
   );
   await card().getByTestId("decision-run").click();
   await expect(card().getByTestId("decision-status")).toHaveText("Done");

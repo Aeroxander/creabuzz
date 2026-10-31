@@ -196,7 +196,7 @@ export interface LedgerEntry {
 const DECISION_WORDS: Record<DecisionState, string> = {
   Unopened: "Not opened",
   Active: "Open for votes",
-  Queued: "Approved, waiting to run",
+  Queued: "Approved, waiting to take effect",
   Succeeded: "Approved, ready to start its wait",
   Defeated: "Did not pass",
   Expired: "Ran out of time without passing",

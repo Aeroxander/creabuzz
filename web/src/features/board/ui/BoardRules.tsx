@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
 
 import { BOARD_RULES_MAX_CHARS } from "../lib/board-moderation";
@@ -37,9 +38,7 @@ export function BoardRules({
       toast.success(draft.trim() === "" ? "Rules cleared." : "Rules saved.");
     } catch (error) {
       setProblem(
-        error instanceof Error && error.message
-          ? error.message
-          : "Couldn't save the rules. Try again.",
+        failureWords(error, "Couldn't save the rules. Try again.").text,
       );
     } finally {
       setBusy(false);

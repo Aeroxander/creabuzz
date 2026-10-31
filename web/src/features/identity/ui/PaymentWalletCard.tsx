@@ -6,14 +6,20 @@ import { shortAddress } from "@/features/launchpad/lib/record-people";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { Modal } from "@/features/launchpad/ui/Modal";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
+import {
+  type FailureWords,
+  errorMessage,
+  failureWords,
+} from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
 
 import {
   readPendingWalletProof,
   publishPendingWalletProof,
   removePublicWallet,
 } from "../lib/public-wallet";
-import { explainPasskeyError } from "../lib/passkey";
+import { passkeyCreateProblem } from "../lib/passkey-problem";
 import { hasPasskeyIdentity, setupPasskey } from "../lib/passkey-identity";
 import { linkPasskeyAccount, passkeyAccountSetup } from "../lib/passkey-wallet";
 import { signInWithWallet } from "../lib/siwe";
@@ -22,19 +28,30 @@ import { resolvePaymentWalletChecked } from "../lib/wallet-proof";
 import { usePaymentWallet } from "../use-payment-wallet";
 import { SignRecovery } from "./SignRecovery";
 
-/** A wallet that did not connect, in words: what happened and what to do next. */
-function walletProblem(error: unknown): string {
+/**
+ * A wallet that was not linked, in words: what happened and what to do next. A sentence the app wrote (or a refusal
+ * with plain words) is said as it is; the wallet's or the server's own words go under Technical details.
+ */
+function walletProblem(error: unknown): FailureWords {
   const code = (error as { code?: unknown } | null)?.code;
-  const message = error instanceof Error ? error.message : "";
-  if (code === 4001 || /reject|denied|cancel/i.test(message)) {
-    return "You cancelled in your wallet. Try again when you are ready.";
+  const message = errorMessage(error);
+  const said = (text: string): FailureWords => ({
+    text,
+    detail: message.trim() === "" ? null : message,
+  });
+  if (code === 4001 || /reject|denied|declin|cancel/i.test(message)) {
+    return said("You cancelled in your wallet. Try again when you are ready.");
   }
-  if (/chain|network/i.test(message)) {
-    return `Your wallet is on another network. ${message}`;
+  const words = failureWords(
+    error,
+    "Your payment wallet was not linked. Try again.",
+  );
+  if (words.detail !== null && /chain|network/i.test(message)) {
+    return said(
+      "Your wallet is on another network. Switch networks in your wallet, then try again.",
+    );
   }
-  return message
-    ? `Could not connect the wallet: ${message}`
-    : "Could not connect the wallet. Try again.";
+  return words;
 }
 
 /** The network a payment wallet is on, in plain words: a test network is just that, whatever it is called. */
@@ -56,7 +73,7 @@ export function PaymentWalletCard({
   const [dialog, setDialog] = useState<"link" | "remove" | null>(null);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
   const [pending, setPending] = useState(() => readPendingWalletProof(pubkey));
   const [copied, setCopied] = useState(false);
   // Bumped after passkey sign-in is set up here, so the dialog reads the new passkey account.
@@ -100,7 +117,10 @@ export function PaymentWalletCard({
       await setupPasskey(resolveUserName(profiles.data?.[pubkey], pubkey));
       setPasskeyGeneration((n) => n + 1);
     } catch (e) {
-      setError(explainPasskeyError(e));
+      setError({
+        text: passkeyCreateProblem(e, "connect a wallet"),
+        detail: errorMessage(e),
+      });
     } finally {
       running.current = false;
       setSettingUpPasskey(false);
@@ -144,7 +164,7 @@ export function PaymentWalletCard({
       setCopied(true);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't copy the address.");
+      setError(failureWords(e, "Couldn't copy the address. Try again."));
     } finally {
       running.current = false;
       setBusy(false);
@@ -294,11 +314,18 @@ export function PaymentWalletCard({
         </div>
       ) : null}
       {error && !dialog ? (
-        <SignRecovery
-          className="mt-2"
-          message={error}
-          onUnlocked={() => setError(null)}
-        />
+        <>
+          <SignRecovery
+            className="mt-2"
+            message={error.text}
+            onUnlocked={() => setError(null)}
+          />
+          <TechnicalDetails
+            className="mt-1"
+            detail={error.detail}
+            testId="payment-wallet-error-details"
+          />
+        </>
       ) : null}
       {dialog ? (
         <Modal
@@ -376,12 +403,19 @@ export function PaymentWalletCard({
             </p>
           )}
           {error ? (
-            <SignRecovery
-              className="mt-3"
-              message={error}
-              onUnlocked={() => setError(null)}
-              testId="wallet-sign-recovery"
-            />
+            <>
+              <SignRecovery
+                className="mt-3"
+                message={error.text}
+                onUnlocked={() => setError(null)}
+                testId="wallet-sign-recovery"
+              />
+              <TechnicalDetails
+                className="mt-1"
+                detail={error.detail}
+                testId="wallet-sign-recovery-details"
+              />
+            </>
           ) : null}
           <div className="mt-5 flex flex-wrap justify-end gap-2">
             <Button disabled={busy} onClick={close} variant="outline">

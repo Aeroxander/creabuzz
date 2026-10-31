@@ -319,12 +319,12 @@ export function PowersCard({
         {guarantees === "plan"
           ? noticeText(DEFAULT_NOTICE, "plan")
           : guarantees === "unknown"
-            ? "Every decision waits before it runs. How long, under this DAO's settings today, could not be read just now; a vote can shorten those settings for decisions opened later."
+            ? "Every decision waits before it takes effect. How long, under this DAO's settings today, could not be read just now; a vote can shorten those settings for decisions opened later."
             : noticeText(guarantees.notice, "dao")}{" "}
         {guarantees === "unknown"
-          ? "Whether you can leave with your share before a decision runs is shown once this DAO's rules can be read."
+          ? "Whether you can leave with your share before a decision takes effect is shown once this DAO's rules can be read."
           : canLeave
-            ? `Until it runs, you can leave with your share of what the DAO holds${permanent ? "; no vote can switch that off" : ", for as long as leaving stays on"}. Money already moved into a work budget is not part of that share.`
+            ? `Until it takes effect, you can leave with your share of what the DAO holds${permanent ? "; no vote can switch that off" : ", for as long as leaving stays on"}. Money already moved into a work budget is not part of that share.`
             : "Members cannot leave this DAO with a share of what it holds."}
       </p>
     </Card>

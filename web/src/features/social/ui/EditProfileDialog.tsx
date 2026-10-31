@@ -6,6 +6,7 @@ import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
 import { ProfilePictureField } from "@/features/identity/ui/ProfilePictureField";
 import { pictureLinkProblem } from "@/features/identity/lib/picture-check";
 import { withNameFollowing } from "@/features/identity/lib/profile-names";
+import { failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 
@@ -71,9 +72,7 @@ export function EditProfileDialog({
       },
       onError: (error) =>
         toast.error(
-          error instanceof Error
-            ? error.message
-            : "Couldn't save your profile.",
+          failureWords(error, "Couldn't save your profile. Try again.").text,
         ),
     });
   };

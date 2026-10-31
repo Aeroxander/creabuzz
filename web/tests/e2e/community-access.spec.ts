@@ -296,9 +296,14 @@ test("when the server refuses the change, its words are shown and the setting st
   });
   await page.getByTestId("access-open").check();
   await page.getByTestId("access-confirm-yes").click();
+  // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("access-error")).toHaveText(
-    "actor not authorized: must be owner",
+    "The server did not change who can join, so it is as it was. Try again, or ask the community's owner.",
   );
+  const details = page.getByTestId("access-error-details");
+  await expect(details).toHaveJSProperty("open", false);
+  await details.locator("summary").click();
+  await expect(details).toContainText("actor not authorized: must be owner");
   // The page does not claim a change that did not happen.
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByTestId("access-invite_only")).toBeChecked();
@@ -348,7 +353,14 @@ test("a refused invite shows the server's words and no link", async ({
     },
   });
   await page.getByTestId("invite-make").click();
+  // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("invite-error")).toHaveText(
+    "The server did not make an invite. Try again, or ask the community's owner.",
+  );
+  const details = page.getByTestId("invite-error-details");
+  await expect(details).toHaveJSProperty("open", false);
+  await details.locator("summary").click();
+  await expect(details).toContainText(
     "only relay owners and admins can create invites",
   );
   await expect(page.getByTestId("invite-made")).toHaveCount(0);
@@ -454,7 +466,14 @@ test("when the server will not end an invite, its words are shown and the invite
     ],
   });
   await page.getByTestId("invite-end").click();
+  // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("invite-end-error")).toHaveText(
+    "The server did not end that invite. Reload to see if it is still open, then try again.",
+  );
+  const details = page.getByTestId("invite-end-error-details");
+  await expect(details).toHaveJSProperty("open", false);
+  await details.locator("summary").click();
+  await expect(details).toContainText(
     "invite not found, or it has already ended",
   );
   await expect(page.getByTestId("active-invite")).toHaveCount(1);
@@ -548,7 +567,14 @@ test("when the server will not remove someone, its words are shown", async ({
   });
   await page.getByTestId("person-remove").click();
   await page.getByTestId("person-remove-yes").click();
+  // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("person-error")).toHaveText(
+    "The server did not remove them, so they are still here. Try again, or ask the community's owner.",
+  );
+  const details = page.getByTestId("person-error-details");
+  await expect(details).toHaveJSProperty("open", false);
+  await details.locator("summary").click();
+  await expect(details).toContainText(
     "actor not authorized: admins can only remove members",
   );
   // They are still listed.
@@ -642,9 +668,14 @@ test("when the server will not change a role, its words are shown", async ({
     refuseRole: "actor not authorized: must be owner",
   });
   await page.getByTestId("person-role").click();
+  // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("person-error")).toHaveText(
-    "actor not authorized: must be owner",
+    "The server did not change their role. Try again, or ask the community's owner.",
   );
+  const details = page.getByTestId("person-error-details");
+  await expect(details).toHaveJSProperty("open", false);
+  await details.locator("summary").click();
+  await expect(details).toContainText("actor not authorized: must be owner");
 });
 
 test("the owner can ban a person for a week with a reason, after being told what it means, and the ban is listed", async ({
@@ -788,7 +819,14 @@ test("when the server will not ban someone, its words are shown and nobody is li
   });
   await page.getByTestId("person-ban").click();
   await page.getByTestId("ban-yes").click();
+  // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("ban-error")).toHaveText(
+    "The server did not ban them. Try again, or ask the community's owner.",
+  );
+  const details = page.getByTestId("ban-error-details");
+  await expect(details).toHaveJSProperty("open", false);
+  await details.locator("summary").click();
+  await expect(details).toContainText(
     "actor not authorized: an admin cannot ban a fellow admin",
   );
   await expect(page.getByTestId("banned-list")).toHaveCount(0);
@@ -811,7 +849,14 @@ test("when the server will not lift a ban, its words are shown and the ban stays
     ],
   });
   await page.getByTestId("ban-lift").click();
+  // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("ban-lift-error")).toHaveText(
+    "The server did not lift the ban, so it is still in place. Try again, or ask the community's owner.",
+  );
+  const details = page.getByTestId("ban-lift-error-details");
+  await expect(details).toHaveJSProperty("open", false);
+  await details.locator("summary").click();
+  await expect(details).toContainText(
     "actor not authorized: only the owner can lift this ban",
   );
   await expect(page.getByTestId("banned-person")).toHaveCount(1);

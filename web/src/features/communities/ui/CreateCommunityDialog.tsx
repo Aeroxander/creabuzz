@@ -12,8 +12,10 @@ import { toast } from "sonner";
 import { Modal } from "@/features/launchpad/ui/Modal";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
 import { setStoredRelayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
+import { FailureNote } from "@/shared/ui/failure-note";
 import { Input } from "@/shared/ui/input";
 
 import { ACCESS_CHOICES, type Access } from "../lib/access";
@@ -37,7 +39,7 @@ export function CreateCommunityDialog({
   // rooms inside it. Either is one press, and the owner can change it later.
   const [access, setAccess] = useState<Access>("open");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
   const signedIn = existingUserPubkey() !== null;
 
   const name = finishName(typed);
@@ -57,7 +59,10 @@ export function CreateCommunityDialog({
       window.location.assign(`/c/${encodeURIComponent(created.host)}`);
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "That did not go through.",
+        failureWords(
+          cause,
+          "Your community was not created. Try again in a moment.",
+        ),
       );
       setBusy(false);
     }
@@ -147,13 +152,7 @@ export function CreateCommunityDialog({
           </p>
         ) : null}
         {error ? (
-          <p
-            className="text-sm text-red-600 dark:text-red-400"
-            data-testid="community-create-error"
-            role="alert"
-          >
-            {error}
-          </p>
+          <FailureNote failure={error} testId="community-create-error" />
         ) : null}
         <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
           {/* Why the button is not ready yet, beside it, until a name is typed. */}

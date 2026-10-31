@@ -7,14 +7,12 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
+import { FailureNote } from "@/shared/ui/failure-note";
 
 import { BAN_LENGTHS, type Ban, describeBan } from "../lib/bans";
 import { banPerson, liftBan } from "../use-bans";
-
-function errorText(cause: unknown, fallback: string): string {
-  return cause instanceof Error && cause.message ? cause.message : fallback;
-}
 
 /** Ask how long and why, say plainly what a ban does, and send it. */
 export function BanForm({
@@ -31,7 +29,7 @@ export function BanForm({
   const [length, setLength] = useState(0);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
 
   const ban = async () => {
     setBusy(true);
@@ -41,7 +39,12 @@ export function BanForm({
       toast.success(`${name} was banned.`);
       onDone();
     } catch (cause) {
-      setError(errorText(cause, "Could not ban them."));
+      setError(
+        failureWords(
+          cause,
+          "The server did not ban them. Try again, or ask the community's owner.",
+        ),
+      );
       setBusy(false);
     }
   };
@@ -97,15 +100,7 @@ export function BanForm({
           Cancel
         </Button>
       </div>
-      {error ? (
-        <p
-          className="text-sm text-red-600 dark:text-red-400"
-          data-testid="ban-error"
-          role="alert"
-        >
-          {error}
-        </p>
-      ) : null}
+      {error ? <FailureNote failure={error} testId="ban-error" /> : null}
     </div>
   );
 }
@@ -123,7 +118,7 @@ function BannedRow({
   onLifted: () => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
 
   const lift = async () => {
     setBusy(true);
@@ -133,7 +128,12 @@ function BannedRow({
       toast.success(`${name} can use the community again.`);
       onLifted();
     } catch (cause) {
-      setError(errorText(cause, "Could not lift the ban."));
+      setError(
+        failureWords(
+          cause,
+          "The server did not lift the ban, so it is still in place. Try again, or ask the community's owner.",
+        ),
+      );
       setBusy(false);
     }
   };
@@ -164,13 +164,7 @@ function BannedRow({
         {ban.reason ? ` · “${ban.reason}”` : ""}
       </p>
       {error ? (
-        <p
-          className="mt-1 text-sm text-red-600 dark:text-red-400"
-          data-testid="ban-lift-error"
-          role="alert"
-        >
-          {error}
-        </p>
+        <FailureNote className="mt-1" failure={error} testId="ban-lift-error" />
       ) : null}
     </li>
   );

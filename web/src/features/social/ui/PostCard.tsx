@@ -156,8 +156,9 @@ export function PostCard({
   const parsed = parseNote(note);
   const launches = parsed?.launches ?? [];
 
-  const fail = (error: unknown) =>
-    toast.error(error instanceof Error ? error.message : "That didn't work.");
+  // Each action says what didn't happen; a refusal with plain words (a ban, the request limit) says those instead.
+  const fail = (fallback: string) => (error: unknown) =>
+    toast.error(failureWords(error, fallback).text);
 
   const repost = () => {
     setMenuOpen(false);
@@ -165,7 +166,13 @@ export function PostCard({
       engagement.viewerRepostId
         ? buildUndo(engagement.viewerRepostId, 6)
         : buildRepost(note),
-      { onError: fail },
+      {
+        onError: fail(
+          engagement.viewerRepostId
+            ? "The server did not undo your repost. Try again."
+            : "The server did not repost this. Try again.",
+        ),
+      },
     );
   };
 
@@ -186,7 +193,9 @@ export function PostCard({
       onSuccess: () => toast.success("Post deleted"),
       onError: (error) => {
         setDeleted(false);
-        fail(error);
+        fail("The server did not delete your post. It is back. Try again.")(
+          error,
+        );
       },
     });
   };
@@ -401,7 +410,13 @@ export function PostCard({
               onClick={() =>
                 bookmark.mutate(
                   { id: note.id, saved: !bookmarked },
-                  { onError: fail },
+                  {
+                    onError: fail(
+                      bookmarked
+                        ? "Your bookmark was not removed. Try again."
+                        : "Your bookmark was not saved. Try again.",
+                    ),
+                  },
                 )
               }
               testId="social-bookmark"

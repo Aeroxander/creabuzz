@@ -549,14 +549,14 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     );
     await approved.getByTestId("decision-start-wait").click();
     await expect(approved.getByTestId("decision-status")).toHaveText(
-      "Waiting to run",
+      "Waiting to take effect",
       { timeout: 30_000 },
     );
     await pass(waitFor);
     await open(founder, "Decisions");
     const ready = founder.page.getByTestId("decision-card").first();
     await expect(ready.getByTestId("decision-status")).toHaveText(
-      "Ready to run",
+      "Ready to take effect",
       { timeout: 30_000 },
     );
     await ready.getByTestId("decision-run").click();

@@ -17,7 +17,9 @@ import { roleOf } from "@/features/communities/lib/access";
 import { useCommunityPeople } from "@/features/communities/use-access";
 import { MODAL_FOOTER_CLASS, Modal } from "@/features/launchpad/ui/Modal";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
+import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
+import { FailureNote } from "@/shared/ui/failure-note";
 
 import {
   MAX_NOTE_LENGTH,
@@ -45,7 +47,7 @@ export function ReportDialog({
   const [type, setType] = useState<ReportType | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
   const { people } = useCommunityPeople();
   const reported =
     target.kind === "person" ? target.pubkey : target.authorPubkey;
@@ -65,9 +67,10 @@ export function ReportDialog({
       onClose();
     } catch (cause) {
       setError(
-        cause instanceof Error && cause.message
-          ? cause.message
-          : "The report did not go through. Try again.",
+        failureWords(
+          cause,
+          "Your report was not sent. Your note is still here. Try again.",
+        ),
       );
       setBusy(false);
     }
@@ -143,15 +146,7 @@ export function ReportDialog({
             value={note}
           />
         </div>
-        {error ? (
-          <p
-            className="text-sm text-red-600 dark:text-red-400"
-            data-testid="report-error"
-            role="alert"
-          >
-            {error}
-          </p>
-        ) : null}
+        {error ? <FailureNote failure={error} testId="report-error" /> : null}
         <div className={`flex justify-end gap-2 ${MODAL_FOOTER_CLASS}`}>
           <Button onClick={onClose} size="sm" type="button" variant="ghost">
             Cancel

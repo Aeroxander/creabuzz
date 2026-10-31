@@ -116,7 +116,7 @@ test("an approved decision, and a queued one whose wait is over, can be moved al
     items.map((i) => i.key),
     ["move-ready", "move-approved"],
   );
-  assert.match(items[0].text, /^Ready to run/);
+  assert.match(items[0].text, /^Ready to take effect/);
   assert.match(items[1].text, /ready to start its wait/);
 });
 

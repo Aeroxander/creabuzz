@@ -6,8 +6,14 @@ import { toast } from "sonner";
 import { resolveUserName } from "@/features/profiles/use-profiles";
 import { cn } from "@/shared/lib/cn";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { failureWords } from "@/shared/lib/readable-error";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
+import {
+  QueryError,
+  errorMessage,
+  readableError,
+} from "@/shared/ui/query-error";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { parseEntity } from "../lib/entity";
@@ -66,8 +72,12 @@ export function ConversationPage() {
       {
         onError: (error) => {
           setText(content);
+          // The words are back in the box, so trying again is one tap.
           toast.error(
-            error instanceof Error ? error.message : "Couldn't send that.",
+            failureWords(
+              error,
+              "Your message was not sent. It is back in the box. Try again.",
+            ).text,
           );
         },
       },
@@ -126,11 +136,14 @@ export function ConversationPage() {
           <TimelineSkeleton />
         ) : conversations.isError && !conversations.data ? (
           // Not read is not empty: say why, rather than "No messages yet".
-          <EmptyState title="Couldn't load this conversation">
-            {conversations.error instanceof Error
-              ? conversations.error.message
-              : "Try again."}
-          </EmptyState>
+          <QueryError
+            description={readableError(conversations.error)}
+            error={conversations.error}
+            message={errorMessage(conversations.error)}
+            onRetry={() => void conversations.refetch()}
+            testId="social-conversation-error"
+            title="Couldn't load this conversation"
+          />
         ) : messages.length === 0 ? (
           <p className="py-16 text-center text-sm text-black/60 dark:text-white/60">
             No messages yet. Say hello. Messages are end-to-end encrypted.

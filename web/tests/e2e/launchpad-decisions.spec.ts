@@ -164,7 +164,7 @@ test("a decision opened elsewhere is read from the chain, backed, waited out and
   await expect(page.getByTestId("decision-status")).toHaveText(
     "Collecting support",
   );
-  // Nothing can run in the review period, whatever the vote.
+  // Nothing can take effect in the review period, whatever the vote.
   await expect(page.getByTestId("decision-next")).toContainText(
     "Nothing can take effect before",
   );
@@ -199,18 +199,21 @@ test("a decision opened elsewhere is read from the chain, backed, waited out and
   });
   await page.getByTestId("decision-start-wait").click();
   await expect(page.getByTestId("decision-status")).toHaveText(
-    "Waiting to run",
+    "Waiting to take effect",
     { timeout: 30_000 },
   );
   await expect(page.getByTestId("decision-run")).toHaveCount(0);
 
-  // Once the wait is over anyone can run it.
+  // Once the wait is over anyone can make it take effect.
   await pass(90_000);
   await page.reload();
   await page.getByRole("tab", { name: "Decisions" }).click();
-  await expect(page.getByTestId("decision-status")).toHaveText("Ready to run", {
-    timeout: 30_000,
-  });
+  await expect(page.getByTestId("decision-status")).toHaveText(
+    "Ready to take effect",
+    {
+      timeout: 30_000,
+    },
+  );
   await page.getByTestId("decision-run").click();
   await expect(page.getByTestId("decision-status")).toHaveText("Done", {
     timeout: 30_000,

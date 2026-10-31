@@ -681,6 +681,11 @@ test("a malformed relay payload shows a recoverable error, not a blank page", as
   const boundary = page.getByTestId("route-error");
   await expect(boundary).toBeVisible();
   await expect(boundary).toContainText("Something went wrong");
+  // The crash's own words are kept for whoever helps, collapsed.
+  await expect(page.getByTestId("route-error-details")).toHaveJSProperty(
+    "open",
+    false,
+  );
   await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });

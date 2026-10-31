@@ -206,11 +206,7 @@ export function PostThread({
       setDraft("");
       setReplyTo(null);
     } catch (error) {
-      setProblem(
-        error instanceof Error && error.message
-          ? error.message
-          : "Couldn't send that. Try again.",
-      );
+      setProblem(failureWords(error, "Couldn't send that. Try again.").text);
     } finally {
       sending.current = false;
       setBusy(false);

@@ -7,8 +7,14 @@ import { useCommunityAccess } from "@/features/communities/use-access";
 import { resolveUserName } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { countOf } from "@/shared/lib/count-of";
+import { failureWords } from "@/shared/lib/readable-error";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
+import {
+  QueryError,
+  errorMessage,
+  readableError,
+} from "@/shared/ui/query-error";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { newestIncomingOf } from "../lib/messages-seen";
@@ -71,7 +77,10 @@ function ReceiveFromOtherAppsBanner() {
             onSuccess: () => toast.success("Other apps can now reach you here"),
             onError: (error) =>
               toast.error(
-                error instanceof Error ? error.message : "That didn't work.",
+                failureWords(
+                  error,
+                  "The server did not save where other apps can reach you. Try again.",
+                ).text,
               ),
           })
         }
@@ -131,11 +140,16 @@ export function MessagesPage() {
           {conversations.isLoading ? (
             <TimelineSkeleton />
           ) : conversations.isError ? (
-            <EmptyState title="Couldn't load your messages">
-              {conversations.error instanceof Error
-                ? conversations.error.message
-                : "Try again."}
-            </EmptyState>
+            <div className="p-4">
+              <QueryError
+                description={readableError(conversations.error)}
+                error={conversations.error}
+                message={errorMessage(conversations.error)}
+                onRetry={() => void conversations.refetch()}
+                testId="social-messages-error"
+                title="Couldn't load your messages"
+              />
+            </div>
           ) : shown.length === 0 ? (
             <EmptyState
               testId="social-messages-empty"

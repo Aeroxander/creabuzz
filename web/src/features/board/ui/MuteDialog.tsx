@@ -7,6 +7,7 @@
 import { useState } from "react";
 
 import { MODAL_FOOTER_CLASS, Modal } from "@/features/launchpad/ui/Modal";
+import { failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
 
 import {
@@ -39,9 +40,7 @@ export function MuteDialog({
       onClose();
     } catch (error) {
       setProblem(
-        error instanceof Error && error.message
-          ? error.message
-          : "The mute did not go through. Try again.",
+        failureWords(error, "The mute did not go through. Try again.").text,
       );
       setBusy(false);
     }

@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
 import { openUserPublisher } from "@/shared/lib/publish-as-user";
+import { failureWords } from "@/shared/lib/readable-error";
 
 import { missingStarterBoards, starterDrafts } from "./lib/starter-boards";
 
@@ -43,10 +44,8 @@ export function useStarterBoards(existingNames: readonly string[]) {
     } catch (error) {
       setState({
         phase: "error",
-        message:
-          error instanceof Error && error.message
-            ? error.message
-            : "Couldn't set up the boards. Try again.",
+        message: failureWords(error, "Couldn't set up the boards. Try again.")
+          .text,
       });
     } finally {
       publisher.close();

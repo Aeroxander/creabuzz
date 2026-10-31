@@ -29,7 +29,7 @@ import { bondsOf } from "./decision-title";
 
 /**
  * Everything the DAO has put to a vote, read from the chain: what each decision would do, where it stands, and how
- * to back it, oppose it, start its wait or run it. Whoever opened a decision (this app, the command line, an agent),
+ * to back it, oppose it, start its wait or make it take effect. Whoever opened a decision (this app, the command line, an agent),
  * it shows up here.
  */
 export function DecisionsTab({

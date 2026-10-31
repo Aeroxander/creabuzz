@@ -448,7 +448,7 @@ test("a founder and a contributor with no wallet start a project, do the work an
   await refresh(founder, "Decisions");
   await card().getByTestId("decision-start-wait").click({ timeout: 30_000 });
   await expect(card().getByTestId("decision-status")).toHaveText(
-    "Waiting to run",
+    "Waiting to take effect",
     { timeout: 120_000 },
   );
   await pass(90_000);

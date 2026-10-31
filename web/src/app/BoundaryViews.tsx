@@ -2,6 +2,8 @@ import { Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { reportRenderError } from "@/shared/lib/error-report";
+import { errorMessage } from "@/shared/lib/readable-error";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
 
 /**
  * Route-level failure and miss views.
@@ -18,8 +20,8 @@ export function RouteErrorView({
   error: unknown;
   reset: () => void;
 }) {
-  const message =
-    error instanceof Error ? error.message : String(error ?? "unknown error");
+  // The crash's own words are for whoever helps, under Technical details.
+  const message = errorMessage(error);
   // A crash a screen caught never reaches the window's error event, so it is told here (and only when reporting is on).
   useEffect(() => {
     reportRenderError(error);
@@ -37,9 +39,11 @@ export function RouteErrorView({
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           This view stopped responding to its data. Reloading usually clears it.
         </p>
-        <p className="mt-2 break-words text-xs text-black/60 dark:text-white/60">
-          {message}
-        </p>
+        <TechnicalDetails
+          className="mt-2 text-left"
+          detail={message}
+          testId="route-error-details"
+        />
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <button
             className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"

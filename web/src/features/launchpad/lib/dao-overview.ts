@@ -100,12 +100,12 @@ const OPEN_DECISION: readonly Decision["state"][] = [
   "Queued",
 ];
 
-/** A decision is still going on: collecting support, approved, or waiting to run. */
+/** A decision is still going on: collecting support, approved, or waiting to take effect. */
 export function isOpenDecision(decision: Decision): boolean {
   return OPEN_DECISION.includes(decision.state);
 }
 
-/** Whether a queued decision's wait is over, so it can run now. */
+/** Whether a queued decision's wait is over, so it can take effect now. */
 function waitIsOver(decision: Decision, now: number): boolean {
   return (
     decision.state === "Queued" &&
@@ -460,11 +460,11 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
         text:
           decision.state === "Succeeded" && decision.queuedAt === 0
             ? `Approved and ready to start its wait: ${titleOf(decision)}.`
-            : `Ready to run: ${titleOf(decision)}.`,
+            : `Ready to take effect: ${titleOf(decision)}.`,
         action: "Open it",
         tab: "decisions",
         why: "Anyone can move an approved decision along.",
-        ifIgnored: "It does not run until someone does.",
+        ifIgnored: "Nothing changes until someone does.",
       });
     }
   }

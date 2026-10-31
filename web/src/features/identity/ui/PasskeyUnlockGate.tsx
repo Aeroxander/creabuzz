@@ -16,11 +16,14 @@ import {
   markPasskeyUnlocked,
 } from "../lib/passkey-identity";
 import { passkeyModeCopy } from "../lib/mode-copy";
+import { passkeyUnlockProblem } from "../lib/passkey-problem";
+import { type FailureWords, errorMessage } from "@/shared/lib/readable-error";
+import { FailureNote } from "@/shared/ui/failure-note";
 import { Overlay } from "@/shared/ui/portal";
 
 export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
   const [unlocking, setUnlocking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FailureWords | null>(null);
 
   const unlock = async () => {
     setUnlocking(true);
@@ -29,7 +32,7 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
       await signInPasskeyIdentity();
       markPasskeyUnlocked();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "passkey unlock failed");
+      setError({ text: passkeyUnlockProblem(e), detail: errorMessage(e) });
       setUnlocking(false);
     }
   };
@@ -68,7 +71,11 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
           {passkeyModeCopy(passkeyMode())}
         </p>
         {error ? (
-          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+          <FailureNote
+            className="mt-2 text-xs text-red-600 dark:text-red-400"
+            failure={error}
+            testId="passkey-unlock-error"
+          />
         ) : null}
         {!unlocking ? (
           <button
