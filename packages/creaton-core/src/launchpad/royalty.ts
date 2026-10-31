@@ -76,21 +76,6 @@ export function encodeBandOf(contributor: string): string {
   return `${SELECTOR_BAND_OF}${addressWord(contributor)}`;
 }
 
-/** ABI-encode `nextClose()`. */
-export function encodeNextClose(): string {
-  return SELECTOR_NEXT_CLOSE;
-}
-
-/** ABI-encode `carry()`. */
-export function encodeCarry(): string {
-  return SELECTOR_CARRY;
-}
-
-/** ABI-encode `pendingRevenue()`. */
-export function encodePendingRevenue(): string {
-  return SELECTOR_PENDING_REVENUE;
-}
-
 /** ABI-encode ClaimStake `royaltyReq(bytes32)`. */
 export function encodeRoyaltyReq(claimId: string): string {
   return `${SELECTOR_ROYALTY_REQ}${requireBytes32(claimId, "claim id").slice(2)}`;

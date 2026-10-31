@@ -1,8 +1,9 @@
 /**
- * React wiring for the Manage panel's auction deploy and graduation
- * execution on the web: the pure flows (`lib/auctionFlow.ts`,
- * `lib/graduationFlow.ts`, ported from the desktop app) bound to an injected
- * wallet (`lib/wallet-effects.ts`) and the relay's launch-mirror publisher.
+ * React wiring for the Manage panel's graduation execution on the web: the
+ * pure flow (`lib/graduationFlow.ts`, ported from the desktop app) bound to an
+ * injected wallet (`lib/wallet-effects.ts`) and the relay's launch-mirror
+ * publisher. (Deploying an auction by hand was removed in D150; the launch kit
+ * makes the auction.)
  *
  * Signing needs a connected wallet account; the readiness check does not —
  * it only reads, and always reads the configured RPC endpoint (the chain the
@@ -10,12 +11,7 @@
  * founder (or a curious investor) can see whether graduation is possible
  * before connecting anything. The GraduationExecutor is recovered from chain at
  * readiness time (`fundsRecipient()`), so graduation works after a reload
- * that loses the deploy flow's session state.
- *
- * The deploy flow itself survives reloads via `lib/deploy-progress.ts`: every
- * dispatch persists the step state (predicted addresses, tx hashes) BEFORE the
- * step's effects run, and the reducer seeds from that store on mount, so a
- * crash-reload resumes from the predictions instead of deploying duplicates.
+ * that loses the session state.
  */
 import {
   useCallback,
@@ -32,23 +28,8 @@ import {
   getRpcEndpoint,
   isContractDeployed,
 } from "./chain";
-import {
-  auctionDeployReducer,
-  auctionErrorMessage,
-  retryPlan,
-  runAuctionDeploy,
-  type AuctionDispatch,
-  type AuctionEffects,
-  type AuctionPlanInputs,
-} from "./lib/auctionFlow";
-import {
-  deployProgressFingerprint,
-  loadDeployProgress,
-  makeGenerationFence,
-  saveDeployProgress,
-  seedAuctionDeployState,
-  settleIfCurrent,
-} from "./lib/deploy-progress";
+import { auctionErrorMessage, type AuctionEffects } from "./lib/auctionFlow";
+import { makeGenerationFence, settleIfCurrent } from "./lib/deploy-progress";
 import { buildGraduationCall } from "./lib/evmCalls";
 import {
   buildGraduationsView,
@@ -93,145 +74,10 @@ function makeReadOnlyEffects(rpcUrl: string): AuctionEffects {
 }
 
 // ---------------------------------------------------------------------------
-// Deploy auction
-// ---------------------------------------------------------------------------
-
-export interface AuctionDeployFlowInput {
-  /** The launch record's sale fields. */
-  plan: AuctionPlanInputs;
-  /** Null until the founder connects a wallet; `start` is inert without one. */
-  wallet: ConnectedWallet | null;
-  /** The chain the launch is on (the wallet is checked against it). */
-  chainId: number;
-  /** Republish the launch record with the deployed `auction` tag. */
-  onLink: (input: { auction: string }) => Promise<unknown>;
-  /** The launch record id — deploy progress is persisted under it. */
-  launchId: string;
-  /**
-   * The record's current `auction` tag, if any. The flow refuses to link a
-   * different address than this (or its own persisted prediction) — see the
-   * re-link refusal in `runAuctionDeploy`.
-   */
-  recordAuction?: string | null;
-  /** CCA factory override (default: the canonical v2.1.0 factory). */
-  factory?: string;
-  /** GraduationExecutor reserve share (default 4000 = 40%). */
-  reserveBps?: number;
-}
-
-export interface AuctionDeployFlow {
-  state: ReturnType<typeof auctionDeployReducer>;
-  /** True while preparing, sending transactions, or updating the record. */
-  busy: boolean;
-  /** Fresh deploy: preflight → CREATE/CREATE2 sequence → record update. */
-  start: () => void;
-  /** Resume from the failed step, or retry just the record update. */
-  retry: () => void;
-}
-
-/** Drive the auction deploy's state machine. */
-export function useAuctionDeployFlow(
-  input: AuctionDeployFlowInput,
-): AuctionDeployFlow {
-  const {
-    plan,
-    wallet,
-    chainId,
-    onLink,
-    launchId,
-    recordAuction = null,
-    factory,
-    reserveBps,
-  } = input;
-  const fingerprint = deployProgressFingerprint(plan);
-  const [state, dispatch] = useReducer(
-    auctionDeployReducer,
-    { admission: plan.admission, fingerprint, launchId },
-    // Reload seam: seed the state (predicted addresses, receipts) from the
-    // persisted progress so the flow's `codeAt` idempotency guards engage
-    // and a reload never re-sends a CREATE that already landed.
-    ({ admission, fingerprint: fp, launchId: id }) =>
-      seedAuctionDeployState(admission, loadDeployProgress(id, fp)),
-  );
-  const stateRef = useRef(state);
-  stateRef.current = state;
-
-  // The persist seam: every action is folded and stored BEFORE `run`'s next
-  // effect runs, so a crash between a predicted address and its transaction
-  // still resumes from the prediction.
-  const dispatchPersist = useCallback<AuctionDispatch>(
-    (action) => {
-      const next = auctionDeployReducer(stateRef.current, action);
-      stateRef.current = next;
-      saveDeployProgress(launchId, fingerprint, next);
-      dispatch(action);
-    },
-    [fingerprint, launchId],
-  );
-
-  const run = useCallback(
-    (mode: "fresh" | "resume"): void => {
-      if (!wallet) return;
-      void runAuctionDeploy({
-        effects: makeWalletAuctionEffects({
-          provider: wallet.provider,
-          deployer: wallet.address,
-          chainId,
-        }),
-        plan,
-        deployer: wallet.address,
-        ...(factory !== undefined ? { factory } : {}),
-        ...(reserveBps !== undefined ? { reserveBps } : {}),
-        dispatch: dispatchPersist,
-        mode,
-        previous: stateRef.current,
-        expectedAuction: recordAuction?.trim() || null,
-        onLink,
-      });
-    },
-    [
-      chainId,
-      dispatchPersist,
-      factory,
-      onLink,
-      plan,
-      recordAuction,
-      reserveBps,
-      wallet,
-    ],
-  );
-
-  const start = useCallback(() => run("fresh"), [run]);
-  const retry = useCallback(() => {
-    const planToRetry = retryPlan(stateRef.current);
-    if (!planToRetry) return;
-    if (planToRetry.kind === "record") {
-      dispatchPersist({ type: "link_started" });
-      void onLink({ auction: planToRetry.auctionAddress })
-        .then(() => dispatchPersist({ type: "linked" }))
-        .catch((error: unknown) =>
-          dispatchPersist({
-            type: "link_failed",
-            reason: auctionErrorMessage(error),
-          }),
-        );
-      return;
-    }
-    run("resume");
-  }, [dispatchPersist, onLink, run]);
-
-  const busy =
-    state.phase === "preparing" ||
-    state.phase === "running" ||
-    state.phase === "linking";
-  return { state, busy, start, retry };
-}
-
-// ---------------------------------------------------------------------------
 // Execute graduation
 // ---------------------------------------------------------------------------
 
-export type GraduationPublishReceipt = (
+type GraduationPublishReceipt = (
   kind: "sweep" | "lock",
   parts: { extraTags: string[][]; content: Record<string, string> },
 ) => Promise<unknown>;

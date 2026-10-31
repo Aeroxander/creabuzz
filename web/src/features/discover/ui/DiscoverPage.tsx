@@ -160,9 +160,6 @@ export function DiscoverPage() {
                 </Link>
               </Button>
               <Button asChild size="sm" variant="ghost">
-                <Link to="/markets">Markets</Link>
-              </Button>
-              <Button asChild size="sm" variant="ghost">
                 <Link data-testid="discover-board" to="/projects">
                   Project board
                 </Link>

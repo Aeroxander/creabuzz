@@ -78,7 +78,7 @@ export interface CreatedRooms {
  * launch is only ever recorded with rooms that are real, and the missing ones
  * can be created again later.
  */
-export async function createLaunchRooms(input: {
+async function createLaunchRooms(input: {
   launchName: string;
   team: readonly string[];
   rooms: readonly RoomKey[];
@@ -153,7 +153,7 @@ function membersKey(channelId: string | null) {
 }
 
 /** The pubkeys in a room (kind 39002 `p` tags). Empty when it cannot be read. */
-export function useChannelMembers(channelId: string | null) {
+function useChannelMembers(channelId: string | null) {
   return useQuery({
     queryKey: membersKey(channelId),
     enabled: channelId !== null,

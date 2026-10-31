@@ -106,7 +106,8 @@ EVM address to the npub for launchpad participation.
 ```bash
 pnpm dev                   # vite dev server
 pnpm typecheck
-pnpm check                 # biome + pubkey truncation + px-text guards
+pnpm check                 # biome + pubkey truncation + px-text + copy guards + check:unused
+pnpm check:unused          # knip: orphan files and unused exports in web, core and scripts (allowlist: ../knip.jsonc)
 pnpm check:file-sizes      # per-surface file-size ratchet
 pnpm test                  # node:test unit tests (no browser or relay)
 pnpm check:bundle-size     # first-load budget; needs a build first
@@ -120,21 +121,11 @@ touching the read, write, auth, or static-serving paths — it is the only suite
 that sees the real deployment (it caught the theme bootstrap being served as
 HTML, and a NIP-42 handshake race that killed live subscriptions).
 
-The two raise-era scripts below are not in any gate and predate the launch kit
-(`docs/v3-review/DEPRECATION-2026-10-31.md`, items left for a decision).
-
-`scripts/web-auction-e2e.sh` (from the repo root) deploys the auction from the
-browser against a **real local chain**: it builds the contracts, boots its own
-Anvil with the CCA factory's code at its canonical address, deploys a sale
-currency and token, and runs `tests/e2e/launchpad-auction.spec.ts` with a wallet
-that forwards to that chain. It needs foundry (`FOUNDRY_BIN` if it is not on
-`PATH`); set `PW_CHROMIUM_PATH` if the pinned Playwright wants a newer browser
-build than the machine has. The spec skips itself when its `E2E_*` variables are
-unset, so the default smoke run is unaffected.
-
-`scripts/web-mint-e2e.sh` runs the founder's whole journey (idea, sale, mint the
-token from the browser, deploy, bid, admit) on the apptoken local environment
-against a real relay; see `docs/archive/web-mvp-audit.md` ("Two chain worlds").
+The raise-era scripts `scripts/web-auction-e2e.sh` and `scripts/web-mint-e2e.sh`
+(deploying an auction by hand and minting a token from the browser) were removed
+in D150 with the path they tested; see tag pre-deprecation-2026-10-31. New
+launches make their Shares, DAO and auction in one transaction through the
+launch kit.
 
 The e2e suite runs against `vite preview` on 127.0.0.1:4173 and serves the last
 **built** bundle: run `pnpm build` first, and kill whatever holds port 4173, or

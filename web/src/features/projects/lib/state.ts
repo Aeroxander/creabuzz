@@ -40,7 +40,7 @@ import {
 } from "./manifest.ts";
 
 /** A request's place in the project's story. */
-export type RequestStatus =
+type RequestStatus =
   | "approved"
   | "declined"
   | "role-removed"
@@ -56,7 +56,7 @@ export interface RequestState {
   grant: OwnershipGrant | null;
 }
 
-export interface RoleState {
+interface RoleState {
   role: RoleDeclaration;
   /** The founder's own role — taken by definition, never open to joiners. */
   isFounderRole: boolean;
@@ -66,7 +66,7 @@ export interface RoleState {
   open: boolean;
 }
 
-export interface TeamMember {
+interface TeamMember {
   pubkey: string;
   role: RoleDeclaration;
   /** The stake row this member holds. */

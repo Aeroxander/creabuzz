@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 
 /** How long a room has to be on screen before it counts as read. */
-export const READ_AFTER_MS = 1500;
+const READ_AFTER_MS = 1500;
 
 export function useReadWhileOnScreen(
   markRead: (channelId: string) => void,

@@ -27,7 +27,7 @@ import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
 
 /** The board a new discussion starts on: the supporters board when there is one. */
-export function defaultBoard(boards: readonly Channel[]): Channel | null {
+function defaultBoard(boards: readonly Channel[]): Channel | null {
   const open = boards.filter((board) => board.visibility !== "private");
   return open.find((board) => board.name === "supporters") ?? open[0] ?? null;
 }

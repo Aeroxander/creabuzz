@@ -38,7 +38,7 @@ The app did not show that loop. It showed the order in which the pieces were bui
 | **Start an organization** from the Org page, in four short steps (name, first helper, how much helpers may do alone, review) | `fleet/lib/org-setup.ts`, `fleet/ui/OrgSetup.tsx` | The web could not create an org; the desktop's asks for grants, verbs and epoch windows. Only limits the server really counts are offered. |
 | The Org page works: header, chart, health checks tucked away, "Helper" not "Agent_seat" | `fleet/ui/OrgView.tsx` | See above. |
 | The sale wizard in plain words: Project, Raise, Your Shares, Rules | `wizard.ts`, `WizardSteps.tsx`, `CreateLaunchDialog.tsx` | A founder should not need the contract's vocabulary. |
-| Creating the token in plain words, command line folded away | `TokenMintPanel.tsx`, `mint-flow.ts` | Same. |
+| Creating the token in plain words, command line folded away | `TokenMintPanel.tsx`, `mint-flow.ts` (removed in D150, see tag pre-deprecation-2026-10-31) | Same. |
 | Manage tab: what is left before the sale opens, then the actions, then terms; operator tools under "Expert tools" | `ManagePanel.tsx` | It opened on tools nobody needs on day one. |
 | **A DAO's front page**: where things stand, needs you, treasury / Shares / yours, latest decisions; the raise folded underneath | `DaoOverview.tsx`, `lib/dao-overview.ts` | The Paperclip questions: what is happening, does it need me, what do I do about it. |
 | Home opens on your organizations and what waits for you | `feed/ui/HomeYours.tsx` | Someone who runs a project needs that before a feed. |

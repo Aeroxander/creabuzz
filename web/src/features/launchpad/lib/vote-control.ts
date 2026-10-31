@@ -67,7 +67,7 @@ const ceilBps = (supply: bigint, bps: number) =>
   (supply * BigInt(bps) + 9_999n) / 10_000n;
 
 /** The votes a decision on `bars` needs to take part: the highest of the lane's, the DAO's share and its floor. */
-export function turnoutNeeded(
+function turnoutNeeded(
   control: Pick<VoteControl, "votingSupply"> & { governor?: Governor },
   bars: Bars,
 ): bigint {

@@ -10,7 +10,7 @@
  * Alias-free: `join-policy.test.mjs` drives it under `node --test`.
  */
 
-export interface JoinPolicy {
+interface JoinPolicy {
   terms_markdown?: string;
   privacy_markdown?: string;
   age_attestation_required: boolean;

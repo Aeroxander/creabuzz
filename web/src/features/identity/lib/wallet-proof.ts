@@ -174,7 +174,7 @@ export interface PaymentWallet {
  * whatever the account contract accepts (a passkey account's is a few hundred bytes), so only the account itself can
  * say whether it is valid.
  */
-export interface ContractCheck {
+interface ContractCheck {
   account: string;
   chain: number;
   /** The EIP-712 digest that was signed. */

@@ -5,7 +5,7 @@ function dTagOf(tags: string[][]): string | null {
   return d && typeof d[1] === "string" ? d[1] : null;
 }
 
-export type StopEvent = {
+type StopEvent = {
   id: string;
   tags: string[][];
   created_at: number;

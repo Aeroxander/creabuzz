@@ -94,7 +94,7 @@ export interface TombstonedPage {
 }
 
 /** Bound the Recently-deleted list; the query itself is bounded too. */
-export const TOMBSTONE_LIST_LIMIT = 50;
+const TOMBSTONE_LIST_LIMIT = 50;
 
 /**
  * Pages currently hidden by a RESTORABLE tombstone — the "Recently deleted"

@@ -28,8 +28,8 @@ import {
 
 // CCA selectors proven against the pinned sources
 // (contracts/test/PinnedInterfaces.t.sol).
-export const SELECTOR_IS_GRADUATED = "0x9e5f2602";
-export const SELECTOR_CURRENCY_RAISED = "0x998ba4fc";
+const SELECTOR_IS_GRADUATED = "0x9e5f2602";
+const SELECTOR_CURRENCY_RAISED = "0x998ba4fc";
 export const SELECTOR_CLEARING_PRICE = "0x32a0f2d7";
 export const TOPIC_BID_SUBMITTED =
   "0x650baad5cd8ca09b8f580be220fa04ce2ba905a041f764b6a3fe2c848eb70540";
@@ -69,9 +69,7 @@ function hashSeed(input: string): bigint {
 }
 
 /** Deterministic fixture. Always surfaced as preview, never as live data. */
-export async function previewProgress(
-  record: LaunchRecord,
-): Promise<AuctionProgress> {
+async function previewProgress(record: LaunchRecord): Promise<AuctionProgress> {
   const seed = hashSeed(
     `${record.author}:${record.id}:${record.auction ?? "undeployed"}`,
   );
@@ -125,7 +123,7 @@ export const RPC_RETRY = { delaysMs: [300, 900] as number[] };
  * did not answer, could not be reached, or is busy. The message is for the person (what happened, what to do); `detail`
  * is the node's own words, for the error report.
  */
-export class ChainReadError extends Error {
+class ChainReadError extends Error {
   readonly reason: "busy" | "timeout" | "unreachable";
   readonly detail: string;
 
@@ -524,7 +522,7 @@ export async function ethGetLogs(
 }
 
 /** Live reads. Throws on any failure so callers fall back to preview. */
-export async function liveProgress(
+async function liveProgress(
   record: LaunchRecord,
   endpoint: string,
 ): Promise<AuctionProgress> {
@@ -628,16 +626,6 @@ export async function erc20BalanceOf(
   }
 }
 
-/** The runtime code at `address` as `0x…` hex (`0x` when there is none). Throws on RPC failure. */
-export async function ethGetCode(
-  endpoint: string,
-  address: string,
-): Promise<string> {
-  const code = await rpc(endpoint, "eth_getCode", [address, "latest"]);
-  if (typeof code !== "string") throw new Error("bad eth_getCode return");
-  return code;
-}
-
 /** True when address holds contract code. Throws on RPC failure. */
 export async function isContractDeployed(
   endpoint: string,
@@ -651,7 +639,7 @@ export async function isContractDeployed(
 }
 
 /** No figures: the chain could not be read, and guessing money is not an option. */
-export function unavailableProgress(reason: string): AuctionProgress {
+function unavailableProgress(reason: string): AuctionProgress {
   return {
     raised: 0n,
     goal: null,

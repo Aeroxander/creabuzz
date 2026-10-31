@@ -135,5 +135,4 @@ export function useOrgChart(): {
   };
 }
 
-export { orgNodeKey };
 export type { OrgNodeEntry, OrgTreeNode };

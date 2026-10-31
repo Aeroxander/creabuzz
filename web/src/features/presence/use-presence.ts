@@ -19,7 +19,6 @@ import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import {
   parseLivePresenceEvent,
   PRESENCE_HEARTBEAT_INTERVAL_MS,
-  PRESENCE_IDLE_TIMEOUT_MS,
   PRESENCE_MAX_TRACKED,
   PRESENCE_PRUNE_INTERVAL_MS,
   PRESENCE_TTL_MS,
@@ -29,7 +28,7 @@ import {
   resolveAutomaticPresenceStatus,
 } from "./lib/presence";
 
-export const KIND_PRESENCE_UPDATE = 20001;
+const KIND_PRESENCE_UPDATE = 20001;
 
 const PRESENCE_ACTIVITY_THROTTLE_MS = 1_000;
 
@@ -166,5 +165,3 @@ export function usePresence(
     return statuses;
   }, [presence]);
 }
-
-export { PRESENCE_IDLE_TIMEOUT_MS };

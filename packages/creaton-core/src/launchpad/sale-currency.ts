@@ -16,7 +16,7 @@
  * Alias-free on purpose: `sale-currency.test.mjs` drives it under `node --test`.
  */
 
-export type SaleCurrencyKind = "eth" | "usdc" | "custom";
+type SaleCurrencyKind = "eth" | "usdc" | "custom";
 
 export interface SaleCurrency {
   kind: SaleCurrencyKind;

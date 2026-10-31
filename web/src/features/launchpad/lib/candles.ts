@@ -48,6 +48,15 @@ export function q96ToPrice(
   return Number.isFinite(price) && price > 0 ? price : null;
 }
 
+/** A price with as many digits as its size needs ("—" when not a number). */
+export function formatPrice(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  if (value >= 100) return value.toFixed(2);
+  if (value >= 1) return value.toFixed(3);
+  if (value >= 0.01) return value.toFixed(4);
+  return value.toPrecision(3);
+}
+
 /** Whole currency from base units; null when unreadable. */
 export function atomicToWhole(
   atomic: string | null | undefined,
@@ -88,7 +97,7 @@ export function bucketCandles(
   return [...byBucket.values()].sort((a, b) => a.time - b.time);
 }
 
-export const TIMEFRAMES = [
+const TIMEFRAMES = [
   { id: "1m", label: "1m", seconds: 60 },
   { id: "5m", label: "5m", seconds: 300 },
   { id: "15m", label: "15m", seconds: 900 },

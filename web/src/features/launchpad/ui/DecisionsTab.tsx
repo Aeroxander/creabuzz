@@ -12,7 +12,6 @@ import { isContributorProject } from "../lib/funding";
 import { Card } from "@/shared/ui/card";
 import { FailureNote, WalletStrip } from "./account-widgets";
 import { recordSaleCurrency } from "../chain";
-import { useVerifiedExchange } from "../use-exchange";
 import type { Launch } from "../models";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { useWork } from "../use-work";
@@ -54,11 +53,6 @@ export function DecisionsTab({
     ? recordSaleCurrency(launch.record)
     : null;
   const currencyDecimals = sale?.decimals;
-  const verified = useVerifiedExchange(launch.record.chainId);
-  // A contributor project promised no sale: its decisions do not offer to put its Shares on a market.
-  const exchange = isContributorProject(launch.record)
-    ? null
-    : verified.exchange;
   const snapshot = decisions.data;
   const context = useDecisionContext(dao);
   const work = useWork(dao, wallet.address);
@@ -137,7 +131,6 @@ export function DecisionsTab({
             policy: context.data.policy,
             sharesToken: context.data.shares,
             fundingTerms: context.data.fundingTerms,
-            exchange,
             milestoneWords: (launch.record.unlocks?.milestones ?? []).map(
               (m) => m.label,
             ),
@@ -205,7 +198,6 @@ export function DecisionsTab({
                     payoutsFactory:
                       payoutsFactory(launch.record.chainId ?? null) ??
                       undefined,
-                    amm: exchange?.amm,
                     currency: launch.record.currency ?? undefined,
                     currencySymbol:
                       sale?.kind === "custom" ? "USDC" : sale?.symbol,

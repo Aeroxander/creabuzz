@@ -77,7 +77,7 @@ export interface ThreadModeration {
 
 const NO_ONE: ReadonlySet<string> = new Set();
 
-export const NO_MODERATION: ThreadModeration = {
+const NO_MODERATION: ThreadModeration = {
   locked: false,
   pinned: false,
   canModerate: false,

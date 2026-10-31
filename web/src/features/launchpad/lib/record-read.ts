@@ -26,7 +26,7 @@ import {
 /** The newest log entries read for one event on one contract. */
 export const MAX_RECORD_LOGS = 400;
 /** The most distinct wallets looked at as possible team members (the kit names at most 16). */
-export const MAX_HOLDERS = 64;
+const MAX_HOLDERS = 64;
 /** The most distinct blocks whose time is looked up. */
 const MAX_BLOCKS = 200;
 
@@ -51,7 +51,7 @@ export interface Verdict {
 }
 
 /** A tranche of a team member's Shares and what became of it. */
-export interface PromiseTranche extends MilestoneTranche {
+interface PromiseTranche extends MilestoneTranche {
   /** The claim that freed it, once it has been. */
   claimId: string | null;
   /** Unix seconds it was freed, when the block's time could be read. */

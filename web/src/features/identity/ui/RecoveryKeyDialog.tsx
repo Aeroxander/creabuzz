@@ -46,7 +46,7 @@ export function hasBackedUp(): boolean {
   }
 }
 
-export function markBackedUp(account: string) {
+function markBackedUp(account: string) {
   try {
     localStorage.setItem(BACKED_UP_KEY, account.toLowerCase());
   } catch {

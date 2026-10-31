@@ -68,7 +68,7 @@ const CAST_CREATE_ADDRESSES = [
  * differs between machines; everything before it is the executable creation
  * code and must match byte for byte.
  */
-export function withoutMetadata(hex) {
+function withoutMetadata(hex) {
   const body = hex.replace(/^0x/, "");
   const metaLen = Number.parseInt(body.slice(-4), 16);
   assert.ok(

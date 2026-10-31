@@ -750,32 +750,6 @@ test("performance vesting is validated and published", async ({ page }) => {
     );
 });
 
-test("the liquidity minimum is shown before a thin pool ships", async ({
-  page,
-}) => {
-  await page.getByRole("button", { name: "Set up a sale" }).first().click();
-  await page
-    .getByRole("textbox", { name: "Name", exact: true })
-    .fill("Nebula Eight");
-  await page.getByTestId("launch-advanced").locator("> summary").click();
-  await page.getByLabel("Launch id").fill("nebula-eight");
-  // Only a minted token seeds a pool from the supply (an own-DAO launch keeps its reserve in the DAO), so this is the
-  // minted-token path.
-  await page.getByRole("button", { name: "Mint new" }).click();
-  // Standard allocation: 20% sale, 15% liquidity = 15% of the raise at the
-  // floor, above the 4% minimum for a 20%-of-raise pool.
-  await expect(page.getByTestId("launch-lp-minimum")).toContainText(
-    "15% of the floor raise",
-  );
-  // Crank liquidity down to 2%: the hint flips to a warning.
-  const liquidityInput = page
-    .getByTestId("launch-allocation")
-    .locator('input[type="number"]')
-    .nth(3);
-  await liquidityInput.fill("2");
-  await expect(page.getByTestId("launch-lp-minimum")).toContainText("thin");
-});
-
 test("an agent-run launch is badged and attested", async ({ page }) => {
   // C4: agents are first-class participants. A launch created with the
   // "as agent" toggle is authored by the browser agent key, carries the
@@ -1166,9 +1140,7 @@ test("a new launch on a network with no launch kit is still the project's own Sh
   await expect(page.getByTestId("token-mode-dao")).toBeVisible({
     timeout: 15_000,
   });
-  await expect(
-    page.getByRole("button", { name: "Project Shares" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Mint new" })).toHaveCount(0);
   await expect(page.getByTestId("dao-kit-missing")).toContainText(
     "You can save the draft",
   );

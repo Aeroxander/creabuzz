@@ -5,7 +5,7 @@
  *
  * - every failure names its step (Review-Proven Rule 1) — the step vocabulary
  *   here is the closed set {"exit", "mirror"}, where `mirror` is the
- *   record-only write-back (mint-flow.ts calls the same slot `link`);
+ *   record-only write-back;
  * - a mined revert resolves as `status: "reverted"` receipt data and is a
  *   failed step, never a silent success;
  * - retry re-sends only the remaining steps (Review-Proven Rule 5

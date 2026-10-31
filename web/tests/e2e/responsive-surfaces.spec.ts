@@ -360,13 +360,8 @@ test("discover's actions all fit on a phone", async ({ page }) => {
   await mockRelay(page);
   await page.goto("/discover");
   await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
-  // The four actions in the header wrap onto a second line; none is cut off at the edge.
-  for (const name of [
-    "Launches",
-    "Markets",
-    "Project board",
-    "Pitch a project",
-  ]) {
+  // The actions in the header wrap onto a second line; none is cut off at the edge.
+  for (const name of ["Launches", "Project board", "Pitch a project"]) {
     const control = page
       .getByRole(name === "Pitch a project" ? "button" : "link", { name })
       .first();

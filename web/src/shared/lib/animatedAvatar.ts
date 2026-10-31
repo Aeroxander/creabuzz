@@ -21,13 +21,6 @@ export type AnimatedAvatarDescriptor = {
   animationUrl: string;
 };
 
-export function buildAnimatedAvatarUrl(
-  posterUrl: string,
-  animationUrl: string,
-): string {
-  return `${posterUrl}${ANIMATED_AVATAR_SEPARATOR}${encodeURIComponent(animationUrl)}`;
-}
-
 export function parseAnimatedAvatarUrl(
   url: string | null | undefined,
 ): AnimatedAvatarDescriptor | null {
@@ -60,16 +53,6 @@ export function parseAnimatedAvatarUrl(
   }
 
   return { animationUrl, posterUrl };
-}
-
-export function getAvatarSnapshotUrl(
-  url: string | null | undefined,
-): string | null {
-  if (!url) {
-    return null;
-  }
-
-  return parseAnimatedAvatarUrl(url)?.posterUrl ?? url;
 }
 
 function isHttpUrl(value: string): boolean {

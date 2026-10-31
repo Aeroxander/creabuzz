@@ -20,27 +20,27 @@
  */
 
 /** Longest `name`. */
-export const MAX_NAME = 60;
+const MAX_NAME = 60;
 /** Longest `description`, shown in the picker. */
-export const MAX_DESCRIPTION = 280;
+const MAX_DESCRIPTION = 280;
 /** Longest channel `purpose`. */
-export const MAX_PURPOSE = 200;
+const MAX_PURPOSE = 200;
 /** Channels a template may define. */
-export const MAX_CHANNELS = 8;
+const MAX_CHANNELS = 8;
 /** Helpers (personas) a template may define. */
-export const MAX_PERSONAS = 6;
+const MAX_PERSONAS = 6;
 /** Workflows a template may define. */
-export const MAX_WORKFLOWS = 6;
+const MAX_WORKFLOWS = 6;
 /** Documents a template may define. */
-export const MAX_DOCS = 8;
+const MAX_DOCS = 8;
 /** Skills a template may define. */
-export const MAX_SKILLS = 8;
+const MAX_SKILLS = 8;
 /** Longest founder-seat blurb. */
-export const MAX_ORG_BLURB = 120;
+const MAX_ORG_BLURB = 120;
 /** Ceiling on any default-budget counter: a starting point, not a blank cheque. */
-export const MAX_DEFAULT_BUDGET_LIMIT = 1_000_000;
+const MAX_DEFAULT_BUDGET_LIMIT = 1_000_000;
 /** Bound on every referenced text file. */
-export const MAX_FILE_BYTES = 64 * 1024;
+const MAX_FILE_BYTES = 64 * 1024;
 
 /** The org node id of the founder seat. */
 export const ORG_ROOT_NODE_ID = "root";
@@ -77,7 +77,7 @@ export function isPrivateChannel(
 }
 
 /** One helper: a name and the prompt that tells it who it is. */
-export interface TemplatePersona {
+interface TemplatePersona {
   id: string;
   name: string;
   /** Template-relative file. */
@@ -87,19 +87,19 @@ export interface TemplatePersona {
 }
 
 /** One workflow, bound to a channel (the first channel when it names none). */
-export interface TemplateWorkflow {
+interface TemplateWorkflow {
   file: string;
   channel?: string;
 }
 
 /** One shared document. */
-export interface TemplateDoc {
+interface TemplateDoc {
   file: string;
   title: string;
 }
 
 /** Who a skill is written for. Metadata, not an access boundary. */
-export type SkillScope = "developers" | "all";
+type SkillScope = "developers" | "all";
 
 /** One skill: a template-relative file or an https address. */
 export interface TemplateSkill {
@@ -109,7 +109,7 @@ export interface TemplateSkill {
 }
 
 /** How long a budget counts for. */
-export type BudgetWindow = "epoch" | "day" | "week" | "month";
+type BudgetWindow = "epoch" | "day" | "week" | "month";
 
 /** The default budget every helper falls under. */
 export interface TemplateBudget {
@@ -121,14 +121,14 @@ export interface TemplateBudget {
 }
 
 /** The organization a template starts with. */
-export interface TemplateOrg {
+interface TemplateOrg {
   root: { name: string; blurb?: string };
   seats: { persona: string; title?: string }[];
   default_budget?: TemplateBudget;
 }
 
 /** A parsed `template.yaml`. */
-export interface Template {
+interface Template {
   id: string;
   name: string;
   description: string;
@@ -142,7 +142,7 @@ export interface Template {
 }
 
 /** A skill whose text is bundled: its identity comes from the SKILL.md front matter. */
-export interface ResolvedSkill {
+interface ResolvedSkill {
   name: string;
   description: string;
   /** sha256 (hex) of `content`, the pin. */

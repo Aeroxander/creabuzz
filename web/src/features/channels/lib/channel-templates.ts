@@ -18,7 +18,7 @@ import type {
   ChannelVisibilityChoice,
 } from "./channel-create-events";
 
-export type TemplateSeat =
+type TemplateSeat =
   | { type: "all-agents" }
   | { type: "team"; teamName: string }
   | { type: "agent"; agentId: string };

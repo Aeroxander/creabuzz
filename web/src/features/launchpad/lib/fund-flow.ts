@@ -53,7 +53,6 @@ export const SELECTOR_TREASURY = "0x61d027b3"; // treasury()
 // `@creaton/core`; they are re-exported here so this module's callers keep one
 // import site.
 export { buildGraduationsView, decodeGraduationRecord };
-export type { GraduationRecord };
 
 /** The onchain side of the split, as the panel reads it. */
 export interface GraduationState {
@@ -132,7 +131,7 @@ export function graduationSplit(input: {
 // ------------------------------------------------------------ receipts ----
 
 /** Every receipt word this panel renders as money movement. */
-export type FundFlowTable = "sweep" | "lock" | "summon" | "ragequit";
+type FundFlowTable = "sweep" | "lock" | "summon" | "ragequit";
 
 /** One money-movement row backed by a 47005 receipt. */
 export interface ReceiptRow {

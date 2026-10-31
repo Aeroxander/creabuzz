@@ -60,6 +60,8 @@ pre-filled and tagged to the launch.
 
 ### Two chain worlds, one journey
 
+> The scripts and `e2e-real/journey.spec.ts` below were removed in D150 with the mint and hand-deployed auction path, see tag pre-deprecation-2026-10-31.
+
 The same journey spec runs in two worlds:
 
 - `scripts/web-auction-e2e.sh` (mock world): a prebuilt token is linked, the sale

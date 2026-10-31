@@ -9,7 +9,7 @@ const isAddressLabel = (label: string) => /^0x[0-9a-f]/i.test(label.trim());
  * A person on a project page, as a small disc: their initials when they have a name here, a plain figure when all that
  * is known is a wallet. Decorative next to the name, which is always written beside it.
  */
-export function Face({ label }: { label: string }) {
+function Face({ label }: { label: string }) {
   if (isAddressLabel(label)) {
     return (
       <span

@@ -6,12 +6,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-  claimIdWord,
-  scheduleRequestIssues,
-  trancheAmount,
-  trancheClaims,
-} from "./tranche-claims.ts";
+import { claimIdWord, trancheAmount, trancheClaims } from "./tranche-claims.ts";
 
 function plan(overrides = {}) {
   return {
@@ -73,31 +68,6 @@ describe("trancheAmount", () => {
   });
 });
 
-describe("scheduleRequestIssues", () => {
-  it("mirrors the contract band caps", () => {
-    assert.deepEqual(
-      scheduleRequestIssues({ weight: 1, term: 365 * 86400, band: 1 }),
-      [],
-    );
-    assert.equal(
-      scheduleRequestIssues({ weight: 2, term: 86400, band: 1 }).length,
-      1,
-    );
-    assert.equal(
-      scheduleRequestIssues({ weight: 1, term: 730 * 86400, band: 1 }).length,
-      1,
-    );
-    assert.deepEqual(
-      scheduleRequestIssues({ weight: 3, term: 1095 * 86400, band: 3 }),
-      [],
-    );
-    assert.equal(
-      scheduleRequestIssues({ weight: 1, term: 86400, band: 4 }).length,
-      1,
-    );
-  });
-});
-
 describe("trancheClaims", () => {
   it("maps milestone rows to claims with amounts and escrow total", () => {
     const out = trancheClaims(plan(), 1_000_000n);
@@ -116,21 +86,6 @@ describe("trancheClaims", () => {
     assert.equal(out.claims[1].amount, "131");
     assert.equal(out.escrowRequired, "328");
     assert.equal(out.flooredRemainder, "1");
-  });
-
-  it("rides schedules when asked and refuses bad ones", () => {
-    const ok = trancheClaims(plan(), 1_000_000n, {
-      m1: { weight: 1, term: 365 * 86400, band: 1 },
-    });
-    assert.equal(ok.claims[0].schedule?.band, 1);
-    assert.equal(ok.claims[1].schedule, null);
-    assert.throws(
-      () =>
-        trancheClaims(plan(), 1_000_000n, {
-          m1: { weight: 5, term: 365 * 86400, band: 1 },
-        }),
-      /bad schedule for m1/,
-    );
   });
 
   it("time and none modes produce no claims (record-level by design)", () => {

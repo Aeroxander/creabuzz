@@ -20,8 +20,8 @@ import {
 export type FontSize = "smaller" | "default" | "larger";
 export type Density = "comfortable" | "compact";
 
-export const FONT_SIZE_STORAGE_KEY = "buzz.fontSize";
-export const DENSITY_STORAGE_KEY = "buzz.conversationDensity";
+const FONT_SIZE_STORAGE_KEY = "buzz.fontSize";
+const DENSITY_STORAGE_KEY = "buzz.conversationDensity";
 
 type TypographyContextValue = {
   fontSize: FontSize;

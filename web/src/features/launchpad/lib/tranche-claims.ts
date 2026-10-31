@@ -7,9 +7,8 @@
  * TOKEN via `fund()`, submit each milestone row as a claim, and the
  * VerifierSet's approval quorum releases the tranche to the row's claimant
  * (`settle` -> `payout`). Capital flows against attested delivery, enforced
- * onchain instead of by a treasury promise. A row may also ride along a
- * royalty schedule (`submitClaimWithSchedule`) -- income and ownership from
- * one attested contribution, per `docs/token-lifecycle-design.md` section 2.
+ * onchain instead of by a treasury promise. (The pre-v3 royalty schedule
+ * ride-along was removed in D150, see tag pre-deprecation-2026-10-31.)
  *
  * Mapping decisions (locked 2026-09-26):
  * - Claim text (`"m1"`) -> bytes32 as ASCII right-padded (<= 32 chars). Each
@@ -31,17 +30,7 @@ import {
   unlockPlanIssues,
 } from "./unlock-plans.ts";
 
-/** Royalty schedule ride-along (token-lifecycle-design.md section 3.1 band caps). */
-export interface TrancheScheduleRequest {
-  /** Pool weight points (Tier I <= 1, II <= 2, III <= 3). */
-  weight: number;
-  /** Schedule term in seconds (Tier I <= 365d, II <= 730d, III <= 1095d). */
-  term: number;
-  /** Milestone badge tier: 1, 2, or 3. */
-  band: number;
-}
-
-export interface TrancheClaim {
+interface TrancheClaim {
   /** The wizard row's claim text (`"m1"`). */
   claim: string;
   /** The bytes32 word: 0x + 64 hex, ASCII right-padded. */
@@ -51,8 +40,6 @@ export interface TrancheClaim {
   percent: number;
   /** Tranche in token units (decimal string, floored). */
   amount: string;
-  /** Royalty schedule to mint at attestation, or null for a plain tranche. */
-  schedule: TrancheScheduleRequest | null;
 }
 
 export interface TrancheClaimPlan {
@@ -64,11 +51,6 @@ export interface TrancheClaimPlan {
   /** Floored dust between the ideal milestone allocation and the sum. */
   flooredRemainder: string;
 }
-
-/** Band term caps in seconds, mirroring `RoyaltyDistributor.bandTermCap`. */
-const BAND_TERM_CAP = [0, 365 * 24 * 3600, 730 * 24 * 3600, 1095 * 24 * 3600];
-/** Band weight caps, mirroring `RoyaltyDistributor.bandWeightCap`. */
-const BAND_WEIGHT_CAP = [0, 1, 2, 3];
 
 /**
  * `"m1"` -> `0x6d31000...0`. ASCII right-padded to 32 bytes. Refuses anything
@@ -113,43 +95,14 @@ export function trancheAmount(
   return (totalSupply * BigInt(allocationPct) * BigInt(percent)) / 10_000n;
 }
 
-/** Schedule validation mirroring the contract's band caps (fail loud here). */
-export function scheduleRequestIssues(
-  schedule: TrancheScheduleRequest,
-): string[] {
-  const issues: string[] = [];
-  const { weight, term, band } = schedule;
-  if (!Number.isInteger(band) || band < 1 || band > 3) {
-    issues.push(`band must be 1, 2, or 3 (got ${band})`);
-  } else {
-    if (
-      !Number.isInteger(weight) ||
-      weight < 1 ||
-      weight > BAND_WEIGHT_CAP[band]
-    ) {
-      issues.push(
-        `Tier ${band} weight must be 1..${BAND_WEIGHT_CAP[band]} (got ${weight})`,
-      );
-    }
-    if (!Number.isInteger(term) || term < 1 || term > BAND_TERM_CAP[band]) {
-      issues.push(
-        `Tier ${band} term must be <= ${BAND_TERM_CAP[band]}s (got ${term})`,
-      );
-    }
-  }
-  return issues;
-}
-
 /**
  * The plan as the set of `ClaimStake` claims an operator (or agent) submits
- * and funds. Throws on an invalid plan or schedule -- the enforcer's rules
- * (band caps) are checked in the composer stage too, so a bad row never
- * reaches a reverting transaction.
+ * and funds. Throws on an invalid plan, so a bad row never reaches a
+ * reverting transaction.
  */
 export function trancheClaims(
   plan: UnlockPlan | null,
   totalSupply: bigint,
-  scheduleByClaim?: Record<string, TrancheScheduleRequest | null>,
 ): TrancheClaimPlan {
   if (plan?.mode !== "milestones") {
     return {
@@ -170,20 +123,12 @@ export function trancheClaims(
   const claims: TrancheClaim[] = plan.milestones.map((row: UnlockMilestone) => {
     const amount = trancheAmount(totalSupply, plan.allocationPct, row.percent);
     escrow += amount;
-    const schedule = scheduleByClaim?.[row.claim] ?? null;
-    if (schedule) {
-      const issues = scheduleRequestIssues(schedule);
-      if (issues.length > 0) {
-        throw new Error(`bad schedule for ${row.claim}: ${issues.join("; ")}`);
-      }
-    }
     return {
       claim: row.claim,
       claimIdWord: claimIdWord(row.claim),
       label: row.label,
       percent: row.percent,
       amount: amount.toString(),
-      schedule,
     };
   });
 

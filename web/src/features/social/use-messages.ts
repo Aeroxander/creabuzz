@@ -57,7 +57,7 @@ async function mapLimited<T>(
 const messagesKey = (me: string | null) => [...socialKeys.all, "dms", me];
 
 /** How often the inbox is read again: often while Messages is open, slowly elsewhere (for the nav's dot). */
-export const MESSAGES_OPEN_POLL_MS = 5_000;
+const MESSAGES_OPEN_POLL_MS = 5_000;
 const MESSAGES_ELSEWHERE_POLL_MS = 20_000;
 
 /**

@@ -139,7 +139,7 @@ export interface CheckpointView {
 export const MAX_CHECKPOINT_BLOCK = (1n << 64n) - 1n;
 
 /** Default bound on one checkpoint-list walk (Review-Proven Rule 4). */
-export const DEFAULT_CHECKPOINT_WALK_LIMIT = 512;
+const DEFAULT_CHECKPOINT_WALK_LIMIT = 512;
 
 function decodeWords(returnData: string, expected: number): bigint[] {
   const body = returnData.startsWith("0x") ? returnData.slice(2) : returnData;
@@ -267,7 +267,7 @@ export type ClaimPlan =
  * exited), `exited` (tokens waiting out the claim window), `claimable` (claim
  * unlocked), `settled` (nothing left to claim).
  */
-export type BidStatus =
+type BidStatus =
   | "active"
   | "outbid"
   | "ended"
@@ -441,7 +441,7 @@ export function deriveClaimPlan(
 }
 
 /** Derive the display status from the same inputs as the gated actions. */
-export function deriveBidStatus(input: BidDerivationInput): BidStatus {
+function deriveBidStatus(input: BidDerivationInput): BidStatus {
   const { bid, checkpoints, auction } = input;
   if (bid.exitedBlock !== 0n) {
     if (bid.tokensFilled === 0n) return "settled";
@@ -639,7 +639,7 @@ export async function readBidView(
 }
 
 /** Read + decode `auction.checkpoints(block)`. Throws on read/decode failure. */
-export async function readCheckpointView(
+async function readCheckpointView(
   endpoint: string,
   auction: string,
   block: bigint,
@@ -688,7 +688,7 @@ export async function fetchCheckpointWalk(
 }
 
 /** Read the full auction context {@link AuctionContext}. */
-export async function fetchAuctionContext(
+async function fetchAuctionContext(
   endpoint: string,
   auction: string,
 ): Promise<AuctionContext> {
@@ -738,7 +738,7 @@ export async function findOwnedBidIds(
 }
 
 /** One wallet bid: raw reads plus the gated actions. */
-export interface MyBidEntry {
+interface MyBidEntry {
   bidId: bigint;
   bid: BidView;
   checkpoints: CheckpointView[];
@@ -763,7 +763,7 @@ export interface FetchMyBidsParams {
 }
 
 /** Read one bid's derivation input (bid + its checkpoint walk). */
-export async function fetchBidDerivation(
+async function fetchBidDerivation(
   endpoint: string,
   auction: string,
   bidId: bigint,

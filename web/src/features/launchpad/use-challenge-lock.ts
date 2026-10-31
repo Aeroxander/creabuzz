@@ -17,7 +17,7 @@ import {
 import { endpointChain } from "./use-work";
 
 /** Every read about a milestone lock lives under this key, so one call re-reads them all. */
-export const challengeQueryKey = ["launchpad", "challenge"] as const;
+const challengeQueryKey = ["launchpad", "challenge"] as const;
 
 /**
  * The read of a DAO's milestone lock. It answers a lock that lets holders object, or `null` when the DAO's lock is confirmed
@@ -154,7 +154,7 @@ export function useChallengeLockState(dao: string | null): LockState {
 }
 
 /** The earliest moment (unix seconds) after which something about the lock changes by itself, or null. */
-export function nextDeadline(view: ChallengeLockView | null): number | null {
+function nextDeadline(view: ChallengeLockView | null): number | null {
   if (!view) return null;
   let next: number | null = null;
   const consider = (t: number) => {

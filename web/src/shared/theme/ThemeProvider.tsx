@@ -27,7 +27,7 @@ function getSystemDark(): boolean {
  * `public/theme-boot.js` reads the same key before the bundle runs, so dark-mode
  * users never see a white flash; keep the two in step.
  */
-export const THEME_STORAGE_KEY = "buzz.theme";
+const THEME_STORAGE_KEY = "buzz.theme";
 
 function isTheme(value: unknown): value is Theme {
   return value === "light" || value === "dark" || value === "system";

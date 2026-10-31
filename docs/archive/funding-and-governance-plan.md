@@ -313,7 +313,7 @@ A scripted story runner instead of more isolated tests, run with one command
 - Checks at every step: treasury solvent, supply conserved, no spend beyond an
   allowance, exits neutral.
 - Output: a timeline report with screenshots per stage. Each feature adds its own
-  scene as it lands. Start from `web/tests/e2e-real/journey.spec.ts`.
+  scene as it lands. Start from `web/tests/e2e-real/journey.spec.ts`. (Removed in D150, see tag pre-deprecation-2026-10-31.)
 
 ## 10. Order of work
 

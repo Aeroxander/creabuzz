@@ -37,7 +37,7 @@ export interface TaskSource {
 const HEX_64 = /^[0-9a-f]{64}$/;
 
 /** The share of a task's reward offered to the person who suggested it. */
-export const FINDER_SHARE = 0.1;
+const FINDER_SHARE = 0.1;
 
 /** A well-formed source, or null. Keys are lower-cased, so they compare. */
 export function readSource(value: unknown): TaskSource | null {

@@ -24,7 +24,6 @@ import {
   SELECTOR_CLAIM_TOKENS_BATCH,
   SELECTOR_ERC20_APPROVE,
   SELECTOR_EXIT_BID,
-  SELECTOR_EXIT_PARTIALLY_FILLED_BID,
   SELECTOR_PERMIT2_APPROVE,
   SELECTOR_SUBMIT_BID,
   bidPlanWithDefaultHint,
@@ -45,7 +44,6 @@ export {
   SELECTOR_CLAIM_TOKENS_BATCH,
   SELECTOR_ERC20_APPROVE,
   SELECTOR_EXIT_BID,
-  SELECTOR_EXIT_PARTIALLY_FILLED_BID,
   SELECTOR_PERMIT2_APPROVE,
   SELECTOR_SUBMIT_BID,
   bidPlanWithDefaultHint,
@@ -61,9 +59,9 @@ export type { BidPlan };
 
 import { maxBidPrice } from "./launch-params.ts";
 // checkpoint() — materialize the current block's checkpoint
-export const SELECTOR_CHECKPOINT = "0xc2c4c5c1";
+const SELECTOR_CHECKPOINT = "0xc2c4c5c1";
 // allowance(address,address) on the ERC-20 currency
-export const SELECTOR_ERC20_ALLOWANCE = "0xdd62ed3e";
+const SELECTOR_ERC20_ALLOWANCE = "0xdd62ed3e";
 
 export interface UnsignedTx {
   to: string;
@@ -182,7 +180,7 @@ export function encodeErc20Allowance(owner: string, spender: string): string {
  * insufficient — an unneeded approve costs a little gas, a missing one reverts
  * the whole bid.
  */
-export function needsUnderlyingApproval(
+function needsUnderlyingApproval(
   allowance: bigint | null | undefined,
   amount: bigint,
 ): boolean {

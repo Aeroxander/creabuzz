@@ -15,13 +15,13 @@ import {
 } from "../../../shared/constants/kinds.ts";
 
 /** The one plane the agent posts its turns on. */
-export const AGENT_POST_KIND = KIND_STREAM_MESSAGE;
+const AGENT_POST_KIND = KIND_STREAM_MESSAGE;
 
 /**
  * What the agent reads for channel context: plain kind-1 notes plus both chat
  * planes (kind 9 history, kind 40002 v2 posts).
  */
-export const AGENT_CONTEXT_READ_KINDS = [
+const AGENT_CONTEXT_READ_KINDS = [
   1,
   KIND_STREAM_MESSAGE,
   KIND_STREAM_MESSAGE_V2,

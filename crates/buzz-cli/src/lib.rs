@@ -79,12 +79,91 @@ Options:
 /// for `-h`, which is what gives the two depths: `-h` keeps the group-level
 /// summary, `--help` shows every subcommand under every group.
 fn build_command() -> clap::Command {
-    let cmd = Cli::command();
+    build_command_with(raise_commands_enabled())
+}
+
+/// [`build_command`] with the raise-era launchpad surface shown or hidden.
+/// Taking the switch as an argument keeps tests off the process environment.
+fn build_command_with(raise_commands: bool) -> clap::Command {
+    let mut cmd = Cli::command();
+    if raise_commands {
+        cmd = cmd.mut_subcommand("launchpad", |launchpad| {
+            let launchpad = RAISE_SUBCOMMANDS.iter().fold(launchpad, |lp, name| {
+                lp.mut_subcommand(*name, |sub| sub.hide(false))
+            });
+            launchpad.mut_subcommand("curate", |curate| {
+                RAISE_CURATE_ARGS
+                    .iter()
+                    .fold(curate, |c, arg| c.mut_arg(*arg, |a| a.hide(false)))
+            })
+        });
+    }
     let groups = help_tree::render(&cmd, 1);
     let full = help_tree::render(&cmd, usize::MAX);
     cmd.help_template(ROOT_HELP_TEMPLATE)
         .after_help(format!("Commands:\n{groups}"))
         .after_long_help(format!("Commands:\n{full}"))
+}
+
+/// Set to `1` to bring back the raise-era launchpad commands (token minting,
+/// auction bids, milestone claims and verdicts, raise fields on `curate`,
+/// `futarchy-budget` proposals). The product offers no raise (D137), so they
+/// stay out of `--help` and refuse to run without it; development journeys
+/// that still exercise the frozen raise contracts set it.
+pub const ENV_DEV_RAISE_COMMANDS: &str = "BUZZ_DEV_RAISE_COMMANDS";
+
+/// `buzz launchpad` subcommands that only serve a raise.
+const RAISE_SUBCOMMANDS: [&str; 5] = [
+    "mint-token",
+    "compose-bid",
+    "record-bid",
+    "record-claim",
+    "record-verdict",
+];
+
+/// `buzz launchpad curate` flags that only describe a raise.
+const RAISE_CURATE_ARGS: [&str; 4] = ["currency", "floor-price", "required-raised", "auction"];
+
+fn raise_commands_enabled() -> bool {
+    std::env::var(ENV_DEV_RAISE_COMMANDS).is_ok_and(|v| v == "1")
+}
+
+/// Refuse a raise-era launchpad command unless the development switch is on.
+fn check_raise_gate(cmd: &Cmd, enabled: bool) -> Result<(), CliError> {
+    if enabled {
+        return Ok(());
+    }
+    let Cmd::Launchpad(sub) = cmd else {
+        return Ok(());
+    };
+    let what = match sub {
+        LaunchpadCmd::MintToken { .. } => "launchpad mint-token",
+        LaunchpadCmd::ComposeBid { .. } => "launchpad compose-bid",
+        LaunchpadCmd::RecordBid { .. } => "launchpad record-bid",
+        LaunchpadCmd::RecordClaim { .. } => "launchpad record-claim",
+        LaunchpadCmd::RecordVerdict { .. } => "launchpad record-verdict",
+        LaunchpadCmd::Curate {
+            currency,
+            floor_price,
+            required_raised,
+            auction,
+            ..
+        } if currency.is_some()
+            || floor_price.is_some()
+            || required_raised.is_some()
+            || auction.is_some() =>
+        {
+            "launchpad curate with fundraising fields"
+        }
+        LaunchpadCmd::RecordProposal { kind, .. } if kind == "futarchy-budget" => {
+            "launchpad record-proposal --kind futarchy-budget"
+        }
+        _ => return Ok(()),
+    };
+    Err(CliError::Usage(format!(
+        "`buzz {what}` belongs to fundraising, which is not offered; \
+         set {ENV_DEV_RAISE_COMMANDS}=1 to use it in development"
+    )))
 }
 
 fn parse_args<I, S>(args: I) -> Result<Cli, clap::Error>
@@ -285,9 +364,6 @@ enum Cmd {
     /// Community org graph — roles, grants, and budgets (NIP-ORG)
     #[command(subcommand)]
     Org(OrgCmd),
-    /// Contributor royalty ledger — read, claim, settle, mirrors (token-lifecycle-design.md)
-    #[command(subcommand)]
-    Royalty(RoyaltyCmd),
     /// The trustgraph scoring operator — score roots + gate rotation (NIP-LP 37006)
     #[command(subcommand)]
     Trustgraph(TrustgraphCmd),
@@ -1505,11 +1581,6 @@ pub enum LaunchpadCmd {
         #[command(subcommand)]
         step: commands::launchpad_work::WorkCmd,
     },
-    /// Put the DAO's Shares on the Limit Break AMM (compose the vote)
-    Market {
-        #[command(subcommand)]
-        step: commands::launchpad_market::MarketCmd,
-    },
     /// Read a proposal's state (the D6 quorum-math input)
     ProposalState {
         /// Bound DAO address (`0x…`)
@@ -1547,16 +1618,16 @@ pub enum LaunchpadCmd {
         #[arg(long)]
         chain: Option<String>,
         /// Raise currency (0x address, e.g. USDC)
-        #[arg(long)]
+        #[arg(long, hide = true)]
         currency: Option<String>,
         /// Floor price in smallest currency units
-        #[arg(long, name = "floor-price")]
+        #[arg(long, name = "floor-price", hide = true)]
         floor_price: Option<String>,
         /// Graduation threshold in smallest currency units
-        #[arg(long, name = "required-raised")]
+        #[arg(long, name = "required-raised", hide = true)]
         required_raised: Option<String>,
         /// Auction contract (0x address)
-        #[arg(long)]
+        #[arg(long, hide = true)]
         auction: Option<String>,
         /// Token contract (0x address)
         #[arg(long)]
@@ -1574,7 +1645,7 @@ pub enum LaunchpadCmd {
         id: String,
     },
     /// Mint a ProjectToken via forge script (dev-local chains by default)
-    #[command(name = "mint-token")]
+    #[command(name = "mint-token", hide = true)]
     MintToken {
         /// Token name (1–64 chars)
         #[arg(long)]
@@ -1611,7 +1682,7 @@ pub enum LaunchpadCmd {
         i_know_what_i_am_doing: bool,
     },
     /// Compose an unsigned bid transaction (submitBid + Permit2 approve)
-    #[command(name = "compose-bid")]
+    #[command(name = "compose-bid", hide = true)]
     ComposeBid {
         /// Launch id (slug)
         id: String,
@@ -1655,7 +1726,7 @@ pub enum LaunchpadCmd {
         deadline: Option<u64>,
     },
     /// Mirror an onchain bid into the launch feed (advisory)
-    #[command(name = "record-bid")]
+    #[command(name = "record-bid", hide = true)]
     RecordBid {
         /// Launch id (slug)
         id: String,
@@ -1687,7 +1758,7 @@ pub enum LaunchpadCmd {
         #[arg(long)]
         body: String,
     },
-    /// Mirror a proposal record (plain, futarchy-budget, or signal)
+    /// Mirror a proposal record (plain or signal)
     #[command(name = "record-proposal")]
     RecordProposal {
         /// Launch id (slug)
@@ -1718,7 +1789,7 @@ pub enum LaunchpadCmd {
         tx: String,
     },
     /// Record a milestone claim (47005, table = claim)
-    #[command(name = "record-claim")]
+    #[command(name = "record-claim", hide = true)]
     RecordClaim {
         /// Launch id (slug)
         id: String,
@@ -1733,7 +1804,7 @@ pub enum LaunchpadCmd {
         tx: String,
     },
     /// Record a verifier verdict on a claim (47005, table = verdict)
-    #[command(name = "record-verdict")]
+    #[command(name = "record-verdict", hide = true)]
     RecordVerdict {
         /// Launch id (slug)
         id: String,
@@ -2534,249 +2605,6 @@ pub enum ModerationCmd {
     },
 }
 
-/// Contributor royalty ledger commands — docs/token-lifecycle-design.md.
-///
-/// Local-only (EVM value layer; no relay connection, no Nostr key). The
-/// mirror subcommands print UNSIGNED kind:47006/47007 event templates
-/// (advisory; the chain is authoritative).
-#[derive(Subcommand)]
-pub enum RoyaltyCmd {
-    /// Read the ledger state (credited balance, carry, window clock)
-    Show {
-        /// RoyaltyDistributor address (`0x…`, 40 hex chars)
-        #[arg(long)]
-        distributor: String,
-    },
-    /// Pull the credited royalty balance (credited-is-owned: never expires)
-    Claim {
-        /// RoyaltyDistributor address (`0x…`, 40 hex chars)
-        #[arg(long)]
-        distributor: String,
-    },
-    /// Close the current settlement window (permissionless)
-    Settle {
-        /// RoyaltyDistributor address (`0x…`, 40 hex chars)
-        #[arg(long)]
-        distributor: String,
-    },
-    /// Settle an epoch's royalty weights from its kind:37013 contributions
-    ///
-    /// Collects the epoch's contribution records (bounded query on the
-    /// connected relay's community), resolves each action's verdict exactly
-    /// the way the review machinery does — the newest review by an
-    /// authorized reviewer other than the subject; self-reviews never count
-    /// — and emits one unsigned kind:47006 schedule mirror per beneficiary
-    /// through the existing composer. Formula (weights are integers scaled
-    /// x1000): weight(b) = sum over accepted actions of
-    /// floor(amount * min(monthsActive, 12) * 1000 / 12), minus the same sum
-    /// over rejected/slashed actions, clamped at 0. `monthsActive` defaults
-    /// to 12 when absent, `amount` is required (claims without one are
-    /// reported as unpayable, never silently dropped), and
-    /// pending/appealed/unreviewed actions never count. The chain is
-    /// authoritative; the printed mirrors are advisory and the printed
-    /// `buzz royalty` follow-ups publish them and close the window.
-    SettleWeights {
-        /// Epoch window start (unix seconds, inclusive)
-        #[arg(long)]
-        epoch_start: u64,
-        /// Epoch window end (unix seconds, exclusive)
-        #[arg(long)]
-        epoch_end: u64,
-        /// Latest review `created_at` that may dispose an action (unix
-        /// seconds; default: --epoch-end). Verdicts after the cutoff are
-        /// picked up by the next run: claim ids are derived per accepted
-        /// action, so re-running the epoch with a wider cutoff only adds
-        /// delta claims and can never re-pay a settled action.
-        #[arg(long)]
-        review_until: Option<u64>,
-        /// Reviewer keys whose dispositions count (repeatable; owner/admin
-        /// and seated humans per NIP-ORG review authority)
-        #[arg(long = "authorized-reviewer", required = true)]
-        authorized_reviewer: Vec<String>,
-        /// Max kind:37013 events to read (bounded; default 500, cap 2000)
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Chain identifier for the emitted mirrors, e.g. `eip155:8453`
-        #[arg(long)]
-        chain: String,
-        /// RoyaltyDistributor address (`0x…`)
-        #[arg(long)]
-        distributor: String,
-        /// Schedule term in seconds applied to every emitted schedule
-        #[arg(long, default_value_t = 31_536_000)]
-        term: u64,
-        /// Milestone badge tier for every emitted schedule (1, 2, or 3)
-        #[arg(long, default_value_t = 1)]
-        band: u8,
-        /// Earned token allocation for every emitted schedule (decimal)
-        #[arg(long, default_value_t = 0)]
-        allocation: u128,
-    },
-    /// Print an unsigned kind:47006 royalty-schedule mirror (JSON)
-    MirrorSchedule {
-        /// Chain identifier, e.g. `eip155:8453`
-        #[arg(long)]
-        chain: String,
-        /// RoyaltyDistributor address (`0x…`)
-        #[arg(long)]
-        distributor: String,
-        /// The ClaimStake claim id (0x-prefixed bytes32)
-        #[arg(long)]
-        claim_id: String,
-        /// The claim's evidence hash (0x-prefixed bytes32)
-        #[arg(long)]
-        evidence_hash: String,
-        /// The contributor's bound EVM address (`0x…`)
-        #[arg(long)]
-        contributor: String,
-        /// Schedule weight (tier band caps apply)
-        #[arg(long)]
-        weight: u32,
-        /// Schedule term in seconds
-        #[arg(long)]
-        term: u64,
-        /// Milestone badge tier (1, 2, or 3)
-        #[arg(long)]
-        band: u8,
-        /// Earned token allocation (decimal)
-        #[arg(long)]
-        allocation: u128,
-    },
-    /// Print an unsigned kind:47007 settlement-close mirror (JSON)
-    MirrorClose {
-        /// Chain identifier, e.g. `eip155:8453`
-        #[arg(long)]
-        chain: String,
-        /// RoyaltyDistributor address (`0x…`)
-        #[arg(long)]
-        distributor: String,
-        /// The closed window id
-        #[arg(long)]
-        window_id: u64,
-        /// Window revenue (decimal, currency units)
-        #[arg(long)]
-        revenue: u128,
-        /// Buyback share (decimal)
-        #[arg(long)]
-        buyback_share: u128,
-        /// Treasury share (decimal)
-        #[arg(long)]
-        treasury_share: u128,
-        /// Contributor pool (decimal)
-        #[arg(long)]
-        pool: u128,
-        /// Carried into the next pool (decimal)
-        #[arg(long)]
-        carried: u128,
-    },
-    /// Sign and publish the kind:47006 schedule mirror (the attestation
-    /// feed's record; the chain is authoritative). Needs a relay identity.
-    PublishSchedule {
-        /// Chain identifier, e.g. `eip155:8453`
-        #[arg(long)]
-        chain: String,
-        /// RoyaltyDistributor address (`0x…`)
-        #[arg(long)]
-        distributor: String,
-        /// The ClaimStake claim id (0x-prefixed bytes32)
-        #[arg(long)]
-        claim_id: String,
-        /// The claim's evidence hash (0x-prefixed bytes32)
-        #[arg(long)]
-        evidence_hash: String,
-        /// The contributor's bound EVM address (`0x…`)
-        #[arg(long)]
-        contributor: String,
-        /// Schedule weight (tier band caps apply)
-        #[arg(long)]
-        weight: u32,
-        /// Schedule term in seconds
-        #[arg(long)]
-        term: u64,
-        /// Milestone badge tier (1, 2, or 3)
-        #[arg(long)]
-        band: u8,
-        /// Earned token allocation (decimal)
-        #[arg(long)]
-        allocation: u128,
-        /// Launch record author (pubkey hex) for the `a` binding tag
-        #[arg(long)]
-        launch_author: Option<String>,
-        /// Launch record id (the `d` slug) for the `a` binding tag
-        #[arg(long)]
-        launch_id: Option<String>,
-        /// Channel id for the `h` tag
-        #[arg(long)]
-        channel: Option<String>,
-    },
-    /// Sign and publish the kind:47007 settlement-close mirror (the
-    /// attestation feed's per-window record). Needs a relay identity.
-    PublishClose {
-        /// Chain identifier, e.g. `eip155:8453`
-        #[arg(long)]
-        chain: String,
-        /// RoyaltyDistributor address (`0x…`)
-        #[arg(long)]
-        distributor: String,
-        /// The closed window id
-        #[arg(long)]
-        window_id: u64,
-        /// Window revenue (decimal, currency units)
-        #[arg(long)]
-        revenue: u128,
-        /// Buyback share (decimal)
-        #[arg(long)]
-        buyback_share: u128,
-        /// Treasury share (decimal)
-        #[arg(long)]
-        treasury_share: u128,
-        /// Contributor pool (decimal)
-        #[arg(long)]
-        pool: u128,
-        /// Carried into the next pool (decimal)
-        #[arg(long)]
-        carried: u128,
-        /// Launch record author (pubkey hex) for the `a` binding tag
-        #[arg(long)]
-        launch_author: Option<String>,
-        /// Launch record id (the `d` slug) for the `a` binding tag
-        #[arg(long)]
-        launch_id: Option<String>,
-        /// Channel id for the `h` tag
-        #[arg(long)]
-        channel: Option<String>,
-    },
-    /// Watch a RoyaltyDistributor and publish kind:47007 close mirrors as
-    /// windows close (the attestation feed, unattended). Needs a relay
-    /// identity and BUZZ_EVM_RPC_URL. `--once` for a single pass.
-    Watch {
-        /// Chain identifier, e.g. `eip155:8453`
-        #[arg(long)]
-        chain: String,
-        /// RoyaltyDistributor address (`0x…`)
-        #[arg(long)]
-        distributor: String,
-        /// Launch record author (pubkey hex) for the `a` binding tag
-        #[arg(long)]
-        launch_author: Option<String>,
-        /// Launch record id (the `d` slug) for the `a` binding tag
-        #[arg(long)]
-        launch_id: Option<String>,
-        /// Channel id for the `h` tag
-        #[arg(long)]
-        channel: Option<String>,
-        /// Poll interval in seconds (default 30)
-        #[arg(long)]
-        interval: Option<u64>,
-        /// Single pass then exit (cron-style)
-        #[arg(long)]
-        once: bool,
-        /// Scan from this block (default 0; feed dedupe prevents doubles)
-        #[arg(long)]
-        from_block: Option<u64>,
-    },
-}
-
 /// The trustgraph scoring operator (NIP-LP kind 37006). The scoring ENGINE
 /// is external and replaceable; this is the bridge that turns any engine's
 /// scores into the roots + proofs the launchpad and `TrustGatedHook` consume.
@@ -3533,6 +3361,7 @@ fn normalize_auth_tag_input(input: &str) -> String {
 }
 
 async fn run(cli: Cli) -> Result<(), CliError> {
+    check_raise_gate(&cli.command, raise_commands_enabled())?;
     let relay_url = client::normalize_relay_url(&cli.relay);
 
     // Pack commands are local-only — no relay connection needed.
@@ -3575,71 +3404,6 @@ async fn run(cli: Cli) -> Result<(), CliError> {
     }) = cli.command
     {
         return commands::org_ragequit::cmd_ragequit(dao, *shares, tokens.clone()).await;
-    }
-
-    // Royalty ledger local commands are local-only (token-lifecycle-design.md);
-    // the publish commands fall through to the relay auth below.
-    if let Cmd::Royalty(ref royalty_cmd) = cli.command {
-        if !matches!(
-            royalty_cmd,
-            RoyaltyCmd::PublishSchedule { .. }
-                | RoyaltyCmd::PublishClose { .. }
-                | RoyaltyCmd::Watch { .. }
-                | RoyaltyCmd::SettleWeights { .. }
-        ) {
-            use RoyaltyCmd::*;
-            return match royalty_cmd {
-                Show { distributor } => commands::royalty::cmd_show(distributor).await,
-                Claim { distributor } => commands::royalty::cmd_claim(distributor).await,
-                Settle { distributor } => commands::royalty::cmd_settle(distributor).await,
-                MirrorSchedule {
-                    chain,
-                    distributor,
-                    claim_id,
-                    evidence_hash,
-                    contributor,
-                    weight,
-                    term,
-                    band,
-                    allocation,
-                } => commands::royalty::cmd_mirror_schedule(
-                    chain,
-                    distributor,
-                    claim_id,
-                    evidence_hash,
-                    contributor,
-                    *weight,
-                    *term,
-                    *band,
-                    *allocation,
-                ),
-                MirrorClose {
-                    chain,
-                    distributor,
-                    window_id,
-                    revenue,
-                    buyback_share,
-                    treasury_share,
-                    pool,
-                    carried,
-                } => commands::royalty::cmd_mirror_close(
-                    chain,
-                    distributor,
-                    *window_id,
-                    *revenue,
-                    *buyback_share,
-                    *treasury_share,
-                    *pool,
-                    *carried,
-                ),
-                PublishSchedule { .. }
-                | PublishClose { .. }
-                | Watch { .. }
-                | SettleWeights { .. } => {
-                    unreachable!("settle-weights/publish run after auth")
-                }
-            };
-        }
     }
 
     // Trustgraph operator: compose and gate rotation run before auth;
@@ -3687,7 +3451,6 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                 | LaunchpadCmd::Process { .. }
                 | LaunchpadCmd::ProposalState { .. }
                 | LaunchpadCmd::Work { .. }
-                | LaunchpadCmd::Market { .. }
         ) {
             use LaunchpadCmd::*;
             return match gov_cmd {
@@ -3722,7 +3485,6 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                     commands::launchpad_gov::cmd_proposal_state(dao, id).await
                 }
                 Work { step } => commands::launchpad_work::run(step).await,
-                Market { step } => commands::launchpad_market::run(step).await,
                 _ => unreachable!("only chain-local variants matched"),
             };
         }
@@ -3820,7 +3582,6 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Team(sub) => commands::team_run::dispatch(sub, &client).await,
         Cmd::Templates(sub) => commands::templates::dispatch(sub, &client).await,
         Cmd::Pack(_) => unreachable!("handled above"),
-        Cmd::Royalty(sub) => commands::royalty::dispatch(sub, &client).await,
         Cmd::Trustgraph(sub) => commands::trustgraph::dispatch(sub, &client).await,
     }
 }
@@ -4034,7 +3795,6 @@ mod tests {
             "projects",
             "reactions",
             "repos",
-            "royalty",
             "social",
             "team",
             "templates",
@@ -4221,7 +3981,6 @@ mod tests {
                 "delete",
                 "deployment",
                 "list",
-                "market",
                 "mint-token",
                 "post-update",
                 "process",
@@ -4256,6 +4015,153 @@ mod tests {
         );
     }
 
+    fn launchpad_help(raise_commands: bool) -> String {
+        let cmd = build_command_with(raise_commands);
+        let launchpad = cmd
+            .find_subcommand("launchpad")
+            .expect("launchpad group")
+            .clone();
+        help_tree::render(&launchpad, usize::MAX)
+    }
+
+    /// The raise-era launchpad commands stay out of the help tree unless the
+    /// development switch is on, and the contributor path stays in it.
+    #[test]
+    fn raise_commands_hidden_from_help_unless_enabled() {
+        let help = launchpad_help(false);
+        let listed: Vec<&str> = help
+            .lines()
+            .filter_map(|line| line.split_whitespace().next())
+            .collect();
+        for name in RAISE_SUBCOMMANDS {
+            assert!(!listed.contains(&name), "{name} must be hidden:\n{help}");
+        }
+        for name in ["work", "propose", "vote", "queue", "process", "curate"] {
+            assert!(listed.contains(&name), "{name} must stay listed:\n{help}");
+        }
+        assert!(!help.contains("futarchy"), "{help}");
+        let full = build_command_with(false).render_long_help().to_string();
+        assert!(!full.contains("mint-token"), "root help lists mint-token");
+
+        let help = launchpad_help(true);
+        for name in RAISE_SUBCOMMANDS {
+            assert!(help.contains(name), "{name} must be listed when enabled");
+        }
+
+        let mut curate = build_command_with(false);
+        let curate_help = curate
+            .find_subcommand_mut("launchpad")
+            .and_then(|lp| lp.find_subcommand_mut("curate"))
+            .expect("curate")
+            .render_long_help()
+            .to_string();
+        assert!(!curate_help.contains("--floor-price"), "{curate_help}");
+        assert!(curate_help.contains("--treasury"), "{curate_help}");
+        let mut curate = build_command_with(true);
+        let curate_help = curate
+            .find_subcommand_mut("launchpad")
+            .and_then(|lp| lp.find_subcommand_mut("curate"))
+            .expect("curate")
+            .render_long_help()
+            .to_string();
+        assert!(curate_help.contains("--floor-price"), "{curate_help}");
+    }
+
+    fn parse_launchpad(args: &[&str]) -> Cli {
+        let argv = ["buzz", "launchpad"].iter().chain(args).copied();
+        Cli::from_arg_matches(
+            &build_command_with(false)
+                .try_get_matches_from(argv)
+                .expect("hidden commands still parse"),
+        )
+        .expect("matches")
+    }
+
+    /// `run` refuses a raise-era command before it reaches any dispatch,
+    /// unless the development switch is on.
+    #[test]
+    fn raise_commands_refused_unless_enabled() {
+        let refused: [&[&str]; 8] = [
+            &[
+                "mint-token",
+                "--name",
+                "A",
+                "--symbol",
+                "A",
+                "--supply",
+                "1",
+                "--treasury",
+                "0x0",
+            ],
+            &[
+                "compose-bid",
+                "x",
+                "--auction",
+                "0x0",
+                "--budget",
+                "1",
+                "--max-price",
+                "1",
+                "--tick-spacing",
+                "1",
+                "--floor-price",
+                "1",
+            ],
+            &["record-bid", "x"],
+            &[
+                "record-claim",
+                "x",
+                "--claim-id",
+                "c",
+                "--evidence-hash",
+                "h",
+                "--tx",
+                "t",
+            ],
+            &[
+                "record-verdict",
+                "x",
+                "--claim-id",
+                "c",
+                "--verdict",
+                "approve",
+                "--tx",
+                "t",
+            ],
+            &["curate", "x", "--name", "X", "--floor-price", "1"],
+            &["curate", "x", "--name", "X", "--auction", "0x0"],
+            &[
+                "record-proposal",
+                "x",
+                "--title",
+                "T",
+                "--kind",
+                "futarchy-budget",
+            ],
+        ];
+        for args in refused {
+            let cli = parse_launchpad(args);
+            match check_raise_gate(&cli.command, false) {
+                Err(CliError::Usage(message)) => {
+                    assert!(message.contains(ENV_DEV_RAISE_COMMANDS), "{message}")
+                }
+                other => panic!("{args:?} not refused: {:?}", other.err()),
+            }
+            assert!(check_raise_gate(&cli.command, true).is_ok(), "{args:?}");
+        }
+
+        let allowed: [&[&str]; 4] = [
+            &["curate", "x", "--name", "X", "--treasury", "0x0"],
+            &["record-proposal", "x", "--title", "T"],
+            &["record-receipt", "x", "--table", "sweep", "--tx", "t"],
+            &["list"],
+        ];
+        for args in allowed {
+            let cli = parse_launchpad(args);
+            assert!(check_raise_gate(&cli.command, false).is_ok(), "{args:?}");
+        }
+    }
+
     #[test]
     fn subcommand_counts_are_stable() {
         let expected: Vec<(&str, usize)> = vec![
@@ -4266,7 +4172,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 20),
+            ("launchpad", 19),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

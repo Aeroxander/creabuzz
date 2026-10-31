@@ -43,7 +43,7 @@ const NOTE_LIMIT = 300;
 /** Reactions per read: enough for a page of notes and launches. */
 const REACTION_LIMIT = 2000;
 
-export const feedKeys = {
+const feedKeys = {
   notes: ["feed", "notes"] as const,
   launchNotes: (coord: string) => ["feed", "launch-notes", coord] as const,
   reactions: ["feed", "reactions"] as const,

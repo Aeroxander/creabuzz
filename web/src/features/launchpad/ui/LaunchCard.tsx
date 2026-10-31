@@ -19,7 +19,7 @@ import { FundingBadge, StageBadge } from "./widgets";
 import { countOf } from "@/shared/lib/count-of";
 
 /** What a card reads from a launch, so a preview can fill it from a form. */
-export type LaunchCardRecord = Pick<
+type LaunchCardRecord = Pick<
   LaunchRecord,
   | "id"
   | "name"

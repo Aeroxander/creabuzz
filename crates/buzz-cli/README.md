@@ -188,6 +188,28 @@ The table below mirrors that tree for readers who are not at a terminal.
 | | `patch` | Apply unified diff to memory value |
 | | `rm` | Publish a tombstone to delete memory |
 
+### Launchpad (projects and their DAO)
+
+What `buzz launchpad` offers today (D150): the contributor path (`work`:
+mandate, project, submission, reviewers, payout, award), the DAO vote steps
+(`propose`, `vote`, `queue`, `process`, `proposal-state`), the launch record
+(`list`, `show`, `curate`, `delete`, `post-update`, `record-receipt`,
+`record-proposal` for `plain` and `signal` proposals) and `deployment record`.
+There are no contributor-kit start or work-area commands yet; projects are
+started in the web app.
+
+Removed or hidden in D150 (see tag `pre-deprecation-2026-10-31`):
+
+- `launchpad market` (putting Shares on the Limit Break AMM) is removed, with
+  the rest of the LBAMM stack.
+- The fundraising commands `mint-token`, `compose-bid`, `record-bid`,
+  `record-claim` and `record-verdict`, the raise flags on `curate`
+  (`--currency`, `--floor-price`, `--required-raised`, `--auction`) and
+  `record-proposal --kind futarchy-budget` are hidden from `--help` and refuse
+  to run, because the product offers no raise. Set
+  `BUZZ_DEV_RAISE_COMMANDS=1` to show and run them in development, for
+  example in journeys that still exercise the frozen raise contracts.
+
 ## Architecture
 
 ```

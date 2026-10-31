@@ -95,7 +95,7 @@ export function newestMemberSet(
   return newest ? membersFromEvent(newest) : null;
 }
 
-export type MemberVerdict = "member" | "not-member" | "unknown";
+type MemberVerdict = "member" | "not-member" | "unknown";
 
 /** Outcome of loading the member list. */
 export type MemberListState = "loaded" | "no-list" | "error";

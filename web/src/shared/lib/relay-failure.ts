@@ -23,7 +23,7 @@ import { restrictionText } from "./refusal-text.ts";
 import { isSigningBlockedError } from "./nostr-signer.ts";
 
 /** Success: the relay answered with events (possibly zero). */
-export interface RelayOkOutcome<T> {
+interface RelayOkOutcome<T> {
   state: "ok";
   events: T[];
 }
@@ -32,7 +32,7 @@ export interface RelayOkOutcome<T> {
  * The relay answered *and refused*. `message` is the relay's own wording,
  * verbatim — never re-written, never downgraded to "no answer".
  */
-export interface RelayAnsweredOutcome {
+interface RelayAnsweredOutcome {
   state: "answered";
   message: string;
 }
@@ -42,13 +42,13 @@ export interface RelayAnsweredOutcome {
  * browser could not sign the challenge. `message` is the relay's wording when
  * it stated one, otherwise the local reason.
  */
-export interface RelayAuthRequiredOutcome {
+interface RelayAuthRequiredOutcome {
   state: "auth-required";
   message: string | null;
 }
 
 /** Nobody answered: timeout, refused connection, socket closed mid-query. */
-export interface RelayUnansweredOutcome {
+interface RelayUnansweredOutcome {
   state: "unanswered";
 }
 

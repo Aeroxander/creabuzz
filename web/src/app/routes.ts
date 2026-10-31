@@ -18,7 +18,6 @@ export const routes = rootRoute("root.tsx", [
   route("/launchpad/$launchId", "launchpad.$launchId.tsx"),
   route("/projects", "projects.tsx"),
   route("/projects/$projectId", "projects.$projectId.tsx"),
-  route("/markets", "markets.tsx"),
   route("/portfolio", "portfolio.tsx"),
   route("/court", "court.tsx"),
   route("/social", "social.tsx"),

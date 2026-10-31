@@ -48,6 +48,8 @@ On top of that, **founders hold and vote with their Shares from the first block,
 LBAMM is evaluation-only, so all of this runs on a throwaway local chain with LBAMM cloned outside the repo
 (`LBAMM_DIR`; see [LBAMM.md](LBAMM.md)).
 
+> **Removed in D150** (2026-10-31): the LBAMM market and price stack (Markets page, market decisions, trade card, price chart and indexer, `VITE_LBAMM_ADDRESSES`, `VITE_PRICE_INDEXER_URL`, the market scripts and specs) is gone from the tree; see tag `pre-deprecation-2026-10-31`.
+
 | Piece | Where | How it was checked |
 |---|---|---|
 | A local LBAMM next to our contracts | `scripts/lib/lbamm-world.sh`, `lbamm-replay.mjs` | deploys on the dev chain; used by every script below |

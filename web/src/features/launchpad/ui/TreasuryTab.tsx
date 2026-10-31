@@ -18,11 +18,9 @@ import { resolveDaoBinding } from "../lib/org-money";
 import { KIND_LAUNCH_PROPOSAL } from "@/shared/constants/kinds";
 import { useOrgMoney, usePublishMirror } from "../use-launches";
 import { RagequitPanel } from "./RagequitPanel";
-import { RoyaltyStatementCard } from "./RoyaltyStatementCard";
 import { EnforcementCard } from "./EnforcementCard";
 import { DaoTreasuryTab } from "./DaoTreasuryTab";
 import { DelegationCard } from "./DelegationCard";
-import { milestoneChoices } from "../lib/claim-choices";
 import { TreasuryFlowsPanel } from "./TreasuryFlowsPanel";
 
 export function TreasuryTab({
@@ -121,15 +119,6 @@ export function TreasuryTab({
         daoBinding={daoBinding}
         record={record}
       />
-      {record.distributor && record.claimStake ? (
-        <RoyaltyStatementCard
-          claimStake={record.claimStake}
-          distributor={record.distributor}
-          scheduleIds={
-            milestoneChoices(record.unlocks, launch.receipts).scheduleIds
-          }
-        />
-      ) : null}
       {daoBinding ? <EnforcementCard dao={daoBinding.dao} /> : null}
       <DelegationCard
         author={launch.record.author}

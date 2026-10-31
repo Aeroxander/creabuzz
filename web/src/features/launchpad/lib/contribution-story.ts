@@ -22,7 +22,7 @@ import type { ClaimView } from "./work.ts";
  * (nothing in the part of the history that was read), `unreadable` (the read failed), `reading` (it has not answered
  * yet), `unknown` (the claim itself was not read). Only `missing` says nothing was published.
  */
-export type EvidenceState =
+type EvidenceState =
   | "verified"
   | "mismatch"
   | "missing"

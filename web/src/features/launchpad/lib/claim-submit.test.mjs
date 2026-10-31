@@ -19,7 +19,6 @@ import {
   SELECTOR_PAYOUT,
   SELECTOR_SETTLE,
   SELECTOR_SUBMIT_CLAIM,
-  SELECTOR_SUBMIT_CLAIM_WITH_SCHEDULE,
 } from "./claim-tx.ts";
 
 const CLAIM_STAKE = "0xcccccccccccccccccccccccccccccccccccccccc";
@@ -111,17 +110,6 @@ describe("planClaimSubmit", () => {
     });
     assert.ok(plan);
     assert.equal(plan.fundCalls, null);
-  });
-
-  it("rides a royalty schedule when given (allocation = tranche)", () => {
-    const plan = planClaimSubmit({
-      record: record(),
-      row: ROW,
-      evidenceHash: EVIDENCE,
-      schedule: { weight: 1, term: 365 * 86400, band: 1 },
-    });
-    assert.ok(plan);
-    assert.ok(plan.call.data.startsWith(SELECTOR_SUBMIT_CLAIM_WITH_SCHEDULE));
   });
 
   it("returns null rather than guessing an unwired record", () => {

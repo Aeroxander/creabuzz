@@ -21,8 +21,8 @@ import {
 } from "./evmCalls.ts";
 
 // This is the auction/graduation subset of the desktop app's evmCalls suite
-// (the bid/exit/claim and token-deploy vectors live with bid-tx.test.mjs and
-// mint-tx tests on the web). The CCA factory, config-data and executor-deploy
+// (the bid/exit/claim vectors live with bid-tx.test.mjs on the web; the
+// token-deploy vectors stay in the desktop suite, the web mint was removed in D150). The CCA factory, config-data and executor-deploy
 // vectors are bound in auctionFlow.test.mjs and graduationArtifact.test.mjs.
 //
 // Golden values: `cast sig` / `cast calldata` output, not derived by the code

@@ -44,7 +44,7 @@ import { abiEncode, abiEncodeCall, decodeAddressWord } from "./userop-abi.ts";
 import type { EthCall } from "./aa.ts";
 
 /** `KernelFactory.deploy((uint256,address,bytes,bytes)[],uint256)` (cast-checked). */
-export const KERNEL_DEPLOY_SIGNATURE =
+const KERNEL_DEPLOY_SIGNATURE =
   "deploy((uint256,address,bytes,bytes)[],uint256)";
 
 /** `KernelFactory.getAddress((uint256,address,bytes,bytes)[],uint256)` (cast-checked). */

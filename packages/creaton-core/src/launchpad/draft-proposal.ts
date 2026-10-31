@@ -23,7 +23,7 @@
  * No imports on purpose (alias-free under `node --test`, like `page-index.ts`).
  */
 
-export type ProposalRoute = "plain" | "futarchy-budget" | "signal";
+type ProposalRoute = "plain" | "futarchy-budget" | "signal";
 
 export interface StrictIntent {
   op: 0 | 1;
@@ -76,11 +76,11 @@ export interface DraftEventShape {
   tags: string[][];
 }
 
-export const AGENT_DRAFT_STATE = "agent-draft";
-export const KIND_LAUNCH_PROPOSAL = 47004;
-export const KIND_DELETE = 5;
-export const BLOCK_TITLE_MAX = 200;
-export const BLOCK_EVIDENCE_MAX = 400;
+const AGENT_DRAFT_STATE = "agent-draft";
+const KIND_LAUNCH_PROPOSAL = 47004;
+const KIND_DELETE = 5;
+const BLOCK_TITLE_MAX = 200;
+const BLOCK_EVIDENCE_MAX = 400;
 
 // ── Line semantics (identical to Rust `str::lines`) ────────────────────────
 

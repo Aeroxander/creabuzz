@@ -22,7 +22,7 @@ export type EventTemplate = {
   tags: string[][];
 };
 
-export type ResolutionStatus = "resolved" | "dismissed";
+type ResolutionStatus = "resolved" | "dismissed";
 
 const HEX_64 = /^[0-9a-f]{64}$/;
 

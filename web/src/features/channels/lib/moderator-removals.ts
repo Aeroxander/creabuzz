@@ -13,7 +13,7 @@
 import { isOverlayKind } from "./overlay-kinds.ts";
 
 /** The signed record that removes someone else's message from a room. */
-export const KIND_MODERATION_DELETE = 9005;
+const KIND_MODERATION_DELETE = 9005;
 
 export interface TimelineEvent {
   id: string;

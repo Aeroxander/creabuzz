@@ -43,10 +43,9 @@ import {
   planClaimSubmit,
   planVerdictSubmit,
 } from "../lib/claim-submit";
-import { AuctionSection } from "./AuctionSection";
 import { DaoLaunchPanel } from "./DaoLaunchPanel";
+import { GraduationPanel } from "./GraduationPanel";
 import { recordToInput } from "../lib/record-input";
-import { TokenMintPanel } from "./TokenMintPanel";
 import { TrustGraphCuratorPanel } from "./TrustGraphCuratorPanel";
 
 /**
@@ -735,8 +734,7 @@ export function ManagePanel({
       {record.tokenPlan?.mode === "dao" ? (
         <DaoLaunchPanel
           launch={launch}
-          // Like the auction link below: propagate the publish error so the run can offer a retry, and keep every
-          // field the record holds.
+          // Propagate the publish error so the run can offer a retry, and keep every field the record holds.
           // The launch starts a real sale, so the record says it is live (the founder's commitments are asked for on the
           // way to launching, and the auction is open to bids whatever this label says).
           onLink={(link) =>
@@ -753,27 +751,9 @@ export function ManagePanel({
         />
       ) : null}
 
-      {record.tokenPlan && record.tokenPlan.mode !== "dao" && !record.token ? (
-        <TokenMintPanel
-          launch={launch}
-          // Merge through `toInput`: the mint link and the one-click deploy
-          // both republish the record, and `useCreateLaunch` publishes exactly
-          // what it is given — a bare input would drop `tokenPlan`/`vesting`
-          // (the same save bug the "editing the terms keeps the token plan"
-          // e2e guards) and the Mint panel is gated on `tokenPlan`.
-          onLink={(input) => handleSave(toInput(input))}
-          saving={save.isPending}
-        />
-      ) : null}
-
-      <AuctionSection
-        launch={launch}
-        // The deploy flow reports a failed record write and offers a retry, so
-        // this must PROPAGATE the publish error (not `handleSave`, which toasts
-        // and swallows it). `toInput` keeps every field the record holds.
-        onLink={(input) => save.mutateAsync(toInput(input))}
-        onSetTreasury={(treasury) => save.mutateAsync(toInput({ treasury }))}
-      />
+      {/* Graduation for any launch with an auction: one made by the launch kit, or one deployed by hand before D150
+          (a minted or imported token). Minting a token or deploying an auction by hand is no longer offered. */}
+      {record.auction ? <GraduationPanel launch={launch} /> : null}
 
       <Card className="border-red-500/30 p-4">
         <h2 className="text-base font-semibold text-red-600">Danger zone</h2>

@@ -25,7 +25,6 @@ import {
   type SubscriptionStatus,
 } from "./lib/reconnect";
 
-export { ReconnectBackoff };
 export type { SubscriptionStatus };
 
 export interface ChannelSubscriptionCallbacks {

@@ -27,12 +27,12 @@ import {
   type DirectorySnapshot,
 } from "./lib/directory";
 
-export const discoverQueryKey = ["discover", "directory"] as const;
+const discoverQueryKey = ["discover", "directory"] as const;
 
 /** One page-worth of records; bounded on the relay and in the client. */
 const DISCOVER_LIMIT = 700;
 
-export async function fetchDiscoverEvents(): Promise<NostrEvent[]> {
+async function fetchDiscoverEvents(): Promise<NostrEvent[]> {
   return queryEvents(relayWsUrl(), {
     kinds: [...DISCOVER_EVENT_KINDS],
     limit: DISCOVER_LIMIT,

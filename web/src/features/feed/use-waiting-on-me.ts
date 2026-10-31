@@ -40,7 +40,7 @@ import { useHoldings } from "@/features/portfolio/use-portfolio";
 import { existingUserPubkey } from "@/shared/lib/identity";
 
 /** The most DAOs read for this: each costs a handful of chain reads. */
-export const MAX_DAOS = 6;
+const MAX_DAOS = 6;
 
 /** One line of the queue: a thing waiting on this person in one project, with the clock its deadline is in. */
 export interface QueueEntry {

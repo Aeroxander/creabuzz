@@ -16,7 +16,7 @@
 export type PresenceStatus = "online" | "away" | "offline";
 
 /** One live presence observation with its expiry. */
-export interface PresenceEntry {
+interface PresenceEntry {
   status: PresenceStatus;
   expiresAt: number;
 }

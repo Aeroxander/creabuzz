@@ -35,10 +35,10 @@ import {
 } from "./work.ts";
 import { encodeFunctionData } from "./evmAbi.ts";
 
-export const MAX_MANDATES = 8;
-export const MAX_PROJECTS = 50;
+const MAX_MANDATES = 8;
+const MAX_PROJECTS = 50;
 export const MAX_CLAIMS = 100;
-export const MAX_REVIEWERS = 32;
+const MAX_REVIEWERS = 32;
 
 export interface WorkChain {
   /** An `eth_call`'s raw hex answer. */
@@ -59,7 +59,7 @@ export interface ProjectView {
 }
 
 /** One person on a mandate's reviewer panel, and the bond they hold (null when it could not be read). */
-export interface ReviewerView {
+interface ReviewerView {
   address: string;
   /** The bond they hold and count toward judging; null when it could not be read. */
   stake: bigint | null;

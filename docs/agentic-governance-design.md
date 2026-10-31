@@ -1,5 +1,7 @@
 # Agentic governance — decision routing as the spine
 
+> `scripts/journey-float.sh` and the `buzz royalty` CLI were removed in D150, see tag pre-deprecation-2026-10-31; `JourneyGov.s.sol` still runs on its own (`forge script contracts/script/JourneyGov.s.sol:JourneyGov`).
+
 `draft` `design` `web` `desktop` `cli` `contracts`
 
 **Voting update 2026-10-08:** [the candidate Shares conviction policy](token-voting-design.md)

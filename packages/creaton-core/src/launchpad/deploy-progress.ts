@@ -60,7 +60,7 @@ export function deployProgressFingerprint(plan: AuctionPlanInputs): string {
   ].join(" ");
 }
 
-export function progressStorageKey(launchId: string): string {
+function progressStorageKey(launchId: string): string {
   return `buzz:launchpad:deploy-progress:${launchId}`;
 }
 

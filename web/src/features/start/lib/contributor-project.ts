@@ -40,16 +40,16 @@ export const NAME_MAX = 60;
 export const PITCH_MAX = 140;
 /** A project name is a label of up to 32 bytes, as the work budget stores it. */
 export const PROJECT_NAME_MAX = 32;
-export const CHECK_MAX = 280;
+const CHECK_MAX = 280;
 /** Whole Shares are what people type; the token has 18 decimals like every DAO's Shares here. */
-export const SHARE_UNIT = 10n ** 18n;
+const SHARE_UNIT = 10n ** 18n;
 /** A ceiling for what one form may create: a billion Shares. */
-export const MAX_WHOLE_SHARES = 1_000_000_000n;
-export const MAX_REVIEWERS = 32;
+const MAX_WHOLE_SHARES = 1_000_000_000n;
+const MAX_REVIEWERS = 32;
 /** The most first projects the contributor kit makes in one launch (`ContributorKit.MAX_FIRST_PROJECTS`). */
 export const MAX_FIRST_PROJECTS = 8;
 /** How long the first work budget, and the first project in it, stay open, in days. */
-export const BUDGET_DAYS = 90;
+const BUDGET_DAYS = 90;
 
 /** What the form starts with. */
 export const CONTRIBUTOR_DEFAULTS = {
@@ -120,7 +120,7 @@ export function emptyProject(cap: string): ProjectDraft {
 /** Which box of a first work area a problem is about. */
 export type ProjectPart = "name" | "check" | "shares";
 
-export class ContributorInputError extends Error {
+class ContributorInputError extends Error {
   readonly field: keyof ContributorDraft;
   /** For a first project's problem: which one (0-based). */
   readonly index: number | null;

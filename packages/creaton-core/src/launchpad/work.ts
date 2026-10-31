@@ -292,7 +292,7 @@ const addressOf = (word: bigint): string =>
 const bytes32Of = (word: bigint): string =>
   `0x${word.toString(16).padStart(64, "0")}`;
 
-export const CLAIM_STATUSES = [
+const CLAIM_STATUSES = [
   "Open",
   "Approved",
   "Rejected",

@@ -37,7 +37,7 @@ import type { WorkChain } from "./workRead.ts";
 export const MAX_REASON = 500;
 export const DAY = 86_400;
 
-export type QuestionKind = "workbounty" | "postbounty";
+type QuestionKind = "workbounty" | "postbounty";
 
 export interface Question {
   kind: QuestionKind;
@@ -183,7 +183,7 @@ export function accuracy(
   return Math.round(100 * (1 - mean));
 }
 
-export type Outcome = "done" | "not-done" | null;
+type Outcome = "done" | "not-done" | null;
 
 export interface QuestionState {
   /** Forecasts made at or after this time do not count. */
@@ -236,7 +236,7 @@ export const TOPIC_CLAIM_RELEASED = topicOf(
   "ClaimReleased(bytes32,address,uint256)",
 );
 /** At most this many released submissions are looked at for one work area's cutoff. */
-export const MAX_RELEASES = 100;
+const MAX_RELEASES = 100;
 
 const idTopic = (id: bigint) => `0x${id.toString(16).padStart(64, "0")}`;
 

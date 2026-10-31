@@ -27,8 +27,8 @@ export const Q96 = 1n << 96n;
 /** Milli-bips: `MPS` is 100%. */
 export const MPS = 10_000_000n;
 export const MIN_FLOOR_PRICE = (1n << 32n) + 1n;
-export const MIN_TICK_SPACING = 2n;
-export const MAX_TOTAL_SUPPLY = 1n << 100n;
+const MIN_TICK_SPACING = 2n;
+const MAX_TOTAL_SUPPLY = 1n << 100n;
 const MAX_V4_PRICE = (1n << 160n) - 1n;
 const LOWER_TOTAL_SUPPLY_THRESHOLD = 1n << 62n;
 /** Base produces a block every 2 seconds. */

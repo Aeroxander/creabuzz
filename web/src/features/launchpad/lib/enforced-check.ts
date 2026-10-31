@@ -27,7 +27,7 @@ export interface EnforcedClause {
   onViolation?: string;
 }
 
-export type ClauseStatus =
+type ClauseStatus =
   | "verified" // the named mechanism exists in live config and is on
   | "contradicted" // live config says the mechanism is OFF (a visible lie)
   | "documented" // policy checkpoint (e.g. HITL approvals) — named, not chain-readable

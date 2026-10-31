@@ -149,7 +149,7 @@ export function publishFundingDecision(input: {
 }
 
 /** The most tokens checked for one DAO. */
-export const MAX_WATCHED = 16;
+const MAX_WATCHED = 16;
 
 function tokenList(tokens: readonly string[]): string[] {
   if (tokens.length === 0) {

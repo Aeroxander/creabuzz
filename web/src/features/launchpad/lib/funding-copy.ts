@@ -15,7 +15,7 @@ import {
 const USDC_DECIMALS = 6;
 const DAY = 86_400;
 /** The longest a sale can be open for, in days. */
-export const MAX_SALE_DAYS = 365;
+const MAX_SALE_DAYS = 365;
 
 const date = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString("en-US", {

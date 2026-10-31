@@ -16,6 +16,7 @@ import {
   BUDGET_SHARES,
   budgetForShare,
   budgetCapMessage,
+  buildLegacyInput,
   deriveSymbol,
   initialWizardState,
   nextStep,
@@ -312,6 +313,16 @@ test("wizardToCreateInput preserves record fields it has no editor for", () => {
   assert.ok(input.unlocks, "the unlock plan survives the round trip");
   assert.equal(input.unlocks.milestones.length, 2);
   assert.equal(input.unlocks.milestones[0].label, "pilot");
+});
+
+test("editing a launch published with a minted token keeps the token and its plan", () => {
+  // Minting was removed in D150; an older minted launch is still edited, and a save must keep both what it minted and
+  // the plan it minted from (it used to reopen as an import and drop the plan).
+  const token = "0x00000000000000000000000000000000000000aa";
+  const input = buildLegacyInput({ ...baseForm(), importAddress: token });
+  assert.equal(input.token, token);
+  assert.equal(input.tokenPlan?.mode, "mint");
+  assert.equal(input.tokenPlan?.symbol, "PIXEL");
 });
 
 test("wizardToCreateInput carries the wizard's own plan when supplied", () => {

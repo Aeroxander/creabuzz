@@ -4,9 +4,8 @@ import type { Page } from "@playwright/test";
  * `window.ethereum` forwarding to a local Anvil, signing as one of its
  * unlocked accounts.
  *
- * Shared by `tests/e2e/launchpad-auction.spec.ts` and the simulation's
- * chain-backed story (`tests/simulate/story-anvil.spec.ts`) so the two cannot
- * drift. Extracted verbatim from the auction spec: `eth_requestAccounts` and
+ * Shared by every chain-backed spec (first written for the hand-deployed
+ * auction spec, removed in D150): `eth_requestAccounts` and
  * `eth_accounts` answer with the chosen account, everything else is proxied
  * to the node — so a `rejectFirstSend` run behaves like a user who pressed
  * Reject once and then let the flow finish.

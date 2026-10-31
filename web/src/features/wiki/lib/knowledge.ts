@@ -72,9 +72,9 @@ export const KIND_AGENT_WIKI_PAGE = 44002;
 export const KIND_WIKI_CORRECTION = 44003;
 
 /** `t`-tag prefix marking a correction suggestion. */
-export const SUGGESTION_TAG_PREFIX = "correction-for:";
+const SUGGESTION_TAG_PREFIX = "correction-for:";
 /** `t`-tag prefix naming the team that owns a page's edit rights. */
-export const SCOPE_TAG_PREFIX = "team:";
+const SCOPE_TAG_PREFIX = "team:";
 
 /** The subset of a Nostr event this module needs. */
 export interface KnowledgeEvent {
@@ -89,7 +89,7 @@ export interface KnowledgeEvent {
 // ── classification ─────────────────────────────────────────────────────────
 
 /** Which product kind a Knowledge page is. */
-export type PageKind = "team" | "agent";
+type PageKind = "team" | "agent";
 
 /**
  * Provenance of an agent page: which model produced the distillation and how

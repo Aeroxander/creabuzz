@@ -37,7 +37,7 @@ export type NotificationKind =
  * board, and for a removed reply the conversation it was in; a Home notice has no board, and for a removed reply opens
  * the Home conversation. A removed post has nothing left to open.
  */
-export interface ModerationNotice {
+interface ModerationNotice {
   title: string;
   preview: string;
   boardId: string | null;
@@ -45,7 +45,7 @@ export interface ModerationNotice {
 }
 
 /** Where a board notification opens: the board, the post the conversation is under, and a line to show. */
-export interface BoardRef {
+interface BoardRef {
   boardId: string;
   /** The board post at the top of the conversation. */
   postId: string;

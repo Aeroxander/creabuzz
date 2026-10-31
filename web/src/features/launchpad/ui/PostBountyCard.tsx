@@ -34,7 +34,6 @@ import { encodeApproveBounty } from "../lib/work-bounty";
 import { FailureNote, WalletStrip } from "./account-widgets";
 import { Person } from "./Face";
 import { ForecastPanel } from "./ForecastPanel";
-import { MoneyForecastPanel } from "./MoneyForecastPanel";
 import { postBountyQuestion, questionOf } from "../lib/forecast";
 import {
   AddMoneyForm,
@@ -477,19 +476,6 @@ function BountyItem({
           id: bounty.id,
         })}
         state={postBountyQuestion(record, bounty.firstRunSince, now)}
-      />
-      <MoneyForecastPanel
-        busy={busy}
-        chainId={data.chainId}
-        currency={data.currency.address}
-        gate={gate}
-        id={bounty.id}
-        money={money}
-        now={now}
-        onSend={onSend}
-        position={bounty.wallet}
-        record={record}
-        wallet={wallet}
       />
       {bounty.claimsTruncated ? (
         <p className="text-xs text-muted-foreground" role="status">

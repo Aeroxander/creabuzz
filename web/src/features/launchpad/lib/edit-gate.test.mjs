@@ -69,13 +69,6 @@ test("the token-step rules gate an edit", () => {
   assert.equal(canSaveEdit(wizard, baseForm({ symbol: "" })), false);
   assert.equal(canSaveEdit(wizard, baseForm({ supply: "0" })), false);
   assert.equal(canSaveEdit(wizard, baseForm({ id: "Not A Slug" })), false);
-  assert.equal(
-    canSaveEdit(
-      wizard,
-      baseForm({ tokenMode: "import", importAddress: "0x1" }),
-    ),
-    false,
-  );
 });
 
 test("the form-level checks gate an edit", () => {

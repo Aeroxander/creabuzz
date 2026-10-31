@@ -23,7 +23,7 @@ import {
 } from "./contributor-project.ts";
 
 /** Shares that stand for the whole project once every role's work is awarded. */
-export const WHOLE_PROJECT = 1_000_000n;
+const WHOLE_PROJECT = 1_000_000n;
 
 export interface PitchTeam {
   name: string;

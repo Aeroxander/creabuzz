@@ -146,6 +146,8 @@ transfer validator the dev chain bootstraps, and every setting is chosen by a DA
 
 ## 4c. Shares on a market, and the prices from it (local evaluation only)
 
+> **Removed in D150** (2026-10-31): the LBAMM market and price stack (Markets page, market decisions, trade card, price chart and indexer, `VITE_LBAMM_ADDRESSES`, `VITE_PRICE_INDEXER_URL`, the market scripts and specs) is gone from the tree; see tag `pre-deprecation-2026-10-31`. The steps below no longer run.
+
 The Limit Break AMM is evaluation-only software, so this needs a clone of it **outside this repository** (details in
 [LBAMM.md](LBAMM.md)), and one install of the price indexer:
 
@@ -312,6 +314,8 @@ own post has none), picks **Spam or a scam**, adds a note and sends: "Thanks. Th
 owner open the community and press **Moderation** in the sidebar: one report shows "Spam", the note, and who sent it.
 
 ## 4m. Markets (2026-10-13)
+
+> **Removed in D150** (2026-10-31): the LBAMM market and price stack (Markets page, market decisions, trade card, price chart and indexer, `VITE_LBAMM_ADDRESSES`, `VITE_PRICE_INDEXER_URL`, the market scripts and specs) is gone from the tree; see tag `pre-deprecation-2026-10-31`. The steps below no longer run.
 
 ```bash
 cd web && pnpm test && pnpm build && pnpm exec playwright test --project=smoke markets.spec.ts   # the standard build: no price service
@@ -781,7 +785,7 @@ Use a wallet on the local chain (account 0 as the founder; two other accounts as
    hold now.
 8. **Locked.** In a wallet, try to send some Shares to another address: the network refuses it.
 9. **Market.** On a build with a market configured (`VITE_LBAMM_ADDRESSES`), **New decision** offers "Put Shares on the
-   market" for a DAO that raised, and not for this project (no automated test covers this yet).
+   market" for a DAO that raised, and not for this project (no automated test covers this yet). (Removed in D150, see tag `pre-deprecation-2026-10-31`.)
 
 Sepolia: the same journey runs on a fork of Sepolia (4al). The contributor kit has not been broadcast to the real Sepolia, so a
 hosted Sepolia build says "Contributor projects cannot be started on Sepolia yet" until it is.
@@ -1584,6 +1588,8 @@ By hand (the dev chain, a web build with `VITE_OPEN_BOUNTIES`, `VITE_COURTS`, `V
 6. Try the other way: seal **against**, settle, and the bounty's funders can take their money back at once.
 
 ## 4bn. Money forecasts (D120, 2026-10-26, test networks only)
+
+Removed from the app in D150 (2026-10-31), see tag pre-deprecation-2026-10-31: only the forge and mutation steps below still apply.
 
 ```bash
 cd contracts && forge test --match-contract ForecastPool

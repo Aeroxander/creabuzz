@@ -23,7 +23,7 @@ const AUTH_PREFIX = "nostr:agent-auth:";
  * Sign the NIP-OA preimage `nostr:agent-auth:<agent-pubkey>:<conditions>`
  * with the owner's identity and return the `auth` tag.
  */
-export function buildAuthTag(
+function buildAuthTag(
   ownerSecretHex: string,
   agentPubkey: string,
   conditions: string,

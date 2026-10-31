@@ -23,7 +23,7 @@ import { readDelivery, type TaskDelivery } from "./lib/task-delivery";
 import { readSource, type TaskSource } from "./lib/task-source";
 import { type NewTaskInput, publishNewTask } from "./lib/task-publish";
 
-export type TaskStatus =
+type TaskStatus =
   | "open"
   | "assigned"
   | "in_progress"

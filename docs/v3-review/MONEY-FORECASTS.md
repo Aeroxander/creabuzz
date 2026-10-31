@@ -1,5 +1,9 @@
 # Money forecasts (N8, built for test networks on 2026-10-26 as D120)
 
+> **Removed from the app in D150 (2026-10-31), see tag pre-deprecation-2026-10-31.** The "Money on it" panel, `VITE_FORECAST_POOLS` and the app's reader are gone; the contract
+> `contracts/src/ForecastPool.sol` and its forge tests stay until the contracts clean-up (D137 freezes Solidity). The
+> rest of this page is the historical record.
+
 Status: **an experiment, on test networks only.** `contracts/src/ForecastPool.sol` and a "Money on it" panel under each
 bounty on a post. It does not gate the audited raise, and nothing about it goes near a main network without counsel.
 

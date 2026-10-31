@@ -2,6 +2,8 @@
 
 > **History, 2026-10-31.** Royalties, LBAMM sell liquidity and buybacks were replaced by the v3 token model (D72 to D79) and payouts (D122); the desktop is outside the MVP. The current state is [v3-review/STATUS.md](v3-review/STATUS.md).
 
+> **Removed in D150, see tag pre-deprecation-2026-10-31:** the web royalty statement, the `buzz royalty` CLI and `scripts/journey-float.sh`. The contracts and the desktop copy stay for a later clean-up.
+
 `draft` `design` `contracts` `web` `desktop`
 
 Design contract + build plan for the project-token lifecycle: contribution-gated

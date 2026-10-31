@@ -8,7 +8,7 @@ import { decodeAddress, encodeCall0, SIGNATURES } from "./lib/work";
 import { endpointChain } from "./use-work";
 
 /** The configured RPC endpoint as the decisions reader's chain: the work reader's, plus a transaction's calldata. */
-export function decisionChain(endpoint: string): DecisionChain {
+function decisionChain(endpoint: string): DecisionChain {
   return {
     ...endpointChain(endpoint),
     input: (hash) => ethTransactionInput(endpoint, hash),

@@ -20,7 +20,7 @@ export interface BuiltOn {
 
 /** What a remix of this project gets. */
 export type RemixOffer = "name" | "assets" | "announce" | "contributors";
-export const REMIX_OFFERS: readonly RemixOffer[] = [
+const REMIX_OFFERS: readonly RemixOffer[] = [
   "name",
   "assets",
   "announce",

@@ -18,8 +18,8 @@ import {
   COMMUNITY_DEFAULT_SUBJECT,
 } from "../../budgets/lib/budgetForm.ts";
 
-export const KIND_ORG_NODE = 37010;
-export const KIND_ORG_BUDGET = 37012;
+const KIND_ORG_NODE = 37010;
+const KIND_ORG_BUDGET = 37012;
 
 export const ORG_NAME_MAX = 60;
 export const ORG_PURPOSE_MAX = 140;
@@ -62,9 +62,9 @@ export const AUTONOMY_LEVELS: readonly AutonomyLevel[] = [
   },
 ];
 
-export const DEFAULT_AUTONOMY: AutonomyId = "balanced";
+const DEFAULT_AUTONOMY: AutonomyId = "balanced";
 
-export function autonomyLevel(id: AutonomyId): AutonomyLevel {
+function autonomyLevel(id: AutonomyId): AutonomyLevel {
   const level = AUTONOMY_LEVELS.find((entry) => entry.id === id);
   if (!level) throw new Error(`Unknown autonomy level: ${id}`);
   return level;
@@ -154,13 +154,11 @@ export interface SetupRecord {
   tags: string[][];
 }
 
-export function rootNodeId(draft: Pick<OrgSetupDraft, "name">): string {
+function rootNodeId(draft: Pick<OrgSetupDraft, "name">): string {
   return slugify(draft.name);
 }
 
-export function helperNodeId(
-  draft: Pick<OrgSetupDraft, "name" | "helper">,
-): string {
+function helperNodeId(draft: Pick<OrgSetupDraft, "name" | "helper">): string {
   return `${rootNodeId(draft)}-${slugify(draft.helper?.role ?? "helper") || "helper"}`;
 }
 

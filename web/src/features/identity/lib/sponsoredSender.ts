@@ -72,10 +72,10 @@ import { zerodevConfigFromEnv, type ZerodevConfig } from "./zerodev.ts";
 export const PASSKEY_CREDENTIAL_STORAGE_KEY = "buzz.passkey.credentialId";
 
 /** `execute(bytes32,bytes)` mode: CALLTYPE_SINGLE ‖ EXECTYPE_DEFAULT. */
-export const KERNEL_EXECUTE_MODE_SINGLE = `0x${"00".repeat(32)}`;
+const KERNEL_EXECUTE_MODE_SINGLE = `0x${"00".repeat(32)}`;
 
 /** `execute(bytes32,bytes)` mode: CALLTYPE_BATCH (0x01) ‖ EXECTYPE_DEFAULT. */
-export const KERNEL_EXECUTE_MODE_BATCH = `0x01${"00".repeat(31)}`;
+const KERNEL_EXECUTE_MODE_BATCH = `0x01${"00".repeat(31)}`;
 
 /** One unsigned call — the shape the launchpad flows hand to a sender. */
 export interface SenderCall {
@@ -109,10 +109,7 @@ export interface CallSender {
 }
 
 /** What the sponsored sender is missing when it is not available. */
-export type SponsoredSenderMissing =
-  | "credential"
-  | "owner-key"
-  | "chain-config";
+type SponsoredSenderMissing = "credential" | "owner-key" | "chain-config";
 
 /** Honest availability detail (Rule 6: reason + recovery affordance). */
 export interface SponsoredSenderAvailability {

@@ -1,12 +1,12 @@
 # Where Creaton stands
 
 Updated 2026-10-31. The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
-Each decision is a row in [DECISIONS.md](DECISIONS.md) (D1 to D146). The hand tests for the pilot, in order, are in
+Each decision is a row in [DECISIONS.md](DECISIONS.md) (D1 to D150). The hand tests for the pilot, in order, are in
 [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md); every hand test ever written is in [TEST-STEPS.md](TEST-STEPS.md), a log in
 date order. What the 2026-10-31 pass hid or retired, and what waits on your call, is in
 [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md).
 
-Everything is on the local branch `v4-governance-rework`, not pushed. D146 and the 2026-10-31 pass are not committed yet.
+Everything is on the local branch `v4-governance-rework`, not pushed. D146 to D150 are committed locally (D150 removed the LBAMM market, the pre-kit raise path, the old tokenomics and money forecasts from the app; tag `pre-deprecation-2026-10-31` keeps them).
 
 ## Scope
 
@@ -48,7 +48,7 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 | The hosted image and server: first start, backups, contributor-only build | D107, D140 | `scripts/test-compose-backup.sh`; `deploy-env` tests |
 | Every screen, read as the pilot sees it | D108 to D111, D146 | `WEB_FEATURES=mvp scripts/web-screen-audit.sh`; [SCREEN-AUDIT-2026-10-24.md](SCREEN-AUDIT-2026-10-24.md) |
 | Sepolia readiness: the deploy rehearsed on a fork, every contract checked, the largest transaction under the gas cap | D85, D140 | `scripts/sepolia-deploy.sh` (rehearsal); `web-contributor-e2e.sh --sepolia-fork` |
-| Test networks only, off in the hosted build and frozen: bounties, forecasts, matched exits, CREATE and the court, money forecasts, payouts, remixes, weekly rounds, funding terms | D113 to D136 | Forge suite, mutation check, `web-post-bounty-e2e.sh`, `web-rounds-e2e.sh` |
+| Test networks only, off in the hosted build and frozen: bounties, forecasts, matched exits, CREATE and the court, money forecasts (removed from the app in D150, see tag pre-deprecation-2026-10-31), payouts, remixes, weekly rounds, funding terms | D113 to D136 | Forge suite, mutation check, `web-post-bounty-e2e.sh`, `web-rounds-e2e.sh` |
 | The raise, as far as it goes (after the audit) | D72 to D82, D86, D87, D102 | Forge suite, simulation, the gate's later set |
 
 ## The gates
@@ -71,8 +71,8 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 
 ## Waiting on you
 
-1. **Commit** D146 and the 2026-10-31 pass, then run the gate as above.
-2. **The calls in [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md)**: what to remove, merge or keep, one line each.
+1. **Run the gate** on the build you host, as above.
+2. **The rest of the calls in [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md)**: what to remove, merge or keep, one line each.
 3. **Broadcast to Sepolia:** `scripts/sepolia-deploy.sh --broadcast`, with your own key in `.env`.
 4. **Host the server** with `deploy/compose` (the image, read state, terms at sign-up, backups): a machine, a domain, the
    filled-in `.env`, and one practised restore.
@@ -105,7 +105,7 @@ device. What to measure is in [PILOT-REPORT.md](PILOT-REPORT.md).
   [POST-LAUNCH-CURVE-INTEGRATION-PLAN.md](POST-LAUNCH-CURVE-INTEGRATION-PLAN.md),
   [CONTRIBUTOR-TOKEN-TRADING.md](CONTRIBUTOR-TOKEN-TRADING.md) (recommendation 3 open: voting Shares or Loot for sale
   between members), [LATER-DESIGN-NOTES.md](LATER-DESIGN-NOTES.md), [ROUND-PRICE-HISTORY.md](ROUND-PRICE-HISTORY.md)
-  (built as D147; weekly rounds stay off in the pilot image), [LBAMM.md](LBAMM.md) (evaluation only: its licence rules out live use).
+  (built as D147; weekly rounds stay off in the pilot image), [LBAMM.md](LBAMM.md) (evaluation only: its licence rules out live use; the app, indexer and scripts for it were removed in D150, see tag `pre-deprecation-2026-10-31`).
 - **The project helper** (an AI assistant on a project): only if the pilot shows questions that Ways to help and Needs
   you do not answer.
 - **Fundraising explanations and the raise itself:** after the audit, a verified deployment and a legal read

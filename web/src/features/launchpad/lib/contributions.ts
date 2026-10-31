@@ -39,9 +39,9 @@ import {
 import type { WorkChain } from "./work-read.ts";
 
 export const MAX_BUDGETS = 32;
-export const MAX_AWARDS = 500;
+const MAX_AWARDS = 500;
 /** Share moves read to confirm awards (mints, and moves out of the DAO's reserve), each. */
-export const MAX_MOVES = 2_000;
+const MAX_MOVES = 2_000;
 
 /** `ContributionConsumed(bytes32 indexed claimId, address indexed contributor, uint128 shares)`. */
 export const TOPIC_CONTRIBUTION_CONSUMED = `0x${bytesToHex(
@@ -57,7 +57,7 @@ export const TOPIC_TRANSFER = `0x${bytesToHex(
  * Whether an award's Shares reached the person: `received` when its transaction moved them there, `missing` when it
  * did not, `unknown` when the token's history could not be read.
  */
-export type Receipt = "received" | "missing" | "unknown";
+type Receipt = "received" | "missing" | "unknown";
 
 export interface ContributionAward {
   /** The work budget the claim was filed in. */
@@ -74,7 +74,7 @@ export interface ContributionAward {
   receipt: Receipt;
 }
 
-export interface Contributor {
+interface Contributor {
   address: string;
   /** Shares awarded to them whose arrival was confirmed. */
   earned: bigint;
@@ -154,7 +154,7 @@ const SHARES = encodeCall0("shares()");
 const BALANCE_OF = "0x70a08231";
 
 /** One Shares move from a `Transfer` log of `token`, or null for a log that is not one. */
-export function decodeShareMove(
+function decodeShareMove(
   log: RawLog,
   token: string,
 ): { from: string; to: string; amount: bigint; txHash: string } | null {
@@ -185,7 +185,7 @@ const moveKey = (txHash: string, to: string) =>
  * Which awards' Shares reached the person, and the Shares issued outside awards, from the token's mints and its moves
  * out of the DAO. Awards in one transaction to one person are checked together (a vote can carry several).
  */
-export function confirmAwards(
+function confirmAwards(
   awards: readonly Omit<ContributionAward, "receipt">[],
   moves: { from: string; to: string; amount: bigint; txHash: string }[] | null,
   dao: string,
@@ -234,7 +234,7 @@ export function confirmAwards(
 }
 
 /** Group awards by person, most earned first (ties by address, so the order is stable). */
-export function groupContributions(
+function groupContributions(
   awards: readonly ContributionAward[],
   holdings: ReadonlyMap<string, bigint | null> = new Map(),
   totalShares: bigint | null = null,

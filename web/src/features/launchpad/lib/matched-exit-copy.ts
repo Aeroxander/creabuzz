@@ -14,7 +14,7 @@ const WAD = 10n ** 18n;
 const USDC_DECIMALS = 6;
 const DAY = 86_400;
 /** The longest an offer can last, in days. */
-export const MAX_OFFER_DAYS = 90;
+const MAX_OFFER_DAYS = 90;
 
 const date = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString("en-US", {

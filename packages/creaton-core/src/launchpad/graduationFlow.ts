@@ -129,7 +129,7 @@ export function decodeBoolStrict(returnData: string): boolean {
   throw new Error(`non-canonical bool word: ${returnData}`);
 }
 
-export type GraduationReadinessStatus =
+type GraduationReadinessStatus =
   | "ready"
   | "running"
   | "threshold-missed"
@@ -150,7 +150,7 @@ export interface GraduationReadiness {
 }
 
 /** A readiness read that failed — names the exact check (rule 1). */
-export class GraduationCheckError extends Error {
+class GraduationCheckError extends Error {
   readonly stage: "recipients" | "graduated" | "params" | "block";
 
   constructor(
@@ -502,7 +502,7 @@ export type GraduationStepStatus =
   | "failed"
   | "skipped";
 
-export type GraduationFlowPhase =
+type GraduationFlowPhase =
   | "idle"
   | "checking"
   | "not-ready"

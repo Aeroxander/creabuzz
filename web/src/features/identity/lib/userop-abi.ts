@@ -115,7 +115,7 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
 }
 
 /** Hex of `value` as one 32-byte big-endian word. */
-export function encodeWord(value: bigint): Uint8Array {
+function encodeWord(value: bigint): Uint8Array {
   if (value < 0n || value > MAX_UINT256) {
     fail(`uint out of range for one word: ${value}`);
   }

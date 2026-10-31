@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /** Auto-refresh runs at most this long without a person asking; then it pauses. */
-export const POLL_DEADLINE_MS = 15 * 60_000;
+const POLL_DEADLINE_MS = 15 * 60_000;
 
 /**
  * A refresh that repeats on a timer but never forever (Review-Proven Rule 4).

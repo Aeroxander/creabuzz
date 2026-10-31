@@ -14,7 +14,7 @@
  * Deliberately free of `@/` imports so `node --test` can exercise it.
  */
 
-export type LiveUnavailableReason =
+type LiveUnavailableReason =
   | "no-identity"
   | "no-member-list"
   | "member-list-error"

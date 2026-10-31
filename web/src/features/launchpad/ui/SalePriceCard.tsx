@@ -12,10 +12,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/shared/ui/card";
 
 import { clearingPrice, getRpcEndpoint } from "../chain";
-import { q96ToPrice } from "../lib/candles";
+import { formatPrice, q96ToPrice } from "../lib/candles";
 import { saleCurrencyFor } from "../lib/sale-currency";
 import type { Launch } from "../models";
-import { formatPrice } from "./CandlestickChart";
 
 export function SalePriceCard({ launch }: { launch: Launch }) {
   const { record } = launch;

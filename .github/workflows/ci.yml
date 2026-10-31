@@ -92,6 +92,7 @@ jobs:
               - 'web/**'
               - 'packages/**'
               - 'pnpm-lock.yaml'
+              - 'knip.jsonc'
             contracts:
               - 'contracts/**'
               - '.gitmodules'

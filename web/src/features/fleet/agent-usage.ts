@@ -10,7 +10,7 @@ const USAGE_KEY = "buzz.agent.usage";
 const MAX_ENTRIES = 500;
 
 /** Placeholder rates per 1M tokens — override once real pricing is known. */
-export const COST_RATES = { inputPerM: 0.15, outputPerM: 0.6 };
+const COST_RATES = { inputPerM: 0.15, outputPerM: 0.6 };
 
 export interface UsageRecord {
   prompt: number;
@@ -19,7 +19,7 @@ export interface UsageRecord {
   ts: number;
 }
 
-export function readUsage(): UsageRecord[] {
+function readUsage(): UsageRecord[] {
   try {
     const raw = localStorage.getItem(USAGE_KEY);
     return raw ? (JSON.parse(raw) as UsageRecord[]) : [];

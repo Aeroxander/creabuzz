@@ -21,12 +21,12 @@
  * readings are patterns, never verdicts.
  */
 
-export const HANDOFF_LAG_S = 60;
-export const BURSTY_FLAG_BP = 2000;
+const HANDOFF_LAG_S = 60;
+const BURSTY_FLAG_BP = 2000;
 export const MIN_EVENTS = 20;
-export const MIN_DRIFT_EVENTS = 8;
-export const DRIFT_FLAG_BP = 3000;
-export const SATURATION_FLAG_BP = 2000;
+const MIN_DRIFT_EVENTS = 8;
+const DRIFT_FLAG_BP = 3000;
+const SATURATION_FLAG_BP = 2000;
 
 /** The kinds the instrument reasons over (the coordination plane). */
 export const DIAG_KINDS = [
@@ -48,7 +48,7 @@ export type DiagClass =
   | "receipt"
   | "other";
 
-export const DIAG_CLASSES: DiagClass[] = [
+const DIAG_CLASSES: DiagClass[] = [
   "message",
   "proposal",
   "vote",
@@ -252,7 +252,7 @@ export function timeSignal(events: DiagEvent[]): TimeSignal | null {
 
 // ── Instrument 2: Tomasello's three layers ─────────────────────────────────
 
-export interface Layer {
+interface Layer {
   events: number;
   shareBp: number;
 }

@@ -97,7 +97,6 @@ together. The rows marked **Optional** are not in the image: they need a build o
 | `VITE_WEEKLY_ROUNDS` | `{"11155111":"<weekly-rounds from the manifest>"}` | **Optional, test networks only.** Weekly rounds between holders and new buyers on a project's Funds tab, once its DAO votes them in (D131, D132). Without it the Funds tab shows none |
 | `VITE_CREATE_TOKENS`, `VITE_CREATE_FAUCETS` | `{"11155111":"<create-token>"}`, `{"11155111":"<create-faucet>"}` | **Optional.** Test CREATE and the faucet that gives 1,000 a day (N6): offered as a reviewer bond, and staked in the court |
 | `VITE_COURTS` | `{"11155111":"<court from the manifest>"}` | **Optional.** The court (N7): a Court page reached from Portfolio, and appeals on bounties on posts. Needs `VITE_CREATE_TOKENS` |
-| `VITE_FORECAST_POOLS` | `{"11155111":"<forecast-pool from the manifest>"}` | **Optional, test networks only.** Money on whether a bounty on a post is paid (N8) |
 | `VITE_PAYOUTS_FACTORIES` | `{"11155111":"<payouts-factory from the manifest>"}` | **Optional, test networks only.** Contributor projects vote to pay holders a share of revenue (N10) |
 | `VITE_REMIX_BONDS` | `{"11155111":"<remix-bonds from the manifest>"}` | **Optional, test networks only.** A remix's bond to its parent, decided by the court (N12). Needs `VITE_COURTS` |
 | `VITE_HISTORY_FROM_BLOCKS` | `{"11155111":<the manifest's "block">}` | Reading awards, work and votes: a real node refuses an event read that starts at block 0 |
@@ -109,7 +108,7 @@ together. The rows marked **Optional** are not in the image: they need a build o
 
 Leave these **unset** on Sepolia: `VITE_ENABLE_MAINNET` (it would offer real networks and hide the Testnet tag),
 `VITE_LOCAL_USDC` (a local chain's test currency; Sepolia's Circle USDC is built in), `VITE_LBAMM_ADDRESSES` (no exchange there),
-`VITE_PRICE_INDEXER_URL` (no market to price).
+`VITE_PRICE_INDEXER_URL` (no market to price). (Both settings were removed in D150, see tag `pre-deprecation-2026-10-31`.)
 
 The deploy script prints these with the real addresses, the pilot's first, ready to paste into `deploy/compose/.env`.
 Where a value is yours to fill in it prints `CHANGE_ME_...`: `run.sh build` refuses one left in a `VITE_*` line (so does
@@ -138,7 +137,6 @@ VITE_WEEKLY_ROUNDS={"11155111":"<weekly-rounds>"}
 VITE_CREATE_TOKENS={"11155111":"<create-token>"}
 VITE_CREATE_FAUCETS={"11155111":"<create-faucet>"}
 VITE_COURTS={"11155111":"<court>"}
-VITE_FORECAST_POOLS={"11155111":"<forecast-pool>"}
 VITE_PAYOUTS_FACTORIES={"11155111":"<payouts-factory>"}
 VITE_REMIX_BONDS={"11155111":"<remix-bonds>"}
 ```

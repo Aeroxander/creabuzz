@@ -25,7 +25,7 @@ import { buildFeed, type FeedPost } from "./lib/board-feed";
 import type { BoardEvent } from "./lib/board-model";
 
 /** Posts per page. */
-export const FEED_PAGE_SIZE = 100;
+const FEED_PAGE_SIZE = 100;
 const COMMENT_LIMIT = 3000;
 const VOTE_LIMIT = 5000;
 /** The server refuses a read that names more boards than this. */

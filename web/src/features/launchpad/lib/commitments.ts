@@ -17,7 +17,7 @@ export const CADENCES = [
 /** Shares of the raise a founder can commit to spending each month. */
 export const BUDGET_CHOICES = [5, 10, 15, 20] as const;
 
-export const MIN_STORY_LENGTH = 40;
+const MIN_STORY_LENGTH = 40;
 
 export interface CommitmentForm {
   longPitch: string;

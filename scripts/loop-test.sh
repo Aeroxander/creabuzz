@@ -12,8 +12,8 @@
 #   7. LLM spend budget -> (optional) a priced mock upstream, a 1-cent budget, refused on the 5th call
 #
 # It boots its own relay on a throwaway port (a fresh community per run) and
-# stops it on exit. The on-chain half (mint, auction, bind) is
-# scripts/dogfood-raise.sh plus the forge suites.
+# stops it on exit. The on-chain half is the forge suites (the old
+# scripts/dogfood-raise.sh mint and auction walk was removed in D150).
 #
 # Requirements: a running Postgres and Redis (DATABASE_URL, REDIS_URL), psql,
 # python3, and the built binaries (built here if missing). Step 7 additionally

@@ -18,7 +18,7 @@
  */
 
 /** The event the token source asks the signer to sign. */
-export type MediaTokenTemplate = {
+type MediaTokenTemplate = {
   kind: number;
   created_at: number;
   tags: string[][];
@@ -51,7 +51,7 @@ export class MediaUnavailableError extends Error {
   }
 }
 
-export class MediaLoadError extends Error {
+class MediaLoadError extends Error {
   readonly status?: number;
   constructor(message: string, status?: number) {
     super(message);
@@ -170,7 +170,7 @@ export function createMediaTokenSource(
 }
 
 /** What a watcher of one picture is told, once. */
-export type MediaResult =
+type MediaResult =
   | { status: "ready"; src: string }
   | { status: "failed"; reason: MediaFailure };
 

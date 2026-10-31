@@ -142,7 +142,7 @@ function assetPattern(platform: BuzzDownloadPlatform): RegExp | undefined {
   }
 }
 
-export function selectBuzzDownloadUrl(
+function selectBuzzDownloadUrl(
   releases: GitHubRelease[],
   platform: BuzzDownloadPlatform,
 ): string | undefined {

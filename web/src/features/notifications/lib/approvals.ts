@@ -24,7 +24,7 @@ export const APPROVALS_REQUEST_LIMIT = 50;
 
 const BUDGET_EXCEEDED_TYPE = "budget-exceeded";
 
-export type ApprovalRequestKind = "budget-overrun" | "workflow";
+type ApprovalRequestKind = "budget-overrun" | "workflow";
 
 export type ApprovalRequest = {
   id: string;
@@ -81,7 +81,7 @@ function tagValue(tags: readonly (readonly string[])[], name: string) {
 }
 
 /** The approval token hash every resolution references (`d` tag). */
-export function approvalTokenHashFromTags(
+function approvalTokenHashFromTags(
   tags: readonly (readonly string[])[],
 ): string | null {
   const value = tagValue(tags, "d");

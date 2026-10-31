@@ -3,7 +3,7 @@
 // The reducer/orchestrator scenarios port `desktop/src/features/launchpad/
 // exitHooks.test.mjs`'s runExitFlow section (lines 690-885, cited per test);
 // the parity block mirrors `identity/lib/sponsoredSender.test.mjs`'s bid
-// parity test (its "call parity" section) for the exit/claim/mint composers:
+// parity test (its "call parity" section) for the exit/claim composers:
 // the same composed calls must reach BOTH adapters byte-identically — the
 // sender swap is allowed to change only the wire wrapper (one batched UserOp
 // vs sequential wallet txs), never a calldata byte.
@@ -31,7 +31,6 @@ import {
   resumeExitFromState,
   runExitFlow,
 } from "./exit-flow.ts";
-import { buildTokenDeployCalls } from "./mint-tx.ts";
 
 // ------------------------------------------------------------- fixtures ----
 
@@ -307,13 +306,13 @@ test("EXIT_STEP_LABELS drives the failure message prefix", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Composer/sender calldata parity — exit/claim/mint bytes reach both adapters
+// Composer/sender calldata parity — exit/claim bytes reach both adapters
 // byte-identically (mirror of sponsoredSender.test.mjs's "call parity" block).
 // ---------------------------------------------------------------------------
 
-test("exit/claim/mint composition reaches both senders byte-identically", async () => {
-  // Three representative compositions: a single-call exit, the batch claim,
-  // and the 3-call mint sequence. All are sender-agnostic `build()` outputs.
+test("exit/claim composition reaches both senders byte-identically", async () => {
+  // Two representative compositions: a single-call exit and the batch claim.
+  // Both are sender-agnostic `build()` outputs.
   const exit = buildExitExecution({
     auction: AUCTION,
     bidId: 42n,
@@ -328,21 +327,7 @@ test("exit/claim/mint composition reaches both senders byte-identically", async 
     owner: OWNER,
     bidIds: [1n, 2n, 3n],
   });
-  const mint = buildTokenDeployCalls({
-    name: "Nebula",
-    symbol: "NEB",
-    treasury: OWNER,
-    tokenAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  });
-  const composed = [
-    await exit.calls[0].build(),
-    await claim.calls[0].build(),
-    ...mint.map((call) => ({
-      to: call.to,
-      value: call.value,
-      data: call.data,
-    })),
-  ];
+  const composed = [await exit.calls[0].build(), await claim.calls[0].build()];
 
   // Injected-wallet path: capture at the eth_sendTransaction wire.
   const walletWire = [];

@@ -572,14 +572,11 @@ test("a new launch defaults to the project's own Shares on a network that has a 
   await expect(page.getByTestId("token-mode-dao")).toBeVisible({
     timeout: 15_000,
   });
-  await expect(
-    page.getByRole("button", { name: "Project Shares" }),
-  ).toHaveAttribute("aria-pressed", "true");
   // This build names a kit for this network, so there is nothing to warn about.
   await expect(page.getByTestId("dao-kit-missing")).toHaveCount(0);
-  // The older paths are one click away.
-  await page.getByRole("button", { name: "Mint new" }).click();
-  await expect(page.getByTestId("token-mode-dao")).toHaveCount(0);
+  // Minting a token or importing one is no longer offered (D150).
+  await expect(page.getByRole("button", { name: "Mint new" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Import" })).toHaveCount(0);
 });
 
 test("a launch made in the wizard, as published, launches into its DAO", async ({

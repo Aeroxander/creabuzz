@@ -20,15 +20,15 @@ import {
 import type { Draft } from "./board-events.ts";
 import type { BoardEvent } from "./board-model.ts";
 
-export const KIND_BOARD_LOCK_THREAD = 9045;
-export const KIND_BOARD_UNLOCK_THREAD = 9046;
-export const KIND_BOARD_PIN_THREAD = 9047;
-export const KIND_BOARD_UNPIN_THREAD = 9048;
-export const KIND_BOARD_MUTE = 9049;
-export const KIND_BOARD_UNMUTE = 9050;
-export const KIND_BOARD_SET_RULES = 9051;
-export const KIND_BOARD_APPOINT_MODERATOR = 9052;
-export const KIND_BOARD_REMOVE_MODERATOR = 9053;
+const KIND_BOARD_LOCK_THREAD = 9045;
+const KIND_BOARD_UNLOCK_THREAD = 9046;
+const KIND_BOARD_PIN_THREAD = 9047;
+const KIND_BOARD_UNPIN_THREAD = 9048;
+const KIND_BOARD_MUTE = 9049;
+const KIND_BOARD_UNMUTE = 9050;
+const KIND_BOARD_SET_RULES = 9051;
+const KIND_BOARD_APPOINT_MODERATOR = 9052;
+const KIND_BOARD_REMOVE_MODERATOR = 9053;
 /** The board's state, written by the server: rules, pinned and locked threads, moderators (`d` and `h` = the board). */
 export const KIND_BOARD_STATE = 39008;
 /** One entry of the board's public moderation log, written by the server (`h` = the board). */
@@ -36,12 +36,12 @@ export const KIND_BOARD_MODERATION_LOG = 45004;
 
 /** The server's numbers, so the app offers only what it will accept. */
 export const MODERATOR_MUTE_DAYS = 7;
-export const BOARD_MUTE_MAX_DAYS = 30;
+const BOARD_MUTE_MAX_DAYS = 30;
 export const MODERATOR_TERM_DAYS = 90;
 export const BOARD_RULES_MAX_CHARS = 4000;
 export const REASON_MAX_CHARS = 280;
 /** How long a moderator's request for a longer mute waits for a second moderator. */
-export const SECOND_MODERATOR_WINDOW_SECONDS = 24 * 3600;
+const SECOND_MODERATOR_WINDOW_SECONDS = 24 * 3600;
 
 const DAY = 86_400;
 
@@ -176,7 +176,7 @@ export interface BoardState {
   moderators: ReadonlyMap<string, number>;
 }
 
-export const EMPTY_BOARD_STATE: BoardState = {
+const EMPTY_BOARD_STATE: BoardState = {
   rules: "",
   pinned: [],
   locked: new Set(),
@@ -280,7 +280,7 @@ export function activeModerators(
   );
 }
 
-export type LogAction =
+type LogAction =
   | "lock"
   | "unlock"
   | "pin"

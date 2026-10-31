@@ -208,7 +208,6 @@ test("mainnet, a local chain, a local node and local-only settings are refused",
     [{ VITE_CHAIN_RPC_URL: "http://127.0.0.1:8545" }, "VITE_CHAIN_RPC_URL"],
     [{ VITE_CHAIN_RPC_URL: "https://localhost:8545" }, "this machine"],
     [{ VITE_LOCAL_USDC: KIT }, "VITE_LOCAL_USDC"],
-    [{ VITE_LBAMM_ADDRESSES: "{}" }, "VITE_LBAMM_ADDRESSES"],
     [
       { VITE_ERROR_REPORT_URL: "http://errors.example" },
       "VITE_ERROR_REPORT_URL",

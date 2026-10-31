@@ -14,13 +14,6 @@
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
-export interface TrustScore {
-  /** Hex pubkey/address of the scored entity. */
-  member: string;
-  /** Normalized score, 0-100 (the same scale NIP-85 30382 uses). */
-  score: number;
-}
-
 /**
  * Verify one member's score against a root, using the exact leaf/path layout
  * of `TrustGatedHook.validate`. Returns true when the path folds to the root.
@@ -119,10 +112,7 @@ export interface DeliverySignals {
  * at 12. A reference before the first accepted work is zero. Mirrors
  * `trustgraph.rs::tenure_months`.
  */
-export function tenureMonths(
-  firstAcceptedAt: number,
-  referenceAt: number,
-): number {
+function tenureMonths(firstAcceptedAt: number, referenceAt: number): number {
   return Math.min(
     12,
     Math.max(0, Math.floor((referenceAt - firstAcceptedAt) / 2_592_000)),

@@ -24,7 +24,7 @@ import { slugFromName } from "./wizard.ts";
  */
 export const SUPPORTER_GATE = 10;
 
-export const IDEA_NAME_MAX = 60;
+const IDEA_NAME_MAX = 60;
 export const IDEA_PITCH_MAX = 140;
 
 /** True while a launch has no sale terms at all: just a name, a pitch and people. */

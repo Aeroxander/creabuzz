@@ -15,8 +15,8 @@ import type { WorkChain } from "./workRead.ts";
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const DAY = 86_400;
-export const MIN_TERM_DAYS = 30;
-export const MAX_TERM_DAYS = 730;
+const MIN_TERM_DAYS = 30;
+const MAX_TERM_DAYS = 730;
 
 export const REMIX_BOND_SIGNATURES = {
   post: "post(bytes32,bytes32,address,string,uint256,uint64)",

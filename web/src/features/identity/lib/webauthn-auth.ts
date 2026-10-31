@@ -383,6 +383,3 @@ export function encodeZeroDevWebAuthnSignature(
     { kind: "bool", value: signature.usePrecompiled },
   ]);
 }
-
-/** Re-exported for callers building WebAuthn challenges from raw bytes. */
-export { b64urlEncode };

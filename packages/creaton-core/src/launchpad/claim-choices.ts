@@ -14,7 +14,7 @@
  * dropdown. Pure — `claim-choices.test.mjs` drives it.
  */
 
-export interface ClaimChoice {
+interface ClaimChoice {
   value: string;
   label: string;
 }

@@ -2,18 +2,12 @@
  * The decision-routing view model (`docs/agentic-governance-design.md`
  * sections 0 and 2) — what a proposal card must make legible: WHICH
  * MECHANISM decided this, WHO held what authority, WHERE the receipts are.
- * Pure routing/copy assembly here; the chain reads live in `fetchProposalStates`
- * over the `../chain` `ethCall` seam. Vote mechanics are `vote-tx.ts`.
+ * Pure routing/copy assembly here. Vote mechanics are `vote-tx.ts`.
  */
 
 // Extension included on purpose: this module is driven by
 // `governance-view.test.mjs`, which does not resolve extensionless specifiers.
-import { ethCall } from "../chain.ts";
-import {
-  encodeStateView,
-  PROPOSAL_STATES,
-  type ProposalIntent,
-} from "./vote-tx.ts";
+import { PROPOSAL_STATES } from "./vote-tx.ts";
 
 export type ProposalKind = "plain" | "futarchy-budget" | "signal";
 
@@ -50,17 +44,6 @@ export function governanceRoute(kind: ProposalKind): GovernanceRoute {
   }
 }
 
-export interface QuorumParams {
-  quorumBps?: number | null;
-  /** majeur's absolute quorum — the number when `quorumBps` is 0 (off). */
-  quorumAbsolute?: number | null;
-  minYes?: number | null;
-  proposalTtl?: string | null;
-  /** Raw seconds behind `proposalTtl` (the A5 watch's clock input). */
-  proposalTtlSeconds?: bigint | null;
-  timelockDelay?: string | null;
-}
-
 /** D8: the record-only fallback — no onchain binding, no invented actions. */
 export const RECORD_ONLY_COPY =
   "Record-only: this proposal is tracked here, but its actions are carried out by the treasury, following the recorded decision.";
@@ -82,19 +65,3 @@ export function decodeProposalState(word: bigint | number): string {
   const index = Number(word);
   return PROPOSAL_STATES[index] ?? `Unknown(${index})`;
 }
-
-/** `state(id)` reads for a batch of proposals (the action gates). */
-export async function fetchProposalStates(input: {
-  endpoint: string;
-  dao: string;
-  ids: readonly string[];
-}): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  for (const id of input.ids) {
-    const raw = await ethCall(input.endpoint, input.dao, encodeStateView(id));
-    out[id] = decodeProposalState(BigInt(raw));
-  }
-  return out;
-}
-
-export type { ProposalIntent };

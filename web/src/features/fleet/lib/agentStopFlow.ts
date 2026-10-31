@@ -5,10 +5,6 @@
 // successful stop leaves no stale "agent still seated" UI.
 
 import {
-  AGENT_STOP_KIND_BAN,
-  AGENT_STOP_KIND_BUDGET,
-  AGENT_STOP_KIND_GRANT,
-  AGENT_STOP_KIND_NODE,
   executeAgentStop,
   type AgentStopEvent,
   type AgentStopRecord,
@@ -72,10 +68,3 @@ export async function runAgentStopAll(
   }
   return reports;
 }
-
-export {
-  AGENT_STOP_KIND_BAN,
-  AGENT_STOP_KIND_BUDGET,
-  AGENT_STOP_KIND_GRANT,
-  AGENT_STOP_KIND_NODE,
-};

@@ -82,7 +82,7 @@ export const GRADUATION_STEP_COPY: Record<
 };
 
 /** The plain label of a deploy step, falling back to the raw id. */
-export function auctionStepLabel(step: string): string {
+function auctionStepLabel(step: string): string {
   return AUCTION_STEP_COPY[step as AuctionDeployStepId]?.label ?? step;
 }
 

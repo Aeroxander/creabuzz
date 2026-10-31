@@ -29,7 +29,6 @@ export const ACTION_SIGNATURES = {
   approveProject:
     "approveProject(bytes32,address,uint128,uint128,uint64,bytes32)",
   award: "awardContribution(address,bytes32,uint96,bool)",
-  collectFees: "collectHookFeesByToken(address,address,address,uint256)",
   transfer: "transfer(address,uint256)",
   freezeClaim: "freezeClaim(bytes32)",
   resolveFrozenClaim: "resolveFrozenClaim(bytes32)",
@@ -39,7 +38,7 @@ export const ACTION_SIGNATURES = {
 
 const CALL_TYPE: AbiType = { tuple: ["address", "uint256", "bytes"] };
 
-export type DecisionLane = "unrestricted" | "bounded";
+type DecisionLane = "unrestricted" | "bounded";
 
 /** A decision ready to be opened for a vote: the single call the DAO would make, and how to describe it. */
 export interface DecisionDraft {
@@ -417,40 +416,6 @@ export function awardDecision(input: AwardInput): DecisionDraft {
   };
 }
 
-export interface CollectFeesInput {
-  amm: string;
-  sharesToken: string;
-  currency: string;
-  currencyDecimals: number;
-  recipient: string;
-  amount: bigint;
-}
-
-/** The vote that moves the trading fees the Shares' hook collected into the treasury. */
-export function collectFeesDecision(input: CollectFeesInput): DecisionDraft {
-  const amm = address(input.amm, "amm", "The exchange");
-  if (input.amount === 0n)
-    fail("amount", "No fees are owed yet: they build up as the Shares trade.");
-  return {
-    to: amm,
-    data: encodeFunctionData(
-      ACTION_SIGNATURES.collectFees,
-      ["address", "address", "address", "uint256"],
-      [
-        address(input.sharesToken, "shares", "The Shares"),
-        address(input.currency, "currency", "The currency"),
-        address(input.recipient, "recipient", "The treasury"),
-        input.amount,
-      ],
-    ),
-    lane: "unrestricted",
-    title: "Collect the trading fees",
-    lines: [
-      `Move ${formatUnits(input.amount, input.currencyDecimals, 4)} collected on trades into the treasury`,
-    ],
-  };
-}
-
 export interface PayInput {
   /** The currency the treasury pays in. */
   currency: string;
@@ -606,13 +571,11 @@ export interface ActionDescription {
     | "work-budget"
     | "project"
     | "award"
-    | "fees"
     | "payment"
     | "freeze"
     | "unwind"
     | "close-budget"
     | "slash"
-    | "market"
     | "trading"
     | "payouts"
     | "batch"
@@ -625,14 +588,13 @@ export interface DescribeContext {
   /** Decimals of the sale currency, when known; amounts are otherwise shown in base units. */
   currencyDecimals?: number;
   /**
-   * What the app knows to be this DAO's own: its address, its work budget factory, its work budgets, its exchange. When
+   * What the app knows to be this DAO's own: its address, its work budget factory, its work budgets. When
    * given, an action is only described as (say) an award if it is aimed where a real award is aimed; a call with the
    * same selector sent anywhere else is described as unknown, so the words never claim more than the call does.
    */
   dao?: string;
   factory?: string;
   mandates?: readonly string[];
-  amm?: string;
   /** The currency the treasury holds, so a payment out of it can be recognised. */
   currency?: string;
   currencySymbol?: string;
@@ -879,20 +841,6 @@ function describeCall(
         lines: [
           `From ${who(ctx, reviewer)}`,
           "It is paid to the DAO. It can only be taken from the bond they posted, and no more than they hold.",
-        ],
-      };
-    }
-    if (sel === selectorOfSig("collectFees")) {
-      if (ctx.amm && !same(call.to, ctx.amm)) return null;
-      const [, , recipient, amount] = decodeParameters(
-        ["address", "address", "address", "uint256"],
-        args,
-      ) as [string, string, string, bigint];
-      return {
-        kind: "fees",
-        title: "Collect the trading fees",
-        lines: [
-          `Move ${money(amount, ctx)} collected on trades to ${who(ctx, recipient)}`,
         ],
       };
     }

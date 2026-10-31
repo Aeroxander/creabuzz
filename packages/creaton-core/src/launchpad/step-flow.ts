@@ -22,7 +22,7 @@ export type StepStatus = "pending" | "active" | "done" | "failed" | "skipped";
  * - `failed`: a step failed; retry sends only the remaining steps.
  * - `done`: every planned step confirmed.
  */
-export type StepFlowPhase = "idle" | "running" | "failed" | "done";
+type StepFlowPhase = "idle" | "running" | "failed" | "done";
 
 /** The full observable state of one attempt. */
 export interface StepFlowState<Id extends string, Receipt> {

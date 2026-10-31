@@ -49,14 +49,14 @@ import {
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 
 /** Tombstone kind (NIP-09) — a deleted team page leaves one of these. */
-export const KIND_DELETE = 5;
+const KIND_DELETE = 5;
 /** NIP-ORG org-node kind, for resolving a page's team scope to its seats. */
-export const KIND_ORG_NODE = 37010;
+const KIND_ORG_NODE = 37010;
 /** NIP-43 relay membership list — carries each member's community role. */
-export const KIND_NIP43_MEMBERSHIP_LIST = 13534;
+const KIND_NIP43_MEMBERSHIP_LIST = 13534;
 
 /** Bounded read: the Knowledge fetch never pulls more than this many events. */
-export const KNOWLEDGE_FETCH_LIMIT = 200;
+const KNOWLEDGE_FETCH_LIMIT = 200;
 
 function toKnowledgeEvent(event: NostrEvent): KnowledgeEvent {
   return {
@@ -70,7 +70,7 @@ function toKnowledgeEvent(event: NostrEvent): KnowledgeEvent {
 }
 
 /** Fetch every wiki record + tombstone in one kinds-explicit query. */
-export async function fetchKnowledgeEvents(): Promise<KnowledgeEvent[]> {
+async function fetchKnowledgeEvents(): Promise<KnowledgeEvent[]> {
   const events = await queryEvents(relayWsUrl(), {
     kinds: [
       KIND_WIKI_PAGE,

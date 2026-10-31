@@ -112,8 +112,8 @@ cargo clippy -p buzz-cli -- -D warnings
 (template apply and re-apply, seat an agent, budget bites for an agent but not a human, owner
 approval, emergency stop, and — when `web/node_modules` exists — the priced LLM spend budget).
 It needs Postgres and Redis (`DATABASE_URL`, `REDIS_URL`), migrates a fresh database itself, and
-prints one line per check; it exits non-zero on any failure. The on-chain half is
-`scripts/dogfood-raise.sh` plus the forge suites.
+prints one line per check; it exits non-zero on any failure. The on-chain half is the forge
+suites (`scripts/dogfood-raise.sh` was removed in D150, see tag pre-deprecation-2026-10-31).
 
 ```bash
 DATABASE_URL=postgres://buzz@127.0.0.1:5433/buzz REDIS_URL=redis://127.0.0.1:6379 scripts/loop-test.sh

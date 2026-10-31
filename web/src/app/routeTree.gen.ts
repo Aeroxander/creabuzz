@@ -10,7 +10,6 @@ import { Route as socialRouteImport } from "./routes/social";
 import { Route as reposRouteImport } from "./routes/repos";
 import { Route as projectsRouteImport } from "./routes/projects";
 import { Route as portfolioRouteImport } from "./routes/portfolio";
-import { Route as marketsRouteImport } from "./routes/markets";
 import { Route as linkDeviceRouteImport } from "./routes/link-device";
 import { Route as launchpadRouteImport } from "./routes/launchpad";
 import { Route as identityDemoRouteImport } from "./routes/identity-demo";
@@ -59,11 +58,6 @@ const projectsRoute = projectsRouteImport.update({
 const portfolioRoute = portfolioRouteImport.update({
   id: "/portfolio",
   path: "/portfolio",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const marketsRoute = marketsRouteImport.update({
-  id: "/markets",
-  path: "/markets",
   getParentRoute: () => rootRouteImport,
 } as any);
 const linkDeviceRoute = linkDeviceRouteImport.update({
@@ -197,7 +191,6 @@ export interface FileRoutesByFullPath {
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
   "/link-device": typeof linkDeviceRoute;
-  "/markets": typeof marketsRoute;
   "/portfolio": typeof portfolioRoute;
   "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
@@ -229,7 +222,6 @@ export interface FileRoutesByTo {
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
   "/link-device": typeof linkDeviceRoute;
-  "/markets": typeof marketsRoute;
   "/portfolio": typeof portfolioRoute;
   "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
@@ -262,7 +254,6 @@ export interface FileRoutesById {
   "/identity-demo": typeof identityDemoRoute;
   "/launchpad": typeof launchpadRoute;
   "/link-device": typeof linkDeviceRoute;
-  "/markets": typeof marketsRoute;
   "/portfolio": typeof portfolioRoute;
   "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
@@ -296,7 +287,6 @@ export interface FileRouteTypes {
     | "/identity-demo"
     | "/launchpad"
     | "/link-device"
-    | "/markets"
     | "/portfolio"
     | "/projects"
     | "/repos"
@@ -328,7 +318,6 @@ export interface FileRouteTypes {
     | "/identity-demo"
     | "/launchpad"
     | "/link-device"
-    | "/markets"
     | "/portfolio"
     | "/projects"
     | "/repos"
@@ -360,7 +349,6 @@ export interface FileRouteTypes {
     | "/identity-demo"
     | "/launchpad"
     | "/link-device"
-    | "/markets"
     | "/portfolio"
     | "/projects"
     | "/repos"
@@ -393,7 +381,6 @@ export interface RootRouteChildren {
   identityDemoRoute: typeof identityDemoRoute;
   launchpadRoute: typeof launchpadRoute;
   linkDeviceRoute: typeof linkDeviceRoute;
-  marketsRoute: typeof marketsRoute;
   portfolioRoute: typeof portfolioRoute;
   projectsRoute: typeof projectsRoute;
   reposRoute: typeof reposRoute;
@@ -453,13 +440,6 @@ declare module "@tanstack/react-router" {
       path: "/portfolio";
       fullPath: "/portfolio";
       preLoaderRoute: typeof portfolioRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/markets": {
-      id: "/markets";
-      path: "/markets";
-      fullPath: "/markets";
-      preLoaderRoute: typeof marketsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/link-device": {
@@ -641,7 +621,6 @@ const rootRouteChildren: RootRouteChildren = {
   identityDemoRoute: identityDemoRoute,
   launchpadRoute: launchpadRoute,
   linkDeviceRoute: linkDeviceRoute,
-  marketsRoute: marketsRoute,
   portfolioRoute: portfolioRoute,
   projectsRoute: projectsRoute,
   reposRoute: reposRoute,

@@ -11,7 +11,7 @@
  */
 
 /** Currency the launchpad raises in by default (USDC on Base). */
-export const USDC_DECIMALS = 6;
+const USDC_DECIMALS = 6;
 
 function groupThousands(value: string): string {
   return value.replace(/\B(?=(\d{3})+(?!\d))/g, ",");

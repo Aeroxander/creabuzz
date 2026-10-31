@@ -32,7 +32,7 @@ export interface IpDocument {
   sha256: string;
 }
 
-export interface IpEntity {
+interface IpEntity {
   name: string;
   jurisdiction: string;
   registration: string | null;

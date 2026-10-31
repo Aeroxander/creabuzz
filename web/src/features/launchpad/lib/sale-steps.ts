@@ -8,12 +8,7 @@
 
 import { hasFounderCommitments, type LaunchRecord } from "../models.ts";
 
-export type SaleStepKey =
-  | "prepared"
-  | "commitments"
-  | "deploy"
-  | "open"
-  | "announce";
+type SaleStepKey = "prepared" | "commitments" | "deploy" | "open" | "announce";
 
 export interface SaleStep {
   key: SaleStepKey;

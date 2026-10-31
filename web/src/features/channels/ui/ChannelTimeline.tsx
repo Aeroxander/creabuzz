@@ -136,7 +136,7 @@ function ReactionPills({ events }: { events: NostrEvent[] }) {
 }
 
 /** Anchor id used by message permalinks. */
-export function messageAnchor(eventId: string): string {
+function messageAnchor(eventId: string): string {
   return `message-${eventId}`;
 }
 
@@ -146,7 +146,7 @@ export function messageAnchor(eventId: string): string {
  * The web client addresses a thread by channel with `?channel=`; the message id
  * rides along so the target row can be scrolled to and highlighted.
  */
-export function messagePermalink(eventId: string, channelId?: string): string {
+function messagePermalink(eventId: string, channelId?: string): string {
   const url = new URL(window.location.href);
   url.search = "";
   if (channelId) url.searchParams.set("channel", channelId);

@@ -44,7 +44,7 @@ const day = (seconds: number) =>
   });
 
 /** The milestone panel as a backer needs it: who decides, how many must agree, until when, and the bond they post. */
-export interface PanelFacts {
+interface PanelFacts {
   reviewers: number;
   quorum: number;
   expiresAt: number;
@@ -53,7 +53,7 @@ export interface PanelFacts {
 }
 
 /** How a lock that lets holders object lets milestones through, as a backer needs it before they bid. */
-export interface ChallengeFacts {
+interface ChallengeFacts {
   window: number;
   votePeriod: number;
   clawback: number;
@@ -149,7 +149,7 @@ function votable(rules: ShareRules | null, leaving: Leaving): string[] {
 const GIVE_UP =
   "Give up a team member's unearned Shares. They are burned, never released for sale.";
 
-export function PowersCard({
+function PowersCard({
   locked,
   panel,
   reviewerTerms = null,

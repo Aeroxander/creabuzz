@@ -34,14 +34,14 @@ export const SELECTOR_PROPOSAL_ID = "0x997506ba";
 // state(uint256)
 export const SELECTOR_STATE = "0x3e4f49e6";
 // delegate(address) on the Shares token — voting-power delegation (A2)
-export const SELECTOR_DELEGATE = "0x5c19a95c";
+const SELECTOR_DELEGATE = "0x5c19a95c";
 // delegates(address) — who casts this account's votes (defaults to self)
-export const SELECTOR_DELEGATES = "0x587cde1e";
+const SELECTOR_DELEGATES = "0x587cde1e";
 
 /** `castVote` support words (majeur's tally: 1 = for, 0 = against, 2 = abstain). */
-export const VOTE_AGAINST = 0;
+const VOTE_AGAINST = 0;
 export const VOTE_FOR = 1;
-export const VOTE_ABSTAIN = 2;
+const VOTE_ABSTAIN = 2;
 
 /** `ProposalState` in majeur's declaration order — the D6 panel labels. */
 export const PROPOSAL_STATES = [

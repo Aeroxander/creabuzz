@@ -79,10 +79,10 @@ export class BundlerTimeoutError extends Error {
 }
 
 /** `getSenderAddress(bytes)`. */
-export const GET_SENDER_ADDRESS_SIGNATURE = "getSenderAddress(bytes)";
+const GET_SENDER_ADDRESS_SIGNATURE = "getSenderAddress(bytes)";
 
 /** `SenderAddressResult(address)` — the deliberate revert of the flow above. */
-export const SENDER_ADDRESS_RESULT_SIGNATURE = "SenderAddressResult(address)";
+const SENDER_ADDRESS_RESULT_SIGNATURE = "SenderAddressResult(address)";
 
 function requireString(value: unknown, what: string): string {
   if (typeof value !== "string" || value.length === 0) {
@@ -139,7 +139,7 @@ export interface UserOperationGasEstimate {
 }
 
 /** The standard `eth_getTransactionReceipt` object nested under `receipt`. */
-export interface UserOperationTransactionReceipt {
+interface UserOperationTransactionReceipt {
   transactionHash: string;
   blockNumber: string;
   blockHash: string;
@@ -227,7 +227,7 @@ const MAX_BACKOFF_MS = 2_000;
  * importable outside Vite (unit tests), same pattern as
  * `web/src/features/launchpad/chain.ts`.
  */
-export function bundlerUrlFromEnv(): string | undefined {
+function bundlerUrlFromEnv(): string | undefined {
   const env = (import.meta as { env?: Record<string, string | undefined> }).env;
   const url = env?.VITE_BUNDLER_URL;
   return url === undefined || url === "" ? undefined : url;

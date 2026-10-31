@@ -16,15 +16,11 @@
 export const KIND_DM_CREATED = 41001;
 /** Open (or surface) a DM conversation; `p` tags name the participants. */
 export const KIND_DM_OPEN = 41010;
-/** Add a member to a group DM conversation. */
-export const KIND_DM_ADD_MEMBER = 41011;
-/** Hide a DM conversation from the viewer's listing. */
-export const KIND_DM_HIDE = 41012;
 /** Relay-signed per-viewer snapshot of hidden DM conversations. */
 export const KIND_DM_VISIBILITY = 30622;
 
 /** The open command accepts 1–8 participants (excluding the sender). */
-export const DM_MAX_PARTICIPANTS = 8;
+const DM_MAX_PARTICIPANTS = 8;
 
 /** The minimal event shape this module reads. */
 export interface DmTaggedEvent {

@@ -119,7 +119,7 @@ async function readBacking(
 }
 
 /** The wallets your bids could be in: a connected wallet and your passkey account. */
-export function useBidOwners(walletAddress: string | null) {
+function useBidOwners(walletAddress: string | null) {
   const { sponsoredSender, sponsoredStatus } = useSenderPicker();
   const passkey = useQuery({
     // Keyed by identity: the passkey account belongs to whoever is signed in.

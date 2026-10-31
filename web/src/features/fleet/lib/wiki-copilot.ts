@@ -43,7 +43,7 @@ const MAX_TRACKED_PAGES = 200;
 const MAX_HANDLED_EVENTS = 500;
 
 /** The instruction after the trigger, bounded. */
-export function extractInstruction(content: string): string {
+function extractInstruction(content: string): string {
   return content.replace(TASK_PATTERN, "").trim().slice(0, 400);
 }
 
@@ -72,7 +72,7 @@ export interface WikiEventLike {
   tags: readonly (readonly string[])[];
 }
 
-export type WikiSkipReason =
+type WikiSkipReason =
   | "no-trigger"
   | "no-slug"
   | "own"

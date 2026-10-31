@@ -33,7 +33,7 @@ export const MAX_TRANSFERS = 20_000;
 /** The largest holders listed. */
 export const SHOWN_HOLDERS = 10;
 
-export interface Holder {
+interface Holder {
   /** Lower-case address. */
   holder: string;
   /** Shares held, in base units. */

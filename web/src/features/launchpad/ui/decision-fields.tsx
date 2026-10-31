@@ -8,7 +8,7 @@ import { usePeopleWithWallets } from "../use-people";
  * One labelled field with an optional hint and problem, wired so a screen reader reads label, problem, hint and input
  * together, and a field with a problem is marked invalid where it is (not only in a message by the button).
  */
-export function FormField({
+function FormField({
   label,
   hint,
   error,

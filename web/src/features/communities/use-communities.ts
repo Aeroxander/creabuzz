@@ -13,7 +13,7 @@ export interface CommunityDirectoryEntry {
   archived: boolean;
 }
 
-export interface CommunityDirectory {
+interface CommunityDirectory {
   communities: CommunityDirectoryEntry[];
   /** False when the server does not publish a public directory (HTTP 404). */
   available: boolean;

@@ -54,7 +54,7 @@ it does what the section says, with nobody explaining the screen.
 
 Raises, sales, markets and milestone locks (**4a** to **4c**, **4h**, **4j**, **4m**, **4t**, **4x**'s raise story,
 **4z** to **4ab**), starting from a Projects-board pitch (the first part of **4ak**; its suggested work is in the pilot), and the test-network features that are off in the hosted
-build: bounties, forecasts, matched exits, CREATE and the court, money forecasts, payouts, remixes, pledges, weekly
+build: bounties, forecasts, matched exits, CREATE and the court, money forecasts (removed from the app in D150), payouts, remixes, pledges, weekly
 rounds and funding terms (**4bi** to **4cd**). The milestone test has its own plan
 ([MILESTONE-TEST-PLAN.md](MILESTONE-TEST-PLAN.md)) and a build of its own.
 

@@ -18,6 +18,13 @@ test("a launch that already has a token keeps what it is when edited", () => {
     initialTokenMode({ token: "0xabc", tokenPlan: { mode: "dao" } }, false),
     "dao",
   );
+  // A minted token stays one, plan and all (it used to reopen as an import, and a save dropped its token plan).
+  assert.equal(
+    initialTokenMode({ token: "0xabc", tokenPlan: { mode: "mint" } }, true),
+    "mint",
+  );
+  // A minted-token draft that never got its token can no longer be minted (D150): where a kit exists it opens as the
+  // project's own Shares, so it can still launch.
   assert.equal(initialTokenMode({ tokenPlan: { mode: "mint" } }, true), "dao");
   // An edit never rewrites what was published: a minted-token launch stays one where no kit exists.
   assert.equal(

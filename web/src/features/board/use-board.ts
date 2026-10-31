@@ -29,8 +29,8 @@ import type { BoardEvent } from "./lib/board-model";
 
 /** Bounds on one read. A board past these shows its newest, and says so. */
 export const POST_LIMIT = 200;
-export const COMMENT_LIMIT = 1000;
-export const VOTE_LIMIT = 3000;
+const COMMENT_LIMIT = 1000;
+const VOTE_LIMIT = 3000;
 
 async function fetchBoard(boardId: string): Promise<BoardEvent[]> {
   const url = relayWsUrl();

@@ -5,15 +5,12 @@
  * share this machine's contract:
  *
  * - every failure names its step (Review-Proven Rule 1) — the step vocabulary
- *   is the closed set {checkpoint, exit, claim} here and
- *   {deploy, validator, ruleset, link} in `mint-flow.ts`, where `link` is the
- *   mirror-only record write-back;
+ *   is the closed set {checkpoint, exit, claim} here;
  * - a mined revert resolves as `status: "reverted"` receipt data and is a
  *   failed step, never a silent success;
  * - retry re-sends only the remaining steps — completed steps are never
  *   re-sent (Review-Proven Rule 5 prefix-consistency), so a mirror/link-only
- *   failure can never re-send the money action (`mint-flow.ts`'s
- *   `retryPlan` is the production consumer of that rule).
+ *   failure can never re-send the money action.
  *
  * Send strategy (documented per the launchpad money-action contract): the
  * composer in `my-bids.ts` emits the same `UnsignedTx` list for every sender.
@@ -40,7 +37,7 @@ import { EXIT_STEP_LABELS } from "./my-bids.ts";
 /**
  * The receipt contract of one sent step. `status: "reverted"` is a mined
  * revert (failed step, data not exception); a thrown send error is reported as
- * `unknown` at the mint layer and as a named failure here.
+ * `unknown` at the send layer and as a named failure here.
  */
 export interface FlowReceipt {
   txHash: string;
@@ -175,6 +172,6 @@ export function senderFlowDeps(sender: {
 }
 
 /** `UnsignedTx` → the sender seam's `SenderCall`, byte-preserving. */
-export function toSenderCall(call: UnsignedTx): SenderCall {
+function toSenderCall(call: UnsignedTx): SenderCall {
   return { to: call.to, data: call.data, value: call.value };
 }

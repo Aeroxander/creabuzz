@@ -134,7 +134,7 @@ async function dropCachedPage(slug: string): Promise<void> {
 
 // ── relay source of truth ───────────────────────────────────────────────────
 
-export async function fetchWikiPages(): Promise<WikiPage[]> {
+async function fetchWikiPages(): Promise<WikiPage[]> {
   // Tombstones come back in the same query so a deleted page disappears here
   // as well as on every other client.
   const events = await queryEvents(relayWsUrl(), {
@@ -163,7 +163,7 @@ export async function fetchWikiPages(): Promise<WikiPage[]> {
  * only and `buildTombstonedPages` returns an empty list (harmless, not an
  * error).
  */
-export async function fetchTombstonedPages(): Promise<TombstonedPage[]> {
+async function fetchTombstonedPages(): Promise<TombstonedPage[]> {
   const events = await queryEventsHttp([
     {
       kinds: [KIND_WIKI_PAGE, KIND_DELETE],

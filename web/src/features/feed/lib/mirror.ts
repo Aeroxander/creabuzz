@@ -48,7 +48,7 @@ export const DEFAULT_PUBLIC_RELAYS: readonly string[] = [
 export const MIRROR_TIMEOUT_MS = 5_000;
 
 /** Never more than this many outbox relays per post — a bounded mirror. */
-export const MAX_OUTBOX_RELAYS = 4;
+const MAX_OUTBOX_RELAYS = 4;
 
 const MIRROR_KEY = "buzz.feed.mirror";
 

@@ -1,6 +1,6 @@
 /**
  * The wizard's "everything else": the fields the four steps do not own —
- * launch id override, pitch and founder commitments, token import, chain and
+ * launch id override, pitch and founder commitments, the token, chain and
  * admission, supply allocation, the performance ladder, raw money overrides
  * and block window, sale hooks, discussion channels, and the agent-signing
  * option. Rendered inside the create wizard's Advanced drawer and, in one
@@ -14,7 +14,6 @@
 
 import type { ReactNode } from "react";
 
-import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { isEvmAddress, type VestingConfig } from "../../models";
 import type { CreateLaunchInput } from "../../use-launches";
@@ -22,27 +21,11 @@ import type { SaleCurrency } from "../../lib/sale-currency";
 import type { FundingStatus } from "../../lib/funding";
 import type { VestingIssue } from "../../lib/vesting-params";
 import { effectiveLaunchId } from "../../lib/wizard";
-import { raisesOffered } from "../../lib/raises-offered";
 import { FundingStatusEditor } from "../FundingStatusEditor";
 import { Field } from "./fields";
 
 /** The relay caps `buzz-channel` tags on a launch record. */
 const MAX_BOUND_CHANNELS = 8;
-
-const TOKEN_MODES = ["dao", "mint", "import"] as const;
-
-/**
- * The token kinds the form offers. A build that offers raises offers all three. One that does not (the contributor-only
- * hosted image) offers none to switch to: the only way in there is editing a launch already published, and an edit keeps
- * the kind the founder published rather than inviting a new sale.
- */
-function offeredModes(
-  current: (typeof TOKEN_MODES)[number],
-): readonly (typeof TOKEN_MODES)[number][] {
-  return raisesOffered()
-    ? TOKEN_MODES
-    : TOKEN_MODES.filter((mode) => mode === current);
-}
 
 /** Everything the advanced fields read or change — assembled by the dialog. */
 export interface AdvancedFieldsState {
@@ -60,17 +43,14 @@ export interface AdvancedFieldsState {
   /** The funding declaration; null is "nothing declared yet". */
   funding: FundingStatus | null;
   setFunding(next: FundingStatus | null): void;
+  /** Fixed: "dao" for every new launch; "mint" or "import" only for a launch published that way before D150. */
   tokenMode: "mint" | "import" | "dao";
-  setTokenMode(value: "mint" | "import" | "dao"): void;
   /** This build has no launch contract on the chosen network, so a DAO launch cannot be sent from here yet. */
   daoKitMissing: boolean;
   tokenName: string;
   setTokenName(value: string): void;
+  /** The token the record already links, shown read-only. */
   importAddress: string;
-  setImportAddress(value: string): void;
-  verifyState: "idle" | "checking" | "ok" | "missing" | "error";
-  setVerifyState(value: "idle" | "checking" | "ok" | "missing" | "error"): void;
-  verifyImport(): void;
   chainId: string;
   setChainId(value: string): void;
   admission: "curated" | "community";
@@ -132,14 +112,9 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
     setFunding,
     tokenMode,
     daoKitMissing,
-    setTokenMode,
     tokenName,
     setTokenName,
     importAddress,
-    setImportAddress,
-    verifyState,
-    setVerifyState,
-    verifyImport,
     chainId,
     setChainId,
     admission,
@@ -250,30 +225,9 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
       </details>
 
       <div className="rounded-xl border border-black/15 px-3 py-2 dark:border-white/15">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Token</span>
-          <div className="flex gap-1 rounded-lg bg-black/5 p-1 dark:bg-white/10">
-            {offeredModes(tokenMode).map((mode) => (
-              <button
-                key={mode}
-                aria-pressed={tokenMode === mode}
-                onClick={() => setTokenMode(mode)}
-                className={`rounded-md px-2 py-1 text-sm capitalize ${
-                  tokenMode === mode
-                    ? "bg-white shadow-sm dark:bg-black"
-                    : "text-black/60 dark:text-white/60"
-                }`}
-                type="button"
-              >
-                {mode === "dao"
-                  ? "Project Shares"
-                  : mode === "mint"
-                    ? "Mint new"
-                    : "Import"}
-              </button>
-            ))}
-          </div>
-        </div>
+        <span className="text-sm font-medium">
+          {tokenMode === "dao" ? "Project Shares" : "Token"}
+        </span>
         {tokenMode === "dao" ? (
           <div
             className="mt-2 flex flex-col gap-3"
@@ -306,67 +260,31 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
               />
             </Field>
           </div>
-        ) : tokenMode === "mint" ? (
-          <div className="mt-2 flex flex-col gap-3">
-            <p className="text-xs text-black/60 dark:text-white/60">
-              No addresses needed. Minting deploys a reserve-backed apptoken and
-              is a separate step after publishing. Name, symbol and total supply
-              are on the first step.
-            </p>
-            <Field id="launch-token-name" label="Token name">
-              <Input
-                id="launch-token-name"
-                onChange={(e) => setTokenName(e.target.value)}
-                placeholder="Nebula Token"
-                value={tokenName}
-              />
-            </Field>
-          </div>
         ) : (
-          <div className="mt-2">
-            <Field
-              id="launch-import"
-              label="Token contract"
-              hint="Already launched elsewhere? Paste its address."
-            >
-              <span className="flex gap-1">
+          <div
+            className="mt-2 flex flex-col gap-3"
+            data-testid="token-mode-earlier"
+          >
+            <p className="text-xs text-black/60 dark:text-white/60">
+              This launch was published with a token made outside a project DAO,
+              before new launches always sold the project&apos;s own Shares. It
+              stays as it was published.
+            </p>
+            {isEvmAddress(importAddress) ? (
+              <p className="text-xs text-black/60 dark:text-white/60">
+                Token contract:{" "}
+                <span className="font-mono">{importAddress}</span>
+              </p>
+            ) : null}
+            {tokenMode === "mint" ? (
+              <Field id="launch-token-name" label="Token name">
                 <Input
-                  id="launch-import"
-                  onChange={(e) => {
-                    setImportAddress(e.target.value);
-                    setVerifyState("idle");
-                  }}
-                  placeholder="0x…"
-                  value={importAddress}
+                  id="launch-token-name"
+                  onChange={(e) => setTokenName(e.target.value)}
+                  placeholder="Nebula Token"
+                  value={tokenName}
                 />
-                <Button
-                  disabled={
-                    !isEvmAddress(importAddress) || verifyState === "checking"
-                  }
-                  onClick={() => void verifyImport()}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {verifyState === "checking" ? "…" : "Verify"}
-                </Button>
-              </span>
-            </Field>
-            {verifyState === "ok" ? (
-              <p className="mt-1 text-xs text-emerald-600">
-                Contract found onchain.
-              </p>
-            ) : null}
-            {verifyState === "missing" ? (
-              <p className="mt-1 text-xs text-amber-600">
-                No contract at this address on the configured RPC.
-              </p>
-            ) : null}
-            {verifyState === "error" ? (
-              <p className="mt-1 text-xs text-amber-600">
-                Couldn&apos;t reach the chain. Format looks right; you can still
-                publish.
-              </p>
+              </Field>
             ) : null}
           </div>
         )}

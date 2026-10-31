@@ -1,15 +1,10 @@
 /**
  * The launchpad's chain settings: which networks the app knows, what the build says (`VITE_*`: the default chain, the
- * RPC endpoint, the kit and dev USDC addresses, the exchange's contracts and their pinned code, where history starts,
- * the price service, the mainnet switch), and which endpoint chain reads go to. Reading the chain itself is in
+ * RPC endpoint, the kit and dev USDC addresses, where history starts, the mainnet switch), and which endpoint chain
+ * reads go to. Reading the chain itself is in
  * `chain.ts`, which re-exports all of this, so callers import from either.
  */
 
-import {
-  type CodeHashes,
-  EXCHANGE_CONTRACTS,
-  parseCodeHash,
-} from "./lib/exchange-verify.ts";
 import { saleCurrencyFor, type SaleCurrency } from "./lib/sale-currency.ts";
 import { DEFAULT_SECONDS_PER_BLOCK } from "./lib/time-blocks.ts";
 
@@ -154,8 +149,6 @@ export interface ChainEnv {
   VITE_CREATE_FAUCETS?: string;
   /** The $CREATE court per chain, as JSON (N7). Where claimants appeal and jurors judge; a chain with no entry has none. */
   VITE_COURTS?: string;
-  /** The money forecast pools per chain, as JSON (N8): test networks only, on bounties on posts. */
-  VITE_FORECAST_POOLS?: string;
   /** The payout module factory per chain, as JSON (N10): test networks only; DAOs vote to start payouts with it. */
   VITE_PAYOUTS_FACTORIES?: string;
   /** The remix bond contract per chain, as JSON (N12): test networks only; needs the court and CREATE. */
@@ -166,26 +159,6 @@ export interface ChainEnv {
    * history for being too wide; a chain with no entry is then read from block 0, which a long chain cannot finish.
    */
   VITE_HISTORY_FROM_BLOCKS?: string;
-  /**
-   * The price service's base URL (`services/price-indexer`). Without one, prices come only from recorded bids and the
-   * sale's floor, as they always did.
-   */
-  VITE_PRICE_INDEXER_URL?: string;
-  /**
-   * The exchange's contracts per chain, as JSON: `{"31337":{"amm":"0x…","hook":"0x…","registry":"0x…","poolType":"0x…"}}`.
-   * A chain with no entry has no market to put Shares on or trade them in. On any chain but the local test chain an
-   * entry must also carry `"codehashes"` (the keccak256 of each contract's runtime code, same four names): the app
-   * reads the code at each address and offers a market only when it matches. An unpinned entry for a real chain is
-   * refused, so a build can never point at an address nobody checked.
-   */
-  VITE_LBAMM_ADDRESSES?: string;
-}
-
-export interface ExchangeAddresses {
-  amm: string;
-  hook: string;
-  registry: string;
-  poolType: string;
 }
 
 /** This build's settings (absent outside Vite, as in unit tests). */
@@ -266,14 +239,6 @@ export function payoutsFactory(
   return addressForChain(env?.VITE_PAYOUTS_FACTORIES, chainId);
 }
 
-/** The money forecast pools on `chainId`, or null when the build does not name them (N8, test networks only). */
-export function forecastPool(
-  chainId: string | number | null,
-  env: ChainEnv | undefined = viteEnv(),
-): string | null {
-  return addressForChain(env?.VITE_FORECAST_POOLS, chainId);
-}
-
 /** The $CREATE court on `chainId`, or null when the build does not name one. */
 export function courtAddress(
   chainId: string | number | null,
@@ -344,90 +309,6 @@ export function historyFromBlock(
       : 0n;
   } catch {
     return 0n;
-  }
-}
-
-/** The price service's base URL, or null when the build names none or it is not a plain http(s) URL. */
-export function priceIndexerUrl(
-  env: ChainEnv | undefined = viteEnv(),
-): string | null {
-  const raw = env?.VITE_PRICE_INDEXER_URL?.trim();
-  if (!raw) return null;
-  try {
-    const url = new URL(raw);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.origin + url.pathname.replace(/\/+$/, "")
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The local test chain: its exchange is a throwaway clone, so it needs no pinned code. */
-const LOCAL_CHAIN_ID = 31337;
-
-/** The code hashes a build pins for the exchange on `chainId`, or null when it pins none or pins them badly. */
-export function exchangeCodehashes(
-  chainId: string | number | null,
-  env: ChainEnv | undefined = viteEnv(),
-): CodeHashes | null {
-  const raw = env?.VITE_LBAMM_ADDRESSES?.trim();
-  if (!raw || chainId === null) return null;
-  try {
-    const map: unknown = JSON.parse(raw);
-    if (map === null || typeof map !== "object" || Array.isArray(map))
-      return null;
-    const entry = (map as Record<string, unknown>)[String(chainId)];
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry))
-      return null;
-    const pins = (entry as Record<string, unknown>).codehashes;
-    if (pins === null || typeof pins !== "object" || Array.isArray(pins))
-      return null;
-    const out: Record<string, string> = {};
-    for (const key of EXCHANGE_CONTRACTS) {
-      const hash = parseCodeHash((pins as Record<string, unknown>)[key]);
-      if (hash === null) return null;
-      out[key] = hash;
-    }
-    return out as CodeHashes;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The exchange's contracts on `chainId`, or null when the build names none (never guessed). Strict about every address,
- * and about pins: any chain but the local test chain needs its code hashes, or the entry is refused.
- */
-export function exchangeAddresses(
-  chainId: string | number | null,
-  env: ChainEnv | undefined = viteEnv(),
-): ExchangeAddresses | null {
-  const raw = env?.VITE_LBAMM_ADDRESSES?.trim();
-  if (!raw || chainId === null) return null;
-  try {
-    const map: unknown = JSON.parse(raw);
-    if (map === null || typeof map !== "object" || Array.isArray(map))
-      return null;
-    const entry = (map as Record<string, unknown>)[String(chainId)];
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry))
-      return null;
-    const fields = entry as Record<string, unknown>;
-    const out: Record<string, string> = {};
-    for (const key of ["amm", "hook", "registry", "poolType"]) {
-      const value = fields[key];
-      if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value))
-        return null;
-      out[key] = value.toLowerCase();
-    }
-    if (
-      Number(chainId) !== LOCAL_CHAIN_ID &&
-      exchangeCodehashes(chainId, env) === null
-    )
-      return null;
-    return out as unknown as ExchangeAddresses;
-  } catch {
-    return null;
   }
 }
 

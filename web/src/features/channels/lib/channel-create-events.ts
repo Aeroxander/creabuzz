@@ -20,7 +20,7 @@ export const KIND_CREATE_CHANNEL = 9007;
 /** NIP-29 add-member. The relay folds it into kind:39002 membership. */
 export const KIND_ADD_MEMBER = 9000;
 /** NIP-29 remove-user: take someone off a room or board. The server lets only its owners and admins remove others. */
-export const KIND_REMOVE_MEMBER = 9001;
+const KIND_REMOVE_MEMBER = 9001;
 
 export type EventTemplate = {
   kind: number;

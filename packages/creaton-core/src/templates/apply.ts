@@ -64,11 +64,7 @@ export type StepKind =
  * - `already-exists` / `unchanged`: the server already has it, skip;
  * - `needs-cli`: this app cannot do it (a skill from a web address).
  */
-export type StepAction =
-  | "create"
-  | "already-exists"
-  | "unchanged"
-  | "needs-cli";
+type StepAction = "create" | "already-exists" | "unchanged" | "needs-cli";
 
 /** One step of a plan. `item` is the marker's item id (or the template's own id for channels). */
 export interface PlanStep {
@@ -78,7 +74,7 @@ export interface PlanStep {
 }
 
 /** A marker-tagged record the server already holds. */
-export interface ExistingItem {
+interface ExistingItem {
   eventId: string;
   createdAt: number;
   /** Skills: the source recorded when it was written. */

@@ -74,7 +74,7 @@ export function useSelfServe() {
 }
 
 /** A refusal or failure, in words to show. `code` says which, for the few the screen treats differently. */
-export class CreateCommunityError extends Error {
+class CreateCommunityError extends Error {
   readonly code: string;
   constructor(code: string, message: string) {
     super(message);

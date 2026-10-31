@@ -29,7 +29,7 @@ export type WorkflowRunStatus =
   | "failed"
   | "cancelled";
 
-export type RunStep = {
+type RunStep = {
   stepId: string;
   status: string;
   error: string | null;
@@ -50,7 +50,7 @@ export type WorkflowRun = {
   createdAt: number;
 };
 
-export type RunApprovalStatus = "pending" | "granted" | "denied" | "expired";
+type RunApprovalStatus = "pending" | "granted" | "denied" | "expired";
 
 export type RunApproval = {
   /** Hex approval token hash — the resolution reference (`d` tag). */

@@ -18,7 +18,7 @@ import {
 import { useChainBlockHeight, useVoteTallies } from "@/features/feed/use-feed";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { ArrowRight, Lightbulb, LineChart, Plus, Rocket } from "lucide-react";
+import { ArrowRight, Lightbulb, Plus, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import { EMPTY_CHAT, ensureRooms } from "../use-launch-chat";
 
@@ -263,21 +263,14 @@ export function LaunchesPage() {
         action={
           <div className="flex items-center gap-2">
             {raises ? (
-              <>
-                <Button asChild size="sm" variant="ghost">
-                  <Link data-testid="open-markets" to="/markets">
-                    <LineChart className="mr-1 h-4 w-4" /> Markets
-                  </Link>
-                </Button>
-                <Button
-                  onClick={() => setCreateOpen(true)}
-                  size="sm"
-                  title="Skip the idea stage and set up a sale with your own terms"
-                  variant="ghost"
-                >
-                  Set up a sale
-                </Button>
-              </>
+              <Button
+                onClick={() => setCreateOpen(true)}
+                size="sm"
+                title="Skip the idea stage and set up a sale with your own terms"
+                variant="ghost"
+              >
+                Set up a sale
+              </Button>
             ) : null}
             <Button
               data-testid="start-idea"

@@ -16,9 +16,7 @@ import { usePendingWords } from "../use-pending-words";
 import { PendingWordsNote } from "./PendingWordsNote";
 import {
   AwardForm,
-  CollectFeesForm,
   type FormContext,
-  MarketForm,
   PayForm,
   ProjectForm,
 } from "./decision-forms";
@@ -54,8 +52,6 @@ type Kind =
   | "budget"
   | "project"
   | "award"
-  | "market"
-  | "fees"
   | "pay"
   | "freeze"
   | "unwind"
@@ -93,17 +89,6 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     id: "award",
     label: "Award Shares for submitted work",
     about: "Give Shares for work the reviewers approved.",
-  },
-  {
-    id: "market",
-    label: "Put Shares on the market",
-    about:
-      "Let people buy and sell the Shares, with a fee to the DAO on every trade.",
-  },
-  {
-    id: "fees",
-    label: "Collect the trading fees",
-    about: "Move the fees the market has collected into the treasury.",
   },
   {
     id: "freeze",
@@ -387,11 +372,7 @@ export function DecisionComposer({
               onChange={(event) => setKind(event.target.value as Kind)}
               value={kind}
             >
-              {KINDS.filter(
-                (k) =>
-                  (ctx.exchange || (k.id !== "market" && k.id !== "fees")) &&
-                  offered(k.id),
-              ).map((k) => (
+              {KINDS.filter((k) => offered(k.id)).map((k) => (
                 <option key={k.id} value={k.id}>
                   {k.label}
                 </option>
@@ -405,11 +386,7 @@ export function DecisionComposer({
           </label>
           <fieldset className="hidden gap-2 sm:grid sm:grid-cols-3">
             <legend className="sr-only">What kind of decision</legend>
-            {KINDS.filter(
-              (k) =>
-                (ctx.exchange || (k.id !== "market" && k.id !== "fees")) &&
-                offered(k.id),
-            ).map((k) => (
+            {KINDS.filter((k) => offered(k.id)).map((k) => (
               <button
                 aria-pressed={kind === k.id}
                 className={`rounded-lg border p-3 text-left text-sm ${kind === k.id ? "border-primary bg-primary/5" : "border-black/10 dark:border-white/10"}`}
@@ -569,16 +546,7 @@ export function DecisionComposer({
               key={`t${formKey}`}
               onSubmit={submit}
             />
-          ) : kind === "market" ? (
-            <MarketForm
-              blocked={blocked}
-              busy={busy}
-              ctx={ctx}
-              gate={gate}
-              key={`m${formKey}`}
-              onSubmit={submit}
-            />
-          ) : kind === "pay" ? (
+          ) : (
             <>
               <div
                 className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
@@ -612,15 +580,6 @@ export function DecisionComposer({
                 onSubmit={submit}
               />
             </>
-          ) : (
-            <CollectFeesForm
-              blocked={blocked}
-              busy={busy}
-              ctx={ctx}
-              gate={gate}
-              key={`f${formKey}`}
-              onSubmit={submit}
-            />
           )}
         </div>
       ) : null}

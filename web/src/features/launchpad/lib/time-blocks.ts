@@ -27,13 +27,13 @@
 export const SAMPLE_BLOCKS = 8;
 
 /** Blocks between "publish" and "auction starts": sign + relay round-trips. */
-export const START_BUFFER_SECONDS = 300;
+const START_BUFFER_SECONDS = 300;
 
 /** Half a day between the auction closing and claims opening. */
 export const CLAIM_DELAY_SECONDS = 12 * 60 * 60;
 
 /** Extra window, in basis points, so a slower-than-measured chain still ends on time. */
-export const END_SAFETY_MARGIN_BPS = 200;
+const END_SAFETY_MARGIN_BPS = 200;
 
 /** Base produces a block every 2 seconds (`launch-params.ts`). */
 export const DEFAULT_SECONDS_PER_BLOCK = 2;

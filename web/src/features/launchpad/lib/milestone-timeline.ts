@@ -55,7 +55,7 @@ export interface Verdict {
   approve: boolean;
 }
 
-export type TimelineStage = MilestoneStage | "agreed" | "given-up";
+type TimelineStage = MilestoneStage | "agreed" | "given-up";
 
 export interface ReviewerVerdict {
   reviewer: string;

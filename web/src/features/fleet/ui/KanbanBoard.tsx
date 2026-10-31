@@ -15,7 +15,7 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 export const ISSUE_MOVE_TARGETS = ["open", "done", "closed"];
 
-export const STATUS_COLUMNS = [
+const STATUS_COLUMNS = [
   { key: "open", label: "Open" },
   { key: "assigned", label: "Assigned" },
   { key: "in_progress", label: "In progress" },

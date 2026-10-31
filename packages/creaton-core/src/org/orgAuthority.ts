@@ -24,13 +24,13 @@
 // Not modeled: the relay's per-decision lookup budget (an I/O bound with no
 // meaning over an in-memory graph).
 
-export const MAX_ORG_CANDIDATES = 32;
-export const MAX_NODE_ANCHOR_DEPTH = 16;
-export const MAX_GRANT_CHAIN_DEPTH = 32;
+const MAX_ORG_CANDIDATES = 32;
+const MAX_NODE_ANCHOR_DEPTH = 16;
+const MAX_GRANT_CHAIN_DEPTH = 32;
 /** `subject` of the community default budget: covers agents with no budget. */
-export const DEFAULT_BUDGET_SUBJECT = "*";
+const DEFAULT_BUDGET_SUBJECT = "*";
 /** `content.type` of a kind:37011 record that is an ownership stake, not a delegation. */
-export const ORG_GRANT_TYPE_EQUITY = "equity";
+const ORG_GRANT_TYPE_EQUITY = "equity";
 
 /** A stored kind:37010 org node with its signer. */
 export type StoredOrgNode = {
@@ -72,7 +72,7 @@ export type OrgGraph = {
   grants: readonly StoredOrgGrant[];
 };
 
-export type Denial =
+type Denial =
   | "root_requires_admin"
   | "not_anchored"
   | "id_owned_by_another_author"
@@ -120,7 +120,7 @@ function parseU64(text: string): bigint | null {
 }
 
 /** Split a verb into name and optional argument: "read:#eng" → ["read", "#eng"]. */
-export function splitVerb(verb: string): [string, string | undefined] {
+function splitVerb(verb: string): [string, string | undefined] {
   const pos = verb.indexOf(":");
   if (pos === -1) return [verb, undefined];
   return [verb.slice(0, pos), verb.slice(pos + 1)];
@@ -132,7 +132,7 @@ function channelSegments(channel: string): string[] {
 }
 
 /** "#eng:fe" is contained by "#eng"; "#l" is not contained by "#leadership". */
-export function channelContainedBy(child: string, parent: string): boolean {
+function channelContainedBy(child: string, parent: string): boolean {
   const childSegs = channelSegments(child);
   const parentSegs = channelSegments(parent);
   if (parentSegs.length === 0 || childSegs.length < parentSegs.length) {

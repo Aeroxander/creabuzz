@@ -23,9 +23,9 @@ export const KIND_FORUM_VOTE = 45002;
 export const KIND_FORUM_COMMENT = 45003;
 export const KIND_DELETION = 5;
 /** Follow an open board: the server adds the sender to its members (NIP-29 join request). */
-export const KIND_JOIN_BOARD = 9021;
+const KIND_JOIN_BOARD = 9021;
 /** Stop following a board: the server takes the sender off its members (NIP-29 leave request). */
-export const KIND_LEAVE_BOARD = 9022;
+const KIND_LEAVE_BOARD = 9022;
 /** A board's members, written by the server: one `p` tag per person, with their role. */
 export const KIND_BOARD_MEMBERS = 39002;
 /** A board owner's or admin's removal of someone else's post or reply (NIP-29 delete-event). */

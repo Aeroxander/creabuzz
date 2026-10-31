@@ -18,7 +18,7 @@
 import { eventTagValue as tagValue } from "../../../shared/lib/event-fields.ts";
 
 /** The team page kind (human wiki) — the only kind with per-page history. */
-export const KIND_WIKI_PAGE = 44001;
+const KIND_WIKI_PAGE = 44001;
 
 /** The subset of a Nostr event this module needs. */
 export interface HistoryEvent {

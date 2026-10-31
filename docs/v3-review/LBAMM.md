@@ -1,5 +1,7 @@
 # LBAMM and apptokens: what was read, what it means for Creaton
 
+> **Removed in D150** (2026-10-31): the LBAMM market and price stack (Markets page, market decisions, trade card, price chart and indexer, `VITE_LBAMM_ADDRESSES`, `VITE_PRICE_INDEXER_URL`, the market scripts and specs) is gone from the tree; see tag `pre-deprecation-2026-10-31`.
+
 > **History (noted 2026-10-23).** Background reading for a market venue. No market is planned for contributor projects or the first raises (D77, [CONTRIBUTOR-TOKEN-TRADING.md](CONTRIBUTOR-TOKEN-TRADING.md)); LBAMM stays evaluation-only.
 
 Read on 2026-10-08 from two repositories cloned into a scratch directory outside this repo (never copied in):

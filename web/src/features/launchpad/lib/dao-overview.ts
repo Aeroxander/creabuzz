@@ -25,7 +25,7 @@ import type { WorkSnapshot } from "./work-read.ts";
 import { workTitle } from "./work-titles.ts";
 
 /** The tab that holds the answer. */
-export type AttentionTab = "decisions" | "work" | "milestones";
+type AttentionTab = "decisions" | "work" | "milestones";
 
 export interface AttentionItem {
   /** Stable, so a list re-renders without flicker. */

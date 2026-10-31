@@ -32,7 +32,7 @@ export interface ScoreRow {
   score: number;
 }
 
-export interface MemberProof {
+interface MemberProof {
   score: number;
   proof: string[];
 }
@@ -51,7 +51,7 @@ export interface RootBundle {
 }
 
 const MEMBER_RE = /^0x[0-9a-fA-F]{40}$/;
-export const ROOT_RE = /^0x[0-9a-fA-F]{64}$/;
+const ROOT_RE = /^0x[0-9a-fA-F]{64}$/;
 
 /** Lowercase, `0x`-prefixed member key; throws on a non-address. */
 function memberKey(member: string): string {

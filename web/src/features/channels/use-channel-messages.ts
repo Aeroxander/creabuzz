@@ -38,7 +38,7 @@ export const TIMELINE_CONTENT_KINDS = [
   KIND_HUDDLE_STARTED,
 ];
 
-export { isOverlayKind, OVERLAY_KINDS } from "./lib/overlay-kinds";
+export { isOverlayKind } from "./lib/overlay-kinds";
 
 /** Events keyed by id, newest-first list for ordering. */
 export interface ChannelMessages {

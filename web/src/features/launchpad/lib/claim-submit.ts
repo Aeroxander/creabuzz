@@ -5,8 +5,8 @@
  *
  * Completes the loop `unlock-plans.ts` describes: the record's `unlocks` row
  * becomes a real claim against the launch's ClaimStake, the tranche releases
- * on the VerifierSet's approval quorum, and the same attestation can ride
- * along a royalty schedule (`tranche-claims.ts` mapping decisions).
+ * on the VerifierSet's approval quorum (`tranche-claims.ts` mapping
+ * decisions).
  *
  * This module only COMPOSES (the `claim-tx.ts` / `bid-tx.ts` seam: unsigned
  * bytes). Sending stays in the wallet via the `SenderCall` shape. It returns
@@ -22,14 +22,8 @@ import {
   encodePayout,
   encodeSettle,
   encodeSubmitClaim,
-  encodeSubmitClaimWithSchedule,
 } from "./claim-tx.ts";
-import {
-  claimIdWord,
-  trancheAmount,
-  type TrancheScheduleRequest,
-  scheduleRequestIssues,
-} from "./tranche-claims.ts";
+import { claimIdWord, trancheAmount } from "./tranche-claims.ts";
 
 /** One sendable call in the `SenderCall` shape (`identity/lib/sponsoredSender`). */
 export interface OnchainCall {
@@ -42,7 +36,7 @@ export interface OnchainCall {
 export interface ClaimSubmitPlan {
   /** The launch's ClaimStake (the claim call's target). */
   claimStake: string;
-  /** The claim itself (submitClaim or submitClaimWithSchedule). */
+  /** The claim itself (`submitClaim`). */
   call: OnchainCall;
   /** The tranche this row releases, token base units (decimal). */
   amount: string;
@@ -83,9 +77,8 @@ export function planClaimSubmit(args: {
   >;
   row: UnlockMilestone;
   evidenceHash: string;
-  schedule?: TrancheScheduleRequest | null;
 }): ClaimSubmitPlan | null {
-  const { record, row, evidenceHash, schedule = null } = args;
+  const { record, row, evidenceHash } = args;
   const claimStake = record.claimStake;
   const supply = record.tokenPlan?.supply;
   const plan = record.unlocks;
@@ -112,26 +105,11 @@ export function planClaimSubmit(args: {
   } catch {
     return null;
   }
-  const call = schedule
-    ? {
-        to: claimStake,
-        data: encodeSubmitClaimWithSchedule(
-          claimWord,
-          amount,
-          0n,
-          evidence,
-          schedule.weight,
-          schedule.term,
-          schedule.band,
-          amount, // the tranche IS the earned allocation (double-pay rule)
-        ),
-        value: "0x0",
-      }
-    : {
-        to: claimStake,
-        data: encodeSubmitClaim(claimWord, amount, 0n, evidence),
-        value: "0x0",
-      };
+  const call = {
+    to: claimStake,
+    data: encodeSubmitClaim(claimWord, amount, 0n, evidence),
+    value: "0x0",
+  };
 
   return {
     claimStake,
@@ -154,9 +132,6 @@ export function planClaimSubmit(args: {
         : null,
   };
 }
-
-/** Schedule request issues, re-exported so the UI can gate the button. */
-export { scheduleRequestIssues };
 
 /**
  * The verdict half: the accepted verifier's `attest(claimId, approve)` on the

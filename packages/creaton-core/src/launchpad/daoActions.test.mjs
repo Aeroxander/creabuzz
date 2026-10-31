@@ -4,7 +4,6 @@ import { test } from "node:test";
 import {
   awardDecision,
   closeBudgetDecision,
-  collectFeesDecision,
   freezeClaimDecision,
   resolveFrozenClaimDecision,
   slashReviewerDecision,
@@ -187,34 +186,6 @@ test("an award is a call to the DAO itself, as cast encodes it", () => {
   );
 });
 
-test("collecting trading fees is a call to the exchange, as cast encodes it", () => {
-  const d = collectFeesDecision({
-    amm: AMM,
-    sharesToken: SHARES,
-    currency: CUR,
-    currencyDecimals: 6,
-    recipient: DAO,
-    amount: 12_345_678n,
-  });
-  assert.equal(d.to, AMM);
-  assert.equal(
-    d.data,
-    "0x5f06713d00000000000000000000000000000000000000000000000000000000000000b100000000000000000000000000000000000000000000000000000000000000cc00000000000000000000000000000000000000000000000000000000000000d00000000000000000000000000000000000000000000000000000000000bc614e",
-  );
-  refused(
-    () =>
-      collectFeesDecision({
-        amm: AMM,
-        sharesToken: SHARES,
-        currency: CUR,
-        currencyDecimals: 6,
-        recipient: DAO,
-        amount: 0n,
-      }),
-    "amount",
-  );
-});
-
 test("every action this module writes is read back as what it is", () => {
   const ctx = { currencyDecimals: 6 };
   const budget = describeAction(
@@ -254,19 +225,6 @@ test("every action this module writes is read back as what it is", () => {
   );
   assert.equal(award.kind, "award");
   assert.match(award.title, /^Award 25 Shares for the submission/);
-  const fees = describeAction(
-    collectFeesDecision({
-      amm: AMM,
-      sharesToken: SHARES,
-      currency: CUR,
-      currencyDecimals: 6,
-      recipient: DAO,
-      amount: 12_345_678n,
-    }),
-    ctx,
-  );
-  assert.equal(fees.kind, "fees");
-  assert.match(fees.lines[0], /12\.34/);
 });
 
 test("anything else is said to be unknown, with where it goes, and never guessed at", () => {
@@ -362,20 +320,6 @@ test("an action aimed anywhere but where a real one is aimed is never described 
   );
   assert.equal(
     describeAction({ ...project, to: OTHER }, { mandates: [MANDATE] }).kind,
-    "unknown",
-  );
-
-  const fees = collectFeesDecision({
-    amm: AMM,
-    sharesToken: SHARES,
-    currency: CUR,
-    currencyDecimals: 6,
-    recipient: DAO,
-    amount: 5n,
-  });
-  assert.equal(describeAction(fees, { amm: AMM }).kind, "fees");
-  assert.equal(
-    describeAction({ ...fees, to: OTHER }, { amm: AMM }).kind,
     "unknown",
   );
 });

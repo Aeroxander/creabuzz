@@ -13,7 +13,7 @@
  * Alias-free for `node --test`.
  */
 
-export type StartStepKey = "workspace" | "idea" | "raise" | "run";
+type StartStepKey = "workspace" | "idea" | "raise" | "run";
 
 /** Where a step's button goes. `start` is the `?start=` that opens a dialog on the launchpad. */
 export type StartTarget =

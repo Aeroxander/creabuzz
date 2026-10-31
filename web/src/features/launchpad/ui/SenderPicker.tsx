@@ -1,10 +1,12 @@
 /**
- * The launchpad money-action sender picker: wallet vs sponsored passkey,
- * exactly the `ui/RecordBidDialog.tsx` pattern extracted so the exit/claim and
- * mint flows share one picker implementation. The COMPOSER stays outside —
- * each flow builds its `SenderCall[]` once and hands the same bytes to either
- * sender (`identity/lib/sponsoredSender.test.mjs` binds that parity for bids;
- * `lib/exit-claim.test.mjs` binds it for exit/claim/mint).
+ * Raise screens only: the wallet-or-passkey picker for a raise's money steps (bids, leaving, milestone release, the
+ * trust gate). Since D139 every other screen sends as the one acting account through `use-chain-send.ts` and shows no
+ * picker; a contributor screen that shares a raise panel passes `followActingAccount`, which makes this follow that
+ * account. Do not add the picker to a new screen; send with `useChainSend` (or `useWalletSend` on a project's page).
+ *
+ * The COMPOSER stays outside: each flow builds its `SenderCall[]` once and hands the same bytes to either sender
+ * (`identity/lib/sponsoredSender.test.mjs` binds that parity for bids; `lib/exit-claim.test.mjs` binds it for
+ * exit/claim).
  */
 import { useEffect, useMemo, useState } from "react";
 
@@ -16,7 +18,7 @@ import type {
 import { zerodevConfigFromEnv } from "@/features/identity/lib/zerodev";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 
-import { makeSponsoredSender } from "../lib/sponsored-sender";
+import { makeSponsoredSender } from "../lib/passkey-sender";
 import type { Eip1193ProviderLike } from "../lib/wallet-sender";
 import { useActingAccount } from "../use-acting-account";
 import {
@@ -28,7 +30,6 @@ import {
 // Re-exported so dialogs keep one import site; the testable seam lives in
 // `lib/sender-choice.ts` (node --test cannot load this .tsx).
 export { resolveSender, senderErrorMessage };
-export type { SenderKind };
 
 /** Everything a dialog needs to render the picker and resolve a sender. */
 export interface SenderPickerState {

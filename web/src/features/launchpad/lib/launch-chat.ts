@@ -73,7 +73,7 @@ export function pendingBackers(
 }
 
 /** What the viewer can do with one room. */
-export type RoomStanding =
+type RoomStanding =
   /** In the room already: open it. */
   | "member"
   /** Open room, not in it yet: one click joins. */

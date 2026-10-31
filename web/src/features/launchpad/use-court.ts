@@ -28,7 +28,7 @@ import { endpointChain } from "./use-work";
 /** Where every query about the court lives, so a step sent from one re-reads them all. */
 export const COURT_QUERY = ["launchpad", "court"] as const;
 
-export interface CourtWallet {
+interface CourtWallet {
   create: bigint;
   createAllowance: bigint;
   fee: bigint;

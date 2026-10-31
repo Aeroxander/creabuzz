@@ -17,12 +17,11 @@ const DAY = 86_400;
 const UNIT = 10n ** 18n;
 
 export const SETTLE_WINDOW = 2 * DAY;
-export const EVERY = 7 * DAY;
-export const STEPS = 1024;
-export const CUT_BPS = 2000n;
-export const DAO_MIN_STEPS = 2;
+const EVERY = 7 * DAY;
+const STEPS = 1024;
+const CUT_BPS = 2000n;
 /** The most price steps the page lists, the busiest first. */
-export const MAX_PRICE_ROWS = 12;
+const MAX_PRICE_ROWS = 12;
 
 export const ROUND_SIGNATURES = {
   open: "open(address)",
@@ -216,7 +215,7 @@ export interface RoundOrder {
   claimed: boolean;
 }
 
-export interface PriceRow {
+interface PriceRow {
   step: number;
   price: bigint;
   /** Units offered at this price or below. */
@@ -508,7 +507,7 @@ export interface OpenClaim {
 }
 
 /** The most rounds read for what is left to collect, newest first. */
-export const MAX_OPEN_CLAIMS = 20;
+const MAX_OPEN_CLAIMS = 20;
 
 /**
  * Every round of `dao` where `wallet` placed an order it has not collected and that can be collected now (settled, or
@@ -605,7 +604,7 @@ export interface RoundHistory {
 }
 
 /** One finished holders' round from its `rounds(id)` record, or null for a funding round or one still running. */
-export function pastRoundOf(
+function pastRoundOf(
   id: bigint,
   record: string,
   now: number,

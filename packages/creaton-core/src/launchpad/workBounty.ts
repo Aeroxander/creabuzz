@@ -188,14 +188,14 @@ interface LogLike {
   data?: unknown;
 }
 
-export interface BountyOpened {
+interface BountyOpened {
   id: bigint;
   mandate: string;
   projectId: string;
   opener: string;
 }
 
-export function decodeBountyOpened(log: LogLike): BountyOpened | null {
+function decodeBountyOpened(log: LogLike): BountyOpened | null {
   const t = Array.isArray(log.topics) ? (log.topics as unknown[]) : [];
   if (
     t.length !== 4 ||
@@ -216,7 +216,7 @@ export function decodeBountyOpened(log: LogLike): BountyOpened | null {
 }
 
 /** The funder of one `Funded` log, or null for a log that is not one. */
-export function decodeFundedFunder(log: LogLike): string | null {
+function decodeFundedFunder(log: LogLike): string | null {
   const t = Array.isArray(log.topics) ? (log.topics as unknown[]) : [];
   if (
     t.length !== 3 ||

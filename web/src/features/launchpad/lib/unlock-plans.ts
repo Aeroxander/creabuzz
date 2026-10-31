@@ -41,7 +41,7 @@ export type UnlockMode = "milestones" | "time" | "none";
  * piece (`docs/next-gen-launchpad-plan.md` Phase C — "Finish the milestone
  * verifier set"), so today the founder is the attestor and the record says so.
  */
-export type UnlockVerifier = "founder";
+type UnlockVerifier = "founder";
 
 export interface UnlockMilestone {
   /** The kind:47005 `claim` id this row is tracked under. */

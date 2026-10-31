@@ -131,7 +131,7 @@ export const NOT_CONFIRMED_MESSAGE =
 export const STILL_GOING_MESSAGE =
   "Another step from your account is still going through. Wait a minute, refresh the page, then press again.";
 /** The passkey's signature was not accepted. */
-export const SIGNATURE_REFUSED_MESSAGE =
+const SIGNATURE_REFUSED_MESSAGE =
   "Your passkey's signature was not accepted, so nothing was sent. Press the button again; if it happens again, tell whoever runs this site.";
 /** The service that carries passkey steps did not answer: whether it went through is not known. */
 export const NO_ANSWER_MESSAGE =

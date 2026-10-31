@@ -22,7 +22,7 @@ export const RUN = 9 * 86_400;
 /** The first part of a run, worded "agreeing". */
 export const AGREE = 2 * 86_400;
 /** How long after the latest a run could be paid it can still be paid. */
-export const PAY_GRACE = 14 * 86_400;
+const PAY_GRACE = 14 * 86_400;
 /** The furthest a deadline can be from opening. */
 export const MAX_LENGTH = 365 * 86_400;
 /** The longest words or evidence, in bytes. */
@@ -30,8 +30,8 @@ export const MAX_TEXT = 1000;
 /** How long after the deadline (or a run that ended after it) a claimant can appeal, before refunds open. */
 export const APPEAL_WINDOW = 3 * 86_400;
 /** At most this many bounties are read for one post, and this many claims for one bounty; more are reported. */
-export const MAX_POST_BOUNTIES = 10;
-export const MAX_POST_CLAIMS = 200;
+const MAX_POST_BOUNTIES = 10;
+const MAX_POST_CLAIMS = 200;
 
 export const OPEN_BOUNTY_SIGNATURES = {
   open: "open(bytes32,string,uint64,uint256)",
@@ -276,7 +276,7 @@ export function decodePostBounty(hex: string): PostBountyRecord | null {
 }
 
 /** `claims(uint256,uint32)`: claimant, open, backing, evidence hash. Null for a claim that does not exist. */
-export function decodePostClaim(hex: string): {
+function decodePostClaim(hex: string): {
   claimant: string;
   open: boolean;
   backing: bigint;
@@ -689,7 +689,7 @@ export async function readPostBounties(
 }
 
 /** At most this many bounties, the newest, are read for a timeline's money chips. */
-export const MAX_INDEXED_BOUNTIES = 50;
+const MAX_INDEXED_BOUNTIES = 50;
 
 /**
  * What is behind one post, over all its bounties, kept apart: what was paid to work, and what unpaid bounties still hold
@@ -875,7 +875,7 @@ async function readPosition(
 }
 
 /** The topic a post's event id is filtered by (it is already 32 bytes). */
-export function postTopic(post: string): string {
+function postTopic(post: string): string {
   if (!WORD_RE.test(post)) throw new Error("not a post id");
   return post.toLowerCase();
 }

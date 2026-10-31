@@ -72,12 +72,11 @@ const NAV_ITEMS: readonly NavItem[] = [
     label: "Discover",
     // Not the compass: that is the timeline's Explore, which shows beside this on a phone.
     icon: LayoutGrid,
-    // Projects, launches and their markets are destinations within Discover.
+    // Projects and launches are destinations within Discover.
     matches: (p) =>
       p.startsWith("/discover") ||
       p.startsWith("/projects") ||
-      p.startsWith("/launchpad") ||
-      p === "/markets",
+      p.startsWith("/launchpad"),
   },
   {
     to: "/c",

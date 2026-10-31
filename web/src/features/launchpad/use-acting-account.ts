@@ -38,7 +38,7 @@ import {
   saveActingKind,
   sendLanded,
 } from "./lib/acting-account";
-import { makeSponsoredSender } from "./lib/sponsored-sender";
+import { makeSponsoredSender } from "./lib/passkey-sender";
 import { makeWalletAuctionEffects } from "./lib/wallet-effects";
 import {
   type ConnectedWalletState,

@@ -18,7 +18,7 @@ import { needAccountTo } from "@/features/identity/lib/account-copy";
  * each vote counts toward *ranking* is a separate, internal matter (`trust-weight.ts`), so no decimal ever
  * appears and the same like reads the same everywhere.
  */
-export function netVotes(tally: Pick<VoteTally, "up" | "down">): number {
+function netVotes(tally: Pick<VoteTally, "up" | "down">): number {
   return tally.up - tally.down;
 }
 

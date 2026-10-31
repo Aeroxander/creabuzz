@@ -47,12 +47,12 @@ const STAGES: readonly string[] = [
   "failed",
 ];
 
-export function isLaunchStage(value: unknown): value is LaunchStage {
+function isLaunchStage(value: unknown): value is LaunchStage {
   return typeof value === "string" && STAGES.includes(value);
 }
 
 /** Strict `["hook", <0x-address>, <bucket>]` parse (NIP-LP chain addresses). */
-export function parseHookTags(
+function parseHookTags(
   tags: string[][],
 ): { address: string; bucket: string }[] {
   const out: { address: string; bucket: string }[] = [];
@@ -137,9 +137,10 @@ export interface LaunchRecord {
    */
   hooks: { address: string; bucket: string }[];
   /**
-   * Tranche/royalty enforcer wiring (token-lifecycle-design.md): the launch's
-   * RoyaltyDistributor and ClaimStake, set once deployed. Absent on older
-   * records and pre-deploy launches — the mirror-only flow applies then.
+   * Tranche enforcer wiring: the launch's ClaimStake, set once deployed.
+   * `distributor` is a pre-v3 RoyaltyDistributor tag, still parsed so an edit
+   * keeps an old record's tag (the royalty view was removed in D150, see tag
+   * pre-deprecation-2026-10-31). Absent on pre-deploy launches.
    */
   distributor: string | null;
   claimStake: string | null;
@@ -235,7 +236,7 @@ export interface LaunchUpdate {
   workArea?: { mandate: string; id: string; check: string };
 }
 
-export type ProposalKind = "plain" | "futarchy-budget" | "signal";
+type ProposalKind = "plain" | "futarchy-budget" | "signal";
 
 /**
  * The execution intent for majeur's `executeByVotes` (op/to/value/data/nonce)
@@ -323,7 +324,7 @@ export interface Launch {
   receipts: LaunchReceipt[];
 }
 
-export function tagValue(event: NostrEvent, name: string): string | null {
+function tagValue(event: NostrEvent, name: string): string | null {
   const tag = event.tags.find((t) => t[0] === name);
   return tag && tag.length >= 2 ? tag[1] : null;
 }
@@ -581,23 +582,6 @@ export function suggestSymbol(name: string): string {
     .slice(0, 4);
 }
 
-/** Exact CLI mint command for a mint-mode plan (copy-paste handoff). */
-export function mintCommandForPlan(input: {
-  tokenName: string;
-  symbol: string;
-  supply: string;
-  treasury: string;
-}): string {
-  const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
-  return [
-    "buzz launchpad mint-token",
-    `--name ${quote(input.tokenName)}`,
-    `--symbol ${input.symbol}`,
-    `--supply ${input.supply}`,
-    `--treasury ${input.treasury}`,
-  ].join(" ");
-}
-
 /**
  * Split a mirror's `a` tag into its author-qualified identity.
  *
@@ -619,7 +603,7 @@ function launchRefFrom(
   return { launchId: id, launchKey: `${author}:${id}` };
 }
 
-export function parseLaunchBid(event: NostrEvent): LaunchBid | null {
+function parseLaunchBid(event: NostrEvent): LaunchBid | null {
   if (event.kind !== KIND_LAUNCH_BID) return null;
   const ref = launchRefFrom(event);
   if (!ref) return null;
@@ -941,7 +925,7 @@ export function parseScoreRoot(event: NostrEvent): ScoreRoot | null {
   };
 }
 
-export interface VestingTranche {
+interface VestingTranche {
   /** Unlocks when the token price reaches this multiple of the floor. */
   multiple: number;
   /** Tranche size in percent of the unlocked pool (sums to 100). */

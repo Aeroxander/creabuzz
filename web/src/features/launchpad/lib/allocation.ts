@@ -20,7 +20,7 @@ export interface SupplyAllocation {
 }
 
 /** Sale first: it is the part a launch is priced from. */
-export const ALLOCATION_LABELS: Array<{
+const ALLOCATION_LABELS: Array<{
   key: keyof SupplyAllocation;
   label: string;
   hint: string;
@@ -66,7 +66,7 @@ export const STANDARD_ALLOCATION: SupplyAllocation = {
  * launch shows three, and the DAO decides later what to do with its reserve. The record keeps its six numbers (older
  * launches and the other token modes use them); a DAO launch writes its whole reserve into `treasury`.
  */
-export const DAO_RESERVE_KEYS = [
+const DAO_RESERVE_KEYS = [
   "treasury",
   "liquidity",
   "milestones",
@@ -119,28 +119,6 @@ export function startingAllocation(
   );
 }
 
-const sameShares = (a: SupplyAllocation, b: SupplyAllocation) =>
-  (Object.keys(a) as Array<keyof SupplyAllocation>).every(
-    (key) => a[key] === b[key],
-  );
-
-/**
- * The split after the kind of token changes. A founder who has not touched the standard split gets the other kind's
- * standard one (an own DAO shows three shares, the other modes six); anything they edited stays as they set it.
- */
-export function allocationForMode(
-  allocation: SupplyAllocation,
-  ownDao: boolean,
-): SupplyAllocation {
-  if (ownDao && sameShares(allocation, STANDARD_ALLOCATION)) {
-    return { ...STANDARD_DAO_ALLOCATION };
-  }
-  if (!ownDao && sameShares(allocation, STANDARD_DAO_ALLOCATION)) {
-    return { ...STANDARD_ALLOCATION };
-  }
-  return allocation;
-}
-
 /** One share edited. An own-DAO launch shows the DAO's share as one number, and it all lives in the treasury share. */
 export function changeAllocation(
   allocation: SupplyAllocation,
@@ -162,7 +140,7 @@ export interface AllocationRow {
 }
 
 /** The three shares an own-DAO launch shows. */
-export const DAO_ALLOCATION_LABELS: ReadonlyArray<{
+const DAO_ALLOCATION_LABELS: ReadonlyArray<{
   key: "sale" | "team" | "treasury";
   label: string;
   hint: string;

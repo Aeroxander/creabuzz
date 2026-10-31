@@ -60,7 +60,7 @@ export const PROJECT_EVENT_KINDS = [
 const PROJECTS_KEY = "projects" as const;
 
 /** Everything the board and detail pages derive from. */
-export interface ProjectEvents {
+interface ProjectEvents {
   pitches: PitchManifest[];
   nodes: NostrEvent[];
   requests: JoinRequest[];
@@ -68,7 +68,7 @@ export interface ProjectEvents {
 }
 
 /** One org node: the project's seat structure, `holders` = the founder. */
-export function buildOrgNodeTemplate(input: {
+function buildOrgNodeTemplate(input: {
   nodeId: string;
   name: string;
   holder: string;
@@ -209,7 +209,7 @@ function dTag(event: { tags: string[][] }): string | null {
 }
 
 /** An unsigned template ready to sign and publish (see `lib/*` builders). */
-export interface EventTemplate {
+interface EventTemplate {
   kind: number;
   tags: string[][];
   content: string;

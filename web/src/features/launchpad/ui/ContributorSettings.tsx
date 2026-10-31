@@ -19,7 +19,7 @@ import { useCreateLaunch } from "../use-launches";
 import { TextAreaField, TextField } from "./decision-fields";
 
 /** Why these words cannot be saved, or null when they can. */
-export function settingsProblem(name: string, pitch: string): string | null {
+function settingsProblem(name: string, pitch: string): string | null {
   if (name.trim() === "") return "Give the project a name.";
   if (name.trim().length > NAME_MAX)
     return `Keep the name to ${NAME_MAX} characters.`;

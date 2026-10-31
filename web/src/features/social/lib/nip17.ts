@@ -18,8 +18,8 @@ import { getEventHash, verifyEvent } from "nostr-tools/pure";
 import { KIND_GIFT_WRAP } from "../../../shared/constants/kinds.ts";
 import type { SignedEvent } from "./timeline.ts";
 
-export const KIND_SEAL = 13;
-export const KIND_DIRECT_MESSAGE = 14;
+const KIND_SEAL = 13;
+const KIND_DIRECT_MESSAGE = 14;
 
 /** NIP-59 randomizes seal and wrap timestamps up to two days into the past. */
 const MAX_JITTER_SECONDS = 2 * 24 * 60 * 60;

@@ -10,7 +10,7 @@ import { Composer } from "./Composer";
 import { NoteCard } from "./NoteCard";
 
 /** Launch coordinate -> launch name, from the launches already loaded. */
-export function useLaunchNames(): (coord: string) => string | null {
+function useLaunchNames(): (coord: string) => string | null {
   const launches = useLaunches();
   const names = useMemo(() => {
     const map = new Map<string, string>();

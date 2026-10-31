@@ -31,7 +31,7 @@ const ZERO_ADDRESS = `0x${"0".repeat(40)}`;
 
 /** The lock's own caps (`MAX_TRANCHES`, `MAX_TEAM`). */
 export const MAX_CHALLENGE_MILESTONES = 8;
-export const MAX_CHALLENGE_TEAM = 16;
+const MAX_CHALLENGE_TEAM = 16;
 
 export const CHALLENGE_SIGNATURES = {
   submit: "submit(uint256,bytes32)",
@@ -169,7 +169,7 @@ export interface ChallengeTerms {
   deposit: bigint;
 }
 
-export type ChallengePhase = "none" | "pending" | "voting" | "stood";
+type ChallengePhase = "none" | "pending" | "voting" | "stood";
 const PHASES: ChallengePhase[] = ["none", "pending", "voting", "stood"];
 
 export interface ChallengeObjection {

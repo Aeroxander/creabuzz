@@ -89,3 +89,5 @@ cd contracts && FOUNDRY_LINT_LINT_ON_BUILD=false forge test
 The whole-loop acceptance run (`scripts/loop-test.sh`, 31 checks against a
 live relay) and the real-chain browser suite (`scripts/web-auction-e2e.sh`,
 6 journeys including ETH and USDC graduation) are the behavioral evidence.
+(`scripts/web-auction-e2e.sh` was removed in D150 with the hand-deployed auction path it tested, see tag
+pre-deprecation-2026-10-31; the launch kit's journeys replace it.)

@@ -8,11 +8,18 @@ import { accountGate } from "./lib/acting-account";
 import { useActingAccount } from "./use-acting-account";
 
 /**
- * Sending as the acting account (D139) on the build's own network, for a screen that is not a project's page (a bounty
- * on a post) or a card on its Funds tab. Like `useWalletSend`: it says why it cannot send (no account, the wrong
- * network), keeps one send going at a time, and re-reads every query under `refresh` once the step landed.
+ * The one way a screen sends as the acting account (D139: a passkey account with covered fees, or the browser's
+ * wallet). It says why it cannot send (no account, the wrong network), keeps one send going at a time, and re-reads
+ * every query under each `refresh` key once the step landed. A screen on a project's page uses `useWalletSend`, which
+ * is this hook on the project's network; a card elsewhere (a bounty on a post, the Funds tab) calls it directly with
+ * the build's network. `chainId` is null when a project names no network: nothing can be sent then.
+ *
+ * Only raise screens let a person pick wallet or passkey per step (`ui/SenderPicker.tsx`); everything else sends here.
  */
-export function useChainSend(chainId: number, refresh: readonly unknown[]) {
+export function useChainSend(
+  chainId: number | null,
+  ...refresh: (readonly unknown[])[]
+) {
   const wallet = useActingAccount();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState<string | null>(null);
@@ -20,12 +27,15 @@ export function useChainSend(chainId: number, refresh: readonly unknown[]) {
 
   const gate = accountGate(wallet, chainId, networkLabel);
 
-  /** Send `calls` in order as one step; true once they landed and the page re-read what it shows. */
+  /**
+   * Send `calls` in order as one step (one passkey prompt, or one wallet prompt each); true once they landed and the
+   * page re-read what it shows.
+   */
   const sendBatch = async (
     key: string,
     calls: SenderCall[],
   ): Promise<boolean> => {
-    if (gate || calls.length === 0) return false;
+    if (chainId === null || gate || calls.length === 0) return false;
     setBusy(key);
     setFailure(null);
     try {
@@ -35,8 +45,13 @@ export function useChainSend(chainId: number, refresh: readonly unknown[]) {
       setFailure(error instanceof Error ? error.message : String(error));
       return false;
     } finally {
-      // Re-read whatever happened, a failure too: part of a step may have landed.
-      await queryClient.invalidateQueries({ queryKey: [...refresh] });
+      // Re-read whatever happened, a failure too: part of a step may have landed, and pressing the button again must
+      // build the rest from what is on chain.
+      await Promise.all(
+        refresh.map((queryKey) =>
+          queryClient.invalidateQueries({ queryKey: [...queryKey] }),
+        ),
+      );
       setBusy(null);
     }
   };

@@ -69,15 +69,17 @@ where taken. The screen re-check's open items (STILL #10 to STILL #96, NEW1 to N
 
 ## Waiting on you
 
+Rows marked done were removed on 2026-10-31 (D150); the commit before them is tagged `pre-deprecation-2026-10-31`.
+
 | Item | What | Recommendation |
 |---|---|---|
 | #12 | Two discussion systems on one project (feed notes and board posts), three vote widgets, three composers | Merge after the contributor pilot: make Discussion a project-tagged board feed and keep old notes read-only, unless the pilot shows people confused by two places sooner. |
 | #19 | Matched exits and weekly rounds compete for one exchange slot | When the freeze lifts, keep weekly rounds (funding terms build on them) and retire matched exits; first take the matched-exit sale out of `web-contributor-e2e`'s journey. |
-| #20 | Four send paths and two modules named one hyphen apart | Do it now: small, no user effect (one hook wraps the other, the passkey sender renamed, the wallet-or-passkey picker marked raise-only); check accepting a submission and one Funds step after. |
+| #20 | Four send paths and two modules named one hyphen apart | Done in D150: `useWalletSend` wraps `useChainSend`; the passkey sender renamed `passkey-sender.ts`; the picker marked raise-only; an unused governance sender deleted. |
 | #21 | 43 web files that only re-export the core package | A mechanical import change after the pilot; the type check catches any miss. |
-| #22 | The LBAMM market and price stack (page, decisions, price sparkline, indexer, scripts, specs, CLI command) | Remove it, tagging the commit first: never shipped, on hold since D12, and its licence rules out live use. |
-| #23 | The pre-kit raise path (mint or imported token, the manual auction deploy, their journeys) | Remove it once `dogfood-raise.sh`'s chain setup is split from its mint (`dev-chain` needs the setup); keep old mint records readable. |
-| #24 | Pre-v3 tokenomics: royalties, float mode, buyback | Remove the app and CLI parts and the float journey; leave the frozen contracts for a later contracts clean-up. |
-| #26 | Money forecasts (N8) | Remove from the app, keeping the contract and [MONEY-FORECASTS.md](MONEY-FORECASTS.md) on a tag: high legal risk (D120), off everywhere, and only works on post bounties, also off. |
-| #29 | No check for unused exports or orphan files | Add one (knip or an import-graph scan) to `pnpm check` with a short allowlist, after the removals above, so dead code stops coming back. |
-| #30 | The CLI's launchpad commands are raise-era and lack the contributor flow | Hide the raise and market commands now; add contributor-kit and work-area commands before agents take part in a pilot. |
+| #22 | The LBAMM market and price stack (page, decisions, price sparkline, indexer, scripts, specs, CLI command) | Done in D150, tag `pre-deprecation-2026-10-31`. The sale's own price card stays on raise pages. The LBAMM contracts and submodules wait for the contracts clean-up. |
+| #23 | The pre-kit raise path (mint or imported token, the manual auction deploy, their journeys) | Done in D150: chain setup split to `scripts/apptoken-infra.sh`; mint, import and hand-deployed auctions removed from the web app; old minted launches open read-only. Desktop keeps its copy. |
+| #24 | Pre-v3 tokenomics: royalties, float mode, buyback | Done in D150 for the app, the CLI and the float journey. The core royalty code stays while desktop imports it. |
+| #26 | Money forecasts (N8) | Done in D150; the no-money forecasts stay. |
+| #29 | No check for unused exports or orphan files | Done in D150: knip (`knip.jsonc`) runs as `pnpm -C web check:unused`, part of `pnpm -C web check` and CI. |
+| #30 | The CLI's launchpad commands are raise-era and lack the contributor flow | Half done in D150: `buzz launchpad market` removed, raise commands hidden unless `BUZZ_DEV_RAISE_COMMANDS=1`. Still open: contributor-kit and work-area commands before agents join a pilot. |

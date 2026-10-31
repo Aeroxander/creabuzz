@@ -24,11 +24,11 @@
  */
 
 export const KIND_TASK = 44011;
-export const KIND_TASK_REACTION = 7;
+const KIND_TASK_REACTION = 7;
 export const KIND_CONTRIBUTION = 37013;
 
 /** Content fields that persist until a row writes them again. */
-export const TASK_STICKY_FIELDS = [
+const TASK_STICKY_FIELDS = [
   "title",
   "description",
   "priority",
@@ -192,7 +192,7 @@ export interface PlannableTask {
 }
 
 /** Statuses that count as "not started yet" for Next up. */
-export const NEXT_UP_STATUSES = new Set(["open", "assigned"]);
+const NEXT_UP_STATUSES = new Set(["open", "assigned"]);
 
 const PRIORITY_RANK: Record<PlannableTask["priority"], number> = {
   urgent: 0,

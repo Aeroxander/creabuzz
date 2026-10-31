@@ -41,7 +41,7 @@ const PERSONAL_SHARE = 0.5;
 const PRIORITY_UPDATE_BONUS_SECONDS = 6 * 60 * 60;
 
 /** The follow graph and community size, shared by every ranked list. */
-export function useTrustModel() {
+function useTrustModel() {
   const me = existingUserPubkey();
   const lists = useQuery({
     queryKey: [...socialKeys.lists, "trust-graph"],

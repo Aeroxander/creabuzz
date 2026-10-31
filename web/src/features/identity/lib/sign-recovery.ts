@@ -11,7 +11,7 @@
  */
 
 /** The action the reader can take right now. */
-export type SignRecoveryAction = "signin" | "create";
+type SignRecoveryAction = "signin" | "create";
 
 export interface SignRecovery {
   action: SignRecoveryAction;

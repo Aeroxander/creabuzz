@@ -16,8 +16,6 @@ import {
   decodeQuantity,
   decodeU256,
   defaultChainPreset,
-  exchangeAddresses,
-  exchangeCodehashes,
   BLOCK_LOOKUP_CONCURRENCY,
   ethBlockNumber,
   ethBlockTimestamps,
@@ -28,7 +26,6 @@ import {
   getRpcEndpoint,
   historyFromBlock,
   isDevBuild,
-  priceIndexerUrl,
   reportReadFailure,
 } from "./chain.ts";
 
@@ -359,115 +356,6 @@ test("getRpcEndpoint: a deployed site never defaults to the visitor's own machin
       "app.example.com",
     ),
     "https://rpc.example.org",
-  );
-});
-
-test("the price service is only ever a plain http(s) address the build names", () => {
-  assert.equal(priceIndexerUrl({}), null);
-  assert.equal(priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "  " }), null);
-  assert.equal(
-    priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "http://127.0.0.1:42069/" }),
-    "http://127.0.0.1:42069",
-  );
-  assert.equal(
-    priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "https://prices.example/api/" }),
-    "https://prices.example/api",
-  );
-  assert.equal(priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "ftp://x" }), null);
-  assert.equal(
-    priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "javascript:1" }),
-    null,
-  );
-  assert.equal(priceIndexerUrl({ VITE_PRICE_INDEXER_URL: "nonsense" }), null);
-});
-
-test("the exchange's contracts are only ever the ones the build names, every address checked", () => {
-  const good = {
-    amm: "0x00000000000000000000000000000000000000A1",
-    hook: "0x00000000000000000000000000000000000000b2",
-    registry: "0x00000000000000000000000000000000000000c3",
-    poolType: "0x00000000000000000000000000000000000000d4",
-  };
-  const env = (value) => ({ VITE_LBAMM_ADDRESSES: JSON.stringify(value) });
-  assert.deepEqual(exchangeAddresses(31337, env({ 31337: good })), {
-    amm: good.amm.toLowerCase(),
-    hook: good.hook,
-    registry: good.registry,
-    poolType: good.poolType,
-  });
-  assert.equal(exchangeAddresses(1, env({ 31337: good })), null);
-  assert.equal(exchangeAddresses(31337, {}), null);
-  assert.equal(exchangeAddresses(null, env({ 31337: good })), null);
-  assert.equal(
-    exchangeAddresses(31337, env({ 31337: { ...good, hook: "nope" } })),
-    null,
-  );
-  assert.equal(
-    exchangeAddresses(31337, env({ 31337: { amm: good.amm } })),
-    null,
-  );
-  assert.equal(
-    exchangeAddresses(31337, { VITE_LBAMM_ADDRESSES: "{not json" }),
-    null,
-  );
-  assert.equal(exchangeAddresses(31337, env([good])), null);
-});
-
-test("an exchange on any chain but the local one needs pinned code, or it is refused", () => {
-  const addresses = {
-    amm: "0x00000000000000000000000000000000000000a1",
-    hook: "0x00000000000000000000000000000000000000a2",
-    registry: "0x00000000000000000000000000000000000000a3",
-    poolType: "0x00000000000000000000000000000000000000a4",
-  };
-  const pins = Object.fromEntries(
-    Object.keys(addresses).map((k, i) => [k, `0x${String(i + 1).repeat(64)}`]),
-  );
-  const env = (entry) => ({
-    VITE_LBAMM_ADDRESSES: JSON.stringify({ 11155111: entry, 31337: entry }),
-  });
-
-  // Unpinned: fine on the local test chain, refused anywhere real.
-  assert.notEqual(exchangeAddresses(31337, env(addresses)), null);
-  assert.equal(exchangeAddresses(11155111, env(addresses)), null);
-  assert.equal(exchangeCodehashes(11155111, env(addresses)), null);
-
-  // Pinned: accepted, and the pins read back lower-cased.
-  const pinned = { ...addresses, codehashes: pins };
-  assert.notEqual(exchangeAddresses(11155111, env(pinned)), null);
-  assert.deepEqual(exchangeCodehashes(11155111, env(pinned)), pins);
-  assert.deepEqual(
-    exchangeCodehashes(
-      11155111,
-      env({
-        ...addresses,
-        codehashes: Object.fromEntries(
-          Object.entries(pins).map(([k, v]) => [
-            k,
-            v.toUpperCase().replace("0X", "0x"),
-          ]),
-        ),
-      }),
-    ),
-    pins,
-  );
-
-  // A pin that is missing, short, or not hex makes the whole entry unusable.
-  assert.equal(
-    exchangeAddresses(
-      11155111,
-      env({ ...addresses, codehashes: { ...pins, hook: "0x1234" } }),
-    ),
-    null,
-  );
-  const { poolType: _dropped, ...partial } = pins;
-  assert.equal(
-    exchangeAddresses(11155111, env({ ...addresses, codehashes: partial })),
-    null,
-  );
-  assert.equal(
-    exchangeAddresses(11155111, env({ ...addresses, codehashes: [pins] })),
-    null,
   );
 });
 

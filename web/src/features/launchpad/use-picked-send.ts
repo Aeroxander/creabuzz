@@ -2,7 +2,7 @@
  * How a screen with a sender picker sends (D144): on a contributor project, as the account the rest of the page acts as
  * (`useActingAccount().sendCalls`, the seam the Decisions tab uses); elsewhere, from the account its own picker is on
  * (`lib/picked-send.ts`). Either way the calls go out on the project's network only and the promise resolves once they
- * landed and succeeded.
+ * landed and succeeded. Raise screens only (see `ui/SenderPicker.tsx`); a new screen sends with `useChainSend`.
  */
 import type { SenderCall } from "@/features/identity/lib/sponsoredSender";
 

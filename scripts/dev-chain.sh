@@ -12,10 +12,11 @@
 # What "fully-loaded" means, in dependency order:
 #   1. anvil (chain id 31337, background, logged, pid file)
 #   2. apptoken infrastructure — TokenMaster router, pools, transfer validator,
-#      and the DEV-ONLY router allowlist patch. This REUSES the existing
-#      `scripts/dogfood-raise.sh` machinery (its own idempotent bootstrap +
-#      patch + apptoken mint) rather than duplicating it; see that script's
-#      header for the why.
+#      and the DEV-ONLY router allowlist patch: `scripts/apptoken-infra.sh`
+#      (idempotent bootstrap + patch; see that script's header for the why).
+#      It used to be the first half of scripts/dogfood-raise.sh, which also
+#      minted an apptoken; that mint was removed in D150 (see tag
+#      pre-deprecation-2026-10-31).
 #   3. OrgBinding + Summoner + Moloch DAO for org formation
 #      (`contracts/script/DeployOrgDao.s.sol`, which writes the
 #      `deployments/org-dao-<chainid>.json` manifest)
@@ -27,7 +28,7 @@
 #      and the WorkAreaBounty (outside money behind a work area) + `deployments/work-bounty-<chainid>.json`
 #      and the OpenBounty (money behind a post) + `deployments/open-bounty-<chainid>.json`
 #      then the optional test-network features, each with its own manifest: test CREATE and its faucet, the court,
-#      money forecasts, the payouts factory, remix bonds, matched exits and weekly rounds (the journeys use them)
+#      money forecasts (contract only: removed from the app in D150), the payouts factory, remix bonds, matched exits and weekly rounds (the journeys use them)
 #   5. funded dev accounts, printed as a table (keys are DEV ONLY, labeled)
 #
 # What it prints for the web app: first the settings for a build like the hosted pilot's (contributor projects only,
@@ -40,7 +41,7 @@
 #
 # The steps above run the packaged apptoken bootstrap (unlocked dev accounts +
 # multisig impersonation) and a dev-only router storage patch — exactly the
-# two things `scripts/dogfood-raise.sh` documents as local-only. This script
+# two things `scripts/apptoken-infra.sh` documents as local-only. This script
 # refuses any non-loopback RPC URL and only ever boots its own anvil on
 # loopback, so those steps cannot reach a real chain from here.
 # ════════════════════════════════════════════════════════════════════════════
@@ -294,7 +295,7 @@ plan_lines() {
   echo "  chain:          $chain_state"
   echo "  state:          $STATE_DIR (anvil pid file + logs)"
   echo "  1. anvil        boot, log $LOG_FILE  [skipped: a dev anvil already answers]"
-  echo "  2. apptoken infra  scripts/dogfood-raise.sh  [idempotent: skips deployed router/pools/validator, the DEV-ONLY allowlist patch, and an already-minted apptoken]"
+  echo "  2. apptoken infra  scripts/apptoken-infra.sh  [idempotent: skips deployed router/pools/validator and the DEV-ONLY allowlist patch]"
   echo "  3. org dao      forge script DeployOrgDao.s.sol  [skipped: deployments/org-dao-$DEV_CHAIN_ID.json names an OrgBinding that answers summoner()]"
   echo "  4. currency     $CURRENCY_NAME ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)  [skipped: deployments/dev-currency-$DEV_CHAIN_ID.json names a token that still says $CURRENCY_SYMBOL]"
   echo "  5. cca          place the CCA factory + Permit2 at their canonical addresses (anvil_setCode)  [skipped: the code there already matches the build output]"
@@ -355,24 +356,19 @@ boot_anvil() {
   echo "   ✓ anvil up (PID $pid)"
 }
 
-# `apptoken infra` — the whole dogfood-raise step chain, reused as-is. It is
-# idempotent by construction and refuses non-loopback/non-anvil itself. Its
-# output is tee'd so the confirmed token address (the `verify-token` row) can
-# be reported from THIS run — `contracts/deployments/apptoken-latest.json` is
-# written by `DeployAppToken.s.sol`, not by the mint, and can be stale.
+# `apptoken infra` — scripts/apptoken-infra.sh, reused as-is. It is idempotent
+# by construction and refuses non-loopback/non-anvil itself.
 load_apptoken_infra() {
   echo
-  echo "── apptoken infra: scripts/dogfood-raise.sh (bootstrap + DEV-ONLY router allowlist patch + apptoken mint)"
+  echo "── apptoken infra: scripts/apptoken-infra.sh (bootstrap + DEV-ONLY router allowlist patch)"
   mkdir -p "$STATE_DIR"
   if (
-    RPC_URL="$RPC_URL" bash "$REPO_ROOT/scripts/dogfood-raise.sh"
-  ) 2>&1 | tee "$STATE_DIR/dogfood-raise.log"; then
+    RPC_URL="$RPC_URL" bash "$REPO_ROOT/scripts/apptoken-infra.sh"
+  ) 2>&1 | tee "$STATE_DIR/apptoken-infra.log"; then
     :
   else
-    fail_step "apptoken-infra" "dogfood-raise.sh failed (its summary names the step)"
+    fail_step "apptoken-infra" "apptoken-infra.sh failed (its summary names the step)"
   fi
-  APPTOKEN_ADDRESS=$(awk '/^verify-token[[:space:]]/ {print $2; exit}' \
-    "$STATE_DIR/dogfood-raise.log")
 }
 
 org_manifest_path() {
@@ -519,7 +515,7 @@ deploy_currency() {
 
 # The CCA factory and Permit2 exist only on forks of a public chain, so a raise could
 # not run on a bare dev chain. Put their runtime code at the canonical addresses, the
-# same way scripts/web-auction-e2e.sh does. "Already there" means the code MATCHES the
+# same way the removed scripts/web-auction-e2e.sh did (D150). "Already there" means the code MATCHES the
 # build output, not merely that something has code at the address.
 CCA_FACTORY_ADDRESS="0x000000001F26a0044BaA66024e7b6599c61963F8"
 PERMIT2_ADDRESS="0x000000000022D473030F116dDEE9F6B43aC78BA3"
@@ -969,6 +965,7 @@ forecast_pool_deployed() {
 }
 
 # Money forecasts (N8): two pools of people's own money on whether a bounty on a post is paid. Test networks only.
+# Contract only since D150: the app no longer shows them (tag pre-deprecation-2026-10-31); kept until the contracts clean-up.
 deploy_forecast_pool() {
   echo
   if forecast_pool_deployed; then
@@ -1260,7 +1257,7 @@ up() {
   echo "════════════════════════ dev-chain summary ══════════════════════════════"
   echo "  chain:      $RPC_URL (chain id $CHAIN_ID)"
   [[ -f "$PID_FILE" ]] && echo "  anvil pid:  $(cat "$PID_FILE") (log $LOG_FILE)"
-  echo "  apptoken:   ${APPTOKEN_ADDRESS:-<not minted>} (dogfood-raise, log $STATE_DIR/dogfood-raise.log)"
+  echo "  apptoken infra: router, pools and transfer validator (log $STATE_DIR/apptoken-infra.log)"
   echo "  org dao:    factory $(manifest_role "$(org_manifest_path)" factory) (org-dao-$CHAIN_ID.json)"
   echo "  summoner:   $(manifest_role "$(org_manifest_path)" summoner)"
   echo "  currency:   $(currency_address) ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)"
@@ -1274,7 +1271,7 @@ up() {
     echo "  weekly rounds: $(weekly_rounds_address) (weekly-rounds-$CHAIN_ID.json)"
     echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
     echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
-    echo "  forecasts:  $(forecast_pool_address) (forecast-pool-$CHAIN_ID.json)"
+    echo "  forecasts:  $(forecast_pool_address) (forecast-pool-$CHAIN_ID.json; the app no longer shows them, D150)"
     echo "  payouts:    $(payouts_factory_address) (payouts-factory-$CHAIN_ID.json)"
     echo "  remix bonds: $(remix_bonds_address) (remix-bonds-$CHAIN_ID.json)"
   fi
@@ -1291,7 +1288,6 @@ up() {
     echo "              VITE_WEEKLY_ROUNDS='{\"$CHAIN_ID\":\"$(weekly_rounds_address)\"}'  (weekly rounds between holders and new buyers, once their DAO votes them in)"
     echo "              VITE_CREATE_TOKENS='{\"$CHAIN_ID\":\"$(create_token_address)\"}' VITE_CREATE_FAUCETS='{\"$CHAIN_ID\":\"$(create_faucet_address)\"}'  (test CREATE: stakes and bonds)"
     echo "              VITE_COURTS='{\"$CHAIN_ID\":\"$(court_address)\"}'  (the court claimants appeal to)"
-    echo "              VITE_FORECAST_POOLS='{\"$CHAIN_ID\":\"$(forecast_pool_address)\"}'  (money on whether a post's bounty is paid; test money)"
     echo "              VITE_PAYOUTS_FACTORIES='{\"$CHAIN_ID\":\"$(payouts_factory_address)\"}'  (DAOs vote to pay holders a share of revenue)"
     echo "              VITE_REMIX_BONDS='{\"$CHAIN_ID\":\"$(remix_bonds_address)\"}'  (a remix's bond to its parent)"
   else
@@ -1358,17 +1354,6 @@ status() {
     row "apptoken (recorded)" "${address:-?}" "$(basename "$f")"
   else
     row "apptoken (recorded)" "-" "no apptoken-latest.json yet"
-  fi
-  # The apptoken THIS chain actually holds: dogfood-raise's confirmed
-  # `verify-token` row. The manifest above is written by DeployAppToken.s.sol
-  # and can point at an older chain's token (its code row says `none` when it
-  # does), so report the live one next to it rather than overwriting it.
-  if [[ -f "$STATE_DIR/dogfood-raise.log" ]]; then
-    local live_token
-    live_token=$(awk '/^verify-token[[:space:]]/ {print $2; exit}' "$STATE_DIR/dogfood-raise.log")
-    if [[ -n "$live_token" ]]; then
-      row "apptoken (minted here)" "$live_token" "dogfood-raise.log"
-    fi
   fi
 
   for f in "$DEPLOYMENTS_DIR"/org-dao-*.json "$DEPLOYMENTS_DIR"/dev-currency-*.json "$DEPLOYMENTS_DIR"/dao-launch-kit-*.json "$DEPLOYMENTS_DIR"/contributor-kit-*.json "$DEPLOYMENTS_DIR"/work-bounty-*.json "$DEPLOYMENTS_DIR"/open-bounty-*.json; do

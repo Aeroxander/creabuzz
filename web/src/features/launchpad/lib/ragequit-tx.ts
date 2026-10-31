@@ -37,7 +37,7 @@ export const ETH_TOKEN = `0x${"00".repeat(20)}`;
 
 /** `cast sig 'ragequit(address[],uint256,uint256)'` (pinned golden). */
 export const RAGEQUIT_SELECTOR = "0x29f64d1a";
-export const RAGEQUIT_SIGNATURE = "ragequit(address[],uint256,uint256)";
+const RAGEQUIT_SIGNATURE = "ragequit(address[],uint256,uint256)";
 
 export interface RagequitCallInput {
   /** Token addresses to claim (ETH = {@link ETH_TOKEN}). Order is normalized. */

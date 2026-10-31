@@ -34,7 +34,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import { getPublicKey } from "nostr-tools/pure";
 
 /** HKDF info of the Nostr derivation — the branch's shipped value. */
-export const HKDF_INFO = new TextEncoder().encode("buzz-nostr-v1");
+const HKDF_INFO = new TextEncoder().encode("buzz-nostr-v1");
 
 /** The two public roots of one passkey registration. */
 export interface PasskeyIdentity {
@@ -51,7 +51,7 @@ export interface CreatedPasskeyRef {
 }
 
 /** Base error: a passkey ceremony or derivation failure with a plain reason. */
-export class PasskeyError extends Error {
+class PasskeyError extends Error {
   readonly created?: CreatedPasskeyRef;
 
   constructor(message: string, created?: CreatedPasskeyRef) {
@@ -121,7 +121,7 @@ export function b64urlDecode(value: string): Uint8Array {
  * 127.0.0.1). localhost is the sanctioned loopback id for dev, and the same
  * RP id must be used for both registration and assertion.
  */
-export function rpId(): string {
+function rpId(): string {
   if (typeof window === "undefined") return "localhost";
   const host = window.location.hostname || "localhost";
   if (
@@ -176,7 +176,7 @@ export function nostrPubkeyHex(secretKey: Uint8Array): string {
 }
 
 /** Both public roots from the in-memory Nostr secret + the attested r1 key. */
-export function passkeyIdentityFrom(
+function passkeyIdentityFrom(
   nostrSecretKey: Uint8Array,
   r1Uncompressed: Uint8Array,
 ): PasskeyIdentity {

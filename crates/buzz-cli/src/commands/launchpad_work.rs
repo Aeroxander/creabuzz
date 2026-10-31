@@ -1141,24 +1141,6 @@ impl Chain {
             .ok_or_else(|| CliError::Other("eth_call result too short for a word".into()))
     }
 
-    /// The latest block's timestamp: the chain's own clock, which a local test chain can move far from the wall clock.
-    pub(crate) async fn latest_block_time(&self) -> Result<u64, CliError> {
-        let block = self
-            .rpc
-            .call(
-                "eth_getBlockByNumber",
-                json!(["latest", false]),
-                RPC_TIMEOUT,
-            )
-            .await
-            .map_err(|e| CliError::Other(format!("eth_getBlockByNumber: {e}")))?;
-        let text = block["timestamp"]
-            .as_str()
-            .ok_or_else(|| CliError::Other("the latest block has no timestamp".into()))?;
-        u64::from_str_radix(text.trim_start_matches("0x"), 16)
-            .map_err(|e| CliError::Other(format!("malformed block timestamp: {e}")))
-    }
-
     pub(crate) async fn address_of(&self, to: &str, signature: &str) -> Result<String, CliError> {
         let word = self.word(to, &abi::selector(signature)).await?;
         Ok(format!("0x{}", hex::encode(&word[12..])))

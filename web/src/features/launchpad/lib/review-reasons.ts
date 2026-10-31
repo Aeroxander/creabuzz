@@ -105,7 +105,7 @@ export function reasonProblem(reason: string): string | null {
 }
 
 /** How a key's binding to a wallet is named in the set `boundWallets` returns. */
-export function bindingKey(pubkey: string, address: string): string {
+function bindingKey(pubkey: string, address: string): string {
   return `${pubkey}:${address.toLowerCase()}`;
 }
 

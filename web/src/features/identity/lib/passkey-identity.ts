@@ -36,7 +36,7 @@ const R1_KEY = "buzz.passkey.r1";
 
 export type PasskeyMode = "prf" | "unlock";
 
-export interface PasskeyState {
+interface PasskeyState {
   credentialId: string;
   salt: Uint8Array;
   pubkey: string;

@@ -55,12 +55,12 @@ export const SELECTOR_LOOT = "0x9b7b2ab0"; // loot()
 export const SELECTOR_BALANCE_OF = "0x70a08231"; // balanceOf(address)
 export const SELECTOR_TOTAL_SUPPLY = "0x18160ddd"; // totalSupply()
 export const SELECTOR_RAGEQUITTABLE = "0x14a6d7de"; // ragequittable()
-export const SELECTOR_DECIMALS = "0x313ce567"; // decimals()
-export const SELECTOR_SYMBOL = "0x95d89b41"; // symbol()
+const SELECTOR_DECIMALS = "0x313ce567"; // decimals()
+const SELECTOR_SYMBOL = "0x95d89b41"; // symbol()
 export const SELECTOR_LOCK_GUARD = "0x36bc529d"; // lockGuard()
 export const SELECTOR_LOCKED_OF = "0xa5f1e282"; // lockedOf(address)
 export const SELECTOR_TOTAL_LOCKED = "0x56891412"; // totalLocked()
-export const SELECTOR_LEAVING = "0xaf56f7dc"; // leaving() — only DAOs made after D72/D73 have it
+const SELECTOR_LEAVING = "0xaf56f7dc"; // leaving() — only DAOs made after D72/D73 have it
 export const SELECTOR_VOTING_WEIGHT = "0x6f533638"; // votingWeight()
 export const SELECTOR_MANDATE_FACTORY = "0xb04b7bdb"; // mandateFactory()
 export const SELECTOR_FUNDING_TERMS = "0xb881228a"; // fundingTerms()
@@ -360,7 +360,7 @@ export function overdrawsPosition(input: PositionInput): boolean {
  * made before D72 counts them, so the preview does too. `unknown`: the DAO leaves them out but its lock does not say how
  * many, so its exit refuses to run and no figure can be given.
  */
-export type ExitRule = "current" | "legacy" | "unknown";
+type ExitRule = "current" | "legacy" | "unknown";
 
 /** A contract that does not have the function: the call reverts, or answers nothing. A network failure is not one. */
 export function isRefusal(error: unknown): boolean {
@@ -527,10 +527,7 @@ export async function fetchRagequitPosition(
  * The exit fee this DAO's exit charges now, read the way the exit reads it. A DAO, policy, factory or terms contract from
  * before the fee has no such call and its exit charges none: a refusal is zero. A network failure throws.
  */
-export async function readExitFee(
-  endpoint: string,
-  dao: string,
-): Promise<bigint> {
+async function readExitFee(endpoint: string, dao: string): Promise<bigint> {
   try {
     const policy = decodeAddress(
       await ethCall(endpoint, dao, SELECTOR_VOTING_WEIGHT),

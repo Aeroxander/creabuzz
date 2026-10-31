@@ -15,7 +15,6 @@ import {
   createToken,
   daoLaunchKit,
   defaultChainPreset,
-  forecastPool,
   payoutsFactory,
   remixBonds,
   historyFromBlock,
@@ -83,16 +82,10 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       "VITE_ENABLE_MAINNET is set: a hosted build offers test networks only until the contracts are audited.",
     );
   }
-  for (const name of [
-    "VITE_LOCAL_USDC",
-    "VITE_LBAMM_ADDRESSES",
-    "VITE_PRICE_INDEXER_URL",
-  ]) {
-    if (value(env, name)) {
-      problems.push(
-        `${name} is set: it is for a local chain or the exchange, which a hosted test network does not have.`,
-      );
-    }
+  if (value(env, "VITE_LOCAL_USDC")) {
+    problems.push(
+      "VITE_LOCAL_USDC is set: it is for a local chain, which a hosted test network does not have.",
+    );
   }
 
   const preset = defaultChainPreset(env, false);
@@ -167,12 +160,6 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   if (court && !create) {
     problems.push(
       "VITE_COURTS is named but VITE_CREATE_TOKENS is not: jurors could not see what they stake.",
-    );
-  }
-  const pools = forecastPool(chainId, env);
-  if (value(env, "VITE_FORECAST_POOLS") && !pools) {
-    problems.push(
-      `VITE_FORECAST_POOLS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
     );
   }
   const payouts = payoutsFactory(chainId, env);
@@ -252,9 +239,6 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
     `CREATE: ${create ? `on (${create}${faucet ? `, faucet ${faucet}` : ", no faucet"})` : "off"}`,
   );
   summary.push(`Court: ${court ? `on (${court})` : "off"}`);
-  summary.push(
-    `Money forecasts: ${pools ? `on, test money only (${pools})` : "off"}`,
-  );
   summary.push(
     `Payouts to holders: ${payouts ? `on where a DAO votes for them (${payouts})` : "off"}`,
   );

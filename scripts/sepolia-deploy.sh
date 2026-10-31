@@ -136,7 +136,7 @@ echo "  ✓ test CREATE at $CREATE_TOKEN, all of it in the faucet at $CREATE_FAU
 [[ "$(lower "$(cast call "$OPEN_BOUNTY" 'court()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$COURT")" ]] || fail "bounties on posts do not appeal to this court"
 echo "  ✓ the court at $COURT stakes test CREATE and is paid in USDC; bounties on posts appeal to it"
 [[ "$(lower "$(cast call "$POOLS" 'bounties()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$OPEN_BOUNTY")" ]] || fail "the money forecast pools do not read these bounties on posts"
-echo "  ✓ money forecasts at $POOLS read the bounties on posts"
+echo "  ✓ money forecasts at $POOLS read the bounties on posts (contract only: removed from the app in D150)"
 [[ "$(cast codesize "$PAYOUTS_FACTORY" --rpc-url "$RPC")" != "0" ]] || fail "no code at the payouts factory $PAYOUTS_FACTORY"
 [[ "$(lower "$(cast call "$(cast call "$SUMMONER" 'mandateFactory()(address)' --rpc-url "$RPC" | first)" 'payoutsFactory()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$PAYOUTS_FACTORY")" ]] || fail "the payouts factory is not the one the DAOs accept modules from"
 echo "  ✓ the payouts factory at $PAYOUTS_FACTORY is the one the work budget factory made, the only one DAOs accept"
@@ -200,7 +200,6 @@ VITE_WEEKLY_ROUNDS='{"${C}":"${WEEKLY_ROUNDS}"}'
 VITE_CREATE_TOKENS='{"${C}":"${CREATE_TOKEN}"}'
 VITE_CREATE_FAUCETS='{"${C}":"${CREATE_FAUCET}"}'
 VITE_COURTS='{"${C}":"${COURT}"}'
-VITE_FORECAST_POOLS='{"${C}":"${POOLS}"}'
 VITE_PAYOUTS_FACTORIES='{"${C}":"${PAYOUTS_FACTORY}"}'
 VITE_REMIX_BONDS='{"${C}":"${REMIX_BONDS}"}'
 

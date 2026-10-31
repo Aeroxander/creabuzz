@@ -73,10 +73,10 @@ export const KIND_APPROVAL_GRANT = 46030;
 export const KIND_APPROVAL_DENY = 46031;
 
 /** NIP-LP's closed verdict vocabulary (`docs/nips/NIP-LP.md:274-276`). */
-export const VERDICT_WORDS = ["approve", "reject"] as const;
-export type VerdictWord = (typeof VERDICT_WORDS)[number];
+const VERDICT_WORDS = ["approve", "reject"] as const;
+type VerdictWord = (typeof VERDICT_WORDS)[number];
 
-export function isVerdictWord(value: unknown): value is VerdictWord {
+function isVerdictWord(value: unknown): value is VerdictWord {
   return value === "approve" || value === "reject";
 }
 
@@ -94,7 +94,7 @@ function payloadString(
 // ---------------------------------------------------- launch outcomes ----
 
 /** One readable `kind=verdict` mirror (47005). */
-export interface VerdictSignal {
+interface VerdictSignal {
   claimId: string;
   verdict: VerdictWord;
   /** The verifier who signed it (their key, not a display name). */
@@ -107,7 +107,7 @@ export interface VerdictSignal {
 }
 
 /** One readable `kind=claim` mirror (47005). */
-export interface ClaimSignal {
+interface ClaimSignal {
   claimId: string;
   evidenceHash: string | null;
   /** The evidence hash is 64 hex as `milestone-receipt.ts` requires. */
@@ -120,7 +120,7 @@ export interface ClaimSignal {
 }
 
 /** Any other 47005 receipt word (sweep/lock/ragequit/summon/graduate/…). */
-export interface SettlementSignal {
+interface SettlementSignal {
   table: string;
   author: string;
   createdAt: number;
@@ -130,7 +130,7 @@ export interface SettlementSignal {
 }
 
 /** One milestone, paired: its claim mirror and every verdict on it. */
-export interface MilestoneTimelineEntry {
+interface MilestoneTimelineEntry {
   claimId: string;
   claim: ClaimSignal | null;
   /** Ascending by `createdAt`; each one names its author and tx. */
@@ -145,7 +145,7 @@ export interface MilestoneTimelineEntry {
   lastActivityAt: number;
 }
 
-export interface LaunchTrustCounts {
+interface LaunchTrustCounts {
   approved: number;
   rejected: number;
   claims: number;
@@ -160,7 +160,7 @@ export interface LaunchTrustCounts {
   byWord: { sweep: number; lock: number; ragequit: number; other: number };
 }
 
-export interface LaunchTrustUnreadable {
+interface LaunchTrustUnreadable {
   /** `kind=verdict` mirrors without a claim id or a closed-vocabulary word. */
   verdicts: number;
   /** `kind=claim` mirrors without a claim id. */
@@ -455,7 +455,7 @@ export function trackRecordDerivation(
 // -------------------------------------------------- community outcomes ----
 
 /** NIP-ORG's review vocabulary (`docs/nips/NIP-ORG.md:337-339,373-376`). */
-export type ReviewStatus = "pending" | "accepted" | "rejected" | "appealed";
+type ReviewStatus = "pending" | "accepted" | "rejected" | "appealed";
 
 const REVIEW_STATUSES: readonly ReviewStatus[] = [
   "pending",
@@ -464,7 +464,7 @@ const REVIEW_STATUSES: readonly ReviewStatus[] = [
   "appealed",
 ];
 
-export function isReviewStatus(value: unknown): value is ReviewStatus {
+function isReviewStatus(value: unknown): value is ReviewStatus {
   return (
     typeof value === "string" &&
     (REVIEW_STATUSES as readonly string[]).includes(value)
@@ -472,7 +472,7 @@ export function isReviewStatus(value: unknown): value is ReviewStatus {
 }
 
 /** One canonical contribution record (kind 37013), plus its resolution. */
-export interface ContributionSignal {
+interface ContributionSignal {
   eventId: string;
   /** The action id (`d` tag); null when the record published without one. */
   actionId: string | null;
@@ -487,7 +487,7 @@ export interface ContributionSignal {
   approval: "granted" | "denied" | null;
 }
 
-export interface CommunityTrustCounts {
+interface CommunityTrustCounts {
   accepted: number;
   rejected: number;
   appealed: number;
@@ -501,7 +501,7 @@ export interface CommunityTrustCounts {
   approvalsUnlinked: number;
 }
 
-export interface CommunityTrustUnreadable {
+interface CommunityTrustUnreadable {
   /** 37013 events read incompletely (bad content, no `d`, unknown status). */
   contributions: number;
   /** 46030/46031 events with no readable target tag. */

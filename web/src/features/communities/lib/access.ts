@@ -16,7 +16,7 @@ export const KIND_SET_ACCESS = 9034;
 /** The signed record that removes a person from the community's list. */
 export const KIND_REMOVE_MEMBER = 9031;
 /** The signed record that makes a member an admin, or an admin a member. Only the owner's is accepted. */
-export const KIND_CHANGE_ROLE = 9032;
+const KIND_CHANGE_ROLE = 9032;
 /** The server's list of a community's people and their roles. */
 export const KIND_MEMBER_LIST = 13534;
 
@@ -186,7 +186,7 @@ export function mayRemove(
   return myRole === "admin" && person.role === "member";
 }
 
-export const DAY = 24 * 60 * 60;
+const DAY = 24 * 60 * 60;
 
 export const INVITE_LIFETIMES: readonly {
   id: string;

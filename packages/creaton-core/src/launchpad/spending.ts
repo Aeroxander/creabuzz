@@ -29,7 +29,7 @@ const same = (a: string, b: string | null) =>
   b !== null && a.toLowerCase() === b.toLowerCase();
 
 /** One payment a decision made straight out of the treasury. */
-export interface DirectPayment {
+interface DirectPayment {
   /** Its place in the list, so a screen can tell two identical payments apart. */
   position: number;
   decisionId: string;
@@ -168,12 +168,12 @@ export function summariseSpending(input: Input): SpendingSummary {
       unread += 1; // a delegate call runs arbitrary code as the DAO
       continue;
     }
-    // A budget (counted from the budget itself) and a market (Shares into a pool) take no money out of the treasury.
+    // A budget is counted from the budget itself, not from the vote that set it aside.
     const whole = describeDecision(
       { to: action.to, data: action.data },
       { ...context, currency: currency ?? undefined },
     );
-    if (whole.kind === "work-budget" || whole.kind === "market") continue;
+    if (whole.kind === "work-budget") continue;
     // Several calls in one vote are the DAO's own batch; the same bytes sent anywhere else are something else.
     const batch =
       context.dao && same(action.to, context.dao)

@@ -30,7 +30,7 @@ export const EMPTY_TALLY: VoteTally = { up: 0, down: 0, score: 0, mine: null };
  * The key a reaction counts toward: a launch's `a` coordinate when it names
  * one (so a vote survives record edits), otherwise the voted event's id.
  */
-export function voteTarget(reaction: SignedEventLike): string | null {
+function voteTarget(reaction: SignedEventLike): string | null {
   const coord = reaction.tags.find((t) => t[0] === "a")?.[1];
   if (coord) return coord;
   const eTags = reaction.tags.filter((t) => t[0] === "e" && t[1]);

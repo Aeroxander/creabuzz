@@ -13,7 +13,6 @@ import { publishEvent } from "@/shared/lib/publish-event";
 import {
   buildOrgBudgetContent,
   describeBudgetLimits,
-  isCommunityDefaultSubject,
   type BudgetLimits,
   type BudgetWindow,
   type OrgBudgetContentInput,
@@ -132,4 +131,4 @@ export async function publishBudget(
   }
 }
 
-export { describeBudgetLimits, isCommunityDefaultSubject };
+export { describeBudgetLimits };

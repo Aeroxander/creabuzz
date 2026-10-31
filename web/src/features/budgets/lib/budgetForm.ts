@@ -15,11 +15,10 @@
 
 /** Subject of the community-default budget (covers every agent). */
 export const COMMUNITY_DEFAULT_SUBJECT = "*";
-export const COMMUNITY_DEFAULT_LABEL = "All agents (community default)";
 
 const HEX_PUBKEY = /^[0-9a-f]{64}$/i;
 
-export function isCommunityDefaultSubject(
+function isCommunityDefaultSubject(
   subject: string | null | undefined,
 ): boolean {
   return subject === COMMUNITY_DEFAULT_SUBJECT;
@@ -146,9 +145,7 @@ export type BudgetLimits = {
 };
 
 /** The `limits` object published in a budget's content. */
-export function buildBudgetLimits(
-  input: BudgetLimitInput,
-): Record<string, unknown> {
+function buildBudgetLimits(input: BudgetLimitInput): Record<string, unknown> {
   const limits: Record<string, unknown> = {};
   if (input.spend != null) {
     limits.spend = { amount: input.spend, unit: "usd-cents" };
@@ -276,14 +273,4 @@ export function describeBudgetLimits(budget: {
     enforcement,
     badge: ENFORCEMENT_LABEL[enforcement],
   }));
-}
-
-/** Display name of a budget's subject; `resolveAgent` names a pubkey. */
-export function budgetSubjectLabel(
-  subject: string,
-  resolveAgent: (pubkey: string) => string,
-): string {
-  return isCommunityDefaultSubject(subject)
-    ? COMMUNITY_DEFAULT_LABEL
-    : resolveAgent(subject);
 }

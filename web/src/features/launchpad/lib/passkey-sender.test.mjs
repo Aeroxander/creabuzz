@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { makeSponsoredSender } from "./sponsored-sender.ts";
+import { makeSponsoredSender } from "./passkey-sender.ts";
 
 test("a passkey sender made for any page tells the error collector when a send fails, and still fails", async () => {
   const told = [];

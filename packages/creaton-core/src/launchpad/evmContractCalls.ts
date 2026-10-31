@@ -377,11 +377,11 @@ interface ResolvedTokenDeployParams {
  * rug-capable configuration owned by the treasury. Whoever owns the token can
  * move fees and spreads anywhere BELOW these, never above.
  */
-export const MAX_TOKEN_FEE_BPS = 1_000n;
-export const MAX_TOKEN_SPREAD_BPS = 1_000n;
+const MAX_TOKEN_FEE_BPS = 1_000n;
+const MAX_TOKEN_SPREAD_BPS = 1_000n;
 /** Ceiling on the creator's share of spent value: equal to its initial value, so it can only go down. */
-export const MAX_SPEND_CREATOR_SHARE_BPS = 5_000n;
-export const INITIAL_SPEND_CREATOR_SHARE_BPS = 5_000n;
+const MAX_SPEND_CREATOR_SHARE_BPS = 5_000n;
+const INITIAL_SPEND_CREATOR_SHARE_BPS = 5_000n;
 
 const TOKEN_DECIMALS = 18n; // the script hardcodes 18
 /**
@@ -731,22 +731,22 @@ export function encodeErc20BalanceOf(holder: string): string {
 }
 
 /** ABI-encode `auction.onTokensReceived()` (no arguments). */
-export function encodeOnTokensReceived(): string {
+function encodeOnTokensReceived(): string {
   return SELECTOR_ON_TOKENS_RECEIVED;
 }
 
 /** ABI-encode `GraduationExecutor.bindAuction(auction)`. */
-export function encodeBindAuction(auction: string): string {
+function encodeBindAuction(auction: string): string {
   return encodeFunctionData(SIGNATURE_BIND_AUCTION, ["address"], [auction]);
 }
 
 /** ABI-encode `AllowlistHook.setAuction(auction)`. */
-export function encodeSetHookAuction(auction: string): string {
+function encodeSetHookAuction(auction: string): string {
   return encodeFunctionData(SIGNATURE_SET_HOOK_AUCTION, ["address"], [auction]);
 }
 
 /** ABI-encode `GraduationExecutor.withdrawStuckReserve(auction)`. */
-export function encodeWithdrawStuckReserve(auction: string): string {
+function encodeWithdrawStuckReserve(auction: string): string {
   return encodeFunctionData(
     SIGNATURE_WITHDRAW_STUCK_RESERVE,
     ["address"],

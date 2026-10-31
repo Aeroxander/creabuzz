@@ -32,7 +32,7 @@ import {
 } from "./lib/board-moderation";
 
 /** The newest log entries a board shows. */
-export const LOG_LIMIT = 200;
+const LOG_LIMIT = 200;
 
 async function fetchModeration(boardId: string): Promise<BoardEvent[]> {
   const url = relayWsUrl();

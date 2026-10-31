@@ -162,7 +162,7 @@ export function buildVote(input: {
 }
 
 /** Every launch coordinate a note is about. */
-export function launchCoordinates(event: SignedEventLike): string[] {
+function launchCoordinates(event: SignedEventLike): string[] {
   return event.tags
     .filter((t) => t[0] === "a" && typeof t[1] === "string")
     .map((t) => t[1])

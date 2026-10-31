@@ -26,8 +26,6 @@ const DEV = process.env.E2E_DEV ?? "";
 const EVE = process.env.E2E_EVE ?? "";
 /** The court (N7); without one the appeal journey is skipped. */
 const COURT = process.env.E2E_COURT ?? "";
-/** The money forecast pools (N8); without them those steps are skipped. */
-const POOLS = process.env.E2E_POOLS ?? "";
 const UNIT = 10n ** 6n;
 
 test.skip(
@@ -258,30 +256,6 @@ test("money behind a post is paid to the work most of it backs for nine days, an
     item(dev).getByTestId("post-bounty-withdraw-claim"),
   ).toBeVisible();
 
-  // ── Money on it (N8): Cara puts 10 on paid, Eve 5 on not paid; Ben, who opened it, can only say it will be ──
-  const pools = (page: Page) => item(page).getByTestId("money-forecast");
-  if (POOLS) {
-    await refresh(cara);
-    await pools(cara).getByTestId("money-forecast-amount").fill("10");
-    await pools(cara).getByTestId("money-forecast-yes").click();
-    await expect(pools(cara).getByTestId("money-forecast-pools")).toHaveText(
-      /^10 .* says it will be paid · 0 .* says it won't\.$/,
-      { timeout: 60_000 },
-    );
-    const early = await context.newPage();
-    await open(early, EVE, KEYS.eve);
-    await pools(early).getByTestId("money-forecast-amount").fill("5");
-    await pools(early).getByTestId("money-forecast-no").click();
-    await expect(pools(early).getByTestId("money-forecast-pools")).toHaveText(
-      /^10 .* says it will be paid · 5 .* says it won't\.$/,
-      { timeout: 60_000 },
-    );
-    await refresh(ben);
-    await expect(pools(ben).getByTestId("money-forecast-yes")).toBeVisible();
-    await expect(pools(ben).getByTestId("money-forecast-no")).toHaveCount(0);
-    await early.close();
-  }
-
   // ── Ben backs it: exactly half is not a majority ──────────────────────────────────────────────────
   await refresh(ben);
   await devClaim(ben).getByTestId("post-bounty-back").click();
@@ -343,24 +317,6 @@ test("money behind a post is paid to the work most of it backs for nine days, an
     "It got done. The middle forecast was 60%.",
     { timeout: 30_000 },
   );
-  // Those who said it would be paid share the other side: Cara's 10 brings back 15.
-  if (POOLS) {
-    await refresh(cara);
-    await pools(cara).getByTestId("money-forecast-settle").click();
-    await expect(
-      pools(cara).getByTestId("money-forecast-outcome"),
-    ).toContainText("It was paid.", { timeout: 60_000 });
-    const caraBefore = await usdcOf(CARA);
-    await pools(cara).getByTestId("money-forecast-collect").click();
-    await expect(pools(cara).getByTestId("money-forecast-collect")).toHaveCount(
-      0,
-      {
-        timeout: 60_000,
-      },
-    );
-    expect(await usdcOf(CARA)).toBe(caraBefore + 15n * UNIT);
-  }
-
   // ── Cara's profile shows how accurate her forecast was: 80% on something that got done scores 96 ─────
   const profile = await context.newPage();
   await open(profile, EVE, KEYS.eve, `/u/${CARA_PUBKEY}`);

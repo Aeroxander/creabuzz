@@ -33,16 +33,16 @@
 //   {"v":1,"sk":"<64-hex account secret key>","nonce":"<the nonce>","exp":<unix seconds>}
 
 /** Payload schema version. Bump on any shape change. */
-export const LINK_DEVICE_PAYLOAD_VERSION = 1;
+const LINK_DEVICE_PAYLOAD_VERSION = 1;
 
 /** How long a freshly built payload stays acceptable: 5 minutes. */
-export const LINK_DEVICE_TTL_MS = 5 * 60 * 1000;
+const LINK_DEVICE_TTL_MS = 5 * 60 * 1000;
 
 /** The one URL scheme a handoff may return to. */
-export const LINK_DEVICE_CB_SCHEME = "creaton:";
+const LINK_DEVICE_CB_SCHEME = "creaton:";
 
 /** The one host a handoff may return to: `creaton://identity`, and nothing else. */
-export const LINK_DEVICE_CB_HOST = "identity";
+const LINK_DEVICE_CB_HOST = "identity";
 
 /** Nonce alphabet and length bounds the desktop must generate within. */
 const NONCE_RE = /^[A-Za-z0-9_-]{8,128}$/;

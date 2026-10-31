@@ -66,7 +66,7 @@ export const AUCTION_DEPLOY_STEPS = [
 
 export type AuctionDeployStepId = (typeof AUCTION_DEPLOY_STEPS)[number]["id"];
 
-export type AuctionDeployStepStatus =
+type AuctionDeployStepStatus =
   | "pending"
   | "running"
   | "done"
@@ -83,7 +83,7 @@ export interface AuctionDeployStepState {
   alreadyDeployed: boolean;
 }
 
-export type AuctionDeployPhase =
+type AuctionDeployPhase =
   | "idle"
   | "preparing"
   | "running"

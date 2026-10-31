@@ -120,7 +120,7 @@ export function durationSecondsFor(key: DurationPreset["key"]): number | null {
  * so long that a step would have to sell nothing per block. Callers treat that
  * as "no deployable schedule", never as "sell everything".
  */
-export function buildShareSchedule(
+function buildShareSchedule(
   startBlock: bigint,
   endBlock: bigint,
   shares: readonly number[],
@@ -286,7 +286,7 @@ export function floorFromPrice(
 }
 
 /** What the whole tranche raises if it all clears at the floor (base units). */
-export function floorRaiseAtomic(input: {
+function floorRaiseAtomic(input: {
   saleTokens: bigint;
   floorPrice: bigint;
 }): bigint {

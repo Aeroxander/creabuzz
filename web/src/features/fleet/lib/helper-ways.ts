@@ -33,7 +33,7 @@ export interface AnnouncedHelper {
   alive: boolean;
 }
 
-export type WayState =
+type WayState =
   /** Works here and nothing is running yet. */
   | "ready"
   /** Something is running in this place. */

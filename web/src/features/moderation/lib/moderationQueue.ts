@@ -21,7 +21,7 @@ export type ReportType =
 
 export type ReportStatus = "open" | "resolved" | "dismissed" | "escalated";
 
-export type ReportTargetKind = "event" | "pubkey" | "blob";
+type ReportTargetKind = "event" | "pubkey" | "blob";
 
 /** A moderator's disposition of a queued report (resolve-report command). */
 export type ResolutionAction =
@@ -128,7 +128,7 @@ const SEVERITY_RANK: Record<ReportType, number> = {
   other: 0,
 };
 
-export function reportSeverity(reportType: ReportType): number {
+function reportSeverity(reportType: ReportType): number {
   return SEVERITY_RANK[reportType] ?? 0;
 }
 

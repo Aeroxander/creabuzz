@@ -22,7 +22,7 @@ import { launchCoordinate } from "../../feed/lib/feed-events.ts";
 import { withMentions } from "./post-events.ts";
 
 export const LAUNCH_UPDATE_LABEL = "launch-update";
-export const LAUNCH_UPDATE_NAMESPACE = "creaton.launch";
+const LAUNCH_UPDATE_NAMESPACE = "creaton.launch";
 /** How many updates per launch per week raise a priority notification. */
 export const PRIORITY_PER_WEEK = 3;
 const WEEK_SECONDS = 7 * 24 * 60 * 60;

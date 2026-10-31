@@ -3,14 +3,8 @@ import { useEffect, useState } from "react";
 import { useChannels } from "@/features/channels/use-channels";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { useProject } from "@/features/projects/use-projects";
-import {
-  isEvmAddress,
-  LAUNCH_DEFAULTS,
-  suggestSymbol,
-  type VestingConfig,
-} from "../models";
+import { LAUNCH_DEFAULTS, suggestSymbol, type VestingConfig } from "../models";
 import type { CreateLaunchInput } from "../use-launches";
-import { useTokenMode } from "./create-wizard/useTokenMode";
 import {
   STANDARD_ALLOCATION,
   allocationIssue,
@@ -69,7 +63,6 @@ import {
   localUsdcAddress,
   ethBlockNumber,
   getRpcEndpoint,
-  isContractDeployed,
   measureChainBlockTime,
   type ChainBlockTime,
 } from "../chain";
@@ -210,7 +203,8 @@ export function CreateLaunchDialog({
   );
   const [asAgent, setAsAgent] = useState(Boolean(initial?.asAgent));
   const { data: channelList } = useChannels();
-  const [tokenMode, setTokenMode] = useTokenMode(initialMode, setAllocation);
+  // Fixed for the dialog's life: a new launch is always the project's own Shares, an edit keeps the published kind.
+  const tokenMode = initialMode;
   const [tokenName, setTokenName] = useState(
     () => initial?.tokenPlan?.name ?? ideaTokenDefaults(idea?.name).tokenName,
   );
@@ -232,10 +226,8 @@ export function CreateLaunchDialog({
       (initial?.allocation ?? STANDARD_ALLOCATION).sale,
     ),
   );
-  const [importAddress, setImportAddress] = useState(initial?.token ?? "");
-  const [verifyState, setVerifyState] = useState<
-    "idle" | "checking" | "ok" | "missing" | "error"
-  >("idle");
+  // The token the record already links; a save keeps it (the form has no field that changes it).
+  const [importAddress] = useState(initial?.token ?? "");
   const [error, setError] = useState<string | null>(null);
 
   // Raw block overrides — the Advanced drawer's copy of what the wizard
@@ -594,23 +586,6 @@ export function CreateLaunchDialog({
     });
   };
 
-  const verifyImport = async () => {
-    if (!isEvmAddress(importAddress)) {
-      setVerifyState("error");
-      return;
-    }
-    setVerifyState("checking");
-    try {
-      const ok = await isContractDeployed(
-        getRpcEndpoint(),
-        importAddress.trim(),
-      );
-      setVerifyState(ok ? "ok" : "missing");
-    } catch {
-      setVerifyState("error");
-    }
-  };
-
   const advance = () => {
     if (stepIssues.length > 0) return;
     const next =
@@ -865,15 +840,10 @@ export function CreateLaunchDialog({
     funding,
     setFunding,
     tokenMode,
-    setTokenMode,
     daoKitMissing: !daoLaunchKit(chainId),
     tokenName,
     setTokenName,
     importAddress,
-    setImportAddress,
-    verifyState,
-    setVerifyState,
-    verifyImport,
     chainId,
     setChainId: onChain,
     admission,

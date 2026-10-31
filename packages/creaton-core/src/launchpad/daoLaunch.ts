@@ -32,13 +32,13 @@ const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const MAX_SALE_WEI = 1n << 100n;
 const MAX_UINT96 = (1n << 96n) - 1n;
 /** The lock holds at most this many milestones per team member. */
-export const MAX_MILESTONES = 8;
+const MAX_MILESTONES = 8;
 
 /**
  * The limits the launch kit enforces on every launch (D74, D75): checked here first so the form can say what to fix
  * before a wallet is asked. Whole percents of the supply.
  */
-export const LAUNCH_LIMITS = {
+const LAUNCH_LIMITS = {
   /** The sale is at least this share of all Shares. */
   minSalePercent: 60,
   /** The team at most this share. */
@@ -51,14 +51,14 @@ export const LAUNCH_LIMITS = {
   maxMilestonePercent: 50,
 } as const;
 
-export interface DaoLaunchSeat {
+interface DaoLaunchSeat {
   /** The team member's wallet: they hold and vote with their Shares from the first block. */
   address: string;
   /** Share of the TEAM allocation, in whole percent. The seats add up to 100. */
   percent: number;
 }
 
-export interface DaoLaunchMilestone {
+interface DaoLaunchMilestone {
   check: string;
   percent: number;
 }
@@ -158,7 +158,7 @@ export class DaoLaunchPlanError extends Error {
 }
 
 /** The panel as the kit takes it. */
-export interface DaoLaunchPanelPlan {
+interface DaoLaunchPanelPlan {
   reviewers: string[];
   quorum: number;
   bond: bigint;
@@ -170,7 +170,7 @@ export interface DaoLaunchPanelPlan {
 }
 
 /** The challenge terms as the kit takes them (`DaoLaunchKit.ChallengeTerms`). */
-export interface DaoLaunchChallengePlan {
+interface DaoLaunchChallengePlan {
   window: number;
   votePeriod: number;
   clawback: number;
@@ -664,13 +664,12 @@ const CHALLENGE_TERMS_TYPE: AbiType = {
 };
 
 /** `DaoLaunchKit.launch(Params)`, with the struct spelled out so the selector is the contract's. */
-export const SIGNATURE_KIT_LAUNCH =
+const SIGNATURE_KIT_LAUNCH =
   "launch((string,string,string,uint96,bytes32,address[],uint256[],bytes32[],uint16[],address[],uint256,uint128,address,address,uint64,uint256,uint128,bytes,bytes32,uint64))";
 /** `DaoLaunchKit.launchChallenged(Params, ChallengeTerms)`: milestones that unlock unless holders object. */
-export const SIGNATURE_KIT_LAUNCH_CHALLENGED =
+const SIGNATURE_KIT_LAUNCH_CHALLENGED =
   "launchChallenged((string,string,string,uint96,bytes32,address[],uint256[],bytes32[],uint16[],address[],uint256,uint128,address,address,uint64,uint256,uint128,bytes,bytes32,uint64),(uint64,uint64,uint64,uint16,address,uint128,uint128))";
-export const SIGNATURE_KIT_PREDICT_EXECUTOR =
-  "predictExecutor(address,bytes32)";
+const SIGNATURE_KIT_PREDICT_EXECUTOR = "predictExecutor(address,bytes32)";
 export const SELECTOR_KIT_LAUNCH = selectorOf(SIGNATURE_KIT_LAUNCH);
 export const SELECTOR_KIT_LAUNCH_CHALLENGED = selectorOf(
   SIGNATURE_KIT_LAUNCH_CHALLENGED,

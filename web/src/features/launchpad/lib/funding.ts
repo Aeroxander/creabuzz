@@ -38,7 +38,7 @@ export const FUNDING_STANCES: readonly FundingStance[] = [
   "rolling",
 ];
 
-export function isFundingStance(value: unknown): value is FundingStance {
+function isFundingStance(value: unknown): value is FundingStance {
   return (
     typeof value === "string" && (FUNDING_STANCES as string[]).includes(value)
   );
@@ -53,7 +53,7 @@ export const FUNDING_SEEKING: readonly FundingSeeking[] = [
   "advisors",
 ];
 
-export function isFundingSeeking(value: unknown): value is FundingSeeking {
+function isFundingSeeking(value: unknown): value is FundingSeeking {
   return (
     typeof value === "string" && (FUNDING_SEEKING as string[]).includes(value)
   );
@@ -72,7 +72,7 @@ export const FUNDING_PATHS: readonly FundingPath[] = [
   "contributors",
 ];
 
-export function isFundingPath(value: unknown): value is FundingPath {
+function isFundingPath(value: unknown): value is FundingPath {
   return (
     typeof value === "string" && (FUNDING_PATHS as string[]).includes(value)
   );

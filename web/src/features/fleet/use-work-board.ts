@@ -46,20 +46,20 @@ import {
 import { getTag } from "@/shared/lib/event-fields";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 
-export const KIND_GIT_STATUS_OPEN = 1630;
-export const KIND_GIT_STATUS_MERGED = 1631;
-export const KIND_GIT_STATUS_CLOSED = 1632;
-export const KIND_GIT_STATUS_DRAFT = 1633;
+const KIND_GIT_STATUS_OPEN = 1630;
+const KIND_GIT_STATUS_MERGED = 1631;
+const KIND_GIT_STATUS_CLOSED = 1632;
+const KIND_GIT_STATUS_DRAFT = 1633;
 
 /** Board column -> NIP-34 status kind for issue moves. */
-export const ISSUE_STATUS_KIND: Record<string, number> = {
+const ISSUE_STATUS_KIND: Record<string, number> = {
   open: KIND_GIT_STATUS_OPEN,
   done: KIND_GIT_STATUS_MERGED,
   closed: KIND_GIT_STATUS_CLOSED,
   triage: KIND_GIT_STATUS_DRAFT,
 };
 
-export type WorkItemType = "task" | "issue";
+type WorkItemType = "task" | "issue";
 
 export interface WorkItem {
   type: WorkItemType;

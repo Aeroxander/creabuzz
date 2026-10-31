@@ -81,7 +81,7 @@ test("every passkey sender the launchpad makes has reporting around it", () => {
   // The seam: `makeSponsoredSender` wraps it. A page that made one directly (a screen's own sender picker did) would
   // send passkey steps whose refused sponsorships nobody hears about.
   const made = readFileSync(
-    new URL("./sponsored-sender.ts", import.meta.url),
+    new URL("./passkey-sender.ts", import.meta.url),
     "utf8",
   );
   assert.match(made, /reportingSender\(\s*createSponsoredSender\(/);
@@ -91,7 +91,7 @@ test("every passkey sender the launchpad makes has reporting around it", () => {
   }
   const root = new URL("../", import.meta.url);
   const direct = readdirSync(root, { recursive: true })
-    .filter((f) => /\.(ts|tsx)$/.test(f) && !f.endsWith("sponsored-sender.ts"))
+    .filter((f) => /\.(ts|tsx)$/.test(f) && !f.endsWith("passkey-sender.ts"))
     .filter((f) =>
       /createSponsoredSender\(/.test(readFileSync(new URL(f, root), "utf8")),
     );

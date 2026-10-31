@@ -71,7 +71,7 @@ changes, TokenMaster's pool and router source, the web launchpad, projects, feed
 | Check | Result |
 |---|---|
 | `forge test` (whole suite) | **270 passed, 0 failed, 1 skipped** (a fork test that needs an RPC). Two invariants, 256 runs × 500 actions, 0 reverts |
-| Browser raise journey, `scripts/web-auction-e2e.sh` | **6 of 6**: community and curated deploy, wrong-wallet guard, decline and retry, ETH sale and USDC sale through bid, end and graduation |
+| Browser raise journey, `scripts/web-auction-e2e.sh` (removed in D150, see tag pre-deprecation-2026-10-31) | **6 of 6**: community and curated deploy, wrong-wallet guard, decline and retry, ETH sale and USDC sale through bid, end and graduation |
 | Web unit tests / typecheck / copy check | 1,281 pass / clean / pass |
 | Web voting browser spec (`voting-allocation.spec.ts`) | **4 of 4** (with a mocked wallet and RPC: it proves the screens, not the network) |
 | Web file-size ratchet | **Fails**: `WikiView.tsx` is 1,040 lines (limit 1,000). Pre-existing, not from governance work |
@@ -499,7 +499,8 @@ frozen. Sizes are calendar estimates for one engineer-agent pair with your revie
 - **Browser (real relay + chain):** two journeys in one runner: *raise* (idea → quick sale → mint → auction → bids →
   graduation → funds in DAO → claim tokens → trade → post `$TICKER` → proposal → mandate → project → claim → pay →
   award) and *no-raise* (project → governed summon → equity claims → award → proposal). Extend
-  `web-auction-e2e.sh` and `e2e-real/journey.spec.ts` rather than adding infrastructure.
+  `web-auction-e2e.sh` and `e2e-real/journey.spec.ts` rather than adding infrastructure. (Both removed in D150 with
+  the mint and hand-deployed auction path, see tag pre-deprecation-2026-10-31.)
 - **Indexer:** golden-swap price tests, reorg replay test, staleness label test.
 - **Human test steps** will be written per gate; I will never mark that step done myself.
 
@@ -547,7 +548,7 @@ frozen. Sizes are calendar estimates for one engineer-agent pair with your revie
 # contracts
 cd contracts && forge test                                       # 270 passed
 # raise → graduation in a browser (boots its own anvil)
-. ./bin/activate-hermit && scripts/web-auction-e2e.sh            # 6 passed
+. ./bin/activate-hermit && scripts/web-auction-e2e.sh            # 6 passed (removed in D150, see tag pre-deprecation-2026-10-31)
 # F1 repro: copy docs/v3-review/repro-bricked-summon.t.sol.txt to contracts/test/ReviewScratch.t.sol, then
 cd contracts && forge test --match-path test/ReviewScratch.t.sol -vv
 # Study B

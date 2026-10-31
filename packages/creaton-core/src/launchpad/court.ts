@@ -27,9 +27,9 @@ const DAY = 86_400;
 
 export const EVIDENCE = 2 * DAY;
 export const COMMIT = 2 * DAY;
-export const REVEAL = 2 * DAY;
-export const APPEAL = 2 * DAY;
-export const DRAW_TIMEOUT = 14 * DAY;
+const REVEAL = 2 * DAY;
+const APPEAL = 2 * DAY;
+const DRAW_TIMEOUT = 14 * DAY;
 export const MAX_ROUNDS = 3;
 /** The most cases read at once, newest first. */
 export const MAX_CASES = 50;
@@ -205,7 +205,7 @@ export function commitHash(
 
 // ---- reads ---------------------------------------------------------------------------------------
 
-export interface CourtJuror {
+interface CourtJuror {
   staked: bigint;
   locked: bigint;
   freeSeats: number;

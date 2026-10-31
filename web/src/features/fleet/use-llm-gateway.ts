@@ -15,7 +15,7 @@ import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 
 import type { GatewayStatus } from "./lib/helper-ways";
 
-export async function probeLlmGateway(
+async function probeLlmGateway(
   fetchImpl: typeof fetch = fetch,
 ): Promise<GatewayStatus> {
   try {

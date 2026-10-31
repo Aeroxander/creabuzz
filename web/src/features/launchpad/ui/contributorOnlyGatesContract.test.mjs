@@ -33,12 +33,7 @@ test("the launch page offers no sale button and opens no bid without raises", ()
   assert.match(page, /\{bidOpen && raisesOffered\(\) \? \(/);
 });
 
-test("Markets and the raise sandbox lead elsewhere without raises", () => {
-  const markets = source("../../../app/routes/markets.tsx");
-  assert.match(
-    markets,
-    /if \(!raisesOffered\(\)\) throw redirect\(\{ to: "\/discover"/,
-  );
+test("the raise sandbox leads elsewhere without raises", () => {
   const launch = source("../../../app/routes/launchpad.$launchId.tsx");
   assert.match(launch, /params\.launchId === SANDBOX_ID && !raisesOffered\(\)/);
 });

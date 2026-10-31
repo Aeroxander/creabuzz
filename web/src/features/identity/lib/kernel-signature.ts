@@ -30,7 +30,7 @@ import {
 import { wrapPasskeyAssertionForZeroDevValidator } from "./webauthn-auth.ts";
 
 /** The Kernel version this module signs for. The account's own domain names it, so it cannot be guessed. */
-export const KERNEL_VERSION = "0.3.3";
+const KERNEL_VERSION = "0.3.3";
 
 /** `keccak256("Kernel(bytes32 hash)")`, the type hash Kernel 0.3.3 wraps a hash with. */
 export const KERNEL_WRAPPER_TYPE_HASH =

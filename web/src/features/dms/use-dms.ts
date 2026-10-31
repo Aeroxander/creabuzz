@@ -45,7 +45,7 @@ export interface DmConversation {
 }
 
 /** One conversation-list query key, shared by the list and its refetches. */
-export function dmConversationsKey(me: string | null): string[] {
+function dmConversationsKey(me: string | null): string[] {
   return ["dm-conversations", me ?? "none"];
 }
 

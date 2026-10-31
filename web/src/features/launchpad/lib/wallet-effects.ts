@@ -34,9 +34,9 @@ import type { Eip1193ProviderLike } from "./wallet-sender.ts";
 export { walletError };
 
 /** How often the receipt is polled. */
-export const RECEIPT_POLL_MS = 1500;
+const RECEIPT_POLL_MS = 1500;
 /** Give up waiting for a receipt after this long (the tx may still land). */
-export const RECEIPT_TIMEOUT_MS = 180_000;
+const RECEIPT_TIMEOUT_MS = 180_000;
 
 export interface WalletEffectsInput {
   provider: Eip1193ProviderLike;

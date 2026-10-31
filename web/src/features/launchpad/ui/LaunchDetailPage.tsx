@@ -15,8 +15,6 @@ import { raisesOffered } from "../lib/raises-offered";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
 import { LaunchMissing } from "./LaunchMissing";
-import { PriceChartCard } from "./PriceChartCard";
-import { TradeCard } from "./TradeCard";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
 import { KIND_LAUNCH_BID, KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
@@ -62,6 +60,7 @@ import { WorkTab } from "./WorkTab";
 import { ContributionsTab } from "./ContributionsTab";
 import { MilestonesTab } from "./MilestonesTab";
 import { OverviewTab } from "./OverviewTab";
+import { SalePriceCard } from "./SalePriceCard";
 import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 import { projectProgress } from "@/features/feed/lib/project-progress";
 import { ProjectAgents } from "@/features/fleet/ui/ProjectAgents";
@@ -363,11 +362,7 @@ export function LaunchDetailPage({
 
   const raiseOverview = (
     <>
-      {/* The TrustGraph surface: gate state, published roots, the graph. */}
-      {contributor ? null : <PriceChartCard launch={launch} />}
-      {workDao && !contributor ? (
-        <TradeCard dao={workDao} launch={launch} />
-      ) : null}
+      {contributor ? null : <SalePriceCard launch={launch} />}
       <OverviewTab
         launch={launch}
         onOpenMilestones={() => setTab("milestones")}

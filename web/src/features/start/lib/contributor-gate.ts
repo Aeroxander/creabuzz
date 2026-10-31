@@ -11,7 +11,7 @@
 
 import { ideaId } from "../../launchpad/lib/idea.ts";
 
-export type ContributorGateReason =
+type ContributorGateReason =
   | "reading"
   | "no-network"
   | "mainnet"

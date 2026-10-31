@@ -126,7 +126,7 @@ export function auctionErrorMessage(error: unknown): string {
  * Wei of the sale token that StandardPool locks in the TokenMaster router at
  * mint (StandardPool.sol:127-128), and therefore can never be sold or funded.
  */
-export const STANDARD_POOL_ROUTER_LOCK_WEI = 1n;
+const STANDARD_POOL_ROUTER_LOCK_WEI = 1n;
 
 /** Canonical CCA factory v2.1.0 (LaunchpadFork.t.sol:16). */
 export const DEFAULT_CCA_FACTORY = "0x000000001F26a0044BaA66024e7b6599c61963F8";
@@ -153,9 +153,9 @@ const MPS = 10_000_000n;
 // ---------------------------------------------------------------------------
 
 /** `create(address,uint256,bytes,bytes32)` on the CCA factory (`cast` → `0x4aaa5b37`). */
-export const SIGNATURE_FACTORY_CREATE = "create(address,uint256,bytes,bytes32)";
+const SIGNATURE_FACTORY_CREATE = "create(address,uint256,bytes,bytes32)";
 /** `getAddress(address,uint256,bytes,bytes32,address)` (`cast` → `0x1bfb751b`). */
-export const SIGNATURE_FACTORY_GET_ADDRESS =
+const SIGNATURE_FACTORY_GET_ADDRESS =
   "getAddress(address,uint256,bytes,bytes32,address)";
 /** `graduations(address)` on GraduationExecutor (`cast` → `0x62e3857f`). */
 export const SIGNATURE_GRADUATIONS = "graduations(address)";
@@ -179,9 +179,7 @@ export const SELECTOR_LBP_INITIALIZATION_PARAMS = selectorOf(
 
 /** `isGraduated()` selector — same pin as `chainRpc.SELECTOR_IS_GRADUATED` (`0x9e5f2602`). */
 export const SIGNATURE_IS_GRADUATED = "isGraduated()";
-export const SIGNATURE_CURRENCY_RAISED = "currencyRaised()";
 export const SELECTOR_IS_GRADUATED = selectorOf(SIGNATURE_IS_GRADUATED);
-export const SELECTOR_CURRENCY_RAISED = selectorOf(SIGNATURE_CURRENCY_RAISED);
 
 /** Decode a single 32-byte return word as an address (left-padded, 20 bytes). */
 export function addressWordValue(returnData: string): string {
@@ -315,7 +313,7 @@ export interface AuctionDeployParams {
 export type AuctionPreflightStage = "plan" | "auction-address";
 
 /** A preflight failure that names the exact check that failed. */
-export class AuctionPrepareError extends Error {
+class AuctionPrepareError extends Error {
   readonly stage: AuctionPreflightStage;
 
   constructor(stage: AuctionPreflightStage, message: string) {

@@ -18,7 +18,6 @@ import {
 import { raisesOffered } from "../lib/raises-offered";
 import { SANDBOX_ID, sandboxProgress } from "../lib/sandbox";
 import type { LaunchRecord, LaunchStage } from "../models";
-import { effectiveStage } from "../models";
 
 const STAGE_LABELS: Record<LaunchStage, string> = {
   draft: "Draft",
@@ -201,5 +200,3 @@ export function OwnershipOnlyNote({ className }: { className?: string }) {
     </p>
   );
 }
-
-export { effectiveStage };

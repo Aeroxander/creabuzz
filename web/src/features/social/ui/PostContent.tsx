@@ -11,11 +11,9 @@ import { displayText } from "../../feed/lib/feed-events";
 import { DecisionEmbeds } from "../../launchpad/ui/DecisionEmbeds";
 import { tokenize } from "../lib/content";
 import { quotedPostState } from "../lib/timeline";
-import { q96ToPrice } from "../../launchpad/lib/candles";
+import { formatPrice, q96ToPrice } from "../../launchpad/lib/candles";
 import { saleCurrencyFor } from "../../launchpad/lib/sale-currency";
-import { formatPrice } from "../../launchpad/ui/CandlestickChart";
 import { cashtagLabel, cashtagPrice } from "../lib/cashtag";
-import { useMarketPrice } from "../../launchpad/use-market";
 import { useCashtagOwners } from "../use-cashtags";
 import { usePeople } from "../use-people";
 import { useNotesById } from "../use-social-data";
@@ -69,9 +67,8 @@ function Spark({ points }: { points: number[] }) {
 
 /**
  * `$TICKER`: a link to the launch that owns the ticker, or plain text when nobody has claimed it. The price beside
- * it is the last trade on the market once the token has traded and a price service is configured. Before that it is
- * only ever what is recorded: the highest price recent bids would pay, or the sale's starting price when nobody has
- * bid, which is not a market trade, and the label says so.
+ * it is only ever what is recorded: the highest price recent bids would pay, or the sale's starting price when nobody
+ * has bid, which is not a market trade, and the label says so.
  */
 function Cashtag({ symbol }: { symbol: string }) {
   const launch = useCashtagOwners().get(symbol);
@@ -86,7 +83,6 @@ function ResolvedCashtag({
   launch: NonNullable<ReturnType<ReturnType<typeof useCashtagOwners>["get"]>>;
   symbol: string;
 }) {
-  const market = useMarketPrice(launch);
   const currency = saleCurrencyFor(
     launch.record.currency,
     launch.record.chainId,
@@ -95,7 +91,6 @@ function ResolvedCashtag({
   const price = cashtagPrice(
     { bids: launch.bids, floorPrice: launch.record.floorPrice },
     (q96) => q96ToPrice(q96, currency.decimals),
-    market,
   );
   const shown = price ? { price, unit, text: formatPrice(price.latest) } : null;
   const label = cashtagLabel(symbol, launch, shown);

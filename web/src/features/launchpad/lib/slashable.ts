@@ -23,7 +23,7 @@ interface SlashMandate {
   reviewers: readonly SlashReviewer[];
 }
 
-export interface Slashable<M extends SlashMandate> {
+interface Slashable<M extends SlashMandate> {
   mandate: M;
   reviewer: M["reviewers"][number];
   /** Bond that still counts toward judging. */

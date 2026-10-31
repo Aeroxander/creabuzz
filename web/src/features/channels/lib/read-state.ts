@@ -10,7 +10,7 @@
  * Alias-free; `read-state.test.mjs` drives it under `node --test`.
  */
 
-export type ReadCount =
+type ReadCount =
   | { status: "exact"; value: number }
   | { status: "at_least"; value: number }
   | { status: "unknown" };

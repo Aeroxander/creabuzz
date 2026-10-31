@@ -113,7 +113,7 @@ export const WIZARD_STEPS: readonly WizardStepMeta[] = [
   },
 ];
 
-export function stepIndex(step: WizardStep): number {
+function stepIndex(step: WizardStep): number {
   return WIZARD_STEPS.findIndex((meta) => meta.key === step);
 }
 
@@ -169,11 +169,12 @@ export interface WizardState {
  * dialog and the wizard share one mapping (`buildLegacyInput`).
  */
 /**
- * Which token a launch form starts on. A launch already made as a DAO stays one when edited (its Shares are the
- * record's token, not an import); a new one is always the project's own Shares. A network with no launch kit does not
- * change the product: the draft is saved as the same own-DAO launch and the launch step says it cannot go yet, rather than
- * quietly turning the project into a minted token with different ownership. Only an existing launch that was published as
- * a minted token stays one where no kit exists, because an edit never rewrites what the founder published.
+ * Which token a launch form starts on. A new launch is always the project's own Shares ("dao"). A network with no
+ * launch kit does not change the product: the draft is saved as the same own-DAO launch and the launch step says it
+ * cannot go yet. Minting a token or importing one was removed in D150; a launch published that way before then keeps
+ * its kind when edited ("mint" with its token plan, "import" with its token), because an edit never rewrites what the
+ * founder published. The one exception is a minted-token draft that never got its token, on a network with a launch
+ * kit: it can no longer be minted, so it opens as the project's own Shares and can launch through the kit.
  */
 export function initialTokenMode(
   initial:
@@ -183,8 +184,10 @@ export function initialTokenMode(
   hasKit: boolean,
 ): "mint" | "import" | "dao" {
   if (initial?.tokenPlan?.mode === "dao") return "dao";
+  if (initial?.tokenPlan?.mode === "mint") {
+    return initial.token || !hasKit ? "mint" : "dao";
+  }
   if (initial?.token) return "import";
-  if (initial?.tokenPlan?.mode === "mint" && !hasKit) return "mint";
   return "dao";
 }
 
@@ -232,11 +235,13 @@ export interface FormState {
   vestingPresent: boolean;
   /** The founder changed the ladder in this session. */
   vestingDirty: boolean;
+  /** "mint" and "import" only describe a launch published before D150 (see {@link initialTokenMode}). */
   tokenMode: "mint" | "import" | "dao";
   tokenName: string;
   symbol: string;
   /** Sale tranche in whole tokens — the record's `tokenPlan.supply`. */
   supply: string;
+  /** The token the record already links (an older launch's token, or a DAO's Shares); kept through a save. */
   importAddress: string;
   asAgent: boolean;
   /**
@@ -258,7 +263,7 @@ export interface FormState {
 }
 
 /** Four equal milestones by default — 25/25/25/25 of the milestone slice. */
-export function initialMilestones(count = 4): MilestoneRow[] {
+function initialMilestones(count = 4): MilestoneRow[] {
   const percents = equalMilestoneSplit(count);
   return Array.from({ length: count }, (_, index) => ({
     claim: milestoneClaimId(index),
@@ -363,7 +368,7 @@ export interface SalePatch {
 }
 
 /** Tokens the auction offers, in 18-decimal units. */
-export function saleTokensFromSupply(supply: string): bigint {
+function saleTokensFromSupply(supply: string): bigint {
   const trimmed = supply.trim();
   if (!/^\d+$/.test(trimmed)) return 0n;
   return BigInt(trimmed) * 10n ** 18n;
@@ -423,7 +428,7 @@ export function patchForRaiseTarget(
 /** The share dropdown's options. Anything else reads as "set in Advanced". */
 export const BUDGET_SHARES = [0, 5, 10, 15, 20, 25] as const;
 
-export function toBigint(value: string): bigint {
+function toBigint(value: string): bigint {
   const trimmed = value.trim();
   if (trimmed === "") return 0n;
   if (!/^\d+$/.test(trimmed)) return 0n;
@@ -486,7 +491,7 @@ export function budgetCapMessage(
 // ---------------------------------------------------------------------------
 
 /** The plan step 3 produces, for the record's `unlocks` field. */
-export function unlockPlanFromWizard(
+function unlockPlanFromWizard(
   wizard: WizardState,
   allocation: SupplyAllocation,
   ownDao = false,
@@ -540,12 +545,6 @@ export function wizardStepIssues(
       issues.push(
         "Launch id must be lowercase letters, digits, dashes or underscores.",
       );
-    }
-    if (
-      form.tokenMode === "import" &&
-      !/^0x[0-9a-fA-F]{40}$/.test(form.importAddress.trim())
-    ) {
-      issues.push("Paste the token contract you are importing.");
     }
   }
   if (step === "sale") {
@@ -754,7 +753,7 @@ export function validationWindowFor(
  * The ladder the form starts from: MetaDAO's default package (cliff, then
  * 2x/4x/8x/16x/32x), the same numbers `CreateLaunchDialog` has always seeded.
  */
-export function defaultVesting(): VestingConfig {
+function defaultVesting(): VestingConfig {
   return {
     cliffBlocks: 3_110_400,
     tranches: DEFAULT_PERFORMANCE_TRANCHES.map((tranche) => ({ ...tranche })),
@@ -763,9 +762,7 @@ export function defaultVesting(): VestingConfig {
 }
 
 /** Structural equality — did anyone actually change the ladder? */
-export function isDefaultVesting(
-  vesting: VestingConfig | null | undefined,
-): boolean {
+function isDefaultVesting(vesting: VestingConfig | null | undefined): boolean {
   if (!vesting) return false;
   const fallback = defaultVesting();
   return (
@@ -789,7 +786,7 @@ export function isDefaultVesting(
  * one the founder edited in Advanced, always publishes — an explicit edit is
  * the advanced-passthrough rule.
  */
-export function publishableVesting(form: FormState): VestingConfig | undefined {
+function publishableVesting(form: FormState): VestingConfig | undefined {
   if (!form.vesting || validateVesting(form.vesting).length > 0) {
     return undefined;
   }
@@ -828,11 +825,9 @@ export function buildLegacyInput(form: FormState): CreateLaunchInput {
     tickSpacing: form.tickSpacing.trim(),
     requiredRaised: form.requiredRaised.trim(),
     auction: form.auction.trim(),
-    // A DAO's Shares are linked after its launch; editing the terms must keep that link, not blank it.
-    token:
-      form.tokenMode === "import" || form.tokenMode === "dao"
-        ? form.importAddress.trim()
-        : "",
+    // Whatever token the record links (a DAO's Shares, linked after its launch, or an older launch's minted or
+    // imported token): editing the terms must keep that link, not blank it.
+    token: form.importAddress.trim(),
     treasury: form.treasury.trim(),
     admission: form.admission,
     channels: form.channels,

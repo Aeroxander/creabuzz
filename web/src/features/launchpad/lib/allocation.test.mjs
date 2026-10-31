@@ -5,7 +5,6 @@ import {
   STANDARD_ALLOCATION,
   STANDARD_DAO_ALLOCATION,
   allocationIssue,
-  allocationForMode,
   allocationRows,
   daoReserve,
   withDaoReserve,
@@ -149,18 +148,4 @@ test("setting the DAO's share writes it all into one stored share and keeps the 
   assert.equal(next.sale, STANDARD_ALLOCATION.sale);
   assert.equal(next.team, STANDARD_ALLOCATION.team);
   assert.match(String(allocationIssue(next)), /unassigned/);
-});
-
-test("changing the kind of token swaps an untouched standard split and leaves an edited one alone", () => {
-  assert.deepEqual(
-    allocationForMode({ ...STANDARD_ALLOCATION }, true),
-    STANDARD_DAO_ALLOCATION,
-  );
-  assert.deepEqual(
-    allocationForMode({ ...STANDARD_DAO_ALLOCATION }, false),
-    STANDARD_ALLOCATION,
-  );
-  const edited = { ...STANDARD_DAO_ALLOCATION, sale: 25, treasury: 55 };
-  assert.deepEqual(allocationForMode(edited, false), edited);
-  assert.deepEqual(allocationForMode(edited, true), edited);
 });

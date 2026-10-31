@@ -137,18 +137,18 @@ export const OFFICIAL_STUB_SIGNATURE = encodeZeroDevWebAuthnSignature({
 });
 
 /** Function signatures (cast-verified 1.4.3; selectors in the smoke header). */
-export const KERNEL_CREATE_ACCOUNT_SIGNATURE = "createAccount(bytes,bytes32)";
-export const KERNEL_GET_ADDRESS_SIGNATURE_0_3_3 = "getAddress(bytes,bytes32)";
-export const KERNEL_INITIALIZE_SIGNATURE =
+const KERNEL_CREATE_ACCOUNT_SIGNATURE = "createAccount(bytes,bytes32)";
+const KERNEL_GET_ADDRESS_SIGNATURE_0_3_3 = "getAddress(bytes,bytes32)";
+const KERNEL_INITIALIZE_SIGNATURE =
   "initialize(bytes21,address,bytes,bytes,bytes[])";
-export const ENTRY_POINT_GET_USER_OP_HASH_SIGNATURE =
+const ENTRY_POINT_GET_USER_OP_HASH_SIGNATURE =
   "getUserOpHash((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes))";
-export const ENTRY_POINT_GET_NONCE_SIGNATURE = "getNonce(address,uint192)";
+const ENTRY_POINT_GET_NONCE_SIGNATURE = "getNonce(address,uint192)";
 
 // ------------------------------------------------------------- errors ------
 
 /** Build-time / runtime configuration is missing or inconsistent. */
-export class Kernel033ConfigError extends Error {
+class Kernel033ConfigError extends Error {
   constructor(message: string) {
     super(`kernel033: ${message}`);
     this.name = "Kernel033ConfigError";

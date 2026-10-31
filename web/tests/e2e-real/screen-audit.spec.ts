@@ -648,12 +648,6 @@ const STOPS: Stop[] = [
     path: "/launchpad/nebula-sandbox",
     hosted: { redirect: /\/(launchpad|discover)$/ },
   },
-  {
-    name: "h10-markets",
-    who: "nia",
-    path: "/markets",
-    hosted: { redirect: /\/discover$/ },
-  },
   // ── The rest a person can reach ────────────────────────────────────────────────────────────────────
   { name: "i01-repos", who: "nia", path: "/repos" },
   { name: "i02-wiki", who: "dev", path: community("?view=wiki") },
@@ -792,8 +786,8 @@ async function capture(
 }
 
 // The hosted build offers no sale anywhere: Start has no raise steps, the sale wizard does not open (its button is not
-// there, and the `?start=sale` address leads to Discover), Discover offers no backing, and Markets and the raise sandbox
-// lead elsewhere.
+// there, and the `?start=sale` address leads to Discover), Discover offers no backing, and the raise sandbox leads
+// elsewhere.
 test("the contributor-only build shows no sale", async ({ browser }) => {
   test.skip(!CONTRIBUTOR_ONLY, "only for a capture of the hosted build");
   const page = await openAs(browser, "frida", "desktop", false);
@@ -826,8 +820,6 @@ test("the contributor-only build shows no sale", async ({ browser }) => {
     ).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Markets" })).toHaveCount(0);
 
-    await page.goto("/markets");
-    await expect(page).toHaveURL(/\/discover$/);
     await page.goto("/launchpad/nebula-sandbox");
     // The list of ideas may itself move under Discover in this build; either way the sandbox is not offered.
     await expect(page).toHaveURL(/\/(launchpad|discover)$/);

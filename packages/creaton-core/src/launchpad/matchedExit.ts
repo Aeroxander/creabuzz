@@ -36,12 +36,12 @@ const HEX_RE = /^0x([0-9a-fA-F]{2})*$/;
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 /** The EIP-712 domain the exchange signs in. */
-export const EXIT_DOMAIN_NAME = "Creaton matched exit";
-export const EXIT_DOMAIN_VERSION = "1";
+const EXIT_DOMAIN_NAME = "Creaton matched exit";
+const EXIT_DOMAIN_VERSION = "1";
 /** The most offer records read for one DAO; older ones are not looked at. */
 export const MAX_EXIT_OFFERS = 50;
 /** The largest offer record, in bytes (the server refuses larger). */
-export const MAX_EXIT_OFFER_BYTES = 2000;
+const MAX_EXIT_OFFER_BYTES = 2000;
 
 const OFFER_TUPLE = "(address,address,uint256,uint256,uint64,uint256)";
 const OFFER_TYPE = {

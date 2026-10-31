@@ -368,7 +368,7 @@ export interface CreateLaunchInput {
   auction: string;
   token: string;
   treasury: string;
-  /** Tranche/royalty enforcer wiring (token-lifecycle-design.md), post-deploy. */
+  /** Tranche enforcer wiring, post-deploy (`distributor`: pre-v3 tag, kept on edits). */
   distributor?: string;
   claimStake?: string;
   verifierSet?: string;

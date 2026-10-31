@@ -20,7 +20,7 @@ import {
  * Ensure the repo is cloned (or fetched) into IndexedDB.
  * Other hooks depend on this to get `fs` and `dir`.
  */
-export function useGitClone(owner: string, repoName: string, ref: string) {
+function useGitClone(owner: string, repoName: string, ref: string) {
   return useQuery({
     queryKey: ["git-clone", owner, repoName, ref],
     queryFn: () => ensureClone(owner, repoName, ref),

@@ -38,7 +38,7 @@ const STANCE_HINTS: Record<FundingStance, string> = {
 };
 
 /** The declaration as the record stores it; null means "nothing declared". */
-export function fundingFromForm(
+function fundingFromForm(
   stance: FundingStance | null,
   seeking: readonly FundingSeeking[],
   path: FundingPath | null,

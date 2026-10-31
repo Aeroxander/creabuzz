@@ -35,9 +35,9 @@ export type AgentStopEvent = {
   createdAt: number;
 };
 
-export type AgentStopStepName = "budget" | "ban" | "seats" | "grants";
+type AgentStopStepName = "budget" | "ban" | "seats" | "grants";
 
-export type AgentStopStepResult =
+type AgentStopStepResult =
   | { step: AgentStopStepName; ok: true; changed: number }
   | { step: AgentStopStepName; ok: false; error: string };
 
@@ -103,10 +103,7 @@ export function stopBudgetContent(agent: string): string {
  * only the newest event per coordinate and drops a republish made within the
  * same second as its predecessor as a duplicate.
  */
-export function nextCreatedAt(
-  existingCreatedAt: number | null,
-  now: number,
-): number {
+function nextCreatedAt(existingCreatedAt: number | null, now: number): number {
   return Math.max(now, existingCreatedAt === null ? 0 : existingCreatedAt + 1);
 }
 
@@ -163,10 +160,7 @@ function newestPerD(records: AgentStopRecord[]): AgentStopRecord[] {
  * The node republish with `agent` removed from `agentSeats`, keeping every
  * other field — holders, parent, scope. `null` when nothing would change.
  */
-export function detachAgentSeat(
-  existing: string,
-  agent: string,
-): string | null {
+function detachAgentSeat(existing: string, agent: string): string | null {
   const body = parseObject(existing);
   if (!body) return null;
   const who = agent.toLowerCase();
@@ -183,7 +177,7 @@ export function detachAgentSeat(
  * `name`, and one `seat` per holder and agent seat (the relay's seat cap
  * counts these — dropping them silently strips authority).
  */
-export function orgNodeTags(dtag: string, content: string): string[][] {
+function orgNodeTags(dtag: string, content: string): string[][] {
   const body = parseObject(content) ?? {};
   const tags: string[][] = [["d", dtag]];
   if (typeof body.name === "string" && body.name) {

@@ -30,7 +30,6 @@ import {
 
 import {
   buildSiweLogin,
-  buildSiweMessage,
   parseWalletBinding,
   revokeProofTemplate,
   type SiweLoginChallenge,
@@ -282,5 +281,3 @@ export async function signInWithWallet(
   }
   return { address: login.address, pubkey: login.pubkey };
 }
-
-export { buildSiweMessage };

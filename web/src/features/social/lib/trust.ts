@@ -137,9 +137,9 @@ export function percentiles(
 }
 
 /** Below this many accounts the follow graph says too little to lean on. */
-export const SMALL_COMMUNITY = 25;
+const SMALL_COMMUNITY = 25;
 /** At this many accounts the trust signal is fully in play. */
-export const LARGE_COMMUNITY = 1_000;
+const LARGE_COMMUNITY = 1_000;
 /** Even a huge community keeps some weight on plain headcount. */
 export const MAX_TRUST_SHARE = 0.8;
 

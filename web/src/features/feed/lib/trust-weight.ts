@@ -32,8 +32,8 @@ import {
 import type { SignedEventLike } from "./feed-events.ts";
 
 export const NEWCOMER_WEIGHT = 0.2;
-export const CONTRIBUTOR_WEIGHT = 1;
-export const PER_EXTRA_ACCEPTED = 0.25;
+const CONTRIBUTOR_WEIGHT = 1;
+const PER_EXTRA_ACCEPTED = 0.25;
 export const MAX_WEIGHT = 2;
 
 /**

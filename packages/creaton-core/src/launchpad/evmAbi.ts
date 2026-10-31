@@ -434,15 +434,15 @@ export const SIGNATURE_ERC20_TRANSFER = "transfer(address,uint256)";
 /** ERC-20 `balanceOf(address)` — the funding preflight/idempotency read. */
 export const SIGNATURE_ERC20_BALANCE_OF = "balanceOf(address)";
 /** `onTokensReceived()` on the CCA — arms the auction once its supply arrived. */
-export const SIGNATURE_ON_TOKENS_RECEIVED = "onTokensReceived()";
+const SIGNATURE_ON_TOKENS_RECEIVED = "onTokensReceived()";
 /** `bindAuction(address)` on GraduationExecutor — the one-shot, treasury-only bind. */
 export const SIGNATURE_BIND_AUCTION = "bindAuction(address)";
 /** `boundAuction()` on GraduationExecutor — the bind idempotency read. */
-export const SIGNATURE_BOUND_AUCTION = "boundAuction()";
+const SIGNATURE_BOUND_AUCTION = "boundAuction()";
 /** `setAuction(address)` on AllowlistHook — the one-shot, owner-only bind. */
 export const SIGNATURE_SET_HOOK_AUCTION = "setAuction(address)";
 /** `auction()` on AllowlistHook — the bind idempotency read. */
-export const SIGNATURE_HOOK_AUCTION = "auction()";
+const SIGNATURE_HOOK_AUCTION = "auction()";
 /** `withdrawStuckReserve(address)` — treasury takes an unreleased reserve back after the lock. */
 export const SIGNATURE_WITHDRAW_STUCK_RESERVE = "withdrawStuckReserve(address)";
 

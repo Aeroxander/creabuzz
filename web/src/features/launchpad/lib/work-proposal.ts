@@ -22,11 +22,11 @@ import { hashText, idWord } from "@creaton/core/launchpad/work.ts";
 import { KIND_FORUM_POST } from "../../board/lib/board-events.ts";
 import { composePost, splitPost } from "../../board/lib/post-text.ts";
 
-export const WORK_PROPOSAL_TOPIC = "work-proposal";
-export const PROJECT_NAME_MAX = 32;
-export const CHECK_MIN = 5;
-export const CHECK_MAX = 280;
-export const MAX_ASK = 1_000_000_000n;
+const WORK_PROPOSAL_TOPIC = "work-proposal";
+const PROJECT_NAME_MAX = 32;
+const CHECK_MIN = 5;
+const CHECK_MAX = 280;
+const MAX_ASK = 1_000_000_000n;
 
 export function workProposalTopic(
   chainId: string | number,

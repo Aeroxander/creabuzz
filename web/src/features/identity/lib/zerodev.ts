@@ -109,7 +109,7 @@ export const ENTRY_POINT_V0_7 = "0x0000000071727de22e5e9d8baf0edac6f37da032";
 export const ENTRY_POINT_V0_8 = "0x4337084d9e255ff0702461cf8895ce9e3b5ff108";
 
 /** ZeroDev RPC host (`/api/v3/<projectId>/chain/<chainId>`). */
-export const ZERODEV_RPC_HOST = "https://rpc.zerodev.app";
+const ZERODEV_RPC_HOST = "https://rpc.zerodev.app";
 
 /** Thrown when the ZeroDev project id (or chain id) is not configured. */
 export class ZerodevNotConfiguredError extends Error {
@@ -457,10 +457,10 @@ export async function sponsorUserOperation(
 }
 
 /** Passkey-style signer port: userOpHash → validator signature bytes. */
-export type SignUserOpHash = (opHash: string) => string | Promise<string>;
+type SignUserOpHash = (opHash: string) => string | Promise<string>;
 
 /** Hash port; defaults to `getUserOpHash` (EntryPoint v0.8.0 EIP-712). */
-export type HashUserOp = (
+type HashUserOp = (
   userOp: PackedUserOperation,
   entryPoint: string,
   chainId: bigint,

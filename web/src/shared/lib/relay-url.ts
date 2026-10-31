@@ -18,7 +18,7 @@ export function relayHttpUrl(wsUrl: string): string {
  * empty-community screen. A stored override lets users point the app at the
  * right relay without rebuilding.
  */
-export const RELAY_URL_STORAGE_KEY = "buzz.relayUrl";
+const RELAY_URL_STORAGE_KEY = "buzz.relayUrl";
 
 /** Normalize a user-supplied relay URL to a WebSocket URL (http→ws, https→wss). */
 export function normalizeRelayWsUrl(input: string): string {
@@ -36,7 +36,7 @@ export function normalizeRelayWsUrl(input: string): string {
   return `ws://${trimmed}`;
 }
 
-export function getStoredRelayWsUrl(): string | null {
+function getStoredRelayWsUrl(): string | null {
   try {
     return window.localStorage.getItem(RELAY_URL_STORAGE_KEY);
   } catch {
