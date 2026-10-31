@@ -21,7 +21,12 @@ import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { LaunchCard } from "@/features/launchpad/ui/LaunchCard";
-import { effectiveFunding } from "@/features/launchpad/lib/funding";
+import {
+  effectiveFunding,
+  isContributorProject,
+} from "@/features/launchpad/lib/funding";
+import { useContributorProvenance } from "@/features/launchpad/use-contributor-provenance";
+import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { isIdea } from "@/features/launchpad/lib/idea";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
@@ -79,6 +84,85 @@ function AddressLine({
   );
 }
 
+/**
+ * A contributor project's DAO, as far as it was checked: made by the contributor kit (the one way this app sets a
+ * project up), or only claimed by its record.
+ */
+function ContributorDaoSource({
+  chainId,
+  dao,
+}: {
+  chainId: string | null;
+  dao: string | null;
+}) {
+  const { provenance } = useContributorProvenance(chainId, dao);
+  return (
+    <span className="shrink-0" data-testid="discover-dao-checked">
+      {provenance === "kit"
+        ? "Set up by the contributor kit"
+        : provenance === "reading"
+          ? "Checking how it was set up…"
+          : "Not set up by the contributor kit"}
+    </span>
+  );
+}
+
+/**
+ * A contributor project's DAO card: its page is the project's own, with nothing to join from here. It shows names
+ * only, never the DAO's address: the project page carries that (with copy and explorer link), and this card is on the
+ * hosted pilot's main directory page.
+ */
+function ContributorDaoCard({
+  card,
+  launch,
+  nameOf,
+}: {
+  card: DaoCard;
+  launch: NonNullable<DaoCard["launch"]>;
+  nameOf: (pubkey: string) => string;
+}) {
+  return (
+    <li>
+      <Card
+        className="flex h-full flex-col gap-3 p-4"
+        data-testid="discover-dao"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <Link
+            className="min-w-0 flex-1 truncate text-base font-semibold hover:underline"
+            data-testid="discover-dao-title"
+            params={{ launchId: launch.id }}
+            search={{ action: undefined, author: launch.author }}
+            to="/launchpad/$launchId"
+          >
+            {card.name}
+          </Link>
+          <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-2xs font-medium text-emerald-700 dark:text-emerald-300">
+            DAO
+          </span>
+        </div>
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-2xs text-black/70 dark:text-white/70">
+          <span className="truncate" title={card.founder ?? undefined}>
+            {card.founder ? nameOf(card.founder) : "founder not recorded"}
+          </span>
+          <ContributorDaoSource chainId={launch.chainId} dao={card.dao} />
+        </div>
+        <div className="flex gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link
+              params={{ launchId: launch.id }}
+              search={{ action: undefined, author: launch.author }}
+              to="/launchpad/$launchId"
+            >
+              Open project
+            </Link>
+          </Button>
+        </div>
+      </Card>
+    </li>
+  );
+}
+
 export function DiscoverDaoCard({
   card,
   nameOf,
@@ -86,6 +170,11 @@ export function DiscoverDaoCard({
   card: DaoCard;
   nameOf: (pubkey: string) => string;
 }) {
+  if (card.launch) {
+    return (
+      <ContributorDaoCard card={card} launch={card.launch} nameOf={nameOf} />
+    );
+  }
   const address = card.dao ?? card.contract?.address ?? null;
   const addressLabel = card.dao
     ? "DAO address"
@@ -186,13 +275,24 @@ export function DiscoverDaoCard({
   );
 }
 
-export function DiscoverLaunchCard({ launch }: { launch: Launch }) {
+export function DiscoverLaunchCard({
+  launch,
+  raises,
+}: {
+  launch: Launch;
+  /** Whether this build offers raises (`raisesOffered`): without them nothing offers to back a launch. */
+  raises: boolean;
+}) {
   const follows = useLaunchFollows();
   const { data: profiles } = useProfiles([launch.record.author]);
   const founder = profiles?.[launch.record.author];
   const stage = effectiveStage(launch);
   const blockHeight = useChainBlockHeight();
   const key = launchCoord(launch.record);
+  // A contributor project sold nothing: it is a project to open, not a launch to view.
+  const contributor = isContributorProject(launch.record);
+  // A contributor-only build lists no DAOs section: the project's own card says it is a DAO, and how it was set up.
+  const dao = contributor && !raises ? daoOfLaunch(launch) : null;
   return (
     <li data-testid="discover-launch">
       <LaunchCard
@@ -203,11 +303,25 @@ export function DiscoverLaunchCard({ launch }: { launch: Launch }) {
         followed={follows.followed.has(key)}
         footer={
           <div className="space-y-3">
+            {dao ? (
+              <p
+                className="flex flex-wrap items-center gap-2 text-2xs text-black/70 dark:text-white/70"
+                data-testid="discover-launch-dao"
+              >
+                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">
+                  DAO
+                </span>
+                <ContributorDaoSource
+                  chainId={launch.record.chainId ?? null}
+                  dao={dao}
+                />
+              </p>
+            ) : null}
             <ProgressBar quietWhenUnknown record={launch.record} />
             {/* A raise that is over stays listed (hiding it would make the
                 directory lie by omission), but its CTA must not promise a bid
                 the auction will not take — Review-Proven Rule 6. */}
-            {canBackLaunch(stage) ? (
+            {canBackLaunch(stage, raises) ? (
               <Button asChild className="w-full" size="sm">
                 <Link
                   params={{ launchId: launch.record.id }}
@@ -225,7 +339,7 @@ export function DiscoverLaunchCard({ launch }: { launch: Launch }) {
                   search={{ action: undefined, author: launch.record.author }}
                   to="/launchpad/$launchId"
                 >
-                  View launch
+                  {contributor ? "Open project" : "View launch"}
                   <ArrowRight aria-hidden className="ml-1 h-3.5 w-3.5" />
                 </Link>
               </Button>

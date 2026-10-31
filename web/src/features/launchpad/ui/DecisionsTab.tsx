@@ -10,7 +10,7 @@ import { useEvidencePackets } from "../use-evidence";
 import type { SponsorIntent } from "../lib/sponsor";
 import { isContributorProject } from "../lib/funding";
 import { Card } from "@/shared/ui/card";
-import { FailureNote, WalletStrip } from "./auction-widgets";
+import { FailureNote, WalletStrip } from "./account-widgets";
 import { recordSaleCurrency } from "../chain";
 import { useVerifiedExchange } from "../use-exchange";
 import type { Launch } from "../models";

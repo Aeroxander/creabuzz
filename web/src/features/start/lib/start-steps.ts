@@ -6,8 +6,9 @@
  * person published. Nothing is ticked on a guess. The last step (running it together) is what happens after a raise, so
  * it is never "done" from here.
  *
- * A build that offers no raises (the contributor-only hosted image, `raisesOffered`) gets only the steps that need none:
- * a raise step there would open a sale that cannot be launched.
+ * A build that offers no raises (the contributor-only hosted image, `raisesOffered`) leaves out the raise steps (they
+ * would open a sale that cannot be launched) and the place-to-work step (the pilot server makes no new communities, and
+ * its helpers are not set up). What is left is an option beside the contributor project, not a numbered next step.
  *
  * Alias-free for `node --test`.
  */
@@ -79,16 +80,26 @@ export interface StartStepView extends StartStep {
   next: boolean;
 }
 
-/** The steps that are about a raise: shown only where the build offers one. */
-const RAISE_STEPS: ReadonlySet<StartStepKey> = new Set(["raise", "run"]);
+/** The steps a build without raises leaves out: the raise itself, and the place to work it has no way to set up. */
+const LEFT_OUT_WITHOUT_RAISES: ReadonlySet<StartStepKey> = new Set([
+  "workspace",
+  "raise",
+  "run",
+]);
 
-/** The idea step's words where no raise follows it. */
-const IDEA_BODY_WITHOUT_RAISES =
-  "Say what you are making in a sentence. People can say they would back it, so you see real interest early.";
+/** The words a build without raises uses instead: nothing about backing. */
+const WITHOUT_RAISES: Partial<
+  Record<StartStepKey, Partial<Pick<StartStep, "body" | "note">>>
+> = {
+  idea: {
+    body: "Say what you are making in a sentence. People can say they're interested, so you see who wants to help.",
+  },
+};
 
 /**
  * Each step with whether it is done, and which one is next. `raises` is whether this build offers raises; without them
- * the raise steps are left out and the idea step does not talk about raising.
+ * only the idea step is left, it does not talk about backing, and it is an option rather than a next step (the
+ * contributor project above it is the way to start), so nothing is marked next.
  */
 export function startSteps(
   progress: StartProgress,
@@ -101,17 +112,16 @@ export function startSteps(
     run: false,
   };
   let nextFound = false;
-  return START_STEPS.filter((step) => raises || !RAISE_STEPS.has(step.key)).map(
-    (step) => {
-      const isDone = done[step.key];
-      // "Run it together" is what happens after a raise, never a task to tick off.
-      const next = !isDone && !nextFound && step.key !== "run";
-      if (next) nextFound = true;
-      const body =
-        !raises && step.key === "idea" ? IDEA_BODY_WITHOUT_RAISES : step.body;
-      return { ...step, body, done: isDone, next };
-    },
-  );
+  return START_STEPS.filter(
+    (step) => raises || !LEFT_OUT_WITHOUT_RAISES.has(step.key),
+  ).map((step) => {
+    const isDone = done[step.key];
+    // "Run it together" is what happens after a raise, never a task to tick off.
+    const next = raises && !isDone && !nextFound && step.key !== "run";
+    if (next) nextFound = true;
+    const words = raises ? {} : (WITHOUT_RAISES[step.key] ?? {});
+    return { ...step, ...words, done: isDone, next };
+  });
 }
 
 /**

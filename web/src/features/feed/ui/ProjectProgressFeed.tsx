@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { Link as LinkIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLaunches } from "@/features/launchpad/use-launches";
 import type { Launch } from "@/features/launchpad/models";
@@ -171,8 +172,11 @@ function ProgressList({
               : "Project progress"}
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {fresh ? `${fresh} new to you · ` : ""}Updates from the team and
-            work people submitted.
+            {fresh ? `${fresh} new to you · ` : ""}
+            {/* A project's own page lists its team's updates only: submitted work is shown with the work. */}
+            {project
+              ? "Updates from the team."
+              : "Updates from the team and work people submitted."}
           </p>
         </div>
         {!project ? (
@@ -186,10 +190,10 @@ function ProgressList({
                 onClick={() => setFilter(f)}
               >
                 {f === "all"
-                  ? "All projects"
+                  ? "All"
                   : hasFollowing
                     ? "Following & yours"
-                    : "Latest projects"}
+                    : "Projects I follow"}
               </Button>
             ))}
           </fieldset>
@@ -259,7 +263,9 @@ function ProgressList({
                 {i.project.name}
               </Link>
               <span>
-                {i.evidence ? "Evidence submitted" : "Team report"}
+                {i.evidence
+                  ? `Work submitted by ${names(i.author)}`
+                  : "Team update"}
                 {isNew(i.coordinate, i.id) ? " · New to you" : ""} ·{" "}
                 {new Date(i.at * 1000).toLocaleDateString()}
               </span>
@@ -290,7 +296,7 @@ function ProgressList({
               {i.evidence ? (
                 <Chip tone="warning">Not approved yet</Chip>
               ) : (
-                <Chip>Not checked by anyone else</Chip>
+                <Chip>From the team</Chip>
               )}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -308,8 +314,12 @@ function ProgressList({
               >
                 Discuss project
               </Link>
+              {/* An icon with its name for screen readers and on hover: as words it wrapped onto a line of its own on a
+                  phone, detached from the update it copies. */}
               <Button
-                size="sm"
+                aria-label="Copy update link"
+                size="icon"
+                title="Copy update link"
                 variant="ghost"
                 onClick={async () => {
                   const url = new URL(
@@ -331,7 +341,7 @@ function ProgressList({
                   }
                 }}
               >
-                Copy update link
+                <LinkIcon aria-hidden className="h-4 w-4" />
               </Button>
             </div>
           </li>

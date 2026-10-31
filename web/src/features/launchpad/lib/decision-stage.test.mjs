@@ -44,7 +44,7 @@ describe("decisionStage", () => {
   it("says nothing can run before the review ends, then that support has to hold", () => {
     assert.match(
       decisionStage(decision({ rules }), 1_000).next,
-      /Nothing can run before/,
+      /Nothing can take effect before/,
     );
     assert.match(
       decisionStage(decision({ rules }), 3_000).next,

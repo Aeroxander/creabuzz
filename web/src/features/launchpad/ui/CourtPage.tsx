@@ -17,7 +17,7 @@ import { formatUnits, parseUnits } from "../lib/dao-actions";
 import { encodeApproveBounty } from "../lib/work-bounty";
 import { useChainSend } from "../use-chain-send";
 import { COURT_QUERY, type CourtPageData, useCourt } from "../use-court";
-import { FailureNote, WalletStrip } from "./auction-widgets";
+import { FailureNote, WalletStrip } from "./account-widgets";
 import { CourtCaseCard } from "./CourtCaseCard";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;

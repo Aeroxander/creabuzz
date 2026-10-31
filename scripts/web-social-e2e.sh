@@ -165,11 +165,22 @@ if [[ "$HOSTED" == "1" ]]; then
   done
 fi
 
-# Every social real-server spec there is (some are added by later work; a missing one is not an error).
+# Every social real-server spec there is. As the pilot server runs (HOSTED=1, the MVP gate's social journey) a missing
+# one fails the run, and so does a media store that is down: media.spec.ts would skip itself, and pictures are the first
+# thing the pilot asks people to add. Otherwise a missing spec is not an error (some come with later work).
 DEFAULT_SPECS=()
 for spec in social board-moderation home-moderation follow-notify media; do
-  [[ -f "tests/e2e-real/$spec.spec.ts" ]] && DEFAULT_SPECS+=("tests/e2e-real/$spec.spec.ts")
+  if [[ -f "tests/e2e-real/$spec.spec.ts" ]]; then
+    DEFAULT_SPECS+=("tests/e2e-real/$spec.spec.ts")
+  elif [[ "$HOSTED" == "1" && -z "${SPECS:-}" ]]; then
+    fail "tests/e2e-real/$spec.spec.ts is missing: the hosted social run checks every social spec"
+  fi
 done
+if [[ "$HOSTED" == "1" && -z "${SPECS:-}" ]]; then
+  MEDIA_STORE="${BUZZ_S3_ENDPOINT:-http://localhost:9000}"
+  curl -fsS -o /dev/null --max-time 5 "${MEDIA_STORE%/}/minio/health/live" \
+    || fail "the media store ($MEDIA_STORE, the dev MinIO \`just setup\` starts) is not answering: the picture test would skip"
+fi
 read -r -a RUN_SPECS <<<"${SPECS:-${DEFAULT_SPECS[*]}}"
 [[ ${#RUN_SPECS[@]} -gt 0 ]] || fail "no specs to run"
 

@@ -9,12 +9,13 @@ import {
   type AuctionProgress,
 } from "../chain";
 import { formatMoney } from "../lib/amounts";
+import { fundingLine } from "../lib/contributor-only";
 import {
-  fundingSummary,
   type FundingStance,
   type ResolvedFunding,
   isContributorProject,
 } from "../lib/funding";
+import { raisesOffered } from "../lib/raises-offered";
 import { SANDBOX_ID, sandboxProgress } from "../lib/sandbox";
 import type { LaunchRecord, LaunchStage } from "../models";
 import { effectiveStage } from "../models";
@@ -69,6 +70,9 @@ export function FundingBadge({
   funding: ResolvedFunding;
   className?: string;
 }) {
+  // A contributor-only build says who a project is looking for, never a word about raising (`contributor-only.ts`).
+  const line = fundingLine(funding, raisesOffered());
+  if (line === null) return null;
   return (
     <span
       className={cn(
@@ -78,7 +82,7 @@ export function FundingBadge({
       )}
       data-testid="launch-funding-badge"
     >
-      {fundingSummary(funding)}
+      {line}
     </span>
   );
 }

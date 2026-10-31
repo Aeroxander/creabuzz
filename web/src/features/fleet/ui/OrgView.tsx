@@ -133,8 +133,8 @@ function AgentOrgCard({
               className="rounded-full border border-black/10 bg-background px-2 py-0.5 text-2xs text-black/60 hover:bg-black/5 dark:border-white/10 dark:text-white/60 dark:hover:bg-white/10"
               title={
                 isMine
-                  ? "Set this tab agent's team"
-                  : "Team shown here is announced by the agent"
+                  ? "Put this tab's AI helper in a team"
+                  : "This AI helper says which team it is in"
               }
               data-testid={`team-edit-${agent.id.slice(0, 6)}`}
             >
@@ -208,7 +208,7 @@ function OrgNodeCard({
                         })
                       }
                     >
-                      Stop agent
+                      Stop AI helper
                     </button>
                   ) : null}
                 </span>
@@ -366,9 +366,6 @@ export function OrgView() {
       >
         <summary className="cursor-pointer text-sm font-semibold select-none">
           Activity and health checks
-          <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
-            for the curious
-          </span>
         </summary>
         <OrgDiagnosticCard />
       </details>
@@ -403,23 +400,29 @@ function OrgRosterFallback({
   const userName = useUserNames(rosterPubkeys);
 
   const online = agents.filter((a) => a.alive).length;
+  // Team picks are for this tab's own helper, so they show only while it is on the roster.
+  const tabHelper = peekAgentPubkey();
+  const tabHelperListed =
+    tabHelper !== null && agents.some((a) => a.id === tabHelper);
 
   return (
     <div className="flex min-w-0 shrink-0 flex-col gap-3 p-4">
       <PageHeader
         title="Org"
         action={
-          <span className="text-xs text-black/60 dark:text-white/60">
-            {countOf(agents.length, "AI helper")} · {online} online ·{" "}
-            {countOf(groups.length, "team")}
-          </span>
+          agents.length > 0 ? (
+            <span className="text-xs text-black/60 dark:text-white/60">
+              {countOf(agents.length, "AI helper")} · {online} online ·{" "}
+              {countOf(groups.length, "team")}
+            </span>
+          ) : null
         }
       />
 
-      {TEAM_SUGGESTIONS.length > 0 ? (
+      {TEAM_SUGGESTIONS.length > 0 && tabHelperListed ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-black/60 dark:text-white/60">
-            Suggest a team for this tab agent:
+            Put this tab's AI helper in a team:
           </span>
           {TEAM_SUGGESTIONS.map((t) => (
             <button
@@ -438,7 +441,14 @@ function OrgRosterFallback({
       <div className="space-y-4">
         {loading && agents.length === 0 ? (
           <p className="text-xs text-black/60 dark:text-white/60">
-            Loading roster…
+            Loading AI helpers…
+          </p>
+        ) : agents.length === 0 ? (
+          <p
+            className="text-xs text-black/60 dark:text-white/60"
+            data-testid="org-no-helpers"
+          >
+            No AI helpers here yet.
           </p>
         ) : (
           groups.map(([team, members]) => (

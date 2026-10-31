@@ -205,18 +205,3 @@ export function useNoteRanking(
     };
   }, [enabled, model, ready, events, priority]);
 }
-
-/**
- * `rows` ordered for the Creaton tab. Until the trust model and the engagement
- * of the loaded posts are known, the rows stay in feed order — the ranking only
- * ever refines the chronological list, so there is no empty or half-sorted state.
- */
-export function useRankedRows(rows: readonly Row[], enabled: boolean): Row[] {
-  const ranking = useNoteRanking(rows, enabled);
-  return useMemo(() => {
-    if (!ranking.ready || rows.length === 0) return [...rows];
-    return [...rows].sort(
-      (a, b) => ranking.scoreNote(b) - ranking.scoreNote(a),
-    );
-  }, [ranking, rows]);
-}

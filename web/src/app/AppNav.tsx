@@ -1,23 +1,41 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Briefcase,
-  Compass,
   Home,
+  LayoutGrid,
   type LucideIcon,
   MessagesSquare,
   PlusCircle,
   Search,
 } from "lucide-react";
 
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 
+import { onlyCommunityHost } from "@/features/communities/lib/community-label";
+import { useCommunities } from "@/features/communities/use-communities";
+import { useSelfServe } from "@/features/communities/use-self-serve";
 import { ProfileMenu } from "@/features/identity/ui/ProfileMenu";
+import { useNotifications } from "@/features/notifications/use-notifications";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import {
+  portfolioInNav,
+  portfolioLabel,
+} from "@/features/portfolio/lib/portfolio-label";
+import { existingUserPubkey } from "@/shared/lib/identity";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 import { APP_NAME } from "@/shared/constants/brand";
 import { useMediaQuery } from "@/shared/hooks/use-media-query";
 import { Button } from "@/shared/ui/button";
 import { CreatonMark } from "@/shared/ui/CreatonMark";
 
 import { TestnetChip, TestnetStrip } from "./TestnetTag";
+
+// Notifications and Messages in the top bar: their reads load with them, after the page.
+const InboxLinks = lazy(() =>
+  import("@/features/social/ui/SocialShell").then((m) => ({
+    default: m.InboxLinks,
+  })),
+);
 
 interface NavItem {
   to:
@@ -36,6 +54,10 @@ interface NavItem {
    * Optional secondary destinations can stay out of the four-item phone bar.
    */
   wideOnly?: boolean;
+  /** Communities only: the one community to open instead of the directory (`onlyCommunityHost`). */
+  host?: string;
+  /** Something new behind this section, counted (the community bell's unread notifications). */
+  badge?: number;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
@@ -48,7 +70,8 @@ const NAV_ITEMS: readonly NavItem[] = [
   {
     to: "/discover",
     label: "Discover",
-    icon: Compass,
+    // Not the compass: that is the timeline's Explore, which shows beside this on a phone.
+    icon: LayoutGrid,
     // Projects, launches and their markets are destinations within Discover.
     matches: (p) =>
       p.startsWith("/discover") ||
@@ -79,6 +102,58 @@ const START_TAB: NavItem = {
   matches: (p) => p.startsWith("/start"),
 };
 
+/**
+ * The sections this build and this person see. A contributor-only build calls Portfolio "Your work" and shows it only
+ * to someone with an account (`portfolio-label.ts`).
+ */
+function navItems(community: {
+  host: string | null;
+  unread: number;
+}): readonly NavItem[] {
+  const raises = raisesOffered();
+  return NAV_ITEMS.flatMap((item) => {
+    if (item.to === "/c") {
+      return [
+        {
+          ...item,
+          host: community.host ?? undefined,
+          badge: community.unread,
+        },
+      ];
+    }
+    if (item.to !== "/portfolio") return [item];
+    if (!portfolioInNav(raises, existingUserPubkey() !== null)) return [];
+    return [{ ...item, label: portfolioLabel(raises) }];
+  });
+}
+
+/**
+ * What the Communities section needs: the one community to go straight into, when there is only one, and the count of
+ * the community's unread notifications (mentions, a moderator's notice about your words), which otherwise only show
+ * on the bell inside it.
+ */
+function useCommunitiesSection(): { host: string | null; unread: number } {
+  const selfServe = useSelfServe();
+  const directory = useCommunities();
+  const { unread } = useNotifications();
+  let host: string | null = null;
+  try {
+    host = onlyCommunityHost(
+      selfServe.data?.enabled,
+      directory.data?.communities,
+      new URL(relayWsUrl()).host,
+    );
+  } catch {
+    host = null;
+  }
+  return { host, unread };
+}
+
+/** The test id of a section's link: by its address, so a build that renames a section keeps it. */
+function navTestId(item: NavItem): string {
+  return `app-nav-${item.to === "/" ? "home" : item.to === "/c" ? "communities" : item.to.slice(1)}`;
+}
+
 /** Pages people land on from outside the app, shown without app chrome. */
 export function hidesAppNav(pathname: string): boolean {
   return pathname.startsWith("/invite/");
@@ -94,6 +169,8 @@ export function hidesAppNav(pathname: string): boolean {
 export function AppNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const wide = useMediaQuery("(min-width: 768px)");
+  const items = navItems(useCommunitiesSection());
+  const signedIn = existingUserPubkey() !== null;
 
   if (wide) {
     return (
@@ -101,6 +178,7 @@ export function AppNav() {
         aria-label="Main"
         className="flex h-16 w-full shrink-0 items-center gap-3 border-b border-border/60 bg-background/70 px-4 backdrop-blur-md lg:gap-6 lg:px-8"
         data-testid="app-nav"
+        data-layout="wide"
       >
         <Link
           aria-label={`${APP_NAME} home`}
@@ -115,7 +193,7 @@ export function AppNav() {
         <TestnetChip />
         <HeaderSearch />
         <div className="ml-auto flex items-center gap-0.5">
-          {NAV_ITEMS.map((item) => (
+          {items.map((item) => (
             <NavLink
               active={item.matches(pathname)}
               item={item}
@@ -124,6 +202,11 @@ export function AppNav() {
             />
           ))}
         </div>
+        {signedIn ? (
+          <Suspense fallback={null}>
+            <InboxLinks />
+          </Suspense>
+        ) : null}
         <Button asChild size="sm">
           <Link data-testid="app-nav-start" to="/start">
             Start
@@ -141,9 +224,10 @@ export function AppNav() {
         aria-label="Main"
         className="flex h-14 w-full shrink-0 items-stretch justify-around border-t border-border/60 bg-sidebar px-1"
         data-testid="app-nav"
+        data-layout="phone"
       >
         {/* Start sits in the middle, as the wide bar's Start button does at its end. */}
-        {[...NAV_ITEMS.slice(0, 2), START_TAB, ...NAV_ITEMS.slice(2)]
+        {[...items.slice(0, 2), START_TAB, ...items.slice(2)]
           .filter((item) => !item.wideOnly)
           .map((item) => (
             <NavLink
@@ -204,35 +288,55 @@ function NavLink({
   variant: "top" | "tab";
 }) {
   const Icon = item.icon;
+  // The one community, when Communities goes straight into it; otherwise the section's own page.
+  const target = item.host
+    ? ({ to: "/c/$host", params: { host: item.host } } as const)
+    : ({ to: item.to } as const);
+  const badge = item.badge ? (
+    <>
+      <span
+        aria-hidden
+        className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-3xs font-bold text-primary-foreground"
+        data-testid={`${navTestId(item)}-badge`}
+      >
+        {item.badge > 99 ? "99+" : item.badge}
+      </span>
+      <span className="sr-only">
+        , {item.badge} new {item.badge === 1 ? "notification" : "notifications"}
+      </span>
+    </>
+  ) : null;
   if (variant === "top") {
     return (
       <Link
+        {...target}
         aria-current={active ? "page" : undefined}
         className={`relative rounded-lg px-2.5 py-2 text-sm font-semibold transition-colors lg:px-3 ${
           active
             ? "text-foreground after:absolute after:inset-x-2.5 after:-bottom-[13px] after:h-[3px] after:rounded-full after:bg-primary"
             : "text-foreground/65 hover:bg-foreground/[0.06] hover:text-foreground"
-        }`}
-        data-testid={`app-nav-${item.to === "/c" ? "communities" : item.label.toLowerCase()}`}
-        to={item.to}
+        } ${item.badge ? "pr-5 lg:pr-5" : ""}`}
+        data-testid={navTestId(item)}
       >
         {item.label}
+        {badge}
       </Link>
     );
   }
   return (
     <Link
+      {...target}
       aria-current={active ? "page" : undefined}
-      className={`flex min-w-0 max-w-20 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-2xs font-semibold transition-colors ${
+      className={`relative flex min-w-0 max-w-20 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-2xs font-semibold transition-colors ${
         active
           ? "bg-primary/15 text-primary-ink"
           : "text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
       }`}
-      data-testid={`app-nav-${item.to === "/c" ? "communities" : item.label.toLowerCase()}`}
-      to={item.to}
+      data-testid={navTestId(item)}
     >
       <Icon aria-hidden className="h-5 w-5 shrink-0" />
       <span className="max-w-full truncate">{item.label}</span>
+      {badge}
     </Link>
   );
 }

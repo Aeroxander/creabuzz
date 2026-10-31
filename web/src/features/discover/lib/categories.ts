@@ -14,6 +14,7 @@
  */
 
 import { KIND_LAUNCH_RECORD } from "../../../shared/constants/kinds.ts";
+import { LAUNCH_CATEGORIES } from "../../launchpad/models.ts";
 
 /** The tag shared by every launch record — a routing marker, not a topic. */
 export const LAUNCH_ROUTING_TAG = "dao-launchpad";
@@ -28,11 +29,18 @@ export interface TaggedEvent {
   tags: string[][];
 }
 
-/** Distinct topic tags on launch records, sorted for a stable picker. */
-export function collectCategories(events: readonly TaggedEvent[]): string[] {
+/**
+ * Distinct topic tags on launch records, sorted for a stable picker. `keep` leaves out records this build does not list
+ * (a contributor-only build hides raises), so no topic leads to an empty page.
+ */
+export function collectCategories<T extends TaggedEvent>(
+  events: readonly T[],
+  keep: (event: T) => boolean = () => true,
+): string[] {
   const found = new Set<string>();
   for (const event of events) {
     if (event.kind !== KIND_LAUNCH_RECORD) continue;
+    if (!keep(event)) continue;
     for (const tag of event.tags) {
       if (tag[0] !== "t" || typeof tag[1] !== "string") continue;
       const topic = tag[1].trim().toLowerCase();
@@ -41,6 +49,22 @@ export function collectCategories(events: readonly TaggedEvent[]): string[] {
     }
   }
   return [...found].sort();
+}
+
+/**
+ * How a topic reads on its chip: the name the idea form offers ("AI agents" for "ai agents"), or the topic with a
+ * capital first letter.
+ */
+export function categoryLabel(
+  topic: string,
+  known: readonly string[] = LAUNCH_CATEGORIES,
+): string {
+  const match = known.find(
+    (name) => name.toLowerCase() === topic.trim().toLowerCase(),
+  );
+  if (match) return match;
+  const trimmed = topic.trim();
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
 /**

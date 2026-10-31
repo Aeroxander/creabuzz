@@ -13,7 +13,7 @@ import { CalendarClock, RefreshCw } from "lucide-react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
-import { Chip, type ChipTone } from "@/shared/ui/chip";
+import { Chip } from "@/shared/ui/chip";
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { formatAtomic } from "../lib/amounts";
 import { isContributorProject } from "../lib/funding";
@@ -26,7 +26,6 @@ import {
   bondShortfall,
   canAcceptClaim,
   canExpire,
-  type ClaimStatus,
   claimStatusLabel,
   encodeBind,
   encodeBond,
@@ -49,8 +48,12 @@ import { useWorkProposals } from "../use-work-proposals";
 import { useWalletSend } from "../use-wallet-send";
 import { useMilestoneLock, useRecordEvents, useWork } from "../use-work";
 import { claimKey, type RecordEvents } from "../lib/record-read";
-import { paidOn, TxLink } from "./TxLink";
-import { FailureNote, WalletStrip } from "./auction-widgets";
+import { PaidLine, statusTone } from "./ClaimPaidLine";
+import { useDecisions } from "../use-decisions";
+import { mayOfferVote, openVoteFor } from "../lib/proposal-gate";
+import { knownTitles, shortNameBeside, workTitle } from "../lib/work-titles";
+import { managersFor } from "../lib/dao-overview";
+import { FailureNote, WalletStrip } from "./account-widgets";
 import { BondReturn } from "./BondReturn";
 import { useEvidencePackets } from "../use-evidence";
 import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
@@ -95,6 +98,7 @@ export function WorkTab({
   onOpenDecisions,
   onChallenge,
   onSponsor,
+  onOpenDecision,
   focusClaim,
 }: {
   launch: Launch;
@@ -106,6 +110,8 @@ export function WorkTab({
   onChallenge?: (intent: ChallengeIntent) => void;
   /** Someone is putting a suggestion to a vote (D84): open "Approve a work area" filled in from it. */
   onSponsor?: (intent: SponsorIntent) => void;
+  /** Open one decision on the Decisions tab (a suggestion's vote, once it is open). */
+  onOpenDecision?: (decisionId: string) => void;
 }) {
   const { wallet, gate, busy, failure, send, sendBatch } = useWalletSend(
     launch,
@@ -115,6 +121,13 @@ export function WorkTab({
   // When and in which transaction each paid claim was paid out (the same read the Track record tab uses).
   const payouts = useRecordEvents(dao, work.data);
   const context = useDecisionContext(dao);
+  // Who may open a vote, and the votes already open (a suggestion being voted on says so).
+  const decisions = useDecisions(dao, wallet.address);
+  // A freeze or unwind is offered only to a signed-in person with a wallet that may open a vote: never to a visitor.
+  const offerVote = mayOfferVote(decisions.data, {
+    signedIn: existingUserPubkey() !== null,
+    wallet: wallet.address,
+  });
   const lock = useMilestoneLock(dao, wallet.address, work.data);
   // Money people put behind work areas (N1), when this build names a bounty contract for the project's network.
   const bounties = useWorkBounties(
@@ -155,19 +168,34 @@ export function WorkTab({
     dao,
     approvedProjects,
   );
+  // A work area made from a suggestion reads by the suggestion's title.
+  const titles = useMemo(
+    () => knownTitles(proposals.rows, approvedProjects),
+    [proposals.rows, approvedProjects],
+  );
   const areas = useMemo(
     () =>
       work.data
-        ? openWorkAreas(work.data, [
-            ...recordSources(launch.record.workAreas),
-            ...evidence.areaWords,
-            ...proposals.rows.map((row) => ({
-              text: row.check,
-              id: row.projectId,
-            })),
-          ])
+        ? openWorkAreas(
+            work.data,
+            [
+              ...recordSources(launch.record.workAreas),
+              ...evidence.areaWords,
+              ...proposals.rows.map((row) => ({
+                text: row.check,
+                id: row.projectId,
+              })),
+            ],
+            titles,
+          )
         : [],
-    [work.data, launch.record.workAreas, evidence.areaWords, proposals.rows],
+    [
+      work.data,
+      launch.record.workAreas,
+      evidence.areaWords,
+      proposals.rows,
+      titles,
+    ],
   );
   // The work area someone chose to submit work for: the submit form opens on it, its words filled in.
   const [picked, setPicked] = useState<{
@@ -332,8 +360,11 @@ export function WorkTab({
         approved={approvedProjects}
         chainId={launch.record.chainId ?? null}
         dao={dao}
+        onSeeVote={onOpenDecision}
         onSponsor={onSponsor}
+        power={decisions.data}
         totalShares={contributions.data?.totalShares ?? null}
+        voteFor={(row) => openVoteFor(decisions.data?.decisions ?? [], row)}
       />
 
       {lock.data && wallet.address ? (
@@ -427,6 +458,8 @@ export function WorkTab({
               onSend={send}
               onSendBatch={sendBatch}
               openKeys={openKeys}
+              titles={titles}
+              offerVote={offerVote}
               payouts={payouts.data}
               payoutsUnread={payouts.isError && !payouts.data}
               wallet={wallet.address}
@@ -486,7 +519,13 @@ function MandateCard({
   openKeys,
   reviewOf,
   passkeyKeys,
+  titles,
+  offerVote,
 }: {
+  /** Titles published for work areas (a suggestion's), keyed by short name. */
+  titles: ReadonlyMap<string, string>;
+  /** The connected account is known to hold too few votes to open a decision: no "put it to a vote" links. */
+  offerVote: boolean;
   /** The acting passkey account's public details, so a reviewer can link it to their name; null for a wallet. */
   passkeyKeys: PasskeyAccountKeys | null;
   /** Who reviewed a claim and why it was turned down, as far as that is known. */
@@ -678,6 +717,8 @@ function MandateCard({
             );
             const canReview = reviewerTurn && standing.kind === "verified";
             const label = idLabel(claim.id);
+            const title = workTitle(claim.id);
+            const shortName = shortNameBeside(claim.id, title);
             // An approved claim can be frozen only until its challenge window ends (then it can be paid).
             const challengeKind = challengeFor(claim.record.status);
             const pastChallengeWindow =
@@ -691,7 +732,16 @@ function MandateCard({
                 key={claim.id}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium">{label}</span>
+                  {/* The short name the chain keys it by, quietly beside the title: it is what a submission names. */}
+                  <span className="font-medium">
+                    {title}
+                    {shortName ? (
+                      <span className="font-mono text-xs font-normal text-muted-foreground">
+                        {" "}
+                        {shortName}
+                      </span>
+                    ) : null}
+                  </span>
                   <span
                     className="text-xs text-muted-foreground"
                     data-testid="work-claim-status"
@@ -708,7 +758,7 @@ function MandateCard({
                   </span>
                 </div>
                 <p className="mt-1" data-testid="work-claim-next">
-                  {step.text}
+                  {waitingFor(step, claim, mandate, chainTime, labelOf)}
                   {step.kind === "stuck" && step.lapsesAt > 0
                     ? ` Its deadline is ${date(step.lapsesAt)}.`
                     : null}
@@ -789,7 +839,7 @@ function MandateCard({
                             size="sm"
                             type="button"
                           >
-                            Accept for review in {idLabel(project.id)}
+                            Accept for review in {workTitle(project.id, titles)}
                           </Button>
                         ))
                     : null}
@@ -865,14 +915,23 @@ function MandateCard({
                     </Button>
                   ) : null}
                 </div>
-                {onChallenge && challengeKind && !pastChallengeWindow ? (
+                {/* Not on one's own work, and only for someone who could open the vote (never a visitor). */}
+                {onChallenge &&
+                challengeKind &&
+                !pastChallengeWindow &&
+                !mine &&
+                offerVote ? (
                   <p
                     className="mt-2 text-xs text-muted-foreground"
                     data-testid="work-challenge-help"
                   >
                     {challengeKind === "freeze"
-                      ? "Doubt it? Holders can freeze it: nothing is paid while it is frozen."
-                      : "A vote to unwind it returns the money to the budget and the deposit to the contributor."}{" "}
+                      ? sharesOnly
+                        ? "Doubt it? Shareholders can freeze it: while it is frozen, no Shares can be awarded for it."
+                        : "Doubt it? Shareholders can freeze it: nothing is paid while it is frozen."
+                      : sharesOnly
+                        ? "A vote can reject it for good: nothing is awarded for it."
+                        : "A vote can reject it for good: the money goes back to the budget and the deposit to the contributor."}{" "}
                     <button
                       className="underline"
                       data-testid="work-challenge"
@@ -887,7 +946,7 @@ function MandateCard({
                     >
                       {challengeKind === "freeze"
                         ? "Put a freeze to a vote"
-                        : "Put an unwind to a vote"}
+                        : "Put a rejection to a vote"}
                     </button>
                   </p>
                 ) : null}
@@ -919,63 +978,24 @@ function MandateCard({
 }
 
 /**
- * When a claim was taken and in which transaction, or why that is not shown. A claim that asked for no money moved
- * none, so it says it was finished, never paid.
+ * What a submission waits for, naming the person when one manager can accept it ("Waiting for Frida Lund to accept it
+ * for review."), else the step as it is.
  */
-function PaidLine({
-  sharesOnly,
-  money,
-  at,
-  tx,
-  chainId,
-  unread,
-  reading,
-}: {
-  /** A contributor project, where no claim can ask for money: saying so on each would be noise. */
-  sharesOnly: boolean;
-  money: boolean;
-  at: number | undefined;
-  tx: string | undefined;
-  chainId: number;
-  unread: boolean;
-  reading: boolean;
-}) {
-  const what = money ? "paid" : "finished";
-  return (
-    <p
-      className="mt-1 text-xs text-muted-foreground"
-      data-testid="work-claim-paid"
-    >
-      {unread ? (
-        `When it was ${what} could not be read just now.`
-      ) : reading ? (
-        `Reading when it was ${what}…`
-      ) : tx ? (
-        <>
-          {money ? "Paid" : "Finished"} {paidOn(at)} ·{" "}
-          <TxLink chainId={chainId} tx={tx} />
-          {money || sharesOnly ? null : " · No money was asked for."}
-        </>
-      ) : money ? (
-        "Paid; its payout transaction was not found in the history this page reads."
-      ) : (
-        "Finished; its transaction was not found in the history this page reads."
-      )}
-    </p>
-  );
+function waitingFor(
+  step: ReturnType<typeof claimStep>,
+  claim: MandateView["claims"][number],
+  mandate: MandateView,
+  now: number,
+  labelOf: (address: string) => string,
+): string {
+  if (step.kind !== "bind" || step.who !== "manager") return step.text;
+  const managers = managersFor(claim, mandate, now);
+  // A wallet nobody has put a name to would only be an address: the general words say more then.
+  const name = managers.length === 1 ? labelOf(managers[0]) : null;
+  return name && !name.startsWith("0x")
+    ? `Waiting for ${name} to accept it for review.`
+    : step.text;
 }
-
-/** A submission's status as a chip colour: settled well, stopped, run out, or still moving. */
-const STATUS_TONES: Record<ClaimStatus, ChipTone> = {
-  Open: "info",
-  Approved: "success",
-  Paid: "success",
-  Rejected: "danger",
-  Frozen: "danger",
-  Recovered: "danger",
-  Expired: "neutral",
-};
-const statusTone = (status: ClaimStatus) => STATUS_TONES[status];
 
 function bindData(projectId: string, claimId: string, contributor: string) {
   return encodeBind(projectId, claimId, contributor);

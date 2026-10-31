@@ -67,7 +67,7 @@ export function NewDmDialog({
             id="new-dm-title"
             className="text-sm font-semibold text-black dark:text-white"
           >
-            New message in this community
+            New chat in this community
           </h2>
           <button
             type="button"

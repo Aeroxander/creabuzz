@@ -1,0 +1,83 @@
+# What was hidden, retired or merged on 2026-10-31, and what waits on you
+
+A survey of what no longer fits the MVP (the server, the web app and contributor projects, with no raise and no desktop:
+D137), followed by a re-check of the D146 screen audit. Item ids are the survey's (#1 to #38) and the re-check's
+("STILL #n" for an earlier screen finding not yet fixed, "NEW1" to "NEW32"). The rule for this pass: a feature still used
+in raise builds is **hidden in the contributor-only build**, not deleted; anything that removes code a raise build uses,
+or reverses a decision you took, is left for you below. The contracts stay frozen (D137). The current index is
+[STATUS.md](STATUS.md).
+
+## Done in this pass
+
+**Hidden in the contributor-only build** (raise builds unchanged). The web areas took these; each area's report has the
+detail and anything it could not finish.
+
+- Idea pages: no sale checklist or bidder tools under Manage, and no D60 project-ops surfaces (helpers tab, the
+  workspace work board) (#1, #2).
+- Remixes step one on Start and project overviews (#3).
+- Routes that opened by address with no gate: the court, the passkey demo, the desktop link-device page, the Projects
+  board with its % seats, and repositories (#4).
+- Start's "Set up a place to work" step, which led nowhere on an invite-only server (#5).
+- AI helpers, helper budgets and the template and room-dialog helper pickers where no helper can run (#6).
+- The work-board Points card on Your work for people without points (#7).
+
+**Removed:** the Discussion tab's thread-summary switch and button, a stub that always failed (#8); the orphaned desktop
+hand-off card, with the fixture generator moved out of the app (#27); code with no production caller (#28), where its
+area confirmed it by search.
+
+**Merged or renamed:** one idea-to-project path and one project list (#10, #11); one place for private messages and
+notices (#13); one navigation (#14); one meaning each for "Work", "points" and "Projects" (#15); one rule for naming a
+person with no profile name (#16); one set of error words (#17); the record-only Proposals tab beside Decisions (#25),
+where taken. The screen re-check's open items (STILL #10 to STILL #96, NEW1 to NEW32) went to the web areas by screen.
+
+**Scripts and documents** (this area):
+
+- **#9** [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) now matches the runbook: reviewers added by name after
+  they show their name with their account, three reviewers with two of three deciding (or two with "Let any one
+  decide", where the first answer decides; D145), two work areas, and an invitation that says the founder accepts each
+  piece for review and someone presses Finish the review to start the 7 days. The runbook names
+  `scripts/web-social-hosted-e2e.sh` for the automated social run.
+- **#18** written down, with no code change: `VITE_CONTRIBUTOR_ONLY=1` (read by `raisesOffered()`) is the hosted MVP's
+  switch, set only by the image's Dockerfile; every other build offers raises ([STATUS.md](STATUS.md), "The hosted
+  build"; `deploy/compose/README.md`; `web/README.md`).
+- **#31, #32** the gate: `scripts/mvp-gate.sh --pilot` runs what the pilot depends on (the hosted social suite, invite
+  links, error reports, the contributor journeys from the command line, pages and passkey accounts, work and paid work);
+  `--later` runs the raise, milestone and optional-feature journeys; `--list` shows the set. Invite links and error
+  reports were not in the gate before. The hosted social run now fails on a missing social spec or a media store that
+  is down (the picture test used to skip). Nothing runs the gate on its own, and its last recorded pass is from
+  2026-10-28: commit, then run it ([STATUS.md](STATUS.md), "The gates").
+- **#33** `scripts/sepolia-deploy.sh` prints the pilot's settings alone, and the optional features' only with
+  `--optional`; `just dev-chain` prints a contributor-only build's settings first (with `VITE_CONTRIBUTOR_ONLY=1`), and
+  the rest only with `DEV_CHAIN_ALL=1`. Both still deploy everything: a pilot-only deploy would change the Forge deploy
+  script, which is frozen with the contracts.
+- **#34** `scripts/dogfood-loop.sh` deleted (nothing referred to it); `launchpad-anvil-fork.sh`, `web-decisions-e2e.sh`,
+  `web-discussion-e2e.sh` and `web-passkey-wallet-e2e.sh` carry a "not in any gate" banner saying what replaced them.
+- **#35** [STATUS.md](STATUS.md) is the current index, short and up to D146; [STATUS-2026-10-22.md](STATUS-2026-10-22.md)
+  stays as history behind a pointer.
+- **#36** [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md) orders the hand tests before and during the pilot and points into
+  [TEST-STEPS.md](TEST-STEPS.md), which stays a log.
+- **#37** freeze or history banners on the superseded proposals and review records (JOIN-CURVE, MARKETS-AND-EXIT-PLAN,
+  POST-LAUNCH-CURVE-INTEGRATION-PLAN, NEXT-GEN-DAO, CONTRIBUTOR-TOKEN-TRADING, the five October review records, and the
+  older plans under `docs/`). The no-desktop scope is written on D9 and in STATUS.md.
+- **#38** [ROUND-PRICE-HISTORY.md](ROUND-PRICE-HISTORY.md) is marked parked until weekly rounds are in a pilot, with no
+  decision number.
+- **NEW6** the screen audit captures what each stop is named for: sign-up and sign-in open from the controls a phone
+  actually has, the decision forms pick their kind from the phone's list and are photographed on their own, a stop
+  fails when it does not reach its state, the hosted build checks that the sale screens are absent or lead elsewhere
+  instead of photographing a copy of another page, "Loading …" lines are waited out, and `scripts/screen-audit-unique.mjs`
+  fails the run on two equal pictures unless one is a redirect or declared to look like the other.
+
+## Waiting on you
+
+| Item | What | Recommendation |
+|---|---|---|
+| #12 | Two discussion systems on one project (feed notes and board posts), three vote widgets, three composers | Merge after the contributor pilot: make Discussion a project-tagged board feed and keep old notes read-only, unless the pilot shows people confused by two places sooner. |
+| #19 | Matched exits and weekly rounds compete for one exchange slot | When the freeze lifts, keep weekly rounds (funding terms build on them) and retire matched exits; first take the matched-exit sale out of `web-contributor-e2e`'s journey. |
+| #20 | Four send paths and two modules named one hyphen apart | Do it now: small, no user effect (one hook wraps the other, the passkey sender renamed, the wallet-or-passkey picker marked raise-only); check accepting a submission and one Funds step after. |
+| #21 | 43 web files that only re-export the core package | A mechanical import change after the pilot; the type check catches any miss. |
+| #22 | The LBAMM market and price stack (page, decisions, price sparkline, indexer, scripts, specs, CLI command) | Remove it, tagging the commit first: never shipped, on hold since D12, and its licence rules out live use. |
+| #23 | The pre-kit raise path (mint or imported token, the manual auction deploy, their journeys) | Remove it once `dogfood-raise.sh`'s chain setup is split from its mint (`dev-chain` needs the setup); keep old mint records readable. |
+| #24 | Pre-v3 tokenomics: royalties, float mode, buyback | Remove the app and CLI parts and the float journey; leave the frozen contracts for a later contracts clean-up. |
+| #26 | Money forecasts (N8) | Remove from the app, keeping the contract and [MONEY-FORECASTS.md](MONEY-FORECASTS.md) on a tag: high legal risk (D120), off everywhere, and only works on post bounties, also off. |
+| #29 | No check for unused exports or orphan files | Add one (knip or an import-graph scan) to `pnpm check` with a short allowlist, after the removals above, so dead code stops coming back. |
+| #30 | The CLI's launchpad commands are raise-era and lack the contributor flow | Hide the raise and market commands now; add contributor-kit and work-area commands before agents take part in a pilot. |

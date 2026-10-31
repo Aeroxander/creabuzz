@@ -5,6 +5,7 @@ import {
   controlOf,
   readVoteControl,
   sharesUntilShared,
+  aloneUntil,
   voteControlLines,
 } from "./vote-control.ts";
 
@@ -164,6 +165,41 @@ test("how many Shares others need before one holder no longer decides alone", ()
   // 300 of 450: 300 must fall below 66% of all the votes, which takes more than 454.54… in all: about 4.55 more.
   assert.equal(sharesUntilShared(300n * WAD, control), 4545454545454545455n);
   assert.equal(sharesUntilShared(50n * WAD, control), 0n);
+  // At the award bar (55%) the same holder keeps passing awards alone until the votes pass 300/0.55 = 545.45…
+  assert.equal(
+    sharesUntilShared(300n * WAD, control, control.bounded),
+    95454545454545454546n,
+  );
+  // Below a 50% approval bar, holding more than half is what binds: 300 stops at 600 votes in all.
+  assert.equal(
+    sharesUntilShared(300n * WAD, control, { quorumBps: 0, approvalBps: 4000 }),
+    150n * WAD,
+  );
+});
+
+test("the numbers agree with controlOf: one Share fewer than the answer still leaves the holder alone, the answer does not", () => {
+  for (const bars of [control.full, control.bounded]) {
+    const weight = 300n * WAD;
+    const more = sharesUntilShared(weight, control, bars);
+    const at = (extra) =>
+      controlOf(
+        weight,
+        { ...control, votingSupply: control.votingSupply + extra },
+        bars,
+      );
+    assert.equal(at(more - 1n), "alone");
+    assert.notEqual(at(more), "alone");
+  }
+});
+
+test("each lane says how many more whole Shares others need, or nothing where the holder does not decide alone", () => {
+  const until = aloneUntil(300n * WAD, control);
+  assert.equal(until.full, 5n * WAD);
+  assert.equal(until.bounded, 96n * WAD);
+  // 260 of 450 is 57.8%: short of 66%, past 55%.
+  const awardsOnly = aloneUntil(260n * WAD, control);
+  assert.equal(awardsOnly.full, null);
+  assert.equal(awardsOnly.bounded, 23n * WAD);
 });
 
 test("the words say who decides now and what changes it, for a raise and for a contributor project", () => {

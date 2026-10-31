@@ -6,8 +6,12 @@ threads and reactions, the community directory, wiki with live co-editing, the
 agent fleet (including an in-tab agent), the work board, notifications, search,
 profiles, repositories, and the DAO launchpad.
 
-The desktop app remains the reference client; feature-parity work is tracked in
-`docs/archive/web-ui-roadmap.md`.
+For Creaton the web app is the client: the MVP is the server, this web app and
+contributor projects, with no desktop or mobile app (`docs/v3-review/STATUS.md`,
+"Scope"). The hosted image is built contributor-only (`VITE_CONTRIBUTOR_ONLY=1`,
+read by `raisesOffered()`); a plain `pnpm dev` or `pnpm build` leaves it off and
+also shows the raise screens, which the pilot never sees. The older desktop
+parity notes are in `docs/archive/web-ui-roadmap.md` (history).
 
 ## Surfaces
 
@@ -115,6 +119,9 @@ community; `tests/e2e-real/README.md` has the setup. Keep it green when
 touching the read, write, auth, or static-serving paths — it is the only suite
 that sees the real deployment (it caught the theme bootstrap being served as
 HTML, and a NIP-42 handshake race that killed live subscriptions).
+
+The two raise-era scripts below are not in any gate and predate the launch kit
+(`docs/v3-review/DEPRECATION-2026-10-31.md`, items left for a decision).
 
 `scripts/web-auction-e2e.sh` (from the repo root) deploys the auction from the
 browser against a **real local chain**: it builds the contracts, boots its own

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/shared/ui/button";
 
+import { raisesOffered } from "../lib/raises-offered";
 import { useJoinRoom } from "../use-launch-chat";
 
 export function BackIdeaButton({
@@ -46,7 +47,11 @@ export function BackIdeaButton({
       onClick={onClick}
       variant={followed ? "outline" : "default"}
     >
-      {followed ? "You're in ✓" : "I'd back this"}
+      {followed
+        ? "You're in ✓"
+        : raisesOffered()
+          ? "I'd back this"
+          : "I'm interested"}
     </Button>
   );
 }

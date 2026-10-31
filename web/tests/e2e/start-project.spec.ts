@@ -345,7 +345,7 @@ test("a missing member list never grants setup permission", async ({
   relay.seed(general);
   await open(page, relay, { role: null });
   await expect(page.getByTestId("start-project-access")).toContainText(
-    "Couldn't confirm your role",
+    "You're not on this community's member list yet.",
   );
   await expect(page.getByTestId("start-project-confirm")).toBeDisabled();
   expect(writes).toBe(0);

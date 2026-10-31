@@ -38,7 +38,6 @@ export const KIND_BOARD_MODERATION_LOG = 45004;
 export const MODERATOR_MUTE_DAYS = 7;
 export const BOARD_MUTE_MAX_DAYS = 30;
 export const MODERATOR_TERM_DAYS = 90;
-export const BOARD_PIN_LIMIT = 3;
 export const BOARD_RULES_MAX_CHARS = 4000;
 export const REASON_MAX_CHARS = 280;
 /** How long a moderator's request for a longer mute waits for a second moderator. */
@@ -601,4 +600,18 @@ export function boardRefusalText(message: string): string {
       (_, unix: string) => `until ${whenText(Number(unix))}`,
     );
   return words === "" ? message : asSentence(words);
+}
+
+/**
+ * Whom the panel suggests appointing: people on the board, leaving out anyone with an open report about their words or
+ * an active mute here (offering them would ask a moderator to hand power to the person they are dealing with), at most
+ * `limit` of them.
+ */
+export function appointSuggestions(
+  candidates: readonly string[],
+  excluded: { reported: Iterable<string>; muted: Iterable<string> },
+  limit = 8,
+): string[] {
+  const skip = new Set([...excluded.reported, ...excluded.muted]);
+  return candidates.filter((pubkey) => !skip.has(pubkey)).slice(0, limit);
 }

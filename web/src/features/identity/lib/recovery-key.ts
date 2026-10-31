@@ -76,3 +76,22 @@ function hexBytes(hex: string): Uint8Array {
     Number.parseInt(pair, 16),
   );
 }
+
+/**
+ * The file a downloaded recovery key is saved as: the product's name and the start of the account it is for, so two
+ * accounts' keys never share a name. Plain characters only: some systems refuse others in file names.
+ */
+export function recoveryKeyFileName(appName: string, account: string): string {
+  const product =
+    appName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "account";
+  const start = account
+    .toLowerCase()
+    .replace(/[^0-9a-f]/g, "")
+    .slice(0, 8);
+  return start
+    ? `${product}-recovery-key-${start}.key`
+    : `${product}-recovery-key.key`;
+}

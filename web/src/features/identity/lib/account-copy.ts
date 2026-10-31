@@ -17,8 +17,8 @@ export function needAccountTo(action: string): string {
   return `Create your account (top right) to ${action}.`;
 }
 
-/** The secret a person saves so they can get back into their account. */
-export const RECOVERY_KEY = "recovery key";
-
 /** Asks the account menu to open its sign-up dialog (it owns that flow). */
 export const SIGN_UP_EVENT = "creaton:sign-up";
+
+/** Asks the account menu to open its sign-in dialog (recovery key), as `SIGN_UP_EVENT` does for sign-up. */
+export const SIGN_IN_EVENT = "creaton:sign-in";

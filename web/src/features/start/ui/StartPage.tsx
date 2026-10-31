@@ -6,7 +6,7 @@
  * really done, and points at the next. Every step still opens the same screens as before; it only gathers them.
  *
  * Where the build offers no raises (the contributor-only hosted image), the raise steps and their heading are left out, so
- * a contributor-only server never sends anyone to a sale it cannot launch.
+ * a contributor-only server never sends anyone to a sale it cannot launch; what is left is an unnumbered option.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -60,7 +60,16 @@ function StepLink({
   );
 }
 
-function Step({ step, index }: { step: StartStepView; index: number }) {
+function Step({
+  step,
+  index,
+  numbered,
+}: {
+  step: StartStepView;
+  index: number;
+  /** Steps in an order get a number; options beside the main way to start do not. */
+  numbered: boolean;
+}) {
   return (
     <li
       className={cn(
@@ -69,17 +78,19 @@ function Step({ step, index }: { step: StartStepView; index: number }) {
       )}
       data-testid={`start-step-${step.key}`}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
-          step.done
-            ? "bg-primary text-primary-foreground"
-            : "bg-foreground/10 text-foreground/70",
-        )}
-      >
-        {step.done ? <Check className="h-4 w-4" /> : index + 1}
-      </span>
+      {numbered || step.done ? (
+        <span
+          aria-hidden
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
+            step.done
+              ? "bg-primary text-primary-foreground"
+              : "bg-foreground/10 text-foreground/70",
+          )}
+        >
+          {step.done ? <Check className="h-4 w-4" /> : index + 1}
+        </span>
+      ) : null}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-base font-bold">{step.title}</h2>
@@ -136,7 +147,7 @@ export function StartPage() {
         description={
           raises
             ? "Most projects go in this order. You can begin at any step, and come back to the others later."
-            : "Build a project with contributors, or begin with a place to work or an idea."
+            : "Build a project with contributors, or share an idea first."
         }
         title="Start something"
       />
@@ -146,9 +157,9 @@ export function StartPage() {
       >
         <h2 className="text-base font-bold">Build with contributors</h2>
         <p className="text-sm text-muted-foreground">
-          Start without a token sale. Set up work, choose reviewers, and award
-          Shares, the project&apos;s voting tokens, through project votes. A
-          page shows who earned how much and for what.
+          {raises
+            ? "Start without a token sale. Set up work, choose reviewers, and award Shares, the project's voting tokens, through project votes. A page shows who earned how much and for what."
+            : "Set up work and choose reviewers. People who do the work earn Shares, which are votes in the project, when the project votes to award them. A page shows who earned how much and for what."}
         </p>
         <div>
           <Button asChild data-testid="start-go-contributor" size="sm">
@@ -159,11 +170,20 @@ export function StartPage() {
       <h2 className="text-sm font-semibold text-muted-foreground">
         {raises ? "Or plan a raise, step by step" : "Other ways to begin"}
       </h2>
-      <ol className="flex flex-col gap-3" data-testid="start-steps">
-        {steps.map((step, index) => (
-          <Step index={index} key={step.key} step={step} />
-        ))}
-      </ol>
+      {/* With raises these are steps in an order; without, the idea is an option beside the contributor project. */}
+      {raises ? (
+        <ol className="flex flex-col gap-3" data-testid="start-steps">
+          {steps.map((step, index) => (
+            <Step index={index} key={step.key} numbered step={step} />
+          ))}
+        </ol>
+      ) : (
+        <ul className="flex flex-col gap-3" data-testid="start-steps">
+          {steps.map((step, index) => (
+            <Step index={index} key={step.key} numbered={false} step={step} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

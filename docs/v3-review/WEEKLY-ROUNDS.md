@@ -88,6 +88,9 @@ starting the project, 5.5M), the newcomer's six 1.3M, the second buyer's three 0
 
 A pilot that measures two things: whether people put money into productive projects, and how much runway matching keeps.
 
+Proposed for the card: the last trade with its date, the last few rounds, and what leaving pays now after the exit fee.
+A price band between rounds was considered and dropped. See [ROUND-PRICE-HISTORY.md](ROUND-PRICE-HISTORY.md).
+
 ## Funding rounds (D133)
 
 Beside the holders' rounds, a DAO with funding terms sells its new units in funding rounds: the tranche is the only

@@ -1,5 +1,7 @@
 # When can a contributor project's token be traded? (recommendation, 2026-10-19)
 
+> **Frozen (D137), 2026-10-31.** Recommendation 1 is built (D66, D77). The rest waits until after the pilots; recommendation 3 (voting Shares or non-voting Loot for sale between members) stays open before any main network. The current index is [STATUS.md](STATUS.md).
+
 Written for D65. Recommendation 1 (lock transfers at birth) is built (D66, and D77 for the raise); the rest is not. It answers the roadmap's open question for contributor projects (section 4 of
 [SOCIAL-MVP-ROADMAP-2026-10-19.md](SOCIAL-MVP-ROADMAP-2026-10-19.md)): when, if ever, should Shares that were earned for
 work become something people can buy and sell?

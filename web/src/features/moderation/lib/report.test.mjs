@@ -5,6 +5,7 @@ import {
   KIND_REPORT,
   MAX_NOTE_LENGTH,
   REPORT_REASONS,
+  REPORTING_OWNER,
   reportRecord,
   reportWording,
   tidyNote,
@@ -121,28 +122,40 @@ test("every reason has words a person can read", () => {
   }
 });
 
-test("a board post's report says the board's moderators see it without the reporter, and the community's with", () => {
-  const { privacy, evidence } = reportWording("board");
-  assert.match(
+test("a board post's report says board moderators don't see who reported, and the community's do", () => {
+  const { privacy, evidence, owner } = reportWording("board");
+  assert.equal(
     privacy,
-    /^This board's moderators see what you reported and your note, not who you are\. The community's moderators also see who you are\./,
+    "Board moderators don't see who reported. The community's moderators do. Nothing is removed until they decide.",
   );
-  assert.doesNotMatch(privacy, /Only this community's moderators/);
   assert.equal(evidence, null);
+  assert.equal(owner, null);
 });
 
-test("elsewhere the report says only the community's moderators see it", () => {
-  const { privacy, evidence } = reportWording("community");
-  assert.match(
+test("elsewhere the report says the moderators see it and your name, without naming a community it may not be in", () => {
+  const { privacy, evidence, owner } = reportWording("community");
+  assert.equal(
     privacy,
-    /^Only this community's moderators will see this, and who you are\./,
+    "The moderators see this report and your name. Nothing is removed until they decide.",
   );
+  assert.doesNotMatch(privacy, /this community|owner/);
   assert.equal(evidence, null);
+  assert.equal(owner, null);
+});
+
+test("the owner sentence shows only when the reported person runs the community", () => {
+  for (const setting of ["community", "board", "conversation"]) {
+    assert.equal(reportWording(setting).owner, null);
+    assert.equal(
+      reportWording(setting, { reportingOwner: true }).owner,
+      REPORTING_OWNER,
+    );
+  }
 });
 
 test("from a private conversation the report says the messages are not sent, and asks what happened", () => {
   const { privacy, evidence, noteLabel } = reportWording("conversation");
-  assert.match(privacy, /^Only this community's moderators/);
+  assert.match(privacy, /^The moderators see this report and your name\./);
   assert.equal(
     evidence,
     "Your messages with them are not sent with the report. Say in the note what happened.",

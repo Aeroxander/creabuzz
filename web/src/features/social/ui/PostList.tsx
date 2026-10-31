@@ -147,6 +147,7 @@ export function PostList({
             <BoardPostCard
               add={boards.add}
               author={people[item.post.author]}
+              bookmarked={bookmarks?.includes(item.post.id) ?? false}
               board={{
                 id: item.post.boardId,
                 name: boards.names.get(item.post.boardId)?.name ?? "Board",

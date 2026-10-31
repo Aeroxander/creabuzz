@@ -34,7 +34,7 @@ import { useChallengeActions } from "../use-challenge-actions";
 import { useActingAccount } from "../use-acting-account";
 import { useEvidencePackets } from "../use-evidence";
 import { useWalletLabels } from "../use-wallet-labels";
-import { FailureNote, GateNote, WalletStrip } from "./auction-widgets";
+import { FailureNote, GateNote, WalletStrip } from "./account-widgets";
 import { ChallengeMilestoneCard } from "./ChallengeMilestoneCard";
 import { useTokenDecimals } from "./WorkBudgetForm";
 

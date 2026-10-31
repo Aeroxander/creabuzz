@@ -94,3 +94,12 @@ test("the name step is done only for a name the person chose, not for any profil
   assert.equal(hasChosenName({ name: "Robin" }), true);
   assert.equal(hasChosenName({ display_name: "Robin Hale" }), true);
 });
+
+test("adding a name opens the profile editor in place, with no directions to follow", () => {
+  for (const role of ["helper", "founder"]) {
+    const name = stepsFor(role, none).find((s) => s.id === "name");
+    assert.equal(name.editsProfile, true);
+    assert.equal(name.to, null);
+    assert.doesNotMatch(name.hint, /account menu/i);
+  }
+});

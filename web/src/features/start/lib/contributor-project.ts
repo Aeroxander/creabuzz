@@ -117,19 +117,26 @@ export function emptyProject(cap: string): ProjectDraft {
   return { name: "", check: "", shares: cap };
 }
 
+/** Which box of a first work area a problem is about. */
+export type ProjectPart = "name" | "check" | "shares";
+
 export class ContributorInputError extends Error {
   readonly field: keyof ContributorDraft;
   /** For a first project's problem: which one (0-based). */
   readonly index: number | null;
+  /** For a first project's problem: which of its boxes, so that box is marked and focused. */
+  readonly part: ProjectPart | null;
   constructor(
     field: keyof ContributorDraft,
     message: string,
     index: number | null = null,
+    part: ProjectPart | null = null,
   ) {
     super(message);
     this.name = "ContributorInputError";
     this.field = field;
     this.index = index;
+    this.part = part;
   }
 }
 
@@ -141,8 +148,9 @@ function fail(
   field: keyof ContributorDraft,
   message: string,
   index: number | null = null,
+  part: ProjectPart | null = null,
 ): never {
-  throw new ContributorInputError(field, message, index);
+  throw new ContributorInputError(field, message, index, part);
 }
 
 /** The short name the form suggests for a project name, never empty. */
@@ -156,13 +164,15 @@ function wholeShares(
   field: keyof ContributorDraft,
   what: string,
   index: number | null = null,
+  part: ProjectPart | null = null,
 ): bigint {
   const text = value.trim().replace(/[,_\s]/g, "");
-  if (!/^\d+$/.test(text)) fail(field, `${what}: use a whole number.`, index);
+  if (!/^\d+$/.test(text))
+    fail(field, `${what}: use a whole number.`, index, part);
   const n = BigInt(text);
-  if (n === 0n) fail(field, `${what} must be more than 0.`, index);
+  if (n === 0n) fail(field, `${what} must be more than 0.`, index, part);
   if (n > MAX_WHOLE_SHARES)
-    fail(field, `${what} can be at most 1,000,000,000.`, index);
+    fail(field, `${what} can be at most 1,000,000,000.`, index, part);
   return n;
 }
 
@@ -237,6 +247,8 @@ function checkProjects(
     fail(
       "projects",
       `Start with at most ${MAX_FIRST_PROJECTS} work areas; the project can vote to add more later.`,
+      null,
+      "name",
     );
   const seen = new Set<string>();
   let total = 0n;
@@ -250,20 +262,27 @@ function checkProjects(
         : "the first work area";
     const Which = which.charAt(0).toUpperCase() + which.slice(1);
     if (name.length === 0)
-      fail("projects", `Name ${which}, in a word or two.`, index);
+      fail("projects", `Name ${which}, in a word or two.`, index, "name");
     if (utf8ToBytes(name).length > PROJECT_NAME_MAX)
       fail(
         "projects",
         `Keep the name of ${which} to ${PROJECT_NAME_MAX} letters.`,
         index,
+        "name",
       );
     if (name.startsWith("0x"))
-      fail("projects", `Start the name of ${which} with a letter.`, index);
+      fail(
+        "projects",
+        `Start the name of ${which} with a letter.`,
+        index,
+        "name",
+      );
     if (seen.has(name))
       fail(
         "projects",
         `Two work areas are called ${which}: give each its own name.`,
         index,
+        "name",
       );
     seen.add(name);
     const check = draft.check.trim();
@@ -272,24 +291,28 @@ function checkProjects(
         "projects",
         `Say what finished work looks like for ${which}, so reviewers know what to check.`,
         index,
+        "check",
       );
     if (check.length > CHECK_MAX)
       fail(
         "projects",
         `Keep what finished work looks like for ${which} under ${CHECK_MAX} characters.`,
         index,
+        "check",
       );
     const sharesWhole = wholeShares(
       draft.shares,
       "projects",
       `The Shares for ${which}`,
       index,
+      "shares",
     );
     if (sharesWhole > capWhole)
       fail(
         "projects",
         `${Which} can award at most ${formatWhole(capWhole)} Shares, the most for one work area.`,
         index,
+        "shares",
       );
     total += sharesWhole;
     return { name, check, sharesWhole };
@@ -298,6 +321,8 @@ function checkProjects(
     fail(
       "projects",
       `Together the work areas award ${formatWhole(total)} Shares, more than the ${formatWhole(budgetWhole)} the budget holds.`,
+      null,
+      "shares",
     );
   return projects;
 }
@@ -438,6 +463,18 @@ export function sharePreview(
   }
 }
 
+/**
+ * A warning while the founder types, before they press Start: their starting Shares are more than a third of the work
+ * budget, so contributors could never end up holding most of the project (and the start would be refused, D79).
+ */
+export function founderShareWarning(preview: {
+  founderWhole: bigint;
+  budgetWhole: bigint;
+}): string | null {
+  if (preview.founderWhole * 3n <= preview.budgetWhole) return null;
+  return `Your starting Shares are more than a third of the Shares for work, so the people who do the work could never hold most of the project. Start with at most ${formatWhole(preview.budgetWhole / 3n)}, or raise the Shares for work.`;
+}
+
 /** The first refusal for a draft, or null when it can be started. */
 export function contributorIssue(
   draft: ContributorDraft,
@@ -447,13 +484,20 @@ export function contributorIssue(
   message: string;
   /** Which first project, for a problem with one of them. */
   index: number | null;
+  /** Which box of that work area (its name, what finished looks like, or its Shares). */
+  part: ProjectPart | null;
 } | null {
   try {
     contributorTerms(draft, founderWallet);
     return null;
   } catch (error) {
     if (error instanceof ContributorInputError)
-      return { field: error.field, message: error.message, index: error.index };
+      return {
+        field: error.field,
+        message: error.message,
+        index: error.index,
+        part: error.part,
+      };
     throw error;
   }
 }
@@ -466,6 +510,9 @@ export function formatWhole(n: bigint): string {
 /** Basis points as a percent with at most one decimal ("33.3%", "50%"). */
 export function formatBps(bps: number): string {
   const tenths = Math.round(bps / 10);
+  // A share that rounds to nothing (or to everything) is not nothing: say so rather than print 0% or 100%.
+  if (tenths === 0 && bps > 0) return "<0.1%";
+  if (tenths === 1000 && bps < 10_000) return ">99.9%";
   return `${tenths % 10 === 0 ? tenths / 10 : (tenths / 10).toFixed(1)}%`;
 }
 

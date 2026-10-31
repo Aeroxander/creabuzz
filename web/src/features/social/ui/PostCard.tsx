@@ -16,10 +16,6 @@ import {
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import {
-  resolveUserName,
-  resolveUserSecondaryName,
-} from "@/features/profiles/use-profiles";
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
 import { ReasonDialog } from "@/features/board/ui/ReasonDialog";
 import { useBanAuthor } from "@/features/communities/ui/BanAuthor";
@@ -34,6 +30,7 @@ import { UserAvatar } from "@/shared/ui/UserAvatar";
 
 import { parseLaunchCoordinate, parseNote } from "../../feed/lib/feed-events";
 import type { Engagement } from "../lib/engagement";
+import { avatarName, bylineHandle, bylineName } from "../lib/person-name";
 import { buildRepost, buildUndo } from "../lib/post-events";
 import type { Row } from "../lib/timeline";
 import { useSocialPublish, useToggleBookmark } from "../use-social-actions";
@@ -152,9 +149,9 @@ export function PostCard({
   const [moderating, setModerating] = useState(false);
   const [deleted, setDeleted] = useState(false);
 
-  const name = resolveUserName(author, note.pubkey);
+  const name = bylineName(author);
   const ban = useBanAuthor(note.pubkey, name);
-  const handle = resolveUserSecondaryName(author, note.pubkey);
+  const handle = bylineHandle(author);
   const isReposted = engagement.viewerRepostId !== null;
   const parsed = parseNote(note);
   const launches = parsed?.launches ?? [];
@@ -233,7 +230,7 @@ export function PostCard({
           className="mb-1 flex items-center gap-1.5 pl-12 text-xs font-bold text-primary-ink"
           data-testid="social-launch-update"
         >
-          <Megaphone aria-hidden className="h-3.5 w-3.5" /> Launch update
+          <Megaphone aria-hidden className="h-3.5 w-3.5" /> Team update
         </p>
       ) : null}
       {row.repostedBy ? (
@@ -247,9 +244,7 @@ export function PostCard({
             params={{ pubkey: row.repostedBy.pubkey }}
             to="/u/$pubkey"
           >
-            {row.repostedBy.pubkey === me
-              ? "You"
-              : resolveUserName(reposter, row.repostedBy.pubkey)}{" "}
+            {row.repostedBy.pubkey === me ? "You" : bylineName(reposter)}{" "}
             reposted
           </Link>
         </p>
@@ -264,7 +259,7 @@ export function PostCard({
           <UserAvatar
             avatarUrl={author?.picture ?? null}
             className="h-11 w-11"
-            displayName={name}
+            displayName={avatarName(author)}
           />
         </Link>
         <div className="min-w-0 flex-1">
@@ -284,9 +279,11 @@ export function PostCard({
                 <Bot aria-hidden className="h-3 w-3" /> Agent
               </span>
             ) : null}
-            <span className="truncate text-black/60 dark:text-white/60">
-              {handle}
-            </span>
+            {handle ? (
+              <span className="truncate text-black/60 dark:text-white/60">
+                {handle}
+              </span>
+            ) : null}
             <span className="text-black/60 dark:text-white/60">·</span>
             <Link
               aria-label={`Open post from ${relativeTime(note.created_at)}`}

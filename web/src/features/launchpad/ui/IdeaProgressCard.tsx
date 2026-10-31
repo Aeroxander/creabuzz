@@ -18,6 +18,8 @@ import { useLaunchNotes } from "@/features/feed/use-feed";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
+import { handOffIdea } from "@/features/start/lib/from-idea";
+
 import { gateProgress } from "../lib/idea";
 import { raisesOffered } from "../lib/raises-offered";
 import { recordToInput } from "../lib/record-input";
@@ -84,7 +86,7 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
           {writing ? (
             <div className="mt-1.5">
               <Composer
-                initialText={`I'm starting ${record.name}: ${record.pitch}\n\nSay you'd back it and join the chat.`}
+                initialText={`I'm starting ${record.name}: ${record.pitch}\n\n${raises ? "Say you'd back it and join the chat." : "Say you're interested and join the chat."}`}
                 launch={launchRef(record)}
                 onPosted={() => setWriting(false)}
                 testId="idea-share"
@@ -148,7 +150,8 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
           <Step done={false} title="Start a contributor project">
             <p className="mt-0.5 text-xs text-muted-foreground">
               Set up the work and who reviews it. People who help earn Shares,
-              the project&apos;s voting tokens.
+              which are votes in the project. The idea&apos;s name and sentence
+              fill the form.
             </p>
             <Button
               asChild
@@ -156,7 +159,19 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
               data-testid="idea-start-contributor"
               size="sm"
             >
-              <Link to="/start/contributor">Start a contributor project</Link>
+              <Link
+                onClick={() =>
+                  handOffIdea(sessionStorage, {
+                    id: record.id,
+                    author: record.author,
+                    name: record.name,
+                    pitch: record.pitch,
+                  })
+                }
+                to="/start/contributor"
+              >
+                Start a contributor project
+              </Link>
             </Button>
           </Step>
         )}

@@ -3,13 +3,16 @@
  */
 
 import { useEffect, useState, useRef } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
   KeyRound,
+  LogIn,
   LogOut,
   Pencil,
-  UserPlus,
+  User,
 } from "lucide-react";
+import { Button } from "@/shared/ui/button";
 
 import {
   existingUserPubkey,
@@ -21,8 +24,9 @@ import {
 import { IdentityRecoveryBanner } from "./IdentityRecoveryBanner";
 import {
   useProfiles,
+  hasUserName,
+  resolveUserHandle,
   resolveUserName,
-  resolveUserSecondaryName,
 } from "@/features/profiles/use-profiles";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { useQueryClient } from "@tanstack/react-query";
@@ -41,7 +45,11 @@ import { readWalletBinding, revokeWalletBinding } from "../lib/siwe";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { OnboardingDialog } from "./OnboardingDialog";
 import { PolicyLinks } from "./PolicyLinks";
-import { CREATE_ACCOUNT, SIGN_UP_EVENT } from "../lib/account-copy";
+import {
+  CREATE_ACCOUNT,
+  SIGN_IN_EVENT,
+  SIGN_UP_EVENT,
+} from "../lib/account-copy";
 import {
   BACKED_UP_KEY,
   copyRecoveryKey,
@@ -80,8 +88,9 @@ export { hasBackedUp };
  * Where the menu is mounted. `sidebar` is the full-width chip; `rail` (the
  * global nav on wide screens) and `tabbar` (the phone bottom bar) show only the
  * avatar, keeping the name and username as the button's accessible text.
- * `header` is the top bar on wide screens: the avatar, or a "Sign up" button
- * until there is an identity.
+ * `header` is the top bar on wide screens: the avatar, or "Sign in" and
+ * "Sign up" until there is an identity. On a phone (`tabbar`) the slot says
+ * "Sign in"; its dialog can switch to making an account.
  */
 export type ProfileMenuPlacement = "sidebar" | "rail" | "tabbar" | "header";
 
@@ -112,7 +121,9 @@ export function ProfileMenu({
   const [created, setCreated] = useState(
     () => hasStoredIdentity() || hasPasskeyIdentity(),
   );
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState<
+    "create" | "signin" | null
+  >(null);
   const [editName, setEditName] = useState<string | null>(null);
   const [editAbout, setEditAbout] = useState("");
   const [editPicture, setEditPicture] = useState("");
@@ -137,20 +148,24 @@ export function ProfileMenu({
   const profiles = profilesRead.data;
   const profile = pubkey ? profiles?.[pubkey] : undefined;
   const resolvedName = resolveUserName(profile, pubkey);
-  // The community username when this identity has claimed one; the recognisable
-  // pubkey otherwise. The full pubkey stays available as a tooltip so the
-  // username never hides the identity that actually signs.
-  const secondaryName = resolveUserSecondaryName(profile, pubkey);
-  // An account with no name yet would show its short key twice: say what it is instead.
-  const displayName =
-    resolvedName === secondaryName ? "Your account" : resolvedName;
+  // The community username when this identity has claimed one; nothing
+  // otherwise (a short key is not a handle). The full pubkey stays available as
+  // a tooltip so the username never hides the identity that actually signs.
+  const secondaryName = resolveUserHandle(profile);
+  // An account with no name yet is "Your account" to its owner, never a short key.
+  const displayName = hasUserName(profile) ? resolvedName : "Your account";
 
   // Other surfaces (the Home welcome) ask for the sign-up dialog rather than
   // owning a second copy of it.
   useEffect(() => {
-    const open = () => setShowOnboarding(true);
+    const open = () => setShowOnboarding("create");
+    const openSignIn = () => setShowOnboarding("signin");
     window.addEventListener(SIGN_UP_EVENT, open);
-    return () => window.removeEventListener(SIGN_UP_EVENT, open);
+    window.addEventListener(SIGN_IN_EVENT, openSignIn);
+    return () => {
+      window.removeEventListener(SIGN_UP_EVENT, open);
+      window.removeEventListener(SIGN_IN_EVENT, openSignIn);
+    };
   }, []);
 
   // A passkey account reads its profile while the passkey is still locked (the sign-in prompt below waits for a touch),
@@ -277,40 +292,55 @@ export function ProfileMenu({
   }
 
   if (!created) {
+    const signIn = (
+      <button
+        type="button"
+        onClick={() => setShowOnboarding("signin")}
+        className={
+          placement === "tabbar"
+            ? "flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-2xs font-semibold text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
+            : "inline-flex h-10 items-center rounded-lg px-3 text-sm font-semibold text-foreground/80 transition hover:bg-foreground/[0.06] hover:text-foreground"
+        }
+        data-testid="sign-in-cta"
+      >
+        {placement === "tabbar" ? (
+          <LogIn aria-hidden className="h-5 w-5 shrink-0" />
+        ) : null}
+        Sign in
+      </button>
+    );
     return (
       <div
         className={
-          compact
-            ? ""
-            : "border-t border-black/10 px-3 py-2.5 dark:border-white/10"
+          placement === "header"
+            ? "flex items-center gap-1"
+            : compact
+              ? ""
+              : "border-t border-black/10 px-3 py-2.5 dark:border-white/10"
         }
       >
-        <button
-          type="button"
-          onClick={() => setShowOnboarding(true)}
-          className={
-            placement === "header"
-              ? "inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-primary-foreground shadow-[0_6px_16px_-6px_hsl(var(--primary)/0.6)] transition hover:brightness-110"
-              : compact
-                ? "grid h-10 w-10 place-items-center rounded-full border border-dashed border-black/30 text-black/70 hover:bg-black/5 dark:border-white/30 dark:text-white/70 dark:hover:bg-white/10"
-                : "flex w-full items-center gap-2 rounded-md border border-dashed border-black/20 px-2 py-2 text-left text-sm text-black/60 hover:bg-black/5 dark:border-white/20 dark:text-white/60 dark:hover:bg-white/10"
-          }
-          data-testid="create-identity-cta"
-          title={compact ? CREATE_ACCOUNT : undefined}
-        >
-          {placement === "header" ? null : (
-            <UserPlus aria-hidden className="h-4 w-4" />
-          )}
-          <span
-            className={
-              compact && placement !== "header" ? "sr-only" : undefined
-            }
-          >
-            {placement === "header" ? "Sign up" : CREATE_ACCOUNT}
-          </span>
-        </button>
+        {placement === "tabbar" ? (
+          signIn
+        ) : (
+          <>
+            {placement === "header" ? signIn : null}
+            <button
+              type="button"
+              onClick={() => setShowOnboarding("create")}
+              className={
+                placement === "header"
+                  ? "inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-primary-foreground shadow-[0_6px_16px_-6px_hsl(var(--primary)/0.6)] transition hover:brightness-110"
+                  : "flex w-full items-center gap-2 rounded-md border border-dashed border-black/20 px-2 py-2 text-left text-sm text-black/60 hover:bg-black/5 dark:border-white/20 dark:text-white/60 dark:hover:bg-white/10"
+              }
+              data-testid="create-identity-cta"
+            >
+              {placement === "header" ? "Sign up" : CREATE_ACCOUNT}
+            </button>
+          </>
+        )}
         {showOnboarding ? (
           <OnboardingDialog
+            onCancel={() => setShowOnboarding(null)}
             onDone={() => {
               // Reload so the fresh profile (kind 0) renders in the chip.
               window.location.reload();
@@ -319,9 +349,10 @@ export function ProfileMenu({
               // Passkey setup re-renders in place — no reload, no extra
               // ceremony; the session is already active with the derived key.
               setCreated(true);
-              setShowOnboarding(false);
+              setShowOnboarding(null);
               setOpen(false);
             }}
+            startOn={showOnboarding}
           />
         ) : null}
       </div>
@@ -458,6 +489,17 @@ export function ProfileMenu({
               </div>
             ) : (
               <div className="mt-3 space-y-0.5">
+                {/* The way to your own profile: the timeline's side nav no longer repeats it. */}
+                <Link
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+                  data-testid="profile-menu-profile"
+                  onClick={() => setOpen(false)}
+                  params={{ pubkey }}
+                  to="/u/$pubkey"
+                >
+                  <User aria-hidden className="h-3.5 w-3.5" />
+                  Your profile
+                </Link>
                 <MenuItem
                   icon={<Pencil className="h-3.5 w-3.5" />}
                   // The editor starts from the saved profile and saving merges into it: before it has been read,
@@ -491,7 +533,13 @@ export function ProfileMenu({
                 <MenuItem
                   icon={<KeyRound className="h-3.5 w-3.5" />}
                   label={hasBackedUp() ? "Recovery key" : "Save a recovery key"}
-                  onClick={() => setShowBackup(true)}
+                  onClick={() => {
+                    // The dialog takes over: the menu under it would only show through on a phone. Focus goes back
+                    // to the account button the menu hangs from when the dialog closes.
+                    triggerRef.current?.focus();
+                    setOpen(false);
+                    setShowBackup(true);
+                  }}
                 />
                 <div className="px-2 py-1.5">
                   <p className="text-xs text-black/60 dark:text-white/60">
@@ -585,8 +633,12 @@ export function ProfileMenu({
                       label="Copy recovery key"
                       onClick={() => {
                         if (recovery.kind === "ready")
-                          copyRecoveryKey(recovery.hex, pubkey);
-                        else setShowBackup(true);
+                          void copyRecoveryKey(recovery.hex, pubkey);
+                        else {
+                          triggerRef.current?.focus();
+                          setOpen(false);
+                          setShowBackup(true);
+                        }
                       }}
                     />
                     <p
@@ -718,43 +770,49 @@ export function ProfileMenu({
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {hasBackedUp()
-                ? "To sign back in, you need your recovery key."
+                ? passkeySetUp
+                  ? "This browser forgets your passkey too. To sign back in, you need your recovery key."
+                  : "To sign back in, you need your recovery key."
                 : "You have not saved your recovery key. Without it you cannot get back into this account."}
             </p>
+            {/* The app's own buttons: signing out is the destructive one. */}
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-              <button
-                type="button"
+              <Button
                 onClick={() => setConfirmSignOut(false)}
-                className="rounded-md px-3 py-1.5 text-sm text-muted-foreground"
+                size="sm"
+                type="button"
+                variant="ghost"
               >
                 Cancel
-              </button>
+              </Button>
               {hasBackedUp() ? null : (
-                <button
-                  type="button"
+                <Button
+                  data-testid="signout-save-key"
                   onClick={() => {
                     setConfirmSignOut(false);
                     setShowBackup(true);
                   }}
-                  className="rounded-full border border-input px-4 py-1.5 text-sm font-medium"
-                  data-testid="signout-save-key"
+                  size="sm"
+                  type="button"
+                  variant="outline"
                 >
                   Save recovery key
-                </button>
+                </Button>
               )}
-              <button
-                type="button"
+              <Button
+                data-testid="signout-confirm"
                 onClick={() => {
                   removePasskeyIdentity();
                   forgetIdentity();
                   localStorage.removeItem(BACKED_UP_KEY);
                   window.location.assign("/");
                 }}
-                className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
-                data-testid="signout-confirm"
+                size="sm"
+                type="button"
+                variant="destructive"
               >
                 {hasBackedUp() ? "Sign out" : "Sign out anyway"}
-              </button>
+              </Button>
             </div>
           </div>
         </Overlay>

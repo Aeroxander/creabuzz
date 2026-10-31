@@ -11,14 +11,18 @@ import { failureWords } from "@/shared/lib/readable-error";
 
 /**
  * Join or leave an open board. Joining puts it in "Your boards" on Home; anyone can read and post on an open board
- * either way. The person who started a board (or runs it) is on it for good, so they get no Leave.
+ * either way. The person who started a board (or runs it) is on it for good, so they get no Leave: their role is shown
+ * instead. An appointed moderator who has not joined is told they moderate it, beside Join.
  */
 export function JoinBoardButton({
   boardId,
   boardName,
+  moderator = false,
 }: {
   boardId: string;
   boardName: string;
+  /** The reader is one of the board's appointed moderators. */
+  moderator?: boolean;
 }) {
   const mine = useMyBoards();
   const [busy, setBusy] = useState(false);
@@ -47,13 +51,13 @@ export function JoinBoardButton({
         data-testid="board-join-state"
       >
         <Check aria-hidden className="h-3.5 w-3.5" />
-        {role === "owner" ? "Yours" : "You run it"}
+        {role === "owner" ? "Owner" : "Admin"}
       </span>
     );
   }
 
   const joined = role !== undefined;
-  return (
+  const button = (
     <Button
       aria-label={joined ? `Leave ${boardName}` : `Join ${boardName}`}
       aria-pressed={joined}
@@ -86,5 +90,18 @@ export function JoinBoardButton({
         "Join"
       )}
     </Button>
+  );
+  if (!moderator) return button;
+  return (
+    <>
+      <span
+        className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs text-muted-foreground"
+        data-testid="board-moderator-state"
+      >
+        <Check aria-hidden className="h-3.5 w-3.5" />
+        Moderator
+      </span>
+      {button}
+    </>
   );
 }

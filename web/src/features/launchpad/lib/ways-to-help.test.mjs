@@ -129,7 +129,8 @@ test("the update that publishes a work area's words names the budget and the wor
     mandate: BUDGET,
     check: DOCS,
   });
-  assert.equal(content.title, "Work area: guide-es");
+  assert.equal(content.title, "Proposed work area: Guide es");
+  assert.match(content.body, /^Being voted on\. Done when: /);
 });
 
 const formArea = (name, words, check = words ?? "approved words") => ({
@@ -170,4 +171,19 @@ test("the words must hash to the chosen work area's check, read again when submi
   assert.match(wordsProblem(changed, DOCS), /These are not docs's exact words/);
   // No area chosen: nothing to check against.
   assert.equal(wordsProblem(null, "anything"), null);
+});
+
+test("an open work area reads by a published title, else its short name made readable, and keeps its short name", () => {
+  const areas = openWorkAreas(
+    work([area("garden-guide", DOCS), area("plain-guide", DOCS)]),
+    [],
+    new Map([["garden-guide", "Plant guide for community gardens"]]),
+  );
+  assert.deepEqual(
+    areas.map((a) => [a.name, a.title]),
+    [
+      ["garden-guide", "Plant guide for community gardens"],
+      ["plain-guide", "Plain guide"],
+    ],
+  );
 });

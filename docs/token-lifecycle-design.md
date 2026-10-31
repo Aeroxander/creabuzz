@@ -1,5 +1,7 @@
 # Token lifecycle — earned liquidity and contributor royalties
 
+> **History, 2026-10-31.** Royalties, LBAMM sell liquidity and buybacks were replaced by the v3 token model (D72 to D79) and payouts (D122); the desktop is outside the MVP. The current state is [v3-review/STATUS.md](v3-review/STATUS.md).
+
 `draft` `design` `contracts` `web` `desktop`
 
 Design contract + build plan for the project-token lifecycle: contribution-gated

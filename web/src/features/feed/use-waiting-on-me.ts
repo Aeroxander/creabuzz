@@ -34,6 +34,7 @@ import { useLaunches } from "@/features/launchpad/use-launches";
 import { challengeAttention } from "@/features/launchpad/lib/challenge-attention";
 import { challengeLockQuery } from "@/features/launchpad/use-challenge-lock";
 import { workQuery } from "@/features/launchpad/use-work";
+import { useWalletLabels } from "@/features/launchpad/use-wallet-labels";
 import { decisionTitler } from "@/features/launchpad/ui/decision-title";
 import { useHoldings } from "@/features/portfolio/use-portfolio";
 import { existingUserPubkey } from "@/shared/lib/identity";
@@ -135,6 +136,20 @@ export function useWaitingOnMe(): {
   const challenge = useQueries({
     queries: targets.map((t) => challengeLockQuery(t.dao)),
   });
+  // People named by their name, not their wallet: whoever submitted the work waiting on this person.
+  const contributors = [
+    ...new Set(
+      work.flatMap((q) =>
+        (q.data?.mandates ?? []).flatMap((m) =>
+          m.claims.map((c) => c.record.contributor.toLowerCase()),
+        ),
+      ),
+    ),
+  ].sort();
+  const contributorsKey = contributors.join(",");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the addresses, not the array
+  const named = useMemo(() => contributors, [contributorsKey]);
+  const labelOf = useWalletLabels(named);
 
   const queue = rankEntries(
     targets.flatMap((target, i): QueueEntry[] => {
@@ -149,6 +164,7 @@ export function useWaitingOnMe(): {
               decisions: decided,
               work: worked,
               wallet: target.wallet,
+              labelOf,
               titleOf: decisionTitler({
                 launch: target.launch,
                 dao: target.dao,

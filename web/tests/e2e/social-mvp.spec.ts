@@ -130,7 +130,8 @@ test("a reply to your board post and up votes on it show in notifications, and o
   const reply = page.locator(
     "[data-testid='social-notification'][data-kind='board-reply']",
   );
-  await expect(reply).toContainText("replied on a board");
+  // It names the post and the board it is on.
+  await expect(reply).toContainText("replied to “My trailer” in film-making");
   await expect(reply).toContainText("Great cut!");
   const upvotes = page.locator(
     "[data-testid='social-notification'][data-kind='board-upvote']",
@@ -139,7 +140,9 @@ test("a reply to your board post and up votes on it show in notifications, and o
   await expect(upvotes).toContainText("and 1 other upvoted your board post");
   await expect(upvotes).toContainText("My trailer");
 
-  await reply.getByRole("link", { name: /Open: replied on a board/ }).click();
+  await reply
+    .getByRole("link", { name: /Open: replied to “My trailer”/ })
+    .click();
   await expect(page).toHaveURL(new RegExp(`/b/${FILM}\\?post=${mine.id}`));
 });
 

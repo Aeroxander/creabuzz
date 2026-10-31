@@ -1,5 +1,7 @@
 # A next-gen DAO: from an idea to paid work, ownership and staged funding (proposal, 2026-10-25)
 
+> **Decided and frozen, 2026-10-31.** N1 to N12 were decided as D113 to D124 and built for test networks only; every one is off in the hosted build, and nothing more is built until the pilots have run (D137). The current index is [STATUS.md](STATUS.md).
+
 Status: **a proposal.** Stage 1 is built for test networks: N1 and N2 (D113, D114, 2026-10-25), N3 and N4 (D115, D116,
 2026-10-26). Stage 2: N5 matched exits (D117), N6 what $CREATE is (D118, [CREATE-TOKEN.md](CREATE-TOKEN.md)) and N7
 the court with bounty appeals (D119, [COURT.md](COURT.md)) are built for test networks, and N8 money forecasts as a

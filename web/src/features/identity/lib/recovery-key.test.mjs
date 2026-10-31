@@ -8,6 +8,7 @@ import {
   backedUpFor,
   parseRecoveryKey,
   recoveryExportFor,
+  recoveryKeyFileName,
 } from "./recovery-key.ts";
 
 const HEX = "3d".repeat(32);
@@ -117,4 +118,16 @@ test("backed up means this account's key was saved; the old flag counts only for
   assert.equal(backedUpFor("1", account, "prf"), false);
   assert.equal(backedUpFor(null, account, null), false);
   assert.equal(backedUpFor(account, null, null), false);
+});
+
+test("a downloaded key is named after the product and the account, in plain characters", () => {
+  assert.equal(
+    recoveryKeyFileName("Creaton", "6B4B9D0D".padEnd(64, "a")),
+    "creaton-recovery-key-6b4b9d0d.key",
+  );
+  // Never the internal name, never a character some systems refuse.
+  const name = recoveryKeyFileName("Creaton", HEX);
+  assert.doesNotMatch(name, /buzz|…|\s/);
+  assert.match(name, /^[a-z0-9.-]+$/);
+  assert.equal(recoveryKeyFileName("My App!", ""), "my-app-recovery-key.key");
 });

@@ -56,7 +56,7 @@ async function open(
     };
     await route.fulfill({ status: answer.status, json: answer.json });
   });
-  await page.goto("/invite/some-code");
+  await page.goto("/invite/v2.some-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
   return { claims, relay };
 }
 
@@ -100,7 +100,9 @@ test("making an account and joining: the claim is signed by the new account, the
     window.localStorage.getItem("buzz.identity.nsec"),
   );
   expect(stored).toBeTruthy();
-  expect(claims[0].body).toEqual({ code: "some-code" });
+  expect(claims[0].body).toEqual({
+    code: "v2.some-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  });
 
   // The browser now points at the community the invite was for.
   expect(
@@ -138,7 +140,9 @@ test("an invite that cannot be used says why in words, and the person stays on t
     "This invite has expired",
   );
   // Still on the invite page. The account made along the way is theirs, so the usual button is there now.
-  await expect(page).toHaveURL(/\/invite\/some-code/);
+  await expect(page).toHaveURL(
+    /\/invite\/v2.some-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/,
+  );
   await expect(
     page.getByRole("button", { name: "Join in browser" }),
   ).toBeEnabled();

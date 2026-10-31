@@ -891,8 +891,13 @@ test("an idea starts in one step with an open supporters room, and a supporter j
   const fixture = fixtureOrSkip();
   const errors = await signInAsDev(page, fixture);
   const name = `Idea ${RUN}`;
-  await page.goto("/launchpad");
-  await page.getByTestId("start-idea").first().click();
+  if (CONTRIBUTOR_ONLY) {
+    // The contributor-only build lists ideas on Discover: `/launchpad` leads there, and `?start=idea` opens the dialog.
+    await page.goto("/launchpad?start=idea");
+  } else {
+    await page.goto("/launchpad");
+    await page.getByTestId("start-idea").first().click();
+  }
   await page.getByTestId("idea-name").fill(name);
   await page.getByTestId("idea-pitch").fill("A thing worth talking about.");
   await page.getByTestId("idea-create").click();
@@ -951,11 +956,18 @@ test("an idea starts in one step with an open supporters room, and a supporter j
     timeout: 30_000,
   });
 
-  // The Ideas filter finds it.
-  await page.goto("/launchpad");
-  await page.getByTestId("launch-filter-ideas").click();
+  // The Ideas filter finds it (on Discover in the contributor-only build).
+  if (CONTRIBUTOR_ONLY) {
+    await page.goto("/discover");
+    await page.getByTestId("discover-filter-ideas").click();
+  } else {
+    await page.goto("/launchpad");
+    await page.getByTestId("launch-filter-ideas").click();
+  }
   await expect(
-    page.getByTestId("launch-card-title").filter({ hasText: name }),
+    page
+      .getByTestId(CONTRIBUTOR_ONLY ? "discover-launch" : "launch-card-title")
+      .filter({ hasText: name }),
   ).toBeVisible({ timeout: 30_000 });
   await page.goto(`/launchpad/${launchId}?author=${fixture.people.dev}`);
   await expect(page.getByTestId("idea-progress")).toBeVisible();

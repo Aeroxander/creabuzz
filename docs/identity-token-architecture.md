@@ -1,5 +1,7 @@
 # Creaton identity & token architecture
 
+> **History, 2026-10-31.** Parts were replaced by later decisions (passkey accounts as the acting account, D139; names instead of keys, D31). The current state is [v3-review/STATUS.md](v3-review/STATUS.md).
+
 Status: agreed design — the identity layer that communication, tasks, and the
 DAO launchpad all sit on. Captures the decisions from the web-app work
 (`web-passkey` branch) and the `dao-launchpad` branch's EVM work.

@@ -106,7 +106,7 @@ test("a message by someone else can be reported with a reason and a note, and it
   await theirRow(page).hover();
   await theirRow(page).getByTestId("report-button").click();
   await expect(page.getByRole("dialog")).toContainText(
-    "Only this community's moderators will see this, and who you are",
+    "The moderators see this report and your name.",
   );
   // A reason has to be chosen first: nothing is sent without one.
   await expect(page.getByTestId("report-submit")).toBeDisabled();
@@ -548,10 +548,16 @@ test("a member's sidebar is rooms, boards and messages; whoever runs the communi
     timeout: 20_000,
   });
 
-  // Someone who moderates here sees every one of them.
+  // Someone who moderates here sees the pages that run it; setting it up stays with an owner or admin, which the member
+  // list does not say this moderator is.
   moderator = true;
   await page.goto("/c/alpha.example.com");
-  for (const testId of [...runOnly, "moderation-toggle", "people-toggle"]) {
+  for (const testId of [
+    ...runOnly.filter((id) => id !== "start-project-toggle"),
+    "moderation-toggle",
+    "people-toggle",
+  ]) {
     await expect(page.getByTestId(testId)).toBeVisible({ timeout: 20_000 });
   }
+  await expect(page.getByTestId("start-project-toggle")).toHaveCount(0);
 });

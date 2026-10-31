@@ -14,11 +14,14 @@
  * renders `QueryError` instead of three empty grids that would read as
  * "nothing exists".
  */
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import { Link } from "@tanstack/react-router";
-import { Plus, Search } from "lucide-react";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { Lightbulb, Plus, Search } from "lucide-react";
 
+import { isIdea } from "@/features/launchpad/lib/idea";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import { StartIdeaDialog } from "@/features/launchpad/ui/StartIdeaDialog";
 import { PitchDialog } from "@/features/projects/ui/PitchDialog";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { useUserNames } from "@/features/profiles/use-profiles";
@@ -31,6 +34,8 @@ import { CategoryBrowse } from "./CategoryBrowse";
 
 import {
   directoryNotice,
+  discoverFilters,
+  launchesForFilter,
   visibleSections,
   DISCOVER_EVENT_KINDS,
   type DiscoverFilter,
@@ -43,12 +48,16 @@ import {
 } from "./DiscoverCards";
 import { countOf } from "@/shared/lib/count-of";
 
-const FILTERS: readonly { id: DiscoverFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "daos", label: "DAOs" },
-  { id: "fundraising", label: "Fundraising" },
-  { id: "hiring", label: "Hiring" },
-];
+/** The contributor-only build's one way to start something: a contributor project. */
+function StartProjectButton({ variant }: { variant?: "outline" }) {
+  return (
+    <Button asChild size="sm" variant={variant}>
+      <Link data-testid="discover-start-project" to="/start/contributor">
+        <Plus className="mr-1 h-4 w-4" aria-hidden /> Start a project
+      </Link>
+    </Button>
+  );
+}
 
 function EmptyState({
   testId,
@@ -103,13 +112,27 @@ function SectionHeading({
 
 export function DiscoverPage() {
   const { data, isLoading, error, refetch } = useDiscover();
+  // A contributor-only build (the hosted pilot) lists no raise, offers no backing and no pitch board: its projects are
+  // contributor projects, and starting one is the only way in.
+  const raises = raisesOffered();
   const [filter, setFilter] = useState<DiscoverFilter>("all");
   const [pitchOpen, setPitchOpen] = useState(false);
+  // `?start=idea` (the Start page's "Share an idea", where a contributor-only build sends it here) opens the idea dialog
+  // once; a build with raises keeps it on the launchpad.
+  const startIdea =
+    (useSearch({ strict: false }) as { start?: unknown }).start === "idea";
+  const [ideaOpen, setIdeaOpen] = useState(startIdea && !raises);
+  const navigate = useNavigate();
+  useEffect(() => {
+    // Dropped once read, so a reload does not open the dialog again.
+    if (startIdea) void navigate({ to: "/discover", replace: true });
+  }, [startIdea, navigate]);
 
-  const sections = visibleSections(filter);
+  const sections = visibleSections(filter, raises);
   const snapshot = data;
   const daos = snapshot?.daos ?? [];
-  const launches = snapshot?.launches ?? [];
+  const allLaunches = snapshot?.launches ?? [];
+  const launches = launchesForFilter(allLaunches, filter, raises);
   const projects = snapshot?.projects ?? [];
   const founders = [
     ...daos.map((card) => card.founder),
@@ -119,34 +142,54 @@ export function DiscoverPage() {
   const notice = snapshot ? directoryNotice(snapshot.counts) : null;
   const nothingHere =
     snapshot !== undefined &&
-    daos.length === 0 &&
-    launches.length === 0 &&
-    projects.length === 0;
+    // A contributor-only build shows no DAOs section, so its DAOs cannot fill the page there.
+    (daos.length === 0 || !raises) &&
+    allLaunches.length === 0 &&
+    // The pitch board is not shown where raises are not offered, so its pitches cannot fill the page there.
+    (projects.length === 0 || !raises);
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8">
       <PageHeader
         action={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild size="sm" variant="outline">
-              <Link to="/launchpad" data-testid="discover-launches">
-                Launches
-              </Link>
-            </Button>
-            <Button asChild size="sm" variant="ghost">
-              <Link to="/markets">Markets</Link>
-            </Button>
-            <Button asChild size="sm" variant="ghost">
-              <Link data-testid="discover-board" to="/projects">
-                Project board
-              </Link>
-            </Button>
-            <Button onClick={() => setPitchOpen(true)} size="sm">
-              <Plus className="mr-1 h-4 w-4" aria-hidden /> Pitch a project
-            </Button>
-          </div>
+          raises ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button asChild size="sm" variant="outline">
+                <Link to="/launchpad" data-testid="discover-launches">
+                  Launches
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <Link to="/markets">Markets</Link>
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <Link data-testid="discover-board" to="/projects">
+                  Project board
+                </Link>
+              </Button>
+              <Button onClick={() => setPitchOpen(true)} size="sm">
+                <Plus className="mr-1 h-4 w-4" aria-hidden /> Pitch a project
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                data-testid="discover-share-idea-header"
+                onClick={() => setIdeaOpen(true)}
+                size="sm"
+                variant="outline"
+              >
+                <Lightbulb aria-hidden className="mr-1 h-4 w-4" /> Share an idea
+              </Button>
+              <StartProjectButton />
+            </div>
+          )
         }
-        description="Everything on this server in one place: the DAOs that already hold money, the launches raising now, and the projects hiring for a role."
+        description={
+          raises
+            ? "Everything on this server in one place: the DAOs that already hold money, the launches raising now, and the projects hiring for a role."
+            : "Projects on this server and the people they need."
+        }
         title={
           <span className="flex items-center gap-2">
             <Search aria-hidden className="h-5 w-5" /> Discover
@@ -159,7 +202,7 @@ export function DiscoverPage() {
         className="flex flex-wrap items-center gap-x-6 gap-y-2"
         role="tablist"
       >
-        {FILTERS.map((entry) => (
+        {discoverFilters(raises).map((entry) => (
           <button
             aria-selected={filter === entry.id}
             className={cn(
@@ -181,7 +224,9 @@ export function DiscoverPage() {
         <span className="ml-auto text-xs text-black/60 dark:text-white/60">
           {isLoading
             ? "Reading the server…"
-            : `${countOf(daos.length, "DAO")} · ${countOf(launches.length, "launch", "launches")} · ${countOf(projects.length, "project")}`}
+            : raises
+              ? `${countOf(daos.length, "DAO")} · ${countOf(launches.length, "launch", "launches")} · ${countOf(projects.length, "project")}`
+              : `${countOf(allLaunches.filter((l) => !isIdea(l.record)).length, "project")} · ${countOf(allLaunches.filter((l) => isIdea(l.record)).length, "idea")}`}
         </span>
       </div>
 
@@ -221,21 +266,64 @@ export function DiscoverPage() {
           ) : null}
 
           {nothingHere ? (
-            <EmptyState
-              message="No projects on this server yet. Start one. Add a pitch and the roles you need, and it appears here for everyone reading this page."
-              onPitch={() => setPitchOpen(true)}
-              testId="discover-empty"
-            />
+            raises ? (
+              <EmptyState
+                message="No projects on this server yet. Start one. Add a pitch and the roles you need, and it appears here for everyone reading this page."
+                onPitch={() => setPitchOpen(true)}
+                testId="discover-empty"
+              />
+            ) : (
+              <EmptyState
+                message="No projects on this server yet. Start one and it shows up here."
+                testId="discover-empty"
+              >
+                <StartProjectButton />
+              </EmptyState>
+            )
           ) : (
             <>
               {sections.launches ? (
                 <section className="flex flex-col gap-3">
                   <SectionHeading
                     count={launches.length}
-                    description="Raises open for backing, with their stage, target and progress as the sale itself reports them."
-                    title="Live launches"
+                    description={
+                      raises
+                        ? "Raises open for backing, with their stage, target and progress as the sale itself reports them."
+                        : filter === "ideas"
+                          ? "Ideas people shared before starting a project."
+                          : "Projects looking for people to help, and ideas shared before one starts."
+                    }
+                    title={
+                      raises
+                        ? "Live launches"
+                        : filter === "ideas"
+                          ? "Ideas"
+                          : "Projects"
+                    }
                   />
-                  {launches.length === 0 ? (
+                  {launches.length === 0 && !raises ? (
+                    <EmptyState
+                      message={
+                        filter === "ideas"
+                          ? "No ideas yet. Share one and it shows up here."
+                          : "No projects yet. Start one and it shows up here."
+                      }
+                      testId="discover-launches-empty"
+                    >
+                      {filter === "ideas" ? (
+                        <Button
+                          data-testid="discover-share-idea"
+                          onClick={() => setIdeaOpen(true)}
+                          size="sm"
+                        >
+                          <Lightbulb aria-hidden className="mr-1 h-4 w-4" />{" "}
+                          Share an idea
+                        </Button>
+                      ) : (
+                        <StartProjectButton />
+                      )}
+                    </EmptyState>
+                  ) : launches.length === 0 ? (
                     <EmptyState
                       message="No live launches right now. Publish one and it shows up here with its stage, target, and a way to back it."
                       testId="discover-launches-empty"
@@ -256,6 +344,7 @@ export function DiscoverPage() {
                         <DiscoverLaunchCard
                           key={`${launch.record.author}:${launch.record.id}`}
                           launch={launch}
+                          raises={raises}
                         />
                       ))}
                     </ul>
@@ -268,7 +357,7 @@ export function DiscoverPage() {
                   <SectionHeading
                     count={projects.length}
                     description="Pitches with the roles they need open. Every chip is a seat you can ask for."
-                    title="Open projects"
+                    title="Project board"
                   />
                   {projects.length === 0 ? (
                     <EmptyState
@@ -296,17 +385,21 @@ export function DiscoverPage() {
                 <section className="flex flex-col gap-3">
                   <SectionHeading
                     count={daos.length}
-                    description="Money already on chain: the address each project was summoned at, and the seats it minted."
+                    description="Projects with their own DAO and funds."
                     title="DAOs"
                   />
                   {daos.length === 0 ? (
                     <EmptyState
-                      message="No DAO summoned yet. One appears here the moment a project's launch graduates and its summon receipt lands."
+                      message="No DAOs yet. A project's DAO shows up here once it is set up."
                       testId="discover-daos-empty"
                     >
-                      <Button asChild size="sm" variant="outline">
-                        <Link to="/launchpad">Open the launchpad</Link>
-                      </Button>
+                      {raises ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link to="/launchpad">Open the launchpad</Link>
+                        </Button>
+                      ) : (
+                        <StartProjectButton variant="outline" />
+                      )}
                     </EmptyState>
                   ) : (
                     <ul
@@ -329,7 +422,10 @@ export function DiscoverPage() {
         </>
       ) : null}
 
-      <PitchDialog onOpenChange={setPitchOpen} open={pitchOpen} />
+      {raises ? (
+        <PitchDialog onOpenChange={setPitchOpen} open={pitchOpen} />
+      ) : null}
+      {ideaOpen ? <StartIdeaDialog onClose={() => setIdeaOpen(false)} /> : null}
     </div>
   );
 }

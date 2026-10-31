@@ -10,7 +10,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { buildLaunches } from "@/features/launchpad/models";
+import { listedHere } from "@/features/launchpad/lib/contributor-only";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import { buildLaunches, parseLaunchRecord } from "@/features/launchpad/models";
 import { KIND_LAUNCH_RECORD } from "@/shared/constants/kinds";
 import { cn } from "@/shared/lib/cn";
 import { queryEvents } from "@/shared/lib/nostr-client";
@@ -20,20 +22,27 @@ import { Button } from "@/shared/ui/button";
 import {
   buildCategoryQuery,
   CATEGORY_PAGE_SIZE,
+  categoryLabel,
   collectCategories,
   nextPageCursor,
 } from "../lib/categories";
 import { DiscoverLaunchCard } from "./DiscoverCards";
 
 export function CategoryBrowse() {
+  // A contributor-only build never lists a raise (`contributor-only.ts`), so a raise's topic is no chip there either.
+  const raises = raisesOffered();
   const categories = useQuery({
-    queryKey: ["discover", "categories"],
+    queryKey: ["discover", "categories", raises],
     queryFn: async () =>
       collectCategories(
         await queryEvents(relayWsUrl(), {
           kinds: [KIND_LAUNCH_RECORD],
           limit: 200,
         }),
+        (event) => {
+          const record = parseLaunchRecord(event);
+          return record !== null && listedHere(record, raises);
+        },
       ),
     staleTime: 60_000,
   });
@@ -57,8 +66,11 @@ export function CategoryBrowse() {
   });
 
   const launches = useMemo(
-    () => buildLaunches(page.data ? [...page.data] : []),
-    [page.data],
+    () =>
+      buildLaunches(page.data ? [...page.data] : []).filter((launch) =>
+        listedHere(launch.record, raises),
+      ),
+    [page.data, raises],
   );
   const nextCursor = page.data ? nextPageCursor(page.data) : null;
   const hasMore =
@@ -74,12 +86,14 @@ export function CategoryBrowse() {
 
   return (
     <section
-      aria-label="Browse launches by category"
+      aria-label={
+        raises ? "Browse launches by category" : "Browse projects by topic"
+      }
       className="mt-4"
       data-testid="category-browse"
     >
       <div
-        aria-label="Launch categories"
+        aria-label={raises ? "Launch categories" : "Topics"}
         className="flex flex-wrap items-center gap-2"
         role="tablist"
       >
@@ -114,7 +128,7 @@ export function CategoryBrowse() {
             role="tab"
             type="button"
           >
-            {topic}
+            {categoryLabel(topic)}
           </button>
         ))}
       </div>
@@ -155,6 +169,7 @@ export function CategoryBrowse() {
                 <DiscoverLaunchCard
                   key={`${launch.record.author}:${launch.record.id}`}
                   launch={launch}
+                  raises={raises}
                 />
               ))
             )}

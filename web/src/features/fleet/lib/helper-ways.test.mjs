@@ -6,13 +6,25 @@ import { describeWays } from "./helper-ways.ts";
 const idle = { state: "stopped", name: null };
 const way = (ways, id) => ways.find((w) => w.id === id);
 
-test("the three ways are always offered, in the order a newcomer should look at them", () => {
-  const ways = describeWays({ gateway: "available", tab: idle, helpers: [] });
+test("the ways are offered in the order a newcomer should look at them, the computer only with the desktop app", () => {
+  const ways = describeWays({
+    gateway: "available",
+    tab: idle,
+    helpers: [],
+    desktopApp: true,
+  });
   assert.deepEqual(
     ways.map((w) => w.id),
     ["tab", "server", "computer"],
   );
   assert.ok(ways.every((w) => w.title && w.summary && w.status));
+  // A web-only build does not offer what it cannot give.
+  assert.deepEqual(
+    describeWays({ gateway: "available", tab: idle, helpers: [] }).map(
+      (w) => w.id,
+    ),
+    ["tab", "server"],
+  );
 });
 
 test("the tab way works only where the server has an AI service, and says so when it does not", () => {
@@ -96,42 +108,29 @@ test("the server way reports what is running there, and what is set up but offli
   assert.equal(many.status, "A, B and 1 more are running on this server.");
 });
 
-test("the computer way is offered unless someone is already using it", () => {
+test("the computer way is ready only once a helper has run from one, and shows without the desktop app when one has", () => {
   const helper = (name, alive) => ({ name, runtype: "desktop", alive });
+  const computer = (helpers, desktopApp) =>
+    way(
+      describeWays({ gateway: "available", tab: idle, helpers, desktopApp }),
+      "computer",
+    );
   assert.deepEqual(
     [
-      way(
-        describeWays({ gateway: "available", tab: idle, helpers: [] }),
-        "computer",
-      ).state,
-      way(
-        describeWays({
-          gateway: "available",
-          tab: idle,
-          helpers: [helper("Ana", false)],
-        }),
-        "computer",
-      ).state,
-      way(
-        describeWays({
-          gateway: "available",
-          tab: idle,
-          helpers: [helper("Ana", true)],
-        }),
-        "computer",
-      ).state,
+      computer([], true).state,
+      computer([helper("Ana", false)], true).state,
+      computer([helper("Ana", true)], true).state,
     ],
-    ["ready", "ready", "running"],
+    ["unknown", "ready", "running"],
   );
   assert.equal(
-    way(
-      describeWays({
-        gateway: "available",
-        tab: idle,
-        helpers: [helper("Ana", true)],
-      }),
-      "computer",
-    ).status,
+    computer([], true).status,
+    "No helper has run from a computer here yet.",
+  );
+  assert.equal(computer([], false), undefined);
+  // Someone runs one from the command line in a web-only build: still said.
+  assert.equal(
+    computer([helper("Ana", true)], false).status,
     "Ana is running from a computer.",
   );
 });

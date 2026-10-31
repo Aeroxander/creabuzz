@@ -12,7 +12,9 @@
  * - **On the server.** Always on, even with every laptop closed. Whoever runs
  *   the server starts it; we can only say whether one is running.
  * - **On your computer.** The desktop app (or the command line) runs the AI
- *   tools you already use, and keeps working when this tab is closed.
+ *   tools you already use, and keeps working when this tab is closed. Offered
+ *   only in a build that has the desktop app; a build without it still says
+ *   so when someone runs a helper from a computer anyway (the command line).
  *
  * The statuses are read from what the page can see (the server's AI service,
  * the helpers that have announced themselves, this tab's own state); nothing is
@@ -63,6 +65,8 @@ export function describeWays(input: {
   /** This tab's helper: stopped, starting or running, and its name when it has one. */
   tab: { state: "stopped" | "starting" | "running"; name: string | null };
   helpers: readonly AnnouncedHelper[];
+  /** Whether this build offers the desktop app (`DESKTOP_APP`). */
+  desktopApp?: boolean;
 }): Way[] {
   const onServer = input.helpers.filter((h) => h.runtype === "sandbox");
   const onComputers = input.helpers.filter((h) => h.runtype === "desktop");
@@ -109,6 +113,7 @@ export function describeWays(input: {
     };
   }
 
+  // "Ready" only once a helper has been seen running from a computer: before that, the page cannot tell it would work.
   const computer: Pick<Way, "state" | "status"> =
     computerLive.length > 0
       ? {
@@ -120,9 +125,13 @@ export function describeWays(input: {
             state: "ready",
             status: `${names(onComputers)} ${onComputers.length === 1 ? "was" : "were"} started from a computer and ${onComputers.length === 1 ? "is" : "are"} offline now.`,
           }
-        : { state: "ready", status: "Works with the desktop app." };
+        : {
+            state: "unknown",
+            status: "No helper has run from a computer here yet.",
+          };
+  const offerComputer = input.desktopApp === true || onComputers.length > 0;
 
-  return [
+  const ways: Way[] = [
     {
       id: "tab",
       title: "In this browser tab",
@@ -145,4 +154,5 @@ export function describeWays(input: {
       ...computer,
     },
   ];
+  return offerComputer ? ways : ways.filter((way) => way.id !== "computer");
 }

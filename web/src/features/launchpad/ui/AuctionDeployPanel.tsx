@@ -27,7 +27,7 @@ import {
   StatusLine,
   StepRow,
   WalletStrip,
-} from "./auction-widgets";
+} from "./account-widgets";
 import { UnauditedNotice } from "./UnauditedNotice";
 import { TreasuryFromWallet } from "./TreasuryFromWallet";
 

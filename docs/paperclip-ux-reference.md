@@ -1,5 +1,7 @@
 # Paperclip UX Reference for Buzz Org/DAO Surfaces
 
+> **Outside the Creaton MVP, 2026-10-31.** The MVP is the server, the web app and contributor projects, with no desktop ([v3-review/STATUS.md](v3-review/STATUS.md), "Scope").
+
 **Purpose.** A concrete, implementable UX reference for rebuilding Buzz's DAO/org
 surfaces at Paperclip's quality bar. Everything below was read out of the
 Paperclip repo (`/Volumes/ExternalSSD/Applications/paperclip`, `ui/src`,

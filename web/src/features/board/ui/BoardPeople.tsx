@@ -17,7 +17,6 @@ import { useMentionCandidates } from "@/features/fleet/use-mention-candidates";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { failureWords } from "@/shared/lib/readable-error";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { Input } from "@/shared/ui/input";
@@ -49,8 +48,9 @@ export function BoardPeople({
   const [busy, setBusy] = useState(false);
 
   const have = new Set(members.map((m) => m.pubkey));
+  // Only people with a name: a short key tells the reader nothing about who they would be adding.
   const suggestions = candidates.filter(
-    (c) => !c.agent && !c.me && !have.has(c.pubkey),
+    (c) => !c.agent && !c.me && !have.has(c.pubkey) && c.named === true,
   );
 
   const addPerson = async (pubkey: string) => {
@@ -86,7 +86,7 @@ export function BoardPeople({
     const pubkey = parsePersonOrLink(text);
     if (pubkey === null) {
       setProblem(
-        "That isn't a profile link or key. Open their profile, copy the link from the address bar, and paste it here.",
+        "That isn't a profile link. Open their profile, copy the link from the address bar, and paste it here.",
       );
       return;
     }
@@ -143,13 +143,13 @@ export function BoardPeople({
         }}
       >
         <label className="sr-only" htmlFor={`${place}-add-person`}>
-          Add someone by their profile link or key
+          Add someone by their profile link
         </label>
         <Input
           className="h-8 max-w-xs text-xs"
           id={`${place}-add-person`}
           onChange={(event) => setText(event.target.value)}
-          placeholder="Add someone: paste their profile link or key"
+          placeholder="Add someone: paste their profile link"
           value={text}
         />
         <Button
@@ -171,7 +171,6 @@ export function BoardPeople({
               disabled={busy}
               key={person.pubkey}
               onClick={() => void addPerson(person.pubkey)}
-              title={truncatePubkey(person.pubkey)}
               type="button"
             >
               Add {person.name}

@@ -43,13 +43,14 @@ import { type TimelineSort, useMixedTimeline } from "../use-mixed-timeline";
 import { useFollowing } from "../use-social-data";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 
-type Tab = "everyone" | "following" | "boards" | "projects";
+type Tab = "everyone" | "following" | "boards" | "updates";
 
-const TABS: readonly { id: Tab; label: string }[] = [
+const TABS: readonly { id: Tab; label: string; testId?: string }[] = [
   { id: "everyone", label: "Everyone" },
   { id: "following", label: "Following" },
   { id: "boards", label: "Boards" },
-  { id: "projects", label: "Projects" },
+  // The projects' progress reports: "Projects" is Discover's list of the projects themselves. The test id is the old one.
+  { id: "updates", label: "Updates", testId: "social-tab-projects" },
 ];
 
 const BoardDirectory = lazy(() =>
@@ -61,7 +62,7 @@ const BoardDirectory = lazy(() =>
 /**
  * Home. Everyone is the General board: every post on this server, short posts and board posts together, ranked by
  * recency lifted by votes. Following is the people you follow, from General and every board, newest first. Boards
- * lists the boards to browse and join, and Projects the projects' own progress reports. One composer on top posts to
+ * lists the boards to browse and join, and Updates the projects' own progress reports. One composer on top posts to
  * General or a board. Above it, for someone signed in, what is waiting on them and their organizations; for a visitor,
  * what this place is for.
  */
@@ -183,7 +184,7 @@ export function SocialHomePage() {
         <Suspense fallback={<TimelineSkeleton />}>
           <BoardDirectory />
         </Suspense>
-      ) : tab === "projects" ? (
+      ) : tab === "updates" ? (
         <div className="p-3">
           <ProjectProgressFeed />
         </div>

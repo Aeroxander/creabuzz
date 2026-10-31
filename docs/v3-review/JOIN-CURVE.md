@@ -1,5 +1,7 @@
 # Raise with the auction, then a funding curve (proposal, 2026-10-25)
 
+> **Frozen (D137), partly decided (D112), 2026-10-31.** D112 accepted the asset rule (leaving pays only the sale's currency in these DAOs); the curve itself is a proposal, frozen with every new mechanism until the pilots have run. The current index is [STATUS.md](STATUS.md).
+
 Status: **a proposal for you to decide on. Nothing here is accepted, built or deployed.** It changes no decision in
 [DECISIONS.md](DECISIONS.md) until you accept it, and then it would need its own decision rows, contract work and audit
 scope. An outside review on 2026-10-25 recommended it as the direction for a **feasibility specification**, not for

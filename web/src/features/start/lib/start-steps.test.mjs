@@ -59,32 +59,34 @@ test("running it together is never ticked and never the next thing to do", () =>
   assert.equal(steps.filter((s) => s.next).length, 0);
 });
 
-test("a build that offers no raises shows only the steps that need none", () => {
+test("a build that offers no raises shows only the idea, as an option and not a next step", () => {
   const steps = startSteps(none, false);
   assert.deepEqual(
     steps.map((s) => s.key),
-    ["workspace", "idea"],
+    ["idea"],
   );
-  assert.equal(steps.find((s) => s.next)?.key, "workspace");
-  // Nothing on the page points at a sale or the raise sandbox.
+  // The contributor project above is the way to start: nothing here is marked next.
+  assert.equal(steps.filter((s) => s.next).length, 0);
+  // Nothing on the page points at a sale, the raise sandbox or a place to work the pilot cannot set up.
   for (const step of steps) {
     assert.notDeepEqual(step.target, { to: "/launchpad", start: "sale" });
     assert.notEqual(step.target.to, "/launchpad/$launchId");
+    assert.notEqual(step.target.to, "/c");
     assert.doesNotMatch(
-      `${step.title} ${step.body} ${step.action}`,
-      /raise|sale/i,
+      `${step.title} ${step.body} ${step.action} ${step.note ?? ""}`,
+      /raise|sale|back|AI helpers/i,
     );
   }
 });
 
-test("without raises, nothing is next once the place to work and the idea are done", () => {
+test("without raises, a shared idea is ticked and still nothing is next", () => {
   const steps = startSteps(
     { madeProject: true, hasIdea: true, hasSale: false },
     false,
   );
   assert.deepEqual(
     steps.map((s) => s.done),
-    [true, true],
+    [true],
   );
   assert.equal(steps.filter((s) => s.next).length, 0);
 });
@@ -115,4 +117,12 @@ test("the last step opens the sandbox launch the launchpad really has", () => {
     to: "/launchpad/$launchId",
     launchId: SANDBOX_ID,
   });
+});
+
+test("a build with raises keeps the place to work, in its own words", () => {
+  const workspace = startSteps(none, true).find((s) => s.key === "workspace");
+  assert.equal(
+    workspace?.note,
+    START_STEPS.find((s) => s.key === "workspace")?.note,
+  );
 });

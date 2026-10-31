@@ -4,8 +4,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildDmAddMemberTags,
-  buildDmHideTags,
   buildDmOpenTags,
   dmConversationLabel,
   hiddenDmIds,
@@ -51,19 +49,6 @@ test("open tags refuse an empty participant set and malformed keys", () => {
   );
   assert.throws(
     () => buildDmOpenTags([PK_A.slice(0, 63)]),
-    /64-character public key/,
-  );
-});
-
-test("add-member and hide tags reference the conversation by h tag", () => {
-  assert.deepEqual(buildDmAddMemberTags(UUID, PK_A), [
-    ["h", UUID],
-    ["p", PK_A],
-  ]);
-  assert.deepEqual(buildDmHideTags(UUID), [["h", UUID]]);
-  assert.throws(() => buildDmHideTags("nope"), /UUID/);
-  assert.throws(
-    () => buildDmAddMemberTags(UUID, "xyz"),
     /64-character public key/,
   );
 });

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 #
+# ⚠️  NOT IN ANY GATE (2026-10-31, docs/v3-review/DEPRECATION-2026-10-31.md): scripts/mvp-gate.sh does not run it and
+# nothing runs it on a schedule, so it may have broken since it was last changed. Run it before relying on it.
+# Raise-era (a launch-kit DAO); the contributor journeys cover opening, voting and running a decision.
+#
 # scripts/web-decisions-e2e.sh — deciding in the WEB app, against a REAL local chain.
 #
 # A project is launched into its own DAO through the kit and a decision is opened (from the command line: the page reads

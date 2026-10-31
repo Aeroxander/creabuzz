@@ -98,16 +98,17 @@ export function BudgetFigures({
           </ul>
         ) : null}
       </div>
-      <div className="rounded-xl bg-secondary/60 px-4 py-3">
-        <p className="text-xs text-muted-foreground">Reviewer bond</p>
-        <p className="mt-0.5 text-sm" data-testid="work-bond">
-          {mandate.bond
-            ? `${bondMoney(mandate.bond.minBond)} each, which the DAO can take after a disputed approval`
-            : mandate.bondUnreadable
-              ? "Could not be read. The network did not answer; this is not the same as no bond."
-              : "None"}
-        </p>
-      </div>
+      {/* No bond is the common case: a "None" box would only take room. */}
+      {mandate.bond || mandate.bondUnreadable ? (
+        <div className="rounded-xl bg-secondary/60 px-4 py-3">
+          <p className="text-xs text-muted-foreground">Reviewer bond</p>
+          <p className="mt-0.5 text-sm" data-testid="work-bond">
+            {mandate.bond
+              ? `${bondMoney(mandate.bond.minBond)} each, which the DAO can take after a disputed approval`
+              : "Could not be read. The network did not answer; this is not the same as no bond."}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

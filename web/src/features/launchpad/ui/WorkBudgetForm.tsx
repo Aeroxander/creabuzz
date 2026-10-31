@@ -10,6 +10,7 @@ import {
 } from "../lib/dao-actions";
 import { decodeWord } from "../lib/work";
 import { useShareRules } from "../use-share-rules";
+import { useWalletLabels } from "../use-wallet-labels";
 import {
   PeoplePicker,
   SelectField,
@@ -26,7 +27,8 @@ import {
   names,
 } from "./decision-forms";
 
-const reviewerExample = "0x… (one wallet address per line)";
+const reviewerExample =
+  "Add people from the list, or paste an account address on each line";
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
@@ -298,6 +300,7 @@ export function WorkBudgetForm({
         testId="budget-reviewers"
         value={reviewers}
       />
+      <PickedNames text={reviewers} />
       <TextField
         hint="Leave empty for a simple majority of the reviewers."
         inputMode="numeric"
@@ -382,5 +385,23 @@ export function WorkBudgetForm({
         result={result}
       />
     </div>
+  );
+}
+
+/** The people picked so far, by name, so nobody has to read the addresses in the box above. */
+function PickedNames({ text }: { text: string }) {
+  const addresses = useMemo(
+    () => [...new Set(text.match(/0x[0-9a-fA-F]{40}/g) ?? [])],
+    [text],
+  );
+  const nameOf = useWalletLabels(addresses);
+  if (addresses.length === 0) return null;
+  return (
+    <p
+      className="-mt-2 text-xs text-muted-foreground"
+      data-testid="budget-reviewers-named"
+    >
+      Reviewers: {addresses.map(nameOf).join(", ")}
+    </p>
   );
 }

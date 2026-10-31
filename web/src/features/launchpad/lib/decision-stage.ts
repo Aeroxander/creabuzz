@@ -60,7 +60,7 @@ export function decisionStage(
       return {
         label: "Waiting to run",
         tone: "wait",
-        next: `Approved. It can run at ${when(decision.queuedAt + Number(delay))}. Support must hold until then.`,
+        next: `Approved. It can take effect at ${when(decision.queuedAt + Number(delay))}. Support must hold until then.`,
         step: null,
       };
     case "Succeeded":
@@ -68,7 +68,7 @@ export function decisionStage(
         ? {
             label: "Approved",
             tone: "good",
-            next: `It has enough support. Start the ${duration(delay)} wait, then it can run.`,
+            next: `It has enough support. Start the ${duration(delay)} wait, then it can take effect.`,
             step: "start",
           }
         : {
@@ -83,7 +83,7 @@ export function decisionStage(
         tone: "open",
         next:
           decision.rules && now < Number(decision.rules.reviewEndsAt)
-            ? `Nothing can run before ${when(decision.rules.reviewEndsAt)}, whatever the vote.`
+            ? `Nothing can take effect before ${when(decision.rules.reviewEndsAt)}, whatever the vote.`
             : "It needs enough support, and that support has to hold.",
         step: null,
       };

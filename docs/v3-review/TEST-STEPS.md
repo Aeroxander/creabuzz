@@ -1,5 +1,9 @@
 # How to test what was built, yourself
 
+> **For the pilot, start from [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md)** (2026-10-31): it orders the hand tests for the
+> hosted contributor-only build and points into the sections below. This file is a log in date order; a later section
+> can change what an earlier one says.
+
 Agents exercised all of this (see [PROGRESS.md](PROGRESS.md)); the repository's rule is that a human then tests it
 too. Every command below runs against a throwaway local chain and cleans up after itself. Nothing is sent to a real
 network and nothing is pushed.
@@ -1902,3 +1906,15 @@ On the test network, a contributor project with two reviewers and "Let any one d
 4. Open the project's link signed out on a phone: "Couldn't load this project" with sign-in and Try again, never
    "not found".
 5. Put `CHANGE_ME_x` in `VITE_ZERODEV_PROJECT_ID` and run `./run.sh build` in `deploy/compose`: refused, naming it.
+
+## 4ck. Every screen, as the pilot sees it (D146)
+
+On the hosted image (contributor-only), signed out, then as a member, on a laptop and a phone:
+
+1. Discover, the Home rail, Your work and the Launchpad say nothing about sales, raising, backing or markets; `/markets`
+   goes back to Discover.
+2. Communities are named by name; Home, a board and a project page scroll, and Back returns to where you were.
+3. Make an account without a passkey, open the payment wallet dialog: it says how to add a passkey, and after adding one
+   you are still the same person (same name, same posts).
+4. On a project: every tab is reachable on the phone, work shows readable titles, Funds shows the DAO's address to copy.
+5. Report a Home post and a board post: each dialog says who will read it.

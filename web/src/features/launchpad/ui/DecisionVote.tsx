@@ -5,6 +5,8 @@ import { Button } from "@/shared/ui/button";
 import { ethCall, getRpcEndpoint } from "../chain";
 import { encodeCastVote, encodeCastVoteFor } from "../lib/vote-tx";
 import { formatUnits } from "../lib/dao-actions";
+import { useAllocationDelegators } from "../use-allocation-delegators";
+import { useWalletLabels } from "../use-wallet-labels";
 import {
   ALL_VOTING_SHARES,
   decodeVotingAllocation,
@@ -40,7 +42,11 @@ export function DecisionVote({
   const [amount, setAmount] = useState("");
   const [onBehalf, setOnBehalf] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
-  const owner = onBehalf.trim() || account;
+  // Whose vote this account may also cast: only people who handed it theirs, named, never typed in as an address.
+  const delegators = useAllocationDelegators(dao, account);
+  const nameOf = useWalletLabels(delegators);
+  const forOther = delegators.includes(onBehalf);
+  const owner = (forOther ? onBehalf : "") || account;
   const validOwner = owner !== null && VOTING_OWNER_RE.test(owner);
   const allocation = useQuery({
     queryKey: ["launchpad", "work", dao, "allocation", id, owner],
@@ -97,7 +103,7 @@ export function DecisionVote({
       return;
     }
     const tx =
-      onBehalf.trim() && owner
+      forOther && owner
         ? encodeCastVoteFor(owner, id, support, wei)
         : encodeCastVote(id, support, wei);
     const landed = await onSend(
@@ -119,7 +125,7 @@ export function DecisionVote({
         : "backing this with";
   const disabled = busy !== null || gate !== null || !validOwner || !data;
   // Nothing to vote with: the buttons go, and voting for someone who gave you their vote (below) stays.
-  const nothingToVote = data?.owned === 0n && onBehalf.trim() === "";
+  const nothingToVote = data?.owned === 0n && !forOther;
 
   return (
     <section
@@ -128,7 +134,7 @@ export function DecisionVote({
       data-testid="decision-vote"
     >
       <p className="text-sm" data-testid="decision-vote-summary" role="status">
-        {!account && !onBehalf.trim()
+        {!account && !forOther
           ? "Sign in with your passkey or connect a wallet to vote."
           : allocation.isError
             ? "Your Shares could not be read. Check the connection and try again."
@@ -210,24 +216,28 @@ export function DecisionVote({
           {problem}
         </p>
       ) : null}
-      <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer">
-          Vote for someone who gave you their vote
-        </summary>
-        <label className="mt-1 block" htmlFor={`${field}-owner`}>
-          Their account address
+      {delegators.length > 0 ? (
+        <label
+          className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+          data-testid="decision-vote-for"
+          htmlFor={`${field}-owner`}
+        >
+          Whose vote
+          <select
+            className="rounded border bg-background px-2 py-1 text-sm text-foreground"
+            id={`${field}-owner`}
+            onChange={(e) => setOnBehalf(e.target.value)}
+            value={forOther ? onBehalf : ""}
+          >
+            <option value="">Mine</option>
+            {delegators.map((person) => (
+              <option key={person} value={person}>
+                {nameOf(person)}, who gave you their vote
+              </option>
+            ))}
+          </select>
         </label>
-        <input
-          aria-invalid={
-            onBehalf.trim() !== "" && !VOTING_OWNER_RE.test(onBehalf.trim())
-          }
-          className="mt-1 w-full rounded border bg-background px-2 py-1 text-sm"
-          id={`${field}-owner`}
-          onChange={(e) => setOnBehalf(e.target.value)}
-          placeholder="0x…"
-          value={onBehalf}
-        />
-      </details>
+      ) : null}
     </section>
   );
 }

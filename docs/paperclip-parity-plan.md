@@ -1,5 +1,7 @@
 # Paperclip parity in Buzz — port plan
 
+> **Outside the Creaton MVP, 2026-10-31.** The MVP is the server, the web app and contributor projects, with no desktop ([v3-review/STATUS.md](v3-review/STATUS.md), "Scope").
+
 > Goal: get Buzz as close as possible to Paperclip's **UI and features**,
 > natively — with the relay (not a per-user database) as the system of
 > record. This is the concrete plan behind [VISION_ORG.md](../VISION_ORG.md)

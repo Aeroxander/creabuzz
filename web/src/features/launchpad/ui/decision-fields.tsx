@@ -4,24 +4,45 @@ import { useUserNames } from "@/features/profiles/use-profiles";
 import { Input } from "@/shared/ui/input";
 import { usePeopleWithWallets } from "../use-people";
 
-/** One labelled field with an optional hint, wired so a screen reader reads label, hint and input together. */
+/**
+ * One labelled field with an optional hint and problem, wired so a screen reader reads label, problem, hint and input
+ * together, and a field with a problem is marked invalid where it is (not only in a message by the button).
+ */
 export function FormField({
   label,
   hint,
+  error,
   children,
 }: {
   label: string;
   hint?: string;
-  children: (props: { id: string; "aria-describedby"?: string }) => ReactNode;
+  /** What is wrong with what was typed here, shown under the field; the field is then marked invalid. */
+  error?: string | null;
+  children: (props: {
+    id: string;
+    "aria-describedby"?: string;
+    "aria-invalid"?: true;
+  }) => ReactNode;
 }) {
   const id = useId();
   const hintId = hint ? `${id}-hint` : undefined;
+  const errorId = error ? `${id}-error` : undefined;
+  const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
   return (
     <div className="flex flex-col gap-1 text-sm">
       <label className="font-medium" htmlFor={id}>
         {label}
       </label>
-      {children({ id, "aria-describedby": hintId })}
+      {children({
+        id,
+        "aria-describedby": describedBy,
+        ...(error ? { "aria-invalid": true as const } : {}),
+      })}
+      {error ? (
+        <span className="text-xs text-destructive" id={errorId}>
+          {error}
+        </span>
+      ) : null}
       {hint ? (
         <span className="text-xs text-muted-foreground" id={hintId}>
           {hint}
@@ -40,6 +61,7 @@ export function TextField({
   testId,
   inputMode,
   after,
+  error,
 }: {
   label: string;
   hint?: string;
@@ -50,9 +72,10 @@ export function TextField({
   inputMode?: "decimal" | "numeric" | "text";
   /** Something that helps fill this in, shown under the box (a list of people to pick from). */
   after?: ReactNode;
+  error?: string | null;
 }) {
   return (
-    <FormField hint={hint} label={label}>
+    <FormField error={error} hint={hint} label={label}>
       {(props) => (
         <>
           <Input
@@ -79,6 +102,7 @@ export function TextAreaField({
   testId,
   rows = 3,
   after,
+  error,
 }: {
   label: string;
   hint?: string;
@@ -88,9 +112,10 @@ export function TextAreaField({
   testId: string;
   rows?: number;
   after?: ReactNode;
+  error?: string | null;
 }) {
   return (
-    <FormField hint={hint} label={label}>
+    <FormField error={error} hint={hint} label={label}>
       {(props) => (
         <>
           <textarea
@@ -170,6 +195,10 @@ export function PeoplePicker({
   );
   const nameOf = useUserNames(keys);
   if (!people.data || people.data.length === 0) return null;
+  // A name alone, unless two people share it: then their short addresses tell them apart.
+  const named = people.data.map((person) => nameOf(person.pubkey));
+  const shared = (name: string) =>
+    named.filter((other) => other === name).length > 1;
   return (
     <select
       aria-label="Add someone you know"
@@ -183,8 +212,10 @@ export function PeoplePicker({
       <option value="">Add someone you know…</option>
       {people.data.map((person) => (
         <option key={person.pubkey} value={person.address}>
-          {nameOf(person.pubkey)} · {person.address.slice(0, 6)}…
-          {person.address.slice(-4)}
+          {nameOf(person.pubkey)}
+          {shared(nameOf(person.pubkey))
+            ? ` · ${person.address.slice(0, 6)}…${person.address.slice(-4)}`
+            : ""}
         </option>
       ))}
     </select>

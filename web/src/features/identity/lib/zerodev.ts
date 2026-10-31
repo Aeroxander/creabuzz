@@ -133,17 +133,18 @@ export const PAYMASTER_DENIED_DASHBOARD_ACTION =
 /**
  * `zd_sponsorUserOperation` refused to sponsor. `serverMessage` is the raw
  * upstream error (never paraphrased away); `dashboardAction` is the
- * operator step that unblocks it.
+ * operator step that unblocks it. Both are for whoever runs the site (logs,
+ * Technical details): people are told `actingErrorMessage`'s plain words,
+ * never a vendor's dashboard.
  */
 export class PaymasterDeniedError extends Error {
   readonly serverMessage: string;
   readonly dashboardAction: string;
 
   constructor(serverMessage: string) {
-    super(
-      `zerodev: paymaster denied sponsorship: ${serverMessage}. ` +
-        PAYMASTER_DENIED_DASHBOARD_ACTION,
-    );
+    // The message (which "Technical details" may show) keeps the server's words but not the vendor dashboard steps:
+    // those are on `dashboardAction`, for whoever runs the site.
+    super(`zerodev: paymaster denied sponsorship: ${serverMessage}.`);
     this.name = "PaymasterDeniedError";
     this.serverMessage = serverMessage;
     this.dashboardAction = PAYMASTER_DENIED_DASHBOARD_ACTION;

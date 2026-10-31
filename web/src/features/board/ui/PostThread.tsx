@@ -21,6 +21,10 @@ import {
   type Profile,
   resolveUserName,
 } from "@/features/profiles/use-profiles";
+import {
+  CREATE_ACCOUNT,
+  SIGN_UP_EVENT,
+} from "@/features/identity/lib/account-copy";
 import { whenText } from "@/shared/lib/refusal-text";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
@@ -97,6 +101,7 @@ export function PostThread({
   actions,
   needAccount,
   onBack,
+  backInBar = false,
   header,
   badges,
   moderation = NO_MODERATION,
@@ -110,6 +115,8 @@ export function PostThread({
   /** Tells a signed-out reader to make an account; true when they have one. */
   needAccount: (action: string) => boolean;
   onBack: () => void;
+  /** The page's own bar already holds the one back control, so the thread shows none of its own. */
+  backInBar?: boolean;
   header?: ReactNode;
   /** A short fact beside a person's name, by public key. */
   badges?: Record<string, string>;
@@ -136,8 +143,9 @@ export function PostThread({
     moderation.mutedUntil !== null
       ? `You are muted on this board until ${whenText(moderation.mutedUntil)}.`
       : null;
-  // A locked thread takes replies only from its moderators, owners and admins.
+  // A locked thread takes replies only from its moderators, owners and admins. A visitor gets a sign-up line instead.
   const canReply =
+    me !== null &&
     (!moderation.locked || moderation.canModerate) &&
     moderation.mutedUntil === null;
 
@@ -264,9 +272,7 @@ export function PostThread({
             void sendReply();
           }
         }}
-        placeholder={
-          me === null ? "Create your account to reply." : "Write a reply"
-        }
+        placeholder="Write a reply"
         value={draft}
       />
       {problem ? (
@@ -296,16 +302,20 @@ export function PostThread({
       className="flex min-h-0 flex-1 flex-col overflow-y-auto"
       data-testid="board-thread"
     >
-      <div className="p-3">
-        <Button
-          data-testid="board-back"
-          onClick={onBack}
-          size="sm"
-          variant="ghost"
-        >
-          <ArrowLeft aria-hidden className="mr-1 h-4 w-4" /> All posts
-        </Button>
-      </div>
+      {!backInBar ? (
+        <div className="p-3">
+          <Button
+            data-testid="board-back"
+            onClick={onBack}
+            size="sm"
+            variant="ghost"
+          >
+            <ArrowLeft aria-hidden className="mr-1 h-4 w-4" /> All posts
+          </Button>
+        </div>
+      ) : (
+        <div className="h-3" />
+      )}
       {post.author !== me && muted.has(post.author) ? (
         <p
           className="px-4 pb-2 text-xs text-muted-foreground"
@@ -413,7 +423,7 @@ export function PostThread({
               <BoardMarkdown text={post.body} />
             </div>
           ) : null}
-          {canReply ? (
+          {canReply && replyTo !== null ? (
             <button
               className="mt-2 text-xs text-muted-foreground underline disabled:opacity-50"
               data-testid="board-reply-post"
@@ -445,7 +455,7 @@ export function PostThread({
         >
           {moderation.canModerate
             ? "This thread is locked. Only moderators, owners and admins can reply."
-            : "This thread is locked by the board's moderators. No new replies."}
+            : "This thread is locked. No new replies."}
         </p>
       ) : null}
       {moderation.rules.trim() !== "" ? (
@@ -461,7 +471,21 @@ export function PostThread({
           </div>
         </details>
       ) : null}
-      {canReply && !replyingTo ? (
+      {me === null ? (
+        <p
+          className="mx-4 mb-4 text-sm text-muted-foreground"
+          data-testid="board-reply-sign-up"
+        >
+          <button
+            className="font-semibold text-foreground underline underline-offset-2"
+            onClick={() => window.dispatchEvent(new Event(SIGN_UP_EVENT))}
+            type="button"
+          >
+            {CREATE_ACCOUNT}
+          </button>{" "}
+          to reply.
+        </p>
+      ) : canReply && !replyingTo ? (
         <div className="px-4 pb-4">{replyForm}</div>
       ) : null}
       <section aria-label="Replies" className="border-t px-4 py-3">

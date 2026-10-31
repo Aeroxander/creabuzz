@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
-import { type Browser, type Page, test } from "@playwright/test";
+import { type Browser, type Page, expect, test } from "@playwright/test";
 import { generateSecretKey } from "nostr-tools/pure";
 
 import { installKeyWallet, walletFromKey } from "../helpers/key-wallet";
@@ -14,13 +14,19 @@ import { waitForAnimations } from "../helpers/animations";
  * saved into E2E_SHOTS as `<stop>-<width>.png`, with the words on the screen in `<stop>-<width>.txt` and one line per
  * capture in `index.ndjson` (words, accessibility findings, sideways scroll, anything that could not be opened).
  *
- * Not a test: nothing here fails on what the screens say. A stop that cannot be opened is still captured as it is, with
- * the reason in the index.
+ * Nothing here fails on what the screens say. It fails when a stop does not reach the state it is named for (its
+ * `open` step throws, or what it `shows` is not visible): the picture is still saved, with the reason in the index, but
+ * a screenshot of some other screen must not pass for the stop. In the hosted (contributor-only) build, E2E_CONTRIBUTOR_
+ * ONLY=1, a capture first checks that no sale can be reached, and stops about the sale path check that they are absent
+ * or lead elsewhere instead of being photographed. `scripts/screen-audit-unique.mjs` then fails the run on two equal
+ * pictures, unless one is a redirect or a stop declared `sameAs` the other.
  */
 
 const FIXTURE = process.env.E2E_AUDIT_FIXTURE ?? "";
 const SHOTS = process.env.E2E_SHOTS ?? "";
 const ONLY = process.env.ONLY ?? "";
+/** The capture is of the hosted build (`VITE_CONTRIBUTOR_ONLY=1`): `web-screen-audit.sh` sets it for the mvp modes. */
+const CONTRIBUTOR_ONLY = process.env.E2E_CONTRIBUTOR_ONLY === "1";
 
 test.skip(
   !FIXTURE || !SHOTS,
@@ -65,6 +71,24 @@ interface Stop {
   open?: (page: Page) => Promise<void>;
   /** Also captured in the dark theme. */
   dark?: boolean;
+  /** A selector that must be visible once `open` is done, or the stop fails: the state the stop is about was reached. */
+  shows?: string;
+  /** A test id photographed on its own (with its words) instead of the whole page, for a form inside a long page. */
+  subject?: string;
+  /** Another stop this one is meant to look exactly like (a tab the page shows as another), so equal pictures pass. */
+  sameAs?: string;
+  /**
+   * In the hosted (contributor-only) build: the state must not be reachable (`absent` checks that, and nothing is
+   * captured), or the page must send you elsewhere (`redirect`, checked, and nothing is captured), or it is reached
+   * another way (`open`, `shows`, `sameAs` replace the stop's own).
+   */
+  hosted?: {
+    absent?: (page: Page) => Promise<void>;
+    redirect?: RegExp;
+    open?: (page: Page) => Promise<void>;
+    shows?: string;
+    sameAs?: string;
+  };
 }
 
 const W = world as World;
@@ -93,12 +117,36 @@ const steps =
 const roleButton = (name: string | RegExp) => async (page: Page) => {
   await page.getByRole("button", { name }).first().click();
 };
+const tid = (testId: string) => `[data-testid="${testId}"]`;
+/** Press the one visible copy of a control: a header and a phone tab bar can both carry the same test id. */
+const clickVisible = (testId: string) => async (page: Page) => {
+  await page.locator(`[data-testid="${testId}"]:visible`).first().click();
+};
+// Sign-up lives in the header on a wide screen; a phone's tab bar has only Sign in, so there it is Home's own button.
+const openSignUp = async (page: Page) => {
+  const header = page.locator('[data-testid="create-identity-cta"]:visible');
+  if ((await header.count()) > 0) await header.first().click();
+  else
+    await page
+      .getByTestId("home-welcome")
+      .getByRole("button", { name: "Create your account" })
+      .click();
+};
+// The kinds are cards on a wide screen and one list on a phone (DecisionComposer.tsx).
+const pickKind = (kind: string) => async (page: Page) => {
+  const select = page.getByTestId("decision-kind-select");
+  if (await select.isVisible()) await select.selectOption(kind);
+  else await page.getByTestId(`decision-kind-${kind}`).click();
+};
 const decision = (kind: string) =>
-  steps(
-    tab("Decisions"),
-    click("decision-new"),
-    click(`decision-kind-${kind}`),
+  steps(tab("Decisions"), click("decision-new"), pickKind(kind));
+/** In the hosted build there is no sale to set up: the button that would open the wizard is not there. */
+const noSaleWizard = async (page: Page) => {
+  await expect(page.getByRole("button", { name: "Set up a sale" })).toHaveCount(
+    0,
   );
+  await expect(page.getByTestId("wizard-step-token")).toHaveCount(0);
+};
 
 const STOPS: Stop[] = [
   // ── Arriving, signed out ──────────────────────────────────────────────────────────────────────────
@@ -144,15 +192,17 @@ const STOPS: Stop[] = [
     name: "b01-signup",
     who: "visitor",
     path: "/",
-    open: click("create-identity-cta"),
+    open: openSignUp,
+    shows: tid("onboarding-dialog"),
   },
   {
     name: "b02-signup-name",
     who: "visitor",
     path: "/",
-    open: steps(click("create-identity-cta"), async (page) => {
+    open: steps(openSignUp, async (page) => {
       await page.getByTestId("onboarding-name").fill("Sam");
     }),
+    shows: tid("onboarding-dialog"),
   },
   { name: "b03-home-first-run", who: "newbie", path: "/", dark: true },
   {
@@ -171,7 +221,8 @@ const STOPS: Stop[] = [
     name: "b10-signin",
     who: "visitor",
     path: "/",
-    open: steps(click("create-identity-cta"), click("onboarding-signin")),
+    open: clickVisible("sign-in-cta"),
+    shows: tid("onboarding-signin-form"),
   },
   {
     name: "b11-signout",
@@ -419,6 +470,8 @@ const STOPS: Stop[] = [
         .getByTestId("way-to-help-submit")
         .click();
     },
+    shows: tid("work-claim-evidence"),
+    subject: "work-file-claim",
   },
   {
     name: "g04-submit-work-problem",
@@ -431,6 +484,8 @@ const STOPS: Stop[] = [
         .click();
       await page.getByTestId("work-claim-submit").click();
     },
+    shows: tid("work-claim-evidence"),
+    subject: "work-file-claim",
   },
   {
     name: "g05-suggest-work",
@@ -448,9 +503,21 @@ const STOPS: Stop[] = [
     who: "nia",
     path: project("contributions"),
   },
-  { name: "g08-project-record", who: "nia", path: project("record") },
+  // A contributor project's record is its contributions, so this tab opens Contributions.
+  {
+    name: "g08-project-record",
+    who: "nia",
+    path: project("record"),
+    sameAs: "g07-project-contributions",
+  },
   { name: "g09-project-treasury", who: "nia", path: project("treasury") },
-  { name: "g10-project-people", who: "nia", path: project("agents") },
+  // A contributor project shows its people on the overview, so this tab opens the overview.
+  {
+    name: "g10-project-people",
+    who: "nia",
+    path: project("agents"),
+    sameAs: "g01-project-overview-member",
+  },
   { name: "g11-project-discussion", who: "nia", path: project("discussion") },
   { name: "g12-project-updates", who: "nia", path: project("updates") },
   { name: "g13-project-overview-founder", who: "frida", path: project() },
@@ -472,6 +539,8 @@ const STOPS: Stop[] = [
     who: "frida",
     path: project("decisions"),
     open: click("decision-new"),
+    shows: '[data-testid="decision-new"][aria-expanded="true"]',
+    subject: "decision-composer",
   },
   ...[
     "budget",
@@ -490,10 +559,14 @@ const STOPS: Stop[] = [
         who: "frida",
         path: project("decisions"),
         open: decision(kind),
+        shows: '[data-testid="decision-new"][aria-expanded="true"]',
+        subject: "decision-composer",
       }),
       // A contributor project offers no money decisions (D108).
     )
-    .filter((stop) => !/-(pay|unwind|slash)$/.test(stop.name)),
+    .filter((stop) => !/-(pay|unwind|slash)$/.test(stop.name))
+    // The hosted build offers no trading decision: Shares are never put up for sale there.
+    .filter((stop) => !(CONTRIBUTOR_ONLY && stop.name.endsWith("-trading"))),
   { name: "g28-project-work-reviewer", who: "rui", path: project("work") },
   { name: "g29-project-overview-reviewer", who: "rui", path: project() },
   { name: "g30-project-work-contributor", who: "cora", path: project("work") },
@@ -507,8 +580,22 @@ const STOPS: Stop[] = [
     who: "nia",
     path: "/projects",
     open: roleButton(/pitch a project/i),
+    // Pitches with seats are not offered in the hosted build: new Shares come only from reviewed work.
+    hosted: {
+      absent: async (page) => {
+        await expect(
+          page.getByRole("button", { name: /pitch a project/i }),
+        ).toHaveCount(0);
+      },
+    },
   },
-  { name: "h04-launchpad", who: "nia", path: "/launchpad" },
+  {
+    name: "h04-launchpad",
+    who: "nia",
+    path: "/launchpad",
+    // The hosted build lists its projects on Discover alone, so this second list (named for sales) leads there.
+    hosted: { redirect: /\/discover$/ },
+  },
   {
     name: "h05-launch-detail",
     who: "nia",
@@ -516,12 +603,26 @@ const STOPS: Stop[] = [
     open: async (page) => {
       await page.getByText("Nebula").first().click();
     },
+    // The hosted world has no sale to open; the list's way into a project is the Creaton project itself.
+    hosted: {
+      open: async (page) => {
+        await page
+          .locator("main")
+          .locator('a[href*="/launchpad/"]')
+          .filter({ hasText: "Creaton" })
+          .first()
+          .click();
+      },
+      shows: '[role="tab"]',
+      sameAs: "g01-project-overview-member",
+    },
   },
   {
     name: "h06-sale-wizard",
     who: "frida",
     path: "/launchpad",
     open: roleButton("Set up a sale"),
+    hosted: { absent: noSaleWizard },
   },
   {
     name: "h07-sale-wizard-next",
@@ -538,10 +639,21 @@ const STOPS: Stop[] = [
         .first()
         .click();
     }),
+    hosted: { absent: noSaleWizard },
   },
   { name: "h08-idea-dialog", who: "frida", path: "/launchpad?start=idea" },
-  { name: "h09-sandbox", who: "nia", path: "/launchpad/nebula-sandbox" },
-  { name: "h10-markets", who: "nia", path: "/markets" },
+  {
+    name: "h09-sandbox",
+    who: "nia",
+    path: "/launchpad/nebula-sandbox",
+    hosted: { redirect: /\/(launchpad|discover)$/ },
+  },
+  {
+    name: "h10-markets",
+    who: "nia",
+    path: "/markets",
+    hosted: { redirect: /\/discover$/ },
+  },
   // ── The rest a person can reach ────────────────────────────────────────────────────────────────────
   { name: "i01-repos", who: "nia", path: "/repos" },
   { name: "i02-wiki", who: "dev", path: community("?view=wiki") },
@@ -602,17 +714,49 @@ async function openAs(
   return page;
 }
 
+/** Whether the page ended somewhere other than the address the stop opened (a route that sends you elsewhere). */
+function redirected(page: Page, path: string): boolean {
+  const asked = new URL(path, page.url());
+  return new URL(page.url()).pathname !== asked.pathname;
+}
+
+/** One line in the index for a stop that is checked instead of captured (hosted absences and redirects). */
+function recordChecked(
+  stop: Stop,
+  variant: string,
+  url: string,
+  check: string,
+) {
+  appendFileSync(
+    `${SHOTS}/index.ndjson`,
+    `${JSON.stringify({ stop: stop.name, variant, who: stop.who, path: stop.path, url, checked: check })}\n`,
+  );
+}
+
 async function capture(
   page: Page,
   stop: Stop,
   variant: string,
   problem: string,
+  sameAs: string | undefined,
 ) {
   await page.waitForTimeout(1500);
   await waitForAnimations(page).catch(() => undefined);
   const base = `${SHOTS}/${stop.name}-${variant}`;
-  await page.screenshot({ path: `${base}.png`, fullPage: true });
-  const text = await page.evaluate(() => document.body.innerText);
+  // A form inside a long page is photographed on its own, so the picture is of the form, not of the page above it.
+  const subject =
+    stop.subject && !problem
+      ? page.locator(`[data-testid="${stop.subject}"]:visible`).first()
+      : null;
+  if (subject && (await subject.count()) > 0) {
+    await subject.screenshot({ path: `${base}.png` });
+  } else {
+    await page.screenshot({ path: `${base}.png`, fullPage: true });
+  }
+  const text =
+    subject && (await subject.count()) > 0
+      ? await subject.innerText()
+      : await page.evaluate(() => document.body.innerText);
   writeFileSync(`${base}.txt`, text);
   const axe = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -636,6 +780,9 @@ async function capture(
       who: stop.who,
       path: stop.path,
       url: page.url(),
+      // Read by scripts/screen-audit-unique.mjs: equal pictures pass only for a redirect or a declared look-alike.
+      redirected: redirected(page, stop.path),
+      ...(sameAs ? { sameAs } : {}),
       words: text.split(/\s+/).filter(Boolean).length,
       accessibility: blocking,
       sideways,
@@ -644,50 +791,126 @@ async function capture(
   );
 }
 
+// The hosted build offers no sale anywhere: Start has no raise steps, the sale wizard does not open (its button is not
+// there, and the `?start=sale` address leads to Discover), Discover offers no backing, and Markets and the raise sandbox
+// lead elsewhere.
+test("the contributor-only build shows no sale", async ({ browser }) => {
+  test.skip(!CONTRIBUTOR_ONLY, "only for a capture of the hosted build");
+  const page = await openAs(browser, "frida", "desktop", false);
+  try {
+    await page.goto("/start");
+    await expect(page.getByTestId("start-go-contributor")).toBeVisible();
+    await expect(page.getByTestId("start-step-raise")).toHaveCount(0);
+    await expect(page.getByTestId("start-step-run")).toHaveCount(0);
+    await expect(page.locator("main")).not.toContainText(
+      /plan a raise|set up a sale|pretend money|would back/i,
+    );
+
+    await page.goto("/launchpad?start=sale");
+    // The list of sales leads to Discover in this build (only `?start=idea` stays here, to share an idea), so the
+    // address never opens the sale wizard.
+    await expect(page).toHaveURL(/\/discover$/);
+    await expect(page.getByTestId("discover-start-project")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Set up a sale" }),
+    ).toHaveCount(0);
+    await expect(page.getByTestId("wizard-step-token")).toHaveCount(0);
+    await expect(page.getByTestId("sandbox-entry")).toHaveCount(0);
+    await expect(page.getByTestId("launch-chips")).toHaveCount(0);
+
+    await page.goto("/discover");
+    await expect(page.getByTestId("discover-start-project")).toBeVisible();
+    await expect(page.getByTestId("discover-filter-hiring")).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: /back this launch/i }),
+    ).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Markets" })).toHaveCount(0);
+
+    await page.goto("/markets");
+    await expect(page).toHaveURL(/\/discover$/);
+    await page.goto("/launchpad/nebula-sandbox");
+    // The list of ideas may itself move under Discover in this build; either way the sandbox is not offered.
+    await expect(page).toHaveURL(/\/(launchpad|discover)$/);
+  } finally {
+    await page.context().close();
+  }
+});
+
 for (const stop of STOPS) {
   if (ONLY && !stop.name.includes(ONLY)) continue;
   test(stop.name, async ({ browser }) => {
     test.setTimeout(120_000);
+    const hosted = CONTRIBUTOR_ONLY ? stop.hosted : undefined;
+    const open = hosted?.open ?? stop.open;
+    const shows = hosted?.shows ?? stop.shows;
+    const sameAs = hosted?.sameAs ?? stop.sameAs;
     const variants: ["desktop" | "phone", boolean][] = [
       ["desktop", false],
       ["phone", false],
       ...(stop.dark ? ([["desktop", true]] as ["desktop", boolean][]) : []),
     ];
+    // Every width is captured before the stop fails, so one bad step still leaves the other pictures to read.
+    const problems: string[] = [];
     for (const [width, dark] of variants) {
+      const variant = `${width}${dark ? "-dark" : ""}`;
       const page = await openAs(browser, stop.who, width, dark);
       const path = stop.path;
       let problem = "";
+      let checked = false;
       try {
         await page.goto(path);
         await page.waitForTimeout(1500);
-        // Loading placeholders and "Reading …" lines gone, or fifteen seconds: a screen is judged as it reads once loaded.
+        // Loading placeholders and "Reading …" or "Loading …" lines gone, or fifteen seconds: a screen is judged as it
+        // reads once loaded.
         await page
           .waitForFunction(
             () =>
               !document.querySelector(".animate-pulse") &&
-              !/(^|\n)Reading [^\n]*…/.test(document.body.innerText),
+              !/(^|\n)(Reading|Loading)\b[^\n]*(…|\.\.\.)/.test(
+                document.body.innerText,
+              ),
             null,
             {
               timeout: 15_000,
             },
           )
           .catch(() => undefined);
-        // On a phone a community's rooms and panels sit behind the channel list.
-        if (
-          width === "phone" &&
-          stop.name.startsWith("e") &&
-          (await page.getByTestId("open-channel-list").isVisible())
-        ) {
-          await page.getByTestId("open-channel-list").click();
-          await page.waitForTimeout(400);
+        // In the hosted build some stops are checked, not photographed: they must not exist, or must lead elsewhere.
+        if (hosted?.redirect) {
+          await expect(page).toHaveURL(hosted.redirect);
+          recordChecked(stop, variant, page.url(), "redirect");
+          checked = true;
+        } else if (hosted?.absent) {
+          await hosted.absent(page);
+          recordChecked(stop, variant, page.url(), "absent");
+          checked = true;
+        } else {
+          // On a phone a community's rooms and panels sit behind the channel list.
+          if (
+            width === "phone" &&
+            stop.name.startsWith("e") &&
+            (await page.getByTestId("open-channel-list").isVisible())
+          ) {
+            await page.getByTestId("open-channel-list").click();
+            await page.waitForTimeout(400);
+          }
+          if (open) await open(page);
+          if (shows) {
+            await expect(
+              page.locator(`${shows}:visible`).first(),
+            ).toBeVisible();
+          }
         }
-        if (stop.open) await stop.open(page);
       } catch (error) {
         problem =
           error instanceof Error ? error.message.split("\n")[0] : String(error);
       }
-      await capture(page, stop, `${width}${dark ? "-dark" : ""}`, problem);
+      // A failed check is still photographed, so whoever reads the run sees what was there instead.
+      if (!checked) await capture(page, stop, variant, problem, sameAs);
+      if (problem) problems.push(`${variant}: ${problem}`);
       await page.context().close();
     }
+    // A stop whose state could not be reached fails: its picture would show some other screen and pass for this one.
+    expect(problems, `${stop.name} did not reach its state`).toEqual([]);
   });
 }

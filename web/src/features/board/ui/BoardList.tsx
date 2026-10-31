@@ -90,8 +90,11 @@ export function BoardList({
   statusesReady,
   moderation,
   mutedHidden = null,
+  nameInBar = false,
 }: {
   channel: Channel;
+  /** The page bar above already shows the board's name: the heading is kept for screen readers only. */
+  nameInBar?: boolean;
   moderation: BoardListModeration;
   /** Posts left out because the reader muted their authors, and how to show them anyway. */
   mutedHidden?: { count: number; onShow: () => void } | null;
@@ -175,13 +178,18 @@ export function BoardList({
   };
 
   return (
+    // `relative`: the vote buttons' screen-reader words are positioned, and must stay inside this scroller rather than
+    // stretch the page under it. `overscroll-contain`: reaching the end does not scroll the app's nav away.
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+      className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
       data-testid="board"
     >
       <header className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
         <div className="min-w-0">
-          <h2 className="truncate text-base font-bold" data-testid="board-name">
+          <h2
+            className={nameInBar ? "sr-only" : "truncate text-base font-bold"}
+            data-testid="board-name"
+          >
             {channel.name}
           </h2>
           {channel.description ? (
@@ -190,7 +198,8 @@ export function BoardList({
             </p>
           ) : null}
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        {/* On a phone the actions take their own row, so New post does not wrap onto a line of its own. */}
+        <div className="ml-auto flex flex-wrap items-center gap-2 max-sm:w-full max-sm:justify-end">
           {proposalsView ? null : (
             <fieldset className="m-0 flex min-w-0 rounded-md border p-0.5">
               <legend className="sr-only">Sort posts</legend>
@@ -250,14 +259,15 @@ export function BoardList({
               People
             </Button>
           ) : null}
+          {/* For a moderator it is a tool; for anyone else only who moderates and what they did, so it reads as a link. */}
           <Button
             aria-expanded={showingModeration}
             data-testid="board-moderation-toggle"
             onClick={() => setShowingModeration((v) => !v)}
             size="sm"
-            variant="outline"
+            variant={moderation.canModerate ? "outline" : "link"}
           >
-            Moderation
+            {moderation.canModerate ? "Moderation" : "Moderators and log"}
             {moderation.canModerate && moderation.reports.rows.length > 0 ? (
               <span
                 className="ml-1.5 rounded-full bg-destructive px-1.5 text-2xs font-semibold text-destructive-foreground"
@@ -273,7 +283,15 @@ export function BoardList({
             ) : null}
           </Button>
           {channel.visibility === "public" ? (
-            <JoinBoardButton boardId={channel.id} boardName={channel.name} />
+            <JoinBoardButton
+              boardId={channel.id}
+              boardName={channel.name}
+              moderator={
+                moderation.me !== null &&
+                (moderation.state.moderators.get(moderation.me) ?? 0) >
+                  Date.now() / 1000
+              }
+            />
           ) : null}
           <Button
             aria-describedby={

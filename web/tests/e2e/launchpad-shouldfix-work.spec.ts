@@ -530,7 +530,7 @@ test("two reviewers turn work down with a reason: the founder closes it from Nee
   const contributor = await openAs(browser, "contributor", relay, world);
   await contributor.goto(projectPath("overview"));
   await expect(contributor.getByTestId("dao-waiting-others")).toContainText(
-    "The reviewers turned down your “translate”. The Work tab shows who, and their reasons if they gave any.",
+    "The reviewers turned down your “Translate”. The Work tab shows who, and their reasons if they gave any.",
     { timeout: 20_000 },
   );
 
@@ -574,7 +574,7 @@ test("two reviewers turn work down with a reason: the founder closes it from Nee
   );
   await contributor.goto(projectPath("contributions"));
   const turned = contributor.getByTestId("contribution-turned-down");
-  await expect(turned).toContainText("translate", { timeout: 20_000 });
+  await expect(turned).toContainText("Translate", { timeout: 20_000 });
   await expect(turned).toContainText("half the headings are still in English");
 });
 

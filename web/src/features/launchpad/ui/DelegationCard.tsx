@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { decodeU256, ethCall, getRpcEndpoint } from "../chain";
 import { delegateReceiptParts } from "../lib/milestone-receipt";
 import { usePublishMirror } from "../use-launches";
@@ -17,6 +16,7 @@ import {
 import { HashPicker } from "./HashPicker";
 import { useConnectedWallet } from "../use-connected-wallet";
 import { usePickedSend } from "../use-picked-send";
+import { useWalletLabels } from "../use-wallet-labels";
 
 const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 // shares() on the DAO — the votes live on its Shares token (cast sig).
@@ -94,6 +94,19 @@ export function DelegationCard({
     refetchOnWindowFocus: false,
   });
 
+  const delegateKeys = useMemo(
+    () => (current.data ? [current.data.delegate] : []),
+    [current.data],
+  );
+  const nameOf = useWalletLabels(delegateKeys);
+  const delegate = current.data?.delegate ?? null;
+  const self =
+    delegate !== null &&
+    holder !== null &&
+    delegate.toLowerCase() === holder.toLowerCase();
+  // Nobody named: a delegate this server knows no name for is said as "someone else", with the address on hover only.
+  const delegateName = delegate ? nameOf(delegate) : "";
+
   const options: DelegateOption[] = [
     ...(holder ? [{ value: holder, label: "Back to myself (reclaim)" }] : []),
     ...members.filter(
@@ -143,16 +156,24 @@ export function DelegationCard({
       <h2 className="text-base font-semibold">Vote delegation</h2>
       <p className="mt-1 text-xs text-black/60 dark:text-white/60">
         Hand your votes to someone you trust. They vote with your Shares, and
-        your Shares stay yours: you can take the votes back at any time by
-        delegating to yourself. It adds no extra voting power.
+        your Shares stay yours: you can take the votes back at any time.
       </p>
       {current.data ? (
-        <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-          Currently delegated to{" "}
-          <span className="font-mono">
-            {truncatePubkey(current.data.delegate)}
-          </span>
-          {lastTx ? ` · last tx ${lastTx.slice(0, 10)}…` : ""}
+        <p
+          className="mt-1 text-xs text-black/60 dark:text-white/60"
+          data-testid="delegation-current"
+        >
+          {self ? (
+            "Your votes: your own."
+          ) : delegateName.startsWith("0x") ? (
+            <>
+              Your votes: handed to{" "}
+              <span title={delegate ?? undefined}>someone else</span>.
+            </>
+          ) : (
+            `Your votes: handed to ${delegateName}.`
+          )}
+          {lastTx ? " Changed just now." : ""}
         </p>
       ) : null}
       {!dao ? (
@@ -175,7 +196,7 @@ export function DelegationCard({
               label="Delegate to"
               onValueChange={setDelegatee}
               options={options}
-              placeholder="Their account address (0x…)"
+              placeholder="Pick someone, or paste their account address"
               testId="delegate-target"
               value={delegatee}
             />

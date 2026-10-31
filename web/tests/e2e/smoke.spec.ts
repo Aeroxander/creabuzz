@@ -160,14 +160,9 @@ for (const status of [200, 404]) {
       page.getByText("Welcome to the supporters chat"),
     ).toBeVisible();
     await expect(page.getByTestId("channel-Demo · team")).toBeVisible();
-    // Returning through the main navigation must keep the direct entry.
+    // Returning through the main navigation opens the one community directly (D146: no one-card directory).
     await page.getByTestId("app-nav-communities").click();
-    await expect(
-      page.getByRole("heading", { name: "Communities", exact: true }),
-    ).toBeVisible();
-    await page
-      .getByRole("link", { name: /127\.0\.0\.1:4173.*Open community/ })
-      .click();
+    await expect(page).toHaveURL(/\/c\/127\.0\.0\.1%3A4173/);
     await page.getByTestId("channel-Demo · team").click();
     await expect(page).toHaveURL(new RegExp(`channel=${teamId}`));
   });
@@ -279,7 +274,7 @@ test("invite requires age and legal consent before opening Creaton", async ({
       ]),
     });
   });
-  await page.goto("/invite/demo-code");
+  await page.goto("/invite/v2.demo-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
   // The first release is the web app alone: no desktop download is offered (VITE_DESKTOP_APP is off).
   await expect(page.getByRole("link", { name: "Download it now" })).toHaveCount(
@@ -374,7 +369,7 @@ test("invite can enroll a NIP-07 identity for browser access", async ({
     const request = route.request();
     const body = request.postData() ?? "";
     expect(JSON.parse(body)).toEqual({
-      code: "browser-code",
+      code: "v2.browser-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     });
 
     const authorization = request.headers().authorization;
@@ -407,7 +402,7 @@ test("invite can enroll a NIP-07 identity for browser access", async ({
     });
   });
 
-  await page.goto("/invite/browser-code");
+  await page.goto("/invite/v2.browser-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
   await page.getByRole("button", { name: "Join in browser" }).click();
   await expect(page).toHaveURL("/");
   expect(claimObserved).toBe(true);
@@ -451,7 +446,7 @@ test("invite asks Safari users to choose their Mac download", async ({
     await route.fulfill({ status: 500 });
   });
 
-  await page.goto("/invite/demo-code");
+  await page.goto("/invite/v2.demo-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
   const download = page.getByRole("link", { name: "Download it now" });
   await expect(download).toHaveAttribute("aria-haspopup", "dialog");
   await download.click();
@@ -473,7 +468,9 @@ test("invite asks Safari users to choose their Mac download", async ({
   const openedPage = await openedPagePromise;
   await expect(chooser).toBeHidden();
   await expect(openedPage).toHaveURL("https://github.com/block/buzz/releases");
-  await expect(page).toHaveURL(/\/invite\/demo-code$/);
+  await expect(page).toHaveURL(
+    /\/invite\/v2.demo-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA$/,
+  );
   await openedPage.close();
 
   await download.click();
@@ -584,7 +581,7 @@ test("invite download links to the appropriate platform destination", async ({
       });
     });
 
-    await page.goto("/invite/demo-code");
+    await page.goto("/invite/v2.demo-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     await expect(
       page.getByRole("link", { name: "Download it now" }),
       device.name,
@@ -647,7 +644,7 @@ test("the landing Repositories button opens the repo browser", async ({
   await page.getByRole("link", { name: "Repositories" }).click();
   await expect(page).toHaveURL(/\/repos$/);
   await expect(
-    page.getByRole("heading", { name: "This community is empty" }),
+    page.getByRole("heading", { name: "No code yet" }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Communities" })).toBeHidden();
 });
@@ -1278,15 +1275,15 @@ test("the tab agent's key can be rotated and its storage is disclosed", async ({
 
   // Agent stopped: the disclosure explains the key it will create on start.
   await expect(page.getByTestId("agent-key-disclosure")).toContainText(
-    "creates a signing key for it in this browser",
+    "gets its own account in this browser",
   );
 
-  await page.getByText("Retire this tab helper's key").click();
+  await page.getByText("Remove this tab's helper account").click();
   await page.getByTestId("reset-agent-key").click();
   await expect(page.getByTestId("confirm-dialog")).toBeVisible();
   await page.getByTestId("confirm-accept").click();
 
-  await expect(page.getByText("Agent key reset")).toBeVisible();
+  await expect(page.getByText("Helper account removed")).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(() => window.localStorage.getItem("buzz.agent.nsec")),
@@ -2037,7 +2034,7 @@ test("invite can enroll the identity this app creates, without an extension", as
     });
   });
 
-  await page.goto("/invite/durable-code");
+  await page.goto("/invite/v2.durable-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
   await page.getByRole("button", { name: "Join in browser" }).click();
   await expect(page).toHaveURL("/");
   expect(claimPubkey, "the claim is signed by this browser's identity").toBe(

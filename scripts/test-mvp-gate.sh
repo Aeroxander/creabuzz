@@ -141,6 +141,23 @@ chmod +x "$WORK/wrapper/web-social-e2e.sh"
 HOSTED="" "$WORK/wrapper/web-social-hosted-e2e.sh" --grep feed >"$WORK/wrapper.out" 2>&1
 check "the wrapper runs the social suite with HOSTED=1 and passes its arguments on" $(yes_if grep -qx "HOSTED=1 args=--grep feed" "$WORK/wrapper.out")
 
+echo "--- the pilot set is what the hosted pilot depends on, and nothing raise-only"
+mkdir -p "$WORK/list-logs"
+PILOT_LIST="$(LOG_DIR="$WORK/list-logs" "$GATE" --pilot --list)"
+for journey in web-social-hosted-e2e web-invite-only-e2e web-error-report-e2e web-contributor-e2e web-passkey-contributor-e2e; do
+  check "the pilot set includes $journey" $(yes_if grep -qx "$journey" <<<"$PILOT_LIST")
+done
+for journey in web-dao-launch-e2e web-economy-e2e web-sepolia-fork-e2e cli-milestone-e2e web-challenge-e2e; do
+  check "the pilot set leaves out $journey" $(yes_if bash -c '! grep -qx "$0" <<<"$1"' "$journey" "$PILOT_LIST")
+done
+ALL_LIST="$("$GATE" --list)"
+check "the full run is the pilot set and then the later set" \
+  $(yes_if [ "$ALL_LIST" == "$(printf '%s\n%s' "$PILOT_LIST" "$("$GATE" --later --list)")" ])
+missing=""
+for journey in $ALL_LIST; do [[ -x "$REPO_ROOT/scripts/$journey.sh" ]] || missing+=" $journey"; done
+check "every journey in the full run is a script here${missing:+ (missing:$missing)}" $(yes_if [ -z "$missing" ])
+check "--list runs nothing" $(yes_if bash -c '[[ -z "$(ls -A "$0")" ]]' "$WORK/list-logs")
+
 echo "--- a failing journey fails the run"
 "$GATE" failing >"$WORK/run3.out" 2>&1; status=$?
 check "a failing journey makes the run fail" $(yes_if bash -c '[[ $0 -ne 0 ]] && grep -q "FAILED:  failing" "$1"' "$status" "$WORK/run3.out")

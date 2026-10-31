@@ -4,12 +4,14 @@ import { Button } from "@/shared/ui/button";
 import { evidenceProblem, type EvidenceStanding } from "../lib/evidence";
 import { hashText } from "../lib/work";
 import type { ClaimView } from "../lib/work";
+import { linkLabel } from "../lib/link-label";
 
 const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;
 
 /**
  * A text with its web links made clickable. Only http and https links become anchors, and every anchor opens in a new
- * tab without handing the page over: evidence is written by someone else.
+ * tab without handing the page over: evidence is written by someone else. Each link reads as a short label (its site
+ * and path, or "Post on a board"); the full address is its title and where it goes.
  */
 export function Linked({ text }: { text: string }) {
   const parts = text.split(URL_RE);
@@ -24,12 +26,13 @@ export function Linked({ text }: { text: string }) {
         return (
           <span key={key}>
             <a
-              className="break-all text-primary-ink underline-offset-4 hover:underline"
+              className="break-words text-primary-ink underline-offset-4 [overflow-wrap:anywhere] hover:underline"
               href={link}
               rel="noopener noreferrer"
               target="_blank"
+              title={link}
             >
-              {link}
+              {linkLabel(link, window.location.origin)}
             </a>
             {rest}
           </span>
@@ -100,9 +103,6 @@ export function EvidenceBlock({
             </p>
           </>
         ) : null}
-        <p className="mt-2 text-xs text-muted-foreground">
-          These are the words it was submitted with.
-        </p>
       </div>
     );
   }

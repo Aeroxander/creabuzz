@@ -370,7 +370,7 @@ export function WikiView({
     <div className="flex h-full min-h-0 w-full flex-1 flex-col lg:flex-row">
       {/* Page list: a stacked strip on narrow screens, a column from `lg` up. */}
       <aside
-        className="flex max-h-40 w-full shrink-0 flex-col border-b border-black/10 bg-sidebar lg:max-h-none lg:w-56 lg:border-b-0 lg:border-r dark:border-white/10"
+        className="flex max-h-48 w-full shrink-0 flex-col border-b border-black/10 bg-sidebar lg:max-h-none lg:w-56 lg:border-b-0 lg:border-r dark:border-white/10"
         data-testid="wiki-page-list"
       >
         <div className="flex items-center justify-between px-3 py-3">
@@ -444,7 +444,9 @@ export function WikiView({
                 key={t}
                 type="button"
                 onClick={() => setTab(t)}
-                className={`rounded-md px-2 py-1 text-xs font-medium ${
+                // Nothing to edit until a page exists.
+                disabled={t === "edit" && pages.length === 0}
+                className={`rounded-md px-2 py-1 text-xs font-medium disabled:opacity-50 ${
                   tab === t
                     ? "bg-white text-black shadow-xs dark:bg-white/20 dark:text-white"
                     : "text-black/60 dark:text-white/60"
@@ -455,73 +457,81 @@ export function WikiView({
               </button>
             ))}
           </div>
-          <span className="min-w-0 truncate text-sm font-medium text-black/70 dark:text-white/70">
-            {activeSlug ?? "wiki"}
-          </span>
+          {activeSlug ? (
+            <span className="min-w-0 truncate text-sm font-medium text-black/70 dark:text-white/70">
+              {activeSlug}
+            </span>
+          ) : null}
           <div className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-black/60 dark:text-white/60">
-            {(["wysiwyg", "source", "preview"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={`rounded-md border px-2 py-1 ${
-                  mode === m
-                    ? "border-black/25 bg-black/5 dark:border-white/25 dark:bg-white/10"
-                    : "border-black/15 dark:border-white/15"
-                }`}
-                data-testid={`wiki-mode-${m}`}
-              >
-                {m === "wysiwyg"
-                  ? "WYSIWYG"
-                  : m === "source"
-                    ? "Source"
-                    : "Preview"}
-              </button>
-            ))}
-            <span
-              className="flex items-center gap-1"
-              data-testid="wiki-editors"
-              title={liveText.detail}
-            >
-              <Users className="h-3 w-3" aria-hidden="true" />
-              {liveText.editors}
-            </span>
-            <span
-              className="flex items-center gap-1 rounded border border-black/15 px-1.5 py-0.5 dark:border-white/15"
-              data-live-state={live.state}
-              data-testid="wiki-live-status"
-              role="status"
-              title={liveText.detail}
-            >
-              {liveText.chip}
-              <span className="sr-only">. {liveText.detail}</span>
-            </span>
-            <span
-              className="flex items-center gap-1"
-              data-testid="wiki-save-state"
-            >
-              <CloudUpload className="h-3 w-3" aria-hidden="true" />
-              {saving
-                ? "saving…"
-                : dirty
-                  ? "unsaved"
-                  : active?.draft && !publishedHere.has(active.slug)
-                    ? "not published"
-                    : "saved"}
-            </span>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
-              data-testid="wiki-copy-link"
-              onClick={copyPageLink}
-              title="Copy a link to this page"
-            >
-              <Link2 className="h-3 w-3" /> Copy link
-            </button>
+            {/* Editing controls belong to an open page: with none open they only read as broken. */}
+            {activeSlug ? (
+              <>
+                {(["wysiwyg", "source", "preview"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMode(m)}
+                    className={`rounded-md border px-2 py-1 ${
+                      mode === m
+                        ? "border-black/25 bg-black/5 dark:border-white/25 dark:bg-white/10"
+                        : "border-black/15 dark:border-white/15"
+                    }`}
+                    data-testid={`wiki-mode-${m}`}
+                  >
+                    {m === "wysiwyg"
+                      ? "Visual"
+                      : m === "source"
+                        ? "Source"
+                        : "Preview"}
+                  </button>
+                ))}
+                <span
+                  className="flex items-center gap-1"
+                  data-testid="wiki-editors"
+                  title={liveText.detail}
+                >
+                  <Users className="h-3 w-3" aria-hidden="true" />
+                  {liveText.editors}
+                </span>
+                <span
+                  className="flex items-center gap-1 rounded border border-black/15 px-1.5 py-0.5 dark:border-white/15"
+                  data-live-state={live.state}
+                  data-testid="wiki-live-status"
+                  role="status"
+                  title={liveText.detail}
+                >
+                  {liveText.chip}
+                  <span className="sr-only">. {liveText.detail}</span>
+                </span>
+                <span
+                  className="flex items-center gap-1"
+                  data-testid="wiki-save-state"
+                >
+                  <CloudUpload className="h-3 w-3" aria-hidden="true" />
+                  {saving
+                    ? "saving…"
+                    : dirty
+                      ? "unsaved"
+                      : active?.draft && !publishedHere.has(active.slug)
+                        ? "not published"
+                        : "saved"}
+                </span>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
+                  data-testid="wiki-copy-link"
+                  onClick={copyPageLink}
+                  title="Copy a link to this page"
+                >
+                  <Link2 className="h-3 w-3" /> Copy link
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               onClick={exportWiki}
-              className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 dark:border-white/15"
+              disabled={pages.length === 0}
+              className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 disabled:opacity-50 dark:border-white/15"
               aria-label="Export wiki as markdown"
               data-testid="wiki-export"
               title="Download all pages as one markdown file"
@@ -639,7 +649,7 @@ export function WikiView({
                 data-testid="wiki-suggest"
                 title={
                   isAgentPage
-                    ? "Suggest a correction to this agent page"
+                    ? "Suggest a correction to this AI helper's page"
                     : "Propose a change to this page"
                 }
               >
@@ -742,7 +752,7 @@ export function WikiView({
                     : `Published by ${signerName}`}
                 </p>
                 <p className="text-2xs text-black/50 dark:text-white/50">
-                  This page is kept up to date by an agent and can&apos;t be
+                  An AI helper keeps this page up to date, so it can&apos;t be
                   edited here. Suggest a correction to propose a change.
                 </p>
               </div>
@@ -814,8 +824,20 @@ export function WikiView({
             )}
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/60 dark:text-white/60">
-            Select a page or create one.
+          <div
+            className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-black/60 dark:text-white/60"
+            data-testid="wiki-empty"
+          >
+            <p>Pick a page from the list, or start a new one.</p>
+            <button
+              className="inline-flex items-center gap-1.5 rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+              data-testid="wiki-empty-new-page"
+              onClick={() => setDialog("new")}
+              type="button"
+            >
+              <FilePlus2 aria-hidden className="h-4 w-4" />
+              New page
+            </button>
           </div>
         )}
       </div>

@@ -13,6 +13,8 @@
 
 import { hashText, idLabel, idWord } from "@creaton/core/launchpad/work.ts";
 
+import { workTitle } from "./work-titles.ts";
+
 /** Somewhere a work area's words were published. `mandate` and `id` narrow it to one work area when known. */
 export interface WordsSource {
   text: string;
@@ -55,7 +57,10 @@ export function recordSources(
 export interface OpenWorkArea {
   mandate: string;
   id: string;
+  /** Its short name on the chain (`idLabel`), the key people may need to quote. */
   name: string;
+  /** What people read: a title published for it, else its short name made readable (`work-titles.ts`). */
+  title: string;
   manager: string;
   /** Shares it may still award (18 decimals). */
   sharesLeft: bigint;
@@ -101,6 +106,8 @@ export interface WorkForHelp {
 export function openWorkAreas(
   work: WorkForHelp,
   sources: readonly WordsSource[],
+  /** Titles published for work areas, keyed by short name in lower case (`knownTitles`). */
+  titles?: ReadonlyMap<string, string>,
 ): OpenWorkArea[] {
   const now = work.chainTime;
   return work.mandates
@@ -117,6 +124,7 @@ export function openWorkAreas(
             mandate: mandate.address.toLowerCase(),
             id: project.id.toLowerCase(),
             name: idLabel(project.id),
+            title: workTitle(project.id, titles),
             manager: record.manager,
             sharesLeft: sharesLeft > 0n ? sharesLeft : 0n,
             shareBudget: record.shareBudget,
@@ -143,7 +151,8 @@ export function openWorkAreas(
 type FormArea = Pick<
   OpenWorkArea,
   "mandate" | "id" | "name" | "words" | "checkHash"
->;
+> &
+  Partial<Pick<OpenWorkArea, "title">>;
 
 const draftKey = (area: Pick<OpenWorkArea, "mandate" | "id">) =>
   `${area.mandate.toLowerCase()}:${area.id.toLowerCase()}`;
@@ -170,20 +179,24 @@ export function wordsProblem(
   words: string,
 ): string | null {
   if (!area || hashText(words) === area.checkHash.toLowerCase()) return null;
+  const name = area.title ?? area.name;
   return area.words
-    ? `These are not ${area.name}'s exact words, so its manager could not accept your work. Use the words shown under Open work.`
-    : `These are not ${area.name}'s words as it was approved, so its manager could not accept your work. Ask its manager for the exact words.`;
+    ? `These are not ${name}'s exact words, so its manager could not accept your work. Use the words shown under Open work.`
+    : `These are not ${name}'s words as it was approved, so its manager could not accept your work. Ask its manager for the exact words.`;
 }
 
-/** The update that publishes a work area's words beside the vote that approves it. */
+/**
+ * The update that publishes a work area's words beside the vote that approves it. It is posted when the vote opens,
+ * so it says the area is proposed: it is not open for work until the vote passes.
+ */
 export function workAreaUpdateContent(input: {
   mandate: string;
   id: string;
   check: string;
 }): Record<string, unknown> {
   return {
-    title: `Work area: ${idLabel(input.id)}`,
-    body: `What finished work looks like: ${input.check}`,
+    title: `Proposed work area: ${workTitle(input.id)}`,
+    body: `Being voted on. Done when: ${input.check}`,
     links: [],
     workArea: {
       id: input.id.toLowerCase(),

@@ -371,7 +371,7 @@ export function DaoOverview({
             label="In review"
             onOpen={() => onOpen("work")}
             testId="dao-figure-in-review"
-            value={work.data ? String(counts.openClaims) : "—"}
+            value={work.data ? String(counts.inReview ?? 0) : "—"}
           />
           <Figure
             icon={Vote}

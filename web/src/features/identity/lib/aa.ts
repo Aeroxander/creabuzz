@@ -1,17 +1,8 @@
 /**
  * ERC-4337 transports and counterfactual sender derivation.
  *
- * Two submission paths (the locked wave-4b decisions):
- *
- * a) **Self-bundling**: compose `EntryPoint.handleOps(PackedUserOperation[],
- *    address beneficiary)` calldata and hand it to an injected
- *    `SubmitTransaction` port (unsigned transaction only — the injected
- *    wallet signs, exactly like `web/src/features/launchpad/ui/RecordBidDialog.tsx`
- *    sends `eth_sendTransaction`). Selector `0x449fd934` derived with
- *    `cast sig "handleOps(((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes))[],address)"`
- *    and golden-tested against `cast abi-encode`.
- *
- * b) **Standard bundler RPC**: `eth_sendUserOperation`,
+ * Submission goes through the **standard bundler RPC** (the self-bundling
+ * `handleOps` path gave way to the ZeroDev bundler, D34/D139): `eth_sendUserOperation`,
  *    `eth_estimateUserOperationGas`, `eth_getUserOperationReceipt` per the
  *    ERC-4337 bundler spec. Every call is bounded: per-attempt timeout,
  *    capped exponential backoff between attempts, hard attempt limit, and a
@@ -30,20 +21,8 @@
  * - Paymasters are explicitly out of scope for wave 4b (`paymasterAndData`
  *   must stay empty for these transports to be meaningful).
  */
-import type { AbiField } from "./userop-abi.ts";
 import { abiEncodeCall, decodeAddressError } from "./userop-abi.ts";
 import type { PackedUserOperation } from "./userop.ts";
-
-/** An unsigned transaction request, wallet-signed at submission. */
-export interface TransactionRequest {
-  to: string;
-  data: string;
-  value?: string;
-  from?: string;
-}
-
-/** Port: submit `tx`, resolve with the transaction hash. */
-export type SubmitTransaction = (tx: TransactionRequest) => Promise<string>;
 
 /**
  * Port: `eth_call`-style read. Resolves with raw return data on success;
@@ -51,11 +30,6 @@ export type SubmitTransaction = (tx: TransactionRequest) => Promise<string>;
  * `getSenderAddress` relies on the revert payload.
  */
 export type EthCall = (tx: { to: string; data: string }) => Promise<string>;
-
-/** Minimal EIP-1193 provider surface used by the adapters. */
-export interface Eip1193Provider {
-  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
-}
 
 export class EthCallRevertError extends Error {
   readonly data: string;
@@ -104,102 +78,17 @@ export class BundlerTimeoutError extends Error {
   }
 }
 
-/** `handleOps((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes)[],address)`. */
-export const HANDLE_OPS_SIGNATURE =
-  "handleOps(((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes))[],address)";
-
 /** `getSenderAddress(bytes)`. */
 export const GET_SENDER_ADDRESS_SIGNATURE = "getSenderAddress(bytes)";
 
 /** `SenderAddressResult(address)` — the deliberate revert of the flow above. */
 export const SENDER_ADDRESS_RESULT_SIGNATURE = "SenderAddressResult(address)";
 
-const packedUserOpFields = (op: PackedUserOperation): AbiField[] => [
-  { kind: "address", value: op.sender },
-  { kind: "uint", value: BigInt(op.nonce) },
-  { kind: "bytes", value: op.initCode },
-  { kind: "bytes", value: op.callData },
-  { kind: "bytes32", value: op.accountGasLimits },
-  { kind: "uint", value: BigInt(op.preVerificationGas) },
-  { kind: "bytes32", value: op.gasFees },
-  { kind: "bytes", value: op.paymasterAndData },
-  { kind: "bytes", value: op.signature },
-];
-
-/** Compose `EntryPoint.handleOps(userOps, beneficiary)` calldata. */
-export function buildHandleOpsCalldata(
-  userOps: PackedUserOperation[],
-  beneficiary: string,
-): string {
-  if (userOps.length === 0) {
-    throw new Error("aa: handleOps needs at least one user operation");
-  }
-  return abiEncodeCall(HANDLE_OPS_SIGNATURE, [
-    { kind: "tuple[]", items: userOps.map(packedUserOpFields) },
-    { kind: "address", value: beneficiary },
-  ]);
-}
-
-/** Self-bundling submission: one `handleOps` transaction via the port. */
-export async function submitUserOpsViaHandleOps(params: {
-  submitTransaction: SubmitTransaction;
-  entryPoint: string;
-  userOps: PackedUserOperation[];
-  beneficiary: string;
-}): Promise<string> {
-  return params.submitTransaction({
-    to: params.entryPoint,
-    data: buildHandleOpsCalldata(params.userOps, params.beneficiary),
-  });
-}
-
 function requireString(value: unknown, what: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`aa: ${what} must be a non-empty string`);
   }
   return value;
-}
-
-/** Adapter: `SubmitTransaction` over an EIP-1193 wallet provider. */
-export function createEip1193SubmitTransaction(
-  provider: Eip1193Provider,
-): SubmitTransaction {
-  return async (tx) => {
-    const params = {
-      ...(tx.from === undefined ? {} : { from: tx.from }),
-      to: tx.to,
-      ...(tx.value === undefined ? {} : { value: tx.value }),
-      data: tx.data,
-    };
-    return requireString(
-      await provider.request({
-        method: "eth_sendTransaction",
-        params: [params],
-      }),
-      "transaction hash",
-    );
-  };
-}
-
-/** Adapter: `EthCall` over an EIP-1193 provider, surfacing revert payloads. */
-export function createEip1193EthCall(provider: Eip1193Provider): EthCall {
-  return async (tx) => {
-    try {
-      return requireString(
-        await provider.request({
-          method: "eth_call",
-          params: [{ to: tx.to, data: tx.data }, "latest"],
-        }),
-        "eth_call return data",
-      );
-    } catch (error) {
-      const data = (error as { data?: unknown }).data;
-      if (typeof data === "string" && data.startsWith("0x")) {
-        throw new EthCallRevertError("eth_call reverted", data.toLowerCase());
-      }
-      throw error;
-    }
-  };
 }
 
 /**

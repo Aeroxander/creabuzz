@@ -10,8 +10,9 @@
 # thread and a moderator, a report, a private room. Then `screen-audit.spec.ts` visits every screen at desktop and phone
 # width and saves, per stop, a PNG and the visible words (`<name>.txt`) into SHOTS.
 #
-# Not a test: it fails only when the world cannot be built. Read the screenshots; `docs/v3-review/SCREEN-AUDIT-*.md`
-# records what was found.
+# Not a test of the words: it fails when the world cannot be built, when a stop does not reach the state it is named for,
+# or when two stops saved the same picture (`scripts/screen-audit-unique.mjs`), so no screenshot passes for a screen it
+# is not. Read the screenshots; `docs/v3-review/SCREEN-AUDIT-*.md` records what was found.
 #
 # ⚠️  DEV ONLY. Needs Postgres and Redis (see `just services`) and foundry. Anvil's public dev keys.
 #
@@ -93,8 +94,12 @@ CURRENCY="$(manifest_role "$DEPLOYMENTS/dev-currency-31337.json" currency)"
 FEATURES=("VITE_CONTRIBUTOR_KITS={\"31337\":\"${CONTRIBUTOR_KIT}\"}")
 case "${WEB_FEATURES:-audit}" in
   audit) FEATURES+=("VITE_DAO_LAUNCH_KITS={\"31337\":\"${LAUNCH_KIT}\"}") ;;
-  mvp) ;;
+  # As the hosted image is built (Dockerfile, web-social-e2e.sh): contributor-only, so no sale shows anywhere. The
+  # passkey (ZeroDev) settings stay off: they need an entry point and account factory, which only a Sepolia fork has
+  # (web-passkey-contributor-e2e.sh); this dev chain has neither.
+  mvp) FEATURES+=("VITE_CONTRIBUTOR_ONLY=1") ;;
   mvp+forecasts)
+    FEATURES+=("VITE_CONTRIBUTOR_ONLY=1")
     WORK_BOUNTY="$(manifest_role "$DEPLOYMENTS/work-bounty-31337.json" work-bounty)"
     OPEN_BOUNTY="$(manifest_role "$DEPLOYMENTS/open-bounty-31337.json" open-bounty)"
     [[ -n "$WORK_BOUNTY" && -n "$OPEN_BOUNTY" ]] || fail "the dev chain did not report both bounty contracts"
@@ -176,10 +181,14 @@ fi
 
 step "capturing every screen into ${SHOTS}"
 mkdir -p "$SHOTS"
+# A capture of the hosted build first checks that it really shows no sale (screen-audit.spec.ts).
+case "${WEB_FEATURES:-audit}" in mvp | mvp+forecasts) export E2E_CONTRIBUTOR_ONLY=1 ;; esac
 set +e
 E2E_SHOTS="$SHOTS" node_modules/.bin/playwright test --config=playwright.real-relay.config.ts \
   tests/e2e-real/screen-audit.spec.ts --reporter=list --retries=0 "$@"
 status=$?
+# Two stops with the same picture mean one never reached its own state; only redirects and declared look-alikes pass.
+node "$REPO_ROOT/scripts/screen-audit-unique.mjs" "$SHOTS" || status=1
 set -e
 step "$(find "$SHOTS" -name '*.png' | wc -l | tr -d ' ') screenshots in ${SHOTS}"
 

@@ -228,7 +228,7 @@ test("a ban from the queue names the person, and a timeout says whom it is for",
   const room = rowWith(page, "You are all idiots");
   await room.getByTestId("moderation-timeout").click();
   await expect(room.getByTestId("timeout-choices")).toContainText(
-    "Time out Alice Reyes for",
+    "Mute Alice Reyes everywhere in this community for",
   );
   await room.getByRole("button", { name: "Cancel" }).click();
 
@@ -380,9 +380,8 @@ test("reporting a board post says its moderators see the report without the repo
   await page.getByTestId("board-report-post").click({ timeout: 20_000 });
   const privacy = page.getByTestId("report-privacy");
   await expect(privacy).toContainText(
-    "This board's moderators see what you reported and your note, not who you are. The community's moderators also see who you are.",
+    "Board moderators don't see who reported. The community's moderators do.",
   );
-  await expect(privacy).not.toContainText("Only this community's moderators");
 });
 
 test("a board post a moderator removed says so, with the reason from the board's log", async ({
@@ -425,7 +424,7 @@ test("appointing a board moderator from the buttons asks first, naming them; the
   await page.getByTestId("board-moderation-toggle").click({ timeout: 20_000 });
   await expect(page.getByTestId("board-appoint-person")).toHaveAttribute(
     "placeholder",
-    "Their profile link or key",
+    "Their profile link",
   );
 
   await page

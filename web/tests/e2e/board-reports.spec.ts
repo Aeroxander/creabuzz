@@ -364,8 +364,8 @@ test("a direct-message thread is private but offers no people to add or remove",
   await open(page, relay);
   await page.getByTestId("dms-toggle").click();
   await page.getByTestId(`dm-${ROOM.slice(0, 8)}`).click();
-  await expect(page.getByTestId("channel-add-people")).toBeVisible();
   await expect(page.getByTestId("room-people-toggle")).toHaveCount(0);
-  await page.getByTestId("channel-add-people").click();
+  // Nobody joins a direct thread, so no invitation card is offered in it.
+  await expect(page.getByTestId("channel-add-people")).toHaveCount(0);
   await expect(page.getByTestId("room-people")).toHaveCount(0);
 });

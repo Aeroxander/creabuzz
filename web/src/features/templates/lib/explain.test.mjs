@@ -37,6 +37,13 @@ test("a refusal says what to do next, and that what went through is kept", () =>
   );
   assert.match(
     explainStepFailure(step("doc"), new Error("invalid: bad tag")),
-    /The server said no: invalid: bad tag/,
+    /^Bad tag\. Whatever already went through is kept/,
   );
+  // The server's internal failure is said plainly, never its code.
+  const internal = explainStepFailure(
+    step("doc"),
+    new Error("error: database error: down"),
+  );
+  assert.doesNotMatch(internal, /error:|database/);
+  assert.match(internal, /turned this step down/);
 });

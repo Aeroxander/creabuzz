@@ -1,3 +1,6 @@
+import { Link } from "@tanstack/react-router";
+
+import { APP_NAME } from "@/shared/constants/brand";
 import { CreatonMark } from "@/shared/ui/CreatonMark";
 import { DESKTOP_APP } from "@/shared/lib/desktop-app";
 import { claimInviteInBrowser } from "@/features/invite/invite-api";
@@ -32,6 +35,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { acceptJoinPolicy, POLICY_TIMEOUT_MS } from "../accept-policy";
+import { type InviteCodeProblem, inviteCodeProblem } from "../invite-code";
 import { type InviteProblem, inviteProblem } from "../invite-errors";
 import { InviteJoinPolicyNotice } from "./InviteJoinPolicyNotice";
 
@@ -65,8 +69,53 @@ function problemText(text: string): InviteProblem {
   return { text, detail: null, reloadTerms: false };
 }
 
+/** The invite landing's yellow-to-blue wash behind its white card. */
+const PAGE_BACKGROUND = {
+  backgroundImage: "linear-gradient(180deg, #D7D72E 0%, #D7E7F6 100%)",
+};
+
 /** Landing page for a community invite link (`/invite/<code>`). */
 export function InvitePage({ code }: { code: string }) {
+  // A link that cannot be an invite is said so before anyone makes an account for it.
+  const problem = inviteCodeProblem(code);
+  return problem ? (
+    <BrokenInvite problem={problem} />
+  ) : (
+    <InviteLanding code={code} />
+  );
+}
+
+function BrokenInvite({ problem }: { problem: InviteCodeProblem }) {
+  // The app's own background and buttons: this is an answer from the app, not the branded invite landing.
+  return (
+    <div
+      className="flex flex-1 flex-col items-center justify-center bg-background px-4 py-16 text-center"
+      data-testid="invite-broken"
+    >
+      <div className="flex w-full max-w-xl flex-col items-center rounded-3xl border bg-card px-6 py-10 sm:px-12 sm:py-12">
+        <div
+          className="h-12 w-12 overflow-hidden bg-black"
+          style={{ borderRadius: "22.37%" }}
+        >
+          <CreatonMark className="h-full w-full" label={APP_NAME} />
+        </div>
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight">
+          {problem === "expired"
+            ? "This invite has expired"
+            : "This invite link doesn't work"}
+        </h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Ask the person who sent it for a new one.
+        </p>
+        <Button asChild className="mt-8">
+          <Link to="/">Home</Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function InviteLanding({ code }: { code: string }) {
   const relay = inviteRelayWsUrl();
   const host = relay.replace(/^wss?:\/\//, "");
   const [policyLoad, setPolicyLoad] = React.useState<PolicyLoad>({
@@ -341,9 +390,7 @@ export function InvitePage({ code }: { code: string }) {
   return (
     <div
       className="flex flex-1 flex-col items-center justify-center px-4 py-16 text-center"
-      style={{
-        backgroundImage: "linear-gradient(180deg, #D7D72E 0%, #D7E7F6 100%)",
-      }}
+      style={PAGE_BACKGROUND}
     >
       <div className="w-full max-w-xl space-y-4">
         <div className="flex w-full flex-col items-center rounded-3xl bg-white px-6 py-10 sm:px-12 sm:py-12">
@@ -351,12 +398,14 @@ export function InvitePage({ code }: { code: string }) {
             className="h-12 w-12 overflow-hidden bg-black"
             style={{ borderRadius: "22.37%" }}
           >
-            <CreatonMark className="h-full w-full" label="Creaton" />
+            <CreatonMark className="h-full w-full" label={APP_NAME} />
           </div>
           <h1 className="mt-4 text-2xl font-semibold tracking-tight text-black">
-            You&apos;re invited to
+            You&apos;re invited to a community on {APP_NAME}
           </h1>
-          <p className="mt-9 font-mono text-lg text-black/70">{host}</p>
+          <p className="mt-2 text-sm text-black/60" data-testid="invite-host">
+            {host}
+          </p>
 
           <div
             className={`grid w-full max-w-md overflow-hidden transition-[grid-template-rows,margin,opacity,transform] duration-[220ms] [transition-timing-function:cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none ${

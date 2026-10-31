@@ -12,6 +12,7 @@ import {
   type RulesRead,
   type StatusChip,
 } from "../lib/contributor-status";
+import { raisesOffered } from "../lib/raises-offered";
 import { useContributorProvenance } from "../use-contributor-provenance";
 import { useShareRules } from "../use-share-rules";
 
@@ -49,7 +50,8 @@ export function ContributorStatusNote({
     ) : null;
   return (
     <div className="flex flex-wrap gap-1.5" data-testid="contributor-chips">
-      {chip(status.start, Ban, "contributor-note")}
+      {/* A build with no sales never brings sales up, not even to say there was none. */}
+      {raisesOffered() ? chip(status.start, Ban, "contributor-note") : null}
       {chip(status.shares, Award, "contributor-issuance")}
       {chip(
         status.trading,

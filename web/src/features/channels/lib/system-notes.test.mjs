@@ -5,6 +5,7 @@ import {
   isServerNote,
   KIND_SYSTEM_NOTE,
   parseSystemNote,
+  repeatedCreationNotes,
   systemNoteText,
 } from "./system-notes.ts";
 
@@ -143,4 +144,20 @@ test("only the server's own notes count as notes", () => {
   // The server's key is not known: every note counts.
   assert.equal(isServerNote({ ...note, pubkey: BOARD }, null), true);
   assert.equal(isServerNote({ kind: 9, pubkey: SERVER }, SERVER), false);
+});
+
+test("a room shows one creation note: any later one is left out", () => {
+  const notes = new Map([
+    ["first", { type: "channel_created", actor: BOARD }],
+    ["joined", { type: "member_joined", actor: BOARD, target: REPLY }],
+    ["again", { type: "channel_created", actor: REPLY }],
+  ]);
+  const ordered = [
+    { id: "first" },
+    { id: "joined" },
+    { id: "message" },
+    { id: "again" },
+  ];
+  assert.deepEqual([...repeatedCreationNotes(ordered, notes)], ["again"]);
+  assert.deepEqual([...repeatedCreationNotes([{ id: "joined" }], notes)], []);
 });

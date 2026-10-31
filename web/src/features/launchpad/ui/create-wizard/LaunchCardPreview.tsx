@@ -36,7 +36,7 @@ export function LaunchCardPreview({
           onToggleFollow={() => undefined}
           record={{
             id: name.trim().toLowerCase().replace(/\s+/g, "-") || "your-launch",
-            name: name.trim() || "Your launch",
+            name: name.trim() || "Your project",
             pitch: pitch.trim(),
             image: image.trim() || null,
             category: category || null,

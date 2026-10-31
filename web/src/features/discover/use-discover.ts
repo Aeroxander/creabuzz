@@ -16,6 +16,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { useChainBlockHeight } from "@/features/feed/use-feed";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -51,6 +52,7 @@ export function useDiscover() {
         events: await fetchDiscoverEvents(),
         me: existingUserPubkey(),
         chainHead,
+        raises: raisesOffered(),
       }),
     staleTime: 60_000,
     refetchOnWindowFocus: false,

@@ -107,7 +107,8 @@ function SectionHeader({
   onToggle: () => void;
   actionLabel: string;
   actionTestId: string;
-  onAction: () => void;
+  /** Left out for a visitor, who has no account to make anything with. */
+  onAction?: () => void;
 }) {
   return (
     <div className="flex items-center gap-1 px-4 py-3">
@@ -124,16 +125,18 @@ function SectionHeader({
           }`}
         />
       </button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="ml-auto h-7 gap-1 px-2 text-xs"
-        onClick={onAction}
-        data-testid={actionTestId}
-      >
-        <Plus className="h-3.5 w-3.5" /> {actionLabel}
-      </Button>
+      {onAction ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-7 gap-1 px-2 text-xs"
+          onClick={onAction}
+          data-testid={actionTestId}
+        >
+          <Plus className="h-3.5 w-3.5" /> {actionLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -171,6 +174,7 @@ export function ChannelSidebar({
   const chats = channels.filter((channel) => channel.type !== "forum");
   const starter = useStarterBoards(boards.map((board) => board.name));
   const moreFailure = moreError != null ? readFailureWords(moreError) : null;
+  const signedIn = existingUserPubkey() !== null;
   return (
     <aside className="flex min-h-0 w-full flex-1 flex-col">
       <SectionHeader
@@ -179,7 +183,7 @@ export function ChannelSidebar({
         collapsed={boardsCollapsed}
         icon={<Newspaper className="h-4 w-4" />}
         label="Boards"
-        onAction={() => setCreating("forum")}
+        onAction={signedIn ? () => setCreating("forum") : undefined}
         onToggle={() => setBoardsCollapsed((v) => !v)}
       />
       {!boardsCollapsed && (
@@ -246,7 +250,7 @@ export function ChannelSidebar({
         collapsed={chatsCollapsed}
         icon={<Users className="h-4 w-4" />}
         label="Channels"
-        onAction={() => setCreating("stream")}
+        onAction={signedIn ? () => setCreating("stream") : undefined}
         onToggle={() => setChatsCollapsed((v) => !v)}
       />
       {!chatsCollapsed && (

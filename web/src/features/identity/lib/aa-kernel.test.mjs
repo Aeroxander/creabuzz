@@ -10,14 +10,12 @@ import { EthCallRevertError } from "./aa.ts";
 import {
   KERNEL_MODULE_TYPE_VALIDATOR,
   buildKernelInitCode,
-  buildKernelNonce,
   buildKernelSelfCallData,
   getSenderFromKernelFactory,
   validatorInternalData,
   webAuthnValidatorInstall,
   webAuthnValidatorModuleData,
 } from "./aa-kernel.ts";
-import { unpackNonce } from "./userop.ts";
 
 test("webAuthnValidatorModuleData matches cast abi-encode of (WebAuthnValidatorData, bytes32)", () => {
   // WebAuthnValidator.onInstall decodes `abi.decode(data, (WebAuthnValidatorData, bytes32))`
@@ -125,36 +123,6 @@ test("buildKernelInitCode matches factory ‖ cast calldata of deploy", () => {
       }),
     /must not be empty/,
   );
-});
-
-test("buildKernelNonce follows Utils.parseNonce byte layout", () => {
-  // Root validation, standard mode: the whole nonce is zero.
-  assert.equal(buildKernelNonce(), "0x0");
-  // [1 byte vMode | 1 byte vType | 20 bytes vId | 2 bytes nonceKey | 8 bytes
-  // sequence] — 32 bytes total.
-  const validator = "0x1234567890123456789012345678901234567890";
-  const nonce = buildKernelNonce({
-    validationType: 1,
-    validator,
-    nonceKey: 0x0203,
-    sequence: 0x04050607n,
-  });
-  assert.equal(
-    `0x${nonce.slice(2).padStart(64, "0")}`,
-    `0x0001${validator.slice(2)}02030000000004050607`,
-  );
-  // Cross-binding: the EP-level 192/64 split carries vMode|vType|vId|nonceKey.
-  assert.deepEqual(unpackNonce(nonce), {
-    key192: BigInt(`0x0001${validator.slice(2)}0203`),
-    sequence64: 0x04050607n,
-  });
-  assert.throws(
-    () => buildKernelNonce({ validationType: 0, validator }),
-    /takes no validator address/,
-  );
-  assert.throws(() => buildKernelNonce({ sequence: 1n << 64n }), /eight bytes/);
-  assert.throws(() => buildKernelNonce({ nonceKey: 0x10000 }), /two bytes/);
-  assert.throws(() => buildKernelNonce({ validationMode: 256 }), /one byte/);
 });
 
 test("buildKernelSelfCallData matches cast calldata of execute (self, 0, empty)", () => {

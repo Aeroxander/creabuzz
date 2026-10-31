@@ -4,6 +4,7 @@ import { parseAnimatedAvatarUrl } from "@/shared/lib/animatedAvatar";
 import { cn } from "@/shared/lib/cn";
 import { getInitials } from "@/shared/lib/initials";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
+import { SOMEONE } from "@/shared/lib/no-name";
 import { useServerMediaSrc } from "@/shared/lib/use-server-media";
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
 
@@ -64,7 +65,8 @@ export function UserAvatar({
   imageDraggable,
   testId,
 }: UserAvatarProps) {
-  const initials = getInitials(displayName);
+  // Someone with no name gets a plain disc: an "S" would read as their initial.
+  const initials = displayName === SOMEONE ? "" : getInitials(displayName);
   // Animated avatars show their static poster frame until hovered, then play
   // the animation.
   const animated = parseAnimatedAvatarUrl(avatarUrl);

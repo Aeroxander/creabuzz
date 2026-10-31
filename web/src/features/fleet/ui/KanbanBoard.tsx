@@ -2,7 +2,7 @@
  * Kanban board — work moved through status columns by drag or menu.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CircleDot, Flag, GitPullRequest, Plus } from "lucide-react";
 
 import type { WorkItem } from "../use-work-board";
@@ -213,6 +213,20 @@ export function KanbanBoard({
 }) {
   const { agents } = useAgentRoster();
   const [quickAdd, setQuickAdd] = useState<string | null>(null);
+  // The columns run past the edge on most screens: a fade on the right says there is more until the end is in view.
+  const scroller = useRef<HTMLDivElement>(null);
+  const [moreRight, setMoreRight] = useState(false);
+  const measure = () => {
+    const el = scroller.current;
+    if (!el) return;
+    setMoreRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measure reads the element; it re-runs when the cards change
+  useEffect(() => {
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [items.length]);
   const [draft, setDraft] = useState("");
   const [overCol, setOverCol] = useState<string | null>(null);
 
@@ -236,96 +250,109 @@ export function KanbanBoard({
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-x-auto pb-1">
-      {STATUS_COLUMNS.map((col) => {
-        const columnItems = items.filter((i) => i.status === col.key);
-        return (
-          // biome-ignore lint/a11y/noStaticElementInteractions: drag-drop targets are containers by design
-          <div
-            key={col.key}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              setOverCol(col.key);
-            }}
-            onDragLeave={() => setOverCol((v) => (v === col.key ? null : v))}
-            onDrop={(e) => {
-              e.preventDefault();
-              const id = e.dataTransfer.getData("application/x-buzz-task");
-              dropped(id, col.key);
-              setOverCol(null);
-            }}
-            className={`flex min-h-0 w-60 shrink-0 flex-col rounded-lg border ${
-              overCol === col.key
-                ? "border-black/25 bg-black/[0.03] dark:border-white/25 dark:bg-white/10"
-                : "border-black/10 bg-white/40 dark:border-white/10 dark:bg-white/5"
-            }`}
-            data-testid={`kanban-col-${col.key}`}
-          >
-            <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-black/55 dark:text-white/55">
-                {col.label}
-              </span>
-              <span className="text-2xs text-black/60 dark:text-white/60">
-                {columnItems.length}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickAdd(col.key);
-                  setDraft("");
-                }}
-                className="ml-auto rounded p-0.5 text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
-                aria-label={`Add to ${col.label}`}
-                data-testid={`kanban-add-${col.key}`}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            {quickAdd === col.key ? (
-              <div className="mx-2 mb-1 flex items-center gap-1">
-                <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="New task…"
-                  className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-                  data-testid="kanban-quick-input"
-                />
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-x-auto pb-1"
+        onScroll={measure}
+        ref={scroller}
+      >
+        {STATUS_COLUMNS.map((col) => {
+          const columnItems = items.filter((i) => i.status === col.key);
+          return (
+            // biome-ignore lint/a11y/noStaticElementInteractions: drag-drop targets are containers by design
+            <div
+              key={col.key}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setOverCol(col.key);
+              }}
+              onDragLeave={() => setOverCol((v) => (v === col.key ? null : v))}
+              onDrop={(e) => {
+                e.preventDefault();
+                const id = e.dataTransfer.getData("application/x-buzz-task");
+                dropped(id, col.key);
+                setOverCol(null);
+              }}
+              className={`flex min-h-0 w-60 shrink-0 flex-col rounded-lg border ${
+                overCol === col.key
+                  ? "border-black/25 bg-black/[0.03] dark:border-white/25 dark:bg-white/10"
+                  : "border-black/10 bg-white/40 dark:border-white/10 dark:bg-white/5"
+              }`}
+              data-testid={`kanban-col-${col.key}`}
+            >
+              <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-black/55 dark:text-white/55">
+                  {col.label}
+                </span>
+                <span className="text-2xs text-black/60 dark:text-white/60">
+                  {columnItems.length}
+                </span>
                 <button
                   type="button"
                   onClick={() => {
-                    if (draft.trim()) onQuickAdd(col.key, draft.trim());
-                    setQuickAdd(null);
+                    setQuickAdd(col.key);
                     setDraft("");
                   }}
-                  className="rounded-full bg-black px-2 py-1 text-2xs font-medium text-white dark:bg-white dark:text-black"
+                  className="ml-auto rounded p-0.5 text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+                  aria-label={`Add to ${col.label}`}
+                  data-testid={`kanban-add-${col.key}`}
                 >
-                  Add
+                  <Plus className="h-3.5 w-3.5" />
                 </button>
               </div>
-            ) : null}
-            <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 pb-2">
-              {columnItems.map((item) => (
-                <div key={item.key}>
-                  <Card
-                    item={item}
-                    onSetStatus={onSetStatus}
-                    onAssignSelf={onAssignSelf}
-                    onUnassign={onUnassign}
-                    agents={agents}
-                    userName={userName}
+              {quickAdd === col.key ? (
+                <div className="mx-2 mb-1 flex items-center gap-1">
+                  <input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="New task…"
+                    className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+                    data-testid="kanban-quick-input"
                   />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (draft.trim()) onQuickAdd(col.key, draft.trim());
+                      setQuickAdd(null);
+                      setDraft("");
+                    }}
+                    className="rounded-full bg-black px-2 py-1 text-2xs font-medium text-white dark:bg-white dark:text-black"
+                  >
+                    Add
+                  </button>
                 </div>
-              ))}
-              {columnItems.length === 0 ? (
-                <p className="px-1 py-3 text-center text-2xs text-black/60 dark:text-white/60">
-                  Drop tasks here
-                </p>
               ) : null}
+              <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 pb-2">
+                {columnItems.map((item) => (
+                  <div key={item.key}>
+                    <Card
+                      item={item}
+                      onSetStatus={onSetStatus}
+                      onAssignSelf={onAssignSelf}
+                      onUnassign={onUnassign}
+                      agents={agents}
+                      userName={userName}
+                    />
+                  </div>
+                ))}
+                {columnItems.length === 0 ? (
+                  <p className="px-1 py-3 text-center text-2xs text-black/60 dark:text-white/60">
+                    Drop tasks here
+                  </p>
+                ) : null}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
+      {moreRight ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent"
+          data-testid="kanban-more-right"
+        />
+      ) : null}
     </div>
   );
 }

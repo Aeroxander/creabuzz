@@ -119,16 +119,21 @@ export function ReviewersPicked({
                 data-testid="contributor-reviewer-picked"
                 key={address.toLowerCase()}
               >
+                {/* A name alone for someone known here; the short address only for an account nobody is linked to. */}
                 {key ? (
-                  <span className="font-medium">{nameOf(key)}</span>
-                ) : (
-                  <span className="text-amber-700 dark:text-amber-300">
-                    Not linked to anyone here
+                  <span className="font-medium" title={address}>
+                    {nameOf(key)}
                   </span>
+                ) : (
+                  <>
+                    <span className="text-amber-700 dark:text-amber-300">
+                      Not linked to anyone here
+                    </span>
+                    <span className="font-mono text-muted-foreground">
+                      {short(address)}
+                    </span>
+                  </>
                 )}
-                <span className="font-mono text-muted-foreground">
-                  {short(address)}
-                </span>
               </li>
             );
           })}

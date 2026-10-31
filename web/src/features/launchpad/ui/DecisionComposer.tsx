@@ -1,6 +1,8 @@
 import { type ChallengeIntent, challengePickKey } from "../lib/challenge";
 import type { SponsorIntent } from "../lib/sponsor";
+import { raisesOffered } from "../lib/raises-offered";
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
@@ -42,6 +44,11 @@ import { PayoutsForm } from "./PayoutsForm";
 import { ExitSalesForm } from "./ExitSalesForm";
 import { FundingDecisionForm } from "./FundingDecisionForm";
 import { RoundsDecisionForm } from "./RoundsDecisionForm";
+import {
+  cannotOpenDecision,
+  cannotOpenLine,
+  whoMayOpen,
+} from "../lib/proposal-gate";
 
 type Kind =
   | "budget"
@@ -102,12 +109,13 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     id: "freeze",
     label: "Freeze a submission",
     about:
-      "Hold back work you doubt. Nothing is paid or awarded for it until a later decision lets it go.",
+      "Hold back work you doubt. Nothing is paid or awarded for it while it is frozen, and a later vote can reject it.",
   },
   {
     id: "unwind",
-    label: "Unwind a frozen submission",
-    about: "Send the money reserved for it back to the budget.",
+    label: "Reject a frozen submission",
+    about:
+      "End it for good. The money reserved for it goes back to the budget.",
   },
   {
     id: "slash",
@@ -213,6 +221,8 @@ export function DecisionComposer({
   // Funds tab; with neither, there is nothing to vote in.
   const exitExchange = matchedExit(ctx.chainId ?? null);
   const offered = (id: Kind): boolean => {
+    // Opening trading makes Shares something to buy and sell: a contributor-only build offers no sale of any kind.
+    if (id === "trading" && !raisesOffered()) return false;
     if (id === "sales") return exitExchange !== null && contributor;
     if (id === "rounds")
       return weeklyRounds(ctx.chainId ?? null) !== null && contributor;
@@ -290,20 +300,44 @@ export function DecisionComposer({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">Put something to a vote</h3>
-          <p className="text-xs text-muted-foreground">
-            Anyone holding enough Shares can open a decision.
-          </p>
+          {cannotOpenLine(snapshot) && !open ? (
+            // Someone who cannot open one is told why, and where Shares come from, instead of a rule with nothing to do.
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="decision-cannot-open"
+            >
+              {cannotOpenLine(snapshot)}{" "}
+              {launch ? (
+                <Link
+                  className="font-medium text-primary-ink underline"
+                  params={{ launchId: launch.record.id }}
+                  search={{ author: launch.record.author, tab: "work" }}
+                  to="/launchpad/$launchId"
+                >
+                  See open work
+                </Link>
+              ) : null}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {whoMayOpen(snapshot)} can open a decision.
+            </p>
+          )}
         </div>
-        <Button
-          aria-expanded={open}
-          data-testid="decision-new"
-          onClick={() => setOpen((v) => !v)}
-          size="sm"
-          type="button"
-          variant={open ? "outline" : "default"}
-        >
-          {open ? "Close" : "New decision"}
-        </Button>
+        {/* Someone known to hold too few Shares is not offered a form they could never send (a vote they came to
+            open from elsewhere still shows, with why it cannot be sent). */}
+        {cannotOpenDecision(snapshot) && !open ? null : (
+          <Button
+            aria-expanded={open}
+            data-testid="decision-new"
+            onClick={() => setOpen((v) => !v)}
+            size="sm"
+            type="button"
+            variant={open ? "outline" : "default"}
+          >
+            {open ? "Close" : "New decision"}
+          </Button>
+        )}
       </div>
       {done ? (
         <p className="mt-2 text-sm" data-testid="decision-opened" role="status">
@@ -344,7 +378,32 @@ export function DecisionComposer({
       ) : null}
       {open ? (
         <div className="mt-3">
-          <fieldset className="grid gap-2 sm:grid-cols-3">
+          {/* On a phone the cards would stack far above the form they open: one list instead, the form right under it. */}
+          <label className="flex flex-col gap-1 text-sm sm:hidden">
+            <span className="font-medium">What kind of decision</span>
+            <select
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+              data-testid="decision-kind-select"
+              onChange={(event) => setKind(event.target.value as Kind)}
+              value={kind}
+            >
+              {KINDS.filter(
+                (k) =>
+                  (ctx.exchange || (k.id !== "market" && k.id !== "fees")) &&
+                  offered(k.id),
+              ).map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.label}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs text-muted-foreground">
+              {contributor && kind === "unwind"
+                ? "End a frozen submission for good. Nothing is awarded for it."
+                : KINDS.find((k) => k.id === kind)?.about}
+            </span>
+          </label>
+          <fieldset className="hidden gap-2 sm:grid sm:grid-cols-3">
             <legend className="sr-only">What kind of decision</legend>
             {KINDS.filter(
               (k) =>

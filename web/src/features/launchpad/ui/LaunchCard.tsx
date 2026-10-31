@@ -14,7 +14,7 @@ import { formatMoney } from "../lib/amounts";
 import { saleCurrencyFor } from "../lib/sale-currency";
 import { launchArt } from "../lib/launch-art";
 import type { LaunchRecord, LaunchStage } from "../models";
-import type { ResolvedFunding } from "../lib/funding";
+import { isContributorProject, type ResolvedFunding } from "../lib/funding";
 import { FundingBadge, StageBadge } from "./widgets";
 import { countOf } from "@/shared/lib/count-of";
 
@@ -192,18 +192,21 @@ export function LaunchCard({
         ) : null}
 
         <div className="mt-auto flex items-center justify-between gap-2 pt-4">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-sm font-bold tabular-nums"
-            data-testid={idea ? "launch-card-supporters" : undefined}
-            title={
-              idea
-                ? `${countOf(supporters ?? 0, "supporter")} · ${countOf(updates, "update")}`
-                : `${countOf(bids, "bid")} · ${countOf(updates, "update")}`
-            }
-          >
-            <Users aria-hidden className="h-4 w-4" />
-            {idea ? (supporters ?? 0) : bids}
-          </span>
+          {/* A contributor project takes no bids: a bid count on it would only ever read zero. */}
+          {!idea && isContributorProject(record) ? null : (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-sm font-bold tabular-nums"
+              data-testid={idea ? "launch-card-supporters" : undefined}
+              title={
+                idea
+                  ? `${countOf(supporters ?? 0, "supporter")} · ${countOf(updates, "update")}`
+                  : `${countOf(bids, "bid")} · ${countOf(updates, "update")}`
+              }
+            >
+              <Users aria-hidden className="h-4 w-4" />
+              {idea ? (supporters ?? 0) : bids}
+            </span>
+          )}
           {goal ? (
             <span
               className="rounded-xl bg-secondary/80 px-3 py-2 text-sm font-bold tabular-nums"

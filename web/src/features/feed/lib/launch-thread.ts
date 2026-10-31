@@ -1,12 +1,13 @@
 /**
  * The launch discussion's two extras: founder updates pinned at the top, and
- * the agent's thread summary card.
+ * a thread summary card when one was published.
  *
  * - Founder updates (kind 47003) ride the discussion as pinned posts, newest
  *   first, so a reader meets the founder's own words before the replies.
  * - A thread summary (kind 39005) is written by the launch's agent and is
  *   rendered as its own card, badged "Summarized by agent …" — never as if a
- *   person wrote it. The founder opts in per launch.
+ *   person wrote it. Nothing here writes one: the page only shows a summary
+ *   someone already published.
  *
  * Pure and alias-free: `launch-thread.test.mjs` drives it under `node --test`.
  */
@@ -21,6 +22,8 @@ export interface PinnedUpdatable {
   createdAt: number;
   title: string;
   body: string;
+  /** The post to open for a reply, when the update is a post people can reply to (a record-only update is not). */
+  replyTo?: string;
 }
 
 /** Newest founder update first — the pinned row order is a contract. */
@@ -69,42 +72,4 @@ export function newestSummary(
     if (!best || summary.createdAt > best.createdAt) best = summary;
   }
   return best;
-}
-
-const OPTIN_PREFIX = "buzz.feed.thread-summary:";
-
-/** Whether the founder has opted this launch into agent summaries. */
-export function readSummaryOptIn(coord: string): boolean {
-  try {
-    return globalThis.localStorage?.getItem(OPTIN_PREFIX + coord) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function writeSummaryOptIn(coord: string, on: boolean): void {
-  try {
-    if (on) globalThis.localStorage?.setItem(OPTIN_PREFIX + coord, "1");
-    else globalThis.localStorage?.removeItem(OPTIN_PREFIX + coord);
-  } catch {
-    // Storage refused: the opt-in simply stays off for this visit.
-  }
-}
-
-/**
- * Generate a thread summary with the launch's agent.
- *
- * TODO: generation is not wired yet. The LLM call
- * (`/llm/chat/completions` via `features/fleet/browser-agent.ts` `askLlm`)
- * and the agent signing key (`signAsAgent`, NIP-OA `auth` tag) both live in
- * the fleet feature; a summary must be signed by the launch's agent, not by
- * the viewing founder, so the pipeline crosses that ownership boundary.
- * Reading and rendering summaries anyone publishes already works — this is
- * the one stub.
- */
-export async function generateThreadSummary(_input: {
-  launchCoord: string;
-  thread: readonly SignedEventLike[];
-}): Promise<never> {
-  throw new Error("Agent thread summaries are not available yet.");
 }

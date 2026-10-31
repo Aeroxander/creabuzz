@@ -25,7 +25,7 @@ import {
   useMatchedExit,
 } from "../use-matched-exit";
 import { useWalletLabels } from "../use-wallet-labels";
-import { FailureNote, WalletStrip } from "./auction-widgets";
+import { FailureNote, WalletStrip } from "./account-widgets";
 import { ExitOfferForm } from "./ExitOfferForm";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;

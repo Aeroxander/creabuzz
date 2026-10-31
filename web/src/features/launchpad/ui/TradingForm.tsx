@@ -36,7 +36,7 @@ const when = (seconds: number) =>
 
 /** The bar this app sets before trading opens; the contracts check none of it. */
 const BAR = [
-  "The contracts are audited, the market's own included.",
+  "The project's code has had an outside security review, the market's code included.",
   "The project has had a legal read: Shares that can be sold may be treated as an investment where its holders are.",
   "There is a track record: the Shares are spread across the people who earned or bought them, not held by a few.",
   "The project runs on a main network, not a test network.",
@@ -160,7 +160,7 @@ export function TradingForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
               onChange={(event) => setChecked(event.target.checked)}
               type="checkbox"
             />
-            I have checked the bar above.
+            I've checked each point above.
           </label>
         </div>
       ) : null}

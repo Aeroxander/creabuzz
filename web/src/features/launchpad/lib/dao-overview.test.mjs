@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   attentionItems,
   isOpenDecision,
+  managersFor,
   overviewCounts,
   rankAttention,
   rankEntries,
@@ -197,7 +198,10 @@ test("a manager is asked to accept submitted work in one of their work areas, an
   const [item] = items(ME);
   assert.equal(item.kind, "bind");
   assert.equal(item.action, "Accept for review");
-  assert.match(item.text, /Accept it for review in docs\.$/);
+  assert.match(
+    item.text,
+    / submitted “[^”]+” for Docs\. Accept it so the reviewers can judge it\.$/,
+  );
   assert.deepEqual(item.claim, { id: "c1", mandate: BUDGET });
   // Someone who manages no work area there is not asked.
   assert.deepEqual(items(OTHER), []);
@@ -404,6 +408,8 @@ test("the counts and the sentence say what is going on, or that nothing is", () 
   assert.deepEqual(counts, {
     openDecisions: 2,
     openClaims: 2,
+    // Claim "1" is open in a work area, so its reviewers are judging it.
+    inReview: 1,
     workBudgets: 1,
     carriedOut: 1,
   });
@@ -653,7 +659,7 @@ test("work the reviewers turned down is closed from Needs you by its manager or 
   // Who turned it down is always shown; a reason only when one was given, so "why" is not promised.
   assert.match(
     told?.text ?? "",
-    /turned down your “down”\. The Work tab shows who, and their reasons if they gave any\./,
+    /turned down your “Down”\. The Work tab shows who, and their reasons if they gave any\./,
   );
   // Someone with no part in it is asked nothing.
   assert.equal(
@@ -820,4 +826,36 @@ test("work whose words no open work area uses is not left waiting on a manager w
   // A budget with no open work area yet still waits for one.
   const none = forWho(OTHER, []).find((i) => i.key === "waiting-stray");
   assert.match(none?.text ?? "", /manager to accept it for review/);
+});
+
+test("In review counts only work a manager accepted; work still waiting for a manager is not in review", () => {
+  const waiting = claim("w", "Open", { project: null });
+  const judged = claim("j", "Open");
+  const counts = overviewCounts(snap([]), {
+    chainTime: 1,
+    mandates: [mandate([waiting, judged])],
+  });
+  assert.equal(counts.openClaims, 2);
+  assert.equal(counts.inReview, 1);
+});
+
+test("the managers who could accept a submission are those of open work areas with its words", () => {
+  const submitted = claim("c1", "Open", {
+    project: null,
+    record: { ...claim("x", "Open").record, checkHash: DOCS_CHECK },
+  });
+  const projects = [
+    managed(ME),
+    managed(OTHER, { checkHash: ART_CHECK }),
+    managed(ME.toUpperCase().replace("0X", "0x")),
+  ];
+  assert.deepEqual(
+    managersFor(submitted, mandate([submitted], { projects }), 10_000),
+    [ME.toLowerCase()],
+  );
+  // Past its end, nobody can accept it.
+  assert.deepEqual(
+    managersFor(submitted, mandate([submitted], { projects }), 50_000),
+    [],
+  );
 });

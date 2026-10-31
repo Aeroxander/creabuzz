@@ -362,7 +362,8 @@ test("the raise terms are money a buyer can read", async ({ page }) => {
   await expect(page.getByTestId("launch-sale-price")).toBeVisible();
   await expect(page.getByTestId("launch-price-chart")).toHaveCount(0);
   await expect(page.getByText(/fills over time at the auction/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Place bid" })).toBeVisible();
+  // This fixture links no auction yet, so there is nowhere to place a bid and the page offers none.
+  await expect(page.getByRole("button", { name: "Place bid" })).toHaveCount(0);
 });
 
 test("the founder sees what is still missing before deploying", async ({

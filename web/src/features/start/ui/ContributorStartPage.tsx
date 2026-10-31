@@ -9,7 +9,7 @@
 
 import { Link, useSearch } from "@tanstack/react-router";
 import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import {
@@ -18,8 +18,9 @@ import {
   TextField,
 } from "@/features/launchpad/ui/decision-fields";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import { remixesOffered } from "@/features/launchpad/lib/remixes-offered";
 import { testRecordsNotice } from "@/features/launchpad/lib/test-network";
-import { WalletStrip } from "@/features/launchpad/ui/auction-widgets";
+import { WalletStrip } from "@/features/launchpad/ui/account-widgets";
 import { usePeopleWithWallets } from "@/features/launchpad/use-people";
 import { cn } from "@/shared/lib/cn";
 import { SIGNING_BLOCKED_MESSAGE } from "@/shared/lib/nostr-signer";
@@ -38,10 +39,12 @@ import {
   contributorIssue,
   contributorSymbol,
   emptyProject,
+  founderShareWarning,
   sharePreview,
   formatBps,
   formatWhole,
 } from "../lib/contributor-project";
+import { clearIdea, type IdeaHandoff, peekIdea } from "../lib/from-idea";
 import type { PitchStart } from "../lib/from-pitch";
 import { useContributorStart } from "../use-contributor-start";
 import { useStartFromPitch } from "../use-start-from-pitch";
@@ -95,11 +98,22 @@ function FromBoard({ start }: { start: PitchStart }) {
   );
 }
 
-/** What a contributor project is and is not, said before the form; on a test network, what its Shares are worth. */
-function WhatItIs({ testNotice }: { testNotice: string | null }) {
+/**
+ * What a contributor project is and is not, said before the form; on a test network, what its Shares are worth. Where
+ * the build offers raises it is set against one; a contributor-only build has no sale to compare it with.
+ */
+function WhatItIs({
+  testNotice,
+  raises,
+}: {
+  testNotice: string | null;
+  raises: boolean;
+}) {
   return (
     <Card className="p-5" data-testid="contributor-no-raise">
-      <h2 className="text-base font-bold">Starts without a token sale</h2>
+      <h2 className="text-base font-bold">
+        {raises ? "Starts without a token sale" : "How Shares work"}
+      </h2>
       <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
         <li>
           You start with Shares, which are votes in the project. At first you
@@ -114,7 +128,7 @@ function WhatItIs({ testNotice }: { testNotice: string | null }) {
           Shares can&apos;t be sold at first. Opening transfers takes two
           project votes, at least 30 days apart.
         </li>
-        <li>The project can still receive money into its shared funds.</li>
+        <li>The project can still receive money into its funds.</li>
       </ul>
       {testNotice ? (
         <p
@@ -183,6 +197,21 @@ export function ContributorStartPage() {
   const [symbolTouched, setSymbolTouched] = useState(false);
   const [tried, setTried] = useState(false);
 
+  // The founder's own idea, handed over by its page: its name and sentence fill the form once (never over a board team).
+  const [fromIdea] = useState<IdeaHandoff | null>(() =>
+    search.project ? null : peekIdea(sessionStorage, start.me),
+  );
+  useEffect(() => {
+    clearIdea(sessionStorage);
+    if (!fromIdea) return;
+    setDraft((current) => ({
+      ...current,
+      name: fromIdea.name,
+      pitch: fromIdea.pitch,
+      symbol: contributorSymbol(fromIdea.name),
+    }));
+  }, [fromIdea]);
+
   // A team from the Projects board fills the form once, when it has been read; the founder can still change anything.
   const [seeded, setSeeded] = useState(false);
   useEffect(() => {
@@ -221,7 +250,22 @@ export function ContributorStartPage() {
   ];
   const issue = contributorIssue(draft, founderAddresses);
   const preview = sharePreview(draft);
+  const warning = preview ? founderShareWarning(preview) : null;
+  // A problem is said under the field it is about, once the founder has tried to start.
+  const errorFor = (field: keyof ContributorDraft) =>
+    tried && issue?.field === field ? issue.message : null;
+  const form = useRef<HTMLDivElement | null>(null);
+  // Pressing Start with a problem takes the founder to the field it is about.
+  const showProblem = () =>
+    requestAnimationFrame(() => {
+      const field = form.current?.querySelector<HTMLElement>(
+        '[aria-invalid="true"]',
+      );
+      field?.scrollIntoView({ block: "center" });
+      field?.focus({ preventScroll: true });
+    });
 
+  const raises = raisesOffered();
   const done = job !== null && flow.phase === "done";
   const unfinished = job !== null && !done;
   const projectLink = job
@@ -235,10 +279,17 @@ export function ContributorStartPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
       <PageHeader
-        description="Set up a project where reviewed work can earn Shares, the project's voting tokens."
+        description={
+          raises
+            ? "Set up a project where reviewed work can earn Shares, the project's voting tokens."
+            : "Set up a project where reviewed work earns Shares, which are votes in the project."
+        }
         title="Start a contributor project"
       />
-      <WhatItIs testNotice={testRecordsNotice(start.network?.chainId)} />
+      <WhatItIs
+        raises={raises}
+        testNotice={testRecordsNotice(start.network?.chainId)}
+      />
       {fromBoard.start ? <FromBoard start={fromBoard.start} /> : null}
       {fromBoard.problem ? (
         <p
@@ -298,6 +349,20 @@ export function ContributorStartPage() {
                 each award. Share the Work page so people can see what needs
                 doing.
               </p>
+              {fromIdea ? (
+                <p className="text-sm" data-testid="contributor-from-idea-done">
+                  Your idea {fromIdea.name} is still listed on its own.{" "}
+                  <Link
+                    className="font-semibold underline"
+                    params={{ launchId: fromIdea.id }}
+                    search={{ author: fromIdea.author, tab: "manage" }}
+                    to="/launchpad/$launchId"
+                  >
+                    Take the idea off Discover
+                  </Link>{" "}
+                  so people find the project instead.
+                </p>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button asChild data-testid="contributor-open-project">
                   <Link {...projectLink}>Open work</Link>
@@ -337,7 +402,7 @@ export function ContributorStartPage() {
               {wallet.address &&
               wallet.address.toLowerCase() !== job.founder ? (
                 <span className="text-xs text-muted-foreground">
-                  Use the account that started it: {job.founder}
+                  Switch to the account you started it with.
                 </span>
               ) : null}
               <WalletStrip
@@ -356,14 +421,17 @@ export function ContributorStartPage() {
         <Card
           className="flex flex-col gap-4 p-5"
           data-testid="contributor-form"
+          ref={form}
         >
           <TextField
+            error={errorFor("name")}
             label="Project name"
             onChange={set("name")}
             testId="contributor-name"
             value={draft.name}
           />
           <TextField
+            error={errorFor("pitch")}
             hint="One sentence: what it is and who it is for."
             label="What it is"
             onChange={set("pitch")}
@@ -371,6 +439,7 @@ export function ContributorStartPage() {
             value={draft.pitch}
           />
           <TextField
+            error={errorFor("symbol")}
             hint="A short code for the Shares, 2 to 8 letters or numbers, like CREA."
             label="Short name"
             onChange={set("symbol")}
@@ -378,6 +447,18 @@ export function ContributorStartPage() {
             value={draft.symbol}
           />
           <TextField
+            after={
+              warning ? (
+                <span
+                  className="text-xs font-medium text-amber-800 dark:text-amber-200"
+                  data-testid="contributor-preview-warning"
+                  role="status"
+                >
+                  {warning}
+                </span>
+              ) : null
+            }
+            error={errorFor("founderShares")}
             hint="Held by the account you act with, so you can open and back the first votes."
             inputMode="numeric"
             label="Your starting Shares"
@@ -386,6 +467,7 @@ export function ContributorStartPage() {
             value={draft.founderShares}
           />
           <TextField
+            error={errorFor("budgetShares")}
             hint="The first work budget: a limit on future awards in all, not a payment promised for any one task."
             inputMode="numeric"
             label="Shares available for work"
@@ -394,6 +476,7 @@ export function ContributorStartPage() {
             value={draft.budgetShares}
           />
           <TextField
+            error={errorFor("projectCap")}
             hint="The most any one work area (say, the docs) may award."
             inputMode="numeric"
             label="Most for one work area"
@@ -420,10 +503,11 @@ export function ContributorStartPage() {
                 testId="contributor-reviewers-people"
               />
             }
-            hint="The people who check submitted work: pick them from the list, or paste each one's account address on its own line. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
+            error={errorFor("reviewers")}
+            hint="The people who check submitted work: add them from the list. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
             label="Reviewers"
             onChange={set("reviewers")}
-            placeholder="0x… (one account address per line)"
+            placeholder="Add people from the list, or paste an account address on each line"
             testId="contributor-reviewers"
             value={draft.reviewers}
           />
@@ -436,6 +520,7 @@ export function ContributorStartPage() {
             reviewers={draft.reviewers}
           />
           <TextField
+            error={errorFor("quorum")}
             hint="Leave empty for more than half of them."
             inputMode="numeric"
             label="How many reviewers must agree"
@@ -448,17 +533,23 @@ export function ContributorStartPage() {
             onChange={(projects) =>
               setDraft((current) => ({ ...current, projects }))
             }
+            problem={errorFor("projects")}
             problemIndex={
               tried && issue?.field === "projects" ? issue.index : null
             }
+            problemPart={
+              tried && issue?.field === "projects" ? issue.part : null
+            }
             projects={draft.projects}
           />
-          <RemixFields
-            draft={draft}
-            onChange={(patch) =>
-              setDraft((current) => ({ ...current, ...patch }))
-            }
-          />
+          {remixesOffered() ? (
+            <RemixFields
+              draft={draft}
+              onChange={(patch) =>
+                setDraft((current) => ({ ...current, ...patch }))
+              }
+            />
+          ) : null}
 
           {preview ? (
             <p
@@ -536,23 +627,29 @@ export function ContributorStartPage() {
               disabled={!gate.ok}
               onClick={() => {
                 setTried(true);
-                if (issue) return;
+                if (issue) {
+                  showProblem();
+                  return;
+                }
                 start.start(draft, search.project);
               }}
               type="button"
             >
               Start the project
             </Button>
-            <span className="text-xs text-muted-foreground">
-              {wallet.kind === "passkey"
-                ? "Your passkey is asked once, and the fees are covered."
-                : "Your wallet is asked once."}
-            </span>
+            {/* Said only once there is an account to ask: with none, the account line above says what to do. */}
+            {wallet.address ? (
+              <span className="text-xs text-muted-foreground">
+                {wallet.kind === "passkey"
+                  ? "Your passkey is asked once, and the fees are covered."
+                  : "Your wallet is asked once."}
+              </span>
+            ) : null}
           </div>
         </Card>
       )}
 
-      {raisesOffered() ? (
+      {raises ? (
         <p className="text-sm text-muted-foreground">
           Want to raise money instead?{" "}
           <Link className="underline" to="/start">

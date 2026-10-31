@@ -20,7 +20,11 @@
 # anvil a journey starts is pointed at a directory this run made (`--cache-path`), and that directory is all that is
 # removed. Nothing is ever deleted from anvil's shared default location: another run's state there is not ours to judge.
 #
-# Usage:  scripts/mvp-gate.sh [journey ...]   (no arguments: all of them)
+# Usage:  scripts/mvp-gate.sh [--pilot | --later] [--list] [journey ...]   (no journeys named: all of them)
+#           --pilot  only what the hosted contributor pilot depends on (the "Pilot" set below): run this green on the
+#                    build you host before inviting anyone (docs/v3-review/PILOT-RUNBOOK.md, step 10)
+#           --later  only the raise, milestone and optional-feature journeys, for after the pilot
+#           --list   print the journeys it would run, and run nothing
 # Env:    LOG_DIR (default: a temp directory; each journey's full log is kept there)
 #         KEEP_GATE_STATE=1 keeps the run's own scratch directory (its anvil state) instead of removing it
 #         JOURNEY_DIR where the journey scripts are (default: scripts; scripts/test-mvp-gate.sh points it at stand-ins)
@@ -72,31 +76,61 @@ trap 'exit 130' INT TERM
 # a reviewer approving or objecting from a passkey account (the passkey journey's reviewers use a wallet), the passkey
 # name link checked by a real invite-only server (that journey stubs the server), and the image's own build (journeys
 # build the web app with vite directly; web/src/features/launchpad/lib/deploy-env-image.test.mjs keeps the image's
-# settings in step with the build check). Error reports reach a collector in web-error-report-e2e, run on its own.
-ALL=(
+# settings in step with the build check). Error reports reaching a collector
+# (web-error-report-e2e) and invite links (web-invite-only-e2e) are journeys here since 2026-10-31.
+#
+# Pilot: what the hosted contributor pilot depends on. The social suite as the pilot server runs it, invite links (every
+# pilot member joins by one), error reports reaching a collector, a contributor project from the command line and from
+# pages, from passkey accounts as the hosted image is built, and work reviewed and paid. web-contributor-e2e builds with
+# the optional features on and ends with a sale between members, which the hosted build does not offer: its earlier
+# steps are the pilot's, and a build exactly like the image is web-passkey-contributor-e2e's.
+PILOT=(
   web-social-hosted-e2e
+  web-invite-only-e2e
+  web-error-report-e2e
   cli-no-raise-e2e
   web-contributor-e2e
+  web-passkey-contributor-e2e
+  web-work-e2e
+  web-paid-work-e2e
+)
+# Later: raises, milestone locks and the optional features. None of these is reachable in the hosted build (D137).
+LATER=(
   cli-milestone-e2e
   web-record-e2e
   web-milestone-e2e
-  web-work-e2e
-  web-paid-work-e2e
   web-dao-launch-e2e
   web-challenge-e2e
   web-dao-journey-e2e
   web-economy-e2e
   web-sepolia-fork-e2e
-  web-passkey-contributor-e2e
 )
-JOURNEYS=("$@")
-[[ ${#JOURNEYS[@]} -eq 0 ]] && JOURNEYS=("${ALL[@]}")
+ALL=("${PILOT[@]}" "${LATER[@]}")
+SET=("${ALL[@]}")
+LIST_ONLY=0
+JOURNEYS=()
+for arg in "$@"; do
+  case "$arg" in
+    --pilot) SET=("${PILOT[@]}") ;;
+    --later) SET=("${LATER[@]}") ;;
+    --list) LIST_ONLY=1 ;;
+    -*) printf 'unknown option: %s\n' "$arg" >&2; exit 2 ;;
+    *) JOURNEYS+=("$arg") ;;
+  esac
+done
+[[ ${#JOURNEYS[@]} -eq 0 ]] && JOURNEYS=("${SET[@]}")
+if [[ "$LIST_ONLY" == "1" ]]; then
+  printf '%s\n' "${JOURNEYS[@]}"
+  exit 0
+fi
 
 # The ports a journey serves on, which must be free before it starts. The browser specs of most journeys are served from
 # :4173; the social journey's server is on :3199, the address the real-server specs and their seed scripts use.
 journey_ports() {
   case "$1" in
     web-social-hosted-e2e) echo 3199 ;;
+    # A real server on a free port, and no preview server.
+    web-invite-only-e2e) ;;
     *) echo 4173 ;;
   esac
 }

@@ -166,7 +166,7 @@ test("a decision opened elsewhere is read from the chain, backed, waited out and
   );
   // Nothing can run in the review period, whatever the vote.
   await expect(page.getByTestId("decision-next")).toContainText(
-    "Nothing can run before",
+    "Nothing can take effect before",
   );
   await expect(page.getByTestId("decision-run")).toHaveCount(0);
   await expect(page.getByTestId("decision-start-wait")).toHaveCount(0);

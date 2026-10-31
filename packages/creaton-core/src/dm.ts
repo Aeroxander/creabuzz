@@ -47,18 +47,6 @@ function normalizePubkey(pubkey: string, index: number): string {
   return trimmed;
 }
 
-function requireUuid(channelId: string): string {
-  const trimmed = channelId.trim();
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      trimmed,
-    )
-  ) {
-    throw new Error("channel id must be a UUID");
-  }
-  return trimmed.toLowerCase();
-}
-
 /**
  * Tags for a DM open command (kind 41010): one `p` tag per participant.
  *
@@ -80,22 +68,6 @@ export function buildDmOpenTags(pubkeys: string[]): string[][] {
     );
   }
   return [...unique.keys()].map((pubkey) => ["p", pubkey]);
-}
-
-/** Tags for a group-DM add-member command (kind 41011). */
-export function buildDmAddMemberTags(
-  channelId: string,
-  pubkey: string,
-): string[][] {
-  return [
-    ["h", requireUuid(channelId)],
-    ["p", normalizePubkey(pubkey, 0)],
-  ];
-}
-
-/** Tags for a DM hide command (kind 41012). */
-export function buildDmHideTags(channelId: string): string[][] {
-  return [["h", requireUuid(channelId)]];
 }
 
 /** The relay's confirmation of a DM open command. */

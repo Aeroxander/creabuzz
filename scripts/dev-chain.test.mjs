@@ -79,6 +79,8 @@ test("dry-run prints the ordered plan and touches no state", () => {
     assert.match(out, /names a token that still says/);
     assert.match(out, /code there already matches the build output/);
     assert.match(out, /names a kit that still points at this summoner and factory/);
+    // The optional test-network features are part of the plan too, after the kits (DEV_CHAIN_ALL=1 prints their settings).
+    assert.match(out, /6e\. optional features/);
 
     // Dev accounts: right roles, right (derived) addresses, keys labeled.
     assert.match(out, /DEV-ONLY ACCOUNTS/);

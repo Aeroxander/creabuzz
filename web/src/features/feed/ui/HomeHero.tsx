@@ -16,6 +16,7 @@ import { useState } from "react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { useProfiles } from "@/features/profiles/use-profiles";
+import { EditProfileDialog } from "@/features/social/ui/EditProfileDialog";
 import { hasFirstStep } from "@/shared/lib/first-steps";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
@@ -138,6 +139,7 @@ function Welcome() {
 function GettingStarted({ me }: { me: string }) {
   const [dismissed, setDismissed] = useState(readDismissed);
   const [role, setRole] = useState<Role>(readRole);
+  const [editing, setEditing] = useState(false);
   const lists = useMyLists();
   const launches = useLaunches();
   const { data: profiles } = useProfiles([me]);
@@ -259,7 +261,16 @@ function GettingStarted({ me }: { me: string }) {
                 {step.hint}
               </span>
             </span>
-            {!step.done && step.to ? (
+            {step.done ? null : step.editsProfile ? (
+              <Button
+                data-testid={`home-step-${step.id}-go`}
+                onClick={() => setEditing(true)}
+                size="sm"
+                variant="outline"
+              >
+                Go
+              </Button>
+            ) : step.to ? (
               <Button asChild size="sm" variant="outline">
                 <Link to={step.to}>Go</Link>
               </Button>
@@ -267,6 +278,11 @@ function GettingStarted({ me }: { me: string }) {
           </li>
         ))}
       </ol>
+      <EditProfileDialog
+        onClose={() => setEditing(false)}
+        open={editing}
+        profile={profile}
+      />
     </section>
   );
 }

@@ -180,9 +180,13 @@ test("a logged-in person can explicitly publish their wallet proof without chang
   expect(wallet.calls.filter((m) => m === "eth_signTypedData_v4")).toHaveLength(
     1,
   );
-  await expect(
-    page.getByRole("link", { name: "Profile", exact: true }),
-  ).toHaveAttribute("href", `/u/${ME}`);
+  // The way to your own profile is in the account menu (the timeline's side nav no longer repeats it).
+  await page.getByTestId("user-chip").click();
+  await expect(page.getByTestId("profile-menu-profile")).toHaveAttribute(
+    "href",
+    `/u/${ME}`,
+  );
+  await page.keyboard.press("Escape");
   await page.reload();
   await expect(page.getByTestId("payment-wallet")).toContainText("Verified");
 });
@@ -292,11 +296,12 @@ test("removing the public wallet supersedes the old proof and survives reload", 
   await signIn(page);
   await page.goto(`/u/${ME}`);
   await page
-    .getByRole("button", { name: "Remove public wallet", exact: true })
+    .getByTestId("payment-wallet")
+    .getByRole("button", { name: "Disconnect", exact: true })
     .click();
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Remove public wallet" })
+    .getByRole("dialog", { name: "Disconnect payment wallet" })
+    .getByRole("button", { name: "Disconnect", exact: true })
     .click();
   await expect(page.getByTestId("payment-wallet")).toContainText(
     "removed its public payment wallet",

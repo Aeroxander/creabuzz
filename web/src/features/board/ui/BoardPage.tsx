@@ -49,7 +49,19 @@ export function BoardPage({
     onScreen === null ? null : (unread.rows.get(onScreen)?.latest ?? null),
   );
 
-  const back = (
+  // One back control: from a thread it goes to the board's posts, from the board to all boards.
+  const back = postId ? (
+    <Link
+      aria-label="Back to all posts"
+      className="-ml-2 rounded-full p-2 hover:bg-black/5 dark:hover:bg-white/10"
+      data-testid="board-back"
+      params={{ boardId }}
+      search={{}}
+      to="/b/$boardId"
+    >
+      <ArrowLeft aria-hidden className="h-5 w-5" />
+    </Link>
+  ) : (
     <Link
       aria-label="Back to all boards"
       className="-ml-2 rounded-full p-2 hover:bg-black/5 dark:hover:bg-white/10"
@@ -84,6 +96,7 @@ export function BoardPage({
       ) : (
         <BoardView
           channel={board}
+          inPage
           key={board.id}
           onOpenPost={(id) =>
             void navigate({

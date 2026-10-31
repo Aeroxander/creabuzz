@@ -9,6 +9,7 @@ import { Button } from "@/shared/ui/button";
 import {
   MAX_FIRST_PROJECTS,
   type ProjectDraft,
+  type ProjectPart,
   emptyProject,
 } from "../lib/contributor-project";
 
@@ -22,6 +23,8 @@ export function FirstProjectsField({
   cap,
   onChange,
   problemIndex,
+  problem = null,
+  problemPart = null,
 }: {
   projects: ProjectDraft[];
   /** The per-project limit, used as a new project's size. */
@@ -29,7 +32,18 @@ export function FirstProjectsField({
   onChange: (projects: ProjectDraft[]) => void;
   /** The project a problem is about, outlined. */
   problemIndex: number | null;
+  /** What is wrong with it, said under the box it is about. */
+  problem?: string | null;
+  /** Which box of that work area the problem is about; its name when not said. */
+  problemPart?: ProjectPart | null;
 }) {
+  // The problem goes under one box only, the one it is about, which is also the box marked invalid and focused.
+  const errorAt = (index: number, part: ProjectPart) =>
+    problem !== null &&
+    (problemIndex ?? 0) === index &&
+    (problemPart ?? "name") === part
+      ? problem
+      : null;
   const update =
     (index: number, field: keyof ProjectDraft) => (value: string) =>
       onChange(
@@ -58,9 +72,11 @@ export function FirstProjectsField({
           // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity until named, and are only added or removed at the end or by button
           key={index}
         >
-          <div className="flex items-end gap-2">
+          {/* Top-aligned, so a hint under the name never pushes the Shares box down; stacked on a phone. */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
             <div className="min-w-0 flex-1">
               <TextField
+                error={errorAt(index, "name")}
                 hint={
                   index === 0
                     ? "A word or two, for example: Bug reports."
@@ -77,8 +93,9 @@ export function FirstProjectsField({
                 value={project.name}
               />
             </div>
-            <div className="w-36 shrink-0">
+            <div className="shrink-0 sm:w-36">
               <TextField
+                error={errorAt(index, "shares")}
                 inputMode="numeric"
                 label="Shares"
                 onChange={update(index, "shares")}
@@ -89,7 +106,7 @@ export function FirstProjectsField({
             {several ? (
               <Button
                 aria-label={`Remove ${project.name || `work area ${index + 1}`}`}
-                className="mb-0.5 shrink-0"
+                className="shrink-0 self-end sm:mt-6 sm:self-start"
                 onClick={() => onChange(projects.filter((_, i) => i !== index))}
                 size="sm"
                 type="button"
@@ -100,6 +117,7 @@ export function FirstProjectsField({
             ) : null}
           </div>
           <TextAreaField
+            error={errorAt(index, "check")}
             hint={
               index === 0
                 ? "The reviewers check each submission against these words. They can't be changed later."
@@ -107,7 +125,7 @@ export function FirstProjectsField({
             }
             label="What finished work looks like"
             onChange={update(index, "check")}
-            placeholder="The pages are merged and reviewed"
+            placeholder="e.g. The pages are published and reviewed"
             testId={
               index === 0
                 ? "contributor-project-check"

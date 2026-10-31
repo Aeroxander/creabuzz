@@ -24,6 +24,10 @@ import { PasskeyUnlockGate } from "@/features/identity/ui/PasskeyUnlockGate";
 import { useModerationAccess } from "@/features/moderation/use-moderation-queue";
 import { useCommunitySetupAccess } from "@/features/templates/use-template-apply";
 import { NotificationBell } from "@/features/notifications/ui/NotificationBell";
+import { communityLabel } from "@/features/communities/lib/community-label";
+import { useSelfServe } from "@/features/communities/use-self-serve";
+import { APP_NAME } from "@/shared/constants/brand";
+import { beyondContributorProjects } from "@/app/lib/build-gates";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
 // Sidebar panels load on first use. The wiki alone pulls TipTap, Yjs and the
@@ -163,7 +167,9 @@ export function CommunityShell({
   const [showingModeration, setShowingModeration] = useState(false);
   const { access: moderationAccess, loading: moderationLoading } =
     useModerationAccess();
-  const { access: setupAccess } = useCommunitySetupAccess();
+  // The settled answer, not the live one: a re-check must not make the entries blink, and the setup entry waits for the
+  // first answer instead of showing and then vanishing for a moderator the member list does not name.
+  const { settled: setupAccess } = useCommunitySetupAccess();
   // Setting up, the wiki, AI helpers, work and the org page are for the people who run a community (D109); a member's
   // sidebar is rooms, boards and messages. Shown to its owner or an admin (its member list) and to its moderators, and
   // when either check could not be answered, so an owner keeps the way in. A link to one of these views still opens it.
@@ -172,6 +178,21 @@ export function CommunityShell({
     setupAccess === "error" ||
     moderationAccess === "granted" ||
     (!moderationLoading && moderationAccess === "unknown");
+  // Setting up needs an owner or admin. A moderator the member list does not confirm as one would only be told no, so
+  // the entry is left out for them; anyone else in `runsCommunity` keeps it, with its own explanation inside.
+  const offersSetup =
+    runsCommunity &&
+    setupAccess !== null &&
+    !(
+      moderationAccess === "granted" &&
+      (setupAccess === "unknown" || setupAccess === "denied")
+    );
+  // AI helpers and Org (helper budgets) need an AI service the hosted pilot does not run, so a contributor-only build
+  // leaves them out; the route drops links to them as well.
+  const helpers = beyondContributorProjects();
+  // Named by its name, not its address (the address stays under it).
+  const selfServe = useSelfServe();
+  const label = communityLabel(host, selfServe.data?.domain ?? null, APP_NAME);
   /**
    * Slide-over channel list. Below `lg` the panel is off-canvas, so this is the
    * only way to reach it; at `lg` and up it is a static column and this state
@@ -362,9 +383,16 @@ export function CommunityShell({
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#43e296]/15 dark:bg-[#43e296]/20">
               <Zap className="h-4 w-4 text-[#0e9f66] dark:text-[#43e296]" />
             </div>
-            <p className="min-w-0 truncate text-sm font-semibold text-black dark:text-white">
-              {host}
-            </p>
+            <div className="min-w-0" data-testid="community-name-header">
+              <p className="truncate text-sm font-semibold text-black dark:text-white">
+                {label.name}
+              </p>
+              {label.address ? (
+                <p className="truncate text-xs text-black/60 dark:text-white/60">
+                  {label.address}
+                </p>
+              ) : null}
+            </div>
           </div>
           <NotificationBell
             onOpenChannel={(channelId) => {
@@ -404,19 +432,21 @@ export function CommunityShell({
           </div>
           {runsCommunity ? (
             <>
-              <button
-                type="button"
-                onClick={() => showStart(!showingStart)}
-                className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
-                  showingStart
-                    ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
-                    : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
-                }`}
-                data-testid="start-project-toggle"
-              >
-                <Rocket className="h-3.5 w-3.5" />
-                Set up community
-              </button>
+              {offersSetup ? (
+                <button
+                  type="button"
+                  onClick={() => showStart(!showingStart)}
+                  className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+                    showingStart
+                      ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                      : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/5"
+                  }`}
+                  data-testid="start-project-toggle"
+                >
+                  <Rocket className="h-3.5 w-3.5" />
+                  Set up community
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
@@ -433,22 +463,24 @@ export function CommunityShell({
                 <BookOpen className="h-3.5 w-3.5" />
                 Wiki
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchTerm("");
-                  setView("fleet");
-                }}
-                className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
-                  showingFleet
-                    ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
-                    : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
-                }`}
-                data-testid="fleet-toggle"
-              >
-                <Bot className="h-3.5 w-3.5" />
-                AI helpers
-              </button>
+              {helpers ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setView("fleet");
+                  }}
+                  className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+                    showingFleet
+                      ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                      : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+                  }`}
+                  data-testid="fleet-toggle"
+                >
+                  <Bot className="h-3.5 w-3.5" />
+                  AI helpers
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
@@ -463,24 +495,26 @@ export function CommunityShell({
                 data-testid="work-toggle"
               >
                 <ListChecks className="h-3.5 w-3.5" />
-                Work
+                Tasks
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchTerm("");
-                  setView("org");
-                }}
-                className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
-                  showingOrg
-                    ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
-                    : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
-                }`}
-                data-testid="org-toggle"
-              >
-                <Network className="h-3.5 w-3.5" />
-                Org
-              </button>
+              {helpers ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setView("org");
+                  }}
+                  className={`mx-3 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+                    showingOrg
+                      ? "bg-black/10 text-black dark:bg-white/15 dark:text-white"
+                      : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
+                  }`}
+                  data-testid="org-toggle"
+                >
+                  <Network className="h-3.5 w-3.5" />
+                  Org
+                </button>
+              ) : null}
             </>
           ) : null}
           <button
@@ -507,7 +541,8 @@ export function CommunityShell({
             data-testid="dms-toggle"
           >
             <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-            Notices and messages
+            {/* A contributor-only build's private messages live on Home; here are the community's notices to you. */}
+            {helpers ? "Private chats" : "Notices"}
           </button>
           <button
             type="button"
@@ -601,7 +636,7 @@ export function CommunityShell({
               <Menu className="h-4 w-4" />
             </button>
             <span className="truncate text-sm font-semibold text-black dark:text-white">
-              {host}
+              {label.name}
             </span>
           </div>
           <div className="buzz-content-card mb-2 mr-2 mt-px flex min-h-0 min-w-0 flex-1 flex-col">
@@ -689,6 +724,13 @@ export function CommunityShell({
             ) : searching ? (
               <Suspense fallback={<ViewLoadingFallback label="Searching…" />}>
                 <SearchResults
+                  onClear={() => setSearchTerm("")}
+                  onTermChange={setSearchTerm}
+                  onOpenPost={(boardId, postId) => {
+                    selectChannel(boardId);
+                    setSearchTerm("");
+                    openPost(postId);
+                  }}
                   onOpenKnowledge={({ view, id }) => {
                     setView(view);
                     if (view === "wiki" && id) selectWikiPage(id);
@@ -704,6 +746,7 @@ export function CommunityShell({
                     }
                   }}
                   term={searchTerm.trim()}
+                  typed={searchTerm}
                   channels={channels}
                   onOpenChannel={(channelId) => {
                     selectChannel(channelId);
@@ -731,18 +774,26 @@ export function CommunityShell({
               </Suspense>
             ) : activeChannel ? (
               <ChannelTimeline
+                // One room's state (its people panel, a reply in progress) never carries into the next.
+                key={activeChannel.id}
                 channel={activeChannel}
+                runsCommunity={runsCommunity}
+                onShowPeople={() => setView("people")}
                 highlightedId={highlightedMessage}
                 suggestPeopleFrom={
                   channels.find(
                     (c) => c.type !== "forum" && c.visibility === "public",
                   )?.id ?? null
                 }
-                onShowFleet={() => {
-                  setShowingWiki(false);
-                  setShowingFleet(true);
-                  setShowingWork(false);
-                }}
+                onShowFleet={
+                  helpers
+                    ? () => {
+                        setShowingWiki(false);
+                        setShowingFleet(true);
+                        setShowingWork(false);
+                      }
+                    : undefined
+                }
                 onShowWork={() => {
                   setShowingWiki(false);
                   setShowingFleet(false);
@@ -762,8 +813,9 @@ export function CommunityShell({
                       Nothing here yet
                     </p>
                     <p className="max-w-sm">
-                      Pick a creative or a technical project and this community
-                      fills with channels, AI helpers and shared pages.
+                      {helpers
+                        ? "Pick a creative or a technical project and this community fills with channels, AI helpers and shared pages."
+                        : "Pick a creative or a technical project and this community fills with rooms and shared pages."}
                     </p>
                     <button
                       className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"

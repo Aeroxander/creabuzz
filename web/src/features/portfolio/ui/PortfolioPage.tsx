@@ -5,6 +5,10 @@
  * chain, per wallet you bid from) and work a reviewer accepted (read from the
  * server under the review rule). Neither decays: your points only grow, and
  * your share moves only because everyone else's does.
+ *
+ * A contributor-only build (`raisesOffered()` false) calls it "Your work": the
+ * project Shares you earned come first, nothing is about backing, and the
+ * points card stays out of the way once you hold Shares and have no points.
  */
 import { Link } from "@tanstack/react-router";
 import {
@@ -25,6 +29,9 @@ import {
   defaultChainPreset,
 } from "@/features/launchpad/chain-config";
 import { formatAtomic, formatMoney } from "@/features/launchpad/lib/amounts";
+import { listedHere } from "@/features/launchpad/lib/contributor-only";
+import { isContributorProject } from "@/features/launchpad/lib/funding";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { Figure } from "@/features/launchpad/ui/Figure";
@@ -40,6 +47,7 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Chip } from "@/shared/ui/chip";
 import { MoreInfo } from "@/shared/ui/more-info";
+import { WaitingOnYou } from "@/features/feed/ui/WaitingOnYou";
 import { PageHeader, SectionHeader } from "@/shared/ui/PageHeader";
 import { errorMessage, QueryError } from "@/shared/ui/query-error";
 
@@ -56,6 +64,7 @@ import {
   useWorkStanding,
 } from "../use-portfolio";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
+import { portfolioLabel } from "../lib/portfolio-label";
 
 /** AppToken supply is minted with 18 decimals. */
 const TOKEN_DECIMALS = 18;
@@ -114,9 +123,28 @@ function LaunchLink({ launch }: { launch: Launch }) {
   );
 }
 
-function WorkSection() {
+function WorkSection({
+  holdsShares,
+  onlyWithPoints = false,
+}: {
+  holdsShares: boolean;
+  /**
+   * Shown only to someone who already has points: a contributor-only build earns Shares for project work, and its
+   * community task board is not open to members, so a card pointing a newcomer there would lead nowhere.
+   */
+  onlyWithPoints?: boolean;
+}) {
   const me = existingUserPubkey();
   const work = useWorkStanding();
+  // Points are a second reward, for community work boards: someone who holds project Shares and has never earned a
+  // point is not shown an empty card about them above the Shares they did earn.
+  const noPoints =
+    work.data !== undefined &&
+    work.data.accepted === 0 &&
+    work.data.waiting === 0;
+  if (holdsShares && noPoints) return null;
+  if (onlyWithPoints && (!me || work.data === undefined || noPoints))
+    return null;
   let body: ReactNode;
   if (!me) {
     body = <Muted>{needAccountTo("start earning credit for your work")}</Muted>;
@@ -372,7 +400,10 @@ function BackingSection() {
 
 function HoldingRow({ held }: { held: HeldInDao }) {
   const { launch } = held;
-  const symbol = launch.record.tokenPlan?.symbol;
+  // A contributor project's Shares are called Shares everywhere else in the app, never by their ticker.
+  const symbol = isContributorProject(launch.record)
+    ? "Shares"
+    : launch.record.tokenPlan?.symbol;
   const free = held.balance - held.locked;
   return (
     <li>
@@ -420,8 +451,11 @@ function HoldingRow({ held }: { held: HeldInDao }) {
   );
 }
 
-function HoldingsSection() {
-  const holdings = useHoldings();
+function HoldingsSection({
+  holdings,
+}: {
+  holdings: ReturnType<typeof useHoldings>;
+}) {
   const { wallet } = holdings;
   let body: ReactNode;
   if (holdings.owners.length === 0) {
@@ -489,7 +523,7 @@ function HoldingsSection() {
   }
   return (
     <Section
-      description="Shares you hold in each DAO. Time held counts from the day they reached this wallet."
+      description="Shares you hold in each project."
       id="portfolio-holdings"
       title="Project Shares you hold"
     >
@@ -503,11 +537,17 @@ function HoldingsSection() {
   );
 }
 
-function FollowingSection() {
-  const { followed, loading, error } = useFollowedLaunches();
+function FollowingSection({ raises }: { raises: boolean }) {
+  const followedAll = useFollowedLaunches();
+  const { loading, error } = followedAll;
+  // A contributor-only build never lists a raise, even one followed elsewhere.
+  const followed = followedAll.followed.filter((launch) =>
+    listedHere(launch.record, raises),
+  );
+  const noun = raises ? "launches" : "projects";
   let body: ReactNode;
   if (loading) {
-    body = <Muted>Loading the launches you follow…</Muted>;
+    body = <Muted>Loading the {noun} you follow…</Muted>;
   } else if (error) {
     body = (
       <p
@@ -515,16 +555,27 @@ function FollowingSection() {
         data-testid="portfolio-following-error"
         role="alert"
       >
-        Couldn't load launches right now.
+        Couldn't load {noun} right now.
       </p>
     );
   } else if (followed.length === 0) {
     body = (
       <Muted testId="portfolio-following-empty">
-        Follow a launch to keep an eye on it here.{" "}
-        <Link className="underline" to="/launchpad">
-          Browse launches
-        </Link>
+        {raises ? (
+          <>
+            Follow a launch to keep an eye on it here.{" "}
+            <Link className="underline" to="/launchpad">
+              Browse launches
+            </Link>
+          </>
+        ) : (
+          <>
+            Follow a project to keep an eye on it here.{" "}
+            <Link className="underline" to="/discover">
+              Browse projects
+            </Link>
+          </>
+        )}
       </Muted>
     );
   } else {
@@ -559,7 +610,9 @@ function FollowingSection() {
   }
   return (
     <Section
-      description="Launches you're keeping an eye on."
+      description={
+        raises ? "Launches you're keeping an eye on." : "Projects you follow."
+      }
       id="portfolio-following"
       title="Following"
     >
@@ -568,17 +621,23 @@ function FollowingSection() {
   );
 }
 
-/** Raises are shown where this server lists a sale, or this build offers one; a contributor-only server has neither. */
+/**
+ * Raises are shown where this server lists a sale, or this build offers one; a contributor-only server has neither, and a
+ * contributor-only build shows none even when another build published a sale to the same server.
+ */
 function useRaisesHere(): boolean {
   const launches = useLaunches();
   return (
-    daoLaunchKit(defaultChainPreset().chainId) !== null ||
-    (launches.data ?? []).some((launch) => Boolean(launch.record.auction))
+    raisesOffered() &&
+    (daoLaunchKit(defaultChainPreset().chainId) !== null ||
+      (launches.data ?? []).some((launch) => Boolean(launch.record.auction)))
   );
 }
 
 export function PortfolioPage() {
   const raises = useRaisesHere();
+  const holdings = useHoldings();
+  const holdsShares = (holdings.data?.held.length ?? 0) > 0;
   return (
     <div
       className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8"
@@ -588,19 +647,32 @@ export function PortfolioPage() {
         description={
           raises
             ? "What you've backed, what you've built, and your share of each."
-            : "What you've built and what you hold."
+            : "The Shares you hold, and what is waiting on you."
         }
         title={
           <span className="flex items-center gap-2">
-            <Briefcase aria-hidden className="h-5 w-5" /> Portfolio
+            <Briefcase aria-hidden className="h-5 w-5" />{" "}
+            {portfolioLabel(raisesOffered())}
           </span>
         }
       />
-      <WorkSection />
-      {raises ? <BackingSection /> : null}
-      <HoldingsSection />
+      {raises ? (
+        <>
+          <WorkSection holdsShares={holdsShares} />
+          <BackingSection />
+          <HoldingsSection holdings={holdings} />
+        </>
+      ) : (
+        <>
+          {/* What is waiting on a contributor leads (nothing shows when nothing waits); what they earned follows. Points
+              for community task boards show only to someone who has them. */}
+          <WaitingOnYou />
+          <HoldingsSection holdings={holdings} />
+          <WorkSection holdsShares={holdsShares} onlyWithPoints />
+        </>
+      )}
       <CourtSection />
-      <FollowingSection />
+      <FollowingSection raises={raisesOffered()} />
     </div>
   );
 }

@@ -304,11 +304,14 @@ export function PostComposer({
       <UserAvatar
         avatarUrl={myProfile?.picture ?? null}
         className="h-10 w-10"
-        displayName={resolveUserName(myProfile, me)}
+        // No name yet: the account menu's "Your account", not initials from the key.
+        displayName={
+          myProfile?.display_name || myProfile?.name || "Your account"
+        }
       />
       <div className="relative min-w-0 flex-1">
         {postTo && !quote && !replyTo && toBoard.boards.length > 0 ? (
-          <label className="flex w-fit items-center gap-1.5 text-xs font-medium text-black/70 dark:text-white/70">
+          <label className="mb-1.5 flex w-fit items-center gap-1.5 text-xs font-medium text-black/70 dark:text-white/70">
             Post to
             <select
               className="rounded-full border border-black/15 bg-transparent px-2 py-0.5 text-xs font-semibold text-sky-700 dark:border-white/20 dark:text-sky-400"
@@ -362,9 +365,7 @@ export function PostComposer({
           }}
           onKeyDown={onKeyDown}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-          placeholder={
-            onBoard ? "Text (optional). You can use Markdown." : placeholder
-          }
+          placeholder={onBoard ? "Add details (optional)" : placeholder}
           ref={ref}
           rows={1}
           value={text}
@@ -450,11 +451,11 @@ export function PostComposer({
                     type="checkbox"
                   />
                   <Megaphone aria-hidden className="h-3.5 w-3.5" />
-                  Launch update
+                  Team update
                 </label>
                 {launchMode && teamLaunches.length > 1 ? (
                   <select
-                    aria-label="Which launch"
+                    aria-label="Which project"
                     className="rounded-md border border-border bg-transparent px-1.5 py-0.5 text-xs"
                     data-testid={`${testId}-launch-pick`}
                     onChange={(e) => setLaunchKey(e.target.value)}

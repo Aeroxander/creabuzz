@@ -5,6 +5,7 @@
  * Mirrors the desktop's feed categories with the same mention convention.
  */
 
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { queryEvents } from "@/shared/lib/nostr-client";
@@ -19,6 +20,16 @@ import {
 } from "./lib/moderation-items";
 
 const SEEN_KEY = "buzz.notifications.seen";
+/** Said on this page when the feed is marked read, so every count of it (the bell, the main nav) drops together. */
+const SEEN_EVENT = "buzz:notifications-seen";
+
+function readSeen(): number {
+  try {
+    return Number(localStorage.getItem(SEEN_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * How often the feed is re-read.
@@ -29,6 +40,7 @@ const SEEN_KEY = "buzz.notifications.seen";
  * request per tab per second.
  */
 const POLL_MS = 15_000;
+const NONE: NotificationItem[] = [];
 
 export interface NotificationItem {
   id: string;
@@ -41,6 +53,94 @@ export interface NotificationItem {
   at: number;
 }
 
+/** The reader's notifications on this server, newest first. */
+async function fetchNotifications(me: string): Promise<NotificationItem[]> {
+  const [mentions, tasks, members, moderation] = await Promise.all([
+    // Mentions: any channel message carrying a p-tag for me.
+    queryEvents(relayWsUrl(), {
+      kinds: TIMELINE_CONTENT_KINDS,
+      "#p": [me],
+      limit: 40,
+    }),
+    // Tasks assigned to me that still need attention.
+    queryEvents(relayWsUrl(), {
+      kinds: [44011],
+      "#p": [me],
+      limit: 40,
+    }),
+    // Relay-authored membership notifications.
+    queryEvents(relayWsUrl(), { kinds: [44100], "#p": [me], limit: 20 }),
+    // A board's public log entries about me (the server writes these).
+    queryEvents(relayWsUrl(), {
+      kinds: [KIND_BOARD_MODERATION_LOG],
+      "#p": [me],
+      limit: 20,
+    }),
+  ]);
+  const out: NotificationItem[] = [];
+  for (const e of mentions) {
+    out.push({
+      id: e.id,
+      kind: "mention",
+      author: e.pubkey.toLowerCase(),
+      title: "Mentioned you",
+      preview: e.content.slice(0, 120),
+      channelId: e.tags.find((t) => t[0] === "h")?.[1] ?? null,
+      at: e.created_at * 1000,
+    });
+  }
+  for (const e of tasks) {
+    const status = (() => {
+      try {
+        return (JSON.parse(e.content) as { status?: string }).status ?? "";
+      } catch {
+        return "";
+      }
+    })();
+    if (!["assigned", "in_progress", "needs_approval"].includes(status)) {
+      continue;
+    }
+    out.push({
+      id: e.id,
+      kind: "task",
+      title: "Task assigned to you",
+      preview:
+        (() => {
+          try {
+            return (JSON.parse(e.content) as { title?: string }).title ?? "";
+          } catch {
+            return "";
+          }
+        })().slice(0, 120) || e.content.slice(0, 120),
+      channelId: null,
+      at: e.created_at * 1000,
+    });
+  }
+  for (const e of members) {
+    out.push({
+      id: e.id,
+      kind: "member",
+      title: "Community event",
+      preview: e.content.slice(0, 120),
+      channelId: null,
+      at: e.created_at * 1000,
+    });
+  }
+  for (const e of moderation) {
+    const item = moderationItem(e, me);
+    if (item === null) continue;
+    out.push({
+      id: e.id,
+      kind: "moderation",
+      title: item.title,
+      preview: item.preview.slice(0, 160),
+      channelId: e.tags.find((t) => t[0] === "h")?.[1] ?? null,
+      at: e.created_at * 1000,
+    });
+  }
+  return out.sort((a, b) => b.at - a.at).slice(0, 60);
+}
+
 export function useNotifications(): {
   items: NotificationItem[];
   unread: number;
@@ -48,134 +148,33 @@ export function useNotifications(): {
   lastSeen: number;
 } {
   const me = existingUserPubkey();
-  const [items, setItems] = useState<NotificationItem[]>([]);
-  const [lastSeen, setLastSeen] = useState<number>(() => {
-    try {
-      return Number(localStorage.getItem(SEEN_KEY)) || 0;
-    } catch {
-      return 0;
-    }
-  });
+  const [lastSeen, setLastSeen] = useState<number>(readSeen);
+  // Marked read anywhere on the page (or in another tab): every count follows.
+  useEffect(() => {
+    const sync = () => setLastSeen(readSeen());
+    window.addEventListener(SEEN_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(SEEN_EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
 
   /**
-   * Refresh the feed.
-   *
-   * This used to run exactly once, when the hook mounted: a mention that
-   * arrived while the app was open never raised the badge, so the bell only
-   * ever showed what had happened before the page loaded. `#p` filters are not
-   * fanned out by the relay (see docs/archive/web-ui-roadmap.md §2), so polling is the
-   * mechanism that works; a focus refresh covers a tab that was parked.
+   * The feed, re-read every so often. The relay does not fan out `#p` filters (docs/archive/web-ui-roadmap.md §2), so
+   * polling is the mechanism that works; a focus refresh covers a tab that was parked. One shared query: the bell and
+   * the main nav's count read the same poll. A failed read keeps what was shown.
    */
-  const refresh = useCallback(async () => {
-    if (!me) return;
-    await Promise.all([
-      // Mentions: any channel message carrying a p-tag for me.
-      queryEvents(relayWsUrl(), {
-        kinds: TIMELINE_CONTENT_KINDS,
-        "#p": [me],
-        limit: 40,
-      }),
-      // Tasks assigned to me that still need attention.
-      queryEvents(relayWsUrl(), {
-        kinds: [44011],
-        "#p": [me],
-        limit: 40,
-      }),
-      // Relay-authored membership notifications.
-      queryEvents(relayWsUrl(), { kinds: [44100], "#p": [me], limit: 20 }),
-      // A board's public log entries about me (the server writes these).
-      queryEvents(relayWsUrl(), {
-        kinds: [KIND_BOARD_MODERATION_LOG],
-        "#p": [me],
-        limit: 20,
-      }),
-    ])
-      .then(([mentions, tasks, members, moderation]) => {
-        const out: NotificationItem[] = [];
-        for (const e of mentions) {
-          out.push({
-            id: e.id,
-            kind: "mention",
-            author: e.pubkey.toLowerCase(),
-            title: "Mentioned you",
-            preview: e.content.slice(0, 120),
-            channelId: e.tags.find((t) => t[0] === "h")?.[1] ?? null,
-            at: e.created_at * 1000,
-          });
-        }
-        for (const e of tasks) {
-          const status = (() => {
-            try {
-              return (
-                (JSON.parse(e.content) as { status?: string }).status ?? ""
-              );
-            } catch {
-              return "";
-            }
-          })();
-          if (!["assigned", "in_progress", "needs_approval"].includes(status)) {
-            continue;
-          }
-          out.push({
-            id: e.id,
-            kind: "task",
-            title: "Task assigned to you",
-            preview:
-              (() => {
-                try {
-                  return (
-                    (JSON.parse(e.content) as { title?: string }).title ?? ""
-                  );
-                } catch {
-                  return "";
-                }
-              })().slice(0, 120) || e.content.slice(0, 120),
-            channelId: null,
-            at: e.created_at * 1000,
-          });
-        }
-        for (const e of members) {
-          out.push({
-            id: e.id,
-            kind: "member",
-            title: "Community event",
-            preview: e.content.slice(0, 120),
-            channelId: null,
-            at: e.created_at * 1000,
-          });
-        }
-        for (const e of moderation) {
-          const item = moderationItem(e, me);
-          if (item === null) continue;
-          out.push({
-            id: e.id,
-            kind: "moderation",
-            title: item.title,
-            preview: item.preview.slice(0, 160),
-            channelId: e.tags.find((t) => t[0] === "h")?.[1] ?? null,
-            at: e.created_at * 1000,
-          });
-        }
-        setItems(out.sort((a, b) => b.at - a.at).slice(0, 60));
-      })
-      .catch((error: unknown) => {
-        console.warn("[notifications] refresh failed", error);
-      });
-  }, [me]);
-
-  useEffect(() => {
-    if (!me) return;
-    void refresh();
-    const timer = setInterval(() => void refresh(), POLL_MS);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void refresh();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [me, refresh]);
+  const url = relayWsUrl();
+  const feed = useQuery({
+    queryKey: ["notifications", url, me],
+    queryFn: () => fetchNotifications(me ?? ""),
+    enabled: me !== null,
+    refetchInterval: POLL_MS,
+    refetchIntervalInBackground: true,
+    retry: false,
+  });
+  const items = feed.data ?? NONE;
 
   // A mention from someone the reader muted is not shown or counted. A moderator's notice about the reader always is.
   const muted = useMutedSet();
@@ -200,6 +199,7 @@ export function useNotifications(): {
       // ignore
     }
     setLastSeen(now);
+    window.dispatchEvent(new Event(SEEN_EVENT));
   }, []);
 
   return { items: shown, unread, markRead, lastSeen };

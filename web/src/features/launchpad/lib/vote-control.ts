@@ -185,16 +185,43 @@ export function controlOf(
   return "shared";
 }
 
-/** How many more Shares others must come to hold before `weight` can no longer pass a decision against all of them. */
+/**
+ * How many more Shares others must come to hold before `weight` can no longer pass a decision on `bars` (the full bar
+ * by default) against all of them. `controlOf` calls it "alone" while the votes for are more than half of all the
+ * votes and at least the approval share of them: the first total that breaks either is the smaller of 2·weight and
+ * ⌊weight·10,000 / approval⌋ + 1, the same integer comparisons the contract makes.
+ */
 export function sharesUntilShared(
   weight: bigint,
-  control: VoteControl,
+  control: Pick<VoteControl, "votingSupply" | "full">,
+  bars: Bars = control.full,
 ): bigint {
-  const needed =
-    (weight * 10_000n) / BigInt(control.full.approvalBps) +
-    1n -
-    control.votingSupply;
+  const byMajority = weight * 2n;
+  const byApproval =
+    bars.approvalBps > 0
+      ? (weight * 10_000n) / BigInt(bars.approvalBps) + 1n
+      : byMajority;
+  const first = byApproval < byMajority ? byApproval : byMajority;
+  const needed = first - control.votingSupply;
   return needed > 0n ? needed : 0n;
+}
+
+/**
+ * For each lane where `weight` decides alone now, how many more whole Shares (rounded up) others must hold before it no
+ * longer does; null for a lane where it already does not. Awards and work areas pass at a lower bar, so they stay in one
+ * holder's hands longer than rule changes do.
+ */
+export function aloneUntil(
+  weight: bigint,
+  control: VoteControl,
+): { full: bigint | null; bounded: bigint | null } {
+  const ONE = 10n ** 18n;
+  const whole = (exact: bigint) => ((exact + ONE - 1n) / ONE) * ONE;
+  const lane = (bars: Bars) =>
+    controlOf(weight, control, bars) === "alone"
+      ? whole(sharesUntilShared(weight, control, bars))
+      : null;
+  return { full: lane(control.full), bounded: lane(control.bounded) };
 }
 
 /** Basis points of `part` in `whole`, as a percent with one decimal at most. */
@@ -243,14 +270,11 @@ export function voteControlLines(input: {
       `${shares(control.waiting)} Shares bought in the sale are still waiting to be claimed and vote only once they are; with all of them claimed, ${who} would hold ${percentOf(weight, control.votingSupply + control.waiting)}.`,
     );
   }
-  // In whole Shares, rounded up: "about 43,515.15 more" reads as false precision.
-  const ONE = 10n ** 18n;
-  const exact = now === "alone" ? sharesUntilShared(weight, control) : 0n;
-  const until = ((exact + ONE - 1n) / ONE) * ONE;
+  // How many more Shares others need, per lane, is shown beside these lines as a table (`aloneUntil`).
   lines.push(
     kind === "contributors"
-      ? `That changes only as Shares are awarded for accepted work, and as holders leave${until > 0n ? `: ${who} stops deciding alone once others hold about ${shares(until)} more Shares` : ""}.`
-      : `It also changes as Shares are awarded for accepted work and as holders leave.`,
+      ? "That changes only as Shares are awarded for accepted work, and as holders leave."
+      : "It also changes as Shares are awarded for accepted work and as holders leave.",
   );
   return lines;
 }

@@ -21,8 +21,6 @@ import { parseLaunchReceipt } from "../models.ts";
 import {
   buildGraduationsView,
   decodeGraduationRecord,
-  decodeLockReceipt,
-  decodeSweepReceipt,
   explorerAddressUrl,
   explorerTxUrl,
   fundFlowReceiptRows,
@@ -32,7 +30,6 @@ import {
   SELECTOR_GRADUATIONS,
   SELECTOR_RESERVE_BPS,
   SELECTOR_TREASURY,
-  splitFromSweepReceipt,
 } from "./fund-flow.ts";
 
 const ALICE = "a".repeat(64);
@@ -166,7 +163,7 @@ test("the two shares always sum to the raise (floor stays with the treasury)", (
   );
 });
 
-test("a sweep mirror survives the production parser and decodes the split", () => {
+test("a sweep mirror survives the production parser", () => {
   const receipt = parseLaunchReceipt(
     receiptEvent(
       sweepParts({
@@ -181,19 +178,9 @@ test("a sweep mirror survives the production parser and decodes the split", () =
   assert.ok(receipt, "a sweep mirror must not be dropped by the feed parser");
   assert.equal(receipt.table, "sweep");
   assert.equal(receipt.tx, TX);
-  const sweep = decodeSweepReceipt(receipt);
-  assert.equal(sweep.currencyRaised, 1_234_567n);
-  assert.equal(sweep.treasuryShare, 617_284n);
-  assert.equal(sweep.unsoldTokens, 30_000n);
-  // The recorded split: reserve is the remainder of the raise
-  // (GraduationExecutor.sol:254 reads the same onchain).
-  assert.deepEqual(splitFromSweepReceipt(sweep), {
-    reserveShare: 617_283n,
-    treasuryShare: 617_284n,
-  });
 });
 
-test("a lock mirror survives the production parser and decodes the escrow", () => {
+test("a lock mirror survives the production parser", () => {
   const receipt = parseLaunchReceipt(
     receiptEvent(
       lockParts({ auction: AUCTION, tx: TX2, reserveEscrow: 617_283n }),
@@ -201,23 +188,7 @@ test("a lock mirror survives the production parser and decodes the escrow", () =
   );
   assert.ok(receipt);
   assert.equal(receipt.table, "lock");
-  const lock = decodeLockReceipt(receipt);
-  assert.equal(lock.reserveEscrow, 617_283n);
-  assert.equal(lock.tx, TX2);
-});
-
-test("a malformed receipt payload is a named decode error, not silent zeros", () => {
-  const bad = parseLaunchReceipt(
-    receiptEvent({
-      extraTags: [
-        ["kind", "sweep"],
-        ["tx", TX],
-      ],
-      content: { table: "sweep", auction: AUCTION, currencyRaised: "lots" },
-    }),
-  );
-  assert.ok(bad);
-  assert.throws(() => decodeSweepReceipt(bad), /currencyRaised/);
+  assert.equal(receipt.tx, TX2);
 });
 
 test("money-movement rows keep only sweep/lock/summon/ragequit, in time order", () => {

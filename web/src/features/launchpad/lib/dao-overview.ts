@@ -18,11 +18,11 @@ import {
   canAcceptClaim,
   canExpire,
   claimStep,
-  idLabel,
   nextStep,
   type ClaimView,
 } from "./work.ts";
 import type { WorkSnapshot } from "./work-read.ts";
+import { workTitle } from "./work-titles.ts";
 
 /** The tab that holds the answer. */
 export type AttentionTab = "decisions" | "work" | "milestones";
@@ -177,6 +177,27 @@ function waitingText(
   }
 }
 
+/**
+ * Who can accept this submission for review: the managers of the open work areas whose words it states. Lower-case,
+ * each once; empty when no open area matches.
+ */
+export function managersFor(
+  claim: ClaimView,
+  mandate: Pick<
+    WorkSnapshot["mandates"][number],
+    "closed" | "expiresAt" | "projects"
+  >,
+  now: number,
+): string[] {
+  const found = new Set<string>();
+  for (const project of mandate.projects) {
+    const manager = project.record.manager;
+    if (canAcceptClaim({ wallet: manager, mandate, project, claim, now }))
+      found.add(manager.toLowerCase());
+  }
+  return [...found];
+}
+
 /** Whether a claim is not finished: still being reviewed, or approved and waiting to be taken. */
 function isOpenClaim(claim: ClaimView): boolean {
   return claim.record.status === "Open" || claim.record.status === "Approved";
@@ -271,7 +292,8 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
         });
       }
       const target = { id: claim.id, mandate: mandate.address };
-      const label = idLabel(claim.id);
+      // One name for a piece of work everywhere it is mentioned: its readable title (D146).
+      const label = workTitle(claim.id);
       const mine = sameAddress(claim.record.contributor, wallet);
       const managesItsArea =
         claim.project !== null &&
@@ -300,8 +322,8 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           kind: "bind",
           text:
             accepting.length === 1
-              ? `${who(claim.record.contributor)} submitted “${label}”. Accept it for review in ${idLabel(accepting[0].id)}.`
-              : `${who(claim.record.contributor)} submitted “${label}”. Accept it for review in one of your work areas.`,
+              ? `${who(claim.record.contributor)} submitted “${workTitle(claim.id)}” for ${workTitle(accepting[0].id)}. Accept it so the reviewers can judge it.`
+              : `${who(claim.record.contributor)} submitted “${workTitle(claim.id)}”. Accept it in one of your work areas so the reviewers can judge it.`,
           action: "Accept for review",
           tab: "work",
           claim: target,
@@ -530,6 +552,8 @@ export function rankAttention<T extends AttentionItem>(
 export interface OverviewCounts {
   openDecisions: number;
   openClaims: number;
+  /** Open work a manager accepted, so the reviewers are judging it now (not work still waiting for a manager). */
+  inReview?: number;
   workBudgets: number;
   /** Decisions that ran: the DAO has done things, even if nothing is open right now. */
   carriedOut?: number;
@@ -544,6 +568,14 @@ export function overviewCounts(
     openDecisions: (decisions?.decisions ?? []).filter(isOpenDecision).length,
     openClaims: mandates.reduce(
       (sum, mandate) => sum + mandate.claims.filter(isOpenClaim).length,
+      0,
+    ),
+    inReview: mandates.reduce(
+      (sum, mandate) =>
+        sum +
+        mandate.claims.filter(
+          (claim) => claim.record.status === "Open" && claim.project !== null,
+        ).length,
       0,
     ),
     // The milestone panel judges the team's milestones and holds no budget: it is not "a work budget" to start with.

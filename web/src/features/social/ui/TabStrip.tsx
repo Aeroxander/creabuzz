@@ -7,7 +7,8 @@ export function TabStrip<T extends string>({
   onChange,
   label,
 }: {
-  tabs: readonly { id: T; label: string }[];
+  /** `testId` keeps a renamed tab's old test id. */
+  tabs: readonly { id: T; label: string; testId?: string }[];
   value: T;
   onChange: (tab: T) => void;
   label: string;
@@ -18,7 +19,7 @@ export function TabStrip<T extends string>({
         <button
           aria-selected={value === tab.id}
           className="relative flex h-12 flex-1 items-center justify-center text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-          data-testid={`social-tab-${tab.id}`}
+          data-testid={tab.testId ?? `social-tab-${tab.id}`}
           key={tab.id}
           onClick={() => onChange(tab.id)}
           role="tab"

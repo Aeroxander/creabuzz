@@ -28,7 +28,7 @@ import {
   StatusLine,
   StepRow,
   WalletStrip,
-} from "./auction-widgets";
+} from "./account-widgets";
 import { UnauditedNotice } from "./UnauditedNotice";
 
 function chainNumber(value: string | null): number | null {

@@ -24,7 +24,7 @@ import {
   StatusLine,
   StepRow,
   WalletStrip,
-} from "./auction-widgets";
+} from "./account-widgets";
 import { LaunchReviewFields } from "./LaunchReviewFields";
 import { UnauditedNotice } from "./UnauditedNotice";
 import { useTokenDecimals } from "./WorkBudgetForm";

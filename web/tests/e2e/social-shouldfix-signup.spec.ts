@@ -87,7 +87,10 @@ test("someone with no account can make a passkey account on the invite page, joi
 }) => {
   await addVirtualAuthenticator(page);
   const { claims } = await answerInvite(page);
-  const backup = await joinWithNewPasskey(page, "first-code");
+  const backup = await joinWithNewPasskey(
+    page,
+    "v2.first-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  );
 
   // The claim is signed by the passkey account, and no browser key was made beside it.
   const stored = await page.evaluate(() => ({
@@ -115,13 +118,18 @@ test("a passkey account that is locked unlocks on the invite page and joins with
 }) => {
   await addVirtualAuthenticator(page);
   const { claims } = await answerInvite(page);
-  await joinWithNewPasskey(page, "first-code");
+  await joinWithNewPasskey(
+    page,
+    "v2.first-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  );
   const account = await page.evaluate(() =>
     localStorage.getItem("buzz.passkey.pubkey"),
   );
 
   // A new page load: the passkey's key is gone from memory, and this page has no account menu to unlock it from.
-  await page.goto(`${LOCALHOST}/invite/second-code`);
+  await page.goto(
+    `${LOCALHOST}/invite/v2.second-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`,
+  );
   await expect(page.getByTestId("invite-passkey-locked")).toBeVisible({
     timeout: 20_000,
   });
@@ -133,7 +141,9 @@ test("a passkey account that is locked unlocks on the invite page and joins with
   await unlock.click();
   await page.waitForURL(`${LOCALHOST}/`, { timeout: 20_000 });
   expect(claims).toHaveLength(2);
-  expect(claims[1].body.code).toBe("second-code");
+  expect(claims[1].body.code).toBe(
+    "v2.second-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  );
   expect(claims[1].signer).toBe(account);
 });
 
@@ -271,7 +281,7 @@ test("terms that could not be loaded say so with Try again; terms that changed l
       await route.fulfill({ json: { receipt: "receipt-1" } });
     }
   });
-  await page.goto("/invite/some-code");
+  await page.goto("/invite/v2.some-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
   const failed = page.getByTestId("invite-policy-failed");
   await expect(failed).toBeVisible({ timeout: 20_000 });
@@ -330,7 +340,7 @@ test("a refusal the page does not know is said plainly, with the server's words 
       json: { error: "internal server error" },
     }),
   );
-  await page.goto("/invite/some-code");
+  await page.goto("/invite/v2.some-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
   await page.getByRole("button", { name: "Join in browser" }).click();
   const problem = page.getByTestId("invite-join-problem");
   await expect(problem.getByRole("alert")).toHaveText(
@@ -519,7 +529,7 @@ test("Edit profile on the profile page offers the same picture upload, and keeps
     .toEqual([pictureUrl]);
 });
 
-test("the recovery key dialog keeps Tab inside it while open, and gives focus back to the account menu on close", async ({
+test("the recovery key dialog keeps Tab inside it while open, closes the account menu under it, and gives focus back to the account button", async ({
   page,
 }) => {
   await openAsOwner(page, { name: "Mira Okafor" });
@@ -532,6 +542,8 @@ test("the recovery key dialog keeps Tab inside it while open, and gives focus ba
   await opener.click();
   const backup = page.getByTestId("backup-dialog");
   await expect(backup).toBeVisible();
+  // The dialog takes over from the menu: it does not stay open underneath (on a phone it showed below the dialog).
+  await expect(page.getByTestId("profile-popover")).toHaveCount(0);
   // Focus starts on the dialog itself, so its title is read first.
   await expect(backup.getByRole("dialog")).toBeFocused();
 
@@ -555,23 +567,22 @@ test("the recovery key dialog keeps Tab inside it while open, and gives focus ba
   }
   await expect(page.getByTestId("backup-close")).toBeVisible();
 
-  // Escape closes the dialog only, and focus is back on the menu item that opened it.
+  const focused = () =>
+    page.evaluate(
+      () => (document.activeElement as HTMLElement | null)?.dataset.testid,
+    );
+  // Escape closes the dialog, and focus is back on the account button the menu hangs from.
   await page.keyboard.press("Escape");
   await expect(backup).toHaveCount(0);
-  await expect(opener).toBeFocused();
+  await expect.poll(focused).toBe("user-chip");
 
-  // Closed by pointer, the menu has closed behind it (the press was outside it): focus goes to the account button.
+  // Closed by pointer, the same.
+  await chip.click();
   await opener.click();
   await expect(backup).toBeVisible();
   await page.getByTestId("backup-close").click();
   await expect(backup).toHaveCount(0);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => (document.activeElement as HTMLElement | null)?.dataset.testid,
-      ),
-    )
-    .toBe("user-chip");
+  await expect.poll(focused).toBe("user-chip");
 });
 
 test("a profile the server could not save says so in plain words, with the server's under Technical details", async ({

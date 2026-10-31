@@ -1,5 +1,7 @@
 # Paperclip bridge
 
+> **Outside the Creaton MVP, 2026-10-31.** The MVP is the server, the web app and contributor projects, with no desktop ([v3-review/STATUS.md](v3-review/STATUS.md), "Scope").
+
 > ## Status: an on-ramp, not a two-way bridge
 >
 > The Paperclip integration is an **on-ramp**: a **one-way import** of

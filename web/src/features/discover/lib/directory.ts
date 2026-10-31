@@ -35,8 +35,14 @@ import {
   KIND_ORG_NODE,
   KIND_ORG_PITCH,
 } from "../../../shared/constants/kinds.ts";
-import { formatMoney } from "../../launchpad/lib/amounts.ts";
-import { effectiveFunding, raisingFirst } from "../../launchpad/lib/funding.ts";
+import { listedHere } from "../../launchpad/lib/contributor-only.ts";
+import { daoOfLaunch } from "../../launchpad/lib/dao-of-launch.ts";
+import { isIdea } from "../../launchpad/lib/idea.ts";
+import {
+  effectiveFunding,
+  isContributorProject,
+  raisingFirst,
+} from "../../launchpad/lib/funding.ts";
 import {
   explorerAddressUrl,
   explorerTxUrl,
@@ -132,6 +138,11 @@ export interface DaoCard {
   updatedAt: number;
   /** Human provenance, printed on the card: which records built it. */
   sources: string[];
+  /**
+   * A contributor project's DAO: the launch whose record names it. Its page is the project's page, and whether the
+   * contributor kit really made it is checked on the card (`useContributorProvenance`), not here.
+   */
+  launch: { id: string; author: string; chainId: string | null } | null;
 }
 
 export interface DirectorySnapshot {
@@ -144,8 +155,38 @@ export interface DirectorySnapshot {
   counts: DirectoryCounts;
 }
 
-/** The filter chips above the sections. */
-export type DiscoverFilter = "all" | "daos" | "fundraising" | "hiring";
+/**
+ * The filter chips above the sections. `fundraising` is the launches section, whatever this build calls it; `ideas` is
+ * the ideas in it, a chip only a contributor-only build shows.
+ */
+export type DiscoverFilter =
+  | "all"
+  | "daos"
+  | "fundraising"
+  | "hiring"
+  | "ideas";
+
+/**
+ * The chips this build shows. A contributor-only build (`raisesOffered()` false) has no fundraising and no pitch board,
+ * and every project there is a DAO from day one, so a DAOs chip would list the same projects again: its chips are the
+ * projects and the ideas.
+ */
+export function discoverFilters(
+  raises: boolean,
+): readonly { id: DiscoverFilter; label: string }[] {
+  return raises
+    ? [
+        { id: "all", label: "All" },
+        { id: "daos", label: "DAOs" },
+        { id: "fundraising", label: "Fundraising" },
+        { id: "hiring", label: "Project board" },
+      ]
+    : [
+        { id: "all", label: "All" },
+        { id: "fundraising", label: "Projects" },
+        { id: "ideas", label: "Ideas" },
+      ];
+}
 
 export interface SectionVisibility {
   daos: boolean;
@@ -157,12 +198,35 @@ export interface SectionVisibility {
  * Which sections a chip shows. Table-tested exhaustively — a chip that
  * silently showed a second section would make the counts lie.
  */
-export function visibleSections(filter: DiscoverFilter): SectionVisibility {
+export function visibleSections(
+  filter: DiscoverFilter,
+  raises = true,
+): SectionVisibility {
   return {
-    daos: filter === "all" || filter === "daos",
-    launches: filter === "all" || filter === "fundraising",
-    projects: filter === "all" || filter === "hiring",
+    // A contributor-only build lists each project once, under Projects: its DAO is the project itself.
+    daos: raises && (filter === "all" || filter === "daos"),
+    launches:
+      filter === "all" ||
+      filter === "fundraising" ||
+      (!raises && filter === "ideas"),
+    // The pitch board promises percentage seats, a second kind of share a contributor-only build does not offer.
+    projects: raises && (filter === "all" || filter === "hiring"),
   };
+}
+
+/**
+ * The launches a chip lists. Where raises are offered every chip lists them all; a contributor-only build's Projects chip
+ * lists the projects and its Ideas chip the ideas.
+ */
+export function launchesForFilter<
+  T extends { record: Parameters<typeof isIdea>[0] },
+>(launches: readonly T[], filter: DiscoverFilter, raises: boolean): T[] {
+  if (raises) return [...launches];
+  if (filter === "fundraising")
+    return launches.filter((launch) => !isIdea(launch.record));
+  if (filter === "ideas")
+    return launches.filter((launch) => isIdea(launch.record));
+  return [...launches];
 }
 
 /** The `summon` receipt payload — validated field by field (org-money.ts). */
@@ -219,7 +283,10 @@ export function deriveDirectory(input: {
    * chain: nothing is guessed to be settling.
    */
   chainHead?: number | bigint | null;
+  /** Whether this build offers raises (`raisesOffered`); without them no raise is listed. Defaults to true. */
+  raises?: boolean;
 }): DirectorySnapshot {
+  const raises = input.raises ?? true;
   const events = [...input.events];
   const counts: DirectoryCounts = {
     malformed: 0,
@@ -288,11 +355,18 @@ export function deriveDirectory(input: {
 
   const allLaunches = buildLaunches(events, tombstones);
   // A draft is a founder's unfinished record — it is not a live launch, and
-  // listing one here would answer "what is happening" with a maybe. "Raising
-  // now" then leads the section (plan §2), with the newest-record order
-  // `buildLaunches` produced still holding inside each group.
+  // listing one here would answer "what is happening" with a maybe. An idea is
+  // a draft on purpose, though: without raises Discover has an Ideas chip, so
+  // ideas are listed there. "Raising now" then leads the section (plan §2),
+  // with the newest-record order `buildLaunches` produced still holding inside
+  // each group.
   const launches = raisingFirst(
-    allLaunches.filter((launch) => effectiveStage(launch) !== "draft"),
+    allLaunches.filter(
+      (launch) =>
+        (effectiveStage(launch) !== "draft" ||
+          (!raises && isIdea(launch.record))) &&
+        listedHere(launch.record, raises),
+    ),
     (launch) => effectiveFunding(launch, input.chainHead ?? null),
   );
   const launchName = new Map<string, string>();
@@ -355,6 +429,7 @@ export function deriveDirectory(input: {
       openRoles: summary?.openRoles ?? [],
       updatedAt: receipt.createdAt,
       sources: ["DAO creation receipt"],
+      launch: null,
     });
   }
   for (const deployment of deployments) {
@@ -383,6 +458,7 @@ export function deriveDirectory(input: {
         openRoles: summary?.openRoles ?? [],
         updatedAt: deployment.createdAt,
         sources: [],
+        launch: null,
       };
       cards.set(projectId, card);
     }
@@ -394,8 +470,40 @@ export function deriveDirectory(input: {
     card.updatedAt = Math.max(card.updatedAt, deployment.createdAt);
     card.sources.push(`${deployment.role} deployment record`);
   }
+  // A contributor project has its DAO from the first day, with no sale and so no summon receipt: its record names it.
+  for (const launch of launches) {
+    if (!isContributorProject(launch.record)) continue;
+    const dao = daoOfLaunch(launch);
+    if (!dao) continue;
+    const projectId = `launch:${launch.record.author}:${launch.record.id}`;
+    if ([...cards.values()].some((card) => card.dao === dao)) continue;
+    cards.set(projectId, {
+      projectId,
+      name: launch.record.name,
+      dao,
+      contract: null,
+      chainId: toChainNumber(launch.record.chainId),
+      addressUrl: null,
+      txUrl: null,
+      summonTx: null,
+      deploymentTx: null,
+      teamSize: null,
+      teamSource: null,
+      mintedSeats: null,
+      founder: launch.record.author,
+      hasPitch: false,
+      openRoles: [],
+      updatedAt: launch.record.createdAt,
+      sources: ["Contributor project"],
+      launch: {
+        id: launch.record.id,
+        author: launch.record.author,
+        chainId: launch.record.chainId,
+      },
+    });
+  }
   for (const card of cards.values()) {
-    const summary = byProjectId.get(card.projectId);
+    const summary = card.launch ? undefined : byProjectId.get(card.projectId);
     if (summary) {
       // Team size comes from the equity map (the same derivation the board
       // prints), so Discover and the Project Board cannot disagree.
@@ -419,7 +527,11 @@ export function deriveDirectory(input: {
     card.txUrl =
       tx && card.chainId !== null ? explorerTxUrl(card.chainId, tx) : null;
   }
-  const daos = [...cards.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  // A contributor-only build lists only contributor projects' DAOs: the others were made by a sale, and their cards
+  // lead to the pitch board, which that build does not offer.
+  const daos = [...cards.values()]
+    .filter((card) => raises || card.launch !== null)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
 
   return { daos, launches, projects, counts };
 }
@@ -431,21 +543,9 @@ export function deriveDirectory(input: {
  * would make the directory lie by omission) but their card must not offer a
  * "Back this launch" that cannot be completed.
  */
-export function canBackLaunch(stage: LaunchStage): boolean {
-  return stage === "live" || stage === "funding";
-}
-
-/**
- * The target line for a launch card — the record's own graduation threshold,
- * through the launchpad's own money formatter (`amounts.ts formatMoney`, the
- * same call `LaunchDetailPage` uses for "Graduation threshold"), so a raw
- * atomic figure is never printed as if it were tokens. An absent figure
- * stays absent.
- */
-export function launchTargetText(launch: Launch): string | null {
-  const goal = launch.record.requiredRaised;
-  if (!goal) return null;
-  return formatMoney(goal);
+export function canBackLaunch(stage: LaunchStage, raises = true): boolean {
+  // A contributor-only build offers no way to put money in, whatever a listed record says.
+  return raises && (stage === "live" || stage === "funding");
 }
 
 /** The line above the grids: what could not be listed, in the reader's words. */

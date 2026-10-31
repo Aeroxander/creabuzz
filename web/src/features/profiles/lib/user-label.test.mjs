@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleToAtName, pickUserHandle, pickUserName } from "./user-label.ts";
+import {
+  handleToAtName,
+  hasUserName,
+  personName,
+  personSecondaryLabel,
+  pickUserHandle,
+  pickUserName,
+  SOMEONE,
+} from "./user-label.ts";
 
 test("a display name is the username", () => {
   assert.equal(
@@ -62,4 +70,35 @@ test("an `@name` short form needs a real handle behind it", () => {
   assert.equal(handleToAtName("tyler"), null);
   assert.equal(handleToAtName("tyler@"), null);
   assert.equal(handleToAtName("@buzz.dev"), null);
+});
+
+const KEY = `${"ab5d2e79".padEnd(60, "0")}168d`;
+
+test("someone with no name is Someone in main copy, never a short key", () => {
+  assert.equal(SOMEONE, "Someone");
+  assert.equal(personName({ display_name: "Alice Archer" }), "Alice Archer");
+  assert.equal(personName(undefined), SOMEONE);
+  assert.equal(personName({ display_name: "  ", about: "hi" }), SOMEONE);
+  assert.equal(hasUserName({ name: "alice" }), true);
+  assert.equal(hasUserName({}), false);
+  assert.equal(hasUserName(undefined), false);
+});
+
+test("a short key is never printed beside a real name as if it were a handle", () => {
+  // A name and no username: nothing beside it.
+  assert.equal(
+    personSecondaryLabel({ display_name: "Alice Archer" }, KEY),
+    null,
+  );
+  // A username is what a reader can use.
+  assert.equal(
+    personSecondaryLabel(
+      { display_name: "Alice", nip05: "alice@a.example" },
+      KEY,
+    ),
+    "alice@a.example",
+  );
+  // Only someone with no name keeps a quiet short key, so two "Someone"s can be told apart.
+  assert.equal(personSecondaryLabel(undefined, KEY), "ab5d2e79…168d");
+  assert.equal(personSecondaryLabel({}, ""), null);
 });

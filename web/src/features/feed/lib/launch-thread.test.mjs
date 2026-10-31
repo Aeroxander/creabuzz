@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  generateThreadSummary,
-  newestSummary,
-  parseThreadSummary,
-  pinnedUpdates,
-  readSummaryOptIn,
-  writeSummaryOptIn,
-} from "./launch-thread.ts";
+import * as thread from "./launch-thread.ts";
+
+const { newestSummary, parseThreadSummary, pinnedUpdates } = thread;
 
 const KIND_THREAD_SUMMARY = 39005;
 
@@ -68,28 +63,12 @@ test("the freshest summary wins", () => {
   assert.equal(newestSummary([]), null);
 });
 
-test("the founder's opt-in round-trips per launch", () => {
-  const store = new Map();
-  globalThis.localStorage = {
-    getItem: (k) => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => store.set(k, v),
-    removeItem: (k) => store.delete(k),
-  };
-  try {
-    assert.equal(readSummaryOptIn("coord-1"), false);
-    writeSummaryOptIn("coord-1", true);
-    assert.equal(readSummaryOptIn("coord-1"), true);
-    assert.equal(readSummaryOptIn("coord-2"), false);
-    writeSummaryOptIn("coord-1", false);
-    assert.equal(readSummaryOptIn("coord-1"), false);
-  } finally {
-    delete globalThis.localStorage;
+test("the page never offers to write a summary: no opt-in and no generator are left", () => {
+  for (const gone of [
+    "generateThreadSummary",
+    "readSummaryOptIn",
+    "writeSummaryOptIn",
+  ]) {
+    assert.equal(gone in thread, false, gone);
   }
-});
-
-test("generation is the one stub and says so plainly", async () => {
-  await assert.rejects(
-    () => generateThreadSummary({ launchCoord: "c", thread: [] }),
-    /not available yet/,
-  );
 });

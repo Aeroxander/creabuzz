@@ -71,7 +71,7 @@ export function StartBoardForm({
         id="start-board-name"
         maxLength={60}
         onChange={(event) => setName(event.target.value)}
-        placeholder="Name, for example indie-games"
+        placeholder="Name, for example Indie games"
         value={name}
       />
       <label className="sr-only" htmlFor="start-board-about">

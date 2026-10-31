@@ -249,6 +249,8 @@ test("sponsorUserOperation: policy denial → PaymasterDeniedError with server t
       assert.equal(error.dashboardAction, PAYMASTER_DENIED_DASHBOARD_ACTION);
       // Rule 1: the raw server message survives into the thrown error text.
       assert.match(error.message, /transaction not allowed by gas policies/);
+      // The vendor's dashboard steps stay off the message a person can open under Technical details.
+      assert.doesNotMatch(error.message, /dashboard|Gas Policies →|https?:/);
       return true;
     },
   );

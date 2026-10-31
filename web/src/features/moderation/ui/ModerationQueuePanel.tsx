@@ -2,7 +2,7 @@
  * Moderation queue: each report with what it is about (the reported words and
  * who wrote them, or the reported person, with a link to see it in place), who
  * reported it, its status, and the moderator actions for open rows — resolve
- * (delete / time out / ban pair an enforcement with the resolution), dismiss,
+ * (remove / mute everywhere (a server time out) / ban pair an enforcement with the resolution), dismiss,
  * and escalate. All, open or escalated reports, a page at a time. Action
  * affordances render only for moderators; empty, loading, and error states
  * are explicit, and a failed action keeps the row open with an inline retry.
@@ -16,24 +16,34 @@ import { useUserNames } from "@/features/profiles/use-profiles";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import {
   isHomePostReport,
+  reportDate,
   reportStatusLabel,
   reportTypeLabel,
   type ResolutionAction,
 } from "../lib/moderationQueue";
-import { QUEUE_FILTERS } from "../lib/queueRow";
+import { QUEUE_FILTERS, removedNoun } from "../lib/queueRow";
 import {
   useModerationAccess,
   useModerationQueue,
   type ModerationRow,
 } from "../use-moderation-queue";
 
-const ACTION_LABEL: Record<ResolutionAction, string> = {
-  delete: "Delete content",
-  timeout: "Time out",
-  ban: "Ban",
-  dismiss: "Dismiss",
-  escalate: "Escalate",
-};
+/** The board's Moderate menu says "Remove post…"; the queue uses the same words. */
+function actionLabel(action: ResolutionAction, row: ModerationRow): string {
+  switch (action) {
+    case "delete":
+      return `Remove ${removedNoun(row.subject)}…`;
+    // The board's own mute covers one board; this one covers the whole community, and says so.
+    case "timeout":
+      return "Mute everywhere…";
+    case "ban":
+      return "Ban";
+    case "dismiss":
+      return "Dismiss";
+    case "escalate":
+      return "Escalate";
+  }
+}
 
 /** Bounded timeout choices — one of three fixed windows, no free-form input. */
 const TIMEOUT_CHOICES: { label: string; seconds: number }[] = [
@@ -168,8 +178,9 @@ function Row({
         <p className="truncate text-xs font-medium text-black dark:text-white">
           {reportTypeLabel(report.reportType)} · about {subject.about}
         </p>
+        {/* A status, not a button: a filled pill, unlike the outlined filters and actions. */}
         <span
-          className="shrink-0 text-2xs font-medium text-black/70 dark:text-white/70"
+          className="shrink-0 rounded-full bg-black/[0.06] px-2 py-0.5 text-2xs font-medium text-black/70 dark:bg-white/10 dark:text-white/70"
           data-testid="moderation-report-status"
         >
           {reportStatusLabel(status)}
@@ -178,9 +189,7 @@ function Row({
       <Subject nameOf={nameOf} row={row} />
       <p className="mt-1 text-2xs text-black/60 dark:text-white/60">
         {reporter ? `Reported by ${nameOf(reporter)}` : "Reported"}
-        {report.createdAt
-          ? ` · ${new Date(report.createdAt).toLocaleString()}`
-          : ""}
+        {report.createdAt ? ` · ${reportDate(report.createdAt)}` : ""}
       </p>
       {report.note ? (
         <p className="mt-1 text-2xs text-black/70 dark:text-white/70">
@@ -203,7 +212,7 @@ function Row({
               data-testid="timeout-choices"
             >
               <legend className="float-left mr-1.5 text-2xs text-black/60 dark:text-white/60">
-                Time out {personName} for
+                Mute {personName} everywhere in this community for
               </legend>
               {TIMEOUT_CHOICES.map((choice) => (
                 <button
@@ -227,12 +236,16 @@ function Row({
               >
                 Cancel
               </button>
+              <p className="w-full text-2xs text-black/60 dark:text-white/60">
+                They can still read, but not post in any room or board here. A
+                board mute covers one board.
+              </p>
             </fieldset>
           ) : (
             <div className="flex flex-wrap items-center gap-1.5">
               {actions.map((action) => (
                 <button
-                  aria-label={`${ACTION_LABEL[action]}: ${reportTypeLabel(report.reportType)} report`}
+                  aria-label={`${actionLabel(action, row).replace("…", "")}: ${reportTypeLabel(report.reportType)} report`}
                   className="inline-flex items-center gap-1 rounded-md border border-black/10 px-2 py-1 text-2xs font-medium text-black/70 disabled:opacity-50 dark:border-white/10 dark:text-white/70"
                   data-testid={`moderation-${action}`}
                   key={action}
@@ -252,7 +265,7 @@ function Row({
                   {action === "delete" ? <Trash2 className="h-3 w-3" /> : null}
                   {action === "timeout" ? <Clock className="h-3 w-3" /> : null}
                   {action === "ban" ? <Ban className="h-3 w-3" /> : null}
-                  {ACTION_LABEL[action]}
+                  {actionLabel(action, row)}
                 </button>
               ))}
             </div>
@@ -271,11 +284,11 @@ function Row({
           />
           {deleting ? (
             <ReasonDialog
-              confirmLabel="Delete"
+              confirmLabel="Remove"
               description={
                 onHome
                   ? "This post will be removed from Home for everyone and the report closed. Its author is told, with your reason."
-                  : "This message will be removed for everyone and the report closed."
+                  : `This ${removedNoun(subject)} will be removed for everyone and the report closed.`
               }
               destructive
               onClose={() => setDeleting(false)}
@@ -285,7 +298,9 @@ function Row({
               }}
               testId="moderation-delete-dialog"
               title={
-                onHome ? "Remove this post from Home?" : "Delete this message?"
+                onHome
+                  ? "Remove this post from Home?"
+                  : `Remove this ${removedNoun(subject)}?`
               }
             />
           ) : null}
@@ -390,7 +405,7 @@ export function ModerationQueuePanel() {
             {filter === "escalated"
               ? "No escalated reports."
               : filter === "open"
-                ? "No open reports."
+                ? "No reports need review."
                 : "No reports right now."}
           </p>
         ) : (

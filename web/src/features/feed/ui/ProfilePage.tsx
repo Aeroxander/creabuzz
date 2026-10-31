@@ -2,10 +2,15 @@ import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Link as LinkIcon, Mail } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import {
+  SIGN_IN_EVENT,
+  SIGN_UP_EVENT,
+} from "@/features/identity/lib/account-copy";
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { PaymentWalletCard } from "@/features/identity/ui/PaymentWalletCard";
 import { AccountMoneyCard } from "@/features/launchpad/ui/AccountMoneyCard";
 import {
+  hasUserName,
   resolveUserName,
   resolveUserSecondaryName,
 } from "@/features/profiles/use-profiles";
@@ -63,19 +68,36 @@ function bannerHue(pubkey: string): number {
   return Math.abs(hash) % 360;
 }
 
+/** One figure on a profile; a pulsing bar while it is read, so a count never shows as a dash first. */
 function Count({
   value,
   label,
   testId,
+  labelFirst = false,
 }: {
-  value: string;
+  value: string | undefined;
   label: string;
   testId: string;
+  /** "Score 7" rather than "7 Following". */
+  labelFirst?: boolean;
 }) {
+  const figure =
+    value === undefined ? (
+      <span
+        aria-label="Loading"
+        className="inline-block h-3.5 w-5 animate-pulse rounded bg-black/10 align-middle dark:bg-white/15"
+        data-testid={`${testId}-loading`}
+        role="img"
+      />
+    ) : (
+      <b className="text-black dark:text-white">{value}</b>
+    );
+  const words = (
+    <span className="text-black/60 dark:text-white/60">{label}</span>
+  );
   return (
     <span className="text-sm" data-testid={testId}>
-      <b className="text-black dark:text-white">{value}</b>{" "}
-      <span className="text-black/60 dark:text-white/60">{label}</span>
+      {labelFirst ? words : figure} {labelFirst ? figure : words}
     </span>
   );
 }
@@ -195,6 +217,62 @@ function Launches({ pubkey }: { pubkey: string }) {
 }
 
 /**
+ * A `/u/` address that names nobody (`app/lib/profile-param.ts`), or `/u/me` with no account here: said plainly,
+ * with the way on, instead of a made-up person.
+ */
+export function ProfileMissing({ signedOut }: { signedOut: boolean }) {
+  return (
+    <SocialShell>
+      <PageBar
+        back={
+          <Link
+            aria-label="Back to the feed"
+            className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+            to="/"
+          >
+            <ArrowLeft aria-hidden className="h-5 w-5" />
+          </Link>
+        }
+        title="Profile"
+      />
+      {signedOut ? (
+        <EmptyState testId="profile-signed-out" title="You're not signed in">
+          Sign in to see your profile, or make an account.
+        </EmptyState>
+      ) : (
+        <EmptyState
+          testId="profile-not-found"
+          title="This profile can't be found"
+        >
+          Check the link, or search for them by name.
+        </EmptyState>
+      )}
+      <div className="flex justify-center gap-2 pb-10">
+        {signedOut ? (
+          <>
+            <Button
+              onClick={() => window.dispatchEvent(new Event(SIGN_IN_EVENT))}
+              variant="outline"
+            >
+              Sign in
+            </Button>
+            <Button
+              onClick={() => window.dispatchEvent(new Event(SIGN_UP_EVENT))}
+            >
+              Sign up
+            </Button>
+          </>
+        ) : (
+          <Button asChild variant="outline">
+            <Link to="/">Home</Link>
+          </Button>
+        )}
+      </div>
+    </SocialShell>
+  );
+}
+
+/**
  * One person: header image, avatar, bio, follow counts, and tabs for their
  * posts, replies, media, likes and the launches they started.
  */
@@ -204,13 +282,15 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
   const [editing, setEditing] = useState(false);
   const people = usePeople([pubkey]);
   const profile = people[pubkey];
-  const name = resolveUserName(profile, pubkey);
+  const isSelf = me === pubkey;
+  // Your own profile before you have picked a name is "Your account", as the account menu calls it, never a key.
+  const nameless = isSelf && !hasUserName(profile);
+  const name = nameless ? "Your account" : resolveUserName(profile, pubkey);
   const following = useFollowing(pubkey);
   const followers = useFollowerCount(pubkey);
   const score = useAuthorScore(pubkey);
   // What points are, shown on a tap as well as on hover: a phone has no hover.
   const [pointsHelp, setPointsHelp] = useState(false);
-  const isSelf = me === pubkey;
   const hue = bannerHue(pubkey);
 
   return (
@@ -263,9 +343,9 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
                 onClick={() => setEditing(true)}
                 size="sm"
                 type="button"
-                variant="outline"
+                variant={nameless ? "default" : "outline"}
               >
-                Edit profile
+                {nameless ? "Add your name" : "Edit profile"}
               </Button>
             ) : me ? (
               <>
@@ -304,9 +384,11 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
         <h2 className="mt-2 text-xl font-extrabold text-black dark:text-white">
           {name}
         </h2>
-        <p className="text-sm text-black/60 dark:text-white/60">
-          {resolveUserSecondaryName(profile, pubkey)}
-        </p>
+        {nameless ? null : (
+          <p className="text-sm text-black/60 dark:text-white/60">
+            {resolveUserSecondaryName(profile, pubkey)}
+          </p>
+        )}
         {profile?.about ? (
           <p className="mt-3 whitespace-pre-wrap break-words text-sm text-black dark:text-white">
             {profile.about}
@@ -335,15 +417,16 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
             type="button"
           >
             <Count
-              label={score.data === 1 || score.data === -1 ? "point" : "points"}
+              label="Score"
+              labelFirst
               testId="profile-score"
-              value={score.data === undefined ? "–" : String(score.data)}
+              value={score.data === undefined ? undefined : String(score.data)}
             />
           </button>
           <Count
             label="Following"
             testId="profile-following-count"
-            value={following.data ? String(following.data.length) : "–"}
+            value={following.data ? String(following.data.length) : undefined}
           />
           <Count
             label={followers.data?.count === 1 ? "Follower" : "Followers"}
@@ -351,7 +434,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
             value={
               followers.data
                 ? `${followers.data.count}${followers.data.capped ? "+" : ""}`
-                : "–"
+                : undefined
             }
           />
         </div>
@@ -361,7 +444,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
             data-testid="profile-points-help"
             id="profile-points-help"
           >
-            Points are up votes minus down votes on their newest {SCORE_POSTS}{" "}
+            The score is up votes minus down votes on their newest {SCORE_POSTS}{" "}
             posts and {SCORE_POSTS} board posts: feedback on posts, not votes in
             any project and not Shares.
           </p>

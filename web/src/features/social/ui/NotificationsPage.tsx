@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useChannels } from "@/features/channels/use-channels";
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
-import { resolveUserName } from "@/features/profiles/use-profiles";
 import { cn } from "@/shared/lib/cn";
 import {
   KIND_CONTACT_LIST,
@@ -39,6 +39,7 @@ import {
 } from "../../board/lib/board-events";
 import { KIND_BOARD_MODERATION_LOG } from "../lib/moderation-notices";
 import { notificationsView } from "../lib/notifications-state";
+import { avatarName, bylineName } from "../lib/person-name";
 import { launchCoordinate } from "../../feed/lib/feed-events";
 import { useLaunches } from "../../launchpad/use-launches";
 import { useNotificationBadge, useNotifications } from "../use-discovery";
@@ -161,18 +162,40 @@ function ModerationRow({
   );
 }
 
+/**
+ * What a board reply says it answered: the post by its title and the board by its name, when both are known
+ * ("replied to “Where did you get stuck?” in supporters").
+ */
+function boardReplyVerb(
+  postTitle: string | null | undefined,
+  boardName: string | undefined,
+): string {
+  if (postTitle && boardName)
+    return `replied to “${postTitle}” in ${boardName}`;
+  if (postTitle) return `replied to “${postTitle}”`;
+  if (boardName) return `replied in ${boardName}`;
+  return VERB["board-reply"];
+}
+
 function ReactionRow({
   group,
   unread,
   people,
   targetText,
+  boardName,
 }: {
   group: NotificationGroup;
   unread: boolean;
   people: Record<string, ProfileMetadata>;
   targetText?: string;
+  /** The name of the board a board notification is on. */
+  boardName?: string;
 }) {
   const { Icon, className } = ICON[group.kind];
+  const verb =
+    group.kind === "board-reply"
+      ? boardReplyVerb(group.board?.postTitle, boardName)
+      : VERB[group.kind];
   const first = group.actors[0];
   const others = group.actors.length - 1;
   return (
@@ -190,7 +213,7 @@ function ReactionRow({
           {group.actors.slice(0, 5).map((pubkey) => (
             <UserAvatar
               avatarUrl={people[pubkey]?.picture ?? null}
-              displayName={resolveUserName(people[pubkey], pubkey)}
+              displayName={avatarName(people[pubkey])}
               key={pubkey}
               size="sm"
             />
@@ -202,12 +225,12 @@ function ReactionRow({
             params={{ pubkey: first }}
             to="/u/$pubkey"
           >
-            {resolveUserName(people[first], first)}
+            {bylineName(people[first])}
           </Link>
           {others > 0
             ? ` and ${others} ${others === 1 ? "other" : "others"}`
             : ""}{" "}
-          {VERB[group.kind]}
+          {verb}
           <span className="text-black/60 dark:text-white/60">
             {" "}
             · {shortRelativeTime(group.at)}
@@ -221,7 +244,7 @@ function ReactionRow({
       </div>
       {group.board ? (
         <Link
-          aria-label={`Open: ${VERB[group.kind]}`}
+          aria-label={`Open: ${verb}`}
           className="absolute inset-0"
           params={{ boardId: group.board.boardId }}
           search={{ post: group.board.postId }}
@@ -236,7 +259,7 @@ function ReactionRow({
         />
       ) : (
         <Link
-          aria-label={`Open ${resolveUserName(people[first], first)}'s profile`}
+          aria-label={`Open ${bylineName(people[first])}'s profile`}
           className="absolute inset-0"
           params={{ pubkey: first }}
           to="/u/$pubkey"
@@ -264,12 +287,12 @@ function LaunchUpdatesSection({ visitSeenAt }: { visitSeenAt: number }) {
     )?.record.name ?? "this launch";
   return (
     <section
-      aria-label="Launch updates"
+      aria-label="Team updates"
       className="border-b border-primary/30 bg-primary/[0.04]"
       data-testid="social-launch-updates"
     >
       <h2 className="flex items-center gap-2 px-4 pt-3 text-sm font-bold text-primary-ink">
-        <Megaphone aria-hidden className="h-4 w-4" /> Launch updates
+        <Megaphone aria-hidden className="h-4 w-4" /> Team updates
       </h2>
       {updates.slice(0, 20).map((update) => {
         const row = rows.find((r) => r.event.id === update.id);
@@ -341,6 +364,12 @@ export function NotificationsPage() {
   // A moderator's notice is signed by the server, not a person to show.
   const people = usePeople(
     groups.flatMap((g) => (g.kind === "moderation" ? [] : g.actors)),
+  );
+  const channels = useChannels().channels;
+  const boardNames = new Map(
+    channels
+      .filter((channel) => channel.type === "forum")
+      .map((channel) => [channel.id, channel.name]),
   );
   const view = notificationsView(notifications);
   const retry = () => void notifications.refetch();
@@ -415,6 +444,9 @@ export function NotificationsPage() {
             />
           ) : group.noteId === null ? (
             <ReactionRow
+              boardName={
+                group.board ? boardNames.get(group.board.boardId) : undefined
+              }
               group={group}
               key={group.key}
               people={people}

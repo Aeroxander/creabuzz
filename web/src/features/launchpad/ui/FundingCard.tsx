@@ -19,7 +19,7 @@ import {
 } from "../lib/weekly-rounds";
 import { useChainSend } from "../use-chain-send";
 import { FUNDING_QUERY, useFunding } from "../use-funding";
-import { FailureNote, WalletStrip } from "./auction-widgets";
+import { FailureNote, WalletStrip } from "./account-widgets";
 import { FundingFlagForm } from "./FundingFlagForm";
 import { RoundClaims } from "./RoundClaims";
 import { RoundPanel } from "./WeeklyRoundsCard";

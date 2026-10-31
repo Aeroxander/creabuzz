@@ -231,10 +231,10 @@ export function FleetView({ channels }: { channels: Channel[] }) {
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col p-4">
         <PageHeader title="AI helpers" />
         <QueryError
-          description="The server did not answer the agent roster query, so no agents can be listed."
+          description="The server didn't answer, so the AI helpers can't be listed."
           message={errorMessage(loadError)}
           testId="fleet-load-error"
-          title="Couldn't load agents"
+          title="Couldn't load AI helpers"
         />
       </div>
     );
@@ -317,13 +317,14 @@ export function FleetView({ channels }: { channels: Channel[] }) {
         data-testid="agent-key-disclosure"
       >
         {state === "running"
-          ? "This helper signs with a key stored in this browser's local storage. Stop it first to retire that identity."
-          : "Running a helper in this tab creates a signing key for it in this browser. It is not shared with the server."}
+          ? "This helper's account lives in this browser. Stop it first to remove it."
+          : "A helper you start here gets its own account in this browser."}
       </p>
-      {state !== "running" ? (
+      {/* Only when this browser holds a helper account: with none, there is nothing to remove. */}
+      {state !== "running" && tabAgentPubkey ? (
         <details className="text-xs text-black/60 dark:text-white/60">
           <summary className="cursor-pointer font-medium">
-            Retire this tab helper's key
+            Remove this tab's helper account
           </summary>
           <div className="mt-2">
             <button
@@ -332,23 +333,23 @@ export function FleetView({ channels }: { channels: Channel[] }) {
               onClick={() => setConfirmReset(true)}
               type="button"
             >
-              Reset agent key
+              Remove helper account
             </button>
           </div>
         </details>
       ) : null}
 
       <ConfirmDialog
-        confirmLabel="Reset agent key"
-        description="The tab agent gets a new identity. Anything attributed to the old one stays attributed to it, and the old key is removed from this browser."
+        confirmLabel="Remove helper account"
+        description="The next helper you start here gets a new account. What the old one did stays under its name."
         onCancel={() => setConfirmReset(false)}
         onConfirm={() => {
           setConfirmReset(false);
           resetAgentIdentity();
-          toast.success("Agent key reset");
+          toast.success("Helper account removed");
         }}
         open={confirmReset}
-        title="Reset the tab agent's key?"
+        title="Remove this tab's helper account?"
       />
 
       <section className="rounded-lg border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
@@ -429,7 +430,12 @@ export function FleetView({ channels }: { channels: Channel[] }) {
         ) : null}
       </section>
 
-      <div className="grid min-h-0 flex-1 auto-rows-min gap-2 overflow-y-auto">
+      <section
+        aria-label="Helpers"
+        className="grid min-h-0 flex-1 auto-rows-min gap-2 overflow-y-auto"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to focus this scroll container to scroll it.
+        tabIndex={0}
+      >
         {loading && agents.length === 0 ? (
           <p className="text-xs text-black/60 dark:text-white/60">
             Loading roster…
@@ -443,7 +449,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
         ) : (
           agents.map((agent) => <AgentCard key={agent.id} agent={agent} />)
         )}
-      </div>
+      </section>
     </div>
   );
 }

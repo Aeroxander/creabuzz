@@ -341,7 +341,7 @@ export function projectDecision(input: ProjectInput): DecisionDraft {
   try {
     id = idWord(input.id);
   } catch {
-    return fail("id", "Give the project a short name (up to 32 letters).");
+    return fail("id", "Give the work area a short name, up to 32 characters.");
   }
   if (input.amount === 0n && input.shares === 0n && !input.milestone)
     fail("amount", "A project needs some Shares, some money, or both.");
@@ -512,7 +512,7 @@ export function freezeClaimDecision(input: ClaimActionInput): DecisionDraft {
     title: `Freeze the submission “${idLabel(claimId)}”`,
     lines: [
       "While it is frozen nothing is paid for it and no Shares are unlocked by it.",
-      "Freezing is not a verdict. A later decision unwinds it, and nobody's money is taken.",
+      "A later vote can reject it for good, and nobody's money is taken.",
     ],
   };
 }
@@ -531,7 +531,7 @@ export function resolveFrozenClaimDecision(
       [claimId],
     ),
     lane: "unrestricted",
-    title: `Unwind the frozen submission “${idLabel(claimId)}”`,
+    title: `Reject the frozen submission “${idLabel(claimId)}”`,
     lines: [
       "The money set aside for it goes back to the work budget.",
       "The contributor's deposit goes back to them. Nothing is taken from anyone.",
@@ -541,6 +541,8 @@ export function resolveFrozenClaimDecision(
 
 export interface CloseBudgetInput {
   mandate: string;
+  /** The budget holds Shares only (a contributor project's): its draft then says nothing about money. */
+  sharesOnly?: boolean;
 }
 
 /** The vote that closes a work budget early: no new claims, its unused money returns to the DAO, and its Shares awards end. */
@@ -551,12 +553,17 @@ export function closeBudgetDecision(input: CloseBudgetInput): DecisionDraft {
     data: encodeFunctionData(ACTION_SIGNATURES.closeMandate, [], []),
     lane: "unrestricted",
     title: "Close the work budget",
-    lines: [
-      "No new work can be submitted in it.",
-      "Money not set aside for a submission goes back to the DAO.",
-      "Submissions whose money is already set aside keep their own payment rules.",
-      "No more Shares can be awarded through it: work that was approved and paid but not yet awarded Shares loses its award.",
-    ],
+    lines: input.sharesOnly
+      ? [
+          "No new work can be submitted in it.",
+          "No more Shares can be awarded through it: work that was approved but not yet awarded Shares loses its award.",
+        ]
+      : [
+          "No new work can be submitted in it.",
+          "Money not set aside for a submission goes back to the DAO.",
+          "Submissions whose money is already set aside keep their own payment rules.",
+          "No more Shares can be awarded through it: work that was approved and paid but not yet awarded Shares loses its award.",
+        ],
   };
 }
 
@@ -825,7 +832,7 @@ function describeCall(
         title: `Freeze the submission “${idLabel(claim)}”`,
         lines: [
           "While it is frozen nothing is paid for it and no Shares are unlocked by it.",
-          "Freezing is not a verdict. A later decision unwinds it, and nobody's money is taken.",
+          "A later vote can reject it for good, and nobody's money is taken.",
         ],
       };
     }
@@ -835,7 +842,7 @@ function describeCall(
       const [claim] = decodeParameters(["bytes32"], args) as [string];
       return {
         kind: "unwind",
-        title: `Unwind the frozen submission “${idLabel(claim)}”`,
+        title: `Reject the frozen submission “${idLabel(claim)}”`,
         lines: [
           "The money set aside for it goes back to the work budget.",
           "The contributor's deposit goes back to them. Nothing is taken from anyone.",

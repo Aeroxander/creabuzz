@@ -1,5 +1,7 @@
 # Contract audit readiness — starting package
 
+> **History, 2026-10-31.** Replaced by [v3-review/AUDIT-SCOPE.md](v3-review/AUDIT-SCOPE.md), the audit's current scope.
+
 Status: 30 Sep 2026. This document hands an external auditor the launchpad
 contract surface without a walkthrough. The launchpad stays **testnet-only**
 until an audit and a legal posture for the token sale exist (the standing

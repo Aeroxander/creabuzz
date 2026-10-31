@@ -146,7 +146,7 @@ export function AgentStopDialog({
           className="text-sm font-semibold text-black dark:text-white"
           id="agent-stop-title"
         >
-          {one ? `Stop ${names}?` : `Stop ${targets.length} agents?`}
+          {one ? `Stop ${names}?` : `Stop ${targets.length} AI helpers?`}
         </h2>
         <p
           className="mt-1 text-xs text-black/60 dark:text-white/60"
@@ -164,7 +164,7 @@ export function AgentStopDialog({
             onChange={(e) => setBan(e.target.checked)}
             type="checkbox"
           />
-          {one ? "Also ban this agent" : "Also ban these agents"}
+          {one ? "Also ban this AI helper" : "Also ban these AI helpers"}
         </label>
         {failures.length > 0 ? (
           <div
@@ -206,7 +206,7 @@ export function AgentStopDialog({
             type="button"
             variant="destructive"
           >
-            {one ? "Stop agent" : "Stop agents"}
+            {one ? "Stop AI helper" : "Stop AI helpers"}
           </Button>
         </div>
       </div>

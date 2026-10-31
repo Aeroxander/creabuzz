@@ -201,7 +201,7 @@ test("a board owner locks and pins a thread and mutes someone, and each is one c
   await expect(page.getByTestId("board-mute-days-30")).toBeVisible();
   // An owner sets a long mute alone: nothing about a second moderator.
   await page.getByTestId("board-mute-days-14").check();
-  await expect(page.getByTestId("board-mute-second")).toHaveCount(0);
+  await expect(page.getByTestId("board-mute-second-14")).toHaveCount(0);
   await page.getByTestId("board-mute-reason").fill("Keeps posting adverts");
   await page.getByTestId("board-mute-submit").click();
   await expect(page.getByTestId("board-mute-form")).toHaveCount(0);
@@ -228,12 +228,11 @@ test("an appointed moderator is told a long mute needs a second moderator, and c
   await page.getByTestId("board-moderate-post").click();
   await expect(page.getByTestId("board-thread-lock")).toBeVisible();
   await page.getByTestId("board-mute-post").click();
-  await page.getByTestId("board-mute-days-30").check();
-  await expect(page.getByTestId("board-mute-second")).toContainText(
-    "only if another moderator",
+  // What a longer mute does is said under it before it is chosen; up to seven days needs no one else.
+  await expect(page.getByTestId("board-mute-second-30")).toContainText(
+    "if another moderator, owner or admin agrees",
   );
-  await page.getByTestId("board-mute-days-7").check();
-  await expect(page.getByTestId("board-mute-second")).toHaveCount(0);
+  await expect(page.getByTestId("board-mute-second-7")).toHaveCount(0);
   await page.getByRole("button", { name: "Cancel" }).click();
 
   await page.getByTestId("board-back").click();

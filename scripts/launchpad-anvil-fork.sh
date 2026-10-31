@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+#
+# ⚠️  NOT IN ANY GATE (2026-10-31, docs/v3-review/DEPRECATION-2026-10-31.md): scripts/mvp-gate.sh does not run it and
+# nothing runs it on a schedule, so it may have broken since it was last changed. Run it before relying on it.
+# Superseded by scripts/sepolia-deploy.sh (its rehearsal forks Sepolia) and the --sepolia-fork journeys (D85).
+#
 # Launchpad Sepolia fork: local Anvil + full contract suite.
 #
 # Boots Anvil forked from Sepolia (unless one is already on RPC_PORT), then

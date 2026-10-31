@@ -131,6 +131,15 @@ function reportActionFailure(what: string) {
   };
 }
 
+/** A phone-sized window, where the board's columns do not fit. */
+function narrowScreen(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(max-width: 639px)").matches
+  );
+}
+
 export function WorkBoard({
   channels,
   initialItemId,
@@ -161,8 +170,9 @@ export function WorkBoard({
   const { agents } = useAgentRoster();
   const [filter, setFilter] = useState<"all" | "mine" | "open" | "done">("all");
   const [typeFilter, setTypeFilter] = useState<"all" | "task" | "issue">("all");
-  const [view, setView] = useState<"list" | "board" | "next">(
-    initialItemId ? "list" : "board",
+  // On a phone the board's columns are mostly off screen: the list is the useful start there.
+  const [view, setView] = useState<"list" | "board" | "next">(() =>
+    initialItemId || narrowScreen() ? "list" : "board",
   );
   const [selectedId, setSelectedId] = useState<string | null>(
     () => initialItemId ?? null,
@@ -328,13 +338,13 @@ export function WorkBoard({
   if (loadError && items.length === 0) {
     return (
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col p-4">
-        <PageHeader title="Work" />
+        <PageHeader title="Tasks" />
         <QueryError
           description="The server did not answer the task and issue query, so this board has nothing to show."
           message={errorMessage(loadError)}
           onRetry={reload}
           testId="work-load-error"
-          title="Couldn't load the work board"
+          title="Couldn't load the tasks"
         />
       </div>
     );
@@ -343,7 +353,7 @@ export function WorkBoard({
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 p-4">
       <PageHeader
-        title="Work"
+        title="Tasks"
         action={
           <span className="text-xs text-black/60 dark:text-white/60">
             {countOf(items.length, "item")} ·{" "}
@@ -407,7 +417,8 @@ export function WorkBoard({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="New task…"
-          className="min-w-0 flex-1 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none placeholder:text-black/60 focus:ring-1 focus:ring-black/20 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/40"
+          aria-label="New task"
+          className="min-w-0 basis-full rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none placeholder:text-black/60 focus:ring-1 focus:ring-black/20 sm:basis-0 sm:flex-1 dark:border-white/10 dark:bg-white/5 dark:placeholder:text-white/40"
           data-testid="work-create-input"
         />
         <select
@@ -447,13 +458,16 @@ export function WorkBoard({
           <option value="high">High</option>
           <option value="urgent">Urgent</option>
         </select>
-        <input
-          type="date"
-          value={due}
-          onChange={(e) => setDue(e.target.value)}
-          aria-label="Due date"
-          className="w-32 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none dark:border-white/10 dark:bg-white/5"
-        />
+        <label className="flex items-center gap-1 text-xs text-black/60 dark:text-white/60">
+          Due
+          <input
+            type="date"
+            value={due}
+            onChange={(e) => setDue(e.target.value)}
+            aria-label="Due date"
+            className="w-36 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm text-black outline-none dark:border-white/10 dark:bg-white/5 dark:text-white"
+          />
+        </label>
         <button
           type="button"
           disabled={creating || title.trim().length === 0}
@@ -539,7 +553,9 @@ export function WorkBoard({
               </p>
             ) : filtered.length === 0 ? (
               <p className="rounded-lg border border-dashed border-black/15 p-6 text-center text-sm text-black/60 dark:border-white/15 dark:text-white/60">
-                No work items match.
+                {items.length === 0
+                  ? "No tasks yet. Add one above."
+                  : "No tasks match."}
               </p>
             ) : (
               filtered.map((item) => (
@@ -554,7 +570,12 @@ export function WorkBoard({
             )}
           </div>
 
-          <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-lg border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-white/5">
+          {/* On a phone the two panes stack: the detail pane shows once a task is picked. */}
+          <div
+            className={`min-h-0 min-w-0 flex-col overflow-y-auto rounded-lg border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-white/5 ${
+              selected ? "flex" : "hidden lg:flex"
+            }`}
+          >
             {selected ? (
               <>
                 <div className="flex items-start gap-2">
@@ -726,7 +747,7 @@ export function WorkBoard({
               <div className="flex flex-1 flex-col items-center justify-center text-center">
                 <X className="mb-2 h-6 w-6 text-black/20 dark:text-white/20" />
                 <p className="text-sm text-black/60 dark:text-white/60">
-                  Select a work item to see its thread and actions.
+                  Select a task to see its thread and actions.
                 </p>
               </div>
             )}

@@ -133,7 +133,8 @@ const REVIEWER_BOND = process.env.E2E_REVIEWER_BOND ?? "";
  */
 async function postBondIfAsked(page: Page) {
   if (REVIEWER_BOND === "") {
-    await expect(page.getByTestId("work-bond")).toContainText("None");
+    // No bond: the page shows no bond box at all.
+    await expect(page.getByTestId("work-bond")).toHaveCount(0);
     await expect(page.getByTestId("work-post-bond")).toHaveCount(0);
     return;
   }
@@ -168,7 +169,7 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   // Words that do not make a claim are refused before the wallet is asked.
   await filer.getByTestId("work-claim-submit").click();
   await expect(filer.getByTestId("work-claim-problem")).toContainText(
-    "short name",
+    "a title",
   );
   await filer.getByTestId("work-claim-name").fill("write-docs");
   await filer.getByTestId("work-claim-submit").click();

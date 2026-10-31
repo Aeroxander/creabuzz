@@ -99,7 +99,8 @@ export function saleAction(input: SaleActionInput): SaleAction | null {
   if (stage === "graduated") return hasAuction ? CLAIM : null;
   if (stage === "failed") return hasAuction ? REFUND : null;
   if (raise === "none") return null;
-  if (raise === "open") return BID;
+  // With no auction there is nowhere to put a bid, however open the record says the sale is.
+  if (raise === "open") return hasAuction ? BID : null;
   return hasAuction ? CLOSED : null;
 }
 

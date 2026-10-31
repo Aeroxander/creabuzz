@@ -22,8 +22,9 @@ export function IdeaOverview({ record }: { record: LaunchRecord }) {
       <Card className="p-4">
         <h2 className="text-sm font-bold">This is an idea</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          There is no token and no money involved yet. Say you would back it to
-          join the supporters chat and help it get going.
+          {raises
+            ? "There is no token and no money involved yet. Say you would back it to join the supporters chat and help it get going."
+            : "Say you're interested to join the supporters chat and help it get going."}
           {raises
             ? " If the founder opens a sale, you will be able to back it for real, and backers get their own room."
             : null}

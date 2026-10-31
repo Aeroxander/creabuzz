@@ -106,8 +106,11 @@ export function BoardView({
   proposalExtras,
   proposalStates,
   suggestPeopleFrom = null,
+  inPage = false,
 }: {
   channel: Channel;
+  /** On the board's own page, whose bar already names the board and holds the one back control. */
+  inPage?: boolean;
   /** A channel whose speakers are offered as people to add to a private board. */
   suggestPeopleFrom?: string | null;
   /** The post that is open, if any (kept in the address so it can be linked to). */
@@ -371,6 +374,7 @@ export function BoardView({
         key={open.id}
         me={me}
         needAccount={needAccount}
+        backInBar={inPage}
         onBack={() => onOpenPost(null)}
         post={open}
         profiles={profiles}
@@ -403,6 +407,7 @@ export function BoardView({
       channel={channel}
       me={me}
       moderation={listModeration}
+      nameInBar={inPage}
       onOpenPost={onOpenPost}
       profiles={profiles}
       records={records}

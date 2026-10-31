@@ -7,8 +7,39 @@ import { truncatePubkey } from "@/shared/lib/pubkey";
 
 import { explorerTxUrl } from "../lib/fund-flow";
 
-export function TxLink({ chainId, tx }: { chainId: number; tx: string }) {
+export function TxLink({
+  chainId,
+  tx,
+  label,
+  lead = "",
+}: {
+  chainId: number;
+  tx: string;
+  /**
+   * Words for the link instead of the hash, for main copy. With a label, a network with no public page shows nothing:
+   * a bare hash tells people nothing.
+   */
+  label?: string;
+  /** Text before the link (a separator), shown only when the link is. */
+  lead?: string;
+}) {
   const url = explorerTxUrl(chainId, tx);
+  if (label) {
+    return url ? (
+      <>
+        {lead}
+        <a
+          className="text-sky-700 underline dark:text-sky-300"
+          data-testid="tx-link"
+          href={url}
+          rel="noreferrer"
+          target="_blank"
+        >
+          {label}
+        </a>
+      </>
+    ) : null;
+  }
   return url ? (
     <a
       className="break-all text-sky-700 underline dark:text-sky-300"

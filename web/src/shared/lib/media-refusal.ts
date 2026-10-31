@@ -5,7 +5,11 @@
  *
  * Alias-free: `media-refusal.test.mjs` drives it under `node --test`.
  */
-import { type FailureWords, failureWords } from "./readable-error.ts";
+import {
+  errorMessage,
+  type FailureWords,
+  failureWords,
+} from "./readable-error.ts";
 
 /** Someone the server will not take uploads from: not on an invite-only server's list, or banned. */
 export const UPLOAD_NOT_ALLOWED_TEXT =
@@ -72,7 +76,7 @@ export function uploadFailureWords(
   fallback: string,
 ): FailureWords {
   const words = failureWords(error, fallback);
-  const raw = error instanceof Error ? error.message : String(error ?? "");
+  const raw = errorMessage(error);
   const media = mediaRefusalText(raw);
   return media === null ? words : { text: media, detail: raw.trim() };
 }

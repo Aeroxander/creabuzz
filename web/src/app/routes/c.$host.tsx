@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CommunityHomePage } from "@/features/communities/ui/CommunityHomePage";
+import { beyondContributorProjects } from "../lib/build-gates";
 
 /**
  * `view` names the surface the sidebar is showing, `page` a wiki page and `work`
@@ -38,9 +39,16 @@ const VIEWS: CommunityView[] = [
 
 export const Route = createFileRoute("/c/$host")({
   validateSearch: (search: Record<string, unknown>): CommunitySearch => {
-    const view = VIEWS.includes(search.view as CommunityView)
-      ? (search.view as CommunityView)
+    // The work board is called Tasks on screen; a link that says so opens it too.
+    const asked = search.view === "tasks" ? "work" : search.view;
+    const known = VIEWS.includes(asked as CommunityView)
+      ? (asked as CommunityView)
       : undefined;
+    // AI helpers and Org (helper budgets) are not in a contributor-only build: a link to them opens the rooms.
+    const view =
+      (known === "fleet" || known === "org") && !beyondContributorProjects()
+        ? undefined
+        : known;
     return {
       channel: typeof search.channel === "string" ? search.channel : undefined,
       message: typeof search.message === "string" ? search.message : undefined,

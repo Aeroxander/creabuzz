@@ -11,8 +11,9 @@ each run finds goes in [PILOT-REPORT.md](PILOT-REPORT.md).
 Before it: the hosted server with the web app, the terms and privacy note finished, two or three boards with real first
 posts (starter boards help), and you reachable while it runs. The server is invite-only, so each person needs their own
 invite link, and a picture upload has to load back before anyone is asked to add one (steps 3 and 4 of the contributor
-run's list below say how). The automated version of this run on a local server is `scripts/web-social-e2e.sh`; it does
-not replace this one.
+run's list below say how). The automated version of this run, on a local server set up as the pilot server is, is
+`scripts/web-social-hosted-e2e.sh` (the social suite with `HOSTED=1`, in the MVP gate's pilot set); it does not replace
+this one. The order of the hand checks before and during each run is in [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md).
 
 Ask each person to do these on their own, thinking aloud:
 
@@ -108,8 +109,9 @@ author without anyone explaining it.
    piece lapses. Either name a third reviewer, or choose "Let any one decide", and tell the reviewers which. With "Let
    any one decide" the first answer decides: one approval approves a piece, and one turn-down turns it down (anyone can
    then close it as turned down, and any deposit goes to the treasury), so the other reviewer cannot overrule it.
-10. **The automated versions**, green on the build you host: `scripts/mvp-gate.sh` (it includes the contributor, work,
-   paid-work and milestone journeys). They do not cover a reviewer acting from a passkey account or the name link against
+10. **The automated versions**, green on the build you host: `scripts/mvp-gate.sh --pilot` (the social suite as the
+   pilot server runs it, invite links, error reports, and the contributor, passkey-contributor, work and paid-work
+   journeys; the full `scripts/mvp-gate.sh` adds the raise, milestone and optional-feature journeys for later). They do not cover a reviewer acting from a passkey account or the name link against
    your real server, so in step 3's practice project have one reviewer approve from a passkey account, and have each
    reviewer's name show in the founder's reviewer picker (step 6).
 11. **The report**: a copy of [PILOT-REPORT.md](PILOT-REPORT.md) to fill in as it runs.

@@ -13,11 +13,8 @@ import { useLaunchUpdates } from "@/features/social/use-launch-updates";
 import { EMPTY_TALLY, type SortMode } from "../lib/ranking";
 import {
   type PinnedUpdatable,
-  generateThreadSummary,
   newestSummary,
   pinnedUpdates,
-  readSummaryOptIn,
-  writeSummaryOptIn,
 } from "../lib/launch-thread";
 import {
   useLaunchNotes,
@@ -46,7 +43,7 @@ function PinnedUpdates({ updates }: { updates: PinnedUpdatable[] }) {
         >
           <p className="flex flex-wrap items-center gap-2 text-2xs text-black/60 dark:text-white/60">
             <span className="rounded-full bg-black/10 px-2 py-0.5 font-medium text-black/70 dark:bg-white/15 dark:text-white/70">
-              Pinned · founder update
+              Pinned · team update
             </span>
             {relativeTime(update.createdAt)}
           </p>
@@ -55,9 +52,19 @@ function PinnedUpdates({ updates }: { updates: PinnedUpdatable[] }) {
               {update.title}
             </h3>
           ) : null}
-          <p className="mt-0.5 text-sm whitespace-pre-wrap text-black/80 dark:text-white/80">
+          <p className="mt-0.5 text-sm whitespace-pre-wrap break-words text-black/80 [overflow-wrap:anywhere] dark:text-white/80">
             {update.body}
           </p>
+          {update.replyTo ? (
+            <Link
+              className="mt-2 inline-block text-sm font-semibold text-primary-ink underline"
+              data-testid="pinned-update-reply"
+              params={{ id: update.replyTo }}
+              to="/social/post/$id"
+            >
+              Reply
+            </Link>
+          ) : null}
         </article>
       ))}
     </section>
@@ -69,9 +76,9 @@ function PinnedUpdates({ updates }: { updates: PinnedUpdatable[] }) {
  * record) posts here; everyone else replies and votes. A supporter's own post
  * about the launch carries its coordinate and shows up in the Creaton feed
  * with the launch's chip, so it is never lost — it just isn't pinned into the
- * team's channel. The founder's updates sit pinned at the top, and when the
- * founder has opted in, the launch's agent may leave a thread summary —
- * rendered as its own card, badged as the agent's words.
+ * team's channel. The founder's updates sit pinned at the top; one posted on
+ * Home carries a Reply link to its own thread. A thread summary someone
+ * published is rendered as its own card, badged as the agent's words.
  */
 export function LaunchDiscussion({
   record,
@@ -85,7 +92,6 @@ export function LaunchDiscussion({
   const { tallies } = useVoteTallies();
   const [mode, setMode] = useState<SortMode>("hot");
   const me = existingUserPubkey();
-  const isFounder = me === record.author;
   const teamKeys = useMemo(
     () => new Set([record.author, ...record.team.map((t) => t.pubkey)]),
     [record.author, record.team],
@@ -106,9 +112,12 @@ export function LaunchDiscussion({
         createdAt: u.at,
         title: "",
         body: u.event.content.replace(/\n*nostr:naddr1\w+/g, "").trim(),
+        replyTo: u.id,
       })),
     [launchUpdates],
   );
+  const pinned = pinnedUpdates([...updates, ...pinnedFromPosts]);
+  const pinnedCount = pinned.length;
   // Top-level posts from the team, and every reply under them.
   const teamNotes = useMemo(() => {
     const all = notes.data ?? [];
@@ -121,29 +130,11 @@ export function LaunchDiscussion({
         !pinned.has(n.id) && (n.rootId ? roots.has(n.rootId) : roots.has(n.id)),
     );
   }, [notes.data, teamKeys, launchUpdates]);
-  const [optIn, setOptIn] = useState(() => readSummaryOptIn(coord));
   const { summaries } = useLaunchSummaries(coord);
   const summary = newestSummary(summaries);
   const nameOf = useUserNames(summary ? [summary.author] : []);
-  const [note, setNote] = useState<string | null>(null);
-
-  const toggleOptIn = () => {
-    const next = !optIn;
-    writeSummaryOptIn(coord, next);
-    setOptIn(next);
-  };
-
-  const summarize = async () => {
-    setNote(null);
-    try {
-      await generateThreadSummary({
-        launchCoord: coord,
-        thread: (notes.data ?? []).map((n) => n.event),
-      });
-    } catch (error) {
-      setNote(error instanceof Error ? error.message : String(error));
-    }
-  };
+  // Whether anything pinned takes a reply: a team post made on Home does, a record-only update does not.
+  const replyable = pinned.some((update) => update.replyTo);
 
   return (
     <section aria-label="Discussion" data-testid="launch-discussion">
@@ -157,46 +148,11 @@ export function LaunchDiscussion({
             testId="launch-vote"
           />
           <span className="text-sm text-black/60 dark:text-white/60">
-            Support this launch
+            Support this project
           </span>
         </div>
-        {isFounder ? (
-          <div className="flex items-center gap-2">
-            <button
-              aria-checked={optIn}
-              className="rounded-full border border-black/15 px-3 py-1 text-xs font-medium text-black/70 hover:bg-black/5 dark:border-white/15 dark:text-white/70 dark:hover:bg-white/10"
-              data-testid="summary-optin"
-              onClick={toggleOptIn}
-              role="switch"
-              type="button"
-            >
-              Agent thread summaries
-            </button>
-            {optIn ? (
-              <button
-                className="rounded-full bg-black px-3 py-1 text-xs font-medium text-white dark:bg-white dark:text-black"
-                data-testid="summary-generate"
-                onClick={() => void summarize()}
-                type="button"
-              >
-                Summarize thread
-              </button>
-            ) : null}
-          </div>
-        ) : null}
       </div>
-      {note ? (
-        <p
-          className="mt-2 text-2xs text-black/60 dark:text-white/60"
-          data-testid="summary-note"
-          role="status"
-        >
-          {note}
-        </p>
-      ) : null}
-      <PinnedUpdates
-        updates={pinnedUpdates([...updates, ...pinnedFromPosts])}
-      />
+      <PinnedUpdates updates={pinned} />
       {summary ? (
         <article
           className="mt-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3"
@@ -214,7 +170,7 @@ export function LaunchDiscussion({
         {isTeam ? (
           <Composer
             launch={launchRef(record)}
-            placeholder={`Post to ${record.name}'s backers`}
+            placeholder={`Tell people how ${record.name} is going`}
             testId="launch-composer"
           />
         ) : (
@@ -222,13 +178,15 @@ export function LaunchDiscussion({
             className="glass rounded-xl border px-4 py-3 text-sm text-muted-foreground"
             data-testid="launch-team-only"
           >
-            The team posts here; you can reply to any post and vote. Want to
-            share your own take on {record.name}?{" "}
+            {replyable
+              ? "The team posts here, and you can reply to their posts. "
+              : "The team posts here. "}
+            Want to share your own take on {record.name}?{" "}
             <Link
               className="font-semibold text-primary-ink underline"
               to="/social"
             >
-              Post it in the Creaton feed
+              Post it on Home
             </Link>
             .
           </p>
@@ -274,7 +232,11 @@ export function LaunchDiscussion({
                 className="rounded-xl border border-dashed border-black/15 p-6 text-center text-sm text-black/60 dark:border-white/15 dark:text-white/60"
                 data-testid="discussion-empty"
               >
-                The team hasn't posted about {record.name} yet.
+                {replyable
+                  ? "No replies yet. Reply to an update above."
+                  : pinnedCount > 0
+                    ? "No replies yet."
+                    : `The team hasn't posted about ${record.name} yet.`}
               </p>
             }
             mode={mode}

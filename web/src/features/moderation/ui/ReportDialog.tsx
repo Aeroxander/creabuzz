@@ -1,5 +1,5 @@
 /**
- * Report a message, a post or a person to this community's moderators.
+ * Report a message, a post or a person to the community's moderators.
  *
  * Who reads it depends on where it is sent from (`setting`): a board post's report is also read by that board's
  * moderators, without the reporter's name; a person reported from a private conversation is reported without the
@@ -13,7 +13,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Modal } from "@/features/launchpad/ui/Modal";
+import { roleOf } from "@/features/communities/lib/access";
+import { useCommunityPeople } from "@/features/communities/use-access";
+import { MODAL_FOOTER_CLASS, Modal } from "@/features/launchpad/ui/Modal";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { Button } from "@/shared/ui/button";
 
@@ -44,7 +46,11 @@ export function ReportDialog({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const wording = reportWording(setting);
+  const { people } = useCommunityPeople();
+  const reported =
+    target.kind === "person" ? target.pubkey : target.authorPubkey;
+  const reportingOwner = roleOf(people, reported) === "owner";
+  const wording = reportWording(setting, { reportingOwner });
 
   const send = async () => {
     if (type === null) return;
@@ -76,6 +82,11 @@ export function ReportDialog({
       >
         {wording.privacy}
       </p>
+      {wording.owner ? (
+        <p className="mt-1.5 text-sm" data-testid="report-owner">
+          {wording.owner}
+        </p>
+      ) : null}
       {wording.evidence ? (
         <p className="mt-1.5 text-sm" data-testid="report-evidence">
           {wording.evidence}
@@ -141,7 +152,7 @@ export function ReportDialog({
             {error}
           </p>
         ) : null}
-        <div className="flex justify-end gap-2">
+        <div className={`flex justify-end gap-2 ${MODAL_FOOTER_CLASS}`}>
           <Button onClick={onClose} size="sm" type="button" variant="ghost">
             Cancel
           </Button>

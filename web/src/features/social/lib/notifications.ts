@@ -51,6 +51,8 @@ export interface BoardRef {
   postId: string;
   /** For an up vote, your post's title or your reply; for a reply, what they wrote. */
   text: string;
+  /** The title of the post at the top of the conversation, when it is one of yours (so its title is known). */
+  postTitle: string | null;
 }
 
 export interface NotificationItem {
@@ -95,24 +97,27 @@ export function buildBoardNotifications(
 ): NotificationItem[] {
   const own = new Map<
     string,
-    { boardId: string; postId: string; text: string }
+    { boardId: string; postId: string; text: string; postTitle: string | null }
   >();
   for (const e of mine) {
     if (e.pubkey !== viewer) continue;
     const boardId = tagOf(e.tags, "h");
     if (!boardId) continue;
     if (e.kind === KIND_BOARD_POST) {
-      own.set(e.id, {
-        boardId,
-        postId: e.id,
-        text: splitPost(e.content).title,
-      });
+      const { title } = splitPost(e.content);
+      own.set(e.id, { boardId, postId: e.id, text: title, postTitle: title });
     } else if (e.kind === KIND_BOARD_REPLY) {
       const target = boardReplyTarget(e.tags);
       if (target)
-        own.set(e.id, { boardId, postId: target.postId, text: e.content });
+        own.set(e.id, {
+          boardId,
+          postId: target.postId,
+          text: e.content,
+          postTitle: null,
+        });
     }
   }
+  const titleOf = (postId: string) => own.get(postId)?.postTitle ?? null;
   const seen = new Set<string>();
   const items: NotificationItem[] = [];
   for (const e of related) {
@@ -133,6 +138,7 @@ export function buildBoardNotifications(
           boardId: answered.boardId,
           postId: answered.postId,
           text: e.content,
+          postTitle: titleOf(answered.postId),
         },
       });
     } else if (e.kind === KIND_BOARD_VOTE && e.content === "+") {
@@ -146,7 +152,7 @@ export function buildBoardNotifications(
         at: e.created_at,
         targetId,
         noteId: null,
-        board: voted,
+        board: { ...voted, postTitle: titleOf(voted.postId) },
       });
     }
   }

@@ -166,63 +166,6 @@ export function buildKernelInitCode(options: {
 }
 
 /**
- * Kernel nonce (`src/lib/Utils.sol parseNonce`): `[1 byte vMode | 1 byte
- * vType | 20 bytes vId | 2 bytes nonceKey | 8 bytes sequence]` — the 24-byte
- * key ‖ 8-byte sequence split of the ERC-4337 nonce
- * (`NonceManager.getNonce`: `key = uint192(nonce >> 64)`). Defaults give the
- * standard-mode ROOT validation (nonce `0x0`) whose signature is verified by
- * the root validator (the first installed validator — the WebAuthnValidator
- * for this account).
- */
-export function buildKernelNonce(options?: {
-  /** 0x00 standard (default), 0x08 enable mode — `Types.sol ValidationMode`. */
-  validationMode?: number;
-  /** 0x00 ROOT (default) routes to the root validator; 0x01 = installed validator. */
-  validationType?: number;
-  /** 20-byte validator address (vId); ignored for ROOT. */
-  validator?: string;
-  /** 2-byte nonce key within the validation. */
-  nonceKey?: number;
-  /** 8-byte sequence within the validation (the ERC-4337 low 64 bits). */
-  sequence?: bigint;
-}): string {
-  const validationMode = options?.validationMode ?? 0;
-  const validationType = options?.validationType ?? 0;
-  const nonceKey = options?.nonceKey ?? 0;
-  const sequence = options?.sequence ?? 0n;
-  if (validationMode < 0 || validationMode > 0xff) {
-    throw new Error("aa-kernel: validationMode must be one byte");
-  }
-  if (validationType < 0 || validationType > 0xff) {
-    throw new Error("aa-kernel: validationType must be one byte");
-  }
-  if (nonceKey < 0 || nonceKey > 0xffff) {
-    throw new Error("aa-kernel: nonceKey must be two bytes");
-  }
-  if (sequence < 0n || sequence > 0xffffffffffffffffn) {
-    throw new Error("aa-kernel: sequence must be eight bytes");
-  }
-  const validator = options?.validator ?? `0x${"00".repeat(20)}`;
-  if (!/^0x[0-9a-fA-F]{40}$/.test(validator)) {
-    throw new Error(
-      `aa-kernel: validator must be a 20-byte address, got ${validator}`,
-    );
-  }
-  if (validationType === 0 && validator !== `0x${"00".repeat(20)}`) {
-    throw new Error(
-      "aa-kernel: ROOT nonce (validationType 0) takes no validator address",
-    );
-  }
-  const hex =
-    validationMode.toString(16).padStart(2, "0") +
-    validationType.toString(16).padStart(2, "0") +
-    validator.slice(2) +
-    nonceKey.toString(16).padStart(4, "0") +
-    sequence.toString(16).padStart(16, "0");
-  return `0x${BigInt(`0x${hex}`).toString(16)}`;
-}
-
-/**
  * Query the deterministic account address from the factory itself
  * (`KernelFactory.getAddress`); an alternative to the `getSenderAddress`
  * revert flow for callers that already talk to the factory.

@@ -1,8 +1,11 @@
-import { Check, Copy, Wallet } from "lucide-react";
+import { Check, Copy, Fingerprint, Wallet } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { CHAIN_PRESETS } from "@/features/launchpad/chain";
+import { shortAddress } from "@/features/launchpad/lib/record-people";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { Modal } from "@/features/launchpad/ui/Modal";
+import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { Button } from "@/shared/ui/button";
 
 import {
@@ -10,6 +13,8 @@ import {
   publishPendingWalletProof,
   removePublicWallet,
 } from "../lib/public-wallet";
+import { explainPasskeyError } from "../lib/passkey";
+import { hasPasskeyIdentity, setupPasskey } from "../lib/passkey-identity";
 import { linkPasskeyAccount, passkeyAccountSetup } from "../lib/passkey-wallet";
 import { signInWithWallet } from "../lib/siwe";
 import { walletChainChecker } from "../lib/wallet-chain";
@@ -17,7 +22,6 @@ import { resolvePaymentWalletChecked } from "../lib/wallet-proof";
 import { usePaymentWallet } from "../use-payment-wallet";
 import { SignRecovery } from "./SignRecovery";
 
-/** Public, dual-signed payment address on a person's social profile. */
 /** A wallet that did not connect, in words: what happened and what to do next. */
 function walletProblem(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code;
@@ -33,6 +37,14 @@ function walletProblem(error: unknown): string {
     : "Could not connect the wallet. Try again.";
 }
 
+/** The network a payment wallet is on, in plain words: a test network is just that, whatever it is called. */
+function networkWords(chainId: number): string {
+  const preset = CHAIN_PRESETS.find((p) => p.chainId === chainId);
+  if (!preset) return `Network ${chainId}`;
+  return preset.mainnet ? preset.label : "Test network";
+}
+
+/** Public, dual-signed payment address on a person's social profile. */
 export function PaymentWalletCard({
   pubkey,
   isSelf,
@@ -47,6 +59,10 @@ export function PaymentWalletCard({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(() => readPendingWalletProof(pubkey));
   const [copied, setCopied] = useState(false);
+  // Bumped after passkey sign-in is set up here, so the dialog reads the new passkey account.
+  const [, setPasskeyGeneration] = useState(0);
+  const [settingUpPasskey, setSettingUpPasskey] = useState(false);
+  const profiles = useProfiles(isSelf ? [pubkey] : []);
   const running = useRef(false);
   const result = query.data;
   const wallet = result?.state === "verified" ? result.wallet : null;
@@ -73,6 +89,23 @@ export function PaymentWalletCard({
     }
   };
   const passkeySetup = passkeyAccountSetup();
+  // An account made without a passkey has no passkey account to be paid at: the way to one is right here.
+  const canSetUpPasskey = !passkeySetup.ok && !hasPasskeyIdentity();
+  const setUpPasskey = async () => {
+    if (running.current) return;
+    running.current = true;
+    setSettingUpPasskey(true);
+    setError(null);
+    try {
+      await setupPasskey(resolveUserName(profiles.data?.[pubkey], pubkey));
+      setPasskeyGeneration((n) => n + 1);
+    } catch (e) {
+      setError(explainPasskeyError(e));
+    } finally {
+      running.current = false;
+      setSettingUpPasskey(false);
+    }
+  };
   // The newest record this account has already published, so a new link replaces it.
   const newerThan = Math.max(
     pending?.created_at ?? 0,
@@ -156,14 +189,19 @@ export function PaymentWalletCard({
       ) : wallet ? (
         <>
           <p className="mt-2 text-xs text-muted-foreground">
-            {chain?.label ?? `Network ${wallet.chain}`}
+            {networkWords(wallet.chain)}
           </p>
+          {/* The start and end to read at a glance; the whole address for screen readers, Copy and hover. */}
           <code
-            className="mt-1 block break-all text-sm"
-            data-testid="payment-wallet-address"
+            aria-hidden
+            className="mt-1 block text-sm"
+            title={wallet.address}
           >
-            {wallet.address}
+            {shortAddress(wallet.address)}
           </code>
+          <span className="sr-only" data-testid="payment-wallet-address">
+            {wallet.address}
+          </span>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button
               aria-label="Copy payment address"
@@ -190,15 +228,17 @@ export function PaymentWalletCard({
                 disabled={busy}
                 onClick={() => setDialog("remove")}
                 size="sm"
-                variant="ghost"
+                variant="outline"
               >
-                Remove public wallet
+                Disconnect
               </Button>
             ) : null}
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Before sending anything, check you are on the same network.
-          </p>
+          {raisesOffered() ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Before sending anything, check you are on the same network.
+            </p>
+          ) : null}
         </>
       ) : (
         <p className="mt-2 text-muted-foreground">
@@ -265,14 +305,14 @@ export function PaymentWalletCard({
           label={
             dialog === "link"
               ? "Connect payment wallet"
-              : "Remove public wallet"
+              : "Disconnect payment wallet"
           }
           onClose={close}
         >
           <h2 className="text-lg font-semibold">
             {dialog === "link"
               ? "Connect your payment wallet"
-              : "Remove your public wallet?"}
+              : "Disconnect your payment wallet?"}
           </h2>
           {dialog === "link" ? (
             <>
@@ -280,24 +320,54 @@ export function PaymentWalletCard({
                 Projects send what you earn to this wallet. Connecting it does
                 not let anyone spend from it.
               </p>
-              <label className="mt-4 flex items-start gap-2 text-sm">
+              <p className="mt-4 text-sm" id="payment-wallet-public">
+                Projects pay you at a public address: anyone can see its
+                history.
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-sm font-medium">
                 <input
+                  aria-describedby="payment-wallet-public"
                   checked={consent}
-                  className="mt-1"
                   disabled={busy}
                   onChange={(e) => setConsent(e.target.checked)}
                   type="checkbox"
                 />
-                <span>
-                  Show the wallet address on my profile. Anyone can then see
-                  this wallet's history.
-                </span>
+                I understand
               </label>
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p
+                className="mt-3 text-xs text-muted-foreground"
+                data-testid="payment-wallet-how"
+              >
                 {passkeySetup.ok
                   ? "Use your passkey account, or a wallet in this browser. The first time, your passkey account is set up for you at no cost."
-                  : "Use a wallet in this browser."}
+                  : canSetUpPasskey
+                    ? "Set up passkey sign-in to be paid at your passkey account, or use a wallet in this browser."
+                    : `${passkeySetup.reason} You can use a wallet in this browser.`}
               </p>
+              {canSetUpPasskey ? (
+                <Button
+                  className="mt-2"
+                  data-testid="payment-wallet-setup-passkey"
+                  disabled={busy || settingUpPasskey}
+                  onClick={() => void setUpPasskey()}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Fingerprint aria-hidden className="h-3.5 w-3.5" />
+                  {settingUpPasskey
+                    ? "Waiting for your passkey…"
+                    : "Set up passkey sign-in"}
+                </Button>
+              ) : null}
+              {!consent ? (
+                <p
+                  className="mt-3 text-xs text-muted-foreground"
+                  data-testid="payment-wallet-consent-hint"
+                  id="payment-wallet-consent-hint"
+                >
+                  Tick "I understand" to continue.
+                </p>
+              ) : null}
             </>
           ) : (
             <p className="mt-2 text-sm text-muted-foreground">
@@ -319,6 +389,9 @@ export function PaymentWalletCard({
             </Button>
             {dialog === "link" && passkeySetup.ok ? (
               <Button
+                aria-describedby={
+                  consent ? undefined : "payment-wallet-consent-hint"
+                }
                 data-testid="link-passkey-account"
                 disabled={busy || !consent}
                 onClick={() =>
@@ -332,7 +405,14 @@ export function PaymentWalletCard({
               </Button>
             ) : null}
             <Button
-              disabled={busy || (dialog === "link" && !consent)}
+              aria-describedby={
+                dialog === "link" && !consent
+                  ? "payment-wallet-consent-hint"
+                  : undefined
+              }
+              disabled={
+                busy || settingUpPasskey || (dialog === "link" && !consent)
+              }
               onClick={() =>
                 void run(async () => {
                   if (dialog === "remove" && wallet)
@@ -349,7 +429,7 @@ export function PaymentWalletCard({
                 ? "Waiting for signatures…"
                 : dialog === "link"
                   ? "Connect wallet"
-                  : "Remove public wallet"}
+                  : "Disconnect"}
             </Button>
           </div>
         </Modal>

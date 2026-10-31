@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 
 import { resolveUserName } from "@/features/profiles/use-profiles";
+
+import { avatarName, bylineName } from "../lib/person-name";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { ServerImage } from "@/shared/ui/ServerImage";
@@ -160,7 +162,7 @@ function QuoteCard({ id }: { id: string }) {
       </div>
     );
   }
-  const name = resolveUserName(people[author], author);
+  const name = bylineName(people[author]);
   return (
     <div
       className="relative z-10 mt-3 overflow-hidden rounded-xl border border-black/10 p-3 transition-colors hover:bg-black/[0.03] dark:border-white/10 dark:hover:bg-white/[0.04]"
@@ -169,7 +171,7 @@ function QuoteCard({ id }: { id: string }) {
       <div className="flex items-center gap-2 text-sm">
         <UserAvatar
           avatarUrl={people[author]?.picture ?? null}
-          displayName={name}
+          displayName={avatarName(people[author])}
           size="xs"
         />
         <Link

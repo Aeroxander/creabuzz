@@ -12,6 +12,8 @@ import {
 } from "@/features/profiles/use-profiles";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 
+import { parsePersonOrLink } from "@/features/board/lib/person-link";
+
 import { parseEntity } from "../lib/entity";
 import { useUserSearch } from "../use-discovery";
 import { usePeople } from "../use-people";
@@ -40,12 +42,15 @@ export function PersonSearch({
   const [query, setQuery] = useState("");
   const following = useFollowing(me).data ?? [];
   const q = query.trim();
-  const direct = parseEntity(q);
+  // A pasted key or profile link finds that person too, without the box asking for one.
+  const entity = parseEntity(q);
+  const directKey =
+    entity?.type === "pubkey" ? entity.pubkey : parsePersonOrLink(q);
   const found = useUserSearch(q);
   const followedPeople = usePeople(following.slice(0, 100));
 
   const matches = [
-    ...(direct?.type === "pubkey" ? [direct.pubkey] : []),
+    ...(directKey ? [directKey] : []),
     ...Object.entries(followedPeople)
       .filter(([, p]) =>
         q === ""
@@ -70,7 +75,7 @@ export function PersonSearch({
         data-testid={inputTestId}
         id={inputId}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search for someone, or paste their public key"
+        placeholder="Search by name"
         ref={inputRef}
         value={query}
       />
@@ -79,15 +84,15 @@ export function PersonSearch({
           className="mt-2 px-2 text-xs text-red-700 dark:text-red-300"
           role="alert"
         >
-          Couldn't search just now. Try again, or paste their public key.
+          Couldn't search just now. Try again, or paste their profile link.
         </p>
       ) : searched && matches.length === 0 ? (
         <p
           className="mt-2 px-2 text-xs text-black/60 dark:text-white/60"
           role="status"
         >
-          No one by that name here. Check the spelling, or paste their public
-          key.
+          No one by that name here. Check the spelling, or paste their profile
+          link.
         </p>
       ) : null}
       <ul className="mt-2 max-h-72 overflow-y-auto">

@@ -114,6 +114,11 @@ export function ReviewActions({
           return;
         }
       }
+      // The claim this is about, found now: once the verdict lands the page reads the work again, and this form may be
+      // gone before the send resolves.
+      const card = form.current?.closest<HTMLElement>(
+        '[data-testid="work-claim"]',
+      );
       if (
         await onSend(
           `object-${claimId}`,
@@ -123,9 +128,6 @@ export function ReviewActions({
       ) {
         // The form and the button that opened it both go away (the verdict is given), so focus moves to the claim it
         // was about rather than falling to the page.
-        const card = form.current?.closest<HTMLElement>(
-          '[data-testid="work-claim"]',
-        );
         setOpen(false);
         setReason("");
         requestAnimationFrame(() => card?.focus());

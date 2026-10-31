@@ -9,6 +9,7 @@
 import * as React from "react";
 
 import { useAgentRoster } from "@/features/fleet/use-agent-roster";
+import { beyondContributorProjects } from "@/app/lib/build-gates";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import {
@@ -257,8 +258,8 @@ export function CreateChannelDialog({
           </AlertDialogTitle>
           <AlertDialogDescription>
             {channelType === "forum"
-              ? "A board is where people post topics and reply under them. It stays easy to find later. You can add agents and teams now or later."
-              : "Channels are where your community talks. You can add agents and teams now or later."}
+              ? "A board is where people post topics and reply under them. It stays easy to find later. You can add AI helpers and teams now or later."
+              : "Channels are where your community talks. You can add AI helpers and teams now or later."}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -274,7 +275,7 @@ export function CreateChannelDialog({
                 setName(e.target.value);
                 setFormError(null);
               }}
-              placeholder="design"
+              placeholder="e.g. design"
               autoComplete="off"
               required
             />
@@ -296,7 +297,7 @@ export function CreateChannelDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label
                 className="text-sm font-medium"
@@ -385,82 +386,87 @@ export function CreateChannelDialog({
             )}
           </div>
 
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Who joins</legend>
-            <p className="text-xs text-black/60 dark:text-white/60">
-              Agents join as bots. You can add or remove members later.
-            </p>
-            {roster.loading ? (
+          {/* AI helpers need an AI service a contributor-only build's server does not run: no picker for them there. */}
+          {beyondContributorProjects() ? (
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Who joins</legend>
               <p className="text-xs text-black/60 dark:text-white/60">
-                Loading agents…
+                AI helpers join as members. You can add or remove them later.
               </p>
-            ) : roster.loadError != null ? (
-              <p
-                className="text-xs text-amber-700 dark:text-amber-300"
-                role="alert"
-              >
-                Couldn't load the agent roster. You can still create the channel
-                and add members later.
-              </p>
-            ) : agents.length === 0 ? (
-              <p className="text-xs text-black/60 dark:text-white/60">
-                No agents in this community yet.
-              </p>
-            ) : (
-              <div className="max-h-48 space-y-2 overflow-y-auto">
-                {[...teams.entries()].map(([team, teamAgents]) => {
-                  const teamKey = team || "";
-                  const allOn = teamAgents.every((a) =>
-                    selected.has(a.pubkey.toLowerCase()),
-                  );
-                  return (
-                    <div key={teamKey || "unassigned"} className="space-y-1">
-                      <label className="flex items-center gap-2 text-sm font-medium">
-                        <input
-                          type="checkbox"
-                          checked={allOn}
-                          onChange={(e) =>
-                            toggleTeam(teamKey, e.target.checked)
-                          }
-                        />
-                        {team || "Not on a team"}
-                        <span className="text-xs text-black/50 dark:text-white/50">
-                          {teamAgents.length}{" "}
-                          {teamAgents.length === 1 ? "agent" : "agents"}
-                        </span>
-                      </label>
-                      <div className="ml-6 space-y-0.5">
-                        {teamAgents.map((agent) => {
-                          const key = agent.pubkey.toLowerCase();
-                          return (
-                            <label
-                              key={agent.id}
-                              className="flex items-center gap-2 text-sm"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selected.has(key)}
-                                onChange={(e) =>
-                                  toggleAgent(agent.pubkey, e.target.checked)
-                                }
-                              />
-                              <span className="truncate">{agent.name}</span>
-                            </label>
-                          );
-                        })}
+              {roster.loading ? (
+                <p className="text-xs text-black/60 dark:text-white/60">
+                  Loading AI helpers…
+                </p>
+              ) : roster.loadError != null ? (
+                <p
+                  className="text-xs text-amber-700 dark:text-amber-300"
+                  role="alert"
+                >
+                  Couldn't load the AI helpers. You can still create the channel
+                  and add them later.
+                </p>
+              ) : agents.length === 0 ? (
+                <p className="text-xs text-black/60 dark:text-white/60">
+                  No AI helpers in this community yet.
+                </p>
+              ) : (
+                <div className="max-h-48 space-y-2 overflow-y-auto">
+                  {[...teams.entries()].map(([team, teamAgents]) => {
+                    const teamKey = team || "";
+                    const allOn = teamAgents.every((a) =>
+                      selected.has(a.pubkey.toLowerCase()),
+                    );
+                    return (
+                      <div key={teamKey || "unassigned"} className="space-y-1">
+                        <label className="flex items-center gap-2 text-sm font-medium">
+                          <input
+                            type="checkbox"
+                            checked={allOn}
+                            onChange={(e) =>
+                              toggleTeam(teamKey, e.target.checked)
+                            }
+                          />
+                          {team || "Not on a team"}
+                          <span className="text-xs text-black/50 dark:text-white/50">
+                            {teamAgents.length}{" "}
+                            {teamAgents.length === 1
+                              ? "AI helper"
+                              : "AI helpers"}
+                          </span>
+                        </label>
+                        <div className="ml-6 space-y-0.5">
+                          {teamAgents.map((agent) => {
+                            const key = agent.pubkey.toLowerCase();
+                            return (
+                              <label
+                                key={agent.id}
+                                className="flex items-center gap-2 text-sm"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selected.has(key)}
+                                  onChange={(e) =>
+                                    toggleAgent(agent.pubkey, e.target.checked)
+                                  }
+                                />
+                                <span className="truncate">{agent.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {unresolvedSeats.length > 0 && (
-              <p className="text-xs text-amber-700 dark:text-amber-300">
-                Some template members weren't found:{" "}
-                {unresolvedSeats.join(", ")}.
-              </p>
-            )}
-          </fieldset>
+                    );
+                  })}
+                </div>
+              )}
+              {unresolvedSeats.length > 0 && (
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Some template members weren't found:{" "}
+                  {unresolvedSeats.join(", ")}.
+                </p>
+              )}
+            </fieldset>
+          ) : null}
 
           {formError && (
             <FailureNote failure={formError} testId="create-channel-error" />
@@ -490,13 +496,28 @@ export function CreateChannelDialog({
           )}
         </form>
 
-        <AlertDialogFooter>
+        <AlertDialogFooter className="sm:items-center">
+          {/* Why the button is not ready yet, beside it. */}
+          {name.trim().length === 0 && !isCreating ? (
+            <p
+              className="text-xs text-black/60 sm:mr-auto dark:text-white/60"
+              data-testid="create-channel-why"
+              id="create-channel-why"
+            >
+              Give it a name first.
+            </p>
+          ) : null}
           <AlertDialogCancel disabled={isCreating}>
             {pendingMembers && pendingMembers.length > 0 ? "Done" : "Cancel"}
           </AlertDialogCancel>
           <Button
             type="submit"
             form={FORM_ID}
+            aria-describedby={
+              name.trim().length === 0 && !isCreating
+                ? "create-channel-why"
+                : undefined
+            }
             disabled={name.trim().length === 0 || isCreating}
             data-testid="submit-create-channel"
           >

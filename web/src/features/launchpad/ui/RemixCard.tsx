@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 
 import { Card } from "@/shared/ui/card";
 import { offersLine, remixFit } from "../lib/remix";
+import { remixesOffered } from "../lib/remixes-offered";
 import type { Launch } from "../models";
 import { useLaunches } from "../use-launches";
 import { RemixBondPanel } from "./RemixBondPanel";
@@ -9,9 +10,13 @@ import { RemixBondPanel } from "./RemixBondPanel";
 /**
  * Where a project comes from and what was built on it (N11): the project it is built on, whether its licence fits that
  * project's, the projects built on this one, and this project's own terms. No money moves; nothing here is enforced.
- * Shown only when there is something to say.
+ * Shown only when there is something to say, and never in a contributor-only build (`remixesOffered`).
  */
 export function RemixCard({ launch }: { launch: Launch }) {
+  return remixesOffered() ? <RemixCardBody launch={launch} /> : null;
+}
+
+function RemixCardBody({ launch }: { launch: Launch }) {
   const { record } = launch;
   const launches = useLaunches();
   const all = launches.data ?? [];

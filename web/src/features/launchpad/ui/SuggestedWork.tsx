@@ -22,6 +22,11 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
 import { askForShare, proposalProblem, shareAfter } from "../lib/work-proposal";
+import {
+  cannotOpenDecision,
+  type ProposalPower,
+  whoMayOpen,
+} from "../lib/proposal-gate";
 import type { SponsorIntent } from "../lib/sponsor";
 import { type ProposalRow, useWorkProposals } from "../use-work-proposals";
 import { TextAreaField, TextField } from "./decision-fields";
@@ -125,7 +130,7 @@ function SuggestForm({
       <TextField
         label="What you will do"
         onChange={setTitle}
-        placeholder="Translate the docs to Spanish"
+        placeholder="e.g. Translate the docs to Spanish"
         testId="suggest-title"
         value={title}
       />
@@ -140,7 +145,7 @@ function SuggestForm({
         hint="A word or two; the work area's name if it is approved."
         label="Short name"
         onChange={setName}
-        placeholder="Spanish guide"
+        placeholder="e.g. Spanish guide"
         testId="suggest-name"
         value={name}
       />
@@ -148,7 +153,7 @@ function SuggestForm({
         hint="The reviewers will check your work against these words."
         label="What finished work looks like"
         onChange={setCheck}
-        placeholder="All twelve pages are translated and merged"
+        placeholder="e.g. All twelve pages are translated and published"
         testId="suggest-check"
         value={check}
       />
@@ -158,25 +163,27 @@ function SuggestForm({
             inputMode="decimal"
             label="You ask for"
             onChange={setAmount}
-            placeholder={unit === "percent" ? "5" : "5000"}
+            placeholder={unit === "percent" ? "e.g. 5" : "e.g. 5000"}
             testId="suggest-amount"
             value={amount}
           />
         </div>
-        <fieldset className="m-0 mb-1 flex rounded-md border p-0.5">
-          <legend className="sr-only">As</legend>
-          {(["percent", "shares"] as const).map((key) => (
-            <button
-              aria-pressed={unit === key}
-              className={`rounded px-2.5 py-1 text-xs font-medium ${unit === key ? "bg-secondary text-foreground" : "text-muted-foreground"}`}
-              data-testid={`suggest-unit-${key}`}
-              key={key}
-              onClick={() => setUnit(key)}
-              type="button"
-            >
-              {key === "percent" ? "% of the project" : "Shares"}
-            </button>
-          ))}
+        <fieldset className="m-0 border-0 p-0">
+          <legend className="mb-1 text-sm font-medium">Ask in</legend>
+          <div className="flex rounded-md border p-0.5">
+            {(["percent", "shares"] as const).map((key) => (
+              <button
+                aria-pressed={unit === key}
+                className={`rounded px-2.5 py-1 text-xs font-medium ${unit === key ? "bg-secondary text-foreground" : "text-muted-foreground"}`}
+                data-testid={`suggest-unit-${key}`}
+                key={key}
+                onClick={() => setUnit(key)}
+                type="button"
+              >
+                {key === "percent" ? "% of the project" : "Shares"}
+              </button>
+            ))}
+          </div>
         </fieldset>
       </div>
       <p
@@ -251,11 +258,16 @@ function ProposalCard({
   name,
   supplyWhole,
   onSponsor,
+  vote,
+  onSeeVote,
 }: {
   row: ProposalRow;
   name: string;
   supplyWhole: bigint | null;
   onSponsor?: (intent: SponsorIntent) => void;
+  /** The open vote that would approve it, when there is one. */
+  vote: string | null;
+  onSeeVote?: (decisionId: string) => void;
 }) {
   return (
     <li
@@ -283,8 +295,7 @@ function ProposalCard({
         </span>
       </div>
       <p className="mt-0.5 text-xs text-muted-foreground">
-        Suggested by {name} · {shortRelativeTime(row.createdAt)} · as “
-        {row.name}”
+        Suggested by {name} · {shortRelativeTime(row.createdAt)}
       </p>
       {row.body ? (
         <p className="mt-1 line-clamp-3 text-sm">{row.body}</p>
@@ -300,6 +311,26 @@ function ProposalCard({
         >
           <CheckCircle2 aria-hidden className="h-4 w-4" /> Approved as a work
           area. {name} can submit work in it below.
+        </p>
+      ) : vote ? (
+        <p
+          className="mt-2 text-sm text-muted-foreground"
+          data-testid="work-proposal-voting"
+        >
+          Being voted on
+          {onSeeVote ? (
+            <>
+              {" · "}
+              <button
+                className="underline"
+                data-testid="work-proposal-see-vote"
+                onClick={() => onSeeVote(vote)}
+                type="button"
+              >
+                See the vote
+              </button>
+            </>
+          ) : null}
         </p>
       ) : onSponsor ? (
         <Button
@@ -331,7 +362,15 @@ export function SuggestedWork({
   totalShares,
   approved,
   onSponsor,
+  power,
+  voteFor,
+  onSeeVote,
 }: {
+  /** Who may open a vote, from the decisions read; undefined while it is read. */
+  power?: ProposalPower;
+  /** The open vote that would approve a suggestion, or null. */
+  voteFor?: (row: ProposalRow) => string | null;
+  onSeeVote?: (decisionId: string) => void;
   chainId: string | null;
   dao: string;
   /** All Shares in existence now (18 decimals); null when unknown. */
@@ -359,6 +398,9 @@ export function SuggestedWork({
           <p className="text-xs text-muted-foreground">
             Suggest work and name your price. If it's voted in, it opens to
             everyone.
+            {cannotOpenDecision(power)
+              ? ` ${whoMayOpen(power)} can put a suggestion to a vote.`
+              : ""}
           </p>
         </div>
         {suggesting ? null : (
@@ -417,10 +459,16 @@ export function SuggestedWork({
             <ProposalCard
               key={row.id}
               name={resolveUserName(profiles?.[row.author], row.author)}
-              // Putting a suggestion to a vote needs an account (and Shares); a visitor is not offered it.
-              onSponsor={existingUserPubkey() ? onSponsor : undefined}
+              // Putting a suggestion to a vote needs an account and enough Shares; nobody else is offered it.
+              onSeeVote={onSeeVote}
+              onSponsor={
+                existingUserPubkey() && !cannotOpenDecision(power)
+                  ? onSponsor
+                  : undefined
+              }
               row={row}
               supplyWhole={supplyWhole}
+              vote={row.status === "approved" ? null : (voteFor?.(row) ?? null)}
             />
           ))}
         </ul>

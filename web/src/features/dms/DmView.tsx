@@ -3,6 +3,7 @@ import { ArrowLeft, MessageSquare, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { dmConversationLabel } from "@creaton/core/dm.ts";
+import { beyondContributorProjects } from "@/app/lib/build-gates";
 import { ChannelTimeline } from "@/features/channels/ui/ChannelTimeline";
 import type { Channel } from "@/features/channels/use-channels";
 import { useUserNames } from "@/features/profiles/use-profiles";
@@ -28,6 +29,9 @@ import {
  */
 export function DmView() {
   const { me, conversations, isLoading, error, refetch } = useDmConversations();
+  // A contributor-only build has one private inbox, Messages on Home: here are only the community's notices to the
+  // reader, to read. Other builds also start private chats inside the community.
+  const startsChats = beyondContributorProjects();
   const dmIds = useMemo(() => conversations.map((c) => c.id), [conversations]);
   const activity = useDmActivity(dmIds);
   const names = useUserNames(
@@ -131,24 +135,30 @@ export function DmView() {
         <div className="flex items-start gap-2 px-4 pt-3">
           <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-black/70 dark:text-white/70" />
           <h2 className="text-sm font-semibold text-black/70 dark:text-white/70">
-            Notices and messages in this community
+            {startsChats
+              ? "Private chats in this community"
+              : "Notices from this community"}
           </h2>
-          <button
-            type="button"
-            onClick={() => {
-              setOpenError(null);
-              setComposeOpen(true);
-            }}
-            className="ml-auto rounded-md p-1.5 text-black/60 hover:bg-black/5 hover:text-black dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white"
-            aria-label="New message"
-            title="New message"
-            data-testid="new-dm-open"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          {startsChats ? (
+            <button
+              type="button"
+              onClick={() => {
+                setOpenError(null);
+                setComposeOpen(true);
+              }}
+              className="ml-auto rounded-md p-1.5 text-black/60 hover:bg-black/5 hover:text-black dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white"
+              aria-label="New chat"
+              title="New chat"
+              data-testid="new-dm-open"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
         <p className="px-4 pb-3 pt-1 text-xs text-black/60 dark:text-white/60">
-          Private messages are under{" "}
+          {startsChats
+            ? "Only the people in a chat can see it. Your other private messages are under "
+            : "Only you can see these. To write to someone, use "}
           <Link
             className="font-medium text-black underline dark:text-white"
             data-testid="dm-home-messages"
@@ -194,7 +204,7 @@ export function DmView() {
           })}
           {!isLoading && error == null && rows.length === 0 ? (
             <p className="px-2 py-1 text-xs text-black/60 dark:text-white/60">
-              No conversations yet. Start one with the + button.
+              {startsChats ? "No chats yet." : "No notices."}
             </p>
           ) : null}
         </nav>
@@ -246,16 +256,40 @@ export function DmView() {
                   serverKey: selected.serverKey,
                 } satisfies Channel
               }
+              readOnlyNote={
+                startsChats
+                  ? undefined
+                  : "Only the people who run this community write here. To answer, use Messages on Home."
+              }
             />
           </>
+        ) : rows.length === 0 && startsChats ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-black/60 dark:text-white/60">
+            <p>No private chats yet.</p>
+            <button
+              className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+              data-testid="dm-empty-start"
+              onClick={() => {
+                setOpenError(null);
+                setComposeOpen(true);
+              }}
+              type="button"
+            >
+              Start a private chat
+            </button>
+          </div>
         ) : (
-          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-black/60 dark:text-white/60">
-            Select a conversation to start reading.
+          <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-sm text-black/60 dark:text-white/60">
+            {rows.length === 0
+              ? "Nothing here yet."
+              : startsChats
+                ? "Select a conversation to start reading."
+                : "Select a notice to read it."}
           </div>
         )}
       </div>
 
-      {composeOpen ? (
+      {composeOpen && startsChats ? (
         <NewDmDialog
           me={me ?? ""}
           pending={openDm.isPending}

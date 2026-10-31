@@ -6,7 +6,7 @@ import test from "node:test";
 /**
  * The launch discussion's two extras have to stay visibly theirs:
  *
- * - founder updates render pinned, newest first, labelled as the founder's —
+ * - the team's updates render pinned, newest first, labelled as the team's —
  *   never mixed into the reply stream where a reader could mistake one for a
  *   reply;
  * - the agent's thread summary renders as its own card, badged "Summarized by
@@ -27,7 +27,7 @@ test("founder updates render pinned, newest first", () => {
   const source = read(DISCUSSION);
   assert.match(source, /data-testid="pinned-updates"/);
   assert.match(source, /data-testid="pinned-update"/);
-  assert.match(source, /Pinned · founder update/);
+  assert.match(source, /Pinned · team update/);
   // Ordering comes from the tested pure helper, newest first.
   assert.match(source, /pinnedUpdates\(/);
 });
@@ -37,8 +37,15 @@ test("the agent summary is a distinct, clearly-badged card", () => {
   assert.match(source, /data-testid="thread-summary-card"/);
   assert.match(source, /Summarized by agent/);
   assert.match(source, /newestSummary\(/);
-  // One owner for the opt-in label: a single switch, no duplicate text.
-  const switches = source.match(/role="switch"/g) ?? [];
-  assert.equal(switches.length, 1);
-  assert.equal((source.match(/Agent thread summaries/g) ?? []).length, 1);
+});
+
+test("the page offers no summary switch or button: nothing here writes a summary", () => {
+  const source = read(DISCUSSION);
+  assert.doesNotMatch(source, /role="switch"/);
+  assert.doesNotMatch(source, /Agent thread summaries/);
+  assert.doesNotMatch(source, /Summarize thread/);
+  assert.doesNotMatch(
+    read("src/features/feed/lib/launch-thread.ts"),
+    /generateThreadSummary/,
+  );
 });

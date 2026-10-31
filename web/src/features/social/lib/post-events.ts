@@ -9,7 +9,7 @@
  *   the text (NIP-18).
  * - A repost is kind 6 with the original embedded (NIP-18); undoing one is a
  *   NIP-09 deletion.
- * - A like is the NIP-25 `+` reaction the feed already uses as an upvote.
+ * - A vote is the NIP-25 reaction the feed builds (`feed-events.ts` `buildVote`).
  *
  * Pure and alias-free: `social.test.mjs` drives it under `node --test`.
  */
@@ -18,7 +18,6 @@ import { KIND_DELETION, KIND_REPOST } from "../../../shared/constants/kinds.ts";
 import {
   buildPost,
   buildReply,
-  buildVote,
   type EventTemplate,
   MAX_POST_CHARS,
   type SignedEventLike,
@@ -98,9 +97,4 @@ export function buildUndo(eventId: string, kind: number): EventTemplate {
     ],
     content: "",
   };
-}
-
-/** A like — the `+` reaction (an upvote in the launch feed). */
-export function buildLike(target: SignedEventLike): EventTemplate {
-  return buildVote({ target, direction: "+" });
 }

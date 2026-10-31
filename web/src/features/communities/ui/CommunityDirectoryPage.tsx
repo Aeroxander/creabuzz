@@ -17,13 +17,31 @@ import { ServerImage } from "@/shared/ui/ServerImage";
 import { QueryError } from "@/shared/ui/query-error";
 import { useSelfServe } from "../use-self-serve";
 import { CreateCommunityDialog } from "./CreateCommunityDialog";
+import { communityLabel, listedCommunities } from "../lib/community-label";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import { APP_NAME } from "@/shared/constants/brand";
+import { existingUserPubkey } from "@/shared/lib/identity";
 
 type CardEntry = Omit<CommunityDirectoryEntry, "member_count"> & {
   member_count: number | null;
 };
 
-function CommunityCard({ entry }: { entry: CardEntry }) {
-  const hostName = entry.name || entry.host;
+function CommunityCard({
+  entry,
+  domain,
+}: {
+  entry: CardEntry;
+  /** Where this server makes new communities, to name the ones made there. */
+  domain: string | null;
+}) {
+  // The server's own name for it when it sends one; otherwise the name it was started under (see `communityLabel`).
+  const label = entry.name
+    ? {
+        name: entry.name,
+        address: entry.name === entry.host ? null : entry.host,
+      }
+    : communityLabel(entry.host, domain, APP_NAME);
+  const hostName = label.name;
   return (
     <Link
       to="/c/$host"
@@ -47,11 +65,11 @@ function CommunityCard({ entry }: { entry: CardEntry }) {
           <h3 className="truncate text-base font-semibold text-black dark:text-white">
             {hostName}
           </h3>
-          {hostName === entry.host ? null : (
+          {label.address ? (
             <p className="truncate text-xs text-black/60 dark:text-white/60">
-              {entry.host}
+              {label.address}
             </p>
-          )}
+          ) : null}
         </div>
       </div>
       {entry.description ? (
@@ -107,11 +125,14 @@ function AddCommunityForm() {
       setStoredRelayWsUrl(normalizeRelayWsUrl(host));
       window.location.reload();
     } catch {
-      toast.error("That doesn't look like a relay host");
+      toast.error("That doesn't look like a server address");
     }
   };
   return (
-    <form onSubmit={submit} className="flex w-full max-w-sm items-center gap-2">
+    <form
+      onSubmit={submit}
+      className="mt-2 flex w-full max-w-sm items-center gap-2"
+    >
       <label className="sr-only" htmlFor="add-community">
         Server address
       </label>
@@ -119,7 +140,7 @@ function AddCommunityForm() {
         id="add-community"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="community.example.com"
+        placeholder="e.g. community.example.com"
         className="flex-1 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
         data-testid="add-community-input"
       />
@@ -142,9 +163,11 @@ export function CommunityDirectoryPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const host = new URL(relayWsUrl()).host;
   const connected = data?.communities.find((entry) => entry.host === host);
-  const otherCommunities = data?.communities.filter(
-    (entry) => entry.host !== host,
-  );
+  const otherCommunities = data
+    ? listedCommunities(data.communities, host)
+    : undefined;
+  const domain = selfServe.data?.domain ?? null;
+  const signedIn = existingUserPubkey() !== null;
 
   return (
     <div className="flex h-full w-full flex-1 flex-col gap-6 overflow-y-auto px-4 py-8">
@@ -161,29 +184,44 @@ export function CommunityDirectoryPage() {
             <Plus /> Create a community
           </Button>
         ) : null}
-        <AddCommunityForm />
-        <Link to="/repos">
-          <Button variant="outline" size="sm" className="dark:border-white/15">
-            <BookMarked /> Repositories
-          </Button>
-        </Link>
+        {/* The hosted pilot is people and projects; code browsing is for the builds that offer it. */}
+        {raisesOffered() ? (
+          <Link to="/repos">
+            <Button
+              variant="outline"
+              size="sm"
+              className="dark:border-white/15"
+            >
+              <BookMarked /> Repositories
+            </Button>
+          </Link>
+        ) : null}
       </header>
+      {/* Pointing this browser at another server is rare and only matters to someone with an account. */}
+      {signedIn ? (
+        <details className="text-sm" data-testid="add-community-advanced">
+          <summary className="cursor-pointer font-medium text-black/70 select-none dark:text-white/70">
+            Advanced: open a community on another server
+          </summary>
+          <AddCommunityForm />
+        </details>
+      ) : null}
 
       <section aria-labelledby="connected-community-heading">
         <h2
           id="connected-community-heading"
           className="mb-3 text-sm font-semibold"
         >
-          Connected community
+          This community
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <CommunityCard
+            domain={domain}
             entry={
               connected ?? {
                 host,
-                name: host,
-                description:
-                  "Open channels, messages, and shared work on your connected server.",
+                name: "",
+                description: "Rooms, boards and messages on this server.",
                 member_count: null,
                 archived: false,
               }
@@ -218,7 +256,7 @@ export function CommunityDirectoryPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {otherCommunities?.map((entry) => (
-            <CommunityCard key={entry.host} entry={entry} />
+            <CommunityCard domain={domain} entry={entry} key={entry.host} />
           ))}
         </div>
       )}

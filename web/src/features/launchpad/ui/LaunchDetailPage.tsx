@@ -1,16 +1,17 @@
 import { markFirstStep } from "@/shared/lib/first-steps";
 import type { SponsorIntent } from "../lib/sponsor";
 import type { ChallengeIntent } from "../lib/challenge";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import { useUserNames } from "@/features/profiles/use-profiles";
 import { BackIdeaButton } from "./BackIdeaButton";
 import { IdeaOverview } from "./IdeaOverview";
 import { IdeaProgressCard } from "./IdeaProgressCard";
 import { SaleProgressCard } from "./SaleProgressCard";
 import { isSetupStage } from "../lib/sale-steps";
+import { raisesOffered } from "../lib/raises-offered";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
 import { LaunchMissing } from "./LaunchMissing";
@@ -25,11 +26,19 @@ import {
   useLaunch,
   usePublishMirror,
 } from "../use-launches";
-import { effectiveStage, isEvmAddress, type Launch } from "../models";
+import { effectiveStage, isEvmAddress } from "../models";
 import { effectiveFundingAt, isContributorProject } from "../lib/funding";
 import { saleView } from "../lib/sale-action";
 import { SaleActionButton } from "./SaleActionButton";
 import { isIdea } from "../lib/idea";
+import {
+  allowedTabs,
+  founderSettings,
+  ideaShowsTeamSurfaces,
+  type LaunchTab,
+  type PageKind,
+  tabAlias,
+} from "../lib/launch-tabs";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { markSupportersSeen } from "../use-founder-activity";
 import { useSupporters } from "../use-supporters";
@@ -40,8 +49,6 @@ import { ContributorSettings } from "./ContributorSettings";
 import { LaunchDiscussion } from "@/features/feed/ui/LaunchDiscussion";
 import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
-
-type TabLaunch = Launch;
 
 import { getRpcEndpoint } from "../chain";
 import { useAuctionProgress, OwnershipOnlyNote } from "./widgets";
@@ -56,46 +63,16 @@ import { ContributionsTab } from "./ContributionsTab";
 import { MilestonesTab } from "./MilestonesTab";
 import { OverviewTab } from "./OverviewTab";
 import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
+import { projectProgress } from "@/features/feed/lib/project-progress";
 import { ProjectAgents } from "@/features/fleet/ui/ProjectAgents";
 import { ProjectDeliveryOverview } from "./ProjectDeliveryOverview";
 import { ContributorStatusNote } from "./ContributorStatusNote";
 import { DaoOverview } from "./DaoOverview";
 import { MyBidsPanel } from "./MyBidsPanel";
-import { ProposalCard } from "./ProposalCard";
-import { WikiDraftComposer } from "./WikiDraftComposer";
-import { launchCoordinate } from "../models";
 import { resolveDaoBinding } from "../lib/org-money";
 import { useOrgMoney } from "../use-launches";
 
-type Tab =
-  | "overview"
-  | "milestones"
-  | "discussion"
-  | "updates"
-  | "proposals"
-  | "treasury"
-  | "mybids"
-  | "decisions"
-  | "work"
-  | "contributions"
-  | "record"
-  | "agents"
-  | "manage";
-
-/**
- * The tabs a contributor project shows: its work, its votes, who earned what, the talk around it, its funds and the way
- * to leave (D111: no sale is not no treasury), and the founder's settings.
- */
-const CONTRIBUTOR_TABS: Tab[] = [
-  "overview",
-  "contributions",
-  "decisions",
-  "work",
-  "discussion",
-  "updates",
-  "treasury",
-  "manage",
-];
+type Tab = LaunchTab;
 
 export function LaunchDetailPage({
   launchId,
@@ -195,6 +172,37 @@ export function LaunchDetailPage({
   }, [initialTab, initialDecision, isFounder]);
   // Read before any early return: hooks keep their order. It resolves which DAO, if any, this launch belongs to.
   const orgMoney = useOrgMoney();
+  // On a narrow screen the tab row scrolls: the chosen tab is kept in view, and a fade says more tabs are off to a side.
+  const tabRow = useRef<HTMLDivElement | null>(null);
+  const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
+  const measureTabs = useCallback(() => {
+    const row = tabRow.current;
+    if (!row) return;
+    const left = row.scrollLeft > 2;
+    const right = row.scrollLeft + row.clientWidth < row.scrollWidth - 2;
+    setTabOverflow((was) =>
+      was.left === left && was.right === right ? was : { left, right },
+    );
+  }, []);
+  const loaded = Boolean(launch);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the tab changes or the row first appears
+  useEffect(() => {
+    const row = tabRow.current;
+    const chosen = row?.querySelector<HTMLElement>('[aria-selected="true"]');
+    // Sideways only: scrolling the page to the tab row would move someone who is reading further down.
+    if (row && chosen) {
+      const start = chosen.offsetLeft;
+      const end = start + chosen.offsetWidth;
+      if (start < row.scrollLeft) row.scrollLeft = Math.max(0, start - 16);
+      else if (end > row.scrollLeft + row.clientWidth)
+        row.scrollLeft = end - row.clientWidth + 16;
+    }
+    measureTabs();
+  }, [tab, loaded, measureTabs]);
+  useEffect(() => {
+    window.addEventListener("resize", measureTabs);
+    return () => window.removeEventListener("resize", measureTabs);
+  }, [measureTabs]);
 
   // Consume the deep link once: `bid` opens the bid dialog (sender picker);
   // `exit`/`claim` land on the My-bids section and expand the matching bid's
@@ -202,7 +210,8 @@ export function LaunchDetailPage({
   useEffect(() => {
     if (!action) return;
     if (action === "bid") {
-      setBidOpen(true);
+      // A contributor-only build takes no bids, so a shared bid link opens nothing there.
+      if (raisesOffered()) setBidOpen(true);
       return;
     }
     setMybidsAutoAction(action);
@@ -308,12 +317,7 @@ export function LaunchDetailPage({
       ? (launch.record.treasury as string)
       : (daoBinding?.dao ?? null);
   // What people come back for goes first. A DAO is run from Decisions and Work, so those lead; a raise that has not
-  // become a DAO leads with its money and its bids. "Proposals" are the older, recorded kind: once a DAO's decisions
-  // are read from the chain they are only worth a tab if there are some to look at, so an empty one stays out of the way.
-  const proposalsTab = {
-    id: "proposals" as const,
-    label: `Proposals (${launch.proposals.length})`,
-  };
+  // become a DAO leads with its money and its bids.
   const contributionsTab = {
     id: "contributions" as const,
     label: "Contributions",
@@ -337,27 +341,24 @@ export function LaunchDetailPage({
       : []),
     // A simulated launch has no public discussion to join.
     ...(sandbox ? [] : [{ id: "discussion" as const, label: "Discussion" }]),
-    { id: "updates", label: `Updates (${launch.updates.length})` },
-    ...(workDao && launch.proposals.length === 0 ? [] : [proposalsTab]),
+    {
+      id: "updates",
+      // Counted as the tab lists them: the team's own reports (submitted work is shown with the work, not here).
+      label: `Updates (${projectProgress([launch], []).length})`,
+    },
     { id: "manage", label: "Manage", founderOnly: true },
   ];
-  // An idea has no money, proposals or treasury yet; showing those tabs empty
-  // makes the page look broken rather than early.
-  const visibleTabs = idea
-    ? tabs.filter((t) =>
-        ["overview", "agents", "discussion", "updates", "manage"].includes(
-          t.id,
-        ),
-      )
-    : contributor
-      ? // No sale, no money and no team allocation: the tabs about those would be empty or say what is not true.
-        tabs.filter((t) => CONTRIBUTOR_TABS.includes(t.id))
-      : tabs;
-  // A link to a tab this project does not show (an old `?tab=treasury`) opens the overview.
+  const raises = raisesOffered();
+  const kind: PageKind = idea ? "idea" : contributor ? "contributor" : "raise";
+  const allowed = allowedTabs(kind, raises);
+  const visibleTabs = allowed ? tabs.filter((t) => allowed.has(t.id)) : tabs;
+  // A link to a tab this project does not show (an old `?tab=treasury`) opens the overview, or the tab with the same
+  // things on it.
+  const wanted = tabAlias(tab, kind);
   const shown: Tab = visibleTabs.some(
-    (t) => t.id === tab && (!t.founderOnly || isFounder),
+    (t) => t.id === wanted && (!t.founderOnly || isFounder),
   )
-    ? tab
+    ? wanted
     : "overview";
 
   const raiseOverview = (
@@ -386,7 +387,7 @@ export function LaunchDetailPage({
                 onToggle={(onDone) => follows.toggle(coord, onDone)}
                 supportersRoom={launch.record.chat.supporters}
               />
-            ) : mainAction === null ? null : (
+            ) : mainAction === null || !raisesOffered() ? null : (
               <SaleActionButton
                 action={mainAction}
                 onBid={() => setBidOpen(true)}
@@ -454,40 +455,65 @@ export function LaunchDetailPage({
         <LaunchChatCard isFounder={isFounder} launch={launch} />
       )}
 
-      <div
-        className="flex gap-x-5 overflow-x-auto border-b border-border"
-        role="tablist"
-        aria-label="Launch sections"
-      >
-        {visibleTabs
-          .filter((t) => !t.founderOnly || isFounder)
-          .map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={shown === t.id}
-              onClick={() => setTab(t.id)}
-              className={cn(
-                "-mb-px shrink-0 whitespace-nowrap border-b-[3px] px-1 pb-2 text-sm font-semibold transition-colors",
-                shown === t.id
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-              type="button"
-            >
-              {t.label}
-            </button>
-          ))}
+      <div className="relative">
+        <div
+          className="flex gap-x-5 overflow-x-auto border-b border-border [scrollbar-width:none]"
+          onScroll={measureTabs}
+          ref={tabRow}
+          role="tablist"
+          aria-label={contributor ? "Project sections" : "Launch sections"}
+        >
+          {visibleTabs
+            .filter((t) => !t.founderOnly || isFounder)
+            .map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={shown === t.id}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "-mb-px shrink-0 whitespace-nowrap border-b-[3px] px-1 pb-2 text-sm font-semibold transition-colors",
+                  shown === t.id
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+                type="button"
+              >
+                {t.label}
+              </button>
+            ))}
+        </div>
+        {/* Decorative: the tabs themselves stay reachable by keyboard and screen reader whatever is scrolled. */}
+        {tabOverflow.left ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center bg-gradient-to-r from-background to-transparent"
+            data-testid="tabs-more-left"
+          >
+            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          </span>
+        ) : null}
+        {tabOverflow.right ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 flex w-8 items-center justify-end bg-gradient-to-l from-background to-transparent"
+            data-testid="tabs-more-right"
+          >
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </span>
+        ) : null}
       </div>
 
       {shown === "overview" && idea ? (
         <>
           <IdeaOverview record={launch.record} />
-          <ProjectDeliveryOverview
-            launch={launch}
-            dao={workDao}
-            onOpen={setTab}
-          />
+          {ideaShowsTeamSurfaces(raises) ? (
+            <ProjectDeliveryOverview
+              launch={launch}
+              dao={workDao}
+              onOpen={setTab}
+            />
+          ) : null}
           <ProjectProgressFeed project={launch} compact />
         </>
       ) : null}
@@ -533,14 +559,21 @@ export function LaunchDetailPage({
           {stage === "graduated" ? (
             <LaunchChatCard isFounder={isFounder} launch={launch} />
           ) : null}
-          <LaunchDiscussion record={launch.record} updates={launch.updates} />
+          <LaunchDiscussion
+            record={launch.record}
+            // Pinned are the team's own updates: not submitted work, not a work area's words, not someone else's post.
+            updates={launch.updates.filter(
+              (u) =>
+                !u.claim &&
+                !u.workArea &&
+                (u.author === launch.record.author ||
+                  launch.record.team.some((t) => t.pubkey === u.author)),
+            )}
+          />
         </>
       ) : null}
       {shown === "updates" ? <ProjectProgressFeed project={launch} /> : null}
       {shown === "agents" ? <ProjectAgents launch={launch} /> : null}
-      {shown === "proposals" ? (
-        <ProposalsTab launch={launch} onDissent={() => setTab("treasury")} />
-      ) : null}
       {shown === "mybids" && launch.record.auction ? (
         <MyBidsPanel
           record={launch.record}
@@ -578,6 +611,17 @@ export function LaunchDetailPage({
             setSponsor(intent);
             setTab("decisions");
           }}
+          onOpenDecision={(decision) => {
+            setLocalTab("decisions");
+            void navigate({
+              search: (previous) => ({
+                ...previous,
+                tab: "decisions",
+                decision,
+              }),
+              replace: true,
+            });
+          }}
           onOpenDecisions={() => setTab("decisions")}
         />
       ) : null}
@@ -587,8 +631,11 @@ export function LaunchDetailPage({
       {shown === "record" && workDao ? (
         <RecordTab dao={workDao} launch={launch} onOpen={(t) => setTab(t)} />
       ) : null}
-      {shown === "manage" && isFounder && contributor ? (
+      {shown === "manage" &&
+      isFounder &&
+      founderSettings(kind, raises) === "settings" ? (
         <ContributorSettings
+          idea={idea}
           isDeleting={remove.isPending}
           launch={launch}
           onDelete={removeFromDirectory}
@@ -602,7 +649,7 @@ export function LaunchDetailPage({
         />
       ) : null}
 
-      {bidOpen ? (
+      {bidOpen && raisesOffered() ? (
         <RecordBidDialog
           isPublishing={mirror.isPending}
           launchName={launch.record.name}
@@ -620,64 +667,5 @@ export function LaunchDetailPage({
         />
       ) : null}
     </div>
-  );
-}
-
-function ProposalsTab({
-  launch,
-  onDissent,
-}: {
-  launch: TabLaunch;
-  /** D2: the dissent door — jump to the treasury tab's ragequit. */
-  onDissent: () => void;
-}) {
-  // One batched lookup for every proposer this tab renders, rather than a query
-  // per proposal row.
-  const proposers = useMemo(
-    () => [...new Set(launch.proposals.map((p) => p.author))],
-    [launch.proposals],
-  );
-  const userNames = useUserNames(proposers);
-  // The bound DAO for onchain actions (D8: record-only when unbound) — the
-  // same resolution the treasury tab uses (`lib/org-money.ts`).
-  const orgMoney = useOrgMoney();
-  const daoBinding = resolveDaoBinding({
-    receipts: launch.receipts,
-    orgBindings: orgMoney.data?.bindings ?? [],
-  });
-
-  if (launch.proposals.length === 0) {
-    return (
-      <div className="text-sm text-black/60 dark:text-white/60">
-        <p>No proposals yet.</p>
-        <p className="mt-1">
-          Once the raise completes, budget and treasury proposals are voted on
-          here. Earlier suggestions live in the project's repos.
-        </p>
-      </div>
-    );
-  }
-  return (
-    <>
-      <WikiDraftComposer
-        launchCoordinate={launchCoordinate(
-          launch.record.author,
-          launch.record.id,
-        )}
-        proposals={launch.proposals}
-      />
-      <ol className="flex max-w-2xl flex-col gap-2">
-        {launch.proposals.map((p) => (
-          <li key={p.id}>
-            <ProposalCard
-              proposal={p}
-              dao={daoBinding?.dao ?? null}
-              displayName={userNames(p.author)}
-              onDissent={onDissent}
-            />
-          </li>
-        ))}
-      </ol>
-    </>
   );
 }

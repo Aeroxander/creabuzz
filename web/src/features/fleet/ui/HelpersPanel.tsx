@@ -14,7 +14,7 @@
 
 import { Bot, Cpu, Globe, HardDrive } from "lucide-react";
 
-import { BUZZ_RELEASES_URL } from "@/shared/lib/buzz-download";
+import { DESKTOP_APP } from "@/shared/lib/desktop-app";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
@@ -113,22 +113,12 @@ function WayCard({ way, tab }: { way: Way; tab: TabHelper }) {
         </div>
       ) : null}
       {way.id === "server" ? <ServerSteps /> : null}
-      {way.id === "computer" ? (
-        <div>
-          <Button asChild size="sm" variant="outline">
-            <a
-              href={BUZZ_RELEASES_URL}
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              Get the desktop app
-            </a>
-          </Button>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Sign in to this community there and start your project's helpers
-            from its list.
-          </p>
-        </div>
+      {/* No download link: this product has no desktop release of its own to point at yet. */}
+      {way.id === "computer" && DESKTOP_APP ? (
+        <p className="text-xs text-muted-foreground">
+          Sign in to this community in the desktop app and start your project's
+          helpers from its list.
+        </p>
       ) : null}
     </li>
   );
@@ -166,6 +156,7 @@ export function HelpersPanel({
         (tab.state === "running" ? "The general assistant" : null),
     },
     helpers: announced,
+    desktopApp: DESKTOP_APP,
   });
   const tabPubkey = peekAgentPubkey();
   const noService = gateway === "missing";
@@ -230,7 +221,8 @@ export function HelpersPanel({
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
             A tab runs one helper at a time. To have the whole crew working at
-            once, run them on the server or on your computer.
+            once, run them on the server
+            {DESKTOP_APP ? " or on your computer" : ""}.
           </p>
           {tab.error ? (
             <p

@@ -5,6 +5,8 @@ import { type ReactNode, useMemo, useState } from "react";
 import { launchCoord, LaunchVoteCard } from "@/features/feed/ui/LaunchVoteCard";
 import { EMPTY_TALLY, sortByMode } from "@/features/feed/lib/ranking";
 import { useFeedNotes, useVoteTallies } from "@/features/feed/use-feed";
+import { listedHere } from "@/features/launchpad/lib/contributor-only";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { useLaunches } from "@/features/launchpad/use-launches";
 
 import { useSuggestedUsers, useTrending } from "../use-discovery";
@@ -61,17 +63,22 @@ function TrendingLaunchesCard() {
   const launches = useLaunches();
   const notes = useFeedNotes();
   const { tallies } = useVoteTallies();
+  const raises = raisesOffered();
   const trending = useMemo(
     () =>
       sortByMode(
         (launches.data ?? []).filter(
-          (l) => l.record.stage !== "draft" && l.record.stage !== "failed",
+          (l) =>
+            l.record.stage !== "draft" &&
+            l.record.stage !== "failed" &&
+            // A contributor-only build never lists a raise, even one another build published here.
+            listedHere(l.record, raises),
         ),
         "hot",
         (l) => tallies.get(launchCoord(l.record))?.score ?? 0,
         (l) => l.record.createdAt,
       ).slice(0, 4),
-    [launches.data, tallies],
+    [launches.data, tallies, raises],
   );
   const postsPerLaunch = useMemo(() => {
     const counts = new Map<string, number>();

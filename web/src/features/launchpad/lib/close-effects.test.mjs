@@ -39,10 +39,22 @@ test("a budget with nothing waiting loses nothing, and a cut-off history says th
   assert.deepEqual(closeEffects({ claims: [], projects: [] }), {
     awardsLost: 0,
     allowanceLost: 0n,
+    unallocatedLost: 0n,
     incomplete: false,
   });
   assert.equal(
     closeEffects({ claims: [], projects: [], truncated: true }).incomplete,
     true,
   );
+});
+
+test("the Shares not yet given to any work area are given up too, and counted apart from those left in work areas", () => {
+  const effects = closeEffects({
+    claims: [],
+    projects: [project(30_000n, 0n), project(20_000n, 8_000n)],
+    created: { shareBudget: 300_000n },
+    sharesAllocated: 50_000n,
+  });
+  assert.equal(effects.allowanceLost, 42_000n);
+  assert.equal(effects.unallocatedLost, 250_000n);
 });

@@ -5,11 +5,11 @@
 
 import type { PlanStep } from "@creaton/core/templates/apply.ts";
 
-/** The reason a refused write carries, or the text of whatever was thrown. */
-export function refusalText(error: unknown): string {
-  const text = error instanceof Error ? error.message : String(error ?? "");
-  return text.trim();
-}
+import {
+  errorMessage,
+  failureWords,
+  plainErrorText,
+} from "../../../shared/lib/readable-error.ts";
 
 /**
  * A refusal in words a person can act on. The server speaks in short codes
@@ -17,9 +17,12 @@ export function refusalText(error: unknown): string {
  * already went through is kept.
  */
 export function explainStepFailure(step: PlanStep, error: unknown): string {
-  const text = refusalText(error);
+  const text = error == null ? "" : errorMessage(error).trim();
   const kept =
     " Whatever already went through is kept, so trying again picks up where this stopped.";
+  // A ban, a timeout, an invite-only server or the request limit have their own plain words.
+  const plain = plainErrorText(error);
+  if (plain !== null) return `${plain}${kept}`;
   if (/rate|too many/i.test(text)) {
     return `The server asked us to slow down. Wait a moment, then try again.${kept}`;
   }
@@ -43,5 +46,6 @@ export function explainStepFailure(step: PlanStep, error: unknown): string {
   ) {
     return `The connection dropped. Check it, then try again.${kept}`;
   }
-  return `The server said no: ${text}.${kept}`;
+  // The server's own words when they are written for people; never its codes.
+  return `${failureWords(error, "The server turned this step down.").text}${kept}`;
 }

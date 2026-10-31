@@ -17,6 +17,7 @@ import {
   KIND_SYSTEM_MESSAGE,
 } from "@/shared/constants/kinds";
 import { OVERLAY_KINDS } from "./lib/overlay-kinds";
+import { roomTimeline } from "./lib/room-events";
 import { subscribeChannel, type SubscriptionStatus } from "./subscribe-channel";
 
 /**
@@ -138,21 +139,28 @@ export function useChannelMessages(channelId: string | null) {
     return unsubscribe;
   }, [channelId]);
 
+  // The live and older lists belong to one room: a new room starts them empty, so nothing from the last one lingers.
+  const [listsFor, setListsFor] = useState(channelId);
+  if (listsFor !== channelId) {
+    setListsFor(channelId);
+    setLiveEvents(new Map());
+    setOlderEvents(new Map());
+    setOlderExhausted(false);
+    setOlderError(null);
+  }
+
   const allEvents = useMemo(() => {
-    const byId = new Map<string, NostrEvent>();
-    const events = [
-      ...(historyQuery.data ?? []),
-      ...olderEvents.values(),
-      ...liveEvents.values(),
-    ];
-    for (const event of events) {
-      byId.set(event.id, event);
-    }
-    const ordered = [...byId.values()].sort(
-      (a, b) => a.created_at - b.created_at,
+    // Only this room's events, however they arrived (see `roomTimeline`).
+    const ordered = roomTimeline(
+      [
+        ...(historyQuery.data ?? []),
+        ...olderEvents.values(),
+        ...liveEvents.values(),
+      ],
+      channelId ?? "",
     );
-    return { byId, ordered };
-  }, [historyQuery.data, olderEvents, liveEvents]);
+    return { byId: new Map(ordered.map((e) => [e.id, e])), ordered };
+  }, [historyQuery.data, olderEvents, liveEvents, channelId]);
 
   const oldestLoadedAt = useMemo(() => {
     const times = [...(historyQuery.data ?? []), ...olderEvents.values()].map(

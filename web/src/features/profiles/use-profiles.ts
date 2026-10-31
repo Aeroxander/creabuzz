@@ -6,7 +6,12 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 
 import { indexProfiles, type ProfileMetadata } from "./lib/index-profiles";
-import { pickUserHandle, pickUserName } from "./lib/user-label";
+import {
+  hasUserName as profileHasName,
+  personName,
+  personSecondaryLabel,
+  pickUserHandle,
+} from "./lib/user-label";
 
 export type { ProfileMetadata as Profile };
 
@@ -37,27 +42,37 @@ export function useProfiles(authors: string[]) {
 }
 
 /**
- * The username to show for a person: `display_name`, then the kind-0 `name`,
- * then the community NIP-05 username, and only then the truncated pubkey.
+ * What to call a person in main copy: `display_name`, then the kind-0 `name`, then the community NIP-05 username, and
+ * "Someone" when they have none (or their profile is still loading). Never a short key: a key tells a reader nothing
+ * about who someone is (`profiles/lib/user-label.ts` holds the rule; post bylines use the same one).
  *
- * One chain for the whole client — a surface that renders a person imports this
- * instead of picking its own fallback, which is how the fleet and launchpad
- * panels ended up showing raw hex next to people who had names.
+ * One chain for the whole client: a surface that renders a person imports this instead of picking its own fallback.
+ * `pubkey` is the person this is for; no part of the name is ever made from it.
  */
 export function resolveUserName(
   profile: ProfileMetadata | undefined,
-  pubkey: string,
+  _pubkey: string,
 ): string {
-  return pickUserName(profile) ?? truncatePubkey(pubkey);
+  return personName(profile);
+}
+
+/** Whether the person has chosen a name. Use this to tell "no name" apart, never a comparison with a short key. */
+export function hasUserName(profile: ProfileMetadata | undefined): boolean {
+  return profileHasName(profile);
+}
+
+/** Their `user@host` community username, or null. */
+export function resolveUserHandle(
+  profile: ProfileMetadata | undefined,
+): string | null {
+  return pickUserHandle(profile);
 }
 
 /**
- * The plain name used for mention insert text, falling back to a truncated npub.
+ * The plain name used for mention insert text, falling back to a truncated key.
  *
- * Deliberately NOT `resolveUserName`: a mention inserts this string literally
- * after `@`, so a NIP-05 username would produce `@alice@relay.example` — a
- * malformed mention. Mentions need a bare name; every other surface wants the
- * username.
+ * Deliberately NOT `resolveUserName`: a mention inserts this string literally after `@`, so it must name exactly one
+ * person ("@Someone" would not), and a NIP-05 username would produce `@alice@relay.example`, a malformed mention.
  */
 export function profileDisplayName(
   profile: ProfileMetadata | undefined,
@@ -69,17 +84,15 @@ export function profileDisplayName(
 }
 
 /**
- * The secondary line for a person: their community username (`user@host`) when
- * they have one, otherwise the truncated pubkey.
- *
- * The pubkey is a recognition aid and never the identity proof, so it stays the
- * fallback — but a username is what a reader can actually use.
+ * The quiet secondary line for a person: their community username (`user@host`) when they have one; for someone with
+ * no name, their short key, so two "Someone"s can be told apart; otherwise null. A short key is never printed beside a
+ * real name as if it were a handle. Render it in a quiet style, and render nothing for null.
  */
 export function resolveUserSecondaryName(
   profile: ProfileMetadata | undefined,
   pubkey: string,
-): string {
-  return pickUserHandle(profile) ?? truncatePubkey(pubkey);
+): string | null {
+  return personSecondaryLabel(profile, pubkey);
 }
 
 /**

@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 
-import { Modal } from "@/features/launchpad/ui/Modal";
+import { MODAL_FOOTER_CLASS, Modal } from "@/features/launchpad/ui/Modal";
 import { Button } from "@/shared/ui/button";
 
 import { REASON_MAX_CHARS } from "../lib/board-moderation";
@@ -82,7 +82,7 @@ export function ReasonDialog({
             {problem}
           </p>
         ) : null}
-        <div className="flex justify-end gap-2">
+        <div className={`flex justify-end gap-2 ${MODAL_FOOTER_CLASS}`}>
           <Button onClick={onClose} size="sm" type="button" variant="ghost">
             Cancel
           </Button>

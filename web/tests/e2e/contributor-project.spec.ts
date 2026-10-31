@@ -242,7 +242,7 @@ test("Start offers a contributor project, says it has no token sale, and shows w
   // No promise the treasury can never receive money, the founder's starting Shares said before signing, review and
   // award as separate steps, and the transfer rule as it is.
   await expect(intro).toContainText(
-    "The project can still receive money into its shared funds.",
+    "The project can still receive money into its funds.",
   );
   await expect(intro).toContainText(
     "At first you may hold every Share that votes.",
@@ -338,17 +338,18 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
   await expect(
     people.nth(0).getByTestId("contribution-award-title"),
   ).toHaveText([
-    "15 Shares for translate",
-    "25 Shares for write-docs in the work area docs",
+    "15 Shares for Translate",
+    "25 Shares for Write docs in the work area Docs",
   ]);
   // The story behind an award says only what it could read: this stub chain gives no block times and no claims, so
-  // the date is "not read" and the evidence is left to the Work tab, never guessed; the transaction is still there.
+  // the date is "not read" and the evidence is left to the Work tab, never guessed.
   const story = people.nth(0).getByTestId("contribution-award-story").first();
   await expect(story).toContainText("Date not read");
   await expect(story).toContainText(
     "Its evidence is on the Work tab with the claim.",
   );
-  await expect(story.getByTestId("tx-link")).toBeVisible();
+  // A network with no public transaction page shows no transaction id in the story (a bare hash tells people nothing).
+  await expect(story.getByTestId("tx-link")).toHaveCount(0);
   await expect(
     people.nth(1).getByTestId("contribution-person-earned"),
   ).toHaveText("10 Shares awarded");
@@ -361,7 +362,7 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
   ).toHaveText("Award recorded; the Shares were not found reaching them");
   // Each award links to its claim on the Work tab.
   await expect(
-    people.nth(1).getByRole("link", { name: "fix-search" }),
+    people.nth(1).getByRole("link", { name: "Fix search" }),
   ).toHaveAttribute("href", /tab=work.*claim=0x6669782d736561726368/);
   await expectAccessible(page, "contributions tab");
 });

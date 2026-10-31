@@ -8,6 +8,7 @@ import {
   QUEUE_MAX,
   QUEUE_PAGE,
   queueUrl,
+  removedNoun,
   REPORTED_WORD_KINDS,
   reportedSubject,
   shownStatus,
@@ -59,7 +60,7 @@ test("a Home post shows its words and author, and opens on its own page", () => 
     author: ALICE,
     excerpt: "Send me your seed phrase",
     href: `/social/post/${TARGET}`,
-    linkLabel: "Open the post",
+    linkLabel: "See the post",
   });
   assert.equal(personToAct(subject), ALICE);
 });
@@ -97,7 +98,7 @@ test("a board post shows its title and the start of its body and opens on the bo
   );
   assert.equal(reply.about, "a reply on a board");
   assert.equal(reply.href, `/b/${BOARD}?post=${ROOT}`);
-  assert.equal(reply.linkLabel, "Open the thread");
+  assert.equal(reply.linkLabel, "See the thread");
 });
 
 test("long words are cut short", () => {
@@ -186,5 +187,21 @@ test("a decision shows its status at once, and an escalated report stays listed 
   assert.deepEqual(
     listed.map((r) => r.id),
     ["r1", "r2"],
+  );
+});
+
+test("a removal from the queue is named as the board names it: post, reply or message", () => {
+  assert.equal(removedNoun({ type: "gone", about: "a post on Home" }), "post");
+  assert.equal(
+    removedNoun({ type: "notFound", about: "a post on a board" }),
+    "post",
+  );
+  assert.equal(
+    removedNoun({ type: "unread", about: "a reply on a board" }),
+    "reply",
+  );
+  assert.equal(
+    removedNoun({ type: "notFound", about: "a message" }),
+    "message",
   );
 });

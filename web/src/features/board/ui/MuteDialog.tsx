@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 
-import { Modal } from "@/features/launchpad/ui/Modal";
+import { MODAL_FOOTER_CLASS, Modal } from "@/features/launchpad/ui/Modal";
 import { Button } from "@/shared/ui/button";
 
 import {
@@ -30,7 +30,6 @@ export function MuteDialog({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const chosen = choices.find((choice) => choice.days === days);
 
   const send = async () => {
     setBusy(true);
@@ -82,24 +81,18 @@ export function MuteDialog({
               <span className="text-sm">
                 {choice.label}
                 {choice.needsSecond ? (
-                  <span className="block text-xs text-muted-foreground">
-                    Needs a second moderator
+                  <span
+                    className="block text-xs text-muted-foreground"
+                    data-testid={`board-mute-second-${choice.days}`}
+                  >
+                    Starts as {MODERATOR_MUTE_DAYS} days. Becomes {choice.label}{" "}
+                    if another moderator, owner or admin agrees within a day.
                   </span>
                 ) : null}
               </span>
             </label>
           ))}
         </fieldset>
-        {chosen?.needsSecond ? (
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="board-mute-second"
-          >
-            This starts as a {MODERATOR_MUTE_DAYS}-day mute. It becomes{" "}
-            {chosen.label} only if another moderator also mutes them for that
-            long within a day.
-          </p>
-        ) : null}
         <div>
           <label className="text-sm font-medium" htmlFor="board-mute-reason">
             Reason (public)
@@ -122,7 +115,7 @@ export function MuteDialog({
             {problem}
           </p>
         ) : null}
-        <div className="flex justify-end gap-2">
+        <div className={`flex justify-end gap-2 ${MODAL_FOOTER_CLASS}`}>
           <Button onClick={onClose} size="sm" type="button" variant="ghost">
             Cancel
           </Button>

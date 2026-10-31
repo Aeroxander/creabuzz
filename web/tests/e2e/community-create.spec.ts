@@ -90,7 +90,12 @@ test("a server that offers it shows the button, tidies the name and previews the
   await page.getByTestId("create-community").click();
   const input = page.getByTestId("community-name");
   await expect(page.getByTestId("community-address")).toContainText(
-    "a name followed by example.test",
+    "your name followed by example.test, like my-film.example.test",
+  );
+  // The button says why it is not ready yet.
+  await expect(page.getByTestId("community-create-submit")).toBeDisabled();
+  await expect(page.getByTestId("community-create-why")).toHaveText(
+    "Give it a name first.",
   );
   await input.fill("My Film Crew!");
   await expect(input).toHaveValue("my-film-crew");

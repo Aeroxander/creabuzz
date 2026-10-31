@@ -1,6 +1,18 @@
-import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  lazyRouteComponent,
+  redirect,
+} from "@tanstack/react-router";
+
+import { beyondContributorProjects } from "../lib/build-gates";
 
 export const Route = createFileRoute("/projects/$projectId")({
+  // The Projects board is not in a contributor-only build (see `/projects`).
+  beforeLoad: () => {
+    if (!beyondContributorProjects()) {
+      throw redirect({ to: "/discover", replace: true });
+    }
+  },
   validateSearch: (search: Record<string, unknown>) => ({
     // Node ids are unique per author, so a project address is
     // `?author=<founder hex>` — same shape as `/launchpad/$launchId`.

@@ -74,12 +74,22 @@ describe("buildBoardNotifications", () => {
         [
           "board-reply",
           BOB,
-          { boardId: "film", postId: "other-post", text: "Me too" },
+          {
+            boardId: "film",
+            postId: "other-post",
+            text: "Me too",
+            postTitle: null,
+          },
         ],
         [
           "board-reply",
           ANN,
-          { boardId: "film", postId: post.id, text: "Great cut" },
+          {
+            boardId: "film",
+            postId: post.id,
+            text: "Great cut",
+            postTitle: "My trailer",
+          },
         ],
       ],
     );
@@ -123,6 +133,7 @@ describe("buildBoardNotifications", () => {
       boardId: "film",
       postId: post.id,
       text: "My trailer",
+      postTitle: "My trailer",
     });
   });
 

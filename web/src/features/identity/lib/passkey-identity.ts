@@ -145,10 +145,6 @@ export function isPasskeyUnlocked(): boolean {
   }
 }
 
-export function activePasskeyPubkey(): string | null {
-  return isPasskeyActive() && current ? current.pubkey : null;
-}
-
 /**
  * The passkey identity's pubkey as stored on this browser, or null.
  *
@@ -198,19 +194,35 @@ export function ensureSamePubkey(
 }
 
 /**
+ * The account already on this browser that a new passkey must keep, or null.
+ *
+ * Only a stored key with no passkey registered counts: with one registered, the passkey's key is who the reader is.
+ * A stored key that cannot be read throws (`StoredIdentityUnreadableError`) rather than being treated as absent.
+ */
+function keptAccountPubkey(): string | null {
+  if (loadStored()) return null;
+  const hex = storedIdentityHex();
+  return hex ? nostrPubkeyHex(hexToBytes(hex)) : null;
+}
+
+/**
  * Register a passkey and derive both identity roots.
  *
  * PRF platforms (Windows Hello / Google Password Manager) derive the Nostr
  * key from the PRF output. Platforms without PRF (e.g. iCloud Keychain) fall
  * back to "unlock" mode (the web-passkey branch's shipped posture): the
  * passkey gates the browser identity with a plain assertion instead of
- * deriving it — the r1 owner root is captured either way.
+ * deriving it — the r1 owner root is captured either way. An account already
+ * stored on this browser always takes unlock mode, so adding a passkey never
+ * changes who the person is.
  */
 export async function setupPasskey(displayName: string): Promise<{
   mode: PasskeyMode;
   pubkey: string;
   identity: PasskeyIdentity | null;
 }> {
+  // Read before the ceremony, so an unreadable stored key refuses here instead of after a passkey was made.
+  const kept = keptAccountPubkey();
   // The salt is generated here (not inside createPasskey) so the unlock-mode
   // fallback keeps it for the stored record either way.
   const salt = crypto.getRandomValues(new Uint8Array(32));
@@ -220,18 +232,33 @@ export async function setupPasskey(displayName: string): Promise<{
       userLabel: displayName,
       prfSalt: salt,
     });
-    const state: PasskeyState = {
-      credentialId: created.credentialId,
-      salt: created.prfSalt,
-      pubkey: created.identity.nostr.pubkeyHex,
-      mode: "prf",
-      r1UncompressedHex: created.identity.evmOwner.r1UncompressedHex,
-      secretKey: created.nostrSecretKey,
-    };
+    // An account that already exists on this browser keeps its key: a PRF-derived key would be a new, empty person
+    // that none of its posts, communities or work belong to. The passkey then gates it and owns its payment account.
+    const state: PasskeyState = kept
+      ? {
+          credentialId: created.credentialId,
+          salt: created.prfSalt,
+          pubkey: kept,
+          mode: "unlock",
+          r1UncompressedHex: created.identity.evmOwner.r1UncompressedHex,
+          secretKey: null,
+        }
+      : {
+          credentialId: created.credentialId,
+          salt: created.prfSalt,
+          pubkey: created.identity.nostr.pubkeyHex,
+          mode: "prf",
+          r1UncompressedHex: created.identity.evmOwner.r1UncompressedHex,
+          secretKey: created.nostrSecretKey,
+        };
     current = state;
     persist(state);
     notifyPasskeySessionChange();
-    return { mode: "prf", pubkey: state.pubkey, identity: created.identity };
+    return {
+      mode: state.mode,
+      pubkey: state.pubkey,
+      identity: kept ? passkeyIdentity() : created.identity,
+    };
   } catch (error) {
     if (!(error instanceof PrfUnavailableError) || !error.created) throw error;
     // Unlock mode: keep the current identity (or a fresh nsec) as the Nostr

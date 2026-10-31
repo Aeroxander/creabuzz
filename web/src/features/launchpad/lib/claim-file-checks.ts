@@ -14,10 +14,10 @@ const NAME_RE = /^[\x20-\x7e]{1,32}$/;
 export function nameProblem(name: string): string | null {
   const trimmed = name.trim();
   if (trimmed === "" || trimmed.startsWith("0x")) {
-    return "Give your work a short name, up to 32 characters.";
+    return "Give your work a title, up to 32 characters.";
   }
   if (!NAME_RE.test(trimmed)) {
-    return "Use plain letters, numbers and dashes in the name (no accents or emoji), up to 32 characters.";
+    return "Use plain letters and numbers in the title (no accents or emoji), up to 32 characters.";
   }
   return null;
 }

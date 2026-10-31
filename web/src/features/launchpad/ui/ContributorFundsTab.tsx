@@ -10,6 +10,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
 
 import { pickUserName } from "@/features/profiles/lib/user-label";
 import { useProfiles } from "@/features/profiles/use-profiles";
@@ -33,6 +34,9 @@ import { FundingCard } from "./FundingCard";
 import { WeeklyRoundsCard } from "./WeeklyRoundsCard";
 import { PayoutsCard } from "./PayoutsCard";
 import { RagequitPanel } from "./RagequitPanel";
+import { AddressRow } from "./account-widgets";
+import { SHOWN_HOLDERS } from "../lib/holders-read";
+import { plainNetworkName } from "../lib/test-network";
 import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
 
 /** One currency the DAO may hold: USDC where this network has it, and ETH. */
@@ -102,9 +106,12 @@ export function ContributorFundsTab({
     exclude: [dao, acting],
   });
 
+  // Read before the early return below: hooks keep their order when the DAO check finishes.
+  const shownOnce = useRef(false);
+
   if (provenance !== "kit") {
     return (
-      <Card className="max-w-3xl p-4" data-testid="contributor-funds">
+      <Card className="p-4" data-testid="contributor-funds">
         <h2 className="text-base font-semibold">Funds</h2>
         <p
           className="mt-1 text-sm text-muted-foreground"
@@ -126,17 +133,30 @@ export function ContributorFundsTab({
   };
   // The exit pays out each currency it names: USDC where the network has it, beside ETH.
   const exitRecord = { ...launch.record, currency: usdc };
+  // Leaving and handing on votes are for people holding Shares: shown unless the full list of holders is known and the
+  // acting account is not on it (a list cut at the largest few, or not read, never hides them).
+  const fullList =
+    holders.data?.accounted === true &&
+    !holders.data.tooMany &&
+    holders.data.found <= SHOWN_HOLDERS;
+  const holdsNow =
+    !fullList ||
+    (acting !== null &&
+      holderAddresses.some((h) => h.toLowerCase() === acting.toLowerCase()));
+  // Once shown, the panels stay for this visit: leaving takes the person off the list of holders, and the panel (with
+  // its open dialog, which says the exit landed) must not vanish under them when that list is read again.
+  if (holdsNow) shownOnce.current = true;
+  const holdsShares = holdsNow || shownOnce.current;
   return (
     <div
-      className="grid max-w-3xl grid-cols-1 gap-4"
+      className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start"
       data-testid="contributor-funds"
     >
       <Card className="p-4">
         <h2 className="text-base font-semibold">Funds</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          This project sold nothing, but anyone can send money to its DAO.
-          Holders decide on the Decisions tab what it is spent on, and anyone
-          holding Shares can leave with their part of it.
+          Shareholders decide on the Decisions tab what this money is spent on,
+          and anyone holding Shares can leave with their part of it.
         </p>
         <div className="mt-3 grid max-w-md grid-cols-2 gap-3">
           {usdc ? (
@@ -144,25 +164,44 @@ export function ContributorFundsTab({
           ) : null}
           <Held dao={dao} decimals={18} symbol="ETH" token={null} />
         </div>
+        <div data-testid="contributor-funds-send">
+          <h3 className="mt-4 text-sm font-semibold">
+            Send money to this project
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Anyone can send {usdc ? "USDC or ETH" : "ETH"} to its DAO, on{" "}
+            {plainNetworkName(chainId)} only. Money sent on another network is
+            lost.
+          </p>
+          <AddressRow
+            copyLabel="Copy the DAO's address"
+            label="The DAO's address"
+            value={dao}
+          />
+        </div>
       </Card>
-      <RagequitPanel
-        chainId={Number(chainId ?? "") || 0}
-        daoBinding={binding}
-        followActingAccount
-        record={exitRecord}
-      />
+      {holdsShares ? (
+        <RagequitPanel
+          chainId={Number(chainId ?? "") || 0}
+          daoBinding={binding}
+          followActingAccount
+          record={exitRecord}
+        />
+      ) : null}
       <FundingCard dao={dao} />
       <WeeklyRoundsCard dao={dao} />
       <MatchedExitCard dao={dao} />
       <PayoutsCard dao={dao} />
-      <DelegationCard
-        author={launch.record.author}
-        chainId={Number(chainId ?? "") || 0}
-        dao={dao}
-        followActingAccount
-        launchId={launch.record.id}
-        members={delegates}
-      />
+      {holdsShares ? (
+        <DelegationCard
+          author={launch.record.author}
+          chainId={Number(chainId ?? "") || 0}
+          dao={dao}
+          followActingAccount
+          launchId={launch.record.id}
+          members={delegates}
+        />
+      ) : null}
     </div>
   );
 }

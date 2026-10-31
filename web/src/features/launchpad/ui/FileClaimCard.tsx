@@ -81,7 +81,26 @@ export function FileClaimCard({
   const [check, setCheck] = useState("");
   const [pay, setPay] = useState("");
   const [deposit, setDeposit] = useState("");
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblemText] = useState<string | null>(null);
+  // The field a problem is about: it is marked, the problem is said under it, and it is brought into view.
+  const [problemField, setProblemField] = useState<ProblemField | null>(null);
+  const setProblem = (
+    text: string | null,
+    field: ProblemField | null = null,
+  ) => {
+    setProblemText(text);
+    setProblemField(text ? field : null);
+    if (text && field)
+      requestAnimationFrame(() => {
+        const element = card.current?.querySelector<HTMLElement>(
+          `[data-field="${field}"]`,
+        );
+        element?.scrollIntoView({ block: "center" });
+        element?.focus({ preventScroll: true });
+      });
+  };
+  // A work area's published words are shown as they are; changing them is a deliberate step.
+  const [ownWords, setOwnWords] = useState(false);
   const [filed, setFiled] = useState<{
     name: string;
     /** It was already accepted for review: it waits for the reviewers, not a manager. */
@@ -112,6 +131,7 @@ export function FileClaimCard({
   const moveTo = (area: OpenWorkArea | null) => {
     setCheck(wordsAfterMove(typedFor.current, chosenArea, check, area));
     setAreaId(area?.id ?? "");
+    setOwnWords(false);
   };
   // Chosen under Ways to help: move to its budget and work area, fill its words, and bring the form into view. It
   // answers the pick only: the budgets are read again on every render, and a re-read must not undo what was typed.
@@ -147,6 +167,23 @@ export function FileClaimCard({
     staleTime: 5_000,
   });
   if (!mandate) return null;
+  // The chosen area's published words, untouched: shown read-only unless the person asks to change them.
+  const lockedWords = Boolean(
+    chosenArea?.words && !ownWords && check.trim() === chosenArea.words,
+  );
+  const fieldProblem = (field: ProblemField) =>
+    problemField === field ? problem : null;
+  const invalid = (field: ProblemField) => ({
+    "data-field": field,
+    "aria-invalid": problemField === field ? (true as const) : undefined,
+    "aria-describedby":
+      [
+        problemField === field ? `work-claim-${field}-problem` : null,
+        field === "name" ? "work-claim-name-hint" : null,
+      ]
+        .filter(Boolean)
+        .join(" ") || undefined,
+  });
   const holdsMoney = mandate.created.budget > 0n && mandate.currency !== null;
 
   const submit = async () => {
@@ -159,22 +196,37 @@ export function FileClaimCard({
     let id: string;
     const badName = nameProblem(name);
     if (badName) {
-      setProblem(badName);
+      setProblem(badName, "name");
       return;
     }
     try {
       id = idWord(name);
     } catch {
-      setProblem("Give your work a short name, up to 32 characters.");
+      setProblem("Give your work a title, up to 32 characters.", "name");
       return;
     }
-    if (evidence.trim() === "" || check.trim() === "") {
-      setProblem("Say where the work is, and how it should be judged.");
+    if (evidence.trim() === "") {
+      setProblem(
+        "Say where the work is, and how it should be judged.",
+        "evidence",
+      );
+      return;
+    }
+    // "Not sure yet" where there are work areas: only a work area's words can be accepted, so pick one first.
+    if (!chosenArea && budgetAreas.length > 0 && check.trim() === "") {
+      setProblem("Pick the work area this work is for.", "area");
+      return;
+    }
+    if (check.trim() === "") {
+      setProblem(
+        "Say where the work is, and how it should be judged.",
+        "check",
+      );
       return;
     }
     const tooLong = evidenceProblem(evidence);
     if (tooLong) {
-      setProblem(tooLong);
+      setProblem(tooLong, "evidence");
       return;
     }
     // What it asks for, in the budget's currency: nothing unless the person filled it in. A currency that did not say how
@@ -223,25 +275,28 @@ export function FileClaimCard({
     const wanted = hashText(check);
     const wrongWords = wordsProblem(chosenArea, check);
     if (wrongWords) {
-      setProblem(wrongWords);
+      setProblem(wrongWords, "check");
       return;
     }
     // "Not sure yet" with words of one's own: only a work area's words can ever be accepted for review.
     const noArea = chosenArea ? null : noAreaProblem(budgetAreas, check);
     if (noArea) {
-      setProblem(noArea);
+      setProblem(noArea, "area");
       return;
     }
     const existing = mandate.claims.find((c) => c.id === id);
     if (existing && !sameAddress(wallet, existing.record.contributor)) {
-      setProblem("Someone else already used that name. Choose another.");
+      setProblem(
+        "Someone else already used that name. Choose another.",
+        "name",
+      );
       return;
     }
     // The same name again: only to finish a submission still open with this very evidence. Anything else would send
     // nothing while saying it was submitted.
     const reused = resubmitProblem(existing, evidence);
     if (reused) {
-      setProblem(reused);
+      setProblem(reused, "name");
       return;
     }
     if (
@@ -410,7 +465,7 @@ export function FileClaimCard({
               <option key={m.address} value={i}>
                 {m.isMilestonePanel
                   ? "The milestone panel (for your team's milestones)"
-                  : `${m.address.slice(0, 10)}…`}
+                  : `Work budget ${i + 1}`}
               </option>
             ))}
           </select>
@@ -421,6 +476,7 @@ export function FileClaimCard({
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">Work area</span>
             <select
+              {...invalid("area")}
               className="rounded-md border border-black/10 bg-transparent px-2 py-1 dark:border-white/10"
               data-testid="work-claim-area"
               onChange={(e) =>
@@ -431,32 +487,33 @@ export function FileClaimCard({
               <option value="">Not sure yet</option>
               {budgetAreas.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.name}
+                  {a.title}
                 </option>
               ))}
             </select>
+            <FieldProblem field="area" problem={fieldProblem("area")} />
           </label>
         ) : null}
         <div className="flex flex-col gap-1 text-sm">
           <label className="font-medium" htmlFor="work-claim-name-input">
-            Name your work
+            Title
           </label>
           <Input
+            {...invalid("name")}
             data-testid="work-claim-name"
             id="work-claim-name-input"
             ref={nameInput}
-            aria-describedby="work-claim-name-hint"
             maxLength={32}
             onChange={(e) => setName(e.target.value)}
-            placeholder="write-the-docs"
+            placeholder="e.g. First draft of the guide"
             value={name}
           />
+          <FieldProblem field="name" problem={fieldProblem("name")} />
           <span
             className="text-xs text-muted-foreground"
             id="work-claim-name-hint"
           >
-            Plain letters, numbers and dashes, up to 32. Fixed work gets a new
-            name.
+            Up to 32 characters, without accents. Fixed work gets a new title.
           </span>
         </div>
         <div className="flex flex-col gap-1 text-sm">
@@ -464,33 +521,74 @@ export function FileClaimCard({
             Where the work is
           </label>
           <Input
+            {...invalid("evidence")}
             data-testid="work-claim-evidence"
             id="work-claim-evidence-input"
             onChange={(e) => setEvidence(e.target.value)}
             placeholder="A link, or a short description"
             value={evidence}
           />
+          <FieldProblem field="evidence" problem={fieldProblem("evidence")} />
         </div>
         <div className="flex flex-col gap-1 text-sm">
           <label className="font-medium" htmlFor="work-claim-check-input">
             How it should be judged
           </label>
-          <Input
+          {/* A work area's published words are shown whole and read-only (a one-line box cut them off on a phone);
+              typing other words is a deliberate step, since any change means it cannot be accepted for review. */}
+          <textarea
+            {...invalid("check")}
+            className={`rounded-md border border-input px-3 py-2 text-sm [field-sizing:content] placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring ${lockedWords ? "bg-secondary/50" : "bg-transparent"}`}
             data-testid="work-claim-check"
             id="work-claim-check-input"
             onChange={(e) => setCheck(e.target.value)}
-            placeholder="The work area's acceptance check, in its exact words"
+            placeholder={
+              !chosenArea && budgetAreas.length > 0
+                ? "Pick the work area above and its words are filled in"
+                : "The work area's acceptance check, in its exact words"
+            }
+            readOnly={lockedWords}
+            // Published words are shown whole: the box grows with them instead of cutting them off on a phone.
+            rows={
+              lockedWords
+                ? Math.min(12, Math.max(2, Math.ceil(check.length / 36)))
+                : 2
+            }
             value={check}
           />
+          <FieldProblem field="check" problem={fieldProblem("check")} />
           <span
             className="text-xs text-muted-foreground"
             data-testid="work-claim-check-note"
           >
-            {chosenArea?.words && check.trim() === chosenArea.words
-              ? `These are the words ${chosenArea.name} was set up with.`
-              : chosenArea && !chosenArea.words
-                ? `${chosenArea.name}'s words are not published here: ask its manager for them. If yours differ, it cannot be accepted for review.`
-                : "Use the work area's exact words. If they differ, its manager cannot accept your work for review."}
+            {lockedWords && chosenArea
+              ? `These are the words ${chosenArea.title} was set up with. `
+              : chosenArea?.words && check.trim() === chosenArea.words
+                ? `These are the words ${chosenArea.title} was set up with.`
+                : chosenArea && !chosenArea.words
+                  ? `${chosenArea.title}'s words are not published here: ask its manager for them. If yours differ, it cannot be accepted for review.`
+                  : "Use the work area's exact words. If they differ, its manager cannot accept your work for review."}
+            {lockedWords ? (
+              <button
+                className="underline"
+                data-testid="work-claim-own-words"
+                onClick={() => {
+                  setOwnWords(true);
+                  // This button goes away once the words can be changed: keep focus in the box being unlocked.
+                  requestAnimationFrame(() => {
+                    const box =
+                      card.current?.querySelector<HTMLTextAreaElement>(
+                        '[data-field="check"]',
+                      );
+                    box?.focus();
+                    box?.setSelectionRange(box.value.length, box.value.length);
+                  });
+                }}
+                type="button"
+              >
+                Use different words
+              </button>
+            ) : null}
           </span>
         </div>
       </div>
@@ -551,11 +649,12 @@ export function FileClaimCard({
           >
             {filed.accepted
               ? `Submitted “${filed.name}”. It is waiting for the reviewers.`
-              : `Submitted “${filed.name}”. It is waiting for a work area's manager to accept it for review.`}
+              : `Submitted “${filed.name}”. It is waiting for the work area's manager to accept it for review.`}
           </span>
         ) : null}
       </div>
-      {problem ? (
+      {/* A problem about one field is said under that field only; the rest are said here. */}
+      {problem && problemField === null ? (
         <p
           className="mt-2 text-sm text-red-700 dark:text-red-300"
           data-testid="work-claim-problem"
@@ -566,4 +665,26 @@ export function FileClaimCard({
       ) : null}
     </Card>
   );
+}
+
+type ProblemField = "area" | "name" | "evidence" | "check";
+
+/** A problem said under the field it is about (the field's `aria-describedby` names it). */
+function FieldProblem({
+  field,
+  problem,
+}: {
+  field: ProblemField;
+  problem: string | null;
+}) {
+  return problem ? (
+    <span
+      className="text-xs text-destructive"
+      data-testid="work-claim-problem"
+      id={`work-claim-${field}-problem`}
+      role="alert"
+    >
+      {problem}
+    </span>
+  ) : null;
 }

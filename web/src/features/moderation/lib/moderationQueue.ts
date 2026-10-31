@@ -162,14 +162,26 @@ export function reportTypeLabel(reportType: ReportType): string {
 }
 
 const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
-  open: "Open",
+  // Not "Open": that word is also a link and a filter on the same screen.
+  open: "Needs review",
   resolved: "Resolved",
   dismissed: "Dismissed",
   escalated: "Escalated",
 };
 
+/**
+ * When a report was made, as both the board's Reports section and the community queue show it: "Oct 30". Empty when the
+ * date can't be read.
+ */
+export function reportDate(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
 export function reportStatusLabel(status: ReportStatus): string {
-  return REPORT_STATUS_LABEL[status] ?? "Open";
+  return REPORT_STATUS_LABEL[status] ?? REPORT_STATUS_LABEL.open;
 }
 
 /**

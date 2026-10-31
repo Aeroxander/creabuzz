@@ -1,5 +1,7 @@
 # creabuzz — a DAO OS
 
+> **History, 2026-10-31.** The DAO OS framing (agentic Slack plus a launchpad) was replaced by the social MVP and then contributor projects with no raise (D63, D137). Where this file disagrees with [v3-review/STATUS.md](v3-review/STATUS.md) or [v3-review/DECISIONS.md](v3-review/DECISIONS.md), those win.
+
 > Agentic Slack + a DAO launchpad, wired into one loop. This is the product
 > contract the code is held to. Where an older plan (`docs/archive/ORG_COMMUNITY_PLAN.md`,
 > `docs/dao-launchpad-plan.md`, `docs/next-gen-launchpad-plan.md`) disagrees

@@ -41,8 +41,9 @@ export function PersonRow({
           {name}
         </Link>
         <p className="truncate text-sm text-black/60 dark:text-white/60">
-          {resolveUserSecondaryName(profile, pubkey)}
-          {detail ? ` · ${detail}` : ""}
+          {[resolveUserSecondaryName(profile, pubkey), detail]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
         {showBio && profile?.about ? (
           <p className="mt-1 line-clamp-2 text-sm text-black/80 dark:text-white/80">

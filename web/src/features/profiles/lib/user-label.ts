@@ -7,12 +7,18 @@
  * surface at a time, so the newer panels (fleet, board, launchpad, repos)
  * labelled people with raw hex while the channel timeline showed a name.
  *
- * This is the one place that decides a username. It stays free of imports so
- * `user-label.test.mjs` can drive it under `node --test`; the pubkey fallback
- * lives in `../use-profiles`, which owns the `@/` import.
+ * This is the one place that decides a username, and what to call someone who
+ * has none: "Someone", never a short key (see `shared/lib/no-name.ts`). A short
+ * key is kept for addresses and transaction ids, and as a quiet secondary line
+ * only where two nameless people must be told apart.
  *
- * Alias-free and import-free on purpose.
+ * Alias-free on purpose: `user-label.test.mjs` drives it under `node --test`.
  */
+
+import { SOMEONE } from "../../../shared/lib/no-name.ts";
+import { truncatePubkey } from "../../../shared/lib/pubkey.ts";
+
+export { SOMEONE };
 
 /** The profile fields a username can come from (kind-0 metadata). */
 export interface UserNameProfile {
@@ -44,6 +50,34 @@ export function pickUserName(
 ): string | null {
   if (!profile) return null;
   return firstNonEmpty([profile.display_name, profile.name, profile.nip05]);
+}
+
+/** Whether the person has chosen a name (a profile still loading has none yet). */
+export function hasUserName(
+  profile: UserNameProfile | undefined | null,
+): boolean {
+  return pickUserName(profile) !== null;
+}
+
+/** What main copy calls a person: the name they chose, or "Someone". Never a key. */
+export function personName(
+  profile: UserNameProfile | undefined | null,
+): string {
+  return pickUserName(profile) ?? SOMEONE;
+}
+
+/**
+ * The quiet line under or beside a person's name: their `user@host` username when they have one; for someone with no
+ * name, their short key, so two "Someone"s in one list can be told apart; otherwise nothing. A key is never printed
+ * beside a real name as if it were a handle.
+ */
+export function personSecondaryLabel(
+  profile: UserNameProfile | undefined | null,
+  pubkey: string,
+): string | null {
+  const handle = pickUserHandle(profile);
+  if (handle !== null) return handle;
+  return hasUserName(profile) || pubkey === "" ? null : truncatePubkey(pubkey);
 }
 
 /**

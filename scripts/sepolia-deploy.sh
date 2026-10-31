@@ -19,7 +19,12 @@
 #   SEPOLIA_RPC_URL          your node (the rehearsal falls back to a public one; a real deploy refuses to)
 #   DEPLOYER_PRIVATE_KEY     --broadcast only
 #
-# Usage:  scripts/sepolia-deploy.sh [--broadcast]
+# What it prints after a real deploy: the contributor pilot's settings only (the hosted image takes nothing else). The
+# deploy itself (contracts/script/DeployLaunchKit.s.sol) still puts every optional test-network contract on the chain and
+# this checks each one; `--optional` (beside `--broadcast`) also prints their web settings, for a test build of your own. A pilot-only deploy
+# set would change that Forge script, which is frozen with the contracts (D137).
+#
+# Usage:  scripts/sepolia-deploy.sh [--broadcast] [--optional]
 
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,8 +33,14 @@ step() { printf '\033[36m[sepolia]\033[0m %s\n' "$*"; }
 fail() { printf '\033[31m[sepolia] %s\033[0m\n' "$*" >&2; exit 1; }
 
 MODE="rehearse"
-[[ "${1:-}" == "--broadcast" ]] && MODE="broadcast"
-[[ $# -le 1 && ( "${1:-}" == "" || "${1:-}" == "--broadcast" ) ]] || fail "usage: scripts/sepolia-deploy.sh [--broadcast]"
+OPTIONAL=0
+for arg in "$@"; do
+  case "$arg" in
+    --broadcast) MODE="broadcast" ;;
+    --optional) OPTIONAL=1 ;;
+    *) fail "usage: scripts/sepolia-deploy.sh [--broadcast] [--optional]" ;;
+  esac
+done
 
 if [[ -f .env ]]; then set -a; source .env; set +a; fi
 export PATH="$HOME/.foundry/bin:$PATH"
@@ -176,6 +187,9 @@ BUZZ_EVM_RPC_URL=CHANGE_ME_a_Sepolia_node_for_the_server
 # VITE_ERROR_REPORT_URL=https://<your collector>
 # VITE_APP_RELEASE=<the build's version>
 
+EOF
+  if [[ "$OPTIONAL" == "1" ]]; then
+    cat <<EOF
 # ── Not for the first pilot, and not in the hosted image: test raises and the optional features, for a build of your
 # own (pnpm build in web/; docs/sepolia-testnet.md, section 3)
 VITE_DAO_LAUNCH_KITS='{"${C}":"${KIT}"}'
@@ -191,5 +205,9 @@ VITE_PAYOUTS_FACTORIES='{"${C}":"${PAYOUTS_FACTORY}"}'
 VITE_REMIX_BONDS='{"${C}":"${REMIX_BONDS}"}'
 
 EOF
+  else
+    echo "  (a raise and the optional test-network features were deployed too, not for the pilot: their addresses are in"
+    echo "   contracts/deployments/dao-launch-kit-${SEPOLIA_CHAIN_ID}.json, and --optional beside --broadcast prints their settings)"
+  fi
   echo "  (docs/sepolia-testnet.md has the rest: the server, the page's node, passkey accounts, what testers need)"
 fi

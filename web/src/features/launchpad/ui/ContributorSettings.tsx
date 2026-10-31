@@ -1,5 +1,6 @@
 /**
- * The founder's settings for a contributor project (D111): what people read about it, and taking it off Discover.
+ * The founder's settings for a contributor project (D111), and for an idea in a build without raises: what people read
+ * about it, and taking it off Discover.
  *
  * The sale's checklist and auction set-up do not apply, so they are not here. The rest of the record (its DAO, Shares,
  * work areas and how it is funded) is kept exactly as published: an edit republishes it with only these words changed.
@@ -30,10 +31,13 @@ export function settingsProblem(name: string, pitch: string): string | null {
 
 export function ContributorSettings({
   launch,
+  idea = false,
   isDeleting,
   onDelete,
 }: {
   launch: Launch;
+  /** An idea has no DAO or Shares yet: nothing about it is fixed on the network. */
+  idea?: boolean;
   isDeleting: boolean;
   onDelete: () => Promise<void>;
 }) {
@@ -69,14 +73,17 @@ export function ContributorSettings({
 
   return (
     <div
-      className="grid max-w-3xl grid-cols-1 gap-4"
+      className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start"
       data-testid="contributor-settings"
     >
       <Card className="p-4">
-        <h2 className="text-base font-semibold">About this project</h2>
+        <h2 className="text-base font-semibold">
+          {idea ? "About this idea" : "About this project"}
+        </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          What people read on Discover and on this page. The Shares' name and
-          the work areas' words are fixed on the network and stay as they are.
+          {idea
+            ? "What people read on Discover and on this page."
+            : "What people read on Discover and on this page. The Shares' name and the work areas' words are fixed on the network and stay as they are."}
         </p>
         <div className="mt-3 grid gap-3">
           <TextField
@@ -126,8 +133,9 @@ export function ContributorSettings({
           Take it off Discover
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          The project stops being listed. Its DAO, its Shares and everything
-          already decided stay on the network.
+          {idea
+            ? "The idea stops being listed."
+            : "The project stops being listed. Its DAO, its Shares and everything already decided stay on the network."}
         </p>
         {confirmRemove ? (
           <div className="mt-2 flex gap-2">

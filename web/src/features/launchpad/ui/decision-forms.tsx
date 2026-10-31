@@ -21,7 +21,11 @@ import {
   marketDecision,
   marketTerms,
 } from "../lib/market-actions";
-import { decodeWord, idLabel } from "../lib/work";
+import { decodeWord } from "../lib/work";
+import { readableQuotes, workTitle } from "../lib/work-titles";
+
+/** The work area name's rule, said the same way as the check that refuses a longer one. */
+const WORK_AREA_NAME_HINT = "A short name, up to 32 characters.";
 import type { WorkSnapshot } from "../lib/work-read";
 import type { DecisionsSnapshot } from "../lib/decisions";
 import { awardsUnderVote } from "../lib/dao-overview";
@@ -78,6 +82,20 @@ export function attempt(make: () => DecisionDraft): DraftResult {
   }
 }
 
+/** A work budget by what it holds and until when, never by its contract's address. */
+export function budgetName(m: {
+  created: { shareBudget: bigint };
+  sharesAllocated: bigint;
+  expiresAt: number;
+}): string {
+  const until = new Date(m.expiresAt * 1000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  return `Work budget · ${formatUnits(m.created.shareBudget - m.sharesAllocated, 18)} Shares not yet in a work area · open until ${until}`;
+}
+
 export const DAY = 86_400;
 export const days = (value: string, fallback: number): number => {
   const n = Number(value);
@@ -115,18 +133,18 @@ export function DraftPanel({
             className="text-sm font-semibold"
             data-testid="decision-draft-title"
           >
-            {result.draft.title}
+            {readableQuotes(result.draft.title)}
           </p>
           <ul className="mt-1 list-disc pl-5 text-sm text-muted-foreground">
             {result.draft.lines.map((line) => (
-              <li key={line}>{line}</li>
+              <li key={line}>{readableQuotes(line)}</li>
             ))}
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
             {result.draft.lane === "unrestricted"
               ? "This changes what the DAO can do or spend, so it takes the full vote."
               : "This is inside a budget the DAO already voted, so it takes the lighter vote."}{" "}
-            Nothing happens until holders back it and it runs.
+            Nothing happens until holders back it and it takes effect.
           </p>
           <Button
             aria-busy={sending}
@@ -140,17 +158,16 @@ export function DraftPanel({
             {sending ? "Opening…" : "Put it to a vote"}
           </Button>
         </>
-      ) : dirty ? (
+      ) : (
+        // What is still missing, named: the first thing the form refuses, not a general "fill it in".
         <p
           className="text-sm text-muted-foreground"
-          data-testid="decision-draft-problem"
+          data-testid={
+            dirty ? "decision-draft-problem" : "decision-draft-missing"
+          }
           role="status"
         >
-          {result.problem}
-        </p>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Fill in the details and you will see exactly what is put to a vote.
+          {dirty ? result.problem : `Still needed: ${result.problem}`}
         </p>
       )}
       {blocked ? (
@@ -196,6 +213,12 @@ export function ProjectForm({
   const [which, setWhich] = useState("");
   const [name, setName] = useState(preset?.name ?? "");
   const [manager, setManager] = useState("");
+  // The manager picked or pasted, by name where this server knows one.
+  const managerKeys = useMemo(
+    () => (/^0x[0-9a-fA-F]{40}$/.test(manager.trim()) ? [manager.trim()] : []),
+    [manager],
+  );
+  const managerName = useWalletLabels(managerKeys);
   const [shares, setShares] = useState(preset?.shares ?? "");
   const [money, setMoney] = useState("");
   const [open, setOpen] = useState("30");
@@ -292,14 +315,14 @@ export function ProjectForm({
             label:
               ctx.work?.milestonePanel === m.address.toLowerCase()
                 ? "The milestone panel (judges your team's milestones)"
-                : `${m.address.slice(0, 10)}… · ${formatUnits(m.created.shareBudget - m.sharesAllocated, 18)} Shares left`,
+                : budgetName(m),
           }))}
           testId="project-budget"
           value={chosen?.address ?? ""}
         />
       )}
       <TextField
-        hint="A short name, up to 32 characters."
+        hint={WORK_AREA_NAME_HINT}
         label="Work area name"
         onChange={setName}
         placeholder="docs"
@@ -307,13 +330,18 @@ export function ProjectForm({
         value={name}
       />
       <TextField
-        hint="Leave empty to manage it yourself."
+        hint={
+          managerKeys.length > 0 &&
+          !managerName(managerKeys[0]).startsWith("0x")
+            ? `${managerName(managerKeys[0])} will manage it.`
+            : "Pick someone from the list, or leave empty to manage it yourself."
+        }
         after={
           <PeoplePicker onPick={setManager} testId="project-manager-people" />
         }
-        label="Who manages it (wallet address)"
+        label="Who manages it"
         onChange={setManager}
-        placeholder="0x…"
+        placeholder="Pick from the list below, or paste an account address"
         testId="project-manager"
         value={manager}
       />
@@ -444,11 +472,12 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
         vote goes.
       </p>
       {awardable.length === 0 ? (
+        // Nothing to award: no amount to type and no preview, only where the work stands.
         <p className="text-sm" data-testid="award-none">
           No approved work is waiting for an award.{" "}
           {inVote
             ? "Work already in an open award vote is not listed again."
-            : "Work can be awarded once its work area's manager has accepted it, its reviewers approve it, and the waiting period has passed."}
+            : "Work can be awarded once its work area's manager has accepted it, its reviewers approve it, and the waiting period has passed. Submitted work and where it stands are on the Work tab."}
         </p>
       ) : (
         <SelectField
@@ -456,40 +485,44 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
           onChange={setWhich}
           options={awardable.map((a) => ({
             value: key(a),
-            label: `“${idLabel(a.claim.id)}” by ${who(a.claim.record.contributor)} in “${a.claim.project ? idLabel(a.claim.project) : ""}”`,
+            label: `${workTitle(a.claim.id)} by ${who(a.claim.record.contributor)}${a.claim.project ? ` in ${workTitle(a.claim.project)}` : ""}`,
           }))}
           testId="award-claim"
           value={chosen ? key(chosen) : ""}
         />
       )}
-      <TextField
-        hint={
-          [
-            left !== null
-              ? `The work area has ${formatUnits(left, 18)} Shares left to award.`
-              : null,
-            allowanceLeft !== null
-              ? `This year's allowance of new Shares has ${formatUnits(allowanceLeft, 18)} left.`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(" ") || undefined
-        }
-        inputMode="decimal"
-        label="Shares to award"
-        onChange={setShares}
-        placeholder="500"
-        testId="award-shares"
-        value={shares}
-      />
-      <DraftPanel
-        blocked={blocked}
-        busy={busy}
-        dirty={shares !== ""}
-        gate={gate}
-        onSubmit={onSubmit}
-        result={result}
-      />
+      {awardable.length === 0 ? null : (
+        <>
+          <TextField
+            hint={
+              [
+                left !== null
+                  ? `The work area has ${formatUnits(left, 18)} Shares left to award.`
+                  : null,
+                allowanceLeft !== null
+                  ? `This year's allowance of new Shares has ${formatUnits(allowanceLeft, 18)} left.`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
+            inputMode="decimal"
+            label="Shares to award"
+            onChange={setShares}
+            placeholder="500"
+            testId="award-shares"
+            value={shares}
+          />
+          <DraftPanel
+            blocked={blocked}
+            busy={busy}
+            dirty={shares !== ""}
+            gate={gate}
+            onSubmit={onSubmit}
+            result={result}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -782,8 +815,8 @@ export function PayForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
   return (
     <div className="mt-3 grid gap-3" data-testid="form-pay">
       <p className="text-sm text-muted-foreground">
-        Pay someone from the treasury. Nothing moves until holders back this and
-        it runs.
+        Pay someone from the treasury. Nothing moves until holders back it and
+        it takes effect.
       </p>
       <p
         className="text-xs text-muted-foreground"

@@ -9,7 +9,7 @@ import {
 } from "../lib/payouts";
 import { useChainSend } from "../use-chain-send";
 import { PAYOUTS_QUERY, usePayouts } from "../use-payouts";
-import { FailureNote, WalletStrip } from "./auction-widgets";
+import { FailureNote, WalletStrip } from "./account-widgets";
 
 const date = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString(undefined, {

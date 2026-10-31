@@ -12,6 +12,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, LayoutGrid, Plus } from "lucide-react";
 import { useState } from "react";
 
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -68,16 +69,34 @@ export function BoardPage() {
   const me = existingUserPubkey();
   const nameOf = useUserNames(projects.map((card) => card.founder));
   const myPending = projects.some((card) => card.myRequestPending);
+  // A contributor-only build has no raise to carry shares over to and no percentage seats to pitch: starting something
+  // there is a contributor project.
+  const raises = raisesOffered();
+  const startProject = (
+    <Button asChild size="sm">
+      <Link data-testid="board-start-project" to="/start/contributor">
+        <Plus className="mr-1 h-4 w-4" aria-hidden /> Start a project
+      </Link>
+    </Button>
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8">
       <PageHeader
         action={
-          <Button onClick={() => setPitchOpen(true)} size="sm">
-            <Plus className="mr-1 h-4 w-4" /> Pitch a project
-          </Button>
+          raises ? (
+            <Button onClick={() => setPitchOpen(true)} size="sm">
+              <Plus className="mr-1 h-4 w-4" /> Pitch a project
+            </Button>
+          ) : (
+            startProject
+          )
         }
-        description="Founders pitch projects here. Pick a role and ask to join; if the founder agrees, your share is recorded. It is not a legal contract, and it can be undone until the project's DAO takes it on."
+        description={
+          raises
+            ? "Founders pitch projects here. Pick a role and ask to join; if the founder agrees, your share is recorded. It is not a legal contract, and it can be undone until the project's DAO takes it on."
+            : "Projects people have pitched, and the roles they need help with."
+        }
         title={
           <span className="flex items-center gap-2">
             <LayoutGrid className="h-5 w-5" /> Project board
@@ -113,12 +132,19 @@ export function BoardPage() {
           data-testid="board-empty"
         >
           <p className="text-sm text-black/60 dark:text-white/60">
-            No projects on the board yet. Founders, pitch the first one: the
-            idea, the role you take, and the roles you need.
+            {raises
+              ? "No projects on the board yet. Founders, pitch the first one: the idea, the role you take, and the roles you need."
+              : "No projects on the board yet."}
           </p>
-          <Button className="mt-4" onClick={() => setPitchOpen(true)} size="sm">
-            <Plus className="mr-1 h-4 w-4" /> Pitch a project
-          </Button>
+          <div className="mt-4 flex justify-center">
+            {raises ? (
+              <Button onClick={() => setPitchOpen(true)} size="sm">
+                <Plus className="mr-1 h-4 w-4" /> Pitch a project
+              </Button>
+            ) : (
+              startProject
+            )}
+          </div>
         </div>
       ) : (
         <>
@@ -140,20 +166,24 @@ export function BoardPage() {
               <ProjectCard card={card} key={card.key} me={me} nameOf={nameOf} />
             ))}
           </ul>
-          <Link
-            className="flex items-center justify-between rounded-2xl border border-violet-500/30 bg-violet-500/5 px-4 py-3 text-sm transition-colors hover:bg-violet-500/10"
-            to="/launchpad"
-          >
-            <span>
-              Ready to raise money later? The agreed shares carry over to the
-              project's launch.
-            </span>
-            <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
-          </Link>
+          {raises ? (
+            <Link
+              className="flex items-center justify-between rounded-2xl border border-violet-500/30 bg-violet-500/5 px-4 py-3 text-sm transition-colors hover:bg-violet-500/10"
+              to="/launchpad"
+            >
+              <span>
+                Ready to raise money later? The agreed shares carry over to the
+                project's launch.
+              </span>
+              <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
+            </Link>
+          ) : null}
         </>
       )}
 
-      <PitchDialog onOpenChange={setPitchOpen} open={pitchOpen} />
+      {raises ? (
+        <PitchDialog onOpenChange={setPitchOpen} open={pitchOpen} />
+      ) : null}
     </div>
   );
 }

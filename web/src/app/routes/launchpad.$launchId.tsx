@@ -1,10 +1,16 @@
-import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  lazyRouteComponent,
+  redirect,
+} from "@tanstack/react-router";
 
 import { isDecisionId } from "@/features/launchpad/lib/decision-link";
 import {
   type LaunchAction,
   parseLaunchAction,
 } from "@/features/launchpad/lib/deep-link";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import { SANDBOX_ID } from "@/features/launchpad/lib/sandbox";
 
 /** Optional on purpose: a link names only what it needs, so existing links stay as they are. */
 interface LaunchSearch {
@@ -31,6 +37,12 @@ interface LaunchSearch {
 }
 
 export const Route = createFileRoute("/launchpad/$launchId")({
+  // The sandbox walks through a raise; a contributor-only build offers none, so its address leads to the launchpad.
+  beforeLoad: ({ params }) => {
+    if (params.launchId === SANDBOX_ID && !raisesOffered()) {
+      throw redirect({ to: "/launchpad", search: {}, replace: true });
+    }
+  },
   validateSearch: (search: Record<string, unknown>): LaunchSearch => ({
     author:
       typeof search.author === "string" && search.author.length > 0
@@ -88,7 +100,7 @@ const LaunchDetailPage = lazyRouteComponent(
 function LaunchDetailRoute() {
   const { launchId } = Route.useParams();
   const { author, action, tab, decision, claim, mandate } = Route.useSearch();
-  const sandbox = launchId === "nebula-sandbox";
+  const sandbox = launchId === SANDBOX_ID;
   return (
     <LaunchDetailPage
       key={`${author ?? "unknown"}:${launchId}`}

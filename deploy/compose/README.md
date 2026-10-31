@@ -81,6 +81,11 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - The image's build prints what the web app will offer (network, chain node, contributor projects, sponsored gas,
   error reports) and stops on settings that do not fit together (`web/scripts/check-deploy-env.mjs`). The first release
   offers contributor projects only: the image takes no setting for test raises, nor the mainnet switch.
+- Contributor-only is one build setting, `VITE_CONTRIBUTOR_ONLY=1`, which the repository's `Dockerfile` sets for this
+  image. The web app reads it through `raisesOffered()` (`web/src/features/launchpad/lib/raises-offered.ts`), and it is
+  the hosted MVP's switch for more than money: it also decides what Start, Discover, Your work and the side rails offer.
+  Every other build (a developer's, the mocked browser suite, CI) leaves it off and offers raises
+  (`docs/v3-review/STATUS.md`, "The hosted build").
 - The image is contributor-only, and its people act from passkey accounts alone, so with contributor projects on the
   build stops unless the ZeroDev settings (`VITE_ZERODEV_PROJECT_ID`, a UUID, and `VITE_ZERODEV_CHAIN_ID`) are set. Any
   `VITE_*` value still holding `CHANGE_ME` stops it too: `./run.sh build` refuses before Docker starts, and the image's

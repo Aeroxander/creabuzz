@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { selectorOf } from "@creaton/core/launchpad/evmAbi.ts";
 import {
+  founderShareWarning,
   CONTRIBUTOR_DEFAULTS,
   contributorIssue,
   contributorRecordInput,
@@ -290,6 +291,42 @@ test("several first projects (D84): distinct names, each within the limit, toget
   );
 });
 
+test("a work area's problem says which of its boxes is wrong, so that box is the one marked and focused", () => {
+  const area = (overrides) => ({
+    name: "docs",
+    check: "docs merged",
+    shares: "1",
+    ...overrides,
+  });
+  const cases = [
+    [{ name: "" }, "name"],
+    [{ name: "0xdocs" }, "name"],
+    [{ name: "a".repeat(33) }, "name"],
+    // Named, but what finished looks like is empty or too short: the empty box, not the name.
+    [{ check: "" }, "check"],
+    [{ check: "ok" }, "check"],
+    [{ check: "x".repeat(2001) }, "check"],
+    [{ shares: "" }, "shares"],
+    [{ shares: "1.5" }, "shares"],
+    [{ shares: "0" }, "shares"],
+    [{ shares: "25001" }, "shares"],
+  ];
+  for (const [overrides, part] of cases) {
+    const issue = contributorIssue(draft({ projects: [area(overrides)] }));
+    assert.equal(issue?.field, "projects", JSON.stringify(overrides));
+    assert.equal(issue?.index, 0, JSON.stringify(overrides));
+    assert.equal(issue?.part, part, JSON.stringify(overrides));
+  }
+  // In the second of two areas: its index and its box.
+  const second = contributorIssue(
+    draft({ projects: [area({}), area({ name: "dev", check: "" })] }),
+  );
+  assert.equal(second?.index, 1);
+  assert.equal(second?.part, "check");
+  // A problem that is not about a box of a work area has no part.
+  assert.equal(contributorIssue(draft({ pitch: "short" }))?.part, null);
+});
+
 test("the launch call carries every first project, each managed by the founder", () => {
   const data = encodeKitLaunch({
     terms: contributorTerms(
@@ -367,5 +404,34 @@ test("how reviewers decide is said as ClaimStake.settle decides: with one needed
   assert.equal(
     quorumSentence(1, 1),
     "This reviewer decides on each piece of work alone.",
+  );
+});
+
+test("starting Shares above a third of the Shares for work are warned about while typing, with the most allowed", () => {
+  assert.equal(
+    founderShareWarning({ founderWhole: 100n, budgetWhole: 300n }),
+    null,
+  );
+  assert.match(
+    founderShareWarning({
+      founderWhole: 999_999_999n,
+      budgetWhole: 300_000n,
+    }) ?? "",
+    /more than a third of the Shares for work.*at most 100,000/,
+  );
+});
+
+test("a share that rounds to nothing or to everything is never printed as 0% or 100%", () => {
+  assert.equal(formatBps(3), "<0.1%");
+  assert.equal(formatBps(0), "0%");
+  assert.equal(formatBps(9_997), ">99.9%");
+  assert.equal(formatBps(10_000), "100%");
+  assert.equal(formatBps(50), "0.5%");
+});
+
+test("the starting-Shares warning names what it is about", () => {
+  assert.match(
+    founderShareWarning({ founderWhole: 200n, budgetWhole: 300n }) ?? "",
+    /^Your starting Shares are more than a third/,
   );
 });

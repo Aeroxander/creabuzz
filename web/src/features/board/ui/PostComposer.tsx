@@ -119,7 +119,7 @@ export function PostComposer({
             void submit();
           }
         }}
-        placeholder="Add details (optional). You can use Markdown."
+        placeholder="Add details (optional)"
         value={body}
       />
       <div>
@@ -147,7 +147,7 @@ export function PostComposer({
         </Button>
         <span className="text-xs text-muted-foreground">
           {" "}
-          Paste a link in the text to share one.
+          Or paste a link to a picture in the text.
         </span>
       </div>
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}

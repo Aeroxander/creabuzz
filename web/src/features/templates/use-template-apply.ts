@@ -117,7 +117,12 @@ export function useCommunitySetupAccess() {
       : accessQuery.isError
         ? "error"
         : (accessQuery.data ?? "checking");
-  return { access, refreshAccess: accessQuery.refetch };
+  // The last answer the server gave, kept through a re-check, for places that must not flicker while one runs (the
+  // sidebar's setup entry). Null until the first answer.
+  const settled: "allowed" | "denied" | "unknown" | "error" | null = !me
+    ? null
+    : (accessQuery.data ?? (accessQuery.isError ? "error" : null));
+  return { access, settled, refreshAccess: accessQuery.refetch };
 }
 
 export function useTemplateApply() {

@@ -1,5 +1,7 @@
 # Paperclip parity status — can a DAO run on this?
 
+> **Outside the Creaton MVP, 2026-10-31.** The MVP is the server, the web app and contributor projects, with no desktop ([v3-review/STATUS.md](v3-review/STATUS.md), "Scope").
+
 Audited 2026-09-21 against committed HEAD + live walkthrough +
 docs/paperclip-parity-plan.md and docs/paperclip-ux-reference.md.
 

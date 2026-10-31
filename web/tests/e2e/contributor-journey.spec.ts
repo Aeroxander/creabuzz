@@ -360,7 +360,7 @@ test("a contributor project is started from the page, work is claimed the same d
   // Their own work, waiting on someone else, is said on the project's page.
   await refresh(contributor, "Overview");
   await expect(contributor.getByTestId("dao-waiting")).toContainText(
-    "Your “write-docs” is waiting for a work area's manager to accept it for review.",
+    "Your “Write docs” is waiting for a work area's manager to accept it for review.",
     { timeout: 30_000 },
   );
 
@@ -443,10 +443,13 @@ test("a contributor project is started from the page, work is claimed the same d
   await refresh(founder, "Overview");
   const accept = founder
     .getByTestId("dao-attention")
-    .filter({ hasText: "submitted “write-docs”" });
-  await expect(accept).toContainText("Accept it for review in docs.", {
-    timeout: 30_000,
-  });
+    .filter({ hasText: "submitted “Write docs”" });
+  await expect(accept).toContainText(
+    "Accept it so the reviewers can judge it.",
+    {
+      timeout: 30_000,
+    },
+  );
   await accept.getByRole("button", { name: "Accept for review" }).click();
   await expect(founder.getByRole("tab", { name: "Work" })).toHaveAttribute(
     "aria-selected",
@@ -553,7 +556,7 @@ test("a contributor project is started from the page, work is claimed the same d
     "Holds 25 now (11.1% of all Shares now).",
   );
   await expect(person.getByTestId("contribution-award-title")).toHaveText(
-    "25 Shares for write-docs in the work area docs",
+    "25 Shares for Write docs in the work area Docs",
   );
   // The story behind it: when it ran, how the review went, the transaction, and what they delivered in their own
   // words, shown because it hashes to what the claim committed to.
@@ -562,7 +565,8 @@ test("a contributor project is started from the page, work is claimed the same d
   // Who approved it, by name or short account (D144), both reviewers of the two.
   await expect(story).toContainText("approved by ");
   await expect(story).toContainText(/approved by [^,]+, [^ ]+/);
-  await expect(story.getByTestId("tx-link")).toBeVisible();
+  // The local chain has no public transaction page, so the story shows no transaction id.
+  await expect(story.getByTestId("tx-link")).toHaveCount(0);
   // Evidence that is only a link is shown as the link, not quoted (D108).
   await expect(
     story.getByTestId("contribution-award-evidence"),
@@ -1104,9 +1108,11 @@ test("several people earn in one contributor project: two first projects, and a 
 
   // ── 6. the founder takes each claim on in its own project; both reviewers approve both ────────────
   await refresh(founder, "Work");
+  // Work areas read by title: the launch's own area by its short name made readable ("guide" reads "Guide"), the one
+  // approved from a suggestion by that suggestion's title (D146).
   for (const [claim, project] of [
-    ["write-guide", "guide"],
-    ["translate-es", "guide-es"],
+    ["write-guide", "Guide"],
+    ["translate-es", "Translate the guide to Spanish"],
   ] as const) {
     const card = claimCard(founder, claim);
     await card
@@ -1158,8 +1164,9 @@ test("several people earn in one contributor project: two first projects, and a 
   }
 
   // ── 7. each award is its own vote ───────────────────────────────────────────────────────────────
-  await award(founder, "write-guide", "40");
-  await award(founder, "translate-es", "11");
+  // Work reads by title in the award picker ("write-guide" reads "Write guide").
+  await award(founder, "Write guide", "40");
+  await award(founder, "Translate es", "11");
   expect(await sharesOf(CONTRIBUTOR)).toBe(40n * E18);
   expect(await sharesOf(NEWCOMER)).toBe(11n * E18);
   expect(BigInt(await call(shares, "0x18160ddd"))).toBe(251n * E18);
@@ -1182,7 +1189,7 @@ test("several people earn in one contributor project: two first projects, and a 
   ).toHaveText("Holds 40 now (15.9% of all Shares now).");
   await expect(
     person(CONTRIBUTOR).getByTestId("contribution-award-title"),
-  ).toHaveText("40 Shares for write-guide in the work area guide");
+  ).toHaveText("40 Shares for Write guide in the work area Guide");
   await expect(
     person(CONTRIBUTOR).getByTestId("contribution-award-evidence"),
   ).toContainText("Open what they delivered", {
@@ -1196,7 +1203,9 @@ test("several people earn in one contributor project: two first projects, and a 
   ).toHaveText("Holds 11 now (4.4% of all Shares now).");
   await expect(
     person(NEWCOMER).getByTestId("contribution-award-title"),
-  ).toHaveText("11 Shares for translate-es in the work area guide-es");
+  ).toHaveText(
+    "11 Shares for Translate es in the work area Translate the guide to Spanish",
+  );
   await expect(
     person(NEWCOMER).getByTestId("contribution-award-evidence"),
   ).toContainText("Open what they delivered");

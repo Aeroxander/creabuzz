@@ -18,7 +18,8 @@ import {
 import { closeEffects } from "../lib/close-effects";
 import { formatShares } from "../lib/shares-format";
 import { slashableReviewers } from "../lib/slashable";
-import { type ClaimView, idLabel } from "../lib/work";
+import type { ClaimView } from "../lib/work";
+import { workTitle } from "../lib/work-titles";
 import type { MandateView } from "../lib/work-read";
 import { SelectField, TextField } from "./decision-fields";
 import { useStickyPick } from "./use-sticky-pick";
@@ -30,11 +31,17 @@ import {
   type FormProps,
 } from "./decision-forms";
 
-const short = (address: string) => `${address.slice(0, 8)}…`;
+const until = (seconds: number) =>
+  new Date(seconds * 1000).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+/** A budget by when it is open until, never by its contract's address. */
 const budgetName = (m: MandateView) =>
   m.isMilestonePanel
     ? "the milestone panel"
-    : `the work budget ${short(m.address)}`;
+    : `the work budget open until ${until(m.expiresAt)}`;
 
 interface Pick {
   mandate: MandateView;
@@ -57,7 +64,7 @@ const pickLabel = (
   who: (address: string) => string,
   budgets: number,
 ) =>
-  `“${idLabel(p.claim.id)}” by ${who(p.claim.record.contributor)}${budgets > 1 ? ` in ${budgetName(p.mandate)}` : ""}`;
+  `${workTitle(p.claim.id)} by ${who(p.claim.record.contributor)}${budgets > 1 ? ` in ${budgetName(p.mandate)}` : ""}`;
 
 function ClaimPickForm({
   ctx,
@@ -159,7 +166,11 @@ export function FreezeForm(props: FormProps & { initialPick?: string }) {
   return (
     <ClaimPickForm
       {...props}
-      intro="Hold back work you doubt. Nothing is paid or awarded for it while it is frozen. A freeze is not a verdict: a later decision can let it go."
+      intro={
+        props.ctx.contributor
+          ? "Hold back work you doubt. While it is frozen, no Shares can be awarded for it. A later vote can reject it for good."
+          : "Hold back work you doubt. Nothing is paid or awarded for it while it is frozen. A later vote can reject it for good."
+      }
       label="Submission to freeze"
       make={make}
       none="Nothing is open to freeze. Only work that is still being reviewed, or approved and waiting out its challenge window, can be frozen."
@@ -187,10 +198,10 @@ export function UnwindForm(props: FormProps & { initialPick?: string }) {
       {...props}
       intro={
         props.ctx.contributor
-          ? "End a frozen submission for good: nothing is awarded for it, now or later. Nothing is taken from anyone."
-          : "Unwind a frozen submission. It ends for good: the money set aside for it goes back to the work budget and the deposit goes back to the person who submitted it. Nothing is taken from anyone."
+          ? "End a frozen submission for good: nothing is awarded for it, now or later."
+          : "Reject a frozen submission. It ends for good: the money set aside for it goes back to the work budget and the deposit goes back to the person who submitted it. Nothing is taken from anyone."
       }
-      label="Frozen submission to unwind"
+      label="Frozen submission to reject"
       make={make}
       none="No submission is frozen."
       states={["Frozen"]}
@@ -222,22 +233,26 @@ export function CloseBudgetForm({
   const result = useMemo<DraftResult>(
     () =>
       chosen
-        ? attempt(() => closeBudgetDecision({ mandate: chosen.address }))
+        ? attempt(() =>
+            closeBudgetDecision({
+              mandate: chosen.address,
+              // A contributor project's budgets hold Shares only: the money lines would describe nothing.
+              sharesOnly: ctx.contributor,
+            }),
+          )
         : {
             problem: pick.gone
               ? "That work budget is no longer open. Choose which one you mean."
               : "No work budget is open.",
           },
-    [chosen, pick.gone],
+    [chosen, pick.gone, ctx.contributor],
   );
   return (
     <div className="mt-3 grid gap-3" data-testid="form-close">
       <p className="text-sm text-muted-foreground">
-        Close a work budget early. No new work can be submitted in it and the
-        money not set aside for a submission goes back to the DAO. Submissions
-        whose money is already set aside keep their own payment rules. The
-        milestone panel is not offered here: closing it would leave the
-        team&apos;s locked Shares with no way to unlock.
+        {ctx.contributor
+          ? "Close a work budget early. No new work can be submitted in it, and no more Shares can be awarded through it."
+          : "Close a work budget early. No new work can be submitted in it and the money not set aside for a submission goes back to the DAO. Submissions whose money is already set aside keep their own payment rules. The milestone panel is not offered here: closing it would leave the team's locked Shares with no way to unlock."}
       </p>
       {pick.gone ? (
         <p
@@ -261,28 +276,31 @@ export function CloseBudgetForm({
             ...(chosen ? [] : [{ value: "", label: "Choose a work budget…" }]),
             ...open.map((m) => ({
               value: m.address,
-              label: `${short(m.address)}, open until ${new Date(m.expiresAt * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}`,
+              label: budgetName(m).replace(/^the w/, "W"),
             })),
           ]}
           testId="close-budget"
           value={chosen?.address ?? ""}
         />
       )}
-      {effects && (effects.awardsLost > 0 || effects.allowanceLost > 0n) ? (
+      {effects &&
+      (effects.awardsLost > 0 ||
+        effects.allowanceLost > 0n ||
+        effects.unallocatedLost > 0n) ? (
         <div
           className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
           data-testid="close-effects"
           role="note"
         >
           <p className="font-medium">
-            Closing also ends this budget&apos;s Shares allowance.
+            Closing also ends this budget&apos;s Shares for work.
           </p>
           <p className="mt-1">
             {effects.awardsLost > 0
               ? `${effects.awardsLost} ${effects.awardsLost === 1 ? "submission that was" : "submissions that were"} approved and paid ${effects.awardsLost === 1 ? "is" : "are"} still waiting for a Shares award, and can no longer be awarded. `
               : ""}
-            {effects.allowanceLost > 0n
-              ? `${formatShares(effects.allowanceLost)} Shares of allowance would go unused. `
+            {effects.allowanceLost > 0n || effects.unallocatedLost > 0n
+              ? `Closing gives up ${formatShares(effects.allowanceLost + effects.unallocatedLost)} Shares: ${formatShares(effects.allowanceLost)} left in its work areas and ${formatShares(effects.unallocatedLost)} not yet given to any work area. `
               : ""}
             {effects.incomplete
               ? "This budget has more history than the page reads, so there may be more. "
@@ -313,6 +331,7 @@ export function SlashForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
   } = slashableReviewers(ctx.work?.mandates ?? []);
   const key = (r: (typeof reviewers)[number]) =>
     `${r.mandate.address}:${r.reviewer.address}`;
+  const nameOf = useWalletLabels(reviewers.map((r) => r.reviewer.address));
   const [amount, setAmount] = useState("");
   const { pick, select } = useStickyPick(reviewers.map(key), null);
   // An amount typed for one reviewer is not carried to another: choosing again starts the amount again.
@@ -409,7 +428,7 @@ export function SlashForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
               ...(chosen ? [] : [{ value: "", label: "Choose a reviewer…" }]),
               ...reviewers.map((r) => ({
                 value: key(r),
-                label: `${short(r.reviewer.address)} in ${budgetName(r.mandate)}, holding ${held(r)}`,
+                label: `${nameOf(r.reviewer.address)} in ${budgetName(r.mandate)}, holding ${held(r)}`,
               })),
             ]}
             testId="slash-reviewer"

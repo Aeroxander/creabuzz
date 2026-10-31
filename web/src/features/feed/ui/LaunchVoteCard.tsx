@@ -3,7 +3,7 @@ import { MessageSquare } from "lucide-react";
 
 import type { LaunchRecord } from "@/features/launchpad/models";
 import { isContributorProject } from "@/features/launchpad/lib/funding";
-import { ProgressBar } from "@/features/launchpad/ui/widgets";
+import { ProgressBar, StageBadge } from "@/features/launchpad/ui/widgets";
 import { KIND_LAUNCH_RECORD } from "@/shared/constants/kinds";
 
 import {
@@ -33,15 +33,6 @@ export function launchRef(record: LaunchRecord): LaunchRef {
 export function launchCoord(record: LaunchRecord): string {
   return launchCoordinate(launchRef(record));
 }
-
-const STAGE_LABEL: Record<string, string> = {
-  draft: "Draft",
-  review: "In review",
-  live: "Live",
-  funding: "Raising",
-  graduated: "Sale completed",
-  failed: "Did not graduate",
-};
 
 /** A launch as a feed row: votes, name, pitch, stage, discussion size. */
 export function LaunchVoteCard({
@@ -88,15 +79,21 @@ export function LaunchVoteCard({
           </div>
         )}
         <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-black/60 dark:text-white/60">
-          <span className="rounded-full bg-black/5 px-2 py-0.5 dark:bg-white/10">
-            {contributor
-              ? "Looking for contributors"
-              : (STAGE_LABEL[record.stage] ?? record.stage)}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <MessageSquare aria-hidden className="h-3.5 w-3.5" />
-            {comments} {comments === 1 ? "post" : "posts"}
-          </span>
+          {/* One stage vocabulary for every surface: `StageBadge` knows a contributor project from a sale. */}
+          {contributor ? (
+            <span className="rounded-full bg-black/5 px-2 py-0.5 dark:bg-white/10">
+              Looking for contributors
+            </span>
+          ) : (
+            <StageBadge record={record} stage={record.stage} />
+          )}
+          {/* "0 posts" reads as no interest when the talk may be on a board this count does not see: shown from one. */}
+          {comments > 0 ? (
+            <span className="inline-flex items-center gap-1">
+              <MessageSquare aria-hidden className="h-3.5 w-3.5" />
+              {comments} {comments === 1 ? "post" : "posts"}
+            </span>
+          ) : null}
         </p>
       </div>
     </article>

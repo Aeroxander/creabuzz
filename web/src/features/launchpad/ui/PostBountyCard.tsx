@@ -31,7 +31,7 @@ import { useChainSend } from "../use-chain-send";
 import { POST_BOUNTY_QUERY, usePostBounties } from "../use-post-bounties";
 import { useWalletLabels } from "../use-wallet-labels";
 import { encodeApproveBounty } from "../lib/work-bounty";
-import { FailureNote, WalletStrip } from "./auction-widgets";
+import { FailureNote, WalletStrip } from "./account-widgets";
 import { Person } from "./Face";
 import { ForecastPanel } from "./ForecastPanel";
 import { MoneyForecastPanel } from "./MoneyForecastPanel";

@@ -9,9 +9,10 @@ import type {
   CallSender,
   SponsoredSender,
 } from "../../identity/lib/sponsoredSender.ts";
-import { SponsoredSenderUnavailableError } from "../../identity/lib/sponsoredSender.ts";
-import { PaymasterDeniedError } from "../../identity/lib/zerodev.ts";
-import { requireSponsoredSuccess } from "./acting-account.ts";
+import {
+  actingErrorMessage,
+  requireSponsoredSuccess,
+} from "./acting-account.ts";
 import {
   createInjectedWalletSender,
   type Eip1193ProviderLike,
@@ -51,16 +52,10 @@ export function resolveSender(
   };
 }
 
-/** Map a send failure to a human message (the RecordBidDialog error map). */
+/**
+ * A send failure in plain words: `actingErrorMessage`'s, so every money panel says the same thing for the same failure
+ * and never a vendor's dashboard or a bundler's error. `fallback` is for a thrown value that is not an error at all.
+ */
 export function senderErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof PaymasterDeniedError) {
-    return `${err.serverMessage} ${err.dashboardAction}`;
-  }
-  if (
-    err instanceof SponsoredSenderUnavailableError &&
-    err.availability.action
-  ) {
-    return `${err.message} ${err.availability.action}`;
-  }
-  return err instanceof Error ? err.message : fallback;
+  return err instanceof Error ? actingErrorMessage(err) : fallback;
 }

@@ -486,7 +486,7 @@ test("the screen audit's world", async ({ browser }) => {
   const select = frida.getByTestId("award-claim");
   await expect(select).toBeVisible();
   const value = await select
-    .locator("option", { hasText: "first-hour" })
+    .locator("option", { hasText: "First hour" })
     .getAttribute("value");
   await select.selectOption(value ?? "");
   await frida.getByTestId("award-shares").fill("8000");

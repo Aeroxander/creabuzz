@@ -46,6 +46,6 @@ test("a name is plain text the pages can show, up to 32 characters", () => {
   assert.equal(nameProblem("write-the-docs"), null);
   assert.match(nameProblem("Übersetzung") ?? "", /no accents or emoji/);
   assert.match(nameProblem("docs 🚀") ?? "", /no accents or emoji/);
-  assert.match(nameProblem("   ") ?? "", /short name/);
+  assert.match(nameProblem("   ") ?? "", /a title, up to 32 characters/);
   assert.match(nameProblem("x".repeat(33)) ?? "", /up to 32/);
 });

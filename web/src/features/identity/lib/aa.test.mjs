@@ -1,8 +1,8 @@
 /**
- * Transport tests: handleOps composition, the EIP-1193 adapters, the bounded
- * bundler RPC client, and the `getSenderAddress` revert flow.
+ * Transport tests: the bounded bundler RPC client and the `getSenderAddress`
+ * revert flow.
  *
- * All I/O is mocked at the injected seams (SubmitTransaction, EthCall,
+ * All I/O is mocked at the injected seams (EthCall,
  * fetchImpl) so these bind the production code paths without infrastructure
  * (TESTING.md "Review-Proven Test Standards": falsifiable and seam-binding).
  */
@@ -13,12 +13,8 @@ import {
   BundlerRpcError,
   BundlerTimeoutError,
   EthCallRevertError,
-  buildHandleOpsCalldata,
   createBundlerTransport,
-  createEip1193EthCall,
-  createEip1193SubmitTransaction,
   getSenderAddress,
-  submitUserOpsViaHandleOps,
 } from "./aa.ts";
 import { packUints } from "./userop.ts";
 
@@ -33,118 +29,7 @@ const goldenOp = {
   paymasterAndData: "0x",
   signature: "0x11",
 };
-const BENEFICIARY = "0x3333333333333333333333333333333333333333";
 const ENTRY_POINT = "0x1111111111111111111111111111111111111111";
-
-test("buildHandleOpsCalldata matches cast abi-encode + selector", () => {
-  // $ cast abi-encode "f((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes)[],address)" \
-  //     "[(0x2222222222222222222222222222222222222222,0x0,0xdeadbeef,0xc0ffee, \
-  //        0x0000000000000000000000000000000300000000000000000000000000000005,21000, \
-  //        0x0000000000000000000000000000000100000000000000000000000000000002,0x,0x11)]" \
-  //     0x3333333333333333333333333333333333333333
-  // and prepended 0x449fd934 (cast sig "handleOps(...)", see userop-abi.test.mjs).
-  const expected =
-    "0x449fd934" +
-    "0000000000000000000000000000000000000000000000000000000000000040" +
-    "0000000000000000000000003333333333333333333333333333333333333333" +
-    "0000000000000000000000000000000000000000000000000000000000000001" +
-    "0000000000000000000000000000000000000000000000000000000000000020" +
-    "0000000000000000000000002222222222222222222222222222222222222222" +
-    "0000000000000000000000000000000000000000000000000000000000000000" +
-    "0000000000000000000000000000000000000000000000000000000000000120" +
-    "0000000000000000000000000000000000000000000000000000000000000160" +
-    "0000000000000000000000000000000300000000000000000000000000000005" +
-    "0000000000000000000000000000000000000000000000000000000000005208" +
-    "0000000000000000000000000000000100000000000000000000000000000002" +
-    "00000000000000000000000000000000000000000000000000000000000001a0" +
-    "00000000000000000000000000000000000000000000000000000000000001c0" +
-    "0000000000000000000000000000000000000000000000000000000000000004" +
-    "deadbeef00000000000000000000000000000000000000000000000000000000" +
-    "0000000000000000000000000000000000000000000000000000000000000003" +
-    "c0ffee0000000000000000000000000000000000000000000000000000000000" +
-    "0000000000000000000000000000000000000000000000000000000000000000" +
-    "0000000000000000000000000000000000000000000000000000000000000001" +
-    "1100000000000000000000000000000000000000000000000000000000000000";
-  assert.equal(buildHandleOpsCalldata([goldenOp], BENEFICIARY), expected);
-  assert.throws(() => buildHandleOpsCalldata([], BENEFICIARY), /at least one/);
-});
-
-test("submitUserOpsViaHandleOps sends one unsigned handleOps transaction", async () => {
-  const seen = [];
-  const txHash = await submitUserOpsViaHandleOps({
-    submitTransaction: async (tx) => {
-      seen.push(tx);
-      return "0xhash";
-    },
-    entryPoint: ENTRY_POINT,
-    userOps: [goldenOp],
-    beneficiary: BENEFICIARY,
-  });
-  assert.equal(txHash, "0xhash");
-  assert.equal(seen.length, 1);
-  assert.equal(seen[0].to, ENTRY_POINT);
-  assert.equal(seen[0].data, buildHandleOpsCalldata([goldenOp], BENEFICIARY));
-});
-
-test("createEip1193SubmitTransaction composes the eth_sendTransaction request", async () => {
-  const calls = [];
-  const submit = createEip1193SubmitTransaction({
-    request: async (args) => {
-      calls.push(args);
-      return "0xfeed";
-    },
-  });
-  assert.equal(
-    await submit({
-      to: ENTRY_POINT,
-      data: "0x1234",
-      from: "0x2222",
-      value: "0x1",
-    }),
-    "0xfeed",
-  );
-  assert.deepEqual(calls[0], {
-    method: "eth_sendTransaction",
-    params: [{ from: "0x2222", to: ENTRY_POINT, value: "0x1", data: "0x1234" }],
-  });
-  // Without from/value the keys stay absent (wallet fills them).
-  await submit({ to: ENTRY_POINT, data: "0x1234" });
-  assert.deepEqual(calls[1].params[0], { to: ENTRY_POINT, data: "0x1234" });
-  await assert.rejects(
-    () =>
-      createEip1193SubmitTransaction({ request: async () => 42 })({
-        to: ENTRY_POINT,
-        data: "0x",
-      }),
-    /transaction hash/,
-  );
-});
-
-test("createEip1193EthCall surfaces revert payloads and rethrows provider noise", async () => {
-  const ok = createEip1193EthCall({ request: async () => "0x01" });
-  assert.equal(await ok({ to: ENTRY_POINT, data: "0x" }), "0x01");
-  const reverting = createEip1193EthCall({
-    request: async () => {
-      throw Object.assign(new Error("execution reverted"), {
-        data: "0x6ca7b806",
-      });
-    },
-  });
-  await assert.rejects(
-    () => reverting({ to: ENTRY_POINT, data: "0x" }),
-    (error) =>
-      error instanceof EthCallRevertError && error.data === "0x6ca7b806",
-  );
-  const noisy = createEip1193EthCall({
-    request: async () => {
-      throw new Error("provider disconnected");
-    },
-  });
-  await assert.rejects(
-    () => noisy({ to: ENTRY_POINT, data: "0x" }),
-    /disconnected/,
-  );
-});
 
 test("getSenderAddress parses the SenderAddressResult revert", async () => {
   const sender = `0x${"22".repeat(20)}`;

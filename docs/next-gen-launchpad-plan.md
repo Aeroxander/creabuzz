@@ -1,5 +1,7 @@
 # Next-Gen DAO Launchpad — Integration Plan v3
 
+> **History, 2026-10-31.** A research pass from before the v3 review, replaced by its decisions ([v3-review/DECISIONS.md](v3-review/DECISIONS.md)). The current state is [v3-review/STATUS.md](v3-review/STATUS.md).
+
 > Research pass 2026-09-13: four sources re-read against the shipped product —
 > Umia (`/tmp/nextgen/umia-full.md`), MetaDAO (`/tmp/nextgen/metadao-all.txt`),
 > Trustgraphs (`/tmp/nextgen/tg/*.md`, esp. `research/BUZZ_NOSTR_PLAN.md`),

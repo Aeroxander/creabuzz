@@ -26,7 +26,14 @@
 #      ContributorKit (a contributor project, no sale, ready for work) + `deployments/contributor-kit-<chainid>.json`
 #      and the WorkAreaBounty (outside money behind a work area) + `deployments/work-bounty-<chainid>.json`
 #      and the OpenBounty (money behind a post) + `deployments/open-bounty-<chainid>.json`
+#      then the optional test-network features, each with its own manifest: test CREATE and its faucet, the court,
+#      money forecasts, the payouts factory, remix bonds, matched exits and weekly rounds (the journeys use them)
 #   5. funded dev accounts, printed as a table (keys are DEV ONLY, labeled)
+#
+# What it prints for the web app: first the settings for a build like the hosted pilot's (contributor projects only,
+# VITE_CONTRIBUTOR_ONLY=1, no sale, no optional feature). The optional features' settings (a raise, bounties, matched
+# exits, weekly rounds, CREATE, the court, forecasts, payouts, remix bonds) are printed only with DEV_CHAIN_ALL=1: they
+# are deployed either way, and are for testing those features, not for the pilot (docs/v3-review/PILOT-RUNBOOK.md).
 #
 # ════════════════════════════════════════════════════════════════════════════
 # ⚠️  DEV-ONLY. LOCAL ANVIL ONLY. NEVER MAINNET. ⚠️
@@ -51,6 +58,7 @@
 #   STATE_DIR   default <repo>/target/dev-chain (pid file, logs)
 #   ANVIL_KEY   default anvil dev key 0 (deployer == treasury == DAO owner)
 #   DEV_CHAIN_ID default 31337 (the chain anvil is booted with)
+#   DEV_CHAIN_ALL=1  also print the optional features' web settings (see above)
 
 set -euo pipefail
 
@@ -294,6 +302,7 @@ plan_lines() {
   echo "  6b. contributor kit  deploy ContributorKit (summoner)  [skipped: deployments/contributor-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner]"
   echo "  6c. work bounty  deploy WorkAreaBounty (currency + work budget factory)  [skipped: deployments/work-bounty-$DEV_CHAIN_ID.json names one that still points at both]"
   echo "  6d. open bounty  deploy OpenBounty (currency)  [skipped: deployments/open-bounty-$DEV_CHAIN_ID.json names one that still pays in it]"
+  echo "  6e. optional features  test CREATE + faucet, court, forecasts, payouts factory, remix bonds, matched exit, weekly rounds  [skipped: each one's manifest names a contract that still has code]"
   echo "  7. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
   echo "  8. accounts     print the DEV-ONLY key table to stdout"
 }
@@ -1256,28 +1265,38 @@ up() {
   echo "  summoner:   $(manifest_role "$(org_manifest_path)" summoner)"
   echo "  currency:   $(currency_address) ($CURRENCY_SYMBOL, ${CURRENCY_DECIMALS}dp)"
   echo "  cca:        factory $CCA_FACTORY_ADDRESS, Permit2 $PERMIT2_ADDRESS"
-  echo "  launch kit: $(kit_address) (dao-launch-kit-$CHAIN_ID.json)"
   echo "  contributor kit: $(contributor_kit_address) (contributor-kit-$CHAIN_ID.json)"
-  echo "  work bounty: $(work_bounty_address) (work-bounty-$CHAIN_ID.json)"
-  echo "  open bounty: $(open_bounty_address) (open-bounty-$CHAIN_ID.json)"
-  echo "  matched exit: $(matched_exit_address) (matched-exit-$CHAIN_ID.json)"
-  echo "  weekly rounds: $(weekly_rounds_address) (weekly-rounds-$CHAIN_ID.json)"
-  echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
-  echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
-  echo "  forecasts:  $(forecast_pool_address) (forecast-pool-$CHAIN_ID.json)"
-  echo "  payouts:    $(payouts_factory_address) (payouts-factory-$CHAIN_ID.json)"
-  echo "  remix bonds: $(remix_bonds_address) (remix-bonds-$CHAIN_ID.json)"
-  echo "  web env:    VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
+  if [[ "${DEV_CHAIN_ALL:-}" == "1" ]]; then
+    echo "  launch kit: $(kit_address) (dao-launch-kit-$CHAIN_ID.json)"
+    echo "  work bounty: $(work_bounty_address) (work-bounty-$CHAIN_ID.json)"
+    echo "  open bounty: $(open_bounty_address) (open-bounty-$CHAIN_ID.json)"
+    echo "  matched exit: $(matched_exit_address) (matched-exit-$CHAIN_ID.json)"
+    echo "  weekly rounds: $(weekly_rounds_address) (weekly-rounds-$CHAIN_ID.json)"
+    echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
+    echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
+    echo "  forecasts:  $(forecast_pool_address) (forecast-pool-$CHAIN_ID.json)"
+    echo "  payouts:    $(payouts_factory_address) (payouts-factory-$CHAIN_ID.json)"
+    echo "  remix bonds: $(remix_bonds_address) (remix-bonds-$CHAIN_ID.json)"
+  fi
+  # The pilot's build first and alone: the hosted image is contributor-only and takes no optional feature.
+  echo "  web env (as the hosted pilot is built: contributor projects only, no sale):"
+  echo "              VITE_LAUNCHPAD_CHAIN_ID=$CHAIN_ID VITE_CHAIN_RPC_URL=$RPC_URL VITE_CONTRIBUTOR_ONLY=1"
   echo "              VITE_CONTRIBUTOR_KITS='{\"$CHAIN_ID\":\"$(contributor_kit_address)\"}'  (lets the app start a contributor project here)"
-  echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
-  echo "              VITE_OPEN_BOUNTIES='{\"$CHAIN_ID\":\"$(open_bounty_address)\"}'  (lets people put money behind a post here)"
-  echo "              VITE_MATCHED_EXITS='{\"$CHAIN_ID\":\"$(matched_exit_address)\"}'  (lets members sell Shares to each other here, once their DAO votes for it)"
-  echo "              VITE_WEEKLY_ROUNDS='{\"$CHAIN_ID\":\"$(weekly_rounds_address)\"}'  (weekly rounds between holders and new buyers, once their DAO votes them in)"
-  echo "              VITE_CREATE_TOKENS='{\"$CHAIN_ID\":\"$(create_token_address)\"}' VITE_CREATE_FAUCETS='{\"$CHAIN_ID\":\"$(create_faucet_address)\"}'  (test CREATE: stakes and bonds)"
-  echo "              VITE_COURTS='{\"$CHAIN_ID\":\"$(court_address)\"}'  (the court claimants appeal to)"
-  echo "              VITE_FORECAST_POOLS='{\"$CHAIN_ID\":\"$(forecast_pool_address)\"}'  (money on whether a post's bounty is paid; test money)"
-  echo "              VITE_PAYOUTS_FACTORIES='{\"$CHAIN_ID\":\"$(payouts_factory_address)\"}'  (DAOs vote to pay holders a share of revenue)"
-  echo "              VITE_REMIX_BONDS='{\"$CHAIN_ID\":\"$(remix_bonds_address)\"}'  (a remix's bond to its parent)"
+  if [[ "${DEV_CHAIN_ALL:-}" == "1" ]]; then
+    echo "  web env, optional (not in the pilot; leave out VITE_CONTRIBUTOR_ONLY=1 for a raise):"
+    echo "              VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
+    echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
+    echo "              VITE_OPEN_BOUNTIES='{\"$CHAIN_ID\":\"$(open_bounty_address)\"}'  (lets people put money behind a post here)"
+    echo "              VITE_MATCHED_EXITS='{\"$CHAIN_ID\":\"$(matched_exit_address)\"}'  (lets members sell Shares to each other here, once their DAO votes for it)"
+    echo "              VITE_WEEKLY_ROUNDS='{\"$CHAIN_ID\":\"$(weekly_rounds_address)\"}'  (weekly rounds between holders and new buyers, once their DAO votes them in)"
+    echo "              VITE_CREATE_TOKENS='{\"$CHAIN_ID\":\"$(create_token_address)\"}' VITE_CREATE_FAUCETS='{\"$CHAIN_ID\":\"$(create_faucet_address)\"}'  (test CREATE: stakes and bonds)"
+    echo "              VITE_COURTS='{\"$CHAIN_ID\":\"$(court_address)\"}'  (the court claimants appeal to)"
+    echo "              VITE_FORECAST_POOLS='{\"$CHAIN_ID\":\"$(forecast_pool_address)\"}'  (money on whether a post's bounty is paid; test money)"
+    echo "              VITE_PAYOUTS_FACTORIES='{\"$CHAIN_ID\":\"$(payouts_factory_address)\"}'  (DAOs vote to pay holders a share of revenue)"
+    echo "              VITE_REMIX_BONDS='{\"$CHAIN_ID\":\"$(remix_bonds_address)\"}'  (a remix's bond to its parent)"
+  else
+    echo "  optional:   a raise and the optional features are deployed too; DEV_CHAIN_ALL=1 just dev-chain prints their settings"
+  fi
   echo "  status:     just dev-chain-status"
   echo "  stop:       just dev-chain-down"
   echo "═══════════════════════════════════════════════════════════════════════"

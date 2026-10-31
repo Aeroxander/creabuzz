@@ -21,6 +21,7 @@ import {
   SIGN_UP_EVENT,
 } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { beyondContributorProjects } from "@/app/lib/build-gates";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
@@ -103,7 +104,9 @@ function Progress({ results, busy }: { results: StepResult[]; busy: boolean }) {
 
 /** Everything a team adds, behind one line: most people pick a starting point and never open this. */
 function Preview({ summary }: { summary: TemplateSummary }) {
-  const limit = describeDefaultLimit(summary.defaultBudget);
+  // A contributor-only build's server runs no AI service: the helper seats and their limit are left unsaid there.
+  const helpers = beyondContributorProjects();
+  const limit = helpers ? describeDefaultLimit(summary.defaultBudget) : null;
   return (
     <details
       className="mt-4 rounded-xl border bg-secondary/30 p-4 text-sm"
@@ -145,7 +148,7 @@ function Preview({ summary }: { summary: TemplateSummary }) {
           </div>
         </div>
         <div className="space-y-3">
-          {summary.helpers.length > 0 ? (
+          {helpers && summary.helpers.length > 0 ? (
             <div>
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 AI helpers
@@ -280,7 +283,8 @@ export function StartProject({
               Open #{first?.name}
             </Button>
           ) : null}
-          {state.entry.template.personas.length > 0 ? (
+          {beyondContributorProjects() &&
+          state.entry.template.personas.length > 0 ? (
             <Button
               data-testid="start-project-add-helper"
               onClick={() => onOpenView("agents")}
@@ -289,9 +293,12 @@ export function StartProject({
               Choose where your AI helpers run
             </Button>
           ) : null}
-          <Button onClick={() => onOpenView("org")} variant="outline">
-            See your team
-          </Button>
+          {/* Org (the helper budgets) is not in a contributor-only build. */}
+          {beyondContributorProjects() ? (
+            <Button onClick={() => onOpenView("org")} variant="outline">
+              See your team
+            </Button>
+          ) : null}
         </div>
         <details className="mt-4 text-sm">
           <summary className="cursor-pointer text-muted-foreground">
@@ -385,7 +392,7 @@ export function StartProject({
                 ? "Only this community's owner or an admin can set up its team. Ask one of them to do this."
                 : access === "error"
                   ? "Couldn't check your community permissions. Check the connection, then try again."
-                  : "Couldn't confirm your role in this community. Ask its owner or an admin, or check again."}
+                  : "You're not on this community's member list yet. The person who runs the server can add you."}
           </p>
           {access !== "checking" ? (
             <Button

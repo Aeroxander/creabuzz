@@ -18,7 +18,7 @@ import {
 import { useChainBlockHeight, useVoteTallies } from "@/features/feed/use-feed";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { ArrowRight, LineChart, Plus, Rocket } from "lucide-react";
+import { ArrowRight, Lightbulb, LineChart, Plus, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import { EMPTY_CHAT, ensureRooms } from "../use-launch-chat";
 
@@ -52,7 +52,9 @@ import { CreateLaunchDialog } from "./CreateLaunchDialog";
 import { useProfiles, resolveUserName } from "@/features/profiles/use-profiles";
 import { LaunchCard } from "./LaunchCard";
 import { StartIdeaDialog } from "./StartIdeaDialog";
+import { isContributorProject } from "../lib/funding";
 import { isIdea } from "../lib/idea";
+import { listedHere } from "../lib/contributor-only";
 import { raisesOffered } from "../lib/raises-offered";
 import { useSupporters } from "../use-supporters";
 import { ProgressBar } from "./widgets";
@@ -75,6 +77,11 @@ const FILTER_LABELS: Record<Filter, string> = {
   "closing-soon": "Closing soon",
   graduated: "Sale completed",
 };
+/** The tabs that are about sales, left out where the build offers none. */
+const SALE_FILTERS: ReadonlySet<Filter> = new Set([
+  "closing-soon",
+  "graduated",
+]);
 /**
  * One funding chip: the label, the count it would show, and whether it is the
  * row's current choice. A `<button>` with its own text and `aria-pressed`, so
@@ -117,10 +124,12 @@ function FundingChip({
 export function LaunchesPage() {
   const { data, isLoading, error, refetch } = useLaunches();
   const create = useCreateLaunch();
-  // The contributor-only hosted image cannot launch a sale, so it offers none:
-  // no Set up a sale, no Markets, no raise sandbox, and `?start=sale` opens nothing. Listed launches stay readable.
+  // The contributor-only hosted image cannot launch a sale, so it offers none: no Set up a sale, no Markets, no raise
+  // sandbox, no sale tabs or funding chips, and `?start=sale` opens nothing. It lists contributor projects and ideas only;
+  // a raise another build published stays readable by its own link.
   const raises = raisesOffered();
-  const [filter, setFilter] = useState<Filter>("all");
+  // Without raises this page is the list of ideas (projects are on Discover): it opens on them.
+  const [filter, setFilter] = useState<Filter>(raises ? "all" : "ideas");
   // The Start page links here with `?start=idea` or `?start=sale`: open that dialog once, then drop the parameter so a
   // reload does not open it again.
   const { start } = useSearch({ from: "/launchpad" });
@@ -140,7 +149,9 @@ export function LaunchesPage() {
   const { tallies } = useVoteTallies();
   const pubkey = existingUserPubkey();
 
-  const launches = data ?? [];
+  const launches = (data ?? []).filter((launch) =>
+    listedHere(launch.record, raises),
+  );
   const blockHeight = useChainBlockHeight();
   const fundingOf = (launch: Launch): ResolvedFunding =>
     effectiveFunding(launch, blockHeight);
@@ -226,14 +237,28 @@ export function LaunchesPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
       <PageHeader
         title={
-          <span className="flex items-center gap-2">
-            <Rocket className="h-5 w-5" /> Launchpad
-          </span>
+          raises ? (
+            <span className="flex items-center gap-2">
+              <Rocket aria-hidden className="h-5 w-5" /> Launchpad
+            </span>
+          ) : (
+            <span className="flex items-center gap-2">
+              <Lightbulb aria-hidden className="h-5 w-5" /> Ideas
+            </span>
+          )
         }
         description={
-          raises
-            ? "Find a raise to back, or start one of your own."
-            : "Find an idea to back, or share one of your own."
+          raises ? (
+            "Find a raise to back, or start one of your own."
+          ) : (
+            <>
+              Ideas people shared before starting a project. Projects are on{" "}
+              <Link className="underline" to="/discover">
+                Discover
+              </Link>
+              .
+            </>
+          )
         }
         action={
           <div className="flex items-center gap-2">
@@ -269,30 +294,32 @@ export function LaunchesPage() {
         <div
           className="flex flex-wrap items-center gap-x-6 gap-y-2"
           role="tablist"
-          aria-label="Launch filter"
+          aria-label={raises ? "Launch filter" : "Idea filter"}
         >
-          {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => (
-            <button
-              key={f}
-              role="tab"
-              aria-selected={filter === f}
-              data-testid={`launch-filter-${f}`}
-              onClick={() => setFilter(f)}
-              className={cn(
-                "border-b-[3px] px-1 pb-1.5 text-base font-semibold transition-colors",
-                filter === f
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-foreground/60 hover:text-foreground",
-              )}
-              type="button"
-            >
-              {FILTER_LABELS[f]}
-            </button>
-          ))}
+          {(Object.keys(FILTER_LABELS) as Filter[])
+            .filter((f) => raises || !SALE_FILTERS.has(f))
+            .map((f) => (
+              <button
+                key={f}
+                role="tab"
+                aria-selected={filter === f}
+                data-testid={`launch-filter-${f}`}
+                onClick={() => setFilter(f)}
+                className={cn(
+                  "border-b-[3px] px-1 pb-1.5 text-base font-semibold transition-colors",
+                  filter === f
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-foreground/60 hover:text-foreground",
+                )}
+                type="button"
+              >
+                {FILTER_LABELS[f]}
+              </button>
+            ))}
         </div>
         <span className="ml-auto flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
           <label className="sr-only" htmlFor="launch-sort">
-            Sort launches
+            {raises ? "Sort launches" : "Sort ideas"}
           </label>
           <select
             className="rounded-md border border-black/10 bg-transparent px-2 py-1 text-xs dark:border-white/15"
@@ -305,68 +332,76 @@ export function LaunchesPage() {
             <option value="new">New</option>
             <option value="top">Top</option>
           </select>
-          {countOf(launches.length, "launch", "launches")}
+          {raises
+            ? countOf(launches.length, "launch", "launches")
+            : `${countOf(launches.filter((l) => isIdea(l.record)).length, "idea")} · ${countOf(launches.filter((l) => !isIdea(l.record)).length, "project")}`}
         </span>
       </div>
 
-      {/* Filters only mean something once there is a list to filter: on an empty tab every chip would read zero. */}
-      <div
-        className={cn("flex flex-col gap-2", filtered.length === 0 && "hidden")}
-        data-testid="launch-chips"
-      >
-        <fieldset className="min-w-0 border-0 p-0">
-          <legend className="text-2xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
-            Funding
-          </legend>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <FundingChip
-              active={stanceFilter === null}
-              count={filtered.length}
-              label="Any"
-              onClick={() => setStanceFilter(null)}
-              testId="funding-chip-any"
-            />
-            {FUNDING_STANCES.map((stance) => (
+      {/* Filters only mean something once there is a list to filter: on an empty tab every chip would read zero. A
+          contributor-only build lists no raise, so its cards have no funding to filter by. */}
+      {raises ? (
+        <div
+          className={cn(
+            "flex flex-col gap-2",
+            filtered.length === 0 && "hidden",
+          )}
+          data-testid="launch-chips"
+        >
+          <fieldset className="min-w-0 border-0 p-0">
+            <legend className="text-2xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+              Funding
+            </legend>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <FundingChip
-                active={stanceFilter === stance}
-                count={counts.stance[stance]}
-                key={stance}
-                label={FUNDING_STANCE_LABELS[stance]}
-                onClick={() =>
-                  setStanceFilter(stanceFilter === stance ? null : stance)
-                }
-                testId={`funding-chip-${stance}`}
+                active={stanceFilter === null}
+                count={filtered.length}
+                label="Any"
+                onClick={() => setStanceFilter(null)}
+                testId="funding-chip-any"
               />
-            ))}
-          </div>
-        </fieldset>
-        <fieldset className="min-w-0 border-0 p-0">
-          <legend className="text-2xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
-            Looking for
-          </legend>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <FundingChip
-              active={seekingFilter === null}
-              count={filtered.length}
-              label="Anyone"
-              onClick={() => setSeekingFilter(null)}
-              testId="seeking-chip-any"
-            />
-            {FUNDING_SEEKING.map((wanted) => (
+              {FUNDING_STANCES.map((stance) => (
+                <FundingChip
+                  active={stanceFilter === stance}
+                  count={counts.stance[stance]}
+                  key={stance}
+                  label={FUNDING_STANCE_LABELS[stance]}
+                  onClick={() =>
+                    setStanceFilter(stanceFilter === stance ? null : stance)
+                  }
+                  testId={`funding-chip-${stance}`}
+                />
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="min-w-0 border-0 p-0">
+            <legend className="text-2xs font-semibold uppercase tracking-wide text-black/50 dark:text-white/50">
+              Looking for
+            </legend>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <FundingChip
-                active={seekingFilter === wanted}
-                count={counts.seeking[wanted]}
-                key={wanted}
-                label={FUNDING_SEEKING_LABELS[wanted]}
-                onClick={() =>
-                  setSeekingFilter(seekingFilter === wanted ? null : wanted)
-                }
-                testId={`seeking-chip-${wanted}`}
+                active={seekingFilter === null}
+                count={filtered.length}
+                label="Anyone"
+                onClick={() => setSeekingFilter(null)}
+                testId="seeking-chip-any"
               />
-            ))}
-          </div>
-        </fieldset>
-      </div>
+              {FUNDING_SEEKING.map((wanted) => (
+                <FundingChip
+                  active={seekingFilter === wanted}
+                  count={counts.seeking[wanted]}
+                  key={wanted}
+                  label={FUNDING_SEEKING_LABELS[wanted]}
+                  onClick={() =>
+                    setSeekingFilter(seekingFilter === wanted ? null : wanted)
+                  }
+                  testId={`seeking-chip-${wanted}`}
+                />
+              ))}
+            </div>
+          </fieldset>
+        </div>
+      ) : null}
 
       {raises && !isLoading && !error ? (
         <Link
@@ -389,7 +424,7 @@ export function LaunchesPage() {
 
       {isLoading ? (
         <p className="py-8 text-center text-sm text-black/60 dark:text-white/60">
-          Loading launches…
+          {raises ? "Loading launches…" : "Loading ideas…"}
         </p>
       ) : error ? (
         <QueryError
@@ -407,7 +442,9 @@ export function LaunchesPage() {
           )}
           relayUrl={relayWsUrl()}
           testId="launchpad-load-error"
-          title="Couldn't load the launchpad"
+          title={
+            raises ? "Couldn't load the launchpad" : "Couldn't load the ideas"
+          }
         />
       ) : visible.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-black/15 px-5 py-12 text-center dark:border-white/15">
@@ -415,7 +452,9 @@ export function LaunchesPage() {
             {stanceFilter !== null || seekingFilter !== null
               ? "Nothing matches those filters. Try removing one."
               : filter === "all"
-                ? "No launches yet. Start an idea to get going."
+                ? raises
+                  ? "No launches yet. Start an idea to get going."
+                  : "No projects yet. Start an idea to get going."
                 : filter === "ideas"
                   ? "No ideas yet. Be the first to start one."
                   : filter === "mine"
@@ -455,6 +494,31 @@ export function LaunchesPage() {
                   footer={
                     <div className="space-y-2">
                       <ProgressBar quietWhenUnknown record={launch.record} />
+                      {/* A contributor project here is one to open, as on Discover. */}
+                      {!raises && isContributorProject(launch.record) ? (
+                        <Button
+                          asChild
+                          className="w-full"
+                          size="sm"
+                          variant="outline"
+                        >
+                          <Link
+                            data-testid="launch-card-open-project"
+                            params={{ launchId: launch.record.id }}
+                            search={{
+                              action: undefined,
+                              author: launch.record.author,
+                            }}
+                            to="/launchpad/$launchId"
+                          >
+                            Open project
+                            <ArrowRight
+                              aria-hidden
+                              className="ml-1 h-3.5 w-3.5"
+                            />
+                          </Link>
+                        </Button>
+                      ) : null}
                       <VoteButtons
                         label={launch.record.name}
                         launch={launchRef(launch.record)}

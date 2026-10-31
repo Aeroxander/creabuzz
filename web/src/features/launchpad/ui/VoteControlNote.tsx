@@ -12,6 +12,7 @@ import { Button } from "@/shared/ui/button";
 import { ethCall, getRpcEndpoint } from "../chain";
 import { formatUnits } from "../lib/dao-actions";
 import {
+  aloneUntil,
   controlOf,
   readVoteControl,
   voteControlLines,
@@ -130,7 +131,50 @@ export function VoteControlNote({
       {lines.map((line) => (
         <p key={line}>{line}</p>
       ))}
+      <UntilTable
+        until={aloneUntil(subject.weight, control.data)}
+        who={subject.who}
+      />
     </div>
+  );
+}
+
+/** Per kind of decision, how many more Shares others must hold before one holder stops passing it alone. */
+function UntilTable({
+  who,
+  until,
+}: {
+  who: string;
+  until: ReturnType<typeof aloneUntil>;
+}) {
+  if (until.full === null && until.bounded === null) return null;
+  const rows = [
+    { label: "Rule changes and spending", value: until.full },
+    { label: "Awards and work areas", value: until.bounded },
+  ];
+  return (
+    <table
+      className="mt-1 w-full max-w-md text-sm"
+      data-testid="vote-control-until"
+    >
+      <caption className="text-left text-xs text-muted-foreground">
+        More Shares others must hold before {who} stops deciding alone
+      </caption>
+      <tbody>
+        {rows.map((row) => (
+          <tr className="border-t border-border/60" key={row.label}>
+            <th className="py-1 pr-3 text-left font-normal" scope="row">
+              {row.label}
+            </th>
+            <td className="py-1 text-right tabular-nums">
+              {row.value === null
+                ? "Already shared"
+                : `${shares(row.value)} more`}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

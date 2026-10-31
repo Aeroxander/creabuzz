@@ -191,20 +191,21 @@ test("the community panel says what it holds and where private messages are", as
   await relay.install(page);
   await signIn(page);
   await openCommunityPanel(page);
-  await expect(page.getByTestId("dms-toggle")).toHaveText(
-    "Notices and messages",
-  );
+  await expect(page.getByTestId("dms-toggle")).toHaveText("Private chats");
   await expect(
     page.getByRole("heading", {
-      name: "Notices and messages in this community",
+      name: "Private chats in this community",
     }),
   ).toBeVisible();
+  await expect(page.getByTestId("dm-list")).toContainText(
+    "Only the people in a chat can see it.",
+  );
   const home = page.getByTestId("dm-home-messages");
   await expect(home).toHaveText("Messages on Home");
   await expect(page.getByTestId(`dm-${DM.slice(0, 8)}`)).toBeVisible({
     timeout: 20_000,
   });
-  await expectAccessible(page, "the community's notices and messages");
+  await expectAccessible(page, "the community's private chats");
   await home.click();
   await expect(page).toHaveURL(/\/social\/messages$/);
 });
@@ -265,10 +266,7 @@ test("a conversation in the community is started by finding the person by name, 
   await expect(dialog).not.toContainText("npub");
   const search = page.getByTestId("new-dm-recipient");
   await expect(search).toBeFocused();
-  await expect(search).toHaveAttribute(
-    "placeholder",
-    "Search for someone, or paste their public key",
-  );
+  await expect(search).toHaveAttribute("placeholder", "Search by name");
 
   await search.fill("Alice");
   const result = dialog

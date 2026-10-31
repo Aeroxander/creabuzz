@@ -41,7 +41,7 @@ export type QueueFilter = "all" | "open" | "escalated";
 
 export const QUEUE_FILTERS: readonly { value: QueueFilter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "open", label: "Open" },
+  { value: "open", label: "Needs review" },
   { value: "escalated", label: "Escalated" },
 ];
 
@@ -156,7 +156,7 @@ export function reportedSubject(
       author: event.pubkey,
       excerpt: shorten(postExcerpt(event.content)),
       href: `/b/${board}?post=${event.id}`,
-      linkLabel: "Open the post",
+      linkLabel: "See the post",
     };
   }
   if (event.kind === KIND_FORUM_COMMENT && board) {
@@ -167,7 +167,7 @@ export function reportedSubject(
       author: event.pubkey,
       excerpt: shorten(event.content),
       href: thread ? `/b/${board}?post=${thread}` : `/b/${board}`,
-      linkLabel: "Open the thread",
+      linkLabel: "See the thread",
     };
   }
   if (report.channelId === null) {
@@ -177,7 +177,7 @@ export function reportedSubject(
       author: event.pubkey,
       excerpt: shorten(event.content),
       href: `/social/post/${event.id}`,
-      linkLabel: "Open the post",
+      linkLabel: "See the post",
     };
   }
   const query = new URLSearchParams({
@@ -190,8 +190,20 @@ export function reportedSubject(
     author: event.pubkey,
     excerpt: shorten(event.content),
     href: `${roomPath}?${query.toString()}`,
-    linkLabel: "Open the message",
+    linkLabel: "See the message",
   };
+}
+
+/**
+ * What a removal from this row takes down, in the words the board's own Moderate menu uses ("Remove post…"), so the
+ * same action has one name on both screens.
+ */
+export function removedNoun(
+  subject: ReportedSubject,
+): "post" | "reply" | "message" {
+  if (subject.about.includes("reply")) return "reply";
+  if (subject.about.includes("post")) return "post";
+  return "message";
 }
 
 /** Whom a ban or a timeout from this row would be against: the reported person, or whoever wrote the reported words. */

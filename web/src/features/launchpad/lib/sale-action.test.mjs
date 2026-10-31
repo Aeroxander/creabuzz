@@ -127,9 +127,13 @@ test("with no auction there is nothing to claim or refund, and a draft offers no
     saleAction(sale({ hasAuction: false, stage: "live", raise: "settling" })),
     null,
   );
-  // A record-only sale that is open can still record a bid.
-  assert.deepEqual(
+  // A record that says its sale is open but links no auction offers no bid: there is nowhere to place one.
+  assert.equal(
     saleAction(sale({ hasAuction: false, stage: "live", raise: "open" })),
-    BID,
+    null,
+  );
+  assert.equal(
+    saleAction(sale({ hasAuction: false, stage: "funding", raise: "open" })),
+    null,
   );
 });

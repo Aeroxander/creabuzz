@@ -8,6 +8,7 @@ import { Link } from "@tanstack/react-router";
 import { Check, Users } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { Card } from "@/shared/ui/card";
 import type { RoleDeclaration } from "../lib/manifest";
@@ -34,7 +35,8 @@ export function RoleChip({
       data-testid={filled ? "role-chip-filled" : "role-chip-open"}
     >
       {filled ? <Check className="h-3 w-3" aria-hidden /> : null}
-      {role.label} · {role.pct}%
+      {/* A contributor-only build promises no percentage seats: its projects award Shares for reviewed work. */}
+      {raisesOffered() ? `${role.label} · ${role.pct}%` : role.label}
     </span>
   );
 }

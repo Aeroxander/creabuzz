@@ -93,6 +93,8 @@ export interface BoardFeed {
     { name: string; description: string; visibility: "public" | "private" }
   >;
   isLoading: boolean;
+  /** Only the list of boards is still being read (the posts may come later): what a list of boards waits for. */
+  boardsLoading: boolean;
   error: unknown;
   /** Read everything again from the newest, taking in any new posts. */
   refetch: () => void;
@@ -186,6 +188,7 @@ export function useBoardFeed({
     posts,
     boards,
     isLoading: (!empty && enabled && query.isLoading) || channels.isLoading,
+    boardsLoading: channels.isLoading,
     error: query.error ?? channels.error,
     refetch: () => {
       void query.refetch();

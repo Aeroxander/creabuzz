@@ -30,7 +30,8 @@ import { useWalletLabels } from "../use-wallet-labels";
 import { shortAddress } from "../lib/record-people";
 import { useRecordEvents, useWork } from "../use-work";
 import { type ClaimReview, useReviewReasons } from "../use-review-reasons";
-import { idLabel } from "../lib/work";
+import { readableName, workTitle } from "../lib/work-titles";
+import { useWorkTitles } from "../use-work-titles";
 import type { WorkSnapshot } from "../lib/work-read";
 import { ClaimReviewNote } from "./ClaimReviewNote";
 import { paidOn, TxLink } from "./TxLink";
@@ -68,10 +69,12 @@ function AwardStoryLine({
       <span>
         {story.at === null ? "Date not read" : `Awarded ${paidOn(story.at)}`}
         {award.txHash ? (
-          <>
-            {" · "}
-            <TxLink chainId={chainId} tx={award.txHash} />
-          </>
+          <TxLink
+            chainId={chainId}
+            label="Record"
+            lead=" · "
+            tx={award.txHash}
+          />
         ) : null}
         {approvedBy && approvedBy.length > 0 ? (
           <span data-testid="contribution-award-reviewers">
@@ -143,8 +146,10 @@ function AwardLine({
   story,
   onRetryEvidence,
   approvedBy,
+  titles,
 }: {
   award: ContributionAward;
+  titles: ReadonlyMap<string, string>;
   launch: Launch;
   story: AwardStory | null;
   onRetryEvidence: () => void;
@@ -168,12 +173,14 @@ function AwardLine({
           }}
           to="/launchpad/$launchId"
         >
-          {award.claim}
+          {readableName(award.claim)}
         </Link>
         {award.project ? (
           <span className="text-muted-foreground">
             {" "}
-            in the work area {award.project}
+            in the work area{" "}
+            {titles.get(award.project.toLowerCase()) ??
+              readableName(award.project)}
           </span>
         ) : null}
       </span>
@@ -298,7 +305,7 @@ function TurnedDown({
             data-testid="contribution-turned-down"
             key={`${mandate}:${claim.id}`}
           >
-            <span className="font-semibold">{idLabel(claim.id)}</span>
+            <span className="font-semibold">{workTitle(claim.id)}</span>
             <span className="text-muted-foreground">
               {" "}
               by {labelOf(claim.record.contributor)}
@@ -332,6 +339,8 @@ export function ContributionsTab({
     launch,
     allAwards,
   );
+  // Work areas read by the same titles as on the Work tab (a suggestion's own title, when one made the area).
+  const titles = useWorkTitles(launch.record.chainId ?? null, dao, work);
   // Who reviewed each piece, from the chain, and the reasons published for turning work down.
   const record = useRecordEvents(dao, work);
   const { reviewOf } = useReviewReasons(reasons, record.data);
@@ -386,17 +395,13 @@ export function ContributionsTab({
 
   const { totalShares, earned, unconfirmed, startingShares, people } = snapshot;
   return (
-    <div
-      className="flex max-w-3xl flex-col gap-4"
-      data-testid="contributions-tab"
-    >
+    <div className="flex flex-col gap-4" data-testid="contributions-tab">
       <Card className="flex flex-col gap-2 p-4">
         <h2 className="text-base font-bold">Who earned the Shares</h2>
         <p className="text-sm text-muted-foreground">
           {contributor
-            ? "New Shares come only from awards: the reviewers approve the work, then the project votes to award it. "
-            : ""}
-          Each award is checked against the Shares the person received.
+            ? "New Shares come only from awards: the reviewers approve the work, then the project votes to award it."
+            : "Each award is checked against the Shares the person received."}
         </p>
         {testNotice ? (
           <p
@@ -484,7 +489,7 @@ export function ContributionsTab({
         <p className="text-sm text-muted-foreground">
           A project&apos;s decisions are votes of its Shares. Until awards
           spread the Shares, the founder&apos;s starting Shares can be enough to
-          decide alone; this reads where that stands now.
+          decide alone.
         </p>
         <VoteControlNote
           dao={dao}
@@ -514,15 +519,21 @@ export function ContributionsTab({
                     >
                       {label(person.address)}
                     </span>
-                    {/* A name is what someone chose; the account is what was paid. Both, so a record can be checked. */}
+                    {/* A name is what someone chose; the account is what was paid. The account stays checkable, folded
+                        away from the main copy. */}
                     {label(person.address) !==
                     shortAddress(person.address.toLowerCase()) ? (
-                      <span
-                        className="block font-mono text-2xs text-muted-foreground"
-                        data-testid="contribution-person-account"
-                      >
-                        {shortAddress(person.address.toLowerCase())}
-                      </span>
+                      <details className="text-2xs text-muted-foreground">
+                        <summary className="cursor-pointer select-none">
+                          Account
+                        </summary>
+                        <span
+                          className="block break-all font-mono"
+                          data-testid="contribution-person-account"
+                        >
+                          {person.address.toLowerCase()}
+                        </span>
+                      </details>
                     ) : null}
                   </span>
                   <span
@@ -554,6 +565,7 @@ export function ContributionsTab({
                       key={`${award.budget}:${award.claimId}`}
                       launch={launch}
                       onRetryEvidence={retryEvidence}
+                      titles={titles}
                       story={
                         stories.get(storyKey(award.budget, award.claimId)) ??
                         null

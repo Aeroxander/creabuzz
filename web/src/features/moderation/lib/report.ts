@@ -127,35 +127,52 @@ export function reportRecord(input: {
  */
 export type ReportSetting = "community" | "board" | "conversation";
 
-const NOTHING_REMOVED =
-  "Nothing is removed because you reported it; they decide what to do.";
+const NOTHING_REMOVED = "Nothing is removed until they decide.";
 
-/** What the report dialog says about who sees a report, what goes with it, and what to write in the note. */
-export function reportWording(setting: ReportSetting): {
+/** Said only when the person reported (or the post's author) runs the community: nobody above them reviews it. */
+export const REPORTING_OWNER =
+  "This person runs the community, so no one independent can review this report yet.";
+
+/**
+ * What the report dialog says about who sees a report, what goes with it, and what to write in the note.
+ *
+ * `reportingOwner` is whether the reported person, or the reported post's author, is the community's owner; only then
+ * does the dialog say that no one independent reviews it.
+ */
+export function reportWording(
+  setting: ReportSetting,
+  { reportingOwner = false }: { reportingOwner?: boolean } = {},
+): {
   privacy: string;
   /** For a private conversation: what is not sent, and so what the note should say. */
   evidence: string | null;
+  /** Only when reporting the community's owner. */
+  owner: string | null;
   noteLabel: string;
 } {
+  const owner = reportingOwner ? REPORTING_OWNER : null;
   if (setting === "board") {
     return {
-      privacy: `This board's moderators see what you reported and your note, not who you are. The community's moderators also see who you are. ${NOTHING_REMOVED}`,
+      privacy: `Board moderators don't see who reported. The community's moderators do. ${NOTHING_REMOVED}`,
       evidence: null,
+      owner,
       noteLabel: "Anything the moderators should know? (optional)",
     };
   }
-  const privacy = `Only this community's moderators will see this, and who you are. ${NOTHING_REMOVED} If you are reporting the community's owner, there is no one independent to review it yet.`;
+  const privacy = `The moderators see this report and your name. ${NOTHING_REMOVED}`;
   if (setting === "conversation") {
     return {
       privacy,
       evidence:
         "Your messages with them are not sent with the report. Say in the note what happened.",
+      owner,
       noteLabel: "What happened? (optional)",
     };
   }
   return {
     privacy,
     evidence: null,
+    owner,
     noteLabel: "Anything the moderators should know? (optional)",
   };
 }

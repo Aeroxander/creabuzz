@@ -13,7 +13,8 @@ import {
   canBackLaunch,
   deriveDirectory,
   directoryNotice,
-  launchTargetText,
+  discoverFilters,
+  launchesForFilter,
   visibleSections,
 } from "./directory.ts";
 
@@ -251,6 +252,21 @@ describe("deriveDirectory — launches", () => {
     );
   });
 
+  it("without raises, lists ideas (drafts with no sale terms) for the Ideas chip, and still no other draft", () => {
+    const idea = launchRecord({
+      slug: "garden-idea",
+      stage: "draft",
+      requiredRaised: undefined,
+    });
+    const unfinishedSale = launchRecord({ slug: "orion", stage: "draft" });
+    const listed = (raises) =>
+      deriveDirectory({ events: [idea, unfinishedSale], raises }).launches.map(
+        (launch) => launch.record.id,
+      );
+    assert.deepEqual(listed(false), ["garden-idea"]);
+    assert.deepEqual(listed(true), []);
+  });
+
   it("drops a tombstoned launch", () => {
     const { launches } = deriveDirectory({
       events: [
@@ -275,17 +291,6 @@ describe("deriveDirectory — launches", () => {
     for (const stage of ["draft", "review", "graduated", "failed"]) {
       assert.equal(canBackLaunch(stage), false, `${stage} is not backable`);
     }
-  });
-
-  it("states the target only when the record carries one, in money units", () => {
-    const [live] = deriveDirectory({
-      events: [launchRecord({ slug: "nebula" })],
-    }).launches;
-    assert.equal(launchTargetText(live), "6 USDC", "atomic 6000000 = 6 USDC");
-    const [bare] = deriveDirectory({
-      events: [launchRecord({ slug: "nebula", requiredRaised: "" })],
-    }).launches;
-    assert.equal(launchTargetText(bare), null, "absent stays absent");
   });
 });
 
@@ -375,5 +380,134 @@ describe("visibleSections", () => {
       launches: false,
       projects: true,
     });
+  });
+});
+
+// ---- the contributor-only build (`raisesOffered()` false) ----
+
+function contributorRecord({ slug = "creaton", created_at = 800 } = {}) {
+  return {
+    id: `record-${slug}-${created_at}`,
+    kind: 37001,
+    pubkey: FOUNDER,
+    created_at,
+    tags: [
+      ["d", slug],
+      ["name", "Creaton"],
+      ["chain", CHAIN],
+      ["treasury", DAO.replace("11", "33")],
+    ],
+    content: JSON.stringify({
+      pitch: "A place to meet and do useful work.",
+      stage: "graduated",
+      funding: {
+        stance: "not-raising",
+        seeking: ["contributors"],
+        path: "contributors",
+      },
+      tokenPlan: { mode: "dao", name: "Creaton", symbol: "CREA", supply: "0" },
+    }),
+    sig: "sig",
+  };
+}
+
+describe("a contributor-only build", () => {
+  it("offers Projects and Ideas chips, and never DAOs again, the pitch board or fundraising", () => {
+    assert.deepEqual(
+      discoverFilters(false).map((f) => f.label),
+      ["All", "Projects", "Ideas"],
+    );
+    // Each project is listed once: its DAO is the project, so there is no second DAOs section.
+    assert.equal(visibleSections("all", false).daos, false);
+    assert.equal(visibleSections("daos", false).daos, false);
+    assert.equal(visibleSections("all", true).daos, true);
+    assert.equal(visibleSections("ideas", false).launches, true);
+    assert.equal(visibleSections("ideas", true).launches, false);
+    assert.deepEqual(
+      discoverFilters(true).map((f) => f.label),
+      ["All", "DAOs", "Fundraising", "Project board"],
+    );
+    assert.equal(visibleSections("all", false).projects, false);
+    assert.equal(visibleSections("hiring", false).projects, false);
+    assert.equal(visibleSections("all", false).launches, true);
+    assert.equal(visibleSections("all", true).projects, true);
+  });
+
+  it("the Projects chip lists projects and the Ideas chip ideas; with raises every chip lists them all", () => {
+    const project = {
+      record: {
+        stage: "graduated",
+        auction: null,
+        token: "0x1",
+        requiredRaised: null,
+        floorPrice: null,
+      },
+    };
+    const idea = {
+      record: {
+        stage: "draft",
+        auction: null,
+        token: null,
+        requiredRaised: null,
+        floorPrice: null,
+      },
+    };
+    assert.deepEqual(launchesForFilter([project, idea], "fundraising", false), [
+      project,
+    ]);
+    assert.deepEqual(launchesForFilter([project, idea], "ideas", false), [
+      idea,
+    ]);
+    assert.deepEqual(launchesForFilter([project, idea], "all", false), [
+      project,
+      idea,
+    ]);
+    assert.deepEqual(launchesForFilter([project, idea], "fundraising", true), [
+      project,
+      idea,
+    ]);
+  });
+
+  it("never offers to back a launch, whatever its stage", () => {
+    assert.equal(canBackLaunch("live", false), false);
+    assert.equal(canBackLaunch("funding", false), false);
+    assert.equal(canBackLaunch("live", true), true);
+  });
+
+  it("lists contributor projects and leaves raises out", () => {
+    const events = [
+      launchRecord({ slug: "aurora", created_at: 600 }),
+      contributorRecord(),
+    ];
+    const hosted = deriveDirectory({ events, raises: false });
+    assert.deepEqual(
+      hosted.launches.map((l) => l.record.id),
+      ["creaton"],
+    );
+    const everywhere = deriveDirectory({ events });
+    assert.equal(everywhere.launches.length, 2);
+  });
+
+  it("counts a contributor project's DAO, linked to the project's own page, and no DAO a sale made", () => {
+    const { daos } = deriveDirectory({
+      events: [contributorRecord(), launchRecord(), summonReceipt()],
+      raises: false,
+    });
+    assert.equal(daos.length, 1);
+    assert.equal(daos[0].name, "Creaton");
+    assert.equal(daos[0].dao, DAO.replace("11", "33").toLowerCase());
+    assert.deepEqual(daos[0].launch, {
+      id: "creaton",
+      author: FOUNDER,
+      chainId: CHAIN,
+    });
+    assert.equal(daos[0].addressUrl?.startsWith(SEPOLIA), true);
+    // Every build with raises lists both.
+    assert.equal(
+      deriveDirectory({
+        events: [contributorRecord(), launchRecord(), summonReceipt()],
+      }).daos.length,
+      2,
+    );
   });
 });

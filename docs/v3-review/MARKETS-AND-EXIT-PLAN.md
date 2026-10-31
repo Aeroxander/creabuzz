@@ -1,5 +1,7 @@
 # Milestone forecasts, choosing contributors by market, and leaving while you back a spend (plan for feedback, 2026-10-25)
 
+> **Frozen (D137), 2026-10-31.** Superseded in part by [NEXT-GEN-DAO.md](NEXT-GEN-DAO.md) (decided as D113 to D124); nothing new is built until the pilots have run. The current index is [STATUS.md](STATUS.md).
+
 Status: **a plan to collect feedback on. Nothing here is decided or built.** It follows the funding curve proposal
 ([JOIN-CURVE.md](JOIN-CURVE.md); its asset rule is decided as D112) and the conversation after it. Each part would
 need its own decision rows, contract work where noted, audit scope and, for real money, a legal read.

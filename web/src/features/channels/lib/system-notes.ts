@@ -180,3 +180,22 @@ export function systemNoteText(note: SystemNote, names: NoteNames): string {
         : `${actor} updated this channel`;
   }
 }
+
+/**
+ * The notes to leave out of a room's timeline: every "created this channel" note after the first. A room is made once,
+ * so a second one is a stray (a note that reached this room's list from somewhere else, or one sent twice) and reads as
+ * two people making the same room. `ordered` is the timeline oldest first; `notes` the server's notes in it, by id.
+ */
+export function repeatedCreationNotes(
+  ordered: readonly { id: string }[],
+  notes: ReadonlyMap<string, SystemNote>,
+): Set<string> {
+  const hidden = new Set<string>();
+  let seen = false;
+  for (const event of ordered) {
+    if (notes.get(event.id)?.type !== "channel_created") continue;
+    if (seen) hidden.add(event.id);
+    seen = true;
+  }
+  return hidden;
+}

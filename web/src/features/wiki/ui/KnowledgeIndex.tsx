@@ -42,7 +42,7 @@ function PageRow({
       <span className="min-w-0 truncate">{page.slug}</span>
       {page.kind === "agent" ? (
         <span className="ml-auto shrink-0 text-2xs text-black/60 dark:text-white/60">
-          agent
+          AI helper
         </span>
       ) : null}
     </button>
@@ -129,7 +129,12 @@ export function KnowledgeIndex({
           />
         </div>
       </div>
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+      <nav
+        aria-label="Pages"
+        className="min-h-0 flex-1 overflow-y-auto px-2 pb-4"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to focus this scroll container to scroll it (a phone shows a short strip of it).
+        tabIndex={0}
+      >
         <Group
           label="Team pages"
           testId="knowledge-group-team"
@@ -139,12 +144,12 @@ export function KnowledgeIndex({
           empty="No team pages yet."
         />
         <Group
-          label="Agent pages"
+          label="AI helper pages"
           testId="knowledge-group-agent"
           pages={agentMatch}
           activeSlug={activeSlug}
           onSelect={onSelect}
-          empty="No agent pages yet."
+          empty="No AI helper pages yet."
         />
       </nav>
     </div>

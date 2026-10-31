@@ -297,8 +297,9 @@ test("org view fits", async ({ page }) => {
 
 test("first-run identity prompt fits", async ({ page }) => {
   await openCommunity(page);
-  // On a phone the identity prompt lives in the app's bottom tab bar.
-  await page.getByTestId("create-identity-cta").click();
+  // On a phone the account slot in the app's bottom tab bar says Sign in; its dialog can switch to making an account.
+  await page.getByTestId("sign-in-cta").click();
+  await expect(page.getByTestId("onboarding-signin-form")).toBeVisible();
   await expectNoOverflow(page, "first-run identity");
   await shot(page, "16-mobile-first-run-identity");
 });
@@ -527,7 +528,7 @@ test("invite landing fits", async ({ page }) => {
   await page.route("https://api.github.com/**", async (route) => {
     await route.fulfill({ status: 503, body: "unavailable" });
   });
-  await page.goto("/invite/demo-code");
+  await page.goto("/invite/v2.demo-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
   await expect(page.getByTestId("invite-create-and-join")).toBeVisible();
   await expectNoOverflow(page, "invite");
   await expectNoClippedControls(page, "main");
@@ -538,7 +539,7 @@ test("repository browser fits", async ({ page }) => {
   await mockRelay(page);
   await page.goto("/repos");
   await expect(
-    page.getByRole("heading", { name: "This community is empty" }),
+    page.getByRole("heading", { name: "No code yet" }),
   ).toBeVisible();
   await expectNoOverflow(page, "repos");
   await shot(page, "22-mobile-repos");

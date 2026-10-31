@@ -70,19 +70,21 @@ export function BoardDirectory() {
           Boards are communities for one topic. Their posts show up in Everyone;
           join the ones you care about.
         </p>
-        <Button
-          data-testid="board-directory-start"
-          onClick={() => {
-            if (existingUserPubkey() === null) {
-              toast.error(needAccountTo("start a board"));
-              return;
-            }
-            setStarting(true);
-          }}
-          size="sm"
-        >
-          Start a board
-        </Button>
+        {starting ? null : (
+          <Button
+            data-testid="board-directory-start"
+            onClick={() => {
+              if (existingUserPubkey() === null) {
+                toast.error(needAccountTo("start a board"));
+                return;
+              }
+              setStarting(true);
+            }}
+            size="sm"
+          >
+            Start a board
+          </Button>
+        )}
       </div>
 
       {starting ? (
@@ -103,7 +105,8 @@ export function BoardDirectory() {
           testId="board-directory-error"
           title="Couldn't load the boards"
         />
-      ) : feed.isLoading ? (
+      ) : feed.boardsLoading ? (
+        // The boards are listed as soon as they are known; their activity fills in when the posts arrive.
         <p className="text-sm text-muted-foreground" role="status">
           Loading boards…
         </p>

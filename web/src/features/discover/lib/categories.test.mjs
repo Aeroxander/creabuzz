@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildCategoryQuery,
   CATEGORY_PAGE_SIZE,
+  categoryLabel,
   collectCategories,
   LAUNCH_ROUTING_TAG,
   nextPageCursor,
@@ -47,4 +48,22 @@ test("a category query is bounded, explicit and pageable", () => {
 test("the next page continues just before the oldest event seen", () => {
   assert.equal(nextPageCursor([ev(1, [], 10), ev(1, [], 7), ev(1, [], 12)]), 6);
   assert.equal(nextPageCursor([]), null);
+});
+
+test("records this build does not list give no topic, so no chip leads to an empty page", () => {
+  const events = [
+    { ...ev(KIND_LAUNCH_RECORD, [["t", "games"]]), listed: false },
+    { ...ev(KIND_LAUNCH_RECORD, [["t", "software"]]), listed: true },
+  ];
+  assert.deepEqual(
+    collectCategories(events, (event) => event.listed),
+    ["software"],
+  );
+  assert.deepEqual(collectCategories(events), ["games", "software"]);
+});
+
+test("a topic reads as the idea form names it", () => {
+  assert.equal(categoryLabel("ai agents"), "AI agents");
+  assert.equal(categoryLabel("games"), "Games");
+  assert.equal(categoryLabel("design"), "Design");
 });

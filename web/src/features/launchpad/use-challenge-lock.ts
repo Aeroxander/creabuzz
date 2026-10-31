@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getRpcEndpoint } from "./chain";
@@ -201,13 +201,4 @@ export function useChallengeViewers(
     staleTime: 10_000,
     refetchOnWindowFocus: true,
   });
-}
-
-/** For code that has just changed something and wants every read about milestone locks made again. */
-export function useRefreshChallenge() {
-  const client = useQueryClient();
-  return useCallback(
-    () => client.invalidateQueries({ queryKey: challengeQueryKey }),
-    [client],
-  );
 }

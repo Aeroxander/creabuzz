@@ -130,7 +130,7 @@ export function OrgSetup({
 
   return (
     <Card className="m-3 p-5" data-testid="org-setup">
-      <h2 className="text-lg font-semibold">Start your organization</h2>
+      <h2 className="text-lg font-semibold">Name your organization</h2>
       <p className="mt-0.5 text-sm text-muted-foreground">
         Four short steps. You can change any of it later.
       </p>
@@ -168,7 +168,7 @@ export function OrgSetup({
                 data-testid="org-setup-name"
                 maxLength={ORG_NAME_MAX}
                 onChange={(event) => patch({ name: event.target.value })}
-                placeholder="Nebula Labs"
+                placeholder="e.g. Riverside Film Club"
                 value={draft.name}
               />
             </div>
@@ -184,7 +184,7 @@ export function OrgSetup({
                 data-testid="org-setup-purpose"
                 maxLength={ORG_PURPOSE_MAX}
                 onChange={(event) => patch({ purpose: event.target.value })}
-                placeholder="Maps the night sky, open source."
+                placeholder="e.g. Short films, made together."
                 value={draft.purpose}
               />
             </div>
@@ -257,7 +257,7 @@ export function OrgSetup({
                       },
                     })
                   }
-                  placeholder="Researcher"
+                  placeholder="e.g. Researcher"
                   value={draft.helper.role}
                 />
               </div>
@@ -329,7 +329,11 @@ export function OrgSetup({
         ) : null}
 
         {shownIssue ? (
-          <p className="text-xs text-destructive" data-testid="org-setup-issue">
+          <p
+            className="text-xs text-destructive"
+            data-testid="org-setup-issue"
+            id="org-setup-issue"
+          >
             {shownIssue}
           </p>
         ) : null}
@@ -346,7 +350,17 @@ export function OrgSetup({
           </p>
         ) : null}
 
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {/* Why Next is not ready yet, quietly, before the first keystroke (after it, the issue above says it). */}
+          {issue !== null && shownIssue === null && step !== "review" ? (
+            <p
+              className="mr-auto text-xs text-muted-foreground"
+              data-testid="org-setup-next-why"
+              id="org-setup-next-why"
+            >
+              {issue}
+            </p>
+          ) : null}
           {/* Once a record is out, the answers are fixed: changing the name now would leave the first team behind. */}
           {index > 0 && published.size === 0 ? (
             <Button
@@ -374,6 +388,13 @@ export function OrgSetup({
             </Button>
           ) : (
             <Button
+              aria-describedby={
+                issue === null
+                  ? undefined
+                  : shownIssue === null
+                    ? "org-setup-next-why"
+                    : "org-setup-issue"
+              }
               data-testid="org-setup-next"
               disabled={issue !== null}
               onClick={() => setStep(STEPS[index + 1].id)}

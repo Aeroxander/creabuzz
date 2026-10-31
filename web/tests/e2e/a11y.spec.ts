@@ -209,7 +209,7 @@ test("the invite landing is accessible", async ({ page }) => {
       body: JSON.stringify({ policy: null }),
     });
   });
-  await page.goto("/invite/demo-code");
+  await page.goto("/invite/v2.demo-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
   // The browser join (the first release offers no desktop app).
   await expect(page.getByTestId("invite-create-and-join")).toBeVisible({
     timeout: 20_000,

@@ -163,9 +163,9 @@ test("org view falls back to the roster when no nodes exist", async ({
 
   // The pre-org fallback renders: no `37010` data means the old flat roster,
   // which with no agents reports an empty fleet rather than a chart.
-  await expect(
-    page.getByText(/0 AI helpers · 0 online · 0 teams/),
-  ).toBeVisible();
+  await expect(page.getByTestId("org-no-helpers")).toHaveText(
+    "No AI helpers here yet.",
+  );
   await expect(page.getByText("Loading org chart…")).toBeHidden();
   await expect(page.getByText("CTO", { exact: true })).toBeHidden();
 });

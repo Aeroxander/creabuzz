@@ -8,17 +8,13 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { reportTypeLabel } from "@/features/moderation/lib/moderationQueue";
+import {
+  reportDate,
+  reportTypeLabel,
+} from "@/features/moderation/lib/moderationQueue";
 
 import type { BoardReportRow, BoardReports } from "../use-board-reports";
 import { ReasonDialog } from "./ReasonDialog";
-
-function when(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
 
 function Row({
   row,
@@ -55,7 +51,7 @@ function Row({
         {report.createdAt ? (
           <span className="text-muted-foreground">
             {" "}
-            · reported {when(report.createdAt)}
+            · reported {reportDate(report.createdAt)}
           </span>
         ) : null}
       </p>
@@ -76,7 +72,7 @@ function Row({
             onClick={() => onOpenPost(words.thread)}
             type="button"
           >
-            {words.what === "post" ? "Open the post" : "Open the thread"}
+            {words.what === "post" ? "See the post" : "See the thread"}
           </button>
         ) : null}
         {choices.remove ? (
@@ -166,9 +162,9 @@ export function BoardReportsSection({
     <div data-testid="board-reports">
       <h3 className="text-sm font-semibold">Reports</h3>
       <p className="text-xs text-muted-foreground">
-        Open reports about posts and replies here. You are not told who sent
-        them. The community's moderators see every report too, and decide
-        anything more than a removal, such as a ban.
+        Open reports about posts and replies here. Board moderators don't see
+        who reported. The community's moderators do, and they decide anything
+        more than a removal, such as a ban.
       </p>
       {reports.error ? (
         <p className="mt-2 text-xs text-destructive" role="alert">

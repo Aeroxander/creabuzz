@@ -490,14 +490,8 @@ export const SELECTOR_ON_TOKENS_RECEIVED = selectorOf(
 export const SELECTOR_BIND_AUCTION = selectorOf(SIGNATURE_BIND_AUCTION);
 /** Selector of {@link SIGNATURE_BOUND_AUCTION} (`cast`: `0x769956cb`). */
 export const SELECTOR_BOUND_AUCTION = selectorOf(SIGNATURE_BOUND_AUCTION);
-/** Selector of {@link SIGNATURE_SET_HOOK_AUCTION} (`cast`: `0xb8c6f579`). */
-export const SELECTOR_SET_HOOK_AUCTION = selectorOf(SIGNATURE_SET_HOOK_AUCTION);
 /** Selector of {@link SIGNATURE_HOOK_AUCTION} (`cast`: `0x7d9f6db5`). */
 export const SELECTOR_HOOK_AUCTION = selectorOf(SIGNATURE_HOOK_AUCTION);
-/** Selector of {@link SIGNATURE_WITHDRAW_STUCK_RESERVE} (`cast`: `0xeb6ba94e`). */
-export const SELECTOR_WITHDRAW_STUCK_RESERVE = selectorOf(
-  SIGNATURE_WITHDRAW_STUCK_RESERVE,
-);
 
 // ---------------------------------------------------------------------------
 // Call shape

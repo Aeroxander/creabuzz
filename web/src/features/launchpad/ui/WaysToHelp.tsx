@@ -73,7 +73,16 @@ export function WaysToHelp({
               key={`${area.mandate}:${area.id}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <span className="font-semibold">{area.name}</span>
+                {/* The short name is what a submission names: quietly beside the title. */}
+                <span className="font-semibold">
+                  {area.title}
+                  {area.title !== area.name ? (
+                    <span className="font-mono text-xs font-normal text-muted-foreground">
+                      {" "}
+                      {area.name}
+                    </span>
+                  ) : null}
+                </span>
                 <span className="flex flex-wrap gap-1.5">
                   {area.sharesLeft > 0n ? (
                     <Chip icon={Award} tone="success">
@@ -90,14 +99,14 @@ export function WaysToHelp({
               {area.shareBudget > 0n ? (
                 <div>
                   <Meter
-                    label={`${area.name}: Shares awarded`}
+                    label={`${area.title}: Shares awarded`}
                     max={area.shareBudget}
                     value={area.sharesAwarded}
                   />
                   <p className="mt-1 text-xs text-muted-foreground">
                     {area.sharesAwarded > 0n
                       ? `${whole(area.sharesAwarded)} of ${whole(area.shareBudget)} awarded`
-                      : "Nothing awarded yet. Be the first"}
+                      : "Nothing awarded yet."}
                   </p>
                 </div>
               ) : null}

@@ -144,9 +144,9 @@ test("a project's helper runs in the tab under its own name, takes its seat, and
   await expect(page.getByTestId("helper-way-server-state")).toHaveText(
     "Not available",
   );
-  await expect(page.getByTestId("helper-way-computer-state")).toHaveText(
-    "Ready",
-  );
+  // This build has no desktop app, so the computer is not offered (and nothing links to another product's downloads).
+  await expect(page.getByTestId("helper-way-computer-state")).toHaveCount(0);
+  await expect(page.getByText("Get the desktop app")).toHaveCount(0);
 
   await page.getByTestId("seat-run-writer").click();
   await expect(page.getByTestId("helper-seat-writer-status")).toHaveText(

@@ -3,6 +3,7 @@ import { Meter } from "@/shared/ui/meter";
 
 import { formatAtomic } from "../lib/amounts";
 import { idLabel } from "../lib/work";
+import { shortNameBeside, workTitle } from "../lib/work-titles";
 import type { WorkBounties } from "../lib/work-bounty";
 import type { MandateView, ProjectView } from "../lib/work-read";
 import { Person } from "./Face";
@@ -67,18 +68,8 @@ export function BudgetWorkAreas({
     ? mandate.projects
     : mandate.projects.filter((project) => !open.has(key(project)));
   const openCount = mandate.projects.length - listed.length;
-  if (listed.length === 0) {
-    return (
-      <p
-        className="mt-3 text-sm text-muted-foreground"
-        data-testid="work-areas-all-open"
-      >
-        {openCount === 1
-          ? "Its work area is under Open work."
-          : `Its ${openCount} work areas are under Open work.`}
-      </p>
-    );
-  }
+  // Every area is on the Open work card above: nothing more to list here.
+  if (listed.length === 0) return null;
   return (
     <>
       <h4 className="mt-3 text-sm font-semibold">
@@ -105,7 +96,16 @@ export function BudgetWorkAreas({
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{idLabel(project.id)}</span>
+                {/* The short name the chain keys it by, quietly beside the title: it is what a submission names. */}
+                <span className="font-medium">
+                  {workTitle(project.id)}
+                  {shortNameBeside(project.id, workTitle(project.id)) ? (
+                    <span className="font-mono text-xs font-normal text-muted-foreground">
+                      {" "}
+                      {shortNameBeside(project.id, workTitle(project.id))}
+                    </span>
+                  ) : null}
+                </span>
                 {mandate.isMilestonePanel ? null : (
                   <Chip>{endedReason(mandate, project, chainTime)}</Chip>
                 )}
@@ -117,7 +117,7 @@ export function BudgetWorkAreas({
             {project.record.shareBudget > 0n ? (
               <div className="mt-2">
                 <Meter
-                  label={`${idLabel(project.id)}: Shares awarded`}
+                  label={`${workTitle(project.id)}: Shares awarded`}
                   max={project.record.shareBudget}
                   value={project.record.sharesAwarded}
                 />

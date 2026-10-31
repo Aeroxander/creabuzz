@@ -1,5 +1,6 @@
 import { BookMarked, GitBranch, WifiOff } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -64,12 +65,21 @@ function CommunityEmptyState() {
           <CreatonMark className="h-full w-full" label="Creaton" />
         </div>
         <h1 className="mt-6 text-2xl font-semibold tracking-tight text-black dark:text-white">
-          This community is empty
+          No code yet
         </h1>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-black/60 dark:text-white/60">
-          Code repositories pushed to this community show up here.
+          Code pushed to this community shows up here.
         </p>
-        <ConnectButton className="mt-6" />
+        <Button asChild className="mt-6" variant="outline">
+          <Link
+            data-testid="repos-back-to-community"
+            params={{ host: new URL(relayWsUrl()).host }}
+            to="/c/$host"
+          >
+            Back to the community
+          </Link>
+        </Button>
+        <ConnectButton className="mt-3" />
       </div>
     </div>
   );

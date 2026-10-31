@@ -9,6 +9,7 @@ import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { useAgentRoster } from "@/features/fleet/use-agent-roster";
 import {
+  hasUserName,
   useProfiles,
   profileDisplayName,
 } from "@/features/profiles/use-profiles";
@@ -21,6 +22,8 @@ export interface MentionCandidate {
   name: string;
   agent?: boolean;
   me?: boolean;
+  /** Whether this person has chosen a name (their `name` is otherwise a short key, for mention text only). */
+  named?: boolean;
 }
 
 export function useMentionCandidates(
@@ -76,6 +79,7 @@ export function useMentionCandidates(
       result.push({
         pubkey,
         name: profileDisplayName(profiles?.[pubkey], pubkey),
+        named: hasUserName(profiles?.[pubkey]),
       });
     }
     return result;

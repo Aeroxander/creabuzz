@@ -16,7 +16,6 @@ const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const DAY = 86_400;
 const UNIT = 10n ** 18n;
 
-export const BIDDING = 3 * DAY;
 export const SETTLE_WINDOW = 2 * DAY;
 export const EVERY = 7 * DAY;
 export const STEPS = 1024;

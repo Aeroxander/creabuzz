@@ -1,33 +1,32 @@
 import { UserAvatar } from "@/shared/ui/UserAvatar";
-import {
-  type Profile,
-  resolveUserName,
-} from "@/features/profiles/use-profiles";
+import type { Profile } from "@/features/profiles/use-profiles";
+import { avatarName, bylineName } from "@/features/social/lib/person-name";
 
 /**
  * A person's picture and name, as the rest of the app shows them. Boards show the picture large, the way a forum
- * does, so the people in a discussion are easy to tell apart at a glance.
+ * does, so the people in a discussion are easy to tell apart at a glance. Until their profile is read (or when they
+ * never chose a name) they are "Someone", never a short key.
  */
 export function AuthorChip({
-  pubkey,
   profile,
   badge,
   size = "xs",
 }: {
+  /** Whose chip it is. The label comes from their profile alone, so a key is never shown in its place. */
   pubkey: string;
   profile: Profile | undefined;
   /** A short fact about the person to show beside their name, such as how much of a DAO they hold. */
   badge?: string;
   size?: "xs" | "md" | "xl";
 }) {
-  const name = resolveUserName(profile, pubkey);
+  const name = bylineName(profile);
   return (
     <span
       className={`inline-flex min-w-0 items-center ${size === "xs" ? "gap-1.5" : "gap-2.5"}`}
     >
       <UserAvatar
         avatarUrl={profile?.picture ?? null}
-        displayName={name}
+        displayName={avatarName(profile)}
         size={size}
       />
       <span

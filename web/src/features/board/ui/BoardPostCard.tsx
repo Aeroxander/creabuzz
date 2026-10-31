@@ -1,21 +1,27 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  Bookmark,
   ExternalLink,
+  Flag,
   Lock,
   MessageCircle,
   ScrollText,
   Share,
   Users,
 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
 import {
-  resolveUserName,
-  resolveUserSecondaryName,
-} from "@/features/profiles/use-profiles";
+  avatarName,
+  bylineHandle,
+  bylineName,
+} from "@/features/social/lib/person-name";
+import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { VoteControl } from "@/features/social/ui/VoteControl";
+import { useToggleBookmark } from "@/features/social/use-social-actions";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { relativeTime, shortRelativeTime } from "@/shared/lib/relative-time";
@@ -34,25 +40,32 @@ import { failureWords } from "@/shared/lib/readable-error";
  * opens on its board's page, where the discussion is.
  *
  * A post about a DAO decision has no vote arrows, as on the board: a vote here is not the DAO's vote. A thread its
- * board's moderators locked says so, as it does on the board.
+ * board's moderators locked says so, as it does on the board. Like a short post it can be bookmarked and, by a
+ * signed-in reader who did not write it, reported (to the board's moderators, without the reporter's name).
  */
 export function BoardPostCard({
   post,
   board,
   author,
   add,
+  bookmarked = false,
 }: {
   post: FeedPost;
   board: { id: string; name: string };
   author: ProfileMetadata | undefined;
+  /** In the reader's bookmarks. */
+  bookmarked?: boolean;
   /** Merge a record the server just accepted (the reader's vote) into the list. */
   add: (event: BoardEvent) => void;
 }) {
   const navigate = useNavigate();
+  const me = existingUserPubkey();
+  const bookmark = useToggleBookmark();
+  const [reporting, setReporting] = useState(false);
   const actions = useBoardActions(post.boardId, add);
   const locked = useBoardStateRecord(post.boardId).locked.has(post.id);
-  const name = resolveUserName(author, post.author);
-  const handle = resolveUserSecondaryName(author, post.author);
+  const name = bylineName(author);
+  const handle = bylineHandle(author);
   const media = postMedia(post.body);
   const preview = post.body ? previewText(post.body, 280) : "";
   const open = () =>
@@ -63,7 +76,7 @@ export function BoardPostCard({
     });
 
   const vote = (direction: "+" | "-") => {
-    if (existingUserPubkey() === null) {
+    if (me === null) {
       toast.error(needAccountTo("vote"));
       return;
     }
@@ -100,7 +113,7 @@ export function BoardPostCard({
           <UserAvatar
             avatarUrl={author?.picture ?? null}
             className="h-11 w-11"
-            displayName={name}
+            displayName={avatarName(author)}
           />
         </Link>
         <div className="min-w-0 flex-1">
@@ -112,9 +125,11 @@ export function BoardPostCard({
             >
               {name}
             </Link>
-            <span className="truncate text-black/60 dark:text-white/60">
-              {handle}
-            </span>
+            {handle ? (
+              <span className="truncate text-black/60 dark:text-white/60">
+                {handle}
+              </span>
+            ) : null}
             <span className="text-black/60 dark:text-white/60">·</span>
             <Link
               aria-label={`Open post from ${relativeTime(post.createdAt)}`}
@@ -206,6 +221,32 @@ export function BoardPostCard({
               />
             )}
             <button
+              aria-label={bookmarked ? "Remove bookmark" : "Bookmark"}
+              aria-pressed={bookmarked}
+              className={`relative z-10 grid h-8 w-8 place-items-center rounded-full hover:bg-sky-500/10 hover:text-sky-600 disabled:cursor-default ${
+                bookmarked ? "text-sky-600" : "text-black/60 dark:text-white/60"
+              }`}
+              data-testid="social-board-bookmark"
+              disabled={me === null || bookmark.isPending}
+              onClick={() =>
+                bookmark.mutate(
+                  { id: post.id, saved: !bookmarked },
+                  {
+                    onError: (error) =>
+                      toast.error("Couldn't save the bookmark", {
+                        description: failureWords(error).text,
+                      }),
+                  },
+                )
+              }
+              type="button"
+            >
+              <Bookmark
+                aria-hidden
+                className={`h-[1.15rem] w-[1.15rem] ${bookmarked ? "fill-current" : ""}`}
+              />
+            </button>
+            <button
               aria-label="Copy link to post"
               className="relative z-10 grid h-8 w-8 place-items-center rounded-full text-black/60 hover:bg-sky-500/10 hover:text-sky-600 dark:text-white/60"
               onClick={share}
@@ -213,9 +254,32 @@ export function BoardPostCard({
             >
               <Share aria-hidden className="h-[1.15rem] w-[1.15rem]" />
             </button>
+            {me !== null && me !== post.author ? (
+              <button
+                aria-label="Report post"
+                className="relative z-10 grid h-8 w-8 place-items-center rounded-full text-black/60 hover:bg-red-500/10 hover:text-red-600 dark:text-white/60"
+                data-testid="social-board-report"
+                onClick={() => setReporting(true)}
+                type="button"
+              >
+                <Flag aria-hidden className="h-[1.15rem] w-[1.15rem]" />
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
+      {reporting ? (
+        <ReportDialog
+          onClose={() => setReporting(false)}
+          setting="board"
+          target={{
+            kind: "message",
+            eventId: post.id,
+            authorPubkey: post.author,
+          }}
+          what="this post"
+        />
+      ) : null}
     </article>
   );
 }

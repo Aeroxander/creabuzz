@@ -42,7 +42,6 @@ import {
 } from "./nip17.ts";
 import { buildNotifications, groupNotifications } from "./notifications.ts";
 import {
-  buildLike,
   buildQuote,
   buildRepost,
   buildSocialPost,
@@ -194,17 +193,6 @@ describe("post events", () => {
       ],
       content: "",
     });
-  });
-
-  it("a like is the + reaction naming the note, its author and kind", () => {
-    const like = buildLike(ev({ id: hex("7"), kind: 1, pubkey: ALICE }));
-    assert.equal(like.kind, 7);
-    assert.equal(like.content, "+");
-    assert.deepEqual(like.tags.slice(0, 3), [
-      ["e", hex("7")],
-      ["p", ALICE],
-      ["k", "1"],
-    ]);
   });
 });
 

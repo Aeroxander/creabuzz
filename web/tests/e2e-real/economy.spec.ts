@@ -779,7 +779,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     .getByTestId("work-challenge")
     .click();
   await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
-    "Freeze the submission “extra-docs”",
+    "Freeze the submission “Extra docs”",
     { timeout: 30_000 },
   );
   await founder.page.getByTestId("decision-draft-submit").click();
@@ -803,7 +803,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await founder.page.getByTestId("decision-new").click();
   await founder.page.getByTestId("decision-kind-unwind").click();
   await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
-    "Unwind the frozen submission “extra-docs”",
+    "Reject the frozen submission “Extra docs”",
     { timeout: 30_000 },
   );
   await founder.page.getByTestId("decision-draft-submit").click();

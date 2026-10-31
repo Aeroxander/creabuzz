@@ -3,7 +3,7 @@
  * board's public moderation log in plain words, each thread named and one tap away. Everyone sees both. Above them, for
  * the board's moderators only, the open reports about its posts and replies. The board's
  * owners and admins appoint (from the people on the board, after a confirmation naming them, or by profile link or key)
- * and dismiss moderators; a moderator can step
+ * and remove moderators (after a confirmation naming them); a moderator can step
  * down. Moderators can lift a mute that is still in force, when they stand at least as high as whoever set it, and
  * confirm another moderator's request for a longer mute. The server decides each of these and its reason is shown
  * when it refuses.
@@ -15,10 +15,12 @@ import { toast } from "sonner";
 import { Modal } from "@/features/launchpad/ui/Modal";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { Button } from "@/shared/ui/button";
+import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { Input } from "@/shared/ui/input";
 
 import {
   activeMutes,
+  appointSuggestions,
   type BoardState,
   type LogEntry,
   logSentence,
@@ -56,7 +58,7 @@ function AppointDialog({
       <p className="mt-0.5 text-sm text-muted-foreground">
         For {MODERATOR_TERM_DAYS} days they can lock, pin and remove posts and
         mute people on this board. It goes in the board's moderation log, and
-        you can dismiss them at any time.
+        you can remove them as a moderator at any time.
       </p>
       <div className="mt-4 flex justify-end gap-2">
         <Button onClick={onClose} size="sm" type="button" variant="ghost">
@@ -108,7 +110,12 @@ export function BoardModerationPanel({
   const moderators = [...state.moderators].filter(([, until]) => until > now);
   const mutes = activeMutes(log, now);
   const pending = new Set(pendingLongerMutes(log, now).map((e) => e.id));
-  const shownCandidates = candidates.slice(0, 8);
+  const shownCandidates = appointSuggestions(candidates, {
+    reported: reports.rows.flatMap((row) =>
+      row.words ? [row.words.author] : [],
+    ),
+    muted: mutes.keys(),
+  });
   const people = [
     ...new Set([
       ...moderators.map(([pubkey]) => pubkey),
@@ -128,6 +135,7 @@ export function BoardModerationPanel({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const run = async (work: () => Promise<unknown>, done: string) => {
     setBusy(true);
@@ -151,7 +159,7 @@ export function BoardModerationPanel({
   const appoint = async () => {
     const pubkey = parsePersonOrLink(text);
     if (pubkey === null) {
-      setProblem("Paste their profile link or key.");
+      setProblem("Paste their profile link.");
       return;
     }
     if (await run(() => actions.appoint(pubkey), "Moderator appointed."))
@@ -174,11 +182,24 @@ export function BoardModerationPanel({
       <div>
         <h3 className="text-sm font-semibold">Moderators</h3>
         <p className="text-xs text-muted-foreground">
-          Appointed by this board's owners and admins for up to{" "}
-          {MODERATOR_TERM_DAYS} days. They can lock, pin and remove posts and
-          mute people on this board, but never act against each other or the
-          owners and admins, and each can take at most 20 actions an hour.
+          They lock, pin and remove posts and mute people on this board.
         </p>
+        <details className="text-xs text-muted-foreground">
+          <summary
+            className="w-fit cursor-pointer underline"
+            data-testid="board-moderator-limits"
+          >
+            Limits
+          </summary>
+          <ul className="mt-1 list-disc pl-4">
+            <li>
+              Appointed by the board's owners and admins, for up to{" "}
+              {MODERATOR_TERM_DAYS} days.
+            </li>
+            <li>Never act against each other or the owners and admins.</li>
+            <li>At most 20 actions an hour each.</li>
+          </ul>
+        </details>
         {moderators.length === 0 ? (
           <p className="mt-2 text-xs text-muted-foreground">
             No appointed moderators. The board's owners and admins moderate it.
@@ -193,7 +214,17 @@ export function BoardModerationPanel({
                 className="flex flex-wrap items-center gap-2 text-sm"
                 key={pubkey}
               >
-                <AuthorChip profile={profiles?.[pubkey]} pubkey={pubkey} />
+                {/* Your own row says so, as the log does ("you"). */}
+                {pubkey === me ? (
+                  <span
+                    className="font-medium"
+                    data-testid="board-moderator-you"
+                  >
+                    You
+                  </span>
+                ) : (
+                  <AuthorChip profile={profiles?.[pubkey]} pubkey={pubkey} />
+                )}
                 <span className="text-xs text-muted-foreground">
                   until {dateWords(until)}
                 </span>
@@ -217,15 +248,10 @@ export function BoardModerationPanel({
                     className="text-xs underline disabled:opacity-50"
                     data-testid="board-moderator-dismiss"
                     disabled={busy}
-                    onClick={() =>
-                      void run(
-                        () => actions.dismiss(pubkey),
-                        "Moderator dismissed.",
-                      )
-                    }
+                    onClick={() => setRemoving(pubkey)}
                     type="button"
                   >
-                    Dismiss
+                    Remove as moderator…
                   </button>
                 ) : null}
               </li>
@@ -250,7 +276,7 @@ export function BoardModerationPanel({
               disabled={busy}
               id="board-appoint-person"
               onChange={(event) => setText(event.target.value)}
-              placeholder="Their profile link or key"
+              placeholder="Their profile link"
               value={text}
             />
             <Button
@@ -291,6 +317,22 @@ export function BoardModerationPanel({
             }}
           />
         ) : null}
+        <ConfirmDialog
+          confirmLabel="Remove as moderator"
+          description={`${removing === null ? "They" : nameOf(removing)} can no longer lock, pin or remove posts or mute people on this board. It goes in the board's moderation log.`}
+          onCancel={() => setRemoving(null)}
+          onConfirm={() => {
+            const pubkey = removing;
+            setRemoving(null);
+            if (pubkey !== null)
+              void run(
+                () => actions.dismiss(pubkey),
+                "No longer a moderator of this board.",
+              );
+          }}
+          open={removing !== null}
+          title={`Remove ${removing === null ? "them" : nameOf(removing)} as a moderator?`}
+        />
         {problem ? (
           <p className="mt-1 text-xs text-destructive" role="alert">
             {problem}

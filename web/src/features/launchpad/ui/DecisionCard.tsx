@@ -10,6 +10,7 @@ import type { Decision, DecisionsSnapshot } from "../lib/decisions";
 import { encodeExecuteByVotes, encodeQueue } from "../lib/vote-tx";
 import { votingRuleWatch, votingStatusLabel } from "../lib/voting-allocation";
 import { decisionStage, duration, isLive, when } from "../lib/decision-stage";
+import { deadline } from "../lib/challenge-copy";
 import { DecisionVote } from "./DecisionVote";
 
 export { decisionStage };
@@ -155,7 +156,8 @@ export function DecisionCard({
           Passes when at least {shares(rules.quorum)} Shares take part and{" "}
           {Number(rules.approvalBps) / 100}% of them back it, for{" "}
           {duration(rules.hold)} in a row. It then waits {duration(rules.delay)}{" "}
-          before it can run. Open until {when(rules.expiresAt)}.
+          before it can take effect. Voting closes{" "}
+          {deadline(Number(rules.expiresAt))}.
         </p>
       ) : null}
 

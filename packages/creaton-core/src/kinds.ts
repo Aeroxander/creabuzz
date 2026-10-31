@@ -32,12 +32,12 @@ export * from "./kinds.generated.ts";
 
 // ── NIP-78 application data (all kind 30078, d-tag differentiated) ───────
 // The relay differentiates them by d-tag ("read-state:<slotId>",
-// "channel-sections", "channel-mutes", "channel-stars", "channel-sort",
-// "project-sidebar-membership", "community-theme").
+// "channel-sections", "channel-mutes", "channel-stars",
+// "project-sidebar-membership", "community-theme"; desktop also keeps
+// "channel-sort" under the same kind).
 export const KIND_CHANNEL_SECTIONS = 30078;
 export const KIND_CHANNEL_MUTES = 30078;
 export const KIND_CHANNEL_STARS = 30078;
-export const KIND_CHANNEL_SORT = 30078;
 export const KIND_PROJECT_SIDEBAR_MEMBERSHIP = 30078;
 export const KIND_COMMUNITY_THEME = 30078;
 

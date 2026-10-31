@@ -6,6 +6,7 @@ import {
   Flag,
   Hash,
   Link2,
+  Lock,
   MessageSquare,
   Pencil,
   Reply,
@@ -26,6 +27,7 @@ import type { Channel } from "../use-channels";
 import {
   isServerNote,
   parseSystemNote,
+  repeatedCreationNotes,
   systemNoteText,
 } from "../lib/system-notes";
 import { useModeratorRemovals } from "../use-moderator-removals";
@@ -56,6 +58,7 @@ import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { MutedLine } from "@/features/social/ui/MutedLine";
 import { useMutedSet } from "@/features/social/use-social-actions";
 import { BoardPeople } from "@/features/board/ui/BoardPeople";
+import { RoomInviteCards } from "./RoomInviteCards";
 import { SystemNoteRow } from "./SystemNoteRow";
 import { failureWords, readFailureWords } from "@/shared/lib/readable-error";
 
@@ -507,12 +510,21 @@ export function ChannelTimeline({
   channel,
   onShowFleet,
   onShowWork,
+  onShowPeople,
+  runsCommunity = false,
   highlightedId,
   suggestPeopleFrom = null,
+  readOnlyNote,
 }: {
   channel: Channel;
+  /** Shown in place of the composer: a thread the reader can read but not write in (the server's notices to them). */
+  readOnlyNote?: string;
   onShowFleet?: () => void;
   onShowWork?: () => void;
+  /** Opens the community's People page, where its invite links are made. */
+  onShowPeople?: () => void;
+  /** The reader runs this community (owner, admin or moderator): AI helpers, tasks and invites are theirs to add. */
+  runsCommunity?: boolean;
   /** Message id from a permalink: scrolled to and highlighted by the shell. */
   highlightedId?: string | null;
   /** For a private room: a channel whose speakers are offered as people to add. */
@@ -647,7 +659,17 @@ export function ChannelTimeline({
     }
   }, [messages.ordered.length, autoScroll]);
 
-  const roots = messages.ordered.filter((e) => !getTag(e, "e"));
+  // A room is created once: a second "created" note is left out (see `repeatedCreationNotes`).
+  const repeatedNotes = useMemo(
+    () => repeatedCreationNotes(messages.ordered, notes),
+    [messages.ordered, notes],
+  );
+  const roots = messages.ordered.filter(
+    (e) => !getTag(e, "e") && !repeatedNotes.has(e.id),
+  );
+  // Visitors read; the invitation cards are for people who can act on them, and a direct thread's people are fixed.
+  const signedIn = ownPubkey !== "";
+  const showInviteCards = signedIn && !channel.direct;
 
   // Who is here: recent participants plus the viewer, bounded. There is no
   // member registry to read, so the timeline's authors are the honest set.
@@ -671,7 +693,16 @@ export function ChannelTimeline({
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
-        <Hash className="h-4 w-4 text-black/60 dark:text-white/60" />
+        {/* The sidebar's mark: a lock for a private room, # for an open one. */}
+        {channel.visibility === "private" ? (
+          <Lock
+            aria-hidden
+            className="h-4 w-4 shrink-0 text-black/60 dark:text-white/60"
+            data-testid="channel-header-private"
+          />
+        ) : (
+          <Hash className="h-4 w-4 shrink-0 text-black/60 dark:text-white/60" />
+        )}
         <h2 className="text-sm font-semibold text-black dark:text-white">
           {channel.name}
         </h2>
@@ -721,22 +752,25 @@ export function ChannelTimeline({
           {agentsOnline > 0 && (
             <span
               className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2 py-1 text-xs font-medium text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60"
-              title="Fleet agents online in this community"
+              title="AI helpers online in this community"
               data-testid="agents-online-chip"
             >
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              {agentsOnline} {agentsOnline === 1 ? "agent" : "agents"} online
+              {agentsOnline} {agentsOnline === 1 ? "AI helper" : "AI helpers"}{" "}
+              online
             </span>
           )}
-          <button
-            type="button"
-            onClick={() => onShowWork?.()}
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-            data-testid="channel-new-work"
-          >
-            <ListChecks className="h-3.5 w-3.5" />
-            New work
-          </button>
+          {signedIn && runsCommunity && onShowWork ? (
+            <button
+              type="button"
+              onClick={onShowWork}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              data-testid="channel-new-work"
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              New task
+            </button>
+          ) : null}
         </span>
       </header>
       {messages.liveStatus === "refused" ? (
@@ -756,54 +790,16 @@ export function ChannelTimeline({
         />
       ) : null}
 
-      {/*
-        Two invitation cards under the header, the desktop's treatment: they are
-        the two things a new channel needs, and as buttons in the header row they
-        read as chrome rather than as the next step.
-      */}
-      <div className="flex gap-2 px-4 pb-1">
-        <button
-          type="button"
-          onClick={() => onShowFleet?.()}
-          className="flex flex-1 flex-col items-start rounded-lg border border-border/70 bg-card px-3 py-2 text-left transition-colors hover:bg-muted/50"
-          data-testid="channel-add-agent"
-        >
-          <span className="text-xs font-semibold text-foreground">
-            Add agent
-          </span>
-          <span className="text-xs text-muted-foreground">
-            Add an agent here.
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            // Only the people on a private room's list can read it: a link lets nobody in, so open the list instead.
-            if (privateRoom) {
-              setShowingPeople(true);
-              return;
-            }
-            const url = window.location.href;
-            if (navigator.clipboard) {
-              void navigator.clipboard
-                .writeText(url)
-                .then(() => toast.success("Invite link copied"))
-                .catch(() => toast.error("Couldn't copy invite link"));
-            } else {
-              toast.error("Couldn't copy invite link");
-            }
-          }}
-          className="flex flex-1 flex-col items-start rounded-lg border border-border/70 bg-card px-3 py-2 text-left transition-colors hover:bg-muted/50"
-          data-testid="channel-add-people"
-        >
-          <span className="text-xs font-semibold text-foreground">
-            Add people
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {privateRoom ? "Choose who can read it." : "Invite members."}
-          </span>
-        </button>
-      </div>
+      {/* The People panel has its own way to add someone; one is enough on screen. */}
+      {showInviteCards && !(privateRoom && showingPeople) ? (
+        <RoomInviteCards
+          onShowFleet={runsCommunity ? onShowFleet : undefined}
+          onShowPeople={runsCommunity ? onShowPeople : undefined}
+          onShowRoomPeople={
+            privateRoom ? () => setShowingPeople(true) : undefined
+          }
+        />
+      ) : null}
 
       <div
         className="min-h-0 flex-1 overflow-y-auto px-4 py-2"
@@ -937,19 +933,28 @@ export function ChannelTimeline({
         <div ref={bottomRef} />
       </div>
 
-      <Composer
-        channelId={channel.id}
-        channelName={channel.name}
-        replyTo={replyTo}
-        editTarget={editTarget}
-        onPosted={() => {
-          setReplyTo(null);
-          setEditTarget(null);
-          setAutoScroll(true);
-        }}
-        onCancelReply={() => setReplyTo(null)}
-        onCancelEdit={() => setEditTarget(null)}
-      />
+      {readOnlyNote ? (
+        <p
+          className="border-t border-black/10 px-4 py-3 text-xs text-black/60 dark:border-white/10 dark:text-white/60"
+          data-testid="timeline-read-only"
+        >
+          {readOnlyNote}
+        </p>
+      ) : (
+        <Composer
+          channelId={channel.id}
+          channelName={channel.name}
+          replyTo={replyTo}
+          editTarget={editTarget}
+          onPosted={() => {
+            setReplyTo(null);
+            setEditTarget(null);
+            setAutoScroll(true);
+          }}
+          onCancelReply={() => setReplyTo(null)}
+          onCancelEdit={() => setEditTarget(null)}
+        />
+      )}
 
       <ConfirmDialog
         confirmLabel="Delete message"

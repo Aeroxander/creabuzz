@@ -23,8 +23,7 @@ export function PostUpdateDialog({
         Post update
       </h2>
       <p className="mt-2 text-sm text-muted-foreground">
-        Published to this project's update feed on this server. Include only
-        artifacts you intend to share.
+        Everyone following the project can read this.
       </p>
       <div className="mt-3 flex flex-col gap-3">
         <div>
@@ -35,7 +34,7 @@ export function PostUpdateDialog({
             id="update-title"
             className="mt-1"
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="What shipped this week?"
+            placeholder="What did you finish this week?"
             value={title}
           />
         </div>
@@ -47,13 +46,24 @@ export function PostUpdateDialog({
             id="update-body"
             className="mt-1 w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Show the artifact or demo, credit the people and agents who helped, and say what comes next."
+            placeholder="What you finished, who helped, and what's next."
             rows={4}
             value={body}
           />
         </div>
       </div>
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+        {title.trim() === "" ? (
+          <p
+            className="mr-auto text-xs text-muted-foreground"
+            data-testid="update-needs-title"
+          >
+            Add a title to publish.
+          </p>
+        ) : null}
+        <Button onClick={onClose} type="button" variant="outline">
+          Cancel
+        </Button>
         <Button
           disabled={title.trim() === "" || isPublishing}
           onClick={() =>

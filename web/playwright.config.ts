@@ -36,6 +36,8 @@ export default defineConfig({
         "**/launchpad-presets.spec.ts",
         "**/community-create.spec.ts",
         "**/community-access.spec.ts",
+        // The community screen audit's fixes (2026-10-30).
+        "**/community-shouldfix.spec.ts",
         "**/report.spec.ts",
         "**/chat-removal.spec.ts",
         // DM threads only under Messages; the server's room notes as sentences.

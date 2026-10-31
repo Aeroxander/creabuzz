@@ -14,6 +14,7 @@ import { Fingerprint, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Overlay } from "@/shared/ui/portal";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { CREATE_ACCOUNT } from "../lib/account-copy";
 import { offerRecoveryKey } from "../lib/recovery-offer";
 import { InviteOnlySignUpNotice } from "./InviteOnlySignUpNotice";
@@ -171,9 +172,15 @@ async function saveTypedName(name: string, about: string): Promise<void> {
 export function OnboardingDialog({
   onDone,
   onPasskeyDone,
+  startOn = "create",
+  onCancel,
 }: {
   onDone: () => void;
+  /** Closing without an account ("Not now"); `onDone` when not given. */
+  onCancel?: () => void;
   onPasskeyDone?: () => void;
+  /** "signin" opens straight on the recovery-key sign-in (the nav's Sign in). */
+  startOn?: "create" | "signin";
 }) {
   const [name, setName] = useState("");
   const [about, setAbout] = useState("");
@@ -206,7 +213,7 @@ export function OnboardingDialog({
     }
   };
 
-  const [signingIn, setSigningIn] = useState(false);
+  const [signingIn, setSigningIn] = useState(startOn === "signin");
   /** A passkey account was made and its recovery-key offer handed to the app's root (`lib/recovery-offer.ts`). */
   const [handedOff, setHandedOff] = useState(false);
 
@@ -253,12 +260,24 @@ export function OnboardingDialog({
   };
 
   if (signingIn) {
-    return <SignInView onBack={() => setSigningIn(false)} />;
+    return (
+      <SignInView
+        backLabel={startOn === "signin" ? "Create an account" : "Back"}
+        onBack={() => setSigningIn(false)}
+        onCancel={startOn === "signin" ? (onCancel ?? onDone) : undefined}
+      />
+    );
   }
 
   if (handedOff) return null;
 
   const ready = name.trim().length > 0 && allowed && !saving;
+  // Why the buttons below are still off once a name is typed: a box above is not ticked yet.
+  const untickedBoxes =
+    name.trim().length > 0 && policy.status === "ready" && !allowed;
+  // A contributor-only build pays for work at a passkey account, so the passkey is the way in; without one is a
+  // quiet second choice, and says what it costs.
+  const passkeyFirst = !raisesOffered();
   return (
     <Overlay
       className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 dark:bg-black/50"
@@ -314,8 +333,20 @@ export function OnboardingDialog({
             state={policy}
           />
         </div>
+        {untickedBoxes ? (
+          <p
+            className="mb-2 text-xs text-muted-foreground"
+            data-testid="onboarding-tick-hint"
+            id="onboarding-tick-hint"
+          >
+            {policyRequirements(policy).age
+              ? "Tick the boxes above to continue."
+              : "Tick the box to agree to the Terms of use."}
+          </p>
+        ) : null}
         <button
           type="button"
+          aria-describedby={untickedBoxes ? "onboarding-tick-hint" : undefined}
           onClick={createWithPasskey}
           disabled={!ready}
           className="flex w-full items-center justify-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
@@ -331,15 +362,36 @@ export function OnboardingDialog({
           Sign in here with your fingerprint, face or device PIN. On another
           device you need your recovery key, which you can save next.
         </p>
-        <button
-          type="button"
-          disabled={!ready}
-          onClick={() => void submit()}
-          className="mt-3 w-full rounded-full border border-black/15 px-4 py-2 text-sm font-medium text-black hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-          data-testid="onboarding-create"
-        >
-          Create without a passkey
-        </button>
+        {passkeyFirst ? (
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            <button
+              type="button"
+              aria-describedby="onboarding-create-note"
+              disabled={!ready}
+              onClick={() => void submit()}
+              className="font-medium text-foreground underline underline-offset-2 disabled:no-underline disabled:opacity-40"
+              data-testid="onboarding-create"
+            >
+              Create without a passkey
+            </button>{" "}
+            <span id="onboarding-create-note">
+              You'll need a passkey to be paid for work.
+            </span>
+          </p>
+        ) : (
+          <button
+            type="button"
+            aria-describedby={
+              untickedBoxes ? "onboarding-tick-hint" : undefined
+            }
+            disabled={!ready}
+            onClick={() => void submit()}
+            className="mt-3 w-full rounded-full border border-black/15 px-4 py-2 text-sm font-medium text-black hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
+            data-testid="onboarding-create"
+          >
+            Create without a passkey
+          </button>
+        )}
         {walletAvailable() ? (
           <button
             type="button"
@@ -371,7 +423,7 @@ export function OnboardingDialog({
           </button>
           <button
             type="button"
-            onClick={onDone}
+            onClick={onCancel ?? onDone}
             className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground"
           >
             Not now
@@ -387,14 +439,22 @@ export function OnboardingDialog({
  * shows, or an `nsec1…` key from another app). A passkey signs in only where it was set up, and that browser keeps the
  * account, so a new browser needs the key.
  */
-function SignInView({ onBack }: { onBack: () => void }) {
+function SignInView({
+  onBack,
+  backLabel,
+  onCancel,
+}: {
+  onBack: () => void;
+  backLabel: string;
+  onCancel?: (() => void) | undefined;
+}) {
   const [key, setKey] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const signIn = () => {
     const hex = parseRecoveryKey(key);
     if (!hex) {
       setProblem(
-        "That is not a recovery key. It is 64 letters and numbers, or starts with nsec1.",
+        "That doesn't look like a recovery key. Paste the whole key you saved.",
       );
       return;
     }
@@ -462,8 +522,17 @@ function SignInView({ onBack }: { onBack: () => void }) {
             onClick={onBack}
             className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground"
           >
-            Back
+            {backLabel}
           </button>
+          {onCancel ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="ml-auto rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground"
+            >
+              Not now
+            </button>
+          ) : null}
           <button
             type="submit"
             disabled={key.trim().length === 0}

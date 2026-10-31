@@ -91,7 +91,7 @@ export function CreateCommunityDialog({
               setTyped(tidyName(event.target.value));
               setError(null);
             }}
-            placeholder="my-film"
+            placeholder="e.g. my-film"
             value={typed}
           />
           <p
@@ -99,7 +99,7 @@ export function CreateCommunityDialog({
             data-testid="community-address"
           >
             {name === ""
-              ? `Its address will be a name followed by ${status.domain}.`
+              ? `Its address will be your name followed by ${status.domain}, like ${previewHost("my-film", status.domain ?? "")}.`
               : `Its address will be ${previewHost(name, status.domain ?? "")}`}
           </p>
         </div>
@@ -155,11 +155,24 @@ export function CreateCommunityDialog({
             {error}
           </p>
         ) : null}
-        <div className="mt-1 flex justify-end gap-2">
+        <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
+          {/* Why the button is not ready yet, beside it, until a name is typed. */}
+          {signedIn && name === "" ? (
+            <p
+              className="mr-auto text-xs text-muted-foreground"
+              data-testid="community-create-why"
+              id="community-create-why"
+            >
+              Give it a name first.
+            </p>
+          ) : null}
           <Button onClick={onClose} size="sm" type="button" variant="ghost">
             Cancel
           </Button>
           <Button
+            aria-describedby={
+              signedIn && name === "" ? "community-create-why" : undefined
+            }
             data-testid="community-create-submit"
             disabled={!canSubmit}
             size="sm"

@@ -52,6 +52,8 @@ export interface Step {
   label: string;
   hint: string;
   to: "/discover" | "/start/contributor" | null;
+  /** Its Go opens the profile editor in place, rather than going somewhere. */
+  editsProfile?: true;
 }
 
 export function stepsFor(role: Role, signals: Signals): Step[] {
@@ -59,8 +61,9 @@ export function stepsFor(role: Role, signals: Signals): Step[] {
     id: "name",
     done: signals.named,
     label: "Add your name and a picture",
-    hint: "Open your account menu and choose Edit profile. The picture is optional.",
+    hint: "The picture is optional.",
     to: null,
+    editsProfile: true,
   };
   if (role === "helper") {
     return [

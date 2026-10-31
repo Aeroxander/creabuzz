@@ -3,10 +3,20 @@
  * author's name. A menu button by the WAI-ARIA pattern: the button says it has a menu and whether it is open; the menu
  * takes focus on its first item; arrow keys, Home and End move between items; Escape closes it and returns focus to the
  * button; Tab or a click outside closes it.
+ *
+ * The menu opens under the button's left edge, or under its right edge when that would run past the window (a phone,
+ * with the button mid-row), and is never wider than the window.
  */
 
 import { ChevronDown } from "lucide-react";
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 export interface ModerateItem {
   label: string;
@@ -37,6 +47,17 @@ export function ModerateMenu({
   const menuId = useId();
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const [alignRight, setAlignRight] = useState(false);
+
+  // Measured before paint, so a flipped menu never shows cut off first.
+  useLayoutEffect(() => {
+    if (!open) {
+      setAlignRight(false);
+      return;
+    }
+    const box = menu.current?.getBoundingClientRect();
+    if (box && box.right > window.innerWidth - 8) setAlignRight(true);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,7 +120,9 @@ export function ModerateMenu({
       {open ? (
         <div
           aria-label={label}
-          className="absolute left-0 top-full z-30 mt-1 min-w-44 overflow-hidden rounded-lg border bg-card py-1 text-sm shadow-lg"
+          className={`absolute top-full z-30 mt-1 min-w-44 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-card py-1 text-sm shadow-lg ${
+            alignRight ? "right-0" : "left-0"
+          }`}
           id={menuId}
           onKeyDown={onMenuKey}
           ref={menu}

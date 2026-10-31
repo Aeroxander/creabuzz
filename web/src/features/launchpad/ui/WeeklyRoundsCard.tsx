@@ -31,7 +31,7 @@ import {
   useWeeklyRounds,
   WEEKLY_ROUNDS_QUERY,
 } from "../use-weekly-rounds";
-import { FailureNote, WalletStrip } from "./auction-widgets";
+import { FailureNote, WalletStrip } from "./account-widgets";
 import { RoundClaims } from "./RoundClaims";
 import { BidForm, OfferForm } from "./RoundOrderForms";
 

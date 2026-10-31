@@ -45,6 +45,15 @@ function useNavEntries(): NavEntry[] {
   const me = existingUserPubkey();
   const { unread, failed } = useNotificationBadge();
   const newMessages = useHasNewMessages();
+  return navEntries(me, unread, failed, newMessages);
+}
+
+function navEntries(
+  me: string | null,
+  unread: number,
+  failed: boolean,
+  newMessages: boolean,
+): NavEntry[] {
   return [
     {
       key: "feed",
@@ -154,7 +163,8 @@ function useCompose() {
 }
 
 function pathMatches(pathname: string, prefix: string): boolean {
-  if (prefix === "/") return pathname === "/";
+  // A board opens from Home's Boards tab, so Home stays the place you are in.
+  if (prefix === "/") return pathname === "/" || pathname.startsWith("/b/");
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
@@ -201,9 +211,17 @@ export function SocialShell({
           className="sticky top-0 hidden w-14 shrink-0 flex-col items-center gap-1 self-start justify-self-end px-1 py-3 md:flex xl:w-56 xl:items-stretch xl:px-3"
           data-testid="social-nav"
         >
-          {entries.map((entry) => (
-            <SocialNavLink entry={entry} key={entry.key} pathname={pathname} />
-          ))}
+          {/* Home and your profile are in the app's own nav and account menu, and Notifications and Messages sit in
+              its top bar: this column keeps what only the timeline has. */}
+          {entries
+            .filter((entry) => !IN_APP_NAV.has(entry.key))
+            .map((entry) => (
+              <SocialNavLink
+                entry={entry}
+                key={entry.key}
+                pathname={pathname}
+              />
+            ))}
           <button
             aria-label="Write a post"
             className="mt-3 flex h-11 w-11 items-center justify-center gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90 xl:w-full"
@@ -253,6 +271,35 @@ export function SocialShell({
   );
 }
 
+/** The timeline's sections that wide screens reach from the app's top bar instead. */
+const IN_APP_NAV = new Set(["feed", "profile", "notifications", "messages"]);
+
+/**
+ * Notifications and Messages for the app's top bar on wide screens, with the same counts and names as the timeline's
+ * own nav. Rendered only for someone with an account (its reads need one).
+ */
+export function InboxLinks() {
+  const me = existingUserPubkey();
+  const { unread, failed } = useNotificationBadge();
+  const newMessages = useHasNewMessages();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const entries = navEntries(me, unread, failed, newMessages).filter(
+    (entry) => entry.key === "notifications" || entry.key === "messages",
+  );
+  return (
+    <div className="flex items-center gap-0.5" data-testid="app-nav-inbox">
+      {entries.map((entry) => (
+        <SocialNavLink
+          compact
+          entry={entry}
+          key={entry.key}
+          pathname={pathname}
+        />
+      ))}
+    </div>
+  );
+}
+
 function SocialNavLink({
   entry,
   pathname,
@@ -270,7 +317,7 @@ function SocialNavLink({
       aria-current={active ? "page" : undefined}
       aria-label={
         compact || entry.dot
-          ? `${entry.label}${entry.badgeFailed ? ", couldn't check for new ones" : ""}${entry.dot ? ", new messages" : ""}`
+          ? `${entry.label}${entry.badge && !entry.badgeFailed ? `, ${entry.badge} new` : ""}${entry.badgeFailed ? ", couldn't check for new ones" : ""}${entry.dot ? ", new messages" : ""}`
           : undefined
       }
       className={cn(

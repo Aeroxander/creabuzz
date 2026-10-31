@@ -126,7 +126,8 @@ VITE_ERROR_REPORT_URL=<your collector>
 VITE_APP_RELEASE=<the build's version; the image defaults to the source revision>
 ```
 
-Not for the first pilot, and not in the hosted image (a build of your own):
+Not for the first pilot, and not in the hosted image (a build of your own). The deploy prints these only when run with
+`--broadcast --optional`; otherwise the addresses are in the manifest's roles:
 
 ```
 VITE_DAO_LAUNCH_KITS={"11155111":"<launch-kit>"}

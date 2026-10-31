@@ -16,7 +16,7 @@ import { encodeApproveBounty } from "../lib/work-bounty";
 import type { Launch } from "../models";
 import { useChainSend } from "../use-chain-send";
 import { REMIX_BOND_QUERY, useRemixBond } from "../use-remix-bond";
-import { FailureNote } from "./auction-widgets";
+import { FailureNote } from "@/shared/ui/failure-note";
 
 const date = (seconds: number) =>
   new Date(seconds * 1000).toLocaleDateString(undefined, {

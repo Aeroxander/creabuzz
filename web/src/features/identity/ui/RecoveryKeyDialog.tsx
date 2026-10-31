@@ -5,10 +5,10 @@
  */
 
 import { type RefObject, useRef, useState } from "react";
-import { Check, Download, Fingerprint } from "lucide-react";
+import { Check, Copy, Download, Fingerprint } from "lucide-react";
 
+import { APP_NAME } from "@/shared/constants/brand";
 import { existingUserPubkey, storedIdentityHex } from "@/shared/lib/identity";
-import { truncatePubkey } from "@/shared/lib/pubkey";
 import { Overlay } from "@/shared/ui/portal";
 import { useFocusTrap } from "@/shared/ui/use-focus-trap";
 
@@ -16,6 +16,7 @@ import {
   backedUpFor,
   type RecoveryExport,
   recoveryExportFor,
+  recoveryKeyFileName,
 } from "../lib/recovery-key";
 import {
   hasPasskeyIdentity,
@@ -76,21 +77,32 @@ export function currentRecovery(account: string): RecoveryExport {
   });
 }
 
-/** Copy the key, and count it as saved only once the clipboard took it. */
-export function copyRecoveryKey(hex: string, account: string) {
-  void navigator.clipboard
-    ?.writeText(hex)
+/** Copy the key, and count it as saved only once the clipboard took it. Resolves true when it was copied. */
+export function copyRecoveryKey(
+  hex: string,
+  account: string,
+): Promise<boolean> {
+  const write = navigator.clipboard?.writeText(hex);
+  if (!write) {
+    void import("sonner").then(({ toast }) =>
+      toast.error("Couldn't copy it. Try Download instead."),
+    );
+    return Promise.resolve(false);
+  }
+  return write
     .then(() => {
       markBackedUp(account);
-      return import("sonner").then(({ toast }) =>
+      void import("sonner").then(({ toast }) =>
         toast.success("Recovery key copied"),
       );
+      return true;
     })
-    .catch(() =>
-      import("sonner").then(({ toast }) =>
+    .catch(() => {
+      void import("sonner").then(({ toast }) =>
         toast.error("Couldn't copy it. Try Download instead."),
-      ),
-    );
+      );
+      return false;
+    });
 }
 
 export function RecoveryKeyDialog({
@@ -109,6 +121,7 @@ export function RecoveryKeyDialog({
   closeLabel?: string;
 }) {
   const [revealKey, setRevealKey] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   // The key comes from module state (the passkey session): bumping this re-reads it after an unlock.
@@ -203,11 +216,21 @@ export function RecoveryKeyDialog({
               </button>
               <button
                 type="button"
-                onClick={() => copyRecoveryKey(recovery.hex, account)}
+                onClick={() =>
+                  void copyRecoveryKey(recovery.hex, account).then(setCopied)
+                }
                 className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1 text-xs font-medium"
                 data-testid="backup-copy"
               >
-                <Check aria-hidden className="h-3 w-3" /> Copy
+                {copied ? (
+                  <>
+                    <Check aria-hidden className="h-3 w-3" /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy aria-hidden className="h-3 w-3" /> Copy
+                  </>
+                )}
               </button>
               <button
                 type="button"
@@ -218,7 +241,7 @@ export function RecoveryKeyDialog({
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a");
                   a.href = url;
-                  a.download = `buzz-identity-${truncatePubkey(account)}.key`;
+                  a.download = recoveryKeyFileName(APP_NAME, account);
                   a.click();
                   URL.revokeObjectURL(url);
                   markBackedUp(account);

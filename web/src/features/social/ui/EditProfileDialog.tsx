@@ -1,9 +1,11 @@
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { ProfileMetadata } from "@/features/profiles/lib/index-profiles";
 import { ProfilePictureField } from "@/features/identity/ui/ProfilePictureField";
 import { pictureLinkProblem } from "@/features/identity/lib/picture-check";
+import { withNameFollowing } from "@/features/identity/lib/profile-names";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 
@@ -14,8 +16,7 @@ const FIELDS: {
   label: string;
   multiline?: boolean;
 }[] = [
-  { key: "display_name", label: "Display name" },
-  { key: "name", label: "Username" },
+  { key: "display_name", label: "Name" },
   { key: "about", label: "Bio", multiline: true },
   { key: "banner", label: "Banner link" },
   { key: "website", label: "Website" },
@@ -63,7 +64,7 @@ export function EditProfileDialog({
 
   const save = () => {
     if (pictureUploading || pictureProblem) return;
-    update.mutate(values, {
+    update.mutate(withNameFollowing(values, profile), {
       onSuccess: () => {
         toast.success("Profile updated");
         onClose();
@@ -83,6 +84,11 @@ export function EditProfileDialog({
       className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-2xl glass-dialog border p-0 text-foreground backdrop:bg-black/50 backdrop:backdrop-blur-sm"
       data-testid="social-edit-profile"
       onClose={onClose}
+      // A press on the backdrop (the dialog element itself, outside the form) closes it, as Escape does.
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !update.isPending)
+          onClose();
+      }}
       ref={ref}
     >
       <form
@@ -92,8 +98,23 @@ export function EditProfileDialog({
           save();
         }}
       >
-        <div className="flex items-center justify-between border-b border-black/10 px-4 py-3 dark:border-white/10">
-          <h2 className="text-lg font-bold" id="social-edit-profile-title">
+        <div className="flex items-center gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
+          <Button
+            aria-label="Close"
+            className="-ml-2 rounded-full"
+            data-testid="social-edit-profile-close"
+            disabled={update.isPending}
+            onClick={onClose}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <X aria-hidden className="h-5 w-5" />
+          </Button>
+          <h2
+            className="mr-auto text-lg font-bold"
+            id="social-edit-profile-title"
+          >
             Edit profile
           </h2>
           <Button

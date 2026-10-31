@@ -7,9 +7,9 @@ import { truncatePubkey } from "../../src/shared/lib/pubkey";
 /**
  * Usernames in the web client.
  *
- * The desktop client labels every person with a username — `display_name`, the
- * kind-0 `name`, then the community NIP-05 username — and falls back to the
- * truncated pubkey only when the person has set none. These bind that contract
+ * Every person is labelled with a username — `display_name`, the kind-0 `name`,
+ * then the community NIP-05 username — and is "Someone" (your own account: "Your
+ * account") when they have set none, never a short key. These bind that contract
  * to the surfaces that render it.
  */
 
@@ -105,7 +105,7 @@ test("the user chip shows the community username when the identity has one", asy
   );
 });
 
-test("an identity with no username still shows its pubkey", async ({
+test("an identity with a name and no username shows no key beside the name", async ({
   page,
 }) => {
   await mountWithProfile(page, { display_name: "Tessa" });
@@ -113,9 +113,24 @@ test("an identity with no username still shows its pubkey", async ({
   const chip = page.getByTestId("user-chip");
   await expect(chip).toContainText("Tessa");
   await expect(chip).not.toContainText("Decoy");
-  await expect(page.getByTestId("user-chip-username")).toHaveText(
-    truncatePubkey(SELF),
+  // A short key is not a handle: printed beside a real name it reads as one.
+  await expect(page.getByTestId("user-chip-username")).toHaveText("");
+  await expect(chip).not.toContainText(truncatePubkey(SELF));
+  // The identity that signs is still reachable, on the tooltip.
+  await expect(page.getByTestId("user-chip-username")).toHaveAttribute(
+    "title",
+    SELF,
   );
+});
+
+test("an identity with no name is Your account to its owner, never a key", async ({
+  page,
+}) => {
+  await mountWithProfile(page, { about: "no name yet" });
+
+  const chip = page.getByTestId("user-chip");
+  await expect(chip).toContainText("Your account");
+  await expect(chip).not.toContainText(truncatePubkey(SELF));
 });
 
 test("the profile menu header shows the username", async ({ page }) => {
