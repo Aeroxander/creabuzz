@@ -57,10 +57,9 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
   server runs it, invite links, error reports, the command-line and page contributor journeys, the passkey one, work and
   paid work). `scripts/mvp-gate.sh` runs all sixteen, the pilot set first; `--later` runs the raise, milestone and
   optional-feature journeys alone; `--list` shows what would run.
+- **Last full pass: 2026-10-31**, all 16 journeys after the D150 removals (pilot set and later set).
 - **Nothing runs it on its own.** No workflow or recipe calls it, and the branch has never been pushed, so CI has never
-  run it either. The last recorded full pass is 2026-10-28 (12 of 12 journeys, before the passkey and social journeys
-  joined). D142 to D146 recorded unit tests and mocked specs, not a gate run, and D146 changed words journeys assert.
-  Next: commit, then run the pilot set, then the rest.
+  run it either. Run it again after any change to what `dev-chain` deploys or to words journeys assert.
 - **Not covered by it**, so checked by hand ([PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md)): a reviewer acting from a
   passkey account, the name link against a real invite-only server, and the image's own build.
 - **A known mismatch:** `web-contributor-e2e.sh` builds with the optional features on and ends with a sale between
