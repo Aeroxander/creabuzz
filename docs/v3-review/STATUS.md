@@ -1,7 +1,7 @@
 # Where Creaton stands
 
 Updated 2026-10-31. The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
-Each decision is a row in [DECISIONS.md](DECISIONS.md) (D1 to D150). The hand tests for the pilot, in order, are in
+Each decision is a row in [DECISIONS.md](DECISIONS.md) (D1 to D151). The hand tests for the pilot, in order, are in
 [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md); every hand test ever written is in [TEST-STEPS.md](TEST-STEPS.md), a log in
 date order. What the 2026-10-31 pass hid or retired, and what waits on your call, is in
 [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md).
@@ -57,7 +57,7 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
   server runs it, invite links, error reports, the command-line and page contributor journeys, the passkey one, work and
   paid work). `scripts/mvp-gate.sh` runs all sixteen, the pilot set first; `--later` runs the raise, milestone and
   optional-feature journeys alone; `--list` shows what would run.
-- **Last full pass: 2026-10-31**, all 16 journeys after the D150 removals (pilot set and later set).
+- **Last full pass: 2026-10-31**, all 16 journeys after the D150 and D151 removals (pilot set and later set).
 - **Nothing runs it on its own.** No workflow or recipe calls it, and the branch has never been pushed, so CI has never
   run it either. Run it again after any change to what `dev-chain` deploys or to words journeys assert.
 - **Not covered by it**, so checked by hand ([PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md)): a reviewer acting from a
