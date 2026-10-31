@@ -37,7 +37,7 @@ import {
   roleOfferedFor,
 } from "../lib/access";
 import { useBans } from "../use-bans";
-import { BanForm, BannedList } from "./BanPanel";
+import { BanForm, BannedList, MutedList } from "./BanPanel";
 import {
   changeRole,
   mintInvite,
@@ -517,15 +517,18 @@ export function PeopleSection() {
     return people.map((person) => person.pubkey);
   }, [people]);
   const invites = useInvites(mayInvite(myRole));
-  const bans = useBans(mayInvite(myRole));
+  const restricted = useBans(mayInvite(myRole));
   const nameOf = useUserNames(
     useMemo(
       () => [
         ...keys,
         ...(invites.data ?? []).map((invite) => invite.madeBy),
-        ...(bans.data ?? []).flatMap((ban) => [ban.pubkey, ban.by]),
+        ...[
+          ...(restricted.data?.bans ?? []),
+          ...(restricted.data?.timeouts ?? []),
+        ].flatMap((row) => [row.pubkey, row.by]),
       ],
-      [keys, invites.data, bans.data],
+      [keys, invites.data, restricted.data],
     ),
   );
   const known = access.data ?? null;
@@ -600,11 +603,30 @@ export function PeopleSection() {
         )}
       </div>
       {mayInvite(myRole) ? (
-        <BannedList
-          bans={bans.data ?? []}
-          nameOf={nameOf}
-          onChanged={refreshBans}
-        />
+        <>
+          {restricted.isError ? (
+            <FailureNote
+              failure={failureWords(
+                restricted.error,
+                "Couldn't load who is banned or muted. Try again in a moment.",
+              )}
+              testId="restricted-error"
+            />
+          ) : null}
+          <BannedList
+            bans={restricted.data?.bans ?? []}
+            nameOf={nameOf}
+            onChanged={refreshBans}
+          />
+          <MutedList
+            banned={
+              new Set((restricted.data?.bans ?? []).map((ban) => ban.pubkey))
+            }
+            nameOf={nameOf}
+            onChanged={refreshBans}
+            timeouts={restricted.data?.timeouts ?? []}
+          />
+        </>
       ) : null}
     </section>
   );

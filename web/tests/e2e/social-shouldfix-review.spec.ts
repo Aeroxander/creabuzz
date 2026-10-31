@@ -216,7 +216,7 @@ test("a wiki rename that saved the new page but could not delete the old one say
     page.locator("[data-sonner-toast]").filter({ hasText: title });
   const rename = toast("Couldn't rename page");
   await expect(rename).toContainText(
-    "Saved under the new name, but the old name is still there. You are timed out in this community until",
+    "Saved under the new name, but the old name is still there. You are muted everywhere in this community until",
   );
   await expect(rename).not.toContainText("nothing was renamed");
   await expect(rename).not.toContainText("did not answer");
@@ -226,7 +226,7 @@ test("a wiki rename that saved the new page but could not delete the old one say
   await page.getByTestId("confirm-accept").click();
   const removal = toast("Couldn't delete page");
   await expect(removal).toContainText(
-    "You are timed out in this community until",
+    "You are muted everywhere in this community until",
   );
   await expect(removal).toContainText(
     "You can still read; you can post again then.",

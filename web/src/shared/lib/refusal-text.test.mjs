@@ -50,7 +50,7 @@ describe("restrictions on the reader", () => {
     );
     assert.match(
       refusalText("restricted: you are timed out until 1893456000", "x"),
-      /^You are timed out in this community until .*2030.*\. You can still read; you can post again then\.$/,
+      /^You are muted everywhere in this community until .*2030.*\. You can still read; you can post again then\.$/,
     );
     assert.match(
       refusalText(

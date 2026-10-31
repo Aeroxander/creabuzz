@@ -48,7 +48,7 @@ const RESTRICTIONS: [RegExp, (match: RegExpExecArray) => string][] = [
   [
     /^restricted: you are timed out until (\d+)$/,
     (m) =>
-      `You are timed out in this community until ${whenText(Number(m[1]))}. You can still read; you can post again then.`,
+      `You are muted everywhere in this community until ${whenText(Number(m[1]))}. You can still read; you can post again then.`,
   ],
   [
     /^restricted: you are muted on this board until (\d+)$/,

@@ -1,6 +1,6 @@
 /**
- * Banning from the People list: the form that asks how long and why, and the list of who is banned with a way to lift
- * each ban. What is offered follows the person's role (an owner or admin), and the server refuses anyone it should
+ * Banning from the People list: the form that asks how long and why, the list of who is banned with a way to lift
+ * each ban, and the list of who moderators have muted everywhere with a way to end each mute early. What is offered follows the person's role (an owner or admin), and the server refuses anyone it should
  * regardless, with a reason that is shown as it is said.
  */
 
@@ -11,8 +11,14 @@ import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
 import { FailureNote } from "@/shared/ui/failure-note";
 
-import { BAN_LENGTHS, type Ban, describeBan } from "../lib/bans";
-import { banPerson, liftBan } from "../use-bans";
+import {
+  BAN_LENGTHS,
+  type Ban,
+  describeBan,
+  describeTimeout,
+  type Timeout,
+} from "../lib/bans";
+import { banPerson, endTimeout, liftBan } from "../use-bans";
 
 /** Ask how long and why, say plainly what a ban does, and send it. */
 export function BanForm({
@@ -192,6 +198,131 @@ export function BannedList({
             key={ban.pubkey}
             name={nameOf(ban.pubkey)}
             onLifted={onChanged}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** One current community-wide mute, with its reason and a way to end it early. */
+function MutedRow({
+  timeout,
+  name,
+  by,
+  banned,
+  onEnded,
+}: {
+  timeout: Timeout;
+  name: string;
+  by: string;
+  /** They are banned as well: ending the mute does not let them post. */
+  banned: boolean;
+  onEnded: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<FailureWords | null>(null);
+
+  const end = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await endTimeout(timeout.pubkey);
+      toast.success(
+        banned
+          ? `${name}'s mute has ended. They are still banned.`
+          : `${name} can post again.`,
+      );
+      onEnded();
+    } catch (cause) {
+      const words = failureWords(
+        cause,
+        "The server did not end the mute, so it is still in place. Try again, or ask the community's owner.",
+      );
+      // It ran out, or someone else ended it, since the list was read: say so and read the list again.
+      if (/not timed out/i.test(words.detail ?? words.text)) {
+        toast.success(`${name}'s mute had already ended.`);
+        onEnded();
+        return;
+      }
+      setError(words);
+    } finally {
+      // Ready again if the row is still listed (the list could not be read again, or the server refused).
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li
+      className="rounded-lg border border-black/10 p-2 dark:border-white/10"
+      data-testid="muted-person"
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className="min-w-0 flex-1 truncate text-sm"
+          title={timeout.pubkey}
+        >
+          {name}
+        </span>
+        <Button
+          aria-label={`End the mute on ${name}`}
+          data-testid="mute-end"
+          disabled={busy}
+          onClick={() => void end()}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          {busy ? "Ending…" : "End mute"}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {describeTimeout(timeout, Math.floor(Date.now() / 1000))}
+        {/* The server keeps one name per person for a ban and a mute together: for someone also banned, it may be who banned them. */}
+        {timeout.by ? ` · ${banned ? "last changed" : "muted"} by ${by}` : ""}
+        {timeout.reason ? ` · “${timeout.reason}”` : ""}
+      </p>
+      {error ? (
+        <FailureNote className="mt-1" failure={error} testId="mute-end-error" />
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * Who moderators have muted everywhere in the community right now: they can read but not post until the mute ends. Not
+ * shown at all while nobody is.
+ */
+export function MutedList({
+  timeouts,
+  banned,
+  nameOf,
+  onChanged,
+}: {
+  timeouts: readonly Timeout[];
+  /** Who is banned as well, by key. */
+  banned: ReadonlySet<string>;
+  nameOf: (pubkey: string) => string;
+  onChanged: () => void;
+}) {
+  if (timeouts.length === 0) return null;
+  return (
+    <div className="space-y-1.5" data-testid="muted-list">
+      <h3 className="text-sm font-medium">
+        Muted by moderators ({timeouts.length})
+      </h3>
+      <p className="text-xs text-muted-foreground">
+        They can read, but not post anywhere here, until the mute ends.
+      </p>
+      <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {timeouts.map((timeout) => (
+          <MutedRow
+            banned={banned.has(timeout.pubkey)}
+            by={nameOf(timeout.by)}
+            key={timeout.pubkey}
+            name={nameOf(timeout.pubkey)}
+            onEnded={onChanged}
+            timeout={timeout}
           />
         ))}
       </ul>

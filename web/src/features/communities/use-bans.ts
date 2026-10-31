@@ -1,7 +1,7 @@
 /**
- * Banning and un-banning people, and the list of who is banned.
+ * Banning and un-banning people, ending a community-wide mute early, and the list of who is banned or muted.
  *
- * Both writes are records the moderator signs (the server decides who may: an owner can ban anyone but themselves, an
+ * Each write is a record the moderator signs (the server decides who may: an owner can ban anyone but themselves, an
  * admin only members). The list is the server's own, read by an owner or admin; anyone else is refused, so it is asked
  * only for one.
  */
@@ -12,6 +12,7 @@ import { useCallback } from "react";
 import {
   buildBan,
   buildUnban,
+  buildUntimeout,
 } from "@/features/moderation/lib/moderationEvents";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
@@ -20,7 +21,7 @@ import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 import { existingUserPubkey } from "@/shared/lib/identity";
 
 import { mayRemove } from "./lib/access";
-import { banExpiry, parseBans } from "./lib/bans";
+import { banExpiry, parseBans, parseTimeouts } from "./lib/bans";
 import { useCommunityPeople } from "./use-access";
 
 async function fetchBans() {
@@ -41,16 +42,19 @@ async function fetchBans() {
         : "The server did not give the list of banned people. Try again in a moment.",
     );
   }
-  return parseBans(await response.json(), Math.floor(Date.now() / 1000));
+  const json: unknown = await response.json();
+  const now = Math.floor(Date.now() / 1000);
+  return { bans: parseBans(json, now), timeouts: parseTimeouts(json, now) };
 }
 
-/** The people banned from this community right now. */
+/** The people banned from this community right now, and those muted everywhere in it. */
 export function useBans(enabled: boolean) {
   return useQuery({
     queryKey: ["community-bans", relayHttpBaseUrl()],
     queryFn: fetchBans,
     enabled,
-    staleTime: 10_000,
+    // Read again each time People opens: a ban or mute given from a report elsewhere should show here at once.
+    staleTime: 0,
     retry: 1,
     refetchOnWindowFocus: false,
   });
@@ -80,6 +84,17 @@ export async function liftBan(pubkey: string): Promise<void> {
   await publishAsUser(
     buildUnban({ pubkey }),
     "The server did not lift the ban.",
+  );
+}
+
+/**
+ * End a community-wide mute early: they can write again at once. The server refuses when they are not muted any more
+ * (it ran out, or someone else ended it), and says so.
+ */
+export async function endTimeout(pubkey: string): Promise<void> {
+  await publishAsUser(
+    buildUntimeout({ pubkey }),
+    "The server did not end the mute.",
   );
 }
 

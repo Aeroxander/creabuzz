@@ -183,7 +183,7 @@ test("a sentence the app wrote for people is kept as it is, with nothing more to
   );
   // A timeout said with its date and time keeps its words, colon and all.
   const timedOut =
-    "You are timed out in this community until Oct 30, 2026, 2:39 PM. You can still read; you can post again then.";
+    "You are muted everywhere in this community until Oct 30, 2026, 2:39 PM. You can still read; you can post again then.";
   assert.deepEqual(failureWords(new Error(timedOut), "Try again."), {
     text: timedOut,
     detail: null,

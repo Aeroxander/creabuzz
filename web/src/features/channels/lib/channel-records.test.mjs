@@ -7,6 +7,7 @@ import {
   defaultRoom,
   latestRecords,
   listedRooms,
+  mergeChannelPages,
 } from "./channel-records.ts";
 
 const SERVER = "a".repeat(64);
@@ -129,4 +130,21 @@ test("a community opens on #general, else its first chat room, else its first bo
   );
   assert.equal(defaultRoom([room("general", "stream", true)]), null);
   assert.equal(defaultRoom([]), null);
+});
+
+test("pages merge to one room each, and the newest record of a room wins whichever page it is on", () => {
+  const renamed = channelFromRecord(record("r1", [["name", "new-name"]], 300));
+  const stale = channelFromRecord(record("r1", [["name", "old-name"]], 100));
+  const other = channelFromRecord(record("r2", [["name", "other"]], 50));
+  // The first page holds the room's new record; an older page read before the rename still holds its old one.
+  const merged = mergeChannelPages([renamed], [stale, other]);
+  assert.deepEqual(
+    merged.map((c) => [c.id, c.name]),
+    [
+      ["r1", "new-name"],
+      ["r2", "other"],
+    ],
+  );
+  // And the other way round: a newer record on an older page is still the one kept.
+  assert.equal(mergeChannelPages([stale], [renamed])[0].name, "new-name");
 });

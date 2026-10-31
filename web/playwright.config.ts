@@ -35,6 +35,7 @@ export default defineConfig({
         "**/launchpad-presets.spec.ts",
         "**/community-create.spec.ts",
         "**/community-access.spec.ts",
+        "**/channel-edit.spec.ts",
         // The community screen audit's fixes (2026-10-30).
         "**/community-shouldfix.spec.ts",
         "**/report.spec.ts",

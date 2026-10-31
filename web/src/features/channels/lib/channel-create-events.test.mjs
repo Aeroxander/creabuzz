@@ -5,9 +5,12 @@ import {
   buildAddMemberEvent,
   buildRemoveMemberEvent,
   buildCreateChannelEvent,
+  buildEditChannelEvent,
   canonicalChannelName,
+  channelEdits,
   KIND_ADD_MEMBER,
   KIND_CREATE_CHANNEL,
+  KIND_EDIT_CHANNEL,
 } from "./channel-create-events.ts";
 import {
   groupAgentsByTeam,
@@ -165,5 +168,91 @@ test("removing someone names the room and the person, nothing else", () => {
   });
   assert.throws(() =>
     buildRemoveMemberEvent({ channelId: "room", pubkey: "not-hex" }),
+  );
+});
+
+const ROOM = "1b6f9d7e-3c2a-4b8e-9f10-0a1b2c3d4e5f";
+
+test("edit-channel event matches the canonical edit-metadata shape (build_update_channel)", () => {
+  assert.equal(KIND_EDIT_CHANNEL, 9002);
+  assert.deepEqual(
+    buildEditChannelEvent({
+      channelId: ROOM,
+      name: "  ##design-review ",
+      about: "  Talk about the designs  ",
+      visibility: "private",
+    }),
+    {
+      kind: 9002,
+      content: "",
+      tags: [
+        ["h", ROOM],
+        ["name", "design-review"],
+        ["about", "Talk about the designs"],
+        ["visibility", "private"],
+      ],
+    },
+  );
+  // Only what changes is sent; an empty description clears it.
+  assert.deepEqual(
+    buildEditChannelEvent({ channelId: ROOM, about: " " }).tags,
+    [
+      ["h", ROOM],
+      ["about", ""],
+    ],
+  );
+});
+
+test("edit-channel refuses an empty name, an unknown visibility and an edit with nothing in it", () => {
+  assert.throws(
+    () => buildEditChannelEvent({ channelId: ROOM, name: " # " }),
+    /name is required/,
+  );
+  assert.throws(
+    () => buildEditChannelEvent({ channelId: ROOM, visibility: "public" }),
+    /visibility/,
+  );
+  assert.throws(
+    () => buildEditChannelEvent({ channelId: ROOM }),
+    /nothing to change/,
+  );
+});
+
+test("channelEdits sends only what differs from the room as it is", () => {
+  const current = {
+    name: "general",
+    description: "Hello",
+    visibility: "public",
+  };
+  assert.equal(
+    channelEdits(current, {
+      name: " #general ",
+      description: "Hello ",
+      visibility: "open",
+    }),
+    null,
+  );
+  assert.deepEqual(
+    channelEdits(current, {
+      name: "chat",
+      description: "Hello",
+      visibility: "open",
+    }),
+    { name: "chat" },
+  );
+  assert.deepEqual(
+    channelEdits(current, {
+      name: "general",
+      description: "",
+      visibility: "private",
+    }),
+    { about: "", visibility: "private" },
+  );
+  assert.deepEqual(
+    channelEdits(
+      { ...current, visibility: "private" },
+      { name: "general", description: "Hello", visibility: "open" },
+    ),
+    { visibility: "open" },
   );
 });

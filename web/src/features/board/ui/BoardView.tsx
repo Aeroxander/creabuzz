@@ -107,8 +107,11 @@ export function BoardView({
   proposalStates,
   suggestPeopleFrom = null,
   inPage = false,
+  projectBoard = false,
 }: {
   channel: Channel;
+  /** A project's own board (D156), which stays open to everyone in the community. */
+  projectBoard?: boolean;
   /** On the board's own page, whose bar already names the board and holds the one back control. */
   inPage?: boolean;
   /** A channel whose speakers are offered as people to add to a private board. */
@@ -399,6 +402,8 @@ export function BoardView({
     <BoardList
       actions={actions}
       board={listBoard}
+      canEdit={ownsOrAdministers}
+      fixedVisibility={projectBoard}
       mutedHidden={
         mutedPosts > 0 && !showMuted
           ? { count: mutedPosts, onShow: () => setShowMuted(true) }

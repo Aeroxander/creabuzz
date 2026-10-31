@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import type { Channel } from "@/features/channels/use-channels";
+import { EditChannelDialog } from "@/features/channels/ui/EditChannelDialog";
 import type { Profile } from "@/features/profiles/use-profiles";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
@@ -91,8 +92,14 @@ export function BoardList({
   moderation,
   mutedHidden = null,
   nameInBar = false,
+  canEdit = false,
+  fixedVisibility = false,
 }: {
   channel: Channel;
+  /** The reader owns or administers the board, so the server lets them change its name, description and who reads it. */
+  canEdit?: boolean;
+  /** Who can read it is not offered in the edit (a project's board stays open). */
+  fixedVisibility?: boolean;
   /** The page bar above already shows the board's name: the heading is kept for screen readers only. */
   nameInBar?: boolean;
   moderation: BoardListModeration;
@@ -115,6 +122,7 @@ export function BoardList({
   const [composing, setComposing] = useState(false);
   const [showingPeople, setShowingPeople] = useState(false);
   const [showingModeration, setShowingModeration] = useState(false);
+  const [editing, setEditing] = useState(false);
   const mutedReason =
     moderation.mutedUntil !== null
       ? `You are muted on this board until ${whenText(moderation.mutedUntil)}.`
@@ -259,6 +267,17 @@ export function BoardList({
               People
             </Button>
           ) : null}
+          {canEdit ? (
+            <Button
+              aria-haspopup="dialog"
+              data-testid="board-edit"
+              onClick={() => setEditing(true)}
+              size="sm"
+              variant="outline"
+            >
+              Edit board
+            </Button>
+          ) : null}
           {/* For a moderator it is a tool; for anyone else only who moderates and what they did, so it reads as a link. */}
           <Button
             aria-expanded={showingModeration}
@@ -309,6 +328,15 @@ export function BoardList({
           </Button>
         </div>
       </header>
+
+      {editing ? (
+        <EditChannelDialog
+          channel={channel}
+          fixedVisibility={fixedVisibility}
+          onOpenChange={setEditing}
+          open
+        />
+      ) : null}
 
       {showingPeople && channel.visibility === "private" ? (
         <BoardPeople

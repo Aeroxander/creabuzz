@@ -77,6 +77,23 @@ export function channelFromRecord(record: ChannelRecord): Channel {
   };
 }
 
+/**
+ * The channels of the first page and of the older pages walked back to, one per room: the newest record of a room
+ * wins, so one renamed since an older page was read shows its new name.
+ */
+export function mergeChannelPages(
+  first: readonly Channel[],
+  older: readonly Channel[],
+): Channel[] {
+  const byId = new Map<string, Channel>();
+  for (const channel of [...first, ...older]) {
+    const known = byId.get(channel.id);
+    if (!known || channel.createdAt > known.createdAt)
+      byId.set(channel.id, channel);
+  }
+  return [...byId.values()];
+}
+
 /** Every channel in one page of metadata records, DM threads included, sorted by name. */
 export function channelsFromRecords(
   records: readonly ChannelRecord[],

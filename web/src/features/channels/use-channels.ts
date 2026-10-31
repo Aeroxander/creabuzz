@@ -8,6 +8,7 @@ import {
   type Channel,
   channelsFromRecords,
   listedRooms,
+  mergeChannelPages,
 } from "./lib/channel-records";
 
 export type { Channel } from "./lib/channel-records";
@@ -53,12 +54,8 @@ export function useChannels() {
   const [exhausted, setExhausted] = useState(false);
 
   const channels = useMemo(() => {
-    const byId = new Map<string, Channel>();
-    for (const channel of [...(query.data ?? []), ...olderChannels]) {
-      byId.set(channel.id, channel);
-    }
-    return listedRooms([...byId.values()]).sort((a, b) =>
-      a.name.localeCompare(b.name),
+    return listedRooms(mergeChannelPages(query.data ?? [], olderChannels)).sort(
+      (a, b) => a.name.localeCompare(b.name),
     );
   }, [query.data, olderChannels]);
 

@@ -12,6 +12,7 @@ import {
   buildResolveReport,
   buildTimeout,
   buildUnban,
+  buildUntimeout,
 } from "./moderationEvents.ts";
 import { failureWords } from "../../../shared/lib/readable-error.ts";
 import {
@@ -264,6 +265,20 @@ describe("buildUnban", () => {
 
   it("refuses anything that is not a 64-character key", () => {
     assert.throws(() => buildUnban({ pubkey: "alice" }));
+  });
+});
+
+describe("buildUntimeout", () => {
+  it("ends a community-wide mute with one record naming the person (kind 9043)", () => {
+    assert.deepEqual(buildUntimeout({ pubkey: MEMBER.toUpperCase() }), {
+      kind: 9043,
+      content: "",
+      tags: [["p", MEMBER]],
+    });
+  });
+
+  it("refuses anything that is not a 64-character key", () => {
+    assert.throws(() => buildUntimeout({ pubkey: "alice" }));
   });
 });
 

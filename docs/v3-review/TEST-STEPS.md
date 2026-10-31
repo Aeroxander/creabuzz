@@ -1957,3 +1957,25 @@ hand, on a dev chain with weekly rounds on (§4by):
 6. As the board's founder, remove someone's post on the project board: it goes, as on any board.
 7. `buzz launchpad show <id>` prints the project's `board`; `buzz messages send --channel <board> --kind 45001 --content
    "…"` posts there as an agent.
+
+## 4cn. Who is muted, and editing a room or board (D163)
+
+`web/tests/e2e/community-access.spec.ts` and `web/tests/e2e/channel-edit.spec.ts` check it with a stubbed server. By
+hand, against a local server and the web app, with two people (an owner and a member):
+
+1. As the member, post something; as the owner, report it is not needed: from **Moderation**, on a report about the
+   member, choose **Mute everywhere…** → 1 hour. As the member, try to post anywhere: the message says you are muted
+   everywhere until a time, and that you can still read.
+2. As the owner, open **People**: **Muted by moderators (1)** lists the member with "Muted for 60 more minutes" (or
+   so). Press **End mute**: "… can post again." and the list goes. As the member, posting works again.
+3. Mute them again, wait for it to end (or end it from another tab), then press **End mute** on the old row: "…'s mute
+   had already ended." and the list is read again.
+4. As a board's owner, press **Edit board**: the name field has focus and **Save changes** says "Nothing has changed
+   yet." Rename it and give it a description; save. The board's header, the sidebar and Home → Boards show the new name.
+5. Edit it again and choose **Only people on its list**: the note says how many are on it now. Save. As the member (not
+   on the list), the board is gone from their list and, if open, stops. Make it open again: they see it again.
+6. In a chat room you own, **Edit room** in its header works the same; clear the description and save: it goes.
+7. As the member, there is no **Edit board** or **Edit room**.
+8. On a project's Discussion tab, as its founder, **Edit board** offers no choice of who can read it, only "A project's
+   board stays open to everyone in the community".
+9. Phone width: the edit dialog and a room's header (with **Edit room**) fit without sideways scrolling.

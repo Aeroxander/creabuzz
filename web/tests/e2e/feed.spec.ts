@@ -221,6 +221,26 @@ test("the founder opens the project's board on its Discussion tab; a post there 
   expect(record?.tags).toContainEqual(["buzz-channel", boardId]);
   expect(JSON.parse(record?.content ?? "{}").chat?.board).toBe(boardId);
 
+  // The founder owns the board (as the server lists it) and can edit it, but a project's board stays open to everyone:
+  // who can read it is not offered.
+  relay.deliver(
+    event({
+      kind: 39002,
+      pubkey: "b".repeat(64),
+      created_at: now(),
+      // The server stores a roster under its board and sends it live to a subscription naming the board by `#h`.
+      tags: [
+        ["d", boardId],
+        ["h", boardId],
+        ["p", ME, "", "owner"],
+      ],
+    }),
+  );
+  await page.getByTestId("board-edit").click();
+  await expect(page.getByTestId("edit-channel-visibility-fixed")).toBeVisible();
+  await expect(page.getByTestId("edit-channel-visibility")).toHaveCount(0);
+  await page.getByRole("button", { name: "Cancel" }).click();
+
   // Talk is a board post on the project's board, with the board's own composer.
   await page.getByTestId("board-new-post").click();
   await page.getByLabel("Title").fill("Which planet first?");

@@ -13,6 +13,7 @@ import {
   KIND_MODERATION_RESOLVE_REPORT,
   KIND_MODERATION_TIMEOUT,
   KIND_MODERATION_UNBAN,
+  KIND_MODERATION_UNTIMEOUT,
   KIND_NIP29_DELETE_EVENT,
 } from "@creaton/core/kinds.ts";
 
@@ -101,6 +102,15 @@ export function buildTimeout(input: {
   ];
   if (input.reason?.trim()) tags.push(["reason", input.reason.trim()]);
   return { kind: KIND_MODERATION_TIMEOUT, content: "", tags };
+}
+
+/** End-a-timeout-early command (kind:9043). */
+export function buildUntimeout(input: { pubkey: string }): EventTemplate {
+  return {
+    kind: KIND_MODERATION_UNTIMEOUT,
+    content: "",
+    tags: [["p", requireHex64(input.pubkey, "member id")]],
+  };
 }
 
 /**

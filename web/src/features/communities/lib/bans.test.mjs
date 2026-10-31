@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { BAN_LENGTHS, banExpiry, describeBan, parseBans } from "./bans.ts";
+import {
+  BAN_LENGTHS,
+  banExpiry,
+  describeBan,
+  describeTimeout,
+  parseBans,
+  parseTimeouts,
+} from "./bans.ts";
 
 const A = "a".repeat(64);
 const B = "b".repeat(64);
@@ -88,5 +95,76 @@ test("a ban says how long it has left", () => {
   assert.equal(
     describeBan({ ...forever, until: NOW + 30 }, NOW),
     "Banned for 1 more hour",
+  );
+});
+
+test("current mutes are read from the same list: ended ones, rows with no mute and half-rows are left out", () => {
+  const timeouts = parseTimeouts(
+    [
+      {
+        pubkey: A.toUpperCase(),
+        banned: false,
+        muted_until: iso(NOW + 3600),
+        mute_reason: "  spam  ",
+        actor_pubkey: B,
+      },
+      // Banned and muted: in both lists.
+      { pubkey: B, banned: true, muted_until: iso(NOW + 86_400) },
+      { pubkey: "c".repeat(64), banned: false, muted_until: iso(NOW - 1) },
+      { pubkey: "d".repeat(64), banned: true, muted_until: null },
+      { pubkey: "short", muted_until: iso(NOW + 3600) },
+      { pubkey: "e".repeat(64), muted_until: "not a date" },
+      null,
+    ],
+    NOW,
+  );
+  assert.deepEqual(timeouts, [
+    { pubkey: A, reason: "spam", until: NOW + 3600, by: B },
+    { pubkey: B, reason: "", until: NOW + 86_400, by: "" },
+  ]);
+  assert.deepEqual(parseTimeouts({ rows: [] }, NOW), []);
+  assert.deepEqual(
+    parseBans(
+      [{ pubkey: A, banned: false, muted_until: iso(NOW + 3600) }],
+      NOW,
+    ),
+    [],
+  );
+});
+
+test("a mute says how long it has left", () => {
+  const base = { pubkey: A, reason: "", by: "" };
+  assert.equal(
+    describeTimeout({ ...base, until: NOW + 7 * 86_400 - 5 }, NOW),
+    "Muted for 7 more days",
+  );
+  assert.equal(
+    describeTimeout({ ...base, until: NOW + 86_400 }, NOW),
+    "Muted for 1 more day",
+  );
+  assert.equal(
+    describeTimeout({ ...base, until: NOW + 5 * 3600 - 10 }, NOW),
+    "Muted for 5 more hours",
+  );
+  assert.equal(
+    describeTimeout({ ...base, until: NOW + 3600 }, NOW),
+    "Muted for 60 more minutes",
+  );
+  assert.equal(
+    describeTimeout({ ...base, until: NOW + 30 }, NOW),
+    "Muted for 1 more minute",
+  );
+  // Under a day is said in hours, never rounded up to a day.
+  assert.equal(
+    describeTimeout({ ...base, until: NOW + 13 * 3600 }, NOW),
+    "Muted for 13 more hours",
+  );
+  assert.equal(
+    describeTimeout({ ...base, until: NOW + 86_400 - 30 }, NOW),
+    "Muted for 1 more day",
+  );
+  assert.equal(
+    describeBan({ ...base, until: NOW + 13 * 3600 }, NOW),
+    "Banned for 13 more hours",
   );
 });

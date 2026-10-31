@@ -106,7 +106,7 @@ test("a timeout and a board mute refuse a post with when they end, in plain word
   await tryToPost(page);
   const problem = page.getByTestId("board-composer-problem");
   await expect(problem).toContainText(
-    "You are timed out in this community until",
+    "You are muted everywhere in this community until",
   );
   await expect(problem).toContainText("You can still read");
   await expect(problem).not.toContainText(String(until));

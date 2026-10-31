@@ -60,7 +60,11 @@ async function open(
     /** Why the server refuses to ban a person, or to lift a ban, when it does. */
     refuseBan?: string;
     refuseUnban?: string;
-    /** People the server already lists as banned. */
+    /** Why the server refuses to end a mute early, when it does. */
+    refuseUntimeout?: string;
+    /** The server fails to give the list of banned and muted people. */
+    restrictedFails?: boolean;
+    /** People the server already lists as banned or muted. */
     bans?: Record<string, unknown>[];
     /** A second admin in the community's list. */
     anotherAdmin?: boolean;
@@ -77,6 +81,7 @@ async function open(
     refuseRole,
     refuseBan,
     refuseUnban,
+    refuseUntimeout,
     refuseRevoke,
     anotherAdmin = false,
     phone = false,
@@ -88,6 +93,7 @@ async function open(
       if (refuseRole && event.kind === 9032) return refuseRole;
       if (refuseBan && event.kind === 9040) return refuseBan;
       if (refuseUnban && event.kind === 9041) return refuseUnban;
+      if (refuseUntimeout && event.kind === 9043) return refuseUntimeout;
       return undefined;
     },
   });
@@ -183,6 +189,10 @@ async function open(
   const banListRequests: string[] = [];
   await page.route("**/moderation/restricted", async (route) => {
     banListRequests.push(route.request().headers().authorization ?? "");
+    if (options.restrictedFails) {
+      await route.fulfill({ status: 500, json: { error: "database error" } });
+      return;
+    }
     if (role === "member") {
       await route.fulfill({
         status: 403,
@@ -196,9 +206,12 @@ async function open(
     for (const event of relay.events) {
       const target = event.tags.find((tag) => tag[0] === "p")?.[1];
       if (!target) continue;
+      // As the server keeps it: one row per person, a ban and a mute side by side, and whoever acted last.
+      const row = rows.get(target);
       if (event.kind === 9040) {
         const until = event.tags.find((tag) => tag[0] === "expiration")?.[1];
         rows.set(target, {
+          ...row,
           pubkey: target,
           banned: true,
           ban_expires_at: until
@@ -209,7 +222,28 @@ async function open(
           actor_pubkey: event.pubkey,
         });
       }
-      if (event.kind === 9041) rows.delete(target);
+      const muted =
+        typeof row?.muted_until === "string" &&
+        Date.parse(row.muted_until) > Date.now();
+      if (event.kind === 9041) {
+        if (muted)
+          rows.set(target, {
+            ...row,
+            banned: false,
+            ban_expires_at: null,
+            actor_pubkey: event.pubkey,
+          });
+        else rows.delete(target);
+      }
+      if (event.kind === 9043) {
+        if (row?.banned === true)
+          rows.set(target, {
+            ...row,
+            muted_until: null,
+            actor_pubkey: event.pubkey,
+          });
+        else rows.delete(target);
+      }
     }
     await route.fulfill({ json: [...rows.values()] });
   });
@@ -773,6 +807,11 @@ test("people the server already holds out are listed when the page opens, from a
   await expect(page.getByTestId("banned-person")).toContainText(
     "Impersonating the founder",
   );
+  // The time-out is listed on its own, as a mute.
+  await expect(page.getByTestId("muted-person")).toHaveCount(1);
+  await expect(page.getByTestId("muted-person")).toContainText(
+    "Muted for 60 more minutes",
+  );
   expect(banListRequests.length).toBeGreaterThan(0);
   for (const header of banListRequests) {
     expect(header.startsWith("Nostr ")).toBe(true);
@@ -862,7 +901,134 @@ test("when the server will not lift a ban, its words are shown and the ban stays
   await expect(page.getByTestId("banned-person")).toHaveCount(1);
 });
 
-test("the ban form and the list of banned people are accessible", async ({
+const MUTED = {
+  pubkey: NEIGHBOUR,
+  banned: false,
+  ban_expires_at: null,
+  muted_until: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+  mute_reason: "Posting the same link everywhere",
+  actor_pubkey: ME,
+};
+
+test("people muted everywhere are listed with how long and why, and ending a mute sends it and clears the list", async ({
+  page,
+}) => {
+  const { relay } = await open(page, { role: "owner", bans: [MUTED] });
+  const row = page.getByTestId("muted-person");
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("Muted for 2 more days");
+  await expect(row).toContainText("Posting the same link everywhere");
+  await expect(page.getByTestId("banned-list")).toHaveCount(0);
+
+  await row.getByTestId("mute-end").click();
+  await expect
+    .poll(() => relay.events.filter((event) => event.kind === 9043).length)
+    .toBe(1);
+  const end = relay.events.find((event) => event.kind === 9043);
+  expect(end?.tags).toEqual([["p", NEIGHBOUR]]);
+  expect(end?.pubkey).toBe(ME);
+  expect(end && verifyEvent(end)).toBe(true);
+  await expect(page.getByTestId("muted-list")).toHaveCount(0);
+});
+
+test("someone banned and muted is in both lists, and ending the mute leaves the ban", async ({
+  page,
+}) => {
+  await open(page, {
+    role: "owner",
+    bans: [{ ...MUTED, banned: true, ban_reason: "Spam" }],
+  });
+  await expect(page.getByTestId("banned-person")).toHaveCount(1);
+  await page.getByTestId("mute-end").click();
+  await expect(page.getByTestId("muted-list")).toHaveCount(0);
+  await expect(page.getByTestId("banned-person")).toHaveCount(1);
+});
+
+test("when the server will not end a mute, its words are shown and the mute stays listed", async ({
+  page,
+}) => {
+  await open(page, {
+    role: "owner",
+    refuseUntimeout: "actor not authorized: only the owner can end this mute",
+    bans: [MUTED],
+  });
+  await page.getByTestId("mute-end").click();
+  await expect(page.getByTestId("mute-end-error")).toHaveText(
+    "The server did not end the mute, so it is still in place. Try again, or ask the community's owner.",
+  );
+  const details = page.getByTestId("mute-end-error-details");
+  await details.locator("summary").click();
+  await expect(details).toContainText("only the owner can end this mute");
+  await expect(page.getByTestId("muted-person")).toHaveCount(1);
+});
+
+test("a mute that ended since the list was read is said so, and the list is read again", async ({
+  page,
+}) => {
+  const { banListRequests } = await open(page, {
+    role: "owner",
+    refuseUntimeout: "invalid: member is not timed out",
+    bans: [MUTED],
+  });
+  await expect(page.getByTestId("muted-person")).toHaveCount(1);
+  const before = banListRequests.length;
+  await page.getByTestId("mute-end").click();
+  await expect(page.getByText("mute had already ended")).toBeVisible();
+  await expect.poll(() => banListRequests.length).toBeGreaterThan(before);
+  await expect(page.getByTestId("mute-end-error")).toHaveCount(0);
+});
+
+test("a member never sees who is muted, and never asks", async ({ page }) => {
+  const { banListRequests } = await open(page, {
+    role: "member",
+    bans: [MUTED],
+  });
+  await expect(page.getByTestId("person")).toHaveCount(3);
+  await expect(page.getByTestId("muted-list")).toHaveCount(0);
+  expect(banListRequests).toHaveLength(0);
+});
+
+test("lifting the ban on someone also muted leaves them muted", async ({
+  page,
+}) => {
+  await open(page, {
+    role: "owner",
+    bans: [{ ...MUTED, banned: true, ban_reason: "Spam" }],
+  });
+  await page.getByTestId("ban-lift").click();
+  await expect(page.getByTestId("banned-list")).toHaveCount(0);
+  await expect(page.getByTestId("muted-person")).toHaveCount(1);
+});
+
+test("when the list of banned and muted people cannot be read, the owner is told", async ({
+  page,
+}) => {
+  await open(page, { role: "owner", restrictedFails: true });
+  await expect(page.getByTestId("restricted-error")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("muted-list")).toHaveCount(0);
+});
+
+test("opening People again reads the list again, so a mute given elsewhere shows at once", async ({
+  page,
+}) => {
+  const listed: Record<string, unknown>[] = [];
+  const { banListRequests } = await open(page, { role: "owner", bans: listed });
+  await expect(page.getByTestId("people-section")).toBeVisible();
+  await expect(page.getByTestId("muted-list")).toHaveCount(0);
+  // A moderator mutes them from a report, in another view, moments later.
+  listed.push(MUTED);
+  // Close People and open it again.
+  await page.getByTestId("people-toggle").click();
+  await expect(page.getByTestId("people-section")).toHaveCount(0);
+  const before = banListRequests.length;
+  await page.getByTestId("people-toggle").click();
+  await expect.poll(() => banListRequests.length).toBeGreaterThan(before);
+  await expect(page.getByTestId("muted-person")).toHaveCount(1);
+});
+
+test("the ban form and the lists of banned and muted people are accessible", async ({
   page,
 }) => {
   await open(page, {
@@ -875,8 +1041,10 @@ test("the ban form and the list of banned people are accessible", async ({
         ban_reason: "Spam",
         actor_pubkey: ME,
       },
+      { ...MUTED, pubkey: "9".repeat(64) },
     ],
   });
+  await expect(page.getByTestId("muted-person")).toHaveCount(1);
   await page
     .locator('[data-testid="person"][data-role="member"]')
     .getByTestId("person-ban")

@@ -19,7 +19,7 @@ test("a refused rename or delete says why, not that the server did not answer", 
   for (const say of [renameFailureText, deleteFailureText]) {
     assert.match(
       say(new Error(TIMED_OUT)),
-      /^You are timed out in this community until .*2030.*\. You can still read; you can post again then\.$/,
+      /^You are muted everywhere in this community until .*2030.*\. You can still read; you can post again then\.$/,
     );
     assert.equal(
       say(new Error("blocked: you are banned from this community")),
@@ -58,7 +58,7 @@ test("a rename that saved the new page but could not delete the old one says so"
   assert.equal(failure.cause, refused);
   assert.match(
     renameFailureText(failure),
-    /^Saved under the new name, but the old name is still there\. You are timed out in this community until /,
+    /^Saved under the new name, but the old name is still there\. You are muted everywhere in this community until /,
   );
   // Without plain words for why: just what happened.
   assert.equal(

@@ -190,6 +190,7 @@ function ProjectBoard({ launch }: { launch: Launch }) {
         key={board.id}
         onOpenPost={(id) => setPostId(id ?? undefined)}
         postId={postId}
+        projectBoard
       />
     </div>
   );

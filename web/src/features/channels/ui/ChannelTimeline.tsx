@@ -58,6 +58,7 @@ import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { MutedLine } from "@/features/social/ui/MutedLine";
 import { useMutedSet } from "@/features/social/use-social-actions";
 import { BoardPeople } from "@/features/board/ui/BoardPeople";
+import { EditRoomButton } from "./EditChannelDialog";
 import { RoomInviteCards } from "./RoomInviteCards";
 import { SystemNoteRow } from "./SystemNoteRow";
 import { failureWords, readFailureWords } from "@/shared/lib/readable-error";
@@ -692,7 +693,7 @@ export function ChannelTimeline({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <header className="flex items-center gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
+      <header className="flex flex-wrap items-center gap-2 border-b border-black/10 px-4 py-3 dark:border-white/10">
         {/* The sidebar's mark: a lock for a private room, # for an open one. */}
         {channel.visibility === "private" ? (
           <Lock
@@ -703,7 +704,7 @@ export function ChannelTimeline({
         ) : (
           <Hash className="h-4 w-4 shrink-0 text-black/60 dark:text-white/60" />
         )}
-        <h2 className="text-sm font-semibold text-black dark:text-white">
+        <h2 className="min-w-0 truncate text-sm font-semibold text-black dark:text-white">
           {channel.name}
         </h2>
         {channel.description && (
@@ -735,8 +736,9 @@ export function ChannelTimeline({
                 : "Reconnecting…"}
           </span>
         ) : null}
-        <span className="ml-auto flex items-center gap-2">
+        <span className="ml-auto flex flex-wrap items-center gap-2">
           <PresenceStrip memberPubkeys={memberPubkeys} />
+          {channel.direct ? null : <EditRoomButton channel={channel} />}
           {privateRoom ? (
             <button
               aria-expanded={showingPeople}
