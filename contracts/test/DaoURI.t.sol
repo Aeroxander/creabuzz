@@ -5,14 +5,14 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {OrgBinding} from "../src/OrgBinding.sol";
-import {DaoURIAdapter} from "../src/DaoURIAdapter.sol";
 import {Call, Moloch, Summoner} from "../src/majeur/MolochPatched.sol";
 
-/// @notice Phase 3 acceptance (OA.md/OAv2): the half-built `contractURI()`
-///         field becomes the ERC-4824 `daoURI()`, the summon carries it, and
+/// @notice Phase 3 acceptance (OA.md/OAv2): the summon's uri lands in the
+///         DAO's `contractURI()`, OrgBinding's DaoBound event carries it, and
 ///         — the DUNA category-error guard — a named uri OVERRIDES majeur's
 ///         nonprofit default so no commercial AO inherits a stranger's
-///         charter (OAv2 §4.8: the adapter is required, not optional).
+///         charter (OAv2 §4.8). The unused `daoURI()` adapter was removed in
+///         D151 (tag pre-deprecation-2026-10-31); readers use `contractURI()`.
 /// Stand-in for majeur's DUNA operating-charter renderer: what a DAO's
 /// `contractURI()` falls through to when no uri was named.
 contract DunaRendererMock {
@@ -21,15 +21,17 @@ contract DunaRendererMock {
     function daoContractURI(Moloch) external pure returns (string memory) {
         return DUNA;
     }
+
     function daoTokenURI(Moloch, uint256) external pure returns (string memory) {
         return "";
     }
+
     function badgeTokenURI(Moloch, uint256) external pure returns (string memory) {
         return "";
     }
 }
 
-contract DaoURIAdapterTest is Test {
+contract OrgBindingUriTest is Test {
     address internal treasury = makeAddr("treasury");
 
     struct HolderSetup {
@@ -70,31 +72,26 @@ contract DaoURIAdapterTest is Test {
         dao = Moloch(payable(daoAddr));
     }
 
-    /// The shape upgrade: the summon's uri lands in `contractURI()` and the
-    /// adapter exposes it as `daoURI()` — ERC-4824's entry point.
-    function test_summonUriBecomesTheDaoURI() public {
+    /// The summon's uri lands in the DAO's `contractURI()`.
+    function test_summonUriBecomesTheContractURI() public {
         string memory uri = "https://relay.example/dao.json";
-        (Moloch dao, ) = _summon(uri);
-        DaoURIAdapter adapter = new DaoURIAdapter(address(dao));
+        (Moloch dao,) = _summon(uri);
 
-        assertEq(dao.contractURI(), uri, "the half-built field, upgraded");
-        assertEq(adapter.daoURI(), uri, "ERC-4824 entry point");
+        assertEq(dao.contractURI(), uri, "the summon's uri is the DAO's document");
     }
 
     /// OrgBinding summons with NO renderer, so an empty uri reads back as the
     /// empty string — "unknown", which the DaoBound docs tell readers never to
     /// treat as a value. It is never a stranger's charter.
     function test_emptyUri_withoutARenderer_readsBackEmpty() public {
-        (Moloch dao, ) = _summon("");
+        (Moloch dao,) = _summon("");
         assertEq(bytes(dao.contractURI()).length, 0, "no uri, no renderer: nothing is claimed");
-        DaoURIAdapter adapter = new DaoURIAdapter(address(dao));
-        assertEq(bytes(adapter.daoURI()).length, 0, "the adapter exposes unknown as unknown");
     }
 
     /// The DUNA guard (OAv2 §4.8): if a renderer IS set, an EMPTY uri falls
     /// through to the renderer's default — a stranger's charter presented as the
-    /// org's own metadata — and a NAMED uri overrides it. The adapter forwards
-    /// whatever `contractURI()` says, so a bound org must name its own document.
+    /// org's own metadata — and a NAMED uri overrides it. Readers take whatever
+    /// `contractURI()` says, so a bound org must name its own document.
     function test_emptyUri_fallsThroughToTheRenderer_andANamedUriOverridesIt() public {
         DunaRendererMock renderer = new DunaRendererMock();
         Summoner summoner = newSummoner();
@@ -104,21 +101,23 @@ contract DaoURIAdapterTest is Test {
         shares[0] = 1e18;
 
         Moloch unnamed = summoner.summon(
-            "Cafe AO", "CAFE", "", 500, true, address(renderer), keccak256("unnamed"),
-            holders, shares, new Call[](0)
+            "Cafe AO", "CAFE", "", 500, true, address(renderer), keccak256("unnamed"), holders, shares, new Call[](0)
         );
         Moloch named = summoner.summon(
-            "Cafe AO", "CAFE", "https://relay.example/dao.json", 500, true, address(renderer),
-            keccak256("named"), holders, shares, new Call[](0)
+            "Cafe AO",
+            "CAFE",
+            "https://relay.example/dao.json",
+            500,
+            true,
+            address(renderer),
+            keccak256("named"),
+            holders,
+            shares,
+            new Call[](0)
         );
 
         string memory fallbackUri = unnamed.contractURI();
         assertEq(fallbackUri, renderer.daoContractURI(unnamed), "an empty uri IS the renderer default");
-        assertEq(
-            new DaoURIAdapter(address(unnamed)).daoURI(),
-            fallbackUri,
-            "the adapter launders nothing: it exposes the fall-through as-is"
-        );
         assertEq(named.contractURI(), "https://relay.example/dao.json", "a named uri wins");
         assertTrue(
             keccak256(bytes(named.contractURI())) != keccak256(bytes(fallbackUri)),
@@ -143,36 +142,24 @@ contract DaoURIAdapterTest is Test {
         assertTrue(found, "DaoBound not emitted");
     }
 
-    /// The indexer ping is advisory and open (the bytes are recomputable —
-    /// this event is a hint, never a trust anchor).
-    function test_notifyUpdateIsOpenAndAdvisory() public {
-        (Moloch dao, ) = _summon("https://relay.example/dao.json");
-        DaoURIAdapter adapter = new DaoURIAdapter(address(dao));
-        vm.expectEmit(true, true, true, true);
-        emit DaoURIAdapter.DAOURIUpdate("https://relay.example/dao.json");
-        adapter.notifyUpdate("https://relay.example/dao.json");
-    }
-
     /// The acceptance's LWW rule: a re-summoned org updates BOTH sides under
     /// the same last-write-wins semantics — the binding points at the newest
-    /// DAO and its adapter exposes that DAO's document.
+    /// DAO and that DAO serves its own document.
     function test_resummonUpdatesBothSides_LWW() public {
         bytes32 rid = keccak256("lww-root");
         OrgBinding binding = new OrgBinding(newSummoner());
-        (Moloch first, ) = _summon("https://relay.example/first.json");
+        (Moloch first,) = _summon("https://relay.example/first.json");
         binding.bindDao(rid, address(first));
-        DaoURIAdapter firstAdapter = new DaoURIAdapter(address(first));
 
         // The re-summon (second DAO, second document).
-        (Moloch second, ) = _summon("https://relay.example/second.json");
+        (Moloch second,) = _summon("https://relay.example/second.json");
         binding.bindDao(rid, address(second));
-        DaoURIAdapter secondAdapter = new DaoURIAdapter(address(second));
 
-        (address boundDao, ) = binding.bindingOf(rid);
+        (address boundDao,) = binding.bindingOf(rid);
         assertEq(boundDao, address(second), "LWW: the newest binding wins");
-        assertEq(secondAdapter.daoURI(), "https://relay.example/second.json", "new side updated");
+        assertEq(second.contractURI(), "https://relay.example/second.json", "new side updated");
         // And the OLD side still serves its own document (no aliasing, no
         // silent rewrite of history).
-        assertEq(firstAdapter.daoURI(), "https://relay.example/first.json", "old side untouched");
+        assertEq(first.contractURI(), "https://relay.example/first.json", "old side untouched");
     }
 }

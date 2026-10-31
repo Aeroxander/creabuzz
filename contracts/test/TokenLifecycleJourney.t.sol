@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {RoyaltyDistributor, IERC20Bal} from "../src/RoyaltyDistributor.sol";
-import {SellRateGate} from "../src/SellRateGate.sol";
 import {VerifierSet} from "../src/VerifierSet.sol";
 import {ClaimStake} from "../src/ClaimStake.sol";
 import {MockCurrency, MockProjectToken} from "./RoyaltyDistributor.t.sol";
@@ -29,12 +28,10 @@ contract TokenLifecycleJourneyTest is Test {
     VerifierSet internal verifiers;
     ClaimStake internal stake;
     RoyaltyDistributor internal dist;
-    SellRateGate internal gate;
 
     address internal treasury = makeAddr("treasury");
     address internal buybackSink = makeAddr("buybackSink");
     address internal governance = makeAddr("governance");
-    address internal venue = makeAddr("venue");
     address internal verifierA = makeAddr("verifierA");
     address internal alice = makeAddr("alice");
 
@@ -63,7 +60,6 @@ contract TokenLifecycleJourneyTest is Test {
             4000,
             2000
         );
-        gate = new SellRateGate(dist, venue);
         // Treasury holds the milestone allocation and escrows it on approve.
         pt.setBalance(treasury, TRANCHE_1 + TRANCHE_2);
         vm.startPrank(treasury);
@@ -88,9 +84,7 @@ contract TokenLifecycleJourneyTest is Test {
         // --- Alice submits wizard row m1 with a royalty schedule ride-along.
         // (Weight 1 / 12mo / Tier I: inside the band caps.)
         vm.prank(alice);
-        stake.submitClaimWithSchedule(
-            M1, TRANCHE_1, 0, EVIDENCE, 1, 365 days, 1, uint128(TRANCHE_1)
-        );
+        stake.submitClaimWithSchedule(M1, TRANCHE_1, 0, EVIDENCE, 1, 365 days, 1, uint128(TRANCHE_1));
         // --- Treasury reserves the tranche for THAT claim (fund is per claim).
         vm.prank(treasury);
         stake.fund(M1, TRANCHE_1);
@@ -105,7 +99,7 @@ contract TokenLifecycleJourneyTest is Test {
         stake.payout(M1);
 
         assertEq(pt.balanceOf(alice), TRANCHE_1, "tranche released on the verdict");
-        (, , , ClaimStake.Status status, ,,,) = stake.claims(M1);
+        (,,, ClaimStake.Status status,,,,) = stake.claims(M1);
         assertEq(uint256(status), uint256(ClaimStake.Status.Paid), "claim closed");
         (address schedWho,,,,,, bool suspended) = dist.schedules(M1);
         assertEq(schedWho, alice, "schedule minted to the claimant");
@@ -129,14 +123,6 @@ contract TokenLifecycleJourneyTest is Test {
         _closeWindow();
         assertEq(usd.balanceOf(alice), 2_000 + 6_000, "window 2: full pool + carried");
         assertEq(usd.balanceOf(buybackSink), 8_000, "B from revenue only (I2)");
-
-        // --- Sell-rate gate: the tier drip, fail-closed.
-        uint256 cap = (TRANCHE_1 * 300) / 10_000; // Tier I: 3%/window
-        vm.prank(venue);
-        gate.consumeSellAllowance(alice, cap);
-        vm.prank(venue);
-        vm.expectRevert(abi.encodeWithSelector(SellRateGate.SellRateExceeded.selector, 1, 0));
-        gate.consumeSellAllowance(alice, 1);
     }
 
     function test_RejectedRow_Slashed_NoTranche_NoSchedule() public {
@@ -144,9 +130,7 @@ contract TokenLifecycleJourneyTest is Test {
         pt.setBalance(alice, 100);
         vm.startPrank(alice);
         pt.approve(address(stake), 100);
-        stake.submitClaimWithSchedule(
-            M2, TRANCHE_2, 100, EVIDENCE, 1, 365 days, 1, uint128(TRANCHE_2)
-        );
+        stake.submitClaimWithSchedule(M2, TRANCHE_2, 100, EVIDENCE, 1, 365 days, 1, uint128(TRANCHE_2));
         vm.stopPrank();
         vm.prank(treasury);
         stake.fund(M2, TRANCHE_2);
@@ -155,7 +139,7 @@ contract TokenLifecycleJourneyTest is Test {
         verifiers.attest(M2, false); // objection quorum
         stake.settle(M2);
 
-        (, , , ClaimStake.Status status, ,,,) = stake.claims(M2);
+        (,,, ClaimStake.Status status,,,,) = stake.claims(M2);
         assertEq(uint256(status), uint256(ClaimStake.Status.Rejected), "rejected");
         assertEq(pt.balanceOf(alice), 0, "no tranche released");
         assertEq(dist.allocOf(alice), 0, "no schedule minted (I8)");
@@ -167,9 +151,7 @@ contract TokenLifecycleJourneyTest is Test {
 
     function test_SellingAllAllocation_StopsRoyalty_ButTrancheIsOurs() public {
         vm.prank(alice);
-        stake.submitClaimWithSchedule(
-            M1, TRANCHE_1, 0, EVIDENCE, 1, 365 days, 1, uint128(TRANCHE_1)
-        );
+        stake.submitClaimWithSchedule(M1, TRANCHE_1, 0, EVIDENCE, 1, 365 days, 1, uint128(TRANCHE_1));
         vm.prank(treasury);
         stake.fund(M1, TRANCHE_1);
         vm.prank(verifierA);

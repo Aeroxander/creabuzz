@@ -1,5 +1,7 @@
 # OAv2.md — Autonomous Organizations as an interoperable, inspectable entity
 
+> **Removed in D151 (2026-10-31, tag pre-deprecation-2026-10-31):** the never-wired `DaoURIAdapter` (`daoURI()`); readers use the DAO's `contractURI()` and OrgBinding's `DaoBound` event, covered by `contracts/test/DaoURI.t.sol`.
+
 `draft` `design` `relay` `contracts` `cli`
 
 **v2 of [OA.md](OA.md).** Phases 0–2 are built. This revision folds in a

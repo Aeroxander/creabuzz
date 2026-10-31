@@ -294,7 +294,7 @@ sweeps are recipient-only), so one call atomically:
 The reserve releases once, treasury-only, to the recorded pool
 (`releaseReserve`, mirrored as 47005 `lock`); if the pool never lands the
 treasury can `withdrawStuckReserve`. The accounting-only
-`AppTokenLBPInitializer` is superseded — do not deploy it for new launches.
+`AppTokenLBPInitializer` is superseded and was removed from the contracts in D151 (tag pre-deprecation-2026-10-31).
 
 
 ## Relaunch, exit, and vesting (A3 / B4 / B5, 2026-09-13)

@@ -1,6 +1,6 @@
 # DAO Launchpad Dashboard — Integration Plan v2 (brainstorm)
 
-> **History, 2026-10-31.** A brainstorm from before the v3 review; its desktop dashboards, futarchy and LBAMM direction were replaced (D9, D12, D63, D137). The current state is [v3-review/STATUS.md](v3-review/STATUS.md). `scripts/launchpad-anvil-fork.sh`, which it names, is superseded by `scripts/sepolia-deploy.sh`.
+> **History, 2026-10-31.** A brainstorm from before the v3 review; its desktop dashboards, futarchy and LBAMM direction were replaced (D9, D12, D63, D137). The current state is [v3-review/STATUS.md](v3-review/STATUS.md). `scripts/launchpad-anvil-fork.sh`, which it names, is superseded by `scripts/sepolia-deploy.sh`. Removed in D151 (2026-10-31, tag pre-deprecation-2026-10-31): `AuctionLauncher` and `AppTokenLBPInitializer`.
 
 > Direction locked: **onchain-first, Moloch core, futarchy only for budget/subDAO.**
 > Inspiration from Umia. Token + LP control via apptoken-skills.

@@ -28,12 +28,12 @@
 #      and the WorkAreaBounty (outside money behind a work area) + `deployments/work-bounty-<chainid>.json`
 #      and the OpenBounty (money behind a post) + `deployments/open-bounty-<chainid>.json`
 #      then the optional test-network features, each with its own manifest: test CREATE and its faucet, the court,
-#      money forecasts (contract only: removed from the app in D150), the payouts factory, remix bonds, matched exits and weekly rounds (the journeys use them)
+#      the payouts factory, remix bonds, matched exits and weekly rounds (the journeys use them)
 #   5. funded dev accounts, printed as a table (keys are DEV ONLY, labeled)
 #
 # What it prints for the web app: first the settings for a build like the hosted pilot's (contributor projects only,
 # VITE_CONTRIBUTOR_ONLY=1, no sale, no optional feature). The optional features' settings (a raise, bounties, matched
-# exits, weekly rounds, CREATE, the court, forecasts, payouts, remix bonds) are printed only with DEV_CHAIN_ALL=1: they
+# exits, weekly rounds, CREATE, the court, payouts, remix bonds) are printed only with DEV_CHAIN_ALL=1: they
 # are deployed either way, and are for testing those features, not for the pilot (docs/v3-review/PILOT-RUNBOOK.md).
 #
 # ════════════════════════════════════════════════════════════════════════════
@@ -303,7 +303,7 @@ plan_lines() {
   echo "  6b. contributor kit  deploy ContributorKit (summoner)  [skipped: deployments/contributor-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner]"
   echo "  6c. work bounty  deploy WorkAreaBounty (currency + work budget factory)  [skipped: deployments/work-bounty-$DEV_CHAIN_ID.json names one that still points at both]"
   echo "  6d. open bounty  deploy OpenBounty (currency)  [skipped: deployments/open-bounty-$DEV_CHAIN_ID.json names one that still pays in it]"
-  echo "  6e. optional features  test CREATE + faucet, court, forecasts, payouts factory, remix bonds, matched exit, weekly rounds  [skipped: each one's manifest names a contract that still has code]"
+  echo "  6e. optional features  test CREATE + faucet, court, payouts factory, remix bonds, matched exit, weekly rounds  [skipped: each one's manifest names a contract that still has code]"
   echo "  7. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
   echo "  8. accounts     print the DEV-ONLY key table to stdout"
 }
@@ -946,41 +946,6 @@ deploy_open_bounty() {
   echo "  ✓ OpenBounty at $address (manifest $(open_bounty_manifest_path))"
 }
 
-forecast_pool_manifest_path() {
-  echo "$DEPLOYMENTS_DIR/forecast-pool-${CHAIN_ID}.json"
-}
-
-forecast_pool_address() {
-  manifest_role "$(forecast_pool_manifest_path)" "forecast-pool"
-}
-
-# Guard: the pools have code and read this chain's bounties on posts.
-forecast_pool_deployed() {
-  local pools named
-  [[ -f "$(forecast_pool_manifest_path)" ]] || return 1
-  pools=$(forecast_pool_address)
-  [[ -n "$pools" && "$(code_bytes "$pools")" != "0" ]] || return 1
-  named=$(cast call "$pools" "bounties()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
-  [[ "$(lower "$named")" == "$(lower "$(open_bounty_address)")" ]]
-}
-
-# Money forecasts (N8): two pools of people's own money on whether a bounty on a post is paid. Test networks only.
-# Contract only since D150: the app no longer shows them (tag pre-deprecation-2026-10-31); kept until the contracts clean-up.
-deploy_forecast_pool() {
-  echo
-  if forecast_pool_deployed; then
-    echo "── forecast-pool: already at $(forecast_pool_address) — skipped (idempotent)"
-    return 0
-  fi
-  local address
-  echo "── forecast-pool: deploying ForecastPool (currency $(currency_address), bounties $(open_bounty_address))"
-  address=$(create_from_artifact forecast-pool ForecastPool "$(cast abi-encode "constructor(address,address)" \
-    "$(currency_address)" "$(open_bounty_address)")")
-  write_one_role_manifest "$(forecast_pool_manifest_path)" forecast-pool "$address" "ForecastPool(currency, open bounty)"
-  forecast_pool_deployed || fail_step "forecast-pool" "the deployed pools do not read this chain's bounties on posts"
-  echo "  ✓ ForecastPool at $address (manifest $(forecast_pool_manifest_path))"
-}
-
 payouts_factory_manifest_path() {
   echo "$DEPLOYMENTS_DIR/payouts-factory-${CHAIN_ID}.json"
 }
@@ -1258,7 +1223,6 @@ up() {
   deploy_test_create
   deploy_court
   deploy_open_bounty
-  deploy_forecast_pool
   deploy_payouts_factory
   deploy_remix_bonds
   deploy_matched_exit
@@ -1283,7 +1247,6 @@ up() {
     echo "  weekly rounds: $(weekly_rounds_address) (weekly-rounds-$CHAIN_ID.json)"
     echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
     echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
-    echo "  forecasts:  $(forecast_pool_address) (forecast-pool-$CHAIN_ID.json; the app no longer shows them, D150)"
     echo "  payouts:    $(payouts_factory_address) (payouts-factory-$CHAIN_ID.json)"
     echo "  remix bonds: $(remix_bonds_address) (remix-bonds-$CHAIN_ID.json)"
   fi

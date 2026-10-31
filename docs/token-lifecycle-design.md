@@ -2,7 +2,7 @@
 
 > **History, 2026-10-31.** Royalties, LBAMM sell liquidity and buybacks were replaced by the v3 token model (D72 to D79) and payouts (D122); the desktop is outside the MVP. The current state is [v3-review/STATUS.md](v3-review/STATUS.md).
 
-> **Removed in D150, see tag pre-deprecation-2026-10-31:** the web royalty statement, the `buzz royalty` CLI and `scripts/journey-float.sh`. The contracts and the desktop copy stay for a later clean-up.
+> **Removed in D150, see tag pre-deprecation-2026-10-31:** the web royalty statement, the `buzz royalty` CLI and `scripts/journey-float.sh`. The desktop copy stays for a later clean-up. **Removed in D151:** `SellRateGate`, `TieredSellRouter`, `BuybackKeeper` and `script/DeployRoyalty.s.sol`; `RoyaltyDistributor.sol` stays (unchanged, never deployed) because `ClaimStake` imports its interface.
 
 `draft` `design` `contracts` `web` `desktop`
 

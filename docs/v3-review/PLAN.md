@@ -1,6 +1,6 @@
 # v3 review and implementation plan
 
-> **History (noted 2026-10-23).** This was the v3 review plan. Its decisions are D1 to D15 in [DECISIONS.md](DECISIONS.md) and almost all of it has been built since; where it says "nothing in this plan has been implemented" read it as of 2026-10-07. What is built and what is open now: [STATUS-2026-10-22.md](STATUS-2026-10-22.md).
+> **History (noted 2026-10-23).** This was the v3 review plan. Its decisions are D1 to D15 in [DECISIONS.md](DECISIONS.md) and almost all of it has been built since; where it says "nothing in this plan has been implemented" read it as of 2026-10-07. What is built and what is open now: [STATUS-2026-10-22.md](STATUS-2026-10-22.md). Removed in D151 (2026-10-31, tag pre-deprecation-2026-10-31): `SellRateGate`, `TieredSellRouter` and `BuybackKeeper` (F8 and the LBAMM work below no longer apply).
 
 `draft` `review` `plan` `contracts` `web` `desktop` `cli` `indexer`
 

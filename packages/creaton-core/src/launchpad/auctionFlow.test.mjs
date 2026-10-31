@@ -229,7 +229,7 @@ test("uniformAuctionSteps rejects unschedulable windows", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Plan derivation (the AuctionLauncher parameter gate)
+// Plan derivation (the parameter gate)
 // ---------------------------------------------------------------------------
 
 test("deriveAuctionDeployParams maps the record fields", () => {

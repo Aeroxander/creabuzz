@@ -1,5 +1,7 @@
 # OA.md — Autonomous Organizations as an interoperable, inspectable entity
 
+> **Removed in D151 (2026-10-31, tag pre-deprecation-2026-10-31):** the never-wired `DaoURIAdapter` (`daoURI()`); readers use the DAO's `contractURI()` and OrgBinding's `DaoBound` event, covered by `contracts/test/DaoURI.t.sol`.
+
 `draft` `design` `relay` `contracts` `cli`
 
 **Thesis.** ERC-4824 is the standards-body answer to a question the autonomous-organization

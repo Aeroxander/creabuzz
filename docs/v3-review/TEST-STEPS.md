@@ -1588,13 +1588,9 @@ By hand (the dev chain, a web build with `VITE_OPEN_BOUNTIES`, `VITE_COURTS`, `V
 
 ## 4bn. Money forecasts (D120, 2026-10-26, test networks only)
 
-Removed from the app in D150 (2026-10-31), see tag pre-deprecation-2026-10-31: only the forge and mutation steps below still apply (the post-bounty journey no longer bets).
-
-```bash
-cd contracts && forge test --match-contract ForecastPool
-scripts/web-post-bounty-e2e.sh               # the first journey puts money on both sides and collects
-node scripts/contracts-mutation-check.mjs 101 102 103 104 105 106 107 108
-```
+Removed from the app in D150 and from the contracts in D151 (2026-10-31), see tag pre-deprecation-2026-10-31: nothing
+in this section runs any more (`ForecastPool`, its forge tests and its eight mutation cases are gone, which moved every
+later mutation index down by 8; the indices below are the current ones). Kept as the historical record.
 
 By hand (a web build with `VITE_FORECAST_POOLS` too):
 
@@ -1625,7 +1621,7 @@ cd contracts && forge test --match-contract Payouts
 node scripts/check-majeur-fork.mjs           # the DAO's payout hook stays inside its patch region
 pnpm --dir packages/creaton-core test        # payouts: the two votes, their words, the reader
 scripts/web-contributor-e2e.sh               # vote payouts, revenue arrives, split, the contributor collects
-node scripts/contracts-mutation-check.mjs 109 110 111 112 113 114 115 116 117 118 119
+node scripts/contracts-mutation-check.mjs 101 102 103 104 105 106 107 108 109 110 111
 ```
 
 By hand (a web build with `VITE_PAYOUTS_FACTORIES`):
@@ -1644,7 +1640,7 @@ By hand (a web build with `VITE_PAYOUTS_FACTORIES`):
 cd contracts && forge test --match-contract RemixBond
 pnpm --dir packages/creaton-core test        # remixBond: the calls, the key, the reader, the steps
 scripts/web-contributor-e2e.sh               # Field Guide posts a 500 CREATE bond for Docs Commons
-node scripts/contracts-mutation-check.mjs 120 121 122 123 124 125 126 127
+node scripts/contracts-mutation-check.mjs 112 113 114 115 116 117 118 119
 ```
 
 By hand (a web build with `VITE_REMIX_BONDS`, `VITE_COURTS`, `VITE_CREATE_TOKENS`, `VITE_CREATE_FAUCETS`):

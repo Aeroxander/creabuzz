@@ -475,8 +475,8 @@ function auctionFailureMessage(state: AuctionDeployState): string | null {
  * track) → GraduationExecutor (the auction's funds/tokens recipient at deploy
  * time — GraduationExecutor.sol:77-91) → the CCA auction via the factory's
  * CREATE2 `create` → record link (the `auction` tag). No CLI, no pasted
- * addresses. `AuctionLauncher.registerLaunch` is deliberately not sent: it is
- * optional (the factory is the deploy path — AuctionLauncher.sol:5-9) and no
+ * addresses. No params commitment is registered onchain: the factory is the
+ * deploy path (the optional `AuctionLauncher` was removed in D151) and no
  * launcher address is pinned in the record.
  */
 function AuctionDeployPanel({

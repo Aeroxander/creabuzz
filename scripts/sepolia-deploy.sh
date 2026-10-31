@@ -87,7 +87,7 @@ fi
 step "deploying the summoner, the launch kit and the contributor kit"
 OUT="$BACKUP/forge.out"
 sepolia_deploy_kits "$RPC" "$KEY" "$OUT"
-grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|MatchedExit|CreateToken|CreateFaucet|CreateCourt|ForecastPool|PayoutsFactory|RemixBond|WeeklyRounds|Auction factory)" "$OUT" || tail -20 "$OUT"
+grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|MatchedExit|CreateToken|CreateFaucet|CreateCourt|PayoutsFactory|RemixBond|WeeklyRounds|Auction factory)" "$OUT" || tail -20 "$OUT"
 
 KIT=$(sepolia_role launch-kit)
 SUMMONER=$(sepolia_role summoner)
@@ -98,7 +98,6 @@ MATCHED_EXIT=$(sepolia_role matched-exit)
 CREATE_TOKEN=$(sepolia_role create-token)
 CREATE_FAUCET=$(sepolia_role create-faucet)
 COURT=$(sepolia_role court)
-POOLS=$(sepolia_role forecast-pool)
 PAYOUTS_FACTORY=$(sepolia_role payouts-factory)
 REMIX_BONDS=$(sepolia_role remix-bonds)
 WEEKLY_ROUNDS=$(sepolia_role weekly-rounds)
@@ -135,8 +134,6 @@ echo "  ✓ test CREATE at $CREATE_TOKEN, all of it in the faucet at $CREATE_FAU
 [[ "$(lower "$(cast call "$COURT" 'feeToken()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SEPOLIA_USDC")" ]] || fail "the court is not paid in Sepolia's USDC"
 [[ "$(lower "$(cast call "$OPEN_BOUNTY" 'court()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$COURT")" ]] || fail "bounties on posts do not appeal to this court"
 echo "  ✓ the court at $COURT stakes test CREATE and is paid in USDC; bounties on posts appeal to it"
-[[ "$(lower "$(cast call "$POOLS" 'bounties()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$OPEN_BOUNTY")" ]] || fail "the money forecast pools do not read these bounties on posts"
-echo "  ✓ money forecasts at $POOLS read the bounties on posts (contract only: removed from the app in D150)"
 [[ "$(cast codesize "$PAYOUTS_FACTORY" --rpc-url "$RPC")" != "0" ]] || fail "no code at the payouts factory $PAYOUTS_FACTORY"
 [[ "$(lower "$(cast call "$(cast call "$SUMMONER" 'mandateFactory()(address)' --rpc-url "$RPC" | first)" 'payoutsFactory()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$PAYOUTS_FACTORY")" ]] || fail "the payouts factory is not the one the DAOs accept modules from"
 echo "  ✓ the payouts factory at $PAYOUTS_FACTORY is the one the work budget factory made, the only one DAOs accept"

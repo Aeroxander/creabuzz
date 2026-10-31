@@ -48,7 +48,7 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 | The hosted image and server: first start, backups, contributor-only build | D107, D140 | `scripts/test-compose-backup.sh`; `deploy-env` tests |
 | Every screen, read as the pilot sees it | D108 to D111, D146 | `WEB_FEATURES=mvp scripts/web-screen-audit.sh`; [SCREEN-AUDIT-2026-10-24.md](SCREEN-AUDIT-2026-10-24.md) |
 | Sepolia readiness: the deploy rehearsed on a fork, every contract checked, the largest transaction under the gas cap | D85, D140 | `scripts/sepolia-deploy.sh` (rehearsal); `web-contributor-e2e.sh --sepolia-fork` |
-| Test networks only, off in the hosted build and frozen: bounties, forecasts, matched exits, CREATE and the court, money forecasts (removed from the app in D150, see tag pre-deprecation-2026-10-31), payouts, remixes, weekly rounds, funding terms | D113 to D136 | Forge suite, mutation check, `web-post-bounty-e2e.sh`, `web-rounds-e2e.sh` |
+| Test networks only, off in the hosted build and frozen: bounties, forecasts, matched exits, CREATE and the court, money forecasts (removed from the app in D150 and from the contracts in D151, see tag pre-deprecation-2026-10-31), payouts, remixes, weekly rounds, funding terms | D113 to D136 | Forge suite, mutation check, `web-post-bounty-e2e.sh`, `web-rounds-e2e.sh` |
 | The raise, as far as it goes (after the audit) | D72 to D82, D86, D87, D102 | Forge suite, simulation, the gate's later set |
 
 ## The gates

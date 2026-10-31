@@ -7,18 +7,13 @@ surface that wraps upstream primitives:
 - `src/CCA.sol` — minimal interfaces mirrored from
   `Uniswap/continuous-clearing-auction` (factory v2.1.0): graduation handoff
   (`lbpInitializationParams`), bid-gating hook (`IValidationHook`).
-- `src/AuctionLauncher.sol` — parameter gate + onchain params commitment
-  (floor, tick spacing, threshold, blocks, steps) before the CCA deploy.
 - `src/hooks/AllowlistHook.sol` — curated-track gate (allowlist + per-wallet
   caps, accumulating). Stateful, so `validate` is callable only by the auction
   the owner binds once with `setAuction`.
 - `src/hooks/TrustGatedHook.sol` — community-track gate (trustgraph score-root
   Merkle proofs, treasury-rotated roots).
-- `src/AppTokenLBPInitializer.sol` — graduation handoff: pulls final clearing
-  price / tokens sold / net raised, splits reserve (TokenMaster floor) vs
-  treasury, records pool addresses once the apptoken deployment lands.
 - `src/GraduationExecutor.sol` — apptoken graduation that actually moves the
-  money (sweep + split + escrow + release; supersedes the initializer). Bound to
+  money (sweep + split + escrow + release). Bound to
   exactly ONE auction (`bindAuction`, treasury, one-shot; ERC-20 or native ETH
   currency — `receive()` takes ETH from the bound auction only, `_pay` sends it
   for the zero currency); the reserve leaves only to the recorded pool, or back
@@ -67,6 +62,13 @@ surface that wraps upstream primitives:
   (`spend` is advisory accounting only); spends may not name a future epoch.
 - `src/OrgBinding.sol` — DAO binding records; only the first binder or the
   recorded DAO may rebind a root.
+
+Removed in D151 (recoverable from tag `pre-deprecation-2026-10-31`): the
+pre-kit raise's `AuctionLauncher` and `AppTokenLBPInitializer`, the LBAMM and
+royalty-market contracts (`SellRateGate`, `TieredSellRouter`, `BuybackKeeper`,
+`script/DeployRoyalty.s.sol`, `script/JourneyFloat.s.sol`), `ForecastPool`
+(money forecasts) and the unused `DaoURIAdapter`. `src/RoyaltyDistributor.sol`
+stays byte-identical because `ClaimStake` imports its interface.
 
 ## Trust assumptions
 
@@ -143,8 +145,7 @@ factory addresses, so the real Standard/Stable/Promo factories must be
 enabled via storage surgery on the router (`allowedTokenFactory`, slot 1;
 see plan §16). Never on mainnet: real chains use the governed admin.
 
-Next: majeur summon path for graduation, LBAMM secondary pool via
-apptoken-skills generators observing `Graduated`.
+Next: majeur summon path for graduation.
 
 ```bash
 forge build

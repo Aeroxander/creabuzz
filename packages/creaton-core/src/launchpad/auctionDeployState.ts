@@ -17,9 +17,9 @@ import type { AuctionPreflightStage } from "./auctionPlan.ts";
  * time — GraduationExecutor.sol:77-91). The hook (curated track) deploys first
  * because the auction constructor bakes its address in as `validationHook`.
  *
- * `AuctionLauncher.registerLaunch` is deliberately absent: OPTIONAL (its own
- * contract says the factory remains the deploy path, AuctionLauncher.sol:5-9)
- * and no launcher address is pinned in the record — deferred, reported.
+ * No params commitment is registered onchain: the factory is the deploy path
+ * (the optional `AuctionLauncher` was removed in D151) and no launcher address
+ * is pinned in the record.
  */
 export const AUCTION_DEPLOY_STEPS = [
   {

@@ -77,10 +77,6 @@ contract DeployLaunchKit is Script {
                 "CreateCourt.sol:CreateCourt", abi.encode(createToken, bountyCurrency, SEAT_STAKE, FEE_PER_SEAT)
             );
         address openBounty = vm.deployCode("OpenBounty.sol:OpenBounty", abi.encode(bountyCurrency, court));
-        // Money forecasts on bounties on posts (N8) are an experiment for test networks only.
-        address pools = court == address(0)
-            ? address(0)
-            : vm.deployCode("ForecastPool.sol:ForecastPool", abi.encode(bountyCurrency, openBounty));
         // Payouts to holders (N10) need counsel before any real money: test networks only. The DAOs accept modules only
         // from the factory their work budget factory made, so that is the one the app is told of.
         address payoutsFactory =
@@ -116,7 +112,6 @@ contract DeployLaunchKit is Script {
             _role("create-token", "CreateToken", createToken);
             _role("create-faucet", "CreateFaucet", createFaucet);
             _role("court", "CreateCourt", court);
-            _role("forecast-pool", "ForecastPool", pools);
             _role("payouts-factory", "PayoutsFactory", payoutsFactory);
             _role("remix-bonds", "RemixBond", remixBonds);
             _role("weekly-rounds", "WeeklyRounds", weeklyRounds);

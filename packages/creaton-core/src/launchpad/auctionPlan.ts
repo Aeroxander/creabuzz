@@ -35,12 +35,12 @@
  *   its requirement that the executor BE the auction's `fundsRecipient` AND
  *   `tokensRecipient` at deploy time (:86-91) — so it is deployed BEFORE the
  *   auction and passed as both recipients.
- * - `contracts/src/AuctionLauncher.sol:39-47` — the parameter gate. NOTE:
- *   `registerLaunch` (the params commitment, :39-64) is **OPTIONAL** for this
- *   flow — "The CCA factory remains the deployment path" (:5-9) and nothing on
- *   the deploy path consults `paramsHash`; we enforce its gates in preflight
- *   and defer the onchain registration (no launcher address is pinned in the
- *   record).
+ * - The parameter gate (once `AuctionLauncher.sol`, removed in D151; see tag
+ *   `pre-deprecation-2026-10-31`): a Q96 floor price above 2^32, a tick spacing
+ *   of at least 2, a positive threshold that fits 128 bits, and
+ *   0 < startBlock < endBlock < claimBlock. The CCA factory was always the
+ *   deployment path and never consulted a params commitment, so the gate is
+ *   enforced here in preflight and nothing is registered onchain.
  * - `contracts/lib/continuous-clearing-auction/src/ContinuousClearingAuction.sol`
  *   — graduation gating: `lbpInitializationParams()` reverts unless the end
  *   block is checkpointed AND the auction graduated (:134-141);
@@ -260,7 +260,7 @@ export function uniformAuctionSteps(
 }
 
 // ---------------------------------------------------------------------------
-// Plan inputs -> deploy plan (pure; the AuctionLauncher parameter gate)
+// Plan inputs -> deploy plan (pure; the parameter gate)
 // ---------------------------------------------------------------------------
 
 /** The launch record's sale fields (lib/launchRecord.ts + launchpadModels). */
@@ -340,7 +340,7 @@ function blockField(value: number | null, label: string): number {
 
 /**
  * Map the launch record's sale fields to the factory's `AuctionParameters`,
- * enforcing `AuctionLauncher.registerLaunch`'s parameter gate (AuctionLauncher.sol:39-47)
+ * enforcing the parameter gate (see the header; once `AuctionLauncher.sol`)
  * up front so a misconfigured sale blocks before any transaction instead of
  * reverting deep inside the factory. Throws `AuctionPrepareError("plan")`
  * naming the exact field.
@@ -389,7 +389,7 @@ export function deriveAuctionDeployParams(
   const floorPrice = orFail("floorPrice", () =>
     decimalField(inputs.floorPrice, "floorPrice"),
   );
-  // AuctionLauncher.sol:41 — a Q96 price must clear 2^32 to price anything.
+  // The gate: a Q96 price must clear 2^32 to price anything.
   if (floorPrice < (1n << 32n) + 1n) {
     fail(
       `The floor price is too low for the auction to price anything (${inputs.floorPrice}). Raise it.`,
@@ -421,7 +421,7 @@ export function deriveAuctionDeployParams(
   const claimBlock = orFail("claimBlock", () =>
     blockField(inputs.claimBlock, "claimBlock"),
   );
-  // AuctionLauncher.sol:44-46 — `BadBlocks`.
+  // The gate: the blocks run in order.
   if (startBlock === 0 || endBlock <= startBlock || claimBlock <= endBlock) {
     fail(
       `blocks must satisfy 0 < startBlock < endBlock < claimBlock (AuctionLauncher.BadBlocks): ${startBlock}, ${endBlock}, ${claimBlock}`,

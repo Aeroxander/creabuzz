@@ -5,7 +5,6 @@ import "forge-std/Test.sol";
 import {
     IContinuousClearingAuctionFactory
 } from "continuous-clearing-auction/src/interfaces/IContinuousClearingAuctionFactory.sol";
-import {AuctionLauncher} from "../src/AuctionLauncher.sol";
 
 /// @notice Sepolia fork integration. Run:
 /// `forge test --match-contract LaunchpadForkTest --fork-url $SEPOLIA_RPC_URL`
@@ -28,25 +27,5 @@ contract LaunchpadForkTest is Test {
         if (controller != address(0)) {
             assertGt(controller.code.length, 0, "protocolFeeController must be a contract or unset");
         }
-    }
-
-    function test_fork_launcher_registers() public {
-        AuctionLauncher launcher = new AuctionLauncher();
-        bytes memory steps = hex"00000000000000010000000000000002";
-        launcher.registerLaunch(
-            bytes32(uint256(42)),
-            AuctionLauncher.LaunchParams({
-                currency: address(1),
-                floorPrice: (uint256(1) << 32) + 1,
-                tickSpacing: 100,
-                requiredRaised: 100,
-                startBlock: 10,
-                endBlock: 20,
-                claimBlock: 30,
-                steps: steps,
-                validationHook: address(0)
-            })
-        );
-        assertTrue(launcher.paramsHash(bytes32(uint256(42))) != bytes32(0));
     }
 }

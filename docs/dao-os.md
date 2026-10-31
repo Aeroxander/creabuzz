@@ -2,7 +2,7 @@
 
 > **History, 2026-10-31.** The DAO OS framing (agentic Slack plus a launchpad) was replaced by the social MVP and then contributor projects with no raise (D63, D137). Where this file disagrees with [v3-review/STATUS.md](v3-review/STATUS.md) or [v3-review/DECISIONS.md](v3-review/DECISIONS.md), those win.
 
-> **Removed in D150, see tag pre-deprecation-2026-10-31:** the web royalty statement, the `buzz royalty` CLI and `scripts/journey-float.sh`. The contracts and the desktop copy stay for a later clean-up.
+> **Removed in D150, see tag pre-deprecation-2026-10-31:** the web royalty statement, the `buzz royalty` CLI and `scripts/journey-float.sh`. The desktop copy stays for a later clean-up; the float, sell-gate and buyback contracts were removed in D151 (`RoyaltyDistributor.sol` stays because `ClaimStake` imports its interface).
 
 > Agentic Slack + a DAO launchpad, wired into one loop. This is the product
 > contract the code is held to. Where an older plan (`docs/archive/ORG_COMMUNITY_PLAN.md`,
