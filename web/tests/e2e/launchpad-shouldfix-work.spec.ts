@@ -457,7 +457,7 @@ const projectPath = (tab: string) =>
 const claimCard = (page: Page) =>
   page.getByTestId("work-claim").filter({ hasText: "translate" });
 
-async function turnDown(page: Page, reason: string) {
+async function turnDown(page: Page, reason: string, cause?: string) {
   await page.goto(projectPath("work"));
   const card = claimCard(page);
   await expect(card.getByTestId("work-evidence-text")).toHaveText(EVIDENCE, {
@@ -469,6 +469,8 @@ async function turnDown(page: Page, reason: string) {
   await expect(form).toBeVisible();
   await expect(card.getByTestId("work-object-reason")).toBeFocused();
   await page.keyboard.type(reason);
+  // What was missing, counted across the project (PROJECT-CYCLE.md): optional, chosen from a short list.
+  if (cause) await card.getByTestId("work-object-cause").selectOption(cause);
   await card.getByTestId("work-object-confirm").click();
   await expect(form).toHaveCount(0, { timeout: 20_000 });
   // Their answer is in: the buttons are gone for them, and the focus is on the claim, not lost to the page.
@@ -486,7 +488,11 @@ test("two reviewers turn work down with a reason: the founder closes it from Nee
   const world: World = { status: STATUS.Open, answers: new Map(), sent: [] };
 
   const rui = await openAs(browser, "rui", relay, world);
-  await turnDown(rui, "The German page is missing. Add it and submit again.");
+  await turnDown(
+    rui,
+    "The German page is missing. Add it and submit again.",
+    "unclear-done",
+  );
   // The reason was published before the turn-down was sent, naming the claim and Rui's wallet.
   const reasons = relay.events.filter(
     (e) => e.kind === 47003 && e.content.includes('"review"'),
@@ -497,6 +503,7 @@ test("two reviewers turn work down with a reason: the founder closes it from Nee
     mandate: MANDATE,
     reviewer: PEOPLE.rui.wallet,
     verdict: "object",
+    cause: "unclear-done",
   });
   expect(world.answers.get(PEOPLE.rui.wallet)).toBe(false);
   // One of two: it waits, and the line says someone turned it down.
@@ -521,7 +528,11 @@ test("two reviewers turn work down with a reason: the founder closes it from Nee
   await expect(raeCard.getByTestId("work-object-form")).toHaveCount(0);
   await expect(raeCard.getByTestId("work-object")).toBeFocused();
   expect(world.answers.has(PEOPLE.rae.wallet)).toBe(false);
-  await turnDown(rae, "Agreed: half the headings are still in English.");
+  await turnDown(
+    rae,
+    "Agreed: half the headings are still in English.",
+    "quality",
+  );
   await expect(claimCard(rae).getByTestId("work-claim-next")).toContainText(
     "Enough reviewers turned it down",
   );
@@ -572,10 +583,20 @@ test("two reviewers turn work down with a reason: the founder closes it from Nee
   await expect(mine.getByTestId("work-claim-reason").first()).toContainText(
     "The German page is missing. Add it and submit again.",
   );
+  await expect(
+    mine
+      .getByTestId("work-claim-reason")
+      .first()
+      .getByTestId("work-claim-reason-cause"),
+  ).toHaveText('The "done when" was unclear');
   await contributor.goto(projectPath("contributions"));
   const turned = contributor.getByTestId("contribution-turned-down");
   await expect(turned).toContainText("Translate", { timeout: 20_000 });
   await expect(turned).toContainText("half the headings are still in English");
+  // Across the project, by cause: each counted once for this claim.
+  await expect(
+    contributor.getByTestId("contributions-turned-down-cause"),
+  ).toHaveText(['The "done when" was unclear: 1', "Not good enough yet: 1"]);
 });
 
 test("a reason published under a reviewer's wallet by someone else is never shown", async ({

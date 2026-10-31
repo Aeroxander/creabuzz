@@ -1,3 +1,4 @@
+import { causeLabel } from "../lib/review-reasons";
 import type { ClaimReview } from "../use-review-reasons";
 import { Linked } from "./EvidenceBlock";
 
@@ -38,9 +39,19 @@ export function ClaimReviewNote({
               <span className="block text-xs font-medium text-muted-foreground">
                 Why {labelOf(reason.reviewer)} turned it down
               </span>
-              <span className="mt-0.5 block whitespace-pre-wrap">
-                <Linked text={reason.reason} />
-              </span>
+              {reason.cause ? (
+                <span
+                  className="mt-0.5 block font-medium"
+                  data-testid="work-claim-reason-cause"
+                >
+                  {causeLabel(reason.cause)}
+                </span>
+              ) : null}
+              {reason.reason ? (
+                <span className="mt-0.5 block whitespace-pre-wrap">
+                  <Linked text={reason.reason} />
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>

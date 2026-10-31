@@ -29,6 +29,7 @@ import { useEvidencePackets } from "../use-evidence";
 import { useWalletLabels } from "../use-wallet-labels";
 import { shortAddress } from "../lib/record-people";
 import { useRecordEvents, useWork } from "../use-work";
+import { causeTally } from "../lib/review-reasons";
 import { type ClaimReview, useReviewReasons } from "../use-review-reasons";
 import { readableName, workTitle } from "../lib/work-titles";
 import { useWorkTitles } from "../use-work-titles";
@@ -295,9 +296,38 @@ function TurnedDown({
       .map((claim) => ({ mandate: mandate.address, claim })),
   );
   if (rejected.length === 0) return null;
+  // Why, across the whole project: most causes are in how the work was set up, not in the person.
+  const tally = causeTally(
+    rejected.map(({ mandate, claim }) => reviewOf(mandate, claim.id).reasons),
+  );
   return (
     <Card className="p-4" data-testid="contributions-turned-down">
       <h2 className="text-base font-bold">Turned down</h2>
+      {tally.byCause.length > 0 ? (
+        <div className="mt-2" data-testid="contributions-turned-down-causes">
+          <p className="text-sm text-muted-foreground">
+            What was missing, across the project. An unclear &ldquo;done
+            when&rdquo;, missing access or missing context is fixed by changing
+            how the work is set up, not by the person who did it.
+          </p>
+          <ul className="mt-1 flex flex-wrap gap-2">
+            {tally.byCause.map((c) => (
+              <li
+                className="rounded-full bg-secondary/60 px-2.5 py-0.5 text-xs"
+                data-testid="contributions-turned-down-cause"
+                key={c.cause}
+              >
+                {c.label}: {c.count}
+              </li>
+            ))}
+            {tally.withoutCause > 0 ? (
+              <li className="rounded-full px-2.5 py-0.5 text-xs text-muted-foreground">
+                No cause given: {tally.withoutCause}
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
       <ul className="mt-2 flex flex-col gap-3">
         {rejected.map(({ mandate, claim }) => (
           <li

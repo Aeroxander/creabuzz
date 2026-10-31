@@ -12,6 +12,10 @@
  * The reason is published before the turn-down is sent: a reason whose turn-down never landed is never shown, so a
  * failure at either step leaves nothing misleading behind, and pressing the button again finishes it.
  *
+ * A reason may also name its cause (`REASON_CAUSES`): what was missing, chosen from a short list, so turn-downs can be
+ * counted by cause across the whole project (`causeTally`). Most causes sit in how the work was set up (an unclear
+ * "done when", missing access, missing context), which the founder can fix, rather than in the person.
+ *
  * Pure and alias-free: `review-reasons.test.mjs` drives it under `node --test`.
  */
 
@@ -19,6 +23,21 @@ import { urlsIn } from "./evidence.ts";
 
 /** The most a reason can say: it travels in a signed event, and the contributor has to read it. */
 export const REASON_MAX_CHARS = 2_000;
+
+/** What a reviewer can say was missing, in the order the form offers them. */
+export const REASON_CAUSES = [
+  { key: "unclear-done", label: 'The "done when" was unclear' },
+  { key: "missing-access", label: "Missing access or information" },
+  { key: "missing-context", label: "The person or their AI lacked context" },
+  { key: "quality", label: "Not good enough yet" },
+  { key: "other", label: "Something else" },
+] as const;
+
+export type ReasonCause = (typeof REASON_CAUSES)[number]["key"];
+
+const CAUSE_KEYS: ReadonlySet<string> = new Set(
+  REASON_CAUSES.map((c) => c.key),
+);
 
 const WORD_RE = /^0x[0-9a-fA-F]{64}$/;
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -32,7 +51,9 @@ export interface ReviewReason {
   mandate: string;
   /** The wallet it says turned the claim down, lower case. */
   reviewer: string;
+  /** May be empty when the reviewer only chose a cause. */
   reason: string;
+  cause: ReasonCause | null;
 }
 
 /** The content of the update that publishes a reviewer's reason for turning a claim down. */
@@ -42,6 +63,7 @@ export function reviewReasonContent(input: {
   mandate: string;
   reviewer: string;
   reason: string;
+  cause?: ReasonCause | null;
 }): Record<string, unknown> {
   return {
     title: `Turned down: ${input.name}`,
@@ -52,6 +74,7 @@ export function reviewReasonContent(input: {
       mandate: input.mandate.toLowerCase(),
       reviewer: input.reviewer.toLowerCase(),
       verdict: "object",
+      ...(input.cause ? { cause: input.cause } : {}),
     },
   };
 }
@@ -81,11 +104,16 @@ export function parseReviewReason(event: {
     !ADDRESS_RE.test(raw.mandate) ||
     typeof raw.reviewer !== "string" ||
     !ADDRESS_RE.test(raw.reviewer) ||
-    typeof text !== "string" ||
-    text.trim() === ""
+    typeof text !== "string"
   ) {
     return null;
   }
+  const cause =
+    typeof raw.cause === "string" && CAUSE_KEYS.has(raw.cause)
+      ? (raw.cause as ReasonCause)
+      : null;
+  // A reason says something: words, a cause, or both.
+  if (text.trim() === "" && cause === null) return null;
   return {
     eventId: event.id,
     author: event.pubkey,
@@ -94,6 +122,36 @@ export function parseReviewReason(event: {
     mandate: raw.mandate.toLowerCase(),
     reviewer: raw.reviewer.toLowerCase(),
     reason: text.slice(0, REASON_MAX_CHARS),
+    cause,
+  };
+}
+
+/** The words a cause is shown with. */
+export function causeLabel(cause: ReasonCause): string {
+  return REASON_CAUSES.find((c) => c.key === cause)?.label ?? cause;
+}
+
+/**
+ * Turn-downs counted by cause across the project, from the reasons shown for each turned-down claim: a claim counts
+ * once for each cause its reviewers named, and once as "no cause given" when none did. Most common first.
+ */
+export function causeTally(perClaim: readonly (readonly ReviewReason[])[]): {
+  byCause: { cause: ReasonCause; label: string; count: number }[];
+  withoutCause: number;
+} {
+  const counts = new Map<ReasonCause, number>();
+  let withoutCause = 0;
+  for (const reasons of perClaim) {
+    const causes = new Set(reasons.flatMap((r) => (r.cause ? [r.cause] : [])));
+    if (causes.size === 0) withoutCause += 1;
+    for (const cause of causes) counts.set(cause, (counts.get(cause) ?? 0) + 1);
+  }
+  const order = REASON_CAUSES.map((c) => c.key as ReasonCause);
+  return {
+    byCause: [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || order.indexOf(a[0]) - order.indexOf(b[0]))
+      .map(([cause, count]) => ({ cause, label: causeLabel(cause), count })),
+    withoutCause,
   };
 }
 

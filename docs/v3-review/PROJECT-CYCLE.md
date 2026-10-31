@@ -1,6 +1,7 @@
 # A working cycle for teams that build with AI (proposal, 2026-10-31)
 
-**Status:** proposal, not built. It follows [PROJECT-STRUCTURE.md](PROJECT-STRUCTURE.md), whose step 1 (taking work
+**Status:** steps 1 (the aim, and why and what we expect on Now) and 2 (what was missing on a turn-down) built as
+D157 and D158; steps 3 to 5 are proposals. It follows [PROJECT-STRUCTURE.md](PROJECT-STRUCTURE.md), whose step 1 (taking work
 on, Now and Not doing) is built (D154), and reorders that document's remaining steps around one cycle.
 
 **Read for it:** *The Effective Executive* (Drucker), Deming's sayings as collected in *The Little Blue Book*, *The

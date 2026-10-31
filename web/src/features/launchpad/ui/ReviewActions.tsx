@@ -6,6 +6,8 @@ import { Button } from "@/shared/ui/button";
 
 import {
   REASON_MAX_CHARS,
+  REASON_CAUSES,
+  type ReasonCause,
   reasonProblem,
   reviewReasonContent,
 } from "../lib/review-reasons";
@@ -54,11 +56,13 @@ export function ReviewActions({
   const reasonShown = useReasonShown(reviewer);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [cause, setCause] = useState<ReasonCause | "">("");
   const [problem, setProblem] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   // The reason already published for this claim in this visit, so a retry after a failed send does not post it twice.
   const published = useRef<string | null>(null);
   const reasonId = useId();
+  const causeId = useId();
   const objectButton = useRef<HTMLButtonElement | null>(null);
   const form = useRef<HTMLFieldSetElement | null>(null);
 
@@ -77,19 +81,21 @@ export function ReviewActions({
       return;
     }
     setSending(true);
+    // What is published: the words and the cause together, so changing either publishes again.
+    const said = `${cause}|${text}`;
     try {
-      if (text && published.current !== text) {
+      if ((text || cause) && published.current !== said) {
         // Read again now: a reason the contributor would never be shown is not published.
         const shown = await reasonShown.check();
         if (shown === null) {
           setProblem(
-            "Couldn't check that the contributor can see your reason, so nothing was sent. Try again, or clear the reason to turn it down without one.",
+            "Couldn't check that the contributor can see your reason, so nothing was sent. Try again, or leave the reason and what was missing empty to turn it down without one.",
           );
           return;
         }
         if (!shown) {
           setProblem(
-            "This account isn't linked to your name, so the contributor would not see your reason. Nothing was sent. Link it first, or clear the reason to turn it down without one.",
+            "This account isn't linked to your name, so the contributor would not see your reason. Nothing was sent. Link it first, or leave the reason and what was missing empty to turn it down without one.",
           );
           return;
         }
@@ -104,12 +110,13 @@ export function ReviewActions({
               mandate,
               reviewer,
               reason: text,
+              cause: cause || null,
             }),
           });
-          published.current = text;
+          published.current = said;
         } catch {
           setProblem(
-            "Your reason could not be published, so nothing was sent. Try again, or clear the reason to turn it down without one.",
+            "Your reason could not be published, so nothing was sent. Try again, or leave the reason and what was missing empty to turn it down without one.",
           );
           return;
         }
@@ -130,6 +137,7 @@ export function ReviewActions({
         // was about rather than falling to the page.
         setOpen(false);
         setReason("");
+        setCause("");
         requestAnimationFrame(() => card?.focus());
       }
     } finally {
@@ -198,6 +206,26 @@ export function ReviewActions({
               placeholder="What is missing, or what would make it pass"
               value={reason}
             />
+          </label>
+          <label className="grid gap-1 text-xs" htmlFor={causeId}>
+            What was missing? Counted across the project, so the team can see
+            what to fix in how work is set up.
+            <select
+              className="h-8 w-fit rounded-md border border-black/10 bg-white px-2 text-sm text-black dark:border-white/10 dark:bg-white/5 dark:text-white"
+              data-testid="work-object-cause"
+              id={causeId}
+              onChange={(event) =>
+                setCause(event.target.value as ReasonCause | "")
+              }
+              value={cause}
+            >
+              <option value="">Choose one (optional)</option>
+              {REASON_CAUSES.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
           </label>
           {reasonShown.shown === false ? (
             <div

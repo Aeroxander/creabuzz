@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   boundWallets,
+  causeTally,
   parseReviewReason,
   REASON_MAX_CHARS,
   reasonProblem,
@@ -237,4 +238,70 @@ test("before a reason is published, the form asks what the filter asks: is the s
     reasonsFor({ id: CLAIM, mandate: BUDGET }, reasons, [RAE], bound),
     [],
   );
+});
+
+test("a reason can name what was missing, with or without words, and an unknown cause is ignored", () => {
+  const withCause = reviewReasonContent({
+    name: "translate",
+    claimId: CLAIM,
+    mandate: BUDGET,
+    reviewer: RUI,
+    reason: "",
+    cause: "unclear-done",
+  });
+  const parsed = parseReviewReason(event(RUI_KEY, 5, withCause));
+  assert.equal(parsed?.cause, "unclear-done");
+  assert.equal(parsed?.reason, "");
+  // Words alone still make a reason, with no cause.
+  const words = parseReviewReason(
+    event(
+      RUI_KEY,
+      6,
+      reviewReasonContent({
+        name: "translate",
+        claimId: CLAIM,
+        mandate: BUDGET,
+        reviewer: RUI,
+        reason: "The test fails",
+      }),
+    ),
+  );
+  assert.equal(words?.cause, null);
+  // Neither words nor a cause it knows: not a reason.
+  const unknown = {
+    ...withCause,
+    review: { ...withCause.review, cause: "laziness" },
+  };
+  assert.equal(parseReviewReason(event(RUI_KEY, 7, unknown)), null);
+});
+
+test("turn-downs are counted by cause across the project, once per claim", () => {
+  const reason = (cause, reviewer = RUI) => ({
+    eventId: `${cause}${reviewer}`,
+    author: RUI_KEY,
+    createdAt: 1,
+    claimId: CLAIM,
+    mandate: BUDGET,
+    reviewer,
+    reason: "",
+    cause,
+  });
+  const tally = causeTally([
+    // Two reviewers named the same cause for one claim: it counts once.
+    [reason("unclear-done"), reason("unclear-done", `0x${"99".repeat(20)}`)],
+    [reason("unclear-done"), reason("quality", `0x${"99".repeat(20)}`)],
+    [reason("missing-access")],
+    [reason(null)],
+    [],
+  ]);
+  assert.deepEqual(
+    tally.byCause.map((c) => [c.cause, c.count]),
+    [
+      ["unclear-done", 2],
+      ["missing-access", 1],
+      ["quality", 1],
+    ],
+  );
+  assert.equal(tally.withoutCause, 2);
+  assert.equal(tally.byCause[0].label, 'The "done when" was unclear');
 });
