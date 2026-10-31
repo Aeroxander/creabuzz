@@ -127,11 +127,12 @@ which the contracts CI lane sets).
 
 ## Minting (apptoken, local)
 
-One command mints a Standard-pool apptoken (ERC-20C, native pairing, Vanilla
+Development only: since D150 the command is hidden and refused unless
+`BUZZ_DEV_RAISE_COMMANDS=1` is set. One command mints a Standard-pool apptoken (ERC-20C, native pairing, Vanilla
 validator ruleset, initial supply to treasury):
 
 ```bash
-./target/debug/buzz launchpad mint-token --name 'Nebula' --symbol NEB \
+BUZZ_DEV_RAISE_COMMANDS=1 ./target/debug/buzz launchpad mint-token --name 'Nebula' --symbol NEB \
   --supply 1000000 --treasury 0x... --rpc-url http://127.0.0.1:8545 \
   --contracts-dir contracts
 ```

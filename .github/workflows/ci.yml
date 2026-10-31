@@ -93,6 +93,9 @@ jobs:
               - 'packages/**'
               - 'pnpm-lock.yaml'
               - 'knip.jsonc'
+              - 'package.json'
+              - 'desktop/src/**'
+              - 'scripts/**/*.mjs'
             contracts:
               - 'contracts/**'
               - '.gitmodules'

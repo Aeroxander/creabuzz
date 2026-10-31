@@ -174,7 +174,6 @@ trade, each labelled as what it is.
 scripts/web-decisions-e2e.sh        # a decision opened elsewhere is read, backed, waited out and run in the page
 scripts/web-dao-journey-e2e.sh      # budget -> project -> claim -> review -> payout -> award, all in pages
 scripts/web-paid-work-e2e.sh        # the same with money: a paid claim with a deposit, and the contributor is paid
-LBAMM_DIR=~/lbamm-examples scripts/web-market-journey-e2e.sh   # a market voted in, traded on the launch page, fees collected, a payment out
 ```
 
 Working looks like `1 passed` for each. To try it by hand, run `just dev-chain`, build the web app with the env lines it
@@ -1589,11 +1588,10 @@ By hand (the dev chain, a web build with `VITE_OPEN_BOUNTIES`, `VITE_COURTS`, `V
 
 ## 4bn. Money forecasts (D120, 2026-10-26, test networks only)
 
-Removed from the app in D150 (2026-10-31), see tag pre-deprecation-2026-10-31: only the forge and mutation steps below still apply.
+Removed from the app in D150 (2026-10-31), see tag pre-deprecation-2026-10-31: only the forge and mutation steps below still apply (the post-bounty journey no longer bets).
 
 ```bash
 cd contracts && forge test --match-contract ForecastPool
-pnpm --dir packages/creaton-core test        # forecastPool: when bets are open, the bars, payouts
 scripts/web-post-bounty-e2e.sh               # the first journey puts money on both sides and collects
 node scripts/contracts-mutation-check.mjs 101 102 103 104 105 106 107 108
 ```
@@ -1917,8 +1915,8 @@ On the test network, a contributor project with two reviewers and "Let any one d
 
 On the hosted image (contributor-only), signed out, then as a member, on a laptop and a phone:
 
-1. Discover, the Home rail, Your work and the Launchpad say nothing about sales, raising, backing or markets; `/markets`
-   goes back to Discover.
+1. Discover, the Home rail, Your work and the Launchpad say nothing about sales, raising, backing or markets. (`/markets` itself
+   was removed in D150 and now shows the not-found page.)
 2. Communities are named by name; Home, a board and a project page scroll, and Back returns to where you were.
 3. Make an account without a passkey, open the payment wallet dialog: it says how to add a passkey, and after adding one
    you are still the same person (same name, same posts).
