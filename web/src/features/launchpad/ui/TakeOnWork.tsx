@@ -29,6 +29,7 @@ import type { OpenWorkArea } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { useProjectFocus, useTakenOn } from "../use-project-structure";
 import { FormField, TextField } from "./decision-fields";
+import { TakeOnInterview } from "./TakeOnInterview";
 
 function day(seconds: number): string {
   return new Date(seconds * 1000).toLocaleDateString(undefined, {
@@ -48,6 +49,8 @@ function TakeOnWork({
   nameOf,
   inNow,
   publish,
+  title,
+  words,
 }: {
   /** The work area, as `<budget>:<work-area-id>`. */
   area: string;
@@ -62,6 +65,9 @@ function TakeOnWork({
   nameOf: (pubkey: string) => string;
   /** The founder named this work area under Now. */
   inNow: boolean;
+  /** The work area's title and its words, for the newcomer interviewer. */
+  title: string;
+  words: string | null;
   publish: (template: {
     kind: number;
     tags: string[][];
@@ -72,6 +78,8 @@ function TakeOnWork({
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  // A draft the AI wrote (TakeOnInterview) is read before it is saved: keeping it or changing it clears this.
+  const [aiDrafted, setAiDrafted] = useState(false);
   const now = nowSeconds();
   const live = mine && !mine.released && mine.until > now ? mine : null;
   const lapsed = mine && !mine.released && mine.until <= now ? mine : null;
@@ -136,6 +144,39 @@ function TakeOnWork({
           data-testid="take-on-form"
         >
           {mine === null ? (
+            <TakeOnInterview
+              areaTitle={title}
+              doneWhen={words}
+              onDraft={(next) => {
+                setDraft(next);
+                setAiDrafted(true);
+                setFailure(null);
+              }}
+            />
+          ) : null}
+          {aiDrafted ? (
+            <p
+              className="flex flex-wrap items-center gap-2 text-xs"
+              data-testid="take-on-ai-drafted"
+              role="status"
+            >
+              Drafted by the AI from your answers. Read it and change anything
+              that is not right.
+              <Button
+                data-testid="take-on-keep-draft"
+                onClick={() => {
+                  setAiDrafted(false);
+                  setFailure(null);
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Keep this draft
+              </Button>
+            </p>
+          ) : null}
+          {mine === null ? (
             // A first piece here: what a good answer looks like, before the boxes.
             <details className="text-xs" data-testid="take-on-examples">
               <summary className="cursor-pointer font-medium">
@@ -160,7 +201,10 @@ function TakeOnWork({
           <TextField
             error={errorFor("deliver")}
             label="What you will deliver"
-            onChange={(value) => setDraft({ ...draft, deliver: value })}
+            onChange={(value) => {
+              setDraft({ ...draft, deliver: value });
+              setAiDrafted(false);
+            }}
             placeholder="A first guide to submitting work"
             testId="take-on-deliver"
             value={draft.deliver}
@@ -169,7 +213,10 @@ function TakeOnWork({
             error={errorFor("for")}
             hint="The people it is for. Ask them what they need before you start."
             label="Who will use it"
-            onChange={(value) => setDraft({ ...draft, for: value })}
+            onChange={(value) => {
+              setDraft({ ...draft, for: value });
+              setAiDrafted(false);
+            }}
             placeholder="New contributors"
             testId="take-on-for"
             value={draft.for}
@@ -183,9 +230,10 @@ function TakeOnWork({
               <Input
                 {...props}
                 data-testid="take-on-until"
-                onChange={(e) =>
-                  setDraft({ ...draft, untilDay: e.target.value })
-                }
+                onChange={(e) => {
+                  setDraft({ ...draft, untilDay: e.target.value });
+                  setAiDrafted(false);
+                }}
                 type="date"
                 value={draft.untilDay}
               />
@@ -202,6 +250,12 @@ function TakeOnWork({
               disabled={busy}
               onClick={() => {
                 setTried(true);
+                if (aiDrafted) {
+                  setFailure(
+                    "Read the draft the AI wrote, then keep it or change it.",
+                  );
+                  return;
+                }
                 if (takeOnProblem(draft, nowSeconds())) return;
                 void send(
                   takeOnFromDraft(draft, { launch, area, now: nowSeconds() }),
@@ -316,6 +370,8 @@ export function useTakingSlot(
         <TakeOnWork
           area={key}
           inNow={nowAreas.has(key)}
+          title={area.title}
+          words={area.words}
           launch={coordinate}
           me={me}
           mine={myTaking(records ?? [], me, key)}

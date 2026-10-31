@@ -13,6 +13,7 @@ import { isContributorProject } from "../lib/funding";
 import { Input } from "@/shared/ui/input";
 import { ethCall, getRpcEndpoint } from "../chain";
 import { formatUnits, parseUnits } from "@creaton/core/launchpad/daoActions.ts";
+import { WorkCheckAi } from "./WorkCheckAi";
 import {
   evidenceProblem,
   evidenceUpdateContent,
@@ -637,6 +638,12 @@ export function FileClaimCard({
           <span className="text-xs text-muted-foreground">
             Both are added to your evidence, so reviewers read them.
           </span>
+          <WorkCheckAi
+            doneWhen={check}
+            evidence={evidence}
+            met={met}
+            notMet={notMet}
+          />
         </div>
       </div>
       {holdsMoney ? (

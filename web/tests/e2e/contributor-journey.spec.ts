@@ -404,6 +404,32 @@ test("a contributor project is started from the page, work is claimed the same d
   );
 
   const contributor = await context.newPage();
+  // A stand-in for the server's AI service for this contributor: the newcomer interviewer and the check before submitting.
+  await contributor.route("**/llm/chat/completions", async (route) => {
+    const body = route.request().postData() ?? "";
+    if (body === "{}") return route.fulfill({ status: 400, body: "{}" });
+    const content = body.includes("Draft what this person will take on")
+      ? {
+          deliver: "A one-page guide to submitting work",
+          for: "people joining this week",
+          days: 7,
+        }
+      : body.includes("Compare the work")
+        ? {
+            gaps: [
+              "I could not open the link: say in a line which pages changed.",
+            ],
+          }
+        : null;
+    if (!content) return route.fulfill({ status: 500, body: "{}" });
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(content) } }],
+      }),
+    });
+  });
   await open(contributor, CONTRIBUTOR, projectPath("work"));
   await expect(contributor.getByTestId("work-projects")).toContainText("docs", {
     timeout: 30_000,
@@ -421,6 +447,26 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(docsCard.getByTestId("take-on-form")).toContainText(
     "Say what you will deliver",
   );
+  // A first piece here: the AI interviewer asks three short questions and drafts the form, which must be read.
+  await docsCard.getByTestId("take-on-interview").click();
+  await docsCard
+    .getByTestId("take-on-interview-good")
+    .fill("Writing clear steps");
+  await docsCard.getByTestId("take-on-interview-next").click();
+  await docsCard.getByTestId("take-on-interview-time").fill("Two evenings");
+  await docsCard.getByTestId("take-on-interview-next").click();
+  await docsCard.getByTestId("take-on-interview-next").click();
+  await docsCard.getByTestId("take-on-interview-draft").click();
+  await expect(docsCard.getByTestId("take-on-deliver")).toHaveValue(
+    "A one-page guide to submitting work",
+    { timeout: 30_000 },
+  );
+  await expect(docsCard.getByTestId("take-on-ai-drafted")).toBeVisible();
+  await docsCard.getByTestId("take-on-save").click();
+  await expect(docsCard.getByTestId("take-on-failed")).toContainText(
+    "Read the draft the AI wrote",
+  );
+  // Changing it counts as reading it.
   await docsCard.getByTestId("take-on-deliver").fill("A first guide");
   await docsCard.getByTestId("take-on-for").fill("new contributors");
   await docsCard.getByTestId("take-on-save").click();
@@ -576,6 +622,7 @@ test("a contributor project is started from the page, work is claimed the same d
     CHECK,
     "write-docs",
     "https://example.com/pr/1",
+    true,
   );
   // Their own work, waiting on someone else, is said on the project's page.
   await refresh(contributor, "Overview");
@@ -993,6 +1040,7 @@ async function submitFromWaysToHelp(
   words: string,
   name: string,
   evidence: string,
+  aiCheck = false,
 ) {
   const way = page.locator(`[data-testid="way-to-help"][data-area="${area}"]`);
   await expect(way.getByTestId("way-to-help-words")).toHaveText(words, {
@@ -1008,6 +1056,14 @@ async function submitFromWaysToHelp(
   await page
     .getByTestId("work-claim-met")
     .fill("Checked it against the work area's words");
+  if (aiCheck) {
+    // With the AI service on, the work is checked against its words first; only the submitter sees the answer.
+    await page.getByTestId("work-claim-ai-check").click();
+    await expect(page.getByTestId("work-claim-ai-gaps")).toContainText(
+      "I could not open the link",
+      { timeout: 30_000 },
+    );
+  }
   await page.getByTestId("work-claim-submit").click();
   await expect(page.getByTestId("work-claim-filed")).toBeVisible({
     timeout: 90_000,

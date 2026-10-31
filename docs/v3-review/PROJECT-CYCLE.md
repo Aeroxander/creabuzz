@@ -1,8 +1,6 @@
 # A working cycle for teams that build with AI (proposal, 2026-10-31)
 
-**Status:** steps 1 (the aim, and why and what we expect on Now) and 2 (what was missing on a turn-down) built as
-D157 and D158; steps 3 to 5 are proposals. It follows [PROJECT-STRUCTURE.md](PROJECT-STRUCTURE.md), whose step 1 (taking work
-on, Now and Not doing) is built (D154), and reorders that document's remaining steps around one cycle.
+**Status:** built, every step: the aim and predictions (D157), what was missing on a turn-down (D158), the check note (D159 to D162), the challenge before money votes (D164, D165), checking work before submitting and a newcomer's first week (D166 to D168). AI parts appear only when the server's AI service is on.
 
 **Read for it:** *The Effective Executive* (Drucker), Deming's sayings as collected in *The Little Blue Book*, *The
 AI-Driven Leader* (Woods), and a set of Agile certification notes (the gist you shared). One correction: the gist is not

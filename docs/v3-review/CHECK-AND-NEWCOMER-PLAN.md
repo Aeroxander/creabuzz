@@ -1,6 +1,6 @@
 # Checking work before it is submitted, and a newcomer's first week: plan (2026-10-31)
 
-**Status:** build steps 1 and 2 done (D166, D167); step 3 (the AI check of work and the AI interviewer) not built.
+**Status:** built: steps 1 to 3 (D166 to D168). The AI helpers appear only when the server's AI service is on.
 
 ## 1. A check before submitting
 
