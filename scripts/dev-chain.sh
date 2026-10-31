@@ -1236,6 +1236,18 @@ up() {
   echo "════════════════════════ dev-chain (LOCAL ANVIL ONLY) ════════════════════"
   echo "rpc:      $RPC_URL (chain id $CHAIN_ID)"
 
+  # A chain with no blocks has nothing deployed, so every manifest for its id is left over from another chain. Kept,
+  # one can name an address this chain gives to a different contract that passes the "already deployed" check (a
+  # matched exit skipped because a work bounty landed at its old address and pays in the same currency).
+  if [[ "$(cast block-number --rpc-url "$RPC_URL" 2>/dev/null || echo "?")" == "0" ]]; then
+    local stale
+    for stale in "$DEPLOYMENTS_DIR"/*-"$CHAIN_ID".json; do
+      [[ -f "$stale" ]] || continue
+      echo "── fresh chain: dropping $(basename "$stale"), left over from an earlier chain"
+      rm -f "$stale"
+    done
+  fi
+
   load_apptoken_infra
   deploy_org_dao
   deploy_currency
