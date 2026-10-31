@@ -448,6 +448,24 @@ test("a contributor project is started from the page, work is claimed the same d
   await founder.route("**/llm/chat/completions", async (route) => {
     const body = route.request().postData() ?? "";
     if (body === "{}") return route.fulfill({ status: 400, body: "{}" });
+    // The challenge before a vote asks twice: follow-ups, then a summary.
+    const reply = (content: unknown) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(content) } }],
+        }),
+      });
+    if (body.includes("follow-up questions"))
+      return reply({
+        followUps: ["What would make 25 Shares fair for one page?"],
+      });
+    if (body.includes("three-line summary of this challenge"))
+      return reply({
+        summary:
+          "It works if the docs stay current; against it, 25 Shares is a lot for one page; instead, award less.",
+      });
     expect(body).toContain("Ship the first guide");
     return route.fulfill({
       status: 200,
@@ -739,6 +757,21 @@ test("a contributor project is started from the page, work is claimed the same d
   await founder
     .getByTestId("decision-challenge-caseAgainst")
     .fill("Twenty-five Shares is a lot for one page");
+  // With the AI service on, it presses on the answers and drafts a summary that must be read before the vote opens.
+  await founder.getByTestId("decision-challenge-ai-ask").click();
+  await founder
+    .getByTestId("decision-challenge-followup-0")
+    .fill("It matches the docs area's per-page rate", { timeout: 30_000 });
+  await founder.getByTestId("decision-challenge-ai-summary").click();
+  await expect(founder.getByTestId("decision-challenge-summary")).toHaveValue(
+    /^It works if the docs stay current/,
+    { timeout: 30_000 },
+  );
+  await founder.getByTestId("decision-draft-submit").click();
+  await expect(founder.getByTestId("decision-challenge-failed")).toContainText(
+    "Read the summary the AI drafted",
+  );
+  await founder.getByTestId("decision-challenge-summary-accept").click();
   await founder.getByTestId("decision-draft-submit").click();
   await expect(founder.getByTestId("decision-opened")).toBeVisible({
     timeout: 60_000,
@@ -752,6 +785,15 @@ test("a contributor project is started from the page, work is claimed the same d
     "Twenty-five Shares is a lot for one page",
   );
   await expect(challenged).toContainText("Skipped.");
+  await expect(
+    challenged.getByTestId("decision-challenged-summary"),
+  ).toContainText("It works if the docs stay current");
+  await expect(challenged).toContainText(
+    "What would make 25 Shares fair for one page? (asked by the AI)",
+  );
+  await expect(challenged).toContainText(
+    "It matches the docs area's per-page rate",
+  );
   const brief = founder.getByTestId("decision-check-note").first();
   await expect(brief).toContainText(
     "Before you vote: read the latest check note",

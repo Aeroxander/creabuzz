@@ -1,7 +1,6 @@
 # The challenger before a vote: plan (2026-10-31)
 
-**Status:** build step 1 done (D164); steps 2 and 3 not built. Step 1 publishes the answers before the vote opens (its id is read from the DAO first), so it needs no retry queue: an answer whose vote never opened is never shown. It is step 4 of [PROJECT-CYCLE.md](PROJECT-CYCLE.md). It builds on the check note
-(D159 to D162) and on the same server AI service (`api/llm_gateway.rs`).
+**Status:** build steps 1 and 2 done (D164, D165); step 3 (Now items) not built. Step 1 publishes the answers before the vote opens (its id is read from the DAO first), so it needs no retry queue.
 
 ## What it is
 

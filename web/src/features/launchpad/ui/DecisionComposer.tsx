@@ -34,11 +34,13 @@ import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
 import { erc20BalanceOf, ethCall, getRpcEndpoint } from "../chain";
 import {
   type ChallengeAnswers,
+  type ChallengeExtras,
   challengeAnswered,
   challengeContent,
   challengeProblem,
   EMPTY_CHALLENGE,
   KIND_CHALLENGE,
+  NO_EXTRAS,
 } from "@creaton/core/launchpad/challenge.ts";
 import { proposalIdCall } from "@creaton/core/launchpad/decisions.ts";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
@@ -270,6 +272,9 @@ export function DecisionComposer({
   // before the vote opens and naming it by the id the DAO will give it. A record nobody would be shown is not published.
   const challenged = launch !== undefined && MONEY_KINDS.has(kind);
   const [against, setAgainst] = useState<ChallengeAnswers>(EMPTY_CHALLENGE);
+  // The AI's follow-ups and summary (step 2), when the server's AI service is on; the summary must be read first.
+  const [extras, setExtras] = useState<ChallengeExtras>(NO_EXTRAS);
+  const [summaryToRead, setSummaryToRead] = useState(false);
   const [againstFailure, setAgainstFailure] = useState<string | null>(null);
   const shown = useReasonShown(ctx.wallet ?? "");
   const queryClient = useQueryClient();
@@ -282,7 +287,13 @@ export function DecisionComposer({
     voteNonce: string,
   ): Promise<boolean> => {
     if (!challenged || !launch || !challengeAnswered(against)) return true;
-    const problem = challengeProblem(against);
+    if (summaryToRead) {
+      setAgainstFailure(
+        "Read the summary the AI drafted, then accept it or change it, before the vote opens.",
+      );
+      return false;
+    }
+    const problem = challengeProblem(against, extras);
     if (problem) {
       setAgainstFailure(problem);
       return false;
@@ -317,6 +328,7 @@ export function DecisionComposer({
               proposer: ctx.wallet,
               title: draft.title,
               answers: against,
+              extras,
             }),
           ),
         },
@@ -356,6 +368,8 @@ export function DecisionComposer({
     if (landed) {
       setDone(draft.title);
       setAgainst(EMPTY_CHALLENGE);
+      setExtras(NO_EXTRAS);
+      setSummaryToRead(false);
       setFormKey((k) => k + 1);
       setOpen(false);
       // The chain keeps only the hash of a work area's words: publish the words, so people can see what to deliver.
@@ -487,10 +501,17 @@ export function DecisionComposer({
               </button>
             ))}
           </fieldset>
-          {challenged ? (
+          {challenged && launch ? (
             <ChallengeQuestions
+              extras={extras}
+              kindLabel={KINDS.find((k) => k.id === kind)?.label ?? kind}
+              launch={launch}
               notShown={notShown}
               onChange={setAgainst}
+              onExtras={setExtras}
+              onSummaryRead={() => setSummaryToRead(false)}
+              onSummaryToRead={() => setSummaryToRead(true)}
+              summaryToRead={summaryToRead}
               value={against}
             />
           ) : null}

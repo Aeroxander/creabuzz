@@ -13,6 +13,23 @@
 import { KIND_LAUNCH_UPDATE } from "../kinds.generated.ts";
 
 const ANSWER_MAX = 400;
+/** At most this many AI follow-up questions (CHALLENGER-PLAN.md step 2). */
+export const MAX_FOLLOW_UPS = 2;
+const SUMMARY_MAX = 600;
+
+/** A follow-up the AI asked, and the answer (empty when skipped). */
+export interface FollowUp {
+  question: string;
+  answer: string;
+}
+
+/** What goes out with the vote beyond the three answers: the AI's follow-ups and the accepted summary, when used. */
+export interface ChallengeExtras {
+  followUps: FollowUp[];
+  summary: string;
+}
+
+export const NO_EXTRAS: ChallengeExtras = { followUps: [], summary: "" };
 const WORD_RE = /^0x[0-9a-f]{64}$/;
 const ADDRESS_RE = /^0x[0-9a-f]{40}$/;
 
@@ -54,12 +71,20 @@ export const CHALLENGED_KINDS: ReadonlySet<string> = new Set([
 ]);
 
 /** What is wrong with the answers as typed, or null. Skipping is allowed. */
-export function challengeProblem(answers: ChallengeAnswers): string | null {
-  return CHALLENGE_QUESTIONS.some(
-    (q) => [...answers[q.key].trim()].length > ANSWER_MAX,
+export function challengeProblem(
+  answers: ChallengeAnswers,
+  extras: ChallengeExtras = NO_EXTRAS,
+): string | null {
+  if (
+    CHALLENGE_QUESTIONS.some(
+      (q) => [...answers[q.key].trim()].length > ANSWER_MAX,
+    ) ||
+    extras.followUps.some((f) => [...f.answer.trim()].length > ANSWER_MAX)
   )
-    ? `Keep each answer under ${ANSWER_MAX} characters.`
-    : null;
+    return `Keep each answer under ${ANSWER_MAX} characters.`;
+  if ([...extras.summary.trim()].length > SUMMARY_MAX)
+    return `Keep the summary under ${SUMMARY_MAX} characters.`;
+  return null;
 }
 
 /** Whether anything was answered: with nothing, no record is published and the vote reads as not challenged. */
@@ -73,23 +98,39 @@ export function challengeContent(input: {
   proposer: string;
   title: string;
   answers: ChallengeAnswers;
+  extras?: ChallengeExtras;
 }): Record<string, unknown> {
-  const problem = challengeProblem(input.answers);
+  const extras = input.extras ?? NO_EXTRAS;
+  const problem = challengeProblem(input.answers, extras);
   if (problem) throw new Error(problem);
   const answers = Object.fromEntries(
     CHALLENGE_QUESTIONS.map((q) => [q.key, input.answers[q.key].trim()]),
   );
   return {
     title: `Before the vote: ${input.title}`,
-    body: CHALLENGE_QUESTIONS.map(
-      (q) => `${q.label} ${input.answers[q.key].trim() || "(skipped)"}`,
-    ).join("\n"),
+    body: [
+      ...(extras.summary.trim() ? [extras.summary.trim()] : []),
+      ...CHALLENGE_QUESTIONS.map(
+        (q) => `${q.label} ${input.answers[q.key].trim() || "(skipped)"}`,
+      ),
+      ...extras.followUps.map(
+        (f) => `${f.question} ${f.answer.trim() || "(skipped)"}`,
+      ),
+    ].join("\n"),
     links: [],
     challenge: {
       v: 1,
       decision: input.decision.toLowerCase(),
       proposer: input.proposer.toLowerCase(),
       answers,
+      ...(extras.followUps.length
+        ? {
+            followUps: extras.followUps
+              .slice(0, MAX_FOLLOW_UPS)
+              .map((f) => ({ question: f.question, answer: f.answer.trim() })),
+          }
+        : {}),
+      ...(extras.summary.trim() ? { summary: extras.summary.trim() } : {}),
     },
   };
 }
@@ -105,6 +146,8 @@ export interface Challenge {
   /** The wallet it says opened the vote, lower case. */
   proposer: string;
   answers: ChallengeAnswers;
+  followUps: FollowUp[];
+  summary: string;
 }
 
 /** A challenge out of a launch update, or null when the update is not one. */
@@ -150,6 +193,20 @@ export function parseChallenge(event: {
     decision: raw.decision,
     proposer: raw.proposer,
     answers,
+    followUps: Array.isArray(raw.followUps)
+      ? raw.followUps.slice(0, MAX_FOLLOW_UPS).flatMap((f) =>
+          f && typeof f.question === "string" && typeof f.answer === "string"
+            ? [
+                {
+                  question: f.question.slice(0, ANSWER_MAX),
+                  answer: f.answer.slice(0, ANSWER_MAX),
+                },
+              ]
+            : [],
+        )
+      : [],
+    summary:
+      typeof raw.summary === "string" ? raw.summary.slice(0, SUMMARY_MAX) : "",
   };
 }
 
