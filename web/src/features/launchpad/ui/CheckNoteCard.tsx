@@ -25,6 +25,13 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
+import {
+  checkDraftPrompt,
+  parseCheckDraft,
+} from "@creaton/core/launchpad/checkNoteAi.ts";
+import { useLlmGateway } from "@/features/fleet/use-llm-gateway";
+
+import { askAi } from "../ask-ai";
 import { causeLabel } from "../lib/review-reasons";
 import { workTitle } from "../lib/work-titles";
 import type { Launch } from "../models";
@@ -255,6 +262,13 @@ function CheckNoteForm({
     reviewOf,
   ]);
   const [edits, setEdits] = useState<CheckNote | null>(null);
+  // The AI draft (CHECK-NOTE-PLAN.md step 4), offered only when the server has its AI service on: a summary the founder
+  // must accept or edit, and one question per Now item that is shown, never published.
+  const gateway = useLlmGateway();
+  const [questions, setQuestions] = useState<string[] | null>(null);
+  const [summaryToRead, setSummaryToRead] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [draftFailure, setDraftFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const note = edits ?? start;
@@ -269,7 +283,35 @@ function CheckNoteForm({
       </Card>
     );
   }
-  const problem = checkNoteProblem(note);
+  const problem =
+    checkNoteProblem(note) ??
+    (summaryToRead
+      ? "Read the summary the AI drafted, then accept it or change it."
+      : null);
+  const draftWithAi = async () => {
+    setDrafting(true);
+    setDraftFailure(null);
+    try {
+      const prompt = checkDraftPrompt(note, focus.query.data?.aim ?? "");
+      const draft = parseCheckDraft(
+        await askAi(prompt.system, prompt.user),
+        note.items.length,
+      );
+      if (!draft) {
+        setDraftFailure(
+          "The AI's answer could not be read. Try again, or write it yourself.",
+        );
+        return;
+      }
+      setEdits({ ...note, summary: draft.summary });
+      setQuestions(draft.questions);
+      setSummaryToRead(true);
+    } catch (error) {
+      setDraftFailure(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDrafting(false);
+    }
+  };
   const set = (patch: Partial<CheckNote>) => setEdits({ ...note, ...patch });
   const setItem = (i: number, patch: Partial<CheckNote["items"][number]>) =>
     set({
@@ -369,6 +411,15 @@ function CheckNoteForm({
               value={item.becomes}
             />
           ) : null}
+          {questions?.[i] ? (
+            <p
+              className="rounded-md bg-sky-50 px-2 py-1 text-sm text-sky-900 dark:bg-sky-950 dark:text-sky-100"
+              data-testid={`check-note-question-${i}`}
+            >
+              <span className="font-medium">A question to consider (AI):</span>{" "}
+              {questions[i]}
+            </p>
+          ) : null}
         </fieldset>
       ))}
       <div
@@ -412,6 +463,67 @@ function CheckNoteForm({
         testId="check-note-change"
         value={note.change}
       />
+      {gateway === "available" ? (
+        <div className="flex flex-col gap-1" data-testid="check-note-ai">
+          <Button
+            aria-busy={drafting}
+            className="w-fit"
+            data-testid="check-note-ai-draft"
+            disabled={drafting}
+            onClick={() => void draftWithAi()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {drafting
+              ? "Asking the AI…"
+              : "Draft a summary and questions with AI"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            It sees only what is on this form and the project&apos;s aim. You
+            read and edit what it writes; it decides nothing.
+          </p>
+          {draftFailure ? (
+            <p
+              className="text-xs text-destructive"
+              data-testid="check-note-ai-failed"
+              role="alert"
+            >
+              {draftFailure}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {note.summary || summaryToRead ? (
+        <div className="flex flex-col gap-1">
+          <TextAreaField
+            hint={
+              summaryToRead
+                ? "Drafted by AI from the facts above. Read it, fix anything that is wrong, then accept it."
+                : undefined
+            }
+            label="Summary"
+            onChange={(summary) => {
+              set({ summary });
+              setSummaryToRead(false);
+            }}
+            testId="check-note-summary"
+            value={note.summary}
+          />
+          {summaryToRead ? (
+            <Button
+              className="w-fit"
+              data-testid="check-note-summary-accept"
+              onClick={() => setSummaryToRead(false)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              I&apos;ve read it: keep this summary
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {problem || failure ? (
         <p
           className="text-sm text-destructive"

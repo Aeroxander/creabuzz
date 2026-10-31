@@ -61,6 +61,8 @@ export interface CheckNote {
   lapsed: number;
   /** The one thing the team changes in how it works. */
   change: string;
+  /** A short summary, optional; it may start as an AI draft the founder has to read and accept or edit. */
+  summary: string;
 }
 
 export interface CheckNoteRecord extends CheckNote {
@@ -158,6 +160,7 @@ export function draftCheckNote(input: {
       (t) => !t.released && t.until > input.since && t.until <= input.now,
     ).length,
     change: "",
+    summary: "",
   };
 }
 
@@ -183,6 +186,8 @@ export function checkNoteProblem(note: CheckNote): string | null {
     return "Name one thing the team changes in how it works. Look at what was missing when work was turned down.";
   if ([...note.change.trim()].length > TEXT_MAX)
     return `Keep the change under ${TEXT_MAX} characters.`;
+  if ([...note.summary.trim()].length > TEXT_MAX)
+    return `Keep the summary under ${TEXT_MAX} characters.`;
   if ([...note.stuck.trim()].length > TEXT_MAX)
     return `Keep "stuck" under ${TEXT_MAX} characters.`;
   return null;
@@ -232,6 +237,7 @@ function checkNoteBody(note: CheckNote): string {
     );
   if (note.stuck.trim()) lines.push(`Stuck: ${note.stuck.trim()}`);
   lines.push(`What we change in how we work: ${note.change.trim()}`);
+  if (note.summary.trim()) lines.unshift(note.summary.trim());
   return lines.join("\n");
 }
 
@@ -264,6 +270,7 @@ export function checkNoteContent(
       ...(note.stuck.trim() ? { stuck: note.stuck.trim() } : {}),
       lapsed: note.lapsed,
       change: note.change.trim(),
+      ...(note.summary.trim() ? { summary: note.summary.trim() } : {}),
     },
   };
 }
@@ -345,6 +352,7 @@ export function parseCheckNotes(
       stuck: isStr(check.stuck) ? check.stuck : "",
       lapsed: typeof check.lapsed === "number" ? check.lapsed : 0,
       change: check.change,
+      summary: isStr(check.summary) ? check.summary : "",
     });
   }
   return notes.sort((a, b) => b.createdAt - a.createdAt);

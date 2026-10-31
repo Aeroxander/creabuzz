@@ -444,6 +444,31 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(docsCard.getByTestId("take-on-open")).toBeVisible();
   // The founder writes a check note (CHECK-NOTE-PLAN.md): the Now item's expectation is filled in, the founder answers
   // the rest, and the note shows on the Overview for everyone.
+  // A stand-in for the server's AI service: the empty probe is answered as "here", a real request with a draft.
+  await founder.route("**/llm/chat/completions", async (route) => {
+    const body = route.request().postData() ?? "";
+    if (body === "{}") return route.fulfill({ status: 400, body: "{}" });
+    expect(body).toContain("Ship the first guide");
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                summary:
+                  "The guide is not out yet; the team pairs newcomers with reviewers next.",
+                questions: [
+                  "What would have to be true for a newcomer to finish the guide?",
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+    });
+  });
   await refresh(founder, "Overview");
   await founder.getByTestId("check-note-write").click({ timeout: 30_000 });
   const noteForm = founder.getByTestId("check-note-form");
@@ -473,6 +498,20 @@ test("a contributor project is started from the page, work is claimed the same d
   await founder
     .getByTestId("check-note-change")
     .fill("Pair each newcomer with a reviewer for their first piece.");
+  // The AI drafts a summary and a question; the note waits until the founder has read the summary.
+  await founder.getByTestId("check-note-ai-draft").click();
+  await expect(founder.getByTestId("check-note-question-0")).toContainText(
+    "What would have to be true",
+    { timeout: 30_000 },
+  );
+  await expect(founder.getByTestId("check-note-summary")).toHaveValue(
+    "The guide is not out yet; the team pairs newcomers with reviewers next.",
+  );
+  await expect(founder.getByTestId("check-note-problem")).toContainText(
+    "Read the summary the AI drafted",
+  );
+  await expect(founder.getByTestId("check-note-publish")).toBeDisabled();
+  await founder.getByTestId("check-note-summary-accept").click();
   await founder.getByTestId("check-note-publish").click();
   await expect(founder.getByTestId("check-note-last")).toContainText(
     "Pair each newcomer with a reviewer",

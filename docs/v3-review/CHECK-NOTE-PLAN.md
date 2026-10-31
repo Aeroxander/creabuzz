@@ -1,6 +1,6 @@
 # The check note: plan (2026-10-31)
 
-**Status:** build steps 1 to 3 done (D159 to D161); step 4 (the AI draft) not built. It is step 3 of [PROJECT-CYCLE.md](PROJECT-CYCLE.md), building on D154 (taking work on;
+**Status:** built: steps 1 to 4 (D159 to D162). The AI draft appears only when the server's AI service is on. It is step 3 of [PROJECT-CYCLE.md](PROJECT-CYCLE.md), building on D154 (taking work on;
 Now and Not doing), D157 (the aim, why, what we expect and a check day) and D158 (what was missing on a turn-down).
 
 ## What it is
