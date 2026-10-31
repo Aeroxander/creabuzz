@@ -154,6 +154,9 @@ async function submitFromWaysToHelp(
   await way.getByTestId("way-to-help-submit").click();
   await page.getByTestId("work-claim-name").fill(name);
   await page.getByTestId("work-claim-evidence").fill(evidence);
+  await page
+    .getByTestId("work-claim-met")
+    .fill("Checked it against the work area's words");
   await page.getByTestId("work-claim-submit").click();
   await expect(page.getByTestId("work-claim-filed")).toBeVisible({
     timeout: 90_000,

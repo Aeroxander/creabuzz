@@ -1,7 +1,11 @@
 import { useState } from "react";
 
 import { Button } from "@/shared/ui/button";
-import { evidenceProblem, type EvidenceStanding } from "../lib/evidence";
+import {
+  evidenceProblem,
+  type EvidenceStanding,
+  splitSelfCheck,
+} from "../lib/evidence";
 import { hashText } from "@creaton/core/launchpad/work.ts";
 import type { ClaimView } from "@creaton/core/launchpad/work.ts";
 import { linkLabel } from "../lib/link-label";
@@ -76,6 +80,7 @@ export function EvidenceBlock({
   const [sending, setSending] = useState(false);
 
   if (standing.kind === "verified") {
+    const parts = splitSelfCheck(standing.packet.evidence);
     return (
       <div
         className="mt-2 rounded-md bg-black/5 p-2 text-sm dark:bg-white/5"
@@ -88,8 +93,24 @@ export function EvidenceBlock({
           className="mt-1 whitespace-pre-wrap"
           data-testid="work-evidence-text"
         >
-          <Linked text={standing.packet.evidence} />
+          <Linked text={parts.work} />
         </p>
+        {parts.met || parts.notMet ? (
+          <div className="mt-2" data-testid="work-evidence-self-check">
+            <p className="text-xs font-medium text-muted-foreground">
+              How they checked it
+            </p>
+            {parts.met ? (
+              <p className="mt-1 whitespace-pre-wrap">{parts.met}</p>
+            ) : null}
+            {parts.notMet ? (
+              <p className="mt-1 whitespace-pre-wrap">
+                <span className="text-muted-foreground">Not met yet:</span>{" "}
+                {parts.notMet}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {standing.packet.check ? (
           <>
             <p className="mt-2 text-xs font-medium text-muted-foreground">

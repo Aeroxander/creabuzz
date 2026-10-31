@@ -322,6 +322,9 @@ test("a founder and a contributor with no wallet start a project, do the work an
   await contributor
     .getByTestId("work-claim-evidence")
     .fill("https://example.com/pr/1");
+  await contributor
+    .getByTestId("work-claim-met")
+    .fill("Checked it against the work area's words");
   const sentBefore = bundler.sent.length;
   await contributor.getByTestId("work-claim-submit").click();
   await expect(contributor.getByTestId("work-claim-filed")).toBeVisible({

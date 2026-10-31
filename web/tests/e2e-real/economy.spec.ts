@@ -640,6 +640,9 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     .getByTestId("work-claim-evidence")
     .fill("https://example.com/pr/1");
   await labor.page
+    .getByTestId("work-claim-met")
+    .fill("Checked it against the work area's words");
+  await labor.page
     .getByTestId("work-claim-check")
     .fill("docs merged and reviewed");
   await labor.page
@@ -731,6 +734,9 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await labor.page
     .getByTestId("work-claim-evidence")
     .fill("https://example.com/pr/2");
+  await labor.page
+    .getByTestId("work-claim-met")
+    .fill("Checked it against the work area's words");
   await labor.page
     .getByTestId("work-claim-check")
     .fill("docs merged and reviewed");

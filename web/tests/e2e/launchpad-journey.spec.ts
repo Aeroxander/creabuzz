@@ -349,6 +349,9 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await contributor
     .getByTestId("work-claim-evidence")
     .fill("https://example.com/pr/1");
+  await contributor
+    .getByTestId("work-claim-met")
+    .fill("Checked it against the work area's words");
   await contributor.getByTestId("work-claim-check").fill(CHECK);
   await contributor.getByTestId("work-claim-submit").click();
   await expect(contributor.getByTestId("work-claim-filed")).toBeVisible({

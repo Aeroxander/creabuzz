@@ -10,7 +10,9 @@ import {
   evidenceUpdateContent,
   packetMatches,
   packetsOf,
+  splitSelfCheck,
   urlsIn,
+  withSelfCheck,
 } from "./evidence.ts";
 
 const ID = `0x${"77".repeat(32)}`;
@@ -131,4 +133,48 @@ test("empty and oversized evidence are refused in plain words", () => {
   assert.match(evidenceProblem("  "), /Say what you are submitting/);
   assert.match(evidenceProblem("x".repeat(EVIDENCE_MAX_CHARS + 1)), /too long/);
   assert.equal(evidenceProblem("done"), null);
+});
+
+test("how the submitter checked their work goes at the end of the evidence, which the claim commits to whole", () => {
+  const full = withSelfCheck("  https://example.com/pr/1 ", {
+    met: "Ran the docs build; every page from the list is there",
+    notMet: "",
+  });
+  assert.equal(
+    full,
+    "https://example.com/pr/1\n\nHow I checked it: Ran the docs build; every page from the list is there",
+  );
+  const both = withSelfCheck("PR 1", {
+    met: "Read it twice",
+    notMet: "No pictures yet",
+  });
+  assert.match(
+    both,
+    /How I checked it: Read it twice\n\nNot met yet: No pictures yet$/,
+  );
+  // Nothing said: the evidence alone, as before.
+  assert.equal(withSelfCheck("PR 1", { met: " ", notMet: "" }), "PR 1");
+  // The hash is of the whole text, so a reviewer reading it can check it is what was submitted.
+  assert.notEqual(hashText(full), hashText("https://example.com/pr/1"));
+});
+
+test("the evidence splits back into the work and the submitter's check, and older evidence is all work", () => {
+  const full = withSelfCheck("https://example.com/pr/1", {
+    met: "Ran the build",
+    notMet: "No pictures",
+  });
+  assert.deepEqual(splitSelfCheck(full), {
+    work: "https://example.com/pr/1",
+    met: "Ran the build",
+    notMet: "No pictures",
+  });
+  assert.deepEqual(splitSelfCheck("Old evidence\nwith lines"), {
+    work: "Old evidence\nwith lines",
+    met: "",
+    notMet: "",
+  });
+  assert.deepEqual(
+    splitSelfCheck(withSelfCheck("PR", { met: "Read it", notMet: "" })),
+    { work: "PR", met: "Read it", notMet: "" },
+  );
 });

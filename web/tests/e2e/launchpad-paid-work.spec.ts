@@ -299,6 +299,9 @@ test("a DAO pays a contributor money for a claim, with a deposit, all from the p
   await contributor
     .getByTestId("work-claim-evidence")
     .fill("https://example.com/pr/1");
+  await contributor
+    .getByTestId("work-claim-met")
+    .fill("Checked it against the work area's words");
   await contributor.getByTestId("work-claim-check").fill(CHECK);
   await contributor
     .getByTestId("work-claim-pay-section")

@@ -129,6 +129,55 @@ export function urlsIn(text: string): string[] {
 }
 
 /** Why the evidence is not acceptable to publish, in plain words, or null. */
+/**
+ * The evidence split back into the work and the submitter's own check, for showing them apart. Text without the
+ * headings is all work, as evidence submitted before the check existed is.
+ */
+export function splitSelfCheck(text: string): {
+  work: string;
+  met: string;
+  notMet: string;
+} {
+  const metAt = text.indexOf(`\n\n${SELF_CHECK_HEADING} `);
+  const notAt = text.indexOf(`\n\n${NOT_MET_HEADING} `);
+  const cuts = [metAt, notAt].filter((i) => i >= 0);
+  const work = cuts.length ? text.slice(0, Math.min(...cuts)) : text;
+  const section = (at: number, heading: string, end: number) =>
+    at < 0 ? "" : text.slice(at + 2 + heading.length + 1, end).trim();
+  return {
+    work: work.trim(),
+    met: section(
+      metAt,
+      SELF_CHECK_HEADING,
+      notAt > metAt ? notAt : text.length,
+    ),
+    notMet: section(
+      notAt,
+      NOT_MET_HEADING,
+      metAt > notAt ? metAt : text.length,
+    ),
+  };
+}
+
+/** The heading the submitter's own check goes under, at the end of the evidence (CHECK-AND-NEWCOMER-PLAN.md). */
+const SELF_CHECK_HEADING = "How I checked it:";
+const NOT_MET_HEADING = "Not met yet:";
+
+/**
+ * The evidence as submitted: what the person wrote, then how they checked it against the "done when" and anything it
+ * does not meet yet, under their headings. It is this whole text the claim commits to and reviewers read.
+ */
+export function withSelfCheck(
+  evidence: string,
+  check: { met: string; notMet: string },
+): string {
+  const parts = [evidence.trim()];
+  if (check.met.trim()) parts.push(`${SELF_CHECK_HEADING} ${check.met.trim()}`);
+  if (check.notMet.trim())
+    parts.push(`${NOT_MET_HEADING} ${check.notMet.trim()}`);
+  return parts.join("\n\n");
+}
+
 export function evidenceProblem(evidence: string): string | null {
   if (evidence.trim() === "")
     return "Say what you are submitting, or link to it.";

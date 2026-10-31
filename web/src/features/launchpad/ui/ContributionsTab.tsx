@@ -29,6 +29,7 @@ import { useEvidencePackets } from "../use-evidence";
 import { useWalletLabels } from "../use-wallet-labels";
 import { shortAddress } from "../lib/record-people";
 import { useRecordEvents, useWork } from "../use-work";
+import { splitSelfCheck } from "../lib/evidence";
 import { causeTally } from "../lib/review-reasons";
 import { type ClaimReview, useReviewReasons } from "../use-review-reasons";
 import { readableName, workTitle } from "../lib/work-titles";
@@ -61,7 +62,9 @@ function AwardStoryLine({
   /** The names of the reviewers who approved it, when who answered was read; the count is shown otherwise. */
   approvedBy: string[] | null;
 }) {
-  const link = story.evidence ? firstLink(story.evidence) : null;
+  // The work apart from how they checked it: a link alone still shows as the link.
+  const parts = story.evidence ? splitSelfCheck(story.evidence) : null;
+  const link = parts ? firstLink(parts.work) : null;
   return (
     <div
       className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted-foreground"
@@ -90,9 +93,9 @@ function AwardStoryLine({
       {story.evidence ? (
         <span data-testid="contribution-award-evidence">
           {/* Evidence that is only a link is shown as the link: quoting a long address tells a reader nothing. */}
-          {link && story.evidence.trim() === link
+          {link && parts?.work === link
             ? null
-            : `In their words: “${shortEvidence(story.evidence)}”`}
+            : `In their words: “${shortEvidence(parts?.work ?? story.evidence)}”`}
           {link ? (
             <>
               {" "}

@@ -179,6 +179,9 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   await filer
     .getByTestId("work-claim-evidence")
     .fill("https://example.com/pr/1");
+  await filer
+    .getByTestId("work-claim-met")
+    .fill("Checked it against the work area's words");
   await filer.getByTestId("work-claim-check").fill("docs merged and reviewed");
   await filer.getByTestId("work-claim-submit").click();
   await expect(filer.getByTestId("work-claim-filed")).toBeVisible({

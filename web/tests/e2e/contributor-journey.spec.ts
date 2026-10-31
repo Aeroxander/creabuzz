@@ -672,6 +672,15 @@ test("a contributor project is started from the page, work is claimed the same d
   for (const account of [REVIEWER1, REVIEWER2]) {
     const reviewer = await context.newPage();
     await open(reviewer, account, projectPath("work"));
+    // The reviewer reads how the contributor checked the work against its words, apart from the work itself.
+    await expect(
+      reviewer.getByTestId("work-evidence-self-check"),
+    ).toContainText("Checked it against the work area's words", {
+      timeout: 30_000,
+    });
+    await expect(reviewer.getByTestId("work-evidence-text")).toHaveText(
+      "https://example.com/pr/1",
+    );
     await reviewer.getByTestId("work-approve").click();
     await expect(reviewer.getByTestId("work-claim-next")).not.toContainText(
       "0 of 2 approvals",
@@ -985,6 +994,9 @@ async function submitFromWaysToHelp(
   );
   await page.getByTestId("work-claim-name").fill(name);
   await page.getByTestId("work-claim-evidence").fill(evidence);
+  await page
+    .getByTestId("work-claim-met")
+    .fill("Checked it against the work area's words");
   await page.getByTestId("work-claim-submit").click();
   await expect(page.getByTestId("work-claim-filed")).toBeVisible({
     timeout: 90_000,

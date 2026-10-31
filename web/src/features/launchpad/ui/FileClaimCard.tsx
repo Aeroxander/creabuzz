@@ -13,7 +13,11 @@ import { isContributorProject } from "../lib/funding";
 import { Input } from "@/shared/ui/input";
 import { ethCall, getRpcEndpoint } from "../chain";
 import { formatUnits, parseUnits } from "@creaton/core/launchpad/daoActions.ts";
-import { evidenceProblem, evidenceUpdateContent } from "../lib/evidence";
+import {
+  evidenceProblem,
+  evidenceUpdateContent,
+  withSelfCheck,
+} from "../lib/evidence";
 import { encodeErc20Approve } from "@creaton/core/launchpad/evmCalls.ts";
 import {
   encodeSetCheck,
@@ -78,6 +82,11 @@ export function FileClaimCard({
   const [which, setWhich] = useState(0);
   const [name, setName] = useState("");
   const [evidence, setEvidence] = useState("");
+  // How the submitter checked the work against its "done when" (CHECK-AND-NEWCOMER-PLAN.md): added to the evidence, so
+  // reviewers read it and the claim commits to it.
+  const [met, setMet] = useState("");
+  const [notMet, setNotMet] = useState("");
+  const submitted = withSelfCheck(evidence, { met, notMet });
   const [check, setCheck] = useState("");
   const [pay, setPay] = useState("");
   const [deposit, setDeposit] = useState("");
@@ -224,7 +233,14 @@ export function FileClaimCard({
       );
       return;
     }
-    const tooLong = evidenceProblem(evidence);
+    if (met.trim() === "") {
+      setProblem(
+        "Say how your work meets the work area's words: what you ran, checked or compared.",
+        "met",
+      );
+      return;
+    }
+    const tooLong = evidenceProblem(submitted);
     if (tooLong) {
       setProblem(tooLong, "evidence");
       return;
@@ -294,7 +310,7 @@ export function FileClaimCard({
     }
     // The same name again: only to finish a submission still open with this very evidence. Anything else would send
     // nothing while saying it was submitted.
-    const reused = resubmitProblem(existing, evidence);
+    const reused = resubmitProblem(existing, submitted);
     if (reused) {
       setProblem(reused, "name");
       return;
@@ -328,7 +344,7 @@ export function FileClaimCard({
       }
       calls.push({
         to: mandate.claimsAddress,
-        data: encodeSubmitPaidClaim(id, amount, stake, hashText(evidence)),
+        data: encodeSubmitPaidClaim(id, amount, stake, hashText(submitted)),
       });
     }
     // State the words, or correct them: a claim no work area has accepted and nobody has reviewed can still change
@@ -353,7 +369,7 @@ export function FileClaimCard({
           name: name.trim(),
           claimId: id,
           mandate: mandate.address,
-          evidence,
+          evidence: submitted,
           check,
         }),
       });
@@ -369,6 +385,8 @@ export function FileClaimCard({
     });
     setName("");
     setEvidence("");
+    setMet("");
+    setNotMet("");
     setCheck("");
     setAreaId("");
     setPay("");
@@ -591,6 +609,35 @@ export function FileClaimCard({
             ) : null}
           </span>
         </div>
+        <div className="flex flex-col gap-1 text-sm">
+          <label className="font-medium" htmlFor="work-claim-met-input">
+            How you checked it against those words
+          </label>
+          <Input
+            {...invalid("met")}
+            data-testid="work-claim-met"
+            id="work-claim-met-input"
+            onChange={(e) => setMet(e.target.value)}
+            placeholder="What you ran, opened or compared, and what you saw"
+            value={met}
+          />
+          <FieldProblem field="met" problem={fieldProblem("met")} />
+        </div>
+        <div className="flex flex-col gap-1 text-sm">
+          <label className="font-medium" htmlFor="work-claim-not-met-input">
+            Anything it does not meet yet (optional)
+          </label>
+          <Input
+            data-testid="work-claim-not-met"
+            id="work-claim-not-met-input"
+            onChange={(e) => setNotMet(e.target.value)}
+            placeholder="Saying it now is better than a turn-down later"
+            value={notMet}
+          />
+          <span className="text-xs text-muted-foreground">
+            Both are added to your evidence, so reviewers read them.
+          </span>
+        </div>
       </div>
       {holdsMoney ? (
         <details className="mt-2 text-sm" data-testid="work-claim-pay-section">
@@ -667,7 +714,7 @@ export function FileClaimCard({
   );
 }
 
-type ProblemField = "area" | "name" | "evidence" | "check";
+type ProblemField = "area" | "name" | "evidence" | "check" | "met";
 
 /** A problem said under the field it is about (the field's `aria-describedby` names it). */
 function FieldProblem({
