@@ -1,232 +1,299 @@
 # Creaton project economics: a brief for an outside reviewer (2026-10-31)
 
-Thank you for looking at this. This brief is meant to be enough on its own for a first read (about an hour); the linked
-documents and code are there when you want the detail. Every number below was read from the contracts or computed by a
-script, not estimated.
+Thank you for looking at this. The main part takes about half an hour to read; the reference sections and appendices
+are there when you want the detail. Every number was read from the contracts or computed by a script in
+[funding-review-2026-10-31/](funding-review-2026-10-31/), not estimated.
 
-## What we are asking
+## What Creaton is for
 
-**Is the way a project raises money, pays contributors, and lets people leave fair to each group, and hard to game?**
-We would like:
+Creaton helps people turn ideas into businesses together: something like an open, onchain Y Combinator for small,
+fast-moving teams, many of them building with AI. Anyone can be a founder, contributor, advisor or investor. Founders
+find contributors, advisors, customers and investors through a shared social network. Projects organise their work,
+recognise contributions, manage ownership and raise money inside the platform, each at its own pace, with a demo day and
+a launch when it is ready. There is no cohort and no central selection.
 
-1. Your **top risks**, most important first, each with the scenario that worries you.
-2. Answers to the **questions** in the last section where you have a view, including "this question is the wrong one".
-3. **Settings** you would change (values, not only directions), and anything you would cut.
-4. A **one-hour call** to walk through a raise on a test chain, ideally after your first read.
+The advantage we are after is continuity: an investor can find a founder through a useful discussion, see what their
+team has delivered, meet its contributors, watch its demo and read its funding terms, all in one project's history.
 
-We can run any scenario you name on a local chain and send you the numbers.
+## The question
 
-**Where things stand.** Everything here runs on test networks only, with test money. The contracts are unaudited, and
-they are frozen until the first pilots have run (D137). The first launch is **contributor projects with no raise**: people
-earn ownership of a project through reviewed work. Raising money comes later, after an external audit and a legal read.
-So your review shapes the design before any real money is involved, and settings and copy can still change freely.
+**What investment and governance structure gives a small team enough freedom and dependable money to move quickly,
+while giving backers a credible share of the value it creates, and contributors a fair share of what they built?**
 
-**Not in scope:** whether any of this is a security under any law (we will ask a lawyer separately); the smart-contract
-audit; the platform's own $CREATE token and its court.
+Our current design answers it with one strong rule, that any holder can leave at any time with their share of the
+treasury, and that rule is now the centre of the tension. We would like:
 
-## The product in one paragraph
+1. Your view on the **five decisions** below, including "this is the wrong decision to be making".
+2. Your **top risks**, each with the scenario that worries you.
+3. **Settings** you would change, as values, and anything you would cut.
+4. A **one-hour call** to walk through a project on a test chain, after your first read.
 
-Creaton is a social app for building projects together (films, apps, open-source software). Each project is a small
-on-chain organisation (a DAO, built on Moloch-style "Majeur" contracts) with a **treasury** and **units** of ownership.
-People earn units by delivering work that reviewers approve, or buy them when the project raises money. Any holder can
-**leave** at any time and take their share of the treasury with them. That right to leave is the main protection we
-offer, and it cannot be switched off.
+We can run any scenario you name and send you the numbers.
 
-## Words used below
+**Where things stand.** Test networks only, test money, unaudited contracts, frozen until the first pilots have run.
+The first launch is **contributor projects with no money**: people earn ownership through reviewed work. Raising money
+comes after an external audit and a legal read, so settings, copy and the shape of the funded model can all still change.
+**Not in scope:** securities law (a lawyer, separately), the contract audit, and the platform's own $CREATE token and court.
 
-| Word | Meaning |
-|---|---|
-| **Shares** | Units that vote and can leave with their part of the treasury |
-| **Loot** | Units that can leave and receive payouts, but do not vote |
-| **Leaving** | Burning units for their share of the treasury, pro rata ("ragequit") |
-| **The floor** | What one unit takes out by leaving now: the treasury's balance ÷ the units that can leave (all Shares and Loot, less the DAO's own and team Shares still locked behind milestones) |
-| **Work budget** | Shares (and sometimes money) set aside by vote for a work area; contributors claim from it |
-| **Award** | Shares paid for a piece of work, after a review panel (e.g. two of three reviewers) approves it |
-| **Funding terms** | Published by vote before any sale: what investors get, how many units may be sold, the exit fee |
-| **Tranche** | One sale under the terms: a quantity, a least price, an end date, each its own vote |
-| **Weekly round** | A once-a-week batch auction at a single price, for tranches and for holders selling to buyers |
+## One project's journey
 
-## Two ways a project starts
-
-### A. Contributor project (what launches first)
-
-1. A founder starts a project with no money. Their starting Shares are **at most a third of the first work budget**, and
-   they are **not on its review panel** (D79).
-2. People claim work from budgets; reviewers approve; the DAO **awards** Shares. New Shares only ever come from awards,
-   and for contributor projects **there is no yearly cap** (D76, D79).
-3. Shares cannot be transferred at first. Holders can open trading between members later, by vote, with 30 days'
-   notice (D117, D131).
-4. Optionally, the holders **publish funding terms** and **sell tranches** in weekly rounds (D133 to D136). Investors
-   receive Loot by default.
-
-Worked example over two years: [TOKENOMICS-PROPOSAL.md §8c](TOKENOMICS-PROPOSAL.md) (the founder's share goes from 100%
-to 26% as 5.7 million Shares are awarded to contributors).
-
-### B. Fundraising kit (later, after the audit)
-
-1. A founder launches with an **auction** (Uniswap's continuous clearing auction) that sells all of its tranche at no
-   less than the floor price, or refunds everyone (D74).
-2. Limits on the split (D75): the sale is **at least 60%** of all Shares, the team **at most 35%**, a DAO reserve **at most
-   20%**. Every team Share is locked behind **2 to 8 milestones** of at most 50% each. Presets are 75/25/0, 80/20/0 and
-   65/35/0.
-3. Holders can object to a milestone; an objection upheld later burns what is still locked. Team Shares that are still
-   locked **do not count** in what leaving pays, so a backer who leaves before any milestone takes their full part of the
-   money not yet spent (D72).
-4. New Shares only as awards, **at most 10% more a year**. That cap is fixed at launch, can be lowered, and can never be
-   raised (D76).
-5. No trading at first; transfers are locked at birth (D77). Later raises use the same funding terms as path A.
-
-Worked examples with numbers by month: [TOKENOMICS-PROPOSAL.md §8a and §8b](TOKENOMICS-PROPOSAL.md), a $50,000 film and
-a $250,000 app. They show what $1,000 of backing is worth at each step, and the team's share of votes.
-
-## How money moves
-
-| Action | Who is paid | What happens to units | Effect on the floor |
+| Stage | What happens | What exists today | Where it is weak |
 |---|---|---|---|
-| Fund the project (a tranche) | The treasury | New units created, within the terms | Rises: tranches sell at least 2% above the floor |
-| Buy from a holder (a round, or a matched exit) | The seller. In a round, a fifth of the seller's gain above the floor goes to the treasury; a matched exit has no fee | Existing units change hands | Unchanged, or up by the round's cut |
-| Leave | The holder, from the treasury, less the exit fee if terms exist | Burned | Unchanged, or up by the fee |
-| Spend by vote (into a work budget, or a payment) | The budget or payee | None | Falls |
-| Award Shares for work | Nobody (no money moves) | New Shares | Falls (more units) |
-| Revenue in, or payouts | Payouts: a chosen share goes to holders, the rest to the treasury (D122) | None | Rises with what reaches the treasury |
+| 1. Find an opportunity | Someone posts an idea, a problem or a prototype; others discuss and vote | Home timeline, boards, ideas | — |
+| 2. Form the team | The founder starts a project; contributors claim work from budgets of Shares; reviewers approve; the holders award Shares | Contributor projects (D65, D66, D79) | The founder can control the reviewers and every vote for a long time (decision 1) |
+| 3. Build a track record | Contributions, reviews and releases accumulate on the project and on each person | Contribution stories, track record, "who holds the IP" record (D38) | Reputation is not yet specific to roles (reviewer, advisor) |
+| 4. Attract support | Advisors and investors find projects with evidence they care about | Social discovery only | **No terms for advisors** at all |
+| 5. Demo day and raise | The holders publish funding terms; investors buy a tranche of units in a weekly round | Funding terms and weekly rounds (D131 to D136), test networks only | Buyers' rights, dilution and runway (decisions 2 to 4) |
+| 6. Operate | Spending by vote or work budgets; revenue and payouts; holders trade in rounds; more tranches | Work budgets, payouts (D122), rounds, sales between members (D117) | Revenue capture (decision 5); **no way to wind a project down** |
 
-**Exit fee** (D135, D136): set when terms are first published, **at most 5%** (the form suggests 2%). It stays in the
-treasury for those who remain. It can be lowered, never raised. It is **waived during the 30 days' notice** after terms
-are published or their limit is raised, so a holder who will be diluted can still leave whole. The last units that can
-leave pay none. A project without terms charges none.
+There is a second, older path: a **fundraising kit** that opens a project with an auction selling at least 60% of all
+Shares, the team's Shares locked behind milestones ([TOKENOMICS-PROPOSAL.md](TOKENOMICS-PROPOSAL.md), D72 to D79). It
+fits a token launch better than a startup, where investors usually take a minority. We now expect stage 5 above, a
+limited tranche sold under funding terms, to be the main funded path, and would like your view on whether the kit has a
+place at all.
 
-**One asset while selling** (D134, D136): while the treasury holds anything besides the round's currency, nothing
-sells; otherwise a price set in USDC would hand buyers part of the ETH for nothing. Any holder can add any token the
-treasury holds to the watch list, which stops sales until a vote accepts it.
+## What a holder owns today, precisely
 
-## Weekly rounds ([WEEKLY-ROUNDS.md](WEEKLY-ROUNDS.md), D131)
+- **Shares** vote. **Loot** does not. Both can leave and both receive payouts.
+- **Leaving** burns your units and pays you your share of **what is in the treasury now**: the treasury's balance divided
+  by the units that can leave (team Shares still locked behind milestones are left out). We call that per-unit amount
+  **the floor**. Leaving cannot be switched off (D73).
+- Leaving does **not** pay for anything outside the treasury: the software, the film, customer contracts, future
+  receipts. A buyer who paid $1,000 at many times the floor may take out about $125 the next day; a contributor leaving
+  an empty treasury gets nothing for what they helped build.
+- Rights over that outside value come only from what the project commits to: a record of **who holds the IP** (D38), a
+  **pledge** of a share of receipts (D78), and revenue the project sends to its **payouts** module (D122). None of these
+  binds a legal entity on its own; that link needs a lawyer.
 
-- One round a week per project: **3 days of bidding**, then up to **2 days** for anyone to settle it. A round nobody
-  settles is void, and everyone takes back what they put in.
-- Sellers name a lowest price, buyers a highest. The clearing price is the one that trades the most. Everyone past it
-  fills whole; the side that is longer at the price shares in proportion.
-- **Prices are on a grid:** 1,024 steps above the floor read when the round opens. Each step is 1% of the floor, or
-  **one cent per unit**, whichever is larger.
-- A funding tranche is offered at least **two steps above the floor** and at its own least price. The units are created
-  and the treasury paid when the round settles.
-- The DAO may also sell Shares it already holds, at two steps or more above the floor, with no cut.
+## The five decisions
 
-## Voting ([`AllocationVoting.sol`](../../contracts/src/AllocationVoting.sol))
+### 1. Contributor control
 
-| Lane | Turnout | Agreement | Review; support must hold | Changeable within |
-|---|---|---|---|---|
-| Full (anything at treasury scale: terms, tranches, budgets) | 20% of voting supply | 66% of those voting yes or no | 48 hours; 12 hours | turnout 5% to 60%, agreement 50.01% to 90%, review 1 to 14 days |
-| Bounded (approvals inside a work budget, whose cap and reviewers limit the loss) | 10% | 55% | 24 hours; 6 hours | same |
+**Today.** A founder's starting Shares are at most a third of the first work budget, and the founder may not review it
+(D79). But the limit is per wallet, the founder names the reviewers and manages the first projects, and the start form
+allows a single reviewer, so the first budget can reach wallets the founder controls. Votes need 20% of the voting supply
+to take part and 66% of those voting to agree; with nobody else voting, a founder holding a quarter clears that alone until
+the supply passes 7.5M Shares (later than month 24 in our example) and can pass a new budget with reviewers of their choice.
 
-Only Shares vote; the DAO's own Shares and other units that can never vote are left out of the supply. Nothing passes
-before its review ends, the bars must have held for the hold time, and a passed decision then waits in a queue (a day in
-the kits). So the minimum is about 3 days from opening to running. The point of those days is that a holder can see a
-decision coming and leave first. Changes that dilute or open trading get **30
-days' notice**: funding terms, raising their limit, naming an exchange, changing the payout split.
+**Our starting position.** For the invited pilot: three reviewers, two of whom must approve, chosen as identifiable people
+with conflicts disclosed. This is an operational safeguard, not protection against fake identities. We would not start
+with reviewer bonds: a bond needs provable misconduct and someone credible to judge it, and does not make a judgement of
+quality independent. Longer term, contributors need a collective say over changes that can erase their position (new
+budgets, reviewers, unlocking transfers), for example a majority of the non-founder Shares that vote
+([§6 option 3](TOKENOMICS-PROPOSAL.md)). *In the app since 2026-10-31:* a new contributor project must name three
+reviewers, two of whom must agree, and the founder publishes how they know each one; the project page shows it.
+
+**Question.** What is a sound minimum for an honest start, and when should contributors' collective approval apply?
+
+### 2. Buyers' rights
+
+**Today.** Investors receive **Loot** by default, so contributors keep control as money arrives (a project may sell
+voting Shares instead). Buyers face a large premium over the floor, uncapped dilution (decision 3), limited liquidity
+(Loot cannot yet be sold in a round, and the app does not yet let Loot leave), and dependence on the contributors'
+decisions about revenue. "Before you buy" discloses most of this.
+
+**Our starting position.** Disclosure is not enough. Funding terms should establish, before anyone pays:
+- a bounded allowance of future awards (decision 3);
+- the revenue commitment, including how receipts earned offchain reach the project (decision 5);
+- protection against changes to those terms that hurt buyers;
+- a working way to leave, and later to sell.
+
+**Question.** For an investor paying for a future business rather than the treasury, which of these rights matter, and
+what else would make the bargain credible?
+
+### 3. Dilution
+
+**Today.** New Shares come only from awards for reviewed work. Fundraising-kit projects cap them at 10% a year; contributor
+projects have no cap, and publishing funding terms does not add one (a vote can add one, but the app does not offer it).
+In our example, a large award budget passed by the founder's side alone would take Loot buyers from 9.1% to 0.9% of all
+units, and their exit value from $4,677 to $464, against $29,700 paid.
+
+**Our starting position.** Keep awards uncapped while no money is involved, to learn whether reviewed work produces
+sensible allocations. Once a project sells units, model **10% of new award Shares over a rolling 12 months**, the same as
+the kit, counting work already promised before the sale so protecting buyers does not break promises to contributors.
+This is a comparison point, not a known optimum.
+
+**Question.** What allowance, measured how, balances buyers against a team that must keep paying contributors in Shares?
+
+### 4. Runway that stays
+
+**Today.** Any holder can leave at any time, so money raised is never committed. In the example below buyers pay $29,700;
+if the existing Shares then leave, this is what stays ([redemption-runway.mjs](funding-review-2026-10-31/redemption-runway.mjs)):
+
+| Existing Shares that leave | Treasury left | Share of the raise left | Months at $3,000 a month |
+|---|---|---|---|
+| 0% | $41,700 | 140% | 13.9 |
+| 10% | $37,985 | 128% | 12.7 |
+| 30% | $30,555 | 103% | 10.2 |
+| 100% | $4,549 | 15% | 1.5 |
+
+A sale that succeeds does not show the project is funded. Paying contributors for past work can be fair, but buyers need
+to see how much of their money may pay for it and how little may be left to deliver.
+
+**Options we see.**
+- **Keep leaving open, and show this table** on every sale, so buyers price it.
+- **Separate committed money from money that can still be withdrawn**: a new instrument where invested money follows an
+  operating budget and milestones, and holders can take out only what is not committed. It would apply only to projects
+  that choose it from the start; existing promises stay. Our specified-but-unbuilt **pledges to the next milestone**
+  (D123) are a step in this direction.
+- **A monthly budget** for the team, as MetaDAO's launches use (a disclosed monthly amount; their documented ceiling is a
+  sixth of the minimum raise, with more needing a vote). Predictable, disclosed spending can cut the number of votes
+  without hiding spending, since holders know when the next withdrawal is due. We would simulate **5% of the raise a
+  month, authorised three months at a time**, nothing owed for months not paid, and paused while a milestone is late or an
+  objection stands. It works inside a different governance and ownership structure at MetaDAO, so the percentage does not
+  transfer on its own.
+
+**Question.** Under a permanent right to leave, how much usable funding does a raise actually secure, and which structure
+would you choose for a small startup?
+
+### 5. Revenue capture
+
+**Today.** Revenue reaches holders only if someone sends it to the project's payouts module, which splits it between
+holders and the treasury (D122, contributor projects only), or the team pledges a share of receipts in the project's
+documents (D78). Onchain units say nothing about offchain software, customers or sale proceeds unless an entity holding
+them is bound to the project.
+
+**Our starting position.** Funding terms should name the revenue commitment and the entity that holds the IP, and the
+project page should show money that came in against money promised.
+
+**Question.** What commitment, and what enforcement, would make an investor believe they share in the business?
+
+## To be fixed before any raise
+
+Our own review found these defects ([FUNDING-REVIEW-2026-10-31.md](FUNDING-REVIEW-2026-10-31.md)). We will fix them;
+please spend your time on the decisions above, and tell us only if you disagree with our reading.
+
+- **Funding rounds can be stopped cheaply:** anyone can void one by sending a tiny amount of ETH to the treasury (R1),
+  and a holder of the smallest unit can block every sale with a made-up token (R2).
+- **A round cannot settle at its lowest price** on most floors of $1 or more, through rounding (R3).
+- **The price grid is far too coarse** below a $1 floor: one step is a cent, so at a $0.002 floor the lowest sale price
+  is ten times the floor (R4). We intend equal percentage steps with a stated starting price for an empty treasury.
+- **Loot cannot leave in the app**, though the page says it can (R5).
+- **Raising the funding limit waives the exit fee for 30 days**, even over a round already selling (R7).
+- **Money waiting in the payouts module or an expired budget is outside the price check**, so buyers can buy at a price
+  that ignores it (R8).
+- **One vote can freeze all later decisions** (some voting settings have no upper limit), and **voting no can push a
+  decision over its turnout bar** (D2, D3). Since 2026-10-31 the app flags any decision that sets these above the
+  voting lanes' own 60% limit, and says by the vote buttons that votes against count toward turnout; the contract bounds
+  and a turnout that counts only yes and neutral wait for after the pilots.
 
 ## A worked example: a contributor project takes money
 
-We start from §8c at month 24: **5,700,000 Shares**, **$12,000** in the treasury, and the largest contributor holding
-**450,000**. The holders publish terms (Loot, exit fee 2%), wait the 30 days, and vote a tranche of **570,000 Loot** with
-a least price of **$0.05**. Computed by script:
+We start at month 24 of [TOKENOMICS-PROPOSAL.md §8c](TOKENOMICS-PROPOSAL.md): **5,700,000 Shares**, **$12,000** in the
+treasury, the largest contributor holding **450,000**. The holders publish terms (Loot, exit fee 2%), wait 30 days, and
+vote a tranche of **570,000 Loot** at no less than **$0.05**
+([brief-example.mjs](funding-review-2026-10-31/brief-example.mjs)):
 
 | | Before | After the tranche sells at its lowest allowed price |
 |---|---|---|
-| Floor (what one unit takes out by leaving) | $0.0021 | $0.0067 (before the 2% fee) |
-| Price per Loot | | $0.0521: the least price rounded up to the next one-cent step, **25 times the floor** |
+| The floor | $0.0021 | $0.0067 (before the 2% fee) |
+| Price per Loot | | $0.0521, the least price rounded up to the next one-cent step: **25 times the floor** |
 | Raised | | $29,700 |
 | Treasury | $12,000 | $41,700 |
 | Largest contributor: share of units | 7.9% | 7.2% |
 | Largest contributor: leaving pays | $947 | $2,933 (after the fee) |
 | A buyer who leaves at once gets back | | 12.5% of what they paid |
 
-What it shows: the premium a buyer pays over the floor goes to the existing holders' exit value at once. A Loot buyer is
-paying for future revenue and payouts, not for the exit. Note the one-cent step: with the floor at $0.002, the lowest
-price a tranche can sell at is the floor plus two cents, more than ten times the floor, whatever the project asks. The
-step size is a deployment setting, not a contract change.
+The premium over the floor goes to existing holders' exit value at once; the buyer is paying for the future business,
+which only decisions 2 to 5 can make credible.
 
-## Decided, and why (the short version)
+## How it works (reference)
 
-- **Leaving is always on** (D73). It is the backer's only real protection, so nothing can turn it off.
-- **Earned and sold units are kept apart** (D133). Earned units need an award vote on reviewed work; sold units need
-  terms published in advance. There is no single "minting on" switch.
-- **Investors get Loot by default** (D133), so contributors keep control as money arrives. A project may choose voting
-  Shares instead.
-- **No continuous market yet** (D77, D137): weekly rounds collect demand once a week; a pool is not designed.
-- **Payouts are a choice, not automatic.** Revenue sent to a payouts module is split between holders and the treasury,
-  for contributor projects only (D122).
-- **Left out of the first version on purpose** (D131, D137): price limits between rounds, sell limits for the team,
-  trading windows for insiders, standing orders, a 90-day cap on gains, unlocks tied to volume or price, and any premium
-  sale for the team.
+**Money in and out.**
 
-The full log, with what reverting each decision costs: [DECISIONS.md](DECISIONS.md) (D72 to D79 and D131 to D137 are
-the economic core).
+| Action | Who is paid | Units | Effect on the floor |
+|---|---|---|---|
+| Fund the project (a tranche) | The treasury | Created, within the terms | Rises: two price steps and 2% above it, or more |
+| Buy from a holder (a round, or a sale between members) | The seller; in a round a fifth of the gain above the floor goes to the treasury | Change hands | Unchanged, or up by the cut |
+| Leave | The holder, less the exit fee if terms exist | Burned | Unchanged, or up by the fee |
+| Spend by vote (a work budget, a bounty, a payment) | The budget or payee | — | Falls |
+| A budget closes, a bounty refunds, a reviewer is slashed | The treasury | — | Rises, for whoever holds then |
+| Award Shares for work | Nobody | Created | Falls (more units) |
+| A team milestone unlocks (fundraising kit) | Nobody | Join what leaving divides by | Falls |
+| Revenue to the payouts module, once someone splits it | Holders' share, the rest to the treasury | — | Rises by the treasury's part |
+| A payout voted from the treasury | Every holder, per unit | — | Falls, evenly |
 
-## What we have checked, and what that does not cover
+**Exit fee** (D135, D136): set once when terms are published, 0% to 5%, lower only; waived for 30 days after terms are
+published or their limit raised, and for the last units out; none without terms. A buyer at the floor overcomes a 2% fee
+once the floor rises by about 2.04%, small beside the inflows and unlocks above, and fees left in the treasury go to
+whoever leaves last (with 2%, a 1% holder leaving last takes 2.98× their share). **We would use 0% as the baseline** and
+ask any fee to show it helps under adversarial scenarios.
 
-- **Money is conserved.** Invariant tests ([AUDIT-SCOPE.md](AUDIT-SCOPE.md), `contracts/test/invariant/`) and an
-  agent-based simulation on a real local chain ([simulate-raise.mjs](../../scripts/simulate-raise.mjs): many accounts,
-  thousands of random steps) check after every step: the treasury falls only by a leave or a vote that met its bars,
-  locked Shares never leave, no bidder pays above their limit, a failed raise refunds in full.
-- **The tests themselves are checked** by mutation testing (deliberately broken contracts must fail a test) and fuzzing
-  of the exit screen against the contract.
-- **AI reviews** of each change, the findings fixed (D80, D86, D105, D130, D134, D136).
+**Weekly rounds** ([WEEKLY-ROUNDS.md](WEEKLY-ROUNDS.md)): one a week per project; 3 days of bidding, up to 2 days for
+anyone to settle, void otherwise. One price, chosen to trade the most; the longer side at it shares in proportion.
+Prices sit on a grid from the floor at opening: 1,023 steps above it, each 1% of the floor or one cent, whichever is
+larger. Holders' rounds price against the treasury's cash only, while leaving pays a share of every asset.
 
-None of this tells us whether the **incentives** are right: whether founders, contributors, reviewers, buyers and
-traders, each acting in their own interest, produce good projects and fair outcomes. That is what we are asking you.
+**Voting** ([`AllocationVoting.sol`](../../contracts/src/AllocationVoting.sol)): only Shares vote. Full lane (anything at
+treasury scale): 20% of voting supply takes part, 66% of yes and no agree, 48 hours of review, support held 12 hours.
+Bounded lane (inside a work budget): 10%, 55%, 24 hours, 6 hours. A passed decision then waits a day, so about 3 days in
+all. Funding terms, raising their limit, unlocking transfers, naming an exchange and changing the payout split need 30
+days' notice.
 
-## Known tensions and open questions
+**Contributor projects** ([CONTRIBUTOR-KIT.md](CONTRIBUTOR-KIT.md)): founder at most a third of the first budget and not
+its reviewer; a claim waits 7 days after approval before it can be awarded; transfers locked until a vote opens them.
 
-1. **Contributor awards have no yearly cap.** Loot buyers in a contributor project can be diluted by any award budget
-   the voting holders pass. The page says so ("Before you buy"), but is disclosure enough? Should funding terms bring a
-   cap with them?
-2. **Raised money can leave with earned Shares.** Once a tranche lands, every contributor can leave with part of it. Is
-   that a fair price for their work, or a drain on a fresh raise?
-3. **Loot or voting Shares for investors**, and whether contributor projects should be allowed to sell voting Shares at
-   all.
-4. **Sales between members sell Shares**, which carry votes; an earlier write-up recommended Loot
-   ([CONTRIBUTOR-TOKEN-TRADING.md](CONTRIBUTOR-TOKEN-TRADING.md)). Loot holders cannot sell in rounds yet; leaving is
-   their only way out.
-5. **No minimum per tranche.** The first auction sells out or refunds; a tranche can sell any part.
-6. **The values**: the 30 days' notice, 2% above the floor, the exit fee (2% suggested, 5% ceiling), the treasury's
-   fifth of a seller's gain, the one-cent price step.
-7. **Any holder can stop sales** by adding a token the treasury holds to the watch list. That is cheap, and it costs a
-   vote to undo. Is it the right trade against the risk of underpricing?
-8. **Founder control in contributor projects.** The limit of a third of the first budget holds at the start; the rule
-   that contributors must also agree to big changes (option 3 in [§6](TOKENOMICS-PROPOSAL.md)) is not built.
-9. **Not designed yet:** winding a project down, continuous trading (a pool), and the funding curve
-   ([JOIN-CURVE.md](JOIN-CURVE.md), not accepted).
+**Fundraising kit**: auction sells all or refunds (D74); sale at least 60%, team at most 35%, reserve at most 20%, team
+Shares behind 2 to 8 milestones (D75); locked team Shares left out of what leaving pays (D72); awards at most 10% a year
+(D76); no trading at first (D77). Worked examples: [§8a and §8b](TOKENOMICS-PROPOSAL.md).
 
-## Our questions for you
+## What we have checked, and what the pilots will tell us
 
-1. Is a pro-rata exit (no premium, no discount) the right backbone for small creative projects, or does it make raising
-   above the floor too hard?
-2. What should a Loot buyer reasonably expect for paying a premium of many times the floor, and how should we explain it?
-3. For contributor projects that take money, should awards then get a yearly cap? If so, how large?
-4. Is the exit fee doing its job (stopping people who buy just before money lands and leave just after) at 2%? Should it
-   apply when a decision a holder dislikes passes?
-5. Weekly batch rounds or a continuous market: at what activity level would you switch, and what would you watch to
-   decide?
-6. The treasury's fifth of a seller's gain above the floor: fair to sellers? Does it push trades to matched exits, which
-   charge nothing?
-7. Fundraising kit: are the split limits and milestone rules (60/35/20, 2 to 8 milestones) sensible for a $50k film and a
-   $250k app?
-8. Reviewer incentives: two of three reviewers approve awards. What would you add to stop them colluding (bonds, rotation,
-   spot checks)?
-9. Where would you expect the first real-world failure: a founder, a reviewer, a buyer, or nobody showing up?
-10. What would you measure in the pilots? We plan to measure review turnaround, reviewer disagreement, and awards
-    against delivered work.
+**Checked:** money is conserved (invariant tests and an agent-based simulation on a real local chain,
+[AUDIT-SCOPE.md](AUDIT-SCOPE.md), [simulate-raise.mjs](../../scripts/simulate-raise.mjs)); the tests catch deliberately
+broken contracts (mutation testing); outside reviews of each major change, several by AI models, none by a tokenomics
+specialist; and our own incentive pre-check, which found the defects above. That confirms the arithmetic, not whether
+people will behave as we hope.
 
-## Where to look
+**The no-money pilot will measure:** review turnaround, reviewer disagreement and inactivity, disputed awards, awards
+against delivered work, how often the founder steps in, whether participants understand what they own, whether someone
+the founder did not know joins and contributes, whether an outside advisor arrives through visible work, and whether
+people would contribute again. A test network can show whether teams form and deliver; it cannot show whether anyone
+will invest real money.
+
+## Appendix A: further questions
+
+Answer any you have a view on.
+
+**The funded model**
+1. Is a pro-rata exit (no premium, no discount) the right backbone for small projects at all, or only for some?
+2. Does the fundraising kit (an auction of 60% or more) have a place in an ecosystem of startups?
+3. What should advisors receive, and on what terms?
+4. How should a project wind down: who is paid first, and how is the remainder shared?
+
+**Settings**
+5. The 30 days' notice for terms: we keep it for now and will measure whether people notice it. Notice does little for
+   someone whose exit value is far below their purchase price; what would you add?
+6. The treasury's fifth of a seller's gain in a round: we will compare it against nothing. What service would earn it,
+   given sales between members charge nothing?
+7. Weekly rounds or continuous trading: we keep weekly rounds until recurring independent demand appears. What would
+   you watch to decide?
+8. Should projects have fewer units (a million rather than a billion) so prices read sensibly, alongside a better grid?
+9. Should every raise of the funding limit waive the exit fee, and should other votes that dilute waive it too?
+10. Fees left in the treasury go to whoever leaves last. Keep, cap, or drop with the fee?
+
+**Contributors and reviewers**
+11. What stops two of three reviewers approving a friend, cheaply, without bonds?
+12. Is leaving with raised money a fair price for earned Shares, and should it be limited for a time after a raise?
+13. What would you measure in the pilots beyond the list above?
+
+**Selling**
+14. Anyone can stop a sale while the treasury holds another asset, which today lets anyone stop every sale. How would you
+    keep the first without the second?
+15. Should a tranche have a minimum to raise (sell enough or sell nothing), as the first auction does?
+
+## Appendix B: where to look
 
 | Topic | Document | Code |
 |---|---|---|
+| Our incentive pre-check and its scripts | [FUNDING-REVIEW-2026-10-31.md](FUNDING-REVIEW-2026-10-31.md) | [funding-review-2026-10-31/](funding-review-2026-10-31/) |
 | The journey and funding terms | [FUNDING-TERMS.md](FUNDING-TERMS.md) | `contracts/src/FundingTerms.sol` |
 | Fundraising kit rules and worked examples | [TOKENOMICS-PROPOSAL.md](TOKENOMICS-PROPOSAL.md) (§0a has later corrections) | `DaoLaunchKit.sol`, `MilestoneChallenge.sol` |
 | Weekly rounds | [WEEKLY-ROUNDS.md](WEEKLY-ROUNDS.md) | `WeeklyRounds.sol` |
 | Sales between members | DECISIONS.md D117 | `MatchedExit.sol` |
 | Payouts | [PAYOUTS.md](PAYOUTS.md) | `Payouts.sol` |
+| Pledges to the next milestone (not built) | [PLEDGES-STATES.md](PLEDGES-STATES.md) | — |
 | Contributor projects | [CONTRIBUTOR-KIT.md](CONTRIBUTOR-KIT.md) | `ContributorKit.sol` |
 | Voting | — | `AllocationVoting.sol` |
 | What is checked | [AUDIT-SCOPE.md](AUDIT-SCOPE.md) | `contracts/test/`, `scripts/simulate-raise.mjs` |
-| Every decision | [DECISIONS.md](DECISIONS.md) | — |
+| Every decision and why | [DECISIONS.md](DECISIONS.md) | — |
