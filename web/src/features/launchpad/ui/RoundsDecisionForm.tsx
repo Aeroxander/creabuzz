@@ -1,7 +1,6 @@
 /**
  * "Weekly rounds" (D131): the decision that names this build's rounds contract as the exchange for the project's Shares,
- * or turns it off. The same 30-day route as sales by signed offers (a DAO has one exchange or the other). The form reads
- * where things stand and offers the one step that fits.
+ * or turns off whatever exchange is named. The form reads where things stand and offers the one step that fits.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -11,10 +10,10 @@ import { getRpcEndpoint } from "../chain";
 import { weeklyRounds } from "../chain-config";
 import {
   allowRoundsDecision,
-  exitSalesState,
-  readExitSales,
-  stopExitSalesDecision,
-} from "../lib/matched-exit";
+  exitExchangeState,
+  readExchangeIfAny,
+  stopExchangeDecision,
+} from "../lib/exit-exchange";
 import { roundsStateLine } from "../lib/rounds-copy";
 import { endpointChain } from "../use-work";
 import {
@@ -36,12 +35,13 @@ export function RoundsDecisionForm({
   const read = useQuery({
     queryKey: ["launchpad", "weekly-rounds", "state", sharesToken],
     enabled: Boolean(sharesToken),
-    queryFn: () => readExitSales(endpointChain(getRpcEndpoint()), sharesToken),
+    queryFn: () =>
+      readExchangeIfAny(endpointChain(getRpcEndpoint()), sharesToken),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
   });
   const state = read.data
-    ? exitSalesState(read.data, contract, ctx.chainTime)
+    ? exitExchangeState(read.data, contract, ctx.chainTime)
     : null;
 
   const result = useMemo<DraftResult>(() => {
@@ -52,13 +52,13 @@ export function RoundsDecisionForm({
           "Shares already move freely between wallets, so there is nothing to start.",
       };
     }
-    // Off, or another exchange: name the rounds (it takes over once switched on, 30 days after the vote).
-    if (state.phase === "off" || state.phase === "other") {
+    // Off: name the rounds. Another contract named or waiting: turn it off first, at once; rounds can follow.
+    if (state.phase === "off") {
       return attempt(() =>
         allowRoundsDecision({ sharesToken, exchange: contract ?? "" }),
       );
     }
-    return attempt(() => stopExitSalesDecision({ sharesToken }));
+    return attempt(() => stopExchangeDecision({ sharesToken }));
   }, [state, sharesToken, contract]);
 
   if (read.isPending) {

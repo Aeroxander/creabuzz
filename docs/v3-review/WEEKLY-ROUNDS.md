@@ -9,7 +9,7 @@ shared plan is the doc "Waitlist and weekly rounds". The contract is `contracts/
 
 | When | What happens |
 |---|---|
-| Opening | Anyone opens the DAO's next round, a week after its last one opened. The DAO must have named the round contract as its exit exchange (30 days' notice, as for matched exits) |
+| Opening | Anyone opens the DAO's next round, a week after its last one opened. The DAO must have named the round contract as its exit exchange (30 days' notice) |
 | Bidding, 3 days | Sellers put Shares in with a lowest price step; buyers put money in with a highest step. Either can take theirs back until bidding ends; a seller can instead leave the DAO straight from the round |
 | Up to 2 days after | Anyone settles by naming the price step; the contract checks it |
 | Nobody settles in time | The round is void and everyone takes back exactly what they put in |
@@ -63,13 +63,13 @@ it owes before paying out what remains); the rounds do not provide it.
 - A seller who also bids in the same round can trade with themselves; it costs them the cut and shows in the events.
 - The floor is read once, at opening. If the treasury grows during bidding, a seller can take their Shares back and leave
   at the new value; if it shrinks, buyers pay the old floor at least.
-- One exchange per DAO: a DAO that names the round contract no longer uses matched offers (D117), and the reverse.
+- One exchange per DAO. Matched offers (D117) used the same slot and were retired in D152; if another contract holds
+  the slot, the Weekly rounds decision offers to turn it off first.
 
 ## In the app (D132)
 
 A contributor project's Funds tab has a **Weekly rounds** card when the build names the contract (`VITE_WEEKLY_ROUNDS`).
-The DAO starts rounds with the **Weekly rounds** decision (the same 30-day route as sales by signed offers; a DAO uses one
-or the other, and the offers card hides when rounds are chosen). Thirty days later anyone switches them on, and anyone
+The DAO starts rounds with the **Weekly rounds** decision (a 30-day route). Thirty days later anyone switches them on, and anyone
 opens each week's round. The card shows:
 
 - the round's floor, its deadline, and what would trade if bidding ended now;

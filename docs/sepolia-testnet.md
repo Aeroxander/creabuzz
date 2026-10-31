@@ -93,7 +93,6 @@ together. The rows marked **Optional** are not in the image: they need a build o
 | `VITE_CONTRIBUTOR_KITS` | `{"11155111":"<contributor-kit from the manifest>"}` | Starting contributor projects. Without it Start says "Contributor projects cannot be started on Sepolia yet" |
 | `VITE_WORK_BOUNTIES` | `{"11155111":"<work-bounty from the manifest>"}` | **Optional.** "Put money behind this work area" on contributor projects (N1). Without it the Work tab shows no bounties |
 | `VITE_OPEN_BOUNTIES` | `{"11155111":"<open-bounty from the manifest>"}` | **Optional.** "Put money behind this" under a post (N2). Without it a post page shows no bounties |
-| `VITE_MATCHED_EXITS` | `{"11155111":"<matched-exit from the manifest>"}` | **Optional.** Sales between members on a project's Funds tab, once its DAO votes them in (N5). Without it the Funds tab shows none |
 | `VITE_WEEKLY_ROUNDS` | `{"11155111":"<weekly-rounds from the manifest>"}` | **Optional, test networks only.** Weekly rounds between holders and new buyers on a project's Funds tab, once its DAO votes them in (D131, D132). Without it the Funds tab shows none |
 | `VITE_CREATE_TOKENS`, `VITE_CREATE_FAUCETS` | `{"11155111":"<create-token>"}`, `{"11155111":"<create-faucet>"}` | **Optional.** Test CREATE and the faucet that gives 1,000 a day (N6): offered as a reviewer bond, and staked in the court |
 | `VITE_COURTS` | `{"11155111":"<court from the manifest>"}` | **Optional.** The court (N7): a Court page reached from Portfolio, and appeals on bounties on posts. Needs `VITE_CREATE_TOKENS` |
@@ -132,7 +131,6 @@ Not for the first pilot, and not in the hosted image (a build of your own). The 
 VITE_DAO_LAUNCH_KITS={"11155111":"<launch-kit>"}
 VITE_WORK_BOUNTIES={"11155111":"<work-bounty>"}
 VITE_OPEN_BOUNTIES={"11155111":"<open-bounty>"}
-VITE_MATCHED_EXITS={"11155111":"<matched-exit>"}
 VITE_WEEKLY_ROUNDS={"11155111":"<weekly-rounds>"}
 VITE_CREATE_TOKENS={"11155111":"<create-token>"}
 VITE_CREATE_FAUCETS={"11155111":"<create-faucet>"}

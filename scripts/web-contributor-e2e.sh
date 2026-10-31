@@ -14,8 +14,6 @@
 # A second journey has several people earn (D84): two first projects at Start, a newcomer with no Shares suggests work
 # for 5% of the project, the founder puts it to a vote filled in from the suggestion, both people's claims are reviewed,
 # paid and awarded by vote, and the Contributions page shows both.
-# The first journey ends with a sale between members (N5): the DAO votes the matched-exit exchange in, 30 days later a
-# newcomer switches it on, the contributor signs an offer for some of the Shares they earned, and the newcomer buys it.
 #
 # ⚠️  DEV ONLY. Anvil's public dev keys, a local chain or a local fork, nothing public.
 #
@@ -46,7 +44,6 @@ if [[ "$CHAIN" == "local" ]]; then
   CONTRIBUTOR_KIT="$(role "$DEPLOYMENTS/contributor-kit-31337.json" contributor-kit)"
   KIT="$(role "$DEPLOYMENTS/dao-launch-kit-31337.json" launch-kit)"
   BOUNTY="$(role "$DEPLOYMENTS/work-bounty-31337.json" work-bounty)"
-  MATCHED_EXIT="$(role "$DEPLOYMENTS/matched-exit-31337.json" matched-exit)"
   PAYOUTS_FACTORY="$(role "$DEPLOYMENTS/payouts-factory-31337.json" payouts-factory)"
   REMIX_BONDS="$(role "$DEPLOYMENTS/remix-bonds-31337.json" remix-bonds)"
   COURT="$(role "$DEPLOYMENTS/court-31337.json" court)"
@@ -71,7 +68,6 @@ else
   CONTRIBUTOR_KIT="$(sepolia_role contributor-kit)"
   KIT="$(sepolia_role launch-kit)"
   BOUNTY="$(sepolia_role work-bounty)"
-  MATCHED_EXIT="$(sepolia_role matched-exit)"
   PAYOUTS_FACTORY="$(sepolia_role payouts-factory)"
   REMIX_BONDS="$(sepolia_role remix-bonds)"
   COURT="$(sepolia_role court)"
@@ -101,8 +97,7 @@ CHAIN_ID="$(cast chain-id --rpc-url "$RPC")"
 [[ "$CONTRIBUTOR_KIT" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no contributor kit was deployed"
 [[ "$KIT" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no launch kit was deployed"
 [[ "$BOUNTY" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no work bounty was deployed"
-[[ "$MATCHED_EXIT" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no matched exit was deployed"
-step "chain ${CHAIN_ID}  contributor kit ${CONTRIBUTOR_KIT}  launch kit ${KIT}  work bounty ${BOUNTY}  matched exit ${MATCHED_EXIT}  currency ${CURRENCY}"
+step "chain ${CHAIN_ID}  contributor kit ${CONTRIBUTOR_KIT}  launch kit ${KIT}  work bounty ${BOUNTY}  currency ${CURRENCY}"
 
 # ── the kit refuses the founder limits (D79), whatever page sends it ─────────────────────────────────
 # Three calls from the founder that differ only where D79 draws its lines: a third of the budget with other people on the
@@ -134,7 +129,6 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   step "building the web app"
   env "${BUILD_ENV[@]}" VITE_CONTRIBUTOR_KITS="{\"${CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}" \
     VITE_DAO_LAUNCH_KITS="{\"${CHAIN_ID}\":\"${KIT}\"}" VITE_WORK_BOUNTIES="{\"${CHAIN_ID}\":\"${BOUNTY}\"}" \
-    VITE_MATCHED_EXITS="{\"${CHAIN_ID}\":\"${MATCHED_EXIT}\"}" \
     VITE_PAYOUTS_FACTORIES="{\"${CHAIN_ID}\":\"${PAYOUTS_FACTORY}\"}" \
     VITE_REMIX_BONDS="{\"${CHAIN_ID}\":\"${REMIX_BONDS}\"}" VITE_COURTS="{\"${CHAIN_ID}\":\"${COURT}\"}" \
     VITE_CREATE_TOKENS="{\"${CHAIN_ID}\":\"${CREATE_TOKEN}\"}" VITE_CREATE_FAUCETS="{\"${CHAIN_ID}\":\"${CREATE_FAUCET}\"}" \
@@ -142,7 +136,7 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
 fi
 step "running the browser spec"
 FIRST_BLOCK="$(cast block-number --rpc-url "$RPC")"
-E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_BOUNTY="$BOUNTY" E2E_MATCHED_EXIT="$MATCHED_EXIT" E2E_PAYOUTS="$PAYOUTS_FACTORY" E2E_REMIX_BONDS="$REMIX_BONDS" E2E_CREATE_FAUCET="$CREATE_FAUCET" E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" \
+E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_BOUNTY="$BOUNTY" E2E_PAYOUTS="$PAYOUTS_FACTORY" E2E_REMIX_BONDS="$REMIX_BONDS" E2E_CREATE_FAUCET="$CREATE_FAUCET" E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" \
   E2E_CONTRIBUTOR="$CONTRIBUTOR" E2E_MANAGER="$MANAGER" E2E_FOUNDER="$FOUNDER" \
   node_modules/.bin/playwright test tests/e2e/contributor-journey.spec.ts --project=smoke --reporter=list "$@"
 

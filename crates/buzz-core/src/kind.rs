@@ -931,11 +931,8 @@ pub const KIND_ROYALTY_CLOSE: u32 = 47007;
 /// naming the question (`forecast:<workbounty|postbounty>:<chain>:<contract>:<id>`)
 /// and one `forecast` tag holding 0–100. See `docs/nips/NIP-LP.md`.
 pub const KIND_FORECAST: u32 = 47008;
-/// NIP-LP: a signed offer to sell Shares through a DAO's matched-exit exchange
-/// (regular). The content is the EIP-712 offer and its signature as JSON; the
-/// chain is the authority on whether it can still be filled. Exactly one `t` tag
-/// naming the DAO's Shares (`exit:<chain>:<shares>`). See `docs/nips/NIP-LP.md`.
-pub const KIND_EXIT_OFFER: u32 = 47009;
+// 47009 carried exit offers for matched exits, retired in D152. Do not reuse it.
+
 /// NIP-LP: trustgraph score root (parameterized replaceable, d = program:epoch).
 /// Published by a scoring operator with its Merkle root and proof pointer;
 /// clients verify individual score claims against the root without a prover.
@@ -1293,7 +1290,6 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_ROYALTY_SCHEDULE,
     KIND_ROYALTY_CLOSE,
     KIND_FORECAST,
-    KIND_EXIT_OFFER,
 ];
 
 /// Returns `true` if `kind` is in the ephemeral range (20000–29999).

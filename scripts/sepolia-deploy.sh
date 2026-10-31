@@ -87,14 +87,13 @@ fi
 step "deploying the summoner, the launch kit and the contributor kit"
 OUT="$BACKUP/forge.out"
 sepolia_deploy_kits "$RPC" "$KEY" "$OUT"
-grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|MatchedExit|CreateToken|CreateFaucet|CreateCourt|PayoutsFactory|RemixBond|WeeklyRounds|Auction factory)" "$OUT" || tail -20 "$OUT"
+grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|CreateToken|CreateFaucet|CreateCourt|PayoutsFactory|RemixBond|WeeklyRounds|Auction factory)" "$OUT" || tail -20 "$OUT"
 
 KIT=$(sepolia_role launch-kit)
 SUMMONER=$(sepolia_role summoner)
 CONTRIBUTOR_KIT=$(sepolia_role contributor-kit)
 WORK_BOUNTY=$(sepolia_role work-bounty)
 OPEN_BOUNTY=$(sepolia_role open-bounty)
-MATCHED_EXIT=$(sepolia_role matched-exit)
 CREATE_TOKEN=$(sepolia_role create-token)
 CREATE_FAUCET=$(sepolia_role create-faucet)
 COURT=$(sepolia_role court)
@@ -123,9 +122,6 @@ echo "  ✓ the work bounty at $WORK_BOUNTY names the same work budget factory a
 [[ "$(cast codesize "$OPEN_BOUNTY" --rpc-url "$RPC")" != "0" ]] || fail "no code at the open bounty $OPEN_BOUNTY"
 [[ "$(lower "$(cast call "$OPEN_BOUNTY" 'currency()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SEPOLIA_USDC")" ]] || fail "the open bounty is not paid in Sepolia's USDC"
 echo "  ✓ the open bounty at $OPEN_BOUNTY pays in USDC"
-[[ "$(cast codesize "$MATCHED_EXIT" --rpc-url "$RPC")" != "0" ]] || fail "no code at the matched exit $MATCHED_EXIT"
-[[ "$(lower "$(cast call "$MATCHED_EXIT" 'currency()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SEPOLIA_USDC")" ]] || fail "the matched exit is not paid in Sepolia's USDC"
-echo "  ✓ the matched exit at $MATCHED_EXIT pays in USDC"
 [[ "$(cast codesize "$CREATE_FAUCET" --rpc-url "$RPC")" != "0" ]] || fail "no code at the CREATE faucet $CREATE_FAUCET"
 [[ "$(lower "$(cast call "$CREATE_FAUCET" 'token()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$CREATE_TOKEN")" ]] || fail "the faucet does not hand out the test CREATE"
 [[ "$(cast call "$CREATE_TOKEN" 'balanceOf(address)(uint256)' "$CREATE_FAUCET" --rpc-url "$RPC" | first)" == "$(cast call "$CREATE_TOKEN" 'totalSupply()(uint256)' --rpc-url "$RPC" | first)" ]] || fail "the faucet does not hold the whole test CREATE supply"
@@ -192,7 +188,6 @@ EOF
 VITE_DAO_LAUNCH_KITS='{"${C}":"${KIT}"}'
 VITE_WORK_BOUNTIES='{"${C}":"${WORK_BOUNTY}"}'
 VITE_OPEN_BOUNTIES='{"${C}":"${OPEN_BOUNTY}"}'
-VITE_MATCHED_EXITS='{"${C}":"${MATCHED_EXIT}"}'
 VITE_WEEKLY_ROUNDS='{"${C}":"${WEEKLY_ROUNDS}"}'
 VITE_CREATE_TOKENS='{"${C}":"${CREATE_TOKEN}"}'
 VITE_CREATE_FAUCETS='{"${C}":"${CREATE_FAUCET}"}'

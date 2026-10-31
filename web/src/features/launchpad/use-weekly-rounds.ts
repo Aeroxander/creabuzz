@@ -8,7 +8,7 @@ import {
   localUsdcAddress,
   weeklyRounds,
 } from "./chain-config";
-import { exitSalesState, readExitSales } from "./lib/matched-exit";
+import { exitExchangeState, readExchangeIfAny } from "./lib/exit-exchange";
 import { fetchRagequitPosition } from "./lib/ragequit-position";
 import {
   type OpenClaim,
@@ -59,10 +59,10 @@ export function useWeeklyRounds(dao: string, wallet: string | null) {
         chain.now(),
       ]);
       const shares = position.sharesToken;
-      const exchange = await readExitSales(chain, shares);
+      const exchange = await readExchangeIfAny(chain, shares);
       // Shares made before exchanges existed have nothing to show.
       if (!exchange) return null;
-      const state = exitSalesState(exchange, at, now);
+      const state = exitExchangeState(exchange, at, now);
       // Read whatever the exchange: a round already running stays collectable after a vote turns rounds off. The price
       // history is told apart when it fails, so a node refusing a long log read never hides the round itself.
       const [rounds, history] = await Promise.all([

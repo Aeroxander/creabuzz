@@ -74,7 +74,7 @@ Rows marked done were removed on 2026-10-31 (D150); the commit before them is ta
 | Item | What | Recommendation |
 |---|---|---|
 | #12 | Two discussion systems on one project (feed notes and board posts), three vote widgets, three composers | Merge after the contributor pilot: make Discussion a project-tagged board feed and keep old notes read-only, unless the pilot shows people confused by two places sooner. |
-| #19 | Matched exits and weekly rounds compete for one exchange slot | When the freeze lifts, keep weekly rounds (funding terms build on them) and retire matched exits; first take the matched-exit sale out of `web-contributor-e2e`'s journey. |
+| #19 | Matched exits and weekly rounds compete for one exchange slot | Done in D152: matched exits retired (contract, kind 47009, screens, deploy steps, the journey's sale step); weekly rounds keep the slot. |
 | #20 | Four send paths and two modules named one hyphen apart | Done in D150: `useWalletSend` wraps `useChainSend`; the passkey sender renamed `passkey-sender.ts`; the picker marked raise-only; an unused governance sender deleted. |
 | #21 | 43 web files that only re-export the core package | A mechanical import change after the pilot; the type check catches any miss. |
 | #22 | The LBAMM market and price stack (page, decisions, price sparkline, indexer, scripts, specs, CLI command) | Done in D150, tag `pre-deprecation-2026-10-31`. The sale's own price card stays on raise pages. The contracts went in D151: `SellRateGate`, `TieredSellRouter`, `BuybackKeeper` and the `DeployRoyalty` and `JourneyFloat` scripts. No submodule was removed: `lib/tm-tokenmaster` and `apptoken-dev` still serve the dev chain, and the two unused creator-token submodules are for you to remove. |

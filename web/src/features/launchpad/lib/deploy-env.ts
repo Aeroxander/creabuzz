@@ -20,7 +20,6 @@ import {
   historyFromBlock,
   LOCAL_ANVIL_PRESET,
   mainnetEnabled,
-  matchedExit,
   weeklyRounds,
   networkLabel,
   openBounty,
@@ -179,17 +178,6 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       "VITE_REMIX_BONDS is named but VITE_COURTS is not: a bond's case would have nowhere to go.",
     );
   }
-  const exits = matchedExit(chainId, env);
-  if (value(env, "VITE_MATCHED_EXITS") && !exits) {
-    problems.push(
-      `VITE_MATCHED_EXITS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
-    );
-  }
-  if (exits && !rpc) {
-    problems.push(
-      "VITE_MATCHED_EXITS is named but VITE_CHAIN_RPC_URL is not: a hosted page has no chain node without it.",
-    );
-  }
   const rounds = weeklyRounds(chainId, env);
   if (value(env, "VITE_WEEKLY_ROUNDS") && !rounds) {
     problems.push(
@@ -231,9 +219,6 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   summary.push(`Bounties on work areas: ${bounty ? `on (${bounty})` : "off"}`);
   summary.push(
     `Bounties on posts: ${postBounty ? `on (${postBounty})` : "off"}`,
-  );
-  summary.push(
-    `Sales between members: ${exits ? `on where a DAO votes for it (${exits})` : "off"}`,
   );
   summary.push(
     `CREATE: ${create ? `on (${create}${faucet ? `, faucet ${faucet}` : ", no faucet"})` : "off"}`,

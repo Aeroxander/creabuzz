@@ -28,12 +28,12 @@
 #      and the WorkAreaBounty (outside money behind a work area) + `deployments/work-bounty-<chainid>.json`
 #      and the OpenBounty (money behind a post) + `deployments/open-bounty-<chainid>.json`
 #      then the optional test-network features, each with its own manifest: test CREATE and its faucet, the court,
-#      the payouts factory, remix bonds, matched exits and weekly rounds (the journeys use them)
+#      the payouts factory, remix bonds and weekly rounds (the journeys use them)
 #   5. funded dev accounts, printed as a table (keys are DEV ONLY, labeled)
 #
 # What it prints for the web app: first the settings for a build like the hosted pilot's (contributor projects only,
-# VITE_CONTRIBUTOR_ONLY=1, no sale, no optional feature). The optional features' settings (a raise, bounties, matched
-# exits, weekly rounds, CREATE, the court, payouts, remix bonds) are printed only with DEV_CHAIN_ALL=1: they
+# VITE_CONTRIBUTOR_ONLY=1, no sale, no optional feature). The optional features' settings (a raise, bounties,
+# weekly rounds, CREATE, the court, payouts, remix bonds) are printed only with DEV_CHAIN_ALL=1: they
 # are deployed either way, and are for testing those features, not for the pilot (docs/v3-review/PILOT-RUNBOOK.md).
 #
 # ════════════════════════════════════════════════════════════════════════════
@@ -303,7 +303,7 @@ plan_lines() {
   echo "  6b. contributor kit  deploy ContributorKit (summoner)  [skipped: deployments/contributor-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner]"
   echo "  6c. work bounty  deploy WorkAreaBounty (currency + work budget factory)  [skipped: deployments/work-bounty-$DEV_CHAIN_ID.json names one that still points at both]"
   echo "  6d. open bounty  deploy OpenBounty (currency)  [skipped: deployments/open-bounty-$DEV_CHAIN_ID.json names one that still pays in it]"
-  echo "  6e. optional features  test CREATE + faucet, court, payouts factory, remix bonds, matched exit, weekly rounds  [skipped: each one's manifest names a contract that still has code]"
+  echo "  6e. optional features  test CREATE + faucet, court, payouts factory, remix bonds, weekly rounds  [skipped: each one's manifest names a contract that still has code]"
   echo "  7. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
   echo "  8. accounts     print the DEV-ONLY key table to stdout"
 }
@@ -841,14 +841,6 @@ open_bounty_address() {
   manifest_role "$(open_bounty_manifest_path)" "open-bounty"
 }
 
-matched_exit_manifest_path() {
-  echo "$DEPLOYMENTS_DIR/matched-exit-${CHAIN_ID}.json"
-}
-
-matched_exit_address() {
-  manifest_role "$(matched_exit_manifest_path)" "matched-exit"
-}
-
 # Guard: the manifest at $1 names role $2, its contract has code, and it still pays in THIS chain's currency.
 currency_contract_deployed() {
   local manifest=$1 role=$2 address currency
@@ -865,10 +857,6 @@ open_bounty_deployed() {
   currency_contract_deployed "$(open_bounty_manifest_path)" open-bounty || return 1
   named=$(cast call "$(open_bounty_address)" "court()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ "$(lower "$named")" == "$(lower "$(court_address)")" ]]
-}
-
-matched_exit_deployed() {
-  currency_contract_deployed "$(matched_exit_manifest_path)" matched-exit
 }
 
 # Deploy a contract whose first constructor argument is this chain's currency: $1 the role, $2 the contract (its file is
@@ -1043,11 +1031,6 @@ write_one_role_manifest() {
   ' "$1" "$CHAIN_ID" "$2" "$3" "$4" || fail_step "$2" "deployed at $3 but could not write $1"
 }
 
-# Matched exits (N5): members sell Shares to people who want in, once their DAO names this exchange by vote.
-deploy_matched_exit() {
-  deploy_currency_contract matched-exit MatchedExit "$(matched_exit_manifest_path)" "sales between members"
-}
-
 weekly_rounds_manifest_path() {
   echo "$DEPLOYMENTS_DIR/weekly-rounds-${CHAIN_ID}.json"
 }
@@ -1203,7 +1186,7 @@ up() {
 
   # A chain with no blocks has nothing deployed, so every manifest for its id is left over from another chain. Kept,
   # one can name an address this chain gives to a different contract that passes the "already deployed" check (a
-  # matched exit skipped because a work bounty landed at its old address and pays in the same currency).
+  # matched exit, since retired, skipped because a work bounty landed at its old address and paid in the same currency).
   if [[ "$(cast block-number --rpc-url "$RPC_URL" 2>/dev/null || echo "?")" == "0" ]]; then
     local stale
     for stale in "$DEPLOYMENTS_DIR"/*-"$CHAIN_ID".json; do
@@ -1225,7 +1208,6 @@ up() {
   deploy_open_bounty
   deploy_payouts_factory
   deploy_remix_bonds
-  deploy_matched_exit
   deploy_weekly_rounds
   fund_accounts
 
@@ -1243,7 +1225,6 @@ up() {
     echo "  launch kit: $(kit_address) (dao-launch-kit-$CHAIN_ID.json)"
     echo "  work bounty: $(work_bounty_address) (work-bounty-$CHAIN_ID.json)"
     echo "  open bounty: $(open_bounty_address) (open-bounty-$CHAIN_ID.json)"
-    echo "  matched exit: $(matched_exit_address) (matched-exit-$CHAIN_ID.json)"
     echo "  weekly rounds: $(weekly_rounds_address) (weekly-rounds-$CHAIN_ID.json)"
     echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
     echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
@@ -1259,7 +1240,6 @@ up() {
     echo "              VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
     echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
     echo "              VITE_OPEN_BOUNTIES='{\"$CHAIN_ID\":\"$(open_bounty_address)\"}'  (lets people put money behind a post here)"
-    echo "              VITE_MATCHED_EXITS='{\"$CHAIN_ID\":\"$(matched_exit_address)\"}'  (lets members sell Shares to each other here, once their DAO votes for it)"
     echo "              VITE_WEEKLY_ROUNDS='{\"$CHAIN_ID\":\"$(weekly_rounds_address)\"}'  (weekly rounds between holders and new buyers, once their DAO votes them in)"
     echo "              VITE_CREATE_TOKENS='{\"$CHAIN_ID\":\"$(create_token_address)\"}' VITE_CREATE_FAUCETS='{\"$CHAIN_ID\":\"$(create_faucet_address)\"}'  (test CREATE: stakes and bonds)"
     echo "              VITE_COURTS='{\"$CHAIN_ID\":\"$(court_address)\"}'  (the court claimants appeal to)"

@@ -15,10 +15,6 @@ import { installAnvilWallet } from "../helpers/anvil-wallet";
  * keeps what pages publish and hands it to the others) and the wallets (`window.ethereum` forwarding to Anvil's
  * unlocked accounts).
  *
- * When the build names a matched-exit exchange (N5), the first journey ends with a sale between members: the DAO votes
- * the exchange in, 30 days later a newcomer switches it on, the contributor offers some of the Shares they earned at a
- * price they choose, and the newcomer buys them; the money goes to the contributor and the treasury is untouched.
- *
  * The second journey has several people earn (D84): two first projects at Start, a newcomer with no Shares suggests
  * work and asks for 5% of the project, the founder puts it to a vote filled in from the suggestion, and both people's
  * claims are taken on in their own projects, reviewed, paid and awarded by vote.
@@ -28,8 +24,6 @@ const ANVIL_URL = process.env.E2E_ANVIL_URL ?? "";
 const KIT = process.env.E2E_KIT ?? "";
 /** The bounty contract on work areas (N1); without one the journey skips the bounty steps. */
 const BOUNTY = process.env.E2E_BOUNTY ?? "";
-/** The matched-exit exchange (N5); without one the journey skips the sales between members. */
-const MATCHED_EXIT = process.env.E2E_MATCHED_EXIT ?? "";
 /** The payout module factory (N10); without one the journey skips payouts. */
 const PAYOUTS = process.env.E2E_PAYOUTS ?? "";
 /** Remix bonds (N12) and the test CREATE faucet; without them the journey skips the bond. */
@@ -638,108 +632,7 @@ test("a contributor project is started from the page, work is claimed the same d
     expect(await usdcOf(FOUNDER_WALLET)).toBe(founderMoney);
   }
 
-  // ── 7. a member who wants out sells to someone who wants in (N5) ────────────────────────────────
-  if (MATCHED_EXIT) {
-    const pendingExchange = async () =>
-      wordAddress(await call(shares, "0x6cb21d83"));
-    await refresh(founder, "Funds");
-    await expect(founder.getByTestId("exit-sales-state")).toContainText(
-      "Members can't sell Shares to each other here yet.",
-      { timeout: 30_000 },
-    );
-    // The DAO votes the exchange in; the vote can't switch it on.
-    await refresh(founder, "Decisions");
-    await founder.getByTestId("decision-new").click();
-    await founder.getByTestId("decision-kind-sales").click();
-    await expect(founder.getByTestId("decision-draft-title")).toHaveText(
-      "Allow sales between members in 30 days",
-      { timeout: 30_000 },
-    );
-    await founder.getByTestId("decision-draft-submit").click();
-    await expect(founder.getByTestId("decision-opened")).toBeVisible({
-      timeout: 60_000,
-    });
-    // A vote on the Shares takes the full vote: two days' review and twelve hours' hold.
-    await carryOut(founder, 175_000, 90_000);
-    expect(await pendingExchange()).toBe(MATCHED_EXIT.toLowerCase());
-    await refresh(founder, "Funds");
-    await expect(founder.getByTestId("exit-sales-state")).toContainText(
-      "They can start on",
-      { timeout: 30_000 },
-    );
-    await expect(founder.getByTestId("exit-sales-switch-on")).toHaveCount(0);
-
-    // 30 days later anyone can switch it on: here a newcomer with money and no Shares.
-    await pass(30 * 86_400);
-    const buyer = await context.newPage();
-    await open(buyer, NEWCOMER, projectPath("treasury"), NEWCOMER_NSEC);
-    await buyer.getByTestId("exit-sales-switch-on").click();
-    await expect(buyer.getByTestId("exit-sales-state")).toContainText(
-      "The money goes to the seller, not the project.",
-      { timeout: 60_000 },
-    );
-    await expect(buyer.getByTestId("exit-sales-none")).toBeVisible();
-
-    // The contributor offers 10 of the 25 Shares they earned at 2 USDC each. They keep them until someone buys.
-    await refresh(contributor, "Funds");
-    // The treasury holds no USDC here, and the page says so rather than "0 per Share".
-    await expect(contributor.getByTestId("exit-sales-leaving")).toHaveText(
-      "Leaving pays no USDC right now.",
-      { timeout: 30_000 },
-    );
-    await contributor.getByTestId("exit-sales-sell").click();
-    await contributor.getByTestId("exit-offer-amount").fill("26");
-    await contributor.getByTestId("exit-offer-price").fill("2");
-    await contributor.getByTestId("exit-offer-publish").click();
-    await expect(contributor.getByTestId("exit-offer-problem")).toContainText(
-      "You can sell up to 25 Shares.",
-    );
-    await contributor.getByTestId("exit-offer-amount").fill("10");
-    await expect(contributor.getByTestId("exit-offer-total")).toHaveText(
-      "Buyers pay 20 USDC in all, to you.",
-    );
-    await contributor.getByTestId("exit-offer-publish").click();
-    await expect(contributor.getByTestId("exit-sales-offer")).toHaveCount(1, {
-      timeout: 60_000,
-    });
-    await expect(contributor.getByTestId("exit-sales-offer")).toContainText(
-      "10 Shares for 20 USDC (2 USDC each), from you",
-    );
-    expect(await sharesOf(CONTRIBUTOR)).toBe(25n * E18);
-    if (process.env.E2E_SHOTS) {
-      await contributor
-        .getByTestId("exit-sales")
-        .screenshot({ path: `${process.env.E2E_SHOTS}/exit-sales-offer.png` });
-    }
-
-    // The newcomer buys it: the money goes to the contributor, the Shares to the newcomer, the treasury is untouched.
-    const treasury = await usdcOf(dao);
-    const sellerMoney = await usdcOf(CONTRIBUTOR);
-    const buyerMoney = await usdcOf(NEWCOMER);
-    await refresh(buyer, "Funds");
-    await buyer.getByTestId("exit-sales-buy").click();
-    await expect(buyer.getByTestId("exit-sales-none")).toBeVisible({
-      timeout: 60_000,
-    });
-    expect(await sharesOf(NEWCOMER)).toBe(10n * E18);
-    expect(await sharesOf(CONTRIBUTOR)).toBe(15n * E18);
-    expect(await usdcOf(CONTRIBUTOR)).toBe(sellerMoney + 20_000_000n);
-    expect(await usdcOf(NEWCOMER)).toBe(buyerMoney - 20_000_000n);
-    expect(await usdcOf(dao)).toBe(treasury);
-    // Everything else stays locked: the newcomer can't send the Shares on themselves.
-    await expect(
-      rpc("eth_call", [
-        {
-          from: NEWCOMER,
-          to: shares,
-          data: `0xa9059cbb${addressArg(FOUNDER_WALLET)}${1n.toString(16).padStart(64, "0")}`,
-        },
-        "latest",
-      ]),
-    ).rejects.toThrow();
-  }
-
-  // ── 8. holders are paid a share of revenue (N10) ──────────────────────────────────────────────────
+  // ── 7. holders are paid a share of revenue (N10) ──────────────────────────────────────────────────
   if (PAYOUTS) {
     await refresh(founder, "Funds");
     await expect(founder.getByTestId("payouts-none")).toBeVisible({

@@ -171,6 +171,9 @@ outside the project.
 
 ## 5. Matched exits (N5)
 
+**Retired in D152 (2026-10-31).** Weekly rounds (D131) took the Shares' one exchange slot, and funding terms build on
+them; the contract, its kind 47009 and its screens are gone. The rest of this section is the history.
+
 **Built for test networks as D117** (`MatchedExit`, the Shares' named exchange, kind 47009, the Funds tab), without the
 price floor (no DAO whose leaving pays one currency exists yet) and with offers signed by a browser wallet.
 

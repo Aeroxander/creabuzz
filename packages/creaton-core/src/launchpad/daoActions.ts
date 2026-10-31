@@ -606,9 +606,7 @@ export interface DescribeContext {
   currencySymbol?: string;
   /** The DAO's own Shares (18 decimals), so a bond paid in them is described as the project's own token. */
   projectToken?: string;
-  /** The matched-exit exchange this app knows on the DAO's network, so a vote naming it is told apart from one naming anything else. */
-  matchedExit?: string;
-  /** The weekly rounds contract this app knows on the DAO's network (D131), told apart the same way. */
+  /** The weekly rounds contract this app knows on the DAO's network (D131), so a vote naming it is told apart from one naming anything else. */
   weeklyRounds?: string;
   /** The funding-terms contract of the DAO's summoner (D133), so its votes are put in words. */
   fundingTerms?: string;

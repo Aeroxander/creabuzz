@@ -34,12 +34,10 @@ import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
 import { erc20BalanceOf, getRpcEndpoint } from "../chain";
 import {
   localUsdcAddress,
-  matchedExit,
   payoutsFactory,
   weeklyRounds,
 } from "../chain-config";
 import { PayoutsForm } from "./PayoutsForm";
-import { ExitSalesForm } from "./ExitSalesForm";
 import { FundingDecisionForm } from "./FundingDecisionForm";
 import { RoundsDecisionForm } from "./RoundsDecisionForm";
 import {
@@ -58,7 +56,6 @@ type Kind =
   | "slash"
   | "close"
   | "trading"
-  | "sales"
   | "rounds"
   | "funding"
   | "payouts";
@@ -117,12 +114,6 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     label: "Open trading",
     about:
       "Let Shares be sent between wallets, and so bought and sold. It can open only 30 days after a vote announces it.",
-  },
-  {
-    id: "sales",
-    label: "Sales between members",
-    about:
-      "Let members who want out sell Shares to people who want in, at a price they choose, or turn that off. It can start only 30 days after the vote.",
   },
   {
     id: "rounds",
@@ -202,13 +193,9 @@ export function DecisionComposer({
     staleTime: 15_000,
     refetchOnWindowFocus: false,
   });
-  // Sales between members need this build's exchange on the DAO's network, and are sold from a contributor project's
-  // Funds tab; with neither, there is nothing to vote in.
-  const exitExchange = matchedExit(ctx.chainId ?? null);
   const offered = (id: Kind): boolean => {
     // Opening trading makes Shares something to buy and sell: a contributor-only build offers no sale of any kind.
     if (id === "trading" && !raisesOffered()) return false;
-    if (id === "sales") return exitExchange !== null && contributor;
     if (id === "rounds")
       return weeklyRounds(ctx.chainId ?? null) !== null && contributor;
     // Sales happen in weekly rounds, and need the summoner's funding-terms contract.
@@ -526,15 +513,6 @@ export function DecisionComposer({
               ctx={ctx}
               gate={gate}
               key={`w${formKey}`}
-              onSubmit={submit}
-            />
-          ) : kind === "sales" ? (
-            <ExitSalesForm
-              blocked={blocked}
-              busy={busy}
-              ctx={ctx}
-              gate={gate}
-              key={`e${formKey}`}
               onSubmit={submit}
             />
           ) : kind === "trading" ? (

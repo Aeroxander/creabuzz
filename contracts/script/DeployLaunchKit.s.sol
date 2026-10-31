@@ -12,9 +12,8 @@ import {TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 /// Shares carry the milestone lock guard), the `DaoLaunchKit` that launches a DAO and its sale in one transaction, and the
 /// `ContributorKit` that starts a contributor project (no sale, ready for work) on the same summoner, and the
 /// `WorkAreaBounty` that holds outside money behind a work area of any work budget the summoner's factory makes (N1), and
-/// the `OpenBounty` that holds money behind a post until someone's claim keeps a majority of it (N2), and the
-/// `MatchedExit` exchange where a member sells Shares to someone who wants in, once their DAO names it by vote (N5). On a
-/// test network it also makes test $CREATE and its faucet (N6), and the court that bounties on posts appeal to (N7).
+/// the `OpenBounty` that holds money behind a post until someone's claim keeps a majority of it (N2). On a test network
+/// it also makes test $CREATE and its faucet (N6), and the court that bounties on posts appeal to (N7).
 ///
 /// Nothing else is deployed: the auction factory, Permit2 and the sale currency are the chain's own. The script refuses
 /// to run where the factory has no code, and it checks the Shares implementation it computes really exists before it
@@ -23,7 +22,7 @@ import {TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 /// Run (a rehearsal on a fork first; `scripts/sepolia-deploy.sh` does both):
 ///   PRIVATE_KEY=0x… forge script script/DeployLaunchKit.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast
 /// Env: PRIVATE_KEY (the deployer, a testnet key), CCA_FACTORY (default: the canonical factory, the same address on every
-/// chain), BOUNTY_CURRENCY (what bounties and matched sales are paid in; default on Sepolia: Circle's USDC there,
+/// chain), BOUNTY_CURRENCY (what bounties and weekly rounds are paid in; default on Sepolia: Circle's USDC there,
 /// required elsewhere),
 /// LAUNCH_PROJECT (a label for the manifest).
 contract DeployLaunchKit is Script {
@@ -84,7 +83,6 @@ contract DeployLaunchKit is Script {
         // A remix's bond to its parent (N12), cased in the court: test networks only.
         address remixBonds =
             court == address(0) ? address(0) : vm.deployCode("RemixBond.sol:RemixBond", abi.encode(createToken, court));
-        address matchedExit = vm.deployCode("MatchedExit.sol:MatchedExit", abi.encode(bountyCurrency));
         // Weekly rounds between holders and new buyers: test networks only. Its smallest price step is one cent a unit.
         address weeklyRounds = court == address(0)
             ? address(0)
@@ -97,7 +95,6 @@ contract DeployLaunchKit is Script {
         require(contributorKit.code.length != 0, "DeployLaunchKit: the contributor kit has no code");
         require(workBounty.code.length != 0, "DeployLaunchKit: the work bounty has no code");
         require(openBounty.code.length != 0, "DeployLaunchKit: the open bounty has no code");
-        require(matchedExit.code.length != 0, "DeployLaunchKit: the matched exit has no code");
 
         console2.log("chain id:", block.chainid);
         _role("summoner", "Summoner", summoner);
@@ -107,7 +104,6 @@ contract DeployLaunchKit is Script {
         _role("contributor-kit", "ContributorKit", contributorKit);
         _role("work-bounty", "WorkAreaBounty", workBounty);
         _role("open-bounty", "OpenBounty", openBounty);
-        _role("matched-exit", "MatchedExit", matchedExit);
         if (createToken != address(0)) {
             _role("create-token", "CreateToken", createToken);
             _role("create-faucet", "CreateFaucet", createFaucet);

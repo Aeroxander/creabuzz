@@ -16,7 +16,7 @@ than any other** before real money.
 ## Who counts, and from when
 
 Every Share and Loot outside the DAO's own holding: what leaving pays out on. The DAO tells the module of every change in
-who holds what (transfers, mints, burns, sales between members, leaving), through the same notice it already sends the
+who holds what (transfers, mints, burns, sales in weekly rounds, leaving), through the same notice it already sends the
 voting ledger. So units count from the moment they are held: a buyer gets nothing for payouts made before they bought,
 and a seller, someone who left or someone banned keeps what was credited to them and collects it themselves.
 

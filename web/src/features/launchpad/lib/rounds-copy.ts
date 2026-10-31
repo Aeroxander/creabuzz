@@ -5,7 +5,7 @@
  */
 
 import { formatUnits, parseUnits } from "./dao-actions.ts";
-import type { ExitSalesPhase } from "./matched-exit.ts";
+import type { ExitExchangePhase } from "./exit-exchange.ts";
 import {
   escrowFor,
   type PastRound,
@@ -40,7 +40,7 @@ export const shares = (units: bigint) => formatUnits(units, 18, 4);
 
 /** Whether rounds are on for this DAO, in one sentence; null when its Shares move freely anyway. */
 export function roundsStateLine(
-  phase: ExitSalesPhase,
+  phase: ExitExchangePhase,
   opensAt: number | null,
 ): string | null {
   switch (phase) {
@@ -57,7 +57,7 @@ export function roundsStateLine(
     case "on":
       return "Once a week, members who want out are matched with people who want in, at one price, never below what leaving pays.";
     case "other":
-      return "This project sells Shares between members another way, so weekly rounds aren't on.";
+      return "Another contract was voted in to move Shares, so weekly rounds aren't on. Turn it off first, then start rounds.";
   }
 }
 

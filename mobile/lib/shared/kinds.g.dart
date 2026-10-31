@@ -817,12 +817,6 @@ class Kinds {
   /// and one `forecast` tag holding 0–100. See `docs/nips/NIP-LP.md`.
   static const int KIND_FORECAST = 47008;
 
-  /// NIP-LP: a signed offer to sell Shares through a DAO's matched-exit exchange
-  /// (regular). The content is the EIP-712 offer and its signature as JSON; the
-  /// chain is the authority on whether it can still be filled. Exactly one `t` tag
-  /// naming the DAO's Shares (`exit:<chain>:<shares>`). See `docs/nips/NIP-LP.md`.
-  static const int KIND_EXIT_OFFER = 47009;
-
   /// NIP-LP: trustgraph score root (parameterized replaceable, d = program:epoch).
   /// Published by a scoring operator with its Merkle root and proof pointer;
   /// clients verify individual score claims against the root without a prover.

@@ -36,7 +36,7 @@ not replace them, the contract audit, or a lawyer.
 | Journey, funding terms, exit fee | `docs/v3-review/FUNDING-TERMS.md` (D133 to D136) |
 | Fundraising kit rules (split limits, locks, issuance, trading lock) | `docs/v3-review/TOKENOMICS-PROPOSAL.md`, `TOKENOMICS-CONTRACT-CHANGES.md` (D72 to D81) |
 | Weekly rounds | `docs/v3-review/WEEKLY-ROUNDS.md`, `contracts/src/WeeklyRounds.sol` (D131, D132) |
-| Matched exits, payouts, bounties | `MatchedExit.sol` (D117), `Payouts.sol` and `PAYOUTS.md` (D122), `WorkAreaBounty.sol`, `OpenBounty.sol` |
+| Payouts, bounties | `Payouts.sol` and `PAYOUTS.md` (D122), `WorkAreaBounty.sol`, `OpenBounty.sol` |
 | Contributor projects | `CONTRIBUTOR-KIT.md`, `ContributorKit.sol` (D65, D66, D79, D84) |
 | Every decision and why | `docs/v3-review/DECISIONS.md` |
 | Invariants already checked | `docs/v3-review/AUDIT-SCOPE.md`, `contracts/test/invariant/`, `scripts/simulate-raise.mjs` |

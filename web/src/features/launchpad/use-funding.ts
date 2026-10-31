@@ -13,7 +13,7 @@ import {
   readFundingContract,
   readFundingTerms,
 } from "./lib/funding-terms";
-import { exitSalesState, readExitSales } from "./lib/matched-exit";
+import { exitExchangeState, readExchangeIfAny } from "./lib/exit-exchange";
 import {
   type OpenClaim,
   readOpenClaims,
@@ -58,9 +58,10 @@ export function useFunding(dao: string, wallet: string | null) {
         chain.now(),
         chain.call(dao, encodeCall0("shares()")),
       ]);
-      const exchange = await readExitSales(chain, decodeAddress(sharesHex));
+      const exchange = await readExchangeIfAny(chain, decodeAddress(sharesHex));
       const roundsOn =
-        exchange !== null && exitSalesState(exchange, at, now).phase === "on";
+        exchange !== null &&
+        exitExchangeState(exchange, at, now).phase === "on";
       const funding = await readRounds(chain, at, dao, wallet, now, "funding");
       // Earlier funding rounds where this wallet still has something to collect; the latest is shown on its own.
       const latest = funding.round?.id ?? null;

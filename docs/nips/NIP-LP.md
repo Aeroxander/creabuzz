@@ -50,10 +50,10 @@ semantics (regular events, `a`/`e`/`p`/`d` tags, NIP-09 deletion).
 | `47005` | Receipt | regular, `a` = launch coordinate | anyone (usually indexer bot) | chain-state mirror: table kind, tx hash, payload JSON |
 | `37006` | Score root | parameterized replaceable, `d` = `<program>:<epoch>` | scoring operator | trustgraph score Merkle root + proof pointer |
 | `47008` | Forecast | regular, `t` = bounty question | anyone | a whole percent that a bounty will be paid, and a reason |
-| `47009` | Exit offer | regular, `t` = `exit:<chain>:<shares>` | anyone (usually the seller) | a signed offer to sell Shares through the DAO's matched-exit exchange |
 
 Kinds `37002`–`37009` (except `37006`) are reserved for future launchpad use; `47006`–`47007` are the royalty
-mirrors, `47008` the forecasts and `47009` the exit offers.
+mirrors and `47008` the forecasts. `47009` carried exit offers for matched exits, retired in D152: relays refuse
+it, and it is not reused.
 
 ## `37001`: the launch record
 
@@ -209,39 +209,6 @@ before the question's cutoff: the day before the bounty's deadline, or earlier w
 `OpenBounty`'s first `RunStarted`; a work-area bounty's first submission released after it opened). The question settles
 on the chain: paid is done; refunds open is not done. Accuracy is `100 × (1 − mean Brier score)`, computed by each
 client from public forecasts and the chain, only for bounties on contracts the client itself trusts.
-
-## `47009`: exit offers
-
-Anyone MAY publish. An exit offer carries a holder's signed offer to sell Shares of a DAO through the `MatchedExit`
-exchange the DAO named by vote (N5 of `docs/v3-review/NEXT-GEN-DAO.md`). The seller keeps the Shares until someone fills
-it; the offer is a signature, not a deposit.
-
-- Exactly one `t` tag naming the DAO's Shares: `exit:<chain id>:<0x Shares, lowercase>`.
-- Content: a JSON object of at most 2000 bytes:
-
-  ```json
-  {
-    "chainId": 11155111,
-    "exchange": "0x…",
-    "shares": "0x…",
-    "seller": "0x…",
-    "amount": "10000000000000000000",
-    "price": "120000000",
-    "expiry": 1790000000,
-    "nonce": "1",
-    "signature": "0x…"
-  }
-  ```
-
-  `amount` is in Shares base units and `price` the whole price in the exchange's currency base units, both decimal
-  strings; `expiry` is in seconds. `signature` is the seller's EIP-712 signature over
-  `Offer(address shares,address seller,uint256 amount,uint256 price,uint64 expiry,uint256 nonce)` in the domain
-  `Creaton matched exit`, version `1`, the chain and the exchange; for a smart account it is whatever the account's
-  ERC-1271 check accepts.
-
-Relays check only the tag and that the content names the same chain and Shares. The chain is the authority: clients
-show an offer only while `MatchedExit.isOpen` says it can be filled and the seller still holds and has approved the
-Shares, and they count an offer once per EIP-712 digest however many records repeat it.
 
 ## Deletion
 

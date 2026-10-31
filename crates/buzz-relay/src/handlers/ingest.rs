@@ -18,30 +18,29 @@ use buzz_core::kind::{
     KIND_BOOKMARK_SET, KIND_BUDGET_SPEND_RECEIPT, KIND_CANVAS, KIND_COMMENT, KIND_CONTACT_LIST,
     KIND_CONTRIBUTION_RECORD, KIND_DELETION, KIND_DEPLOYMENT_RECORD, KIND_DM_ADD_MEMBER,
     KIND_DM_HIDE, KIND_DM_OPEN, KIND_DM_RELAY_LIST, KIND_EMOJI_LIST, KIND_EMOJI_SET,
-    KIND_EVENT_REMINDER, KIND_EVM_BINDING, KIND_EXIT_OFFER, KIND_FOLLOW_SET, KIND_FORECAST,
-    KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GENERIC_REPOST, KIND_GIFT_WRAP,
-    KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST,
-    KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT,
-    KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_HIGHLIGHT, KIND_HUDDLE_ENDED,
-    KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT,
-    KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID,
-    KIND_LAUNCH_PROPOSAL, KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE,
-    KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
-    KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT,
-    KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST,
-    KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP,
-    KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST,
-    KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER, KIND_NIP43_LEAVE_REQUEST,
-    KIND_NIP65_RELAY_LIST_METADATA, KIND_ORG_BUDGET, KIND_ORG_GRANT, KIND_ORG_JOIN_REQUEST,
-    KIND_ORG_NODE, KIND_ORG_PITCH, KIND_PERSONA, KIND_PIN_LIST, KIND_POLL, KIND_POLL_RESPONSE,
-    KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK, KIND_PROFILE,
-    KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_REPOST, KIND_SCORE_ROOT,
-    KIND_SKILL, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT,
-    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEAM_RUN,
-    KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE, KIND_USER_STATUS, KIND_WIKI_CORRECTION,
-    KIND_WIKI_PAGE, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
-    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_ACCESS,
-    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_EVENT_REMINDER, KIND_EVM_BINDING, KIND_FOLLOW_SET, KIND_FORECAST, KIND_FORUM_COMMENT,
+    KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GENERIC_REPOST, KIND_GIFT_WRAP, KIND_GIT_ISSUE,
+    KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT,
+    KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED,
+    KIND_GIT_STATUS_OPEN, KIND_HIGHLIGHT, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
+    KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED,
+    KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
+    KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
+    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
+    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
+    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
+    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
+    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
+    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_ORG_BUDGET, KIND_ORG_GRANT,
+    KIND_ORG_JOIN_REQUEST, KIND_ORG_NODE, KIND_ORG_PITCH, KIND_PERSONA, KIND_PIN_LIST, KIND_POLL,
+    KIND_POLL_RESPONSE, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK,
+    KIND_PROFILE, KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT, KIND_REPOST,
+    KIND_SCORE_ROOT, KIND_SKILL, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF,
+    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
+    KIND_TEAM_CATALOG, KIND_TEAM_RUN, KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE,
+    KIND_USER_STATUS, KIND_WIKI_CORRECTION, KIND_WIKI_PAGE, KIND_WORKFLOW_DEF,
+    KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
+    RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_ACCESS, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -620,9 +619,7 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_LAUNCH_PROPOSAL
         | KIND_LAUNCH_RECEIPT
         // A forecast on a bounty (N3): an opinion with a reason, no money and no vote.
-        | KIND_FORECAST
-        // A signed offer to sell Shares (N5): the chain decides whether it fills.
-        | KIND_EXIT_OFFER => Ok(Scope::MessagesWrite),
+        | KIND_FORECAST => Ok(Scope::MessagesWrite),
         // NIP-ORG: org nodes, grants, and budgets are ordinary member writes
         // (same model as forum posts). Structural authorization (grant chains,
         // budget limits) is layered on top; the relay validates envelopes and
@@ -890,8 +887,6 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_LAUNCH_RECEIPT
             // A forecast names its bounty in a `t` tag; it belongs to no channel.
             | KIND_FORECAST
-            // An exit offer names its DAO's Shares in a `t` tag; it belongs to no channel.
-            | KIND_EXIT_OFFER
             // NIP-ORG: the org graph is a community-level object, addressed by
             // (pubkey, kind, d_tag) exactly like a project (30621) or a launch
             // record (37001). One org belongs to the whole community, not to a
@@ -3433,9 +3428,6 @@ fn validate_forecast(event: &Event) -> Result<(), String> {
     Ok(())
 }
 
-/// The largest exit offer, in bytes of content.
-const MAX_EXIT_OFFER_BYTES: usize = 2000;
-
 /// Whether `s` is a 0x address written in lowercase.
 fn is_lower_address(s: &str) -> bool {
     s.len() == 42
@@ -3443,58 +3435,6 @@ fn is_lower_address(s: &str) -> bool {
         && s[2..]
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-/// An exit offer (kind 47009, N5): exactly one `t` tag `exit:<chain id>:<0x Shares, lowercase>`, and a JSON object of
-/// at most `MAX_EXIT_OFFER_BYTES` naming the same chain and Shares. Whether the offer is signed, open and fillable is
-/// the chain's to say; the client checks it there before showing it.
-fn validate_exit_offer(event: &Event) -> Result<(), String> {
-    let mut topic = None;
-    for tag in event.tags.iter() {
-        let parts = tag.as_slice();
-        if parts.first().map(|s| s.as_str()) != Some("t") {
-            continue;
-        }
-        if topic.is_some() {
-            return Err("exit offer must have exactly one `t` tag".to_string());
-        }
-        topic = Some(parts.get(1).map(|s| s.as_str()).unwrap_or(""));
-    }
-    let Some(topic) = topic else {
-        return Err("exit offer must have exactly one `t` tag".to_string());
-    };
-    let mut parts = topic.split(':');
-    let (Some("exit"), Some(chain), Some(shares), None) =
-        (parts.next(), parts.next(), parts.next(), parts.next())
-    else {
-        return Err("exit offer `t` tag must be exit:<chain>:<shares>".to_string());
-    };
-    let chain_id = match chain.parse::<u64>() {
-        Ok(id)
-            if id > 0 && !chain.starts_with('0') && chain.bytes().all(|b| b.is_ascii_digit()) =>
-        {
-            id
-        }
-        _ => return Err("exit offer `t` tag must be exit:<chain>:<shares>".to_string()),
-    };
-    if !is_lower_address(shares) {
-        return Err("exit offer `t` tag must be exit:<chain>:<shares>".to_string());
-    }
-    if event.content.len() > MAX_EXIT_OFFER_BYTES {
-        return Err(format!(
-            "exit offer must be at most {MAX_EXIT_OFFER_BYTES} bytes"
-        ));
-    }
-    let offer = serde_json::from_str::<serde_json::Value>(&event.content)
-        .ok()
-        .filter(|v| v.is_object())
-        .ok_or_else(|| "exit offer content must be a JSON object".to_string())?;
-    let same_chain = offer.get("chainId").and_then(|v| v.as_u64()) == Some(chain_id);
-    let same_shares = offer.get("shares").and_then(|v| v.as_str()) == Some(shares);
-    if !same_chain || !same_shares {
-        return Err("exit offer must name the chain and Shares of its `t` tag".to_string());
-    }
-    Ok(())
 }
 
 fn validate_launch_mirror_envelope(event: &Event, label: &str) -> Result<(), String> {
@@ -5160,10 +5100,6 @@ async fn ingest_event_inner(
 
     if kind_u32 == KIND_FORECAST {
         validate_forecast(&event).map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
-    }
-
-    if kind_u32 == KIND_EXIT_OFFER {
-        validate_exit_offer(&event).map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
     // Track pre-created channel UUID for compensation on insert failure.
@@ -8759,72 +8695,18 @@ mod postgres_tests {
         );
     }
 
-    const EXIT_TOPIC: &str = "exit:31337:0x9d4454b023096f34b160d6b654540c56a1f81688";
-
-    fn exit_offer(content: &str, tags: &[&[&str]]) -> Event {
-        make_event_with_tags(KIND_EXIT_OFFER, content, tags)
-    }
-
-    const EXIT_BODY: &str = r#"{"chainId":31337,"shares":"0x9d4454b023096f34b160d6b654540c56a1f81688","seller":"0x1","amount":"1","price":"1","expiry":"1","nonce":"1","exchange":"0x2","signature":"0x"}"#;
-
     #[test]
-    fn an_exit_offer_naming_its_shares_is_an_ordinary_global_write() {
-        let ev = exit_offer(EXIT_BODY, &[&["t", EXIT_TOPIC]]);
-        assert!(validate_exit_offer(&ev).is_ok());
-        assert!(is_global_only_kind(KIND_EXIT_OFFER));
+    fn a_retired_exit_offer_is_refused_as_an_unknown_kind() {
+        // Kind 47009 carried signed offers for matched exits, retired in D152; the number stays unused.
+        let ev = make_event_with_tags(
+            47009,
+            "{}",
+            &[&["t", "exit:31337:0x9d4454b023096f34b160d6b654540c56a1f81688"]],
+        );
         assert_eq!(
-            required_scope_for_kind(KIND_EXIT_OFFER, &ev),
-            Ok(Scope::MessagesWrite)
+            required_scope_for_kind(47009, &ev),
+            Err("restricted: unknown event kind")
         );
-    }
-
-    #[test]
-    fn an_exit_offer_must_name_one_dao_by_its_shares() {
-        for topic in [
-            "exit:31337:0x9D4454B023096F34B160D6B654540C56A1F81688",
-            "exit:031337:0x9d4454b023096f34b160d6b654540c56a1f81688",
-            "exit:0:0x9d4454b023096f34b160d6b654540c56a1f81688",
-            "exit:31337:0x9d44",
-            "exit:31337:0x9d4454b023096f34b160d6b654540c56a1f81688:1",
-            "forecast:31337:0x9d4454b023096f34b160d6b654540c56a1f81688",
-        ] {
-            assert!(
-                validate_exit_offer(&exit_offer(EXIT_BODY, &[&["t", topic]])).is_err(),
-                "{topic}"
-            );
-        }
-        assert!(validate_exit_offer(&exit_offer(EXIT_BODY, &[]))
-            .unwrap_err()
-            .contains("exactly one `t`"));
-        assert!(validate_exit_offer(&exit_offer(
-            EXIT_BODY,
-            &[&["t", EXIT_TOPIC], &["t", EXIT_TOPIC]]
-        ))
-        .unwrap_err()
-        .contains("exactly one `t`"));
-    }
-
-    #[test]
-    fn an_exit_offer_is_a_small_json_object_for_the_same_chain_and_shares() {
-        let tags: &[&[&str]] = &[&["t", EXIT_TOPIC]];
-        for bad in [
-            "not json",
-            "[1]",
-            r#"{"chainId":1,"shares":"0x9d4454b023096f34b160d6b654540c56a1f81688"}"#,
-            r#"{"chainId":31337,"shares":"0x0000000000000000000000000000000000000001"}"#,
-        ] {
-            assert!(
-                validate_exit_offer(&exit_offer(bad, tags)).is_err(),
-                "{bad}"
-            );
-        }
-        let padded = EXIT_BODY.replace(
-            r#""signature":"0x""#,
-            &format!(r#""signature":"0x{}""#, "a".repeat(2000)),
-        );
-        assert!(validate_exit_offer(&exit_offer(&padded, tags))
-            .unwrap_err()
-            .contains("at most 2000 bytes"));
     }
 
     #[test]

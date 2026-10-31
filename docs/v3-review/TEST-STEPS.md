@@ -1533,6 +1533,9 @@ By hand (a relay built from this branch, the dev chain, a web build with `VITE_W
 
 ## 4bl. Sales between members (D117, 2026-10-26)
 
+**Retired in D152 (2026-10-31): nothing here to run.** The exchange slot it used is tested in `ExitExchange.t.sol`
+(`forge test --match-contract ExitExchange`) and by the weekly rounds steps in **4by**. The steps below are the history.
+
 ```bash
 cd contracts && forge test --match-contract MatchedExit   # fills, every boundary, the lock, smart accounts, votes
 node scripts/check-majeur-fork.mjs                        # the Shares change stays inside its patch regions
@@ -1566,7 +1569,7 @@ cd contracts && forge test --match-contract "CreateToken|CreateCourt|OpenBounty"
 pnpm --dir packages/creaton-core test        # court: calls, the seal, cases; bounties: the appeal window
 pnpm --dir web test                          # the court's words, the appeal stages, the build settings
 scripts/web-post-bounty-e2e.sh               # second journey: an appeal judged by a juror and paid
-node scripts/contracts-mutation-check.mjs 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100
+node scripts/contracts-mutation-check.mjs 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91
 ```
 
 By hand (the dev chain, a web build with `VITE_OPEN_BOUNTIES`, `VITE_COURTS`, `VITE_CREATE_TOKENS`,
@@ -1621,7 +1624,7 @@ cd contracts && forge test --match-contract Payouts
 node scripts/check-majeur-fork.mjs           # the DAO's payout hook stays inside its patch region
 pnpm --dir packages/creaton-core test        # payouts: the two votes, their words, the reader
 scripts/web-contributor-e2e.sh               # vote payouts, revenue arrives, split, the contributor collects
-node scripts/contracts-mutation-check.mjs 101 102 103 104 105 106 107 108 109 110 111
+node scripts/contracts-mutation-check.mjs 92 93 94 95 96 97 98 99 100 101 102
 ```
 
 By hand (a web build with `VITE_PAYOUTS_FACTORIES`):
@@ -1640,7 +1643,7 @@ By hand (a web build with `VITE_PAYOUTS_FACTORIES`):
 cd contracts && forge test --match-contract RemixBond
 pnpm --dir packages/creaton-core test        # remixBond: the calls, the key, the reader, the steps
 scripts/web-contributor-e2e.sh               # Field Guide posts a 500 CREATE bond for Docs Commons
-node scripts/contracts-mutation-check.mjs 112 113 114 115 116 117 118 119
+node scripts/contracts-mutation-check.mjs 103 104 105 106 107 108 109 110
 ```
 
 By hand (a web build with `VITE_REMIX_BONDS`, `VITE_COURTS`, `VITE_CREATE_TOKENS`, `VITE_CREATE_FAUCETS`):

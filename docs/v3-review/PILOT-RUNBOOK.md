@@ -54,7 +54,7 @@ author without anyone explaining it.
 2. **The hosted build**, the Creaton image from [deploy/compose/README.md](../../deploy/compose/README.md) ("Creaton"),
    with only what this run uses: `VITE_LAUNCHPAD_CHAIN_ID`, `VITE_CHAIN_RPC_URL`, `VITE_CONTRIBUTOR_KITS`,
    `VITE_HISTORY_FROM_BLOCKS`, the ZeroDev settings, and `VITE_ERROR_REPORT_URL` (the release defaults to the source
-   revision). The image takes nothing else, which is the point: each optional feature (bounties, matched exits, weekly
+   revision). The image takes nothing else, which is the point: each optional feature (bounties, weekly
    rounds, payouts, the court, CREATE, forecasts, remixes, raises) adds a screen people would have to understand, and
    none is what this run measures.
    - **The ZeroDev project**: one on Sepolia, with a gas policy that sponsors every operation the run sends: starting

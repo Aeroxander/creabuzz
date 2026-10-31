@@ -1,15 +1,15 @@
 /** Shared with the desktop app: the implementation lives in `@creaton/core`. */
-export * from "@creaton/core/launchpad/matchedExit.ts";
+export * from "@creaton/core/launchpad/exitExchange.ts";
 
 import {
   type ExitExchangeRead,
   readExitExchange,
-} from "@creaton/core/launchpad/matchedExit.ts";
+} from "@creaton/core/launchpad/exitExchange.ts";
 import type { WorkChain } from "@creaton/core/launchpad/workRead.ts";
 import { isRefusal } from "./ragequit-position.ts";
 
-/** Where sales stand for these Shares, or null when the Shares were made before sales between members existed. */
-export async function readExitSales(
+/** Where the exchange stands for these Shares, or null when the Shares were made before exchanges existed. */
+export async function readExchangeIfAny(
   chain: Pick<WorkChain, "call">,
   shares: string,
 ): Promise<ExitExchangeRead | null> {

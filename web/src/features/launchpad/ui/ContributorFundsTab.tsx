@@ -29,7 +29,6 @@ import { usePeopleWithWallets } from "../use-people";
 import { useDaoHolders } from "../use-work";
 import { DelegationCard } from "./DelegationCard";
 import { Figure } from "./Figure";
-import { MatchedExitCard } from "./MatchedExitCard";
 import { FundingCard } from "./FundingCard";
 import { WeeklyRoundsCard } from "./WeeklyRoundsCard";
 import { PayoutsCard } from "./PayoutsCard";
@@ -190,7 +189,6 @@ export function ContributorFundsTab({
       ) : null}
       <FundingCard dao={dao} />
       <WeeklyRoundsCard dao={dao} />
-      <MatchedExitCard dao={dao} />
       <PayoutsCard dao={dao} />
       {holdsShares ? (
         <DelegationCard

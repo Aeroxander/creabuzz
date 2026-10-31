@@ -6,7 +6,7 @@ import { Card } from "@/shared/ui/card";
 import { Chip } from "@/shared/ui/chip";
 import { MoreInfo } from "@/shared/ui/more-info";
 import { defaultChainPreset } from "../chain-config";
-import { encodeActivateExitExchange } from "../lib/matched-exit";
+import { encodeActivateExitExchange } from "../lib/exit-exchange";
 import {
   clearingLine,
   floorAtOpeningText,

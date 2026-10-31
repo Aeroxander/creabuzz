@@ -133,11 +133,6 @@ export interface ChainEnv {
    * pays it to the claim that keeps a majority of it, or back to them. A chain with no entry shows no bounties on posts.
    */
   VITE_OPEN_BOUNTIES?: string;
-  /**
-   * The matched-exit exchange per chain, as JSON: `{"31337":"0x…"}` (N5). Members of a DAO that voted for it sell Shares
-   * there to people who want in. A chain with no entry offers no sales between members.
-   */
-  VITE_MATCHED_EXITS?: string;
   /** Weekly rounds between holders and new buyers per chain (D131), as JSON `{ "<chainId>": "0x…" }`. */
   VITE_WEEKLY_ROUNDS?: string;
   /**
@@ -253,14 +248,6 @@ export function createFaucet(
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
   return addressForChain(env?.VITE_CREATE_FAUCETS, chainId);
-}
-
-/** The matched-exit exchange on `chainId`, or null when the build does not name one. Never guessed: DAOs vote it in. */
-export function matchedExit(
-  chainId: string | number | null,
-  env: ChainEnv | undefined = viteEnv(),
-): string | null {
-  return addressForChain(env?.VITE_MATCHED_EXITS, chainId);
 }
 
 /** The weekly rounds contract on `chainId`, or null when the build does not name one. DAOs vote it in. */
