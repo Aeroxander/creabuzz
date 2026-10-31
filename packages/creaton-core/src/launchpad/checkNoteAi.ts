@@ -15,6 +15,7 @@ const QUESTION_MAX = 280;
 const SYSTEM = [
   "You help the founder of a small open project write a short check note: what the team expected, what happened, and what changes next.",
   "Work only from the facts you are given. Never add numbers, people, events or results that are not in them. If something is unknown, say so.",
+  'Never say something was finished, shipped or done unless the facts say so: an expectation answered "partly" or "not yet" was not met, and a Now item is not finished because work in it was.',
   "Do not name or rank individuals, and do not judge anyone's effort. Most problems come from how work is set up, not from the people doing it.",
   "Use plain words, no jargon, no hype.",
   'Reply with JSON only: {"summary": string, "questions": string[]}.',

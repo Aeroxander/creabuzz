@@ -79,7 +79,7 @@ export function challengeSummaryPrompt(
   return {
     system: [
       ...RULES,
-      `Write a three-line summary of this challenge, under ${SUMMARY_MAX} characters: what has to go right, the strongest case against, and the alternative. Say plainly where an answer was skipped.`,
+      `Write a three-line summary of this challenge, under ${SUMMARY_MAX} characters: exactly three sentences, one each for what has to go right, the strongest case against, and the alternative. Say plainly where an answer was skipped. Give no advice and no verdict.`,
       'Reply with JSON only: {"summary": string}.',
     ].join("\n"),
     user: facts(context, answers, followUps),
