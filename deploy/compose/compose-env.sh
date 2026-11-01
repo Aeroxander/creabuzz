@@ -54,11 +54,25 @@ MSG
 
 require_env() {
   require_env_file
-  if grep -Eq '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=.*CHANGE_ME' .env; then
-    cat >&2 <<'MSG'
-deploy/compose/.env still contains CHANGE_ME placeholders.
-Generate stable secrets first; these values must not rotate on restart.
-MSG
+  local left
+  left="$(grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=.*CHANGE_ME' .env | sed -E 's/^[[:space:]]*/  /; s/=.*//' || true)"
+  if [[ -n "$left" ]]; then
+    {
+      echo "deploy/compose/.env still contains CHANGE_ME placeholders:"
+      echo "$left"
+      echo "Put in the server's host name and generate stable secrets first; the secrets must not rotate on restart."
+    } >&2
+    exit 1
+  fi
+  # An .env copied from an older example still names its example host, which no browser can reach.
+  left="$(grep -E '^[[:space:]]*(BUZZ_DOMAIN|RELAY_URL|BUZZ_MEDIA_BASE_URL|BUZZ_MEDIA_SERVER_DOMAIN|BUZZ_CORS_ORIGINS)=.*buzz\.example\.com' .env |
+    sed -E 's/^[[:space:]]*/  /; s/=.*//' || true)"
+  if [[ -n "$left" ]]; then
+    {
+      echo "deploy/compose/.env still has the example host name (buzz.example.com) in:"
+      echo "$left"
+      echo "Put the server's own host name in each of them first."
+    } >&2
     exit 1
   fi
   if creaton_on; then

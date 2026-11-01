@@ -32,6 +32,8 @@ export type DeployEnv = ChainEnv & Record<string, string | undefined>;
 export interface DeployEnvReport {
   /** What would make the hosted page wrong or unsafe; the build stops when there is any. */
   problems: string[];
+  /** What the operator should know before inviting anyone; the build goes on. */
+  warnings: string[];
   /** What the build will offer, one line each. */
   summary: string[];
 }
@@ -64,6 +66,7 @@ const ZERODEV_PROJECT_ID =
 
 export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   const problems: string[] = [];
+  const warnings: string[] = [];
   const summary: string[] = [];
 
   // The deploy script prints CHANGE_ME_... where a value is the operator's to fill in. One left in would be built into the
@@ -264,8 +267,17 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       "Contributor projects are on, but VITE_ZERODEV_PROJECT_ID and VITE_ZERODEV_CHAIN_ID are not set: in the contributor-only image every step is sent from a passkey account whose fees ZeroDev pays.",
     );
   }
+  // Without paid gas, a build of your own leaves people to send steps from a browser wallet with test gas. The
+  // contributor-only image offers no other way to send them: with contributor projects on it is refused above, and
+  // without them it sends nothing on chain.
+  const contributorOnly = env.VITE_CONTRIBUTOR_ONLY?.trim() === "1";
+  const paidGasOff = contributorOnly
+    ? contributor
+      ? "off"
+      : "off (not needed: contributor projects are off)"
+    : "off (people bring a wallet and test gas)";
   summary.push(
-    `Passkey accounts with paid gas: ${project && zerodevChain ? "on" : "off (people bring a wallet and test gas)"}`,
+    `Passkey accounts with paid gas: ${project && zerodevChain ? "on" : paidGasOff}`,
   );
 
   const reports = value(env, "VITE_ERROR_REPORT_URL");
@@ -276,8 +288,13 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       problems.push(`VITE_ERROR_REPORT_URL ${checked.problem}.`);
     else reportHost = checked.host;
   }
+  if (contributor && !reports) {
+    warnings.push(
+      "Contributor projects are on, but VITE_ERROR_REPORT_URL is not set: the page will send no error reports, so a step that fails for people (a refused fee, a busy chain node) reaches you only if they tell you. The pilot runbook relies on them (docs/error-reporting.md).",
+    );
+  }
   summary.push(`Error reports: ${reportHost ? `on (${reportHost})` : "off"}`);
   summary.push(`Release: ${value(env, "VITE_APP_RELEASE") ?? "unnamed"}`);
 
-  return { problems, summary };
+  return { problems, warnings, summary };
 }

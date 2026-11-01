@@ -11,7 +11,8 @@ services:
 
   caddy:
     logging: *logging
-    image: caddy:2-alpine
+    # Pinned: a new Caddy is an upgrade to try, not something a restart picks up.
+    image: caddy:2.11.7-alpine
     depends_on:
       relay:
         condition: service_healthy

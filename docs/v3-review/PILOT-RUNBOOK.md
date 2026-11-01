@@ -31,9 +31,10 @@ Watch for: anyone who cannot sign up or loses their account; anywhere they wait 
 was taken against. A good run is one in which nobody needs help, and the moderator's removal is understood by its
 author without anyone explaining it.
 
-**Escalated reports**: the server's owner (the organizer, whose key is `RELAY_OWNER_PUBKEY` or in `RELAY_OPERATOR_PUBKEYS`) checks them every morning and evening of a run, in the web app
-(Moderation, "Escalated reports", shown only to the people who run the server; needs `BUZZ_ADMIN_HOST`) or with
-`buzz-admin reports --escalated` on the server, and acts on each the same day.
+**Escalated reports**: the server's owner (the organizer, whose key is `RELAY_OWNER_PUBKEY` or in
+`RELAY_OPERATOR_PUBKEYS`) checks them every morning and evening of a run with `./run.sh reports` in `deploy/compose` on
+the server, and acts on each the same day. The web app's list (Moderation, "Escalated reports") needs `BUZZ_ADMIN_HOST`,
+which the hosted HTTPS stack does not serve, so on the pilot server `./run.sh reports` is the way to read them.
 
 **Restricting someone who holds Shares** (in either run): use "Mute everywhere", not a ban, for anyone who holds Shares,
 has open work or reviews: they keep reading and acting, only their posts stop. A ban cuts them off from the project's
@@ -81,6 +82,8 @@ before inviting anyone.
      `cast logs --from-block <block> --to-block latest --address <contributor-kit> --rpc-url "$NODE"`.
      An answer within a few seconds is fine, even an empty one; a timeout is not. An error about the block range means the
      app will page: [docs/sepolia-testnet.md](../sepolia-testnet.md) (section 3) says how to check that it lasts.
+     `./run.sh build` sends the same request (and asks the node's network) before it builds, and stops if the node
+     does not answer within 15 seconds, is on another network, or refuses that history even in a small range.
    - **Its request limit** has to cover every participant opening project pages at once (a page sends a dozen or more
      reads). A busy node shows people "The chain node is busy. Try again in a minute", and sends you a `chain-busy`
      error report.
@@ -110,7 +113,8 @@ before inviting anyone.
    passkey is saved in their phone's or computer's password manager and synced (iCloud Keychain, Google Password
    Manager, or a password manager they use on two devices), not only on one device or a hardware key. Do not invite
    someone whose passkey is not synced.
-8. **The error reports**: `VITE_ERROR_REPORT_URL` set and checked (docs/error-reporting.md). During the run, look at the
+8. **The error reports**: `VITE_ERROR_REPORT_URL` set and checked (docs/error-reporting.md); the image's build warns
+   when contributor projects are on without it. During the run, look at the
    collector and at the ZeroDev project's spending each day: a `sponsor-refused` note means every passkey step is failing
    for everyone until you raise the limit or widen the policy, and retrying will not help them.
 9. **The project**: typed in from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) by the founder themselves, with
@@ -125,8 +129,9 @@ before inviting anyone.
    journeys; the full `scripts/mvp-gate.sh` adds the raise, milestone and optional-feature journeys for later). They do not cover a reviewer acting from a passkey account or the name link against
    your real server, so in step 3's practice project have one reviewer approve from a passkey account, and have each
    reviewer's name show in the founder's reviewer picker (step 6). Nor do they sign in with a passkey against a real
-   server, or read "Your work" from one: check both by hand in the practice project. The contributor journey in the
-   pilot set runs in a build with the optional features on, not the image's. A CI job for the gate is written
+   server, or read "Your work" from one: check both by hand in the practice project. Under `--pilot` the contributor
+   journey runs in the contributor-only build the image makes (`PILOT_BUILD=1`), with none of the optional features; the
+   full gate runs it with them on. A CI job for the gate is written
    ([MVP-GATE-CI.md](MVP-GATE-CI.md)) but not pushed; publishing it is your call, and green CI does not replace these
    hand checks.
 11. **The report**: a copy of [PILOT-REPORT.md](PILOT-REPORT.md) to fill in as it runs.

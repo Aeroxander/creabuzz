@@ -105,6 +105,88 @@ require_page_settings() {
   exit 1
 }
 
+# A web app setting as the build sees it: from the shell, else from .env (compose reads the shell first), without the
+# quotes around it.
+build_setting() {
+  local value="${!1:-}"
+  [[ -n "$value" ]] || value="$(env_value "$1")"
+  if [[ "$value" =~ ^\'(.*)\'$ || "$value" =~ ^\"(.*)\"$ ]]; then
+    value="${BASH_REMATCH[1]}"
+  fi
+  printf '%s' "$value"
+}
+
+# One JSON-RPC request to the page's chain node, with bounded waits.
+node_call() {
+  curl -sS --connect-timeout 5 --max-time 15 -H 'Content-Type: application/json' --data "$2" "$1"
+}
+
+# The kit's logs from block FROM to TO (a block number in hex, or latest): the request the page sends first.
+kit_history() {
+  node_call "$1" "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"eth_getLogs\",\"params\":[{\"address\":\"$2\",\"fromBlock\":\"$(printf '0x%x' "$3")\",\"toBlock\":\"$4\"}]}"
+}
+
+# Whether a JSON-RPC answer is a list of logs (an empty one counts), not an error.
+is_log_list() {
+  grep -Eq '"result"[[:space:]]*:[[:space:]]*\[' <<<"$1"
+}
+
+node_refused() {
+  {
+    echo "VITE_CHAIN_RPC_URL: $1"
+    echo "Contributor projects read their history from this node in every visitor's browser. Fix the node or the"
+    echo "settings in .env, then run ./run.sh build again (docs/sepolia-testnet.md, section 3)."
+  } >&2
+  exit 1
+}
+
+# With contributor projects on, the page reads the contributor kit's history from VITE_CHAIN_RPC_URL from the deploy
+# block onward. A wrong or unreachable node would be built into the page and found only by the first person who opens a
+# project, so the build asks it first: which network it is, and the kit's history from that block.
+check_chain_node() {
+  local kits rpc chain kit from answer got paged
+  kits="$(build_setting VITE_CONTRIBUTOR_KITS)"
+  if [[ -z "$kits" ]]; then
+    echo "Contributor projects are off (VITE_CONTRIBUTOR_KITS is not set): the chain node is not checked."
+    return 0
+  fi
+  rpc="$(build_setting VITE_CHAIN_RPC_URL)"
+  [[ -n "$rpc" ]] || node_refused "not set, but VITE_CONTRIBUTOR_KITS is."
+  chain="$(build_setting VITE_LAUNCHPAD_CHAIN_ID)"
+  chain="${chain:-11155111}"
+  [[ "$chain" =~ ^[0-9]+$ ]] || node_refused "VITE_LAUNCHPAD_CHAIN_ID=$chain is not a network number."
+  kit="$(sed -nE "s/.*\"$chain\"[[:space:]]*:[[:space:]]*\"(0x[0-9a-fA-F]{40})\".*/\1/p" <<<"$kits")"
+  [[ -n "$kit" ]] || node_refused "VITE_CONTRIBUTOR_KITS names no contributor kit address for network $chain."
+  from="$(sed -nE "s/.*\"$chain\"[[:space:]]*:[[:space:]]*\"?([0-9]+).*/\1/p" <<<"$(build_setting VITE_HISTORY_FROM_BLOCKS)")"
+  [[ -n "$from" ]] || node_refused "VITE_HISTORY_FROM_BLOCKS names no start block for network $chain."
+
+  echo "Checking the page's chain node (network $chain, contributor kit $kit from block $from)..."
+  answer="$(node_call "$rpc" '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}')" ||
+    node_refused "no answer within 15 seconds to a request for its network (curl says why above)."
+  got="$(sed -nE 's/.*"result"[[:space:]]*:[[:space:]]*"(0x[0-9a-fA-F]+)".*/\1/p' <<<"$answer")"
+  [[ -n "$got" ]] || node_refused "did not say which network it is. It answered: ${answer:0:300}"
+  ((got == chain)) || node_refused "is on network $((got)), but the build is for network $chain."
+
+  answer="$(kit_history "$rpc" "$kit" "$from" latest)" ||
+    node_refused "no answer within 15 seconds to a history request from block $from (curl says why above)."
+  if is_log_list "$answer"; then
+    echo "The chain node answers on network $chain and reads the kit's history from block $from."
+    return 0
+  fi
+  # A node may refuse the whole range at once: the page then reads it in pages, narrowing down to 10 blocks
+  # (MIN_PAGE in web/src/features/launchpad/lib/log-pages.ts), so only a node that refuses even that is a stop.
+  paged=""
+  for span in 1000 100 10; do
+    paged="$(kit_history "$rpc" "$kit" "$from" "$(printf '0x%x' "$((from + span - 1))")")" ||
+      node_refused "no answer within 15 seconds to a history request from block $from (curl says why above)."
+    is_log_list "$paged" && break
+  done
+  is_log_list "$paged" ||
+    node_refused "refused the kit's history from block $from, even 10 blocks at a time. It answered: ${paged:0:300}"
+  echo "The chain node refused the kit's whole history at once (${answer:0:200}); the page will read it in pages."
+  echo "Check that its range lasts for the run: docs/sepolia-testnet.md, section 3."
+}
+
 case "${1:-help}" in
   start|up)
     require_env
@@ -131,6 +213,7 @@ case "${1:-help}" in
   build)
     require_env_file
     require_page_settings
+    check_chain_node
     BUZZ_SOURCE_SHA="$(git -C ../.. rev-parse --short HEAD 2>/dev/null || echo unknown)" compose build relay
     ;;
   upgrade)
@@ -189,6 +272,19 @@ case "${1:-help}" in
   list-members)
     docker compose exec relay /usr/local/bin/buzz-admin list-members
     ;;
+  reports)
+    # The reports communities' moderators passed on to the server's owner (with --all, every report), newest first,
+    # read from the database. The web app's list of them needs BUZZ_ADMIN_HOST, which the HTTPS (Caddy) stack does
+    # not serve, so on that stack this is the way to read them.
+    require_env
+    shift
+    which=(--escalated)
+    if [[ "${1:-}" == "--all" ]]; then
+      which=()
+      shift
+    fi
+    compose exec -T relay /usr/local/bin/buzz-admin reports ${which[@]+"${which[@]}"} "$@"
+    ;;
   help|-h|--help)
     cat <<'MSG'
 Usage: ./run.sh <command>
@@ -199,7 +295,10 @@ Commands:
   restart       Recreate the relay after env/image changes (it does not
                 rebuild: after changing a VITE_ setting, run build first)
   pull          Pull configured images
-  build         Build the Creaton relay image from this checkout (Creaton only)
+  build         Build the Creaton relay image from this checkout (Creaton
+                only). With contributor projects on, it first checks that
+                VITE_CHAIN_RPC_URL is on the right network and reads the
+                contributor kit's history
   upgrade       Pull and restart, then print backup reminders (Creaton: back
                 up, then pull, build and restart)
   logs [svc]    Follow logs (default: relay)
@@ -226,6 +325,9 @@ Commands:
   remove-member <npub-or-hex> [--role member|admin]
                 Remove a relay member
   list-members  List all relay members
+  reports [--all] [--limit N]
+                List the reports passed on to the server's owner (with
+                --all, every report), newest first (default 50, up to 200)
 
   Note: when adding multiple members in a loop, add `sleep 1` between
   invocations to avoid same-second timestamp collisions in the kind:13534

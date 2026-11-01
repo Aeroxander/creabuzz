@@ -290,3 +290,41 @@ test("a ZeroDev project id must look like one", () => {
     );
   }
 });
+
+test("contributor projects without error reports build, with a warning; with them, or without the kit, no warning", () => {
+  const without = checkDeployEnv(PILOT);
+  assert.deepEqual(without.problems, []);
+  assert.equal(without.warnings.length, 1, without.warnings.join(" | "));
+  assert.match(without.warnings[0], /VITE_ERROR_REPORT_URL is not set/);
+  assert.deepEqual(
+    checkDeployEnv({
+      ...PILOT,
+      VITE_ERROR_REPORT_URL: "https://errors.example/report",
+    }).warnings,
+    [],
+  );
+  assert.deepEqual(checkDeployEnv({ VITE_CONTRIBUTOR_ONLY: "1" }).warnings, []);
+});
+
+test("the paid-gas line says what the build really asks of people", () => {
+  const line = (env) =>
+    checkDeployEnv(env).summary.find((l) => l.startsWith("Passkey accounts"));
+  // The contributor-only image never asks anyone for a wallet or test gas.
+  assert.equal(
+    line({ VITE_CONTRIBUTOR_ONLY: "1" }),
+    "Passkey accounts with paid gas: off (not needed: contributor projects are off)",
+  );
+  assert.equal(
+    line({
+      ...PILOT,
+      VITE_ZERODEV_PROJECT_ID: "",
+      VITE_ZERODEV_CHAIN_ID: "",
+    }),
+    "Passkey accounts with paid gas: off",
+  );
+  // A build of your own may leave it to people's own wallets.
+  assert.equal(
+    line(SEPOLIA),
+    "Passkey accounts with paid gas: off (people bring a wallet and test gas)",
+  );
+});

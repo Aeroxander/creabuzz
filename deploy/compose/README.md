@@ -91,7 +91,12 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
   `VITE_*` value still holding `CHANGE_ME` stops it too: `./run.sh build` refuses before Docker starts, and the image's
   own check refuses again. The server's secrets may still be `CHANGE_ME` at a first build; `start` refuses those.
 - Contributor projects need the addresses `scripts/sepolia-deploy.sh --broadcast` prints (`docs/sepolia-testnet.md`).
-  Without them the server is the social app alone. Changing them, or any other `VITE_*` setting, means `./run.sh build`
+  Without them the server is the social app alone. With them, `./run.sh build` first asks `VITE_CHAIN_RPC_URL` which
+  network it is on and for the contributor kit's history from `VITE_HISTORY_FROM_BLOCKS` (15 seconds at most each), and
+  stops with the reason when it is on another network, does not answer, or refuses that history. A node that takes only
+  a small range is allowed (the page reads in pages); the build says so, and section 3 of `docs/sepolia-testnet.md` says
+  how to check that its range lasts. The image's own check then warns when `VITE_ERROR_REPORT_URL` is empty: the build
+  goes on, but nobody is told when a step fails for people. Changing them, or any other `VITE_*` setting, means `./run.sh build`
   and then `./run.sh restart`: they are read when the app is built, and `restart` alone keeps serving the old page.
 - The server turns on read state (`BUZZ_V1_ENABLED`, unread markers) and the app's page routes (`BUZZ_WEB_SPA=full`),
   and shows the terms and privacy note named by `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` at sign-up. `run.sh` refuses
@@ -103,7 +108,15 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - Building takes a machine with several GB of memory and about 15 GB of disk for Docker (Rust's release build). A small
   server can load an image built elsewhere instead: `docker save creaton-relay:local | ssh <host> docker load`, built
   for the server's architecture (`docker build --platform linux/amd64 ...` from an Apple silicon Mac is slow but works).
-- `./run.sh upgrade` on a Creaton stack backs up first, then pulls the other images, builds and restarts.
+- `./run.sh upgrade` on a Creaton stack backs up first, then pulls the other images, builds and restarts. Caddy is
+  pinned to one version (`compose.caddy.yml`); moving to a newer one is an edit there, then `./run.sh upgrade`.
+- Agents signing in for a member (`BUZZ_ALLOW_NIP_OA_AUTH`) are off in the Creaton part of `.env`: the web app never
+  signs in that way, and the pilot runs no agents. Turn it on only when you run command-line or hosted agents here.
+- **Escalated reports** (the ones a community's moderators pass on to you): `./run.sh reports` lists them, newest
+  first, from the database; `./run.sh reports --all` lists every report. The web app's list (Moderation, "Escalated
+  reports") needs `BUZZ_ADMIN_HOST`, a host name of its own for the admin API, which this HTTPS (Caddy) stack does not
+  serve: it serves `BUZZ_DOMAIN` alone, so the admin API is never on the public host. Check `./run.sh reports` every
+  morning and evening of a pilot run, and act on each in the web app the same day.
 - Taking down a post and its pictures, illegal content, and a person's request to see or delete their data:
   [docs/operator-takedown-and-data-requests.md](../../docs/operator-takedown-and-data-requests.md).
 
@@ -124,9 +137,10 @@ On the server, with the host name's DNS pointing at it and ports 80 and 443 open
    echo "BUZZ_S3_SECRET_KEY=$(openssl rand -hex 20)"   # scripts/test-compose-backup.sh runs the media store with
    ```
 
-3. Put the host name in `BUZZ_DOMAIN`, `RELAY_URL` (`wss://<host>`), `BUZZ_MEDIA_BASE_URL` (`https://<host>/media`),
-   `BUZZ_MEDIA_SERVER_DOMAIN` (`<host>`) and `BUZZ_CORS_ORIGINS` (`https://<host>`), and a Sepolia node in
-   `BUZZ_EVM_RPC_URL`.
+3. Put the host name in place of `CHANGE_ME_HOST` in `BUZZ_DOMAIN`, `RELAY_URL` (`wss://<host>`),
+   `BUZZ_MEDIA_BASE_URL` (`https://<host>/media`), `BUZZ_MEDIA_SERVER_DOMAIN` (`<host>`) and `BUZZ_CORS_ORIGINS`
+   (`https://<host>`), and a Sepolia node in `BUZZ_EVM_RPC_URL`. `start` refuses while any of them still says
+   `CHANGE_ME_HOST`, or `buzz.example.com` (an older example's host).
 4. `mkdir -p policies && cp ../../docs/policies/TERMS-DRAFT.md policies/terms.md && cp
    ../../docs/policies/PRIVACY-DRAFT.md policies/privacy.md`, fill in every `[placeholder]` (the privacy note's log
    and backup periods should match "Logs" and "Backups" below), and set `BUZZ_TERMS_FILE=policies/terms.md` and
