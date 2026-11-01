@@ -2415,6 +2415,12 @@ impl Db {
         pubkey: &[u8],
         cutoff: DateTime<Utc>,
     ) -> Result<bool> {
+        // Part of deciding whether a write is allowed (the new-account limit), so it is attributed as authorization.
+        let mut connection = crate::observability::acquire_writer(
+            &self.pool,
+            crate::observability::WriterOperation::Authorization,
+        )
+        .await?;
         let row = sqlx::query(
             r#"
             SELECT EXISTS (
@@ -2426,7 +2432,7 @@ impl Db {
         .bind(community_id.as_uuid())
         .bind(pubkey)
         .bind(cutoff)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *connection)
         .await?;
         Ok(row.try_get::<bool, _>("found")?)
     }
@@ -2440,6 +2446,11 @@ impl Db {
         kinds: &[i32],
         since: DateTime<Utc>,
     ) -> Result<i64> {
+        let mut connection = crate::observability::acquire_writer(
+            &self.pool,
+            crate::observability::WriterOperation::Authorization,
+        )
+        .await?;
         let row = sqlx::query(
             r#"
             SELECT COUNT(*) AS n FROM events
@@ -2450,7 +2461,7 @@ impl Db {
         .bind(pubkey)
         .bind(kinds)
         .bind(since)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *connection)
         .await?;
         Ok(row.try_get::<i64, _>("n")?)
     }
