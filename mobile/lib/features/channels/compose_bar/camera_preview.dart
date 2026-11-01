@@ -1,4 +1,3 @@
-import 'package:buzz/shared/brand.dart';
 part of '../compose_bar.dart';
 
 class _InlineCameraPreview extends HookConsumerWidget {

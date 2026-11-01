@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:buzz/shared/brand.dart';
 import 'package:buzz/shared/theme/buzz_icons.dart';
 
 import 'package:nostr/nostr.dart' as nostr;

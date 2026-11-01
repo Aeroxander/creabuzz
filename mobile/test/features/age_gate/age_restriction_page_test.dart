@@ -8,7 +8,9 @@ void main() {
 
     expect(find.text('Creaton is for people 18 and older'), findsOneWidget);
     expect(
-      find.text("You must be 18 or older to use Creaton under Creaton's Terms."),
+      find.text(
+        "You must be 18 or older to use Creaton under Creaton's Terms.",
+      ),
       findsOneWidget,
     );
     expect(find.byType(TextButton), findsNothing);
