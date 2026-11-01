@@ -128,6 +128,16 @@ export function nextCreatedAt(now: number, prior?: number): number {
   return Math.max(now, prior === undefined ? 0 : prior + 1);
 }
 
+/** How to plan. */
+export interface PlanOptions {
+  /**
+   * A contributor-only build (the hosted pilot): its server runs no AI
+   * service, so the plan leaves out everything that only an AI helper uses:
+   * skills, helpers, their seats, their limit and the automations they run.
+   */
+  contributorOnly?: boolean;
+}
+
 /**
  * The ordered plan. Every step is decided as create or skip from what the
  * server already holds: channels (each followed by its first message), skills,
@@ -137,8 +147,10 @@ export function nextCreatedAt(now: number, prior?: number): number {
 export function planApply(
   entry: TemplateEntry,
   existing: ExistingState,
+  options: PlanOptions = {},
 ): PlanStep[] {
   const { template: t } = entry;
+  const helpers = options.contributorOnly !== true;
   const steps: PlanStep[] = [];
   const has = (kind: StepKind, item: string) =>
     existing.items.has(itemKey(kind, item));
@@ -159,7 +171,7 @@ export function planApply(
     if (channel.seed !== undefined) markerStep("seed", seedItem(channel.id));
   }
 
-  for (const skill of t.skills) {
+  for (const skill of helpers ? t.skills : []) {
     const found = existing.items.get(itemKey("skill", skill.name));
     let action: StepAction;
     if (found !== undefined && found.source === skill.source) {
@@ -172,7 +184,8 @@ export function planApply(
     steps.push({ kind: "skill", item: skill.name, action });
   }
 
-  for (const persona of t.personas) markerStep("persona", persona.id);
+  for (const persona of helpers ? t.personas : [])
+    markerStep("persona", persona.id);
 
   if (t.org) {
     const orgStep = (item: string, exists: boolean) =>
@@ -182,18 +195,19 @@ export function planApply(
         action: exists ? "already-exists" : "create",
       });
     orgStep("org:root", existing.orgNodes.has(ORG_ROOT_NODE_ID));
-    for (const seat of t.org.seats) {
+    for (const seat of helpers ? t.org.seats : []) {
       orgStep(
         `org:seat:${seat.persona}`,
         existing.orgNodes.has(seatNodeId(seat.persona)),
       );
     }
-    if (t.org.default_budget) {
+    if (helpers && t.org.default_budget) {
       orgStep("org:budget", existing.orgBudgets.has(ORG_DEFAULT_BUDGET_ID));
     }
   }
 
-  for (const workflow of t.workflows) markerStep("workflow", workflow.file);
+  for (const workflow of helpers ? t.workflows : [])
+    markerStep("workflow", workflow.file);
   for (const doc of t.docs) markerStep("doc", doc.file);
   markerStep("welcome", "welcome");
   return steps;

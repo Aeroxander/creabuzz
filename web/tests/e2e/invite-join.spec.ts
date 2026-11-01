@@ -68,7 +68,7 @@ test("someone with no account is offered to make one, and the button for people 
     timeout: 20_000,
   });
   await expect(
-    page.getByRole("button", { name: "Join in browser" }),
+    page.getByRole("button", { name: "Join this community" }),
   ).toHaveCount(0);
   await expectAccessible(page, "invite (no account)");
 });
@@ -78,7 +78,7 @@ test("someone with an account sees the usual button and is not asked to make ano
 }) => {
   await open(page, { identity: true });
   await expect(
-    page.getByRole("button", { name: "Join in browser" }),
+    page.getByRole("button", { name: "Join this community" }),
   ).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("invite-new-account")).toHaveCount(0);
 });
@@ -144,6 +144,6 @@ test("an invite that cannot be used says why in words, and the person stays on t
     /\/invite\/v2.some-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/,
   );
   await expect(
-    page.getByRole("button", { name: "Join in browser" }),
+    page.getByRole("button", { name: "Join this community" }),
   ).toBeEnabled();
 });

@@ -6,6 +6,7 @@ import { Chip } from "@/shared/ui/chip";
 import { Meter } from "@/shared/ui/meter";
 import { MoreInfo } from "@/shared/ui/more-info";
 import { defaultChainPreset } from "../chain-config";
+import { raisesOffered } from "../lib/raises-offered";
 import {
   beforeYouBuy,
   exitFeeLine,
@@ -27,9 +28,15 @@ import { RoundPanel } from "./WeeklyRoundsCard";
 /**
  * Funding the project (D133), on a contributor project's Funds tab: the funding terms the DAO published (what buyers get,
  * the most it can ever sell, how much has sold), the sale open now, and its funding rounds, where people bid for the new
- * units and every payment goes to the treasury. Shown where this build names the weekly rounds, which the sales use.
+ * units and every payment goes to the treasury. Shown where this build names the weekly rounds, which the sales use, and
+ * offers raises: selling new units is one, so a contributor-only build shows none of it and reads nothing for it.
  */
 export function FundingCard({ dao }: { dao: string }) {
+  if (!raisesOffered()) return null;
+  return <FundingTerms dao={dao} />;
+}
+
+function FundingTerms({ dao }: { dao: string }) {
   const sender = useChainSend(defaultChainPreset().chainId, FUNDING_QUERY);
   const { rounds, query } = useFunding(dao, sender.wallet.address);
   const data = query.data;

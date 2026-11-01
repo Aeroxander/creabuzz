@@ -398,7 +398,7 @@ test("a channel the server could not create says so plainly, with the server's w
   await dialog.getByRole("button", { name: /^Create/ }).click();
 
   await expect(page.getByTestId("create-channel-error")).toHaveText(
-    "Couldn't create the channel. Try again.",
+    "Couldn't create the room. Try again.",
     { timeout: 15_000 },
   );
   // Not in the main copy: only inside the closed disclosure.

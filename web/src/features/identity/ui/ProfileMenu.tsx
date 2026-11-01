@@ -66,6 +66,7 @@ import {
   isPasskeyActive,
   passkeyMode,
   removePasskeyIdentity,
+  removingPasskeyLosesAccount,
   registerPasskeySigner,
   onPasskeySessionChange,
 } from "../lib/passkey-identity";
@@ -137,6 +138,7 @@ export function ProfileMenu({
   const [menuError, setMenuError] = useState<FailureWords | null>(null);
   const [showBackup, setShowBackup] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [confirmRemovePasskey, setConfirmRemovePasskey] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<FailureWords | null>(null);
   const { theme, setTheme } = useTheme();
@@ -662,8 +664,8 @@ export function ProfileMenu({
                       icon={<LogOut className="h-3.5 w-3.5" />}
                       label="Remove passkey sign-in"
                       onClick={() => {
-                        removePasskeyIdentity();
-                        window.location.reload();
+                        setOpen(false);
+                        setConfirmRemovePasskey(true);
                       }}
                     />
                   </>
@@ -776,6 +778,78 @@ export function ProfileMenu({
           onClose={() => setShowBackup(false)}
           returnFocus={triggerRef}
         />
+      ) : null}
+
+      {confirmRemovePasskey ? (
+        <Overlay
+          className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 dark:bg-black/50"
+          data-testid="remove-passkey-dialog"
+        >
+          <div className="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl">
+            <h3 className="text-base font-semibold text-black dark:text-white">
+              Remove passkey sign-in?
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {/* A PRF passkey is the only source of its key; an unlock-mode one only guards the key kept here. */}
+              {removingPasskeyLosesAccount(passkeyModeNow, hasBackedUp())
+                ? "You haven't saved your recovery key. Without it this account is gone for good."
+                : passkeyModeNow === "prf"
+                  ? "This browser forgets your passkey. To sign back in, you need your recovery key."
+                  : "Your account stays on this browser. It just won't ask for your passkey any more."}
+            </p>
+            {/* Losing the account: saving the key is the main button and removing is the second choice. */}
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                onClick={() => setConfirmRemovePasskey(false)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              {removingPasskeyLosesAccount(passkeyModeNow, hasBackedUp()) ? (
+                <>
+                  <Button
+                    data-testid="remove-passkey-confirm"
+                    onClick={() => {
+                      removePasskeyIdentity();
+                      window.location.reload();
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Remove anyway
+                  </Button>
+                  <Button
+                    data-testid="remove-passkey-save-key"
+                    onClick={() => {
+                      setConfirmRemovePasskey(false);
+                      setShowBackup(true);
+                    }}
+                    size="sm"
+                    type="button"
+                  >
+                    Save recovery key
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  data-testid="remove-passkey-confirm"
+                  onClick={() => {
+                    removePasskeyIdentity();
+                    window.location.reload();
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="destructive"
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          </div>
+        </Overlay>
       ) : null}
 
       {confirmSignOut ? (

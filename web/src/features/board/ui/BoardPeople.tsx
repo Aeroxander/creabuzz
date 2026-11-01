@@ -11,6 +11,7 @@
  * rule to boards and rooms, so this works the same for both.
  */
 
+import { needAccountTo } from "@/features/identity/lib/account-copy";
 import { useState } from "react";
 
 import { useMentionCandidates } from "@/features/fleet/use-mention-candidates";
@@ -55,7 +56,7 @@ export function BoardPeople({
 
   const addPerson = async (pubkey: string) => {
     if (me === null) {
-      setProblem("Create your account (top right) to add people.");
+      setProblem(needAccountTo("add people"));
       return;
     }
     setBusy(true);

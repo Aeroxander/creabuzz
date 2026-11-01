@@ -14,7 +14,7 @@ export const CREATE_ACCOUNT = "Create your account";
 
 /** A sentence for the moment someone tries to do something that needs an account. */
 export function needAccountTo(action: string): string {
-  return `Create your account (top right) to ${action}.`;
+  return `Create your account to ${action}.`;
 }
 
 /** Asks the account menu to open its sign-up dialog (it owns that flow). */

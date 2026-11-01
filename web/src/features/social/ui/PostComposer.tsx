@@ -30,7 +30,8 @@ import {
   type SignedEventLike,
 } from "../../feed/lib/feed-events";
 import { usePostToBoard } from "../../board/use-post-to-board";
-import { readMirrorSetting, writeMirrorSetting } from "../../feed/lib/mirror";
+import { forgetOldMirrorSetting, mirrorOffered } from "../../feed/lib/mirror";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { mentionUri } from "../lib/entity";
 import { buildLaunchUpdate } from "../lib/launch-update";
 import {
@@ -103,7 +104,8 @@ export function PostComposer({
   const [text, setText] = useState(initialText);
   const [caret, setCaret] = useState(0);
   const [active, setActive] = useState(0);
-  const [mirror, setMirror] = useState(readMirrorSetting);
+  // "Also share with other apps" is for the post being written only: it starts unticked and is never saved.
+  const [mirror, setMirror] = useState(false);
   const [onboarding, setOnboarding] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [problem, setProblem] = useState<FailureWords | null>(null);
@@ -112,6 +114,10 @@ export function PostComposer({
   // before the server has said which it is.
   const access = useCommunityAccess();
   const readingIsOpen = !me && access.data === "open";
+  const shareOffered = mirrorOffered({
+    raisesOffered: raisesOffered(),
+    access: access.data,
+  });
   const ref = useRef<HTMLTextAreaElement>(null);
   const publish = useSocialPublish();
   const myProfile = usePeople(me ? [me] : [])[me ?? ""];
@@ -136,6 +142,9 @@ export function PostComposer({
   useEffect(() => {
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
+
+  // An older build kept the box ticked for good; drop that so nothing reads it as a standing yes.
+  useEffect(() => forgetOldMirrorSetting(), []);
 
   // Where the caret goes once a chosen mention has been written into the box. It is set in the same commit that writes the
   // text, not a frame later: a key typed straight after choosing someone would otherwise land at the end and then have the
@@ -279,23 +288,26 @@ export function PostComposer({
       );
       return;
     }
-    writeMirrorSetting(mirror);
-    publish.mutate(template, {
-      onSuccess: () => {
-        setText("");
-        setProblem(null);
-        setLaunchMode(false);
-        if (ref.current) ref.current.style.height = "auto";
-        onPosted?.();
-      },
-      onError: (error) =>
-        setProblem(
-          failureWords(
-            error,
-            "Your post was not sent. Your words are still here. Try again.",
+    publish.mutate(
+      { ...template, mirror: mirror && shareOffered },
+      {
+        onSuccess: () => {
+          setText("");
+          setMirror(false);
+          setProblem(null);
+          setLaunchMode(false);
+          if (ref.current) ref.current.style.height = "auto";
+          onPosted?.();
+        },
+        onError: (error) =>
+          setProblem(
+            failureWords(
+              error,
+              "Your post was not sent. Your words are still here. Try again.",
+            ),
           ),
-        ),
-    });
+      },
+    );
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -510,7 +522,7 @@ export function PostComposer({
                 ) : null}
               </span>
             ) : null}
-            {onBoard ? null : (
+            {onBoard || !shareOffered ? null : (
               <label className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
                 <input
                   checked={mirror}
@@ -518,7 +530,8 @@ export function PostComposer({
                   onChange={(e) => setMirror(e.target.checked)}
                   type="checkbox"
                 />
-                Also share with other apps (copies there can&apos;t be deleted)
+                Also share this post with other apps (copies there can&apos;t be
+                deleted)
               </label>
             )}
           </div>

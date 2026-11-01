@@ -37,7 +37,7 @@ Most of it is filled in automatically; the founder writes the first line and the
 | Finished: work awarded or approved, with who did it | the chain (claims, awards) | automatic |
 | Stuck: work waiting on someone, and who could unstick it | the Overview's "Waiting on someone else" | automatic, editable |
 | Turned down, by cause | D158's tally, for this period | automatic |
-| Taken on and lapsed: people whose date passed without a submission (no names, a count) | D154 records | automatic |
+| "Taking this on" dates that passed in the period and were not let go (no names, a count). Work finished on time counts too, so it says nothing about whether work came in, and it is not given to the AI | D154 records | automatic |
 | **For each Now item: keep, change, or drop** | | founder |
 | **One thing we change in how we work** | suggested from the causes (an unclear "done when" suggests rewriting it) | founder, required |
 
@@ -60,6 +60,17 @@ Publishing the note also applies its keep/change/drop answers to Now and Not doi
 the updated focus. They are written in that order, so the note (the record of the decision) always exists. If the
 focus update fails, the note shows "Apply to Now" until it succeeds, so nothing is lost and nothing is applied twice
 (review-proven rules 1 and 5).
+
+How "applied" is known (outside review, 2026-11-01): each Now item has an `id` that stays with it through edits, the
+note keeps the id of each item it answers, and the focus record names the last note applied (`applied`, the note's
+event id) in the same record as the changes. Every later focus save keeps that marker. "Apply to Now" shows while the
+focus does not name the latest note and applying it would change something; times are not compared, so a focus saved
+in the same second as the note is not mistaken for an unapplied one. An answer reaches an item only while the item still
+has the words and expectation the note answered, so a retry changes nothing and an old note never undoes a later edit.
+A note from before ids existed is not applied automatically: the founder updates Now by hand.
+
+The AI draft's words go to the server's AI service, and the form says so. A draft that comes back after the founder
+changed the note is set aside, not merged, since it was written from facts the note no longer has.
 
 ## Build order
 

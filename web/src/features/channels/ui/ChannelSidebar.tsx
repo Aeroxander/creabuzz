@@ -82,7 +82,7 @@ function ChannelButton({
           title={
             board
               ? "Private board. Only people who were added can read it."
-              : "Private channel. A member with admin rights has to add you."
+              : "Private room. A member with admin rights has to add you."
           }
         >
           private
@@ -245,11 +245,11 @@ export function ChannelSidebar({
         </nav>
       )}
       <SectionHeader
-        actionLabel="New channel"
+        actionLabel="New room"
         actionTestId="new-channel"
         collapsed={chatsCollapsed}
         icon={<Users className="h-4 w-4" />}
-        label="Channels"
+        label="Rooms"
         onAction={signedIn ? () => setCreating("stream") : undefined}
         onToggle={() => setChatsCollapsed((v) => !v)}
       />
@@ -275,7 +275,7 @@ export function ChannelSidebar({
                     data-testid="channels-more-error"
                     role="alert"
                   >
-                    Couldn't load more channels. {moreFailure.text}{" "}
+                    Couldn't load more rooms. {moreFailure.text}{" "}
                     <button
                       type="button"
                       className="underline"
@@ -298,9 +298,7 @@ export function ChannelSidebar({
                   disabled={loadingMore}
                   onClick={onLoadMore}
                 >
-                  {loadingMore
-                    ? "Loading more channels…"
-                    : "Load more channels"}
+                  {loadingMore ? "Loading more rooms…" : "Load more rooms"}
                 </button>
               )}
             </div>
@@ -320,7 +318,7 @@ export function ChannelSidebar({
         </p>
       ) : null}
       <p className="border-t border-black/10 px-4 py-2 text-xs text-black/60 dark:border-white/10 dark:text-white/60">
-        {chats.length} channel{chats.length === 1 ? "" : "s"}
+        {chats.length} room{chats.length === 1 ? "" : "s"}
         {boards.length > 0
           ? ` · ${boards.length} board${boards.length === 1 ? "" : "s"}`
           : ""}

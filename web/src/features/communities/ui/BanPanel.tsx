@@ -32,12 +32,14 @@ export function BanForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const [length, setLength] = useState(0);
+  // No length is chosen at first: a default of "For good" banned people forever when a moderator only typed a reason.
+  const [length, setLength] = useState<number | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<FailureWords | null>(null);
 
   const ban = async () => {
+    if (length === null) return;
     setBusy(true);
     setError(null);
     try {
@@ -59,8 +61,8 @@ export function BanForm({
     <div className="mt-2 space-y-2" data-testid="ban-form">
       <p className="text-xs">
         {name} will be signed out right away and cannot get back in, even with
-        an invite link, until the ban ends or you lift it. They are told the
-        reason you give.
+        an invite link, until the ban ends or you lift it. Only moderators see
+        the reason you give.
       </p>
       <label className="flex items-center gap-2 text-xs">
         How long
@@ -68,8 +70,11 @@ export function BanForm({
           className="rounded-md border border-input bg-background px-2 py-1 text-xs"
           data-testid="ban-length"
           onChange={(event) => setLength(Number(event.target.value))}
-          value={length}
+          value={length ?? ""}
         >
+          <option disabled value="">
+            Choose
+          </option>
           {BAN_LENGTHS.map((choice, index) => (
             <option key={choice.label} value={index}>
               {choice.label}
@@ -78,18 +83,18 @@ export function BanForm({
         </select>
       </label>
       <input
-        aria-label="Reason, which they will see"
+        aria-label="Reason, seen only by moderators"
         className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
         data-testid="ban-reason"
         maxLength={200}
         onChange={(event) => setReason(event.target.value)}
-        placeholder="Reason (they will see it)"
+        placeholder="Reason (only moderators see it)"
         value={reason}
       />
       <div className="flex gap-2">
         <Button
           data-testid="ban-yes"
-          disabled={busy}
+          disabled={busy || length === null}
           onClick={() => void ban()}
           size="sm"
           type="button"

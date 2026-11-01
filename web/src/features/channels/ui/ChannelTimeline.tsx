@@ -856,7 +856,7 @@ export function ChannelTimeline({
             role="status"
           >
             Showing live messages only. The server didn't answer the history
-            request for this channel.
+            request for this room.
           </p>
         ) : null}
         {messages.isLoading ? (
@@ -870,7 +870,7 @@ export function ChannelTimeline({
           </div>
         ) : roots.length === 0 && messages.error ? (
           <QueryError
-            description={`The server did not answer the history query for #${channel.name}, so this channel is not known to be empty.`}
+            description={`The server did not answer the history query for #${channel.name}, so this room is not known to be empty.`}
             error={messages.error}
             message={errorMessage(messages.error)}
             onRetry={messages.refetch}
@@ -960,7 +960,7 @@ export function ChannelTimeline({
 
       <ConfirmDialog
         confirmLabel="Delete message"
-        description="The message is replaced with a deletion marker for everyone in this channel."
+        description="The message is replaced with a deletion marker for everyone in this room."
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => {
           const target = pendingDelete;
@@ -973,7 +973,7 @@ export function ChannelTimeline({
 
       <ConfirmDialog
         confirmLabel="Remove message"
-        description="It is taken away for everyone in this channel. The person stays; to keep them out, use Ban."
+        description="It is taken away for everyone in this room. The person stays; to keep them out, use Ban."
         onCancel={() => setPendingRemove(null)}
         onConfirm={() => {
           const target = pendingRemove;

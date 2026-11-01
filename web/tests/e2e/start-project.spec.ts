@@ -112,7 +112,7 @@ test("a team is picked, set up step by step, and its first channel opens", async
   await expect(picker).toContainText("Technical project");
   await expect(picker).toContainText("Film, music, audio or any creative work");
   await expect(picker).toContainText(
-    "4 channels · 2 boards · 6 AI helpers · 3 shared pages",
+    "4 rooms · 2 boards · 6 AI helpers · 3 shared pages",
   );
   const more = page.getByTestId("more-templates");
   await expect(more).toHaveJSProperty("open", false);

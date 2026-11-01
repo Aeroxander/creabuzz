@@ -551,10 +551,12 @@ test("a contributor project is started from the page, work is claimed the same d
     "We expected: Two newcomers submit work",
     { timeout: 30_000 },
   );
+  // Nothing is flagged while the founder is still filling it in; pressing Publish too early says what is missing.
+  await expect(founder.getByTestId("check-note-problem")).toHaveCount(0);
+  await founder.getByTestId("check-note-publish").click();
   await expect(founder.getByTestId("check-note-problem")).toContainText(
     "what changed",
   );
-  await expect(founder.getByTestId("check-note-publish")).toBeDisabled();
   await founder
     .getByTestId("check-note-outside")
     .fill("Nothing yet: the guide is not out.");
@@ -585,7 +587,9 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(founder.getByTestId("check-note-problem")).toContainText(
     "Read the summary the AI drafted",
   );
-  await expect(founder.getByTestId("check-note-publish")).toBeDisabled();
+  // Pressing Publish now still does not send it.
+  await founder.getByTestId("check-note-publish").click();
+  await expect(founder.getByTestId("check-note-last")).toHaveCount(0);
   await founder.getByTestId("check-note-summary-accept").click();
   await founder.getByTestId("check-note-publish").click();
   await expect(founder.getByTestId("check-note-last")).toContainText(

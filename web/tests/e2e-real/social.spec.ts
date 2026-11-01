@@ -578,21 +578,30 @@ test("muting someone hides their posts from your timelines", async ({
 
   await page.goto(`/u/${fixture.people.carol}`);
   await page.getByTestId("profile-mute").click();
-  // Wait for the relay to hold a mute list that actually names Carol.
+  // Wait for the relay to hold a new, private mute list: written encrypted to dev, with no public tag naming Carol.
+  const newestMuteList = async () => {
+    const lists = await readAs("dev", {
+      kinds: [10000],
+      authors: [fixture.people.dev],
+    });
+    return lists.sort(
+      (a: { created_at: number }, b: { created_at: number }) =>
+        b.created_at - a.created_at,
+    )[0] as { id: string; content: string; tags: string[][] } | undefined;
+  };
+  let mutedListId = "";
   await expect
     .poll(
       async () => {
-        const lists = await readAs("dev", {
-          kinds: [10000],
-          authors: [fixture.people.dev],
-        });
-        const newest = lists.sort(
-          (a: { created_at: number }, b: { created_at: number }) =>
-            b.created_at - a.created_at,
-        )[0];
-        return newest?.tags.some(
-          (t: string[]) => t[1] === fixture.people.carol,
-        );
+        const newest = await newestMuteList();
+        if (
+          !newest ||
+          newest.content === "" ||
+          newest.tags.some((t) => t[1] === fixture.people.carol)
+        )
+          return false;
+        mutedListId = newest.id;
+        return true;
       },
       { timeout: 20_000 },
     )
@@ -608,24 +617,12 @@ test("muting someone hides their posts from your timelines", async ({
   // because leaving the page first would abandon the write.
   await page.goto(`/u/${fixture.people.carol}`);
   await page.getByTestId("profile-mute").click();
+  // A newer list replaced the one that muted her (its contents are private, so the page below shows the result).
   await expect
-    .poll(
-      async () => {
-        const lists = await readAs("dev", {
-          kinds: [10000],
-          authors: [fixture.people.dev],
-        });
-        const newest = lists.sort(
-          (a: { created_at: number }, b: { created_at: number }) =>
-            b.created_at - a.created_at,
-        )[0];
-        return newest?.tags.some(
-          (t: string[]) => t[1] === fixture.people.carol,
-        );
-      },
-      { timeout: 20_000 },
-    )
-    .toBe(false);
+    .poll(async () => (await newestMuteList())?.id !== mutedListId, {
+      timeout: 20_000,
+    })
+    .toBe(true);
   await page.goto("/social");
   await expect(postCard(page, text)).toBeVisible({ timeout: 20_000 });
 });

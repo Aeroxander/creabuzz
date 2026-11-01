@@ -2,10 +2,10 @@
  * The check note on a contributor project's Overview (`checkNote.ts` in core, CHECK-NOTE-PLAN.md): when the last one
  * was, what it said changed and what the team changes next, and when the next is due. The founder writes it here: the
  * form starts with what the records say (each Now item's expectation, work finished and turned down since the last note,
- * turn-downs by cause, lapsed "taking this on" dates, work waiting on review) and asks for the rest.
+ * turn-downs by cause, "taking this on" dates that passed, work waiting on review) and asks for the rest.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import {
   type CheckNote,
@@ -26,6 +26,7 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
 import {
+  acceptCheckDraft,
   checkDraftPrompt,
   parseCheckDraft,
 } from "@creaton/core/launchpad/checkNoteAi.ts";
@@ -271,7 +272,12 @@ function CheckNoteForm({
   const [draftFailure, setDraftFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  // The problem shows once the founder has tried to publish, not while they are still filling the form in.
+  const [tried, setTried] = useState(false);
   const note = edits ?? start;
+  // The note as it is now, for an AI answer that arrives after the founder kept typing (acceptCheckDraft).
+  const current = useRef(note);
+  current.current = note;
 
   if (!note) {
     return (
@@ -291,8 +297,9 @@ function CheckNoteForm({
   const draftWithAi = async () => {
     setDrafting(true);
     setDraftFailure(null);
+    const asked = note;
     try {
-      const prompt = checkDraftPrompt(note, focus.query.data?.aim ?? "");
+      const prompt = checkDraftPrompt(asked, focus.query.data?.aim ?? "");
       const draft = parseCheckDraft(
         await askAi(prompt.system, prompt.user),
         note.items.length,
@@ -303,7 +310,17 @@ function CheckNoteForm({
         );
         return;
       }
-      setEdits({ ...note, summary: draft.summary });
+      // Only onto the note it was asked about: an edit made while the AI wrote is kept, and the draft set aside.
+      const next = current.current
+        ? acceptCheckDraft(asked, current.current, draft.summary)
+        : null;
+      if (!next) {
+        setDraftFailure(
+          "You changed the note while the AI was writing, so its draft was set aside. Ask again to draft from what is there now.",
+        );
+        return;
+      }
+      setEdits(next);
       setQuestions(draft.questions);
       setSummaryToRead(true);
     } catch (error) {
@@ -340,8 +357,7 @@ function CheckNoteForm({
         <fieldset
           className="flex flex-col gap-2 rounded-lg bg-secondary/40 p-2"
           data-testid="check-note-item"
-          // biome-ignore lint/suspicious/noArrayIndexKey: the Now list's own order
-          key={`${i}-${item.text}`}
+          key={item.id ?? `${i}-${item.text}`}
         >
           <legend className="px-1 text-sm font-medium">{item.text}</legend>
           {item.expected ? (
@@ -441,7 +457,7 @@ function CheckNoteForm({
         {note.lapsed ? (
           <p>
             {note.lapsed} &ldquo;taking this on&rdquo; date
-            {note.lapsed === 1 ? "" : "s"} passed without the work coming in.
+            {note.lapsed === 1 ? "" : "s"} passed.
           </p>
         ) : null}
       </div>
@@ -480,8 +496,9 @@ function CheckNoteForm({
               : "Draft a summary and questions with AI"}
           </Button>
           <p className="text-xs text-muted-foreground">
-            It sees only what is on this form and the project&apos;s aim. You
-            read and edit what it writes; it decides nothing.
+            It sees only what is on this form and the project&apos;s aim. These
+            words are sent to this server&apos;s AI service. You read and edit
+            what it writes; it decides nothing.
           </p>
           {draftFailure ? (
             <p
@@ -524,7 +541,7 @@ function CheckNoteForm({
           ) : null}
         </div>
       ) : null}
-      {problem || failure ? (
+      {(tried && problem) || failure ? (
         <p
           className="text-sm text-destructive"
           data-testid="check-note-problem"
@@ -537,17 +554,25 @@ function CheckNoteForm({
         <Button
           aria-busy={busy}
           data-testid="check-note-publish"
-          disabled={busy || problem !== null}
+          disabled={busy}
           onClick={async () => {
+            setTried(true);
+            if (problem !== null) return;
             setBusy(true);
             setFailure(null);
             try {
-              // The note first: it is the record of the decision. Then Now, from it; if that fails, the card offers
-              // "Apply to Now" until it succeeds, so the note is never left half done.
-              await notes.publish(note);
+              // The note first: it is the record of the decision. Then Now, from it, naming the note as applied in
+              // the same record; if that fails, the card offers "Apply to Now" until it succeeds, so the note is never
+              // left half done and never applied twice.
+              const id = await notes.publish(note);
               if (focus.query.data) {
                 await focus
-                  .save(applyCheckToFocus(focus.query.data, note))
+                  .save(
+                    applyCheckToFocus(focus.query.data, {
+                      id,
+                      items: note.items,
+                    }),
+                  )
                   .catch(() => undefined);
               }
               onDone();
@@ -607,8 +632,9 @@ export function CheckNoteBrief({ launch }: { launch: Launch }) {
           <span className="text-muted-foreground">What changed:</span>{" "}
           {last.outside}
         </p>
-        {last.items.map((item) => (
-          <p key={item.text}>
+        {last.items.map((item, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: two items may share words; the note's own order
+          <p key={i}>
             {item.text}
             {item.expected
               ? `: expected ${item.expected}, ${item.happened ? HAPPENED_LABEL[item.happened].toLowerCase() : "not answered"}`

@@ -1,7 +1,9 @@
 /**
  * The social client's personal lists, on standard NIP-51 so they travel:
  *
- * - Mutes: kind 10000, public `p` tags (what Primal and other clients write).
+ * - Mutes: kind 10000. New entries are private (NIP-44-encrypted into `content`, see `../mute-list.ts`) so the
+ *   person you muted cannot see it; public `p` tags from older lists are still read. `withMuted` and
+ *   `mutedPeople` below are the old public-tag helpers, kept for reading and their tests.
  * - Bookmarks: kind 10003 `e` tags, held privately — new entries are
  *   NIP-44-encrypted into `content` so other members of the community cannot
  *   see what you saved. The same list also carries the feed's launch follows

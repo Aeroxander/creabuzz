@@ -24,8 +24,14 @@ import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import {
+  type BoardMemoScope,
+  type BoardMemoStore,
+  boardForLaunch,
+  boardIsFounders,
+  forgetBoardMemo,
   missingRooms,
   pendingBackers,
+  publishWithBoard,
   type RoomKey,
   roomRows,
   withRooms,
@@ -34,6 +40,8 @@ import { recordToInput } from "./lib/record-input";
 import { useCreateLaunch } from "./use-launches";
 import type { Launch, LaunchChat } from "./models";
 
+const KIND_CHANNEL_METADATA = 39000;
+const KIND_CHANNEL_ADMINS = 39001;
 const KIND_CHANNEL_MEMBERS = 39002;
 
 /** What a launch can have made for it: its chat rooms and its board (D156). */
@@ -194,68 +202,69 @@ export function setupNotice(ensured: {
   return null;
 }
 
-/** Where a board made for a launch that is not published yet is remembered, so a retried start makes no second one. */
-const boardMemoKey = (launchId: string) => `creaton:launch-board:${launchId}`;
-
-function readBoardMemo(launchId: string): string | null {
+/** The memo of boards made before their record is saved; one that keeps nothing when storage is refused (a private window). */
+function memoStore(): BoardMemoStore {
   try {
-    return localStorage.getItem(boardMemoKey(launchId));
+    return localStorage;
   } catch {
-    return null;
+    return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
   }
 }
 
-function forgetBoardMemo(launchId: string): void {
-  try {
-    localStorage.removeItem(boardMemoKey(launchId));
-  } catch {
-    // Nothing was kept.
-  }
+/** The scope a board made now is remembered under: this community, the founder and the project. */
+function boardMemoScope(
+  founder: string,
+  launchId: string,
+): BoardMemoScope {
+  return { relay: relayWsUrl(), founder, launchId };
+}
+
+/** What the board operations need from the page: where the memo lives, how to check a board and how to make one. */
+function boardDeps(scope: BoardMemoScope, launchName: string) {
+  return {
+    scope,
+    store: memoStore(),
+    // Read on the server the memo was written for; a failure to answer is thrown, so the memo is kept for a retry.
+    isFounders: async (board: string) =>
+      boardIsFounders({
+        board,
+        founder: scope.founder,
+        records: await queryEvents(scope.relay, {
+          kinds: [KIND_CHANNEL_METADATA, KIND_CHANNEL_ADMINS],
+          "#d": [board],
+          limit: 10,
+        }),
+      }),
+    make: async () => {
+      const made = await createLaunchRooms({
+        launchName,
+        team: [],
+        rooms: ["board"],
+      });
+      return {
+        board: made.created.board ?? null,
+        error: made.errors.board ?? null,
+      };
+    },
+  };
 }
 
 /**
- * A board for the launch, made now unless one was already made for it and not yet recorded: a start that publishes its
- * record more than once (a contributor project retried after a failed step), or an Open the project board whose record
- * save failed, reuses the board made the first time instead of leaving another behind. `avoid` is a board that must
- * not be reused (the record names it, and it is gone). Returns the board, or null and the server's reason.
+ * Publish a launch's record with its board, made first (or the one made for it by an earlier, failed try) when the chat
+ * has none. A board that cannot be made leaves the chat as it was: the project still starts, and its founder opens the
+ * board from the Discussion tab, where the reason is shown. `scope` is taken once by the caller, for the whole run.
  */
-async function boardFor(input: {
-  launchId: string;
-  launchName: string;
-  avoid?: string | null;
-}): Promise<{ board: string | null; error: unknown }> {
-  const remembered = readBoardMemo(input.launchId);
-  if (remembered && remembered !== input.avoid) {
-    return { board: remembered, error: null };
-  }
-  const made = await createLaunchRooms({
-    launchName: input.launchName,
-    team: [],
-    rooms: ["board"],
-  });
-  const board = made.created.board ?? null;
-  if (board) {
-    try {
-      localStorage.setItem(boardMemoKey(input.launchId), board);
-    } catch {
-      // Private mode: a retry may make a second board, which the founder can remove.
-    }
-  }
-  return { board, error: made.errors.board ?? null };
-}
-
-/**
- * The launch's chat with its board, made now if it has none. A board that cannot be made leaves the chat as it was:
- * the project still starts, and its founder opens the board from the Discussion tab, where the reason is shown.
- */
-export async function ensureProjectBoard(input: {
-  launchId: string;
+export function publishWithProjectBoard(input: {
+  scope: BoardMemoScope;
   launchName: string;
   chat: LaunchChat;
-}): Promise<LaunchChat> {
-  if (input.chat.board) return input.chat;
-  const { board } = await boardFor(input);
-  return board ? withRooms(input.chat, { board }) : input.chat;
+  save: (chat: LaunchChat) => Promise<void>;
+}): Promise<void> {
+  return publishWithBoard({
+    ...boardDeps(input.scope, input.launchName),
+    chat: input.chat,
+    save: input.save,
+  });
 }
 
 /** How many channels a launch record may name; the server refuses more. */
@@ -273,9 +282,12 @@ export function useCreateProjectBoard(launch: Launch) {
   return useMutation({
     mutationFn: async (): Promise<{ board: string; dropped: number }> => {
       const { record } = launch;
-      const { board, error } = await boardFor({
-        launchId: record.id,
-        launchName: record.name,
+      const deps = boardDeps(
+        boardMemoScope(record.author, record.id),
+        record.name,
+      );
+      const { board, error } = await boardForLaunch({
+        ...deps,
         avoid: record.chat.board,
       });
       if (!board) {
@@ -298,7 +310,7 @@ export function useCreateProjectBoard(launch: Launch) {
           channels: picked.slice(0, picked.length - dropped),
         }),
       );
-      forgetBoardMemo(record.id);
+      forgetBoardMemo(deps.store, deps.scope, board);
       await queryClient.invalidateQueries({ queryKey: ["channels"] });
       return { board, dropped };
     },

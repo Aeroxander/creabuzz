@@ -18,6 +18,7 @@ import {
   type PlanStep,
 } from "@creaton/core/templates/apply.ts";
 import type { TemplateEntry } from "@creaton/core/templates/schema.ts";
+import { beyondContributorProjects } from "@/app/lib/build-gates";
 import { markFirstStep } from "@/shared/lib/first-steps";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { queryEvents } from "@/shared/lib/nostr-client";
@@ -162,7 +163,10 @@ export function useTemplateApply() {
             "Your account or community changed. Reopen community setup and try again.",
           );
         }
-        const plan = planApply(entry, existing);
+        // A contributor-only build's server runs no AI service: set up no helpers, seats, limit, skills or automations.
+        const plan = planApply(entry, existing, {
+          contributorOnly: !beyondContributorProjects(),
+        });
         setState({
           phase: "running",
           entry,

@@ -88,3 +88,25 @@ test("a reply is read only when it is the JSON asked for, with one question per 
     600,
   );
 });
+
+test("an AI summary lands only on the note it was asked about; newer edits are never undone", async () => {
+  const { acceptCheckDraft } = await import("./checkNoteAi.ts");
+  const asked = structuredClone(note);
+  // Nothing changed while the AI wrote: the summary is added to the note as it is now.
+  assert.deepEqual(acceptCheckDraft(asked, structuredClone(note), "Sum."), {
+    ...note,
+    summary: "Sum.",
+  });
+  // The founder changed what they saw, or a keep/change/drop answer, while it wrote: the draft is set aside.
+  const edited = structuredClone(note);
+  edited.outside = "Three teachers used it.";
+  assert.equal(acceptCheckDraft(asked, edited, "Sum."), null);
+  const decided = structuredClone(note);
+  decided.items[1].next = "drop";
+  assert.equal(acceptCheckDraft(asked, decided, "Sum."), null);
+});
+
+test("lapsed dates go to the AI as dates, never as work that did not come in", () => {
+  const { user } = checkDraftPrompt(note, "");
+  assert.doesNotMatch(user, /without the work/);
+});

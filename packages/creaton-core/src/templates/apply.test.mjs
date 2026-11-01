@@ -629,3 +629,49 @@ test("every bundled template is valid, applies cleanly from nothing, and is in t
     );
   }
 });
+
+test("a contributor-only plan leaves out every AI helper step: no helpers, helper seats, helper limit, skills or automations", () => {
+  // The pilot server runs no AI service, so setting up there writes channels, the founder seat, pages and the welcome only.
+  const plan = planApply(demo(), emptyExisting(), { contributorOnly: true });
+  assert.deepEqual(
+    plan.map((s) => `${s.kind}:${s.item}`),
+    [
+      "channel:room",
+      "seed:seed:room",
+      "channel:desk",
+      "org:org:root",
+      "doc:docs/story-bible.md",
+      "welcome:welcome",
+    ],
+  );
+  for (const entry of Object.values(TEMPLATE_CATALOG)) {
+    const steps = planApply(entry, emptyExisting(), { contributorOnly: true });
+    const kinds = steps.map(
+      (s) =>
+        buildStepEvent(s, {
+          entry,
+          channelIds: Object.fromEntries(
+            entry.template.channels.map((c) => [c.id, `id-${c.id}`]),
+          ),
+          me: ME,
+          now: 1000,
+          newId: () => "fresh",
+        }).kind,
+    );
+    assert.ok(!kinds.includes(30175), `${entry.template.id} writes a helper`);
+    assert.ok(!kinds.includes(37012), `${entry.template.id} writes a limit`);
+    // The founder seat is the only org node: no helper seats.
+    assert.equal(
+      kinds.filter((k) => k === 37010).length,
+      entry.template.org ? 1 : 0,
+      `${entry.template.id} writes a helper seat`,
+    );
+    assert.ok(
+      steps.every((s) => !["persona", "skill", "workflow"].includes(s.kind)),
+    );
+  }
+  // Without the option the plan is unchanged.
+  assert.ok(
+    planApply(demo(), emptyExisting()).some((s) => s.kind === "persona"),
+  );
+});

@@ -41,6 +41,13 @@ only what each step needs.
 - **The chain node**, [name of the page's chain node provider]: the app in your browser asks it for public blockchain
   records, so it sees your IP address and which accounts and projects you look at. Our server asks [name of the
   server's chain node provider] to check a passkey account when you link it to your name.
+- **The AI service**, [name of the AI service this server is set up to use], [if this server has one switched on]: the
+  AI helpers (checking your work before you submit it, the "Help me fill this in" questions, drafting a check note, and
+  the follow-up questions and summary before a vote) send what you typed there, with the project details the helper
+  names beside its button, from our server to that service. The AI service sees that text, not your key or your IP
+  address. Our server notes that you used it and how much, to count it against your allowance. Its answer is shown only
+  to you until you choose to save or post something. What the AI service keeps, and
+  for how long, is set by its own terms: [what those terms say, or a link to them].
 - **ZeroDev**, for passkey accounts: each on-chain step you take from a passkey account goes through ZeroDev's bundler,
   and its paymaster covers the fee. ZeroDev sees your account's address, the step and your IP address.
 - **Your passkey** is kept by your device or password manager (for example Apple, Google or Microsoft) under their own

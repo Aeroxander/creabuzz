@@ -5,7 +5,8 @@
  *
  * Most of it comes from the project's own records: each Now item's expectation (the focus record), work finished and
  * turned down since the last note (each note keeps the claims it covered, so the next one lists only what is new),
- * turn-downs by cause, and how many "taking this on" dates lapsed (a count, never names). The founder writes what
+ * turn-downs by cause, and how many "taking this on" dates passed (a count, never names; it says nothing about whether the
+ * work came in, since a date passes the same way when the work was finished on time). The founder writes what
  * changed for the people the project serves, whether each expectation happened, keep / change / drop for each Now
  * item, and one thing the team changes in how it works.
  *
@@ -32,6 +33,12 @@ export type Next = (typeof NEXT)[number];
 
 /** One Now item as the note covers it. */
 interface CheckItem {
+  /**
+   * The Now item's id (`projectStructure.ts`), so the answers go to that item and no other with the same words. Null on
+   * a note from before items had ids: such a note is not applied automatically.
+   */
+  id: string | null;
+  /** The item's words when the note was drafted. */
   text: string;
   /** What the team expected, and the day it said it would check; empty and null when it said nothing. */
   expected: string;
@@ -57,7 +64,10 @@ export interface CheckNote {
   causes: { label: string; count: number }[];
   /** Work waiting on someone, as the founder edits it. */
   stuck: string;
-  /** "Taking this on" dates that passed without the work coming in. */
+  /**
+   * How many "taking this on" dates passed in the period without being let go. Only that: work finished before its date
+   * counts too, so this is never a count of work that did not come in.
+   */
   lapsed: number;
   /** The one thing the team changes in how it works. */
   change: string;
@@ -113,6 +123,7 @@ export function draftCheckNote(input: {
   since: number;
   now: number;
   focus: readonly {
+    id: string;
     text: string;
     expect: string;
     checkBy: number | null;
@@ -140,6 +151,7 @@ export function draftCheckNote(input: {
     since: input.since,
     outside: "",
     items: input.focus.map((item) => ({
+      id: item.id,
       text: item.text,
       expected: item.expect,
       checkBy: item.expect ? item.checkBy : null,
@@ -233,7 +245,7 @@ function checkNoteBody(note: CheckNote): string {
     );
   if (note.lapsed)
     lines.push(
-      `${note.lapsed} "taking this on" date${note.lapsed === 1 ? "" : "s"} passed without the work coming in.`,
+      `${note.lapsed} "taking this on" date${note.lapsed === 1 ? "" : "s"} passed.`,
     );
   if (note.stuck.trim()) lines.push(`Stuck: ${note.stuck.trim()}`);
   lines.push(`What we change in how we work: ${note.change.trim()}`);
@@ -257,6 +269,7 @@ export function checkNoteContent(
       since: note.since,
       outside: note.outside.trim(),
       items: note.items.map((i) => ({
+        ...(i.id ? { id: i.id } : {}),
         text: i.text,
         ...(i.expected ? { expected: i.expected, checkBy: i.checkBy } : {}),
         happened: i.happened,
@@ -321,6 +334,7 @@ export function parseCheckNotes(
           if (!i || !isStr(i.text)) return [];
           return [
             {
+              id: isStr(i.id) && i.id !== "" ? i.id : null,
               text: i.text,
               expected: isStr(i.expected) ? i.expected : "",
               checkBy: typeof i.checkBy === "number" ? i.checkBy : null,
@@ -373,19 +387,35 @@ const NOT_DOING_MAX = 10;
 /**
  * Now and Not doing after the note's answers: "keep" stays, "change" becomes what the founder wrote, "drop" moves to Not
  * doing with what was seen as the reason. An expectation the note answered (yes, partly or no) is settled and cleared,
- * as is the one on a changed item; one answered "not yet" stays. Items are matched by their words, so an item changed
- * since the note was drafted is left as it is.
+ * as is the one on a changed item; one answered "not yet" stays. The result names the note as applied, in the same
+ * record as the changes.
+ *
+ * Answers go to items by id, and only while the item still has the words and expectation the note answered: an item
+ * changed since (by hand, or by this note already) is left as it is, so a retry changes nothing and an old note never
+ * undoes a later edit. Items the note does not answer are left alone. A note without ids (from before they existed)
+ * changes nothing here; the founder brings Now up to date by hand.
  */
 export function applyCheckToFocus(
   focus: FocusDraft,
-  note: Pick<CheckNote, "items">,
+  note: Pick<CheckNoteRecord, "id" | "items">,
 ): FocusDraft {
-  const answers = new Map(note.items.map((i) => [i.text, i]));
+  const ids = note.items.flatMap((i) => (i.id ? [i.id] : []));
+  const answers = new Map(
+    note.items.flatMap((i) =>
+      // An id given twice in one note is ambiguous: neither answer is used.
+      i.id && ids.indexOf(i.id) === ids.lastIndexOf(i.id) ? [[i.id, i]] : [],
+    ),
+  );
   const now: FocusDraft["now"] = [];
   const dropped: FocusDraft["notDoing"] = [];
   for (const item of focus.now) {
-    const answer = answers.get(item.text);
-    if (!answer || answer.next === null) {
+    const answer = answers.get(item.id);
+    if (
+      !answer ||
+      answer.next === null ||
+      answer.text !== item.text ||
+      answer.expected !== item.expect
+    ) {
       now.push(item);
       continue;
     }
@@ -409,20 +439,24 @@ export function applyCheckToFocus(
     aim: focus.aim,
     now,
     notDoing: [...dropped, ...focus.notDoing].slice(0, NOT_DOING_MAX),
+    applied: note.id,
   };
 }
 
 /**
- * Whether the latest note still has to be applied to Now: the focus was not saved after it, and applying it would change
- * something. Then the founder is offered "Apply to Now", so a note whose focus update failed is never left half done.
+ * Whether the latest note still has to be applied to Now: the focus does not name it as applied, and applying it would
+ * change something. Then the founder is offered "Apply to Now", so a note whose focus update failed is never left half
+ * done. Times are not compared: a focus saved in the same second as the note is told apart by the note it names.
  */
 export function checkNeedsApplying(
-  note: CheckNoteRecord,
+  note: Pick<CheckNoteRecord, "id" | "items">,
   focus: (FocusDraft & { createdAt: number }) | null,
 ): boolean {
-  if (!focus || focus.createdAt > note.createdAt) return false;
+  if (!focus || focus.applied === note.id) return false;
   const { createdAt: _, ...draft } = focus;
+  const after = applyCheckToFocus(draft, note);
   return (
-    JSON.stringify(applyCheckToFocus(draft, note)) !== JSON.stringify(draft)
+    JSON.stringify([after.now, after.notDoing]) !==
+    JSON.stringify([draft.now, draft.notDoing])
   );
 }

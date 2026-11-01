@@ -3,9 +3,13 @@
  * money or Shares, they answer three questions against it, and the answers are published with the vote.
  *
  * The vote's id is known before it is sent (`proposalId` on the DAO, from the same op, target, data and nonce), so the
- * challenge is published first and the vote opened after it. A challenge whose vote never opened names no vote, so it is
- * never shown: a failure at either step leaves nothing misleading. A challenge counts only when it names the wallet that
- * opened the vote and is signed by someone who bound that wallet, the check turn-down reasons make.
+ * app's vote form publishes the challenge first and opens the vote after it. A challenge whose vote never opened names no
+ * vote, so it is never shown: a failure at either step leaves nothing misleading. A challenge counts only when it names
+ * the wallet that opened the vote and is signed by someone who bound that wallet, the check turn-down reasons make.
+ *
+ * A reader cannot check that order: the record's date is the one its signer chose, and the same key can publish or
+ * rewrite one after the vote opened. So it is shown as the proposer's case against, with that date, never as proof that
+ * it came before the vote.
  *
  * Pure: a record out, a reading in, driven by `challenge.test.mjs`.
  */
@@ -212,7 +216,8 @@ export function parseChallenge(event: {
 
 /**
  * The challenge to show for one vote: one naming it, naming the wallet that opened it, signed by a key that bound that
- * wallet (`bound` holds `pubkey:address` pairs, as `boundWallets` in the web app builds them). The newest wins.
+ * wallet (`bound` holds `pubkey:address` pairs, as `boundWallets` in the web app builds them). The newest by its signed
+ * date wins; that date is the signer's word, not proof of when it was published.
  */
 export function challengeFor(
   decision: { id: string; proposer: string },

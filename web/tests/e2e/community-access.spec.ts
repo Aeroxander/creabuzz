@@ -729,8 +729,15 @@ test("the owner can ban a person for a week with a reason, after being told what
   await expect(member.getByTestId("ban-form")).toContainText(
     "even with an invite link",
   );
-  await expect(member.getByTestId("ban-form")).toContainText("told the reason");
-  // Nothing is sent until it is confirmed.
+  // The banned person is never shown the reason, so the form does not promise it.
+  await expect(member.getByTestId("ban-form")).toContainText(
+    "Only moderators see the reason",
+  );
+  await expect(member.getByTestId("ban-form")).not.toContainText(
+    "told the reason",
+  );
+  // No length is chosen for them, so nothing can be sent until one is picked and it is confirmed.
+  await expect(member.getByTestId("ban-yes")).toBeDisabled();
   expect(relay.events.filter((event) => event.kind === 9040)).toHaveLength(0);
   await member.getByRole("button", { name: "Cancel" }).click();
   await expect(member.getByTestId("ban-form")).toHaveCount(0);
@@ -763,6 +770,7 @@ test("a ban that is for good sends no end time, and can be lifted, which sends t
 }) => {
   const { relay } = await open(page, { role: "owner" });
   await page.getByTestId("person-ban").click();
+  await page.getByTestId("ban-length").selectOption({ label: "For good" });
   await page.getByTestId("ban-yes").click();
   await expect(page.getByTestId("banned-person")).toHaveCount(1);
   const ban = relay.events.find((event) => event.kind === 9040);
@@ -857,6 +865,7 @@ test("when the server will not ban someone, its words are shown and nobody is li
     refuseBan: "actor not authorized: an admin cannot ban a fellow admin",
   });
   await page.getByTestId("person-ban").click();
+  await page.getByTestId("ban-length").selectOption({ label: "For good" });
   await page.getByTestId("ban-yes").click();
   // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("ban-error")).toHaveText(

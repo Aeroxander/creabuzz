@@ -8,6 +8,8 @@
  * - **Project focus** (kind 37020): the launch author's aim (who the project is for and what it changes for them),
  *   "Now" (at most three, each optionally naming a work area, with why it matters now and what the team expects to
  *   see by a day it will check) and "Not doing" lists. The server takes it only from the launch's author; this module checks the same again.
+ *   Each Now item has an id that stays with it through edits, and the record names the last check note applied to it,
+ *   so a note is applied to the items it answered, once (`checkNote.ts`).
  *
  * Pure: inputs in, records or readings out, driven by `projectStructure.test.mjs`.
  */
@@ -299,6 +301,11 @@ export function myTaking(
 // ---- project focus ---------------------------------------------------------------------------
 
 export interface FocusItem {
+  /**
+   * Stays with the item through edits and saves, so a check note answers this item and not another with the same
+   * words. A record saved before items had ids gets one derived from the record, the same each time it is read.
+   */
+  id: string;
   text: string;
   /** The work area it is about, when it names one. */
   area: string | null;
@@ -321,15 +328,37 @@ export interface FocusDraft {
   aim: string;
   now: FocusItem[];
   notDoing: NotDoingItem[];
+  /**
+   * The check note (its event id) last applied to Now, saved in the same record as the changes it made and kept by
+   * every later save, so "Apply to Now" knows a note is done without comparing times. Null when none was.
+   */
+  applied: string | null;
 }
 
 export interface Focus extends FocusDraft {
   createdAt: number;
 }
 
+const ITEM_ID = /^[A-Za-z0-9_:-]{1,80}$/;
+const EVENT_ID = /^[0-9a-f]{64}$/;
+
+/** A new Now item's id: random, so two items never share one even with the same words. */
+function newItemId(): string {
+  const bytes = new Uint8Array(8);
+  globalThis.crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** A Now row with nothing filled in. */
 export function emptyFocusItem(): FocusItem {
-  return { text: "", area: null, why: "", expect: "", checkBy: null };
+  return {
+    id: newItemId(),
+    text: "",
+    area: null,
+    why: "",
+    expect: "",
+    checkBy: null,
+  };
 }
 
 /** The end of a day the date box gives (`YYYY-MM-DD`, local time), in Unix seconds; null when it is not a date. */
@@ -364,7 +393,18 @@ export function parseFocus(
       notRaw.length > MAX_NOT_DOING
     )
       continue;
-    const now = nowRaw.flatMap((item): FocusItem[] => {
+    // A record from before items had ids (or with a broken or repeated one) gets ids from the record itself: the same
+    // on every read, so a check note drafted from it still finds its items until a save writes real ones.
+    const seen = new Set<string>();
+    const idFor = (raw: unknown, index: number) => {
+      const id =
+        typeof raw === "string" && ITEM_ID.test(raw) && !seen.has(raw)
+          ? raw
+          : `r-${typeof event.id === "string" ? event.id.slice(0, 16) : event.created_at}-${index}`;
+      seen.add(id);
+      return id;
+    };
+    const now = nowRaw.flatMap((item, index): FocusItem[] => {
       const entry = item as Record<string, unknown> | null;
       const t = text(entry?.text, FOCUS_TEXT_MAX, true);
       const why = text(entry?.why, WHY_MAX, false);
@@ -381,7 +421,16 @@ export function parseFocus(
           : null;
       return t === null || why === null || expect === null
         ? []
-        : [{ text: t, area, why, expect, checkBy: expect ? checkBy : null }];
+        : [
+            {
+              id: idFor(entry?.id, index),
+              text: t,
+              area,
+              why,
+              expect,
+              checkBy: expect ? checkBy : null,
+            },
+          ];
     });
     const notDoing = notRaw.flatMap((item): NotDoingItem[] => {
       const entry = item as Record<string, unknown> | null;
@@ -389,8 +438,12 @@ export function parseFocus(
       const why = text(entry?.why, WHY_MAX, false);
       return t === null || why === null ? [] : [{ text: t, why }];
     });
+    const applied =
+      typeof body.applied === "string" && EVENT_ID.test(body.applied)
+        ? body.applied
+        : null;
     if (!best || event.created_at > best.createdAt)
-      best = { aim, now, notDoing, createdAt: event.created_at };
+      best = { aim, now, notDoing, applied, createdAt: event.created_at };
   }
   return best;
 }
@@ -423,6 +476,12 @@ export function focusProblem(focus: FocusDraft): string | null {
     return `Keep each reason under ${WHY_MAX} characters.`;
   if (now.some((i) => i.area !== null && !isAreaKey(i.area)))
     return "Pick the work area again.";
+  if (
+    now.some((i) => !ITEM_ID.test(i.id)) ||
+    new Set(now.map((i) => i.id)).size !== now.length ||
+    (focus.applied !== null && !EVENT_ID.test(focus.applied))
+  )
+    return "Something went wrong with this list. Close it and open it again.";
   return null;
 }
 
@@ -441,9 +500,11 @@ export function focusTemplate(
     ],
     content: JSON.stringify({
       ...(focus.aim.trim() ? { aim: focus.aim.trim() } : {}),
+      ...(focus.applied ? { applied: focus.applied } : {}),
       now: focus.now
         .filter((i) => i.text.trim() !== "")
         .map((i) => ({
+          id: i.id,
           text: i.text.trim(),
           ...(i.area ? { area: i.area } : {}),
           ...(i.why.trim() ? { why: i.why.trim() } : {}),

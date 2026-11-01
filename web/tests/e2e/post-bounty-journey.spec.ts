@@ -292,8 +292,16 @@ test("money behind a post is paid to the work most of it backs for nine days, an
     timeout: 60_000,
   });
 
+  // ── The dip restarted the nine days: seven days after backing it again (ten since the first run began) it is
+  // still not payable. Without the restart it would be.
+  await pass(7 * 86_400);
+  await refresh(cara);
+  await expect(status(cara)).toContainText("Agreed.", { timeout: 30_000 });
+  await expect(status(cara)).not.toContainText("Anyone can pay it now.");
+  await expect(item(cara).getByTestId("post-bounty-pay")).toHaveCount(0);
+
   // ── Nine days with the majority: anyone pays, here Eve, who put nothing in ──────────────────────
-  await pass(9 * 86_400);
+  await pass(2 * 86_400);
   const eve = await context.newPage();
   await open(eve, EVE, KEYS.eve);
   await expect(status(eve)).toContainText("Anyone can pay it now.", {
@@ -396,6 +404,12 @@ test("work nobody backed is appealed, a juror drawn by stake upholds it, and any
   await pass(31 * 86_400);
   await refresh(dev);
   await expect(latest(dev).getByTestId("post-bounty-status")).toContainText(
+    "can appeal to the court until",
+    { timeout: 30_000 },
+  );
+  // Ben's page was opened before the deadline; read it again so the check sees the window, not the old state.
+  await refresh(ben);
+  await expect(latest(ben).getByTestId("post-bounty-status")).toContainText(
     "can appeal to the court until",
     { timeout: 30_000 },
   );

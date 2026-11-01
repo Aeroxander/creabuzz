@@ -90,7 +90,7 @@ export async function joinWithInvite(
 ): Promise<Page> {
   const person = await newPerson(browser);
   await person.goto(inviteUrl);
-  await person.getByRole("button", { name: "Join in browser" }).click();
+  await person.getByRole("button", { name: "Join this community" }).click();
   await person.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
   return person;
 }

@@ -288,7 +288,7 @@ test("terms that could not be loaded say so with Try again; terms that changed l
   await expect(failed.getByRole("alert")).toContainText(
     "Couldn't load this server's terms.",
   );
-  const join = page.getByRole("button", { name: "Join in browser" });
+  const join = page.getByRole("button", { name: "Join this community" });
   await expect(join).toBeDisabled();
   await expectAccessible(page, "invite (terms could not be loaded)");
 
@@ -341,7 +341,7 @@ test("a refusal the page does not know is said plainly, with the server's words 
     }),
   );
   await page.goto("/invite/v2.some-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-  await page.getByRole("button", { name: "Join in browser" }).click();
+  await page.getByRole("button", { name: "Join this community" }).click();
   const problem = page.getByTestId("invite-join-problem");
   await expect(problem.getByRole("alert")).toHaveText(
     /^Couldn't join with this invite\./,

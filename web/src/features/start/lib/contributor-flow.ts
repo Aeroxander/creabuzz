@@ -63,6 +63,11 @@ export interface ContributorJob {
   version: 3;
   /** The founder's public key (the record's author). */
   author: string;
+  /**
+   * The community (its server's address) the project was started in: its board and record belong there. Absent on a
+   * job kept before it was recorded.
+   */
+  relay?: string;
   launchId: string;
   /** The project's salt: with the founder's wallet, it fixes the DAO's address. */
   salt: string;
@@ -254,6 +259,36 @@ export async function runContributorStart(
   return { ok: true, job };
 }
 
+/**
+ * The scope the project's board is remembered under while its record is not saved yet: the community the job was
+ * started in, its founder and its project. A job kept before the community was recorded takes the one open now.
+ */
+export function jobBoardScope(
+  job: ContributorJob,
+  currentRelay: string,
+): { relay: string; founder: string; launchId: string } {
+  return {
+    relay: job.relay ?? currentRelay,
+    founder: job.author,
+    launchId: job.launchId,
+  };
+}
+
+/**
+ * A project's record and board go to the community it was started in. After a switch to another one, publishing would
+ * put them in the wrong place, so the step stops and says how to finish.
+ */
+export function assertJobCommunity(
+  scope: { relay: string },
+  currentRelay: string,
+): void {
+  if (scope.relay !== currentRelay) {
+    throw new Error(
+      "This project was started in another community. Switch back to it, then press Try again.",
+    );
+  }
+}
+
 // ---- keeping the job between visits ------------------------------------------------------------
 
 export const JOB_STORAGE_PREFIX = "creaton.contributor-start.";
@@ -275,6 +310,7 @@ export function parseJob(raw: string | null): ContributorJob | null {
       typeof value.salt !== "string" ||
       typeof value.kit !== "string" ||
       typeof value.founder !== "string" ||
+      (value.relay !== undefined && typeof value.relay !== "string") ||
       typeof value.draft !== "object" ||
       value.draft === null
     )

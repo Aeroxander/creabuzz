@@ -326,6 +326,8 @@ export function ProjectFocusCard({
       aim: current?.aim ?? "",
       now: current?.now.length ? current.now : [emptyFocusItem()],
       notDoing: current?.notDoing ?? [],
+      // Kept through the edit, so the last check note still reads as applied (checkNote.ts).
+      applied: current?.applied ?? null,
     });
   const review = current && founder && focusDueForReview(current, nowSeconds());
 
@@ -364,6 +366,7 @@ export function ProjectFocusCard({
                 aim: current.aim,
                 now: current.now,
                 notDoing: current.notDoing,
+                applied: current.applied,
               })
             }
             size="sm"

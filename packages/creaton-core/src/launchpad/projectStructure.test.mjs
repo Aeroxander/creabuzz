@@ -175,19 +175,24 @@ const item = (text, area = null, more = {}) => ({
   area,
   ...more,
 });
-const draft = (now, notDoing = [], aim = "") => ({ aim, now, notDoing });
+const draft = (now, notDoing = [], aim = "") => ({
+  aim,
+  now,
+  notDoing,
+  applied: null,
+});
+/** An item without its id, for records whose ids are made when read. */
+const words = ({ id: _, ...rest }) => rest;
 
 test("the focus is the launch author's newest; anyone else's is ignored", () => {
+  const guide = item("Ship the first guide", AREA, {
+    why: "Newcomers can't submit without it",
+    expect: "Three newcomers submit work",
+    checkBy: NOW + 14 * DAY,
+  });
+  const reviewer = item("Find a second reviewer");
   const focus = draft(
-    [
-      item("Ship the first guide", AREA, {
-        why: "Newcomers can't submit without it",
-        expect: "Three newcomers submit work",
-        checkBy: NOW + 14 * DAY,
-      }),
-      item("Find a second reviewer"),
-      item("  "),
-    ],
+    [guide, reviewer, item("  ")],
     [{ text: "A mobile app", why: "Not before the guide works" }],
     "Teachers who want open lesson plans, written with them",
   );
@@ -211,14 +216,7 @@ test("the focus is the launch author's newest; anyone else's is ignored", () => 
     read.aim,
     "Teachers who want open lesson plans, written with them",
   );
-  assert.deepEqual(read.now, [
-    item("Ship the first guide", AREA, {
-      why: "Newcomers can't submit without it",
-      expect: "Three newcomers submit work",
-      checkBy: NOW + 14 * DAY,
-    }),
-    item("Find a second reviewer"),
-  ]);
+  assert.deepEqual(read.now, [guide, reviewer]);
   assert.deepEqual(read.notDoing, [
     { text: "A mobile app", why: "Not before the guide works" },
   ]);
@@ -237,7 +235,7 @@ test("a focus saved before the aim and predictions existed still reads", () => {
   };
   const read = parseFocus([signed(old, FOUNDER, NOW)], LAUNCH);
   assert.equal(read.aim, "");
-  assert.deepEqual(read.now, [item("Ship it", AREA)]);
+  assert.deepEqual(read.now.map(words), [words(item("Ship it", AREA))]);
 });
 
 test("what we expect needs a day to check it, and the day needs something to check", () => {
@@ -271,4 +269,51 @@ test("Now holds three at most, and the founder is asked again after four weeks",
   assert.equal(focusDueForReview(set, NOW + 27 * DAY), false);
   assert.equal(focusDueForReview(set, NOW + 28 * DAY), true);
   assert.equal(focusDueForReview({ ...set, now: [] }, NOW + 60 * DAY), false);
+});
+
+test("each Now item keeps its id across saves, and the focus says which check note it applied", () => {
+  const a = emptyFocusItem();
+  const b = emptyFocusItem();
+  assert.notEqual(a.id, b.id);
+  const applied = "c".repeat(64);
+  const template = focusTemplate(LAUNCH, {
+    aim: "",
+    applied,
+    now: [
+      { ...a, text: "Documentation" },
+      { ...b, text: "Documentation" },
+    ],
+    notDoing: [],
+  });
+  const read = parseFocus([signed(template, FOUNDER, NOW)], LAUNCH);
+  assert.deepEqual(
+    read.now.map((i) => i.id),
+    [a.id, b.id],
+  );
+  assert.equal(read.applied, applied);
+});
+
+test("a focus saved before items had ids gets ids that stay the same each time it is read", () => {
+  const old = signed(
+    {
+      kind: 37020,
+      tags: [
+        ["d", "docs-commons"],
+        ["a", COORD],
+      ],
+      content: JSON.stringify({
+        now: [{ text: "Documentation" }, { text: "Documentation" }],
+      }),
+    },
+    FOUNDER,
+    NOW,
+  );
+  const first = parseFocus([old], LAUNCH);
+  const again = parseFocus([old], LAUNCH);
+  assert.deepEqual(
+    first.now.map((i) => i.id),
+    again.now.map((i) => i.id),
+  );
+  assert.notEqual(first.now[0].id, first.now[1].id);
+  assert.equal(first.applied, null);
 });

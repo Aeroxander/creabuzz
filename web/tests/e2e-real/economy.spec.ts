@@ -262,7 +262,9 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   const join = async (person: Person) => {
     await person.page.goto(`/c/${host}`);
     say(`${person.name} is looking at the community`);
-    await person.page.getByRole("button", { name: "Join in browser" }).click();
+    await person.page
+      .getByRole("button", { name: "Join this community" })
+      .click();
     await expect(person.page.getByTestId("user-chip")).toBeVisible({
       timeout: 30_000,
     });

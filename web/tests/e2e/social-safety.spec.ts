@@ -98,7 +98,8 @@ test("a conversation can be reported, and muting it takes it out of the inbox un
   expect(reports[0].tags).toEqual([["p", ALICE, "spam"]]);
   expect(reports[0].pubkey).toBe(ME);
 
-  // Mute: the mute list names them, and the conversation leaves the inbox.
+  // Mute: the mute list is written privately (encrypted to themselves, no public tag naming the person), and the
+  // conversation leaves the inbox.
   await page.getByTestId("conversation-mute").click();
   await expect
     .poll(
@@ -107,11 +108,19 @@ test("a conversation can be reported, and muting it takes it out of the inbox un
           (event) =>
             event.kind === 10000 &&
             event.pubkey === ME &&
-            event.tags.some((tag) => tag[0] === "p" && tag[1] === ALICE),
+            event.content !== "" &&
+            !event.tags.some((tag) => tag[0] === "p"),
         ),
       { timeout: 15_000 },
     )
     .toBe(true);
+  expect(
+    relay.events.some(
+      (event) =>
+        event.kind === 10000 &&
+        event.tags.some((tag) => tag[0] === "p" && tag[1] === ALICE),
+    ),
+  ).toBe(false);
   await page.getByRole("link", { name: "Back to messages" }).click();
   await expect(page.getByTestId("social-conversation")).toHaveCount(0);
   await expect(page.getByTestId("social-muted-hidden")).toContainText(

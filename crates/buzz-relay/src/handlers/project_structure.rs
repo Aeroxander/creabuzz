@@ -23,6 +23,8 @@ const MAX_WHY_CHARS: usize = 280;
 const MAX_NOW: usize = 3;
 /// At most this many Not doing items.
 const MAX_NOT_DOING: usize = 10;
+/// Longest Now item id, in characters.
+const MAX_ITEM_ID_CHARS: usize = 80;
 /// Longest aim (who the project is for and what it changes for them), in characters.
 const MAX_AIM_CHARS: usize = 200;
 
@@ -137,6 +139,8 @@ pub(crate) fn validate_work_taken_on(event: &Event) -> Result<(), String> {
 
 /// kind:37020. `d` is the launch id of the `a` tag, whose author must be the signer; content holds `now` (at most
 /// three items of `text` and an optional `area`) and `notDoing` (at most ten items of `text` and an optional `why`).
+/// A Now item may carry an `id` that stays with it across saves (unique in the list), and the record may name the
+/// check note last `applied` to it (an event id), so a check note is applied to the items it answered, once.
 pub(crate) fn validate_project_focus(event: &Event) -> Result<(), String> {
     const LABEL: &str = "project focus";
     let (d, coordinate) = d_and_launch(event, LABEL)?;
@@ -152,6 +156,16 @@ pub(crate) fn validate_project_focus(event: &Event) -> Result<(), String> {
     }
     let map = content_object(event, LABEL)?;
     text_field(&map, "aim", MAX_AIM_CHARS, false, LABEL)?;
+    match map.get("applied") {
+        None => {}
+        Some(serde_json::Value::String(id))
+            if id.len() == 64
+                && id
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) => {}
+        _ => return Err(format!("{LABEL} `applied` must be an event id")),
+    }
+    let mut ids = std::collections::HashSet::new();
     let list = |key: &str,
                 max: usize|
      -> Result<Vec<serde_json::Map<String, serde_json::Value>>, String> {
@@ -172,6 +186,20 @@ pub(crate) fn validate_project_focus(event: &Event) -> Result<(), String> {
     };
     for item in list("now", MAX_NOW)? {
         text_field(&item, "text", MAX_TEXT_CHARS, true, LABEL)?;
+        match item.get("id") {
+            None => {}
+            Some(serde_json::Value::String(id))
+                if (1..=MAX_ITEM_ID_CHARS).contains(&id.len())
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"_:-".contains(&b))
+                    && ids.insert(id.clone()) => {}
+            _ => {
+                return Err(format!(
+                    "{LABEL} `id` must be 1 to {MAX_ITEM_ID_CHARS} letters, digits, `_`, `:` or `-`, different for each Now item"
+                ))
+            }
+        }
         match item.get("area") {
             None => {}
             Some(serde_json::Value::String(area)) if is_work_area(area) => {}
@@ -296,8 +324,9 @@ mod tests {
         let founder = nostr::Keys::generate();
         let me = founder.public_key().to_hex();
         let a = launch(&me);
+        let applied = "c".repeat(64);
         let content = format!(
-            r#"{{"aim":"Teachers who want open lesson plans","now":[{{"text":"Ship the first guide","area":"{AREA}","why":"Newcomers need it","expect":"Three newcomers submit","checkBy":1767225600}},{{"text":"Find two reviewers"}}],"notDoing":[{{"text":"A mobile app","why":"Not before the guide works"}}]}}"#
+            r#"{{"aim":"Teachers who want open lesson plans","applied":"{applied}","now":[{{"id":"a1b2","text":"Ship the first guide","area":"{AREA}","why":"Newcomers need it","expect":"Three newcomers submit","checkBy":1767225600}},{{"id":"r-ff-1","text":"Find two reviewers"}}],"notDoing":[{{"text":"A mobile app","why":"Not before the guide works"}}]}}"#
         );
         let ok = event(
             &founder,
@@ -340,6 +369,9 @@ mod tests {
         let expect_without_day = r#"{"now":[{"text":"a","expect":"ten sign-ups"}]}"#;
         let day_without_expect = r#"{"now":[{"text":"a","checkBy":1767225600}]}"#;
         let bad_day = r#"{"now":[{"text":"a","expect":"x","checkBy":"soon"}]}"#;
+        let same_id = r#"{"now":[{"id":"x","text":"a"},{"id":"x","text":"b"}]}"#;
+        let bad_id = r#"{"now":[{"id":"no spaces","text":"a"}]}"#;
+        let bad_applied = r#"{"applied":"note","now":[]}"#;
         let long_aim = format!(r#"{{"aim":"{}"}}"#, "a".repeat(MAX_AIM_CHARS + 1));
         let long_why = format!(
             r#"{{"notDoing":[{{"text":"a","why":"{}"}}]}}"#,
@@ -353,6 +385,9 @@ mod tests {
             expect_without_day,
             day_without_expect,
             bad_day,
+            same_id,
+            bad_id,
+            bad_applied,
             long_aim.as_str(),
             four,
             empty,

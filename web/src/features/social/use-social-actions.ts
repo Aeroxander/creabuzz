@@ -18,21 +18,28 @@ import {
 } from "../feed/lib/feed-events";
 import { latestList } from "../feed/lib/lists";
 import { publishFeedEvent } from "../feed/use-feed";
+import { bookmarkedIds, parsePrivateTags, withBookmark } from "./lib/lists";
 import {
-  bookmarkedIds,
-  mutedPeople,
-  parsePrivateTags,
-  withBookmark,
-  withMuted,
-} from "./lib/lists";
+  type MuteState,
+  mutedInState,
+  nextMuteList,
+  readMuteState,
+} from "./mute-list";
 import { readEvents, readLatest } from "./read";
 import { socialKeys } from "./use-social-data";
 
-/** Publish any social event, then refresh what it can change. */
+/**
+ * Publish any social event, then refresh what it can change. `mirror` is the
+ * composer's "Also share with other apps" for this one post only.
+ */
 export function useSocialPublish() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (template: EventTemplate) => publishFeedEvent(template),
+    mutationFn: ({
+      mirror,
+      ...template
+    }: EventTemplate & { mirror?: boolean }) =>
+      publishFeedEvent(template, { mirror }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: socialKeys.all });
       void queryClient.invalidateQueries({ queryKey: ["feed"] });
@@ -40,7 +47,19 @@ export function useSocialPublish() {
   });
 }
 
-/* ── Mutes (public NIP-51 list) ─────────────────────────────────────────── */
+/* ── Mutes (private: NIP-44 in the list's content) ───────────────────────── */
+
+/** Your newest mute list, its private part opened with your own key. */
+async function readMyMutes(me: string): Promise<MuteState> {
+  return readMuteState(
+    latestList(
+      await readEvents({ kinds: [KIND_MUTE_LIST], authors: [me], limit: 5 }),
+      KIND_MUTE_LIST,
+      me,
+    ),
+    (ciphertext) => nip44DecryptAsUser(me, ciphertext),
+  );
+}
 
 export function useMutedPeople() {
   const me = existingUserPubkey();
@@ -48,18 +67,7 @@ export function useMutedPeople() {
     queryKey: [...socialKeys.lists, "muted", me],
     enabled: Boolean(me),
     staleTime: 60_000,
-    queryFn: async () =>
-      mutedPeople(
-        latestList(
-          await readEvents({
-            kinds: [KIND_MUTE_LIST],
-            authors: [me as string],
-            limit: 5,
-          }),
-          KIND_MUTE_LIST,
-          me as string,
-        ),
-      ),
+    queryFn: async () => mutedInState(await readMyMutes(me as string)),
   });
 }
 
@@ -77,7 +85,8 @@ export function useMutedSet(): ReadonlySet<string> {
 /**
  * Mute or unmute a person. The mute list replaces itself on every write, so
  * the newest copy is re-read first and the write is refused if it no longer
- * contains someone this session already saw in it.
+ * contains someone this session already saw in it. Every write keeps the
+ * people muted in the private part only (`mute-list.ts`).
  */
 export function useToggleMute() {
   const queryClient = useQueryClient();
@@ -96,12 +105,8 @@ export function useToggleMute() {
         "muted",
         me,
       ]);
-      const latest = latestList(
-        await readEvents({ kinds: [KIND_MUTE_LIST], authors: [me], limit: 5 }),
-        KIND_MUTE_LIST,
-        me,
-      );
-      const current = mutedPeople(latest);
+      const state = await readMyMutes(me);
+      const current = mutedInState(state);
       for (const seen of known ?? []) {
         if (!current.has(seen)) {
           throw new Error(
@@ -109,7 +114,12 @@ export function useToggleMute() {
           );
         }
       }
-      return publishFeedEvent(withMuted(latest, pubkey, muted));
+      // Written privately, so the person muted can't read that they were.
+      return publishFeedEvent(
+        await nextMuteList(state, pubkey, muted, (plaintext) =>
+          nip44EncryptAsUser(me, plaintext),
+        ),
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: socialKeys.lists });

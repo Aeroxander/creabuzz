@@ -35,6 +35,8 @@ import { existingUserPubkey, userPubkey } from "@/shared/lib/identity";
 import { Badge } from "@/shared/ui/badge";
 import { failureWords } from "@/shared/lib/readable-error";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 import { toast } from "sonner";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { parseTask, type FleetTask } from "../use-agent-tasks";
@@ -341,8 +343,17 @@ export function WorkBoard({
         <PageHeader title="Tasks" />
         <QueryError
           description="The server did not answer the task and issue query, so this board has nothing to show."
+          error={loadError}
           message={errorMessage(loadError)}
           onRetry={reload}
+          recovery={(onUnlocked) => (
+            <SignRecovery
+              autoResume
+              onUnlocked={onUnlocked}
+              showHeadline={false}
+            />
+          )}
+          relayUrl={relayWsUrl()}
           testId="work-load-error"
           title="Couldn't load the tasks"
         />

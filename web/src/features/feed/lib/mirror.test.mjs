@@ -3,10 +3,13 @@ import test from "node:test";
 
 import {
   DEFAULT_PUBLIC_RELAYS,
+  forgetOldMirrorSetting,
   isMirrorable,
   KIND_NIP22_COMMENT,
+  mirrorOffered,
   outboxRelays,
   parseRelayList,
+  shouldMirror,
   withTimeout,
 } from "./mirror.ts";
 
@@ -21,14 +24,54 @@ function ev(kind, tags = []) {
   };
 }
 
-test("posts, threaded replies and votes mirror — nothing else", () => {
+test("only a post or reply written with the box ticked is copied — never a vote or repost", () => {
   assert.equal(isMirrorable(ev(1)), true);
   assert.equal(isMirrorable(ev(KIND_NIP22_COMMENT)), true);
-  assert.equal(isMirrorable(ev(7)), true);
-  assert.equal(isMirrorable(ev(6)), true, "NIP-18 reposts reach other clients");
+  // A vote or a repost is one tap with no box to tick: it stays on the community's server.
+  assert.equal(isMirrorable(ev(7)), false);
+  assert.equal(isMirrorable(ev(6)), false);
   // Founder updates and lists stay on the community relay.
   assert.equal(isMirrorable(ev(47003)), false);
   assert.equal(isMirrorable(ev(3)), false);
+});
+
+test("sharing is asked for one publish at a time, never remembered", () => {
+  // The old sticky setting, left behind in a browser that ticked the box once. shouldMirror never reads storage; the
+  // stub is here for forgetOldMirrorSetting. That publishFeedEvent does not read it either is guarded by the browser
+  // spec "a post is copied to public relays only when its author ticks the box for that post" (feed.spec.ts).
+  const store = new Map([["buzz.feed.mirror", "1"]]);
+  const previous = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (k) => store.get(k) ?? null,
+    setItem: (k, v) => store.set(k, v),
+    removeItem: (k) => store.delete(k),
+  };
+  try {
+    assert.equal(shouldMirror(ev(1), undefined), false);
+    assert.equal(shouldMirror(ev(1), false), false);
+    assert.equal(shouldMirror(ev(1), true), true);
+    // Ticked for a post, the next vote is still not copied.
+    assert.equal(shouldMirror(ev(7, [["e", "aa"]]), true), false);
+    forgetOldMirrorSetting();
+    assert.equal(store.has("buzz.feed.mirror"), false);
+  } finally {
+    globalThis.localStorage = previous;
+  }
+});
+
+test("the box is offered only on an open server, and never in the contributor-only build", () => {
+  assert.equal(mirrorOffered({ raisesOffered: true, access: "open" }), true);
+  assert.equal(
+    mirrorOffered({ raisesOffered: true, access: "invite_only" }),
+    false,
+  );
+  // A server that has not said who may join may be invite-only.
+  assert.equal(mirrorOffered({ raisesOffered: true, access: null }), false);
+  assert.equal(
+    mirrorOffered({ raisesOffered: true, access: undefined }),
+    false,
+  );
+  assert.equal(mirrorOffered({ raisesOffered: false, access: "open" }), false);
 });
 
 test("a channel post (h tag) is never mirrored", () => {
@@ -63,6 +106,7 @@ test("the outbox comes from the NIP-65 list, defaults when it keeps none", () =>
   ]);
   assert.deepEqual(outboxRelays(null), DEFAULT_PUBLIC_RELAYS);
   assert.deepEqual(outboxRelays({ kind: 1, tags: [] }), DEFAULT_PUBLIC_RELAYS);
+  assert.deepEqual(parseRelayList({ kind: 5, tags: [["r", "wss://x"]] }), []);
 });
 
 test("a mirror call is bounded and never hangs the publish", async () => {
@@ -76,22 +120,4 @@ test("a mirror call is bounded and never hangs the publish", async () => {
     () => withTimeout(Promise.reject(new Error("relay down")), 50, "mirror"),
     /relay down/,
   );
-});
-
-test("the mirror switch round-trips", () => {
-  const store = new Map();
-  globalThis.localStorage = {
-    getItem: (k) => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => store.set(k, v),
-    removeItem: (k) => store.delete(k),
-  };
-  try {
-    assert.equal(isMirrorable(ev(1)), true);
-    assert.equal(
-      parseRelayList({ kind: 5, tags: [["r", "wss://x"]] }).length,
-      0,
-    );
-  } finally {
-    delete globalThis.localStorage;
-  }
 });

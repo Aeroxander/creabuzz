@@ -221,12 +221,12 @@ test("a new private room's notes read as sentences with names, from history and 
 
   const notes = page.getByTestId("system-note");
   await expect(notes).toHaveCount(4);
-  await expect(notes.nth(0)).toContainText("Board Tester created this channel");
+  await expect(notes.nth(0)).toContainText("Board Tester created this room");
   await expect(notes.nth(1)).toContainText(
     "Reply Tester was added by Board Tester",
   );
   await expect(notes.nth(2)).toContainText("You were added by Board Tester");
-  await expect(notes.nth(3)).toContainText("Board Tester updated this channel");
+  await expect(notes.nth(3)).toContainText("Board Tester updated this room");
   // No raw body, no server name as an author, and nothing to reply to or report on a note.
   await expect(page.getByText('"type"')).toHaveCount(0);
   await expect(page.getByText("localhost:3001 Moderation")).toHaveCount(0);
@@ -260,7 +260,7 @@ test("a note-shaped message from a member is shown as that member's message, not
   await page.getByTestId("channel-planning").click();
   const notes = page.getByTestId("system-note");
   await expect(notes).toHaveCount(1, { timeout: 20_000 });
-  await expect(notes).toContainText("Board Tester created this channel");
+  await expect(notes).toContainText("Board Tester created this room");
   await expect(page.getByText("removed Reply Tester")).toHaveCount(0);
   const forged = page.getByTestId("message-row");
   await expect(forged).toHaveCount(1);

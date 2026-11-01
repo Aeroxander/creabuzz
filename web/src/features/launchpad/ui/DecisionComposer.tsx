@@ -221,7 +221,9 @@ export function DecisionComposer({
     if (id === "trading" && !raisesOffered()) return false;
     if (id === "rounds")
       return weeklyRounds(ctx.chainId ?? null) !== null && contributor;
-    // Sales happen in weekly rounds, and need the summoner's funding-terms contract.
+    // Selling new units is a raise, so a contributor-only build does not offer it either. Sales happen in weekly rounds,
+    // and need the summoner's funding-terms contract.
+    if (id === "funding" && !raisesOffered()) return false;
     if (id === "funding")
       return (
         weeklyRounds(ctx.chainId ?? null) !== null &&

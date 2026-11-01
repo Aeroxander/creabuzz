@@ -147,8 +147,12 @@ function TakeOnWork({
             <TakeOnInterview
               areaTitle={title}
               doneWhen={words}
+              form={draft}
               onDraft={(next) => {
-                setDraft(next);
+                // Only the three fields the AI wrote, and never into a form that was closed meanwhile.
+                setDraft((current) =>
+                  current === null ? null : { ...current, ...next },
+                );
                 setAiDrafted(true);
                 setFailure(null);
               }}
@@ -272,6 +276,7 @@ function TakeOnWork({
                 setDraft(null);
                 setTried(false);
                 setFailure(null);
+                setAiDrafted(false);
               }}
               size="sm"
               type="button"

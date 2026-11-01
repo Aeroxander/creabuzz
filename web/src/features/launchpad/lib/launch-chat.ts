@@ -158,3 +158,174 @@ export function roomRows(input: {
   }
   return rows;
 }
+
+// ---- remembering a board made before its record is saved ------------------------------------------------------------
+
+/**
+ * Whose board a remembered board is: the community (its server's address), the founder (the record's author) and the
+ * project. Project ids are unique only per founder and per community, so a memo keyed by the id alone handed one
+ * founder's board to another who picked the same name in the same browser. Taken once per operation, so a step that
+ * runs after a community switch still reads the memo it wrote.
+ */
+export interface BoardMemoScope {
+  relay: string;
+  founder: string;
+  launchId: string;
+}
+
+/** The part of `localStorage` the memo uses. */
+export interface BoardMemoStore {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+/** A server address as one spelling: lower-case, no trailing slash. */
+function relayKey(relay: string): string {
+  return relay.trim().replace(/\/+$/, "").toLowerCase();
+}
+
+/**
+ * Where the board is remembered. An older memo keyed by the project id alone (`creaton:launch-board:<id>`) is never
+ * read: it says nothing about whose board it was.
+ */
+export function boardMemoKey(scope: BoardMemoScope): string {
+  return `creaton:launch-board:v2:${encodeURIComponent(relayKey(scope.relay))}:${scope.founder.toLowerCase()}:${scope.launchId}`;
+}
+
+function readBoardMemo(
+  store: BoardMemoStore,
+  scope: BoardMemoScope,
+): string | null {
+  try {
+    return store.getItem(boardMemoKey(scope));
+  } catch {
+    return null;
+  }
+}
+
+function writeBoardMemo(
+  store: BoardMemoStore,
+  scope: BoardMemoScope,
+  board: string,
+): void {
+  try {
+    store.setItem(boardMemoKey(scope), board);
+  } catch {
+    // Private mode: a retry may make a second board, which the founder can remove.
+  }
+}
+
+/**
+ * Forget the remembered board once a record names it. Only when the memo still holds that board: another tab may have
+ * remembered a different one since, and that one still needs its record.
+ */
+export function forgetBoardMemo(
+  store: BoardMemoStore,
+  scope: BoardMemoScope,
+  board: string,
+): void {
+  try {
+    if (store.getItem(boardMemoKey(scope)) === board) {
+      store.removeItem(boardMemoKey(scope));
+    }
+  } catch {
+    // Nothing was kept.
+  }
+}
+
+/** The fields of a board's server records (kinds 39000 and 39001) this check reads. */
+export interface BoardRecord {
+  kind: number;
+  created_at: number;
+  tags: string[][];
+}
+
+/**
+ * Whether a remembered board may be taken as the founder's: the server describes it as a board (its newest metadata is
+ * tagged `t=forum`) and lists the founder among its owners or admins (its newest admins record). Anything else (no
+ * record, a chat room, someone else's board) is not adopted.
+ */
+export function boardIsFounders(input: {
+  board: string;
+  founder: string;
+  records: readonly BoardRecord[];
+}): boolean {
+  const newest = (kind: number) =>
+    input.records
+      .filter(
+        (record) =>
+          record.kind === kind &&
+          record.tags.some((tag) => tag[0] === "d" && tag[1] === input.board),
+      )
+      .reduce<BoardRecord | null>(
+        (best, record) =>
+          best === null || record.created_at > best.created_at ? record : best,
+        null,
+      );
+  const metadata = newest(39000);
+  const admins = newest(39001);
+  if (!metadata || !admins) return false;
+  const forum = metadata.tags.some(
+    (tag) => tag[0] === "t" && tag[1] === "forum",
+  );
+  const founder = input.founder.toLowerCase();
+  const runsIt = admins.tags.some(
+    (tag) =>
+      tag[0] === "p" &&
+      tag[1]?.toLowerCase() === founder &&
+      (tag[2] === "owner" || tag[2] === "admin"),
+  );
+  return forum && runsIt;
+}
+
+/**
+ * A board for the launch, made now unless one was already made for it and not yet recorded: a start that publishes its
+ * record more than once (a contributor project retried after a failed step), or an Open the project board whose record
+ * save failed, reuses the board made the first time instead of leaving another behind. `avoid` is a board that must
+ * not be reused (the record names it, and it is gone). A remembered board is adopted only when `isFounders` confirms it
+ * on the server; when it does not, it is forgotten and a new one is made. When the check itself fails (the server did
+ * not answer), the error is thrown and the memo kept, so a retry can still reuse the board instead of making a second.
+ * Returns the board, or null and the server's reason.
+ */
+export async function boardForLaunch(input: {
+  scope: BoardMemoScope;
+  avoid?: string | null;
+  store: BoardMemoStore;
+  isFounders: (board: string) => Promise<boolean>;
+  make: () => Promise<{ board: string | null; error: unknown }>;
+}): Promise<{ board: string | null; error: unknown }> {
+  const remembered = readBoardMemo(input.store, input.scope);
+  if (remembered && remembered !== input.avoid) {
+    if (await input.isFounders(remembered)) {
+      return { board: remembered, error: null };
+    }
+    forgetBoardMemo(input.store, input.scope, remembered);
+  }
+  const made = await input.make();
+  if (made.board) writeBoardMemo(input.store, input.scope, made.board);
+  return made;
+}
+
+/**
+ * Publish a launch's record with its board, made (or reused) first if the chat has none, so the record never names a
+ * board that does not exist. A board that cannot be made leaves the chat as it was: the project still starts, and its
+ * founder opens the board from the Discussion tab. The memo is forgotten only after `save` resolves, so a refused
+ * record keeps the board for the next try.
+ */
+export async function publishWithBoard(input: {
+  scope: BoardMemoScope;
+  chat: LaunchChat;
+  store: BoardMemoStore;
+  isFounders: (board: string) => Promise<boolean>;
+  make: () => Promise<{ board: string | null; error: unknown }>;
+  save: (chat: LaunchChat) => Promise<void>;
+}): Promise<void> {
+  if (input.chat.board) {
+    await input.save(input.chat);
+    return;
+  }
+  const { board } = await boardForLaunch(input);
+  await input.save(board ? withRooms(input.chat, { board }) : input.chat);
+  if (board) forgetBoardMemo(input.store, input.scope, board);
+}

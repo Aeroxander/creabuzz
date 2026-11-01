@@ -7,7 +7,7 @@ import { createMockRelay } from "./mock-relay";
  * The social layer end to end against the stateful mock relay: posting and
  * replying, trust-weighted votes, launch discussion, following a launch
  * (published as a bookmark list), migrating the old browser-only follows, and
- * the public-Nostr copy being opt-in.
+ * the public-Nostr copy being asked for one post at a time.
  */
 
 const ME_NSEC = "3".repeat(64);
@@ -391,19 +391,31 @@ test("launches followed in the old browser-only list move into bookmarks once", 
     .toBeNull();
 });
 
-test("posts are only copied to public relays when the author opts in", async ({
+/** The server says who may join, as a real one does in its public information. */
+async function serverAccess(page: Page, access: "open" | "invite_only") {
+  await page.route("**/info", (route) => route.fulfill({ json: { access } }));
+}
+
+test("a post is copied to public relays only when its author ticks the box for that post", async ({
   page,
 }) => {
   const relay = createMockRelay();
   await relay.install(page);
+  await serverAccess(page, "open");
   const publicSockets: string[] = [];
   await page.routeWebSocket(/relay\.damus\.io|nos\.lol/, (ws) => {
     publicSockets.push(ws.url());
     ws.close();
   });
+  // An older build saved the box for good; that saved yes must not count.
+  await page.addInitScript(() =>
+    window.localStorage.setItem("buzz.feed.mirror", "1"),
+  );
   await signIn(page);
   await page.goto("/");
 
+  const box = page.getByTestId("social-composer-mirror");
+  await expect(box).not.toBeChecked();
   await page.getByTestId("social-composer-input").fill("Only here");
   await page.getByTestId("social-composer-submit").click();
   await expect(
@@ -411,10 +423,62 @@ test("posts are only copied to public relays when the author opts in", async ({
   ).toBeVisible();
   expect(publicSockets).toEqual([]);
 
-  await page.getByTestId("social-composer-mirror").check();
+  await box.check();
   await page.getByTestId("social-composer-input").fill("Everywhere");
   await page.getByTestId("social-composer-submit").click();
   await expect.poll(() => publicSockets.length).toBe(2);
+  // The box was for that post only.
+  await expect(box).not.toBeChecked();
+  expect(
+    await page.evaluate(() => window.localStorage.getItem("buzz.feed.mirror")),
+  ).toBeNull();
+
+  // A vote on the shared post is not copied.
+  const shared = page
+    .getByTestId("social-post")
+    .filter({ hasText: "Everywhere" });
+  await shared.getByTestId("social-vote-up").click();
+  await expect
+    .poll(() => relay.events.some((e) => e.kind === 7 && e.pubkey === ME))
+    .toBe(true);
+  // The next post, written without ticking, is not copied either.
+  await page.getByTestId("social-composer-input").fill("Back to here only");
+  await page.getByTestId("social-composer-submit").click();
+  await expect(
+    page.getByTestId("social-post").filter({ hasText: "Back to here only" }),
+  ).toBeVisible();
+  // A mirror publish starts right after the community's server answers; give a stray one time to show.
+  await page.waitForTimeout(500);
+  expect(publicSockets).toHaveLength(2);
+});
+
+test("the share box is not offered on an invite-only server, or one that has not said", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  await relay.install(page);
+  // One route whose answer each step sets, so a step can't pass just because the answer is still loading.
+  let access: "open" | "invite_only" | undefined = "open";
+  await page.route("**/info", (route) =>
+    route.fulfill({ json: access ? { access } : {} }),
+  );
+  await signIn(page);
+  const box = page.getByTestId("social-composer-mirror");
+
+  // The control: on an open server the box does show, so its absence below is the server's answer.
+  await page.goto("/");
+  await expect(box).toBeVisible();
+
+  for (const said of ["invite_only", undefined] as const) {
+    access = said;
+    const answered = page.waitForResponse((r) => r.url().endsWith("/info"));
+    await page.reload();
+    await answered;
+    await expect(page.getByTestId("social-composer-input")).toBeVisible();
+    // Give the answer time to reach the composer; an open answer would have shown the box by now.
+    await page.waitForTimeout(300);
+    await expect(box).toHaveCount(0);
+  }
 });
 
 test("the launch page's follow star is saved, not forgotten on navigation", async ({

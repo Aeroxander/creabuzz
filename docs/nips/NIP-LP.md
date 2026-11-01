@@ -228,7 +228,11 @@ anyone else, or whose `d` is not that launch's id. Content: `now`, at most three
 same form as a `37019` `d`), and `notDoing`, at most ten `{text, why?}` items. Text is 1–280 characters, `why` up to 280.
 Optional `aim` (up to 200 characters) says who the project is for and what it changes for them. A Now item may also
 carry `why` (why this, now) and a prediction: `expect` (what the team expects to see, up to 280 characters) with
-`checkBy` (Unix seconds, the day it will check). `expect` and `checkBy` come together or not at all.
+`checkBy` (Unix seconds, the day it will check). `expect` and `checkBy` come together or not at all. A Now item may
+carry an `id` (1–80 letters, digits, `_`, `:` or `-`, different for each item) that stays with it across saves, and the
+record may carry `applied`: the event id of the last check note (a `47003` launch update with a `check` object) applied
+to it. Clients keep both on every save, apply a check note's answers to items by `id`, and treat a note as applied when
+the focus names it, never by comparing times. Clients reading a record without ids derive them from the record.
 
 ## Deletion
 

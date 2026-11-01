@@ -45,11 +45,12 @@ function draft(overrides = {}) {
     now: START + 14 * DAY,
     focus: [
       {
+        id: "i1",
         text: "Ship the first guide",
         expect: "Two newcomers submit work",
         checkBy: START + 10 * DAY,
       },
-      { text: "Find a reviewer", expect: "", checkBy: null },
+      { id: "i2", text: "Find a reviewer", expect: "", checkBy: null },
     ],
     claims,
     covered: new Set(["b:5"]),
@@ -81,6 +82,7 @@ test("the draft fills in what the records say, and lists each piece of work once
   // Only dates inside the period that were not let go.
   assert.equal(note.lapsed, 1);
   assert.deepEqual(note.items[0], {
+    id: "i1",
     text: "Ship the first guide",
     expected: "Two newcomers submit work",
     checkBy: START + 10 * DAY,
@@ -166,15 +168,26 @@ test("a note is applied to Now: keep stays, change rewrites, drop moves to Not d
   const focus = {
     aim: "Teachers",
     now: [
-      focusItem("Ship the guide", { expect: "Two submit", checkBy: START }),
-      focusItem("Find a reviewer", { expect: "One says yes", checkBy: START }),
-      focusItem("Run a workshop"),
+      focusItem("Ship the guide", {
+        id: "i1",
+        expect: "Two submit",
+        checkBy: START,
+      }),
+      focusItem("Find a reviewer", {
+        id: "i2",
+        expect: "One says yes",
+        checkBy: START,
+      }),
+      focusItem("Run a workshop", { id: "i3" }),
     ],
     notDoing: [{ text: "An app", why: "" }],
+    applied: null,
   };
   const note = {
+    id: NOTE_ID,
     items: [
       {
+        id: "i1",
         text: "Ship the guide",
         expected: "Two submit",
         checkBy: START,
@@ -184,6 +197,7 @@ test("a note is applied to Now: keep stays, change rewrites, drop moves to Not d
         becomes: "",
       },
       {
+        id: "i2",
         text: "Find a reviewer",
         expected: "One says yes",
         checkBy: START,
@@ -193,6 +207,7 @@ test("a note is applied to Now: keep stays, change rewrites, drop moves to Not d
         becomes: "Find two more reviewers",
       },
       {
+        id: "i3",
         text: "Run a workshop",
         expected: "",
         checkBy: null,
@@ -207,10 +222,15 @@ test("a note is applied to Now: keep stays, change rewrites, drop moves to Not d
   assert.equal(after.aim, "Teachers");
   assert.deepEqual(after.now, [
     // Not yet: the expectation still stands.
-    focusItem("Ship the guide", { expect: "Two submit", checkBy: START }),
-    // Changed: its old expectation went with it.
-    focusItem("Find two more reviewers"),
+    focusItem("Ship the guide", {
+      id: "i1",
+      expect: "Two submit",
+      checkBy: START,
+    }),
+    // Changed: its old expectation went with it, and it keeps its id.
+    focusItem("Find two more reviewers", { id: "i2" }),
   ]);
+  assert.equal(after.applied, NOTE_ID);
   assert.deepEqual(after.notDoing, [
     { text: "Run a workshop", why: "Nobody signed up" },
     { text: "An app", why: "" },
@@ -221,42 +241,20 @@ test("a note is applied to Now: keep stays, change rewrites, drop moves to Not d
 
 test("Apply to Now is offered only while the latest note is not in Now yet", () => {
   const note = {
-    id: "n",
+    id: NOTE_ID,
     createdAt: START + 10,
-    since: START,
-    outside: "x",
-    items: [
-      {
-        text: "Run a workshop",
-        expected: "",
-        checkBy: null,
-        happened: null,
-        why: "",
-        next: "drop",
-        becomes: "",
-      },
-    ],
-    finished: [],
-    turnedDown: [],
-    causes: [],
-    stuck: "",
-    lapsed: 0,
-    change: "y",
+    items: [answer("i1", "Run a workshop", "drop")],
   };
   const before = {
     aim: "",
-    now: [focusItem("Run a workshop")],
+    now: [focusItem("Run a workshop", { id: "i1" })],
     notDoing: [],
+    applied: null,
     createdAt: START,
   };
   assert.equal(checkNeedsApplying(note, before), true);
-  // Saved after the note: done.
-  assert.equal(
-    checkNeedsApplying(note, { ...before, createdAt: START + 11 }),
-    false,
-  );
-  // Saved in the same second but already applied: nothing left to do.
-  const applied = { ...applyCheckToFocus(before, note), createdAt: START + 10 };
+  const { createdAt: _, ...draftFocus } = before;
+  const applied = { ...applyCheckToFocus(draftFocus, note), createdAt: START };
   assert.equal(checkNeedsApplying(note, applied), false);
   assert.equal(checkNeedsApplying(note, null), false);
 });
@@ -275,4 +273,193 @@ test("a change needs what the item becomes", () => {
     checkNoteContent(note, START).body,
     /Next: change, to "Find two reviewers"/,
   );
+});
+
+// ---- applying by identity (outside review 2026-11-01, claims 2 and 5) ------------------------
+
+const NOTE_ID = "c".repeat(64);
+const OLDER_NOTE = "d".repeat(64);
+const answer = (id, text, next, more = {}) => ({
+  id,
+  text,
+  expected: "",
+  checkBy: null,
+  happened: null,
+  why: "",
+  next,
+  becomes: "",
+  ...more,
+});
+
+test("two Now items with the same words are answered one by one", () => {
+  const focus = {
+    aim: "",
+    applied: null,
+    now: [
+      focusItem("Documentation", { id: "a1" }),
+      focusItem("Documentation", { id: "a2" }),
+    ],
+    notDoing: [],
+  };
+  const after = applyCheckToFocus(focus, {
+    id: NOTE_ID,
+    items: [
+      answer("a1", "Documentation", "keep"),
+      answer("a2", "Documentation", "drop", { why: "One is enough" }),
+    ],
+  });
+  assert.deepEqual(after.now, [focusItem("Documentation", { id: "a1" })]);
+  assert.deepEqual(after.notDoing, [
+    { text: "Documentation", why: "One is enough" },
+  ]);
+  assert.equal(after.applied, NOTE_ID);
+});
+
+test("a change into another item's words, then a drop of that item, applies once", () => {
+  const focus = {
+    aim: "",
+    applied: OLDER_NOTE,
+    now: [focusItem("A", { id: "i1" }), focusItem("B", { id: "i2" })],
+    notDoing: [],
+  };
+  const note = {
+    id: NOTE_ID,
+    items: [
+      answer("i1", "A", "change", { becomes: "B" }),
+      answer("i2", "B", "drop"),
+    ],
+  };
+  const once = applyCheckToFocus(focus, note);
+  assert.deepEqual(once.now, [focusItem("B", { id: "i1" })]);
+  assert.deepEqual(once.notDoing, [{ text: "B", why: "Dropped at a check" }]);
+  // A retry (say after a lost acknowledgement) changes nothing more.
+  assert.deepEqual(applyCheckToFocus(once, note), once);
+});
+
+test("Apply to Now is offered by the note the focus says it applied, never by the clock", () => {
+  const note = {
+    id: NOTE_ID,
+    createdAt: START + 10,
+    items: [
+      answer("i1", "A", "change", { becomes: "B" }),
+      answer("i2", "B", "drop"),
+    ],
+  };
+  const before = {
+    aim: "",
+    applied: OLDER_NOTE,
+    now: [focusItem("A", { id: "i1" }), focusItem("B", { id: "i2" })],
+    notDoing: [],
+  };
+  // Saved in the same second as the note, and applied: nothing is offered.
+  const saved = { ...applyCheckToFocus(before, note), createdAt: START + 10 };
+  assert.equal(checkNeedsApplying(note, saved), false);
+  // The note went out but the focus save was refused: offered, whatever the times say.
+  assert.equal(
+    checkNeedsApplying(note, { ...before, createdAt: START + 99 }),
+    true,
+  );
+  // A manual save keeps the marker, so the note stays applied.
+  const edited = {
+    ...saved,
+    now: [...saved.now, focusItem("C", { id: "i3" })],
+    createdAt: START + 50,
+  };
+  assert.equal(checkNeedsApplying(note, edited), false);
+});
+
+test("an old note never overwrites later manual changes, and leaves other rows alone", () => {
+  const note = {
+    id: NOTE_ID,
+    items: [
+      answer("i1", "A", "change", { becomes: "A, smaller" }),
+      answer("i2", "B", "keep", {
+        expected: "Ten sign-ups",
+        checkBy: START,
+        happened: "yes",
+      }),
+    ],
+  };
+  // After the note, the founder renamed i1 by hand, set a new expectation on i2 and added i3.
+  const focus = {
+    aim: "",
+    applied: OLDER_NOTE,
+    now: [
+      focusItem("A, rewritten by hand", { id: "i1" }),
+      focusItem("B", { id: "i2", expect: "Twenty sign-ups", checkBy: START }),
+      focusItem("C", { id: "i3" }),
+    ],
+    notDoing: [],
+  };
+  const after = applyCheckToFocus(focus, note);
+  assert.deepEqual(after.now, focus.now);
+  assert.equal(after.applied, NOTE_ID);
+});
+
+test("a note from before Now items had ids is left for the founder to apply by hand", () => {
+  const legacy = {
+    id: NOTE_ID,
+    createdAt: START,
+    items: [{ ...answer(null, "Documentation", "drop") }],
+  };
+  const focus = {
+    aim: "",
+    applied: null,
+    now: [focusItem("Documentation", { id: "x" })],
+    notDoing: [],
+    createdAt: START,
+  };
+  const { createdAt: _, ...draftFocus } = focus;
+  assert.deepEqual(applyCheckToFocus(draftFocus, legacy).now, focus.now);
+  assert.equal(checkNeedsApplying(legacy, focus), false);
+});
+
+test("a note keeps each Now item's id, and reads back with it", () => {
+  const note = draftCheckNote({
+    since: START,
+    now: START + DAY,
+    focus: [{ id: "i1", text: "A", expect: "", checkBy: null }],
+    claims: [],
+    covered: new Set(),
+    causesOf: () => [],
+    takings: [],
+  });
+  assert.equal(note.items[0].id, "i1");
+  note.outside = "x";
+  note.change = "y";
+  note.items[0].next = "keep";
+  const content = checkNoteContent(note, START + DAY);
+  assert.equal(content.check.items[0].id, "i1");
+  const [read] = parseCheckNotes(
+    [
+      {
+        id: NOTE_ID,
+        pubkey: FOUNDER,
+        kind: 47003,
+        created_at: START + DAY,
+        content: JSON.stringify(content),
+      },
+    ],
+    FOUNDER,
+  );
+  assert.equal(read.items[0].id, "i1");
+});
+
+test("a lapsed date is only a date that passed: the note does not say the work never came", () => {
+  // The work was finished and paid, yet its "taking this on" date passed without being let go.
+  const note = draftCheckNote({
+    since: START,
+    now: START + 14 * DAY,
+    focus: [],
+    claims: [{ key: "b:1", title: "Delivered guide", status: "Paid" }],
+    covered: new Set(),
+    causesOf: () => [],
+    takings: [{ until: START + 3 * DAY, released: false }],
+  });
+  assert.equal(note.lapsed, 1);
+  note.outside = "x";
+  note.change = "y";
+  const { body } = checkNoteContent(note, START + 14 * DAY);
+  assert.match(body, /1 "taking this on" date passed\./);
+  assert.doesNotMatch(body, /without the work/);
 });

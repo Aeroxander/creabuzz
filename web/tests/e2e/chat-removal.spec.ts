@@ -172,11 +172,8 @@ test("removing asks first, sends one removal for that message, and the message r
   await theirRow(page).hover();
   await theirRow(page).getByTestId("remove-button").click();
   await page.getByRole("button", { name: "Remove message" }).click();
-  await expect(theirRow(page))
-    .toHaveCount(0, { timeout: 20_000 })
-    .catch(() => {
-      // The row stays, with its marker, until the room is read again.
-    });
+  // The row stays with its marker, but the message's words are gone from it.
+  await expect(theirRow(page)).toHaveCount(0, { timeout: 20_000 });
   const sent = relay.events.filter((e) => e.kind === 9005);
   // The mock took the message away as the real server does; the marker shows on the open page.
   await expect(page.getByText("message removed by a moderator")).toBeVisible();

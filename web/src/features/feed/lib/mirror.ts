@@ -3,19 +3,21 @@
  * so people on other clients (nostter, Damus, Primal) can see and answer
  * them.
  *
- * Only posts (kind 1), threaded replies (kind 1111), reposts (kind 6) and
- * votes (kind 7) are ever copied, and never anything carrying an `h` tag (a private channel).
+ * Only the one post (kind 1) or threaded reply (kind 1111) written with the
+ * box ticked is copied, and never anything carrying an `h` tag (a private
+ * channel). Votes and reposts are one tap with no box to tick, so they are
+ * never copied: a box ticked once must not keep sending later activity out.
  * Follow and bookmark lists are NOT copied: they are replaceable, and
  * publishing a Creaton-only list to a public relay would replace the longer
- * list someone keeps there. Ranking counts only the community relay's copy
- * of a vote — the tally reads that relay alone — so a mirrored vote can
- * never double-count.
+ * list someone keeps there.
  *
  * The outbox relays come from the person's NIP-65 relay list (kind 10002,
  * write relays), with two public defaults when they keep none.
  *
- * It is off until the person turns it on, because a copy on someone else's
- * relay cannot be recalled.
+ * It is asked for each post and never remembered, because a copy on someone
+ * else's relay cannot be recalled. The box is offered only on a server open to
+ * anyone (an invite-only community's posts are not for the public), and never
+ * in the contributor-only build.
  *
  * A copy rides its own socket with a bounded timeout and degrades to a log
  * line: the community relay's publish is the record and is never blocked by
@@ -26,11 +28,7 @@
  * Pure and alias-free: `mirror.test.mjs` drives it under `node --test`.
  */
 
-import {
-  KIND_REACTION,
-  KIND_REPOST,
-  KIND_TEXT_NOTE,
-} from "../../../shared/constants/kinds.ts";
+import { KIND_TEXT_NOTE } from "../../../shared/constants/kinds.ts";
 import type { SignedEventLike } from "./feed-events.ts";
 
 /** NIP-22 comment — a threaded reply that also deserves a public copy. */
@@ -50,19 +48,38 @@ export const MIRROR_TIMEOUT_MS = 5_000;
 /** Never more than this many outbox relays per post — a bounded mirror. */
 const MAX_OUTBOX_RELAYS = 4;
 
-const MIRROR_KEY = "buzz.feed.mirror";
+/** Where an older build remembered the box for good; only ever removed now. */
+const OLD_MIRROR_KEY = "buzz.feed.mirror";
 
-const MIRRORABLE_KINDS = new Set<number>([
-  KIND_TEXT_NOTE,
-  KIND_NIP22_COMMENT,
-  KIND_REACTION,
-  KIND_REPOST,
-]);
+const MIRRORABLE_KINDS = new Set<number>([KIND_TEXT_NOTE, KIND_NIP22_COMMENT]);
 
 /** Whether this event may be copied to a public relay at all. */
 export function isMirrorable(event: SignedEventLike): boolean {
   if (!MIRRORABLE_KINDS.has(event.kind)) return false;
   return !event.tags.some((t) => t[0] === "h");
+}
+
+/** Whether this publish is copied: only when its author ticked the box for it. */
+export function shouldMirror(
+  event: SignedEventLike,
+  requested: boolean | undefined,
+): boolean {
+  return requested === true && isMirrorable(event);
+}
+
+/**
+ * Whether the composer offers the box at all: only on a server that says it is
+ * open to anyone (one that has not said may be invite-only), and not in the
+ * contributor-only build.
+ */
+export function mirrorOffered({
+  raisesOffered,
+  access,
+}: {
+  raisesOffered: boolean;
+  access: string | null | undefined;
+}): boolean {
+  return raisesOffered && access === "open";
 }
 
 /**
@@ -123,19 +140,11 @@ export function withTimeout<T>(
   });
 }
 
-export function readMirrorSetting(): boolean {
+/** Drop the setting an older build kept, so nothing reads it as a standing yes. */
+export function forgetOldMirrorSetting(): void {
   try {
-    return globalThis.localStorage?.getItem(MIRROR_KEY) === "1";
+    globalThis.localStorage?.removeItem(OLD_MIRROR_KEY);
   } catch {
-    return false;
-  }
-}
-
-export function writeMirrorSetting(on: boolean): void {
-  try {
-    if (on) globalThis.localStorage?.setItem(MIRROR_KEY, "1");
-    else globalThis.localStorage?.removeItem(MIRROR_KEY);
-  } catch {
-    // Storage refused: the setting simply stays off for this visit.
+    // Storage refused: nothing reads the key any more, so it does no harm.
   }
 }

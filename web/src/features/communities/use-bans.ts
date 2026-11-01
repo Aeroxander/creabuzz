@@ -61,7 +61,7 @@ export function useBans(enabled: boolean) {
 }
 
 /**
- * Ban a person for good, or for `secs` seconds. They are signed out at once and told the reason given. Throws with the
+ * Ban a person for good, or for `secs` seconds. They are signed out at once; the reason is kept for moderators. Throws with the
  * server's own words when it refuses.
  */
 export async function banPerson(

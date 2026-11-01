@@ -401,7 +401,8 @@ export function OnboardingDialog({
             Create without a passkey
           </button>
         )}
-        {walletAvailable() ? (
+        {/* A wallet sign-up belongs with raises: the contributor-only pilot asks for no wallet. */}
+        {raisesOffered() && walletAvailable() ? (
           <button
             type="button"
             disabled={!allowed || saving}

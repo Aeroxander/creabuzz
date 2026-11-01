@@ -491,7 +491,7 @@ function InviteLanding({ code }: { code: string }) {
                       Unlock with your passkey
                     </>
                   ) : (
-                    "Join in browser"
+                    "Join this community"
                   )}
                 </Button>
               </>

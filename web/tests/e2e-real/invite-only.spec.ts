@@ -81,7 +81,7 @@ test("a private community turns strangers away, an invite lets one person in, an
 
   // The invite lets them in.
   await stranger.goto(inviteUrl);
-  await stranger.getByRole("button", { name: "Join in browser" }).click();
+  await stranger.getByRole("button", { name: "Join this community" }).click();
   await stranger.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
   await stranger.goto(`http://${host}/c/${host}`);
   await expect(stranger.getByTestId("content-pane")).toBeVisible({
@@ -100,7 +100,7 @@ test("a private community turns strangers away, an invite lets one person in, an
   // The same link does not work for a second person, who is still turned away.
   const second = await newPerson(browser);
   await second.goto(inviteUrl);
-  await second.getByRole("button", { name: "Join in browser" }).click();
+  await second.getByRole("button", { name: "Join this community" }).click();
   await expect(second.getByRole("alert")).toContainText("use limit", {
     timeout: 30_000,
   });
@@ -157,7 +157,7 @@ test("an invited person is not offered the owner's controls", async ({
 
   const member = await newPerson(browser);
   await member.goto(inviteUrl);
-  await member.getByRole("button", { name: "Join in browser" }).click();
+  await member.getByRole("button", { name: "Join this community" }).click();
   await member.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
   // People is in everyone's sidebar (D110), apart from Org.
   await member.goto(`http://${host}/c/${host}`);
@@ -203,7 +203,7 @@ test("an owner can end an invite that is still out there, and remove a person wh
   // The ended link no longer lets anyone in.
   const late = await newPerson(browser);
   await late.goto(endedUrl);
-  await late.getByRole("button", { name: "Join in browser" }).click();
+  await late.getByRole("button", { name: "Join this community" }).click();
   await expect(late.getByRole("alert")).toContainText("expired", {
     timeout: 30_000,
   });
@@ -219,7 +219,7 @@ test("an owner can end an invite that is still out there, and remove a person wh
   const freshUrl = await owner.getByTestId("invite-link").inputValue();
   const joiner = await newPerson(browser);
   await joiner.goto(freshUrl);
-  await joiner.getByRole("button", { name: "Join in browser" }).click();
+  await joiner.getByRole("button", { name: "Join this community" }).click();
   await joiner.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
   await joiner.goto(`http://${host}/c/${host}`);
   await expect(joiner.getByTestId("content-pane")).toBeVisible({
@@ -273,6 +273,7 @@ test("a banned person is turned away even with the invite link, and a lifted ban
     .getByTestId("person-ban")
     .click();
   await owner.getByTestId("ban-reason").fill("Selling coins in chat");
+  await owner.getByTestId("ban-length").selectOption({ label: "For good" });
   await owner.getByTestId("ban-yes").click();
   await expect(owner.getByTestId("banned-person")).toHaveCount(1, {
     timeout: 30_000,
@@ -292,7 +293,7 @@ test("a banned person is turned away even with the invite link, and a lifted ban
 
   // The invite link does not get them back in.
   await troll.goto(inviteUrl);
-  await troll.getByRole("button", { name: "Join in browser" }).click();
+  await troll.getByRole("button", { name: "Join this community" }).click();
   await troll.waitForTimeout(2_000);
   await troll.goto(`http://${host}/c/${host}`);
   await expect(troll.getByTestId("community-banned")).toBeVisible({
@@ -344,6 +345,7 @@ test("in an open community a spammer who is not on the list can be banned from t
   await expect(theirs).toBeVisible({ timeout: 30_000 });
   await theirs.getByTestId("social-ban").click();
   await owner.getByTestId("ban-reason").fill("Scam links");
+  await owner.getByTestId("ban-length").selectOption({ label: "For good" });
   await owner.getByTestId("ban-yes").click();
   await expect(owner.getByTestId("ban-form")).toHaveCount(0, {
     timeout: 30_000,

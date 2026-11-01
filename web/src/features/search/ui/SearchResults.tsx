@@ -7,6 +7,8 @@ import { eventChannelId, useSearch } from "../use-search";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { QueryError } from "@/shared/ui/query-error";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 
 /**
  * The search box over the results, on narrow screens only: there the sidebar's box is in the closed slide-over, so
@@ -119,8 +121,17 @@ export function SearchResults({
       <div className="flex min-h-0 flex-1 items-center justify-center p-4">
         <QueryError
           description="The server did not answer the search query."
+          error={error}
           message={error.message}
           onRetry={() => void refetch()}
+          recovery={(onUnlocked) => (
+            <SignRecovery
+              autoResume
+              onUnlocked={onUnlocked}
+              showHeadline={false}
+            />
+          )}
+          relayUrl={relayWsUrl()}
           testId="search-error"
           title="Search failed"
         />

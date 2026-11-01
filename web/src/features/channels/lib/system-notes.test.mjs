@@ -30,7 +30,7 @@ const say = (body) =>
 test("a new room's notes read as who made it and who was added", () => {
   assert.equal(
     say({ actor: BOARD, type: "channel_created" }),
-    "Board Tester created this channel",
+    "Board Tester created this room",
   );
   assert.equal(
     say({ actor: BOARD, target: REPLY, type: "member_joined" }),
@@ -38,7 +38,7 @@ test("a new room's notes read as who made it and who was added", () => {
   );
   assert.equal(
     say({ actor: REPLY, target: REPLY, type: "member_joined" }),
-    "Reply Tester joined the channel",
+    "Reply Tester joined the room",
   );
 });
 
@@ -53,27 +53,27 @@ test("the reader is You, at the start of a sentence and inside it", () => {
   );
   assert.equal(
     say({ actor: ME, type: "channel_created" }),
-    "You created this channel",
+    "You created this room",
   );
   assert.equal(
     say({ actor: BOARD, target: ME, type: "member_removed" }),
-    "Board Tester removed you from the channel",
+    "Board Tester removed you from the room",
   );
   // Matched by key, not by case.
   assert.equal(
     say({ actor: ME.toUpperCase(), type: "member_left" }),
-    "You left the channel",
+    "You left the room",
   );
 });
 
 test("the other notes the server writes have their own sentence", () => {
   assert.equal(
     say({ actor: REPLY, type: "member_left" }),
-    "Reply Tester left the channel",
+    "Reply Tester left the room",
   );
   assert.equal(
     say({ type: "admin_kick", target: REPLY }),
-    "Reply Tester was removed from the channel",
+    "Reply Tester was removed from the room",
   );
   assert.equal(
     say({ actor: BOARD, type: "topic_changed", topic: " Launch week " }),
@@ -85,23 +85,23 @@ test("the other notes the server writes have their own sentence", () => {
   );
   assert.equal(
     say({ actor: BOARD, type: "visibility_changed", visibility: "private" }),
-    "Board Tester made this channel private",
+    "Board Tester made this room private",
   );
   assert.equal(
     say({ actor: BOARD, type: "ttl_changed", ttl_seconds: 172800 }),
-    "Board Tester set this channel to clean up after 2 days without activity",
+    "Board Tester set this room to clean up after 2 days without activity",
   );
   assert.equal(
     say({ actor: BOARD, type: "ttl_changed", ttl_seconds: null }),
-    "Board Tester made this channel permanent",
+    "Board Tester made this room permanent",
   );
   assert.equal(
     say({ actor: BOARD, type: "channel_archived" }),
-    "Board Tester archived this channel",
+    "Board Tester archived this room",
   );
   assert.equal(
     say({ type: "channel_auto_archived" }),
-    "This channel was archived after a while without activity",
+    "This room was archived after a while without activity",
   );
   assert.equal(
     say({ actor: BOARD, type: "dm_created", participants: [BOARD, ME] }),
@@ -120,19 +120,19 @@ test("the other notes the server writes have their own sentence", () => {
 test("an unknown note, or one that is not readable, gets a neutral line and never its raw body", () => {
   assert.equal(
     say({ actor: BOARD, type: "something_new", detail: "x" }),
-    "Board Tester updated this channel",
+    "Board Tester updated this room",
   );
-  assert.equal(say({ type: "something_new" }), "This channel was updated");
+  assert.equal(say({ type: "something_new" }), "This room was updated");
   for (const body of ["not json", "[1,2]", "null", '"text"', '{"type":7}']) {
     assert.equal(
       systemNoteText(parseSystemNote(body), names),
-      "This channel was updated",
+      "This room was updated",
     );
   }
   // A name the reader has no profile for is shortened, not dropped.
   assert.equal(
     say({ actor: "e".repeat(64), type: "channel_created" }),
-    "eeeeeeee… created this channel",
+    "eeeeeeee… created this room",
   );
 });
 

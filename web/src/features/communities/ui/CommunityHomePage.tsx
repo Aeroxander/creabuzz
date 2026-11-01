@@ -16,6 +16,7 @@ import { ChannelSidebarLoading } from "@/features/channels/ui/ChannelSidebar";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { desktopConnectDeepLink } from "@/shared/lib/desktop-deep-link";
+import { DESKTOP_APP } from "@/shared/lib/desktop-app";
 import { CommunityShell } from "@/features/channels/ui/CommunityShell";
 
 /**
@@ -303,15 +304,18 @@ export function CommunityHomePage() {
               onClick={joinInBrowser}
               className="bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
             >
-              Join in browser
+              Join this community
             </Button>
-            <Button
-              asChild
-              variant="outline"
-              className="border-black/15 dark:border-white/15"
-            >
-              <a href={deepLink}>Open in Creaton</a>
-            </Button>
+            {/* As on the invite page: a build without the desktop app links to nothing that would open. */}
+            {DESKTOP_APP ? (
+              <Button
+                asChild
+                variant="outline"
+                className="border-black/15 dark:border-white/15"
+              >
+                <a href={deepLink}>Open in Creaton</a>
+              </Button>
+            ) : null}
           </div>
 
           <p className="mt-4 text-xs text-black/60 dark:text-white/60">

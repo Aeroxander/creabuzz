@@ -12,7 +12,10 @@
 
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
-import { storedIdentityHex } from "../../../shared/lib/identity.ts";
+import {
+  importIdentity,
+  storedIdentityHex,
+} from "../../../shared/lib/identity.ts";
 
 import {
   b64urlDecode,
@@ -343,6 +346,48 @@ export function removePasskeyIdentity(): void {
     // ignore
   }
   notifyPasskeySessionChange();
+}
+
+/**
+ * Whether removing passkey sign-in loses the account. A PRF passkey is the only source of its key, so without a saved
+ * recovery key nothing can bring the account back; an unlock-mode passkey only guards a key this browser keeps.
+ */
+export function removingPasskeyLosesAccount(
+  mode: PasskeyMode | null,
+  backedUp: boolean,
+): boolean {
+  return mode === "prf" && !backedUp;
+}
+
+/** The pasted recovery key belongs to a different account than the one on this browser. */
+export class RecoveryKeyMismatchError extends Error {
+  constructor() {
+    super("That recovery key is for a different account.");
+    this.name = "RecoveryKeyMismatchError";
+  }
+}
+
+/**
+ * Unlock this session with the account's recovery key instead of the passkey (unlock mode only).
+ *
+ * The way out when the passkey no longer answers: the key proves who the person is at least as well as a touch. It is
+ * stored again (repairing a browser key that went missing, which would otherwise make signing mint a new identity), then
+ * the session is unlocked. A PRF account is not handled here: its key comes from the passkey, and a recovery key signs
+ * it in through the ordinary sign-in instead.
+ */
+export function unlockWithRecoveryKey(hex: string): { pubkey: string } {
+  const stored = loadStored();
+  if (stored?.mode !== "unlock") {
+    throw new Error("No passkey lock to open on this browser");
+  }
+  if (nostrPubkeyHex(hexToBytes(hex)) !== stored.pubkey) {
+    throw new RecoveryKeyMismatchError();
+  }
+  importIdentity(hex);
+  current = { ...stored };
+  markPasskeyUnlocked();
+  notifyPasskeySessionChange();
+  return { pubkey: stored.pubkey };
 }
 
 /** Export the active nsec (hex) for the one-time manual backup. PRF mode:

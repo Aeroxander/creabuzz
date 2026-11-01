@@ -31,18 +31,21 @@ import {
 } from "@/features/launchpad/use-launches";
 import {
   EMPTY_CHAT,
-  ensureProjectBoard,
+  publishWithProjectBoard,
 } from "@/features/launchpad/use-launch-chat";
 import { endpointChain } from "@/features/launchpad/use-work";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { getUserSigningBlockedReason } from "@/shared/lib/nostr-signer";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import {
   type ContributorFlowState,
   type ContributorJob,
   type ContributorStep,
+  assertJobCommunity,
   contributorFlow,
   JOB_STORAGE_PREFIX,
+  jobBoardScope,
   parseJob,
   runContributorStart,
   stateForJob,
@@ -183,6 +186,8 @@ export function useContributorStart() {
       let state = stateForJob(start);
       setFlow(state);
       const chain = endpointChain(endpoint);
+      // Taken once for the run, so the board memo it writes is the one it reads back.
+      const boardScope = jobBoardScope(start, relayWsUrl());
       void runContributorStart(
         start,
         {
@@ -208,12 +213,15 @@ export function useContributorStart() {
           // The project's board is made first (D156), so the record names it; a board that can't be made does
           // not stop the start, and the team opens it later from the Discussion tab.
           publish: async (input) => {
-            const chat = await ensureProjectBoard({
-              launchId: input.id,
+            assertJobCommunity(boardScope, relayWsUrl());
+            await publishWithProjectBoard({
+              scope: boardScope,
               launchName: input.name,
               chat: input.chat ?? EMPTY_CHAT,
+              save: async (chat) => {
+                await create({ ...input, chat });
+              },
             });
-            await create({ ...input, chat });
           },
           save: (next) => {
             storeJob(storageKey, next);
@@ -256,6 +264,7 @@ export function useContributorStart() {
       run({
         version: 3,
         author: me,
+        relay: relayWsUrl(),
         launchId,
         salt: contributorSalt(me, launchId),
         chainId,

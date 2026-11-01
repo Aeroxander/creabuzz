@@ -75,6 +75,7 @@ export default defineConfig({
         "**/multi-user.spec.ts",
         "**/browser-agent.spec.ts",
         "**/passkey.spec.ts",
+        "**/passkey-safety.spec.ts",
         "**/payment-wallet.spec.ts",
         "**/screenshots.spec.ts",
         "**/usernames.spec.ts",

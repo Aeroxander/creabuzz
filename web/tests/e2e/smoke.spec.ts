@@ -213,7 +213,7 @@ test("community page shows metadata and join stores the relay URL", async ({
   await page.goto("/c/alpha.example.com");
   await expect(page.getByRole("heading", { name: "Alpha" })).toBeVisible();
   await expect(page.getByText("3 members")).toBeVisible();
-  await page.getByRole("button", { name: "Join in browser" }).click();
+  await page.getByRole("button", { name: "Join this community" }).click();
   await expect
     .poll(() =>
       page.evaluate(() => window.localStorage.getItem("buzz.relayUrl")),
@@ -403,7 +403,7 @@ test("invite can enroll a NIP-07 identity for browser access", async ({
   });
 
   await page.goto("/invite/v2.browser-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-  await page.getByRole("button", { name: "Join in browser" }).click();
+  await page.getByRole("button", { name: "Join this community" }).click();
   await expect(page).toHaveURL("/");
   expect(claimObserved).toBe(true);
 });
@@ -661,7 +661,7 @@ test("a channel query failure offers a retry instead of an empty community", asy
   await expect(panel).toContainText("alpha.example.com");
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Join in browser" }),
+    page.getByRole("button", { name: "Join this community" }),
   ).toBeHidden();
 });
 
@@ -1460,7 +1460,8 @@ test("a dropped live connection is shown instead of failing silently", async ({
   await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
   const chip = page.getByTestId("live-status-chip");
   await expect(chip).toBeVisible();
-  await expect(chip).toContainText(/Reconnecting|Connecting/);
+  // Exactly the dropped-connection label: "Connecting…" alone shows only on the very first try, before any drop.
+  await expect(chip).toHaveText("Reconnecting…");
 });
 
 test.describe("theme choice", () => {
@@ -1989,7 +1990,7 @@ test("editing a name keeps the rest of the profile", async ({ page }) => {
 test("invite can enroll the identity this app creates, without an extension", async ({
   page,
 }) => {
-  // The invite page used to offer "Join in browser" only when a NIP-07
+  // The invite page used to offer its join button ("Join this community") only when a NIP-07
   // extension was present, so a reader using the identity this app creates for
   // them had no way to join at all — the landing page was a dead end.
   const nsec = "dd".repeat(32);
@@ -2040,7 +2041,7 @@ test("invite can enroll the identity this app creates, without an extension", as
   });
 
   await page.goto("/invite/v2.durable-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-  await page.getByRole("button", { name: "Join in browser" }).click();
+  await page.getByRole("button", { name: "Join this community" }).click();
   await expect(page).toHaveURL("/");
   expect(claimPubkey, "the claim is signed by this browser's identity").toBe(
     pubkey,

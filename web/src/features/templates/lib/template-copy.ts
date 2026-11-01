@@ -13,6 +13,8 @@ import type {
   TemplateSummary,
 } from "@creaton/core/templates/schema.ts";
 
+import { raisesOffered } from "../../launchpad/lib/raises-offered.ts";
+
 /** What a template is called in the picker (the file's own name, where it is already plain). */
 const TITLES: Record<string, string> = {
   "vanilla-app-studio": "Web & App Studio",
@@ -27,23 +29,34 @@ const AUDIENCE: Record<string, string> = {
   "vanilla-app-studio": "For any web or app startup, without the ceremony.",
 };
 
+type Preset = { id: string; title: string; blurb: string };
+
 /**
  * The two starting points shown first, in the words a newcomer would use for what they are making. They stand in for the
- * bundled teams that fit most people; every other team sits under "More kinds of team".
+ * bundled teams that fit most people; every other team sits under "More kinds of team". A contributor-only build sets up
+ * no AI helpers (its server runs no AI service), so there the lines leave them out.
  */
-export const PRESETS: readonly { id: string; title: string; blurb: string }[] =
-  [
+export function presetsFor(helpers: boolean): readonly Preset[] {
+  return [
     {
       id: "ai-media-studio",
       title: "Creative project",
-      blurb: "Film, music, audio or any creative work, made with AI helpers.",
+      blurb: helpers
+        ? "Film, music, audio or any creative work, made with AI helpers."
+        : "Film, music, audio or any creative work.",
     },
     {
       id: "vanilla-app-studio",
       title: "Technical project",
-      blurb: "A web or app product, with a builder, a reviewer and a lead.",
+      blurb: helpers
+        ? "A web or app product, with a builder, a reviewer and a lead."
+        : "A web or app product.",
     },
   ];
+}
+
+/** The starting points this build shows. */
+export const PRESETS: readonly Preset[] = presetsFor(raisesOffered());
 
 export function templatePreset(
   id: string,
@@ -65,16 +78,18 @@ function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** "4 channels · 6 AI helpers · 3 shared pages", leaving out what a template does not have. */
+/**
+ * "4 rooms · 6 AI helpers · 3 shared pages", leaving out what a template does not have. A contributor-only build
+ * (`helpers` false) never sets helpers up, so it does not count them.
+ */
 export function templateCounts(
   summary: Pick<TemplateSummary, "channels" | "helpers" | "pages">,
+  helpers: boolean = raisesOffered(),
 ): string {
   const boards = summary.channels.filter((channel) => channel.board).length;
-  const parts = [
-    count(summary.channels.length - boards, "channel", "channels"),
-  ];
+  const parts = [count(summary.channels.length - boards, "room", "rooms")];
   if (boards > 0) parts.push(count(boards, "board", "boards"));
-  if (summary.helpers.length > 0) {
+  if (helpers && summary.helpers.length > 0) {
     parts.push(count(summary.helpers.length, "AI helper", "AI helpers"));
   }
   if (summary.pages.length > 0) {

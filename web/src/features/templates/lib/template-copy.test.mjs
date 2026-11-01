@@ -7,6 +7,7 @@ import { TEMPLATE_INDEX } from "@creaton/core/templates/catalog-index.generated.
 import {
   describeDefaultLimit,
   PRESETS,
+  presetsFor,
   templateAudience,
   templatePreset,
   templateCounts,
@@ -56,11 +57,11 @@ test("counts say what a template makes and leave out what it does not", () => {
       helpers: [1, 2, 3, 4, 5, 6],
       pages: [1, 2, 3],
     }),
-    "4 channels · 6 AI helpers · 3 shared pages",
+    "4 rooms · 6 AI helpers · 3 shared pages",
   );
   assert.equal(
     templateCounts({ channels: [1], helpers: [], pages: [] }),
-    "1 channel",
+    "1 room",
   );
   // Boards are counted apart from channels.
   assert.equal(
@@ -74,7 +75,7 @@ test("counts say what a template makes and leave out what it does not", () => {
       helpers: [1],
       pages: [],
     }),
-    "2 channels · 2 boards · 1 AI helper",
+    "2 rooms · 2 boards · 1 AI helper",
   );
   assert.equal(
     templateCounts({
@@ -82,11 +83,11 @@ test("counts say what a template makes and leave out what it does not", () => {
       helpers: [],
       pages: [],
     }),
-    "1 channel · 1 board",
+    "1 room · 1 board",
   );
   assert.equal(
     templateCounts({ channels: [1, 2], helpers: [1], pages: [1] }),
-    "2 channels · 1 AI helper · 1 shared page",
+    "2 rooms · 1 AI helper · 1 shared page",
   );
 });
 
@@ -102,4 +103,28 @@ test("the default limit is said the way a person would say it", () => {
     describeDefaultLimit({ window: "week", runs: 5 }),
     "Each helper can run 5 times a week. Past that, it asks you first.",
   );
+});
+
+test("a contributor-only build says nothing about AI helpers in counts or starting points", () => {
+  assert.equal(
+    templateCounts(
+      {
+        channels: [{ board: false }, { board: true }],
+        helpers: [1, 2],
+        pages: [1],
+      },
+      false,
+    ),
+    "1 room · 1 board · 1 shared page",
+  );
+  for (const preset of presetsFor(false)) {
+    assert.doesNotMatch(preset.blurb, /helper|builder|reviewer|AI/i);
+    assert.ok(preset.blurb.length > 0 && preset.blurb.length <= 80);
+  }
+  assert.deepEqual(
+    presetsFor(false).map((p) => p.id),
+    PRESETS.map((p) => p.id),
+  );
+  // A build that offers raises (this test's, with no settings) keeps them.
+  assert.deepEqual(presetsFor(true), PRESETS);
 });

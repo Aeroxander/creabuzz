@@ -191,12 +191,12 @@ test("a room shows only its own notes: the last room's never carry over", async 
 }) => {
   await open(page, community("member"), { signedIn: true, moderator: false });
   const pane = page.getByTestId("content-pane");
-  await expect(pane.getByText(/created this channel/)).toHaveCount(1);
+  await expect(pane.getByText(/created this room/)).toHaveCount(1);
   await page.getByTestId("channel-design").click();
-  await expect(pane.getByText("You created this channel")).toBeVisible({
+  await expect(pane.getByText("You created this room")).toBeVisible({
     timeout: 20_000,
   });
-  await expect(pane.getByText(/created this channel/)).toHaveCount(1);
+  await expect(pane.getByText(/created this room/)).toHaveCount(1);
   await expect(pane.getByText("Hello from general")).toHaveCount(0);
 });
 

@@ -43,9 +43,10 @@ export function useCheckNotes(launch: Launch) {
       ),
   });
   const publish = useCallback(
-    async (note: CheckNote) => {
+    // Returns the note's event id: the focus record names it as applied, so "Apply to Now" knows it is done.
+    async (note: CheckNote): Promise<string> => {
       const content = checkNoteContent(note, Math.floor(Date.now() / 1000));
-      await publishAsUser(
+      const signed = await publishAsUser(
         {
           kind: KIND_CHECK_NOTE,
           tags: [["a", launchCoordinate(author, id)]],
@@ -58,6 +59,7 @@ export function useCheckNotes(launch: Launch) {
       });
       // It is an update too: the Updates tab reads it with the rest.
       await queryClient.invalidateQueries({ queryKey: launchesQueryKey });
+      return signed.id;
     },
     [author, id, queryClient],
   );

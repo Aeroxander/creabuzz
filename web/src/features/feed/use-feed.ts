@@ -25,11 +25,10 @@ import {
 import { createListWriter, type ListWrite } from "./lib/follow-queue";
 import { latestList, withLaunch, withPerson } from "./lib/lists";
 import {
-  isMirrorable,
   KIND_RELAY_LIST,
   MIRROR_TIMEOUT_MS,
   outboxRelays,
-  readMirrorSetting,
+  shouldMirror,
   withTimeout,
 } from "./lib/mirror";
 import { tallyVotes, type VoteTally } from "./lib/ranking";
@@ -249,8 +248,9 @@ export function useFollowChanges() {
 }
 
 /**
- * Sign and publish to the community's relay; then, when the person turned it
- * on, copy a post or vote to their NIP-65 outbox relays. The copy is
+ * Sign and publish to the community's relay; then, when the person ticked
+ * "Also share with other apps" for this post, copy it to their NIP-65 outbox
+ * relays. The copy is
  * best-effort: one bounded attempt per relay on its own socket, failures
  * logged and dropped. The community relay is the record — and the only copy
  * `useVoteTallies` counts — so a mirror never blocks or fails a publish.
@@ -278,11 +278,16 @@ async function mirrorToOutbox(signed: NostrEvent): Promise<void> {
   }
 }
 
+/**
+ * `mirror` is asked for this one publish (the composer's box) and is never
+ * remembered, so a vote or reply sent later is not copied by itself.
+ */
 export async function publishFeedEvent(
   template: EventTemplate,
+  { mirror = false }: { mirror?: boolean } = {},
 ): Promise<NostrEvent> {
   const signed = await publishAsUser(template, "The server refused this post.");
-  if (readMirrorSetting() && isMirrorable(signed)) {
+  if (shouldMirror(signed, mirror)) {
     void mirrorToOutbox(signed);
   }
   return signed;
@@ -304,7 +309,8 @@ export function useChainBlockHeight(): bigint | null {
 export function usePublishFeedEvent() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: publishFeedEvent,
+    // Never mirrored: only the composer's box asks for a copy.
+    mutationFn: (template: EventTemplate) => publishFeedEvent(template),
     onSuccess: (event) => {
       if (event.kind === KIND_REACTION) {
         void queryClient.invalidateQueries({ queryKey: feedKeys.reactions });

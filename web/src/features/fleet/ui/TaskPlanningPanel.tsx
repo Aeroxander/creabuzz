@@ -140,10 +140,9 @@ export function TaskPlanningPanel({
         </label>
       </div>
       <p className="text-2xs text-black/60 dark:text-white/60">
-        Points are credited when the finished task is accepted as a
-        contribution, and add to the contributor's share of the project.
-        Accepting a contribution does not send USDC. Arrange payment separately
-        or use the DAO's Work tab for a funded claim.
+        Points show on your profile once a reviewer accepts the task. They are
+        not Shares and are not money. To earn Shares, take the work on the
+        project's Work tab.
       </p>
       {dirty ? (
         <div>

@@ -719,16 +719,12 @@ test("someone without an account is told to make one, and nothing is written", a
   await open(page, relay, { signedIn: false });
 
   await page.getByTestId("board-new-post").click();
-  await expect(
-    page.getByText("Create your account (top right) to post."),
-  ).toBeVisible();
+  await expect(page.getByText("Create your account to post.")).toBeVisible();
   await page
     .getByTestId(`board-post-${p.id}`)
     .getByTestId("board-vote-up")
     .click();
-  await expect(
-    page.getByText("Create your account (top right) to vote."),
-  ).toBeVisible();
+  await expect(page.getByText("Create your account to vote.")).toBeVisible();
   expect(
     relay.events.filter(
       (e) => e.kind >= 45000 && e.kind < 46000 && e.id !== p.id,
@@ -756,7 +752,7 @@ test("boards sit in their own group, and a new board is created as one", async (
   await expect(page.getByTestId("board-nav-ideas")).toBeVisible();
   await expect(page.getByTestId("channel-ideas")).toHaveCount(0);
   await expect(page.getByTestId("channel-general")).toBeVisible();
-  await expect(page.getByText("1 channel · 1 board")).toBeVisible();
+  await expect(page.getByText("1 room · 1 board")).toBeVisible();
 
   await page.getByTestId("new-board").click();
   await expect(
@@ -1029,7 +1025,7 @@ test("someone without an account is told to make one before boards are added", a
   ).toBeNull();
   await page.getByTestId("starter-boards").click();
   await expect(
-    page.getByText("Create your account (top right) to add boards."),
+    page.getByText("Create your account to add boards."),
   ).toBeVisible();
   expect(relay.events.filter((e) => e.kind === 9007)).toEqual([]);
   // Writing in the room asks for an account too, and opens sign-up.
@@ -1214,13 +1210,14 @@ test("proposal posts have no vote arrows and are not ranked by votes", async ({
     "Proposal",
   );
 
-  // Votes never rank a proposal: under "Top" the loved one does not jump ahead, it keeps newest first.
+  // Votes never rank a proposal: under "Top" the ordinary post's one vote puts it first, and the loved proposal's
+  // four votes do not lift it past the newer proposal (proposals count as no score, newest first).
   await page.getByTestId("board-sort-top").click();
   await expectRows(page, [
-    "Loved proposal",
     "Ordinary post",
     "Newest proposal",
-  ]).catch(() => undefined);
+    "Loved proposal",
+  ]);
 
   // Proposals view: latest activity first, whatever the votes, and no sort buttons to change that.
   await page.getByTestId("board-filter-proposals").click();

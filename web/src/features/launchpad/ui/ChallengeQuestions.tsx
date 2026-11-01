@@ -18,9 +18,13 @@ import {
   parseChallengeSummary,
   parseFollowUps,
 } from "@creaton/core/launchpad/challengeAi.ts";
+import {
+  AI_DISCLOSURE,
+  fenceAiRequest,
+} from "@creaton/core/launchpad/helperAi.ts";
 import { useLlmGateway } from "@/features/fleet/use-llm-gateway";
 import { Button } from "@/shared/ui/button";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { askAi } from "../ask-ai";
 import type { Launch } from "../models";
@@ -73,9 +77,31 @@ export function ChallengeQuestions({
         }
       : null,
   };
+  // What a request is written from, as it is now, and whether this form is still open. An answer that comes back after
+  // the answers, follow-ups or summary changed, or after the form closed, was written from words that are gone: it is
+  // dropped rather than overwriting newer edits (CLAUDE.md, review-proven rule 2).
+  const latest = useRef({ value, extras, context });
+  latest.current = { value, extras, context };
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const ask = async (what: "follow-ups" | "summary") => {
     setAsking(what);
     setAiFailure(null);
+    const current = fenceAiRequest(
+      () => latest.current,
+      () => mounted.current,
+    );
+    const changed = () => {
+      if (mounted.current)
+        setAiFailure(
+          "You changed your answers while the AI was working, so its reply was set aside. Ask again, or carry on without it.",
+        );
+    };
     try {
       if (what === "follow-ups") {
         const prompt = followUpPrompt(context, value);
@@ -83,8 +109,12 @@ export function ChallengeQuestions({
           await askAi(prompt.system, prompt.user),
         );
         if (!questions) throw new Error("unreadable");
+        if (!current()) {
+          changed();
+          return;
+        }
         onExtras({
-          ...extras,
+          ...latest.current.extras,
           followUps: questions.map((question) => ({ question, answer: "" })),
         });
       } else {
@@ -93,17 +123,22 @@ export function ChallengeQuestions({
           await askAi(prompt.system, prompt.user),
         );
         if (!summary) throw new Error("unreadable");
-        onExtras({ ...extras, summary });
+        if (!current()) {
+          changed();
+          return;
+        }
+        onExtras({ ...latest.current.extras, summary });
         onSummaryToRead();
       }
     } catch (error) {
-      setAiFailure(
-        error instanceof Error && error.message !== "unreadable"
-          ? error.message
-          : "The AI's answer could not be read. Try again, or carry on without it.",
-      );
+      if (mounted.current)
+        setAiFailure(
+          error instanceof Error && error.message !== "unreadable"
+            ? error.message
+            : "The AI's answer could not be read. Try again, or carry on without it.",
+        );
     } finally {
-      setAsking(null);
+      if (mounted.current) setAsking(null);
     }
   };
   return (
@@ -208,8 +243,9 @@ export function ChallengeQuestions({
             {asking === "summary" ? "Drafting…" : "Draft a summary with AI"}
           </Button>
           <span className="text-xs text-muted-foreground">
-            It sees your answers, the project&apos;s aim, Now and the latest
-            check note. It decides nothing.
+            {AI_DISCLOSURE} It sees your answers, the project&apos;s aim, Now
+            and the latest check note, and decides nothing. Nothing is posted
+            until you open the vote.
           </span>
         </div>
       ) : null}
@@ -236,9 +272,19 @@ export function ChallengeQuestions({
 }
 
 /**
- * On a vote that commits money or Shares: the case against it, as the person who opened it answered before it went out,
- * or that it was not challenged. Nothing while the challenges are still being read.
+ * On a vote that commits money or Shares: the case against it, as written by a key bound to the wallet that opened it,
+ * with the date it was signed, or that there is none. A reader cannot tell when it was published, only the date its
+ * signer put on it, so the words do not claim it came before the vote opened. Nothing while the challenges are still
+ * being read.
  */
+function signedOn(seconds: number): string {
+  return new Date(seconds * 1000).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export function ChallengeBrief({
   challenge,
   read,
@@ -253,15 +299,21 @@ export function ChallengeBrief({
         className="text-xs text-muted-foreground"
         data-testid="decision-not-challenged"
       >
-        Not challenged before it went out: whoever opened it did not say what
-        argues against it.
+        No case against it: whoever opened it did not say what argues against
+        it.
       </p>
     );
   }
   return (
     <details className="text-sm" data-testid="decision-challenged">
       <summary className="cursor-pointer text-xs font-medium">
-        Challenged before it went out: read the case against
+        Read the case against it, from whoever opened it{" "}
+        <span
+          className="font-normal text-muted-foreground"
+          data-testid="decision-challenged-date"
+        >
+          (signed {signedOn(challenge.createdAt)})
+        </span>
       </summary>
       <dl className="mt-1 flex flex-col gap-1 rounded-md bg-secondary/40 p-2">
         {challenge.summary ? (

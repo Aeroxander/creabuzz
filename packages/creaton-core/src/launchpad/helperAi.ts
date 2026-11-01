@@ -3,7 +3,8 @@
  * AI service is on:
  *
  * - **Checking work before it is submitted:** the evidence and the person's own check, compared with the work area's
- *   "done when", as a list of what looks missing or unclear. Shown only to the person submitting; never published.
+ *   "done when", as a list of what looks missing or unclear. Shown only to the person submitting; never published (the
+ *   words do go to the server's AI service, `AI_DISCLOSURE`).
  * - **The newcomer interviewer:** three short answers (what they are good at, how much time they have, what they care
  *   about here) turned into a first "taking this on" draft for them to edit.
  *
@@ -37,6 +38,27 @@ function json(reply: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * Said beside every AI helper: what is typed goes to the AI service the server's operator configured, an outside
+ * company. "Not published" alone would hide that.
+ */
+export const AI_DISCLOSURE =
+  "What you type here is sent to this server's AI service.";
+
+/**
+ * Fences one AI request against what the person does while it runs (CLAUDE.md, review-proven rule 2). `inputs` reads,
+ * as they are now, the words the request was written from; `open` says whether the form that asked is still there. The
+ * returned check is true only while both hold: an answer written from words that have since changed, or for a form that
+ * was cancelled, is dropped instead of overwriting newer edits or reopening the form.
+ */
+export function fenceAiRequest(
+  inputs: () => unknown,
+  open: () => boolean,
+): () => boolean {
+  const asked = JSON.stringify(inputs());
+  return () => open() && JSON.stringify(inputs()) === asked;
+}
+
 // ---- checking work against its "done when" ---------------------------------------------------
 
 export function workCheckPrompt(input: {
@@ -62,15 +84,21 @@ export function workCheckPrompt(input: {
   };
 }
 
-/** The list out of a reply (at most five, non-empty), or null when it is not the JSON asked for. */
+/**
+ * The list out of a reply (at most five, each gap once), or null when it is not the JSON asked for. An entry that is not
+ * a non-blank string rejects the whole reply rather than being dropped: an empty list says "nothing looks missing", so
+ * it must come only from a reply that said so, never from one whose findings could not be read.
+ */
 export function parseWorkCheck(reply: string): string[] | null {
   const body = json(reply);
   if (!body || !Array.isArray(body.gaps)) return null;
-  return body.gaps
-    .flatMap((g) =>
-      typeof g === "string" && g.trim() ? [g.trim().slice(0, ITEM_MAX)] : [],
-    )
-    .slice(0, 5);
+  const gaps: string[] = [];
+  for (const g of body.gaps) {
+    if (typeof g !== "string" || !g.trim()) return null;
+    const gap = g.trim().slice(0, ITEM_MAX);
+    if (!gaps.includes(gap)) gaps.push(gap);
+  }
+  return gaps.slice(0, 5);
 }
 
 // ---- the newcomer interviewer ----------------------------------------------------------------

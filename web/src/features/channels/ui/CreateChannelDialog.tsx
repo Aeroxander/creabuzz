@@ -216,7 +216,7 @@ export function CreateChannelDialog({
         },
         onError: (error) => {
           setFormError(
-            failureWords(error, "Couldn't create the channel. Try again."),
+            failureWords(error, "Couldn't create the room. Try again."),
           );
         },
       },
@@ -254,12 +254,12 @@ export function CreateChannelDialog({
       >
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {channelType === "forum" ? "Create a board" : "Create a channel"}
+            {channelType === "forum" ? "Create a board" : "Create a room"}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {channelType === "forum"
               ? "A board is where people post topics and reply under them. It stays easy to find later. You can add AI helpers and teams now or later."
-              : "Channels are where your community talks. You can add AI helpers and teams now or later."}
+              : "Rooms are where your community talks. You can add AI helpers and teams now or later."}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -292,7 +292,7 @@ export function CreateChannelDialog({
                 topicTouchedRef.current = true;
                 setTopic(e.target.value);
               }}
-              placeholder="What this channel is about"
+              placeholder="What this room is about"
               autoComplete="off"
             />
           </div>
@@ -402,7 +402,7 @@ export function CreateChannelDialog({
                   className="text-xs text-amber-700 dark:text-amber-300"
                   role="alert"
                 >
-                  Couldn't load the AI helpers. You can still create the channel
+                  Couldn't load the AI helpers. You can still create the room
                   and add them later.
                 </p>
               ) : agents.length === 0 ? (
@@ -477,7 +477,7 @@ export function CreateChannelDialog({
               role="alert"
             >
               <p>
-                Channel created, but {pendingMembers.length}{" "}
+                Room created, but {pendingMembers.length}{" "}
                 {pendingMembers.length === 1 ? "member" : "members"} couldn't be
                 added:{" "}
                 {pendingMembers.map((m: AttachFailure) => m.name).join(", ")}.
@@ -525,7 +525,7 @@ export function CreateChannelDialog({
               ? "Creating…"
               : channelType === "forum"
                 ? "Create board"
-                : "Create channel"}
+                : "Create room"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -4,7 +4,8 @@
  * edited before the note can go out, and the questions are only shown, never published. The AI decides nothing.
  *
  * It works only from the facts given here (the project's aim and the note), says nothing it was not told, names no one
- * and ranks no one. Pure: a prompt out, a reading of the reply in, driven by `checkNoteAi.test.mjs`.
+ * and ranks no one. The words go to the server's AI service (the relay's `/llm` gateway), so the form says so. Pure: a
+ * prompt out, a reading of the reply in, driven by `checkNoteAi.test.mjs`.
  */
 
 import type { CheckNote } from "./checkNote.ts";
@@ -50,9 +51,8 @@ export function checkDraftPrompt(
   lines.push(
     `Turned down since the last note: ${note.turnedDown.length}${note.causes.length ? ` (what was missing: ${note.causes.map((c) => `${c.label}, ${c.count}`).join("; ")})` : ""}.`,
   );
-  lines.push(
-    `"Taking this on" dates that passed without the work: ${note.lapsed}.`,
-  );
+  // The count of "taking this on" dates that passed is left out: it counts work finished on time too, so given to the AI
+  // it would read as work that never came in.
   if (note.stuck.trim()) lines.push(`Stuck: ${note.stuck.trim()}`);
   if (note.change.trim())
     lines.push(
@@ -91,4 +91,19 @@ export function parseCheckDraft(
     .map((q) => (typeof q === "string" ? q.trim().slice(0, QUESTION_MAX) : ""));
   while (asked.length < itemCount) asked.push("");
   return { summary: summary.trim().slice(0, SUMMARY_MAX), questions: asked };
+}
+
+/**
+ * The draft's summary on the note as it is now, or null when the founder changed the note while the AI was writing
+ * (`asked` is the note the prompt was made from). Then the summary was written from facts that are no longer the
+ * note's, and adding it would also be the only way to keep or lose those newer edits: it is set aside instead.
+ */
+export function acceptCheckDraft(
+  asked: CheckNote,
+  current: CheckNote,
+  summary: string,
+): CheckNote | null {
+  return JSON.stringify(asked) === JSON.stringify(current)
+    ? { ...current, summary }
+    : null;
 }

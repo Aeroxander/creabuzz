@@ -1,9 +1,10 @@
 /**
- * The server's notes in a room ("Board Tester created this channel", "Reply Tester was added by Board Tester"), read
+ * The server's notes in a room ("Board Tester created this room", "Reply Tester was added by Board Tester"), read
  * from their JSON body into one plain sentence.
  *
- * The wording follows the desktop's timeline rows (`SystemMessageRow`, `systemEventCopy`), so both apps say the same
- * thing. A type this app does not know still gets a neutral line, never the raw body.
+ * The wording follows the desktop's timeline rows (`SystemMessageRow`, `systemEventCopy`), except that this app says
+ * "room" where the desktop still says "channel" (the web app calls them rooms everywhere people read). A type this app
+ * does not know still gets a neutral line, never the raw body.
  *
  * Only a note the server signed is one: the server signs a room's metadata record with the same key, so a note from
  * any other key is someone's message and is shown as theirs. When that key is not known (`null`), every note counts.
@@ -124,7 +125,7 @@ export function systemNoteText(note: SystemNote, names: NoteNames): string {
 
   switch (note.type) {
     case "channel_created":
-      return `${actor} created this channel`;
+      return `${actor} created this room`;
     case "dm_created":
       return `${actor} started this conversation`;
     case "member_joined":
@@ -133,40 +134,40 @@ export function systemNoteText(note: SystemNote, names: NoteNames): string {
         note.target === undefined ||
         note.actor.toLowerCase() === note.target.toLowerCase()
       ) {
-        return `${subject(note.target ?? note.actor)} joined the channel`;
+        return `${subject(note.target ?? note.actor)} joined the room`;
       }
       return isSelf(note.target)
         ? `You were added by ${object(note.actor)}`
         : `${subject(note.target)} was added by ${object(note.actor)}`;
     case "member_left":
-      return `${actor} left the channel`;
+      return `${actor} left the room`;
     case "member_removed":
-      return `${actor} removed ${object(note.target)} from the channel`;
+      return `${actor} removed ${object(note.target)} from the room`;
     case "admin_kick":
       return isSelf(note.target)
-        ? "You were removed from the channel"
-        : `${subject(note.target)} was removed from the channel`;
+        ? "You were removed from the room"
+        : `${subject(note.target)} was removed from the room`;
     case "topic_changed":
       return `${actor} ${textChange("topic", note.topic)}`;
     case "purpose_changed":
       return `${actor} ${textChange("purpose", note.purpose)}`;
     case "visibility_changed":
       if (note.visibility === "private" || note.visibility === "public") {
-        return `${actor} made this channel ${note.visibility}`;
+        return `${actor} made this room ${note.visibility}`;
       }
-      return `${actor} changed who can see this channel`;
+      return `${actor} changed who can see this room`;
     case "ttl_changed":
       return typeof note.ttlSeconds === "number" && note.ttlSeconds > 0
-        ? `${actor} set this channel to clean up after ${spanOf(note.ttlSeconds)} without activity`
-        : `${actor} made this channel permanent`;
+        ? `${actor} set this room to clean up after ${spanOf(note.ttlSeconds)} without activity`
+        : `${actor} made this room permanent`;
     case "channel_archived":
-      return `${actor} archived this channel`;
+      return `${actor} archived this room`;
     case "channel_unarchived":
-      return `${actor} unarchived this channel`;
+      return `${actor} unarchived this room`;
     case "channel_auto_archived":
-      return "This channel was archived after a while without activity";
+      return "This room was archived after a while without activity";
     case "channel_deleted":
-      return `${actor} deleted this channel`;
+      return `${actor} deleted this room`;
     case "message_deleted": {
       // A moderator's removal may carry a public reason; a plain delete carries none. The reporter is never named.
       const reason = note.publicReason?.trim();
@@ -176,13 +177,13 @@ export function systemNoteText(note: SystemNote, names: NoteNames): string {
     }
     default:
       return note.actor === undefined
-        ? "This channel was updated"
-        : `${actor} updated this channel`;
+        ? "This room was updated"
+        : `${actor} updated this room`;
   }
 }
 
 /**
- * The notes to leave out of a room's timeline: every "created this channel" note after the first. A room is made once,
+ * The notes to leave out of a room's timeline: every "created this room" note after the first. A room is made once,
  * so a second one is a stray (a note that reached this room's list from somewhere else, or one sent twice) and reads as
  * two people making the same room. `ordered` is the timeline oldest first; `notes` the server's notes in it, by id.
  */

@@ -464,6 +464,7 @@ test("when the server will not ban someone, its words are shown in the dialog", 
   });
   await openChat(page, relay);
   await theirRow(page).getByTestId("ban-author-button").click();
+  await page.getByTestId("ban-length").selectOption({ label: "For good" });
   await page.getByTestId("ban-yes").click();
   // Plain words in main copy; the server's own words only under Technical details.
   await expect(page.getByTestId("ban-error")).toHaveText(
@@ -509,6 +510,7 @@ test("a post by someone else on Home can be banned for, by the owner, and the di
   await theirs.getByTestId("social-ban").click();
   await expect(page.getByTestId("ban-form")).toBeVisible();
   await expectAccessible(page, "the ban dialog on a post");
+  await page.getByTestId("ban-length").selectOption({ label: "For good" });
   await page.getByTestId("ban-yes").click();
   await expect(page.getByTestId("ban-form")).toHaveCount(0);
   const sent = relay.events.filter((event) => event.kind === 9040);

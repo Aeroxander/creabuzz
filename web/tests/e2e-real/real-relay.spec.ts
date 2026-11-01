@@ -412,7 +412,7 @@ test("an invite minted by an owner enrolls a durable identity, once", async ({
   await joinerPage.goto(invitePath);
   // The button must be offered at all: it used to require a browser extension,
   // which left browser readers with no way to join.
-  const join = joinerPage.getByRole("button", { name: "Join in browser" });
+  const join = joinerPage.getByRole("button", { name: "Join this community" });
   await expect(join).toBeVisible({ timeout: 20_000 });
   await join.click();
   await expect(joinerPage).toHaveURL("/", { timeout: 30_000 });
@@ -425,7 +425,9 @@ test("an invite minted by an owner enrolls a durable identity, once", async ({
     [freshNsec()],
   );
   await latecomerPage.goto(invitePath);
-  await latecomerPage.getByRole("button", { name: "Join in browser" }).click();
+  await latecomerPage
+    .getByRole("button", { name: "Join this community" })
+    .click();
   await expect(latecomerPage.getByText(/reached its use limit/i)).toBeVisible({
     timeout: 30_000,
   });

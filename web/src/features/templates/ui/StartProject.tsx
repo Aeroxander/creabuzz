@@ -170,7 +170,7 @@ function Preview({ summary }: { summary: TemplateSummary }) {
               <div className="mt-1">{summary.pages.join(", ")}</div>
             </div>
           ) : null}
-          {summary.automations.length > 0 ? (
+          {helpers && summary.automations.length > 0 ? (
             <div>
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Automations
@@ -192,7 +192,7 @@ function Preview({ summary }: { summary: TemplateSummary }) {
           ) : null}
         </div>
       </div>
-      {summary.needsCommandLine.length > 0 ? (
+      {helpers && summary.needsCommandLine.length > 0 ? (
         <p className="mt-3 text-xs text-muted-foreground">
           One extra skill ({summary.needsCommandLine.join(", ")}) is added from
           a web address, which only the command line can fetch. Everything else
