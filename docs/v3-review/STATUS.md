@@ -6,7 +6,7 @@ Each decision is a row in [DECISIONS.md](DECISIONS.md) (D1 to D152). The hand te
 date order. What the 2026-10-31 pass hid or retired, and what waits on your call, is in
 [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md).
 
-Everything is on the local branch `v4-governance-rework`, not pushed. D146 to D150 are committed locally (D150 removed the LBAMM market, the pre-kit raise path, the old tokenomics and money forecasts from the app; tag `pre-deprecation-2026-10-31` keeps them).
+The branch `v4-governance-rework` is pushed to the fork (https://github.com/Aeroxander/creabuzz, since 2026-11-01); draft PR Aeroxander/creabuzz#1 runs CI against `ci-base`, not the fork's `main`, which still holds 12 older SIWE commits this branch reworked. D146 to D150 are committed locally (D150 removed the LBAMM market, the pre-kit raise path, the old tokenomics and money forecasts from the app; tag `pre-deprecation-2026-10-31` keeps them).
 
 ## Scope
 
@@ -63,14 +63,17 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
   `--later` runs the raise, milestone, optional-feature and self-serve journeys alone (twelve); `--list` shows what
   would run; `--outside` lists the four journey scripts no set runs, each with its reason. A journey script in no set
   and with no reason is printed as a warning on every run ([MVP-GATE-CI.md](MVP-GATE-CI.md)).
-- **Last full pass: 2026-10-31**, the 16 journeys of that day after the D150, D151 and D152 removals. Added since and
+- **Pilot set, 2026-11-01: all ten pass locally; nine of ten in CI.** The first CI run (`.github/workflows/mvp-gate.yml`,
+  pushed to the fork with draft PR Aeroxander/creabuzz#1) passed every journey but `web-social-hosted-e2e`. There,
+  `follow-notify.spec.ts` lost one of two follows clicked within a second (twice, on the slower runner). It passed
+  locally, and the hashtag-search test in the same suite is flaky in both places. A local run hit a Redis outage
+  (Docker Desktop had quit) on the two journeys that start a server; rerun with Redis up, both passed.
+- **Last full pass of all twenty-two: 2026-10-31**, the 16 journeys of that day after the D150, D151 and D152 removals. Added since and
   not yet in a full pass: `web-pilot-e2e` (pilot set) and, on 2026-11-01, `web-rounds-e2e`, `web-post-bounty-e2e`,
   `web-self-serve-e2e` and `shares-erc20c-e2e` (later set; no gate ran them before).
-- **A CI job is written, not pushed:** `.github/workflows/mvp-gate.yml` runs `--pilot` on pull requests that touch the
+- **The CI job runs on the fork:** `.github/workflows/mvp-gate.yml` runs `--pilot` on pull requests that touch the
   web app, server crates, packages, contracts, scripts, deployment config or the database, and `--later` nightly,
-  with Postgres, Redis, MinIO, Foundry and a browser, and uploads every log. It has never run; publishing it is your
-  call, and any pull request stays a draft. Until then nothing runs the gate on its own: run it again after any change
-  to what `dev-chain` deploys or to words journeys assert.
+  with Postgres, Redis, MinIO, Foundry and a browser, and uploads every log. Its first run was on 2026-11-01 (above).
 - **Not covered by it**, so checked by hand ([PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md)): a reviewer acting from a
   passkey account, the name link against a real invite-only server, "Your work" read from a real server, a
   passkey-account holder whose access is restricted (the browser-wallet holder is `web-restricted-holder-e2e`), the
@@ -91,7 +94,7 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 
 ## Waiting on you
 
-1. **Run the gate** on the build you host, as above, and decide whether to publish its CI job (`.github/workflows/mvp-gate.yml`, written, not pushed).
+1. **Run the gate** on the build you host, as above (CI runs it on the fork's pull requests).
 2. **The rest of the calls in [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md)**: what to remove, merge or keep, one line each.
 3. **Broadcast to Sepolia:** `scripts/sepolia-deploy.sh --broadcast`, with your own key in `.env`.
 4. **Host the server** with `deploy/compose` (the image, read state, terms at sign-up, backups): a machine, a domain, the
