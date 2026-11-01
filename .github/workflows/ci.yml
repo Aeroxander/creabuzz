@@ -17,7 +17,9 @@ jobs:
   changes:
     name: Detect Changed Paths
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    # The steps take about 90 seconds, and GitHub can finish the job minutes after
+    # the last step; a 2-minute limit cancels finished runs (upstream uses 10).
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -83,7 +85,6 @@ jobs:
               - 'scripts/model-capabilities.json'
               - 'scripts/normative-corpus.json'
               - 'desktop/**'
-              - '!desktop/src-tauri/**'
               - 'packages/**'
               - 'pnpm-lock.yaml'
             desktop-rust:

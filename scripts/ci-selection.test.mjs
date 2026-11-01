@@ -218,7 +218,8 @@ const scenarios = [
   ],
   ["mobile lockfile", ["mobile/pubspec.lock"], ["mobile"]],
   ["mobile release script", ["scripts/mobile-release.sh"], ["mobile"]],
-  ["desktop", ["desktop/src/main.tsx"], ["desktop"]],
+  // The web job also runs knip, which checks desktop/src for duplicates (knip.jsonc).
+  ["desktop", ["desktop/src/main.tsx"], ["desktop", "web"]],
   ["Tauri", ["desktop/src-tauri/src/main.rs"], ["desktop", "desktop-rust"]],
   ["relay", ["crates/buzz-relay/src/main.rs"], ["rust"]],
   ["migration", ["migrations/123.sql"], ["rust"]],
@@ -244,7 +245,7 @@ const scenarios = [
   [
     "mixed mobile and desktop",
     ["mobile/lib/main.dart", "desktop/src/main.tsx"],
-    ["desktop", "mobile"],
+    ["desktop", "mobile", "web"],
   ],
   ["web", ["web/src/main.tsx"], ["web"]],
   ["documentation", ["README.md"], []],
@@ -272,7 +273,7 @@ const scenarios = [
   [
     "mixed documentation and desktop",
     ["VISION_MOBILE.md", "docs/mobile/design.md", "desktop/src/main.tsx"],
-    ["desktop"],
+    ["desktop", "web"],
   ],
   [
     "mixed documentation and relay",
@@ -313,7 +314,7 @@ for (const [name, paths, expected] of [
   [
     "mixed desktop and Markdown",
     ["CONTEXT.md", "desktop/src/main.tsx"],
-    ["desktop"],
+    ["desktop", "web"],
   ],
 ]) {
   test(`PR file list ignores newer base changes: ${name}`, async () => {
