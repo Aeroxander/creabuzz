@@ -8,10 +8,21 @@
 
 import { makeAuthEvent } from "nostr-tools/nip42";
 
-import { signForRelay } from "@/shared/lib/relay-auth";
-import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
+import { signForRelay } from "./relay-auth.ts";
+import type { SignedNostrEvent } from "./nostr-signer.ts";
 
 const PUBLISH_TIMEOUT_MS = 12_000;
+
+/**
+ * True when the server refused a record only because the login had not gone through yet (`auth-required: not
+ * authenticated`): the record itself was not judged, so it can be sent again once the login has.
+ */
+function refusedBeforeLogin(message: string | undefined): boolean {
+  return (
+    typeof message === "string" &&
+    message.startsWith("auth-required: not authenticated")
+  );
+}
 
 export interface PublishResult {
   accepted: boolean;
@@ -40,6 +51,13 @@ export function publishEvent(
     const ws = new WebSocket(wsUrl);
     let settled = false;
     let sent = false;
+    // The login: whether the server asked for one, its id once sent, whether it went through.
+    let challenged = false;
+    let authId: string | null = null;
+    let authAccepted = false;
+    // A record sent before a late login went through is sent once more after it (never more).
+    let resent = false;
+    let fallback: ReturnType<typeof setTimeout> | null = null;
 
     const timer = setTimeout(() => {
       if (!settled) {
@@ -69,8 +87,12 @@ export function publishEvent(
 
     ws.addEventListener("open", () => {
       // Wait for the relay's AUTH challenge (Buzz relays always send one);
-      // fall back to an unauthenticated EVENT if it never arrives.
-      setTimeout(send, 400);
+      // fall back to an unauthenticated EVENT only if none arrives. Once one has,
+      // the EVENT waits for the login to go through: a slow signer or a slow
+      // network must not send it ahead of the login, where it would be refused.
+      fallback = setTimeout(() => {
+        if (!challenged) send();
+      }, 400);
     });
 
     ws.addEventListener("message", (msg) => {
@@ -83,19 +105,42 @@ export function publishEvent(
       if (!Array.isArray(data)) return;
       const [type] = data;
       if (type === "AUTH" && typeof data[1] === "string") {
+        challenged = true;
+        if (fallback !== null) clearTimeout(fallback);
         const template = makeAuthEvent(wsUrl, String(data[1]));
-        void signAuth(template).then((signed) => {
-          if (settled) return;
-          ws.send(JSON.stringify(["AUTH", signed]));
-        });
+        void signAuth(template).then(
+          (signed) => {
+            if (settled) return;
+            authId = signed.id;
+            ws.send(JSON.stringify(["AUTH", signed]));
+          },
+          (error: unknown) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            ws.close();
+            reject(error instanceof Error ? error : new Error(String(error)));
+          },
+        );
       } else if (type === "OK") {
+        const message = typeof data[3] === "string" ? data[3] : undefined;
         if (data[1] === event.id) {
-          finish({
-            accepted: data[2] === true,
-            message: typeof data[3] === "string" ? data[3] : undefined,
-          });
-        } else if (data[2] === true && !sent) {
+          if (
+            data[2] !== true &&
+            challenged &&
+            !resent &&
+            refusedBeforeLogin(message)
+          ) {
+            // It went out ahead of the login (a challenge that came late): send it again once the login is in.
+            resent = true;
+            sent = false;
+            if (authAccepted) send();
+            return;
+          }
+          finish({ accepted: data[2] === true, message });
+        } else if (data[1] === authId && data[2] === true) {
           // AUTH accepted for the auth-event id — now send EVENT.
+          authAccepted = true;
           send();
         } else if (data[2] === false) {
           // The server refused the login (a ban, a community the reader is not in) or is ending the session with its
@@ -161,11 +206,19 @@ export function openPublishSession(
   const waiting = new Map<
     string,
     {
+      event: SignedNostrEvent;
       resolve: (result: PublishResult) => void;
       reject: (error: Error) => void;
       timer: ReturnType<typeof setTimeout>;
+      resent: boolean;
     }
   >();
+  // Whether the server asked for a login, and once it went through: a record sent ahead of a late login is sent again.
+  let challenged = false;
+  let markLoggedIn: () => void = () => {};
+  const loggedIn = new Promise<void>((resolve) => {
+    markLoggedIn = resolve;
+  });
 
   // Ready once the server's login challenge has been answered, or once it has
   // had a moment to send one and did not (a server without a login step).
@@ -215,6 +268,7 @@ export function openPublishSession(
     if (!Array.isArray(data)) return;
     const [type] = data;
     if (type === "AUTH" && typeof data[1] === "string") {
+      challenged = true;
       if (readyTimer !== null) clearTimeout(readyTimer);
       const template = makeAuthEvent(wsUrl, String(data[1]));
       void signAuth(template).then(
@@ -231,14 +285,31 @@ export function openPublishSession(
           ? data[3]
           : "The server refused to sign you in.";
       if (data[1] === authId) {
-        if (data[2] === true) markReady();
-        else refuseAll(reason);
+        if (data[2] === true) {
+          markLoggedIn();
+          markReady();
+        } else refuseAll(reason);
         return;
       }
       const entry = waiting.get(String(data[1]));
       if (!entry) {
         // Not an answer to a record: the server ending the session with its reason (a ban arriving now).
         if (data[2] === false) refuseAll(reason);
+        return;
+      }
+      if (
+        data[2] !== true &&
+        challenged &&
+        !entry.resent &&
+        refusedBeforeLogin(typeof data[3] === "string" ? data[3] : undefined)
+      ) {
+        // It went out ahead of a login that came late: send it again once the login is in (its timer still runs).
+        entry.resent = true;
+        void loggedIn.then(() => {
+          if (waiting.get(entry.event.id) === entry) {
+            ws.send(JSON.stringify(["EVENT", entry.event]));
+          }
+        });
         return;
       }
       clearTimeout(entry.timer);
@@ -281,7 +352,7 @@ export function openPublishSession(
           waiting.delete(event.id);
           reject(new Error("Server publish timed out"));
         }, PUBLISH_TIMEOUT_MS);
-        waiting.set(event.id, { resolve, reject, timer });
+        waiting.set(event.id, { event, resolve, reject, timer, resent: false });
         try {
           ws.send(JSON.stringify(["EVENT", event]));
         } catch (error) {
