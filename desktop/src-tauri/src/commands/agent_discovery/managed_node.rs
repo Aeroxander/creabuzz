@@ -610,7 +610,8 @@ pub(super) fn managed_npm_command(command: &str) -> Result<Option<String>, Box<I
             command: command.to_string(),
             success: false,
             stdout: String::new(),
-            stderr: "failed to resolve Creaton app-data directory for private npm prefix".to_string(),
+            stderr: "failed to resolve Creaton app-data directory for private npm prefix"
+                .to_string(),
             exit_code: None,
             hint: Some(managed_npm_prefix_hint()),
         }));

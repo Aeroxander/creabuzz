@@ -326,7 +326,9 @@ fn normalize_web_origin(value: &str) -> Result<String, String> {
         || parsed.query().is_some()
         || parsed.fragment().is_some()
     {
-        return Err("The web app address must be just a host name (optionally with a port)".to_string());
+        return Err(
+            "The web app address must be just a host name (optionally with a port)".to_string(),
+        );
     }
     Ok(with_scheme)
 }

@@ -669,7 +669,9 @@ pub(crate) fn handle_deep_link_url(app: &tauri::AppHandle, url_str: &str) {
         }
         Some("add-community") => {
             let Some(payload) = parse_add_community_deep_link(&url) else {
-                eprintln!("buzz-desktop: add-community deep link missing/invalid relay: {redacted}");
+                eprintln!(
+                    "buzz-desktop: add-community deep link missing/invalid relay: {redacted}"
+                );
                 return;
             };
             activate_main_window(app);

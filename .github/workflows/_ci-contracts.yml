@@ -30,6 +30,11 @@ jobs:
         run: |
           curl -sSfL https://github.com/foundry-rs/foundry/releases/download/stable/foundry_stable_linux_amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Install the pinned solc
+        # contracts/foundry.toml pins first-party code to a solc newer than some
+        # forge releases know about; this installs it (SHA-256 checked) where
+        # forge looks, and does nothing when it is already there.
+        run: scripts/ensure-solc.sh
       - name: forge build
         working-directory: contracts
         env:

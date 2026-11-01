@@ -101,6 +101,7 @@ jobs:
               - 'contracts/**'
               - '.gitmodules'
               - 'scripts/check-foundry-lock.mjs'
+              - 'scripts/ensure-solc.sh'
               - 'scripts/regen-graduation-artifact.mjs'
               - 'packages/creaton-core/src/launchpad/graduationArtifact*'
               - '.github/workflows/_ci-contracts.yml'
