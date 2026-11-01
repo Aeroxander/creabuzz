@@ -205,7 +205,7 @@ mod tests {
 
     fn sign_attestation(key: &SigningKey, att: &NostrSignerAttestation) -> String {
         let digest = att.digest(&test_domain());
-        let (sig, recid) = key.sign_prehash_recoverable(&digest).unwrap();
+        let (sig, recid) = key.sign_prehash_recoverable(&digest);
         let mut bytes = sig.to_bytes().to_vec();
         bytes.push(if recid.is_y_odd() { 28 } else { 27 });
         hex::encode(bytes)

@@ -2,6 +2,7 @@
 name = "buzz-fleet-worker"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "Always-on sandbox fleet worker: consumes kind:44011 tasks assigned to it, answers via a direct OpenAI-compatible LLM or the relay gateway, and drafts pending kind:37013 contribution records for completed work."
 
 [dependencies]

@@ -166,10 +166,7 @@ impl Wallet {
     /// transactions do not use EIP-155 `v`).
     pub fn sign_eip1559_tx(&self, tx: &Eip1559TxFields<'_>) -> Result<SignedTx, WalletError> {
         let prehash = keccak256(&signing_payload(tx));
-        let (signature, recid) = self
-            .key
-            .sign_prehash_recoverable(prehash.as_slice())
-            .map_err(|e| WalletError::Signing(format!("{e}")))?;
+        let (signature, recid) = self.key.sign_prehash_recoverable(prehash.as_slice());
         let sig_bytes = signature.to_bytes();
         let mut sig = [0u8; 64];
         sig.copy_from_slice(&sig_bytes);
@@ -1125,7 +1122,7 @@ mod tests {
             recid,
         )
         .expect("signature must recover");
-        let point = recovered.to_encoded_point(false);
+        let point = recovered.to_sec1_point(false);
         let digest = keccak256(&point.as_bytes()[1..]);
         let mut addr = [0u8; 20];
         addr.copy_from_slice(&digest[12..]);

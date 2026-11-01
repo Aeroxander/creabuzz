@@ -30,7 +30,7 @@ impl EvmAddress {
     /// Derive the address for a secp256k1 verifying (public) key:
     /// `address = keccak256(uncompressed_pubkey[1..])[12..]`.
     pub fn from_verifying_key(key: &VerifyingKey) -> Self {
-        let point = key.to_encoded_point(false);
+        let point = key.to_sec1_point(false);
         let uncompressed = &point.as_bytes()[1..]; // skip 0x04 tag
         let hash = keccak256(uncompressed);
         let mut addr = [0u8; 20];

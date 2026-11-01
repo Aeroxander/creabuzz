@@ -327,7 +327,7 @@ mod tests {
     }
     fn eoa_sig(msg: &[u8]) -> String {
         let d = personal_sign_digest(msg);
-        let (sig, recid) = key().sign_prehash_recoverable(&d).unwrap();
+        let (sig, recid) = key().sign_prehash_recoverable(&d);
         let mut b = sig.to_bytes().to_vec();
         b.push(if recid.is_y_odd() { 28 } else { 27 });
         hex::encode(b)

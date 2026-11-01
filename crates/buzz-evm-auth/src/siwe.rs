@@ -306,10 +306,9 @@ pub(crate) fn recover_address(
         .map_err(|e| EvmAuthError::InvalidSignature(e.to_string()))?;
 
     // EIP-2: normalize high-S; recovery parity flips when normalization applies.
-    let (sig, y_parity) = match sig.normalize_s() {
-        Some(normalized) => (normalized, !y_parity),
-        None => (sig, y_parity),
-    };
+    let normalized = sig.normalize_s();
+    let y_parity = if normalized == sig { y_parity } else { !y_parity };
+    let sig = normalized;
 
     let recid = RecoveryId::new(y_parity, false);
     let key = VerifyingKey::recover_from_prehash(digest, &sig, recid)
@@ -361,7 +360,7 @@ mod tests {
     /// Sign `msg` as Ethereum `personal_sign`; returns 65-byte hex (v = 27/28).
     fn sign_personal(key: &SigningKey, msg: &[u8]) -> String {
         let digest = personal_sign_digest(msg);
-        let (sig, recid) = key.sign_prehash_recoverable(&digest).unwrap();
+        let (sig, recid) = key.sign_prehash_recoverable(&digest);
         let mut bytes = sig.to_bytes().to_vec();
         bytes.push(if recid.is_y_odd() { 28 } else { 27 });
         hex::encode(bytes)

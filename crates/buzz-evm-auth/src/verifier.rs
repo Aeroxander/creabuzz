@@ -52,7 +52,7 @@ mod tests {
         let message = b"hello creabuzz";
 
         let digest = personal_sign_digest(message);
-        let (sig, recid) = key.sign_prehash_recoverable(&digest).unwrap();
+        let (sig, recid) = key.sign_prehash_recoverable(&digest);
         let mut bytes = sig.to_bytes().to_vec();
         bytes.push(if recid.is_y_odd() { 28 } else { 27 });
         let sig_hex = hex::encode(bytes);

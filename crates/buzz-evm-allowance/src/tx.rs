@@ -80,7 +80,7 @@ pub(crate) fn rlp_scalar(scalar: &[u8]) -> Vec<u8> {
 /// Derive the 20-byte EVM address of a secp256k1 key.
 pub fn address_from_key(key: &SigningKey) -> [u8; 20] {
     let verifying = key.verifying_key();
-    let point = verifying.to_encoded_point(false);
+    let point = verifying.to_sec1_point(false);
     let digest = keccak256(&point.as_bytes()[1..]);
     let mut addr = [0u8; 20];
     addr.copy_from_slice(&digest[12..]);
@@ -146,12 +146,7 @@ fn signing_prehash(tx: &LegacyTxFields<'_>) -> [u8; 32] {
 
 fn sign_tx_fields(key: &SigningKey, tx: &LegacyTxFields<'_>) -> Result<SignedTx, AllowanceError> {
     let prehash = signing_prehash(tx);
-    let (signature, recid) = key
-        .sign_prehash_recoverable(prehash.as_slice())
-        .map_err(|e| AllowanceError::Rpc {
-            method: "eth_sendRawTransaction",
-            detail: format!("signing failed: {e}"),
-        })?;
+    let (signature, recid) = key.sign_prehash_recoverable(prehash.as_slice());
     let sig_bytes = signature.to_bytes();
     let parity = u64::from(recid.is_y_odd());
     let v = 35 + 2 * tx.chain_id + parity;
@@ -259,7 +254,7 @@ mod tests {
             recid,
         )
         .expect("signature must recover");
-        let recovered_point = recovered.to_encoded_point(false);
+        let recovered_point = recovered.to_sec1_point(false);
         let digest = keccak256(&recovered_point.as_bytes()[1..]);
         let mut recovered_addr = [0u8; 20];
         recovered_addr.copy_from_slice(&digest[12..]);
