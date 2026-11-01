@@ -11,7 +11,7 @@ link on the real server, device recovery, and the restore rehearsal ([RESTORE-RE
 
 ## What the job does
 
-One job, `gate`, on `ubuntu-latest`. It is separate from the Web job (`_ci-clients.yml`, called from `ci.yml`: 15 minutes, no database), because the
+One job, `gate`, on `ubuntu-24.04` (Playwright 1.58 has no browsers for `ubuntu-latest`, now Ubuntu 26.04). It is separate from the Web job (`_ci-clients.yml`, called from `ci.yml`: 15 minutes, no database), because the
 gate needs about an hour, databases, a media store, Foundry and browsers.
 
 | When | What it runs | Time limit |

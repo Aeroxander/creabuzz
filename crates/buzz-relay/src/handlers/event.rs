@@ -2057,72 +2057,74 @@ mod tests {
                 .await
                 .unwrap();
         }
-    }
-    /// Defense in depth behind the admission policy: even if a presence event
-    /// reached the ephemeral handler on an anonymous socket, it must not touch
-    /// member presence state. Authenticated presence still works (control).
-    #[tokio::test]
-    #[ignore = "requires Postgres and Redis"]
-    async fn anonymous_flag_keeps_presence_writes_out_of_member_state() {
-        let state = crate::test_support::test_state().await;
-        let host = format!("presence-guard-{}.example", Uuid::new_v4().simple());
-        let community = state
-            .db
-            .ensure_configured_community(&host)
-            .await
-            .expect("community")
-            .id;
-        let tenant = buzz_core::TenantContext::resolved(community, host);
-        let make_conn = || {
-            let (send_tx, _send_rx) = mpsc::channel(8);
-            let (ctrl_tx, _ctrl_rx) = mpsc::channel(1);
-            let cancel = CancellationToken::new();
-            Arc::new(crate::connection::ConnectionState {
-                conn_id: Uuid::new_v4(),
-                tenant: tenant.clone(),
-                remote_addr: "127.0.0.1:1234".parse().expect("socket addr"),
-                auth_state: std::sync::Mutex::new(crate::connection::AuthState::Failed),
-                subscriptions: Arc::new(Mutex::new(HashMap::new())),
-                send_tx,
-                ctrl_tx,
-                terminal_ctrl_tx: tokio::sync::mpsc::channel(1).0,
-                cancel: cancel.clone(),
-                backpressure_count: Arc::new(AtomicU8::new(0)),
-                grace_limit: 3,
-                nip_fi_assertion: None,
-                session_deadline: None,
-                nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(
-                    CancellationToken::new(),
-                ),
-                community_control: crate::state::CommunityConnectionControl::new(cancel.clone()),
-            })
-        };
+        /// Defense in depth behind the admission policy: even if a presence event
+        /// reached the ephemeral handler on an anonymous socket, it must not touch
+        /// member presence state. Authenticated presence still works (control).
+        #[tokio::test]
+        #[ignore = "requires Postgres and Redis"]
+        async fn anonymous_flag_keeps_presence_writes_out_of_member_state() {
+            let state = crate::test_support::test_state().await;
+            let host = format!("presence-guard-{}.example", Uuid::new_v4().simple());
+            let community = state
+                .db
+                .ensure_configured_community(&host)
+                .await
+                .expect("community")
+                .id;
+            let tenant = buzz_core::TenantContext::resolved(community, host);
+            let make_conn = || {
+                let (send_tx, _send_rx) = mpsc::channel(8);
+                let (ctrl_tx, _ctrl_rx) = mpsc::channel(1);
+                let cancel = CancellationToken::new();
+                Arc::new(crate::connection::ConnectionState {
+                    conn_id: Uuid::new_v4(),
+                    tenant: tenant.clone(),
+                    remote_addr: "127.0.0.1:1234".parse().expect("socket addr"),
+                    auth_state: std::sync::Mutex::new(crate::connection::AuthState::Failed),
+                    subscriptions: Arc::new(Mutex::new(HashMap::new())),
+                    send_tx,
+                    ctrl_tx,
+                    terminal_ctrl_tx: tokio::sync::mpsc::channel(1).0,
+                    cancel: cancel.clone(),
+                    backpressure_count: Arc::new(AtomicU8::new(0)),
+                    grace_limit: 3,
+                    nip_fi_assertion: None,
+                    session_deadline: None,
+                    nip_fi_gate: crate::nip_fi_gate::SessionAdmissionGate::off_mode(
+                        CancellationToken::new(),
+                    ),
+                    community_control: crate::state::CommunityConnectionControl::new(
+                        cancel.clone(),
+                    ),
+                })
+            };
 
-        for (anonymous, expected) in [(true, None), (false, Some("online".to_string()))] {
-            let keys = Keys::generate();
-            let event = EventBuilder::new(Kind::Custom(KIND_PRESENCE_UPDATE as u16), "online")
-                .sign_with_keys(&keys)
-                .expect("sign presence");
-            super::handle_ephemeral_event(
-                event,
-                Uuid::new_v4(),
-                keys.public_key().to_bytes().to_vec(),
-                keys.public_key(),
-                anonymous,
-                make_conn(),
-                Arc::clone(&state),
-            )
-            .await
-            .expect("ephemeral handler accepts the event");
-            assert_eq!(
-                state
-                    .pubsub
-                    .get_presence(&tenant, &keys.public_key())
-                    .await
-                    .expect("read presence"),
-                expected,
-                "anonymous={anonymous}"
-            );
+            for (anonymous, expected) in [(true, None), (false, Some("online".to_string()))] {
+                let keys = Keys::generate();
+                let event = EventBuilder::new(Kind::Custom(KIND_PRESENCE_UPDATE as u16), "online")
+                    .sign_with_keys(&keys)
+                    .expect("sign presence");
+                super::super::handle_ephemeral_event(
+                    event,
+                    Uuid::new_v4(),
+                    keys.public_key().to_bytes().to_vec(),
+                    keys.public_key(),
+                    anonymous,
+                    make_conn(),
+                    Arc::clone(&state),
+                )
+                .await
+                .expect("ephemeral handler accepts the event");
+                assert_eq!(
+                    state
+                        .pubsub
+                        .get_presence(&tenant, &keys.public_key())
+                        .await
+                        .expect("read presence"),
+                    expected,
+                    "anonymous={anonymous}"
+                );
+            }
         }
     }
 

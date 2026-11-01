@@ -1045,7 +1045,7 @@ async fn emit_budget_approval_event(
 }
 
 #[cfg(test)]
-mod tests {
+mod postgres_tests {
     use super::*;
 
     /// Build a minimal [`ApplicableLimit`] for the binding tests below.

@@ -813,4 +813,4 @@ mod tests {
 
 #[cfg(test)]
 #[path = "origin_tests.rs"]
-mod origin_tests;
+mod origin_postgres_tests;

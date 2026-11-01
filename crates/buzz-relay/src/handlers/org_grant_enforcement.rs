@@ -287,7 +287,7 @@ pub(crate) async fn validate_org_node_binding(
 }
 
 #[cfg(test)]
-mod tests {
+mod postgres_tests {
     use super::*;
     use buzz_auth::Scope;
     use nostr::{EventBuilder, Keys, Kind, Tag};

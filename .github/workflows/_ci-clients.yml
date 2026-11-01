@@ -25,7 +25,7 @@ env:
 jobs:
   web:
     name: Web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright 1.58 has no browsers for ubuntu-latest (26.04)
     timeout-minutes: 15
     if: inputs.lane == 'required' && (github.event_name == 'push' || inputs.web)
     permissions:

@@ -623,7 +623,7 @@ pub(crate) const fn initial_retry_delay_ms() -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
+mod postgres_tests {
     use super::*;
     use buzz_audit::AuditAction;
     use std::collections::{HashMap, HashSet};

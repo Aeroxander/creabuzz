@@ -73,7 +73,7 @@ env:
 jobs:
   gate:
     name: MVP gate (${{ github.event_name == 'schedule' && 'later' || inputs.set || 'pilot' }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright 1.58 has no browsers for ubuntu-latest (26.04)
     # The pilot set takes about an hour on a laptop with warm caches; cold Rust and web builds add up to half an hour.
     # The later set is longer. A run that reaches this has hung: its logs are still uploaded below.
     timeout-minutes: ${{ (github.event_name == 'schedule' || inputs.set == 'later' || inputs.set == 'all') && 240 || 120 }}

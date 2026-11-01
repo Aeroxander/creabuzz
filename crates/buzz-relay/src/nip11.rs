@@ -545,7 +545,7 @@ const _RELAY_INFO_BUILD_STATIC_INPUT_FENCE: fn(
 ) -> RelayInfo = RelayInfo::build;
 
 #[cfg(test)]
-mod tests {
+mod postgres_tests {
     // Clients attach evidence only when the relay advertises NIP-FI, so a
     // shadow relay must serve enforce's exact document. Mutation: gating on
     // `enforces()` makes shadow serve Off's document → RED.
