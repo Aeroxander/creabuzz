@@ -482,7 +482,7 @@ test("agent-record retry keeps the page and active project tab", async ({
 
 test("the project-first experience fits a phone and preserves readable actions", async ({
   page,
-}) => {
+}, testInfo) => {
   const relay = createMockRelay();
   seed(relay);
   await install(page, relay);
@@ -499,14 +499,14 @@ test("the project-first experience fits a phone and preserves readable actions",
   ).toBe(true);
   await waitForAnimations(page);
   await page.screenshot({
-    path: "/private/tmp/creaton-os-project-phone.png",
+    path: testInfo.outputPath("creaton-os-project-phone.png"),
     fullPage: true,
   });
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.getByTestId("app-nav-start")).toBeVisible();
   await waitForAnimations(page);
   await page.screenshot({
-    path: "/private/tmp/creaton-os-project-desktop.png",
+    path: testInfo.outputPath("creaton-os-project-desktop.png"),
     fullPage: true,
   });
   await page.setViewportSize({ width: 320, height: 740 });
@@ -536,7 +536,7 @@ test("the project-first experience fits a phone and preserves readable actions",
   );
   await waitForAnimations(page);
   await page.screenshot({
-    path: "/private/tmp/creaton-os-project-small-dark.png",
+    path: testInfo.outputPath("creaton-os-project-small-dark.png"),
     fullPage: true,
   });
 });
