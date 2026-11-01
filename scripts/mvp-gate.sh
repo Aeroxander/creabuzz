@@ -36,6 +36,7 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 LOG_DIR="${LOG_DIR:-$(mktemp -d)}"
+mkdir -p "$LOG_DIR"
 # Everything this run makes on disk besides its logs lives under one directory it created, and only that is removed.
 STATE_ROOT="$(mktemp -d)"
 ANVIL_CACHE="$STATE_ROOT/anvil-cache"
