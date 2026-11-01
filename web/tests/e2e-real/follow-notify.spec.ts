@@ -94,6 +94,37 @@ test("following two people within a second keeps both, and both are told", async
       .toBe(0);
 
     const bob = await signedIn(browser, "bob");
+    // What Bob's page sent and heard about his follow list, printed only if the check below fails: which follows went
+    // out, how the server answered each, and any error the page showed.
+    const trace: string[] = [];
+    const started = Date.now();
+    bob.on("websocket", (socket) => {
+      const note = (dir: string, raw: string | Buffer) => {
+        const text = typeof raw === "string" ? raw : raw.toString();
+        if (!/"kind":3[,}]|^\["(OK|AUTH|CLOSED|NOTICE)"/.test(text)) return;
+        let line = text;
+        try {
+          const frame = JSON.parse(text);
+          if (frame[0] === "EVENT" && frame[1]?.kind === 3) {
+            const tags = frame[1].tags as string[][];
+            line = `EVENT kind 3 id=${String(frame[1].id).slice(0, 8)} created_at=${frame[1].created_at} p=[${tags
+              .filter((t) => t[0] === "p")
+              .map((t) => t[1].slice(0, 8))
+              .join(",")}]`;
+          } else if (frame[0] === "AUTH")
+            line = `AUTH ${typeof frame[1] === "string" ? "challenge" : "answer"}`;
+          else if (frame[0] === "OK")
+            line = `OK ${String(frame[1]).slice(0, 8)} ${frame[2]} ${frame[3] ?? ""}`;
+        } catch {
+          // not JSON: keep the raw text
+        }
+        trace.push(
+          `+${Date.now() - started}ms ${dir} ${socket.url().replace(/^wss?:\/\//, "")} ${line}`,
+        );
+      };
+      socket.on("framesent", (f) => note("->", f.payload));
+      socket.on("framereceived", (f) => note("<-", f.payload));
+    });
     await test.step("Bob follows Alice and Dev from Explore, one right after the other", async () => {
       await bob.goto("/social/explore");
       await bob.getByTestId("social-tab-people").click();
@@ -114,16 +145,31 @@ test("following two people within a second keeps both, and both are told", async
     });
 
     await test.step("the server's newest list keeps Carol and has both of them", async () => {
-      await expect
-        .poll(
-          async () =>
-            (await bobsNewestList())?.tags
-              .filter((t) => t[0] === "p")
-              .map((t) => t[1])
-              .sort(),
-          { timeout: 30_000 },
-        )
-        .toEqual([alice, pubkeyOf("carol"), dev].sort());
+      try {
+        await expect
+          .poll(
+            async () =>
+              (await bobsNewestList())?.tags
+                .filter((t) => t[0] === "p")
+                .map((t) => t[1])
+                .sort(),
+            { timeout: 30_000 },
+          )
+          .toEqual([alice, pubkeyOf("carol"), dev].sort());
+      } catch (error) {
+        const toasts = await bob
+          .locator("[data-sonner-toast]")
+          .allTextContents()
+          .catch(() => []);
+        console.log(
+          [
+            `follow trace (alice=${alice.slice(0, 8)} dev=${dev.slice(0, 8)} carol=${pubkeyOf("carol").slice(0, 8)}):`,
+            ...trace,
+            `toasts: ${JSON.stringify(toasts)}`,
+          ].join("\n"),
+        );
+        throw error;
+      }
     });
 
     await test.step("after a reload, Bob's profile counts all three", async () => {
