@@ -14,7 +14,11 @@ The branch `v4-governance-rework` is pushed to the fork (https://github.com/Aero
   only from reviewed work and an award vote.
 - **No desktop or mobile app in the MVP.** The desktop and mobile apps in this repository are not kept level with the web
   app and are not part of any pilot; D9's "desktop and mobile parity after" waits until after the pilots (noted on D9).
-- **No new mechanisms until the pilots have run (D137).** The contracts are frozen; what the pilots find gets fixed.
+- **Contract development continues under D174's lift (D180); nothing is deployed.** The D137 freeze now applies to
+  deployments and activation, not development: award mechanics and the secondary-listing candidate are built and tested
+  on `v5-governance-rework` ([AWARD-MECHANICS-SPEC.md](AWARD-MECHANICS-SPEC.md), [SECONDARY-LISTING-SPEC.md](SECONDARY-LISTING-SPEC.md)),
+  and activation stays gated on the pilots, the audits named there and an explicit release. What the pilots find still
+  gets fixed.
 - **Order of release:** the social run, then a contributor project, then a milestone test on a test network, then the
   audited raise ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md)).
 
