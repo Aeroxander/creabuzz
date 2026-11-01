@@ -140,8 +140,13 @@ test("following two people within a second keeps both, and both are told", async
       await expect(followDev).toBeEnabled();
       await expect(followAlice).toHaveAttribute("aria-pressed", "false");
       await expect(followDev).toHaveAttribute("aria-pressed", "false");
-      // Both clicks go out before the first follow can have reached the server.
-      await Promise.all([followAlice.click(), followDev.click()]);
+      // Both changes are queued before the first can have reached the server. Clicking both at once raced the page
+      // still settling (the first click could land on nothing), so the second click waits only until the first shows
+      // as pending in the page, which happens at once, long before the server answers.
+      await followAlice.click();
+      await expect(followAlice).toHaveAttribute("aria-pressed", "true");
+      await followDev.click();
+      await expect(followDev).toHaveAttribute("aria-pressed", "true");
     });
 
     await test.step("the server's newest list keeps Carol and has both of them", async () => {
