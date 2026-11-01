@@ -26,7 +26,8 @@ jobs:
   web:
     name: Web
     runs-on: ubuntu-24.04 # Playwright 1.58 has no browsers for ubuntu-latest (26.04)
-    timeout-minutes: 15
+    # The mocked smoke suite (about 640 tests) takes about 17 minutes alone, and setup about 2; 15 cut it off.
+    timeout-minutes: 30
     if: inputs.lane == 'required' && (github.event_name == 'push' || inputs.web)
     permissions:
       contents: read
