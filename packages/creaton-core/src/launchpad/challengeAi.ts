@@ -40,7 +40,7 @@ function facts(
   const lines = [
     `The vote: ${context.kind}.`,
     `The project's aim: ${context.aim.trim() || "(not set)"}`,
-    `What the team works on now: ${context.now.length ? context.now.join("; ") : "(not set)"}`,
+    `The team's priorities: ${context.now.length ? context.now.join("; ") : "(not set)"}`,
     context.lastCheck
       ? `The latest check note: what changed: ${context.lastCheck.outside}; what the team changes: ${context.lastCheck.change}`
       : "There is no check note yet.",

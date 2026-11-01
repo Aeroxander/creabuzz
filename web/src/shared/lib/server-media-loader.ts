@@ -18,6 +18,7 @@ import {
   type MediaSignerState,
   type ServerMediaCache,
 } from "@/shared/lib/server-media";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
 
 function signerState(): MediaSignerState {
   if (getUserSigningBlockedReason()) return { blocked: "locked" };
@@ -36,7 +37,10 @@ let cache: ServerMediaCache | null = null;
 export function serverMediaCache(): ServerMediaCache {
   cache ??= createServerMediaCache({
     tokens: createMediaTokenSource({ sign: signAsUser, signerState }),
-    fetch: (url, init) => fetch(url, init),
+    // A picture whose server never answers, or stalls part way through, ends like any other failed read instead of
+    // loading forever: the 30 s deadline covers the picture's bytes as well as the headers.
+    fetch: (url, init) =>
+      timedFetchStreamed(url, { ...init, timeoutMs: 30_000 }),
     createObjectURL: (blob) => URL.createObjectURL(blob),
     revokeObjectURL: (url) => URL.revokeObjectURL(url),
   });

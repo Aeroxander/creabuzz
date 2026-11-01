@@ -5,6 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { installAnvilWallet } from "../helpers/anvil-wallet";
+import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * Weekly rounds (D131) from pages, against a REAL chain: a member who wants out is matched with two people who want in,
@@ -107,7 +108,7 @@ async function pass(seconds: number) {
 const published: { id: string; kind: number }[] = [];
 
 async function open(page: Page, wallet: string, path: string, nsec = NSEC) {
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -445,7 +446,7 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await refresh(founder, "Funds");
   await expect(
     founder.getByTestId("funding").getByTestId("funding-state"),
-  ).toContainText("This project sells no new units.", { timeout: 30_000 });
+  ).toContainText("This project sells no new shares.", { timeout: 30_000 });
   await refresh(founder, "Decisions");
   await founder.getByTestId("decision-new").click();
   await founder.getByTestId("decision-kind-funding").click();
@@ -453,7 +454,7 @@ test("a member who wants out is matched with two who want in, and the treasury k
     .getByTestId("funding-cap-input")
     .fill("100", { timeout: 30_000 });
   await expect(founder.getByTestId("decision-draft-title")).toHaveText(
-    "Set a funding limit of 100 new Loot",
+    "Set a funding limit of 100 new non-voting shares",
   );
   await founder.getByTestId("decision-draft-submit").click();
   await expect(founder.getByTestId("decision-opened")).toBeVisible({
@@ -467,7 +468,7 @@ test("a member who wants out is matched with two who want in, and the treasury k
     { timeout: 30_000 },
   );
   await expect(funding.getByTestId("funding-instrument")).toHaveText(
-    "Buyers get Loot, with no vote",
+    "Buyers get non-voting shares, with no vote",
   );
   // The form's default exit fee: 2%, not charged during the notice.
   await expect(funding.getByTestId("funding-exit-fee")).toHaveText(
@@ -485,7 +486,7 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await founder.getByTestId("funding-price-input").fill("1.65");
   await founder.getByTestId("funding-days-input").fill("60");
   await expect(founder.getByTestId("decision-draft-title")).toHaveText(
-    "Sell up to 40 new units for the project",
+    "Sell up to 40 new shares for the project",
   );
   await founder.getByTestId("decision-draft-submit").click();
   await expect(founder.getByTestId("decision-opened")).toBeVisible({
@@ -497,7 +498,7 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await refresh(buyer, "Funds");
   const buyerFunding = buyer.getByTestId("funding");
   await expect(buyerFunding.getByTestId("funding-state")).toContainText(
-    "On sale for the project: 40 new units at 1.65 USDC each or more",
+    "On sale for the project: 40 new non-voting shares at 1.65 USDC each or more",
     { timeout: 30_000 },
   );
   await expect(
@@ -519,7 +520,7 @@ test("a member who wants out is matched with two who want in, and the treasury k
   );
   await buyerFunding.getByTestId("rounds-bid-submit").click();
   await expect(buyerFunding.getByTestId("rounds-my-bid")).toHaveText(
-    "You bid for 30 new units at up to 1.8 USDC.",
+    "You bid for 30 new non-voting shares at up to 1.8 USDC.",
     { timeout: 60_000 },
   );
   await refresh(second, "Funds");
@@ -529,12 +530,12 @@ test("a member who wants out is matched with two who want in, and the treasury k
   await secondFunding.getByTestId("rounds-bid-price").fill("1.65");
   await secondFunding.getByTestId("rounds-bid-submit").click();
   await expect(secondFunding.getByTestId("rounds-clearing")).toHaveText(
-    "If bidding ended now: 40 new units at 1.65 USDC each.",
+    "If bidding ended now: 40 new non-voting shares at 1.65 USDC each.",
     { timeout: 60_000 },
   );
   // The round holds the whole sale, and it is still on sale until the round settles.
   await expect(secondFunding.getByTestId("funding-state")).toContainText(
-    "On sale for the project: 40 new units at 1.65 USDC each or more",
+    "On sale for the project: 40 new non-voting shares at 1.65 USDC each or more",
   );
   if (process.env.E2E_SHOTS) {
     await secondFunding.screenshot({
@@ -551,9 +552,10 @@ test("a member who wants out is matched with two who want in, and the treasury k
     .click({ timeout: 30_000 });
   await expect(
     buyer.getByTestId("funding").getByTestId("rounds-clearing"),
-  ).toHaveText("40 new units at 1.65 USDC each were sold for the project.", {
-    timeout: 60_000,
-  });
+  ).toHaveText(
+    "40 new non-voting shares at 1.65 USDC each were sold for the project.",
+    { timeout: 60_000 },
+  );
   // Settling created the 40 units and paid the treasury, before anyone collects.
   expect(await usdcOf(dao)).toBe(366n * USD);
   const loot = wordAddress(await call(dao, "0x9b7b2ab0"));

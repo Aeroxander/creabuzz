@@ -3,11 +3,14 @@
  *
  * The account's key is stored on this browser; a passkey set up from the account menu, the wallet dialog or the
  * signing-recovery prompt must gate that key and own the payment account, never derive a new, empty person. The
- * ceremony is the module's dev mock with PRF output, which is the case that used to switch identities.
+ * ceremony runs through navigator.credentials against a software authenticator with PRF output (`fake-webauthn.mjs`),
+ * which is the case that used to switch identities.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
+
+import { installFakeWebAuthn } from "./fake-webauthn.mjs";
 
 const localMap = new Map();
 const sessionMap = new Map();
@@ -39,7 +42,8 @@ Object.defineProperty(globalThis, "window", {
   value: { localStorage: local },
   configurable: true,
 });
-sessionMap.set("buzz.passkey.mock", "1");
+// A software authenticator with PRF output behind the real navigator.credentials path.
+installFakeWebAuthn();
 
 const { getPublicKey } = await import("nostr-tools/pure");
 const identity = await import("../../../shared/lib/identity.ts");

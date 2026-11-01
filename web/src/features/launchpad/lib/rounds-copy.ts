@@ -78,11 +78,30 @@ export function roundStatusLine(
   }
 }
 
+/**
+ * The name of what a round trades. A holders' round moves Shares. A funding round sells whichever kind the DAO's funding
+ * terms give buyers (the round's token): new Shares, which vote, or new non-voting shares (D177). When the DAO's Shares
+ * address is unknown, plain "shares" covers both rather than claiming a vote the buyer may not get.
+ */
+export function roundUnit(
+  round: Pick<RoundView, "funding" | "shares">,
+  daoShares: string | null,
+): "Shares" | "non-voting shares" | "shares" {
+  if (!round.funding) return "Shares";
+  if (!daoShares || !round.shares) return "shares";
+  return round.shares.toLowerCase() === daoShares.toLowerCase()
+    ? "Shares"
+    : "non-voting shares";
+}
+
 /** What the round trades at its price, said plainly: settled, or as it would be if bidding ended now. */
 export function clearingLine(
   round: Pick<RoundView, "phase" | "clearing" | "floor" | "step"> & {
     funding?: boolean;
   },
+  unit: "Shares" | "non-voting shares" | "shares" = round.funding
+    ? "shares"
+    : "Shares",
 ): string {
   const price = round.floor + BigInt(round.clearing.step) * round.step;
   if (round.clearing.volume === 0n) {
@@ -90,8 +109,8 @@ export function clearingLine(
       ? "Nothing traded: everyone takes back theirs."
       : "Nothing would trade yet.";
   }
-  // A funding round creates new units for the project; a holders' round moves Shares that exist.
-  const what = `${shares(round.clearing.volume)} ${round.funding ? "new units" : "Shares"} at ${usdc(price)} each`;
+  // A funding round creates new ones for the project, of the kind `unit` names; a holders' round moves Shares that exist.
+  const what = `${shares(round.clearing.volume)} ${round.funding ? `new ${unit}` : "Shares"} at ${usdc(price)} each`;
   if (round.phase === "settled") {
     return round.funding
       ? `${what} were sold for the project.`
@@ -164,7 +183,7 @@ export function bidPlan(
 // ---- price history and leaving (D147) ----------------------------------------------------------------
 
 /** The round's own floor chip: fixed when the round opened, so it can differ from what leaving pays today. */
-export function floorAtOpeningText(floor: bigint, unit: "Share" | "unit") {
+export function floorAtOpeningText(floor: bigint, unit: "Share" | "share") {
   return `Floor at opening: ${usdc(floor)} a ${unit}`;
 }
 

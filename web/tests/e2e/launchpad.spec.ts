@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { wizardToPublish } from "../helpers/wizard";
 import { getPublicKey } from "nostr-tools/pure";
+import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * The founder is a real identity this time: the Manage tab is founder-only, so a
@@ -131,7 +132,7 @@ let servedTeamLocked = false;
 let servedMilestones: unknown[] = [];
 
 async function mockRelay(page: import("@playwright/test").Page) {
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {

@@ -105,7 +105,7 @@ function TakeOnWork({
     <div className="flex flex-col gap-1.5" data-testid="take-on">
       {inNow ? (
         <span>
-          <Chip tone="success">Now</Chip>
+          <Chip tone="success">Priority</Chip>
         </span>
       ) : null}
       {takers.length > 0 ? (

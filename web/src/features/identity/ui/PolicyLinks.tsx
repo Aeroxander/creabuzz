@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FileText } from "lucide-react";
 
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
 
 import { policyFromResponse } from "../lib/join-policy";
 import { policyLinks } from "../lib/policy-links";
@@ -29,7 +30,9 @@ export function PolicyLinks() {
     staleTime: 5 * 60_000,
     retry: 1,
     queryFn: async ({ signal }) => {
-      const response = await fetch(`${base}/api/join-policy`, { signal });
+      const response = await timedFetchStreamed(`${base}/api/join-policy`, {
+        signal,
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return policyFromResponse(await response.json());
     },

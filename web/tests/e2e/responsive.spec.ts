@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { COMMUNITY_HOST, PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * Narrow-viewport layout (roadmap item A).
@@ -18,7 +19,7 @@ const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
 const directory = {
   communities: [
     {
-      host: "alpha.example.com",
+      host: COMMUNITY_HOST,
       name: "Alpha",
       description: "A test community.",
       icon: null,
@@ -52,7 +53,7 @@ async function boot(page: import("@playwright/test").Page) {
       body: JSON.stringify(directory),
     });
   });
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -72,7 +73,7 @@ async function boot(page: import("@playwright/test").Page) {
       ws.send(JSON.stringify(["EOSE", subId]));
     });
   });
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await expect(page.getByTestId("content-pane")).toBeVisible();
 }
 

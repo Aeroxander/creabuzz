@@ -3,9 +3,19 @@ import test from "node:test";
 
 import { hashText, idWord } from "@creaton/core/launchpad/work.ts";
 import {
+  milestoneClaimNames,
+  milestoneProgress,
+} from "./milestone-progress.ts";
+import {
+  allocateClaimName,
+  CLAIM_CHECK_SUPERSEDED,
+  CLAIM_NAME_UNCHECKED,
+  CLAIM_NAMES_USED_UP,
   claimForDraft,
+  claimSlotEmpty,
   clearSubmission,
   loadSubmission,
+  nameTakenByOther,
   remainingSteps,
   saveSubmission,
   submissionKey,
@@ -158,4 +168,175 @@ test("a submission that could not be kept is reported as not saved, so nothing i
   );
   // No storage at all.
   assert.equal(saveSubmission(K, draft, null), false);
+});
+
+/** A chain that knows some claim names: `isFree` as the row asks it, through the record read. */
+const chainWith = (filed) => {
+  const asked = [];
+  const empty = `0x${"0".repeat(64 * 8)}`;
+  const full = `0x${"0".repeat(24)}${WALLET.slice(2)}${"0".repeat(64 * 7)}`;
+  return {
+    asked,
+    isFree: async (name) => {
+      asked.push(name);
+      return claimSlotEmpty(filed.includes(name) ? full : empty);
+    },
+  };
+};
+
+const memoryStorage = () => {
+  const store = new Map();
+  return {
+    getItem: (k) => store.get(k) ?? null,
+    setItem: (k, v) => store.set(k, v),
+    removeItem: (k) => store.delete(k),
+  };
+};
+
+test("after a rejection, corrected work is filed under a new claim name, not the turned-down one", async () => {
+  const rejected = claim({}, { status: "Rejected", checkHash: CHECK });
+  // The milestone reads as turned down, so a new submission is offered.
+  assert.equal(milestoneProgress(rejected, 0, 0, false).stage, "turned-down");
+  const chain = chainWith(["milestone-1"]);
+  const named = await allocateClaimName(0, ["milestone-1"], chain.isFree);
+  assert.deepEqual(named, { name: "milestone-1-2" });
+  assert.notEqual(idWord(named.name), rejected.id);
+  // The corrected text starts from the top under its own name: nothing reads it as the closed claim.
+  const corrected = {
+    name: named.name,
+    evidence: "https://example.com/alpha-fixed",
+  };
+  assert.equal(claimForDraft([rejected], corrected, WALLET), null);
+  assert.deepEqual(
+    remainingSteps({
+      draft: corrected,
+      claim: null,
+      checkHash: CHECK,
+      published: false,
+    }),
+    { steps: ["file", "check", "bind", "publish"] },
+  );
+});
+
+test("a name the shown claims miss but the chain has (an older claim, or one filed since) is not chosen", async () => {
+  const chain = chainWith(["milestone-1", "milestone-1-2"]);
+  assert.deepEqual(await allocateClaimName(0, [], chain.isFree), {
+    name: "milestone-1-3",
+  });
+  assert.deepEqual(chain.asked, [
+    "milestone-1",
+    "milestone-1-2",
+    "milestone-1-3",
+  ]);
+});
+
+test("a partial submission reloads to the same claim name and continues it, never a new one", async () => {
+  const storage = memoryStorage();
+  const key = submissionKey("0xDAO", WALLET, 0);
+  const named = await allocateClaimName(0, [], chainWith([]).isFree);
+  const saved = { name: named.name, evidence: draft.evidence };
+  assert.equal(saveSubmission(key, saved, storage), true);
+  // The claim was filed, then the tab closed before the rest.
+  const filed = claim({ id: idWord(saved.name) });
+  const reloaded = loadSubmission(key, storage);
+  assert.deepEqual(reloaded, saved);
+  assert.equal(
+    claimForDraft([filed], reloaded, WALLET)?.id,
+    idWord(saved.name),
+  );
+  assert.deepEqual(
+    remainingSteps({
+      draft: reloaded,
+      claim: claimForDraft([filed], reloaded, WALLET),
+      checkHash: CHECK,
+      published: false,
+      nameTaken: nameTakenByOther([filed], reloaded, WALLET),
+    }),
+    { steps: ["check", "bind", "publish"] },
+  );
+});
+
+test("when every name is used, or the network cannot say, nothing is chosen and the reason is given", async () => {
+  const all = milestoneClaimNames(0);
+  const quiet = chainWith([]);
+  assert.deepEqual(await allocateClaimName(0, all, quiet.isFree), {
+    problem: CLAIM_NAMES_USED_UP,
+  });
+  assert.deepEqual(quiet.asked, []);
+  // Shown names miss them, but the chain has all of them: still bounded, still said.
+  const busy = chainWith(all);
+  assert.deepEqual(await allocateClaimName(0, [], busy.isFree), {
+    problem: CLAIM_NAMES_USED_UP,
+  });
+  assert.equal(busy.asked.length, all.length);
+  assert.deepEqual(
+    await allocateClaimName(0, [], async () => {
+      throw new Error("node down");
+    }),
+    { problem: CLAIM_NAME_UNCHECKED },
+  );
+  // A reply too short to be the record is unreadable, never "free".
+  assert.throws(() => claimSlotEmpty("0x"));
+  assert.throws(() => claimSlotEmpty(`0x${"0".repeat(64)}`));
+});
+
+test("a draft whose name someone else filed first says so instead of offering a Continue that is always refused", () => {
+  const theirs = claim({}, { contributor: OTHER });
+  assert.equal(nameTakenByOther([theirs], draft, WALLET), true);
+  assert.equal(nameTakenByOther([claim()], draft, WALLET), false);
+  assert.match(
+    String(
+      remainingSteps({
+        draft,
+        claim: claimForDraft([theirs], draft, WALLET),
+        checkHash: CHECK,
+        published: false,
+        nameTaken: nameTakenByOther([theirs], draft, WALLET),
+      }).problem,
+    ),
+    /Someone else filed a claim under this submission's name/,
+  );
+});
+
+test("a name check that finishes after the wallet changed files nothing under the old wallet", async () => {
+  let current = true;
+  const chain = chainWith([]);
+  const named = await allocateClaimName(
+    0,
+    [],
+    async (name) => {
+      const free = await chain.isFree(name);
+      current = false; // the wallet switched while the network answered
+      return free;
+    },
+    () => current,
+  );
+  assert.deepEqual(named, { problem: CLAIM_CHECK_SUPERSEDED });
+  // Still current: the same check chooses the name as before.
+  assert.deepEqual(
+    await allocateClaimName(0, [], chainWith([]).isFree, () => true),
+    { name: milestoneClaimNames(0)[0] },
+  );
+});
+
+test("problems that end a submission name the Start over button, and running out gives a real next step", () => {
+  for (const problem of [
+    remainingSteps({
+      draft,
+      claim: claim({}, { status: "Rejected" }),
+      checkHash: CHECK,
+      published: false,
+    }).problem,
+    remainingSteps({
+      draft: { ...draft, evidence: "something else" },
+      claim: claim(),
+      checkHash: CHECK,
+      published: false,
+    }).problem,
+  ]) {
+    assert.match(String(problem), /Press Start over/);
+  }
+  assert.doesNotMatch(CLAIM_NAMES_USED_UP, /reviewers/);
+  assert.match(CLAIM_NAMES_USED_UP, /Decisions tab/);
+  assert.match(CLAIM_NAMES_USED_UP, /\b99\b/);
 });

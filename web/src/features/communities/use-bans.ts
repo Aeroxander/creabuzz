@@ -17,6 +17,11 @@ import {
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import {
+  isServerTimeout,
+  SERVER_DID_NOT_ANSWER,
+  timedFetchStreamed,
+} from "@/shared/lib/timed-fetch";
 
 import { existingUserPubkey } from "@/shared/lib/identity";
 
@@ -24,15 +29,21 @@ import { mayRemove } from "./lib/access";
 import { banExpiry, parseBans, parseTimeouts } from "./lib/bans";
 import { useCommunityPeople } from "./use-access";
 
-async function fetchBans() {
+async function fetchBans({ signal }: { signal?: AbortSignal } = {}) {
   const url = `${relayHttpBaseUrl().replace(/\/+$/, "")}/moderation/restricted`;
   const authorization = await makeNip98AuthHeader(url, "GET");
   let response: Response;
   try {
-    response = await fetch(url, { headers: { Authorization: authorization } });
-  } catch {
+    response = await timedFetchStreamed(url, {
+      headers: { Authorization: authorization },
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
     throw new Error(
-      "Could not reach the server. Check your connection and try again.",
+      isServerTimeout(error)
+        ? SERVER_DID_NOT_ANSWER
+        : "Could not reach the server. Check your connection and try again.",
     );
   }
   if (!response.ok) {
@@ -61,7 +72,7 @@ export function useBans(enabled: boolean) {
 }
 
 /**
- * Ban a person for good, or for `secs` seconds. They are signed out at once; the reason is kept for moderators. Throws with the
+ * Ban a person for good, or for `secs` seconds. They are signed out at once, and told the reason and when it ends. Throws with the
  * server's own words when it refuses.
  */
 export async function banPerson(

@@ -14,6 +14,7 @@
 import { signAsUser, existingUserPubkey } from "@/shared/lib/identity";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
 import { queryEvents } from "@/shared/lib/nostr-client";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
 import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
 import { KIND_EVM_BINDING } from "@/shared/constants/kinds";
 import {
@@ -38,6 +39,9 @@ import {
 
 /** Where the binding recorded by a successful registration is kept. */
 const BINDING_KEY = "buzz.siwe.binding";
+
+/** How long wallet registration may take: room for the server's on-chain signature checks. */
+const REGISTRATION_TIMEOUT_MS = 30_000;
 
 /** The wallet bound to this browser's npub, or null when none is recorded. */
 export function readWalletBinding(): WalletBinding | null {
@@ -85,11 +89,14 @@ export async function revokeWalletBinding(): Promise<void> {
   if (publicBinding.state === "verified" || publicBinding.state === "unchecked")
     await removePublicWallet(publicBinding.wallet);
   const proof = await signAsUser(revokeProofTemplate(binding.address));
-  const res = await fetch(`${relayHttpBaseUrl()}/auth/siwe/revoke`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nostr_proof: proof }),
-  });
+  const res = await timedFetchStreamed(
+    `${relayHttpBaseUrl()}/auth/siwe/revoke`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nostr_proof: proof }),
+    },
+  );
   const json = (await res.json().catch(() => ({}))) as { error?: string };
   if (!res.ok) {
     throw new Error(json.error ?? `revoke failed (${res.status})`);
@@ -112,7 +119,7 @@ export function walletAvailable(): boolean {
 }
 
 async function getChallenge(): Promise<SiweLoginChallenge> {
-  const res = await fetch(`${relayHttpBaseUrl()}/auth/siwe/nonce`);
+  const res = await timedFetchStreamed(`${relayHttpBaseUrl()}/auth/siwe/nonce`);
   if (!res.ok) throw new Error("couldn't start wallet sign-in");
   const json = (await res.json()) as {
     nonce?: string;
@@ -252,7 +259,10 @@ export async function signInWithWallet(
     savePendingWalletProof(publicEvent);
   }
 
-  const res = await fetch(registrationUrl, {
+  const res = await timedFetchStreamed(registrationUrl, {
+    // Longer than the default: for a smart account the server checks the signature on chain, up to two calls of
+    // 8 s each (crates/buzz-evm-auth/src/rpc.rs), before it answers.
+    timeoutMs: REGISTRATION_TIMEOUT_MS,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

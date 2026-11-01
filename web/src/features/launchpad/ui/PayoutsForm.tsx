@@ -123,7 +123,7 @@ export function PayoutsForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
         />
       ) : payouts.data ? (
         <TextField
-          hint="Taken from the treasury now and shared by everyone holding Shares or Loot, by how many they hold."
+          hint="Taken from the treasury now and shared by everyone holding Shares or non-voting shares, by how many they hold."
           inputMode="decimal"
           label="Amount to pay out (USDC)"
           onChange={setAmountText}

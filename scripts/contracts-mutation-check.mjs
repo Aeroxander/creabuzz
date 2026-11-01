@@ -75,6 +75,33 @@ const MUTATIONS = [
     "payableAt;",
   ],
   [
+    "zero-amount finish opened to money claims",
+    "contracts/src/ClaimStake.sol",
+    "msg.sender != claim.contributor && claim.amount != 0",
+    "msg.sender != claim.contributor && false",
+  ],
+  [
+    "finished stake paid to the caller",
+    "contracts/src/ClaimStake.sol",
+    "_payOrOwe(claim.contributor, claim.stake);",
+    "_payOrOwe(msg.sender, claim.stake);",
+    "test/FinishStep.t.sol",
+  ],
+  [
+    "award finishes money claims",
+    "contracts/src/TreasuryMandate.sol",
+    "status == ClaimStake.Status.Approved && amount == 0;",
+    "status == ClaimStake.Status.Approved;",
+    "test/FinishStep.t.sol",
+  ],
+  [
+    "award skips the finish (and its window check)",
+    "contracts/src/TreasuryMandate.sol",
+    "if (finish) claims.payout(claimId);",
+    "finish;",
+    "test/FinishStep.t.sol",
+  ],
+  [
     "an upheld late objection burns nothing",
     "contracts/src/MilestoneChallenge.sol",
     "            _clawBack(index);",

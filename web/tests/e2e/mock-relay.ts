@@ -1,9 +1,17 @@
 import type { Page } from "@playwright/test";
 
+/** The preview's port (`playwright.config.ts`): E2E_PORT lets the mocked specs run beside a journey that holds :4173. */
+export const PREVIEW_PORT = process.env.E2E_PORT ?? "4173";
+
+/**
+ * The community the app is connected to in the mocked specs: the build has no saved or baked-in server, so it talks to
+ * the preview's own address (`relayWsUrl()`), and `/c/<this>` is the community whose rooms the mock serves. Any other
+ * host under `/c/` is a different community, shown by its public card.
+ */
+export const COMMUNITY_HOST = `127.0.0.1:${PREVIEW_PORT}`;
+
 /** The preview the specs run against (`playwright.config.ts`): its sockets are this mock. */
-const PREVIEW_ORIGIN = new RegExp(
-  `127\\.0\\.0\\.1:${process.env.E2E_PORT ?? "4173"}`,
-);
+export const PREVIEW_ORIGIN = new RegExp(`127\\.0\\.0\\.1:${PREVIEW_PORT}`);
 
 /**
  * A small in-memory relay for browser tests.

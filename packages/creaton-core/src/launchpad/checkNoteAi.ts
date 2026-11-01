@@ -14,14 +14,16 @@ const SUMMARY_MAX = 600;
 const QUESTION_MAX = 280;
 
 const SYSTEM = [
-  "You help the founder of a small open project write a short check note: what the team expected, what happened, and what changes next.",
+  "You help the founder of a small open project write a short check note: what the team expected, what happened, and what to keep or change next.",
   "Work only from the facts you are given. Never add numbers, people, events or results that are not in them. If something is unknown, say so.",
-  'Never say something was finished, shipped or done unless the facts say so: an expectation answered "partly" or "not yet" was not met, and a Now item is not finished because work in it was.',
+  'Never say something was finished, shipped or done unless the facts say so: an expectation answered "partly" or "not yet" was not met, and a priority is not finished because work in it was.',
   "Do not name or rank individuals, and do not judge anyone's effort. Most problems come from how work is set up, not from the people doing it.",
+  "Separate the supplied observations from explanations and suggestions. A verdict without an observation is not evidence; say what is still unknown. Agreement between AI replies is not independent evidence.",
+  "Keeping the current method or gathering more evidence is a valid choice. Do not invent a process change to complete the note. One slow period or a few turn-down counts do not establish a trend, a cause or a person's performance; do not invent normal ranges or statistical signals. A confirmed defect or safety problem still needs prompt action.",
   "Use plain words, no jargon, no hype.",
   'Reply with JSON only: {"summary": string, "questions": string[]}.',
-  `"summary": at most three sentences (under ${SUMMARY_MAX} characters) saying what happened against what was expected and what the team changes next.`,
-  `"questions": exactly one question per Now item, in the same order, each under ${QUESTION_MAX} characters, that challenges whether the item is still worth doing or what it assumes (for example: what would have to be true for this to work, what argues against keeping it, what else could be done instead).`,
+  `"summary": at most three sentences (under ${SUMMARY_MAX} characters) saying what was observed against what was expected and what the founder chose to keep, change or investigate next.`,
+  `"questions": exactly one question per priority, in the same order, each under ${QUESTION_MAX} characters, that challenges whether the item is still worth doing or what it assumes (for example: what would have to be true for this to work, what argues against keeping it, what else could be done instead).`,
 ].join("\n");
 
 /** The messages for the AI service: the rules, and the facts as text. */
@@ -34,14 +36,16 @@ export function checkDraftPrompt(
   lines.push(
     `What changed for the people the project is for: ${note.outside.trim() || "(the founder has not said yet)"}`,
   );
-  lines.push("Now items:");
+  lines.push("Priorities:");
   note.items.forEach((item, i) => {
     const expected = item.expected
       ? ` Expected: ${item.expected}. Happened: ${item.happened ?? "not answered yet"}.`
       : " No expectation was set.";
     const seen = item.why.trim()
       ? ` What the founder saw: ${item.why.trim()}.`
-      : "";
+      : item.expected && item.happened !== null && item.happened !== "not-yet"
+        ? " Observation supporting the verdict: (not provided; the outcome is not established here)."
+        : "";
     const next = item.next ? ` The founder's choice: ${item.next}.` : "";
     lines.push(`${i + 1}. ${item.text}.${expected}${seen}${next}`);
   });
@@ -49,14 +53,14 @@ export function checkDraftPrompt(
     `Finished since the last note: ${note.finished.length ? note.finished.map((c) => c.title).join(", ") : "nothing"}.`,
   );
   lines.push(
-    `Turned down since the last note: ${note.turnedDown.length}${note.causes.length ? ` (what was missing: ${note.causes.map((c) => `${c.label}, ${c.count}`).join("; ")})` : ""}.`,
+    `Turned down since the last note: ${note.turnedDown.length}${note.causes.length ? ` (reasons reported, not proven causes or trends: ${note.causes.map((c) => `${c.label}, ${c.count}`).join("; ")})` : ""}.`,
   );
   // The count of "taking this on" dates that passed is left out: it counts work finished on time too, so given to the AI
   // it would read as work that never came in.
   if (note.stuck.trim()) lines.push(`Stuck: ${note.stuck.trim()}`);
   if (note.change.trim())
     lines.push(
-      `What the founder plans to change in how the team works: ${note.change.trim()}`,
+      `How the founder plans to work next (keep, change or investigate): ${note.change.trim()}`,
     );
   return { system: SYSTEM, user: lines.join("\n") };
 }

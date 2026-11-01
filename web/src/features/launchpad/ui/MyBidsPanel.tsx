@@ -422,10 +422,10 @@ function MoneyActionDialog({
 
   const title =
     action.mode === "exit"
-      ? `Exit bid #${action.bidId.toString()}`
+      ? `Take back unspent money from bid #${action.bidId.toString()}`
       : action.bidIds.length === 1
-        ? `Claim tokens for bid #${action.bidIds[0].toString()}`
-        : `Claim tokens for ${action.bidIds.length} bids`;
+        ? `Collect tokens for bid #${action.bidIds[0].toString()}`
+        : `Collect tokens for ${action.bidIds.length} bids`;
 
   const run = async (resume?: ReturnType<typeof resumeExitFromState>) => {
     setRunning(true);
@@ -450,7 +450,12 @@ function MoneyActionDialog({
       }
       await runExitFlow(execution, senderFlowDeps(sender), dispatch, resume);
     } catch (err) {
-      toast.error(senderErrorMessage(err, "The action was not sent."));
+      toast.error(
+        senderErrorMessage(
+          err,
+          "Nothing was sent. Press the button again to try once more.",
+        ),
+      );
     } finally {
       setRunning(false);
     }
@@ -466,9 +471,8 @@ function MoneyActionDialog({
       </h2>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
         {action.mode === "exit"
-          ? "Exits the auction contract bid: refunds the unfilled share and records the filled tokens for a later claim."
-          : "Claims the filled tokens to the bid owner after the claim block."}{" "}
-        The chain is the ledger. There is nothing to mirror.
+          ? "Takes back the part of your bid the sale didn't use, and sets aside the tokens it bought for you to collect later."
+          : "Sends the tokens your bid bought to the account that placed it, once the sale's waiting time is over."}
       </p>
       <SenderPickerControls state={picker} testIdPrefix="mybids-" />
       <ol className="mt-3 flex flex-col gap-1">

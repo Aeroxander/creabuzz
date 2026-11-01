@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Board moderation (D93): rules above the posts, pinned threads first, locked threads that take no replies, mutes on
@@ -98,7 +98,7 @@ async function open(
     window.localStorage.setItem("buzz.identity.nsec", nsec);
   }, OWNER_NSEC);
   await page.goto(
-    `/c/alpha.example.com?channel=${BOARD}${postId ? `&post=${postId}` : ""}`,
+    `/c/${COMMUNITY_HOST}?channel=${BOARD}${postId ? `&post=${postId}` : ""}`,
   );
   await page.getByTestId("content-pane").waitFor();
 }

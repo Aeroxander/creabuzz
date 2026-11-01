@@ -134,7 +134,7 @@ export function startPayoutsDecision(input: {
     lane: "unrestricted",
     title: `Pay holders ${percent(input.splitBps)} of revenue`,
     lines: [
-      `Money sent to the project's revenue address is split: ${percent(input.splitBps)} to everyone holding Shares or Loot, by how many they hold, and the rest to the treasury.`,
+      `Money sent to the project's revenue address is split: ${percent(input.splitBps)} to everyone holding Shares or non-voting shares, by how many they hold, and the rest to the treasury.`,
       "Holders count from when they hold, keep what was paid to them after they sell or leave, and collect it themselves.",
       "This can be chosen once. Changing the split later takes a vote and 30 days' notice.",
     ],
@@ -180,7 +180,7 @@ export function declarePayoutDecision(input: {
     lane: "unrestricted",
     title: `Pay holders ${shown} from the treasury`,
     lines: [
-      `${shown} leaves the treasury for everyone holding Shares or Loot now, by how many they hold.`,
+      `${shown} leaves the treasury for everyone holding Shares or non-voting shares now, by how many they hold.`,
       "Leaving pays from what is left: this money cannot be paid twice.",
     ],
   };

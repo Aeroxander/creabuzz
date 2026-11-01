@@ -5,7 +5,7 @@ import {
 } from "@tanstack/react-router";
 
 import { parseStart } from "@/features/start/lib/start-steps";
-import { beyondContributorProjects } from "../lib/build-gates";
+import { notContributorOnlyBuild } from "../lib/build-gates";
 
 export const Route = createFileRoute("/launchpad")({
   // `?start=idea` or `?start=sale` opens that dialog: the Start page links straight to it.
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/launchpad")({
   // the parameter once read, and that navigation would be redirected, closing the dialog.) A project's own page
   // (`/launchpad/<id>`) is another route and keeps working.
   beforeLoad: ({ search }) => {
-    if (!beyondContributorProjects()) {
+    if (!notContributorOnlyBuild()) {
       throw redirect({
         to: "/discover",
         search: (search.start === "idea" ? { start: "idea" } : {}) as never,

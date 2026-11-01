@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * A personal mute applies wherever the reader meets the person (D100): their board posts are left out of the list with
@@ -125,7 +125,7 @@ test("on a board, a muted person's posts are left out with a way to show them, a
   );
   for (const event of [annsPost, bobsPost, bobsReply, annAnswersBob])
     relay.seed(event);
-  await open(page, relay, `/c/alpha.example.com?channel=${BOARD}`);
+  await open(page, relay, `/c/${COMMUNITY_HOST}?channel=${BOARD}`);
 
   const posts = page.getByTestId("board-posts");
   await expect(posts).toContainText("Ann's question");
@@ -159,7 +159,7 @@ test("a muted person's post opened by link says it is from someone you muted", a
   await open(
     page,
     relay,
-    `/c/alpha.example.com?channel=${BOARD}&post=${bobsPost.id}`,
+    `/c/${COMMUNITY_HOST}?channel=${BOARD}&post=${bobsPost.id}`,
   );
   await expect(page.getByTestId("board-thread-muted-author")).toContainText(
     "You muted Bob",
@@ -174,7 +174,7 @@ test("in a room, a muted person's messages fold to one line, and the reader's ow
   relay.seed(rec(BOB, 9, [["h", ROOM]], "Bob shouting", 300));
   relay.seed(rec(ANN, 9, [["h", ROOM]], "Ann talking", 200));
   relay.seed(rec(ME, 9, [["h", ROOM]], "My own words", 100));
-  await open(page, relay, `/c/alpha.example.com?channel=${ROOM}`);
+  await open(page, relay, `/c/${COMMUNITY_HOST}?channel=${ROOM}`);
   await expect(page.getByText("Ann talking")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("My own words")).toBeVisible();
   await expect(page.getByText("Bob shouting")).toHaveCount(0);
@@ -224,7 +224,7 @@ test("what a muted person caused is not in notifications, and is not counted", a
   await expect(items.filter({ hasText: "Bob" })).toHaveCount(0);
 
   // The community's bell leaves Bob's mention out too.
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   const bell = page.getByTestId("notifications-bell");
   await expect(bell).toContainText("1", { timeout: 30_000 });
   await bell.getByRole("button").first().click();

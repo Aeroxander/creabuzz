@@ -1,8 +1,7 @@
-import { BookMarked, GitBranch, WifiOff } from "lucide-react";
+import { BookMarked, GitBranch } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { toast } from "sonner";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
 import { CreatonMark } from "@/shared/ui/CreatonMark";
 import {
@@ -12,6 +11,8 @@ import {
 } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { mockRepos } from "../mock-repos";
 import { useRepos } from "../use-repos";
@@ -85,10 +86,10 @@ function CommunityEmptyState() {
   );
 }
 
-function CommunityConnectionError({ message }: { message: string }) {
+function CommunityConnectionError({ error }: { error: Error }) {
   const queryClient = useQueryClient();
-  const currentRelay = relayWsUrl();
-  const [relayInput, setRelayInput] = useState("");
+  const currentServer = relayWsUrl();
+  const [serverInput, setServerInput] = useState("");
   const [connectError, setConnectError] = useState<string | null>(null);
 
   const retry = () => {
@@ -98,16 +99,18 @@ function CommunityConnectionError({ message }: { message: string }) {
 
   const connect = (event: FormEvent) => {
     event.preventDefault();
-    if (!relayInput.trim()) {
-      setConnectError("Enter a relay URL to connect to.");
+    if (!serverInput.trim()) {
+      setConnectError("Enter your community's server address to connect.");
       return;
     }
     try {
-      const normalized = normalizeRelayWsUrl(relayInput);
+      const normalized = normalizeRelayWsUrl(serverInput);
       setStoredRelayWsUrl(normalized);
       window.location.reload();
     } catch {
-      setConnectError("That doesn't look like a valid relay URL.");
+      setConnectError(
+        "That doesn't look like a server address. It should look like wss://community.example.com.",
+      );
     }
   };
 
@@ -120,51 +123,55 @@ function CommunityConnectionError({ message }: { message: string }) {
         >
           <CreatonMark className="h-full w-full" label="Creaton" />
         </div>
-        <div className="mt-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
-          <WifiOff className="h-5 w-5 text-black/60 dark:text-white/60" />
-        </div>
-        <h1 className="mt-4 text-2xl font-semibold tracking-tight text-black dark:text-white">
-          Couldn't reach the relay
-        </h1>
-        <p className="mt-2 max-w-md text-sm leading-relaxed text-black/60 dark:text-white/60">
-          {message}
-        </p>
-        <p className="mt-4 max-w-md text-xs leading-relaxed text-black/60 dark:text-white/60">
-          The web app is trying to reach{" "}
+        <QueryError
+          description="The server didn't answer when asked for this community's code."
+          error={error}
+          message={errorMessage(error)}
+          onRetry={retry}
+          recovery={(onUnlocked) => (
+            <SignRecovery
+              autoResume
+              onUnlocked={onUnlocked}
+              showHeadline={false}
+            />
+          )}
+          relayUrl={currentServer}
+          testId="repos-load-error"
+          title="Couldn't load this community's code"
+        />
+        <p className="mt-2 max-w-md text-xs leading-relaxed text-black/60 dark:text-white/60">
+          The app is asking{" "}
           <code className="rounded bg-black/10 px-1 py-0.5 dark:bg-white/10">
-            {currentRelay}
+            {currentServer}
           </code>
-          . If that isn't your community's relay, enter its URL to connect.
+          . If that isn't your community's server, enter its address to connect.
         </p>
         <form
           onSubmit={connect}
           className="mt-4 flex w-full max-w-sm flex-col items-stretch gap-2"
         >
-          <label className="sr-only" htmlFor="relay-url">
-            Relay URL
+          <label className="sr-only" htmlFor="server-address">
+            Server address
           </label>
           <Input
-            id="relay-url"
+            id="server-address"
             type="text"
-            placeholder="wss://relay.example.com"
-            value={relayInput}
-            onChange={(e) => setRelayInput(e.target.value)}
+            placeholder="wss://community.example.com"
+            value={serverInput}
+            onChange={(e) => setServerInput(e.target.value)}
+            aria-invalid={connectError ? true : undefined}
+            aria-describedby={connectError ? "server-address-error" : undefined}
             className="border-black/10 bg-white text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
           />
-          <div className="flex gap-2">
-            <Button type="submit" className="flex-1">
-              Connect
-            </Button>
-            <button
-              type="button"
-              onClick={retry}
-              className="flex-1 rounded-md border border-black/15 bg-white px-4 py-2 text-sm font-medium text-black shadow-xs hover:bg-black/5 dark:border-white/15 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
-            >
-              Try again
-            </button>
-          </div>
+          <Button type="submit">Connect</Button>
           {connectError && (
-            <p className="text-xs text-destructive">{connectError}</p>
+            <p
+              id="server-address-error"
+              role="alert"
+              className="text-xs text-destructive"
+            >
+              {connectError}
+            </p>
           )}
         </form>
       </div>
@@ -199,14 +206,6 @@ export function ReposPage() {
     [repos],
   );
   const ownerNames = useUserNames(ownerPubkeys);
-
-  useEffect(() => {
-    if (error) {
-      toast.error("Failed to load repositories", {
-        description: error.message,
-      });
-    }
-  }, [error]);
 
   const filteredRepos = useMemo(() => {
     if (!repos) return [];
@@ -254,7 +253,7 @@ export function ReposPage() {
   }
 
   if (error) {
-    return <CommunityConnectionError message={error.message} />;
+    return <CommunityConnectionError error={error} />;
   }
 
   if (!repos || repos.length === 0) {

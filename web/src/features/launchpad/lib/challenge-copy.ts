@@ -118,7 +118,7 @@ export interface ChallengeGate {
   now: number;
   /**
    * The milestone before this one (null for the first). Milestones go in order, and the next is published only once the one
-   * before has stood, its time for a late objection is over and no vote on it is open: until then the tokens still ahead
+   * before has stood, its time for a late objection is over and no vote on it is open: until then the Shares still ahead
    * stay locked, so a late objection has something to burn.
    */
   previous: Pick<
@@ -151,7 +151,7 @@ export function challengePublishBlock(
   gate: ChallengeGate,
 ): string | null {
   if (gate.block < terms.earliestBlock) {
-    return `Publishing opens when the buyers can claim, at block ${terms.earliestBlock}. The chain is at block ${gate.block}.`;
+    return "Publishing opens once buyers can claim what they bought in the sale. That has not happened yet; it opens on its own, with nothing for the team to do.";
   }
   const before = gate.previous;
   if (before) {
@@ -159,11 +159,11 @@ export function challengePublishBlock(
       return `Milestones go in order: milestone ${index} has to unlock first.`;
     }
     if (before.objection?.open) {
-      return `A vote on an objection to milestone ${index} is still open. Milestone ${index + 1} can be published once it is settled, so that what is still locked stays at stake.`;
+      return `Holders are still voting on an objection to milestone ${index}. Milestone ${index + 1} can be published once that vote is settled.`;
     }
     const opens = before.unlockedAt + terms.clawback;
     if (gate.now < opens) {
-      return `Holders can still object to milestone ${index} until ${deadline(opens)}. Milestone ${index + 1} can be published after that, so that what is still locked stays at stake.`;
+      return `Holders can still object to milestone ${index} until ${deadline(opens)}, and the team's Shares still locked are what an upheld objection would burn. Milestone ${index + 1} can be published after that.`;
     }
   }
   return null;
@@ -238,7 +238,7 @@ function howItStood(m: ChallengeMilestone, terms: ChallengeTerms): string {
   if (!o) return "Nobody objected.";
   if (!o.late) return "A holder objected, but the objection did not stand.";
   return objectionCarries(o, terms.minRejectBps)
-    ? "A holder objected later and holders upheld it: the team's remaining locked tokens were burned."
+    ? "A holder objected later and holders upheld it: the team's remaining locked Shares were burned."
     : "A holder objected later, but the objection did not stand.";
 }
 
@@ -257,7 +257,7 @@ export function challengeHeadline(
     case "waiting":
       return `Published. Holders can object until ${deadline(m.windowEnds)}. If nobody does, it unlocks.`;
     case "ready":
-      return "Nobody objected. Anyone can finish it now, and the tokens unlock.";
+      return "Nobody objected. Anyone can finish it now, and the Shares unlock.";
     case "voting":
       return open
         ? `A holder objected. Holders vote until ${deadline(open.voteEnds)}.`
@@ -265,12 +265,12 @@ export function challengeHeadline(
     case "vote-ended":
       return "The vote has ended. Anyone can settle it.";
     case "unlocked-open":
-      return `Unlocked on ${date(m.unlockedAt)}. ${howItStood(m, terms)} For ${span(m.unlockedAt + terms.clawback - now)} more a holder can raise one more objection; if holders uphold it, the team's remaining locked tokens are burned.`;
+      return `Unlocked on ${date(m.unlockedAt)}. ${howItStood(m, terms)} For ${span(m.unlockedAt + terms.clawback - now)} more a holder can raise one more objection; if holders uphold it, the team's remaining locked Shares are burned.`;
     case "unlocked":
       return `Unlocked on ${date(m.unlockedAt)}. ${howItStood(m, terms)}`;
     case "late-voting":
       return open
-        ? `Unlocked on ${date(m.unlockedAt)}, and a holder has objected to it since. Holders vote until ${deadline(open.voteEnds)}. If it is upheld, the team's remaining locked tokens are burned.`
+        ? `Unlocked on ${date(m.unlockedAt)}, and a holder has objected to it since. Holders vote until ${deadline(open.voteEnds)}. If it is upheld, the team's remaining locked Shares are burned.`
         : `Unlocked on ${date(m.unlockedAt)}, and a holder has objected to it since.`;
     case "late-vote-ended":
       return `The vote on the objection to this unlocked milestone has ended. Anyone can settle it.`;

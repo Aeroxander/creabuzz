@@ -18,6 +18,7 @@ import { useBoundedPoll } from "@/shared/hooks/use-bounded-poll";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { communityHostName, relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { isServerTimeout, timedFetchStreamed } from "@/shared/lib/timed-fetch";
 
 import {
   type ChannelUnread,
@@ -37,11 +38,17 @@ const MAX_PAGES = 5;
 const NONE: ReadonlyMap<string, ChannelUnread> = new Map();
 
 async function fetchBase(): Promise<string | null> {
-  const response = await fetch(`${relayHttpBaseUrl()}/info`, {
+  const response = await timedFetchStreamed(`${relayHttpBaseUrl()}/info`, {
     headers: { Accept: "application/nostr+json" },
   });
   if (!response.ok) return null;
-  return readStateBase(await response.json().catch(() => null));
+  // An unreadable document offers no read state; one that never finished is a failed read, asked again.
+  return readStateBase(
+    await response.json().catch((error: unknown) => {
+      if (isServerTimeout(error)) throw error;
+      return null;
+    }),
+  );
 }
 
 async function signedFetch(
@@ -53,7 +60,7 @@ async function signedFetch(
     init.method,
     init.method === "POST" ? { body: init.body } : undefined,
   );
-  return fetch(url, {
+  return timedFetchStreamed(url, {
     method: init.method,
     headers: {
       Authorization: auth,

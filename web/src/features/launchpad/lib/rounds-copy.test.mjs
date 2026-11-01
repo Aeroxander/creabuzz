@@ -12,6 +12,7 @@ import {
   offerPlanLine,
   roundStatusLine,
   roundsStateLine,
+  roundUnit,
   sellPlan,
 } from "./rounds-copy.ts";
 
@@ -52,6 +53,11 @@ test("a round's status and what it trades", () => {
   assert.equal(
     clearingLine({ ...round, clearing: { ...round.clearing, volume: 0n } }),
     "Nothing would trade yet.",
+  );
+  // A funding round sells new shares for the project, of whichever kind its terms give buyers.
+  assert.equal(
+    clearingLine({ ...round, phase: "settled", funding: true }),
+    "50 new shares at 1.3 USDC each were sold for the project.",
   );
 });
 
@@ -173,4 +179,34 @@ test("the offer form shows what a seller keeps beside what leaving pays", () => 
     "If the round settles there, you keep 1.24 USDC a Share after the treasury's cut. A higher price pays you more; below it, nothing sells. Leaving now pays about 0.98 USDC a Share.",
   );
   assert.doesNotMatch(offerPlanLine(1_240_000n, null), /Leaving/);
+});
+
+test("a funding round names what it sells: new Shares or new non-voting shares, never Shares by default", () => {
+  const SHARES = "0xAAaa000000000000000000000000000000000001";
+  const LOOT = "0xbbbb000000000000000000000000000000000002";
+  assert.equal(roundUnit({ funding: false, shares: SHARES }, SHARES), "Shares");
+  assert.equal(
+    roundUnit({ funding: true, shares: LOOT }, SHARES),
+    "non-voting shares",
+  );
+  assert.equal(
+    roundUnit({ funding: true, shares: SHARES.toLowerCase() }, SHARES),
+    "Shares",
+  );
+  assert.equal(roundUnit({ funding: true, shares: LOOT }, null), "shares");
+  const round = {
+    phase: "settled",
+    funding: true,
+    floor: USD,
+    step: USD / 100n,
+    clearing: { step: 30, volume: 50n * E18, sellersShare: false },
+  };
+  assert.equal(
+    clearingLine(round, roundUnit({ funding: true, shares: LOOT }, SHARES)),
+    "50 new non-voting shares at 1.3 USDC each were sold for the project.",
+  );
+  assert.equal(
+    clearingLine(round, roundUnit({ funding: true, shares: SHARES }, SHARES)),
+    "50 new Shares at 1.3 USDC each were sold for the project.",
+  );
 });

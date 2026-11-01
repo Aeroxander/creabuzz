@@ -1,6 +1,6 @@
 /**
- * The agreement in one glance, on the project's Overview: what the team's locked tokens are released against. Each
- * milestone is listed with the words it is judged by and the tokens it holds back, from the launch record alone (no chain
+ * The agreement in one glance, on the project's Overview: what the team's locked Shares are released against. Each
+ * milestone is listed with the words it is judged by and the Shares it holds back, from the launch record alone (no chain
  * read), and the Milestones tab holds the live story of each one.
  */
 
@@ -39,17 +39,17 @@ export function MilestoneSummaryCard({
   return (
     <Card className="p-4 lg:col-span-2" data-testid="launch-milestone-summary">
       <h2 className="text-base font-semibold">
-        The team&apos;s tokens unlock with{" "}
+        The team&apos;s Shares unlock with{" "}
         {countOf(milestones.length, "milestone")}
       </h2>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        Each milestone unlocks part of the team&apos;s locked tokens when the
+        Each milestone unlocks part of the team&apos;s locked Shares when the
         team shows it was reached and the project&apos;s rule for judging it is
         satisfied. Each milestone is judged by exactly these words.
       </p>
       <p className="mt-1 text-sm" data-testid="launch-milestone-rule">
         {kind === "challenge" && lock
-          ? `How they are judged: holders can object. The team publishes evidence and posts a bond; its tokens unlock after the objection period (${span(lock.terms.window)} to start with, longer for a bigger milestone or a retry) unless holders successfully challenge the claim. Milestones go in order, each only once the one before has had its time for late objections.`
+          ? `How they are judged: holders can object. The team publishes evidence and posts a bond; its Shares unlock after the objection period (${span(lock.terms.window)} to start with, longer for a bigger milestone or a retry) unless holders successfully challenge the claim. Milestones go in order, each only once the one before has had its time for late objections.`
           : kind === "panel"
             ? "How they are judged: named reviewers read the evidence and approve each milestone, and a waiting period follows in which anyone can object."
             : kind === "unreadable"
@@ -69,8 +69,8 @@ export function MilestoneSummaryCard({
             </span>
             <span className="text-xs text-black/60 tabular-nums dark:text-white/60">
               {tokens[index] !== null && tokens[index] !== undefined
-                ? `about ${formatShares(tokens[index] as bigint)} tokens`
-                : `${milestone.percent}% of the locked tokens`}
+                ? `about ${formatShares(tokens[index] as bigint)} Shares`
+                : `${milestone.percent}% of the locked Shares`}
             </span>
           </li>
         ))}

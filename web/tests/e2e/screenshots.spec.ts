@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Screenshot harness for the web client: the desktop equivalent of
@@ -45,7 +45,7 @@ test("the channel view renders a conversation", async ({ page }) => {
   });
   await relay.install(page);
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByText(MESSAGES[0])).toBeVisible({ timeout: 15_000 });
   await page.waitForTimeout(400);
   await page.screenshot({ path: "test-results/web-channel.png" });

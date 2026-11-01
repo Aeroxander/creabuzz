@@ -1,6 +1,7 @@
 /**
- * Confirm a moderation action and, optionally, say why. The reason is public: it goes in the board's moderation log
- * and, for a removed reply, in the note left in its thread. The server's reason is shown if it refuses.
+ * Confirm a moderation action and, optionally, say why. On a board the reason is public: it goes in the board's
+ * moderation log and, for a removed reply, in the note left in its thread. Elsewhere `reasonLabel` says where it goes.
+ * The server's reason is shown if it refuses.
  */
 
 import { useState } from "react";
@@ -16,6 +17,7 @@ export function ReasonDialog({
   description,
   confirmLabel,
   destructive = false,
+  reasonLabel = "Reason (public, optional)",
   testId,
   onConfirm,
   onClose,
@@ -24,6 +26,7 @@ export function ReasonDialog({
   description: string;
   confirmLabel: string;
   destructive?: boolean;
+  reasonLabel?: string;
   testId: string;
   onConfirm: (reason: string) => Promise<unknown>;
   onClose: () => void;
@@ -61,7 +64,7 @@ export function ReasonDialog({
       >
         <div>
           <label className="text-sm font-medium" htmlFor={inputId}>
-            Reason (public, optional)
+            {reasonLabel}
           </label>
           <input
             className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"

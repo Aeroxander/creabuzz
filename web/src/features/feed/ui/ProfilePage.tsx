@@ -15,6 +15,13 @@ import {
   resolveUserSecondaryName,
 } from "@/features/profiles/use-profiles";
 import { tokenize } from "@/features/social/lib/content";
+import {
+  firstError,
+  firstPageError,
+  listView,
+  olderPageError,
+  partialError,
+} from "@/features/social/lib/read-view";
 import { EditProfileDialog } from "@/features/social/ui/EditProfileDialog";
 import { PostList } from "@/features/social/ui/PostList";
 import {
@@ -27,8 +34,12 @@ import {
   ReportPersonButton,
 } from "@/features/social/ui/PersonSafety";
 import { PageBar, SocialShell } from "@/features/social/ui/SocialShell";
-import { EmptyState, TimelineSkeleton } from "@/features/social/ui/Status";
-import { TabStrip } from "@/features/social/ui/TabStrip";
+import {
+  EmptyState,
+  PartialFailure,
+  TimelineSkeleton,
+} from "@/features/social/ui/Status";
+import { TabStrip, tabPanelProps } from "@/features/social/ui/TabStrip";
 import { usePeople } from "@/features/social/use-people";
 import {
   useFollowerCount,
@@ -37,7 +48,10 @@ import {
   useNotesById,
   useTimeline,
 } from "@/features/social/use-social-data";
+import { KIND_REACTION, KIND_TEXT_NOTE } from "@/shared/constants/kinds";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { relayWsUrl } from "@/shared/lib/relay-url";
+import { QueryError } from "@/shared/ui/query-error";
 import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { ServerImage } from "@/shared/ui/ServerImage";
@@ -126,10 +140,31 @@ function AuthorPosts({
     enabled: tab === "posts",
   });
   const rows = timeline.data?.pages.flatMap((p) => p.rows) ?? [];
-  const loading = tab === "posts" ? mixed.isLoading : timeline.isLoading;
-  const empty = tab === "posts" ? mixed.items.length === 0 : rows.length === 0;
-  if (loading) return <TimelineSkeleton />;
-  if (empty) {
+  const error = tab === "posts" ? mixed.error : firstPageError(timeline);
+  const view = listView({
+    count: tab === "posts" ? mixed.items.length : rows.length,
+    error,
+    loading: tab === "posts" ? mixed.isLoading : timeline.isLoading,
+  });
+  const retry = () =>
+    tab === "posts" ? mixed.refetch() : void timeline.refetch();
+  if (view === "loading") return <TimelineSkeleton />;
+  if (view === "error") {
+    return (
+      <div className="p-4">
+        <QueryError
+          description="The server did not answer, so this account's posts can't be shown. They are not known to be empty."
+          error={error}
+          kinds={[KIND_TEXT_NOTE]}
+          onRetry={retry}
+          relayUrl={relayWsUrl()}
+          testId="profile-posts-error"
+          title="Couldn't load posts"
+        />
+      </div>
+    );
+  }
+  if (view === "empty") {
     return (
       <EmptyState testId="profile-posts-list" title="Nothing here yet">
         When this account posts, it shows up here.
@@ -138,17 +173,25 @@ function AuthorPosts({
   }
   return (
     <div data-testid="profile-posts-list">
+      {partialError(view, error) ? (
+        <PartialFailure onRetry={retry} testId="profile-posts-partial-error">
+          Some of this account's posts couldn't be loaded, so this list may not
+          be complete.
+        </PartialFailure>
+      ) : null}
       {tab === "posts" ? (
         <PostList
           boards={mixed.boards}
           hasMore={mixed.hasMore}
           items={mixed.items}
+          loadMoreError={mixed.loadMoreError}
           loadingMore={mixed.loadingMore}
           onLoadMore={mixed.loadMore}
         />
       ) : (
         <PostList
           hasMore={timeline.hasNextPage}
+          loadMoreError={olderPageError(timeline)}
           loadingMore={timeline.isFetchingNextPage}
           onLoadMore={() => {
             if (!timeline.isFetchingNextPage) void timeline.fetchNextPage();
@@ -163,17 +206,50 @@ function AuthorPosts({
 function Likes({ pubkey }: { pubkey: string }) {
   const ids = useLikedIds(pubkey);
   const notes = useNotesById(ids.data ?? []);
-  if (ids.isLoading || (ids.data?.length && notes.isLoading)) {
-    return <TimelineSkeleton />;
+  const error = firstError(ids.error, notes.error);
+  const view = listView({
+    count: notes.data?.length ?? 0,
+    error,
+    loading: ids.isLoading || Boolean(ids.data?.length && notes.isLoading),
+  });
+  const retry = () => {
+    void ids.refetch();
+    if (notes.error) void notes.refetch();
+  };
+  if (view === "loading") return <TimelineSkeleton />;
+  if (view === "error") {
+    return (
+      <div className="p-4">
+        <QueryError
+          description="The server did not answer, so the posts this account voted up can't be shown."
+          error={error}
+          kinds={[KIND_REACTION, KIND_TEXT_NOTE]}
+          onRetry={retry}
+          relayUrl={relayWsUrl()}
+          testId="profile-likes-error"
+          title="Couldn't load upvoted posts"
+        />
+      </div>
+    );
   }
-  if (!notes.data?.length) {
+  if (view === "empty") {
     return (
       <EmptyState title="No upvotes yet">
         Posts this account voted up show up here.
       </EmptyState>
     );
   }
-  return <PostList rows={notes.data} />;
+  return (
+    <>
+      {partialError(view, error) ? (
+        <PartialFailure onRetry={retry} testId="profile-likes-partial-error">
+          Some upvoted posts couldn't be loaded, so this list may not be
+          complete.
+        </PartialFailure>
+      ) : null}
+      <PostList rows={notes.data} />
+    </>
+  );
 }
 
 function Launches({ pubkey }: { pubkey: string }) {
@@ -453,16 +529,24 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
       </div>
 
       <div className="sticky top-12 z-10 border-b border-border/60 bg-background/45 backdrop-blur-xl max-md:top-[5.75rem]">
-        <TabStrip label="Profile" onChange={setTab} tabs={TABS} value={tab} />
+        <TabStrip
+          idBase="profile-tabs"
+          label="Profile"
+          onChange={setTab}
+          tabs={TABS}
+          value={tab}
+        />
       </div>
 
-      {tab === "posts" || tab === "replies" || tab === "media" ? (
-        <AuthorPosts pubkey={pubkey} tab={tab} />
-      ) : tab === "likes" ? (
-        <Likes pubkey={pubkey} />
-      ) : (
-        <Launches pubkey={pubkey} />
-      )}
+      <div {...tabPanelProps("profile-tabs", tab)}>
+        {tab === "posts" || tab === "replies" || tab === "media" ? (
+          <AuthorPosts pubkey={pubkey} tab={tab} />
+        ) : tab === "likes" ? (
+          <Likes pubkey={pubkey} />
+        ) : (
+          <Launches pubkey={pubkey} />
+        )}
+      </div>
 
       {isSelf ? (
         <EditProfileDialog

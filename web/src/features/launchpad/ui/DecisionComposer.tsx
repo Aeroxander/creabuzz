@@ -138,7 +138,7 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
   },
   {
     id: "funding",
-    label: "Sell new units for the project",
+    label: "Sell new shares for the project",
     about:
       "Publish funding terms (what buyers get, and the most the project can ever sell), or open a sale within them. Nothing sells until 30 days after terms are published.",
   },
@@ -146,7 +146,7 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     id: "payouts",
     label: "Pay holders",
     about:
-      "Share revenue with everyone holding Shares or Loot, or pay them from the treasury.",
+      "Share revenue with everyone holding Shares or non-voting shares, or pay them from the treasury.",
   },
   {
     id: "pay",

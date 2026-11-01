@@ -176,7 +176,7 @@ export function FundingDecisionForm({
       case "watch":
       case "accept": {
         const tokens = tokensText
-          .split(/[\s,]+/)
+          .split(/[\s,;]+/)
           .map((t) => t.trim())
           .filter(Boolean);
         return attempt(() =>
@@ -246,20 +246,20 @@ export function FundingDecisionForm({
       {view && !view.published ? (
         <>
           <SelectField
-            hint="Loot shares in the treasury and payouts like a Share, without a vote, so the people doing the work keep the say. This cannot change later."
+            hint="Non-voting shares get the same part of the treasury and payouts as a Share, but no vote, so the people doing the work keep the say. This cannot change later."
             label="What buyers get"
             onChange={(v) => setInstrument(v === "shares" ? "shares" : "loot")}
             options={[
-              { value: "loot", label: "Loot: no vote" },
+              { value: "loot", label: "Non-voting shares: no vote" },
               { value: "shares", label: "Shares: a vote" },
             ]}
             testId="funding-instrument-input"
             value={instrument}
           />
           <TextField
-            hint="New units that may be sold under these terms for now. A later vote can raise it, with another 30 days' notice."
+            hint="How many may be sold under these terms for now. A later vote can raise it, with another 30 days' notice."
             inputMode="decimal"
-            label="Funding limit (new units)"
+            label={`Funding limit (new ${instrument === "shares" ? "Shares" : "non-voting shares"})`}
             onChange={setCapText}
             placeholder="100"
             testId="funding-cap-input"
@@ -288,16 +288,16 @@ export function FundingDecisionForm({
         <>
           <TextField
             inputMode="decimal"
-            label="How many new units"
+            label={`How many new ${view.asShares ? "Shares" : "non-voting shares"}`}
             onChange={setQuantityText}
             placeholder="40"
             testId="funding-quantity-input"
             value={quantityText}
           />
           <TextField
-            hint="Bids set the price above this. Nothing sells below a unit's share of the treasury, plus 2%."
+            hint="Bids set the price above this. Nothing sells below a share's part of the treasury, plus 2%."
             inputMode="decimal"
-            label="Least price a unit (USDC)"
+            label="Least price a share (USDC)"
             onChange={setPriceText}
             placeholder="1.10"
             testId="funding-price-input"
@@ -316,7 +316,7 @@ export function FundingDecisionForm({
         <TextField
           hint={
             chosen === "watch"
-              ? `Sales stop while the treasury holds ETH or any of these, so a price set in USDC never gives buyers part of them for nothing. Any holder can add one too. Now watched: ${view.watched.length === 0 ? "none" : view.watched.join(", ")}.`
+              ? `Sales stop while the treasury holds ETH or any of these, so a price set in USDC never gives buyers part of them for nothing. Any holder can add one too. Already watched: ${view.watched.length === 0 ? "none" : view.watched.join(", ")}.`
               : "Sales go ahead although the treasury holds these, and buyers get part of them without paying for it. Only for tokens worth nothing, or when holders agree to share them."
           }
           label="Token addresses (up to 16)"
@@ -338,7 +338,7 @@ export function FundingDecisionForm({
       {view?.published && (chosen === "raise" || chosen === "lower") ? (
         <TextField
           inputMode="decimal"
-          label="New funding limit (units)"
+          label={`New funding limit (new ${view.asShares ? "Shares" : "non-voting shares"})`}
           onChange={setCapText}
           testId="funding-cap-input"
           value={capText}

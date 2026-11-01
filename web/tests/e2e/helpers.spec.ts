@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * A project's helpers: the seats a template gives them, running one in this
@@ -118,7 +118,7 @@ async function open(
     },
     [OWNER_NSEC, AGENT_NSEC],
   );
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("fleet-toggle").click();
   return prompts;

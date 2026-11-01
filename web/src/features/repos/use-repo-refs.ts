@@ -1,75 +1,53 @@
 import { useQuery } from "@tanstack/react-query";
-import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
-import { relayWsUrl } from "@/shared/lib/relay-url";
-import { dedup } from "./use-repos";
+import { queryEvents } from "@/shared/lib/nostr-client";
+import { relayHttpUrl, relayWsUrl } from "@/shared/lib/relay-url";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
+import {
+  fetchRepoRefsFrom,
+  repoRefsQueryKey,
+  type RepoRefs,
+} from "./lib/repo-refs";
 
-export interface RepoRefs {
-  branches: string[];
-  tags: string[];
-  head: { ref: string; sha: string } | null;
-}
+export type { RepoRefs } from "./lib/repo-refs";
 
-function parseRefs(events: NostrEvent[]): RepoRefs {
-  const latest = dedup(events);
-  const branches: string[] = [];
-  const tags: string[] = [];
-  let head: RepoRefs["head"] = null;
-
-  for (const event of latest) {
-    for (const tag of event.tags) {
-      const [name, value] = tag;
-      if (!name || !value) continue;
-
-      if (name === "HEAD" && value.startsWith("ref: refs/heads/")) {
-        // HEAD points to a branch ref — find its SHA from a matching branch tag
-        const branchName = value.replace("ref: refs/heads/", "");
-        head = { ref: branchName, sha: "" };
-      } else if (name.startsWith("refs/heads/")) {
-        branches.push(name.replace("refs/heads/", ""));
-      } else if (name.startsWith("refs/tags/")) {
-        tags.push(name.replace("refs/tags/", ""));
-      }
-    }
-  }
-
-  // Resolve HEAD SHA from the matching branch
-  if (head) {
-    for (const event of latest) {
-      for (const tag of event.tags) {
-        if (tag[0] === `refs/heads/${head.ref}` && tag[1]) {
-          head = { ref: head.ref, sha: tag[1] };
-          break;
-        }
-      }
-      if (head.sha) break;
-    }
-  }
-
-  return { branches, tags, head };
-}
-
-async function fetchRepoRefs(repoId: string): Promise<RepoRefs> {
-  // TODO: Filter by `authors: [relayPubkey]` once the relay's own pubkey is
-  // exposed to the client. Without this, a user with ReposWrite permission
-  // could publish fake kind:30618 events with spoofed refs.
-  const events = await queryEvents(relayWsUrl(), {
-    kinds: [30618],
-    "#d": [repoId],
+/** The server's public information document; a failed read throws so it is never mistaken for "no key". */
+async function fetchServerInfo(wsUrl: string): Promise<unknown> {
+  const response = await timedFetchStreamed(`${relayHttpUrl(wsUrl)}/info`, {
+    headers: { Accept: "application/nostr+json" },
   });
-  return parseRefs(events);
+  if (!response.ok) {
+    throw new Error(`the server answered ${response.status}`);
+  }
+  return response.json();
 }
 
-export function useRepoRefs(repoId: string, { preview = false } = {}) {
-  const mockRefs: RepoRefs = {
-    branches: ["main"],
-    tags: ["v0.1.0"],
-    head: { ref: "main", sha: "a".repeat(40) },
-  };
+const mockRefs: RepoRefs = {
+  branches: ["main"],
+  tags: ["v0.1.0"],
+  head: { ref: "main", sha: "a".repeat(40) },
+};
 
+/**
+ * Branches, tags and HEAD of a repository, believed only from the record the community's own server signed (see
+ * `lib/repo-refs.ts`). The cache key carries the server address, and the server's key is read from that same address
+ * inside the same fetch, so switching community never reuses the previous community's key or refs.
+ */
+export function useRepoRefs(repoId: string, { preview = false } = {}) {
+  const wsUrl = relayWsUrl();
   return useQuery({
-    queryKey: preview ? ["repo-refs", "mock", repoId] : ["repo-refs", repoId],
-    queryFn: preview ? async () => mockRefs : () => fetchRepoRefs(repoId),
+    queryKey: preview
+      ? ["repo-refs", "mock", repoId]
+      : repoRefsQueryKey(wsUrl, repoId),
+    queryFn: preview
+      ? async () => mockRefs
+      : () =>
+          fetchRepoRefsFrom(wsUrl, repoId, {
+            fetchInfo: fetchServerInfo,
+            queryEvents: (url, filter) => queryEvents(url, filter),
+          }),
     initialData: preview ? mockRefs : undefined,
     staleTime: 60_000,
+    retry: (failures, error) =>
+      error.name !== "RepoSignerUnknownError" && failures < 2,
   });
 }

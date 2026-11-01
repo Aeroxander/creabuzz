@@ -79,5 +79,6 @@ export function useBoardSearch(query: string) {
     add,
     isLoading: found.isLoading || channels.isLoading,
     error: found.error,
+    refetch: () => void found.refetch(),
   };
 }

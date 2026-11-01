@@ -3,7 +3,7 @@ import { getPublicKey, verifyEvent } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll, PHONE } from "../helpers/layout";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Reporting a message or a post to the community's moderators. The server's own checks (the target must exist in this
@@ -85,7 +85,7 @@ async function openChat(
 ) {
   await relay.install(page);
   await signIn(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   if (phone) await page.getByTestId("open-channel-list").click();
   await page.getByTestId("channel-general").click();
@@ -219,7 +219,7 @@ test("every signed read carries its own nonce, so the moderator check and the qu
   });
   await relay.install(page);
   await signIn(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("moderation-toggle").click({ timeout: 20_000 });
   await expect.poll(() => seen.length).toBeGreaterThanOrEqual(2);
 
@@ -266,7 +266,7 @@ test("the moderation queue names the person who reported, not their key", async 
   });
   await relay.install(page);
   await signIn(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("moderation-toggle").click({ timeout: 20_000 });
   const row = page.getByTestId("moderation-report-row");
   await expect(row).toContainText("Reported by Alice Reyes");
@@ -540,7 +540,7 @@ test("a member's sidebar is rooms, boards and messages; whoever runs the communi
 
   // A member: the server refuses the moderator check, and none of them is offered.
   const refused = page.waitForResponse("**/moderation/reports*");
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await refused;
   await expect(page.getByTestId("dms-toggle")).toBeVisible({ timeout: 20_000 });
   await page.waitForTimeout(500);
@@ -557,7 +557,7 @@ test("a member's sidebar is rooms, boards and messages; whoever runs the communi
   await expect(page.getByTestId("org-budgets-section")).toHaveCount(0);
   await expectAccessible(page, "people, member");
   // A link still opens one of those pages for them.
-  await page.goto("/c/alpha.example.com?view=wiki");
+  await page.goto(`/c/${COMMUNITY_HOST}?view=wiki`);
   await expect(page.getByTestId("wiki-page-list")).toBeVisible({
     timeout: 20_000,
   });
@@ -565,7 +565,7 @@ test("a member's sidebar is rooms, boards and messages; whoever runs the communi
   // Someone who moderates here sees the pages that run it; setting it up stays with an owner or admin, which the member
   // list does not say this moderator is.
   moderator = true;
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   for (const testId of [
     ...runOnly.filter((id) => id !== "start-project-toggle"),
     "moderation-toggle",
@@ -574,4 +574,276 @@ test("a member's sidebar is rooms, boards and messages; whoever runs the communi
     await expect(page.getByTestId(testId)).toBeVisible({ timeout: 20_000 });
   }
   await expect(page.getByTestId("start-project-toggle")).toHaveCount(0);
+});
+
+const ADMIN = "https://admin.test";
+
+/** A community queue read answered with one report about Alice's message, in the status given. */
+async function serveQueue(page: Page, status: string) {
+  await page.route("**/moderation/reports*", async (route) => {
+    await route.fulfill({
+      json: [
+        {
+          id: "q1",
+          report_event_id: "f".repeat(64),
+          reporter_pubkey: ALICE,
+          target_kind: "event",
+          target: THEIR_MESSAGE,
+          channel_id: CHANNEL_ID,
+          report_type: "spam",
+          status,
+          created_at: "2026-10-13T10:00:00Z",
+        },
+      ],
+    });
+  });
+}
+
+/**
+ * The server's admin API, which the real server answers only for the people who run it: the info document says where
+ * it is, and `operator` says whether the probe accepts this person. Every request is kept, with its parsed body.
+ */
+async function serveAdmin(
+  page: Page,
+  operator: boolean,
+  { dealtWith = false }: { dealtWith?: boolean } = {},
+) {
+  const asked: { method: string; path: string; body: unknown; auth: string }[] =
+    [];
+  let escalated = true;
+  await page.route("**/info", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/nostr+json",
+      body: JSON.stringify({ name: "Mock server", admin_api: ADMIN }),
+    });
+  });
+  await page.route(`${ADMIN}/**`, async (route) => {
+    const request = route.request();
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "*",
+      "Access-Control-Allow-Methods": "GET, POST",
+    };
+    if (request.method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: cors });
+      return;
+    }
+    const path = new URL(request.url()).pathname.replace("/api/admin/v1", "");
+    if (path === "/reports/r1/resolve") escalated = false;
+    asked.push({
+      method: request.method(),
+      path,
+      body: request.postData() ? JSON.parse(request.postData() ?? "") : null,
+      auth: request.headers().authorization ?? "",
+    });
+    if (dealtWith && path === "/reports/r1/reopen") {
+      // Someone else dealt with it after the list was read: no longer escalated, so the fenced reopen is refused.
+      escalated = false;
+      await route.fulfill({
+        status: 409,
+        headers: cors,
+        json: {
+          error: {
+            code: "conflict",
+            message:
+              "report is not reopenable (current status: dismissed, expected: escalated)",
+          },
+        },
+      });
+      return;
+    }
+    if (!operator) {
+      await route.fulfill({
+        status: 403,
+        headers: cors,
+        json: {
+          error: { code: "forbidden", message: "request is not authorized" },
+        },
+      });
+      return;
+    }
+    const json =
+      path === "/probe"
+        ? {
+            status: "ok",
+            authMode: "nip98",
+            role: "operator",
+            source: "config",
+            canAct: true,
+            canStaff: true,
+          }
+        : path === "/reports"
+          ? escalated
+            ? [
+                {
+                  id: "r1",
+                  communityId: "c1",
+                  communityHost: "alpha.example.com",
+                  reportEventId: "f".repeat(64),
+                  reporterPubkey: ALICE,
+                  targetKind: "event",
+                  target: THEIR_MESSAGE,
+                  targetAuthorPubkey: ALICE,
+                  channelId: CHANNEL_ID,
+                  reportType: "spam",
+                  note: "a scam link",
+                  status: "escalated",
+                  resolvedBy: ME,
+                  resolvedAt: "2026-10-30T09:00:00Z",
+                  actionId: null,
+                  createdAt: "2026-10-29T09:00:00Z",
+                },
+              ]
+            : []
+          : path === "/reports/r1"
+            ? { message: { content: "Buy my coin at example dot com" } }
+            : path === "/reports/r1/resolve"
+              ? { status: "resolved", activeAction: null }
+              : { status: "open" };
+    await route.fulfill({ headers: cors, json });
+  });
+  return asked;
+}
+
+test("a report sent on to the server's owner says so, and that they have not acted yet", async ({
+  page,
+}) => {
+  const relay = chatRelay();
+  await serveQueue(page, "escalated");
+  await relay.install(page);
+  await signIn(page);
+  await page.goto(`/c/${COMMUNITY_HOST}`);
+  await page.getByTestId("moderation-toggle").click({ timeout: 20_000 });
+  const row = page.getByTestId("moderation-report-row");
+  await expect(row.getByTestId("moderation-report-escalated")).toHaveText(
+    "Sent to the server’s owner. They haven’t acted on it yet.",
+  );
+});
+
+test("an open report offers to send it to the server's owner, in those words", async ({
+  page,
+}) => {
+  const relay = chatRelay();
+  await serveQueue(page, "open");
+  await relay.install(page);
+  await signIn(page);
+  await page.goto(`/c/${COMMUNITY_HOST}`);
+  await page.getByTestId("moderation-toggle").click({ timeout: 20_000 });
+  await expect(page.getByTestId("moderation-escalate")).toHaveText(
+    "Send to the server’s owner",
+  );
+});
+
+test("the server's owner sees each escalated report, who sent it, the community and the post, and removes it", async ({
+  page,
+}) => {
+  const relay = chatRelay();
+  relay.seed({
+    id: "alice-profile",
+    pubkey: ALICE,
+    kind: 0,
+    created_at: now() - 3600,
+    tags: [],
+    content: JSON.stringify({ name: "Alice Reyes" }),
+    sig: "sig",
+  });
+  await serveQueue(page, "open");
+  await relay.install(page);
+  const asked = await serveAdmin(page, true);
+  await signIn(page);
+  await page.goto(`/c/${COMMUNITY_HOST}`);
+  await page.getByTestId("moderation-toggle").click({ timeout: 20_000 });
+
+  const list = page.getByTestId("escalated-reports");
+  const row = list.getByTestId("escalated-report-row");
+  await expect(row).toContainText("Spam · about a message or board post");
+  await expect(row.getByTestId("escalated-report-community")).toContainText(
+    "In alpha.example.com · sent on",
+  );
+  await expect(row.getByTestId("escalated-report-words")).toContainText(
+    "Buy my coin at example dot com",
+  );
+  await expect(row.getByTestId("escalated-report-reporter")).toHaveText(
+    "Reported by Alice Reyes",
+  );
+  await expect(row).toContainText("Why: “a scam link”");
+  // Only escalated reports are read, and every read is signed by this person.
+  const read = asked.find((r) => r.path === "/reports");
+  expect(read?.auth.startsWith("Nostr ")).toBe(true);
+  await expectAccessible(page, "the escalated reports list");
+
+  await row.getByTestId("escalated-delete").click();
+  const dialog = page.getByTestId("escalated-delete-dialog");
+  await dialog.getByRole("textbox").fill("Scam link");
+  await dialog.getByRole("button", { name: "Remove" }).click();
+  await expect(row.getByTestId("escalated-report-done")).toHaveText(
+    "Removed, and the report closed.",
+  );
+  // The admin API resolves open reports only: reopen, then remove with a retry key and the reason.
+  const writes = asked.filter((r) => r.method === "POST");
+  expect(writes.map((r) => r.path)).toEqual([
+    "/reports/r1/reopen",
+    "/reports/r1/resolve",
+  ]);
+  // Reopened only while it is still escalated, so a report someone else has dealt with is never reopened.
+  expect(writes[0].body).toMatchObject({ expectStatus: "escalated" });
+  expect(writes[1].body).toMatchObject({
+    action: "delete",
+    reason: "Scam link",
+  });
+  expect(typeof (writes[1].body as { requestId?: unknown }).requestId).toBe(
+    "string",
+  );
+});
+
+test("an escalated report someone else has dealt with since the list was read is not acted on again", async ({
+  page,
+}) => {
+  const relay = chatRelay();
+  await serveQueue(page, "open");
+  await relay.install(page);
+  const asked = await serveAdmin(page, true, { dealtWith: true });
+  await signIn(page);
+  await page.goto(`/c/${COMMUNITY_HOST}`);
+  await page.getByTestId("moderation-toggle").click({ timeout: 20_000 });
+
+  const row = page
+    .getByTestId("escalated-reports")
+    .getByTestId("escalated-report-row");
+  await row.getByTestId("escalated-delete").click();
+  const dialog = page.getByTestId("escalated-delete-dialog");
+  await expect(page.getByRole("dialog")).toContainText(
+    "Your reason is kept in the server’s records.",
+  );
+  await expect(dialog).toContainText("Reason (optional)");
+  await dialog.getByRole("button", { name: "Remove" }).click();
+  await expect(row.getByTestId("escalated-report-done")).toHaveText(
+    "Someone has already dealt with this report.",
+  );
+  await expect(row.getByTestId("escalated-delete")).toHaveCount(0);
+  // The refused reopen is the only write: nothing is resolved, and the list is read again.
+  await expect
+    .poll(() => asked.filter((r) => r.path === "/reports").length)
+    .toBeGreaterThan(1);
+  const writes = asked.filter((r) => r.method === "POST");
+  expect(writes.map((r) => r.path)).toEqual(["/reports/r1/reopen"]);
+});
+
+test("someone the server does not accept as one of the people who run it never sees escalated reports", async ({
+  page,
+}) => {
+  const relay = chatRelay();
+  await serveQueue(page, "open");
+  await relay.install(page);
+  const asked = await serveAdmin(page, false);
+  await signIn(page);
+  await page.goto(`/c/${COMMUNITY_HOST}`);
+  await page.getByTestId("moderation-toggle").click({ timeout: 20_000 });
+  await expect(page.getByTestId("moderation-report-row")).toBeVisible();
+  await expect.poll(() => asked.map((r) => r.path)).toContain("/probe");
+  await page.waitForTimeout(500);
+  await expect(page.getByTestId("escalated-reports")).toHaveCount(0);
+  // Refused at the probe: no report list is ever asked for.
+  expect(asked.map((r) => r.path)).toEqual(["/probe"]);
 });

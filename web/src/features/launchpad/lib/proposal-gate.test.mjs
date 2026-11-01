@@ -10,6 +10,7 @@ import {
   cannotOpenLine,
   mayOfferVote,
   openVoteFor,
+  unreadableVoteNote,
   whoMayOpen,
 } from "./proposal-gate.ts";
 
@@ -138,4 +139,34 @@ test("someone who cannot open a decision is told how many Shares it takes and ho
     null,
   );
   assert.equal(cannotOpenLine(undefined), null);
+});
+
+test("a live vote to approve a work area whose call cannot be read stays unmatched, and the page is told so", () => {
+  const area = {
+    projectId: idWord("garden-guide"),
+    checkHash: hashText("a two-page guide"),
+  };
+  const good = approve("garden-guide", "a two-page guide");
+  // The approve call's selector with its arguments cut short.
+  const cut = good.slice(0, 10 + 64);
+  const decisions = [
+    { id: "0xcut", state: "Active", action: { data: cut } },
+    { id: "0xold", state: "Executed", action: { data: cut } },
+  ];
+  assert.equal(openVoteFor(decisions, area), null);
+  assert.match(unreadableVoteNote(decisions) ?? "", /^One open vote/);
+  assert.match(
+    unreadableVoteNote([...decisions, { ...decisions[0], id: "0xcut2" }]) ?? "",
+    /^2 open votes/,
+  );
+  // Readable ones, closed ones and other kinds of vote are not counted.
+  assert.equal(
+    unreadableVoteNote([
+      { id: "0xok", state: "Active", action: { data: good } },
+      { id: "0xold", state: "Defeated", action: { data: cut } },
+      { id: "0xelse", state: "Active", action: { data: "0xdeadbeef" } },
+      { id: "0xnone", state: "Active", action: null },
+    ]),
+    null,
+  );
 });

@@ -35,6 +35,7 @@ import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { parseOwnershipGrant, type OwnershipGrant } from "./lib/grant";
 import { parseJoinRequest, type JoinRequest } from "./lib/join-request";
+import { GENERIC_REFUSAL } from "./lib/request-answer-copy";
 import {
   buildPitchTemplate,
   parsePitch,
@@ -217,10 +218,7 @@ interface EventTemplate {
 
 /** Sign a template with the durable identity and publish it over the relay. */
 async function publishTemplate(template: EventTemplate): Promise<NostrEvent> {
-  const signed = await publishAsUser(
-    template,
-    "The server rejected this event.",
-  );
+  const signed = await publishAsUser(template, GENERIC_REFUSAL);
   return signed;
 }
 

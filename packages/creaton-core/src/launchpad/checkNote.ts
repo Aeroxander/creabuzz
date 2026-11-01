@@ -8,7 +8,7 @@
  * turn-downs by cause, and how many "taking this on" dates passed (a count, never names; it says nothing about whether the
  * work came in, since a date passes the same way when the work was finished on time). The founder writes what
  * changed for the people the project serves, whether each expectation happened, keep / change / drop for each Now
- * item, and one thing the team changes in how it works.
+ * item, and what the team keeps or changes in how it works, with its reason.
  *
  * Pure: inputs in, a draft, a record or a reading out, driven by `checkNote.test.mjs`.
  */
@@ -69,7 +69,7 @@ export interface CheckNote {
    * counts too, so this is never a count of work that did not come in.
    */
   lapsed: number;
-  /** The one thing the team changes in how it works. */
+  /** How the team will work next: what it keeps or changes, and why. The field name preserves older records. */
   change: string;
   /** A short summary, optional; it may start as an AI draft the founder has to read and accept or edit. */
   summary: string;
@@ -185,6 +185,13 @@ export function checkNoteProblem(note: CheckNote): string | null {
   for (const item of note.items) {
     if (item.expected && item.happened === null)
       return `Say whether "${item.expected}" happened.`;
+    if (
+      item.expected &&
+      item.happened !== null &&
+      item.happened !== "not-yet" &&
+      item.why.trim() === ""
+    )
+      return `Say what you observed for "${item.text}", or choose "Not yet" if it has not been checked.`;
     if (item.next === null)
       return `Choose keep, change or drop for "${item.text}".`;
     if (item.next === "change" && item.becomes.trim() === "")
@@ -195,9 +202,9 @@ export function checkNoteProblem(note: CheckNote): string | null {
       return `Keep each answer under ${LINE_MAX} characters.`;
   }
   if (note.change.trim() === "")
-    return "Name one thing the team changes in how it works. Look at what was missing when work was turned down.";
+    return "Say what to keep or change in how the team works, and why.";
   if ([...note.change.trim()].length > TEXT_MAX)
-    return `Keep the change under ${TEXT_MAX} characters.`;
+    return `Keep the plan for how the team works under ${TEXT_MAX} characters.`;
   if ([...note.summary.trim()].length > TEXT_MAX)
     return `Keep the summary under ${TEXT_MAX} characters.`;
   if ([...note.stuck.trim()].length > TEXT_MAX)
@@ -248,7 +255,7 @@ function checkNoteBody(note: CheckNote): string {
       `${note.lapsed} "taking this on" date${note.lapsed === 1 ? "" : "s"} passed.`,
     );
   if (note.stuck.trim()) lines.push(`Stuck: ${note.stuck.trim()}`);
-  lines.push(`What we change in how we work: ${note.change.trim()}`);
+  lines.push(`How we work next: ${note.change.trim()}`);
   if (note.summary.trim()) lines.unshift(note.summary.trim());
   return lines.join("\n");
 }

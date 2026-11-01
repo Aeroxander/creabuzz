@@ -2,7 +2,7 @@ import { expect, type Page, type Route, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Unread rooms and boards (D101), from the server's read-state API: counts on the rooms and boards that are not open,
@@ -220,7 +220,7 @@ async function open(
     window.localStorage.setItem("buzz.identity.backedUp", "1");
   }, NSEC);
   await page.goto(
-    `/c/alpha.example.com${channel ? `?channel=${channel}` : ""}`,
+    `/c/${COMMUNITY_HOST}${channel ? `?channel=${channel}` : ""}`,
   );
   await page.getByTestId("content-pane").waitFor();
 }

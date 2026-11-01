@@ -34,6 +34,7 @@ import {
   SenderPickerControls,
   useSenderPicker,
 } from "./SenderPicker";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
 
 function shortHex(value: string): string {
   return value.length > 12 ? `${value.slice(0, 10)}…` : value;
@@ -74,9 +75,11 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
 
   const bundle = useQuery({
     queryKey: ["trust-bundle", selected?.id ?? ""],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!selected?.indexerUrl) return null;
-      const response = await fetch(selected.indexerUrl);
+      const response = await timedFetchStreamed(selected.indexerUrl, {
+        signal,
+      });
       const body: unknown = await response.json();
       const proofs =
         body !== null && typeof body === "object"

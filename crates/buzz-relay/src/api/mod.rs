@@ -327,10 +327,9 @@ pub mod relay_members {
         .await
         {
             crate::handlers::auth::BanOutcome::Clear => Ok(()),
-            crate::handlers::auth::BanOutcome::Banned => Err(super::api_error(
-                StatusCode::FORBIDDEN,
-                "blocked: you are banned from this community",
-            )),
+            crate::handlers::auth::BanOutcome::Banned(refusal) => {
+                Err(super::api_error(StatusCode::FORBIDDEN, &refusal))
+            }
             crate::handlers::auth::BanOutcome::DbError => Err(super::api_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "error: internal error checking restriction state",

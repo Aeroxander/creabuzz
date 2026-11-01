@@ -28,6 +28,7 @@ import { useMediaQuery } from "@/shared/hooks/use-media-query";
 import { Button } from "@/shared/ui/button";
 import { CreatonMark } from "@/shared/ui/CreatonMark";
 
+import { communityBadge } from "./nav-badge";
 import { TestnetChip, TestnetStrip } from "./TestnetTag";
 
 // Notifications and Messages in the top bar: their reads load with them, after the page.
@@ -58,6 +59,8 @@ interface NavItem {
   host?: string;
   /** Something new behind this section, counted (the community bell's unread notifications). */
   badge?: number;
+  /** The check for something new failed with nothing read: marked, not shown as nothing new. */
+  badgeFailed?: boolean;
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
@@ -108,6 +111,7 @@ const START_TAB: NavItem = {
 function navItems(community: {
   host: string | null;
   unread: number;
+  failed: boolean;
 }): readonly NavItem[] {
   const raises = raisesOffered();
   return NAV_ITEMS.flatMap((item) => {
@@ -117,6 +121,7 @@ function navItems(community: {
           ...item,
           host: community.host ?? undefined,
           badge: community.unread,
+          badgeFailed: community.failed,
         },
       ];
     }
@@ -129,12 +134,17 @@ function navItems(community: {
 /**
  * What the Communities section needs: the one community to go straight into, when there is only one, and the count of
  * the community's unread notifications (mentions, a moderator's notice about your words), which otherwise only show
- * on the bell inside it.
+ * on the bell inside it. A check that failed with nothing read is `failed`, marked on the item instead of no count.
  */
-function useCommunitiesSection(): { host: string | null; unread: number } {
+function useCommunitiesSection(): {
+  host: string | null;
+  unread: number;
+  failed: boolean;
+} {
   const selfServe = useSelfServe();
   const directory = useCommunities();
-  const { unread } = useNotifications();
+  const { view, unread } = useNotifications();
+  const badge = communityBadge({ view, unread });
   let host: string | null = null;
   try {
     host = onlyCommunityHost(
@@ -145,7 +155,7 @@ function useCommunitiesSection(): { host: string | null; unread: number } {
   } catch {
     host = null;
   }
-  return { host, unread };
+  return { host, unread: badge.count, failed: badge.failed };
 }
 
 /** The test id of a section's link: by its address, so a build that renames a section keeps it. */
@@ -291,7 +301,18 @@ function NavLink({
   const target = item.host
     ? ({ to: "/c/$host", params: { host: item.host } } as const)
     : ({ to: item.to } as const);
-  const badge = item.badge ? (
+  const badge = item.badgeFailed ? (
+    <>
+      <span
+        aria-hidden
+        className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-3xs font-bold text-black"
+        data-testid={`${navTestId(item)}-badge-failed`}
+      >
+        !
+      </span>
+      <span className="sr-only">, couldn't check for new notifications</span>
+    </>
+  ) : item.badge ? (
     <>
       <span
         aria-hidden
@@ -314,7 +335,7 @@ function NavLink({
           active
             ? "text-foreground after:absolute after:inset-x-2.5 after:-bottom-[13px] after:h-[3px] after:rounded-full after:bg-primary"
             : "text-foreground/65 hover:bg-foreground/[0.06] hover:text-foreground"
-        } ${item.badge ? "pr-5 lg:pr-5" : ""}`}
+        } ${item.badge || item.badgeFailed ? "pr-5 lg:pr-5" : ""}`}
         data-testid={navTestId(item)}
       >
         {item.label}

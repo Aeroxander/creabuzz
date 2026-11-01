@@ -168,7 +168,7 @@ export function BidForm({
       <div className="flex flex-wrap items-end gap-2">
         <Field
           id={`${formId}-amount`}
-          label={funding ? "New units to buy" : "Shares to buy"}
+          label={funding ? "New shares to buy" : "Shares to buy"}
           onChange={setAmountText}
           placeholder="30"
           testId="rounds-bid-amount"
@@ -178,7 +178,7 @@ export function BidForm({
           id={`${formId}-price`}
           label={
             funding
-              ? "Highest price a unit (USDC)"
+              ? "Highest price a share (USDC)"
               : "Highest price a Share (USDC)"
           }
           onChange={setPriceText}

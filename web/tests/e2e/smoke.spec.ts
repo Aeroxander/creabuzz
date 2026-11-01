@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { wizardToPublish } from "../helpers/wizard";
 import { getPublicKey } from "nostr-tools/pure";
 import { expect, test } from "@playwright/test";
-import { createMockRelay } from "./mock-relay";
+import {
+  COMMUNITY_HOST,
+  createMockRelay,
+  PREVIEW_ORIGIN,
+  PREVIEW_PORT,
+} from "./mock-relay";
 import {
   BUZZ_ANDROID_PLAY_STORE_URL,
   BUZZ_IOS_APP_STORE_URL,
@@ -84,7 +89,9 @@ test("empty directory keeps the connected community reachable", async ({
     page.getByText("No other communities are listed on this server."),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /127\.0\.0\.1:4173.*Open community/ }),
+    page.getByRole("link", {
+      name: new RegExp(`127\\.0\\.0\\.1:${PREVIEW_PORT}.*Open community`),
+    }),
   ).toBeVisible();
 });
 
@@ -103,7 +110,9 @@ test("an unpublished directory keeps the connected community reachable", async (
     ),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /127\.0\.0\.1:4173.*Open community/ }),
+    page.getByRole("link", {
+      name: new RegExp(`127\\.0\\.0\\.1:${PREVIEW_PORT}.*Open community`),
+    }),
   ).toBeVisible();
 });
 
@@ -152,9 +161,13 @@ for (const status of [200, 404]) {
     );
     await page.goto("/c");
     await page
-      .getByRole("link", { name: /127\.0\.0\.1:4173.*Open community/ })
+      .getByRole("link", {
+        name: new RegExp(`127\\.0\\.0\\.1:${PREVIEW_PORT}.*Open community`),
+      })
       .click();
-    await expect(page).toHaveURL(/\/c\/127\.0\.0\.1%3A4173/);
+    await expect(page).toHaveURL(
+      new RegExp(`/c/127\\.0\\.0\\.1%3A${PREVIEW_PORT}`),
+    );
     await page.getByTestId("channel-Demo · supporters").click();
     await expect(
       page.getByText("Welcome to the supporters chat"),
@@ -162,7 +175,9 @@ for (const status of [200, 404]) {
     await expect(page.getByTestId("channel-Demo · team")).toBeVisible();
     // Returning through the main navigation opens the one community directly (D146: no one-card directory).
     await page.getByTestId("app-nav-communities").click();
-    await expect(page).toHaveURL(/\/c\/127\.0\.0\.1%3A4173/);
+    await expect(page).toHaveURL(
+      new RegExp(`/c/127\\.0\\.0\\.1%3A${PREVIEW_PORT}`),
+    );
     await page.getByTestId("channel-Demo · team").click();
     await expect(page).toHaveURL(new RegExp(`channel=${teamId}`));
   });
@@ -183,7 +198,9 @@ test("directory failures show a retry alongside the working community entry", as
   const error = page.getByTestId("community-directory-error");
   await expect(error).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /127\.0\.0\.1:4173.*Open community/ }),
+    page.getByRole("link", {
+      name: new RegExp(`127\\.0\\.0\\.1:${PREVIEW_PORT}.*Open community`),
+    }),
   ).toBeVisible();
   status = 200;
   await error.getByRole("button", { name: "Try again" }).click();
@@ -197,7 +214,7 @@ test("community page shows metadata and join stores the relay URL", async ({
   await mockCommunityDirectory(page);
   // An empty relay: the community exists but publishes no channels, so the
   // public card is the correct state (a failed query is an error state).
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -210,15 +227,18 @@ test("community page shows metadata and join stores the relay URL", async ({
       }
     });
   });
+  // The community's own server answers, so joining it passes the check that it is a server before it is saved.
+  await page.routeWebSocket(/alpha\.example\.com/, () => {});
   await page.goto("/c/alpha.example.com");
   await expect(page.getByRole("heading", { name: "Alpha" })).toBeVisible();
   await expect(page.getByText("3 members")).toBeVisible();
+  // The address is saved once the check passes, and the page reloads onto it: read it after the reload.
+  const reloaded = page.waitForEvent("load");
   await page.getByRole("button", { name: "Join this community" }).click();
-  await expect
-    .poll(() =>
-      page.evaluate(() => window.localStorage.getItem("buzz.relayUrl")),
-    )
-    .toBe("ws://alpha.example.com");
+  await reloaded;
+  expect(
+    await page.evaluate(() => window.localStorage.getItem("buzz.relayUrl")),
+  ).toBe("ws://alpha.example.com");
 });
 
 test("invite requires age and legal consent before opening Creaton", async ({
@@ -600,7 +620,7 @@ test("invite download links to the appropriate platform destination", async ({
   }
 });
 
-test("wrong relay shows connect form and stores the relay URL", async ({
+test("wrong server shows connect form and stores the server address", async ({
   page,
 }) => {
   // Served from a non-relay origin (vite preview / static host), the app
@@ -611,10 +631,10 @@ test("wrong relay shows connect form and stores the relay URL", async ({
   // Connect triggers and race the write.
   await page.evaluate(() => window.localStorage.removeItem("buzz.relayUrl"));
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Couldn't reach the relay" }),
-  ).toBeVisible();
-  await page.getByLabel("Relay URL").fill("wss://relay.example.com");
+  await expect(page.getByTestId("repos-load-error")).toContainText(
+    "Couldn't load this community's code",
+  );
+  await page.getByLabel("Server address").fill("wss://relay.example.com");
   await page.getByRole("button", { name: "Connect" }).click();
   await expect
     .poll(() =>
@@ -628,7 +648,7 @@ test("the landing Repositories button opens the repo browser", async ({
 }) => {
   // Regression: /repos was a redirect back to `/`, so this button did nothing.
   await mockCommunityDirectory(page);
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -655,10 +675,10 @@ test("a channel query failure offers a retry instead of an empty community", asy
   // No WebSocket mock: the channel query fails. The page must say so and allow
   // a retry rather than presenting the join-an-empty-community card.
   await mockCommunityDirectory(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   const panel = page.getByTestId("community-load-error");
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText("alpha.example.com");
+  await expect(panel).toContainText(COMMUNITY_HOST);
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Join this community" }),
@@ -705,7 +725,7 @@ async function mockPartialRelay(
 ) {
   await mockCommunityDirectory(page);
   const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -757,7 +777,7 @@ test("the work board reports a refused query instead of an empty board", async (
   page,
 }) => {
   await mockPartialRelay(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("work-toggle").click();
   const panel = page.getByTestId("work-load-error");
@@ -769,7 +789,7 @@ test("the work board reports a refused query instead of an empty board", async (
 
 test("the fleet view reports a refused roster query", async ({ page }) => {
   await mockPartialRelay(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("fleet-toggle").click();
   await expect(page.getByTestId("fleet-load-error")).toBeVisible();
@@ -795,7 +815,7 @@ test("the work board degrades to a notice when only secondary reads fail", async
   await page.route("**/query", async (route) => {
     await route.fulfill({ status: 500, body: "no status index" });
   });
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -864,7 +884,7 @@ test("the work board degrades to a notice when only secondary reads fail", async
     });
   });
 
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("work-toggle").click();
 
@@ -884,7 +904,7 @@ test("a wiki page saves, reports success and stops showing a draft badge", async
   // claim to cover it.
   await page.setViewportSize({ width: 1280, height: 900 });
   await mockCommunityDirectory(page);
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -931,7 +951,7 @@ test("a wiki page saves, reports success and stops showing a draft badge", async
   page.on("console", (message) => {
     if (message.type() === "warning") warnings.push(message.text());
   });
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("wiki-toggle").click();
 
@@ -957,7 +977,7 @@ test("Cmd+K focuses search, opening the slide-over on a phone", async ({
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockPartialRelay(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
 
   const input = page.getByTestId("search-input");
@@ -977,7 +997,7 @@ test("the search shortcut hint is visible on desktop and hidden on a phone", asy
   page,
 }) => {
   await mockPartialRelay(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await expect(page.getByText("⌘K")).toBeVisible();
 
@@ -1014,7 +1034,7 @@ test("a bound wallet can be unbound, and the proof names the revoke endpoint", a
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await mockPartialRelay(page, true);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
 
   await page.getByTestId("user-chip").click();
@@ -1045,7 +1065,7 @@ test("a refused task write says so instead of failing silently", async ({
   // The board used to swallow these: a quick-add or a column move the relay
   // refused left the user looking at an unchanged board.
   await mockCommunityDirectory(page);
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -1091,7 +1111,7 @@ test("a refused task write says so instead of failing silently", async ({
   });
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("work-toggle").click();
 
@@ -1119,7 +1139,7 @@ test("heavy views are split out of the first-load bundle", async ({ page }) => {
     if (request.resourceType() === "script") scripts.push(request.url());
   });
   await mockPartialRelay(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
 
   const loaded = scripts.join(" ");
@@ -1144,7 +1164,7 @@ test("a message can be copied, and its link opens and highlights it", async ({
   await mockCommunityDirectory(page);
   const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
   const MESSAGE_ID = "e".repeat(64);
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -1200,7 +1220,7 @@ test("a message can be copied, and its link opens and highlights it", async ({
     });
   });
 
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByText("Copyable message body")).toBeVisible();
 
   const row = page.getByTestId("message-row").first();
@@ -1237,7 +1257,7 @@ test("the tab agent's key can be rotated and its storage is disclosed", async ({
   await mockCommunityDirectory(page);
   // A permissive relay: the roster must load, or the fleet view shows its
   // error panel instead (which is what `mockPartialRelay` would produce).
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -1274,7 +1294,7 @@ test("the tab agent's key can be rotated and its storage is disclosed", async ({
       ws.send(JSON.stringify(["EOSE", subId]));
     });
   });
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("fleet-toggle").click();
 
@@ -1304,7 +1324,7 @@ test("the wiki page dialog takes focus and gives it back", async ({ page }) => {
   // that do not contain focus (Safari, webviews).
   await page.setViewportSize({ width: 1280, height: 900 });
   await mockPartialRelay(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("wiki-toggle").click();
 
@@ -1327,7 +1347,7 @@ test("the wiki page dialog takes focus and gives it back", async ({ page }) => {
 
 test("a refused search offers a retry", async ({ page }) => {
   await mockCommunityDirectory(page);
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -1369,7 +1389,7 @@ test("a refused search offers a retry", async ({ page }) => {
   });
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("search-input").fill("release notes");
 
@@ -1415,7 +1435,7 @@ test("a dropped live connection is shown instead of failing silently", async ({
   // dropped the live socket.
   await mockCommunityDirectory(page);
   const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -1457,7 +1477,7 @@ test("a dropped live connection is shown instead of failing silently", async ({
   });
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   const chip = page.getByTestId("live-status-chip");
   await expect(chip).toBeVisible();
   // Exactly the dropped-connection label: "Connecting…" alone shows only on the very first try, before any drop.
@@ -1475,7 +1495,7 @@ test.describe("theme choice", () => {
     });
     await page.setViewportSize({ width: 1280, height: 900 });
     await mockPartialRelay(page);
-    await page.goto("/c/alpha.example.com");
+    await page.goto(`/c/${COMMUNITY_HOST}`);
     await page.getByTestId("content-pane").waitFor();
     await page.getByTestId("user-chip").click();
 
@@ -1518,7 +1538,7 @@ test.describe("keyboard and motion preferences", () => {
     // WCAG 2.4.7: axe does not check focus visibility, and only a handful of
     // components drew their own ring.
     await mockPartialRelay(page);
-    await page.goto("/c/alpha.example.com");
+    await page.goto(`/c/${COMMUNITY_HOST}`);
     await page.getByTestId("content-pane").waitFor();
     await page.keyboard.press("Tab");
 
@@ -1542,7 +1562,7 @@ test.describe("keyboard and motion preferences", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await mockPartialRelay(page);
-    await page.goto("/c/alpha.example.com");
+    await page.goto(`/c/${COMMUNITY_HOST}`);
     await page.getByTestId("content-pane").waitFor();
     await page.getByTestId("open-channel-list").click();
 
@@ -1572,7 +1592,7 @@ test("the wiki says when nobody else is connected, and why live editing is off",
   // open room that applies strangers' text).
   await page.setViewportSize({ width: 1280, height: 900 });
   await mockPartialRelay(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("wiki-toggle").click();
   await page.getByTestId("wiki-new-page").click();
@@ -1622,7 +1642,7 @@ test("two tabs converge on one page without P2P signalling", async ({
         body: JSON.stringify({
           communities: [
             {
-              host: "alpha.example.com",
+              host: COMMUNITY_HOST,
               name: "Alpha",
               description: "d",
               icon: null,
@@ -1633,7 +1653,7 @@ test("two tabs converge on one page without P2P signalling", async ({
         }),
       });
     });
-    await target.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    await target.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
       ws.onMessage((message) => {
         let parsed: unknown;
         try {
@@ -1686,7 +1706,7 @@ test("two tabs converge on one page without P2P signalling", async ({
   };
 
   await installRelay(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("wiki-toggle").click();
   await page.getByTestId("wiki-new-page").click();
@@ -1702,7 +1722,7 @@ test("two tabs converge on one page without P2P signalling", async ({
   const second = await context.newPage();
   await second.setViewportSize({ width: 1280, height: 900 });
   await installRelay(second);
-  await second.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await second.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await second.getByTestId("content-pane").waitFor();
   await second.getByTestId("wiki-toggle").click();
   await second.getByTestId(`knowledge-page-${SLUG}`).click();
@@ -1737,7 +1757,7 @@ test("a refused task query is reported on the agents view", async ({
   // load so the view renders, while the task query is refused.
   await mockCommunityDirectory(page);
   const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -1781,7 +1801,7 @@ test("a refused task query is reported on the agents view", async ({
   });
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("fleet-toggle").click();
 
@@ -1802,7 +1822,7 @@ test("a launch can be bound to a discussion channel", async ({ page }) => {
     });
   });
   const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -1899,7 +1919,7 @@ test("editing a name keeps the rest of the profile", async ({ page }) => {
   });
   await mockCommunityDirectory(page);
   const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -1967,7 +1987,7 @@ test("editing a name keeps the rest of the profile", async ({ page }) => {
   });
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("user-chip").click();
   await page.getByRole("button", { name: "Edit profile" }).click();

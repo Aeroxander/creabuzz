@@ -139,3 +139,20 @@ test("a project set up earlier is carried on only by its founder, and not while 
   );
   assert.equal(canResume({ job, wallet: null, signingBlocked: null }), false);
 });
+
+test("the passkey set-up hint names where fees are covered only when the build knows it", () => {
+  const signedOutWallet = {
+    kind: null,
+    address: null,
+    accountsChecked: true,
+    chainId: null,
+    passkeyOffered: true,
+  };
+  const words = (passkeyFeesOn) =>
+    contributorGate({ ...ready, wallet: { ...signedOutWallet, passkeyFeesOn } })
+      .message;
+  assert.match(words("Base"), /with its fees covered on Base\./);
+  assert.doesNotMatch(words("Base"), /test network/);
+  assert.match(words("the test network"), /covered on the test network\./);
+  assert.doesNotMatch(words(null), /fees covered/);
+});

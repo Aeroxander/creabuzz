@@ -3,7 +3,7 @@ import { getPublicKey, verifyEvent } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll, PHONE } from "../helpers/layout";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Changing a room or board after it is made: its name, what it is for, and who can read it. Offered to its owners and
@@ -131,7 +131,7 @@ async function open(
   await page.addInitScript((nsec) => {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
   }, NSEC);
-  await page.goto(`/c/alpha.example.com?channel=${channel}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${channel}`);
   await page.getByTestId("content-pane").waitFor();
   return relay;
 }
@@ -240,7 +240,7 @@ test("a member is offered no way to edit a board or a room", async ({
   await open(page, { role: "member" });
   await expect(page.getByTestId("board-name")).toHaveText("ideas");
   await expect(page.getByTestId("board-edit")).toHaveCount(0);
-  await page.goto(`/c/alpha.example.com?channel=${CHAT}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHAT}`);
   await page.getByTestId("content-pane").waitFor();
   await expect(
     page.getByRole("heading", { name: "general", exact: true }),

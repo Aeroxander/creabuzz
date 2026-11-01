@@ -543,3 +543,35 @@ test("words that match no open work area are said, unless a reviewer has already
     "bind",
   );
 });
+
+test("an approved claim says when it can be marked finished, and once it can, that it is ready", () => {
+  const WINDOW = 604_800;
+  const approved = view({ record: { status: "Approved", releasedAt: 1000 } });
+  // In its wait: the step carries the moment the wait ends, so the page can name the date.
+  const waiting = nextStep(approved, 1000 + WINDOW - 1, WINDOW);
+  assert.equal(waiting.kind, "none");
+  assert.equal(waiting.readyAt, 1000 + WINDOW);
+  assert.match(
+    waiting.text,
+    /can be marked finished once the challenge window ends/,
+  );
+  // A claim that asks for money carries it too.
+  assert.equal(
+    nextStep(
+      view({ record: { status: "Approved", releasedAt: 1000, amount: 5n } }),
+      1000,
+      WINDOW,
+    ).readyAt,
+    1000 + WINDOW,
+  );
+  // The wait is over: it says it is ready to mark finished.
+  const ready = nextStep(approved, 1000 + WINDOW, WINDOW);
+  assert.equal(ready.kind, "payout");
+  assert.match(ready.text, /^Approved and ready to mark finished\./);
+  assert.match(ready.text, /can mark it finished now/);
+  // Only the approved wait carries a moment: other quiet states do not.
+  assert.equal(
+    nextStep(view({ record: { status: "Frozen" } }), 0, WINDOW).readyAt,
+    undefined,
+  );
+});

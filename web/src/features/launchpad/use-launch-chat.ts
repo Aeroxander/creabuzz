@@ -212,10 +212,7 @@ function memoStore(): BoardMemoStore {
 }
 
 /** The scope a board made now is remembered under: this community, the founder and the project. */
-function boardMemoScope(
-  founder: string,
-  launchId: string,
-): BoardMemoScope {
+function boardMemoScope(founder: string, launchId: string): BoardMemoScope {
   return { relay: relayWsUrl(), founder, launchId };
 }
 

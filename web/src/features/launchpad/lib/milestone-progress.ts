@@ -172,16 +172,61 @@ export function milestoneProgress(
   };
 }
 
-/** The id for a new milestone claim: the milestone's number, with a suffix when an earlier try used it. */
+/**
+ * How many claims one milestone can be filed under from here: its first name and 98 numbered retries. A claim's name
+ * can never be used twice (a turned-down claim keeps its name), so each new try needs a fresh one, and the list is
+ * finite so running out is said rather than papered over.
+ */
+export const MAX_MILESTONE_CLAIMS = 99;
+
+/** Every name a claim for milestone `index` may take, in the order they are tried. */
+export function milestoneClaimNames(index: number): string[] {
+  const base = `milestone-${index + 1}`;
+  return Array.from({ length: MAX_MILESTONE_CLAIMS }, (_, i) =>
+    i === 0 ? base : `${base}-${i + 1}`,
+  );
+}
+
+/**
+ * The id for a new milestone claim: the milestone's number, with a suffix when an earlier try used it. Null when every
+ * name is taken: a new claim for this milestone cannot be filed from here, and the caller says so instead of sending.
+ */
 export function milestoneClaimId(
   index: number,
   taken: readonly string[],
-): string {
-  const base = `milestone-${index + 1}`;
+): string | null {
   const used = new Set(taken.map((t) => t.toLowerCase()));
-  for (let attempt = 1; attempt < 100; attempt += 1) {
-    const name = attempt === 1 ? base : `${base}-${attempt}`;
-    if (!used.has(name.toLowerCase())) return name;
-  }
-  return `${base}-${Date.now() % 100_000}`;
+  return (
+    milestoneClaimNames(index).find((name) => !used.has(name.toLowerCase())) ??
+    null
+  );
+}
+
+/** A claim to open on the Work tab: the panel it was filed with and its id, as the Work tab's links name them. */
+export interface ClaimFocus {
+  id: string;
+  mandate: string;
+}
+
+/**
+ * Where "Open the claim on the Work tab" points: that claim, so the Work tab scrolls to it and focuses it, not just the
+ * top of the tab. Null when there is no claim or no panel to name.
+ */
+export function claimFocusFor(
+  claimId: string | null,
+  panelAddress: string | null | undefined,
+): ClaimFocus | null {
+  if (!claimId || !panelAddress) return null;
+  return { id: claimId.toLowerCase(), mandate: panelAddress.toLowerCase() };
+}
+
+/**
+ * The project page's address for one claim on the Work tab: the rest of the address is kept, and the claim and its panel
+ * are named so the page opens that tab and the Work tab scrolls to the claim and focuses it.
+ */
+export function workTabSearch<T extends object>(
+  previous: T,
+  claim: ClaimFocus,
+): T & { tab: "work"; claim: string; mandate: string } {
+  return { ...previous, tab: "work", claim: claim.id, mandate: claim.mandate };
 }

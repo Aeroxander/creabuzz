@@ -1,10 +1,9 @@
 import { BookMarked, Compass, Globe, Plus, Users } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
-import { toast } from "sonner";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import {
-  normalizeRelayWsUrl,
+  communityHostName,
   relayWsUrl,
   setStoredRelayWsUrl,
 } from "@/shared/lib/relay-url";
@@ -18,6 +17,11 @@ import { QueryError } from "@/shared/ui/query-error";
 import { useSelfServe } from "../use-self-serve";
 import { CreateCommunityDialog } from "./CreateCommunityDialog";
 import { communityLabel, listedCommunities } from "../lib/community-label";
+import {
+  checkServer,
+  parseServerAddress,
+  saveServerAddress,
+} from "../lib/server-switch";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { APP_NAME } from "@/shared/constants/brand";
 import { existingUserPubkey } from "@/shared/lib/identity";
@@ -115,45 +119,159 @@ function CardSkeleton() {
   );
 }
 
+type AddState =
+  | { step: "idle" }
+  | { step: "checking"; host: string }
+  | { step: "confirm"; wsUrl: string; host: string }
+  | { step: "problem"; problem: string };
+
+/**
+ * Open a community on another server: the address is read, the server must answer, and the person confirms before
+ * the address is saved and the page reloads onto it. A typo or a dead server never gets saved, and until the confirm
+ * nothing has changed, so Cancel (or editing the address) is the way back.
+ */
 function AddCommunityForm() {
   const [value, setValue] = useState("");
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const host = value.trim();
-    if (!host) return;
-    try {
-      setStoredRelayWsUrl(normalizeRelayWsUrl(host));
-      window.location.reload();
-    } catch {
-      toast.error("That doesn't look like a server address");
-    }
+  const [state, setState] = useState<AddState>({ step: "idle" });
+  // A check still running when the address changes, is cancelled or the page is left must not land afterwards: it is
+  // stopped (its connection hung up) and its answer dropped.
+  const generation = useRef(0);
+  const running = useRef<AbortController | null>(null);
+  const current = communityHostName();
+
+  const stopCheck = () => {
+    generation.current += 1;
+    running.current?.abort();
+    running.current = null;
   };
+  useEffect(
+    () => () => {
+      generation.current += 1;
+      running.current?.abort();
+    },
+    [],
+  );
+
+  const reset = (next: AddState = { step: "idle" }) => {
+    stopCheck();
+    setState(next);
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const parsed = parseServerAddress(value);
+    if (!parsed.ok) {
+      reset({ step: "problem", problem: parsed.problem });
+      return;
+    }
+    if (parsed.host === current) {
+      reset({
+        step: "problem",
+        problem: "This browser is already on that server.",
+      });
+      return;
+    }
+    stopCheck();
+    const mine = generation.current;
+    const controller = new AbortController();
+    running.current = controller;
+    setState({ step: "checking", host: parsed.host });
+    const check = await checkServer(parsed.wsUrl, {
+      signal: controller.signal,
+    });
+    if (generation.current !== mine) return;
+    running.current = null;
+    setState(
+      check.ok
+        ? { step: "confirm", wsUrl: parsed.wsUrl, host: parsed.host }
+        : { step: "problem", problem: check.problem },
+    );
+  };
+
+  const open = (wsUrl: string) => {
+    const problem = saveServerAddress(wsUrl, setStoredRelayWsUrl);
+    if (problem) {
+      reset({ step: "problem", problem });
+      return;
+    }
+    window.location.reload();
+  };
+
   return (
-    <form
-      onSubmit={submit}
-      className="mt-2 flex w-full max-w-sm items-center gap-2"
-    >
-      <label className="sr-only" htmlFor="add-community">
-        Server address
-      </label>
-      <input
-        id="add-community"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="e.g. community.example.com"
-        className="flex-1 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
-        data-testid="add-community-input"
-      />
-      <Button
-        type="submit"
-        variant="outline"
-        size="sm"
-        className="dark:border-white/15"
-        data-testid="add-community-submit"
+    <div className="mt-2 flex w-full max-w-md flex-col gap-2">
+      <form
+        onSubmit={(e) => void submit(e)}
+        className="flex items-center gap-2"
       >
-        <Globe /> Add community
-      </Button>
-    </form>
+        <label className="sr-only" htmlFor="add-community">
+          Server address
+        </label>
+        <input
+          aria-describedby="add-community-status"
+          aria-invalid={state.step === "problem"}
+          id="add-community"
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            if (state.step !== "idle") reset();
+          }}
+          placeholder="e.g. community.example.com"
+          className="min-w-0 flex-1 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+          data-testid="add-community-input"
+        />
+        <Button
+          type="submit"
+          variant="outline"
+          size="sm"
+          className="dark:border-white/15"
+          data-testid="add-community-submit"
+          disabled={state.step === "checking"}
+        >
+          <Globe /> Add community
+        </Button>
+      </form>
+      <div aria-live="polite" id="add-community-status" role="status">
+        {state.step === "checking" ? (
+          <p className="text-xs text-black/60 dark:text-white/60">
+            Checking {state.host}…
+          </p>
+        ) : state.step === "problem" ? (
+          <p
+            className="text-xs text-red-700 dark:text-red-300"
+            data-testid="add-community-problem"
+          >
+            {state.problem}
+          </p>
+        ) : state.step === "confirm" ? (
+          <p data-testid="add-community-confirm-text">
+            {state.host} answered. Open it in this browser? You'll leave{" "}
+            {current || "this server"}; to come back, add its address here
+            again.
+          </p>
+        ) : null}
+      </div>
+      {state.step === "confirm" ? (
+        <div className="flex gap-2" data-testid="add-community-confirm">
+          <Button
+            data-testid="add-community-open"
+            onClick={() => open(state.wsUrl)}
+            size="sm"
+            type="button"
+          >
+            Open {state.host}
+          </Button>
+          <Button
+            data-testid="add-community-cancel"
+            onClick={() => reset()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

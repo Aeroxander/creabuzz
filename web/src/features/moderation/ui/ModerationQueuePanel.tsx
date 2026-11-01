@@ -3,7 +3,7 @@
  * who wrote them, or the reported person, with a link to see it in place), who
  * reported it, its status, and the moderator actions for open rows — resolve
  * (remove / mute everywhere (a server time out) / ban pair an enforcement with the resolution), dismiss,
- * and escalate. All, open or escalated reports, a page at a time. Action
+ * and escalate (sent to the server's owner, who sees it in the Escalated reports list above the queue). All, open or escalated reports, a page at a time. Action
  * affordances render only for moderators; empty, loading, and error states
  * are explicit, and a failed action keeps the row open with an inline retry.
  */
@@ -21,7 +21,10 @@ import {
   reportTypeLabel,
   type ResolutionAction,
 } from "../lib/moderationQueue";
+import { ESCALATED_STATUS_LINE } from "../lib/escalatedReports";
 import { QUEUE_FILTERS, removedNoun } from "../lib/queueRow";
+import { useOperatorOrigin } from "../use-escalated-reports";
+import { EscalatedReportsPanel } from "./EscalatedReportsPanel";
 import {
   useModerationAccess,
   useModerationQueue,
@@ -41,7 +44,7 @@ function actionLabel(action: ResolutionAction, row: ModerationRow): string {
     case "dismiss":
       return "Dismiss";
     case "escalate":
-      return "Escalate";
+      return "Send to the server’s owner";
   }
 }
 
@@ -201,7 +204,7 @@ function Row({
           className="mt-1 text-2xs text-black/60 dark:text-white/60"
           data-testid="moderation-report-escalated"
         >
-          Passed on to the people who run this server.
+          {ESCALATED_STATUS_LINE}
         </p>
       ) : null}
       {actions.length > 0 ? (
@@ -328,6 +331,8 @@ export function ModerationQueuePanel() {
     showOlder,
   } = useModerationQueue(window.location.pathname);
   const moderator = access === "granted";
+  // Set only once the server accepts this person as one of the people who run it.
+  const operatorOrigin = useOperatorOrigin();
 
   return (
     <div
@@ -359,6 +364,9 @@ export function ModerationQueuePanel() {
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {operatorOrigin ? (
+          <EscalatedReportsPanel origin={operatorOrigin} />
+        ) : null}
         {moderator ? (
           <fieldset className="mb-2 flex flex-wrap items-center gap-1.5">
             <legend className="sr-only">Show reports</legend>

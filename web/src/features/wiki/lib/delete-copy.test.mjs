@@ -30,6 +30,8 @@ test("the admin purge dialog is a separate, permanent intent", () => {
   // The dialog says the content is removed from the server and cannot return.
   assert.ok(copy.description.includes("removed from the server"));
   assert.ok(copy.description.includes("cannot be restored"));
+  // Says it once: no second "cannot be undone" restating the same thing.
+  assert.equal(copy.description.match(/cannot be/g)?.length, 1);
   // Distinct from the restorable dialog in every field.
   const restorable = deleteDialogCopy("home");
   assert.notEqual(copy.title, restorable.title);

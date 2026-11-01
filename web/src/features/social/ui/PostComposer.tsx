@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -160,6 +161,7 @@ export function PostComposer({
     resize(el);
   });
 
+  const listBase = useId();
   if (!me) {
     return (
       <div className="border-b border-black/10 px-4 py-4 text-sm text-black/70 dark:border-white/10 dark:text-white/70">
@@ -311,6 +313,8 @@ export function PostComposer({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // An Enter that confirms an input method's conversion is the input method's (Safari: keyCode 229).
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
     if (suggestions.length > 0) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -332,6 +336,8 @@ export function PostComposer({
   };
 
   const inputId = `${testId}-input`;
+  const listId = `${listBase}-mentions`;
+  const activeOption = Math.min(active, suggestions.length - 1);
   return (
     <form
       className="flex gap-3 border-b border-black/10 px-4 pb-2 pt-3 dark:border-white/10"
@@ -400,6 +406,13 @@ export function PostComposer({
             setCaret(e.target.selectionStart);
             resize(e.target);
           }}
+          aria-activedescendant={
+            suggestions.length > 0
+              ? `${listId}-option-${activeOption}`
+              : undefined
+          }
+          aria-autocomplete="list"
+          aria-controls={suggestions.length > 0 ? listId : undefined}
           onKeyDown={onKeyDown}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           placeholder={onBoard ? "Add details (optional)" : placeholder}
@@ -411,11 +424,13 @@ export function PostComposer({
           <div
             aria-label="Mention suggestions"
             className="absolute left-0 top-14 z-30 w-72 overflow-hidden rounded-xl border border-black/10 bg-white py-1 shadow-lg dark:border-white/15 dark:bg-neutral-900"
+            id={listId}
             role="listbox"
           >
             {suggestions.map(([pubkey, profile], i) => (
               <button
                 aria-selected={i === active}
+                id={`${listId}-option-${i}`}
                 className={cn(
                   "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10",
                   i === active && "bg-black/5 dark:bg-white/10",

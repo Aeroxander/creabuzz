@@ -9,6 +9,8 @@ import {
   rankAttention,
   rankEntries,
   summaryLine,
+  waitingToFinish,
+  waitingToFinishText,
 } from "./dao-overview.ts";
 import { idWord } from "@creaton/core/launchpad/work.ts";
 
@@ -857,5 +859,85 @@ test("the managers who could accept a submission are those of open work areas wi
   assert.deepEqual(
     managersFor(submitted, mandate([submitted], { projects }), 50_000),
     [],
+  );
+});
+
+test("once the wait is over, the contributor is asked to mark their work finished, and the button opens that claim", () => {
+  const approved = claim("c1", "Approved", {
+    record: {
+      ...claim("x", "Approved").record,
+      contributor: ME,
+      releasedAt: 9_000,
+    },
+  });
+  const items = (wallet) =>
+    attentionItems({
+      decisions: undefined,
+      work: { chainTime: 9_100, mandates: [mandate([approved])] },
+      wallet,
+      titleOf,
+    });
+  const [item] = items(ME);
+  assert.equal(item.kind, "payout");
+  assert.equal(item.action, "Mark it finished");
+  assert.deepEqual(item.claim, { id: "c1", mandate: BUDGET });
+  assert.match(item.text, /The wait is over/);
+  assert.match(
+    item.ifIgnored,
+    /cannot be awarded Shares until it is marked finished/,
+  );
+  // Only its contributor can mark it finished (`ClaimStake.payout`), so nobody else is asked.
+  assert.deepEqual(
+    items(OTHER).filter((i) => i.kind === "payout"),
+    [],
+  );
+});
+
+test("the award form lists approved work still in its wait or not yet marked finished", () => {
+  const approved = (id, releasedAt, extra = {}) =>
+    claim(idWord(id), "Approved", {
+      record: { ...claim("x", "Approved").record, releasedAt },
+      ...extra,
+    });
+  const work = {
+    chainTime: 10_000,
+    mandates: [
+      mandate([
+        approved("wait", 9_950),
+        approved("ready", 9_900),
+        approved("loose", 9_000, { project: null }),
+        claim("paid", "Paid"),
+        claim("open", "Open"),
+      ]),
+    ],
+  };
+  const found = waitingToFinish(work);
+  assert.deepEqual(
+    found.map((w) => [w.claim.id, w.ready, w.readyAt]),
+    [
+      [idWord("wait"), false, 10_050],
+      [idWord("ready"), true, 9_900 + 100],
+    ],
+  );
+  assert.equal(found[0].mandate.address, BUDGET);
+  // A milestone panel's claims unlock milestone Shares: they are never awarded here.
+  assert.deepEqual(
+    waitingToFinish({
+      chainTime: 10_000,
+      mandates: [mandate([approved("m", 9_000)], { isMilestonePanel: true })],
+    }),
+    [],
+  );
+  assert.deepEqual(waitingToFinish(undefined), []);
+
+  const name = () => "Cleo";
+  const day = (s) => `day ${s}`;
+  assert.equal(
+    waitingToFinishText(found[0], name, day),
+    "“Wait” by Cleo: can be marked finished on day 10050.",
+  );
+  assert.equal(
+    waitingToFinishText(found[1], name, day),
+    "“Ready” by Cleo: waiting for Cleo to mark it finished.",
   );
 });

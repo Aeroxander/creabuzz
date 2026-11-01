@@ -9,7 +9,7 @@
 
 import { Link, useSearch } from "@tanstack/react-router";
 import { Check } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import {
@@ -23,6 +23,7 @@ import { testRecordsNotice } from "@/features/launchpad/lib/test-network";
 import { WalletStrip } from "@/features/launchpad/ui/account-widgets";
 import { usePeopleWithWallets } from "@/features/launchpad/use-people";
 import { cn } from "@/shared/lib/cn";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 import { SIGNING_BLOCKED_MESSAGE } from "@/shared/lib/nostr-signer";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
@@ -43,7 +44,15 @@ import {
   sharePreview,
   formatBps,
   formatWhole,
+  withReviewer,
 } from "../lib/contributor-project";
+import {
+  clearFormDraft,
+  formDraftKey,
+  keptFormFor,
+  loadFormDraft,
+  saveFormDraft,
+} from "../lib/start-form-draft";
 import { clearIdea, type IdeaHandoff, peekIdea } from "../lib/from-idea";
 import type { PitchStart } from "../lib/from-pitch";
 import { useContributorStart } from "../use-contributor-start";
@@ -194,9 +203,31 @@ export function ContributorStartPage() {
   const { job, flow, gate, wallet } = start;
   const search = useSearch({ from: "/start/contributor" });
   const fromBoard = useStartFromPitch(search.project, search.author);
-  const [draft, setDraft] = useState<ContributorDraft>(EMPTY);
-  const [symbolTouched, setSymbolTouched] = useState(false);
+  // What was typed here before a reload or a closed tab, for this server, account and board project (`lib/start-form-draft.ts`).
+  // Follows the account: someone who signs in on this page gets their form kept from then on.
+  const formKey = useMemo(
+    () =>
+      start.me
+        ? formDraftKey({
+            server: relayWsUrl(),
+            account: start.me,
+            fromBoard: search.project,
+          })
+        : null,
+    [start.me, search.project],
+  );
+  // The key the form on screen belongs to; nothing is kept under a new key before its own copy has been read.
+  const [loadedKey, setLoadedKey] = useState(formKey);
+  const [restored, setRestored] = useState<ContributorDraft | null>(() =>
+    formKey ? loadFormDraft(formKey) : null,
+  );
+  // True when this browser refused to keep the form, so a reload would lose it.
+  const [saveRefused, setSaveRefused] = useState(false);
+  const [draft, setDraft] = useState<ContributorDraft>(restored ?? EMPTY);
+  const [symbolTouched, setSymbolTouched] = useState(restored !== null);
   const [tried, setTried] = useState(false);
+  // Picking someone already among the reviewers changes nothing: said, instead of doing nothing.
+  const [pickNote, setPickNote] = useState<string | null>(null);
 
   // The founder's own idea, handed over by its page: its name and sentence fill the form once (never over a board team).
   const [fromIdea] = useState<IdeaHandoff | null>(() =>
@@ -214,13 +245,45 @@ export function ContributorStartPage() {
   }, [fromIdea]);
 
   // A team from the Projects board fills the form once, when it has been read; the founder can still change anything.
-  const [seeded, setSeeded] = useState(false);
+  // A form brought back from an earlier visit is not filled over: it already holds what the founder made of it.
+  const [seeded, setSeeded] = useState(restored !== null);
+  // Signed in (or switched account) on this page: that account's earlier form comes back, unless something is typed.
+  useEffect(() => {
+    if (formKey === loadedKey) return;
+    const kept = formKey ? keptFormFor(formKey, draft, EMPTY) : null;
+    setLoadedKey(formKey);
+    if (!kept) return;
+    setRestored(kept);
+    setDraft(kept);
+    setSymbolTouched(true);
+    setSeeded(true);
+  }, [formKey, loadedKey, draft]);
   useEffect(() => {
     if (seeded || !fromBoard.start) return;
     setDraft(fromBoard.start.draft);
     setSymbolTouched(true);
     setSeeded(true);
   }, [seeded, fromBoard.start]);
+
+  const done = job !== null && flow.phase === "done";
+  // Kept as it is typed, until the project is made; then it is not needed (the run kept its own copy).
+  useEffect(() => {
+    if (!formKey || formKey !== loadedKey || job !== null) return;
+    setSaveRefused(!saveFormDraft(formKey, draft, EMPTY));
+  }, [formKey, loadedKey, draft, job]);
+  useEffect(() => {
+    if (formKey && done) clearFormDraft(formKey);
+  }, [formKey, done]);
+  const startOver = () => {
+    if (formKey) clearFormDraft(formKey);
+    setRestored(null);
+    setDraft(EMPTY);
+    setSymbolTouched(false);
+    setTried(false);
+    setPickNote(null);
+    // From the Projects board: its team fills the form again.
+    setSeeded(false);
+  };
 
   const set =
     (field: Exclude<keyof ContributorDraft, "projects">) => (value: string) => {
@@ -267,7 +330,6 @@ export function ContributorStartPage() {
     });
 
   const raises = raisesOffered();
-  const done = job !== null && flow.phase === "done";
   const unfinished = job !== null && !done;
   const projectLink = job
     ? {
@@ -424,6 +486,41 @@ export function ContributorStartPage() {
           data-testid="contributor-form"
           ref={form}
         >
+          {/* Always there, so a screen reader hears it when this browser stops keeping the form. */}
+          <p
+            className={
+              saveRefused
+                ? "rounded-lg bg-secondary/60 px-3 py-2 text-sm"
+                : "sr-only"
+            }
+            data-testid="contributor-form-not-kept"
+            role="status"
+          >
+            {saveRefused
+              ? "This browser is not keeping what you type here, so reloading or closing this tab would lose it."
+              : null}
+          </p>
+          {restored ? (
+            <div
+              className="flex flex-wrap items-center gap-2 rounded-lg bg-secondary/60 px-3 py-2 text-sm"
+              data-testid="contributor-form-restored"
+            >
+              <span>
+                {fromIdea
+                  ? "Your idea's name and sentence are filled in; the rest is what you typed here before."
+                  : "What you typed here before is filled in again."}
+              </span>
+              <Button
+                data-testid="contributor-form-start-over"
+                onClick={startOver}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Start over
+              </Button>
+            </div>
+          ) : null}
           <TextField
             error={errorFor("name")}
             label="Project name"
@@ -488,18 +585,17 @@ export function ContributorStartPage() {
           <TextAreaField
             after={
               <PeoplePicker
-                onPick={(address) =>
-                  setDraft((current) => ({
-                    ...current,
-                    reviewers: current.reviewers
-                      .toLowerCase()
-                      .includes(address.toLowerCase())
-                      ? current.reviewers
-                      : current.reviewers.trim()
-                        ? `${current.reviewers.trimEnd()}\n${address}`
-                        : address,
-                  }))
-                }
+                onPick={(address) => {
+                  const next = withReviewer(draft.reviewers, address);
+                  setPickNote(
+                    next.added ? null : "That person is already a reviewer.",
+                  );
+                  if (next.added)
+                    setDraft((current) => ({
+                      ...current,
+                      reviewers: withReviewer(current.reviewers, address).text,
+                    }));
+                }}
                 exclude={start.me ? [start.me] : []}
                 testId="contributor-reviewers-people"
               />
@@ -507,11 +603,25 @@ export function ContributorStartPage() {
             error={errorFor("reviewers")}
             hint="The people who check submitted work: name at least three, from the list. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
             label="Reviewers"
-            onChange={set("reviewers")}
+            onChange={(value) => {
+              // Whatever the note said about the last pick no longer holds once the list is edited by hand.
+              setPickNote(null);
+              set("reviewers")(value);
+            }}
             placeholder="Add people from the list, or paste an account address on each line"
             testId="contributor-reviewers"
             value={draft.reviewers}
           />
+          {/* Always there, so a screen reader hears the note when it appears. */}
+          <p
+            className={
+              pickNote ? "-mt-2 text-xs text-muted-foreground" : "sr-only"
+            }
+            data-testid="contributor-reviewers-already"
+            role="status"
+          >
+            {pickNote}
+          </p>
           <ReviewersPicked
             me={start.me}
             onMajorityDecides={() =>

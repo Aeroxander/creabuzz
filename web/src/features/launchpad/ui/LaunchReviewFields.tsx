@@ -109,7 +109,7 @@ export function LaunchReviewFields({
               </li>
               <li>
                 A holder who objects starts a vote of holders; your team&apos;s
-                own tokens do not count. The objection stands only if more is
+                own Shares do not count. The objection stands only if more is
                 against the milestone than for it and at least{" "}
                 {CHALLENGE_DEFAULTS.minRejectBps / 100}% of what could vote is
                 against it. Otherwise, including when nobody votes, the
@@ -118,13 +118,14 @@ export function LaunchReviewFields({
               <li>
                 {waits.clawback === 0
                   ? "No objection is possible after an unlock."
-                  : `For ${span(waits.clawback)} after an unlock one more objection is possible, and if holders uphold it your remaining locked tokens are burned.`}
+                  : `For ${span(waits.clawback)} after an unlock one more objection is possible, and if holders uphold it your remaining locked Shares are burned.`}
               </li>
               <li>
                 Milestones are published in order, and the next only once the
-                one before has had its time for late objections, so what is
-                still locked stays at stake. Once the last one has unlocked,
-                only your bond stands behind it.
+                one before has had its time for late objections. Until then, an
+                upheld late objection can still burn the Shares behind the later
+                milestones. Once the last one has unlocked, only your bond
+                stands behind it.
               </li>
             </ul>
             <p className="mt-2" data-testid="launch-earliest-unlocks">

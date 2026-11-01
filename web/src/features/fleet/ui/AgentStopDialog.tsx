@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { Modal } from "@/features/launchpad/ui/Modal";
 import { Button } from "@/shared/ui/button";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 import { runAgentStopAll } from "../lib/agentStopFlow";
@@ -48,9 +49,12 @@ function failureLines(
 /**
  * The destructive confirm for an emergency stop: names the agent, offers the
  * optional ban, and — on a partial failure — says exactly which step failed
- * and that re-running resumes (the finished steps never run twice). Keyboard
- * and pointer are equal paths: Escape cancels, focus starts on Cancel and is
- * trapped in the dialog, and every control is a real button or checkbox.
+ * and that re-running resumes (the finished steps never run twice). It is the
+ * app's one modal shell (portalled over the whole window, focus trapped and
+ * given back to the opener on close). Keyboard and pointer are equal paths:
+ * Escape and the backdrop cancel, focus starts on Cancel, and while the stop
+ * runs the buttons stay focusable but do nothing, so focus never drops to the
+ * page behind.
  */
 export function AgentStopDialog({
   open,
@@ -61,8 +65,10 @@ export function AgentStopDialog({
   const [ban, setBan] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [failures, setFailures] = useState<string[]>([]);
-  const panelRef = useRef<HTMLDivElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
+  // Set at once, not on the next render: two activations in one frame (a double Enter, a click and Enter) start one
+  // stop, not two overlapping ones.
+  const running = useRef(false);
 
   const one = targets.length === 1;
   const names = targets.map((t) => t.name).join(", ");
@@ -71,39 +77,16 @@ export function AgentStopDialog({
     if (!open) return;
     setBan(false);
     setFailures([]);
-    cancelRef.current?.focus();
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isPending) {
-        event.preventDefault();
-        onOpenChange(false);
-        return;
-      }
-      if (event.key !== "Tab") return;
-      // Keep the keyboard inside the dialog until it closes.
-      const focusable = panelRef.current?.querySelectorAll<HTMLElement>(
-        "button:not([disabled]), input:not([disabled])",
-      );
-      if (!focusable || focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-      if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, isPending, onOpenChange]);
+  const close = () => {
+    // A stop that is running is not abandoned half way by Escape or a stray click.
+    if (!isPending) onOpenChange(false);
+  };
 
   const confirm = async () => {
+    if (running.current) return;
+    running.current = true;
     setIsPending(true);
     setFailures([]);
     try {
@@ -126,6 +109,7 @@ export function AgentStopDialog({
       // happened and keep the dialog open so the button is the resume.
       setFailures([error instanceof Error ? error.message : String(error)]);
     } finally {
+      running.current = false;
       setIsPending(false);
     }
   };
@@ -133,83 +117,84 @@ export function AgentStopDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div
-        aria-describedby="agent-stop-description"
-        aria-labelledby="agent-stop-title"
-        aria-modal="true"
-        className="w-full max-w-sm rounded-lg border border-black/10 bg-white p-4 dark:border-white/10 dark:bg-black"
-        ref={panelRef}
-        role="alertdialog"
+    <Modal
+      className="max-w-sm"
+      describedBy="agent-stop-description"
+      initialFocus={cancelRef}
+      label={one ? `Stop ${names}?` : `Stop ${targets.length} AI helpers?`}
+      labelledBy="agent-stop-title"
+      onClose={close}
+      role="alertdialog"
+    >
+      <h2
+        className="text-sm font-semibold text-black dark:text-white"
+        id="agent-stop-title"
       >
-        <h2
-          className="text-sm font-semibold text-black dark:text-white"
-          id="agent-stop-title"
+        {one ? `Stop ${names}?` : `Stop ${targets.length} AI helpers?`}
+      </h2>
+      <p
+        className="mt-1 text-xs text-black/60 dark:text-white/60"
+        id="agent-stop-description"
+      >
+        {names} will be stopped: no budget, no permissions, and removed from its
+        seats.
+      </p>
+      <label className="mt-3 flex items-center gap-2 text-xs text-black dark:text-white">
+        <input
+          checked={ban}
+          className="size-4"
+          data-testid="agent-stop-ban-toggle"
+          disabled={isPending}
+          onChange={(e) => setBan(e.target.checked)}
+          type="checkbox"
+        />
+        {one ? "Also ban this AI helper" : "Also ban these AI helpers"}
+      </label>
+      {failures.length > 0 ? (
+        <div
+          aria-live="polite"
+          className="mt-3 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+          data-testid="agent-stop-failure"
+          role="status"
         >
-          {one ? `Stop ${names}?` : `Stop ${targets.length} AI helpers?`}
-        </h2>
-        <p
-          className="mt-1 text-xs text-black/60 dark:text-white/60"
-          id="agent-stop-description"
-        >
-          {names} will be stopped: no budget, no permissions, and removed from
-          its seats.
-        </p>
-        <label className="mt-3 flex items-center gap-2 text-xs text-black dark:text-white">
-          <input
-            checked={ban}
-            className="size-4"
-            data-testid="agent-stop-ban-toggle"
-            disabled={isPending}
-            onChange={(e) => setBan(e.target.checked)}
-            type="checkbox"
-          />
-          {one ? "Also ban this AI helper" : "Also ban these AI helpers"}
-        </label>
-        {failures.length > 0 ? (
-          <div
-            aria-live="polite"
-            className="mt-3 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
-            data-testid="agent-stop-failure"
-            role="status"
-          >
-            <p className="font-medium">
-              Stopping didn't finish. Try again. The steps that already finished
-              won't run twice.
-            </p>
-            <ul className="mt-1 list-disc pl-4">
-              {failures.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        <div className="mt-4 flex justify-end gap-2">
-          <Button
-            data-testid="agent-stop-cancel"
-            disabled={isPending}
-            onClick={() => onOpenChange(false)}
-            ref={cancelRef}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Cancel
-          </Button>
-          <Button
-            data-testid="agent-stop-confirm"
-            disabled={isPending}
-            onClick={() => {
-              void confirm();
-            }}
-            size="sm"
-            type="button"
-            variant="destructive"
-          >
-            {one ? "Stop AI helper" : "Stop AI helpers"}
-          </Button>
+          <p className="font-medium">
+            Stopping didn't finish. Try again. The steps that already finished
+            won't run twice.
+          </p>
+          <ul className="mt-1 list-disc pl-4">
+            {failures.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
         </div>
+      ) : null}
+      <div className="mt-4 flex justify-end gap-2">
+        <Button
+          aria-disabled={isPending}
+          className="aria-disabled:opacity-50"
+          data-testid="agent-stop-cancel"
+          onClick={close}
+          ref={cancelRef}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Cancel
+        </Button>
+        <Button
+          aria-disabled={isPending}
+          className="aria-disabled:opacity-50"
+          data-testid="agent-stop-confirm"
+          onClick={() => {
+            void confirm();
+          }}
+          size="sm"
+          type="button"
+          variant="destructive"
+        >
+          {isPending ? "Stopping…" : one ? "Stop AI helper" : "Stop AI helpers"}
+        </Button>
       </div>
-    </div>
+    </Modal>
   );
 }

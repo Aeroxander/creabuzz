@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
 import { wizardToPublish } from "../helpers/wizard";
+import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * Launch a project into its own DAO from the browser, against a REAL local chain.
@@ -173,7 +174,7 @@ async function mockRelay(
 ) {
   let current: StoredEvent = initial;
   const published: StoredEvent[] = [];
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {

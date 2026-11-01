@@ -11,6 +11,7 @@ import {
   readInPages,
 } from "./lib/log-pages.ts";
 import { reportHandledFailure } from "../../shared/lib/error-report.ts";
+import { retryAfterOf, retryPause } from "../../shared/lib/timed-fetch.ts";
 import {
   type ChainEnv,
   documentedBlockTimeSeconds,
@@ -193,6 +194,17 @@ function finalPassingFailure(error: unknown): ChainReadError {
   return failure;
 }
 
+/** A node's HTTP refusal, with how long it asked to be left alone (its `Retry-After`), when it said. */
+class RpcHttpError extends Error {
+  readonly retryAfterMs: number | null;
+
+  constructor(status: number, retryAfterMs: number | null) {
+    super(`rpc http ${status}`);
+    this.name = "RpcHttpError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
 async function rpcOnce(
   endpoint: string,
   method: string,
@@ -208,7 +220,7 @@ async function rpcOnce(
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
       signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`rpc http ${res.status}`);
+    if (!res.ok) throw new RpcHttpError(res.status, retryAfterOf(res));
     const body = (await res.json()) as {
       result?: unknown;
       error?: { message?: string; data?: unknown };
@@ -240,10 +252,19 @@ async function rpc(
       return await rpcOnce(endpoint, method, params, timeoutMs);
     } catch (error) {
       if (!isPassingFailure(error)) throw error;
-      const pause = RPC_RETRY.delaysMs[attempt];
+      const planned = RPC_RETRY.delaysMs[attempt];
+      // Never ask a busy node again sooner than its Retry-After said; a node that asks for a long wait ends the
+      // retries now instead of holding the screen.
+      const pause =
+        planned === undefined
+          ? null
+          : retryPause(
+              planned,
+              error instanceof RpcHttpError ? error.retryAfterMs : null,
+            );
       // Say it in words: the raw abort text ("signal is aborted without reason"), "rpc http 429" and a node's own
       // rate-limit text reach people's screens otherwise.
-      if (pause === undefined) throw finalPassingFailure(error);
+      if (pause === null) throw finalPassingFailure(error);
       await new Promise((resolve) => setTimeout(resolve, pause));
     }
   }

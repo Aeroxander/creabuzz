@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { waitForAnimations } from "../../../desktop/tests/helpers/animations";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Boards: posts people reply to and vote on, live but steady while read.
@@ -131,7 +131,7 @@ async function open(
     }, OWNER_NSEC);
   }
   const query = `channel=${board}${postId ? `&post=${postId}` : ""}`;
-  await page.goto(`/c/alpha.example.com?${query}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?${query}`);
   await page.getByTestId("content-pane").waitFor();
 }
 
@@ -925,7 +925,7 @@ test("a community with no boards can add the supporters and founders boards in o
   await page.addInitScript((nsec) => {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
   }, OWNER_NSEC);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
 
   await page.getByTestId("starter-boards").click();
@@ -978,7 +978,7 @@ test("if the second starter board is refused, the first stays, the problem is sa
   await page.addInitScript((nsec) => {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
   }, OWNER_NSEC);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
 
   await page.getByTestId("starter-boards").click();
@@ -1010,7 +1010,7 @@ test("someone without an account is told to make one before boards are added", a
   const relay = createMockRelay({ deriveChannels: true });
   relay.seed(meta(CHAT, "general", "stream"));
   await relay.install(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   // Reading #general, which a community opens on, gives a visitor no key: they have not signed up.
   await expect(page.getByTestId("channel-general")).toHaveAttribute(
@@ -1252,7 +1252,7 @@ test("a link to a decision of a project the app does not know is left as a plain
   page,
 }) => {
   const relay = relayWithBoard();
-  const link = `http://127.0.0.1:4173/launchpad/nobody-heard-of-this?decision=${DECISION}`;
+  const link = `http://${COMMUNITY_HOST}/launchpad/nobody-heard-of-this?decision=${DECISION}`;
   const p = post(ANN, now() - 100, "Look at this", `See ${link} please.`);
   relay.seed(p);
   await open(page, relay, { post: p.id });

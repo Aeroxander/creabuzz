@@ -84,7 +84,7 @@ export function MilestoneProgressCard({
         <h3 className="text-sm font-semibold">The team&apos;s milestones</h3>
         <p className="mt-1 text-sm" data-testid="dao-milestones-summary">
           {lock.milestones.filter((m) => m.phase === "stood").length} of{" "}
-          {lock.milestones.length} unlocked. {formatShares(lock.locked)} tokens
+          {lock.milestones.length} unlocked. {formatShares(lock.locked)} Shares
           still locked.
         </p>
         <ol className="mt-2 divide-y divide-border/60 text-sm">
@@ -138,7 +138,7 @@ export function MilestoneProgressCard({
         <>
           <p className="mt-1 text-sm" data-testid="dao-milestones-summary">
             {summary.reached} of {summary.total} reached.{" "}
-            {formatShares(summary.heldBack)} tokens still locked
+            {formatShares(summary.heldBack)} Shares still locked
             {summary.released > 0n
               ? `, ${formatShares(summary.released)} released`
               : ""}

@@ -15,6 +15,8 @@ export interface RepoContext {
   defaultRef: string;
   isLoading: boolean;
   error: Error | null;
+  /** Read the repository record again after a failure. */
+  retry: () => void;
 }
 
 export function useRepoContext(
@@ -25,6 +27,7 @@ export function useRepoContext(
     data: repo,
     isLoading: repoLoading,
     error: repoError,
+    refetch: refetchRepo,
   } = useRepo(repoId, { preview });
   const { data: refs, isLoading: refsLoading } = useRepoRefs(repoId, {
     preview,
@@ -36,5 +39,8 @@ export function useRepoContext(
     defaultRef: refs?.head?.ref ?? "main",
     isLoading: repoLoading || refsLoading,
     error: (repoError as Error | null) ?? null,
+    retry: () => {
+      void refetchRepo();
+    },
   };
 }

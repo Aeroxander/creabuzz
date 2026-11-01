@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { hashText } from "@creaton/core/launchpad/work.ts";
 
 import {
+  emptyBudgetProblem,
   nameProblem,
   noAreaProblem,
   resubmitProblem,
@@ -48,4 +49,23 @@ test("a name is plain text the pages can show, up to 32 characters", () => {
   assert.match(nameProblem("docs 🚀") ?? "", /no accents or emoji/);
   assert.match(nameProblem("   ") ?? "", /a title, up to 32 characters/);
   assert.match(nameProblem("x".repeat(33)) ?? "", /up to 32/);
+});
+
+test("new work in a budget with no open work area is refused before it is sent; finishing earlier work is not", () => {
+  const none = {
+    openAreas: 0,
+    truncated: false,
+    otherBudgets: 0,
+    existing: false,
+  };
+  assert.match(emptyBudgetProblem(none) ?? "", /no open work areas yet/);
+  assert.match(
+    emptyBudgetProblem({ ...none, otherBudgets: 1 }) ?? "",
+    /Pick another work budget/,
+  );
+  assert.equal(emptyBudgetProblem({ ...none, openAreas: 1 }), null);
+  // A list cut short may be missing the open area: never refused on a guess.
+  assert.equal(emptyBudgetProblem({ ...none, truncated: true }), null);
+  // A claim already filed under this title can still have its evidence published after its area closed.
+  assert.equal(emptyBudgetProblem({ ...none, existing: true }), null);
 });

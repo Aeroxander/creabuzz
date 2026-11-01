@@ -55,3 +55,25 @@ export function noAreaProblem(
     ? null
     : "These words match no open work area, so nobody could accept your work for review. Pick a work area above and use its words.";
 }
+
+/**
+ * Why new work cannot go to this work budget, or null: with no open work area in it, no manager can ever accept the
+ * work for review (`canAcceptClaim` needs a work area with the same words), so it would only wait until it lapses. Only
+ * said when the budget's work areas were all read (`truncated` false): a list cut short may be missing the open one.
+ */
+export function emptyBudgetProblem(input: {
+  openAreas: number;
+  truncated: boolean;
+  /** Other open work budgets someone could pick instead. */
+  otherBudgets: number;
+  /**
+   * The person already filed a claim under this title here: finishing it (publishing its evidence) must stay possible
+   * after its work area closed, so it is never refused for that.
+   */
+  existing: boolean;
+}): string | null {
+  if (input.existing || input.openAreas > 0 || input.truncated) return null;
+  return input.otherBudgets > 0
+    ? "This work budget has no open work areas, so nobody could accept your work here for review. Pick another work budget, or wait until a work area opens here."
+    : "This work budget has no open work areas yet, so nobody could accept your work for review. Suggest one under Suggested work, or wait until a work area opens.";
+}

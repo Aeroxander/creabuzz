@@ -17,6 +17,7 @@ import {
   type VoteTally,
 } from "@/features/feed/lib/ranking";
 import { useVoteWeights } from "@/features/feed/use-feed";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import {
   KIND_CONTRIBUTION_RECORD,
   KIND_DELETION,
@@ -151,6 +152,12 @@ export function useTaskPlanning(items: readonly WorkItem[]): TaskPlanning {
   );
 
   const claim = useCallback(async (item: WorkItem) => {
+    // A build without raises (the pilot) has no points: nothing there accepts a claim.
+    if (!raisesOffered()) {
+      throw new Error(
+        "Tasks here earn no points. To earn Shares, take the work on the project's Work tab.",
+      );
+    }
     if (!item.doneRowId) {
       throw new Error("Only a finished task can be claimed.");
     }
@@ -177,6 +184,11 @@ export function useTaskPlanning(items: readonly WorkItem[]): TaskPlanning {
 
   const claimFinderCredit = useCallback(
     async (item: WorkItem) => {
+      if (!raisesOffered()) {
+        throw new Error(
+          "Tasks here earn no points, so there is no credit to claim.",
+        );
+      }
       const { source, doneRowId } = item;
       if (!source || !doneRowId || !canClaimFinderCredit(item, viewer)) {
         throw new Error(

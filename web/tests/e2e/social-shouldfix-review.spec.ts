@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * The outside review of the social audit's fixes (D143): failures said in plain words, never the socket's or the
@@ -67,7 +67,7 @@ test("someone removed from a private board who opens it again is told they were 
   await quietChain(page);
   await relay.install(page);
   await signIn(page);
-  await page.goto(`/c/alpha.example.com?channel=${BOARD}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${BOARD}`);
 
   const error = page.getByTestId("board-error");
   await expect(error).toHaveAttribute("data-outcome", "answered", {
@@ -102,7 +102,7 @@ test("older messages that could not load say the server didn't answer, with its 
   await quietChain(page);
   await relay.install(page);
   await signIn(page);
-  await page.goto(`/c/alpha.example.com?channel=${ROOM}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${ROOM}`);
   await expect(page.getByText("history message 70")).toBeVisible({
     timeout: 20_000,
   });
@@ -197,7 +197,7 @@ test("a wiki rename that saved the new page but could not delete the old one say
   await relay.install(page);
   await signIn(page);
   relay.seed(meta(ROOM, "general", "stream"));
-  await page.goto(`/c/alpha.example.com?channel=${ROOM}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${ROOM}`);
   await page.getByTestId("wiki-toggle").click();
   await page.getByTestId("knowledge-page-release-notes").click();
 
@@ -352,7 +352,7 @@ test("a queue action the server could not apply says so plainly, never its inter
   await quietChain(page);
   await relay.install(page);
   await signIn(page);
-  await page.goto(`/c/alpha.example.com?channel=${ROOM}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${ROOM}`);
   await page.getByTestId("moderation-toggle").click({ timeout: 20_000 });
 
   const row = page

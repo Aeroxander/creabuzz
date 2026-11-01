@@ -2,17 +2,23 @@ import { Link, useSearch } from "@tanstack/react-router";
 import { Hash } from "lucide-react";
 import { useState } from "react";
 
+import { KIND_PROFILE, KIND_TEXT_NOTE } from "@/shared/constants/kinds";
+import { relayWsUrl } from "@/shared/lib/relay-url";
+import { QueryError } from "@/shared/ui/query-error";
+
+import { KIND_FORUM_POST } from "../../board/lib/board-events";
 import { useBoardSearch } from "../../board/use-board-search";
 import { parseEntity } from "../lib/entity";
 import { mixChronological } from "../lib/mixed-timeline";
+import { firstError, listView } from "../lib/read-view";
 import { usePostSearch, useUserSearch } from "../use-discovery";
 import { usePeople } from "../use-people";
 import { PersonRow } from "./PersonRow";
 import { PostList } from "./PostList";
 import { SearchBox } from "./RightRail";
 import { PageBar, SocialShell } from "./SocialShell";
-import { EmptyState, TimelineSkeleton } from "./Status";
-import { TabStrip } from "./TabStrip";
+import { EmptyState, PartialFailure, TimelineSkeleton } from "./Status";
+import { TabStrip, tabPanelProps } from "./TabStrip";
 
 type Tab = "posts" | "people";
 
@@ -25,18 +31,52 @@ const TABS: readonly { id: Tab; label: string }[] = [
 function PostResults({ q }: { q: string }) {
   const results = usePostSearch(q);
   const board = useBoardSearch(q);
-  if (results.isLoading || board.isLoading) return <TimelineSkeleton />;
   const items = mixChronological(results.data ?? [], board.posts, true);
+  const error = firstError(results.error, board.error);
+  const view = listView({
+    count: items.length,
+    error,
+    loading: results.isLoading || board.isLoading,
+  });
+  const retry = () => {
+    if (results.error) void results.refetch();
+    if (board.error) board.refetch();
+  };
+  if (view === "loading") return <TimelineSkeleton />;
+  if (view === "error") {
+    return (
+      <div className="p-4">
+        <QueryError
+          description="The server did not answer, so these results are not known to be empty."
+          error={error}
+          kinds={
+            board.error ? [KIND_TEXT_NOTE, KIND_FORUM_POST] : [KIND_TEXT_NOTE]
+          }
+          onRetry={retry}
+          relayUrl={relayWsUrl()}
+          testId="social-search-posts-error"
+          title="Couldn't search posts"
+        />
+      </div>
+    );
+  }
+  const notesFailed = results.error ? (
+    <PartialFailure
+      onRetry={() => void results.refetch()}
+      testId="social-search-notes-failed"
+    >
+      Short posts could not be searched right now; these are board posts only.
+    </PartialFailure>
+  ) : null;
   const boardsFailed = board.error ? (
-    <p
-      className="border-b border-black/10 px-4 py-2 text-xs text-amber-700 dark:border-white/10 dark:text-amber-300"
-      data-testid="social-search-boards-failed"
-      role="status"
+    <PartialFailure
+      onRetry={board.refetch}
+      testId="social-search-boards-failed"
     >
       Board posts could not be searched right now; these are short posts only.
-    </p>
+    </PartialFailure>
   ) : null;
-  if (items.length === 0 && !board.error) {
+  if (view === "empty") {
     return (
       <EmptyState title={`No posts for "${q}"`}>
         Try another word, or look for people.
@@ -48,6 +88,7 @@ function PostResults({ q }: { q: string }) {
       <p className="border-b border-black/10 px-4 py-2 text-xs text-black/60 dark:border-white/10 dark:text-white/60">
         Showing matches from the latest posts and board posts on this server.
       </p>
+      {notesFailed}
       {boardsFailed}
       <PostList
         boards={{ names: board.boards, add: board.add }}
@@ -67,8 +108,28 @@ function PeopleResults({ q }: { q: string }) {
     ]),
   ];
   const people = usePeople(pubkeys);
-  if (found.isLoading) return <TimelineSkeleton />;
-  if (pubkeys.length === 0) {
+  const view = listView({
+    count: pubkeys.length,
+    error: found.error,
+    loading: found.isLoading,
+  });
+  if (view === "loading") return <TimelineSkeleton />;
+  if (view === "error") {
+    return (
+      <div className="p-4">
+        <QueryError
+          description="The server did not answer, so these results are not known to be empty."
+          error={found.error}
+          kinds={[KIND_PROFILE]}
+          onRetry={() => void found.refetch()}
+          relayUrl={relayWsUrl()}
+          testId="social-search-people-error"
+          title="Couldn't search people"
+        />
+      </div>
+    );
+  }
+  if (view === "empty") {
     return (
       <EmptyState title={`No people for "${q}"`}>
         Search by name, or paste someone's public key.
@@ -106,35 +167,38 @@ export function SearchPage() {
           <SearchBox initial={term} key={term} />
         </div>
         <TabStrip
+          idBase="search-tabs"
           label="Search results"
           onChange={setTab}
           tabs={TABS}
           value={tab}
         />
       </PageBar>
-      {term.trim() === "" ? (
-        <EmptyState title="Search">
-          Find posts and people on this server.
-        </EmptyState>
-      ) : (
-        <>
-          {hashtag ? (
-            <Link
-              className="flex items-center gap-3 border-b border-black/10 px-4 py-3 text-sm font-bold text-black hover:bg-black/[0.03] dark:border-white/10 dark:text-white dark:hover:bg-white/[0.04]"
-              params={{ tag: hashtag }}
-              to="/social/tag/$tag"
-            >
-              <Hash aria-hidden className="h-5 w-5" />
-              Go to #{hashtag}
-            </Link>
-          ) : null}
-          {tab === "posts" ? (
-            <PostResults q={term} />
-          ) : (
-            <PeopleResults q={term} />
-          )}
-        </>
-      )}
+      <div {...tabPanelProps("search-tabs", tab)}>
+        {term.trim() === "" ? (
+          <EmptyState title="Search">
+            Find posts and people on this server.
+          </EmptyState>
+        ) : (
+          <>
+            {hashtag ? (
+              <Link
+                className="flex items-center gap-3 border-b border-black/10 px-4 py-3 text-sm font-bold text-black hover:bg-black/[0.03] dark:border-white/10 dark:text-white dark:hover:bg-white/[0.04]"
+                params={{ tag: hashtag }}
+                to="/social/tag/$tag"
+              >
+                <Hash aria-hidden className="h-5 w-5" />
+                Go to #{hashtag}
+              </Link>
+            ) : null}
+            {tab === "posts" ? (
+              <PostResults q={term} />
+            ) : (
+              <PeopleResults q={term} />
+            )}
+          </>
+        )}
+      </div>
     </SocialShell>
   );
 }

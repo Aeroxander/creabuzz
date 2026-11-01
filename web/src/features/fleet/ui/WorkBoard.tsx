@@ -24,6 +24,10 @@ import { NextUpList } from "./NextUpList";
 import { BoardIdeas } from "./BoardIdeas";
 import { TaskDeliveryPanel } from "./TaskDeliveryPanel";
 import { TaskPlanningPanel } from "./TaskPlanningPanel";
+import { PartOfPicker, TaskPartOfPanel } from "./TaskPartOfPanel";
+import { offeredPartOfKey, partOfFromKey } from "../lib/task-part-of";
+import { usePartOfOptions } from "../use-part-of";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { KanbanBoard, ISSUE_MOVE_TARGETS } from "./KanbanBoard";
 import { RecentThread, TaskHistory } from "./WorkBoardThread";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
@@ -169,6 +173,10 @@ export function WorkBoard({
     updateTask,
   } = useWorkBoard(channels);
   const planning = useTaskPlanning(items);
+  // Contributor projects' open work areas a task can be part of.
+  const partOfOptions = usePartOfOptions();
+  // A build without raises (the pilot) links a task to a work area, not to payments.
+  const raises = raisesOffered();
   const { agents } = useAgentRoster();
   const [filter, setFilter] = useState<"all" | "mine" | "open" | "done">("all");
   const [typeFilter, setTypeFilter] = useState<"all" | "task" | "issue">("all");
@@ -190,6 +198,9 @@ export function WorkBoard({
   const [title, setTitle] = useState("");
   const [assignee, setAssignee] = useState("");
   const [channelId, setChannelId] = useState("");
+  const [partOf, setPartOf] = useState("");
+  // The new task's link: the choice while its area is still offered, else none (never written unseen).
+  const createPartOf = offeredPartOfKey(partOfOptions.choices, partOf);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [reply, setReply] = useState("");
@@ -278,8 +289,13 @@ export function WorkBoard({
       channelId: channelId || undefined,
       priority,
       due: due ? Math.floor(new Date(due).getTime() / 1000) : null,
+      partOf: partOfFromKey(createPartOf),
     })
-      .then(() => setTitle(""))
+      .then(() => {
+        setTitle("");
+        setPartOf("");
+      })
+      .catch(reportActionFailure("Couldn't create the task"))
       .finally(() => setCreating(false));
   };
 
@@ -307,6 +323,7 @@ export function WorkBoard({
         milestone: item.milestone,
         reward: item.reward,
         delivery: item.delivery ?? null,
+        partOf: item.partOf ?? null,
         approver: item.approver,
       }),
       sig: "",
@@ -469,6 +486,17 @@ export function WorkBoard({
           <option value="high">High</option>
           <option value="urgent">Urgent</option>
         </select>
+        {partOfOptions.choices.length > 0 ? (
+          <PartOfPicker
+            value={createPartOf}
+            onChange={setPartOf}
+            options={partOfOptions}
+            saved={null}
+            label="New task is part of"
+            className="w-44 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none dark:border-white/10 dark:bg-white/5"
+            testId="work-create-part-of"
+          />
+        ) : null}
         <label className="flex items-center gap-1 text-xs text-black/60 dark:text-white/60">
           Due
           <input
@@ -632,6 +660,17 @@ export function WorkBoard({
                 ) : null}
 
                 {selected.type === "task" ? (
+                  <TaskPartOfPanel
+                    key={`part-of-${selected.key}`}
+                    item={selected}
+                    options={partOfOptions}
+                    onSave={(link) =>
+                      updateTask(asTask(selected), { partOf: link })
+                    }
+                  />
+                ) : null}
+
+                {raises && selected.type === "task" ? (
                   <TaskDeliveryPanel
                     key={`delivery-${selected.key}`}
                     item={selected}

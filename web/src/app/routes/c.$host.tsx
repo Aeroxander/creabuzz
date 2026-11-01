@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CommunityHomePage } from "@/features/communities/ui/CommunityHomePage";
-import { beyondContributorProjects } from "../lib/build-gates";
+import { notContributorOnlyBuild } from "../lib/build-gates";
 
 /**
  * `view` names the surface the sidebar is showing, `page` a wiki page and `work`
@@ -40,7 +40,7 @@ export const Route = createFileRoute("/c/$host")({
       : undefined;
     // AI helpers and Org (helper budgets) are not in a contributor-only build: a link to them opens the rooms.
     const view =
-      (known === "fleet" || known === "org") && !beyondContributorProjects()
+      (known === "fleet" || known === "org") && !notContributorOnlyBuild()
         ? undefined
         : known;
     return {

@@ -171,7 +171,7 @@ export function ChallengeMilestoneCard({
               As things stand it would{" "}
               {objectionCarries(objection, terms.minRejectBps)
                 ? m.phase === "stood"
-                  ? "be upheld: the team's remaining locked tokens would be burned."
+                  ? "be upheld: the team's remaining locked Shares would be burned."
                   : "be upheld: the milestone would be turned down."
                 : "not be upheld: the milestone would stand."}
             </p>
@@ -290,7 +290,7 @@ export function ChallengeMilestoneCard({
               size="sm"
               type="button"
             >
-              {busy("finish") ? "Working…" : "Finish it and unlock the tokens"}
+              {busy("finish") ? "Working…" : "Finish it and unlock the Shares"}
             </Button>
           ) : null}
           {actions.includes("resolve") ? (
@@ -323,7 +323,7 @@ export function ChallengeMilestoneCard({
         {actions.includes("vote") ? (
           <div className="mt-3" data-testid={`challenge-vote-${index}`}>
             <p className="text-sm">
-              Your vote counts for {shares(weight)}. The team&apos;s own tokens
+              Your vote counts for {shares(weight)}. The team&apos;s own Shares
               do not count.
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -490,9 +490,9 @@ function ObjectForm({
     >
       <p>
         {unlocked
-          ? "This milestone has already unlocked. If holders uphold your objection, the team's remaining locked tokens are burned and its bond is forfeited; what already unlocked stays unlocked."
+          ? "This milestone has already unlocked. If holders uphold your objection, the team's remaining locked Shares are burned and its bond is forfeited; what already unlocked stays unlocked."
           : "If holders uphold your objection, the milestone is turned down and the team has to try again with a longer window."}{" "}
-        Holders vote, and the team&apos;s own tokens do not count. Your vote
+        Holders vote, and the team&apos;s own Shares do not count. Your vote
         counts for {shares(weight)}.
       </p>
       <p className="mt-2">

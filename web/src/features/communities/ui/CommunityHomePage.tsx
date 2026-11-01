@@ -1,5 +1,6 @@
 import { ArrowLeft, Ban, Lock, Users } from "lucide-react";
 import { Link, useParams, useSearch } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 
 import {
   normalizeRelayWsUrl,
@@ -8,7 +9,14 @@ import {
 } from "@/shared/lib/relay-url";
 import { ServerImage } from "@/shared/ui/ServerImage";
 import { Button } from "@/shared/ui/button";
+import {
+  asSentence,
+  type BanNotice,
+  banHeadline,
+  banIn,
+} from "@/shared/lib/refusal-text";
 import { looksLikeBanned, looksLikeNotAMember } from "../lib/access";
+import { checkServer, saveServerAddress } from "../lib/server-switch";
 import { useCommunities } from "../use-communities";
 import { useCommunityAccess } from "../use-access";
 import { useChannels } from "@/features/channels/use-channels";
@@ -120,10 +128,11 @@ function InviteOnlyNotice({
 }
 
 /**
- * What a banned person sees instead of a page that reads like the server is broken. There is nothing for them to retry,
- * so there is no retry button.
+ * What a banned person sees instead of a page that reads like the server is broken: until when, and the moderator's
+ * reason, when the server said them. There is nothing for them to retry, so there is no retry button.
  */
-function BannedNotice({ host }: { host: string }) {
+function BannedNotice({ host, ban }: { host: string; ban: BanNotice | null }) {
+  const ends = ban?.ends ?? null;
   return (
     <div className="flex h-dvh min-h-0 w-full flex-1 items-center justify-center px-4">
       <div
@@ -131,15 +140,21 @@ function BannedNotice({ host }: { host: string }) {
         data-testid="community-banned"
       >
         <Ban className="mx-auto h-6 w-6 text-black/60 dark:text-white/60" />
-        <h1 className="mt-3 text-lg font-semibold">
-          You are banned from this community
-        </h1>
+        <h1 className="mt-3 text-lg font-semibold">{banHeadline(ends)}</h1>
         <p className="mt-1 break-all text-xs text-black/60 dark:text-white/60">
           {host}
         </p>
+        {ban?.reason ? (
+          <p
+            className="mt-3 break-words text-sm"
+            data-testid="community-banned-reason"
+          >
+            Reason: {asSentence(ban.reason)}
+          </p>
+        ) : null}
         <p className="mt-3 text-sm text-black/70 dark:text-white/70">
-          The people who run it have turned you away. If you think that is a
-          mistake, ask one of them.
+          The people who run it have turned you away.
+          {typeof ends === "number" ? " You can come back once it ends." : ""}
         </p>
         <div className="mt-4 flex justify-center">
           <Button asChild variant="outline">
@@ -161,11 +176,11 @@ function sameServer(a: string, b: string): boolean {
 }
 
 /**
- * Public page for one community (`/c/<host>`). Communities with open
- * channels open directly into the app shell (sidebar + search + timeline);
- * empty communities show their public card with join/connect CTAs, unless this
- * browser is already connected to it. Then there is nothing to join, and the
- * shell opens on its own prompt to start a project.
+ * Public page for one community (`/c/<host>`). The community this browser is
+ * connected to opens directly into the app shell (sidebar + search + timeline),
+ * even with no rooms yet: there is nothing to join, and the shell opens on its
+ * own prompt to start a project. Any other community shows its public card with
+ * join/connect actions, whatever the connected server holds.
  */
 export function CommunityHomePage() {
   const { host } = useParams({ from: "/c/$host" });
@@ -182,12 +197,53 @@ export function CommunityHomePage() {
   const wsUrl = normalizeRelayWsUrl(host);
   const deepLink = desktopConnectDeepLink(wsUrl);
 
-  const joinInBrowser = () => {
-    setStoredRelayWsUrl(wsUrl);
+  // The page reloads onto the saved address, so a server that does not answer is never saved: the person stays here,
+  // told why, with the button to try again. The check belongs to the address it was started on: moving to another
+  // community's page, or leaving this one, stops it, so a late answer neither saves nor reloads, and its words are
+  // never shown on another community's card.
+  const [join, setJoin] = useState<{
+    host: string;
+    checking: boolean;
+    problem: string | null;
+  } | null>(null);
+  const joinRun = useRef<{ host: string; controller: AbortController } | null>(
+    null,
+  );
+  useEffect(() => {
+    const forHost = host;
+    return () => {
+      const run = joinRun.current;
+      if (run?.host !== forHost) return;
+      run.controller.abort();
+      joinRun.current = null;
+    };
+  }, [host]);
+  const joinHere =
+    join?.host === host ? join : { checking: false, problem: null };
+  const joinInBrowser = async () => {
+    joinRun.current?.controller.abort();
+    const run = { host, controller: new AbortController() };
+    joinRun.current = run;
+    setJoin({ host, checking: true, problem: null });
+    const check = await checkServer(wsUrl, { signal: run.controller.signal });
+    if (joinRun.current !== run || run.controller.signal.aborted) return;
+    joinRun.current = null;
+    const problem = check.ok
+      ? saveServerAddress(wsUrl, setStoredRelayWsUrl)
+      : check.problem;
+    if (problem) {
+      setJoin({ host, checking: false, problem });
+      return;
+    }
     window.location.reload();
   };
 
-  if (channels.isLoading) {
+  // The rooms, errors and refusals below are the CONNECTED server's answers. They describe `/c/<host>` only when that
+  // host is the connected server; any other host is a different community, shown by its own card with the way to join
+  // it (switching servers), never by this server's rooms under the other community's name.
+  const here = sameServer(relayWsUrl(), wsUrl);
+
+  if (here && channels.isLoading) {
     return (
       <div className="flex h-dvh min-h-0 w-full flex-1 items-center justify-center px-4">
         <div className="w-full max-w-md">
@@ -197,11 +253,18 @@ export function CommunityHomePage() {
     );
   }
 
-  if (channels.isError && looksLikeBanned(errorMessage(channels.error))) {
-    return <BannedNotice host={host} />;
+  if (
+    here &&
+    channels.isError &&
+    looksLikeBanned(errorMessage(channels.error))
+  ) {
+    return (
+      <BannedNotice ban={banIn(errorMessage(channels.error))} host={host} />
+    );
   }
 
   if (
+    here &&
     channels.isError &&
     access.data === "invite_only" &&
     looksLikeNotAMember(errorMessage(channels.error))
@@ -211,7 +274,7 @@ export function CommunityHomePage() {
     );
   }
 
-  if (channels.isError) {
+  if (here && channels.isError) {
     return (
       <CommunityLoadState
         host={host}
@@ -229,7 +292,7 @@ export function CommunityHomePage() {
     );
   }
 
-  if (channels.channels.length > 0 || sameServer(relayWsUrl(), wsUrl)) {
+  if (here) {
     const initialChannelId =
       typeof search.channel === "string" ? search.channel : undefined;
     const initialMessageId =
@@ -301,7 +364,8 @@ export function CommunityHomePage() {
 
           <div className="mt-6 flex flex-wrap gap-2">
             <Button
-              onClick={joinInBrowser}
+              disabled={joinHere.checking}
+              onClick={() => void joinInBrowser()}
               className="bg-black text-white hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
             >
               Join this community
@@ -317,6 +381,21 @@ export function CommunityHomePage() {
               </Button>
             ) : null}
           </div>
+
+          <p
+            aria-live="polite"
+            className="mt-3 text-sm text-red-700 empty:hidden dark:text-red-300"
+            data-testid="community-join-problem"
+            role="status"
+          >
+            {joinHere.checking ? (
+              <span className="text-black/60 dark:text-white/60">
+                Checking {host}…
+              </span>
+            ) : (
+              joinHere.problem
+            )}
+          </p>
 
           <p className="mt-4 text-xs text-black/60 dark:text-white/60">
             Joining doesn't require an account here. Creaton creates a local

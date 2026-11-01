@@ -605,10 +605,13 @@ class BrowserAgent {
     });
     const { makeNip98AuthHeader } = await import("@/shared/lib/nip98");
     const auth = await makeNip98AuthHeader(url, "POST", { body });
-    const response = await fetch(url, {
+    const { timedFetch } = await import("@/shared/lib/timed-fetch");
+    // A model can take a while to write; a server that never answers still ends.
+    const response = await timedFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: auth },
       body,
+      timeoutMs: 120_000,
     });
     if (!response.ok) {
       let detail = `gateway ${response.status}`;

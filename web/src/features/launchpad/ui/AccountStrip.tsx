@@ -12,6 +12,11 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 
 import { plainNetworkName } from "../lib/test-network";
+import {
+  feesCoveredOn,
+  passkeyActingLine,
+  passkeyChainId,
+} from "../lib/acting-account";
 import type { ActingAccountState } from "../use-acting-account";
 import type { ConnectedWalletState } from "../use-connected-wallet";
 import { AccountMoneyNote } from "./AccountMoneyNote";
@@ -125,6 +130,7 @@ function NoAccount({
   const nameOf = useUserNames(me ? [me] : []);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const fees = feesCoveredOn(passkeyChainId());
   if (!account.passkeyOffered) {
     return (
       <p
@@ -157,8 +163,8 @@ function NoAccount({
       data-testid={`${testIdPrefix}-no-wallet`}
     >
       <p>
-        To take part, sign in with a passkey. You need no wallet, and the fees
-        are covered on the test network.
+        To take part, sign in with a passkey. You need no wallet
+        {fees ? `, and the fees are covered on ${fees}` : ""}.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -231,7 +237,7 @@ function ActingStrip({
       <div className="mt-2 text-sm text-muted-foreground">
         <p data-testid={`${testIdPrefix}-wallet`}>
           {account.address ? (
-            "You act with your account (passkey; fees are covered on the test network)."
+            passkeyActingLine(account.chainId)
           ) : account.error ? (
             <span className="text-destructive" role="alert">
               {account.error}

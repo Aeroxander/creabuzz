@@ -59,7 +59,7 @@ export function linkDeviceOffered(
  * and the helper budgets on Org: not in a contributor-only build. A pitch there would hand out Shares outside reviewed
  * work, and the pilot server runs no AI service.
  */
-export function beyondContributorProjects(
+export function notContributorOnlyBuild(
   given: GateEnv | undefined = viteEnv(),
 ): boolean {
   return raisesOffered(given);

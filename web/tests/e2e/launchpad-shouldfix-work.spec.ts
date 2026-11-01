@@ -750,3 +750,124 @@ test("Look again on a missing piece of evidence reads it again", async ({
     timeout: 20_000,
   });
 });
+
+/** A check note about a predicted outcome, without needing an AI service. */
+async function openLearningCheck(browser: Browser) {
+  const relay = createMockRelay();
+  seedPeople(relay);
+  relay.seed(evidenceEvent());
+  relay.seed(
+    event(
+      FOUNDER,
+      37020,
+      [
+        ["d", LAUNCH_ID],
+        ["a", COORD],
+      ],
+      {
+        aim: "Help new contributors submit their first useful piece.",
+        now: [
+          {
+            id: "first-guide",
+            text: "Make the first-contribution guide useful",
+            area: `${MANDATE}:${AREA}`,
+            expect: "Two newcomers submit their first piece without help",
+            checkBy: Math.floor(Date.now() / 1000) - 86_400,
+          },
+        ],
+        notDoing: [],
+      },
+    ),
+  );
+  const world: World = { status: STATUS.Open, answers: new Map(), sent: [] };
+  const founder = await openAs(browser, "founder", relay, world);
+  await founder.route("**/llm/chat/completions", (route) =>
+    route.fulfill({ status: 404, body: "{}" }),
+  );
+  await founder.goto(projectPath("overview"));
+  await founder.getByTestId("check-note-write").click();
+  await expect(founder.getByTestId("check-note-item")).toContainText(
+    "Two newcomers submit their first piece without help",
+  );
+  return { founder, relay };
+}
+
+test("a checked prediction needs an observation, and the team may keep a method that works", async ({
+  browser,
+}) => {
+  const { founder, relay } = await openLearningCheck(browser);
+  const keepMethod =
+    "Keep the paired review: both newcomers said the first review answered their questions.";
+  const observation =
+    "Two newcomers submitted their guides and said they needed no extra instructions.";
+  const notes = () =>
+    relay.events.filter(
+      (e) => e.kind === 47003 && Boolean(JSON.parse(e.content).check),
+    );
+
+  await founder
+    .getByTestId("check-note-outside")
+    .fill("New contributors could complete their first submission.");
+  await founder.getByTestId("check-note-happened-0").selectOption("yes");
+  await founder.getByTestId("check-note-next-0").selectOption("keep");
+  await founder
+    .getByLabel("How we work next", { exact: true })
+    .fill(keepMethod);
+
+  // A Yes alone is a verdict, not an observation. Nothing is published until the founder says what they saw.
+  await founder.getByTestId("check-note-publish").click();
+  await expect(founder.getByTestId("check-note-problem")).toContainText(
+    "Say what you observed",
+  );
+  expect(notes()).toHaveLength(0);
+
+  await founder.getByTestId("check-note-why-0").fill(observation);
+  await expect(founder.getByTestId("check-note-publish")).toBeEnabled();
+  await founder.getByTestId("check-note-publish").click();
+  await expect.poll(() => notes().length).toBe(1);
+  const published = JSON.parse(notes()[0].content);
+  expect(published.check.items[0]).toMatchObject({
+    id: "first-guide",
+    happened: "yes",
+    why: observation,
+    next: "keep",
+  });
+  expect(published.check.change).toBe(keepMethod);
+  expect(published.body).toContain(`How we work next: ${keepMethod}`);
+  await expect(founder.getByTestId("check-note-last")).toContainText(
+    keepMethod,
+  );
+  await expect(founder.getByTestId("check-note-last")).toContainText(
+    "How we work next:",
+  );
+  await founder.context().close();
+});
+
+test("a prediction that is not ready to check may stay open without inventing an observation", async ({
+  browser,
+}) => {
+  const { founder, relay } = await openLearningCheck(browser);
+  await founder
+    .getByTestId("check-note-outside")
+    .fill("Nothing yet: the guide has not reached newcomers.");
+  await founder.getByTestId("check-note-happened-0").selectOption("not-yet");
+  await founder.getByTestId("check-note-next-0").selectOption("keep");
+  await founder
+    .getByLabel("How we work next", { exact: true })
+    .fill("Keep the small first-piece review while we wait to observe it.");
+  await expect(founder.getByTestId("check-note-why-0")).toHaveValue("");
+  await expect(founder.getByTestId("check-note-publish")).toBeEnabled();
+  await founder.getByTestId("check-note-publish").click();
+  await expect(founder.getByTestId("check-note-last")).toContainText(
+    "Keep the small first-piece review",
+  );
+  const published = relay.events.filter(
+    (e) => e.kind === 47003 && Boolean(JSON.parse(e.content).check),
+  );
+  expect(published).toHaveLength(1);
+  expect(JSON.parse(published[0].content).check.items[0]).toMatchObject({
+    happened: "not-yet",
+    expected: "Two newcomers submit their first piece without help",
+  });
+  await founder.context().close();
+});

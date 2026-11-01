@@ -2,13 +2,15 @@
  * The way out of the passkey unlock overlay (suite review 2026-11-01, quick win 3): a person whose passkey no longer
  * answers (deleted from the keychain, a broken authenticator) can unlock this session with the recovery key they saved.
  *
- * Driven through the production `passkey-identity` module and `shared/lib/identity` with the dev mock ceremony
- * (`sessionStorage["buzz.passkey.mock"]`), the same set-up as `passkey-identity-keep.test.mjs`. An unlock-mode account
+ * Driven through the production `passkey-identity` module and `shared/lib/identity` with a software authenticator
+ * behind navigator.credentials (`fake-webauthn.mjs`), the same set-up as `passkey-identity-keep.test.mjs`. An unlock-mode account
  * is made the way the app makes one: a stored account, then a passkey added to it.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
+
+import { installFakeWebAuthn } from "./fake-webauthn.mjs";
 
 const localMap = new Map();
 const sessionMap = new Map();
@@ -39,7 +41,8 @@ Object.defineProperty(globalThis, "window", {
   value: { localStorage: local },
   configurable: true,
 });
-sessionMap.set("buzz.passkey.mock", "1");
+// A software authenticator with PRF output behind the real navigator.credentials path.
+installFakeWebAuthn();
 
 const { getPublicKey } = await import("nostr-tools/pure");
 const identity = await import("../../../shared/lib/identity.ts");

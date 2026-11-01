@@ -89,7 +89,7 @@ export interface ContributorDraft {
   budgetShares: string;
   /** Whole Shares any one project inside that budget may award. */
   projectCap: string;
-  /** One wallet address per line (commas and spaces work too). */
+  /** One wallet address per line (commas, semicolons and spaces work too). */
   reviewers: string;
   /** How many reviewers must agree; empty for a simple majority. */
   quorum: string;
@@ -226,12 +226,33 @@ export function quorumSentence(count: number, mustAgree: number): string {
   return `${mustAgree} of these ${count} decide: ${mustAgree} approvals approve it, ${mustAgree} turn-downs turn it down.`;
 }
 
-/** The reviewer addresses in a text box: one per line, or separated by commas or spaces. */
+/**
+ * The reviewer addresses in a text box: one per line, or separated by commas, semicolons or spaces. The same separators
+ * as the milestone reviewers on a raise (`launchpad/lib/launch-panel.ts`), so a list pasted into one form reads the
+ * same in the other.
+ */
 export function reviewerList(text: string): string[] {
   return text
-    .split(/[\s,]+/)
+    .split(/[\s,;]+/)
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
+}
+
+/**
+ * The reviewers box with `address` added on a line of its own, or unchanged with `added` false when that address is
+ * already one of them (in any letter case), so the page can say so instead of doing nothing.
+ */
+export function withReviewer(
+  text: string,
+  address: string,
+): { text: string; added: boolean } {
+  const wanted = address.trim().toLowerCase();
+  if (reviewerList(text).some((entry) => entry.toLowerCase() === wanted))
+    return { text, added: false };
+  return {
+    text: text.trim() ? `${text.trimEnd()}\n${address.trim()}` : address.trim(),
+    added: true,
+  };
 }
 
 export interface ContributorTerms {

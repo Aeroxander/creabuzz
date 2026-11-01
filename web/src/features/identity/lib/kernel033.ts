@@ -74,6 +74,7 @@
  * only because node (tests / the live-check script) has no
  * `navigator.credentials`; it injects the CEREMONY, never a key.
  */
+import { retryAfterOf, retryPause } from "../../../shared/lib/timed-fetch.ts";
 import type { UserOperationReceipt } from "./aa.ts";
 import { createBundlerTransport } from "./aa.ts";
 import type { BundlerTransport } from "./aa.ts";
@@ -631,6 +632,8 @@ export function createKernel033ChainRpc(options: {
     const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params });
     let lastError = new Kernel033ChainRpcError(method, "no attempt made");
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      // The wait a 429/503 asked for (`Retry-After`), so the next attempt is never sooner than the node said.
+      let serverAskedMs: number | null = null;
       const controller = new AbortController();
       const timer = setTimeout(() => {
         controller.abort();
@@ -644,6 +647,7 @@ export function createKernel033ChainRpc(options: {
         });
         const text = await response.text();
         if (response.status === 429 || response.status >= 500) {
+          serverAskedMs = retryAfterOf(response);
           lastError = new Kernel033ChainRpcError(
             method,
             `HTTP ${response.status}: ${text.slice(0, 2000)}`,
@@ -686,7 +690,13 @@ export function createKernel033ChainRpc(options: {
         clearTimeout(timer);
       }
       if (attempt + 1 < maxAttempts) {
-        await sleep(Math.min(MAX_BACKOFF_MS, backoffMs * 2 ** attempt));
+        const pause = retryPause(
+          Math.min(MAX_BACKOFF_MS, backoffMs * 2 ** attempt),
+          serverAskedMs,
+        );
+        // The node asked for a longer wait than this loop makes: stop now with the failure it gave.
+        if (pause === null) throw lastError;
+        await sleep(pause);
       }
     }
     throw lastError;

@@ -126,18 +126,18 @@ function FundingTerms({ dao }: { dao: string }) {
             </div>
           ) : null}
           <MoreInfo label="How funding works" testId="funding-how">
-            Holders vote funding terms first: whether buyers get Loot (no vote)
-            or Shares, a funding limit, an exit fee of at most 5%, and the one
-            rounds contract that may sell. Nothing sells until 30 days later,
-            and leaving costs no fee until then, so anyone who disagrees can
-            leave whole. After that the fee's part of what leaving pays stays in
-            the treasury, for those who stay. Each sale is then its own vote,
-            with a quantity, a least price and an end date, and is sold in
-            weekly funding rounds: bids set the price, never below a unit's
-            share of the treasury plus 2%, and nothing sells while the treasury
-            holds ETH or a token on its watch list, which any holder can add to.
-            Settling a round creates the units sold and pays the treasury at
-            once.
+            Holders vote funding terms first: whether buyers get non-voting
+            shares (no vote) or Shares, a funding limit, an exit fee of at most
+            5%, and the one rounds contract that may sell. Nothing sells until
+            30 days later, and leaving costs no fee until then, so anyone who
+            disagrees can leave whole. After that the fee's part of what leaving
+            pays stays in the treasury, for those who stay. Each sale is then
+            its own vote, with a quantity, a least price and an end date, and is
+            sold in weekly funding rounds: bids set the price, never below a
+            share's part of the treasury plus 2%, and nothing sells while the
+            treasury holds ETH or a token on its watch list, which any holder
+            can add to. Settling a round creates the shares sold and pays the
+            treasury at once.
           </MoreInfo>
           {data.phase === "selling" && !data.roundsOn ? (
             <p
@@ -189,7 +189,7 @@ function FundingTerms({ dao }: { dao: string }) {
             >
               {sender.busy === "funding-finish"
                 ? "Giving back…"
-                : "Give the unsold units back to the sale"}
+                : "Give the unsold shares back to the sale"}
             </Button>
           ) : null}
           {round ? (

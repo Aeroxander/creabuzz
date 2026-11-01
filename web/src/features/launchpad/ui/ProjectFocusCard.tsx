@@ -95,7 +95,7 @@ export function ProjectFocusCard({
   if (focus.query.isError && !current) {
     return (
       <Card className="p-4" data-testid="focus">
-        <h2 className="text-base font-bold">Now</h2>
+        <h2 className="text-base font-bold">Priorities</h2>
         <p className="mt-1 text-sm">
           Couldn&apos;t read what the team is working on now.
         </p>
@@ -115,7 +115,7 @@ export function ProjectFocusCard({
   if (!editing && !current && !founder) {
     return focus.query.isLoading ? null : (
       <Card className="p-4" data-testid="focus">
-        <h2 className="text-base font-bold">Now</h2>
+        <h2 className="text-base font-bold">Priorities</h2>
         <p
           className="mt-1 text-sm text-muted-foreground"
           data-testid="focus-unset"
@@ -142,13 +142,12 @@ export function ProjectFocusCard({
     return (
       <Card className="flex flex-col gap-3 p-4" data-testid="focus-form">
         <div>
-          <h2 className="text-base font-bold">Aim, Now and Not doing</h2>
+          <h2 className="text-base font-bold">Aim, Priorities and Not doing</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pick at most {MAX_NOW} things the team works on now. A team gets
-            more done on a few things at a time. For each, say what you expect
-            to see and when you will check, so the team learns whether it
-            worked. Then say what you have decided not to do, so nobody keeps
-            working on it.
+            Pick at most {MAX_NOW} priorities. A team gets more done on a few
+            things at a time. For each, say what you expect to see and when you
+            will check, so the team learns whether it worked. Then say what you
+            have decided not to do, so nobody keeps working on it.
           </p>
         </div>
         <TextField
@@ -167,7 +166,7 @@ export function ProjectFocusCard({
             key={`now-${i}`}
           >
             <TextField
-              label={`Now ${i + 1}`}
+              label={`Priority ${i + 1}`}
               onChange={(text) => setNow(i, { ...item, text })}
               placeholder="Ship the first guide"
               testId={`focus-now-${i}`}
@@ -175,7 +174,7 @@ export function ProjectFocusCard({
             />
             {areas.length > 0 ? (
               <select
-                aria-label={`Work area for Now ${i + 1}`}
+                aria-label={`Work area for priority ${i + 1}`}
                 className="h-8 w-fit rounded-md border border-input bg-transparent px-2 text-xs"
                 data-testid={`focus-now-area-${i}`}
                 onChange={(e) =>
@@ -242,7 +241,7 @@ export function ProjectFocusCard({
             type="button"
             variant="outline"
           >
-            Add to Now
+            Add a priority
           </Button>
         ) : null}
         {editing.notDoing.map((item, i) => (
@@ -334,7 +333,7 @@ export function ProjectFocusCard({
   return (
     <Card className="flex flex-col gap-3 p-4" data-testid="focus">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-base font-bold">Now</h2>
+        <h2 className="text-base font-bold">Priorities</h2>
         {founder ? (
           <Button
             data-testid={current ? "focus-change" : "focus-set"}
@@ -343,7 +342,7 @@ export function ProjectFocusCard({
             type="button"
             variant="outline"
           >
-            {current ? "Change" : "Set Now"}
+            {current ? "Change" : "Set priorities"}
           </Button>
         ) : null}
       </div>
@@ -389,8 +388,7 @@ export function ProjectFocusCard({
       ) : null}
       {!current || current.now.length === 0 ? (
         <p className="text-sm text-muted-foreground" data-testid="focus-unset">
-          Say what the team works on now, at most {MAX_NOW} things, so everyone
-          pulls the same way.
+          Set at most {MAX_NOW} priorities, so everyone pulls the same way.
         </p>
       ) : (
         <ol className="flex flex-col gap-2" data-testid="focus-now">

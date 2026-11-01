@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { friendlyRelayError } from "@/shared/lib/relay-errors";
 
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
 
 /** One community as listed by the relay's unauthenticated `GET /communities`. */
 export interface CommunityDirectoryEntry {
@@ -19,8 +20,15 @@ interface CommunityDirectory {
   available: boolean;
 }
 
-async function fetchCommunityDirectory(): Promise<CommunityDirectory> {
-  const response = await fetch(`${relayHttpBaseUrl()}/communities`);
+async function fetchCommunityDirectory({
+  signal,
+}: {
+  signal?: AbortSignal;
+} = {}): Promise<CommunityDirectory> {
+  const response = await timedFetchStreamed(
+    `${relayHttpBaseUrl()}/communities`,
+    { signal },
+  );
   // Directory publication is opt-in. A 404 says nothing about whether the
   // connected community exists or whether its channel reads work.
   if (response.status === 404) {

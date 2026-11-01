@@ -8,6 +8,8 @@ import {
   ACTING_KIND_STORAGE_KEY,
   ActingStepError,
   accountGate,
+  feesCoveredOn,
+  passkeyActingLine,
   actingErrorDetails,
   actingErrorMessage,
   actingStepError,
@@ -413,5 +415,36 @@ test("an account that could not be made (AA1x) is not called a step that was alr
       ),
     ),
     WOULD_FAIL_MESSAGE,
+  );
+});
+
+test("the passkey fee promise names the network it is true on, and makes none without one", () => {
+  assert.equal(feesCoveredOn(11155111), "the test network");
+  assert.equal(feesCoveredOn(8453), "Base");
+  assert.equal(feesCoveredOn(null), null);
+  assert.equal(feesCoveredOn(0), null);
+  assert.equal(
+    passkeyActingLine(11155111),
+    "You act with your account (passkey; fees are covered on the test network).",
+  );
+  assert.equal(
+    passkeyActingLine(8453),
+    "You act with your account (passkey; fees are covered on Base).",
+  );
+  assert.equal(passkeyActingLine(null), "You act with your account (passkey).");
+  const none = {
+    kind: null,
+    address: null,
+    accountsChecked: true,
+    chainId: null,
+    passkeyOffered: true,
+  };
+  const label = (id) => `net-${id}`;
+  const onBase = accountGate(none, 8453, label, feesCoveredOn(8453));
+  assert.match(onBase, /fees are covered on Base\)/);
+  assert.doesNotMatch(onBase, /test network/);
+  assert.equal(
+    accountGate(none, 1, label, null),
+    "Set up passkey sign-in from your profile menu to act here, or add a wallet to this browser.",
   );
 });

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay, PREVIEW_PORT } from "./mock-relay";
 
 /**
  * Passkey ceremony prototype against a real WebAuthn stack.
@@ -40,11 +40,11 @@ async function addVirtualAuthenticator(page: Page, hasPrf = true) {
  *
  * Chrome refuses WebAuthn ceremonies on IP-literal origins (both an IP RP id
  * and the `localhost` mapping come back SecurityError on `127.0.0.1`), so the
- * spec drives the same preview server through `http://localhost:4173`, the
+ * spec drives the same preview server through `http://localhost:<E2E_PORT>`, the
  * sanctioned loopback origin where rpId `localhost` is valid.
  */
 async function openCeremony(page: Page) {
-  await page.goto("http://localhost:4173/identity-demo");
+  await page.goto(`http://localhost:${PREVIEW_PORT}/identity-demo`);
 }
 
 test("one registration derives both identity roots and stores only public material", async ({
@@ -145,8 +145,9 @@ test("signing up with a passkey publishes the name that was typed", async ({
   await relay.install(page);
   // Passkeys need the page on `localhost`, but the mock server answers on the
   // loopback address, so this browser is told to use that one.
-  await page.addInitScript(() =>
-    window.localStorage.setItem("buzz.relayUrl", "ws://127.0.0.1:4173"),
+  await page.addInitScript(
+    (url) => window.localStorage.setItem("buzz.relayUrl", url),
+    `ws://${COMMUNITY_HOST}`,
   );
   await page.route("http://127.0.0.1:8545/**", (route) =>
     route.fulfill({
@@ -156,7 +157,7 @@ test("signing up with a passkey publishes the name that was typed", async ({
     }),
   );
 
-  await page.goto("http://localhost:4173/");
+  await page.goto(`http://localhost:${PREVIEW_PORT}/`);
   await page.getByTestId("create-identity-cta").first().click();
   await page.getByTestId("onboarding-name").fill("Mira Okafor");
   await page.getByTestId("onboarding-passkey").click();
@@ -180,10 +181,11 @@ test("signing out of a passkey account offers its own recovery key, and counts i
   const relay = createMockRelay();
   await relay.install(page);
   // A passkey needs a host name, not an IP address: open the app on localhost, still talking to the mock server.
-  await page.addInitScript(() =>
-    localStorage.setItem("buzz.relayUrl", "ws://127.0.0.1:4173"),
+  await page.addInitScript(
+    (url) => localStorage.setItem("buzz.relayUrl", url),
+    `ws://${COMMUNITY_HOST}`,
   );
-  await page.goto("http://localhost:4173/");
+  await page.goto(`http://localhost:${PREVIEW_PORT}/`);
   await page.getByTestId("create-identity-cta").first().click();
   await page.getByTestId("onboarding-name").fill("PRF Reviewer");
   await page.getByTestId("onboarding-passkey").click();

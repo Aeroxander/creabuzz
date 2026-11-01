@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
-import { createMockRelay, matches } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay, matches } from "./mock-relay";
 import { waitForAnimations } from "../helpers/animations";
 import { expectAccessible } from "../helpers/a11y";
 
@@ -139,7 +139,7 @@ async function install(page: Page, relay: ReturnType<typeof createMockRelay>) {
       body: JSON.stringify({
         communities: [
           {
-            host: "alpha.example.com",
+            host: COMMUNITY_HOST,
             name: "Alpha",
             description: "Build together",
             icon: null,
@@ -285,7 +285,7 @@ test("task links persist through status changes and connect output to the projec
   const relay = createMockRelay();
   seed(relay);
   await install(page, relay);
-  await page.goto(`/c/alpha.example.com?view=work&work=${ME}:demo-task`);
+  await page.goto(`/c/${COMMUNITY_HOST}?view=work&work=${ME}:demo-task`);
   const panel = page.getByTestId("task-delivery");
   await expect(panel).toBeVisible();
   await panel.getByTestId("task-delivery-project").selectOption(COORD);
@@ -553,7 +553,7 @@ test("a refused task-link save preserves the draft and offers an actual retry", 
   });
   seed(relay);
   await install(page, relay);
-  await page.goto(`/c/alpha.example.com?view=work&work=${ME}:demo-task`);
+  await page.goto(`/c/${COMMUNITY_HOST}?view=work&work=${ME}:demo-task`);
   const panel = page.getByTestId("task-delivery");
   await panel.getByTestId("task-delivery-project").selectOption(COORD);
   await panel

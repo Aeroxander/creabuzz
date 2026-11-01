@@ -122,8 +122,16 @@ export function publishFundingDecision(input: {
   }
   const share =
     input.unitsNow && input.unitsNow > 0n
-      ? ` (${((cap * 1000n) / input.unitsNow / 10n).toString()}% of the ${whole(input.unitsNow)} units there are now)`
+      ? ` (${((cap * 1000n) / input.unitsNow / 10n).toString()}% of the ${whole(input.unitsNow)} Shares and non-voting shares there are now)`
       : "";
+  const one = cap === UNIT;
+  const kind = input.asShares
+    ? one
+      ? "Share"
+      : "Shares"
+    : one
+      ? "non-voting share"
+      : "non-voting shares";
   return {
     to: contract(input.terms),
     data: encodeFunctionData(
@@ -133,13 +141,13 @@ export function publishFundingDecision(input: {
     ),
     lane: "unrestricted",
     title: input.raising
-      ? `Raise the funding limit to ${whole(cap)} new units`
-      : `Set a funding limit of ${whole(cap)} new ${input.asShares ? "Shares" : "Loot"}`,
+      ? `Raise the funding limit to ${whole(cap)} new ${kind}`
+      : `Set a funding limit of ${whole(cap)} new ${kind}`,
     lines: [
-      `Up to ${whole(cap)} new units may be sold for money for the project${share}. This is the current limit: a later vote can raise it, with another 30 days' notice.`,
+      `Up to ${whole(cap)} new ${kind} may be sold for money for the project${share}. This is the current limit: a later vote can raise it, with another 30 days' notice.`,
       input.asShares
         ? "Buyers get Shares, with a vote."
-        : "Buyers get Loot: the same part of the treasury and of payouts as a Share, but no vote.",
+        : "Buyers get non-voting shares: the same part of the treasury and of payouts as a Share, but no vote.",
       `Only the weekly rounds at ${input.rounds.trim().toLowerCase()} may sell them, and nothing is sold until 30 days after this runs, so anyone who disagrees can leave first. Each sale then needs its own vote.`,
       fee === 0
         ? "No exit fee: leaving pays a whole share."
@@ -247,7 +255,7 @@ export function openTrancheDecision(input: {
   leastPrice: bigint;
   expiry: number;
 }): DecisionDraft {
-  const quantity = units128(input.quantity, "quantity", "How many units");
+  const quantity = units128(input.quantity, "quantity", "How many shares");
   const least = units128(input.leastPrice, "leastPrice", "The least price");
   if (!Number.isInteger(input.expiry) || input.expiry <= 0) {
     throw new DecisionInputError("expiry", "Choose when the sale ends.");
@@ -265,10 +273,10 @@ export function openTrancheDecision(input: {
       [quantity, least, BigInt(input.expiry)],
     ),
     lane: "unrestricted",
-    title: `Sell up to ${whole(quantity)} new units for the project`,
+    title: `Sell up to ${whole(quantity)} new shares for the project`,
     lines: [
-      `Offered in weekly funding rounds at ${money(least)} a unit or more, until ${date}. Bids set the price above that.`,
-      "Every payment goes to the treasury. Nothing sells below a unit's share of the treasury, plus 2%.",
+      `Offered in weekly funding rounds at ${money(least)} a share or more, until ${date}. Bids set the price above that.`,
+      "Every payment goes to the treasury. Nothing sells below a share's part of the treasury, plus 2%.",
     ],
   };
 }
@@ -295,7 +303,7 @@ export function lowerCapDecision(input: {
     to: contract(input.terms),
     data: encodeFunctionData(FUNDING_SIGNATURES.lowerCap, ["uint128"], [cap]),
     lane: "unrestricted",
-    title: `Lower the funding limit to ${whole(cap)} new units`,
+    title: `Lower the funding limit to ${whole(cap)} new shares`,
     lines: [
       "This takes effect at once. Raising it again needs a vote and 30 days' notice.",
     ],

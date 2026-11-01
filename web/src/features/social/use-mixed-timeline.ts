@@ -22,6 +22,7 @@ import {
   mixRanked,
   type TimelineItem,
 } from "./lib/mixed-timeline";
+import { firstError, firstPageError, olderPageError } from "./lib/read-view";
 import type { Row } from "./lib/timeline";
 import type { BoardContext } from "./ui/PostList";
 import { useNoteRanking } from "./use-ranking";
@@ -198,7 +199,9 @@ export function useMixedTimeline({
     boards,
     showFresh,
     isLoading: notes.isLoading || board.isLoading,
-    error: notes.error ?? board.error,
+    // A failed older page is said at the bottom of the list (`loadMoreError`), not in place of what already loaded.
+    error: firstError(firstPageError(notes), board.error),
+    loadMoreError: firstError(olderPageError(notes), board.olderError),
     refetch: () => {
       void notes.refetch();
       board.refetch();

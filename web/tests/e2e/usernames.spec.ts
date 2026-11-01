@@ -1,7 +1,7 @@
 import { getPublicKey } from "nostr-tools/pure";
 import { expect, test } from "@playwright/test";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 import { truncatePubkey } from "../../src/shared/lib/pubkey";
 
 /**
@@ -76,7 +76,7 @@ async function mountWithProfile(
   });
   await relay.install(page);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("user-chip").waitFor();
 }

@@ -21,6 +21,7 @@
  * - Paymasters are explicitly out of scope for wave 4b (`paymasterAndData`
  *   must stay empty for these transports to be meaningful).
  */
+import { retryAfterOf, retryPause } from "../../../shared/lib/timed-fetch.ts";
 import { abiEncodeCall, decodeAddressError } from "./userop-abi.ts";
 import type { PackedUserOperation } from "./userop.ts";
 
@@ -297,6 +298,8 @@ export function createBundlerTransport(
     const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params });
     let lastError: Error = new BundlerRpcError(`bundler: ${method} failed`);
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      // The wait a 429/503 asked for (`Retry-After`), so the next attempt is never sooner than the bundler said.
+      let serverAskedMs: number | null = null;
       try {
         const response = await fetchWithTimeout(
           fetchImpl,
@@ -305,6 +308,7 @@ export function createBundlerTransport(
           timeoutMs,
         );
         if (response.status === 429 || response.status >= 500) {
+          serverAskedMs = retryAfterOf(response);
           lastError = new BundlerRpcError(
             `bundler: ${method} HTTP ${response.status}${await boundedBodyText(response)}`,
             { retryable: true },
@@ -343,7 +347,13 @@ export function createBundlerTransport(
         }
       }
       if (attempt + 1 < maxAttempts) {
-        await sleep(Math.min(MAX_BACKOFF_MS, backoffMs * 2 ** attempt));
+        const pause = retryPause(
+          Math.min(MAX_BACKOFF_MS, backoffMs * 2 ** attempt),
+          serverAskedMs,
+        );
+        // The bundler asked for a longer wait than this loop makes: stop now with the failure it gave.
+        if (pause === null) throw lastError;
+        await sleep(pause);
       }
     }
     throw lastError;

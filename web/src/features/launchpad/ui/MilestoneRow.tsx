@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { Button } from "@/shared/ui/button";
@@ -9,9 +9,12 @@ import {
   evidenceUpdateContent,
 } from "../lib/evidence";
 import {
+  allocateClaimName,
   claimForDraft,
+  claimSlotEmpty,
   clearSubmission,
   loadSubmission,
+  nameTakenByOther,
   type RemainingSteps,
   remainingSteps,
   type SubmissionDraft,
@@ -24,7 +27,6 @@ import type { MilestoneTranche } from "@creaton/core/launchpad/milestoneLock.ts"
 import {
   claimForMilestone,
   MILESTONE_STEPS,
-  milestoneClaimId,
   milestoneProgress,
 } from "../lib/milestone-progress";
 import {
@@ -37,6 +39,7 @@ import {
   idWord,
   SIGNATURES,
 } from "@creaton/core/launchpad/work.ts";
+import { ethCall, getRpcEndpoint } from "../chain";
 import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import type { Launch } from "../models";
 import { useEvidencePackets } from "../use-evidence";
@@ -85,6 +88,9 @@ export function MilestoneRow({
   const panel = work?.mandates.find((m) => m.isMilestonePanel);
   // A submission that was started and not finished is kept, so cancelling a prompt or reloading resumes the same one.
   const storageKey = submissionKey(lock, wallet, tranche.index);
+  // The submission now on screen: a name check that returns after the wallet changed must not save or file under it.
+  const currentKey = useRef(storageKey);
+  currentKey.current = storageKey;
   const [draft, setDraft] = useState<SubmissionDraft | null>(() =>
     loadSubmission(storageKey),
   );
@@ -109,6 +115,7 @@ export function MilestoneRow({
           published:
             pending !== null &&
             evidenceFor(pending, packets, panel.address).kind === "verified",
+          nameTaken: nameTakenByOther(panel.claims, draft, wallet),
         })
       : null;
   const [evidence, setEvidence] = useState("");
@@ -161,6 +168,7 @@ export function MilestoneRow({
       published:
         filed !== null &&
         evidenceFor(filed, packets, panel.address).kind === "verified",
+      nameTaken: nameTakenByOther(panel.claims, saved, wallet),
     });
     if ("problem" in remaining) {
       setProblem(remaining.problem);
@@ -234,13 +242,28 @@ export function MilestoneRow({
       setProblem(wrong);
       return;
     }
-    const saved = {
-      name: milestoneClaimId(
-        tranche.index,
-        panel.claims.map((c) => idLabel(c.id)),
-      ),
-      evidence,
-    };
+    // A fresh name for every new submission (a turned-down claim keeps its own), checked with the network first.
+    setWorking(true);
+    const claimsAddress = panel.claimsAddress;
+    const named = await allocateClaimName(
+      tranche.index,
+      panel.claims.map((c) => idLabel(c.id)),
+      async (name) =>
+        claimSlotEmpty(
+          await ethCall(
+            getRpcEndpoint(),
+            claimsAddress,
+            encodeCallId(SIGNATURES.claim, idWord(name)),
+          ),
+        ),
+      () => currentKey.current === storageKey,
+    );
+    setWorking(false);
+    if ("problem" in named) {
+      setProblem(named.problem);
+      return;
+    }
+    const saved = { name: named.name, evidence };
     // Saved before the first prompt, so a cancel or a reload finds it. If it cannot be kept, nothing is sent: a claim
     // filed whose name and evidence are lost on the next reload cannot be finished or checked.
     if (!saveSubmission(storageKey, saved)) {
@@ -324,7 +347,7 @@ export function MilestoneRow({
               <p>
                 {left && "steps" in left
                   ? `Your last submission is not finished. Still to do: ${left.steps.map((step) => STEP_WORDS[step]).join(", then ")}.`
-                  : "Your last submission cannot be continued."}
+                  : `Your last submission cannot be continued. ${left && "problem" in left ? left.problem : ""}`}
               </p>
               <p className="whitespace-pre-wrap text-xs text-muted-foreground">
                 {draft.evidence}
@@ -346,6 +369,8 @@ export function MilestoneRow({
                   data-testid={`milestone-start-over-${tranche.index}`}
                   disabled={blocked}
                   onClick={() => {
+                    // The saved text goes back in the box, so starting over does not mean typing it again.
+                    if (evidence.trim() === "") setEvidence(draft.evidence);
                     clearSubmission(storageKey);
                     setDraft(null);
                     setProblem(null);

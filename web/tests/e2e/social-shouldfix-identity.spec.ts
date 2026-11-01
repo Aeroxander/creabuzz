@@ -225,12 +225,28 @@ test("setting up passkey sign-in from the wallet dialog keeps the account it was
   page,
 }) => {
   await signIn(page);
-  // The module's deterministic passkey stand-in, with PRF output: the case that used to derive a new person.
-  await page.addInitScript(() => {
-    sessionStorage.setItem("buzz.passkey.mock", "1");
+  // A passkey with PRF output (Chrome's virtual authenticator): the case that used to derive a new person. WebAuthn
+  // needs the `localhost` origin; the mock server answers on 127.0.0.1.
+  const port = process.env.E2E_PORT ?? "4173";
+  const client = await page.context().newCDPSession(page);
+  await client.send("WebAuthn.enable");
+  await client.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+      hasPrf: true,
+    },
   });
+  await page.addInitScript(
+    (url) => localStorage.setItem("buzz.relayUrl", url),
+    `ws://127.0.0.1:${port}`,
+  );
   await start(page);
-  await page.goto(`/u/${ME}`);
+  await page.goto(`http://localhost:${port}/u/${ME}`);
   await page
     .getByRole("button", { name: "Connect payment wallet", exact: true })
     .click();

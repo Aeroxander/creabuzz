@@ -42,17 +42,68 @@ test("the prompt carries only the note's facts, and the rules say to invent noth
   );
   assert.match(system, /Never add numbers, people, events or results/);
   assert.match(system, /Do not name or rank individuals/);
-  assert.match(system, /exactly one question per Now item/);
+  assert.match(system, /exactly one question per priority/);
   assert.match(user, /Aim: Teachers who want open lesson plans/);
   assert.match(
     user,
     /1\. Ship the guide\. Expected: Two newcomers submit\. Happened: partly\. What the founder saw: One submitted\. The founder's choice: keep\./,
   );
   assert.match(user, /2\. Find a reviewer\. No expectation was set\./);
-  assert.match(user, /what was missing: The "done when" was unclear, 1/);
+  assert.match(
+    user,
+    /reasons reported, not proven causes or trends: The "done when" was unclear, 1/,
+  );
   assert.match(
     checkDraftPrompt({ ...note, outside: "" }, "").user,
     /Aim: \(not set\)[\s\S]*\(the founder has not said yet\)/,
+  );
+});
+
+test("AI receives the founder's decision to keep the method and must not invent a change or a statistical signal", () => {
+  const keep =
+    "Keep the review method while we watch the next two submissions.";
+  const { system, user } = checkDraftPrompt(
+    { ...note, change: keep },
+    "Teachers",
+  );
+  assert.match(
+    user,
+    /How the founder plans to work next \(keep, change or investigate\): Keep the review method/,
+  );
+  assert.match(
+    system,
+    /Keeping the current method or gathering more evidence is a valid choice/,
+  );
+  assert.match(system, /Do not invent a process change/);
+  assert.match(
+    system,
+    /do not establish a trend, a cause or a person's performance/,
+  );
+  assert.match(system, /do not invent normal ranges or statistical signals/);
+  assert.match(
+    system,
+    /confirmed defect or safety problem still needs prompt action/,
+  );
+  assert.match(
+    system,
+    /Agreement between AI replies is not independent evidence/,
+  );
+});
+
+test("a legacy prediction verdict without an observation is explicitly unknown to the AI", () => {
+  const withoutObservation = structuredClone(note);
+  withoutObservation.items[0].happened = "yes";
+  withoutObservation.items[0].why = "";
+  const { system, user } = checkDraftPrompt(withoutObservation, "Teachers");
+  assert.match(system, /A verdict without an observation is not evidence/);
+  assert.match(
+    user,
+    /Happened: yes\. Observation supporting the verdict: \(not provided; the outcome is not established here\)/,
+  );
+  withoutObservation.items[0].happened = "not-yet";
+  assert.doesNotMatch(
+    checkDraftPrompt(withoutObservation, "Teachers").user,
+    /outcome is not established here/,
   );
 });
 

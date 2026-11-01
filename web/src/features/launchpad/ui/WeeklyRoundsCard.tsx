@@ -9,6 +9,7 @@ import { defaultChainPreset } from "../chain-config";
 import { encodeActivateExitExchange } from "../lib/exit-exchange";
 import {
   clearingLine,
+  roundUnit,
   floorAtOpeningText,
   historyRow,
   lastTradeLine,
@@ -312,7 +313,9 @@ export function RoundPanel({
   const [form, setForm] = useState<"offer" | "bid" | null>(null);
   const { sell, bid } = round.mine;
   const holders = !round.funding;
-  const what = holders ? "Shares" : "new units";
+  // A funding round names what it sells: new Shares, which vote, or new non-voting shares.
+  const unit = roundUnit(round, shares);
+  const what = holders ? "Shares" : `new ${unit}`;
   const bidding = round.phase === "bidding";
   const over = round.phase === "settled" || round.phase === "void";
   const unclaimed =
@@ -333,7 +336,9 @@ export function RoundPanel({
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">Round {round.id.toString()}</span>
         <Chip icon={Scale}>
-          {floorAtOpeningText(round.floor, holders ? "Share" : "unit")}
+          {holders
+            ? floorAtOpeningText(round.floor, "Share")
+            : `Floor at opening: ${usdc(round.floor)} a ${unit.replace(/s$/, "")}`}
         </Chip>
       </div>
       {holders && leaving ? (
@@ -345,14 +350,14 @@ export function RoundPanel({
         {roundStatusLine(round, round.closesAt + SETTLE_WINDOW)}
       </p>
       <p className="text-sm font-medium" data-testid="rounds-clearing">
-        {clearingLine(round)}
+        {clearingLine(round, unit)}
       </p>
       {round.rows.length > 0 ? (
         <table className="text-sm" data-testid="rounds-rows">
           <thead>
             <tr className="text-left text-xs text-muted-foreground">
               <th className="pr-4 font-medium">
-                Price a {holders ? "Share" : "unit"}
+                Price a {unit.replace(/s$/, "")}
               </th>
               <th className="pr-4 font-medium">Offered at or below</th>
               <th className="font-medium">Wanted at or above</th>
@@ -466,7 +471,7 @@ export function RoundPanel({
             type="button"
             variant="outline"
           >
-            {holders ? "Bid for Shares" : "Bid for new units"}
+            {holders ? "Bid for Shares" : `Bid for new ${unit}`}
           </Button>
         ) : null}
         {round.phase === "settling" ? (

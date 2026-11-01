@@ -81,29 +81,58 @@ interface DecisionLike {
 
 const LIVE = new Set(["Active", "Succeeded", "Queued"]);
 
+/** What a live vote to approve a work area would approve, or "unreadable" when its call cannot be read; null otherwise. */
+function approvedArea(
+  decision: DecisionLike,
+): { projectId: string; checkHash: string } | "unreadable" | null {
+  if (!LIVE.has(decision.state) || !decision.action) return null;
+  const hex = decision.action.data.replace(/^0x/, "").toLowerCase();
+  if (!hex.startsWith(APPROVE_PROJECT)) return null;
+  try {
+    const [projectId, , , , , checkHash] = decodeParameters(
+      ["bytes32", "address", "uint128", "uint128", "uint64", "bytes32"],
+      `0x${hex.slice(8)}`,
+    ) as [string, string, bigint, bigint, bigint, string];
+    return { projectId, checkHash };
+  } catch {
+    return "unreadable";
+  }
+}
+
 /**
  * The open vote that would approve this work area (same short name and same words), or null. A vote that already
- * passed and ran, or failed, does not count: the suggestion then reads as approved, or can be put to a vote again.
+ * passed and ran, or failed, does not count: the suggestion then reads as approved, or can be put to a vote again. A
+ * vote whose call cannot be read is matched to nothing here; `unreadableVoteNote` says so on the page.
  */
 export function openVoteFor(
   decisions: readonly DecisionLike[],
   area: { projectId: string; checkHash: string },
 ): string | null {
   for (const decision of decisions) {
-    if (!LIVE.has(decision.state) || !decision.action) continue;
-    const hex = decision.action.data.replace(/^0x/, "").toLowerCase();
-    if (!hex.startsWith(APPROVE_PROJECT)) continue;
-    try {
-      const [id, , , , , check] = decodeParameters(
-        ["bytes32", "address", "uint128", "uint128", "uint64", "bytes32"],
-        `0x${hex.slice(8)}`,
-      ) as [string, string, bigint, bigint, bigint, string];
-      if (
-        id.toLowerCase() === area.projectId.toLowerCase() &&
-        check.toLowerCase() === area.checkHash.toLowerCase()
-      )
-        return decision.id;
-    } catch {}
+    const approves = approvedArea(decision);
+    if (approves === null || approves === "unreadable") continue;
+    if (
+      approves.projectId.toLowerCase() === area.projectId.toLowerCase() &&
+      approves.checkHash.toLowerCase() === area.checkHash.toLowerCase()
+    )
+      return decision.id;
   }
   return null;
+}
+
+/**
+ * What to say when an open vote to approve a work area could not be read, or null when every one could: such a vote is
+ * not matched to any suggestion, so a suggestion it covers would still offer "Put to a vote". Said once, above the
+ * suggestions, so nobody opens a second vote without looking under Decisions first.
+ */
+export function unreadableVoteNote(
+  decisions: readonly DecisionLike[],
+): string | null {
+  const count = decisions.filter(
+    (decision) => approvedArea(decision) === "unreadable",
+  ).length;
+  if (count === 0) return null;
+  return count === 1
+    ? "One open vote to approve a work area could not be read, so it is not shown beside any suggestion here. Look under Decisions before putting a suggestion to a vote."
+    : `${count} open votes to approve work areas could not be read, so they are not shown beside any suggestion here. Look under Decisions before putting a suggestion to a vote.`;
 }

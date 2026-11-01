@@ -11,6 +11,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { useActionTracker } from "@/shared/hooks/use-action-tracker";
 import { useBoundedPoll } from "@/shared/hooks/use-bounded-poll";
@@ -63,7 +64,9 @@ export type RunListState = {
 async function fetchRuns(workflowId: string): Promise<WorkflowRun[]> {
   const url = `${relayHttpBaseUrl()}/workflows/${encodeURIComponent(workflowId)}/runs?limit=${RUNS_LIMIT}`;
   const auth = await makeNip98AuthHeader(url, "GET");
-  const response = await fetch(url, { headers: { Authorization: auth } });
+  const response = await timedFetchStreamed(url, {
+    headers: { Authorization: auth },
+  });
   if (!response.ok) {
     throw new Error(`The server refused the run list (${response.status}).`);
   }
@@ -76,7 +79,9 @@ async function fetchApprovals(
 ): Promise<RunApproval[]> {
   const url = `${relayHttpBaseUrl()}/workflows/${encodeURIComponent(workflowId)}/runs/${encodeURIComponent(runId)}/approvals`;
   const auth = await makeNip98AuthHeader(url, "GET");
-  const response = await fetch(url, { headers: { Authorization: auth } });
+  const response = await timedFetchStreamed(url, {
+    headers: { Authorization: auth },
+  });
   if (!response.ok) {
     throw new Error(
       `The server refused the approval list (${response.status}).`,

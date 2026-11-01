@@ -4,7 +4,7 @@ import * as nip44 from "nostr-tools/nip44";
 
 import { expectAccessible } from "../helpers/a11y";
 import { createDirectMessageWraps } from "../../src/features/social/lib/nip17.ts";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Reports and the moderation tools, as the social run's moderators and members meet them: the community's queue shows
@@ -132,7 +132,7 @@ async function openQueue(
 ) {
   await relay.install(page);
   await signIn(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("moderation-toggle").click({ timeout: 20_000 });
 }
 
@@ -182,7 +182,7 @@ test("each queue row shows the reported words or person, who wrote them, and lin
   await expect(room).toContainText("about a message");
   await expect(room.getByTestId("moderation-report-link")).toHaveAttribute(
     "href",
-    `/c/alpha.example.com?channel=${ROOM}&message=${ROOM_MESSAGE}`,
+    `/c/${encodeURIComponent(COMMUNITY_HOST)}?channel=${ROOM}&message=${ROOM_MESSAGE}`,
   );
 
   const person = rowWith(page, "says she is the founder");
@@ -366,7 +366,7 @@ async function openBoard(
   await relay.install(page);
   await signIn(page);
   await page.goto(
-    `/c/alpha.example.com?channel=${BOARD}${postId ? `&post=${postId}` : ""}`,
+    `/c/${COMMUNITY_HOST}?channel=${BOARD}${postId ? `&post=${postId}` : ""}`,
   );
   await page.getByTestId("content-pane").waitFor();
 }

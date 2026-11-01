@@ -177,7 +177,12 @@ empties it.
   this machine), `./run.sh build`, then `./run.sh restore backups/<dir> --yes`. Restore refuses when `.env` has a
   different `BUZZ_RELAY_PRIVATE_KEY` from the backup's: the server would come back as a different server.
 - **Practise a restore** before you rely on the backups, and after upgrades that change the database: a backup that has
-  never been restored is a hope, not a backup.
+  never been restored is a hope, not a backup. Use your real backup, copied off the machine, on a second machine, and
+  check what came back (posts, pictures, policies, the server's identity, members, git data) before writing new data:
+  the steps and checks are in
+  [docs/v3-review/RESTORE-REHEARSAL.md](../../docs/v3-review/RESTORE-REHEARSAL.md).
+  `scripts/test-compose-backup.sh` is separate, automated coverage: it builds a scratch stack of its own, backs it up
+  and restores it. It never reads your backup, so running it anywhere says nothing about your server's backups.
 
 ## Logs
 

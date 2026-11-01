@@ -22,7 +22,11 @@ import { readableQuotes, workTitle } from "../lib/work-titles";
 const WORK_AREA_NAME_HINT = "A short name, up to 32 characters.";
 import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import type { DecisionsSnapshot } from "@creaton/core/launchpad/decisions.ts";
-import { awardsUnderVote } from "../lib/dao-overview";
+import {
+  awardsUnderVote,
+  waitingToFinish,
+  waitingToFinishText,
+} from "../lib/dao-overview";
 import { useAllowance } from "./AllowanceNote";
 import {
   PeoplePicker,
@@ -74,17 +78,21 @@ export function attempt(make: () => DecisionDraft): DraftResult {
   }
 }
 
+/** A day, from unix seconds, the way the Work tab writes it. */
+const day = (seconds: number) =>
+  new Date(seconds * 1000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
 /** A work budget by what it holds and until when, never by its contract's address. */
 function budgetName(m: {
   created: { shareBudget: bigint };
   sharesAllocated: bigint;
   expiresAt: number;
 }): string {
-  const until = new Date(m.expiresAt * 1000).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  const until = day(m.expiresAt);
   return `Work budget · ${formatUnits(m.created.shareBudget - m.sharesAllocated, 18)} Shares not yet in a work area · open until ${until}`;
 }
 
@@ -414,12 +422,17 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
       .map((claim) => ({ mandate, claim })),
   );
   const inVote = voting.size > 0;
+  // Approved work that earns nothing until its contributor marks it finished: listed, so it is not mistaken for none.
+  const unfinished = waitingToFinish(ctx.work);
   const [which, setWhich] = useState("");
   const [shares, setShares] = useState("");
   const key = (a: (typeof awardable)[number]) =>
     `${a.mandate.address}:${a.claim.id}`;
   const chosen = awardable.find((a) => key(a) === which) ?? awardable[0];
-  const who = useWalletLabels(awardable.map((a) => a.claim.record.contributor));
+  const who = useWalletLabels([
+    ...awardable.map((a) => a.claim.record.contributor),
+    ...unfinished.map((u) => u.claim.record.contributor),
+  ]);
   const project = chosen?.mandate.projects.find(
     (p) => p.id === chosen.claim.project,
   );
@@ -463,7 +476,25 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
         budget refuses an award larger than the work area has left, however the
         vote goes.
       </p>
-      {awardable.length === 0 ? (
+      {awardable.length === 0 && unfinished.length > 0 ? (
+        // Approved work is there, but none of it is marked finished yet: say whose step it is, or from when.
+        <div className="text-sm" data-testid="award-waiting">
+          <p>
+            Approved work can be awarded once its contributor marks it finished,
+            after a waiting period.
+          </p>
+          <ul className="mt-1 list-disc pl-5">
+            {unfinished.map((u) => (
+              <li
+                data-testid="award-waiting-item"
+                key={`${u.mandate.address}:${u.claim.id}`}
+              >
+                {waitingToFinishText(u, who, day)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : awardable.length === 0 ? (
         // Nothing to award: no amount to type and no preview, only where the work stands.
         <p className="text-sm" data-testid="award-none">
           No approved work is waiting for an award.{" "}

@@ -88,7 +88,7 @@ pub struct BanRecord {
     pub banned: bool,
     /// Ban expiry; `None` while `banned` ⇒ permanent.
     pub ban_expires_at: Option<DateTime<Utc>>,
-    /// Moderator-supplied ban reason (private).
+    /// Moderator-supplied ban reason; shown to the banned person in the ban refusal.
     pub ban_reason: Option<String>,
     /// Write-block until this timestamp; `None` or past ⇒ not timed out.
     pub muted_until: Option<DateTime<Utc>>,

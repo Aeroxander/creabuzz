@@ -1,6 +1,6 @@
 # Where Creaton stands
 
-Updated 2026-10-31. The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
+Updated 2026-11-01 (the gates, the restore rehearsal, restricted holders, the reserve). The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
 Each decision is a row in [DECISIONS.md](DECISIONS.md) (D1 to D152). The hand tests for the pilot, in order, are in
 [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md); every hand test ever written is in [TEST-STEPS.md](TEST-STEPS.md), a log in
 date order. What the 2026-10-31 pass hid or retired, and what waits on your call, is in
@@ -45,7 +45,7 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 | Invite-only server, invite links, reports, error reports | D107, D140 | `scripts/web-invite-only-e2e.sh`, `scripts/web-error-report-e2e.sh` |
 | Contributor projects: start (no sale), work areas, Ways to help, submit, accept for review, review, finish the review, turn-downs, award vote, Needs you, contributions | D65, D66, D84, D88 to D91, D144, D145 | `scripts/web-contributor-e2e.sh`, `web-work-e2e.sh`, `web-paid-work-e2e.sh`, `cli-no-raise-e2e.sh` |
 | Passkey accounts for every contributor step, fees covered, money sent out | D139, D141 | `scripts/web-passkey-contributor-e2e.sh` (Sepolia fork, built like the image) |
-| The hosted image and server: first start, backups, contributor-only build | D107, D140 | `scripts/test-compose-backup.sh`; `deploy-env` tests |
+| The hosted image and server: first start, backups, contributor-only build | D107, D140 | `scripts/test-compose-backup.sh` (a scratch stack); `deploy-env` tests; your own backup only by [RESTORE-REHEARSAL.md](RESTORE-REHEARSAL.md), not yet run |
 | Every screen, read as the pilot sees it | D108 to D111, D146 | `WEB_FEATURES=mvp scripts/web-screen-audit.sh`; [SCREEN-AUDIT-2026-10-24.md](SCREEN-AUDIT-2026-10-24.md) |
 | Sepolia readiness: the deploy rehearsed on a fork, every contract checked, the largest transaction under the gas cap | D85, D140 | `scripts/sepolia-deploy.sh` (rehearsal); `web-contributor-e2e.sh --sepolia-fork` |
 | Test networks only, off in the hosted build and frozen: bounties, forecasts, CREATE and the court, money forecasts (removed from the app in D150 and from the contracts in D151, see tag pre-deprecation-2026-10-31), matched exits (retired in D152), payouts, remixes, weekly rounds, funding terms | D113 to D136 | Forge suite, mutation check, `web-post-bounty-e2e.sh`, `web-rounds-e2e.sh` |
@@ -53,28 +53,49 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 
 ## The gates
 
-- **Run `scripts/mvp-gate.sh --pilot` green on the build you host** (eight journeys: the social suite as the pilot
-  server runs it, invite links, error reports, the command-line and page contributor journeys, the passkey one, work and
-  paid work). `scripts/mvp-gate.sh` runs all sixteen, the pilot set first; `--later` runs the raise, milestone and
-  optional-feature journeys alone; `--list` shows what would run.
-- **Last full pass: 2026-10-31**, all 16 journeys after the D150, D151 and D152 removals (pilot set and later set).
-- **Nothing runs it on its own.** No workflow or recipe calls it, and the branch has never been pushed, so CI has never
-  run it either. Run it again after any change to what `dev-chain` deploys or to words journeys assert.
+- **Run `scripts/mvp-gate.sh --pilot` green on the build you host** (ten journeys: the pilot build's screens, the
+  social suite as the pilot server runs it, invite links, error reports, the command-line and page contributor
+  journeys, the passkey one, work and paid work, and `web-restricted-holder-e2e`: a muted, then banned, holder keeps
+  their rights on a real server, plus `web/tests/e2e-real/passkey-sign-in.spec.ts`, passkey sign-up and sign-in again
+  against that real server). Under `--pilot` the page contributor journey (`web-contributor-e2e`) runs in the
+  contributor-only build the pilot ships (`PILOT_BUILD=1`, since 2026-11-01). `scripts/mvp-gate.sh` runs all
+  twenty-two, the pilot set first;
+  `--later` runs the raise, milestone, optional-feature and self-serve journeys alone (twelve); `--list` shows what
+  would run; `--outside` lists the four journey scripts no set runs, each with its reason. A journey script in no set
+  and with no reason is printed as a warning on every run ([MVP-GATE-CI.md](MVP-GATE-CI.md)).
+- **Last full pass: 2026-10-31**, the 16 journeys of that day after the D150, D151 and D152 removals. Added since and
+  not yet in a full pass: `web-pilot-e2e` (pilot set) and, on 2026-11-01, `web-rounds-e2e`, `web-post-bounty-e2e`,
+  `web-self-serve-e2e` and `shares-erc20c-e2e` (later set; no gate ran them before).
+- **A CI job is written, not pushed:** `.github/workflows/mvp-gate.yml` runs `--pilot` on pull requests that touch the
+  web app, server crates, packages, contracts, scripts, deployment config or the database, and `--later` nightly,
+  with Postgres, Redis, MinIO, Foundry and a browser, and uploads every log. It has never run; publishing it is your
+  call, and any pull request stays a draft. Until then nothing runs the gate on its own: run it again after any change
+  to what `dev-chain` deploys or to words journeys assert.
 - **Not covered by it**, so checked by hand ([PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md)): a reviewer acting from a
-  passkey account, the name link against a real invite-only server, and the image's own build.
-- **A known mismatch:** `web-contributor-e2e.sh` builds with the optional features on and ends with a sale between
-  members, which the hosted build does not offer. Its earlier steps are the pilot's; `web-passkey-contributor-e2e.sh`
-  is the one built exactly like the image.
+  passkey account, the name link against a real invite-only server, "Your work" read from a real server, a
+  passkey-account holder whose access is restricted (the browser-wallet holder is `web-restricted-holder-e2e`), the
+  image's own build, and the restore rehearsal.
+- **Fixed 2026-11-01, the contributor journey's build:** `web-contributor-e2e.sh` used to build with the optional
+  features on under `--pilot` too. Now `--pilot` runs it with `PILOT_BUILD=1` (built as the hosted image is, no
+  optional feature named) and its spec reads `E2E_PILOT_BUILD`: it expects the pilot's words, checks the remix, sale-chip,
+  bounty and payout screens are absent, and skips their steps; any other run plays the optional features as before. Both
+  modes passed on 2026-11-01 (2 of 2 tests each). Still not the pilot's in that journey: a browser wallet, a server
+  stubbed in the page, and a stand-in AI service the pilot server does not run ([MVP-GATE-CI.md](MVP-GATE-CI.md)).
+- **`web-restricted-holder-e2e` is green (2026-11-01, 2 of 2: `passkey-sign-in.spec.ts` and `restricted-holder.spec.ts`).**
+  It was red because `buzz org ragequit` capped gas at 300,000 and a real ragequit needs about 336,000 (fixed in the
+  CLI, `ragequit_gas_cap`). With that fixed, the spec then failed reading the CLI's answer: `org ragequit` prints two
+  JSON lines (the result, then the member view the desktop app reads) and the spec parsed them as one document. The spec
+  now reads both lines and also checks the Shares left in the member view.
 - **The screen audit** fails a stop that does not reach its state, and two stops that saved the same picture
   (`scripts/screen-audit-unique.mjs`), unless one is a redirect or declared to look like the other.
 
 ## Waiting on you
 
-1. **Run the gate** on the build you host, as above.
+1. **Run the gate** on the build you host, as above, and decide whether to publish its CI job (`.github/workflows/mvp-gate.yml`, written, not pushed).
 2. **The rest of the calls in [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md)**: what to remove, merge or keep, one line each.
 3. **Broadcast to Sepolia:** `scripts/sepolia-deploy.sh --broadcast`, with your own key in `.env`.
 4. **Host the server** with `deploy/compose` (the image, read state, terms at sign-up, backups): a machine, a domain, the
-   filled-in `.env`, and one practised restore.
+   filled-in `.env`, and one restore rehearsal ([RESTORE-REHEARSAL.md](RESTORE-REHEARSAL.md)).
 5. **The policy drafts** in `docs/policies/`, with a lawyer.
 6. **The social run, then the contributor run** ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md)), with the first project typed in
    from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) and a few boards with real first posts.
@@ -91,7 +112,15 @@ device. What to measure is in [PILOT-REPORT.md](PILOT-REPORT.md).
 
 - **A record reader independent of community membership**: a holder banned from a community must still be able to read
   the evidence needed to object, vote and leave ([BOARD-MODERATION-DESIGN-2026-10-22.md](BOARD-MODERATION-DESIGN-2026-10-22.md) §5).
-- **Recovery on a hosted server** (passkeys and devices, wallet binding, backups) has not been run end to end.
+  Not built. For the testnet pilot: the model, what still works for a banned holder, a manual fallback ("Mute
+  everywhere" instead of a ban for holders; evidence sent privately and checked against its hash on the chain; the
+  command line for browser-wallet holders; a mute window for passkey holders) and its hand test are in
+  [HOLDER-ACCESS-MODEL.md](HOLDER-ACCESS-MODEL.md). The hand test has not been run, so this stays open until it passes.
+- **Recovery on a hosted server** (passkeys and devices, wallet binding, backups) has not been run end to end. The
+  backup half is written as [RESTORE-REHEARSAL.md](RESTORE-REHEARSAL.md): your real backup, restored and checked on
+  another machine.
+- **The raise's currency reserve does not apply**: the launch kit gives its executor a zero reserve, and the contract
+  already has a treasury fallback ([RESERVE-APPLICABILITY.md](RESERVE-APPLICABILITY.md)). Nothing to build.
 - **A forecast's time is its device's clock** (D116), accepted within 15 minutes. No money rides on it.
 - **Words in browser storage:** a work area's words that failed to publish are kept only in the browser that opened the
   vote; the suggestion or filed evidence also carry them.

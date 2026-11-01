@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { expectAccessible } from "../helpers/a11y";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
+import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * Milestones that unlock unless holders object, on a REAL local chain, in real browsers.
@@ -185,7 +186,7 @@ function makeRelay(initial: StoredEvent) {
   // Kinds the relay answers with nothing, as if they were older than what a list read reaches.
   let hidden: number[] = [];
   const install = async (page: Page) => {
-    await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+    await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
       ws.onMessage((message) => {
         let parsed: unknown;
         try {
@@ -299,7 +300,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   await shot(founder, "0b-launch-form-panel");
   await founder.getByTestId("launch-review-challenge").check();
   await expect(founder.getByTestId("launch-challenge-fields")).toContainText(
-    "your team's own tokens do not count",
+    "your team's own Shares do not count",
   );
   await expect(founder.getByTestId("launch-challenge-fields")).toContainText(
     "7 days",
@@ -427,7 +428,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
     "any holder can object",
   );
   await expect(founder.getByTestId("challenge-summary")).toContainText(
-    "0 of 2 milestones unlocked. 10,000,000 tokens still locked.",
+    "0 of 2 milestones unlocked. 10,000,000 Shares still locked.",
   );
   await expect(founder.getByTestId("challenge-stage-0")).toHaveText(
     "Not published",
@@ -661,11 +662,11 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   });
   // Home tells the team its milestone is ready to finish.
   await expect(founder.getByTestId("home-waiting")).toContainText(
-    "Finish it to unlock your tokens",
+    "Finish it to unlock your Shares",
     { timeout: 60_000 },
   );
   await expect(founder.getByTestId("home-waiting-why").first()).toContainText(
-    "Your tokens stay locked until someone finishes it.",
+    "Your Shares stay locked until someone finishes it.",
   );
   await shot(founder, "4-founder-home-waiting");
   // The untouched page notices the window has closed, and offers to finish it, without a reload.
@@ -680,7 +681,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   );
   expect(await lockedOf(FOUNDER_WALLET)).toBe((TEAM * 50n) / 100n);
   await expect(backerTwo.getByTestId("challenge-summary")).toContainText(
-    "1 of 2 milestones unlocked. 5,000,000 tokens still locked.",
+    "1 of 2 milestones unlocked. 5,000,000 Shares still locked.",
   );
   // The retry went through unopposed: the objection that sent the first attempt back is not this attempt's.
   await expect(backerTwo.getByTestId("challenge-headline-0")).toContainText(
@@ -778,11 +779,11 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   // The milestone says so afterwards, instead of only "Unlocked".
   await openMilestones(backerTwo);
   await expect(backerTwo.getByTestId("challenge-headline-0")).toContainText(
-    "holders upheld it: the team's remaining locked tokens were burned",
+    "holders upheld it: the team's remaining locked Shares were burned",
   );
   await openMilestones(founder);
   await expect(founder.getByTestId("challenge-summary")).toContainText(
-    "0 tokens still locked.",
+    "0 Shares still locked.",
   );
   await context.close();
   void dao;

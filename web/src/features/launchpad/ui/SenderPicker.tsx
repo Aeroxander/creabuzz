@@ -19,6 +19,10 @@ import { zerodevConfigFromEnv } from "@/features/identity/lib/zerodev";
 import { truncatePubkey } from "@/shared/lib/pubkey";
 
 import { makeSponsoredSender } from "../lib/passkey-sender";
+import {
+  passkeyAccountLine,
+  passkeyChoiceLabel,
+} from "../lib/sender-picker-copy";
 import type { Eip1193ProviderLike } from "../lib/wallet-sender";
 import { useActingAccount } from "../use-acting-account";
 import {
@@ -126,7 +130,10 @@ export function useSenderPicker(
   } else if (passkeyNote) {
     passkeyStatusText = passkeyNote;
   } else if (passkeyAccount) {
-    passkeyStatusText = `Account ${truncatePubkey(passkeyAccount)}: tokens and refunds settle there. Gas is sponsored on chain ${chainId}.`;
+    passkeyStatusText = passkeyAccountLine(
+      truncatePubkey(passkeyAccount),
+      chainId,
+    );
   }
 
   return {
@@ -186,7 +193,7 @@ export function SenderPickerControls({
           type="radio"
         />
         <span>
-          Your passkey account (fees are covered on the test network)
+          {passkeyChoiceLabel(state.chainId)}
           {state.kind === "passkey" ? (
             <span
               className="block text-xs text-black/60 dark:text-white/60"

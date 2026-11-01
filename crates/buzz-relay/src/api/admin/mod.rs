@@ -656,6 +656,11 @@ struct ReopenReportBody {
     request_id: Uuid,
     /// Optional operator reason, recorded on the reopen audit row.
     reason: Option<String>,
+    /// Optional fence: reopen only if the report is still in this terminal
+    /// status (`resolved | dismissed | escalated`). A client acting on a list it
+    /// read earlier sends the status it saw, so a report someone else has since
+    /// dealt with is refused (409) instead of being silently reopened.
+    expect_status: Option<String>,
 }
 
 /// POST /reports/{id}/reopen
@@ -663,7 +668,8 @@ struct ReopenReportBody {
 /// Requires nip98 auth. Both Operator and Moderator may act.
 ///
 /// Returns a terminal report (`resolved | dismissed | escalated`) to `open` and
-/// records a durable `reopen` audit row. `409` if the report is not terminal.
+/// records a durable `reopen` audit row. `409` if the report is not terminal,
+/// or if `expectStatus` is given and the report is no longer in that status.
 async fn reopen_report(
     State(state): State<Arc<crate::state::AppState>>,
     method: Method,
@@ -693,6 +699,18 @@ async fn reopen_report(
         .await
         .map_err(|_| ApiError::internal())?;
 
+    // The fence itself is checked by the store under the report's row lock.
+    if body
+        .expect_status
+        .as_deref()
+        .is_some_and(|expected| !matches!(expected, "resolved" | "dismissed" | "escalated"))
+    {
+        return Err(ApiError::bad_request(
+            "invalid_expect_status",
+            "expectStatus must be resolved, dismissed or escalated",
+        ));
+    }
+
     let actor_pubkey: Vec<u8> = principal.pubkey.to_vec();
     let actor_role_str = admin_role_str(principal.role);
 
@@ -705,6 +723,7 @@ async fn reopen_report(
             &actor_pubkey,
             actor_role_str,
             body.reason.as_deref(),
+            body.expect_status.as_deref(),
         )
         .await?;
 
@@ -5582,6 +5601,98 @@ mod postgres_tests {
             upper_json["pubkey"], lower_hex,
             "uppercase path param must be canonicalized to lowercase in the response"
         );
+    }
+
+    /// POST a signed reopen body to the admin host and return the response.
+    async fn post_reopen(
+        state: Arc<crate::state::AppState>,
+        keys: &nostr::Keys,
+        report_id: Uuid,
+        body: serde_json::Value,
+    ) -> axum::response::Response {
+        let body = body.to_string();
+        let path = format!("/reports/{report_id}/reopen");
+        let auth = make_nostr_auth_post(keys, &path, body.as_bytes());
+        status_for(
+            state,
+            Request::builder()
+                .method("POST")
+                .uri(&path)
+                .header(header::HOST, "admin.example")
+                .header(header::AUTHORIZATION, auth)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .expect("request"),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres — reopen fenced by expectStatus"]
+    async fn reopen_route_refuses_a_report_no_longer_in_the_expected_status() {
+        let keys = nostr::Keys::generate();
+        let state = nip98_state(vec![keys.public_key().to_hex()]).await;
+        let pool = sqlx::PgPool::connect(&database_url())
+            .await
+            .expect("connect to test DB");
+        // Someone else already dealt with it: the client saw it escalated.
+        let report_id = seed_admin_host_report(&pool, "resolved").await;
+
+        let response = post_reopen(
+            state.clone(),
+            &keys,
+            report_id,
+            serde_json::json!({ "requestId": Uuid::new_v4(), "expectStatus": "escalated" }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM moderation_reports WHERE id = $1")
+                .bind(report_id)
+                .fetch_one(&pool)
+                .await
+                .expect("read status");
+        assert_eq!(status, "resolved", "a fenced reopen must not reopen");
+
+        // An unknown expected status is a bad request, not a silent reopen.
+        let response = post_reopen(
+            state,
+            &keys,
+            report_id,
+            serde_json::json!({ "requestId": Uuid::new_v4(), "expectStatus": "open" }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        cleanup_admin_host_report(&pool, report_id).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres — reopen fenced by expectStatus"]
+    async fn reopen_route_with_expected_status_reopens_and_replays() {
+        let keys = nostr::Keys::generate();
+        let state = nip98_state(vec![keys.public_key().to_hex()]).await;
+        let pool = sqlx::PgPool::connect(&database_url())
+            .await
+            .expect("connect to test DB");
+        let report_id = seed_admin_host_report(&pool, "escalated").await;
+        let request_id = Uuid::new_v4();
+        let body = serde_json::json!({ "requestId": request_id, "expectStatus": "escalated" });
+
+        let response = post_reopen(state.clone(), &keys, report_id, body.clone()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        // The same request retried after the report is open again still succeeds.
+        let response = post_reopen(state, &keys, report_id, body).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM moderation_reports WHERE id = $1")
+                .bind(report_id)
+                .fetch_one(&pool)
+                .await
+                .expect("read status");
+        assert_eq!(status, "open");
+
+        cleanup_admin_host_report(&pool, report_id).await;
     }
 
     #[tokio::test]

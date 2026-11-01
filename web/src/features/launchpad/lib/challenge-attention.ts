@@ -54,14 +54,14 @@ export function challengeAttention(
           "move",
           "finish",
           onTeam
-            ? `Milestone ${n} waited out its objection window and nobody objected. Finish it to unlock your tokens.`
+            ? `Milestone ${n} waited out its objection window and nobody objected. Finish it to unlock your Shares.`
             : `Milestone ${n} waited out its objection window and nobody objected. Anyone can finish it.`,
           "Finish it",
           {
             why: onTeam ? TEAM : "Anyone can finish it.",
             ifIgnored: onTeam
-              ? "Your tokens stay locked until someone finishes it."
-              : "The team's tokens stay locked until someone finishes it.",
+              ? "Your Shares stay locked until someone finishes it."
+              : "The team's Shares stay locked until someone finishes it.",
           },
         );
         break;
@@ -76,7 +76,7 @@ export function challengeAttention(
               due: m.windowEnds,
               why: HOLDER,
               ifIgnored:
-                "If nobody objects, the milestone unlocks and the team's tokens are free.",
+                "If nobody objects, the milestone unlocks and the team's Shares are free.",
             },
           );
         }

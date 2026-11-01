@@ -18,105 +18,11 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { liveFiltersFor } from "@/features/channels/lib/live-scope";
 import { subscribeChannel } from "@/features/channels/subscribe-channel";
 import { KIND_AGENT_TASK } from "@/shared/constants/kinds";
-import { readMilestone, readReward } from "./lib/task-planning";
-import { readDelivery, type TaskDelivery } from "./lib/task-delivery";
-import { readSource, type TaskSource } from "./lib/task-source";
 import { type NewTaskInput, publishNewTask } from "./lib/task-publish";
+import { type FleetTask, parseTask, type TaskPriority } from "./lib/task-row";
 
-type TaskStatus =
-  | "open"
-  | "assigned"
-  | "in_progress"
-  | "needs_approval"
-  | "done"
-  | "cancelled";
-
-export type TaskPriority = "low" | "normal" | "high" | "urgent";
-
-export interface FleetTask {
-  /** Raw `d` tag: the task's identity on the relay, used when publishing. */
-  id: string;
-  /** Author-qualified key (`author:id`) for storing, keying and de-duplicating. */
-  key: string;
-  title: string;
-  description: string;
-  status: TaskStatus;
-  assignee: string | null;
-  parentEventId: string | null;
-  channelId: string | null;
-  author: string;
-  priority: TaskPriority;
-  due: number | null;
-  labels: string[];
-  /** Milestone this task counts toward (free text), or null. */
-  milestone: string | null;
-  /** Points the task earns once its contribution is accepted, or null. */
-  reward: number | null;
-  /** The board post this task was made from, or null. */
-  source: TaskSource | null;
-  /** Project/output/claim references; these do not authorize any payment. */
-  delivery?: TaskDelivery | null;
-  approver?: string | null;
-  updatedAt: number;
-}
-
-export function parseTask(event: NostrEvent): FleetTask | null {
-  const id = event.tags.find((t) => t[0] === "d")?.[1];
-  if (!id) return null;
-  let body: {
-    title?: string;
-    description?: string;
-    status?: string;
-    priority?: string;
-    due?: number | null;
-    labels?: string[];
-    milestone?: unknown;
-    reward?: unknown;
-    source?: unknown;
-    delivery?: unknown;
-    approver?: unknown;
-  } = {};
-  try {
-    body = JSON.parse(event.content) as typeof body;
-  } catch {
-    // malformed content — task still surfaces with defaults
-  }
-  const statusList: TaskStatus[] = [
-    "open",
-    "assigned",
-    "in_progress",
-    "needs_approval",
-    "done",
-    "cancelled",
-  ];
-  const status = statusList.includes(body.status as TaskStatus)
-    ? (body.status as TaskStatus)
-    : "open";
-  return {
-    id,
-    key: `${event.pubkey}:${id}`,
-    title: body.title ?? event.content.slice(0, 80),
-    description: body.description ?? "",
-    status,
-    assignee: event.tags.find((t) => t[0] === "p")?.[1] ?? null,
-    parentEventId: event.tags.find((t) => t[0] === "e")?.[1] ?? null,
-    channelId: event.tags.find((t) => t[0] === "h")?.[1] ?? null,
-    author: event.pubkey,
-    priority: (["low", "normal", "high", "urgent"] as const).includes(
-      body.priority as TaskPriority,
-    )
-      ? (body.priority as TaskPriority)
-      : "normal",
-    due: typeof body.due === "number" && body.due > 0 ? body.due : null,
-    labels: Array.isArray(body.labels) ? body.labels : [],
-    milestone: readMilestone(body.milestone),
-    reward: readReward(body.reward),
-    source: readSource(body.source),
-    delivery: readDelivery(body.delivery),
-    approver: typeof body.approver === "string" ? body.approver : null,
-    updatedAt: event.created_at * 1000,
-  };
-}
+export { parseTask };
+export type { FleetTask, TaskPriority };
 
 /**
  * The fleet's tasks: read once, then followed live, both untied and in each of `channelIds` (a task tied to a room is

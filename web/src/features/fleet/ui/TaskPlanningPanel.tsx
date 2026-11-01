@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { failureWords } from "@/shared/lib/readable-error";
 
@@ -59,7 +60,10 @@ function parseReward(value: string): number | null {
 /**
  * Planning for one task in the detail panel: backing, the milestone it counts
  * toward, the points it earns, and — once it is done — claiming it as your
- * contribution. Mount it with `key={item.key}` so edits reset per task.
+ * contribution. A build without raises (the pilot) has no points: no screen
+ * there accepts them, so the reward, its note and the claim are left out and
+ * the task is a plain to-do. Mount it with `key={item.key}` so edits reset per
+ * task.
  */
 export function TaskPlanningPanel({
   item,
@@ -82,12 +86,14 @@ export function TaskPlanningPanel({
   const [claiming, setClaiming] = useState(false);
   const [claimed, setClaimed] = useState(false);
   const viewer = existingUserPubkey();
+  const raises = raisesOffered();
   const support = planning.supportOf(item);
 
   const nextMilestone = milestone.trim() === "" ? null : milestone.trim();
-  const nextReward = parseReward(reward);
+  const nextReward = raises ? parseReward(reward) : item.reward;
   const dirty = nextMilestone !== item.milestone || nextReward !== item.reward;
   const claimable =
+    raises &&
     item.status === "done" &&
     item.doneRowId !== null &&
     canClaimTask(item, viewer);
@@ -112,7 +118,9 @@ export function TaskPlanningPanel({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div
+        className={`grid grid-cols-1 gap-2 ${raises ? "sm:grid-cols-2" : ""}`}
+      >
         <label className="flex flex-col gap-1 text-xs">
           <span className="font-medium">Milestone</span>
           <input
@@ -124,26 +132,30 @@ export function TaskPlanningPanel({
             data-testid="task-milestone"
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="font-medium">Reward (points)</span>
-          <input
-            type="number"
-            min={0}
-            step={1}
-            inputMode="numeric"
-            value={reward}
-            onChange={(e) => setReward(e.target.value)}
-            placeholder="None"
-            className="rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none dark:border-white/10 dark:bg-white/5"
-            data-testid="task-reward"
-          />
-        </label>
+        {raises ? (
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-medium">Reward (points)</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              value={reward}
+              onChange={(e) => setReward(e.target.value)}
+              placeholder="None"
+              className="rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none dark:border-white/10 dark:bg-white/5"
+              data-testid="task-reward"
+            />
+          </label>
+        ) : null}
       </div>
-      <p className="text-2xs text-black/60 dark:text-white/60">
-        Points show on your profile once a reviewer accepts the task. They are
-        not Shares and are not money. To earn Shares, take the work on the
-        project's Work tab.
-      </p>
+      {raises ? (
+        <p className="text-2xs text-black/60 dark:text-white/60">
+          Points show on your profile once a reviewer accepts the task. They are
+          not Shares and are not money. To earn Shares, take the work on the
+          project's Work tab.
+        </p>
+      ) : null}
       {dirty ? (
         <div>
           <button

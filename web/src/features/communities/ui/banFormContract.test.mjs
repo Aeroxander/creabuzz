@@ -6,8 +6,9 @@ import test from "node:test";
 /**
  * The ban form must not promise what does not happen, and must not ban for good by default.
  *
- * - The banned person is signed out and never shown the reason (the server keeps it for moderators, in the banned
- *   list). The form used to say "They are told the reason you give" and label the box "they will see it".
+ * - The banned person is signed out and told the reason and when the ban ends (the server's ban refusal carries
+ *   both, `handlers/auth.rs` `ban_refusal`), so the form says so. It once said only moderators see the reason, while
+ *   the server did not yet pass it on.
  * - The length used to start on "For good", so a moderator who only typed a reason banned someone forever. Now no
  *   length is chosen until the moderator picks one, and the ban button waits for it.
  *
@@ -25,10 +26,15 @@ const form = source.slice(
   source.indexOf("function BannedRow"),
 );
 
-test("the ban form does not say the banned person sees the reason", () => {
-  assert.doesNotMatch(form, /told the reason/);
-  assert.doesNotMatch(form, /they will see/i);
-  assert.match(form, /Only moderators see\s+the reason/);
+test("the ban form says the banned person is told the reason and when the ban ends", () => {
+  assert.match(form, /told the\s+reason you give and when the ban ends/);
+  assert.doesNotMatch(form, /only moderators/i);
+  // The server does carry it to them.
+  const auth = readFileSync(
+    fileURLToPath(new URL("../crates/buzz-relay/src/handlers/auth.rs", ROOT)),
+    "utf8",
+  );
+  assert.match(auth, /"; reason: "/);
 });
 
 test("no ban length is chosen until the moderator picks one", () => {

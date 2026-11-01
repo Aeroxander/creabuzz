@@ -511,7 +511,11 @@ export type NextStep =
   | { kind: "stuck"; who: "nobody"; text: string; lapsesAt: number }
   | { kind: "payout"; who: "contributor"; text: string }
   | { kind: "award"; who: "dao"; text: string }
-  | { kind: "none"; who: "nobody"; text: string };
+  /**
+   * Nothing to do now. An approved claim in its wait carries `readyAt` (unix seconds): when the wait ends and its
+   * contributor can take it (mark it finished, or take the payment), so the pages can name the date.
+   */
+  | { kind: "none"; who: "nobody"; text: string; readyAt?: number };
 
 /**
  * Whether a split vote can still be decided: with `panel` reviewers on the panel, those who have not answered could
@@ -671,11 +675,12 @@ export function nextStep(
             who: "contributor",
             text: money
               ? "Approved. The contributor can take the payment now."
-              : "Approved. The contributor can mark it finished now, so Shareholders can vote on an award.",
+              : "Approved and ready to mark finished. The contributor can mark it finished now, so Shareholders can vote on an award.",
           }
         : {
             kind: "none",
             who: "nobody",
+            readyAt: open,
             text: money
               ? "Approved. The payment can be taken once the challenge window ends."
               : "Approved. It can be marked finished once the challenge window ends.",

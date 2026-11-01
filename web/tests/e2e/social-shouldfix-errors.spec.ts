@@ -6,7 +6,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
-import { createMockRelay, matches } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay, matches } from "./mock-relay";
 
 /**
  * What someone sees when the server says no, on the hosted, invite-only server: plain words first and the server's own
@@ -206,7 +206,7 @@ test("older chat messages refused by the request limit say so in plain words", a
       ws.send(JSON.stringify(["EOSE", frame[1]]));
     });
   });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL}`);
   await expect(page.getByText("history message 70")).toBeVisible({
     timeout: 20_000,
   });
@@ -388,7 +388,7 @@ test("a channel the server could not create says so plainly, with the server's w
   await quietChain(page);
   await relay.install(page);
   await signIn(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   const opener = page.getByTestId("open-channel-list");
   if (await opener.isVisible()) await opener.click();

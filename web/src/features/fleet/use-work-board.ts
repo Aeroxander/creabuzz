@@ -37,12 +37,16 @@ import {
   publishTaskEvent,
 } from "./lib/task-publish";
 import type { TaskDelivery } from "./lib/task-delivery";
+import type { TaskPartOf } from "./lib/task-part-of";
 import type { TaskSource } from "./lib/task-source";
 import {
   parseTask,
+  patchTask,
   type FleetTask,
+  type TaskPatch,
   type TaskPriority,
-} from "./use-agent-tasks";
+  taskUpdateRow,
+} from "./lib/task-row";
 import { getTag } from "@/shared/lib/event-fields";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 
@@ -92,6 +96,8 @@ export interface WorkItem {
   /** Row that marked the task done, while it is done (tasks only). */
   doneRowId: string | null;
   delivery?: TaskDelivery | null;
+  /** The contributor project's work area this task is part of (tasks only), or null. */
+  partOf?: TaskPartOf | null;
   updatedAt: number;
 }
 
@@ -162,6 +168,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
     labels?: string[];
     milestone?: string | null;
     reward?: number | null;
+    partOf?: TaskPartOf | null;
   }) => Promise<void>;
   requestApproval: (task: FleetTask) => Promise<void>;
   approve: (task: FleetTask) => Promise<void>;
@@ -174,19 +181,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
   /** Reason a secondary read failed, or null when everything loaded. */
   degraded: string | null;
   reload: () => void;
-  updateTask: (
-    task: FleetTask,
-    patch: {
-      description?: string;
-      priority?: TaskPriority;
-      due?: number | null;
-      labels?: string[];
-      title?: string;
-      milestone?: string | null;
-      reward?: number | null;
-      delivery?: TaskDelivery | null;
-    },
-  ) => Promise<void>;
+  updateTask: (task: FleetTask, patch: TaskPatch) => Promise<void>;
 } {
   const channelIds = useMemo(
     () => channels?.map((c) => c.id) ?? [],
@@ -264,6 +259,7 @@ export function useWorkBoard(channels?: { id: string }[]): {
       reward: task.reward,
       source: task.source,
       delivery: task.delivery,
+      partOf: task.partOf ?? null,
       creator: merged.creator,
       latestRowId: merged.latestRowId,
       doneRowId: merged.doneRowId,
@@ -508,29 +504,8 @@ export function useWorkBoard(channels?: { id: string }[]): {
 
   const publishTaskRow = useCallback(
     async (task: FleetTask, status: string, approver: string | null) => {
-      const tags: string[][] = [
-        ["d", task.id],
-        ["p", task.assignee ?? approver ?? task.author],
-      ];
-      if (task.channelId) tags.push(["h", task.channelId]);
-      if (task.parentEventId) tags.push(["e", task.parentEventId]);
-      await publishTaskEvent(
-        tags,
-        {
-          title: task.title,
-          description: task.description,
-          status,
-          approver,
-          priority: task.priority,
-          due: task.due,
-          labels: task.labels,
-          milestone: task.milestone,
-          reward: task.reward,
-          delivery: task.delivery ?? null,
-          _taskId: task.id,
-        },
-        "task update rejected",
-      );
+      const row = taskUpdateRow(task, status, approver);
+      await publishTaskEvent(row.tags, row.body, "task update rejected");
     },
     [],
   );
@@ -580,33 +555,9 @@ export function useWorkBoard(channels?: { id: string }[]): {
   );
 
   const updateTask = useCallback(
-    async (
-      task: FleetTask,
-      patch: {
-        description?: string;
-        priority?: TaskPriority;
-        due?: number | null;
-        labels?: string[];
-        title?: string;
-        milestone?: string | null;
-        reward?: number | null;
-        delivery?: TaskDelivery | null;
-      },
-    ) => {
+    async (task: FleetTask, patch: TaskPatch) => {
       await publishTaskRow(
-        {
-          ...task,
-          title: patch.title ?? task.title,
-          description: patch.description ?? task.description,
-          priority: patch.priority ?? task.priority,
-          due: patch.due !== undefined ? patch.due : task.due,
-          labels: patch.labels !== undefined ? patch.labels : task.labels,
-          milestone:
-            patch.milestone !== undefined ? patch.milestone : task.milestone,
-          reward: patch.reward !== undefined ? patch.reward : task.reward,
-          delivery:
-            patch.delivery !== undefined ? patch.delivery : task.delivery,
-        },
+        patchTask(task, patch),
         task.status,
         task.approver ?? null,
       );

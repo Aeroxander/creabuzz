@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  beyondContributorProjects,
+  notContributorOnlyBuild,
   courtOffered,
   identityDemoOffered,
   linkDeviceOffered,
@@ -50,7 +50,7 @@ test("the desktop hand-off opens only in a build with the desktop app", () => {
 });
 
 test("the Projects board, code browsing, the sale list and AI helpers stay out of the hosted build", () => {
-  assert.equal(beyondContributorProjects(HOSTED), false);
-  assert.equal(beyondContributorProjects({}), true);
-  assert.equal(beyondContributorProjects(undefined), true);
+  assert.equal(notContributorOnlyBuild(HOSTED), false);
+  assert.equal(notContributorOnlyBuild({}), true);
+  assert.equal(notContributorOnlyBuild(undefined), true);
 });

@@ -22,6 +22,7 @@
 
 mod communities;
 mod deletions;
+mod reports;
 
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -101,6 +102,19 @@ enum Command {
     ProductFeedback {
         #[command(subcommand)]
         command: ProductFeedbackCommand,
+    },
+    /// List moderation reports across every community, newest first.
+    ///
+    /// `--escalated` lists the ones a community's moderators passed on to the
+    /// server's owner: check these regularly and act on them in the web app
+    /// (Moderation, Escalated reports) or the admin console.
+    Reports {
+        /// Only the reports passed on to the server's owner.
+        #[arg(long)]
+        escalated: bool,
+        /// Maximum reports to list.
+        #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u16).range(1..=200))]
+        limit: u16,
     },
     /// Reversible whole-community lifecycle controls.
     Communities {
@@ -186,6 +200,7 @@ async fn run(cli: Cli) -> Result<i32> {
         Command::ProductFeedback {
             command: ProductFeedbackCommand::List { limit },
         } => cmd_list_product_feedback(limit).await,
+        Command::Reports { escalated, limit } => reports::run(escalated, limit).await,
         Command::Communities { command } => communities::run(command).await,
         Command::Deletions { command } => deletions::run(command).await,
         Command::ReconcileChannels { channel, relay_key } => {

@@ -28,7 +28,9 @@ export const units = (u: bigint) => formatUnits(u, 18, 4);
 
 /** What buyers get, in a few words. */
 export const instrumentLine = (asShares: boolean) =>
-  asShares ? "Buyers get Shares, with a vote" : "Buyers get Loot, with no vote";
+  asShares
+    ? "Buyers get Shares, with a vote"
+    : "Buyers get non-voting shares, with no vote";
 
 /** The exit fee, in a few words. */
 export const exitFeeLine = (bps: number) =>
@@ -41,7 +43,7 @@ export function fundingStateLine(
 ): string {
   switch (phase) {
     case "none":
-      return "This project sells no new units. A vote on the Decisions tab can publish funding terms: what buyers get, and a funding limit.";
+      return "This project sells no new shares. A vote on the Decisions tab can publish funding terms: what buyers get, and a funding limit.";
     case "notice":
       return `Funding terms were published. Sales can start from ${date(view?.activeFrom ?? 0)}.`;
     case "ready":
@@ -49,7 +51,7 @@ export function fundingStateLine(
     case "selling": {
       const t = view?.tranche;
       if (!t) return "A sale is open.";
-      return `On sale for the project: ${units(unsoldOfTranche(view as FundingTermsView))} new units at ${usdc(t.leastPrice)} each or more, until ${date(t.expiry)}.`;
+      return `On sale for the project: ${units(unsoldOfTranche(view as FundingTermsView))} new ${view?.asShares ? "Shares" : "non-voting shares"} at ${usdc(t.leastPrice)} each or more, until ${date(t.expiry)}.`;
     }
   }
 }
@@ -70,7 +72,7 @@ export function beforeYouBuy(view: FundingTermsView): string[] {
     "This project's team has no milestone locks.",
     view.asShares
       ? "You get Shares, with a vote."
-      : "You get Loot: the same part of the treasury and payouts as a Share, but no vote. For now you can leave with it at any time; selling it to a new buyer in a round comes later.",
+      : "You get non-voting shares: the same part of the treasury and payouts as a Share, but no vote. For now you can leave with them at any time; selling them to a new buyer in a round comes later.",
     view.exitFeeBps === 0
       ? "Leaving pays a whole share: there is no exit fee."
       : `Leaving keeps ${feePercent(view.exitFeeBps)} of what it pays in the treasury, for those who stay. It is not charged while the terms are under notice, and a vote can lower it but never raise it.`,
@@ -116,7 +118,7 @@ export function salePlan(
   let quantity: bigint;
   let leastPrice: bigint;
   try {
-    quantity = parseUnits(quantityText, 18, "amount", "How many units");
+    quantity = parseUnits(quantityText, 18, "amount", "How many shares");
     leastPrice = parseUnits(
       priceText,
       USDC_DECIMALS,
@@ -126,11 +128,11 @@ export function salePlan(
   } catch (error) {
     return { problem: error instanceof Error ? error.message : String(error) };
   }
-  if (quantity <= 0n) return { problem: "Sell at least some units." };
+  if (quantity <= 0n) return { problem: "Sell at least some shares." };
   if (leastPrice <= 0n)
     return { problem: "The least price must be above zero." };
   if (quantity > room) {
-    return { problem: `The terms allow ${units(room)} more units at most.` };
+    return { problem: `The terms allow ${units(room)} more shares at most.` };
   }
   const days = Number(daysText.trim());
   if (!Number.isInteger(days) || days < 1 || days > MAX_SALE_DAYS) {

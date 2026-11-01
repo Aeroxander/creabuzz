@@ -7,7 +7,6 @@ import {
   MessageSquare,
   Users,
 } from "lucide-react";
-import { APP_NAME } from "@/shared/constants/brand";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -17,6 +16,7 @@ import { Button } from "@/shared/ui/button";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { useRepoRefs } from "../use-repo-refs";
 import { useRepo } from "../use-repos";
+import { COPY_FAILED_TEXT, repoPageState } from "../lib/repo-page-state";
 import {
   getMockRepo,
   mockRepoCommits,
@@ -42,7 +42,7 @@ function CopyableUrl({ url }: { url: string }) {
       toast.success("Copied to clipboard");
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("Failed to copy to clipboard");
+      toast.error(COPY_FAILED_TEXT);
     }
   }
 
@@ -191,10 +191,16 @@ export function RepoDetailPage() {
     data: repo,
     isLoading,
     error,
+    refetch: refetchRepo,
   } = useRepo(repoId, {
     preview: showMockRepo,
   });
-  const { data: refs, isLoading: refsLoading } = useRepoRefs(repoId, {
+  const {
+    data: refs,
+    isLoading: refsLoading,
+    error: refsError,
+    refetch: refetchRefs,
+  } = useRepoRefs(repoId, {
     preview: showMockRepo,
   });
 
@@ -236,14 +242,6 @@ export function RepoDetailPage() {
     }
   }, [browseError]);
 
-  useEffect(() => {
-    if (error) {
-      toast.error("Failed to load repository", {
-        description: error.message,
-      });
-    }
-  }, [error]);
-
   // The people row: the owner first, then the contributors, as one list — the
   // row resolves every name in a single batched profile query.
   const people = useMemo(
@@ -251,7 +249,38 @@ export function RepoDetailPage() {
     [repo],
   );
 
-  if (isLoading) return <DetailSkeleton />;
+  const pageState = repoPageState({ isLoading, error, found: Boolean(repo) });
+  if (pageState === "loading") return <DetailSkeleton />;
+
+  if (pageState === "error") {
+    return (
+      <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8 text-black dark:text-white">
+        <div className="min-w-0 flex-1">
+          <BackToRepositories />
+          <div role="alert" className="mt-12 text-center">
+            <h1 className="text-xl font-semibold text-black dark:text-white">
+              Couldn't load this repository
+            </h1>
+            <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+              {error?.message}
+            </p>
+            <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+              Check your connection and try again.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={() => void refetchRepo()}
+            >
+              Try again
+            </Button>
+          </div>
+        </div>
+        <aside className="hidden w-72 shrink-0 lg:block" />
+      </div>
+    );
+  }
 
   if (!repo) {
     return (
@@ -311,7 +340,12 @@ export function RepoDetailPage() {
         </div>
 
         {/* Refs & HEAD */}
-        <RepoRefsSection refs={refs} isLoading={refsLoading} />
+        <RepoRefsSection
+          refs={refs}
+          isLoading={refsLoading}
+          error={refsError}
+          onRetry={() => void refetchRefs()}
+        />
 
         {/* Clone/browse error banner */}
         {browseError && !isLoading && (
@@ -326,9 +360,8 @@ export function RepoDetailPage() {
                 : String(browseError)}
             </p>
             <p className="mt-2 text-xs opacity-80">
-              Repository reads require an authenticated member of this
-              community. Install a Nostr signer extension to sign in, or open
-              this repository in the {APP_NAME} desktop app.
+              Only signed-in members of this community can read its code. Check
+              that you're signed in, then reload the page.
             </p>
           </div>
         )}

@@ -1,6 +1,6 @@
 /**
  * The account this browser acts as on chain (D139): a passkey account, a smart account whose fees the site's paymaster
- * covers on the test network so a tester needs no wallet and no test ETH, or the browser's own wallet. One account for
+ * covers on its network so a tester needs no wallet and no ETH, or the browser's own wallet. One account for
  * every contributor step, so the address that starts a project, submits work, reviews it and votes is always the same:
  * the contracts key on `msg.sender`, and a claim filed from one account cannot be taken from another.
  *
@@ -13,7 +13,11 @@ import type {
   SenderCall,
 } from "../../identity/lib/sponsoredSender.ts";
 import { SponsoredSenderUnavailableError } from "../../identity/lib/sponsoredSender.ts";
-import { PaymasterDeniedError } from "../../identity/lib/zerodev.ts";
+import {
+  PaymasterDeniedError,
+  zerodevConfigFromEnv,
+} from "../../identity/lib/zerodev.ts";
+import { isMainnetChain, networkLabel } from "../chain-config.ts";
 
 export type ActingKind = "wallet" | "passkey";
 
@@ -32,6 +36,34 @@ export function chooseActingKind(input: {
   return null;
 }
 
+/**
+ * Where the site covers a passkey account's fees, as words for a sentence: "the test network" on a test chain, the
+ * network's own name on a real-money one (a build pointed at one must not say "the test network"), and null when no
+ * chain is set, so nothing is promised. The same rule as the raise screens' picker (`sender-picker-copy.ts`).
+ */
+export function feesCoveredOn(chainId: number | null): string | null {
+  if (chainId === null || !Number.isInteger(chainId) || chainId <= 0) {
+    return null;
+  }
+  return isMainnetChain(chainId) ? networkLabel(chainId) : "the test network";
+}
+
+/** The chain this build's passkey accounts run on, which is where their fees are covered; null when it names none. */
+export function passkeyChainId(): number | null {
+  const chainId = zerodevConfigFromEnv().chainId;
+  return chainId !== undefined && Number.isInteger(chainId) && chainId > 0
+    ? chainId
+    : null;
+}
+
+/** The line that says a passkey account acts here, naming where its fees are covered when that is known. */
+export function passkeyActingLine(chainId: number | null): string {
+  const fees = feesCoveredOn(chainId);
+  return fees
+    ? `You act with your account (passkey; fees are covered on ${fees}).`
+    : "You act with your account (passkey).";
+}
+
 /** What a send needs to know about the acting account to say why it cannot send yet. */
 export interface AccountForGate {
   kind: ActingKind | null;
@@ -43,17 +75,18 @@ export interface AccountForGate {
 
 /**
  * Why the acting account cannot send on `chainId` yet, in words a person can act on; null when it can. `label` names a
- * network for people.
+ * network for people; `feesOn` is where a passkey account's fees are covered ({@link feesCoveredOn}).
  */
 export function accountGate(
   account: AccountForGate,
   chainId: number | null,
   label: (chainId: number) => string,
+  feesOn: string | null = feesCoveredOn(passkeyChainId()),
 ): string | null {
   if (account.kind === null) {
-    return account.passkeyOffered
-      ? "Set up passkey sign-in from your profile menu to act here (fees are covered on the test network), or add a wallet to this browser."
-      : "Connect your wallet to act on this.";
+    if (!account.passkeyOffered) return "Connect your wallet to act on this.";
+    const fees = feesOn ? ` (fees are covered on ${feesOn})` : "";
+    return `Set up passkey sign-in from your profile menu to act here${fees}, or add a wallet to this browser.`;
   }
   if (!account.address) {
     if (account.kind === "wallet") return "Connect your wallet to act on this.";

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * A guided look at every top-level page and every way of starting something, as a new person would meet them.
@@ -173,7 +173,7 @@ test("starting an organization, step by step", async ({ page }) => {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
   }, NSEC);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("org-toggle").click();
   await expect(page.getByTestId("org-setup")).toBeVisible({ timeout: 20_000 });

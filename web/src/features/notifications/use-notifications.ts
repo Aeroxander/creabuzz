@@ -14,6 +14,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages";
 import { useMutedSet } from "@/features/social/use-social-actions";
 
+import { type BellView, bellState } from "./lib/bell-state";
 import {
   KIND_BOARD_MODERATION_LOG,
   moderationItem,
@@ -146,6 +147,14 @@ export function useNotifications(): {
   unread: number;
   markRead: () => void;
   lastSeen: number;
+  /** Whether the list is still being read, failed with nothing read, is empty, or has items. */
+  view: BellView;
+  /** The last poll failed; `items` are what loaded before. */
+  stale: boolean;
+  /** Why the last poll failed, or null. */
+  error: unknown;
+  /** Poll again now. */
+  retry: () => void;
 } {
   const me = existingUserPubkey();
   const [lastSeen, setLastSeen] = useState<number>(readSeen);
@@ -202,5 +211,22 @@ export function useNotifications(): {
     window.dispatchEvent(new Event(SEEN_EVENT));
   }, []);
 
-  return { items: shown, unread, markRead, lastSeen };
+  const { view, stale } = bellState({
+    data: feed.data === undefined ? undefined : shown,
+    error: feed.error,
+    isLoading: feed.isLoading,
+  });
+  const { refetch } = feed;
+  const retry = useCallback(() => void refetch(), [refetch]);
+
+  return {
+    items: shown,
+    unread,
+    markRead,
+    lastSeen,
+    view,
+    stale,
+    error: feed.error ?? null,
+    retry,
+  };
 }

@@ -767,23 +767,37 @@ contract MoneyPathsHandler is Test {
         } catch {}
     }
 
-    /// @notice The contributor takes an approved payout. It must pay exactly the claim and its stake, once, and only after
-    /// the challenge window.
-    function payoutClaim(uint256 claimSeed) external step {
+    /// @notice Someone finishes an approved claim: its contributor, or (for a claim that asks for no money) anyone. It must
+    /// pay exactly the claim and its stake, to the contributor only, once, and only after the challenge window.
+    function payoutClaim(uint256 claimSeed, uint256 whoSeed) external step {
         if (_claimIds.length == 0) return;
-        _payout(_claimIds[claimSeed % _claimIds.length]);
+        _payout(_claimIds[claimSeed % _claimIds.length], whoSeed % 2 == 0 ? contributor : _anyone(whoSeed >> 1));
     }
 
     function _payout(bytes32 claimId) internal {
+        _payout(claimId, contributor);
+    }
+
+    function _payout(bytes32 claimId, address caller) internal {
         (, uint256 amount, uint256 stake, ClaimStake.Status status,,,, uint64 releasedAt) = claims.claims(claimId);
         uint256 before = usdc.balanceOf(contributor);
-        vm.prank(contributor);
+        uint256 owedBefore = claims.owed(contributor);
+        uint256 callerBefore = usdc.balanceOf(caller);
+        vm.prank(caller);
         try claims.payout(claimId) {
             if (status != ClaimStake.Status.Approved) _fail("a payout ran for a claim that was not approved");
             if (block.timestamp < uint256(releasedAt) + 7 days) _fail("a payout ran inside the challenge window");
-            if (usdc.balanceOf(contributor) - before != amount + stake) _fail("a payout paid other than claim + stake");
-            _hit("work.payout");
-        } catch {}
+            if (caller != contributor && amount != 0) _fail("someone other than its contributor finished a money claim");
+            // A claim that asks for no money keeps its stake for a blocked contributor in `owed` (ES-2).
+            uint256 kept = amount == 0 ? claims.owed(contributor) - owedBefore : 0;
+            if (usdc.balanceOf(contributor) - before + kept != amount + stake) _fail("a payout paid other than claim + stake");
+            if (caller != contributor && usdc.balanceOf(caller) != callerBefore) _fail("a payout paid whoever finished it");
+            _hit(caller == contributor ? bytes32("work.payout") : bytes32("work.payoutByAnyone"));
+        } catch {
+            if (status == ClaimStake.Status.Approved && amount == 0 && block.timestamp >= uint256(releasedAt) + 7 days) {
+                _fail("an approved claim that asks for no money could not be finished after its window");
+            }
+        }
     }
 
     /// @notice Anyone lets a claim lapse. Liveness (ES-2): once an open claim is past its deadline this must always go
@@ -807,7 +821,8 @@ contract MoneyPathsHandler is Test {
         if (_projects.length == 0) return;
         uint256 r = uint256(keccak256(abi.encode(seed, "work")));
         bytes32 claimId = keccak256(abi.encode("claim", ++_nonce));
-        uint256 amount = bound(r, 0, 20_000e6);
+        // A quarter of the claims ask for no money (work recognised in Shares only), which anyone may finish.
+        uint256 amount = (r >> 200) % 4 == 0 ? 0 : bound(r, 0, 20_000e6);
         vm.startPrank(contributor);
         try claims.submitClaim(claimId, amount, bound(r >> 64, 0, 300e6), keccak256(abi.encode("work", claimId))) {
             claims.setCheck(claimId, CHECK);
@@ -835,7 +850,8 @@ contract MoneyPathsHandler is Test {
             }
         }
         vm.warp(vm.getBlockTimestamp() + 7 days);
-        _payout(claimId);
+        // Usually the contributor finishes it; sometimes someone else tries (which works only for a claim asking no money).
+        _payout(claimId, (r >> 144) % 4 == 0 ? _anyone(r >> 152) : contributor);
         _hit("work.round");
     }
 

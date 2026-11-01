@@ -10,7 +10,7 @@ import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
 import { createDirectMessageWraps } from "../../src/features/social/lib/nip17.ts";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * The social audit's should-fix items for messages (D143): the community's own inbox says what it is (the server's
@@ -177,7 +177,7 @@ async function installConfirmingDmOpen(page: Page, relay: Relay) {
 }
 
 async function openCommunityPanel(page: Page) {
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   const opener = page.getByTestId("open-channel-list");
   if (await opener.isVisible()) await opener.click();
@@ -452,7 +452,7 @@ test("a board read on its own page is read everywhere: Home's board list and the
     timeout: 20_000,
   });
   await expect(listed).toHaveCount(0);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await expect(page.getByTestId("board-nav-ideas")).toBeVisible({
     timeout: 20_000,

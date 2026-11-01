@@ -455,11 +455,11 @@ export function focusProblem(focus: FocusDraft): string | null {
   if (chars(focus.aim.trim()) > AIM_MAX)
     return `Keep the aim under ${AIM_MAX} characters: one sentence.`;
   if (now.length > MAX_NOW)
-    return `Keep Now to ${MAX_NOW}: a team gets more done on a few things at a time.`;
+    return `Keep priorities to ${MAX_NOW}: a team gets more done on a few things at a time.`;
   if (notDoing.length > MAX_NOT_DOING)
     return `Keep Not doing to ${MAX_NOT_DOING}.`;
   if (now.some((i) => chars(i.text.trim()) > FOCUS_TEXT_MAX))
-    return `Keep each Now item under ${FOCUS_TEXT_MAX} characters.`;
+    return `Keep each priority under ${FOCUS_TEXT_MAX} characters.`;
   if (
     now.some(
       (i) => chars(i.why.trim()) > WHY_MAX || chars(i.expect.trim()) > WHY_MAX,

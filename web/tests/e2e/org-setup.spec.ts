@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Starting an organization from the Org page, as the community's owner: name it, seat a helper, set what helpers may do
@@ -53,7 +53,7 @@ async function open(
   await page.addInitScript((nsec) => {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
   }, NSEC);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("org-toggle").click();
 }

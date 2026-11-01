@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 
 import { installAnvilWallet } from "../helpers/anvil-wallet";
+import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * A contributor project from start to award, entirely from pages, against a REAL local chain: no command line.
@@ -29,6 +30,12 @@ const PAYOUTS = process.env.E2E_PAYOUTS ?? "";
 /** Remix bonds (N12) and the test CREATE faucet; without them the journey skips the bond. */
 const REMIX_BONDS = process.env.E2E_REMIX_BONDS ?? "";
 const CREATE_FAUCET = process.env.E2E_CREATE_FAUCET ?? "";
+/**
+ * The contributor-only build the hosted pilot ships (`PILOT_BUILD=1` in the script): no sale words, no remixes, and none
+ * of the optional features (the script names none of them, so their steps are skipped as above). The spec checks those
+ * screens are absent and plays every contributor step the pilot offers.
+ */
+const PILOT = process.env.E2E_PILOT_BUILD === "1";
 const REVIEWER1 = process.env.E2E_REVIEWER1 ?? "";
 const REVIEWER2 = process.env.E2E_REVIEWER2 ?? "";
 // A third reviewer nobody acts as: a new project names at least three, two of whom decide (funding review D1).
@@ -107,7 +114,7 @@ async function open(
   path: string,
   nsec = NSEC,
 ) {
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -219,8 +226,9 @@ test("a contributor project is started from the page, work is claimed the same d
   const founder = await context.newPage();
   await open(founder, FOUNDER_WALLET, "/start");
   await founder.getByTestId("start-go-contributor").click();
+  // The pilot build never brings sales up, not even to say there is none.
   await expect(founder.getByTestId("contributor-no-raise")).toContainText(
-    "Starts without a token sale",
+    PILOT ? "How Shares work" : "Starts without a token sale",
   );
   // Every network this journey runs on is a test network: Shares earned on it stay there.
   await expect(founder.getByTestId("contributor-test-records")).toContainText(
@@ -245,12 +253,20 @@ test("a contributor project is started from the page, work is claimed the same d
     );
   await founder.getByTestId("contributor-project-name").fill("docs");
   await founder.getByTestId("contributor-project-check").fill(CHECK);
-  // Others may build on Docs Commons (N11): the second journey's project does.
-  await founder.getByTestId("contributor-remix-invited").check();
-  await founder
-    .getByTestId("contributor-remix-asks")
-    .fill("Credit Docs Commons on your page.");
-  docsCommonsPublished = true;
+  if (PILOT) {
+    // Remixes (N11) are not in the pilot build: the form has no "Built on" or invitation.
+    await expect(founder.getByTestId("contributor-remix-invited")).toHaveCount(
+      0,
+    );
+    await expect(founder.getByTestId("contributor-built-on")).toHaveCount(0);
+  } else {
+    // Others may build on Docs Commons (N11): the second journey's project does.
+    await founder.getByTestId("contributor-remix-invited").check();
+    await founder
+      .getByTestId("contributor-remix-asks")
+      .fill("Credit Docs Commons on your page.");
+    docsCommonsPublished = true;
+  }
   await expect(founder.getByTestId("contributor-gate")).toHaveCount(0, {
     timeout: 20_000,
   });
@@ -338,10 +354,6 @@ test("a contributor project is started from the page, work is claimed the same d
     { timeout: 30_000 },
   );
   // The header says what it is and, read from the Shares themselves, that they cannot be traded yet.
-  await expect(founder.getByTestId("contributor-note")).toHaveText(
-    "No token sale",
-    { timeout: 30_000 },
-  );
   await expect(founder.getByTestId("contributor-issuance")).toHaveText(
     "New Shares only for reviewed work",
     { timeout: 30_000 },
@@ -350,7 +362,14 @@ test("a contributor project is started from the page, work is claimed the same d
     "Shares can't be sold",
     { timeout: 30_000 },
   );
-  // The founder says what the team works on now, and what it will not do (PROJECT-STRUCTURE.md, step 1).
+  // A build with no sales does not bring them up, not even to say there is none.
+  if (PILOT)
+    await expect(founder.getByTestId("contributor-note")).toHaveCount(0);
+  else
+    await expect(founder.getByTestId("contributor-note")).toHaveText(
+      "No token sale",
+    );
+  // The founder sets the priorities, and what the team will not do (PROJECT-STRUCTURE.md, step 1).
   await refresh(founder, "Overview");
   await founder.getByTestId("focus-set").click({ timeout: 30_000 });
   await founder
@@ -434,11 +453,11 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(contributor.getByTestId("work-projects")).toContainText("docs", {
     timeout: 30_000,
   });
-  // Before starting, they say what they will deliver, for whom and by when; the card shows it is under Now.
+  // Before starting, they say what they will deliver, for whom and by when; the card shows it is a priority.
   const docsCard = contributor.locator(
     '[data-testid="way-to-help"][data-area="docs"]',
   );
-  await expect(docsCard.getByText("Now", { exact: true })).toBeVisible();
+  await expect(docsCard.getByText("Priority", { exact: true })).toBeVisible();
   await expect(docsCard.getByTestId("take-on-nobody")).toBeVisible();
   await docsCard.getByTestId("take-on-open").click();
   // A first piece here: two worked examples come with the form.
@@ -477,14 +496,14 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(docsCard.getByTestId("take-on-person")).toContainText(
     "A first guide, for new contributors.",
   );
-  // Someone else sees who is on it under Now, and cannot change the founder's lists.
+  // Someone else sees who is on that priority, and cannot change the founder's lists.
   const onlooker = await context.newPage();
   await open(onlooker, null, projectPath("overview"), "55".repeat(32));
   await expect(
     onlooker.getByTestId("focus-now-item").getByTestId("focus-now-who"),
   ).toContainText("until", { timeout: 30_000 });
   await expect(onlooker.getByTestId("focus-set")).toHaveCount(0);
-  // Someone with no Shares here gets the first-week steps; reading the aim and Now ticks the first.
+  // Someone with no Shares here gets the first-week steps; reading the aim and priorities ticks the first.
   const steps = onlooker.getByTestId("new-here-step");
   await expect(steps).toHaveCount(3, { timeout: 30_000 });
   await expect(steps.nth(0)).toHaveAttribute("data-done", "no");
@@ -499,7 +518,7 @@ test("a contributor project is started from the page, work is claimed the same d
     timeout: 30_000,
   });
   await expect(docsCard.getByTestId("take-on-open")).toBeVisible();
-  // The founder writes a check note (CHECK-NOTE-PLAN.md): the Now item's expectation is filled in, the founder answers
+  // The founder writes a check note (CHECK-NOTE-PLAN.md): the priority's expectation is filled in, the founder answers
   // the rest, and the note shows on the Overview for everyone.
   // A stand-in for the server's AI service: the empty probe is answered as "here", a real request with a draft.
   await founder.route("**/llm/chat/completions", async (route) => {
@@ -599,7 +618,7 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(founder.getByTestId("check-note-timing")).toContainText(
     "Last check:",
   );
-  // Publishing applied it to Now: the item reads as changed, its old expectation went with it, and nothing is left to
+  // Publishing applied it to the priorities: the item reads as changed, its old expectation went with it, and nothing is left to
   // apply.
   await expect(founder.getByTestId("focus-now-item")).toContainText(
     "Ship the first guide with a newcomer",
@@ -646,6 +665,8 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(founder.getByTestId("ragequit-panel")).toContainText(
     "Leave and take your share",
   );
+  // The pilot build names no payout module (N10): Funds has no revenue split.
+  if (PILOT) await expect(founder.getByTestId("payouts-none")).toHaveCount(0);
 
   // ── 2b. outside money behind the work area (N1): the founder puts 25 behind "docs" before anyone is approved ──
   const usdcOf = async (holder: string) =>
@@ -654,6 +675,14 @@ test("a contributor project is started from the page, work is claimed the same d
     // The area's card wherever it is: under Open work while it takes work, under its budget once it does not.
     page.getByTestId("work-tab").locator('[data-area="docs"]');
   const contributorMoney = await usdcOf(CONTRIBUTOR);
+  if (PILOT) {
+    // The pilot build names no bounty contract (N1): nobody is offered to put money behind a work area.
+    await refresh(founder, "Work");
+    await expect(docsArea(founder).first()).toBeVisible({ timeout: 30_000 });
+    await expect(docsArea(founder).getByTestId("work-bounty-open")).toHaveCount(
+      0,
+    );
+  }
   if (BOUNTY) {
     await refresh(founder, "Work");
     await docsArea(founder).getByTestId("work-bounty-open").click();
@@ -1215,6 +1244,14 @@ test("several people earn in one contributor project: two first projects, and a 
       "Others may build on this project. It asks: Credit Docs Commons on your page.",
     );
     await founder.goto(path("overview"));
+  }
+  if (PILOT) {
+    // Remixes (N11) are not in the pilot build: the form had no "Built on", and the Overview has no remix card.
+    await founder.getByRole("tab", { name: "Overview" }).click();
+    await expect(founder.getByTestId("contributor-issuance")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(founder.getByTestId("remix-card")).toHaveCount(0);
   }
   await founder.getByRole("tab", { name: "Work" }).click();
   await expect(founder.getByTestId("work-projects")).toContainText("guide", {

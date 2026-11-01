@@ -3,7 +3,7 @@ import { getPublicKey, verifyEvent } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll, PHONE } from "../helpers/layout";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Who may join a community, from the Org page: the owner chooses, an admin can only invite, a member only sees. The
@@ -248,7 +248,7 @@ async function open(
     await route.fulfill({ json: [...rows.values()] });
   });
 
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   if (phone) await page.getByTestId("open-channel-list").click();
   await page.getByTestId("people-toggle").click();
@@ -729,12 +729,12 @@ test("the owner can ban a person for a week with a reason, after being told what
   await expect(member.getByTestId("ban-form")).toContainText(
     "even with an invite link",
   );
-  // The banned person is never shown the reason, so the form does not promise it.
+  // The server's refusal tells the banned person the reason and the end, and the form says so.
   await expect(member.getByTestId("ban-form")).toContainText(
-    "Only moderators see the reason",
+    "They are told the reason you give and when the ban ends.",
   );
   await expect(member.getByTestId("ban-form")).not.toContainText(
-    "told the reason",
+    "Only moderators see",
   );
   // No length is chosen for them, so nothing can be sent until one is picked and it is confirmed.
   await expect(member.getByTestId("ban-yes")).toBeDisabled();

@@ -14,7 +14,8 @@
 # ⚠️  DEV ONLY. Anvil's public dev keys, a local fork, nothing public.
 #
 # Usage:  scripts/web-passkey-contributor-e2e.sh [playwright args]
-# Env:    ANVIL_PORT, SKIP_BUILD=1 (reuse web/dist built by this script), SEPOLIA_RPC_URL (the node to fork)
+# Env:    ANVIL_PORT, SKIP_BUILD=1 (reuse the build made by this script), SEPOLIA_RPC_URL (the node to fork),
+#         E2E_DIST (build into and serve from this folder instead of web/dist)
 
 WORLD_NAME=web-passkey-contributor
 WORLD_NO_CLI=1
@@ -77,7 +78,7 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
     VITE_CONTRIBUTOR_KITS="{\"${SEPOLIA_CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}" \
     VITE_HISTORY_FROM_BLOCKS="{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}" \
     VITE_ZERODEV_PROJECT_ID=fork-stand-in VITE_ZERODEV_CHAIN_ID="$SEPOLIA_CHAIN_ID" VITE_CONTRIBUTOR_ONLY=1 \
-    node_modules/.bin/vite build >/dev/null 2>&1 || fail "web build failed"
+    node_modules/.bin/vite build ${E2E_DIST:+--outDir "$E2E_DIST" --emptyOutDir} >/dev/null 2>&1 || fail "web build failed"
 fi
 step "running the browser spec"
 E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_PAYMASTER="$PAYMASTER" E2E_SUBMITTER="$SUBMITTER" \

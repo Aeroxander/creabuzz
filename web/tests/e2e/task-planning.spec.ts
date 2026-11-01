@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay, matches } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay, matches } from "./mock-relay";
 
 /**
  * Task planning on the work board: "Next up" orders unstarted tasks by
@@ -67,7 +67,7 @@ async function openBoard(
       body: JSON.stringify({
         communities: [
           {
-            host: "alpha.example.com",
+            host: COMMUNITY_HOST,
             name: "Alpha",
             description: "A test community.",
             icon: null,
@@ -97,7 +97,7 @@ async function openBoard(
     window.localStorage.setItem("buzz.identity.nsec", nsec);
     window.localStorage.setItem("buzz.identity.backedUp", "1");
   }, ME_NSEC);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("work-toggle").click();
 }

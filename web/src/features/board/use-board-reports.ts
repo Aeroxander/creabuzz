@@ -23,6 +23,7 @@ import { type NostrEvent, queryEvents } from "@/shared/lib/nostr-client";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { failureWords } from "@/shared/lib/readable-error";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
 
 import {
   KIND_FORUM_COMMENT,
@@ -70,7 +71,7 @@ export interface BoardReports {
 
 async function fetchBoardReports(boardId: string): Promise<ModerationReport[]> {
   const url = boardReportsUrl(relayHttpBaseUrl(), boardId);
-  const response = await fetch(url, {
+  const response = await timedFetchStreamed(url, {
     headers: { Authorization: await makeNip98AuthHeader(url, "GET") },
   });
   if (response.status === 401 || response.status === 403) {

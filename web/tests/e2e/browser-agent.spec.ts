@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * The browser-hosted fleet agent, end to end.
@@ -68,7 +68,7 @@ async function startAgent(page: import("@playwright/test").Page) {
       }),
     });
   });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("fleet-toggle").click();
   await page.getByTestId("browser-agent-toggle").click();
   await expect(page.getByTestId("browser-agent-toggle")).toContainText(
@@ -172,7 +172,7 @@ test("a refused status row is reported instead of claimed as done", async ({
     });
   });
 
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("fleet-toggle").click();
   await page.getByTestId("browser-agent-toggle").click();
   await expect(page.getByTestId("browser-agent-toggle")).toContainText(

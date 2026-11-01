@@ -145,7 +145,7 @@ export function CheckNoteCard({
         {timing.quiet
           ? `${last ? `No check since ${day(last.createdAt)}` : "No check note yet"}. One was due on ${day(timing.dueAt)}.`
           : timing.due
-            ? `A check is due: what did the team expect, what happened, and what changes next?`
+            ? `A check is due: what did the team expect, what happened, and what will it keep or change?`
             : `${last ? `Last check: ${day(last.createdAt)}. ` : ""}Next check by ${day(timing.dueAt)}.`}
       </p>
       {last ? (
@@ -158,7 +158,7 @@ export function CheckNoteCard({
             {last.outside}
           </p>
           <p>
-            <span className="text-muted-foreground">What we change:</span>{" "}
+            <span className="text-muted-foreground">How we work next:</span>{" "}
             {last.change}
           </p>
         </div>
@@ -171,8 +171,8 @@ export function CheckNoteCard({
         >
           <span>
             {applyFailed
-              ? "Now still could not be updated. Try again in a moment."
-              : "Your last check note's keep, change and drop answers are not in Now yet."}
+              ? "The priorities still could not be updated. Try again in a moment."
+              : "Your last check note's keep, change and drop answers are not in the priorities yet."}
           </span>
           <Button
             aria-busy={applying}
@@ -195,7 +195,7 @@ export function CheckNoteCard({
             type="button"
             variant="outline"
           >
-            Apply to Now
+            Apply to priorities
           </Button>
         </div>
       ) : null}
@@ -343,7 +343,7 @@ function CheckNoteForm({
         <h2 className="text-base font-bold">Check note</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Since {day(note.since)}: what the team expected, what happened, and
-          what changes next. Holders read it before they vote on money.
+          what to keep or change. Holders read it before they vote on money.
         </p>
       </div>
       <TextAreaField
@@ -387,6 +387,7 @@ function CheckNoteForm({
             </label>
           ) : null}
           <TextField
+            hint="Say what you observed: a result, feedback, a test or a link. Finished work alone does not show that the expected outcome happened."
             label="What you saw, in a line"
             onChange={(why) => setItem(i, { why })}
             testId={`check-note-why-${i}`}
@@ -420,7 +421,7 @@ function CheckNoteForm({
           </label>
           {item.next === "change" ? (
             <TextField
-              hint="It replaces this Now item when you publish."
+              hint="It replaces this priority when you publish."
               label="What it becomes"
               onChange={(becomes) => setItem(i, { becomes })}
               testId={`check-note-becomes-${i}`}
@@ -469,12 +470,8 @@ function CheckNoteForm({
         value={note.stuck}
       />
       <TextAreaField
-        hint={
-          note.causes[0]
-            ? `Most work turned down lately: ${note.causes[0].label}. Fixing how work is set up there usually helps more than asking people to try harder.`
-            : 'One change to how the team works: a clearer "done when", better context for someone\'s AI, a review rule.'
-        }
-        label="One thing we change in how we work"
+        hint="Keep what works and say why, or name one change to try. A slow week alone does not show that the process needs changing."
+        label="How we work next"
         onChange={(change) => set({ change })}
         testId="check-note-change"
         value={note.change}
@@ -643,7 +640,7 @@ export function CheckNoteBrief({ launch }: { launch: Launch }) {
           </p>
         ))}
         <p>
-          <span className="text-muted-foreground">What we change:</span>{" "}
+          <span className="text-muted-foreground">How we work next:</span>{" "}
           {last.change}
         </p>
       </div>

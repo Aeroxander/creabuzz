@@ -66,6 +66,33 @@ export function defaultFinderReward(reward: number | null): number | null {
   return Math.max(1, Math.round(reward * FINDER_SHARE));
 }
 
+/** A whole number of points from a text box, or null when it is empty or not one. */
+function points(text: string): number | null {
+  const value = Number(text.trim());
+  return text.trim() !== "" && Number.isInteger(value) && value > 0
+    ? value
+    : null;
+}
+
+/**
+ * The points a task made from a board post carries: the reward and the finder's credit as typed (the finder's a tenth
+ * of the reward when left empty, `finderText` null). A build without raises (the pilot) offers no points at all: no
+ * screen there accepts them, and Shares come only from a project's own work areas.
+ */
+export function escalationPoints(
+  raises: boolean,
+  rewardText: string,
+  finderText: string | null,
+): { reward: number | null; finderReward: number | null } {
+  if (!raises) return { reward: null, finderReward: null };
+  const reward = points(rewardText);
+  return {
+    reward,
+    finderReward:
+      finderText === null ? defaultFinderReward(reward) : points(finderText),
+  };
+}
+
 /** Whether `viewer` may turn a post by `postAuthor` into a task. */
 export function canEscalatePost(
   postAuthor: string,

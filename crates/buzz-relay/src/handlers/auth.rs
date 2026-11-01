@@ -9,6 +9,7 @@
 //! For WebSocket auth, the NIP-OA `auth` tag is extracted from the signed AUTH
 //! event itself (the tag is integrity-protected by the event signature).
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use axum::extract::ws::Message as WsMessage;
@@ -19,11 +20,73 @@ use crate::metrics::{AuthOutcome, AuthPostTerminalState};
 use crate::protocol::RelayMessage;
 use crate::state::AppState;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum BanOutcome {
     Clear,
-    Banned,
+    /// Banned; carries the refusal the person is shown ([`ban_refusal`]).
+    Banned(String),
     DbError,
+}
+
+/// The words every ban refusal starts with. Clients that predate the end and
+/// reason read any refusal starting with this as a ban, so it never changes.
+pub(crate) const BAN_REFUSAL: &str = "blocked: you are banned from this community";
+
+/// The most of a moderator's reason a ban refusal carries (the web ban form's
+/// own limit).
+const BAN_REASON_MAX_CHARS: usize = 200;
+
+/// The refusal a banned person is shown, saying when the ban ends and why:
+/// `blocked: you are banned from this community until <unix seconds>` for a
+/// ban with an end, `... for good` for one without, then `; reason: <text>`
+/// when the moderator gave one. The reason is one line of plain text (control
+/// characters and runs of whitespace become one space) cut to 200 characters,
+/// so it is always the last part and needs no escaping.
+pub(crate) fn ban_refusal(
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    reason: Option<&str>,
+) -> String {
+    let mut refusal = match expires_at {
+        Some(at) => format!("{BAN_REFUSAL} until {}", at.timestamp()),
+        None => format!("{BAN_REFUSAL} for good"),
+    };
+    let reason = reason
+        .unwrap_or_default()
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>();
+    let reason = reason
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(BAN_REASON_MAX_CHARS)
+        .collect::<String>();
+    let reason = reason.trim_end();
+    if !reason.is_empty() {
+        refusal.push_str("; reason: ");
+        refusal.push_str(reason);
+    }
+    refusal
+}
+
+/// The refusal for `pubkey`, which a restriction read found banned: from its
+/// own ban row when that row is the ban, else (banned through an agent's
+/// owner, or the row could not be read) the plain [`BAN_REFUSAL`]. Only a
+/// banned principal pays for this read.
+pub(crate) async fn ban_refusal_for(
+    state: &AppState,
+    community: buzz_core::CommunityId,
+    pubkey: &[u8],
+) -> String {
+    match state.db.get_community_ban(community, pubkey).await {
+        Ok(Some(ban)) if ban.banned => ban_refusal(ban.ban_expires_at, ban.ban_reason.as_deref()),
+        Ok(_) => BAN_REFUSAL.to_string(),
+        Err(e) => {
+            warn!(error = %e, "ban row read failed; refusing without its end and reason");
+            BAN_REFUSAL.to_string()
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -79,7 +142,9 @@ pub(crate) async fn community_ban_outcome(
             .moderation_restriction_state(community, key.as_bytes())
             .await
         {
-            Ok(restriction) if restriction.banned => BanOutcome::Banned,
+            Ok(restriction) if restriction.banned => {
+                BanOutcome::Banned(ban_refusal_for(state, community, key.as_bytes()).await)
+            }
             Ok(_) => BanOutcome::Clear,
             Err(e) => {
                 warn!(pubkey = %key.to_hex(), error = %e, "ban-state DB lookup failed, denying (fail-closed)");
@@ -101,17 +166,15 @@ pub(crate) async fn community_ban_outcome(
     }
 }
 
-fn ban_denial(outcome: BanOutcome) -> Option<(&'static str, &'static str, AuthOutcome)> {
+fn ban_denial(outcome: &BanOutcome) -> Option<(&'static str, Cow<'static, str>, AuthOutcome)> {
     match outcome {
         BanOutcome::Clear => None,
-        BanOutcome::Banned => Some((
-            "banned",
-            "blocked: you are banned from this community",
-            AuthOutcome::Banned,
-        )),
+        BanOutcome::Banned(refusal) => {
+            Some(("banned", Cow::Owned(refusal.clone()), AuthOutcome::Banned))
+        }
         BanOutcome::DbError => Some((
             "ban_check_error",
-            "error: internal error checking restriction state",
+            Cow::Borrowed("error: internal error checking restriction state"),
             AuthOutcome::BanCheckError,
         )),
     }
@@ -120,7 +183,7 @@ fn ban_denial(outcome: BanOutcome) -> Option<(&'static str, &'static str, AuthOu
 /// Why a bound socket is refused at the final admission check.
 pub(crate) struct AdmissionDenial {
     pub(crate) metric: &'static str,
-    pub(crate) reason: &'static str,
+    pub(crate) reason: Cow<'static, str>,
     pub(crate) outcome: AuthOutcome,
     pub(crate) class: buzz_auth::DenialClass,
 }
@@ -148,7 +211,7 @@ pub(crate) async fn final_admission_denial(
         signed_auth_created_at,
     )
     .await;
-    if let Some((metric, reason, outcome)) = ban_denial(ban) {
+    if let Some((metric, reason, outcome)) = ban_denial(&ban) {
         let class = match ban {
             BanOutcome::DbError => buzz_auth::DenialClass::AuthorizationUnavailable,
             _ => buzz_auth::DenialClass::AuthorizationDenied,
@@ -171,7 +234,7 @@ pub(crate) async fn final_admission_denial(
     {
         Ok(crate::api::relay_members::MembershipDecision::Denied) => Some(AdmissionDenial {
             metric: "not_relay_member",
-            reason: "restricted: not a relay member",
+            reason: "restricted: not a relay member".into(),
             outcome: AuthOutcome::NotRelayMember,
             class: buzz_auth::DenialClass::AuthorizationDenied,
         }),
@@ -180,7 +243,7 @@ pub(crate) async fn final_admission_denial(
             warn!(pubkey = %pubkey.to_hex(), error = %e, "relay membership recheck failed, denying (fail-closed)");
             Some(AdmissionDenial {
                 metric: "relay_membership_check_error",
-                reason: "error: internal error checking relay membership",
+                reason: "error: internal error checking relay membership".into(),
                 outcome: AuthOutcome::RelayMembershipCheckError,
                 class: buzz_auth::DenialClass::AuthorizationUnavailable,
             })
@@ -217,7 +280,7 @@ pub(crate) async fn admitted_owner(
             warn!(pubkey = %pubkey.to_hex(), error = %e, "stored agent owner lookup failed, denying");
             Err(AdmissionDenial {
                 metric: "agent_owner_link_error",
-                reason: OWNER_LINK_ERROR,
+                reason: OWNER_LINK_ERROR.into(),
                 outcome: AuthOutcome::RelayMembershipCheckError,
                 class: buzz_auth::DenialClass::AuthorizationUnavailable,
             })
@@ -275,7 +338,7 @@ fn deny_admission(conn: &ConnectionState, event_id_hex: &str, denial: AdmissionD
         return;
     }
     let _ = conn.ctrl_tx.try_send(WsMessage::Text(
-        RelayMessage::ok(event_id_hex, false, denial.reason).into(),
+        RelayMessage::ok(event_id_hex, false, &denial.reason).into(),
     ));
     conn.cancel.cancel();
 }
@@ -428,8 +491,8 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                 )
                 .await;
 
-                if let Some((metric_reason, deny_reason, auth_outcome)) = ban_denial(outcome) {
-                    warn!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), reason = deny_reason, "principal denied at ban seam");
+                if let Some((metric_reason, deny_reason, auth_outcome)) = ban_denial(&outcome) {
+                    warn!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), reason = %deny_reason, "principal denied at ban seam");
                     metrics::counter!("buzz_auth_failures_total", "reason" => metric_reason)
                         .increment(1);
                     if !conn.reject_auth(auth_outcome) {
@@ -464,7 +527,7 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                         return;
                     }
                     let _ = conn.ctrl_tx.try_send(WsMessage::Text(
-                        RelayMessage::ok(&event_id_hex, false, deny_reason).into(),
+                        RelayMessage::ok(&event_id_hex, false, &deny_reason).into(),
                     ));
                     conn.cancel.cancel();
                     return;
@@ -684,7 +747,7 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                         &event_id_hex,
                         AdmissionDenial {
                             metric: "agent_owner_link_error",
-                            reason: OWNER_LINK_ERROR,
+                            reason: OWNER_LINK_ERROR.into(),
                             outcome: AuthOutcome::RelayMembershipCheckError,
                             class: buzz_auth::DenialClass::AuthorizationUnavailable,
                         },
@@ -737,14 +800,14 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
             {
                 None if conn.cancel.is_cancelled() => Some(AdmissionDenial {
                     metric: "revoked_during_auth",
-                    reason: "blocked: access revoked",
+                    reason: "blocked: access revoked".into(),
                     outcome: AuthOutcome::Banned,
                     class: buzz_auth::DenialClass::AuthorizationDenied,
                 }),
                 denial => denial,
             };
             if let Some(denial) = denial {
-                warn!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), reason = denial.reason, "denied at final admission check");
+                warn!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), reason = %denial.reason, "denied at final admission check");
                 deny_admission(&conn, &event_id_hex, denial);
                 return;
             }
@@ -846,8 +909,9 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
 #[cfg(test)]
 mod tests {
     use super::{
-        ban_denial, classify_allowlist, classify_relay_membership, extract_auth_tag_json,
-        handle_auth, nip42_denial_class, BanOutcome, PolicyCheck,
+        ban_denial, ban_refusal, classify_allowlist, classify_relay_membership,
+        extract_auth_tag_json, handle_auth, nip42_denial_class, BanOutcome, PolicyCheck,
+        BAN_REFUSAL,
     };
     use crate::api::relay_members::MembershipDecision;
     use crate::connection::{tests::test_conn_with_auth, AuthState};
@@ -3340,8 +3404,9 @@ mod tests {
                     .await
                     .expect("insert community");
                 sqlx::query(
-                    "INSERT INTO community_bans (community_id, pubkey, banned, actor_pubkey) \
-                     VALUES ($1, $2, TRUE, $3)",
+                    "INSERT INTO community_bans \
+                     (community_id, pubkey, banned, ban_expires_at, ban_reason, actor_pubkey) \
+                     VALUES ($1, $2, TRUE, to_timestamp(1893456000), 'Selling coins in chat', $3)",
                 )
                 .bind(community)
                 .bind(harness.key.public_key().to_bytes().to_vec())
@@ -3362,7 +3427,12 @@ mod tests {
                 };
                 assert_eq!(frame[0], "OK");
                 assert_eq!(frame[2], false);
-                assert_eq!(frame[3], "blocked: you are banned from this community");
+                // The banned person is told when the ban ends and why.
+                assert_eq!(
+                    frame[3],
+                    "blocked: you are banned from this community until 1893456000; \
+                     reason: Selling coins in chat"
+                );
                 assert!(
                     harness.terminal_rx.try_recv().is_err(),
                     "off mode never uses terminal"
@@ -3415,23 +3485,51 @@ mod tests {
 
     #[test]
     fn ban_decisions_map_to_bounded_public_outcomes() {
-        assert_eq!(ban_denial(BanOutcome::Clear), None);
+        assert_eq!(ban_denial(&BanOutcome::Clear), None);
+        let refusal = ban_refusal(None, Some("spam"));
         assert_eq!(
-            ban_denial(BanOutcome::Banned),
-            Some((
-                "banned",
-                "blocked: you are banned from this community",
-                AuthOutcome::Banned,
-            ))
+            ban_denial(&BanOutcome::Banned(refusal.clone())),
+            Some(("banned", refusal.into(), AuthOutcome::Banned))
         );
         assert_eq!(
-            ban_denial(BanOutcome::DbError),
+            ban_denial(&BanOutcome::DbError),
             Some((
                 "ban_check_error",
-                "error: internal error checking restriction state",
+                "error: internal error checking restriction state".into(),
                 AuthOutcome::BanCheckError,
             ))
         );
+    }
+
+    #[test]
+    fn a_ban_refusal_says_when_it_ends_and_why_after_the_old_prefix() {
+        use chrono::TimeZone;
+        let end = chrono::Utc.timestamp_opt(1_893_456_000, 0).unwrap();
+        assert_eq!(
+            ban_refusal(Some(end), Some("Selling coins in chat")),
+            "blocked: you are banned from this community until 1893456000; reason: Selling coins in chat"
+        );
+        assert_eq!(
+            ban_refusal(None, None),
+            "blocked: you are banned from this community for good"
+        );
+        // An empty or blank reason is left out.
+        assert_eq!(
+            ban_refusal(Some(end), Some(" \n\t ")),
+            "blocked: you are banned from this community until 1893456000"
+        );
+        // One line of plain text: line breaks and control characters become single spaces.
+        assert_eq!(
+            ban_refusal(None, Some("  spam\r\nand\u{0}  scams ")),
+            "blocked: you are banned from this community for good; reason: spam and scams"
+        );
+        // Bounded: at most 200 characters of reason, cut on a character, never a byte.
+        let long = "é".repeat(500);
+        let refusal = ban_refusal(None, Some(&long));
+        let reason = refusal.split_once("; reason: ").unwrap().1;
+        assert_eq!(reason.chars().count(), 200);
+        // Old clients read every form as a ban.
+        assert!(refusal.starts_with(BAN_REFUSAL));
     }
 
     #[test]

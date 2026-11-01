@@ -366,3 +366,75 @@ test("the Start page says who the reviewers are, when all must agree, and one pr
   // And the founder is asked how they know them (funding review D1); the form refuses a new project without it.
   await expect(page.getByTestId("contributor-reviewer-ties")).toBeVisible();
 });
+
+test("the Start form comes back after a reload, reads reviewers split by semicolons, and Start over empties it", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  await relay.install(page);
+  await installChain(page);
+  await page.addInitScript((nsec) => {
+    window.localStorage.setItem("buzz.identity.nsec", nsec);
+    window.localStorage.setItem("buzz.identity.backedUp", "1");
+  }, NSEC);
+  await page.goto("/start/contributor");
+
+  await expect(page.getByTestId("contributor-form")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("contributor-form-restored")).toHaveCount(0);
+  await page.getByTestId("contributor-name").fill("Garden Guides");
+  const reviewers = `0x${"71".repeat(20)}; 0x${"72".repeat(20)};0x${"73".repeat(20)}`;
+  await page.getByTestId("contributor-reviewers").fill(reviewers);
+  // Semicolons separate reviewers here as they do on a raise's reviewer form.
+  await expect(page.getByTestId("contributor-reviewer-picked")).toHaveCount(3);
+
+  await page.reload();
+  await expect(page.getByTestId("contributor-form-restored")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("contributor-name")).toHaveValue(
+    "Garden Guides",
+  );
+  await expect(page.getByTestId("contributor-reviewers")).toHaveValue(
+    reviewers,
+  );
+
+  await page.getByTestId("contributor-form-start-over").click();
+  await expect(page.getByTestId("contributor-name")).toHaveValue("");
+  await expect(page.getByTestId("contributor-form-restored")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("contributor-form")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("contributor-name")).toHaveValue("");
+  await expect(page.getByTestId("contributor-form-restored")).toHaveCount(0);
+});
+
+test("when this browser will not keep the Start form, the page says a reload would lose it", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  await relay.install(page);
+  await installChain(page);
+  await page.addInitScript((nsec) => {
+    window.localStorage.setItem("buzz.identity.nsec", nsec);
+    window.localStorage.setItem("buzz.identity.backedUp", "1");
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (String(key).startsWith("buzz.start.contributor-form:"))
+        throw new Error("blocked");
+      return setItem.call(this, key, value);
+    };
+  }, NSEC);
+  await page.goto("/start/contributor");
+
+  await expect(page.getByTestId("contributor-form")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("contributor-form-not-kept")).toHaveText("");
+  await page.getByTestId("contributor-name").fill("Garden Guides");
+  await expect(page.getByTestId("contributor-form-not-kept")).toHaveText(
+    "This browser is not keeping what you type here, so reloading or closing this tab would lose it.",
+  );
+});

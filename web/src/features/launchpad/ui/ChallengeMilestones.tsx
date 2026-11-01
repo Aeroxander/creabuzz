@@ -1,5 +1,5 @@
 /**
- * The milestones of a project whose team's tokens unlock unless holders object (`MilestoneChallenge`): what the rule is,
+ * The milestones of a project whose team's Shares unlock unless holders object (`MilestoneChallenge`): what the rule is,
  * where each milestone stands, and what the connected person can do about it. It reads the same for everyone; the buttons
  * are the ones this person may press (the team publishes, holders object and vote, anyone finishes or settles).
  *
@@ -120,7 +120,7 @@ export function ChallengeMilestones({
       <Card className="p-4">
         <h2 className="text-base font-bold">Milestones</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          The team votes with all of its tokens from the start, but a defined
+          The team votes with all of its Shares from the start, but a defined
           part of them stays locked: it cannot be sold or moved until a
           milestone is reached.
         </p>
@@ -136,13 +136,13 @@ export function ChallengeMilestones({
             <li>
               For {span(terms.window)} (longer for a bigger milestone, and
               longer again after each attempt holders turn down) any holder can
-              object. If nobody does, anyone can finish it and the tokens
+              object. If nobody does, anyone can finish it and the Shares
               unlock.
             </li>
             <li>
               A holder who objects posts{" "}
               {terms.deposit > 0n ? money(terms.deposit) : "nothing"} and
-              holders vote; the team&apos;s own tokens do not count. The
+              holders vote; the team&apos;s own Shares do not count. The
               objection stands only if more is against the milestone than for it
               and at least {terms.minRejectBps / 100}% of what could vote is
               against it. With less interest than that, the milestone stands.
@@ -150,12 +150,12 @@ export function ChallengeMilestones({
             <li>
               For {span(terms.clawback)} after an unlock, one more objection is
               possible. If holders uphold it, the team&apos;s remaining locked
-              tokens are burned.
+              Shares are burned.
             </li>
           </ol>
           <p className="mt-2 text-muted-foreground">
             Milestones are published in order, and the next only once the one
-            before has had its time for late objections. So the tokens still
+            before has had its time for late objections. So the Shares still
             ahead stay locked, and are burned, while an earlier milestone can be
             objected to. Once the last one has unlocked, what stands behind it
             is the bond.
@@ -167,15 +167,15 @@ export function ChallengeMilestones({
         </p>
         <p className="mt-2 text-sm" data-testid="challenge-summary">
           {unlocked} of {countOf(view.milestones.length, "milestone")} unlocked.{" "}
-          {shares(view.locked)} tokens still locked.
+          {shares(view.locked)} Shares still locked.
         </p>
         <p
           className="mt-2 rounded-lg bg-black/5 p-2 text-xs text-muted-foreground dark:bg-white/5"
           data-testid="challenge-limits"
         >
-          What this does not do: it holds back the team&apos;s original tokens.
-          Holders can still vote to spend the treasury or to issue more tokens,
-          and those votes do not wait for milestones.{" "}
+          What this does not do: it holds back the team&apos;s original Shares.
+          Holders can still vote to spend the treasury or to issue more Shares
+          or non-voting shares, and those votes do not wait for milestones.{" "}
           <button className="underline" onClick={onOpenDecisions} type="button">
             See the decisions
           </button>
@@ -266,8 +266,8 @@ export function ChallengeMilestones({
               standing={challengeEvidenceFor(m, evidence.packets, view.lock)}
               tokens={
                 tokens !== null && tokens !== undefined
-                  ? `About ${shares(tokens)} tokens will be held back (${m.bps / 100}% of the team's locked tokens)`
-                  : `${m.bps / 100}% of the team's locked tokens`
+                  ? `About ${shares(tokens)} Shares will be held back (${m.bps / 100}% of the team's locked Shares)`
+                  : `${m.bps / 100}% of the team's locked Shares`
               }
               view={view}
               wallet={me}

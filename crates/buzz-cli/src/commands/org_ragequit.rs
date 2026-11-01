@@ -180,6 +180,7 @@ impl MolochClient {
     ) -> Result<String, CliError> {
         let tx_client = AllowanceClient::from_transport(self.rpc.clone(), &self.dao_hex())
             .map_err(cli_error("tx client"))?
+            .with_gas_cap(ragequit_gas_cap(tokens.len()))
             .with_rpc_timeout(self.rpc_timeout)
             .with_receipt_deadline(RECEIPT_DEADLINE);
         let data = encode_ragequit_calldata(tokens, shares_to_burn, loot_to_burn);
@@ -351,6 +352,13 @@ pub async fn cmd_ragequit(
     Ok(())
 }
 
+/// The gas a ragequit may use. Burning the units and paying out each token costs more than the default cap for a
+/// single spend: a one-token ragequit on a kit-built DAO estimates about 336,000 gas, which the default 300,000 cap
+/// refused, so a holder could not leave from the CLI. Each further token adds a transfer.
+fn ragequit_gas_cap(tokens: usize) -> u64 {
+    400_000 + 100_000 * tokens as u64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,6 +452,14 @@ mod tests {
         assert_eq!(hex::encode(abi::selector(SIG_LOOT)), "9b7b2ab0");
         assert_eq!(hex::encode(abi::selector(SIG_BALANCE_OF)), "70a08231");
         assert_eq!(hex::encode(abi::selector(SIG_RAGEQUITTABLE)), "14a6d7de");
+    }
+
+    #[test]
+    fn ragequit_gas_cap_fits_a_real_ragequit() {
+        // Measured: one token on a kit-built DAO estimates 336,016 gas.
+        assert!(ragequit_gas_cap(1) > 336_016);
+        assert!(ragequit_gas_cap(3) > ragequit_gas_cap(1));
+        assert!(ragequit_gas_cap(1) > buzz_evm_allowance::tx::MAX_GAS);
     }
 
     #[test]

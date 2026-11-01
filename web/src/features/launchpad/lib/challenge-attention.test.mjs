@@ -76,7 +76,7 @@ test("a milestone that waited out its window is the team's to finish, and anyone
     milestone({ stage: "ready", phase: "pending", windowEnds: NOW - 1 }),
   ]);
   const [team] = challengeAttention(ready, FOUNDER);
-  assert.match(team.text, /Finish it to unlock your tokens/);
+  assert.match(team.text, /Finish it to unlock your Shares/);
   assert.equal(team.tab, "milestones");
   assert.equal(team.action, "Finish it");
   const [holder] = challengeAttention(ready, BACKER);
@@ -163,7 +163,7 @@ test("the wallet is matched whatever its case", () => {
   assert.match(
     challengeAttention(ready, FOUNDER.toUpperCase().replace("0X", "0x"))[0]
       .text,
-    /unlock your tokens/,
+    /unlock your Shares/,
   );
 });
 
@@ -196,8 +196,8 @@ test("each line says why it is shown, and what happens if nothing is done, and h
   ]);
   const [finishTeam] = challengeAttention(ready, FOUNDER);
   assert.match(finishTeam.why, /on the team/);
-  assert.match(finishTeam.ifIgnored, /Your tokens stay locked/);
+  assert.match(finishTeam.ifIgnored, /Your Shares stay locked/);
   assert.equal(finishTeam.due, undefined, "finishing has no deadline");
   const [finishAnyone] = challengeAttention(ready, BACKER);
-  assert.match(finishAnyone.ifIgnored, /team's tokens stay locked/);
+  assert.match(finishAnyone.ifIgnored, /team's Shares stay locked/);
 });

@@ -485,6 +485,23 @@ test("a founder and a contributor with no wallet start a project, do the work an
     new Set([founderAccount, contributorAccount]),
   );
 
+  // ── 6b. "Your work", opened from the navigation as the contributor, finds the awarded piece: the 25 Shares in this
+  //        project, held by the passkey account (outside review C 9) ───────────────────────────────────────────────
+  await contributor.goto("/");
+  const yourWork = contributor.getByTestId("app-nav-portfolio");
+  await expect(yourWork).toHaveText(/Your work/, { timeout: 30_000 });
+  await yourWork.click();
+  await expect(contributor).toHaveURL(/\/portfolio$/);
+  const holding = contributor
+    .getByTestId("portfolio-holding")
+    .filter({ hasText: "Docs Commons" });
+  await expect(holding.getByTestId("portfolio-holding-shares")).toHaveText(
+    "25 Shares",
+    { timeout: 60_000 },
+  );
+  // Back to the project, where the next steps reload it.
+  await contributor.goto(projectPath("work"));
+
   // ── 7. money in a passkey account can be sent out (D141): paid in here as a faucet would, sent from the profile ──
   const USDC = "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238";
   const usdcOf = async (holder: string) =>
@@ -677,4 +694,12 @@ test("a founder and a contributor with no wallet start a project, do the work an
   );
   await expect(held).toContainText(`${wholeText(ethBefore + ethDue, 18)} ETH`);
   expect(bundler.sent.every((op) => op.success === true)).toBe(true);
+  // "Your work" no longer lists the project: the Shares it showed were the ones just given up.
+  await contributor.goto("/portfolio");
+  await expect(contributor.getByTestId("portfolio-holdings-empty")).toBeVisible(
+    {
+      timeout: 60_000,
+    },
+  );
+  await expect(contributor.getByTestId("portfolio-holding")).toHaveCount(0);
 });

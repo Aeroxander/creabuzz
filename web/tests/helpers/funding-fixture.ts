@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
+import { PREVIEW_ORIGIN } from "../e2e/mock-relay";
 
 /**
  * The funding-status world, shared by the regression spec
@@ -94,7 +95,7 @@ export function launchEvent(fixture: Fixture) {
 
 /** Serve these launches to the app over its relay WebSocket. */
 export async function mockLaunchRelay(page: Page) {
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {

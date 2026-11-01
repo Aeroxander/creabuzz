@@ -2,7 +2,7 @@
  * First-run onboarding: name the durable identity and publish its profile.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { saveNewProfile } from "../lib/profile";
 import { getOrCreateIdentity, importIdentity } from "@/shared/lib/identity";
@@ -18,11 +18,11 @@ import {
   failureWords,
 } from "@/shared/lib/readable-error";
 import { FailureNote } from "@/shared/ui/failure-note";
-import { Overlay } from "@/shared/ui/portal";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { CREATE_ACCOUNT } from "../lib/account-copy";
 import { offerRecoveryKey } from "../lib/recovery-offer";
+import { IdentityDialog } from "./IdentityDialog";
 import { InviteOnlySignUpNotice } from "./InviteOnlySignUpNotice";
 import {
   mayCreateAccount,
@@ -189,6 +189,7 @@ export function OnboardingDialog({
   startOn?: "create" | "signin";
 }) {
   const [name, setName] = useState("");
+  const nameRef = useRef<HTMLInputElement | null>(null);
   const [about, setAbout] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<FailureWords | null>(null);
@@ -288,12 +289,19 @@ export function OnboardingDialog({
   // quiet second choice, and says what it costs.
   const passkeyFirst = !raisesOffered();
   return (
-    <Overlay
-      className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 dark:bg-black/50"
-      data-testid="onboarding-dialog"
+    <IdentityDialog
+      cardClassName="max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-background p-6 shadow-2xl"
+      initialFocus={nameRef}
+      labelledBy="onboarding-title"
+      // Escape is "Not now", except while an account is being made.
+      onEscape={saving ? undefined : (onCancel ?? onDone)}
+      testId="onboarding-dialog"
     >
-      <div className="max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-background p-6 shadow-2xl">
-        <h1 className="text-lg font-semibold tracking-tight text-black dark:text-white">
+      <div>
+        <h1
+          className="text-lg font-semibold tracking-tight text-black dark:text-white"
+          id="onboarding-title"
+        >
           {CREATE_ACCOUNT}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -308,6 +316,7 @@ export function OnboardingDialog({
             Name
             <input
               id="onboarding-name"
+              ref={nameRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoComplete="nickname"
@@ -439,7 +448,7 @@ export function OnboardingDialog({
           </button>
         </div>
       </div>
-    </Overlay>
+    </IdentityDialog>
   );
 }
 
@@ -459,6 +468,7 @@ function SignInView({
 }) {
   const [key, setKey] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
+  const keyRef = useRef<HTMLInputElement | null>(null);
   const signIn = () => {
     const hex = parseRecoveryKey(key);
     if (!hex) {
@@ -479,19 +489,24 @@ function SignInView({
     }
   };
   return (
-    <Overlay
-      className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 dark:bg-black/50"
-      data-testid="onboarding-dialog"
+    <IdentityDialog
+      cardClassName="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl"
+      initialFocus={keyRef}
+      labelledBy="onboarding-signin-title"
+      onEscape={onCancel ?? onBack}
+      testId="onboarding-dialog"
     >
       <form
-        className="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl"
         data-testid="onboarding-signin-form"
         onSubmit={(event) => {
           event.preventDefault();
           signIn();
         }}
       >
-        <h1 className="text-lg font-semibold tracking-tight text-black dark:text-white">
+        <h1
+          className="text-lg font-semibold tracking-tight text-black dark:text-white"
+          id="onboarding-signin-title"
+        >
           Sign in
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -504,6 +519,7 @@ function SignInView({
           Recovery key
           <input
             id="onboarding-signin-key"
+            ref={keyRef}
             value={key}
             onChange={(e) => {
               setKey(e.target.value);
@@ -552,6 +568,6 @@ function SignInView({
           </button>
         </div>
       </form>
-    </Overlay>
+    </IdentityDialog>
   );
 }

@@ -540,10 +540,19 @@ function requireWebAuthn(): void {
   }
 }
 
-/** Dev escape hatch (same flag as the web-passkey branch): any
+/** Dev-server escape hatch (same flag as the web-passkey branch): any
  * `sessionStorage["buzz.passkey.mock"]` routes ceremonies to a deterministic
  * fake; `"noprf"` additionally simulates a platform without PRF (the
- * iCloud-Keychain unlock-mode path). */
+ * iCloud-Keychain unlock-mode path).
+ *
+ * Only ever called as `import.meta.env?.DEV ? mockMode() : "off"`, written out
+ * at each ceremony: `vite build` replaces the condition with `false`, so a
+ * production bundle carries neither this function, the flag's name nor the
+ * fake ceremonies, and setting the flag there still runs real WebAuthn. Outside
+ * Vite (node tests) `import.meta.env` is undefined and the stand-in is off too.
+ * (Behind a helper function the fake bodies survived minification.) Tests use
+ * Chrome's virtual authenticator (browser) or a fake `navigator.credentials`
+ * (`fake-webauthn.mjs`, node) instead. */
 function mockMode(): "off" | "prf" | "noprf" {
   try {
     if (typeof sessionStorage === "undefined") return "off";
@@ -580,7 +589,7 @@ async function performCreate(
   options: CreatePasskeyOptions,
   prfSalt: Uint8Array,
 ): Promise<CeremonyCreateResult> {
-  const mode = mockMode();
+  const mode = import.meta.env?.DEV ? mockMode() : "off";
   if (mode !== "off") {
     // Deterministic fake: PRF = SHA-256(salt), r1 = two hashes shaped like a
     // P-256 point encoding (a fake, not a curve point — dev only).
@@ -659,7 +668,7 @@ async function performCreate(
 async function performGet(
   options: GetPasskeyAssertionOptions,
 ): Promise<PasskeyAssertion> {
-  const mode = mockMode();
+  const mode = import.meta.env?.DEV ? mockMode() : "off";
   if (mode !== "off") {
     const prfOutput =
       options.prfSalt && mode === "prf"

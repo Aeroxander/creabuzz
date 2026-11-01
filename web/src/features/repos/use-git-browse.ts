@@ -138,6 +138,10 @@ export function useGitBlob(
     isLoading:
       cloneQuery.isLoading || (cloneQuery.isSuccess ? query.isLoading : false),
     error: query.error ?? cloneQuery.error ?? null,
+    /** Read again from whichever step failed: the download of the repository, or the file in it. */
+    retry: () => {
+      void (cloneQuery.error ? cloneQuery.refetch() : query.refetch());
+    },
   };
 }
 

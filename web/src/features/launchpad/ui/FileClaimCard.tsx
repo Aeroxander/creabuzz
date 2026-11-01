@@ -36,11 +36,19 @@ import {
 import type { Launch } from "../models";
 import type { SenderCall } from "@/features/identity/lib/sponsoredSender";
 import { usePublishMirror } from "../use-launches";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 import {
+  emptyBudgetProblem,
   nameProblem,
   noAreaProblem,
   resubmitProblem,
 } from "../lib/claim-file-checks";
+import {
+  claimDraftKey,
+  clearClaimDraft,
+  fileWithDraft,
+  saveClaimDraft,
+} from "../lib/claim-draft";
 
 const sameAddress = (a: string | null, b: string) =>
   a !== null && a.toLowerCase() === b.toLowerCase();
@@ -215,6 +223,17 @@ export function FileClaimCard({
       setProblem("Give your work a title, up to 32 characters.", "name");
       return;
     }
+    // New work in a budget with no open work area could never be accepted for review: said before anything else.
+    const empty = emptyBudgetProblem({
+      openAreas: budgetAreas.length,
+      truncated: mandate.truncated,
+      otherBudgets: open.length - 1,
+      existing: mandate.claims.some((c) => c.id === id),
+    });
+    if (empty) {
+      setProblem(empty);
+      return;
+    }
     if (evidence.trim() === "") {
       setProblem(
         "Say where the work is, and how it should be judged.",
@@ -356,27 +375,61 @@ export function FileClaimCard({
         data: encodeSetCheck(id, wanted),
       });
     }
-    if (calls.length !== 0 && !(await onSendBatch(`file-${id}`, calls))) {
-      return;
-    }
-    // The text itself, signed, so reviewers can read what the claim committed to. A claim without it cannot be approved,
-    // so a failure here is said plainly and retried by pressing the button again (the steps above are skipped).
-    try {
-      await publish.mutateAsync({
-        kind: KIND_LAUNCH_UPDATE,
-        author: launch.record.author,
-        launchId: launch.record.id,
-        content: evidenceUpdateContent({
+    // The chain keeps only the text's fingerprint: a copy of the text is kept in this browser before the wallet is
+    // asked, so a reload before the evidence is published can still publish it (`lib/claim-draft.ts`).
+    const draftKey = claimDraftKey({
+      server: relayWsUrl(),
+      account: existingUserPubkey() ?? "",
+      wallet,
+      claimId: id,
+      evidenceHash: hashText(submitted),
+    });
+    let kept = false;
+    const outcome = await fileWithDraft({
+      commits: !existing,
+      keep: () => {
+        kept = saveClaimDraft(draftKey, {
           name: name.trim(),
-          claimId: id,
-          mandate: mandate.address,
           evidence: submitted,
           check,
-        }),
-      });
-    } catch {
+        });
+        return kept;
+      },
+      send: () =>
+        calls.length === 0
+          ? Promise.resolve(true)
+          : onSendBatch(`file-${id}`, calls),
+      // The text itself, signed, so reviewers can read what the claim committed to. A claim without it cannot be
+      // approved, so a failure here is said plainly and retried by pressing the button again (the steps above are
+      // skipped).
+      publish: async () => {
+        await publish.mutateAsync({
+          kind: KIND_LAUNCH_UPDATE,
+          author: launch.record.author,
+          launchId: launch.record.id,
+          content: evidenceUpdateContent({
+            name: name.trim(),
+            claimId: id,
+            mandate: mandate.address,
+            evidence: submitted,
+            check,
+          }),
+        });
+      },
+      forget: () => clearClaimDraft(draftKey),
+    });
+    if (outcome === "not-kept") {
       setProblem(
-        "Your work is submitted, but its evidence could not be published, and reviewers cannot approve what they cannot read. Press Submit work again to publish it.",
+        "Your browser would not keep a copy of this work, so nothing was sent. Your text is still in the form. Allow this site to store data, or free some browser storage, then try again.",
+      );
+      return;
+    }
+    if (outcome === "not-sent") return;
+    if (outcome === "not-published") {
+      setProblem(
+        kept
+          ? "Your work is submitted, but its evidence could not be published, and reviewers cannot approve what they cannot read. A copy is kept in this browser. Press Submit work again to publish it."
+          : "Your work is submitted, but its evidence could not be published, and reviewers cannot approve what they cannot read. Press Submit work again to publish it.",
       );
       return;
     }
@@ -489,6 +542,17 @@ export function FileClaimCard({
             ))}
           </select>
         </label>
+      ) : null}
+      {budgetAreas.length === 0 && !mandate.truncated ? (
+        // Said before anything is typed: new work here would wait for an acceptance that cannot come.
+        <p
+          className="mt-2 text-sm text-amber-800 dark:text-amber-200"
+          data-testid="work-claim-no-areas"
+        >
+          {open.length > 1
+            ? "This work budget has no open work areas, so new work here cannot be accepted for review. Pick another work budget."
+            : "This work budget has no open work areas yet, so new work cannot be accepted for review until one opens."}
+        </p>
       ) : null}
       <div className="mt-2 grid gap-2">
         {budgetAreas.length > 0 ? (

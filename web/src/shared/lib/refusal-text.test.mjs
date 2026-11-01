@@ -5,7 +5,10 @@ import { describe, it } from "node:test";
 import {
   ACCESS_REMOVED_TEXT,
   asSentence,
+  banIn,
+  banText,
   NO_ACCESS_TEXT,
+  parseBan,
   liveRefusalText,
   refusalText,
   restrictionText,
@@ -86,10 +89,6 @@ describe("restrictions on the reader", () => {
   it("match the server's own wording", () => {
     // If the server's words change, these sentences stop matching and people see the raw text again.
     assert.match(
-      relay("handlers/auth.rs"),
-      /"blocked: you are banned from this community"/,
-    );
-    assert.match(
       relay("handlers/ingest.rs"),
       /"restricted: you are timed out until \{\}"/,
     );
@@ -109,6 +108,84 @@ describe("restrictions on the reader", () => {
       relay("handlers/side_effects.rs"),
       /"restricted: channel access revoked"/,
     );
+  });
+});
+
+describe("a ban", () => {
+  const SOON = 1893456000;
+
+  it("is read from the server's refusal: when it ends and the moderator's reason", () => {
+    assert.deepEqual(
+      parseBan(
+        `blocked: you are banned from this community until ${SOON}; reason: Selling coins in chat`,
+      ),
+      { ends: SOON, reason: "Selling coins in chat" },
+    );
+    assert.deepEqual(
+      parseBan("blocked: you are banned from this community for good"),
+      { ends: "never", reason: null },
+    );
+    assert.deepEqual(
+      parseBan(
+        "blocked: you are banned from this community for good; reason: spam; and more spam",
+      ),
+      { ends: "never", reason: "spam; and more spam" },
+    );
+    // An older server says neither.
+    assert.deepEqual(parseBan("blocked: you are banned from this community"), {
+      ends: null,
+      reason: null,
+    });
+    assert.deepEqual(parseBan("blocked: you are banned"), {
+      ends: null,
+      reason: null,
+    });
+    assert.equal(parseBan("restricted: you are timed out until 1"), null);
+    // Found after a client's own words, as a failed sign-in reports it.
+    assert.deepEqual(
+      banIn(
+        "auth failed: blocked: you are banned from this community for good; reason: Spam",
+      ),
+      { ends: "never", reason: "Spam" },
+    );
+    assert.equal(banIn("not a relay member"), null);
+  });
+
+  it("is said in plain words: until when, or for good, then the reason", () => {
+    const timed = refusalText(
+      `blocked: you are banned from this community until ${SOON}; reason: selling coins in chat`,
+      "x",
+    );
+    assert.match(
+      timed,
+      /^You are banned from this community until .*2030.*\. Reason: Selling coins in chat\.$/,
+    );
+    assert.doesNotMatch(timed, new RegExp(String(SOON)));
+    assert.equal(
+      refusalText("blocked: you are banned from this community for good", "x"),
+      "You are banned from this community for good.",
+    );
+    assert.equal(
+      liveRefusalText(
+        "blocked: you are banned from this community for good; reason: Spam",
+      ),
+      "You are banned from this community for good. Reason: Spam.",
+    );
+    assert.equal(
+      banText({ ends: null, reason: null }),
+      "You are banned from this community.",
+    );
+  });
+
+  it("matches the server's own wording", () => {
+    const auth = relay("handlers/auth.rs");
+    assert.match(
+      auth,
+      /BAN_REFUSAL: &str = "blocked: you are banned from this community"/,
+    );
+    assert.match(auth, /"\{BAN_REFUSAL\} until \{\}"/);
+    assert.match(auth, /"\{BAN_REFUSAL\} for good"/);
+    assert.match(auth, /"; reason: "/);
   });
 });
 

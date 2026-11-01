@@ -61,8 +61,8 @@ export function BanForm({
     <div className="mt-2 space-y-2" data-testid="ban-form">
       <p className="text-xs">
         {name} will be signed out right away and cannot get back in, even with
-        an invite link, until the ban ends or you lift it. Only moderators see
-        the reason you give.
+        an invite link, until the ban ends or you lift it. They are told the
+        reason you give and when the ban ends.
       </p>
       <label className="flex items-center gap-2 text-xs">
         How long
@@ -83,12 +83,12 @@ export function BanForm({
         </select>
       </label>
       <input
-        aria-label="Reason, seen only by moderators"
+        aria-label="Reason, shown to them"
         className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
         data-testid="ban-reason"
         maxLength={200}
         onChange={(event) => setReason(event.target.value)}
-        placeholder="Reason (only moderators see it)"
+        placeholder="Reason (they will see it)"
         value={reason}
       />
       <div className="flex gap-2">

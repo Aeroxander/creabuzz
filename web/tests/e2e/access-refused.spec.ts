@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * When the server restricts someone whose app is open: a ban arriving now, a timeout, a board mute. The person is told
@@ -52,7 +52,7 @@ async function open(page: Page, relay: ReturnType<typeof createMockRelay>) {
   await page.addInitScript((nsec) => {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
   }, NSEC);
-  await page.goto(`/c/alpha.example.com?channel=${BOARD}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${BOARD}`);
   await page.getByTestId("content-pane").waitFor();
   await expect(page.getByTestId("board-posts")).toContainText("Already here");
   await expect
@@ -74,23 +74,26 @@ async function tryToPost(page: Page) {
   await page.getByTestId("board-composer-submit").click();
 }
 
-test("a ban arriving while the board is open says so, stops live updates, and refuses a post in plain words", async ({
+test("a ban arriving while the board is open says so with its reason, stops live updates, and refuses a post in plain words", async ({
   page,
 }) => {
   const relay = relayWithBoard();
   await open(page, relay);
 
-  relay.ban("blocked: you are banned from this community");
+  // As the real server says it: for good, with the moderator's reason (`handlers/auth.rs` `ban_refusal`).
+  relay.ban(
+    "blocked: you are banned from this community for good; reason: Selling coins in chat",
+  );
+  const banned =
+    "You are banned from this community for good. Reason: Selling coins in chat.";
   const status = page.getByTestId("board-live-status");
-  await expect(status).toHaveText("You are banned from this community.");
+  await expect(status).toHaveText(banned);
   // Final: the subscription does not go back to "reconnecting" and try again.
   await page.waitForTimeout(2500);
-  await expect(status).toHaveText("You are banned from this community.");
+  await expect(status).toHaveText(banned);
 
   await tryToPost(page);
-  await expect(page.getByTestId("board-composer-problem")).toHaveText(
-    "You are banned from this community.",
-  );
+  await expect(page.getByTestId("board-composer-problem")).toHaveText(banned);
 });
 
 test("a timeout and a board mute refuse a post with when they end, in plain words", async ({
@@ -131,7 +134,7 @@ test("removed from a board while it is open: the reader is told, and the page st
   );
 });
 
-test("a ban arriving while a chat room is open says so under the room's header", async ({
+test("a ban arriving while a chat room is open says so, with when it ends and why, under the room's header", async ({
   page,
 }) => {
   const ROOM = "0f0f0f0f-1111-2222-3333-666666666666";
@@ -149,7 +152,7 @@ test("a ban arriving while a chat room is open says so under the room's header",
   await page.addInitScript((nsec) => {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
   }, NSEC);
-  await page.goto(`/c/alpha.example.com?channel=${ROOM}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${ROOM}`);
   await page.getByTestId("content-pane").waitFor();
   await expect
     .poll(() =>
@@ -159,10 +162,17 @@ test("a ban arriving while a chat room is open says so under the room's header",
     )
     .toBe(true);
 
-  relay.ban("blocked: you are banned from this community");
-  await expect(page.getByTestId("live-refusal")).toHaveText(
-    "You are banned from this community.",
+  // A ban with an end: the reader is told when, as a date, and why.
+  const until = now() + 7 * 86_400;
+  relay.ban(
+    `blocked: you are banned from this community until ${until}; reason: Spam`,
   );
+  const refusal = page.getByTestId("live-refusal");
+  await expect(refusal).toContainText(
+    "You are banned from this community until",
+  );
+  await expect(refusal).toContainText("Reason: Spam.");
+  await expect(refusal).not.toContainText(String(until));
   await expect(page.getByTestId("live-status-chip")).toHaveText(
     "Live updates stopped",
   );

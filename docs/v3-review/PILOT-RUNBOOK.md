@@ -31,6 +31,16 @@ Watch for: anyone who cannot sign up or loses their account; anywhere they wait 
 was taken against. A good run is one in which nobody needs help, and the moderator's removal is understood by its
 author without anyone explaining it.
 
+**Escalated reports**: the server's owner (the organizer, whose key is `RELAY_OWNER_PUBKEY` or in `RELAY_OPERATOR_PUBKEYS`) checks them every morning and evening of a run, in the web app
+(Moderation, "Escalated reports", shown only to the people who run the server; needs `BUZZ_ADMIN_HOST`) or with
+`buzz-admin reports --escalated` on the server, and acts on each the same day.
+
+**Restricting someone who holds Shares** (in either run): use "Mute everywhere", not a ban, for anyone who holds Shares,
+has open work or reviews: they keep reading and acting, only their posts stop. A ban cuts them off from the project's
+pages and evidence, and the rights their Shares give them must not depend on the server. If a ban is unavoidable,
+follow the manual fallback in [HOLDER-ACCESS-MODEL.md](HOLDER-ACCESS-MODEL.md) the same day, and run its hand test once
+before inviting anyone.
+
 ## Second: a contributor project (a founder, two reviewers, three or four contributors, about fifteen days)
 
 > **Updated 2026-10-28.** The scope is the MVP: the server, the web app and contributor projects, with no raise and no
@@ -109,11 +119,16 @@ author without anyone explaining it.
    piece lapses. Either name a third reviewer, or choose "Let any one decide", and tell the reviewers which. With "Let
    any one decide" the first answer decides: one approval approves a piece, and one turn-down turns it down (anyone can
    then close it as turned down, and any deposit goes to the treasury), so the other reviewer cannot overrule it.
-10. **The automated versions**, green on the build you host: `scripts/mvp-gate.sh --pilot` (the social suite as the
+10. **The automated versions**, green on the build you host: `scripts/mvp-gate.sh --pilot` (a quick check that the
+   pilot build hides raise-only screens, `scripts/web-pilot-e2e.sh`, which needs no chain or server; the social suite as the
    pilot server runs it, invite links, error reports, and the contributor, passkey-contributor, work and paid-work
    journeys; the full `scripts/mvp-gate.sh` adds the raise, milestone and optional-feature journeys for later). They do not cover a reviewer acting from a passkey account or the name link against
    your real server, so in step 3's practice project have one reviewer approve from a passkey account, and have each
-   reviewer's name show in the founder's reviewer picker (step 6).
+   reviewer's name show in the founder's reviewer picker (step 6). Nor do they sign in with a passkey against a real
+   server, or read "Your work" from one: check both by hand in the practice project. The contributor journey in the
+   pilot set runs in a build with the optional features on, not the image's. A CI job for the gate is written
+   ([MVP-GATE-CI.md](MVP-GATE-CI.md)) but not pushed; publishing it is your call, and green CI does not replace these
+   hand checks.
 11. **The report**: a copy of [PILOT-REPORT.md](PILOT-REPORT.md) to fill in as it runs.
 
 ### The fifteen days

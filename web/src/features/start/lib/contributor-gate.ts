@@ -54,6 +54,8 @@ export interface ContributorGateInput {
     accountsChecked: boolean;
     chainId: number | null;
     passkeyOffered: boolean;
+    /** Where a passkey account's fees are covered, as words ("the test network", or a real network's name); null when not known. */
+    passkeyFeesOn?: string | null;
   };
   /** A network's name for people. */
   label: (chainId: number) => string;
@@ -124,7 +126,7 @@ export function contributorGate(input: ContributorGateInput): ContributorGate {
             ? "Your passkey account could not be read. Reload the page to try again."
             : "Reading your passkey account…"
           : wallet.kind === null && wallet.passkeyOffered
-            ? "Set up passkey sign-in from your profile menu: your passkey account holds your starting Shares and makes the project, with its fees covered on the test network. Or connect a wallet."
+            ? `Set up passkey sign-in from your profile menu: your passkey account holds your starting Shares and makes the project${wallet.passkeyFeesOn ? `, with its fees covered on ${wallet.passkeyFeesOn}` : ""}. Or connect a wallet.`
             : "Connect a wallet. It holds your starting Shares and sends the one transaction that makes the project.",
     };
   if (wallet.chainId !== chainId)

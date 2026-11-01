@@ -15,6 +15,11 @@ import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
+import {
+  isServerTimeout,
+  SERVER_DID_NOT_ANSWER,
+  timedFetchStreamed,
+} from "@/shared/lib/timed-fetch";
 
 import {
   type Access,
@@ -31,12 +36,21 @@ import {
   setAccessRecord,
 } from "./lib/access";
 
-async function fetchAccess(): Promise<Access | null> {
-  const response = await fetch(`${relayHttpBaseUrl()}/info`, {
+async function fetchAccess({
+  signal,
+}: {
+  signal?: AbortSignal;
+} = {}): Promise<Access | null> {
+  const response = await timedFetchStreamed(`${relayHttpBaseUrl()}/info`, {
     headers: { Accept: "application/nostr+json" },
+    signal,
   });
   if (!response.ok) return null;
-  const body = (await response.json().catch(() => null)) as {
+  // An unreadable document is "the server did not say"; one that never finished is a failed read, not that.
+  const body = (await response.json().catch((error: unknown) => {
+    if (isServerTimeout(error) || signal?.aborted) throw error;
+    return null;
+  })) as {
     access?: unknown;
   } | null;
   return parseAccess(body?.access);
@@ -104,7 +118,7 @@ async function signedPost(
   });
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await timedFetchStreamed(url, {
       method: "POST",
       headers: {
         Authorization: authorization,
@@ -112,9 +126,11 @@ async function signedPost(
       },
       body,
     });
-  } catch {
+  } catch (error) {
     throw new Error(
-      "Could not reach the server. Check your connection and try again.",
+      isServerTimeout(error)
+        ? SERVER_DID_NOT_ANSWER
+        : "Could not reach the server. Check your connection and try again.",
     );
   }
   const json = (await response.json().catch(() => ({}))) as {

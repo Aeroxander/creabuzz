@@ -181,7 +181,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           <Field
             id="launch-long-pitch"
             label="The longer story"
-            hint="What exists today, why now, and what failure looks like. The record only goes live once this is committed."
+            hint="What exists today, why now, and what failure would look like. The launch can't go live without it."
           >
             <textarea
               id="launch-long-pitch"

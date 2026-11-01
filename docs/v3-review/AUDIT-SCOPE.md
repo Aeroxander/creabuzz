@@ -20,6 +20,11 @@ ordinary `launch` call could get round: a team could launch without its mileston
 fixed bytes of the auction configuration rather than what the auction decodes. Both are fixed in the kit only, each from
 a failing test; §1, §2, §5 and §7 follow.
 
+**Added 2026-11-01, not deployed: the award follows approval (§12).** Two small changes to `ClaimStake` and
+`TreasuryMandate` let a claim that asks for no money be finished by anyone after its challenge window, and let the
+DAO's award finish it in the same call ([FINISH-STEP-CONTRACT.md](FINISH-STEP-CONTRACT.md)). The pilot keeps the
+deployed contracts; this ships only after the pilot and an audit that covers it.
+
 **Freeze before sending.** Tag the commit the auditors receive and pin it here. A change to any file in the table below
 after the tag needs either a re-review of that file or a written reason why it is outside the money paths.
 
@@ -69,8 +74,8 @@ Lines are total and source lines (no blanks or comments) at `13b27b2c7`.
 | `MilestoneChallenge` (+ factory) | `src/MilestoneChallenge.sol`, `src/MilestoneChallengeFactory.sol` | 550 (422) + 30 (21) | The default lock: publish with a bond, object with a deposit, holder vote without the team, late objection burns what is still locked, milestones in order and only after the month on the one before (D56–D58); keeps `totalLocked`, which the exit leaves out (D72). |
 | `MilestoneLock` (+ factory) | `src/MilestoneLock.sol`, `src/MilestoneLockFactory.sol` | 206 (137) + 30 (20) | The panel lock: a tranche unlocks on a `Paid` claim in the DAO's named panel mandate; keeps `totalLocked` (D72). |
 | `MilestoneBadge` | `src/MilestoneBadge.sol` | 118 (85) | Soulbound record minted on unlock. Moves no value. |
-| `TreasuryMandate` (+ factory) | `src/TreasuryMandate.sol` | 416 (314) | Work budgets: a DAO-approved, finite budget in currency and/or Shares; projects; claim binding; reviewer slashing; closing. The factory is also where the panel is named. |
-| `ClaimStake` | `src/ClaimStake.sol` | 444 (279) | Claim escrow: contributor stake, reserved payout, approval quorum, 7-day challenge window, freeze, unwind, expiry. |
+| `TreasuryMandate` (+ factory) | `src/TreasuryMandate.sol` | 416 (314) | Work budgets: a DAO-approved, finite budget in currency and/or Shares; projects; claim binding; reviewer slashing; closing. The factory is also where the panel is named. The award finishes an approved claim asking no money in the same call (§12). |
+| `ClaimStake` | `src/ClaimStake.sol` | 444 (279) | Claim escrow: contributor stake, reserved payout, approval quorum, 7-day challenge window, freeze, unwind, expiry. A claim asking no money can be finished by anyone after its window (§12). |
 | `VerifierSet` | `src/VerifierSet.sol` | 246 (166) | Reviewers, quorum, recusal, bonds with a 14-day unbonding delay, slashing by the owner (the mandate). |
 
 About 4,250 source lines of first-party code, of which the patched Majeur is the largest piece.
@@ -409,3 +414,29 @@ as the target. A 600-Share sale with a one-unit target was accepted and graduate
 and compare `floor ≤ ((required + 1) × 2^96 − 1) / supply`, which cannot overflow.
 **Tests**: the review's case, the same encoding with a fair target, an overflowing floor, and a fuzz test over the
 tuple's position and the target.
+
+## 12. The award follows approval, without a separate finish step (2026-11-01, not deployed)
+
+Decision 4 of the suite review ([SUITE-REVIEW-2026-11-01.md §8](SUITE-REVIEW-2026-11-01.md)); full write-up in
+[FINISH-STEP-CONTRACT.md](FINISH-STEP-CONTRACT.md). Developed under a lift of the contract freeze (D137) for
+development only: not deployed, no address or manifest changed, and the pilot keeps the deployed contracts.
+
+**What changed.**
+- `ClaimStake.payout`: the contributor-only check applies only to a claim with a non-zero `amount`. A claim asking no
+  money can be finished (`Approved` to `Paid`) by anyone once its challenge window has passed; its stake, if any, goes
+  only to the contributor, through `_payOrOwe` (kept in `owed` when the currency refuses them, as in `expire`).
+- `TreasuryMandate.consumeContribution`: accepts `Paid`, or `Approved` with `amount == 0`; for the latter it writes the
+  award (`sharesAwarded`, `contributionAwarded`, `ContributionConsumed`) and then calls `claims.payout`, which enforces
+  the window, so an award inside the window reverts.
+- `MolochPatched.sol` is unchanged (`Moloch` runtime still 23,999 bytes).
+
+**What to check.** No award before the window ends, or for a frozen, rejected, unwound or expired claim; no double
+award (state written before the external call; `payout` refuses a `Paid` claim); a money claim still finished only by
+its contributor and awarded only once `Paid`; a third party who finishes a claim receives nothing. Side effect: a
+milestone-panel claim (always zero-amount) can be moved to `Paid` by anyone after its window, which is what
+`MilestoneLock.unlock` waits for; the unlock's other checks are unchanged.
+
+**Tests.** `test/FinishStep.t.sol` (8 tests, five failing on the old code first), and `test/invariant/MoneyPaths.t.sol`
+whose payout step now lets anyone try (`work.payoutByAnyone`), with a quarter of generated claims asking no money. Five
+hand mutations of the new guards each failed a test; `scripts/contracts-mutation-check.mjs` should gain them once the
+change is committed.

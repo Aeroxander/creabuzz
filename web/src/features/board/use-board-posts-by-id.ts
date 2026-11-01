@@ -1,7 +1,7 @@
 /**
  * Board posts by id, with their votes and replies, for a list that names posts rather than boards (the reader's
  * bookmarks). Only posts on a board the reader can see named are kept, as the Home feed does; ids that are not board
- * posts are simply not found.
+ * posts are simply not found. A failed read is `error`, never a shorter list.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -84,5 +84,12 @@ export function useBoardPostsById(ids: readonly string[]) {
     names,
     add,
     isLoading: key.length > 0 && (query.isLoading || channels.isLoading),
+    /** Why the posts or the list of boards could not be read, or null: the page says so instead of leaving them out. */
+    error: key.length > 0 ? (query.error ?? channels.error ?? null) : null,
+    /** Read the posts and the list of boards again. */
+    refetch: () => {
+      void query.refetch();
+      void channels.refetch();
+    },
   };
 }

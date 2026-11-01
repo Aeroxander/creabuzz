@@ -1,5 +1,5 @@
 import { ArrowUp, AtSign, Paperclip } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { uploadFailureWords } from "@/shared/lib/media-refusal";
@@ -22,6 +22,13 @@ import {
   SIGN_UP_EVENT,
 } from "@/features/identity/lib/account-copy";
 import { failureWords } from "@/shared/lib/readable-error";
+
+import {
+  composerKey,
+  mentionedPubkeys,
+  mentionOptionId,
+  type PickedMention,
+} from "./composer-mentions";
 
 export interface EditTarget {
   eventId: string;
@@ -64,7 +71,8 @@ export function Composer({
     setSending(true);
     try {
       const tags: string[][] = [["h", channelId]];
-      for (const pubkey of new Set(mentionPubkeys.current)) {
+      // Only people whose @Name is still in the words are told.
+      for (const pubkey of mentionedPubkeys(content, mentionPicks.current)) {
         tags.push(["p", pubkey]);
       }
       if (replyTo) {
@@ -79,10 +87,12 @@ export function Composer({
           tags,
           content,
         },
-        "Server rejected the event",
+        isEditing
+          ? "The server didn't accept your edit. Your words are still in the box; try saving again."
+          : "The server didn't accept your message. Your words are still in the box; try sending again.",
       );
       setDraft("");
-      mentionPubkeys.current = [];
+      mentionPicks.current = [];
       onPosted();
     } catch (error) {
       console.error("[composer]", error);
@@ -103,7 +113,8 @@ export function Composer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionAt, setMentionAt] = useState<number>(-1);
-  const mentionPubkeys = useRef<string[]>([]);
+  const mentionPicks = useRef<PickedMention[]>([]);
+  const [activeMention, setActiveMention] = useState(0);
   const candidates = useMentionCandidates(channelId);
 
   const onDraftChange = (value: string) => {
@@ -115,6 +126,7 @@ export function Composer({
       setMentionAt(atIndex);
       const token = value.slice(atIndex + 1, caret);
       setMentionQuery(token.length > 0 ? token.toLowerCase() : "");
+      setActiveMention(0);
     } else {
       setMentionQuery(null);
     }
@@ -127,24 +139,33 @@ export function Composer({
     const after = draft.slice(caret);
     const next = `${before}@${name} ${after}`;
     setDraft(next);
-    if (!mentionPubkeys.current.includes(pubkey)) {
-      mentionPubkeys.current.push(pubkey);
-    }
+    mentionPicks.current.push({ pubkey, name });
     setMentionQuery(null);
     setMentionAt(-1);
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      const pos = before.length + name.length + 2;
-      textareaRef.current?.setSelectionRange(pos, pos);
-    });
+    pendingCaret.current = before.length + name.length + 2;
   };
 
-  const filteredMentions =
+  // The caret goes right behind a chosen mention in the same commit that writes it, not a frame later: a key typed
+  // straight after choosing would otherwise land at the end and then have the caret put back in front of it.
+  const pendingCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const pos = pendingCaret.current;
+    const el = textareaRef.current;
+    if (pos === null || !el) return;
+    pendingCaret.current = null;
+    el.focus();
+    el.setSelectionRange(pos, pos);
+  });
+
+  const filteredMentions = (
     mentionQuery !== null
       ? candidates.filter((c) =>
           candidateName(c).toLowerCase().includes(mentionQuery),
         )
-      : [];
+      : []
+  ).slice(0, 6);
+  const mentionListId = `composer-mentions-${channelId}`;
+  const suggestionsOpen = mentionQuery !== null && filteredMentions.length > 0;
 
   const insertMention = () => {
     setDraft((previous) => `${previous}@`);
@@ -226,15 +247,27 @@ export function Composer({
       )}
       <TypingIndicator entries={typingEntries} />
       <div className="rounded-2xl border border-black/10 bg-white px-3 pt-2.5 pb-2 shadow-xs dark:border-white/10 dark:bg-white/5">
-        {mentionQuery !== null && filteredMentions.length > 0 ? (
-          <div className="mb-1.5 rounded-md border border-black/10 bg-background shadow-lg dark:border-white/10">
-            {filteredMentions.slice(0, 6).map((c) => (
+        {suggestionsOpen ? (
+          <div
+            aria-label="Mention suggestions"
+            className="mb-1.5 rounded-md border border-black/10 bg-background shadow-lg dark:border-white/10"
+            id={mentionListId}
+            role="listbox"
+          >
+            {filteredMentions.map((c, i) => (
               <button
+                aria-selected={i === activeMention}
+                id={mentionOptionId(mentionListId, i)}
                 key={c.pubkey}
                 type="button"
+                // Keep the caret in the box: the mention goes where it was typed.
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => pickMention(c.pubkey, candidateName(c))}
-                className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+                className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10${
+                  i === activeMention ? " bg-black/5 dark:bg-white/10" : ""
+                }`}
                 data-testid="mention-option"
+                role="option"
               >
                 <UserAvatar
                   avatarUrl={null}
@@ -256,11 +289,33 @@ export function Composer({
           value={draft}
           onChange={(e) => onDraftChange(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void send(e);
-            }
+            const action = composerKey({
+              key: e.key,
+              shiftKey: e.shiftKey,
+              isComposing: e.nativeEvent.isComposing,
+              keyCode: e.nativeEvent.keyCode,
+              suggestions: mentionQuery !== null ? filteredMentions.length : 0,
+              active: activeMention,
+            });
+            if (action === null) return;
+            e.preventDefault();
+            if (action.type === "move") setActiveMention(action.index);
+            else if (action.type === "close") setMentionQuery(null);
+            else if (action.type === "pick") {
+              const chosen = filteredMentions[action.index];
+              if (chosen) pickMention(chosen.pubkey, candidateName(chosen));
+            } else void send(e);
           }}
+          aria-activedescendant={
+            suggestionsOpen
+              ? mentionOptionId(
+                  mentionListId,
+                  Math.min(activeMention, filteredMentions.length - 1),
+                )
+              : undefined
+          }
+          aria-autocomplete="list"
+          aria-controls={suggestionsOpen ? mentionListId : undefined}
           rows={2}
           placeholder={`Message #${channelName ?? channelId.slice(0, 8)}…`}
           className="w-full resize-none border-0 bg-transparent p-0 text-sm text-black placeholder:text-black/60 focus:outline-hidden focus:ring-0 dark:text-white dark:placeholder:text-white/40"

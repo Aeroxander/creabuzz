@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Two rough edges of the chat rooms, seen on a local server: a direct-message thread was listed under Channels (as
@@ -115,7 +115,7 @@ async function open(page: Page, relay: Relay) {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
     window.localStorage.setItem("buzz.identity.backedUp", "1");
   }, NSEC);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await expect(page.getByTestId("channel-general")).toBeVisible({
     timeout: 20_000,

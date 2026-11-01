@@ -259,7 +259,7 @@ test("what we expect needs a day to check it, and the day needs something to che
 
 test("Now holds three at most, and the founder is asked again after four weeks", () => {
   const four = Array.from({ length: 4 }, (_, i) => item(`item ${i}`));
-  assert.match(focusProblem(draft(four)), /Keep Now to 3/);
+  assert.match(focusProblem(draft(four)), /Keep priorities to 3/);
   assert.throws(() => focusTemplate(LAUNCH, draft(four)));
   assert.equal(
     focusProblem(draft([item("a", "docs")])),

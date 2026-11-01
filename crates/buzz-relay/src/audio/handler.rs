@@ -881,7 +881,7 @@ pub(crate) async fn handle_active_audio_connection(
     if let Some(denial) = denial {
         shadow_attempt.refused();
         let (class, message) = (denial.class, denial.reason);
-        warn!(channel_id = %channel_id, pubkey = %pubkey_hex, reason = message, "audio: denied at final admission check");
+        warn!(channel_id = %channel_id, pubkey = %pubkey_hex, reason = %message, "audio: denied at final admission check");
         exit_authorization_refusal(
             &mut ws_send,
             &control,
@@ -13848,7 +13848,7 @@ mod tests {
                 frames,
                 vec![serde_json::json!({
                     "type": "error",
-                    "message": "blocked: you are banned from this community"
+                    "message": "blocked: you are banned from this community for good"
                 })
                 .to_string()]
             );

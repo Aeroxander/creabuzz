@@ -2,7 +2,7 @@ import { expect, type Page, type Route, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Board moderation pass 2 (D99): a board's moderators see its open reports and close them, the author of removed words
@@ -148,7 +148,7 @@ async function open(page: Page, relay: Relay, channel = BOARD) {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
     window.localStorage.setItem("buzz.identity.backedUp", "1");
   }, NSEC);
-  await page.goto(`/c/alpha.example.com?channel=${channel}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${channel}`);
   await page.getByTestId("content-pane").waitFor();
 }
 
@@ -368,4 +368,36 @@ test("a direct-message thread is private but offers no people to add or remove",
   // Nobody joins a direct thread, so no invitation card is offered in it.
   await expect(page.getByTestId("channel-add-people")).toHaveCount(0);
   await expect(page.getByTestId("room-people")).toHaveCount(0);
+});
+
+test("a board's moderator who does not run the server is never asked about, or shown, escalated reports", async ({
+  page,
+}) => {
+  const spam = post(ANN, "Cheap watches");
+  const relay = boardRelay("owner", "member", spam);
+  await serveReports(page, relay, [reportRow("r1", spam.id, "selling things")]);
+  const admin: string[] = [];
+  await page.route("https://admin.test/**", async (route) => {
+    admin.push(route.request().url());
+    await route.fulfill({ status: 403, json: {} });
+  });
+  await open(page, relay);
+  // The server says where its admin API is; only the community queue, for its moderators, would ever probe it.
+  await page.route("**/info", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/nostr+json",
+      body: JSON.stringify({
+        name: "Mock server",
+        admin_api: "https://admin.test",
+      }),
+    }),
+  );
+  await page.reload();
+  await page.getByTestId("content-pane").waitFor();
+  await page.getByTestId("board-moderation-toggle").click();
+  await expect(page.getByTestId("board-report-row")).toHaveCount(1);
+  await page.waitForTimeout(500);
+  await expect(page.getByTestId("escalated-reports")).toHaveCount(0);
+  expect(admin).toEqual([]);
 });

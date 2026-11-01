@@ -270,20 +270,24 @@ contract TreasuryMandate {
 
     /// @notice Consume evidence of a delivery once, counting `shares` against its project's share budget, before
     /// the DAO awards Shares or converts the contributor's Loot through its sole governor. A claim is `Paid` once
-    /// its reviewers approved it and its challenge window passed, whether or not it asked for currency. A closed
-    /// mandate awards nothing more.
+    /// its reviewers approved it and its challenge window passed. A claim that asked for no currency and is still
+    /// `Approved` is finished here, in the same call (which fails inside its challenge window); one that asked for
+    /// currency must have been paid to its contributor first. A closed mandate awards nothing more.
     function consumeContribution(bytes32 claimId, uint128 shares) external onlyDAO returns (address contributor) {
         bytes32 projectId = claimProject[claimId];
         // Closing a mandate stops what it can still cause: no new projects, and no more Shares from its allowances.
         if (closed || projectId == bytes32(0) || contributionAwarded[claimId]) revert InvalidClaim();
+        uint256 amount;
         ClaimStake.Status status;
-        (contributor,,, status) = claims.claimTerms(claimId);
-        if (status != ClaimStake.Status.Paid) revert InvalidClaim();
+        (contributor, amount,, status) = claims.claimTerms(claimId);
+        bool finish = status == ClaimStake.Status.Approved && amount == 0;
+        if (status != ClaimStake.Status.Paid && !finish) revert InvalidClaim();
         Project storage project = projects[projectId];
         if (shares == 0 || shares > project.shareBudget - project.sharesAwarded) revert BudgetExceeded();
         project.sharesAwarded += shares;
         contributionAwarded[claimId] = true;
         emit ContributionConsumed(claimId, contributor, shares);
+        if (finish) claims.payout(claimId);
     }
 
     /// @notice A disputed payment can be frozen by the same DAO governance.

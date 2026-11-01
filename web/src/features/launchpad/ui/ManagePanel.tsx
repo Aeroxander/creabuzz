@@ -144,7 +144,7 @@ export function ManagePanel({
           tx: txHash.trim(),
         }),
       });
-      setMilestoneStatus("Claim mirror recorded.");
+      setMilestoneStatus("The claim is posted to the feed.");
     } catch (err) {
       setMilestoneError(
         err instanceof Error ? err.message : "Failed to record the claim.",
@@ -514,8 +514,9 @@ export function ManagePanel({
               A contract set up with the sale does all of this; nobody,
               including the founder, handles the money in between. The set-aside
               supply is released only to the trading pool the treasury records.
-              If the pool never appears, the treasury can take it back. The
-              chain is the ledger; this page only describes it.
+              If the pool never appears, the treasury can take it back. Each
+              step is a public transaction anyone can look up, and that is what
+              counts: this page only describes it.
             </p>
           </details>
         </Card>
@@ -532,10 +533,11 @@ export function ManagePanel({
           <div className="mt-3" data-testid="launch-milestones">
             <h2 className="text-base font-semibold">Milestone attestation</h2>
             <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-              A milestone claim is staked and settled onchain by the verifier
-              set; this panel mirrors the claim and your verdict onto the feed
-              (advisory). Every mirror names the tx that settled it. A receipt
-              without one won't go through. The chain is the ledger.
+              Reviewers settle a milestone claim on the network. Here you post
+              that claim and your verdict to the project&apos;s feed, so people
+              can see it, together with the transaction that settled it. A post
+              without that transaction won&apos;t go through. If the post and
+              the transaction ever disagree, the transaction is what counts.
             </p>
             <div className="mt-3 flex flex-col gap-2">
               <HashPicker

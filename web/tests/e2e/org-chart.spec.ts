@@ -9,6 +9,7 @@
  * WebSocket, in the same style as the fleet/work-board smoke tests.
  */
 import { expect, test } from "@playwright/test";
+import { COMMUNITY_HOST, PREVIEW_ORIGIN } from "./mock-relay";
 
 const CHANNEL_ID = "0f0f0f0f-1111-2222-3333-444444444444";
 const FOUNDER = "a".repeat(64);
@@ -81,7 +82,7 @@ async function mockDirectory(page: import("@playwright/test").Page) {
       body: JSON.stringify({
         communities: [
           {
-            host: "alpha.example.com",
+            host: COMMUNITY_HOST,
             name: "Alpha",
             description: "A test community.",
             icon: null,
@@ -105,7 +106,7 @@ async function mockRelayWithOrg(
   orgNodes: ReturnType<typeof orgNodeEvent>[],
 ) {
   await mockDirectory(page);
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -136,7 +137,7 @@ test("org chart renders role tree with occupant chips when nodes exist", async (
   page,
 }) => {
   await mockRelayWithOrg(page, [CTO_ROOT, ENG_CHILD]);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("org-toggle").click();
 
@@ -157,7 +158,7 @@ test("org view falls back to the roster when no nodes exist", async ({
   page,
 }) => {
   await mockRelayWithOrg(page, []);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("org-toggle").click();
 

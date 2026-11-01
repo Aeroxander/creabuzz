@@ -243,9 +243,9 @@ export function ChallengeQuestions({
             {asking === "summary" ? "Drafting…" : "Draft a summary with AI"}
           </Button>
           <span className="text-xs text-muted-foreground">
-            {AI_DISCLOSURE} It sees your answers, the project&apos;s aim, Now
-            and the latest check note, and decides nothing. Nothing is posted
-            until you open the vote.
+            {AI_DISCLOSURE} It sees your answers, the project&apos;s aim, its
+            priorities and the latest check note, and decides nothing. Nothing
+            is posted until you open the vote.
           </span>
         </div>
       ) : null}

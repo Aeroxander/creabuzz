@@ -16,8 +16,10 @@ import {
   remixFromDraft,
   KIT_LAUNCH_SIGNATURE,
   sharePreview,
+  withReviewer,
 } from "./contributor-project.ts";
 import { isContributorProject } from "../../launchpad/lib/funding.ts";
+import { reviewerList as raiseReviewerList } from "../../launchpad/lib/launch-panel.ts";
 
 const R1 = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
 const R2 = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
@@ -468,4 +470,37 @@ test("the starting-Shares warning names what it is about", () => {
     founderShareWarning({ founderWhole: 200n, budgetWhole: 300n }) ?? "",
     /^Your starting Shares are more than a third/,
   );
+});
+
+test("a reviewer list pasted with semicolons reads the same here as in the raise's reviewer form", () => {
+  const pasted = `${R1}; ${R2};${R3}`;
+  assert.deepEqual(
+    contributorTerms(draft({ reviewers: pasted }), FOUNDER).reviewers,
+    [R1, R2, R3],
+  );
+  assert.equal(contributorIssue(draft({ reviewers: pasted })), null);
+  for (const text of [pasted, `${R1}, ${R2}\n${R3}`, ` ${R1}\t${R2}  ${R3} `])
+    assert.deepEqual(
+      contributorTerms(draft({ reviewers: text }), FOUNDER).reviewers,
+      raiseReviewerList(text),
+      text,
+    );
+});
+
+test("picking someone already among the reviewers changes nothing and says so", () => {
+  const first = withReviewer("", R1);
+  assert.deepEqual(first, { text: R1, added: true });
+  const second = withReviewer(`${first.text}  `, R2);
+  assert.deepEqual(second, { text: `${R1}\n${R2}`, added: true });
+  // Already there, in another letter case or after a semicolon.
+  assert.deepEqual(
+    withReviewer(second.text, R1.toUpperCase().replace("0X", "0x")),
+    {
+      text: second.text,
+      added: false,
+    },
+  );
+  assert.equal(withReviewer(`${R3};${R2}`, R2).added, false);
+  // A longer entry that merely contains the address is not the same reviewer.
+  assert.equal(withReviewer(`${R1}ff`, R1).added, true);
 });

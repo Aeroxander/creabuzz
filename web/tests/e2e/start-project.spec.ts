@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Starting a project from a ready-made team, in the browser: the picker, what
@@ -61,7 +61,7 @@ async function open(
       window.localStorage.setItem("buzz.identity.nsec", nsec);
     }, NSEC);
   }
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   if (await page.getByTestId("open-channel-list").isVisible()) {
     await page.getByTestId("open-channel-list").click();
@@ -246,7 +246,7 @@ test("someone without an account is asked to create one first", async ({
   // Setting up is not in a visitor's sidebar (D108); an empty community offers it in its place.
   const relay = createMockRelay();
   await relay.install(page);
-  await page.goto("/c/127.0.0.1:4173");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("empty-community-start").click();
   await expect(page.getByTestId("start-project-confirm")).toHaveCount(0);
   await page.getByTestId("start-project-sign-up").click();
@@ -263,7 +263,7 @@ test("a community with no channels offers community setup instead of showing a d
   }, NSEC);
   // This browser is connected to the server it opens (the page's own address),
   // so there is nothing to join: the empty community opens in the app.
-  await page.goto("/c/127.0.0.1:4173");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
 
   await expect(page.getByTestId("empty-community")).toContainText(
@@ -446,7 +446,7 @@ test("a community that has channels does not show the empty prompt", async ({
   const relay = createMockRelay();
   relay.seed(general);
   await relay.install(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   // With no room named in the link it opens on #general, not on an empty page.
   await expect(page.getByTestId("channel-general")).toHaveAttribute(
@@ -475,7 +475,7 @@ for (const role of ["owner", "admin", "member"] as const) {
       window.localStorage.setItem("buzz.identity.nsec", nsec);
     }, NSEC);
     const refused = page.waitForResponse("**/moderation/reports*");
-    await page.goto("/c/alpha.example.com");
+    await page.goto(`/c/${COMMUNITY_HOST}`);
     await refused;
     await expect(page.getByTestId("dms-toggle")).toBeVisible({
       timeout: 20_000,

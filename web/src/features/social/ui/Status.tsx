@@ -47,3 +47,34 @@ export function TimelineSkeleton() {
     </div>
   );
 }
+
+/**
+ * Said above a list when one of its reads failed and the rest loaded: what is missing, and a retry. The list stays on
+ * screen; this keeps a partial list from passing for the whole one.
+ */
+export function PartialFailure({
+  children,
+  onRetry,
+  testId,
+}: {
+  children: ReactNode;
+  onRetry: () => void;
+  testId: string;
+}) {
+  return (
+    <p
+      className="border-b border-black/10 px-4 py-2 text-xs text-amber-700 dark:border-white/10 dark:text-amber-300"
+      data-testid={testId}
+      role="status"
+    >
+      {children}{" "}
+      <button
+        className="font-semibold underline"
+        onClick={onRetry}
+        type="button"
+      >
+        Try again
+      </button>
+    </p>
+  );
+}

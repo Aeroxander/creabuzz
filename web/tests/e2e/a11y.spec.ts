@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { expectAccessible } from "../helpers/a11y";
+import { COMMUNITY_HOST, PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * Accessibility gate.
@@ -21,7 +22,7 @@ async function mockRelay(page: Page, options?: { failReads?: boolean }) {
       body: JSON.stringify({
         communities: [
           {
-            host: "alpha.example.com",
+            host: COMMUNITY_HOST,
             name: "Alpha",
             description: "A test community.",
             icon: null,
@@ -32,7 +33,7 @@ async function mockRelay(page: Page, options?: { failReads?: boolean }) {
       }),
     });
   });
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     // Challenge like the relay does, so an authenticated client does not read a
     // refusal as "you were not authenticated yet" and retry.
     ws.send(JSON.stringify(["AUTH", "challenge"]));
@@ -172,14 +173,14 @@ test("the discovery landing is accessible", async ({ page }) => {
 
 test("the channel shell and timeline are accessible", async ({ page }) => {
   await mockRelay(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByText("A message with a")).toBeVisible();
   await expectAccessible(page, "channel");
 });
 
 test("a failed read is accessible", async ({ page }) => {
   await mockRelay(page, { failReads: true });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByTestId("timeline-load-error")).toBeVisible({
     timeout: 20_000,
   });
@@ -194,7 +195,7 @@ test("a failed read is accessible", async ({ page }) => {
 
 test("the wiki is accessible", async ({ page }) => {
   await mockRelay(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("wiki-toggle").click();
   await expect(page.getByTestId("wiki-page-list")).toBeVisible();
   await expectAccessible(page, "wiki");
@@ -238,7 +239,7 @@ test("the launchpad is accessible", async ({ page }) => {
 
 test("the work board is accessible", async ({ page }) => {
   await mockRelay(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("work-toggle").click();
   // Scoped: the board renders the title on a card and in the list beside it.
   await expect(page.getByText("Ship the work board").first()).toBeVisible({
@@ -249,7 +250,7 @@ test("the work board is accessible", async ({ page }) => {
 
 test("the org view is accessible", async ({ page }) => {
   await mockRelay(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("org-toggle").click();
   await expect(page.getByText("buzz-tab").first()).toBeVisible({
     timeout: 20_000,
@@ -278,7 +279,7 @@ test("search results are accessible", async ({ page }) => {
       ]),
     });
   });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("search-input").fill("wikilink");
   await page.keyboard.press("Enter");
   // Results, not the channel view again: the seeded message matches.
@@ -295,7 +296,7 @@ test("search results are accessible", async ({ page }) => {
 
 test("the agents view is accessible", async ({ page }) => {
   await mockRelay(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("fleet-toggle").click();
   await expect(page.getByTestId("browser-agent-toggle")).toBeVisible();
   await expectAccessible(page, "fleet");

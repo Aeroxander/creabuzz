@@ -546,7 +546,6 @@ export function LaunchDetailPage({
           dao={workDao}
           launch={launch}
           onOpenDecisions={() => setTab("decisions")}
-          onOpenWork={() => setTab("work")}
         />
       ) : null}
       {shown === "discussion" && !sandbox ? (

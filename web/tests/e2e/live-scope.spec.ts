@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Live updates follow the real server's routing (`buzz-relay/src/subscription.rs`, mirrored by the mock): a record kept
@@ -25,7 +25,7 @@ test("a task tied to a room arrives live in the agents view", async ({
   });
   await relay.install(page);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("fleet-toggle").click();
 

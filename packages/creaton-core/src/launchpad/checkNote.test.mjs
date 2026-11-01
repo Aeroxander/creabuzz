@@ -96,18 +96,110 @@ test("the draft fills in what the records say, and lists each piece of work once
   assert.equal(note.change, "");
 });
 
-test("the founder says what changed, answers each expectation, decides each item, and names one change", () => {
+test("the founder says what changed, supports checked predictions, and decides how to work next", () => {
   const note = draft();
   assert.match(checkNoteProblem(note), /what changed/);
   note.outside = "Two teachers used the guide in class.";
   assert.match(checkNoteProblem(note), /happened/);
   note.items[0].happened = "partly";
+  assert.match(checkNoteProblem(note), /what you observed/);
+  note.items[0].why = "One newcomer submitted; the other has not tried it yet.";
   assert.match(checkNoteProblem(note), /keep, change or drop/);
   note.items[0].next = "keep";
   note.items[1].next = "drop";
-  assert.match(checkNoteProblem(note), /one thing the team changes/);
+  assert.match(checkNoteProblem(note), /what to keep or change/);
   note.change = "Rewrite the translation work's 'done when'.";
   assert.equal(checkNoteProblem(note), null);
+});
+
+test("a checked prediction needs an observation; not-yet and unpredicted work do not", () => {
+  for (const happened of ["yes", "partly", "no"]) {
+    const note = draft();
+    note.outside = "We checked the submission records.";
+    note.change = "Keep the review method while we gather more observations.";
+    note.items[0].happened = happened;
+    note.items[0].next = "keep";
+    note.items[1].next = "keep";
+    note.items[0].why = "  ";
+    assert.match(checkNoteProblem(note), /what you observed/, happened);
+    assert.throws(() => checkNoteContent(note, START), /what you observed/);
+    note.items[0].why =
+      "One newcomer submitted; the other has not tried it yet.";
+    assert.equal(checkNoteProblem(note), null, happened);
+  }
+  const note = draft();
+  note.outside = "The check has not happened yet.";
+  note.change = "Keep the method and check the result next week.";
+  note.items[0].happened = "not-yet";
+  note.items.forEach((item) => {
+    item.next = "keep";
+  });
+  assert.equal(checkNoteProblem(note), null);
+  assert.equal(
+    checkNoteContent(note, START).check.items[0].happened,
+    "not-yet",
+  );
+});
+
+test("keeping the process is published as a valid plan, using the existing record", () => {
+  const note = draft({ focus: [] });
+  note.outside = "The two reviews caught the expected problems.";
+  note.change =
+    "Keep the current review method; check the next two submissions before changing it.";
+  assert.equal(checkNoteProblem(note), null);
+  const content = checkNoteContent(note, START);
+  assert.equal(content.check.v, 1);
+  assert.equal(content.check.change, note.change);
+  assert.match(
+    content.body,
+    /How we work next: Keep the current review method/,
+  );
+  const [read] = parseCheckNotes(
+    [
+      {
+        id: "e".repeat(64),
+        pubkey: FOUNDER,
+        kind: 47003,
+        created_at: START,
+        content: JSON.stringify(content),
+      },
+    ],
+    FOUNDER,
+  );
+  assert.equal(read.change, note.change);
+});
+
+test("older notes remain readable when a checked prediction has no observation", () => {
+  const [read] = parseCheckNotes(
+    [
+      {
+        id: "e".repeat(64),
+        pubkey: FOUNDER,
+        kind: 47003,
+        created_at: START,
+        content: JSON.stringify({
+          check: {
+            v: 1,
+            since: START - DAY,
+            outside: "The guide was tried.",
+            items: [
+              {
+                text: "Guide",
+                expected: "Two people try it",
+                happened: "yes",
+                next: "keep",
+              },
+            ],
+            change: "Keep working this way.",
+          },
+        }),
+      },
+    ],
+    FOUNDER,
+  );
+  assert.equal(read.items[0].happened, "yes");
+  assert.equal(read.items[0].why, "");
+  assert.equal(read.change, "Keep working this way.");
 });
 
 test("a published note reads back, only from the founder, newest first, and its work counts as covered", () => {
@@ -264,6 +356,7 @@ test("a change needs what the item becomes", () => {
   note.outside = "x";
   note.change = "y";
   note.items[0].happened = "yes";
+  note.items[0].why = "The submission records show two completed submissions.";
   note.items[0].next = "keep";
   note.items[1].next = "change";
   assert.match(checkNoteProblem(note), /becomes/);

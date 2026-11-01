@@ -8,6 +8,7 @@ import {
   canEscalatePost,
   defaultFinderReward,
   escalationNote,
+  escalationPoints,
   finderCreditKey,
   readSource,
   taskFromPost,
@@ -215,4 +216,28 @@ test("the source survives later rows that do not write it", () => {
   const body = JSON.parse(merged.event.content);
   assert.equal(body.status, "in_progress");
   assert.deepEqual(readSource(body.source), source());
+});
+
+test("without raises (the pilot) an idea becomes a task with no points, whatever was typed", () => {
+  assert.deepEqual(escalationPoints(false, "50", "9"), {
+    reward: null,
+    finderReward: null,
+  });
+  assert.equal(
+    escalationNote(escalationPoints(false, "50", null)),
+    "The team turned this into a task.",
+  );
+  // Where raises are offered the figures stand as before: the finder gets a tenth unless the team sets one.
+  assert.deepEqual(escalationPoints(true, "50", null), {
+    reward: 50,
+    finderReward: 5,
+  });
+  assert.deepEqual(escalationPoints(true, "50", "9"), {
+    reward: 50,
+    finderReward: 9,
+  });
+  assert.deepEqual(escalationPoints(true, "", "x"), {
+    reward: null,
+    finderReward: null,
+  });
 });

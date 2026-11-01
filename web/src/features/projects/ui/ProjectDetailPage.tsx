@@ -34,6 +34,7 @@ import { errorMessage, QueryError } from "@/shared/ui/query-error";
 import { buildDeclineTemplate } from "../lib/join-request";
 import { buildOwnershipGrantTemplate } from "../lib/grant";
 import { POOL_PCT, type RoleDeclaration } from "../lib/manifest";
+import { requestAnswerError } from "../lib/request-answer-copy";
 import { canApprove, type ProjectState, type RequestState } from "../lib/state";
 import {
   PROJECT_EVENT_KINDS,
@@ -408,10 +409,7 @@ export function ProjectDetailPage({
         setBusyKey(null);
         setRowError({
           key: state.request.key,
-          message:
-            err instanceof Error
-              ? err.message
-              : "The server rejected this event.",
+          message: requestAnswerError(action, err),
         });
       },
       onSuccess: () => setBusyKey(null),

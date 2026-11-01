@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay, PREVIEW_ORIGIN } from "./mock-relay";
 import { publishedEvents } from "../helpers/published-events";
 
 /**
@@ -72,7 +72,7 @@ const record = {
 
 /** A tiny relay: serves the launch record and nothing else. */
 async function serveRecord(page: Page) {
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -335,7 +335,9 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
     },
     [NSEC, ANVIL_URL],
   );
-  await linker.goto(`/c/127.0.0.1:4173?view=work&work=${FOUNDER}:linked-docs`);
+  await linker.goto(
+    `/c/${COMMUNITY_HOST}?view=work&work=${FOUNDER}:linked-docs`,
+  );
   const delivery = linker.getByTestId("task-delivery");
   await expect(delivery).toBeVisible();
   await delivery

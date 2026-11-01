@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { verifyEvent } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Joining a community from an invite link as someone with no account yet. The server's two routes are answered here, so
@@ -11,7 +11,7 @@ import { createMockRelay } from "./mock-relay";
  * stranger's profile).
  */
 
-const HOST = "127.0.0.1:4173";
+const HOST = COMMUNITY_HOST;
 
 interface Setup {
   claims: {

@@ -5,6 +5,7 @@ import { KIND_TEXT_NOTE } from "@/shared/constants/kinds";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { QueryError } from "@/shared/ui/query-error";
 
+import { firstPageError, olderPageError } from "../lib/read-view";
 import { useTimeline } from "../use-social-data";
 import { PostList } from "./PostList";
 import { PageBar, SocialShell } from "./SocialShell";
@@ -39,7 +40,7 @@ export function HashtagPage() {
         back={<BackLink label="Back to the feed" to="/social" />}
         title={`#${lower}`}
       />
-      {timeline.isError ? (
+      {firstPageError(timeline) ? (
         <div className="p-4">
           <QueryError
             description="The server did not answer, so no posts can be shown."
@@ -60,6 +61,7 @@ export function HashtagPage() {
       ) : (
         <PostList
           hasMore={timeline.hasNextPage}
+          loadMoreError={olderPageError(timeline)}
           loadingMore={timeline.isFetchingNextPage}
           onLoadMore={() => {
             if (!timeline.isFetchingNextPage) void timeline.fetchNextPage();

@@ -1,16 +1,23 @@
 /**
  * The milestones: the part of the funding agreement a backer actually follows. Each one shows what the team agreed to
- * deliver, how many of its tokens that holds back, where the review stands, the evidence submitted, what each reviewer
- * said, when anyone can still object, and whether the tokens have been released. It reads the same for everyone, not
+ * deliver, how many of its Shares that holds back, where the review stands, the evidence submitted, what each reviewer
+ * said, when anyone can still object, and whether the Shares have been released. It reads the same for everyone, not
  * only the connected team wallet: the Work tab is where the team acts, this is where everyone else watches.
  *
  * It says plainly what the lock does and does not do. It holds back the team's original allocation; it does not stop
- * holders from voting to spend the treasury or to issue more Shares.
+ * holders from voting to spend the treasury or to issue more Shares or non-voting shares.
  */
+
+import { useNavigate } from "@tanstack/react-router";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
+import {
+  type ClaimFocus,
+  claimFocusFor,
+  workTabSearch,
+} from "../lib/milestone-progress";
 import {
   MILESTONE_STEPS,
   type ReviewerVerdict,
@@ -57,7 +64,6 @@ interface MilestonesTabProps {
   launch: Launch;
   /** The DAO this launch settled into, or null while the sale has not produced one. */
   dao: string | null;
-  onOpenWork: () => void;
   onOpenDecisions: () => void;
 }
 
@@ -117,14 +123,16 @@ export function MilestonesTab(props: MilestonesTabProps) {
   return <PanelMilestones {...props} />;
 }
 
-function PanelMilestones({
-  launch,
-  dao,
-  onOpenWork,
-  onOpenDecisions,
-}: MilestonesTabProps) {
+function PanelMilestones({ launch, dao, onOpenDecisions }: MilestonesTabProps) {
   const { entries, summary, panel, reading, failed, labelOf } =
     useMilestoneTimeline(launch, dao);
+  const navigate = useNavigate({ from: "/launchpad/$launchId" });
+  // The claim goes in the address: the page opens the Work tab from it, and the Work tab focuses that claim.
+  const openClaim = (claim: ClaimFocus) =>
+    void navigate({
+      search: (previous) => workTabSearch(previous, claim),
+      replace: true,
+    });
   const reviewerAddresses = (panel?.reviewers ?? []).map((r) => r.address);
 
   return (
@@ -133,13 +141,13 @@ function PanelMilestones({
         <h2 className="text-base font-bold">Milestones</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {panel
-            ? "The team votes with all of its tokens from the start, but a defined part of them stays locked: it cannot be sold or moved until named reviewers read the evidence for a milestone and approve it, and a waiting period passes in which anyone can object."
-            : "The team votes with all of its tokens from the start, but a defined part of them stays locked: it cannot be sold or moved until each milestone has been reached and judged. How they are judged is set when the project launches, and nobody can change it after."}
+            ? "The team votes with all of its Shares from the start, but a defined part of them stays locked: it cannot be sold or moved until named reviewers read the evidence for a milestone and approve it, and a waiting period passes in which anyone can object."
+            : "The team votes with all of its Shares from the start, but a defined part of them stays locked: it cannot be sold or moved until each milestone has been reached and judged. How they are judged is set when the project launches, and nobody can change it after."}
         </p>
         {dao && !reading && !failed ? (
           <p className="mt-2 text-sm" data-testid="milestones-summary">
             {summary.reached} of {countOf(summary.total, "milestone")} reached.{" "}
-            {formatShares(summary.heldBack)} tokens still locked
+            {formatShares(summary.heldBack)} Shares still locked
             {summary.released > 0n
               ? `, ${formatShares(summary.released)} released`
               : ""}
@@ -160,7 +168,7 @@ function PanelMilestones({
               : "named at launch"}
             . {panel.quorum} must agree on a milestone. The panel is fixed when
             the project launches: nobody can swap in friendlier reviewers later,
-            and if too few of them can be reached the locked tokens stay locked.
+            and if too few of them can be reached the locked Shares stay locked.
           </p>
         ) : null}
         {panel || launch.record.reviewerTerms ? (
@@ -177,9 +185,9 @@ function PanelMilestones({
           className="mt-2 rounded-lg bg-black/5 p-2 text-xs text-muted-foreground dark:bg-white/5"
           data-testid="milestones-limits"
         >
-          What this does not do: it holds back the team&apos;s original tokens.
-          Holders can still vote to spend the treasury or to issue more tokens,
-          and those votes do not wait for milestones.{" "}
+          What this does not do: it holds back the team&apos;s original Shares.
+          Holders can still vote to spend the treasury or to issue more Shares
+          or non-voting shares, and those votes do not wait for milestones.{" "}
           <button className="underline" onClick={onOpenDecisions} type="button">
             See the decisions
           </button>
@@ -210,7 +218,8 @@ function PanelMilestones({
               entry={entry}
               key={entry.index}
               labelOf={labelOf}
-              onOpenWork={dao ? onOpenWork : null}
+              onOpenClaim={dao ? openClaim : null}
+              panelAddress={panel?.address ?? null}
             />
           ))}
         </ol>
@@ -222,12 +231,15 @@ function PanelMilestones({
 function MilestoneCard({
   entry,
   labelOf,
-  onOpenWork,
+  onOpenClaim,
+  panelAddress,
 }: {
   entry: TimelineEntry;
   labelOf: (address: string) => string;
-  onOpenWork: (() => void) | null;
+  onOpenClaim: ((claim: ClaimFocus) => void) | null;
+  panelAddress: string | null;
 }) {
+  const focus = claimFocusFor(entry.claimId, panelAddress);
   return (
     <li data-testid={`milestone-${entry.index}`}>
       <Card className="p-4">
@@ -245,8 +257,8 @@ function MilestoneCard({
         <p className="mt-1 text-xs text-muted-foreground">
           {entry.tokens !== null
             ? entry.tokensPlanned
-              ? `About ${formatShares(entry.tokens)} tokens will be held back (${entry.percent}% of the milestone allocation)`
-              : `${formatShares(entry.tokens)} tokens held back${entry.holders > 1 ? ` across ${entry.holders} team members` : ""}`
+              ? `About ${formatShares(entry.tokens)} Shares will be held back (${entry.percent}% of the milestone allocation)`
+              : `${formatShares(entry.tokens)} Shares held back${entry.holders > 1 ? ` across ${entry.holders} team members` : ""}`
             : entry.percent !== null
               ? `${entry.percent}% of the milestone allocation`
               : ""}
@@ -344,13 +356,14 @@ function MilestoneCard({
 
         {entry.challengeEndsAt ? (
           <p className="mt-2 text-xs text-muted-foreground">
-            Challenge window ends {day(entry.challengeEndsAt)}.
+            Anyone can object until {day(entry.challengeEndsAt)}.
           </p>
         ) : null}
-        {onOpenWork && entry.claimId ? (
+        {onOpenClaim && focus ? (
           <button
             className="mt-2 text-xs underline"
-            onClick={onOpenWork}
+            data-testid={`milestone-open-claim-${entry.index}`}
+            onClick={() => onOpenClaim(focus)}
             type="button"
           >
             Open the claim on the Work tab

@@ -27,7 +27,7 @@ import { NotificationBell } from "@/features/notifications/ui/NotificationBell";
 import { communityLabel } from "@/features/communities/lib/community-label";
 import { useSelfServe } from "@/features/communities/use-self-serve";
 import { APP_NAME } from "@/shared/constants/brand";
-import { beyondContributorProjects } from "@/app/lib/build-gates";
+import { notContributorOnlyBuild } from "@/app/lib/build-gates";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
 // Sidebar panels load on first use. The wiki alone pulls TipTap, Yjs and the
@@ -189,7 +189,7 @@ export function CommunityShell({
     );
   // AI helpers and Org (helper budgets) need an AI service the hosted pilot does not run, so a contributor-only build
   // leaves them out; the route drops links to them as well.
-  const helpers = beyondContributorProjects();
+  const helpers = notContributorOnlyBuild();
   // Named by its name, not its address (the address stays under it).
   const selfServe = useSelfServe();
   const label = communityLabel(host, selfServe.data?.domain ?? null, APP_NAME);

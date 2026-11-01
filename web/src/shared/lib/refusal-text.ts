@@ -40,11 +40,59 @@ export const NO_ACCESS_TEXT =
   "You don't have access to this room or board. Its owner can add you.";
 
 /**
+ * A ban as the server states it in its refusal (`handlers/auth.rs` `ban_refusal`): `blocked: you are banned from this
+ * community`, then ` until <unix seconds>` or ` for good`, then `; reason: <the moderator's words>` when they gave one.
+ * An older server, or a refusal that does not say, gives only the first part.
+ */
+export type BanNotice = {
+  /** When it ends (unix seconds), `"never"` for a ban for good, or null when the server did not say. */
+  ends: number | "never" | null;
+  /** The moderator's reason, or null when there is none. */
+  reason: string | null;
+};
+
+/** The ban in a server refusal, or null when `message` is not a ban. */
+export function parseBan(message: string): BanNotice | null {
+  const match =
+    /^blocked: you are banned\b(?: from this community)?(?: until (\d+)| (for good))?(?:; reason: (.*))?$/is.exec(
+      message.trim(),
+    );
+  if (!match) return null;
+  const reason = match[3]?.trim();
+  return {
+    ends: match[1] ? Number(match[1]) : match[2] ? "never" : null,
+    reason: reason ? reason : null,
+  };
+}
+
+/** The ban in a failure's message wherever it is said in it (after a client's own words), or null when there is none. */
+export function banIn(message: string): BanNotice | null {
+  const at = message.search(/blocked: you are banned\b/i);
+  return at < 0 ? null : parseBan(message.slice(at));
+}
+
+/** "You are banned from this community", then until when or "for good" when the server said, with no full stop. */
+export function banHeadline(ends: BanNotice["ends"]): string {
+  if (ends === "never") return "You are banned from this community for good";
+  if (ends === null) return "You are banned from this community";
+  return `You are banned from this community until ${whenText(ends)}`;
+}
+
+/** A ban in plain words: until when (when the server said), then the moderator's reason (when they gave one). */
+export function banText(ban: BanNotice): string {
+  const head = `${banHeadline(ban.ends)}.`;
+  return ban.reason ? `${head} Reason: ${asSentence(ban.reason)}` : head;
+}
+
+/**
  * The restrictions the server puts on a person (`buzz-relay` ingest, auth and board moderation), each said in plain
  * words with what still works. The server's own wording is the contract: a change there must change these.
  */
 const RESTRICTIONS: [RegExp, (match: RegExpExecArray) => string][] = [
-  [/^blocked: you are banned\b/i, () => "You are banned from this community."],
+  [
+    /^blocked: you are banned\b.*$/is,
+    (m) => banText(parseBan(m[0]) ?? { ends: null, reason: null }),
+  ],
   [
     /^restricted: you are timed out until (\d+)$/,
     (m) =>

@@ -13,6 +13,11 @@
 import { hashText, idWord } from "@creaton/core/launchpad/work.ts";
 import type { ClaimView } from "@creaton/core/launchpad/work.ts";
 
+import {
+  MAX_MILESTONE_CLAIMS,
+  milestoneClaimNames,
+} from "./milestone-progress.ts";
+
 const ZERO_WORD = `0x${"0".repeat(64)}`;
 
 export interface SubmissionDraft {
@@ -43,6 +48,21 @@ export function claimForDraft(
   );
 }
 
+/** Someone else's claim already has the draft's name, so filing it would be refused: it has to start over. */
+export function nameTakenByOther(
+  claims: readonly ClaimView[],
+  draft: SubmissionDraft | null,
+  wallet: string,
+): boolean {
+  if (!draft) return false;
+  const id = idWord(draft.name).toLowerCase();
+  return claims.some(
+    (c) =>
+      c.id.toLowerCase() === id &&
+      c.record.contributor.toLowerCase() !== wallet.toLowerCase(),
+  );
+}
+
 /**
  * What is still to do, in order. Nothing is repeated that already shows: a claim that is filed is not filed again, a
  * criterion that is set is not set again, a claim that is already with the reviewers is not sent again, and evidence
@@ -56,21 +76,30 @@ export function remainingSteps(input: {
   checkHash: string;
   /** Readers can already verify this claim's evidence. */
   published: boolean;
+  /** Someone else filed a claim under the draft's name first ({@link nameTakenByOther}). */
+  nameTaken?: boolean;
 }): RemainingSteps {
   const { draft, claim, checkHash, published } = input;
   if (claim === null) {
+    // Filing again would be refused every time: say so instead of offering a Continue that cannot work.
+    if (input.nameTaken) {
+      return {
+        problem:
+          "Someone else filed a claim under this submission's name first, so it cannot be filed. Press Start over to send the same text under a new name.",
+      };
+    }
     return { steps: ["file", "check", "bind", "publish"] };
   }
   if (claim.record.status !== "Open") {
     return {
       problem:
-        "That claim is no longer open, so it cannot be continued. Start a new submission.",
+        "That claim is no longer open, so it cannot be continued. Press Start over to make a new submission.",
     };
   }
   if (hashText(draft.evidence) !== claim.record.evidenceHash.toLowerCase()) {
     return {
       problem:
-        "The saved text is not what was filed with that claim. Start a new submission.",
+        "The saved text is not what was filed with that claim. Press Start over to make a new submission.",
     };
   }
   const steps: SubmitStep[] = [];
@@ -79,12 +108,67 @@ export function remainingSteps(input: {
   else if (current !== checkHash.toLowerCase()) {
     return {
       problem:
-        "That claim names different words for its criterion, so it cannot be this milestone's. Start a new submission.",
+        "That claim names different words for its criterion, so it cannot be this milestone's. Press Start over to make a new submission.",
     };
   }
   if (claim.project === null) steps.push("bind");
   if (!published) steps.push("publish");
   return { steps };
+}
+
+/** Said when every name a milestone's claims can take is used: nothing is sent. */
+export const CLAIM_NAMES_USED_UP = `This milestone has been submitted ${MAX_MILESTONE_CLAIMS} times, the most this page can send, so nothing was sent. Your text is still in the box. Going on needs a decision by holders: raise it on the Decisions tab.`;
+
+/** Said when the wallet or milestone changed while a name was being checked: nothing is sent under the old one. */
+export const CLAIM_CHECK_SUPERSEDED =
+  "The connected wallet changed while this submission's name was being checked, so nothing was sent. Your text is still in the box. Submit again to send it from this wallet.";
+
+/** Said when the network could not say whether a name is free: nothing is sent, and trying again is safe. */
+export const CLAIM_NAME_UNCHECKED =
+  "Could not check with the network that this submission's name is free, so nothing was sent. Your text is still in the box. Try again in a moment.";
+
+/**
+ * Whether the milestone panel's record for one claim name is empty, from its `claims(bytes32)` read: an unused name reads
+ * as eight zero-led words (no contributor). A reply too short to be that record is not "free": it throws, so a bad read
+ * is never taken for a free name and filed over someone's claim.
+ */
+export function claimSlotEmpty(hex: string): boolean {
+  const body = hex.replace(/^0x/, "");
+  if (!/^[0-9a-fA-F]*$/.test(body) || body.length < 8 * 64) {
+    throw new Error("the claim record could not be read");
+  }
+  return /^0+$/.test(body.slice(0, 64));
+}
+
+/**
+ * The name for a new submission of milestone `index`. Names the panel's claims already show are skipped; each remaining
+ * one is checked with the network before it is chosen, because the claims shown are only the newest ones and another
+ * person may have filed since they were read. Bounded by {@link milestoneClaimNames}: when all are used the answer says so,
+ * and a check that fails stops the search rather than guessing.
+ */
+export async function allocateClaimName(
+  index: number,
+  /** The names of the claims already shown on the panel. */
+  shown: readonly string[],
+  /** Reads whether a name is unused on the chain; throws when it cannot tell. */
+  isFree: (name: string) => Promise<boolean>,
+  /** False once the submission this search is for is no longer the one on screen (another wallet, another milestone). */
+  isCurrent: () => boolean = () => true,
+): Promise<{ name: string } | { problem: string }> {
+  const used = new Set(shown.map((t) => t.toLowerCase()));
+  for (const name of milestoneClaimNames(index)) {
+    if (used.has(name.toLowerCase())) continue;
+    let free: boolean;
+    try {
+      free = await isFree(name);
+    } catch {
+      return { problem: CLAIM_NAME_UNCHECKED };
+    }
+    // Checked after every wait: a result for a wallet that is no longer connected must not be saved or filed.
+    if (!isCurrent()) return { problem: CLAIM_CHECK_SUPERSEDED };
+    if (free) return { name };
+  }
+  return { problem: CLAIM_NAMES_USED_UP };
 }
 
 const STORAGE_PREFIX = "buzz.launchpad.milestone-submission:";

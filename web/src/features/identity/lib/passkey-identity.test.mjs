@@ -4,15 +4,17 @@
  * ceremony/derivation seam, and that a mismatched re-derivation is refused
  * instead of silently adopted.
  *
- * The WebAuthn ceremony is stood in for by the module's dev mock
- * (`sessionStorage["buzz.passkey.mock"]` — same flag as the web-passkey
- * branch); everything below it (HKDF → secp256k1, COSE-shaped owner key,
- * storage posture, match check) is the production code path. The real
- * navigator.credentials surface is exercised in tests/e2e/passkey.spec.ts.
+ * The authenticator is a software one behind `navigator.credentials`
+ * (`fake-webauthn.mjs`); everything from the ceremony down (attestation
+ * parsing, PRF → HKDF → secp256k1, owner key, storage posture, match check) is
+ * the production code path. Chrome's own stack is exercised in
+ * tests/e2e/passkey.spec.ts.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
+
+import { installFakeWebAuthn } from "./fake-webauthn.mjs";
 
 // node has no web storage — install Map-backed shims before the calls.
 const localMap = new Map();
@@ -39,7 +41,10 @@ Object.defineProperty(globalThis, "sessionStorage", {
   value: fakeStorage(sessionMap),
   configurable: true,
 });
-// Deterministic mock ceremony with PRF output (dev flag, web-passkey parity).
+// An authenticator with PRF output, behind the real navigator.credentials path.
+const webauthn = installFakeWebAuthn();
+// The dev server's stand-in flag, set as a person could set it on the live site: outside the dev server it must do
+// nothing (the test below checks the real ceremony ran anyway).
 sessionMap.set("buzz.passkey.mock", "1");
 
 const PASSKEY_KEYS = [
@@ -92,6 +97,37 @@ test("registration persists only public material and keeps the key in memory", a
     localMap.get("buzz.passkey.r1"),
     registered.identity?.evmOwner.r1UncompressedHex,
   );
+});
+
+test("the dev stand-in flag does nothing outside the dev server: the real ceremony runs", async () => {
+  const before = { ...webauthn.calls };
+  const registered = await setupPasskey("Flag Person");
+  assert.equal(webauthn.calls.create, before.create + 1);
+  const credentialId = localMap.get("buzz.passkey.credentialId") ?? "";
+  assert.doesNotMatch(credentialId, /^mock-/);
+  assert.ok(
+    webauthn.credentials.has(
+      Buffer.from(credentialId, "base64url").toString("hex"),
+    ),
+    "the stored credential is one the authenticator made",
+  );
+  clearPasskeySession();
+  await signInPasskeyIdentity();
+  assert.equal(webauthn.calls.get > before.get, true);
+  assert.equal(passkeyIdentity()?.nostr.pubkeyHex, registered.pubkey);
+  removePasskeyIdentity();
+});
+
+test("a passkey the authenticator no longer holds cannot sign in", async () => {
+  await setupPasskey("Gone Person");
+  clearPasskeySession();
+  webauthn.forgetAll();
+  await assert.rejects(
+    signInPasskeyIdentity,
+    (e) => e?.name === "NotAllowedError",
+  );
+  assert.equal(isPasskeyActive(), false);
+  removePasskeyIdentity();
 });
 
 test("reload → unlock re-derives the registered identity through the stored record", async () => {

@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay, matches } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay, matches } from "./mock-relay";
 
 /**
  * Ideas from the boards: the team turns a board post into a task, and the
@@ -129,7 +129,7 @@ async function openWork(
       body: JSON.stringify({
         communities: [
           {
-            host: "alpha.example.com",
+            host: COMMUNITY_HOST,
             name: "Alpha",
             description: "A test community.",
             icon: null,
@@ -157,7 +157,7 @@ async function openWork(
     window.localStorage.setItem("buzz.identity.nsec", secret);
     window.localStorage.setItem("buzz.identity.backedUp", "1");
   }, nsec);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("work-toggle").click();
   await page.getByTestId("board-ideas-toggle").click();

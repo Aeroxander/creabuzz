@@ -4,12 +4,12 @@ import {
   redirect,
 } from "@tanstack/react-router";
 
-import { beyondContributorProjects } from "../lib/build-gates";
+import { notContributorOnlyBuild } from "../lib/build-gates";
 
 export const Route = createFileRoute("/projects/$projectId")({
   // The Projects board is not in a contributor-only build (see `/projects`).
   beforeLoad: () => {
-    if (!beyondContributorProjects()) {
+    if (!notContributorOnlyBuild()) {
       throw redirect({ to: "/discover", replace: true });
     }
   },

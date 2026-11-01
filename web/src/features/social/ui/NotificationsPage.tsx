@@ -52,7 +52,7 @@ import { useNotesById } from "../use-social-data";
 import { PostList } from "./PostList";
 import { PageBar, SocialShell } from "./SocialShell";
 import { EmptyState, TimelineSkeleton } from "./Status";
-import { TabStrip } from "./TabStrip";
+import { TabStrip, tabPanelProps } from "./TabStrip";
 
 type Tab = "all" | "mentions";
 
@@ -378,98 +378,101 @@ export function NotificationsPage() {
     <SocialShell>
       <PageBar title="Notifications">
         <TabStrip
+          idBase="notifications-tabs"
           label="Notifications"
           onChange={setTab}
           tabs={TABS}
           value={tab}
         />
       </PageBar>
-      {me && tab === "all" ? <YourLaunchesSection /> : null}
-      {me && tab === "all" ? (
-        <LaunchUpdatesSection visitSeenAt={visitSeenAt.current ?? 0} />
-      ) : null}
-      {me && notifications.error && notifications.data ? (
-        <div
-          className="flex items-center justify-between gap-3 border-b border-black/10 bg-amber-500/10 px-4 py-2 text-sm text-black dark:border-white/10 dark:text-white"
-          data-testid="social-notifications-stale"
-          role="status"
-        >
-          <span>
-            Couldn't check for new notifications. Showing what loaded before.
-          </span>
-          <button
-            className="shrink-0 font-semibold underline"
-            data-testid="social-notifications-stale-retry"
-            onClick={retry}
-            type="button"
+      <div {...tabPanelProps("notifications-tabs", tab)}>
+        {me && tab === "all" ? <YourLaunchesSection /> : null}
+        {me && tab === "all" ? (
+          <LaunchUpdatesSection visitSeenAt={visitSeenAt.current ?? 0} />
+        ) : null}
+        {me && notifications.error && notifications.data ? (
+          <div
+            className="flex items-center justify-between gap-3 border-b border-black/10 bg-amber-500/10 px-4 py-2 text-sm text-black dark:border-white/10 dark:text-white"
+            data-testid="social-notifications-stale"
+            role="status"
           >
-            Try again
-          </button>
-        </div>
-      ) : null}
-      {!me ? (
-        <EmptyState title="Sign in to see notifications">
-          Votes, replies, reposts and new followers show up here.
-        </EmptyState>
-      ) : view === "loading" ? (
-        <TimelineSkeleton />
-      ) : view === "error" ? (
-        <div className="p-4">
-          <QueryError
-            description="The server did not answer, so your notifications can't be shown. Nothing was lost."
-            error={notifications.error}
-            kinds={NOTIFICATION_KINDS}
-            onRetry={retry}
-            relayUrl={relayWsUrl()}
-            testId="social-notifications-error"
-            title="Couldn't load your notifications"
-          />
-        </div>
-      ) : groups.length === 0 &&
-        tab === "all" &&
-        hasLaunchUpdates ? null : groups.length === 0 ? (
-        <EmptyState
-          testId="social-notifications-empty"
-          title={tab === "all" ? "Nothing yet" : "No mentions yet"}
-        >
-          When someone interacts with you, you'll see it here.
-        </EmptyState>
-      ) : (
-        groups.map((group) =>
-          group.kind === "moderation" ? (
-            <ModerationRow
-              group={group}
-              key={group.key}
-              unread={group.at > (visitSeenAt.current ?? 0)}
+            <span>
+              Couldn't check for new notifications. Showing what loaded before.
+            </span>
+            <button
+              className="shrink-0 font-semibold underline"
+              data-testid="social-notifications-stale-retry"
+              onClick={retry}
+              type="button"
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
+        {!me ? (
+          <EmptyState title="Sign in to see notifications">
+            Votes, replies, reposts and new followers show up here.
+          </EmptyState>
+        ) : view === "loading" ? (
+          <TimelineSkeleton />
+        ) : view === "error" ? (
+          <div className="p-4">
+            <QueryError
+              description="The server did not answer, so your notifications can't be shown. Nothing was lost."
+              error={notifications.error}
+              kinds={NOTIFICATION_KINDS}
+              onRetry={retry}
+              relayUrl={relayWsUrl()}
+              testId="social-notifications-error"
+              title="Couldn't load your notifications"
             />
-          ) : group.noteId === null ? (
-            <ReactionRow
-              boardName={
-                group.board ? boardNames.get(group.board.boardId) : undefined
-              }
-              group={group}
-              key={group.key}
-              people={people}
-              targetText={
-                group.board
-                  ? group.board.text
-                  : group.targetId
-                    ? targets?.find((t) => t.event.id === group.targetId)?.event
-                        .content
-                    : undefined
-              }
-              unread={group.at > (visitSeenAt.current ?? 0)}
-            />
-          ) : (
-            <NoteNotification
-              group={group}
-              key={group.key}
-              rows={postRows}
-              unread={group.at > (visitSeenAt.current ?? 0)}
-            />
-          ),
-        )
-      )}
+          </div>
+        ) : groups.length === 0 &&
+          tab === "all" &&
+          hasLaunchUpdates ? null : groups.length === 0 ? (
+          <EmptyState
+            testId="social-notifications-empty"
+            title={tab === "all" ? "Nothing yet" : "No mentions yet"}
+          >
+            When someone interacts with you, you'll see it here.
+          </EmptyState>
+        ) : (
+          groups.map((group) =>
+            group.kind === "moderation" ? (
+              <ModerationRow
+                group={group}
+                key={group.key}
+                unread={group.at > (visitSeenAt.current ?? 0)}
+              />
+            ) : group.noteId === null ? (
+              <ReactionRow
+                boardName={
+                  group.board ? boardNames.get(group.board.boardId) : undefined
+                }
+                group={group}
+                key={group.key}
+                people={people}
+                targetText={
+                  group.board
+                    ? group.board.text
+                    : group.targetId
+                      ? targets?.find((t) => t.event.id === group.targetId)
+                          ?.event.content
+                      : undefined
+                }
+                unread={group.at > (visitSeenAt.current ?? 0)}
+              />
+            ) : (
+              <NoteNotification
+                group={group}
+                key={group.key}
+                rows={postRows}
+                unread={group.at > (visitSeenAt.current ?? 0)}
+              />
+            ),
+          )
+        )}
+      </div>
     </SocialShell>
   );
 }

@@ -39,7 +39,7 @@ export function governanceRoute(kind: ProposalKind): GovernanceRoute {
         mechanism: "Shares vote",
         ballot: true,
         rationale:
-          "Shares back priorities and opposition is free. A proposal needs enough Shares taking part and enough of the votes in favour, and that support has to hold before it can take effect. Support stays movable until it does. Loot does not vote.",
+          "Shares back priorities and opposition is free. A proposal needs enough Shares taking part and enough of the votes in favour, and that support has to hold before it can take effect. Support stays movable until it does. Non-voting shares have no vote.",
       };
   }
 }

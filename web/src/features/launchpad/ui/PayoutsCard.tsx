@@ -62,8 +62,8 @@ export function PayoutsCard({ dao }: { dao: string }) {
           <p data-testid="payouts-split">
             Revenue sent to{" "}
             <span className="font-mono break-all">{data.module}</span> is split:{" "}
-            {percent(data.splitBps)} to holders by how many Shares and Loot they
-            hold, the rest to the treasury.
+            {percent(data.splitBps)} to holders by how many Shares and
+            non-voting shares they hold, the rest to the treasury.
           </p>
           {data.pending ? (
             <p className="text-muted-foreground" data-testid="payouts-pending">

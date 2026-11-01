@@ -1225,6 +1225,11 @@ pub enum ReopenResult {
 /// reopened (and possibly re-resolved) returns [`ReopenResult::AlreadyReopened`]
 /// without mutating, so a client network retry never re-reopens a
 /// freshly-resolved report.
+///
+/// `expected_status`, when given, fences the reopen to a report still in that
+/// status, checked under the row lock: an operator reopening an escalated report
+/// never undoes a resolution someone else made after the operator last read it.
+#[allow(clippy::too_many_arguments)]
 pub async fn reopen_report(
     pool: &PgPool,
     community_id: CommunityId,
@@ -1233,6 +1238,7 @@ pub async fn reopen_report(
     actor_pubkey: &[u8],
     actor_role: &str,
     reason: Option<&str>,
+    expected_status: Option<&str>,
 ) -> Result<ReopenResult> {
     let mut tx = pool.begin().await?;
 
@@ -1276,7 +1282,9 @@ pub async fn reopen_report(
     }
 
     let status: String = report_row.try_get("status")?;
-    if !matches!(status.as_str(), "resolved" | "dismissed" | "escalated") {
+    if !matches!(status.as_str(), "resolved" | "dismissed" | "escalated")
+        || expected_status.is_some_and(|expected| expected != status)
+    {
         tx.rollback().await?;
         return Ok(ReopenResult::NotReopenable(status));
     }
@@ -2197,6 +2205,7 @@ impl crate::Db {
     /// Reopen a terminal report (resolved|dismissed|escalated → open) with a
     /// durable `reopen` audit row, keyed idempotent on `request_id`.
     #[datastore_span(name = "reopen_report", system = "postgresql")]
+    #[allow(clippy::too_many_arguments)]
     pub async fn reopen_report(
         &self,
         community_id: CommunityId,
@@ -2205,6 +2214,7 @@ impl crate::Db {
         actor_pubkey: &[u8],
         actor_role: &str,
         reason: Option<&str>,
+        expected_status: Option<&str>,
     ) -> Result<ReopenResult> {
         reopen_report(
             &self.pool,
@@ -2214,6 +2224,7 @@ impl crate::Db {
             actor_pubkey,
             actor_role,
             reason,
+            expected_status,
         )
         .await
     }
@@ -4061,6 +4072,7 @@ mod postgres_tests {
                 &actor(),
                 "operator",
                 Some("re-triage"),
+                None,
             )
             .await
             .expect("reopen_report");
@@ -4091,6 +4103,55 @@ mod postgres_tests {
 
     #[tokio::test]
     #[ignore = "requires Postgres"]
+    async fn reopen_with_expected_status_refuses_a_report_that_moved_on() {
+        let pool = setup_pool().await;
+        let community_id = make_community(&pool).await;
+        let cid = CommunityId::from_uuid(community_id);
+        let report_id = make_report(&pool, community_id).await;
+        // The operator read it as escalated; a moderator has since resolved it.
+        set_report_status(&pool, community_id, report_id, "resolved").await;
+
+        let result = reopen_report(
+            &pool,
+            cid,
+            report_id,
+            Uuid::new_v4(),
+            &actor(),
+            "operator",
+            None,
+            Some("escalated"),
+        )
+        .await
+        .expect("reopen_report");
+        assert!(
+            matches!(result, ReopenResult::NotReopenable(ref s) if s == "resolved"),
+            "a fenced reopen of a resolved report must be refused, got {result:?}"
+        );
+        assert_eq!(
+            report_status(&pool, community_id, report_id).await,
+            "resolved"
+        );
+
+        // Still escalated: the same fence lets it through.
+        set_report_status(&pool, community_id, report_id, "escalated").await;
+        let result = reopen_report(
+            &pool,
+            cid,
+            report_id,
+            Uuid::new_v4(),
+            &actor(),
+            "operator",
+            None,
+            Some("escalated"),
+        )
+        .await
+        .expect("reopen_report");
+        assert!(matches!(result, ReopenResult::Reopened), "got {result:?}");
+        assert_eq!(report_status(&pool, community_id, report_id).await, "open");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
     async fn reopen_open_report_is_rejected_as_not_reopenable() {
         let pool = setup_pool().await;
         let community_id = make_community(&pool).await;
@@ -4103,6 +4164,7 @@ mod postgres_tests {
             Uuid::new_v4(),
             &actor(),
             "moderator",
+            None,
             None,
         )
         .await
@@ -4139,6 +4201,7 @@ mod postgres_tests {
             &actor(),
             "operator",
             None,
+            None,
         )
         .await
         .expect("reopen_report");
@@ -4166,6 +4229,7 @@ mod postgres_tests {
             &actor(),
             "operator",
             None,
+            None,
         )
         .await
         .expect("first reopen");
@@ -4182,6 +4246,7 @@ mod postgres_tests {
             request_id,
             &actor(),
             "operator",
+            None,
             None,
         )
         .await
@@ -4227,6 +4292,7 @@ mod postgres_tests {
             &actor(),
             "operator",
             None,
+            None,
         )
         .await
         .expect("reopen_report");
@@ -4253,6 +4319,7 @@ mod postgres_tests {
             request_id,
             &actor(),
             "operator",
+            None,
             None,
         )
         .await
@@ -4326,6 +4393,7 @@ mod postgres_tests {
             &actor(),
             "operator",
             Some("re-triage auto-escalated"),
+            None,
         )
         .await
         .expect("reopen_report");

@@ -95,7 +95,10 @@ export interface BoardFeed {
   isLoading: boolean;
   /** Only the list of boards is still being read (the posts may come later): what a list of boards waits for. */
   boardsLoading: boolean;
+  /** A failed first read or refresh (or list of boards): the page shows it in place of the list. */
   error: unknown;
+  /** A failed older page, said at the bottom of the list with a retry; what loaded stays. Null otherwise. */
+  olderError: unknown;
   /** Read everything again from the newest, taking in any new posts. */
   refetch: () => void;
   /** Merge in a record the server just accepted (the reader's own vote or post). */
@@ -189,7 +192,9 @@ export function useBoardFeed({
     boards,
     isLoading: (!empty && enabled && query.isLoading) || channels.isLoading,
     boardsLoading: channels.isLoading,
-    error: query.error ?? channels.error,
+    // An older page that failed is not the whole feed failing (TanStack keeps the pages read before it).
+    error: (query.isFetchNextPageError ? null : query.error) ?? channels.error,
+    olderError: query.isFetchNextPageError ? query.error : null,
     refetch: () => {
       void query.refetch();
       void channels.refetch();

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
+import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * A `$TICKER` in a post links to the launch that owns it, and a ticker nobody has claimed stays plain text.
@@ -90,7 +91,7 @@ test("a ticker in a post links to the launch that claimed it first", async ({
     bid("nebula", 100, 1n << 94n),
     bid("nebula", 200, 1n << 95n),
   ];
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {

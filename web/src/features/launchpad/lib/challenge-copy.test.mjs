@@ -253,7 +253,7 @@ test("the headline says where a milestone stands and what happens next, in plain
         objection: objection({ late: true }),
       }),
     ),
-    /remaining locked tokens are burned/,
+    /remaining locked Shares are burned/,
   );
 });
 
@@ -318,7 +318,7 @@ test("the team cannot publish before the lock's earliest block, or before the mi
   // What is said instead of the button.
   assert.match(
     challengePublishBlock(0, TERMS, first(100)),
-    /opens when the buyers can claim, at block 105. The chain is at block 100/,
+    /opens once buyers can claim what they bought in the sale/,
   );
   assert.match(
     challengePublishBlock(2, TERMS, after(stages.pending)),
@@ -333,8 +333,12 @@ test("the team cannot publish before the lock's earliest block, or before the mi
   );
   assert.match(
     challengePublishBlock(2, TERMS, after(stages.open)),
-    /A vote on an objection to milestone 2 is still open/,
+    /Holders are still voting on an objection to milestone 2/,
   );
+  // Plain words: no block numbers to compare, and no reason repeated word for word under two different refusals.
+  assert.doesNotMatch(challengePublishBlock(0, TERMS, first(100)), /block|\d/);
+  const voting = challengePublishBlock(2, TERMS, after(stages.open));
+  assert.notEqual(voting.slice(-30), month.slice(-30));
   assert.equal(challengePublishBlock(0, TERMS, OPEN), null);
   assert.equal(challengePublishBlock(1, TERMS, after(settled)), null);
   // The other actions do not depend on it.
@@ -438,7 +442,7 @@ test("an unlocked milestone says how it got through: nobody objected is not the 
   );
   assert.match(
     upheld,
-    /holders upheld it: the team's remaining locked tokens were burned/,
+    /holders upheld it: the team's remaining locked Shares were burned/,
   );
   // Still inside the month, it says how it got through and what can still happen.
   const inMonth = say(

@@ -14,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { failureWords } from "@/shared/lib/readable-error";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 import {
   AlertDialog,
@@ -48,7 +49,8 @@ export function NotificationBell({
   onOpenChannel: (channelId: string) => void;
   onOpenWork: () => void;
 }) {
-  const { items, unread, markRead } = useNotifications();
+  const { items, unread, markRead, view, stale, error, retry } =
+    useNotifications();
   const [open, setOpen] = useState(false);
   const [runsOpen, setRunsOpen] = useState(false);
 
@@ -119,7 +121,39 @@ export function NotificationBell({
               Workflow runs
             </span>
           </button>
-          {items.length === 0 ? (
+          {view === "error" || stale ? (
+            <p
+              className="px-2 py-2 text-xs text-amber-700 dark:text-amber-300"
+              data-testid="notifications-bell-error"
+              role="alert"
+            >
+              {view === "error"
+                ? "Couldn't check for notifications."
+                : "Couldn't check for new notifications. Showing what loaded before."}{" "}
+              {
+                failureWords(
+                  error,
+                  "The server didn't answer. Nothing was lost.",
+                ).text
+              }{" "}
+              <button
+                className="font-semibold underline"
+                data-testid="notifications-bell-retry"
+                onClick={retry}
+                type="button"
+              >
+                Try again
+              </button>
+            </p>
+          ) : null}
+          {view === "loading" ? (
+            <p
+              className="px-2 py-4 text-center text-xs text-black/60 dark:text-white/60"
+              role="status"
+            >
+              Checking for notifications…
+            </p>
+          ) : view === "error" ? null : items.length === 0 ? (
             <p className="px-2 py-4 text-center text-xs text-black/60 dark:text-white/60">
               Nothing new.
             </p>

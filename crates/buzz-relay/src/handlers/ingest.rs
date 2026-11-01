@@ -4108,7 +4108,13 @@ pub(crate) async fn enforce_write_restriction(
                 "error: internal error checking restriction state: {e}"
             ))
         })?;
-    write_restriction_denial(kind, &restriction, Utc::now()).map_or(Ok(()), Err)
+    match write_restriction_denial(kind, &restriction, Utc::now()) {
+        // Say when the ban ends and why, as the auth seam does.
+        Some(IngestError::AuthFailed(_)) if restriction.banned => Err(IngestError::AuthFailed(
+            super::auth::ban_refusal_for(state, tenant.community(), pubkey.as_bytes()).await,
+        )),
+        denial => denial.map_or(Ok(()), Err),
+    }
 }
 
 /// Ingest a signed Nostr event through the full validation pipeline.
@@ -10819,6 +10825,145 @@ mod postgres_tests {
             .expect("unbanning the owner restores the agent");
     }
 
+    /// A person banned directly is told, on the write backstop, when the ban
+    /// ends and why; their agent, banned through them, gets the plain refusal.
+    /// Mutation: drop the `restriction.banned` arm in
+    /// `enforce_write_restriction` → the person gets the plain prefix → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn direct_ban_write_refusal_says_when_it_ends_and_why() {
+        let state = ingest_state().await;
+        let (tenant, owner, agent) = owned_agent_fixture(&state, "direct-ban").await;
+        let owner_bytes = owner.public_key().to_bytes();
+        let end = Utc::now() + chrono::Duration::days(3);
+        state
+            .db
+            .ban_community_member(
+                tenant.community(),
+                &owner_bytes,
+                &owner_bytes,
+                Some("Selling coins in chat."),
+                Some(end),
+            )
+            .await
+            .expect("ban owner");
+
+        for (keys, refusal) in [
+            (
+                &owner,
+                format!(
+                    "blocked: you are banned from this community until {}; reason: Selling coins in chat.",
+                    end.timestamp()
+                ),
+            ),
+            (&agent, "blocked: you are banned from this community".to_string()),
+        ] {
+            match enforce_write_restriction(&state, &tenant, KIND_REACTION, &keys.public_key())
+                .await
+            {
+                Err(IngestError::AuthFailed(msg)) => assert_eq!(msg, refusal),
+                other => panic!("banned write must be refused, got {other:?}"),
+            }
+        }
+    }
+
+    /// The live disconnect a kind-9040 ban sends carries the end and the
+    /// reason: that is the refusal a person with the app open sees. The
+    /// banned person's agent is closed by the same command and so gets the
+    /// same words (it belongs to the banned person).
+    /// Mutation: pass the plain `BAN_REFUSAL` to `revoke_live_access` in
+    /// `handle_ban` → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn ban_command_live_disconnect_says_when_it_ends_and_why() {
+        use tokio_util::sync::CancellationToken;
+
+        let state = ingest_state().await;
+        let (tenant, owner, agent) = owned_agent_fixture(&state, "ban-live").await;
+        let moderator = nostr::Keys::generate();
+        state
+            .db
+            .add_relay_member(
+                tenant.community(),
+                &moderator.public_key().to_hex(),
+                "owner",
+                None,
+            )
+            .await
+            .expect("add moderator");
+
+        let open_socket = |keys: &nostr::Keys, admitted_owner: Option<&nostr::Keys>| {
+            let (tx, _rx) = tokio::sync::mpsc::channel(4);
+            let (ctrl, ctrl_rx) = tokio::sync::mpsc::channel(4);
+            let (terminal, _terminal_rx) = tokio::sync::mpsc::channel(1);
+            let cancel = CancellationToken::new();
+            let id = Uuid::new_v4();
+            state.conn_manager.register(
+                id,
+                tx,
+                ctrl,
+                terminal,
+                None,
+                cancel.clone(),
+                tenant.community(),
+                Arc::new(std::sync::atomic::AtomicU8::new(0)),
+                Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+                3,
+                crate::state::CommunityConnectionControl::new(cancel.clone()),
+            );
+            state
+                .conn_manager
+                .set_authenticated_pubkey(id, keys.public_key().to_bytes().to_vec());
+            if let Some(owner) = admitted_owner {
+                state
+                    .conn_manager
+                    .set_admitted_owner(id, owner.public_key().to_bytes());
+            }
+            (id, cancel, ctrl_rx, _rx, _terminal_rx)
+        };
+        let (owner_id, owner_cancel, mut owner_ctrl, _o1, _o2) = open_socket(&owner, None);
+        let (agent_id, agent_cancel, mut agent_ctrl, _a1, _a2) = open_socket(&agent, Some(&owner));
+
+        let end = Utc::now().timestamp() + 3 * 24 * 3600;
+        let ban = EventBuilder::new(
+            Kind::Custom(buzz_core::kind::KIND_MODERATION_BAN as u16),
+            "",
+        )
+        .tags([
+            nostr::Tag::public_key(owner.public_key()),
+            nostr::Tag::parse(["expiration".to_string(), end.to_string()]).expect("tag"),
+            nostr::Tag::parse(["reason".to_string(), "Selling coins in chat.".to_string()])
+                .expect("tag"),
+        ])
+        .sign_with_keys(&moderator)
+        .expect("sign ban");
+        crate::handlers::moderation_commands::handle_moderation_command(&tenant, &state, &ban)
+            .await
+            .expect("ban applied");
+
+        let expected = crate::protocol::RelayMessage::ok(
+            &ban.id.to_hex(),
+            false,
+            &format!(
+                "blocked: you are banned from this community until {end}; reason: Selling coins in chat."
+            ),
+        );
+        for (ctrl, cancel) in [
+            (&mut owner_ctrl, &owner_cancel),
+            (&mut agent_ctrl, &agent_cancel),
+        ] {
+            assert!(cancel.is_cancelled(), "the live session closes");
+            match ctrl.try_recv() {
+                Ok(axum::extract::ws::Message::Text(frame)) => {
+                    assert_eq!(frame.as_str(), expected)
+                }
+                other => panic!("expected the refusal frame, got {other:?}"),
+            }
+        }
+        state.conn_manager.deregister(owner_id);
+        state.conn_manager.deregister(agent_id);
+    }
+
     /// HTTP routes that call `enforce_relay_membership` refuse a banned member
     /// with 403 `blocked:` even on an open relay, and admit once unbanned.
     /// Mutation: drop the ban step from `enforce_relay_membership` → RED.
@@ -10830,11 +10975,25 @@ mod postgres_tests {
         let owner_bytes = owner.public_key().to_bytes();
         state
             .db
-            .ban_community_member(tenant.community(), &owner_bytes, &owner_bytes, None, None)
+            .ban_community_member(
+                tenant.community(),
+                &owner_bytes,
+                &owner_bytes,
+                Some("spam"),
+                None,
+            )
             .await
             .expect("ban owner");
 
-        for keys in [&owner, &agent] {
+        // The banned person is told the ban is for good and why; their agent,
+        // banned through them, gets the plain refusal.
+        for (keys, refusal) in [
+            (
+                &owner,
+                "blocked: you are banned from this community for good; reason: spam",
+            ),
+            (&agent, "blocked: you are banned from this community"),
+        ] {
             let (status, body) = crate::api::relay_members::enforce_relay_membership(
                 &state,
                 tenant.community(),
@@ -10845,10 +11004,7 @@ mod postgres_tests {
             .await
             .expect_err("banned principal (or its agent) must be refused");
             assert_eq!(status, axum::http::StatusCode::FORBIDDEN);
-            assert_eq!(
-                body.0["error"],
-                "blocked: you are banned from this community"
-            );
+            assert_eq!(body.0["error"], refusal);
         }
 
         state

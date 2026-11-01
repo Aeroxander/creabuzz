@@ -141,8 +141,8 @@ function SplitSection({
         The raise swept to the executor and split onchain:{" "}
         <strong>{amounts.money(state.record.currencyRaised)}</strong> raised →{" "}
         <strong>{amounts.money(split.reserveShare)}</strong> held in escrow for
-        the market&apos;s price floor (reserveBps {state.reserveBps.toString()}
-        /10000) + <strong>{amounts.money(split.treasuryShare)}</strong> to the
+        the market&apos;s price floor ({Number(state.reserveBps) / 100}% of the
+        raise) + <strong>{amounts.money(split.treasuryShare)}</strong> to the
         treasury. The escrow is a promise the treasury keeps, not a guarantee:
         it is released to the recorded pool, and if no pool is recorded the
         treasury can withdraw it once the executor&apos;s reserve lock (30 days

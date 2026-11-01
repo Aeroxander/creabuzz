@@ -80,7 +80,7 @@ export function NewHereCard({
     [
       {
         key: "read",
-        text: "Read the project's aim and what the team works on now.",
+        text: "Read the project's aim and priorities.",
         action: (
           <Button
             data-testid="new-here-read"

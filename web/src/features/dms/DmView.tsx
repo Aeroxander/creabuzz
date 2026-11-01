@@ -3,7 +3,7 @@ import { ArrowLeft, MessageSquare, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { dmConversationLabel } from "@creaton/core/dm.ts";
-import { beyondContributorProjects } from "@/app/lib/build-gates";
+import { notContributorOnlyBuild } from "@/app/lib/build-gates";
 import { ChannelTimeline } from "@/features/channels/ui/ChannelTimeline";
 import type { Channel } from "@/features/channels/use-channels";
 import { useUserNames } from "@/features/profiles/use-profiles";
@@ -31,7 +31,7 @@ export function DmView() {
   const { me, conversations, isLoading, error, refetch } = useDmConversations();
   // A contributor-only build has one private inbox, Messages on Home: here are only the community's notices to the
   // reader, to read. Other builds also start private chats inside the community.
-  const startsChats = beyondContributorProjects();
+  const startsChats = notContributorOnlyBuild();
   const dmIds = useMemo(() => conversations.map((c) => c.id), [conversations]);
   const activity = useDmActivity(dmIds);
   const names = useUserNames(

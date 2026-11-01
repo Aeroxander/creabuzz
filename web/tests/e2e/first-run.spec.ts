@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { expectAccessible } from "../helpers/a11y";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * The very first visit, as a person with no account and no saved anything:
@@ -81,7 +81,7 @@ test("a newcomer can sign up, start an organization, and find it again", async (
   await page.keyboard.press("Escape");
 
   // 3. Into the community, start an organization with one name and no helpers.
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("org-toggle").click();
   await expect(page.getByTestId("org-setup")).toBeVisible({ timeout: 20_000 });

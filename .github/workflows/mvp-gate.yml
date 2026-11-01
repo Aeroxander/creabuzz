@@ -1,0 +1,179 @@
+# MVP gate: the end-to-end journeys of scripts/mvp-gate.sh, in CI.
+#
+# NOT PUSHED. This file was written on the local branch v4-governance-rework (2026-11-01) and has never run on GitHub.
+# Publishing it (pushing the branch, opening a pull request) is the owner's decision; any pull request that carries it
+# stays a draft until the owner says otherwise. docs/v3-review/MVP-GATE-CI.md says what it runs, what it needs, and what
+# a green run does NOT prove.
+#
+# Two runs, one job:
+#   - pull requests that touch what the pilot runs on: `scripts/mvp-gate.sh --pilot` (the pilot set, about an hour;
+#     it runs the restricted-holder and real-server passkey sign-in steps of scripts/web-restricted-holder-e2e.sh);
+#   - nightly, and by hand: `scripts/mvp-gate.sh --later` (raises, milestones, the optional features, about two hours).
+# Each journey boots its own chain (anvil) and, for the real-server journeys, its own database on the Postgres below.
+# Every journey's log is uploaded, pass or fail.
+#
+# A green run does not replace the hand tests before the pilot (docs/v3-review/PILOT-TEST-GUIDE.md): the hosted image,
+# a reviewer acting from a passkey account, the name link on the real server, device recovery, and the restore rehearsal.
+name: MVP gate
+
+on:
+  pull_request:
+    paths:
+      # The web app and the shared packages it builds from
+      - "web/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "patches/**"
+      # The server and the command line (every crate: the relay, its storage, auth, media and search, the CLI)
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".cargo/**"
+      # The database
+      - "migrations/**"
+      - "schema/**"
+      # The contracts and their pinned libraries
+      - "contracts/**"
+      - ".gitmodules"
+      # The journeys, the dev chain and the deploy scripts they use
+      - "scripts/**"
+      # Deployment config: the image, its compose bundle, the dev services this job starts
+      - "Dockerfile"
+      - "deploy/**"
+      - "docker-compose.yml"
+      - ".env.example"
+      - "bin/hermit.hcl"
+      - ".github/workflows/mvp-gate.yml"
+  schedule:
+    # Nightly, 03:17 UTC: the later set.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      set:
+        description: "Which journeys: pilot, later, or all"
+        required: true
+        default: pilot
+        type: choice
+        options: [pilot, later, all]
+
+concurrency:
+  group: mvp-gate-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+
+jobs:
+  gate:
+    name: MVP gate (${{ github.event_name == 'schedule' && 'later' || inputs.set || 'pilot' }})
+    runs-on: ubuntu-latest
+    # The pilot set takes about an hour on a laptop with warm caches; cold Rust and web builds add up to half an hour.
+    # The later set is longer. A run that reaches this has hung: its logs are still uploaded below.
+    timeout-minutes: ${{ (github.event_name == 'schedule' || inputs.set == 'later' || inputs.set == 'all') && 240 || 120 }}
+    env:
+      GATE_SET: ${{ github.event_name == 'schedule' && 'later' || inputs.set || 'pilot' }}
+      LOG_DIR: ${{ github.workspace }}/gate-logs
+      # Empty unless the owner adds the secret; the fork journeys then use their default public Sepolia node, which can
+      # drop a read (scripts/mvp-gate.sh: a single failure there is worth one rerun before it is called a bug).
+      SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          submodules: recursive
+      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
+
+      - name: Tools the journeys call
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lsof postgresql-client >/dev/null
+          for tool in node pnpm cargo curl docker lsof openssl psql python3 shasum; do
+            command -v "$tool" >/dev/null || { echo "missing: $tool"; exit 1; }
+          done
+
+      - name: The runner's own self-test (no chain, browser or database)
+        run: scripts/test-mvp-gate.sh
+
+      - name: Install Foundry
+        run: |
+          curl -sSfL https://github.com/foundry-rs/foundry/releases/download/stable/foundry_stable_linux_amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: The pinned compiler
+        run: scripts/ensure-solc.sh && forge --version
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore pnpm store cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install the browser
+        run: cd web && pnpm exec playwright install --with-deps chromium
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          # Saved only from the nightly and manual runs (never from a pull request), so pull requests start warm.
+          save-if: ${{ github.event_name != 'pull_request' }}
+      # The journeys build these themselves when they are missing; building them here first keeps a compile error apart
+      # from a journey failure, and its time out of the journeys' own.
+      - name: Build the server and the command line
+        run: cargo build -p buzz-relay -p buzz-cli
+
+      # Postgres (each real-server journey makes and drops its own database), Redis, and MinIO with its bucket (the
+      # social journey's picture test refuses to run without it), from the same compose file `just setup` uses.
+      - name: Start Postgres, Redis and MinIO
+        run: |
+          cp .env.example .env
+          docker compose up -d --wait postgres redis minio
+          # `run` makes the bucket and exits with minio-init's own code without attaching to MinIO. (`up
+          # --exit-code-from` would stop MinIO too when minio-init exits, and every picture journey would then fail.)
+          docker compose run --rm minio-init
+          if ! docker compose ps --status running --services | grep -qx minio; then
+            echo "MinIO stopped after its bucket was made" >&2
+            docker compose ps -a >&2
+            exit 1
+          fi
+
+      - name: Journeys (${{ env.GATE_SET }})
+        run: |
+          mkdir -p "$LOG_DIR"
+          case "$GATE_SET" in
+            pilot) scripts/mvp-gate.sh --pilot --list; scripts/mvp-gate.sh --pilot ;;
+            later) scripts/mvp-gate.sh --later --list; scripts/mvp-gate.sh --later ;;
+            all) scripts/mvp-gate.sh --list; scripts/mvp-gate.sh ;;
+            *) echo "unknown set: $GATE_SET"; exit 2 ;;
+          esac
+
+      - name: Service logs
+        if: always()
+        run: |
+          mkdir -p "$LOG_DIR/services"
+          for service in postgres redis minio; do
+            docker compose logs --no-color "$service" >"$LOG_DIR/services/$service.log" 2>&1 || true
+          done
+      - name: Upload the journey logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mvp-gate-${{ env.GATE_SET }}-logs
+          path: ${{ env.LOG_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+      # The gate stops each journey's own processes and removes its own chain state; this removes the services and
+      # their volumes, so nothing is left on a reused runner.
+      - name: Clean up
+        if: always()
+        run: |
+          docker compose down -v --remove-orphans || true
+          rm -f .env

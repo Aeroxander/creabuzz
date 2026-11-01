@@ -208,6 +208,50 @@ function isOpenClaim(claim: ClaimView): boolean {
   return claim.record.status === "Open" || claim.record.status === "Approved";
 }
 
+/** Approved work that cannot be awarded Shares yet: still in its wait, or past it and not yet marked finished. */
+export interface WaitingToFinish {
+  mandate: WorkSnapshot["mandates"][number];
+  claim: ClaimView;
+  /** Unix seconds when its contributor can mark it finished. */
+  readyAt: number;
+  /** The wait is over: only its contributor's "Mark it finished" is missing. */
+  ready: boolean;
+}
+
+/**
+ * What the award form lists when nothing can be awarded yet: approved work in a work area, which earns nothing until
+ * its contributor marks it finished (`ClaimStake.payout`, only after the challenge window). A milestone panel's claims
+ * unlock milestone Shares instead, so they are left out.
+ */
+export function waitingToFinish(
+  work: WorkSnapshot | undefined,
+): WaitingToFinish[] {
+  const now = work?.chainTime ?? 0;
+  return (work?.mandates ?? []).flatMap((mandate) =>
+    mandate.isMilestonePanel
+      ? []
+      : mandate.claims
+          .filter((c) => c.record.status === "Approved" && c.project !== null)
+          .map((claim) => {
+            const readyAt = claim.record.releasedAt + mandate.challengeWindow;
+            return { mandate, claim, readyAt, ready: now >= readyAt };
+          }),
+  );
+}
+
+/** One line of {@link waitingToFinish}, naming who it waits for or the day it can be marked finished. */
+export function waitingToFinishText(
+  entry: WaitingToFinish,
+  nameOf: (address: string) => string,
+  dateOf: (seconds: number) => string,
+): string {
+  const name = nameOf(entry.claim.record.contributor);
+  const what = `“${workTitle(entry.claim.id)}” by ${name}`;
+  return entry.ready
+    ? `${what}: waiting for ${name} to mark it finished.`
+    : `${what}: can be marked finished on ${dateOf(entry.readyAt)}.`;
+}
+
 export interface OverviewInput {
   decisions: DecisionsSnapshot | undefined;
   work: WorkSnapshot | undefined;
@@ -263,8 +307,8 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           text:
             claim.record.amount > 0n
               ? "Your submission was approved. You can take your payment now."
-              : "Your work was approved. Mark it finished so Shareholders can vote on an award.",
-          action: claim.record.amount > 0n ? "Take it" : "Finish it",
+              : "Your work was approved. The wait is over: mark it finished so Shareholders can vote on an award.",
+          action: claim.record.amount > 0n ? "Take it" : "Mark it finished",
           tab: "work",
           why: "It is your submission.",
           ifIgnored:

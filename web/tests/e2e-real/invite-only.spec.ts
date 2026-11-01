@@ -290,6 +290,10 @@ test("a banned person is turned away even with the invite link, and a lifted ban
   await expect(troll.getByTestId("community-banned")).toContainText(
     "You are banned from this community",
   );
+  await expect(troll.getByTestId("community-banned")).toContainText("for good");
+  await expect(troll.getByTestId("community-banned-reason")).toHaveText(
+    "Reason: Selling coins in chat.",
+  );
 
   // The invite link does not get them back in.
   await troll.goto(inviteUrl);

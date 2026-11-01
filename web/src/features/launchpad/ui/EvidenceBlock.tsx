@@ -1,6 +1,14 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { existingUserPubkey } from "@/shared/lib/identity";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
+import {
+  claimDraftKey,
+  clearClaimDraft,
+  draftForClaim,
+  loadClaimDraft,
+} from "../lib/claim-draft";
 import {
   evidenceProblem,
   type EvidenceStanding,
@@ -78,6 +86,40 @@ export function EvidenceBlock({
   const [check, setCheck] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // The copy this browser kept when the work was submitted (`lib/claim-draft.ts`): only for the person who filed it, and
+  // only when it is exactly what the claim committed to. It fills the boxes so publishing is one press.
+  const verified = standing.kind === "verified";
+  const draftKey = mine
+    ? claimDraftKey({
+        server: relayWsUrl(),
+        account: existingUserPubkey() ?? "",
+        wallet: claim.record.contributor,
+        claimId: claim.id,
+        evidenceHash: claim.record.evidenceHash,
+      })
+    : null;
+  const saved = useMemo(
+    () =>
+      draftKey && !verified
+        ? draftForClaim(loadClaimDraft(draftKey), {
+            record: {
+              evidenceHash: claim.record.evidenceHash,
+              checkHash: claim.record.checkHash,
+            },
+          })
+        : null,
+    [draftKey, verified, claim.record.evidenceHash, claim.record.checkHash],
+  );
+  // Readers can verify the evidence now (published from here, the form, or another device): the copy is not needed.
+  useEffect(() => {
+    if (draftKey && verified) clearClaimDraft(draftKey);
+  }, [draftKey, verified]);
+  useEffect(() => {
+    if (!saved) return;
+    // Never over something the person already typed.
+    setEvidence((current) => current || saved.evidence);
+    setCheck((current) => current || saved.check);
+  }, [saved]);
 
   if (standing.kind === "verified") {
     const parts = splitSelfCheck(standing.packet.evidence);
@@ -177,6 +219,8 @@ export function EvidenceBlock({
     setSending(true);
     try {
       await onRepublish(evidence, check);
+      // On the server now: the kept copy has done its job.
+      if (draftKey) clearClaimDraft(draftKey);
     } catch {
       setProblem("Couldn't publish it. Try again.");
     } finally {
@@ -210,6 +254,12 @@ export function EvidenceBlock({
       </Button>
       {mine ? (
         <div className="mt-2 grid gap-2">
+          {saved ? (
+            <p className="text-xs" data-testid="work-evidence-saved-copy">
+              This browser kept a copy of what you submitted, and it is filled
+              in below. Press Publish the evidence.
+            </p>
+          ) : null}
           <label className="grid gap-1 text-xs">
             Evidence, exactly as you submitted it
             <textarea

@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // The preview's port, and optionally a build folder of its own: lets the mocked specs run beside a journey script that
-// holds :4173 and web/dist. Specs that name :4173 themselves need the default.
+// holds :4173 and web/dist. Specs take the port from tests/e2e/mock-relay.ts (PREVIEW_PORT, COMMUNITY_HOST).
 const PORT = process.env.E2E_PORT ?? "4173";
 const DIST = process.env.E2E_DIST;
 
@@ -38,6 +38,8 @@ export default defineConfig({
         "**/channel-edit.spec.ts",
         // The community screen audit's fixes (2026-10-30).
         "**/community-shouldfix.spec.ts",
+        // `/c/<another host>` shows that community's card, never the connected server's rooms under its name.
+        "**/community-other-host.spec.ts",
         "**/report.spec.ts",
         "**/chat-removal.spec.ts",
         // DM threads only under Messages; the server's room notes as sentences.
@@ -49,6 +51,9 @@ export default defineConfig({
         "**/launchpad-shouldfix-*.spec.ts",
         "**/launchpad-empty.spec.ts",
         "**/social-mention.spec.ts",
+        // A mention picked in a room's composer, and read failures said as failures (not as "nothing here").
+        "**/room-composer-mentions.spec.ts",
+        "**/social-read-errors.spec.ts",
         "**/invite-join.spec.ts",
         "**/error-report.spec.ts",
         "**/launchpad-decisions.spec.ts",
@@ -76,6 +81,8 @@ export default defineConfig({
         "**/browser-agent.spec.ts",
         "**/passkey.spec.ts",
         "**/passkey-safety.spec.ts",
+        // The passkey screens in a production build: no dev stand-in, real WebAuthn, dialogs that hold focus.
+        "**/passkey-production.spec.ts",
         "**/payment-wallet.spec.ts",
         "**/screenshots.spec.ts",
         "**/usernames.spec.ts",
@@ -96,6 +103,7 @@ export default defineConfig({
         "**/social-mvp.spec.ts",
         "**/home-checklist.spec.ts",
         "**/projects.spec.ts",
+        "**/repo-refs.spec.ts",
         "**/discover.spec.ts",
         "**/signing-recovery.spec.ts",
         "**/task-planning.spec.ts",
@@ -136,6 +144,23 @@ export default defineConfig({
       testMatch: ["**/passkey-wallet.spec.ts"],
       use: {
         ...devices["Desktop Chrome"],
+      },
+    },
+    {
+      // The pilot build (VITE_CONTRIBUTOR_ONLY=1) against a stubbed server, from a build folder and port of its own: run it
+      // with scripts/web-pilot-e2e.sh. Anywhere else it skips itself, since the default build offers what it checks is gone.
+      name: "pilot",
+      testMatch: ["**/pilot-build.spec.ts"],
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(process.env.PW_CHROMIUM_PATH
+          ? {
+              launchOptions: {
+                executablePath: process.env.PW_CHROMIUM_PATH,
+                args: ["--no-sandbox"],
+              },
+            }
+          : {}),
       },
     },
     {

@@ -3,8 +3,12 @@ import test from "node:test";
 
 import {
   claimForMilestone,
+  claimFocusFor,
+  MAX_MILESTONE_CLAIMS,
   milestoneClaimId,
+  milestoneClaimNames,
   milestoneProgress,
+  workTabSearch,
 } from "./milestone-progress.ts";
 
 const WALLET = "0x00000000000000000000000000000000000000a1";
@@ -108,4 +112,51 @@ test("a new milestone claim takes the next unused name", () => {
     "milestone-1-3",
   );
   assert.equal(milestoneClaimId(2, ["milestone-1"]), "milestone-3");
+});
+
+test("the names a milestone's claims can take are bounded, fit a claim id, and running out is said, not papered over", () => {
+  const names = milestoneClaimNames(4);
+  assert.equal(names.length, MAX_MILESTONE_CLAIMS);
+  assert.equal(new Set(names).size, names.length);
+  assert.equal(names[0], "milestone-5");
+  assert.equal(names.at(-1), `milestone-5-${MAX_MILESTONE_CLAIMS}`);
+  for (const name of names)
+    assert.ok(new TextEncoder().encode(name).length <= 32);
+  // Every name used: no time-based fallback that could repeat or collide, just null.
+  assert.equal(milestoneClaimId(4, names), null);
+  assert.equal(milestoneClaimId(4, names.slice(1)), "milestone-5");
+});
+
+test("opening a milestone's claim on the Work tab names that claim, in the form the page's link accepts", () => {
+  const id = `0x${"Ab".repeat(32)}`;
+  const panel = `0x${"Cd".repeat(20)}`;
+  const focus = claimFocusFor(id, panel);
+  assert.deepEqual(focus, {
+    id: id.toLowerCase(),
+    mandate: panel.toLowerCase(),
+  });
+  // What the launch page's ?claim=&mandate= accepts, and how the Work tab ids a claim's card.
+  assert.match(focus.id, /^0x[0-9a-f]{64}$/);
+  assert.match(focus.mandate, /^0x[0-9a-f]{40}$/);
+  assert.equal(claimFocusFor(null, panel), null);
+  assert.equal(claimFocusFor(id, null), null);
+});
+
+test("opening a milestone's claim puts the Work tab and that claim in the page's address, keeping the rest", () => {
+  const focus = claimFocusFor(`0x${"Ab".repeat(32)}`, `0x${"Cd".repeat(20)}`);
+  const author = "ab".repeat(32);
+  assert.deepEqual(workTabSearch({ author, tab: "milestones" }, focus), {
+    author,
+    tab: "work",
+    claim: focus.id,
+    mandate: focus.mandate,
+  });
+  // A claim opened before is replaced, not kept beside the new one.
+  assert.deepEqual(
+    workTabSearch(
+      { tab: "milestones", claim: "0xold", mandate: "0xold" },
+      focus,
+    ),
+    { tab: "work", claim: focus.id, mandate: focus.mandate },
+  );
 });

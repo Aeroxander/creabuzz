@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
 import { publishedEvents } from "../helpers/published-events";
+import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * A DAO run entirely from the browser, against a REAL local chain: no command line anywhere.
@@ -138,7 +139,7 @@ async function shot(page: Page, name: string) {
 }
 
 async function openAs(page: Page, account: string, tab: "Decisions" | "Work") {
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {

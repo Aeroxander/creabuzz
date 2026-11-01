@@ -5,7 +5,9 @@
  * the community's boards that have not become tasks yet, best-liked first, each
  * with a "Make a task" button that can also offer the person who wrote it a
  * finder's credit. The second is for anyone whose own post became a task: how
- * it is going, and a button to claim the credit once it is done. The rules
+ * it is going, and a button to claim the credit once it is done. A build
+ * without raises (the pilot) has no points, so there the team only makes the
+ * task and the writer only sees how it is going. The rules
  * (who may do what) are in `../lib/task-source.ts`; boards are only read while
  * the section is open.
  */
@@ -20,12 +22,17 @@ import {
   type Profile,
   resolveUserName,
 } from "@/features/profiles/use-profiles";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { usePeople } from "@/features/social/use-people";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { failureWords } from "@/shared/lib/readable-error";
 
 import { escalatePost } from "../escalate-post";
-import { canEscalatePost, defaultFinderReward } from "../lib/task-source";
+import {
+  canEscalatePost,
+  defaultFinderReward,
+  escalationPoints,
+} from "../lib/task-source";
 import type { TaskPlanning } from "../use-task-planning";
 import type { WorkItem } from "../use-work-board";
 
@@ -36,14 +43,6 @@ const INPUT =
   "w-24 rounded-md border border-black/10 bg-white px-2 py-1 text-sm outline-none dark:border-white/10 dark:bg-white/5";
 const BUTTON =
   "rounded-full bg-black px-3 py-1 text-xs font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black";
-
-/** A whole number of points from a text box, or null when it is empty or not one. */
-function points(text: string): number | null {
-  const value = Number(text.trim());
-  return text.trim() !== "" && Number.isInteger(value) && value > 0
-    ? value
-    : null;
-}
 
 function BoardIdeasList({
   board,
@@ -75,6 +74,7 @@ function BoardIdeasList({
   const [reward, setReward] = useState("");
   const [finder, setFinder] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const raises = raisesOffered();
 
   const choose = (id: string | null) => {
     setOpen(id);
@@ -101,16 +101,13 @@ function BoardIdeasList({
   }
 
   const submit = async (post: (typeof posts)[number]) => {
-    const rewardPoints = points(reward);
-    const finderPoints =
-      finder === null ? defaultFinderReward(rewardPoints) : points(finder);
+    const figures = escalationPoints(raises, reward, finder);
     setBusy(true);
     try {
       const { noted } = await escalatePost({
         post,
         board: board.id,
-        reward: rewardPoints,
-        finderReward: finderPoints,
+        ...figures,
       });
       choose(null);
       toast.success("Made into a task", {
@@ -130,8 +127,9 @@ function BoardIdeasList({
   return (
     <ul className="flex flex-col gap-1.5">
       {posts.map((post) => {
-        const rewardPoints = points(reward);
-        const suggested = defaultFinderReward(rewardPoints);
+        const suggested = defaultFinderReward(
+          escalationPoints(raises, reward, null).reward,
+        );
         return (
           <li
             key={post.id}
@@ -166,30 +164,34 @@ function BoardIdeasList({
                   void submit(post);
                 }}
               >
-                <label className="flex flex-col gap-1 text-2xs">
-                  Reward (points)
-                  <input
-                    className={INPUT}
-                    data-testid="idea-reward"
-                    inputMode="numeric"
-                    onChange={(event) => setReward(event.target.value)}
-                    placeholder="None"
-                    value={reward}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-2xs">
-                  Credit for the person who wrote it
-                  <input
-                    className={INPUT}
-                    data-testid="idea-finder"
-                    inputMode="numeric"
-                    onChange={(event) => setFinder(event.target.value)}
-                    placeholder={
-                      suggested === null ? "None" : String(suggested)
-                    }
-                    value={finder ?? ""}
-                  />
-                </label>
+                {raises ? (
+                  <>
+                    <label className="flex flex-col gap-1 text-2xs">
+                      Reward (points)
+                      <input
+                        className={INPUT}
+                        data-testid="idea-reward"
+                        inputMode="numeric"
+                        onChange={(event) => setReward(event.target.value)}
+                        placeholder="None"
+                        value={reward}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-2xs">
+                      Credit for the person who wrote it
+                      <input
+                        className={INPUT}
+                        data-testid="idea-finder"
+                        inputMode="numeric"
+                        onChange={(event) => setFinder(event.target.value)}
+                        placeholder={
+                          suggested === null ? "None" : String(suggested)
+                        }
+                        value={finder ?? ""}
+                      />
+                    </label>
+                  </>
+                ) : null}
                 <button
                   className={BUTTON}
                   data-testid="idea-submit"
@@ -198,11 +200,13 @@ function BoardIdeasList({
                 >
                   {busy ? "Making…" : "Make task"}
                 </button>
-                <p className="basis-full text-2xs text-black/60 dark:text-white/60">
-                  They can claim the credit once the task is done, and a
-                  reviewer accepts it. Leave it empty for the usual tenth of the
-                  reward.
-                </p>
+                {raises ? (
+                  <p className="basis-full text-2xs text-black/60 dark:text-white/60">
+                    They can claim the credit once the task is done, and a
+                    reviewer accepts it. Leave it empty for the usual tenth of
+                    the reward.
+                  </p>
+                ) : null}
               </form>
             ) : null}
           </li>
@@ -231,6 +235,8 @@ function YourSuggestions({
   const me = existingUserPubkey();
   const [filed, setFiled] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
+  // A build without raises (the pilot) has no points: no credit to show or claim.
+  const raises = raisesOffered();
 
   const claim = async (item: WorkItem) => {
     setBusy(item.key);
@@ -249,7 +255,7 @@ function YourSuggestions({
   return (
     <ul className="flex flex-col gap-1.5" data-testid="your-suggestions">
       {tasks.map((item) => {
-        const credit = item.source?.finderReward ?? null;
+        const credit = raises ? (item.source?.finderReward ?? null) : null;
         const done = item.doneRowId !== null && me !== null;
         return (
           <li

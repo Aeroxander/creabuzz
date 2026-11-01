@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { COMMUNITY_HOST, PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * Narrow-viewport audit (roadmap item A, surfaces beyond the shell).
@@ -16,7 +17,7 @@ const FOUNDER = "a".repeat(64);
 const directory = {
   communities: [
     {
-      host: "alpha.example.com",
+      host: COMMUNITY_HOST,
       name: "Alpha",
       description: "A test community.",
       icon: null,
@@ -103,7 +104,7 @@ async function mockRelay(page: Page) {
       body: JSON.stringify(directory),
     });
   });
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -219,7 +220,7 @@ async function expectNoOverflow(page: Page, surface: string) {
 
 async function openCommunity(page: Page) {
   await mockRelay(page);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await expect(page.getByTestId("content-pane")).toBeVisible();
 }
 
@@ -401,7 +402,7 @@ test("wiki typing still lands in the document", async ({ page }) => {
       body: JSON.stringify({
         communities: [
           {
-            host: "alpha.example.com",
+            host: COMMUNITY_HOST,
             name: "Alpha",
             description: "d",
             icon: null,
@@ -412,7 +413,7 @@ test("wiki typing still lands in the document", async ({ page }) => {
       }),
     });
   });
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
@@ -434,7 +435,7 @@ test("wiki typing still lands in the document", async ({ page }) => {
     });
   });
 
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("open-channel-list").click();
   await page.getByTestId("wiki-toggle").click();

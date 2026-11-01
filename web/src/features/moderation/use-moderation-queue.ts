@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type NostrEvent, queryEvents } from "@/shared/lib/nostr-client";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { useActionTracker } from "@/shared/hooks/use-action-tracker";
 import { useBoundedPoll } from "@/shared/hooks/use-bounded-poll";
@@ -67,7 +68,9 @@ async function fetchReports(
 ): Promise<ModerationReport[]> {
   const url = queueUrl(relayHttpBaseUrl(), filter, limit);
   const auth = await makeNip98AuthHeader(url, "GET");
-  const response = await fetch(url, { headers: { Authorization: auth } });
+  const response = await timedFetchStreamed(url, {
+    headers: { Authorization: auth },
+  });
   if (response.status === 401 || response.status === 403) {
     throw new Error("access denied");
   }

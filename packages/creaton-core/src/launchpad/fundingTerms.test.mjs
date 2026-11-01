@@ -71,8 +71,11 @@ test("publishing terms names the seller, calls the limit current, and says the n
       [false, 100n * E18, ROUNDS, 200n],
     ),
   );
-  assert.equal(draft.title, "Set a funding limit of 100 new Loot");
-  assert.match(draft.lines[0], /\(25% of the 400 units there are now\)/);
+  assert.equal(draft.title, "Set a funding limit of 100 new non-voting shares");
+  assert.match(
+    draft.lines[0],
+    /\(25% of the 400 Shares and non-voting shares there are now\)/,
+  );
   assert.match(draft.lines[0], /current limit: a later vote can raise it/);
   assert.match(draft.lines[1], /no vote/);
   assert.match(draft.lines[2], /Only the weekly rounds at 0xa0a0/);
@@ -85,11 +88,17 @@ test("publishing terms names the seller, calls the limit current, and says the n
   assert.equal(feePercent(250), "2.5%");
   assert.equal(
     publish({ asShares: true, cap: E18 }).title,
-    "Set a funding limit of 1 new Shares",
+    "Set a funding limit of 1 new Share",
+  );
+  assert.equal(
+    publish({ cap: E18 }).lines[0].startsWith(
+      "Up to 1 new non-voting share may",
+    ),
+    true,
   );
   assert.equal(
     publish({ raising: true, cap: 200n * E18 }).title,
-    "Raise the funding limit to 200 new units",
+    "Raise the funding limit to 200 new non-voting shares",
   );
   assert.throws(() => publish({ cap: 0n }), /above zero/);
   assert.throws(() => publish({ terms: "" }), /not set up on this network/);
@@ -145,14 +154,14 @@ test("each funding vote reads back as the decision that made it, and only on thi
     leastPrice: 1_100_000n,
     expiry: Date.UTC(2026, 11, 31) / 1000,
   });
-  assert.equal(open.title, "Sell up to 40 new units for the project");
+  assert.equal(open.title, "Sell up to 40 new shares for the project");
   assert.match(
     open.lines[0],
-    /at 1\.1 USDC a unit or more, until Dec 31, 2026/,
+    /at 1\.1 USDC a share or more, until Dec 31, 2026/,
   );
   assert.equal(
     lowerCapDecision({ terms: TERMS, cap: 50n * E18 }).title,
-    "Lower the funding limit to 50 new units",
+    "Lower the funding limit to 50 new shares",
   );
   assert.equal(
     lowerExitFeeDecision({ terms: TERMS, exitFeeBps: 100 }).title,

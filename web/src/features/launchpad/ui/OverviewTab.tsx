@@ -430,9 +430,10 @@ function ProvenCommitmentsCard({ launch }: { launch: TabLaunch }) {
     <Card className="p-4" data-testid="launch-commitments">
       <h2 className="text-base font-semibold">Proven commitments</h2>
       <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-        The record is a signed promise; the blockchain is the ledger. We check
-        each address for a live contract through your RPC endpoint. Anything we
-        can't read is labeled, never shown as verified.
+        The team signs what it promises here; the contracts at these addresses
+        are what actually hold the money. We check that each one is a live
+        contract on the network. Anything we can&apos;t read is labeled, never
+        shown as verified.
       </p>
       <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
         {commitments.map(([label, state]) => (

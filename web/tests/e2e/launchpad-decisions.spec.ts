@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
+import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * Deciding in the browser, against a REAL local chain.
@@ -71,7 +72,7 @@ const record = {
 
 /** The relay that serves the launch record, the founder's wallet, and the browser's settings: everything but the page. */
 async function serve(page: Page) {
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {

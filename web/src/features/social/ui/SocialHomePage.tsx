@@ -17,7 +17,7 @@ import {
 import { HomeHero } from "@/features/feed/ui/HomeHero";
 import { HomeYours } from "@/features/feed/ui/HomeYours";
 import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
-import { KIND_TEXT_NOTE } from "@/shared/constants/kinds";
+import { KIND_CONTACT_LIST, KIND_TEXT_NOTE } from "@/shared/constants/kinds";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { communityHostName, relayWsUrl } from "@/shared/lib/relay-url";
 import { QueryError } from "@/shared/ui/query-error";
@@ -38,7 +38,7 @@ import { PostComposer } from "./PostComposer";
 import { PostList } from "./PostList";
 import { EmptyState, TimelineSkeleton } from "./Status";
 import { PageBar, SocialShell } from "./SocialShell";
-import { TabStrip } from "./TabStrip";
+import { TabStrip, tabPanelProps } from "./TabStrip";
 import { type TimelineSort, useMixedTimeline } from "../use-mixed-timeline";
 import { useFollowing } from "../use-social-data";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
@@ -155,94 +155,117 @@ export function SocialHomePage() {
   return (
     <SocialShell>
       <PageBar title="Home">
-        <TabStrip label="Timeline" onChange={setTab} tabs={TABS} value={tab} />
+        <TabStrip
+          idBase="home-tabs"
+          label="Timeline"
+          onChange={setTab}
+          tabs={TABS}
+          value={tab}
+        />
       </PageBar>
-      <div className="flex flex-col gap-3 px-3 pt-3" data-testid="home-top">
-        {me ? <HomeYours me={me} /> : null}
-        <HomeHero />
-      </div>
-      {/* Signed out, the welcome above already offers the account: no second offer right under it. */}
-      {tab === "boards" || !me ? null : <PostComposer postTo />}
-      {tab === "everyone" ? (
-        <SortBar
-          onPeriod={setPeriod}
-          onSort={setSort}
-          period={period}
-          sort={sort}
-        />
-      ) : null}
-      {showsTimeline ? (
-        <NewPostsBar
-          failed={check.failed}
-          fresh={check.fresh}
-          onRetry={check.retry}
-          onShow={showNew}
-          shown={shownNote}
-        />
-      ) : null}
-      {tab === "boards" ? (
-        <Suspense fallback={<TimelineSkeleton />}>
-          <BoardDirectory />
-        </Suspense>
-      ) : tab === "updates" ? (
-        <div className="p-3">
-          <ProjectProgressFeed />
+      <div {...tabPanelProps("home-tabs", tab)}>
+        <div className="flex flex-col gap-3 px-3 pt-3" data-testid="home-top">
+          {me ? <HomeYours me={me} /> : null}
+          <HomeHero />
         </div>
-      ) : tab === "following" && !me ? (
-        <EmptyState title="Sign in to see who you follow">
-          {needAccountTo("follow people and see their posts here")}
-        </EmptyState>
-      ) : tab === "following" &&
-        following.isSuccess &&
-        (following.data?.length ?? 0) === 0 ? (
-        <EmptyState
-          testId="social-following-empty"
-          title="Your timeline is quiet"
-        >
-          Follow people and their posts show up here.{" "}
-          <Link
-            className="text-sky-700 underline dark:text-sky-400"
-            to="/social/explore"
+        {/* Signed out, the welcome above already offers the account: no second offer right under it. */}
+        {tab === "boards" || !me ? null : <PostComposer postTo />}
+        {tab === "everyone" ? (
+          <SortBar
+            onPeriod={setPeriod}
+            onSort={setSort}
+            period={period}
+            sort={sort}
+          />
+        ) : null}
+        {showsTimeline ? (
+          <NewPostsBar
+            failed={check.failed}
+            fresh={check.fresh}
+            onRetry={check.retry}
+            onShow={showNew}
+            shown={shownNote}
+          />
+        ) : null}
+        {tab === "boards" ? (
+          <Suspense fallback={<TimelineSkeleton />}>
+            <BoardDirectory />
+          </Suspense>
+        ) : tab === "updates" ? (
+          <div className="p-3">
+            <ProjectProgressFeed />
+          </div>
+        ) : tab === "following" && !me ? (
+          <EmptyState title="Sign in to see who you follow">
+            {needAccountTo("follow people and see their posts here")}
+          </EmptyState>
+        ) : tab === "following" &&
+          following.isSuccess &&
+          (following.data?.length ?? 0) === 0 ? (
+          <EmptyState
+            testId="social-following-empty"
+            title="Your timeline is quiet"
           >
-            Find people to follow
-          </Link>
-          .
-        </EmptyState>
-      ) : timeline.error ? (
-        <div className="p-4">
-          <QueryError
-            description="The server did not answer the feed query, so no posts can be shown."
-            error={timeline.error}
-            kinds={[KIND_TEXT_NOTE]}
-            onRetry={timeline.refetch}
-            relayUrl={relayWsUrl()}
-            testId="social-feed-error"
-            title="Couldn't load the feed"
-          />
-        </div>
-      ) : timeline.isLoading || (tab === "following" && following.isLoading) ? (
-        <TimelineSkeleton />
-      ) : timeline.items.length === 0 ? (
-        <EmptyState testId="social-feed-empty" title="Nothing here yet">
-          Be the first to post.
-        </EmptyState>
-      ) : (
-        <section
-          aria-label="Posts"
-          className="scroll-mt-36 outline-none"
-          ref={listTop}
-          tabIndex={-1}
-        >
-          <PostList
-            boards={timeline.boards}
-            hasMore={timeline.hasMore}
-            items={timeline.items}
-            lastVisitBefore={lastVisitBefore}
-            loadingMore={timeline.loadingMore}
-            onLoadMore={timeline.loadMore}
-          />
-        </section>
-      )}
+            Follow people and their posts show up here.{" "}
+            <Link
+              className="text-sky-700 underline dark:text-sky-400"
+              to="/social/explore"
+            >
+              Find people to follow
+            </Link>
+            .
+          </EmptyState>
+        ) : tab === "following" && following.error && !following.data ? (
+          // Without who you follow there is no Following timeline: a failure, not "Nothing here yet".
+          <div className="p-4">
+            <QueryError
+              description="The server did not answer, so who you follow isn't known and their posts can't be shown."
+              error={following.error}
+              kinds={[KIND_CONTACT_LIST]}
+              onRetry={() => void following.refetch()}
+              relayUrl={relayWsUrl()}
+              testId="social-following-error"
+              title="Couldn't load who you follow"
+            />
+          </div>
+        ) : timeline.error ? (
+          <div className="p-4">
+            <QueryError
+              description="The server did not answer the feed query, so no posts can be shown."
+              error={timeline.error}
+              kinds={[KIND_TEXT_NOTE]}
+              onRetry={timeline.refetch}
+              relayUrl={relayWsUrl()}
+              testId="social-feed-error"
+              title="Couldn't load the feed"
+            />
+          </div>
+        ) : timeline.isLoading ||
+          (tab === "following" && following.isLoading) ? (
+          <TimelineSkeleton />
+        ) : timeline.items.length === 0 ? (
+          <EmptyState testId="social-feed-empty" title="Nothing here yet">
+            Be the first to post.
+          </EmptyState>
+        ) : (
+          <section
+            aria-label="Posts"
+            className="scroll-mt-36 outline-none"
+            ref={listTop}
+            tabIndex={-1}
+          >
+            <PostList
+              boards={timeline.boards}
+              hasMore={timeline.hasMore}
+              items={timeline.items}
+              lastVisitBefore={lastVisitBefore}
+              loadMoreError={timeline.loadMoreError}
+              loadingMore={timeline.loadingMore}
+              onLoadMore={timeline.loadMore}
+            />
+          </section>
+        )}
+      </div>
     </SocialShell>
   );
 }

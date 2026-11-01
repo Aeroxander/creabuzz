@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { installAnvilWallet } from "../helpers/anvil-wallet";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Talking about a decision, against a REAL local chain.
@@ -185,7 +185,7 @@ test("a post that names a DAO the app does not know shows no chain figures and s
     sig: "sig",
   });
   await page.goto(
-    `/c/127.0.0.1:4173?channel=${BOARD}&post=${"post-stranger".padEnd(64, "0")}`,
+    `/c/${COMMUNITY_HOST}?channel=${BOARD}&post=${"post-stranger".padEnd(64, "0")}`,
   );
   await expect(page.getByTestId("proposal-unverified")).toContainText(
     "doesn't know that DAO",
@@ -249,7 +249,7 @@ test("a link to a decision becomes a live card under the message, and a link to 
       10,
     ),
   );
-  await page.goto(`/c/127.0.0.1:4173?channel=${CHAT}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHAT}`);
   await expect(page.getByText("Please look at")).toBeVisible({
     timeout: 20_000,
   });

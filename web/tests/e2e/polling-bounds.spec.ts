@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Lists that refresh themselves must stop. The workflow runs list polls every
@@ -39,7 +39,7 @@ test("the workflow runs list pauses its own refreshing after fifteen minutes, an
   await page.addInitScript((nsec) => {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
   }, NSEC);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
 
   await page.getByRole("button", { name: "Notifications" }).click();

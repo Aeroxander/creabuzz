@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+
 import { nextUpOrder } from "../lib/task-planning";
 import type { TaskPlanning } from "../use-task-planning";
 import type { WorkItem } from "../use-work-board";
@@ -28,6 +30,8 @@ export function NextUpList({
   onOpen: (item: WorkItem) => void;
 }) {
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // A build without raises (the pilot) has no points on tasks.
+  const raises = raisesOffered();
   const ordered = useMemo(
     () =>
       nextUpOrder(
@@ -99,7 +103,7 @@ export function NextUpList({
                     {item.milestone ? (
                       <span>Toward: {item.milestone}</span>
                     ) : null}
-                    {item.reward !== null ? (
+                    {raises && item.reward !== null ? (
                       <span>Earns {item.reward} points</span>
                     ) : null}
                     <span data-testid="next-up-support">

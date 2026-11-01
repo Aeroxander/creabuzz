@@ -41,7 +41,8 @@ export function deleteDialogCopy(slug: string): ConfirmCopy {
 export function purgeDialogCopy(slug: string): ConfirmCopy {
   return {
     title: `Delete “${slug}” permanently?`,
-    description: `The content is removed from the server and cannot be restored. This cannot be undone.`,
+    description:
+      "The page is removed from the server and cannot be restored, not even from Recently deleted.",
     confirmLabel: PURGE_LABEL,
   };
 }

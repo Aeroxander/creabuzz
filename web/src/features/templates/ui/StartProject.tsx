@@ -21,7 +21,7 @@ import {
   SIGN_UP_EVENT,
 } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { beyondContributorProjects } from "@/app/lib/build-gates";
+import { notContributorOnlyBuild } from "@/app/lib/build-gates";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
@@ -105,7 +105,7 @@ function Progress({ results, busy }: { results: StepResult[]; busy: boolean }) {
 /** Everything a team adds, behind one line: most people pick a starting point and never open this. */
 function Preview({ summary }: { summary: TemplateSummary }) {
   // A contributor-only build's server runs no AI service: the helper seats and their limit are left unsaid there.
-  const helpers = beyondContributorProjects();
+  const helpers = notContributorOnlyBuild();
   const limit = helpers ? describeDefaultLimit(summary.defaultBudget) : null;
   return (
     <details
@@ -283,7 +283,7 @@ export function StartProject({
               Open #{first?.name}
             </Button>
           ) : null}
-          {beyondContributorProjects() &&
+          {notContributorOnlyBuild() &&
           state.entry.template.personas.length > 0 ? (
             <Button
               data-testid="start-project-add-helper"
@@ -294,7 +294,7 @@ export function StartProject({
             </Button>
           ) : null}
           {/* Org (the helper budgets) is not in a contributor-only build. */}
-          {beyondContributorProjects() ? (
+          {notContributorOnlyBuild() ? (
             <Button onClick={() => onOpenView("org")} variant="outline">
               See your team
             </Button>

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
+import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * Money behind a post (N2), entirely from the post's page, against a REAL local chain with the real `OpenBounty`.
@@ -118,7 +119,7 @@ async function open(
   nsec: string,
   path = `/social/post/${POST.id}`,
 ) {
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {

@@ -17,9 +17,19 @@
 #
 # ⚠️  DEV ONLY. Anvil's public dev keys, a local chain or a local fork, nothing public.
 #
+# With PILOT_BUILD=1 the web app is built as the hosted contributor-only image builds it (VITE_CONTRIBUTOR_ONLY=1 and only
+# the settings its Dockerfile takes: the chain, its node, the contributor kit, where history starts, ZeroDev stand-ins),
+# and the spec is not told where the optional features are (bounties, payouts, remixes, CREATE), so it plays only the
+# contributor steps the pilot offers. Its spec (web/tests/e2e/contributor-journey.spec.ts) reads E2E_PILOT_BUILD: it
+# expects the pilot build's words, checks the left-out screens (remixes, bounties, payouts, the sale chip) are absent,
+# and skips their steps. scripts/mvp-gate.sh --pilot runs this mode (scripts/test-mvp-gate.sh keeps the two in step).
+# On the local chain the build also
+# names the chain's dev USDC (VITE_LOCAL_USDC), standing in for the USDC address a test network's build carries itself.
+#
 # Usage:  scripts/web-contributor-e2e.sh [--sepolia-fork] [playwright args]
-# Env:    ANVIL_PORT, SKIP_BUILD=1 (reuse web/dist: only if it was built by this script for the same chain),
-#         SEPOLIA_RPC_URL (--sepolia-fork: the node to fork; default a public one)
+# Env:    ANVIL_PORT, SKIP_BUILD=1 (reuse the build: only if it was built by this script for the same chain and mode),
+#         SEPOLIA_RPC_URL (--sepolia-fork: the node to fork; default a public one), PILOT_BUILD=1 (above),
+#         E2E_DIST (build into and serve from this folder instead of web/dist)
 
 CHAIN=local
 if [[ "${1:-}" == "--sepolia-fork" ]]; then CHAIN=sepolia-fork; shift; fi
@@ -125,18 +135,34 @@ refused "$ON_PANEL" || fail "the founder on the panel failed, but not with Inval
 echo "  ✓ 200 of 600 with two other reviewers: allowed; 201 of 600: InvalidTerms; the founder on the panel: InvalidTerms"
 
 cd "$REPO_ROOT/web"
-if [[ "${SKIP_BUILD:-}" != "1" ]]; then
-  step "building the web app"
-  env "${BUILD_ENV[@]}" VITE_CONTRIBUTOR_KITS="{\"${CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}" \
-    VITE_DAO_LAUNCH_KITS="{\"${CHAIN_ID}\":\"${KIT}\"}" VITE_WORK_BOUNTIES="{\"${CHAIN_ID}\":\"${BOUNTY}\"}" \
-    VITE_PAYOUTS_FACTORIES="{\"${CHAIN_ID}\":\"${PAYOUTS_FACTORY}\"}" \
-    VITE_REMIX_BONDS="{\"${CHAIN_ID}\":\"${REMIX_BONDS}\"}" VITE_COURTS="{\"${CHAIN_ID}\":\"${COURT}\"}" \
-    VITE_CREATE_TOKENS="{\"${CHAIN_ID}\":\"${CREATE_TOKEN}\"}" VITE_CREATE_FAUCETS="{\"${CHAIN_ID}\":\"${CREATE_FAUCET}\"}" \
-    node_modules/.bin/vite build >/dev/null 2>&1 || fail "web build failed"
+# Where the optional features are, for the build and the spec; the pilot build gets none of them.
+OPTIONAL_BUILD=(VITE_DAO_LAUNCH_KITS="{\"${CHAIN_ID}\":\"${KIT}\"}" VITE_WORK_BOUNTIES="{\"${CHAIN_ID}\":\"${BOUNTY}\"}"
+  VITE_PAYOUTS_FACTORIES="{\"${CHAIN_ID}\":\"${PAYOUTS_FACTORY}\"}"
+  VITE_REMIX_BONDS="{\"${CHAIN_ID}\":\"${REMIX_BONDS}\"}" VITE_COURTS="{\"${CHAIN_ID}\":\"${COURT}\"}"
+  VITE_CREATE_TOKENS="{\"${CHAIN_ID}\":\"${CREATE_TOKEN}\"}" VITE_CREATE_FAUCETS="{\"${CHAIN_ID}\":\"${CREATE_FAUCET}\"}")
+OPTIONAL_SPEC=(E2E_BOUNTY="$BOUNTY" E2E_PAYOUTS="$PAYOUTS_FACTORY" E2E_REMIX_BONDS="$REMIX_BONDS" E2E_CREATE_FAUCET="$CREATE_FAUCET")
+BUILD_NOTE=""
+SPEC_NOTE=""
+if [[ "${PILOT_BUILD:-}" == "1" ]]; then
+  # What the hosted image's Dockerfile takes, and nothing else (deploy-env-image.test.mjs keeps that list).
+  OPTIONAL_BUILD=(VITE_CONTRIBUTOR_ONLY=1 VITE_ZERODEV_PROJECT_ID=fork-stand-in VITE_ZERODEV_CHAIN_ID="$CHAIN_ID")
+  # The spec reads this to expect the pilot build's words where they differ (the Start page's "How Shares work").
+  OPTIONAL_SPEC=(E2E_PILOT_BUILD=1)
+  BUILD_NOTE=" as the hosted contributor-only image builds it"
+  SPEC_NOTE=" (contributor steps only: the optional features are not named)"
 fi
-step "running the browser spec"
+OUT_DIR=()
+[[ -n "${E2E_DIST:-}" ]] && OUT_DIR=(--outDir "$E2E_DIST" --emptyOutDir)
+if [[ "${SKIP_BUILD:-}" != "1" ]]; then
+  step "building the web app${BUILD_NOTE}"
+  # env -i keeps any VITE_ setting from the caller's shell out of the build, so the pilot build has only what is named.
+  env -i PATH="$PATH" HOME="$HOME" "${BUILD_ENV[@]}" VITE_CONTRIBUTOR_KITS="{\"${CHAIN_ID}\":\"${CONTRIBUTOR_KIT}\"}" \
+    "${OPTIONAL_BUILD[@]}" node_modules/.bin/vite build ${OUT_DIR[@]+"${OUT_DIR[@]}"} >"$STATE/web-build.log" 2>&1 \
+    || { tail -20 "$STATE/web-build.log"; fail "web build failed"; }
+fi
+step "running the browser spec${SPEC_NOTE}"
 FIRST_BLOCK="$(cast block-number --rpc-url "$RPC")"
-E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_BOUNTY="$BOUNTY" E2E_PAYOUTS="$PAYOUTS_FACTORY" E2E_REMIX_BONDS="$REMIX_BONDS" E2E_CREATE_FAUCET="$CREATE_FAUCET" E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" \
+env E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" ${OPTIONAL_SPEC[@]+"${OPTIONAL_SPEC[@]}"} E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" \
   E2E_CONTRIBUTOR="$CONTRIBUTOR" E2E_MANAGER="$MANAGER" E2E_FOUNDER="$FOUNDER" \
   node_modules/.bin/playwright test tests/e2e/contributor-journey.spec.ts --project=smoke --reporter=list "$@"
 

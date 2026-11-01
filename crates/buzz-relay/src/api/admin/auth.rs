@@ -30,6 +30,12 @@
 //! Config outranks DB: a `relay_operators` DB row for a config-backed
 //! Operator pubkey is ignored; it never demotes a config grant.
 //!
+//! ## Origin
+//!
+//! A request carrying an `Origin` header must come from the admin origin, or,
+//! for a signed staff member only, from one of this deployment's community
+//! hosts (the web app's escalated-reports list for the server's operators).
+//!
 //! # disabled mode (network-trusted, read-only)
 //!
 //! `authorize()` checks no credential and returns
@@ -235,12 +241,23 @@ pub async fn authorize(
     if !is_admin_host(state, headers) {
         return Err(ApiError::forbidden());
     }
-    if headers.get(header::ORIGIN).is_some_and(|origin| {
-        origin
-            .to_str()
-            .map_or(true, |origin| !origin_matches_host(origin, &config.host))
-    }) {
-        return Err(ApiError::forbidden());
+    if let Some(origin) = headers.get(header::ORIGIN) {
+        let allowed = match origin.to_str() {
+            Err(_) => false,
+            Ok(origin) if origin_matches_host(origin, &config.host) => true,
+            // A signed staff member may also call from the web app on one of
+            // this deployment's own communities (its escalated-reports list).
+            // The credential is a per-request signature, never ambient, so the
+            // page's origin adds no authority; `disabled` mode, where the
+            // network is the only credential, keeps the admin origin alone.
+            Ok(origin) => {
+                matches!(access, AdminAccess::Staff(_))
+                    && origin_is_deployment_community(state, origin).await
+            }
+        };
+        if !allowed {
+            return Err(ApiError::forbidden());
+        }
     }
 
     // Claim the NIP-98 replay ID only after Host and Origin validation succeed,
@@ -524,6 +541,26 @@ fn nostr_credential(value: &str) -> Option<&str> {
         .filter(|c| !c.is_empty())
 }
 
+/// Whether `origin` is one of this deployment's community hosts, with the
+/// scheme that host is served on. A failed lookup fails closed (a refusal,
+/// like every other unbound host), and is logged.
+async fn origin_is_deployment_community(state: &AppState, origin: &str) -> bool {
+    let Some((_, host)) = origin.split_once("://") else {
+        return false;
+    };
+    if host.is_empty() || host.contains('/') || !origin_matches_host(origin, host) {
+        return false;
+    }
+    match crate::tenant::bind_community(&state.db, host).await {
+        Ok(_) => true,
+        Err(crate::tenant::BindError::UnmappedHost) => false,
+        Err(crate::tenant::BindError::Lookup(error)) => {
+            tracing::warn!(%error, "admin origin: community lookup failed");
+            false
+        }
+    }
+}
+
 fn origin_matches_host(origin: &str, host: &str) -> bool {
     // The scheme is matched exactly — https:// for non-loopback, http:// for
     // loopback. Accepting either scheme for non-loopback would allow plaintext
@@ -773,3 +810,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "origin_tests.rs"]
+mod origin_tests;

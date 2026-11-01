@@ -55,6 +55,24 @@ struct KitChallengeTerms {
     uint128 deposit;
 }
 
+/// @dev The two executor reads this file pins (the shared `IExecutor` mirror does not carry them).
+interface IExecutorReserve {
+    function reserveBps() external view returns (uint16);
+    function graduations(address auction)
+        external
+        view
+        returns (
+            uint256 initialPriceX96,
+            uint256 tokensSold,
+            uint256 currencyRaised,
+            uint256 reserveEscrow,
+            uint256 treasuryShare,
+            uint256 unsoldTokens,
+            address tokenMasterPool,
+            bool executed
+        );
+}
+
 interface IKit {
     function launch(KitParams calldata p) external returns (address dao, address executor, address auction);
     function launchChallenged(KitParams calldata p, KitChallengeTerms calldata c)
@@ -180,7 +198,7 @@ contract DaoLaunchKitTest is Test {
         p.reviewQuorum = 2;
         p.panelCurrency = address(currency);
         p.panelExpires = uint64(block.timestamp + 730 days);
-        p.daoShares = 100e18; // the DAO's own reserve (at most 20%), outside voting and outside exits
+        p.daoShares = 100e18; // the DAO's own Shares allocation (at most 20%), outside voting and outside exits
         p.saleSupply = SALE;
         p.auctionConfig = _config(executor);
         p.auctionSalt = salt;
@@ -440,8 +458,18 @@ contract DaoLaunchKitTest is Test {
         uint256 bobBid = _bid(address(auction), bob, 320e18, 4 * Q96, 2 * Q96);
         vm.roll(END_BLOCK + 1);
         auction.checkpoint();
+        // The kit builds its executor with no currency reserve (outside review A 5.1, critique 3): nothing is escrowed for a
+        // pool, so the whole raise goes to the DAO at graduation and none of it waits on `releaseReserve`.
+        assertEq(IExecutorReserve(address(executor)).reserveBps(), 0, "the kit's executor keeps no currency reserve");
         executor.executeGraduation(address(auction));
-        assertEq(currency.balanceOf(address(dao)), 1200e18, "the raise is the DAO's: the 600 on sale at 2");
+        (,, uint256 raised, uint256 escrowed, uint256 toTreasury,,, bool executed) =
+            IExecutorReserve(address(executor)).graduations(address(auction));
+        assertTrue(executed);
+        assertEq(raised, 1200e18, "the auction raised the 600 on sale at 2");
+        assertEq(escrowed, 0, "nothing is held back as a reserve");
+        assertEq(toTreasury, raised, "the treasury's share is the whole raise");
+        assertEq(currency.balanceOf(address(dao)), raised, "and the DAO received all of it");
+        assertEq(currency.balanceOf(address(executor)), 0, "the executor keeps none of the raise");
         assertEq(currency.balanceOf(founder), 0);
         vm.roll(END_BLOCK + 2);
         vm.prank(bob);

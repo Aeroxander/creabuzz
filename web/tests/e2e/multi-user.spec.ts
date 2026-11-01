@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Cross-user behaviour: two clients, one relay.
@@ -54,8 +54,8 @@ test("a page published in one client reaches the other live", async ({
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
-  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
-  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await author.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(author.getByText("No messages yet")).toBeVisible();
 
   // The reader subscribes; the author posts.
@@ -97,8 +97,8 @@ test("a mention from another user raises the notification bell", async ({
   relay.seed(channelEvent());
   await relay.install(reader);
   await relay.install(author);
-  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
-  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
+  await author.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(reader.getByTestId("content-pane")).toBeVisible();
 
   // Another user mentions the reader.
@@ -140,8 +140,8 @@ test("an edit and a reaction reach the other client live", async ({
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
-  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
-  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await author.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await author.getByTestId("composer-input").fill("Original wording");
   await author.getByTestId("composer-send").click();
@@ -187,8 +187,8 @@ test("a task created by one client appears on the other's board", async ({
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
-  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
-  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await author.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await author.getByTestId("work-toggle").click();
   await reader.getByTestId("work-toggle").click();
@@ -220,8 +220,8 @@ test("a client recovers after its connection drops", async ({ browser }) => {
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
-  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
-  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await author.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await author.getByTestId("composer-input").fill("Before the drop");
   await author.getByTestId("composer-send").click();
@@ -262,8 +262,8 @@ test("a page deleted by one client disappears for the other", async ({
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
-  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
-  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await author.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await author.getByTestId("wiki-toggle").click();
   await author.getByTestId("wiki-new-page").click();
@@ -309,8 +309,8 @@ test("a deleted message disappears for the other client", async ({
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
-  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
-  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await author.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await author.getByTestId("composer-input").fill("Delete me");
   await author.getByTestId("composer-send").click();
@@ -360,7 +360,7 @@ test("the composer suggests people seen in the channel, not just agents", async 
     sig: "sig",
   });
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByText("Hello from Alice")).toBeVisible();
 
   const composer = page.getByTestId("composer-input");
@@ -385,8 +385,8 @@ test("a reply appears threaded for the other client", async ({ browser }) => {
   relay.seed(channelEvent());
   await relay.install(author);
   await relay.install(reader);
-  await author.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
-  await reader.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await author.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
+  await reader.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await author.getByTestId("composer-input").fill("Root message");
   await author.getByTestId("composer-send").click();
@@ -456,7 +456,7 @@ test("an author without a profile does not borrow someone else's name", async ({
     sig: "sig",
   });
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   const aliceRow = page
     .getByTestId("message-row")
@@ -486,7 +486,7 @@ test("an accept-then-close relay backs off instead of looping once a second", as
   await page.addInitScript(() => {
     Math.random = () => 0.5;
   });
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByTestId("composer-input")).toBeVisible({
     timeout: 15_000,
   });
@@ -529,7 +529,7 @@ test("a relay that drops the history query reports a failure, not an empty chann
   relay.setClosingSockets((filter) => filter?.kinds?.includes(9) ?? false);
 
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await expect(page.getByTestId("timeline-load-error")).toBeVisible({
     timeout: 20_000,
@@ -546,7 +546,7 @@ test("a wiki page query the relay drops is reported, not shown as no pages", asy
   relay.setClosingSockets((filter) => filter?.kinds?.includes(44001) ?? false);
 
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("wiki-toggle").click();
 
   await expect(page.getByTestId("wiki-load-error")).toBeVisible({
@@ -571,7 +571,7 @@ test("an attachment over the limit is refused without an upload attempt", async 
     if (request.url().includes("/upload")) uploads.push(request.url());
   });
 
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByTestId("composer-input")).toBeVisible({
     timeout: 15_000,
   });
@@ -610,7 +610,7 @@ test("a relay that answers only after NIP-42 still serves the channel history", 
   });
 
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await expect(page.getByText("Seeded before the race")).toBeVisible({
     timeout: 20_000,
@@ -629,7 +629,7 @@ test("a live subscription survives arriving before the AUTH handshake", async ({
 
   await withAccount(page, AUTHOR_KEY);
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByTestId("composer-input")).toBeVisible({
     timeout: 20_000,
   });
@@ -673,7 +673,7 @@ test("older messages can be read past the first page", async ({ page }) => {
     relay.seed(historyMessage(index));
 
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await expect(page.getByText("history message 70")).toBeVisible({
     timeout: 15_000,
@@ -706,7 +706,7 @@ test("an older page the relay drops is reported, not silently absent", async ({
   relay.setClosingSockets((filter) => typeof filter?.until === "number");
 
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByText("history message 70")).toBeVisible({
     timeout: 15_000,
   });
@@ -736,7 +736,7 @@ test("a wiki save does not write blind when the relay read fails", async ({
   });
 
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("wiki-toggle").click();
   await page.getByTestId("knowledge-page-shared-page").click();
   const editor = page.getByTestId("wiki-wysiwyg").locator(".ProseMirror");
@@ -790,7 +790,7 @@ test("a wiki delete the relay cannot confirm is not reported as done", async ({
   });
 
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("wiki-toggle").click();
   await page.getByTestId("knowledge-page-doomed-page").click();
   await expect(
@@ -845,7 +845,7 @@ test("a mention reaches the bell when the relay enforces its p-gate", async ({
     [meNsec],
   );
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByTestId("composer-input")).toBeVisible({
     timeout: 15_000,
   });
@@ -891,7 +891,7 @@ test("a locked passkey identity does not mint a second key", async ({
     window.localStorage.removeItem("buzz.identity.nsec");
   });
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await page.waitForTimeout(4_000);
   const stored = await page.evaluate(() =>
@@ -933,7 +933,7 @@ test("a community with more channels than one page can be paged", async ({
   }
 
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await expect(page.getByTestId("channel-room-210")).toBeVisible({
     timeout: 15_000,
@@ -965,7 +965,7 @@ test("an archived community explains why its channels do not load", async ({
       body: JSON.stringify({
         communities: [
           {
-            host: "retired.example.com",
+            host: COMMUNITY_HOST,
             name: "Retired",
             description: "No longer served.",
             icon: null,
@@ -977,7 +977,7 @@ test("an archived community explains why its channels do not load", async ({
     });
   });
 
-  await page.goto(`/c/retired.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await expect(page.getByText(/This community is archived/)).toBeVisible({
     timeout: 20_000,
   });
@@ -1051,7 +1051,7 @@ test("reactions and edits do not appear as threaded replies", async ({
   });
 
   await relay.install(page);
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
 
   await expect(page.getByText("The edited message")).toBeVisible({
     timeout: 15_000,
@@ -1085,7 +1085,7 @@ test("a wiki page has an address that survives a reload", async ({ page }) => {
   // Read the clipboard rather than trusting the toast: it proves the copied URL
   // carries both parameters.
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.goto(`/c/alpha.example.com?view=wiki&page=release-plan`);
+  await page.goto(`/c/${COMMUNITY_HOST}?view=wiki&page=release-plan`);
 
   // The URL selects the page, not just the wiki surface.
   await expect(page.getByTestId("knowledge-page-release-plan")).toHaveAttribute(
@@ -1158,7 +1158,7 @@ test("search covers wiki pages and a hit opens the page", async ({ page }) => {
     });
   });
 
-  await page.goto(`/c/alpha.example.com?channel=${CHANNEL_ID}`);
+  await page.goto(`/c/${COMMUNITY_HOST}?channel=${CHANNEL_ID}`);
   await page.getByTestId("search-input").fill("treasury");
   await page.keyboard.press("Enter");
 

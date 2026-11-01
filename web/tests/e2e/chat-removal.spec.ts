@@ -3,7 +3,7 @@ import { getPublicKey } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll } from "../helpers/layout";
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Removing someone else's chat message, as a room's moderators do it and as every other reader sees it. The server's own
@@ -75,7 +75,7 @@ async function openRoom(page: Page, relay: Relay) {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
     window.localStorage.setItem("buzz.identity.backedUp", "1");
   }, NSEC);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("channel-general").click();
   await expect(page.getByText("Buy my coin at example dot com")).toBeVisible({
@@ -300,7 +300,7 @@ test("on a phone the message actions are there without hovering, and the page do
     window.localStorage.setItem("buzz.identity.nsec", nsec);
     window.localStorage.setItem("buzz.identity.backedUp", "1");
   }, NSEC);
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
   await page.getByTestId("open-channel-list").click();
   await page.getByTestId("channel-general").click();

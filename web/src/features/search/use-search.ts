@@ -13,7 +13,7 @@ import { COMMUNITY_SEARCH_KINDS, ROOM_SEARCH_KINDS } from "./lib/search-hits";
 export function useSearch(term: string, channelIds: string[]) {
   return useQuery({
     queryKey: ["search", term, [...channelIds].sort().join(",")],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       // Two filters, deliberately: the relay's scoping invariant walls
       // channel-scoped and community-global events off from each other, so a
       // single `#h`-scoped filter can never return a wiki page.
@@ -28,7 +28,8 @@ export function useSearch(term: string, channelIds: string[]) {
           : { kinds: ROOM_SEARCH_KINDS, search: term, limit: 25 },
         { kinds: COMMUNITY_SEARCH_KINDS, search: term, limit: 25 },
       ];
-      const results = await queryEventsHttp(filters);
+      // A superseded search (a newer term) stops quietly instead of finishing for nobody.
+      const results = await queryEventsHttp(filters, { signal });
       // The same event can match both filters: key by id, newest first.
       const byId = new Map(results.map((event) => [event.id, event]));
       return [...byId.values()].sort((a, b) => b.created_at - a.created_at);

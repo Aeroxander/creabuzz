@@ -22,7 +22,11 @@ import {
   networkLabel,
 } from "@/features/launchpad/chain";
 import { usdcAddress } from "@creaton/core/launchpad/sale-currency.ts";
-import { StepRevertedError } from "@/features/launchpad/lib/acting-account";
+import {
+  feesCoveredOn,
+  passkeyChainId,
+  StepRevertedError,
+} from "@/features/launchpad/lib/acting-account";
 import { useActingAccount } from "@/features/launchpad/use-acting-account";
 import {
   useCreateLaunch,
@@ -155,7 +159,7 @@ export function useContributorStart() {
         me,
         signingBlocked,
         projects,
-        wallet,
+        wallet: { ...wallet, passkeyFeesOn: feesCoveredOn(passkeyChainId()) },
         label: networkLabel,
       }),
     [

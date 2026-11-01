@@ -1,7 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
-import { createMockRelay } from "./mock-relay";
+import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
  * Account safety around passkey sign-in (suite review 2026-11-01, quick wins 2 and 3).
@@ -16,6 +16,27 @@ const ME = getPublicKey(
   Uint8Array.from(NSEC.match(/.{2}/g) ?? [], (b) => Number.parseInt(b, 16)),
 );
 const OTHER_NSEC = "78".repeat(32);
+
+// WebAuthn needs the `localhost` origin (Chrome refuses IP-literal ones); the mock server answers on 127.0.0.1.
+const PORT = process.env.E2E_PORT ?? "4173";
+const LOCALHOST = `http://localhost:${PORT}`;
+
+/** Chrome's virtual authenticator with PRF: a real passkey ceremony in a production build. */
+async function addVirtualAuthenticator(page: Page) {
+  const client = await page.context().newCDPSession(page);
+  await client.send("WebAuthn.enable");
+  await client.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+      hasPrf: true,
+    },
+  });
+}
 
 test("the unlock overlay prompts once, and the recovery key gets the person in", async ({
   page,
@@ -55,7 +76,7 @@ test("the unlock overlay prompts once, and the recovery key gets the person in",
     },
     { nsec: NSEC, me: ME },
   );
-  await page.goto("/c/alpha.example.com");
+  await page.goto(`/c/${COMMUNITY_HOST}`);
 
   await expect(page.getByTestId("passkey-unlock-error")).toBeVisible({
     timeout: 20_000,
@@ -105,13 +126,15 @@ test("the unlock overlay prompts once, and the recovery key gets the person in",
 test("removing passkey sign-in asks first, and offers the recovery key when the account would be lost", async ({
   page,
 }) => {
+  // A passkey with PRF output: a passkey-only account, whose key exists only through the passkey.
+  await addVirtualAuthenticator(page);
   const relay = createMockRelay();
   await relay.install(page);
-  // The module's dev ceremony with PRF output: a passkey-only account, whose key exists only through the passkey.
-  await page.addInitScript(() =>
-    sessionStorage.setItem("buzz.passkey.mock", "1"),
+  await page.addInitScript(
+    (url) => localStorage.setItem("buzz.relayUrl", url),
+    `ws://127.0.0.1:${PORT}`,
   );
-  await page.goto("/");
+  await page.goto(`${LOCALHOST}/`);
   await page.getByTestId("create-identity-cta").first().click();
   await page.getByTestId("onboarding-name").fill("Prf Person");
   await page.getByTestId("onboarding-passkey").click();

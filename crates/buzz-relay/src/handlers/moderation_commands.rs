@@ -185,12 +185,15 @@ async fn handle_ban(
     // This runs before the audit insert, so an audit failure cannot leave the
     // banned member connected. A failed owned-agent lookup is still reported
     // (after the notice below) instead of claiming success.
+    // The refusal says when the ban ends and why. The banned person's agents
+    // are closed by this same disconnect and get the same words: they belong
+    // to that person. (Their later auth and write refusals are the plain one.)
     let revoked = state
         .revoke_live_access(
             tenant,
             &target,
             &event.id.to_hex(),
-            "blocked: you are banned from this community",
+            &super::auth::ban_refusal(expires_at, reason.as_deref()),
         )
         .await;
 

@@ -9,6 +9,11 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
+import {
+  isServerTimeout,
+  SERVER_DID_NOT_ANSWER,
+  timedFetchStreamed,
+} from "@/shared/lib/timed-fetch";
 import type { Access } from "./lib/access";
 import {
   DEFAULT_LIMITS,
@@ -38,10 +43,14 @@ const OFF: SelfServeStatus = {
   limits: DEFAULT_LIMITS,
 };
 
-async function fetchStatus(): Promise<SelfServeStatus> {
+async function fetchStatus({
+  signal,
+}: {
+  signal?: AbortSignal;
+} = {}): Promise<SelfServeStatus> {
   const origin = apiOrigin();
   if (!origin) return OFF;
-  const response = await fetch(`${origin}${PATH}`);
+  const response = await timedFetchStreamed(`${origin}${PATH}`, { signal });
   // A server that predates the feature has no such route. That is "not offered", not a failure.
   if (response.status === 404) return OFF;
   if (!response.ok) throw new Error(`server responded ${response.status}`);
@@ -121,15 +130,17 @@ export async function createCommunity(
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await timedFetchStreamed(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: auth },
       body,
     });
-  } catch {
+  } catch (error) {
     throw new CreateCommunityError(
       "network",
-      "Could not reach the server. Check your connection and try again.",
+      isServerTimeout(error)
+        ? SERVER_DID_NOT_ANSWER
+        : "Could not reach the server. Check your connection and try again.",
     );
   }
 

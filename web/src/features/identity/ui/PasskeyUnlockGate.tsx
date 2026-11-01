@@ -28,7 +28,7 @@ import { type FailureWords, errorMessage } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
 import { FailureNote } from "@/shared/ui/failure-note";
-import { Overlay } from "@/shared/ui/portal";
+import { IdentityDialog } from "./IdentityDialog";
 
 export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
   const [unlocking, setUnlocking] = useState(false);
@@ -42,6 +42,7 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
   // The auto-prompt runs once per mount: `unlock` is a new closure every render, and depending on it started ceremony
   // after ceremony (a cancelled prompt came straight back).
   const autoPrompted = useRef(false);
+  const keyInputRef = useRef<HTMLInputElement | null>(null);
 
   const unlock = async () => {
     setUnlocking(true);
@@ -68,6 +69,11 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
     // Auto-prompt once on boot; the touch gates the session. After that the person chooses: Unlock, the key, or sign out.
     void unlock();
   }, [needed]);
+
+  // Opening the recovery-key form replaces the button that opened it: take focus to the field instead of losing it.
+  useEffect(() => {
+    if (showKeyForm) keyInputRef.current?.focus();
+  }, [showKeyForm]);
 
   const unlockWithKey = () => {
     const hex = parseRecoveryKey(key);
@@ -102,12 +108,21 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
   if (!needed) return <>{children}</>;
 
   return (
-    <Overlay className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-4 dark:bg-black/50">
-      <div className="w-full max-w-sm rounded-3xl bg-background p-6 text-center shadow-2xl">
+    <IdentityDialog
+      cardClassName="w-full max-w-sm rounded-3xl bg-background p-6 text-center shadow-2xl"
+      // Focus starts on the dialog itself, and returns there when Unlock disappears while the passkey is asked.
+      labelledBy="passkey-unlock-title"
+      refocusKey={unlocking}
+      testId="passkey-unlock-dialog"
+    >
+      <div>
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
           <Fingerprint className="h-6 w-6 text-black/60 dark:text-white/60" />
         </div>
-        <h1 className="mt-3 text-lg font-semibold text-black dark:text-white">
+        <h1
+          className="mt-3 text-lg font-semibold text-black dark:text-white"
+          id="passkey-unlock-title"
+        >
           {unlocking ? "Waiting for your passkey…" : "Sign in with passkey"}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -156,6 +171,7 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
               className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-xs"
               data-testid="passkey-unlock-key"
               id="passkey-unlock-key"
+              ref={keyInputRef}
               onChange={(event) => {
                 setKey(event.target.value);
                 setKeyProblem(null);
@@ -213,6 +229,6 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
         open={confirmSignOut}
         title="Sign out of this browser?"
       />
-    </Overlay>
+    </IdentityDialog>
   );
 }

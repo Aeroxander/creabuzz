@@ -370,10 +370,13 @@ contract ClaimStake {
 
     /// @notice After release, the contributor withdraws the approved payout
     /// (out of this claim's own reservation) and their stake. One-shot.
+    /// A claim that asks for no money can be finished by anyone once its window
+    /// has passed (the DAO's award does it in the same call): finishing it moves
+    /// nothing but the stake, and that still goes only to the contributor.
     function payout(bytes32 claimId) external {
         MilestoneClaim storage claim = claims[claimId];
         if (claim.status != Status.Approved) revert NotOpen(claimId);
-        if (msg.sender != claim.contributor) revert NotContributor();
+        if (msg.sender != claim.contributor && claim.amount != 0) revert NotContributor();
         // G13: nothing is paid while a challenge could still land. `freeze`
         // works throughout this window, so the pause has teeth rather than
         // being a timer nobody can act on.
@@ -383,9 +386,13 @@ contract ClaimStake {
         if (reserved < claim.amount) revert Underfunded(claimId, reserved, claim.amount);
         claim.status = Status.Paid;
         funded[claimId] = reserved - claim.amount;
-        uint256 total = claim.amount + claim.stake;
-        if (total != 0) currency.safeTransfer(claim.contributor, total);
         emit ClaimPaid(claimId);
+        if (claim.amount == 0) {
+            // Whoever finishes it, a currency that refuses the contributor cannot hold it up: the stake waits in `owed`.
+            _payOrOwe(claim.contributor, claim.stake);
+        } else {
+            currency.safeTransfer(claim.contributor, claim.amount + claim.stake);
+        }
     }
 
     error NotContributor();

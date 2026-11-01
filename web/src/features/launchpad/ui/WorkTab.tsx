@@ -5,6 +5,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import type { SponsorIntent } from "../lib/sponsor";
 import { useContributions } from "../use-contributions";
 import { SuggestedWork } from "./SuggestedWork";
+import { UnreadableVotesNote } from "./UnreadableVotesNote";
 import { PendingWordsNote } from "./PendingWordsNote";
 import { WaysToHelp } from "./WaysToHelp";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -357,6 +358,7 @@ export function WorkTab({
         />
       ) : null}
 
+      <UnreadableVotesNote decisions={decisions.data?.decisions ?? []} />
       <SuggestedWork
         approved={approvedProjects}
         chainId={launch.record.chainId ?? null}
@@ -758,6 +760,9 @@ function MandateCard({
                   {step.kind === "stuck" && step.lapsesAt > 0
                     ? ` Its deadline is ${date(step.lapsesAt)}.`
                     : null}
+                  {step.kind === "none" && step.readyAt !== undefined
+                    ? ` The window ends on ${date(step.readyAt)}.`
+                    : null}
                 </p>
                 <ClaimReviewNote
                   labelOf={labelOf}
@@ -825,7 +830,7 @@ function MandateCard({
                               void onSend(
                                 `bind-${claim.id}`,
                                 mandate.address,
-                                bindData(
+                                encodeBind(
                                   project.id,
                                   claim.id,
                                   claim.record.contributor,
@@ -991,8 +996,4 @@ function waitingFor(
   return name && !name.startsWith("0x")
     ? `Waiting for ${name} to accept it for review.`
     : step.text;
-}
-
-function bindData(projectId: string, claimId: string, contributor: string) {
-  return encodeBind(projectId, claimId, contributor);
 }

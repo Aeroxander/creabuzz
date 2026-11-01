@@ -9,7 +9,7 @@
 import * as React from "react";
 
 import { useAgentRoster } from "@/features/fleet/use-agent-roster";
-import { beyondContributorProjects } from "@/app/lib/build-gates";
+import { notContributorOnlyBuild } from "@/app/lib/build-gates";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import {
@@ -387,7 +387,7 @@ export function CreateChannelDialog({
           </div>
 
           {/* AI helpers need an AI service a contributor-only build's server does not run: no picker for them there. */}
-          {beyondContributorProjects() ? (
+          {notContributorOnlyBuild() ? (
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">Who joins</legend>
               <p className="text-xs text-black/60 dark:text-white/60">

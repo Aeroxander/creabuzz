@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { Card } from "@/shared/ui/card";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
 import {
   type CheckedClause,
   type EnforcedClause,
@@ -20,8 +21,13 @@ import { getRpcEndpoint } from "../chain";
 export function EnforcementCard({ dao }: { dao: string }) {
   const doc = useQuery({
     queryKey: ["dao-json", relayHttpBaseUrl(), dao],
-    queryFn: async (): Promise<EnforcedClause[] | null> => {
-      const response = await fetch(`${relayHttpBaseUrl()}/dao.json`);
+    queryFn: async ({ signal }): Promise<EnforcedClause[] | null> => {
+      const response = await timedFetchStreamed(
+        `${relayHttpBaseUrl()}/dao.json`,
+        {
+          signal,
+        },
+      );
       if (!response.ok) return null;
       const body: unknown = await response.json();
       const register = (body as { extensions?: Record<string, unknown> })

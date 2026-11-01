@@ -33,7 +33,7 @@ const view = {
 };
 
 test("where funding terms stand, in one sentence each", () => {
-  assert.match(fundingStateLine("none", null), /sells no new units/);
+  assert.match(fundingStateLine("none", null), /sells no new shares/);
   assert.equal(
     fundingStateLine("notice", view),
     "Funding terms were published. Sales can start from Dec 1, 2026.",
@@ -41,7 +41,7 @@ test("where funding terms stand, in one sentence each", () => {
   assert.match(fundingStateLine("ready", view), /no sale is open/);
   assert.equal(
     fundingStateLine("selling", view),
-    "On sale for the project: 40 new units at 1.1 USDC each or more, until Jan 31, 2027.",
+    "On sale for the project: 40 new non-voting shares at 1.1 USDC each or more, until Jan 31, 2027.",
   );
   assert.equal(soldLine(view), "40 sold of a current funding limit of 100");
   const notes = beforeYouBuy(view);
@@ -49,7 +49,7 @@ test("where funding terms stand, in one sentence each", () => {
   assert.match(notes[1], /no yearly limit/);
   assert.match(notes[2], /can leave with part of the money raised/);
   assert.match(notes[3], /no milestone locks/);
-  assert.match(notes[4], /Loot/);
+  assert.match(notes[4], /^You get non-voting shares: .* but no vote/);
   assert.match(notes[5], /^Leaving keeps 2% of what it pays in the treasury/);
   assert.match(
     beforeYouBuy({ ...view, exitFeeBps: 0 })[5],
@@ -57,7 +57,10 @@ test("where funding terms stand, in one sentence each", () => {
   );
   assert.equal(exitFeeLine(250), "Exit fee 2.5%");
   assert.equal(exitFeeLine(0), "No exit fee");
-  assert.equal(instrumentLine(false), "Buyers get Loot, with no vote");
+  assert.equal(
+    instrumentLine(false),
+    "Buyers get non-voting shares, with no vote",
+  );
   assert.equal(instrumentLine(true), "Buyers get Shares, with a vote");
 });
 
@@ -77,7 +80,7 @@ test("a cap and a sale are turned into what the vote carries, or a reason they c
   });
   assert.match(
     salePlan("61", "1", "60", 0, 60n * E18).problem,
-    /allow 60 more units/,
+    /allow 60 more shares/,
   );
   assert.match(salePlan("1", "0", "60", 0, 60n * E18).problem, /least price/);
   assert.match(salePlan("1", "1", "0", 0, 60n * E18).problem, /1 to 365 days/);

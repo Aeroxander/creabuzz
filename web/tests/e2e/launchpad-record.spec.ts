@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
+import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
  * A DAO's public track record, for a DAO that moved MONEY, against a REAL local chain.
@@ -61,7 +62,7 @@ const record = {
 };
 
 async function openRecord(page: Page) {
-  await page.routeWebSocket(/127\.0\.0\.1:4173/, (ws) => {
+  await page.routeWebSocket(PREVIEW_ORIGIN, (ws) => {
     ws.onMessage((message) => {
       let parsed: unknown;
       try {
