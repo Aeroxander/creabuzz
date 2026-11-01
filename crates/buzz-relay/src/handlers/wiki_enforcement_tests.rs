@@ -114,7 +114,9 @@ async fn pg_pool() -> (sqlx::PgPool, Uuid) {
         .await
         .expect("connect wiki governance test database");
     let db = buzz_db::Db::from_pool(pool.clone());
-    db.migrate().await.expect("migrate test database");
+    if std::env::var("BUZZ_TEST_SCHEMA_MODE").as_deref() != Ok("desired") {
+        db.migrate().await.expect("migrate test database");
+    }
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
         .bind(id)

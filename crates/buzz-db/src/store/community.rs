@@ -990,6 +990,7 @@ mod postgres_tests {
     /// An invite-only community is not in the public directory, and is again once it is opened. An open one on the
     /// same server stays listed. Mutation: drop the filter from the query → RED.
     #[tokio::test]
+    #[ignore = "requires Postgres"]
     async fn the_public_directory_leaves_out_invite_only_communities() {
         let db = setup_db().await;
         let owner = "ab".repeat(32);
@@ -1031,6 +1032,7 @@ mod postgres_tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires Postgres"]
     async fn list_directory_communities_reports_public_aggregates_only() {
         let db = setup_db().await;
         let database_url = crate::test_support::database_url();

@@ -307,6 +307,8 @@ fn hierarchical_merge(
 }
 
 /// Run Algorithm 1. Deterministic given scripted ports and `config.seed`.
+// The three data splits and three ports are distinct inputs of Algorithm 1.
+#[allow(clippy::too_many_arguments)]
 pub fn train(
     config: &TrainConfig,
     init_skill: SkillDoc,

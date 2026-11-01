@@ -2409,7 +2409,9 @@ mod track_c_tests {
             .await
             .expect("connect test DB");
         let db = buzz_db::Db::from_pool(pool.clone());
-        db.migrate().await.expect("migrate test DB");
+        if std::env::var("BUZZ_TEST_SCHEMA_MODE").as_deref() != Ok("desired") {
+            db.migrate().await.expect("migrate test DB");
+        }
         let redis_pool = deadpool_redis::Config::from_url(&config.redis_url)
             .create_pool(Some(deadpool_redis::Runtime::Tokio1))
             .expect("redis pool");

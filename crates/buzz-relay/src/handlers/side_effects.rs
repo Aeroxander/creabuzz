@@ -391,7 +391,7 @@ pub async fn validate_standard_deletion_event(
                 .iter()
                 .find(|t| t.kind().to_string() == "a")
                 .and_then(|t| t.content())
-                .and_then(|a| a.splitn(3, ':').next())
+                .and_then(|a| a.split(':').next())
                 .and_then(wiki_page_deletion_kind)
                 .is_some();
         if !wiki_a_target {

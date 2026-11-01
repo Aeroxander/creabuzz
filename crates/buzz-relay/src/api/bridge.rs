@@ -2317,6 +2317,7 @@ fn search_hit_accepted(
 
 /// Handle search filters by routing to Postgres FTS, then fetching full events
 /// from DB. Supports a bridge-only `page` extension over the FTS result set.
+#[allow(clippy::too_many_arguments)] // one caller; the reader's scope and identity are separate inputs
 async fn handle_bridge_search(
     state: &AppState,
     raw_filters: &[Value],

@@ -9925,9 +9925,7 @@ mod postgres_tests {
             verifying_contract: EvmAddress::from_bytes([0u8; 20]),
         };
         let digest = attestation.digest(&domain);
-        let (signature, recid) = key
-            .sign_prehash_recoverable(&digest)
-            .expect("attestation signs");
+        let (signature, recid) = key.sign_prehash_recoverable(&digest);
         let mut bytes = signature.to_bytes().to_vec();
         bytes.push(if recid.is_y_odd() { 28 } else { 27 });
         AttestationEnvelope {

@@ -824,10 +824,10 @@ fn fold_corrections(
         if event.kind.as_u16() != buzz_core::kind::KIND_WIKI_PAGE as u16 {
             continue;
         }
-        if !tag_values(event, "d").iter().any(|d| *d == d_tag) {
+        if !tag_values(event, "d").contains(&d_tag) {
             continue;
         }
-        if !tag_values(event, "t").iter().any(|t| *t == t_tag) {
+        if !tag_values(event, "t").contains(&t_tag) {
             continue;
         }
         let author = event.pubkey.to_hex();

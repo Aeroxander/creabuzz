@@ -798,12 +798,16 @@ mod postgres_tests {
         let pool = PgPool::connect(&database_url)
             .await
             .expect("connect test DB");
-        // Apply pending migrations (idempotent) so the newest tables —
-        // including this migration's budget tables — exist.
-        Db::from_pool(pool.clone())
-            .migrate()
-            .await
-            .expect("migrate test DB");
+        // The PostgreSQL lane clones each test database from the desired-state
+        // schema (`BUZZ_TEST_SCHEMA_MODE=desired`), which has no sqlx history,
+        // so migrating it would recreate existing types. Elsewhere (a local dev
+        // database) apply pending migrations so the budget tables exist.
+        if std::env::var("BUZZ_TEST_SCHEMA_MODE").as_deref() != Ok("desired") {
+            Db::from_pool(pool.clone())
+                .migrate()
+                .await
+                .expect("migrate test DB");
+        }
         pool
     }
 

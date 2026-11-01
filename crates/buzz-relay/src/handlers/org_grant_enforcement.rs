@@ -301,7 +301,9 @@ mod postgres_tests {
             .await
             .expect("connect grant enforcement test database");
         let db = buzz_db::Db::from_pool(pool.clone());
-        db.migrate().await.expect("migrate test database");
+        if std::env::var("BUZZ_TEST_SCHEMA_MODE").as_deref() != Ok("desired") {
+            db.migrate().await.expect("migrate test database");
+        }
         let id = uuid::Uuid::new_v4();
         sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
             .bind(id)

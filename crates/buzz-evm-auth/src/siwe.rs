@@ -307,7 +307,11 @@ pub(crate) fn recover_address(
 
     // EIP-2: normalize high-S; recovery parity flips when normalization applies.
     let normalized = sig.normalize_s();
-    let y_parity = if normalized == sig { y_parity } else { !y_parity };
+    let y_parity = if normalized == sig {
+        y_parity
+    } else {
+        !y_parity
+    };
     let sig = normalized;
 
     let recid = RecoveryId::new(y_parity, false);

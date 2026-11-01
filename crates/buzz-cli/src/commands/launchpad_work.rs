@@ -849,7 +849,7 @@ pub fn cmd_mandate(args: &MandateArgs) -> Result<(), CliError> {
     }
     let bond_in_currency = bond_token
         .as_deref()
-        .map_or(true, |t| t.eq_ignore_ascii_case(&currency));
+        .is_none_or(|t| t.eq_ignore_ascii_case(&currency));
     let decimals = match (
         has_cash || (args.reviewer_bond.is_some() && bond_in_currency),
         args.decimals,

@@ -3256,7 +3256,7 @@ async fn replica_floor_writer_transaction_holds_shared_lock() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
-async fn replica_floor_probe_waits_for_shared_writer_and_records_after_release() {
+async fn cluster_global_replica_floor_probe_waits_for_shared_writer_and_records_after_release() {
     let admin = PgPool::connect(&admin_url().await)
         .await
         .expect("connect admin");

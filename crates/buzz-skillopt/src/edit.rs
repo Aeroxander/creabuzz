@@ -312,9 +312,8 @@ mod tests {
         let rewritten = doc.with_slow_update("new guidance");
         assert!(rewritten.as_str().contains("new guidance"));
         assert!(!rewritten.as_str().contains("old guidance"));
-        assert_eq!(
+        assert!(
             rewritten.protected_range().is_some(),
-            true,
             "markers preserved exactly once"
         );
     }

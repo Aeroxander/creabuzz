@@ -1680,6 +1680,7 @@ mod postgres_tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires Postgres — without a database the rejection waits out the pool acquire timeout"]
     async fn a_valid_credential_with_a_mismatched_origin_is_forbidden() {
         let response = status_for(
             test_state().await,
@@ -3255,6 +3256,7 @@ mod postgres_tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires Postgres — without a database the rejection waits out the pool acquire timeout"]
     async fn nip98_mode_wrong_origin_does_not_consume_replay_slot() {
         let keys = nostr::Keys::generate();
         let tracking = Arc::new(TrackingReplayGuard::new());

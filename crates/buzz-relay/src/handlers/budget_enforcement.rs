@@ -309,26 +309,6 @@ struct WindowGroup {
     binding: usize,
 }
 
-/// Check every applicable budget and, when all pass, consume the action.
-///
-/// Budgets are grouped by `window_start` (all budgets on one window share one
-/// counter row). Per group the strictest effective limit binds — a subject
-/// cannot loosen itself by holding a second, looser budget — ties go to a hard
-/// (`onExceed: "reject"`) budget.
-///
-/// 1. **Check** every group's counter against its binding limit. If any is at
-///    or over, return [`BudgetOutcome::Exceeded`] *without consuming
-///    anything*: a rejected action must not burn budget.
-/// 2. **Consume** exactly one unit per group — never one per budget, which
-///    would over-count N x when N budgets share a window. The increment is a
-///    same-call durable write whose failure fails the ingest (never a
-///    fire-and-forget log). The relay store does not expose a transaction
-///    spanning event insert and counter write, so the counter is consumed
-///    before the event is stored — a later storage failure then over-counts
-///    one action, which fails closed (a subject is budget-limited sooner,
-///    never later). A concurrent ingest that races past the check trips the
-///    post-increment guard (`consumed > limit`) and is reported as exceeded;
-///    the counter stands (conservative).
 /// Group budgets by window and pick the strictest effective limit of each
 /// group — the binding budget. Shared by [`enforce_budget_set`] (check and
 /// consume one unit) and the LLM cost meter (check now, consume later).
@@ -390,6 +370,26 @@ fn select_binding(budgets: &[ApplicableLimit], violated: &[usize]) -> usize {
     best
 }
 
+/// Check every applicable budget and, when all pass, consume the action.
+///
+/// Budgets are grouped by `window_start` (all budgets on one window share one
+/// counter row). Per group the strictest effective limit binds — a subject
+/// cannot loosen itself by holding a second, looser budget — ties go to a hard
+/// (`onExceed: "reject"`) budget.
+///
+/// 1. **Check** every group's counter against its binding limit. If any is at
+///    or over, return [`BudgetOutcome::Exceeded`] *without consuming
+///    anything*: a rejected action must not burn budget.
+/// 2. **Consume** exactly one unit per group — never one per budget, which
+///    would over-count N x when N budgets share a window. The increment is a
+///    same-call durable write whose failure fails the ingest (never a
+///    fire-and-forget log). The relay store does not expose a transaction
+///    spanning event insert and counter write, so the counter is consumed
+///    before the event is stored — a later storage failure then over-counts
+///    one action, which fails closed (a subject is budget-limited sooner,
+///    never later). A concurrent ingest that races past the check trips the
+///    post-increment guard (`consumed > limit`) and is reported as exceeded;
+///    the counter stands (conservative).
 async fn enforce_budget_set(
     db: &buzz_db::Db,
     tenant: &TenantContext,
@@ -1096,13 +1096,15 @@ mod postgres_tests {
     /// mapping IS the governance-action gate's vocabulary (S3 HITL).
     #[test]
     fn counter_limit_maps_every_class() {
-        let mut limits = buzz_sdk::BudgetLimits::default();
-        limits.runs = Some(9);
-        limits.governance = Some(buzz_sdk::GovernanceLimits {
-            proposal: Some(1),
-            vote: Some(3),
-            execute: Some(2),
-        });
+        let limits = buzz_sdk::BudgetLimits {
+            runs: Some(9),
+            governance: Some(buzz_sdk::GovernanceLimits {
+                proposal: Some(1),
+                vote: Some(3),
+                execute: Some(2),
+            }),
+            ..Default::default()
+        };
         assert_eq!(counter_limit(&limits, "runs"), Some(9));
         assert_eq!(counter_limit(&limits, "governance_proposal"), Some(1));
         assert_eq!(counter_limit(&limits, "governance_vote"), Some(3));
@@ -1410,7 +1412,9 @@ mod postgres_tests {
             .await
             .expect("connect budget enforcement test database");
         let db = buzz_db::Db::from_pool(pool.clone());
-        db.migrate().await.expect("migrate test database");
+        if std::env::var("BUZZ_TEST_SCHEMA_MODE").as_deref() != Ok("desired") {
+            db.migrate().await.expect("migrate test database");
+        }
         let id = uuid::Uuid::new_v4();
         sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
             .bind(id)

@@ -24,7 +24,7 @@ pub fn learning_rate(
 ) -> usize {
     let l0f = l0 as f64;
     let lminf = lmin as f64;
-    let t = (step.min(total_steps.saturating_sub(1)).max(0)) as f64;
+    let t = step.min(total_steps.saturating_sub(1)) as f64;
     let progress = if total_steps <= 1 {
         1.0
     } else {
