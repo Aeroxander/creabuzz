@@ -64,21 +64,21 @@ const STATUS_WORDS = {
  * cap is the page's own added bound on top of the runner's cut.
  */
 export const CHECK_RUN_MAX_CHECKS = 12;
-export const CHECK_RUN_MAX_ARGV = 8;
+const CHECK_RUN_MAX_ARGV = 8;
 export const CHECK_RUN_ARGV_ENTRY_CAP = 512;
 export const CHECK_RUN_TEXT_CAP = 16_384;
-export const CHECK_RUN_NAME_CAP = 64;
-export const CHECK_RUN_NOTE_CAP = 280;
-export const CHECK_RUN_MAX_LIMITATIONS = 8;
-export const CHECK_RUN_LIMITATION_CAP = 512;
-export const CHECK_RUN_MAX_ARTIFACTS = 16;
-export const CHECK_RUN_WORDS_CAP = 2_000;
+const CHECK_RUN_NAME_CAP = 64;
+const CHECK_RUN_NOTE_CAP = 280;
+const CHECK_RUN_MAX_LIMITATIONS = 8;
+const CHECK_RUN_LIMITATION_CAP = 512;
+const CHECK_RUN_MAX_ARTIFACTS = 16;
+const CHECK_RUN_WORDS_CAP = 2_000;
 
 /** How many records one claim's read brings back, newest first. */
 export const CHECK_RUN_QUERY_LIMIT = 50;
 
 /** The marker a cut answer carries, so no cut text reads as whole. */
-export const CHECK_RUN_CUT_SUFFIX = "…(cut by this page)";
+const CHECK_RUN_CUT_SUFFIX = "…(cut by this page)";
 
 /** A non-empty string, or null. */
 function str(value: unknown): string | null {
@@ -183,7 +183,7 @@ export function parseVerifiedCheckRun(
 }
 
 /** One raw event worth of check-run, as far as a reviewer's page reads it. Signature is the caller's job (`parseVerifiedCheckRun`). */
-export function parseCheckRun(event: {
+function parseCheckRun(event: {
   id: string;
   kind: number;
   pubkey: string;

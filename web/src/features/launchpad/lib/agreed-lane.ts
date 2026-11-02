@@ -46,7 +46,7 @@ export function capabilityHeadline(
 
 // ── one agreement's next step ───────────────────────────────────────────────
 
-export type LaneStepKind =
+type LaneStepKind =
   | "accept"
   | "submit"
   | "corrections"
@@ -261,7 +261,7 @@ export function mayReview(
 }
 
 /** A claim's settlement would pay these wallets and nobody else may judge it. */
-export function reviewPayeesOf(row: AgreementRow | null): string[] {
+function reviewPayeesOf(row: AgreementRow | null): string[] {
   if (row === null || row.kind !== "present") return [];
   return row.split.kind === "declared"
     ? row.split.parties
@@ -459,7 +459,7 @@ function addressOf(value: unknown): string | null {
 }
 
 /** The agreement terms an update carries, only when every field says what it means. */
-export function parseAgreementDescriptor(
+function parseAgreementDescriptor(
   raw: unknown,
 ): Omit<AgreementDescriptor, "eventId" | "author" | "createdAt"> | null {
   if (raw === null || typeof raw !== "object") return null;
@@ -499,7 +499,7 @@ export function parseAgreementDescriptor(
 }
 
 /** The corrections words an update carries, only when they name a real claim. */
-export function parseCorrectionsWords(raw: unknown): {
+function parseCorrectionsWords(raw: unknown): {
   claimId: string;
   mandate: string;
   agreementId: string;

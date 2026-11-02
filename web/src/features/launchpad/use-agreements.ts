@@ -132,7 +132,7 @@ export type AgreementsRead =
  * says, so this seam passes it through (bounded by the build's own history
  * floor inside `ethGetLogs`).
  */
-export function agreementsChain(endpoint: string): AgreementsChain {
+function agreementsChain(endpoint: string): AgreementsChain {
   return {
     call: (to, data) => ethCall(endpoint, to, data),
     now: async () => {
@@ -366,20 +366,6 @@ async function readLane(
         ? null
         : corrections.filter((item) => item.mandate.toLowerCase() === mandate),
   };
-}
-
-/** The corrections words people published for one claim, newest first. */
-export function correctionsFor(
-  corrections: readonly CorrectionsWords[],
-  mandate: string,
-  claimId: string,
-): CorrectionsWords | null {
-  const wanted = corrections.filter(
-    (item) =>
-      item.mandate.toLowerCase() === mandate.toLowerCase() &&
-      item.claimId.toLowerCase() === claimId.toLowerCase(),
-  );
-  return wanted[0] ?? null;
 }
 
 /**

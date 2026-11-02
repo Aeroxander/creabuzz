@@ -45,7 +45,7 @@ import { encodeFunctionData, selectorOf } from "./evmAbi.ts";
 export const AGREEMENTS_VERSION = 1;
 
 /** The mandate struct's own field order — pinned; do not reorder silently. */
-export const AGREEMENT_TUPLE = [
+const AGREEMENT_TUPLE = [
   "projectId",
   "beneficiary",
   "shares",
@@ -70,17 +70,13 @@ export const AGREEMENT_TERMINALS = [
 ] as const;
 export type AgreementTerminal = (typeof AGREEMENT_TERMINALS)[number];
 
-/** The candidate parameters the record discloses (subject to acceptance). */
-export const AGREEMENT_REVIEW_PERIOD_CANDIDATE = 7 * 86_400;
-export const AGREEMENT_CORRECTIONS_GRACE_CANDIDATE = 14 * 86_400;
-
 /** A split is part of the agreed terms: at most this many parties, exact total. */
 export const AGREEMENTS_MAX_SPLIT_PARTIES = 4;
 /** Split percentages are basis points; the declared parts sum to exactly this. */
 export const AGREEMENTS_SPLIT_ALL = 10000;
 
 /** `ClaimStake.Status` in the contract's own enum order. */
-export const CLAIM_STATUSES = [
+const CLAIM_STATUSES = [
   "Open",
   "Approved",
   "Rejected",
@@ -95,7 +91,7 @@ export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
 // ── selectors ────────────────────────────────────────────────────────────────
 
 /** Canonical signatures of the calls this adapter encodes (slash-pinned). */
-export const AGREE_SIGNATURES = {
+const AGREE_SIGNATURES = {
   version: "AGREEMENTS_VERSION()",
   agreements: "agreements(bytes32)",
   propose:
@@ -799,7 +795,7 @@ export function buildAgreedSubmissionBatch(input: {
 // ── what happens next ───────────────────────────────────────────────────────
 
 /** Who a next step belongs to. A quiet agreement names no one. */
-export type NextActionParty =
+type NextActionParty =
   | "manager"
   | "beneficiary"
   | "reviewer"

@@ -37,7 +37,6 @@ import {
   encodeReadAgreementsVersion,
   encodeReadSharesReserved,
   splitHashOf,
-  AGREE_SIGNATURES,
 } from "./agreements.ts";
 import { topicOf } from "./work.ts";
 
@@ -445,6 +444,3 @@ export async function readSharesReserved(
     throw new Error("the reservation answer is not a word");
   return BigInt(`0x${body}`);
 }
-
-/** The signature strings this reader is bound to (the caller may mirror them). */
-export const AGREEMENTS_READ_SIGNATURES = AGREE_SIGNATURES;

@@ -20,11 +20,10 @@ import {
   attemptClaimId,
   buildAgreedSubmissionBatch,
   encodeBindSubmission,
-  splitHashOf,
   type AgreementTerms,
 } from "@creaton/core/launchpad/agreements.ts";
 
-export const AGREED_DRAFT_PREFIX = "buzz.launchpad.agreed-submission:";
+const AGREED_DRAFT_PREFIX = "buzz.launchpad.agreed-submission:";
 
 /** One attempt's text, kept until its evidence is published. */
 export interface AgreedSubmissionDraft {
@@ -421,9 +420,6 @@ export function attemptIdOf(input: {
     nonce: input.nonce,
   });
 }
-
-/** The split hash a proposal commits, for display beside the terms. */
-export const decideSplitHash = splitHashOf;
 
 function safeStorage(): Storage | null {
   try {
