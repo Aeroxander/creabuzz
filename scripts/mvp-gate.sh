@@ -115,6 +115,7 @@ PILOT=(
 LATER=(
   web-project-story-e2e
   work-check-query-e2e
+  v5-local-fixture
   cli-milestone-e2e
   web-record-e2e
   web-milestone-e2e

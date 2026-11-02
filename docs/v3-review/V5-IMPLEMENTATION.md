@@ -469,3 +469,25 @@ turns trading on.
 - `just web-check` currently fails only on `knip` unused exports introduced by
   the new modules; that is being cleared. No behavioural failure is outstanding
   in the suites above.
+
+## Gate status at this checkpoint
+
+| Check | Result |
+|---|---|
+| `forge test --offline --root contracts` | 734 passed, 0 failed, 2 skipped |
+| `forge build --offline --root contracts` | compiles (no ICE) |
+| `cargo test -p buzz-cli --lib 'work_checks::'` | 51 passed |
+| `cargo test -p buzz-relay --lib 'handlers::req'` | 73 passed, 2 pre-existing ignored |
+| `cargo clippy` (buzz-cli, buzz-core, buzz-relay) / `cargo fmt --check` | clean |
+| `scripts/agreement-finalizer.test.mjs` | 34 passed (real chain included) |
+| `./scripts/v5-local-fixture.sh` | 8/8 receipts, all read-backs exact |
+| `./scripts/work-check-query-e2e.sh` | passed on a fresh isolated relay |
+| `pnpm -C web test` / `typecheck` / `build` | 2581 passed / clean / builds |
+| `just web-check` (incl. knip, copy, px-text, kinds) | passes |
+| `just fmt-check file-size-check majeur-fork-check` | pass |
+| `just web-bundle-budget` equivalent | entry 0.78 MiB, ok |
+| `scripts/test-mvp-gate.sh` | all checks passed |
+| `just clippy` (whole workspace) | blocked offline by `sherpa-onnx-sys` download |
+
+`v5-local-fixture` is now registered in the gate's later set, so the sweep runs
+the real deployment proof alongside the query fixture.
