@@ -1,9 +1,11 @@
 # Secondary weekly listing — candidate design
 
-Status: specification only on `v5-governance-rework`, written 2026-11-02 from the
-implementation handoff of 2026-11-01 and its review. No implementation in this
-phase beyond converting the D179 proofs into regression tests where the candidate
-code exists. Not for real-value use. Activation requires the independent security
+Status: development candidate on `v5-governance-rework`, written 2026-11-02 from the
+implementation handoff of 2026-11-01 and its review. The user authorized implementation
+of all phases; the initial specification-only restriction was an orchestration
+mistake, not a user decision. Design review precedes implementation and tests, then
+independent review precedes any real-value activation. Not for real-value use.
+Activation requires the independent security
 review of the actual scope and a jurisdiction-specific legal review of selling
 Shares, plus an explicit human release decision that is never bundled with a
 deployment. D179 remains the reason the current rounds stay off.
@@ -104,6 +106,53 @@ readiness; it does not create it.
    rights and the transaction structure; "secondary" creates no exemption.
 4. An explicit human release decision. Trading activation is never bundled with
    a deployment.
+
+## Development implementation choices (proposed parameters, not production terms)
+
+- A new per-DAO `SecondaryMarket` and its creation-bound factory, rather than
+  presenting the D179-vulnerable `WeeklyRounds` as fixed. No funding, minting,
+  DAO-inventory offer, or arbitrary-token `claimAndLeave` entrypoint exists in
+  the candidate. A holder first collects Shares, then uses the actual DAO exit.
+- The new kit is the factory's only creator/registrar. Actual pinned Summoner,
+  policy, Shares clone identities and the shared mandate-factory binding are
+  checked at creation. Mutually consistent untrusted getters are not provenance.
+  `mandateFactory.daos` maps **mandates**, not DAOs; it is not a DAO registry.
+- The market is the creation-bound transfer-exempt endpoint. Stopping new
+  trading or clearing `exitExchange` must never stop claims, unsold returns,
+  or refunds. Neither a replacement market nor a permissive general operator
+  gets authority to move unrelated wallets' Shares.
+- Candidate fee: **zero**. Round terms freeze explicit quote prices per lot,
+  grid steps, lot size and timing before orders. Orders use integer lots and
+  quote base units per lot, avoiding an implicit percentage price or treasury
+  floor. Filled quantities and refunds are exact integers; partial-fill
+  remainders use a disclosed deterministic order. Bounds and loops are capped.
+- Voting activation candidate: seven days, rounded up to the next daily epoch
+  (seven to eight days, disclosed). A bounded eight-bucket history replaces a
+  per-wallet age test. Founder bootstrap can govern at creation; subsequent
+  awards and acquisitions mature independently. Support tracks currently
+  eligible amounts, not raw balance that new purchases could substitute.
+- Proposal snapshot is an explicit pair: ownership at the previous block,
+  maturity cutoff at the proposal's opening epoch. The cutoff is frozen and
+  used for both the voter amount and quorum denominator. Public previews name
+  their epoch; no current-clock read silently changes an existing snapshot.
+- Market deposits remove live support. Only recorded unsold units returned to
+  their original seller can restore their original history. Sold-unit age
+  credit is consumed; buyers always start fresh. These hooks are restricted to
+  the creation-bound market and must conserve escrow quantities.
+- Founder candidate: a creation-installed, irreversible transfer-only sale
+  schedule, initially tested with zero cliff and 180-day linear release. This
+  is **not a withdrawal lock**: burns/exits remain allowed. Sold eligible units
+  do not reduce the outstanding locked quantity again. A burn may reduce it
+  only by the locked amount actually consumed; tests must exclude double
+  counting and later re-growth. This is described as sale eligibility, not
+  conventional financial vesting or evidence of product readiness.
+- Legacy ContributorKit instances, deployed token/policy code and their zero
+  guard remain unchanged. Unsupported reads stay unknown. No migration system
+  or extra primary-funding path is part of this work.
+- Unattributed direct token deposits do not become an order or someone else's
+  claim. The market never grants arbitrary approvals or pays liabilities from
+  another market's balances. Any surplus recovery requires a separately
+  specified, liability-safe path; no generic admin drain is added.
 
 ## Out of scope
 

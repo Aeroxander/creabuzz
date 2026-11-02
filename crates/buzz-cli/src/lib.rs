@@ -1581,6 +1581,90 @@ pub enum LaunchpadCmd {
         #[command(subcommand)]
         step: commands::launchpad_work::WorkCmd,
     },
+    /// Run a claim's declared checks against a local artifact directory and
+    /// publish the signed run record reviewers read beside the evidence. Each
+    /// check is an argv array executed with no shell, under a per-check
+    /// timeout and a total run cap; output is capped and secret-scrubbed; the
+    /// record states these are the contributor's own execution records, not
+    /// independent verification.
+    WorkChecks {
+        /// The launch the claim belongs to (slug)
+        #[arg(long)]
+        launch: String,
+        /// The launch author's pubkey (64 hex); resolved from the directory
+        /// when omitted and the launch belongs to exactly one signer
+        #[arg(long)]
+        launch_author: Option<String>,
+        /// The claim's id (0x + 64 hex, or a 1–32-byte label)
+        #[arg(long)]
+        claim: String,
+        /// The claim's mandate address (0x + 40 hex)
+        #[arg(long)]
+        mandate: String,
+        /// The evidence hash the checks ran against (0x + 64 hex — the hash
+        /// the claim committed to onchain)
+        #[arg(long = "evidence-hash")]
+        evidence_hash: String,
+        /// The words of the acceptance criterion this claim is judged against
+        /// (their keccak256 must equal --check-hash)
+        #[arg(long = "check-text")]
+        check_text: Option<String>,
+        /// The claim's committed check hash (0x + 64 hex)
+        #[arg(long = "check-hash")]
+        check_hash: String,
+        /// A work area's words a check may map to instead (bound to
+        /// --work-area-hash)
+        #[arg(long = "work-area-text")]
+        work_area_text: Option<String>,
+        /// The work area's words hash (0x + 64 hex)
+        #[arg(long = "work-area-hash")]
+        work_area_hash: Option<String>,
+        /// The checks declaration file (JSON: {"checks":[{"name","argv",
+        /// "criterion"?,"note"?}],"artifacts":[{"name","path","sha256"?,
+        /// "version"?}]})
+        #[arg(long)]
+        checks: String,
+        /// The artifact directory the checks run in (their working directory)
+        #[arg(long)]
+        dir: String,
+        /// Each check's timeout, seconds (default 60; 1–1800)
+        #[arg(long, default_value_t = commands::work_checks::checks::DEFAULT_CHECK_TIMEOUT_SECS)]
+        timeout_secs: u64,
+        /// The total budget for the whole run, seconds (default 600; 1–3600)
+        #[arg(long, default_value_t = commands::work_checks::checks::DEFAULT_TOTAL_CAP_SECS)]
+        total_cap_secs: u64,
+        /// Captured output per stream, bytes (default 65536; 1024–1048576)
+        #[arg(long, default_value_t = commands::work_checks::checks::DEFAULT_OUTPUT_CAP_BYTES)]
+        output_cap_bytes: u64,
+        /// Environment for the checks as KEY=VALUE; repeatable (at most 16).
+        /// Nothing else of this process's environment is passed along, and
+        /// values are recorded only as redactions, never as text
+        #[arg(long = "env")]
+        env: Vec<String>,
+        /// Ask this server's AI service for commentary on the executed results
+        /// (goes in the record's separate model section, as commentary only)
+        #[arg(long, default_value_t = false)]
+        summarize: bool,
+        /// Which model to ask with --summarize (the server's default when omitted)
+        #[arg(long)]
+        model: Option<String>,
+        /// Sign and print the record without publishing it
+        #[arg(long, default_value_t = false)]
+        no_publish: bool,
+        /// A locally available image the sandbox resolves to an immutable ID
+        /// and runs with pull disabled (e.g. alpine:3.20). Required: checks
+        /// always run inside this enforcing sandbox — no daemon/image means
+        /// checks do not run
+        #[arg(long = "sandbox-image")]
+        sandbox_image: String,
+        /// The trusted PID-1 deadline supervisor binary (built once offline
+        /// with scripts/build-check-supervisor.sh; re-runs reuse the same
+        /// verified artifact). Its paired manifest sits beside it (see the
+        /// build script's echo). Required: checks always run under a
+        /// non-stoppable deadline supervisor a check cannot break
+        #[arg(long = "sandbox-supervisor")]
+        sandbox_supervisor: String,
+    },
     /// Read a proposal's state (the D6 quorum-math input)
     ProposalState {
         /// Bound DAO address (`0x…`)
@@ -3994,7 +4078,8 @@ mod tests {
                 "record-verdict",
                 "show",
                 "vote",
-                "work"
+                "work",
+                "work-checks"
             ]
         );
         assert_eq!(names(&cmd, "media"), vec!["get"]);
@@ -4172,7 +4257,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 19),
+            ("launchpad", 20),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

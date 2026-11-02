@@ -64,6 +64,19 @@ contract VerifierSet {
     mapping(bytes32 claimId => mapping(address => bool)) public attested;
     uint256 public quorum;
 
+    /// @notice For each claim the owner registered, the addresses a settlement of it would pay (the mandate names
+    /// them when it binds the delivery): none of them may attest that claim. Empty for claims nobody excluded —
+    /// legacy paid-work claims and every pre-existing deployment behave exactly as they did.
+    mapping(bytes32 claimId => address[]) public excludedFromReview;
+
+    /// @notice Set once at birth by the owner: bound-review readiness on the panel (see `setBoundReviews`).
+    bool public boundReviews;
+    /// @notice Who has asked for ordinary corrections on a claim, once each: a non-final request for changes,
+    /// recorded beside the verdict counters and never counted into any quorum. The mandate's corrections route
+    /// reads only `correctionsCount`.
+    mapping(bytes32 claimId => mapping(address => bool)) public correctionsAsked;
+    mapping(bytes32 claimId => uint256) public correctionsCount;
+
     event VerifierAccepted(address indexed verifier, uint256 stake);
     event VerifierRemoved(address indexed verifier);
     event Attested(bytes32 indexed claimId, address indexed verifier, bool approve);
@@ -73,10 +86,32 @@ contract VerifierSet {
     event Bonded(address indexed verifier, uint256 amount);
     event UnbondRequested(address indexed verifier, uint256 amount, uint64 availableAt);
     event Withdrawn(address indexed verifier, uint256 amount);
+    /// @notice The mandate names, once per claim, the recipients a settlement of it would pay (no one of them may
+    /// attest that claim).
+    event ExcludedFromReview(bytes32 indexed claimId, address[] parties);
+    /// @notice A reviewer asked for ordinary corrections on an open attempt (never a rejection, never in a quorum).
+    event CorrectionsRequested(bytes32 indexed claimId, address indexed verifier, bytes32 reasonHash);
+    event BoundReviewsSet();
 
     error OnlyOwner(address caller);
     /// @notice A reviewer cannot pass judgment on their own work.
     error ClaimantCannotAttest(bytes32 claimId, address claimant);
+    /// @notice The claim the attestation names does not exist in the wired claim escrow: a mark placed before the
+    /// delivery exists can never be taken back, so the escrow's counter snapshot would only be half the protection —
+    /// the reviewer's one mark per claim id would be burnt on content that may never exist.
+    error UnknownPanelClaim(bytes32 claimId);
+    /// @notice Nobody shares a claim's payment and judges it: a declared settlement recipient of this claim is
+    /// barred from attesting it (recusal beyond the claimant, who is otherwise the only read-back guard).
+    error PaidPartyCannotJudge(bytes32 claimId, address party);
+    /// @notice The panel requires bound review readiness: no reviewer may weigh in — attest or formally request
+    /// corrections — on a claim whose check the mandate has not locked (exclusions included) yet.
+    error NotReadyForReview(bytes32 claimId);
+    /// @notice Corrections requests are a non-final route on an *open* attempt: once the review resolved — verdict,
+    /// retirement, freeze, payout or expiry — there is no change request left to file.
+    error ReviewResolved(bytes32 claimId);
+    error AlreadyRequestedCorrections(bytes32 claimId, address verifier);
+    /// @notice The mandate names a claim's paying parties once, at bind time.
+    error AlreadyExcluded(bytes32 claimId);
     error NotClaimStake(address caller);
     error NotAVerifier(address verifier);
     error AlreadyAttested(bytes32 claimId, address verifier);
@@ -84,6 +119,8 @@ contract VerifierSet {
     /// @notice A quorum of zero would let anyone settle any claim with no
     /// attestation at all (`approvals >= 0` is always true).
     error BadQuorum(uint256 quorum);
+    /// @notice The panel's bound-review readiness flag is once-only: set at birth by the owner, never unset.
+    error BoundReviewsAlreadySet();
     error BondAlreadySet();
     error BondNotEnabled();
     /// @notice A verifier below the minimum bond cannot attest.
@@ -138,19 +175,31 @@ contract VerifierSet {
         claimStake = claimStake_;
     }
 
+    /// @notice Set once at birth (every new TreasuryMandate panel turns it on in its constructor): a reviewer may
+    /// attest or formally request corrections only on a claim whose acceptance check the mandate has already bound
+    /// and whose payment exclusions are installed — the same atomic transaction, so no reviewer can spend their
+    /// one-shot or bless a self-rewarding draft. Standalone and legacy sets keep their old behaviour.
+    function setBoundReviews() external {
+        if (msg.sender != owner) revert OnlyOwner(msg.sender);
+        if (boundReviews) revert BoundReviewsAlreadySet();
+        boundReviews = true;
+        emit BoundReviewsSet();
+    }
+
+    /// @notice The owner (the mandate) names, once per claim, the addresses a settlement of that claim would pay:
+    /// none of them may attest it. Called when a delivery is bound to its agreed reward, so the exclusion is
+    /// exactly the terms both parties already signed and never wider than the payment they commit.
+    function excludeFromReview(bytes32 claimId, address[] calldata parties) external {
+        if (msg.sender != owner) revert OnlyOwner(msg.sender);
+        if (excludedFromReview[claimId].length != 0) revert AlreadyExcluded(claimId);
+        for (uint256 i; i < parties.length; ++i) {
+            excludedFromReview[claimId].push(parties[i]);
+        }
+        emit ExcludedFromReview(claimId, parties);
+    }
+
     function attest(bytes32 claimId, bool approve) external {
-        // G1: a claimant cannot attest to their own claim. The claimant is
-        // read from ClaimStake, so this holds whoever is holding the pen.
-        address claimant = claimStake == address(0)
-            ? address(0)
-            : IClaimClaimant(claimStake).claimantOf(claimId);
-        if (claimant != address(0) && msg.sender == claimant) {
-            revert ClaimantCannotAttest(claimId, claimant);
-        }
-        if (!verifiers[msg.sender].active) revert NotAVerifier(msg.sender);
-        if (address(bondToken) != address(0) && verifiers[msg.sender].stake < minBond) {
-            revert BondTooLow(verifiers[msg.sender].stake, minBond);
-        }
+        _weighInChecks(claimId);
         if (attested[claimId][msg.sender]) revert AlreadyAttested(claimId, msg.sender);
         attested[claimId][msg.sender] = true;
         if (approve) {
@@ -160,6 +209,63 @@ contract VerifierSet {
         }
         verifiers[msg.sender].attestedCount++;
         emit Attested(claimId, msg.sender, approve);
+    }
+
+    /// @notice A reviewer asks for ordinary corrections on a claim: a NON-final request for changes, recorded
+    /// beside the verdict counters and never counted into any quorum, never a rejection vote. The mandate's
+    /// corrections route (`bindSubmission`) reads `correctionsCount` and may then replace the open attempt with a
+    /// new one (retiring the old attempt: no verdict, the contributor's stake, if any, back unslashed, no further
+    /// award from it), inside the agreement's own revision window. Same guards as `attest`, on an open attempt
+    /// whose acceptance check the mandate has bound.
+    /// @param reasonHash Offchain descriptor of what to change (recorded, not enforced).
+    function requestCorrections(bytes32 claimId, bytes32 reasonHash) external {
+        _weighInChecks(claimId);
+        (,,, uint8 status) = IClaimClaimant(claimStake).claimTerms(claimId);
+        if (status != uint8(0)) revert ReviewResolved(claimId); // only an Open attempt takes a corrections request
+        if (correctionsAsked[claimId][msg.sender]) revert AlreadyRequestedCorrections(claimId, msg.sender);
+        correctionsAsked[claimId][msg.sender] = true;
+        correctionsCount[claimId] += 1;
+        emit CorrectionsRequested(claimId, msg.sender, reasonHash);
+    }
+
+    /// @dev The shared weight-in gates for both verdicts (`attest`) and non-final corrections requests: the claim
+    /// exists in the wired escrow and is not the reviewer's own work; a declared recipient of its settlement
+    /// cannot weigh in on it; with bound review readiness on, the mandate must have gotten to the check lock
+    /// (and exclusions, one atomic transaction at bind time) before any reviewer weight lands; the reviewer
+    /// must be active and bonded where bonding is on.
+    function _weighInChecks(bytes32 claimId) private view {
+        address claimant = claimStake == address(0) ? address(0) : IClaimClaimant(claimStake).claimantOf(claimId);
+        if (claimant != address(0) && msg.sender == claimant) {
+            revert ClaimantCannotAttest(claimId, claimant);
+        }
+        // A claim that does not exist yet cannot be judged at all — even an honest early vote cannot land
+        // arithmetically (the escrow's counter snapshot only discounts it), yet it would spend this reviewer's
+        // one attestation per claim id on content that may never exist.
+        if (claimStake != address(0) && claimant == address(0)) {
+            revert UnknownPanelClaim(claimId);
+        }
+        _notAPayingParty(claimId);
+        if (boundReviews && claimStake != address(0) && !acceptanceLockedOf(claimId)) {
+            revert NotReadyForReview(claimId);
+        }
+        if (!verifiers[msg.sender].active) revert NotAVerifier(msg.sender);
+        if (address(bondToken) != address(0) && verifiers[msg.sender].stake < minBond) {
+            revert BondTooLow(verifiers[msg.sender].stake, minBond);
+        }
+    }
+
+    /// @dev The claim's mandate-bound state, as the escrow sees it (the inherited `acceptanceLocked[claimId]`).
+    function acceptanceLockedOf(bytes32 claimId) internal view returns (bool) {
+        return IClaimClaimant(claimStake).acceptanceLocked(claimId);
+    }
+
+    /// @dev A declared recipient of this claim's settlement cannot pass judgment on work that would pay them.
+    function _notAPayingParty(bytes32 claimId) internal view {
+        for (uint256 i; i < excludedFromReview[claimId].length; ++i) {
+            if (excludedFromReview[claimId][i] == msg.sender) {
+                revert PaidPartyCannotJudge(claimId, msg.sender);
+            }
+        }
     }
 
     /// @notice Whether a claim has reached the approval quorum.
@@ -243,4 +349,8 @@ contract VerifierSet {
 /// @notice The one lookup `VerifierSet` needs from `ClaimStake`: who filed it.
 interface IClaimClaimant {
     function claimantOf(bytes32 claimId) external view returns (address);
+    /// @notice Public mapping getter on `ClaimStake`: whether the mandate bound this claim's acceptance check.
+    function acceptanceLocked(bytes32 claimId) external view returns (bool);
+    /// @notice Public mapping getter on `ClaimStake`: the claim's (contributor, amount, check, status) shape.
+    function claimTerms(bytes32 claimId) external view returns (address, uint256, bytes32, uint8);
 }

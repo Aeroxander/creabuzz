@@ -87,3 +87,9 @@ web/tests/e2e-real/.social-fixture.json
 
 # fleet worker identity (generated on first start)
 .buzz-fleet-worker.key
+
+# Local orchestration state (not product source)
+.slim/deepwork/
+
+# Foundry cache written at the repo root when a run does not name its own
+/cache/

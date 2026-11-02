@@ -242,6 +242,26 @@ contract Moloch {
     }
     // @@CREABUZZ PATCH END voting-weight
 
+    // @@CREABUZZ PATCH BEGIN agreed-settlement
+    /// @notice Finish an agreed contribution without a discretionary vote. Anyone may settle; the mandate alone
+    /// derives from its onchain agreement record who receives what (an `awarding()`-style one-time mint bounded to
+    /// the reserved quantity — never caller-chosen amounts), and `awardContribution` keeps its `onlyDAO` for the
+    /// legacy and discretionary paths. A mandate this DAO did not approve through its factory settles here nothing.
+    function settleAgreement(address mandate, bytes32 agreementId) public payable {
+        require(AllocationVoting(votingWeight).mandateFactory().daos(mandate) == address(this), NotOk());
+        (address[] memory parties, uint256[] memory portions) = TreasuryMandate(mandate).settleAgreement(agreementId);
+        // Shares under the issuance rule accept a mint only while this is up (D76): new Shares are pay for reviewed work.
+        assembly ("memory-safe") {
+            tstore(AWARDING_SLOT, 1)
+        }
+        for (uint256 i; i < parties.length; ++i) {
+            shares.mintFromMoloch(parties[i], portions[i]);
+        }
+        assembly ("memory-safe") {
+            tstore(AWARDING_SLOT, 0)
+        }
+    }
+    // @@CREABUZZ PATCH END agreed-settlement
     /// @dev Proposal id = keccak(address(this), op, to, value, keccak(data), nonce, config):
     mapping(uint256 id => bool) public executed; // executed latch
     mapping(uint256 id => uint64) public createdAt; // first open/vote time
@@ -1478,6 +1498,13 @@ interface ISharesLockGuard {
     function totalLocked() external view returns (uint256);
 }
 // @@CREABUZZ PATCH END erc20c-interfaces
+// @@CREABUZZ PATCH BEGIN shares-sale-policy
+/// @notice The one read the sale path and the UI use: the amount `holder` may still move to another
+/// wallet. Shares know nothing else about the policy, so calling it stays this narrow.
+interface IShareSalePolicy {
+    function saleCapacity(address holder) external view returns (uint256);
+}
+// @@CREABUZZ PATCH END shares-sale-policy
 contract Shares {
     /* ERRORS */
     error BadBlock();
@@ -1757,6 +1784,69 @@ contract Shares {
         if (locked != 0 && balanceOf[from] < amount + locked) revert LockedShares();
     }
     // @@CREABUZZ PATCH END erc20c-surface
+    // @@CREABUZZ PATCH BEGIN shares-sale-policy
+    // The creation-time founder sale guard. A DAO may bind ONE policy as its sale ceiling: the setter
+    // refuses everything but zero or the DAO's own actual voting policy, refuses any choice once the
+    // lock guard is set (the legacy kit's final "no guard" seal therefore also seals this forever,
+    // which is what keeps old deployments and old-bytecode DAOs exactly as they always were), and
+    // refuses any second choice of its own. The real enforcement is the seal, not a block number: a
+    // DAO whose lock-guard decision is still unset may bind (or decline) any time before it, so this
+    // is strictly weaker than the product kits' flow — those make both choices inside one launch
+    // transaction, seal immediately, and can never revisit. It describes SALE eligibility only —
+    // never financial vesting, never a withdrawal lock, never product readiness: burns and direct
+    // exits never reach it, and every exemption endpoint still ends at `_moveTokens`, where the
+    // ceiling is checked.
+
+    /// @notice The bound sale policy, or zero when the DAO chose none (every legacy DAO reads zero
+    /// here, and new-but-legacy-kit DAOs can never set one once their birth guard is on).
+    address public salePolicy;
+    /// @notice Whether the one creation choice was made (set or explicitly declined), making any
+    /// later install or replacement of the binding impossible.
+    bool public salePolicyChosen;
+
+    event SalePolicySet(address indexed policy);
+    error SalePolicySealed();
+
+    /// @notice Bind the DAO's sale policy: zero for none, or exactly this DAO's own voting policy
+    /// (so a founder schedule comes from the same ledger that governs the DAO, never from an
+    /// arbitrary admin module). Once, and only while the final lock-guard decision is still unset
+    /// (that seal is what makes this final — the product kits make both choices in their single
+    /// launch transaction); a vote afterwards can neither add one nor replace one.
+    function setSalePolicy(address policy) public payable onlyDAO {
+        require(policy == address(0) || policy == Moloch(DAO).votingWeight(), Unauthorized());
+        require(policy == address(0) || policy.code.length != 0, Unauthorized());
+        require(!lockGuardSet, LockGuardSet());
+        require(!salePolicyChosen, SalePolicySealed());
+        salePolicyChosen = true;
+        salePolicy = policy;
+        emit SalePolicySet(policy);
+    }
+
+    /// @notice How many of `holder`'s Shares are sale-eligible right now, and which counting that
+    /// read means: version 0 says no sale policy was bound and the count is the whole balance, and
+    /// version 1 says the count is the bound policy's sale capacity — a transfer-only founder
+    /// schedule, which says nothing about vesting or product readiness. A legacy read failure is
+    /// never masked: this read exists only on deployments whose bytecode carries it, and callers
+    /// that cannot make it must not pretend a number.
+    function saleEligibleOf(address holder) public view returns (uint256 amount, uint8 version) {
+        address policy = salePolicy;
+        if (policy == address(0)) return (balanceOf[holder], uint8(0));
+        return (IShareSalePolicy(policy).saleCapacity(holder), uint8(1));
+    }
+
+    /// @dev The Shares-side half of the founder sale ceiling, applied where every exemption path
+    /// must end: a real move between two different wallets. Self-moves change nothing, burns
+    /// (`ragequit`, a forfeited milestone) are a holder's exit and never reach `_moveTokens`, and
+    /// the check runs before any book keeps the transfer atomic with the refusal.
+    function _checkSaleCapacity(address from, address to, uint256 amount) internal view {
+        if (from == to) return;
+        address policy = salePolicy;
+        if (policy != address(0) && amount > IShareSalePolicy(policy).saleCapacity(from)) {
+            revert LockedShares();
+        }
+    }
+
+    // @@CREABUZZ PATCH END shares-sale-policy
 
     function mintFromMoloch(address to, uint256 amount) public payable onlyDAO {
     // @@CREABUZZ PATCH BEGIN shares-issuance-mint
@@ -1891,6 +1981,14 @@ contract Shares {
     // @@CREABUZZ PATCH BEGIN shares-transfer-recipient
         require(from != address(0) && to != address(0), Unauthorized());
     // @@CREABUZZ PATCH END shares-transfer-recipient
+    // @@CREABUZZ PATCH BEGIN shares-sale-capacity
+        // The bound founder sale schedule is a transfer-only ceiling, and this is the only place it
+        // can be checked from: not in the burn paths (a direct exit is always allowed), not behind
+        // the lock exemptions in `_checkUnlocked` (the market endpoint and any general unlock never
+        // bypass founder sale eligibility), and before the effects. Beyond the ceiling is refused
+        // with the lock's own typed error: the sender's still-locked grant is not theirs to move.
+        _checkSaleCapacity(from, to, amount);
+    // @@CREABUZZ PATCH END shares-sale-capacity
         balanceOf[from] -= amount;
         unchecked {
             balanceOf[to] += amount;

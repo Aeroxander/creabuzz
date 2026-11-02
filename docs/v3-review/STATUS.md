@@ -1,7 +1,7 @@
 # Where Creaton stands
 
-Updated 2026-11-01 (the gates, the restore rehearsal, restricted holders, the reserve). The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
-Each decision is a row in [DECISIONS.md](DECISIONS.md) (D1 to D152). The hand tests for the pilot, in order, are in
+Updated 2026-11-02 (v5 development scope; prior v4 validation remains historical). The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
+Each decision is a row in [DECISIONS.md](DECISIONS.md) (through D180). The hand tests for the pilot, in order, are in
 [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md); every hand test ever written is in [TEST-STEPS.md](TEST-STEPS.md), a log in
 date order. What the 2026-10-31 pass hid or retired, and what waits on your call, is in
 [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md).
@@ -14,13 +14,13 @@ The branch `v4-governance-rework` is pushed to the fork (https://github.com/Aero
   only from reviewed work and an award vote.
 - **No desktop or mobile app in the MVP.** The desktop and mobile apps in this repository are not kept level with the web
   app and are not part of any pilot; D9's "desktop and mobile parity after" waits until after the pilots (noted on D9).
-- **Contract development continues under D174's lift (D180); nothing is deployed.** The D137 freeze now applies to
-  deployments and activation, not development: award mechanics and the secondary-listing candidate are built and tested
-  on `v5-governance-rework` ([AWARD-MECHANICS-SPEC.md](AWARD-MECHANICS-SPEC.md), [SECONDARY-LISTING-SPEC.md](SECONDARY-LISTING-SPEC.md)),
-  and activation stays gated on the pilots, the audits named there and an explicit release. What the pilots find still
-  gets fixed.
-- **Order of release:** the social run, then a contributor project, then a milestone test on a test network, then the
-  audited raise ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md)).
+- **Contract development continues under D174's lift and the D180 handoff.** Work is in progress on
+  `v5-governance-rework`; no v5 deployment or activation has occurred. Phase-by-phase evidence and the
+  existing/new contract capability matrix belong in [V5-IMPLEMENTATION.md](V5-IMPLEMENTATION.md).
+  Prior v4 test results below are not evidence for the unfinished v5 candidate.
+- **Pilot preparations continue separately from candidate development.** The contributor pilot retains its deployed
+  manual/discretionary flow. The requested future direction is contribution-earned ownership followed by secondary
+  trading; an additional primary fundraising path is not a new product commitment.
 
 ## The hosted build
 

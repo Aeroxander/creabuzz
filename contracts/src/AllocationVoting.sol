@@ -153,7 +153,7 @@ contract AllocationVoting is IVotingWeight {
     }
 
     /// @notice Bootstrap every initial Shares holder before proposals open, and set the starting lanes.
-    function initialize(address shares_, address[] calldata holders) external {
+    function initialize(address shares_, address[] calldata holders) public virtual {
         if (dao != address(0) || shares_.code.length == 0 || holders.length > 256) revert InvalidInitialization();
         dao = msg.sender;
         shares = IAllocationShares(shares_);
@@ -245,7 +245,7 @@ contract AllocationVoting is IVotingWeight {
         uint64 ttl,
         uint64 delay,
         bool bounded
-    ) external onlyDAO {
+    ) public virtual onlyDAO {
         if (block.number < governanceStartBlock) revert GovernanceNotOpen(governanceStartBlock);
         Lane memory lane = lanes[bounded ? 1 : 0];
         if (
@@ -280,12 +280,15 @@ contract AllocationVoting is IVotingWeight {
     }
 
     /// @notice Total Shares that could vote on a proposal opened at `snapshot`.
-    function votingSupplyAt(uint256 totalSupplyAtSnapshot, uint48 snapshot) external view returns (uint256) {
+    /// `virtual` for variant previews; the base always answers for the same snapshot it is given.
+    function votingSupplyAt(uint256 totalSupplyAtSnapshot, uint48 snapshot) public view virtual returns (uint256) {
         return _votingSupply(totalSupplyAtSnapshot, snapshot);
     }
 
     /// @notice Snapshot eligibility uses owned Shares, independent of delegation.
-    function getPastCapacity(address owner, uint48 snapshot) public view returns (uint96) {
+    /// `virtual` so a variant policy can supply eligibility of its own (e.g. per-acquired-amount
+    /// maturity); the base's meaning — the whole owned balance — must not change for callers.
+    function getPastCapacity(address owner, uint48 snapshot) public view virtual returns (uint96) {
         if (snapshot >= block.number) revert BadSnapshot();
         Checkpoint[] storage h = history[owner];
         uint256 low;
@@ -304,13 +307,24 @@ contract AllocationVoting is IVotingWeight {
     function allocated(address owner) public view returns (uint256 amount) {
         uint256[] storage ids = ownerProposals[owner];
         for (uint256 i; i < ids.length; ++i) {
-            if (_commits(ids[i], positions[ids[i]][owner].support) && _live(ids[i])) amount += positions[ids[i]][owner].amount;
+            if (_commits(ids[i], positions[ids[i]][owner].support) && _live(ids[i])) {
+                amount += positions[ids[i]][owner].amount;
+            }
         }
     }
 
     /// @notice Unallocated owned Shares. There is no spending or refill ledger.
+    /// The live cap is `_liveCapacity`, so a variant whose live balance differs from the raw
+    /// one caps what is here now without touching any other meaning of `capacity`.
     function available(address owner) public view returns (uint256) {
-        return capacity[owner] - allocated(owner);
+        return _liveCapacity(owner) - allocated(owner);
+    }
+
+    /// @notice The Shares `owner` can move behind or against a live proposal right now: the raw
+    /// owned balance. A variant's live meaning (mature balance only) overrides this alone; the
+    /// whole rest of the ledger keeps using `capacity` unchanged.
+    function _liveCapacity(address owner) internal view virtual returns (uint256) {
+        return capacity[owner];
     }
 
     /// @notice Bounded enumeration for client allocation management.
@@ -329,7 +343,7 @@ contract AllocationVoting is IVotingWeight {
     function weightFor(bytes32 proposalId, address owner, uint48 snapshot) public view returns (uint256) {
         uint256 id = uint256(proposalId);
         if (owner == dao || (proposals[id].expiresAt != 0 && !_live(id))) return 0;
-        uint256 room = capacity[owner];
+        uint256 room = _liveCapacity(owner);
         if (proposals[id].expiresAt == 0 || proposals[id].exclusive) {
             Position storage pos = positions[id][owner];
             room = available(owner) + (_commits(id, pos.support) ? pos.amount : 0);
@@ -344,7 +358,7 @@ contract AllocationVoting is IVotingWeight {
         uint256 id = uint256(proposalId);
         if (owner == dao || (proposals[id].expiresAt != 0 && !_live(id))) return 0;
         uint256 eligible = getPastCapacity(owner, snapshot);
-        uint256 owned = capacity[owner];
+        uint256 owned = _liveCapacity(owner);
         return owned < eligible ? owned : eligible;
     }
 
@@ -365,7 +379,8 @@ contract AllocationVoting is IVotingWeight {
         if (snapshot != IAllocationGovernor(dao).snapshotBlock(id)) revert BadSnapshot();
         if (!_live(id) || side > 2) revert InvalidProposal();
         _prune(owner);
-        uint256 eligible = side == 0 ? opposeWeightFor(proposalId, owner, snapshot) : weightFor(proposalId, owner, snapshot);
+        uint256 eligible =
+            side == 0 ? opposeWeightFor(proposalId, owner, snapshot) : weightFor(proposalId, owner, snapshot);
         if (amount == type(uint256).max) amount = eligible;
         if (amount > eligible || (amount == 0 && positions[id][owner].amount == 0)) revert InsufficientShares();
         if (ownerIndex[id][owner] == 0 && amount != 0) {
@@ -389,7 +404,14 @@ contract AllocationVoting is IVotingWeight {
 
     /// @notice Authentic token hooks update owned Shares and trim over-allocation.
     /// Loot transfers, burns and issuance have no governance effect.
-    function ownershipChanged(bool isLoot, address from, address to, uint256 amount) external onlyDAO {
+    function ownershipChanged(bool isLoot, address from, address to, uint256 amount) external virtual onlyDAO {
+        _ownershipChanged(isLoot, from, to, amount);
+    }
+
+    /// @dev The hook's exact body, internal so a variant policy can extend it in place (call it
+    /// and add its own branches around it) while the external entrypoint above keeps its one
+    /// `onlyDAO` auth and its unchanged signature.
+    function _ownershipChanged(bool isLoot, address from, address to, uint256 amount) internal virtual {
         if (isLoot || from == to || amount == 0) return;
         if (amount > type(uint96).max) revert CapacityExceeded();
         if (from != address(0)) {
@@ -501,7 +523,12 @@ contract AllocationVoting is IVotingWeight {
     // Internals
     // ------------------------------------------------------------------
 
-    function _votingSupply(uint256 totalSupplyAtSnapshot, uint48 snapshot) private view returns (uint256 supply) {
+    function _votingSupply(uint256 totalSupplyAtSnapshot, uint48 snapshot)
+        internal
+        view
+        virtual
+        returns (uint256 supply)
+    {
         supply = totalSupplyAtSnapshot;
         uint256 deducted = getPastCapacity(dao, snapshot);
         for (uint256 i; i < excluded.length; ++i) {
@@ -510,7 +537,7 @@ contract AllocationVoting is IVotingWeight {
         supply = deducted >= supply ? 0 : supply - deducted;
     }
 
-    function _setExcluded(address holder, bool on) private {
+    function _setExcluded(address holder, bool on) internal virtual {
         if (holder == address(0) || holder == dao || isExcluded[holder] == on) return;
         if (on) {
             if (excluded.length >= MAX_EXCLUDED) revert TooManyExcluded();
@@ -527,6 +554,13 @@ contract AllocationVoting is IVotingWeight {
         }
         isExcluded[holder] = on;
         emit ExclusionSet(holder, on);
+    }
+
+    /// @dev The exclusion list the supply path deducts. Internal and variable so a variant policy
+    /// can walk the same list from its own supply override without duplicating the underlying
+    /// state; the base's meaning (the same addresses, same order) does not change.
+    function _excludedSet() internal view virtual returns (address[] storage) {
+        return excluded;
     }
 
     function _ceilBps(uint256 value, uint256 bps) private pure returns (uint256) {
@@ -563,7 +597,7 @@ contract AllocationVoting is IVotingWeight {
     function _trim(address owner) private {
         _prune(owner);
         uint256 used = allocated(owner);
-        uint256 balance = capacity[owner];
+        uint256 balance = _liveCapacity(owner);
         bool scale = used > balance;
         uint256[] storage ids = ownerProposals[owner];
         uint256 i;

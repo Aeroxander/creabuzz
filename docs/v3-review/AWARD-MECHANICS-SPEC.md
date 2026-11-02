@@ -42,7 +42,10 @@ stay uncertain and are said so.
 Rules:
 
 - An approval binds to a submission version. Approvals never carry to a revision;
-  history is preserved and a revision re-enters review.
+  history is preserved and a revision re-enters review. Ordinary correction
+  requests are separate from irreversible rejection votes. Superseding an open
+  attempt must retire it atomically and return its stake unslashed (or record a
+  recoverable debt), rather than leaving it open to a later contradictory verdict.
 - "Taking this on" stays social coordination: it reserves nothing and is never a
   financial signature or an exclusive assignment.
 - Unsolicited work keeps the existing discretionary recognition path and is
@@ -50,6 +53,9 @@ Rules:
 - A user learns that a budget is exhausted at agreement time, never after
   delivery. Deadlines, cancellation and dispute terms are part of the agreement,
   not an afterthought.
+- Once an agreement is accepted, its beneficiary can submit and bind their own
+  criteria-matching work without another discretionary manager approval. A
+  manager may assist; the independent panel still decides whether it passes.
 - Corrections and disagreement have named resolution paths; a contributor is
   never left in an unexplained deadlock. Absence and escalation follow the
   configured panel policy.
@@ -86,15 +92,21 @@ Rules:
 
 ## Identity and one-time consumption
 
-- `agreementId` is stable and scoped (mandate, beneficiary, slot). Deliverables,
-  attempts and revisions are explicit records; coauthor splits are declared at
-  AGREED as explicit shares summing to 100.
+- `agreementId` is stable and scoped by mandate, work area and deliverable slot.
+  One single-reward slot cannot be assigned again merely by changing the
+  beneficiary. Deliverables, attempts and revisions are explicit records;
+  coauthor recipients and split are committed by the manager's proposal and
+  confirmed by the beneficiary at acceptance. Split quantities sum to the exact
+  agreed reward; a disclosed deterministic remainder goes to the beneficiary.
 - Whether the deliverable has one reward, several independently rewarded slots,
   or split coauthor allocations is decided in the terms at AGREED — never argued
   after delivery.
 - No semantic dedup. An identical artifact hash on another claim is flagged as a
   review question; semantic similarity only raises a question. Several agents
   doing one participant's work earn one reward.
+- Every attempt linked to an agreement, including superseded attempts, stays
+  outside the legacy caller-selected discretionary award path. A legacy vote
+  must not consume an agreed claim at a different amount or award an old revision.
 
 ## Reviewer terms
 
@@ -102,10 +114,12 @@ Rules:
   split-unanimity behavior follow D145. Three keys are never claimed to be three
   independent people. Recusal, substitution, escalation and quorum are policy
   fields.
-- Compensation is explicit and independent of the verdict. Candidate: a fixed
-  allocation per completed review, reserved from the mandate's currency budget at
-  AGREED and released on review completion; alternative: a retainer. A bond is
-  not compensation.
+- Compensation is explicit and independent of the verdict. The development
+  candidate uses voluntary reviewers with no payment, clearly disclosed before
+  they accept the role. ContributorKit funds no currency budget. A later paid
+  policy must specify a funded retainer or agreed allocation and reserve it;
+  neither payment machinery nor cash funding is introduced implicitly. A bond
+  is not compensation.
 - Where currency fees exist they need an explicitly funded, reserved budget and
   never consume money promised to contributors. Close, refund, expiry and failed
   transfers are part of the terms. Reviewer Share awards need authorized terms and
@@ -117,10 +131,19 @@ Rules:
 |---|---|---|
 | challenge window | 7 days | matches existing challenge windows |
 | work / review deadlines | per agreement | expiry releases only unearned reservations |
-| quorum | configured panel (e.g. 2-of-3, first-answer opt-in) | D145 semantics preserved |
-| reviewer compensation | 0 (explicit opt-in allocation) | from the mandate currency budget |
+| quorum | actual configured panel | preserve D145 first-answer and split-unanimity semantics; no invented 2-of-3 default |
+| reviewer compensation | none; voluntary review, explicitly disclosed | no implicit cash budget or promise of future payment |
 | cancellation | either party, pre-submission | post-submission goes to dispute |
 | voting activation | see [SECONDARY-LISTING-SPEC.md](SECONDARY-LISTING-SPEC.md) | treatment of new awards decided there |
+
+The development correction proposes a seven-day review period measured from a
+bound submission, enforced in its claim deadline, and a separate fourteen-day
+revision grace after the work deadline. These are candidate terms, not approved
+production promises. Reviewers cannot attest before binding has committed the
+criteria and excluded every reward recipient. A request for changes consumes no
+final-verdict vote. An unanswered review stays unknown; expiry or escalation is
+explicit and does not invent acceptance. A frozen or approved claim is not
+silently erased by expiry of the mandate.
 
 ## UI and reporting
 
