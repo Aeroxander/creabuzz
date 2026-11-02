@@ -43,15 +43,23 @@ while [[ $# -gt 0 ]]; do
 done
 echo "$cache" >>"$ANVIL_CACHE_LOG"
 [[ -n "$cache" ]] && mkdir -p "$cache/anvil-state-fake" && echo x >"$cache/anvil-state-fake/0x1.json"
+: >"$ANVIL_READY_FILE"
 exec sleep 3000
 FAKE
 chmod +x "$WORK/fakebin/anvil"
 cat >"$WORK/journeys/leaky.sh" <<'JOURNEY'
 #!/usr/bin/env bash
 # Starts a chain that outlives it, and, while it runs, another actor makes its own anvil state elsewhere.
+rm -f "$ANVIL_READY_FILE"
 anvil --port 1 &
-echo $! >"$LEAKED_PID_FILE"
-sleep 1
+chain_pid=$!
+echo "$chain_pid" >"$LEAKED_PID_FILE"
+for _ in $(seq 1 100); do
+  [[ -f "$ANVIL_READY_FILE" ]] && break
+  kill -0 "$chain_pid" 2>/dev/null || { echo 'Error: stand-in chain exited before readiness'; exit 1; }
+  sleep 0.1
+done
+[[ -f "$ANVIL_READY_FILE" ]] || { echo 'Error: stand-in chain readiness timed out'; exit 1; }
 mkdir -p "$FOREIGN_STATE/anvil-state-made-during-the-run"
 exit 0
 JOURNEY
@@ -68,7 +76,8 @@ JOURNEY
 chmod +x "$WORK/journeys/"*.sh
 
 export JOURNEY_DIR="$WORK/journeys" LOG_DIR="$WORK/logs" FOUNDRY_BIN="$WORK/fakebin" \
-  LEAKED_PID_FILE="$WORK/leaked.pid" ANVIL_CACHE_LOG="$WORK/cache-paths.txt" FOREIGN_STATE="$WORK/foreign-state"
+  LEAKED_PID_FILE="$WORK/leaked.pid" ANVIL_CACHE_LOG="$WORK/cache-paths.txt" FOREIGN_STATE="$WORK/foreign-state" \
+  ANVIL_READY_FILE="$WORK/anvil-ready"
 
 # Bystanders that were there first: a process, and state that was already on disk.
 sleep 3000 & BYSTANDER=$!; OWN_PIDS+=("$BYSTANDER")
@@ -77,6 +86,7 @@ mkdir -p "$FOREIGN_STATE/anvil-state-there-before"
 echo "--- a journey that leaks a chain and the chain keeps state"
 "$GATE" leaky >"$WORK/run1.out" 2>&1; status=$?
 check "the run passes" $(yes_if [ $status -eq 0 ])
+check "the stand-in chain actually reached readiness" $(yes_if [ -f "$ANVIL_READY_FILE" ])
 check "the chain the journey leaked is stopped" $(yes_if bash -c '! kill -0 "$(cat "$0")" 2>/dev/null' "$LEAKED_PID_FILE")
 check "an unrelated process is left running" $(yes_if alive "$BYSTANDER")
 CACHE="$(head -1 "$ANVIL_CACHE_LOG" 2>/dev/null)"

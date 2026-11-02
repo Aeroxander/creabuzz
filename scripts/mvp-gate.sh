@@ -113,6 +113,7 @@ PILOT=(
 # features, a community of your own (self-serve) is off on the pilot server, and the Shares transfer-validator journey is
 # the LBAMM evaluation's (its lock-guard steps still run here, nightly).
 LATER=(
+  web-project-story-e2e
   cli-milestone-e2e
   web-record-e2e
   web-milestone-e2e
@@ -193,6 +194,7 @@ journey_ports() {
     shares-erc20c-e2e) ;;
     # The pilot build, from a folder of its own, against a stubbed server.
     web-pilot-e2e) echo 4186 ;;
+    web-project-story-e2e) echo 4196 ;;
     *) echo 4173 ;;
   esac
 }
