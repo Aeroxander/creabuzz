@@ -568,6 +568,28 @@ record-level by design (offered / agreed / settled) and the step line carries
 the attempt. Whether the badge should also mirror the attempt is a design
 choice, not a defect, and no fix is needed for the MVP.
 
+### Final evidence: every phase renders, on a world with five agreements
+
+A run against a world already holding four agreements created a fifth and
+captured it after each step. The section rendered **five cards** every time, and
+this run's card tracked all six phases:
+
+| phase | badge | next-step line |
+|---|---|---|
+| proposed | Offered, waiting for the named person | "Accepting is the financial moment: this quantity is reserved against the work area's own ceiling then, never before." |
+| accepted | Agreed; the quantity is reserved | "One submission at a time, at no currency ask…" |
+| submitted | Agreed; the quantity is reserved | "The panel judges one attempt at a time against the agreed criteria; no decision lands by itself…" |
+| approved | Agreed; the quantity is reserved | "The panel reached its actual quorum: anyone may settle the claim, which is what starts the attempt's challenge window." |
+| window passed | Agreed; the quantity is reserved | "Approved on its own terms; once the challenge window has passed anyone may settle it at the record's exact quantity." |
+| settled | Settled | "The agreement settled exactly on its terms." |
+
+Six screenshots, six distinct SHA-256 hashes. The run ended
+`PASS … 9000000000000000000 Shares minted exactly`.
+
+So the original report of a multi-agreement defect was wrong twice over: five
+agreements render as five cards, and every phase of the new one is visible —
+the badge stays record-level and the step line carries the attempt.
+
 **Host note.** `cast send` intermittently panics building macOS proxy settings
 (`system-configuration` returns NULL) before reaching the node; the journey
 script retries that specific startup failure and never retries a parsed revert.
