@@ -193,7 +193,12 @@ pub(super) async fn cmd_work_checks(
     // finished container of this owner or of a verified-dead owner is
     // removed, and its report lands in the record's shared notes.
     let cleanup_notes = sandbox::cleanup_finished("docker", &sandbox::owner_key());
-    let sandbox = sandbox::prepare("docker", &args.sandbox_image, &args.dir, &args.sandbox_supervisor);
+    let sandbox = sandbox::prepare(
+        "docker",
+        &args.sandbox_image,
+        &args.dir,
+        &args.sandbox_supervisor,
+    );
 
     let (outcomes, telemetry) = runner::run_checks(&declaration, &options, &sandbox)?;
 

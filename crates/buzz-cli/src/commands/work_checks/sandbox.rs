@@ -239,18 +239,19 @@ pub(crate) fn prepare(
             ))
         }
     };
-    let verified = match ops::verify_supervisor(docker_bin, &image.image_id, &supervisor, &ops::owner_key()) {
-        Ok(verified) => verified,
-        Err(reason) => {
-            return PreparedSandbox::Unavailable(format!(
-                "no verified in-container deadline supervisor on {image_ref:?}: \
+    let verified =
+        match ops::verify_supervisor(docker_bin, &image.image_id, &supervisor, &ops::owner_key()) {
+            Ok(verified) => verified,
+            Err(reason) => {
+                return PreparedSandbox::Unavailable(format!(
+                    "no verified in-container deadline supervisor on {image_ref:?}: \
                  {reason} — without a supervisor that an untrusted check cannot \
                  stop and that survived the malicious process-stop probe, a running \
                  check could outlive this command, so this image is refused (fail \
                  closed)"
-            ))
-        }
-    };
+                ))
+            }
+        };
     match snapshot_artifact(Path::new(artifact_dir)) {
         Ok(snapshot) => PreparedSandbox::Ready(Box::new(ReadySandbox {
             docker_bin: docker_bin.to_string(),

@@ -156,7 +156,12 @@ fn unsafe_image_with_declared_volumes_is_refused() {
     std::fs::write(dir.path().join("artifact.txt"), "the artifact").unwrap();
     // The volume refusal happens at image resolution, before any governor or
     // helper is touched: an unused path proves no hidden dependency.
-    let sandbox = sandbox::prepare("docker", tag, dir.path().to_str().unwrap(), "/definitely-not-a-supervisor-with-this-run");
+    let sandbox = sandbox::prepare(
+        "docker",
+        tag,
+        dir.path().to_str().unwrap(),
+        "/definitely-not-a-supervisor-with-this-run",
+    );
     let unavailable = match &sandbox {
         sandbox::PreparedSandbox::Unavailable(reason) => reason.clone(),
         other => panic!("an image with declared volumes must be unavailable: {other:?}"),
@@ -192,9 +197,7 @@ fn prepare_with_fixture(dir: &std::path::Path) -> sandbox::PreparedSandbox {
     )
 }
 
-fn unpack_prepared_skip_if_unavailable(
-    prepared: &sandbox::PreparedSandbox,
-) -> bool {
+fn unpack_prepared_skip_if_unavailable(prepared: &sandbox::PreparedSandbox) -> bool {
     match prepared {
         sandbox::PreparedSandbox::Ready(_) => true,
         sandbox::PreparedSandbox::Unavailable(reason) => {
@@ -990,7 +993,9 @@ fn an_untrusted_helper_is_refused_fail_closed() {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&fake_bin, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let manifest = masquerade.path().join("buzz-check-supervisor.manifest.json");
+    let manifest = masquerade
+        .path()
+        .join("buzz-check-supervisor.manifest.json");
     let sha = super::tests::sha256_hex(&fake_bin);
     std::fs::write(
         &manifest,

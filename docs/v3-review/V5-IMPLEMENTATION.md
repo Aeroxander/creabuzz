@@ -345,3 +345,54 @@ reproduced, not an author report.
   (no Docker `--init`), built offline from cached images, hash-pinned in a
   manifest, copied into a private root and mounted read-only. A same-UID check
   can no longer stop the process enforcing its deadline.
+
+### Real local deployment of the creation version
+
+`./scripts/v5-local-fixture.sh` deploys the whole creation path as real
+transactions on a self-started local anvil (chain id 31337, loopback WebSocket)
+and reads every value back from node state with `cast`, not from the script's
+memory. Three consecutive runs exited 0; the final run reported **8/8 receipts
+`status = 1`**, the kit landing on its predicted address
+(`0xDc64…F6C9`), and:
+
+- `dao.shares()` and `dao.votingWeight()` equal the predicted Shares and policy
+  clones; `marketFactory.marketOf(dao)` is the predicted market, whose
+  `dao/sharesToken/policy/quote/lotSize` all match;
+- `listing()` is `false,0,0,0` — trading is a later DAO decision, not automatic;
+- `saleEligibleOf(founder) = (0, 1)`, `lockGuard() = 0`,
+  `lockGuardSet() = true`, `transferExempt() = market`, `transfersLocked() = true`;
+- the founder's bootstrap `capacity` is non-zero (`2e20`) with
+  `proposalThreshold` `2e18`, so a new project can govern from birth;
+- the policy's frozen schedule reads market, founder, grant `2e20`, start = the
+  launch block, cliff 0, duration 15,552,000.
+
+Creation payloads as the node received them, against EIP-3860's 49,152:
+`TreasuryMandateFactory` **49,129** (23 bytes of headroom — a real constraint for
+future work), `Summoner` 47,832, `SecondaryMarketFactory` 30,559,
+`ContributorKitV2` 29,960, `ActivationVoting` 23,886. Runtimes against
+EIP-170's 24,576: Moloch 23,970, `ActivationVoting` 23,687, mandate factory
+21,086, market factory 16,984, work budget 16,505, kit 15,792, market 13,310,
+Shares 12,755, Summoner 1,970.
+
+Noted, not resolved here: Foundry 1.4.3 produces different bytecode for
+`ActivationVoting` from `forge build` (23,446 runtime) versus `forge script`
+(23,687) with identical sources and metadata, and the checked-in `out/`
+artifact was stale. The deployment path is the larger number, so the limits hold
+either way, but a reproducible-artifact check for that contract remains open.
+
+### Real CLI run of the artifact check
+
+The built CLI was run against a fixture artifact with three declared checks
+(read, write-outside, hang) using `--no-publish`:
+
+- `sandboxEnforced: true`, `summary: {passed: 2, timedOut: 1, notRun: 0}`;
+- the outside write was refused by the container (`Read-only file system`) and
+  nothing appeared on the host;
+- the hanging check ended at its deadline rather than hanging the run;
+- the signed record carried `["c", "<mandate>:<claim>:<evidence>"]` alongside the
+  display tags, so the reader's indexed query can reach it.
+
+That run exposed and fixed two real defects: the container read-back compared
+`HostConfig.Binds` as an ordered list, so a daemon that returns the same two
+read-only binds in another order was reported as a containment failure (now a
+set comparison), and the publisher did not emit the `c` context tag at all.

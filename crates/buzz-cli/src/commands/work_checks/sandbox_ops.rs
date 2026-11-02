@@ -369,9 +369,7 @@ fn ensure_private_root(root: &Path, what: &str) -> Result<PathBuf, String> {
                 ));
             }
             if !existing.is_dir() {
-                return Err(format!(
-                    "refusing {what} root: {root:?} is not a directory"
-                ));
+                return Err(format!("refusing {what} root: {root:?} is not a directory"));
             }
             let mode = existing.permissions().mode() & 0o777;
             if mode != ROOT_MODE {
@@ -454,7 +452,12 @@ pub(crate) fn record_owned(owner: &str, name: &str, image_id: &str) -> Result<()
 /// write a 0600 temp file IN the root; fsync the FILE; atomically rename
 /// onto the entry path; fsync the DIRECTORY — only then the entry is durable
 /// and only then does the caller create the container.
-pub(crate) fn record_owned_in(root: &Path, owner: &str, name: &str, image_id: &str) -> Result<(), String> {
+pub(crate) fn record_owned_in(
+    root: &Path,
+    owner: &str,
+    name: &str,
+    image_id: &str,
+) -> Result<(), String> {
     let root = ensure_private_root(root, "journal")?;
     let body = json!({
         "name": name,
@@ -463,9 +466,14 @@ pub(crate) fn record_owned_in(root: &Path, owner: &str, name: &str, image_id: &s
         "pid": std::process::id(),
         "createdAt": now_secs(),
     });
-    persist_entry_atomic(&root, &entry_path_in(&root, owner, name), &body.to_string())
-        .map_err(|e| format!("the ownership entry for {name:?} could not be durably \
-                              recorded (no container was created): {e}"))
+    persist_entry_atomic(&root, &entry_path_in(&root, owner, name), &body.to_string()).map_err(
+        |e| {
+            format!(
+                "the ownership entry for {name:?} could not be durably \
+                              recorded (no container was created): {e}"
+            )
+        },
+    )
 }
 
 fn entry_path_in(root: &Path, owner: &str, name: &str) -> PathBuf {
@@ -480,14 +488,10 @@ fn persist_entry_atomic(root: &Path, dest: &Path, body: &str) -> Result<(), Stri
     if body.len() > 64 * 1024 {
         return Err("the journal entry exceeds its 64 KiB bound".into());
     }
-    let unique = format!(
-        ".tmp-{}-{}-{}",
-        std::process::id(),
-        now_nanos(),
-        body.len()
-    );
+    let unique = format!(".tmp-{}-{}-{}", std::process::id(), now_nanos(), body.len());
     let tmp = root.join(&unique);
-    let mut file = File::create(&tmp).map_err(|e| format!("could not create the entry temp: {e}"))?;
+    let mut file =
+        File::create(&tmp).map_err(|e| format!("could not create the entry temp: {e}"))?;
     std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
         .map_err(|e| format!("could not confine the entry temp: {e}"))?;
     file.write_all(body.as_bytes())
@@ -503,12 +507,13 @@ fn persist_entry_atomic(root: &Path, dest: &Path, body: &str) -> Result<(), Stri
     })?;
     // The rename only becomes durable after its directory is synced.
     let dir = File::open(root).map_err(|e| format!("could not open the journal dir: {e}"))?;
-    dir.sync_all()
-        .map_err(|e| {
-            let _ = std::fs::remove_file(dest);
-            format!("could not fsync the journal dir (the placed entry was withdrawn; \
-                     the record is NOT durable, so nothing may proceed): {e}")
-        })
+    dir.sync_all().map_err(|e| {
+        let _ = std::fs::remove_file(dest);
+        format!(
+            "could not fsync the journal dir (the placed entry was withdrawn; \
+                     the record is NOT durable, so nothing may proceed): {e}"
+        )
+    })
 }
 
 fn now_nanos() -> u128 {
@@ -533,8 +538,8 @@ struct OwnedEntry {
 }
 
 fn parse_entry(path: &Path) -> Result<OwnedEntry, String> {
-    let raw = std::fs::read_to_string(path)
-        .map_err(|e| format!("could not read the entry: {e}"))?;
+    let raw =
+        std::fs::read_to_string(path).map_err(|e| format!("could not read the entry: {e}"))?;
     let value: Value = serde_json::from_str(&raw)
         .map_err(|e| format!("the entry is not a parseable record: {e}"))?;
     let name = value
@@ -568,10 +573,7 @@ fn parse_entry(path: &Path) -> Result<OwnedEntry, String> {
 /// container, matched against an entry. Only a full match (owner label AND
 /// the recorded immutable image pointer) authorizes a recovery removal.
 /// Any management uncertainty propagates — never a removal.
-fn entry_matches_container(
-    docker_bin: &str,
-    entry: &OwnedEntry,
-) -> Result<bool, String> {
+fn entry_matches_container(docker_bin: &str, entry: &OwnedEntry) -> Result<bool, String> {
     let (image, owner, _labels) = match container_identity(docker_bin, &entry.name)? {
         None => return Ok(false),
         Some(identity) => identity,
@@ -645,7 +647,8 @@ pub(crate) fn cleanup_finished_in(root: &Path, docker_bin: &str, own_owner: &str
                     notes.push(format!(
                         "a corrupt journal record at {:?} was RETAINED for visible \
                          retry, not deleted: {reason}",
-                        path.file_name().map(|n| n.to_string_lossy().into_owned())
+                        path.file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
                             .unwrap_or_default()
                     ));
                 }
@@ -850,22 +853,17 @@ fn read_verified_manifest(
         );
     }
     if !binary_meta.file_type().is_file() {
-        return Err(
-            "refusing the supervisor binary: it is not a regular file".into(),
-        );
+        return Err("refusing the supervisor binary: it is not a regular file".into());
     }
     let mode = binary_meta.permissions().mode();
     let privilege_bits = mode & (0o4000 | 0o2000);
     if privilege_bits != 0 {
         return Err(
-            "refusing the supervisor binary: it carries setuid/setgid privilege bits"
-                .into(),
+            "refusing the supervisor binary: it carries setuid/setgid privilege bits".into(),
         );
     }
     if mode & 0o100 == 0 {
-        return Err(
-            "refusing the supervisor binary: it is not owner-executable".into(),
-        );
+        return Err("refusing the supervisor binary: it is not owner-executable".into());
     }
     if binary_meta.len() != size {
         return Err(format!(
@@ -885,8 +883,8 @@ fn read_verified_manifest(
         .map_err(|e| format!("could not copy the supervisor into the private bind root: {e}"))?;
     std::fs::set_permissions(&copy_path, std::fs::Permissions::from_mode(0o755))
         .map_err(|e| format!("could not set the supervisor copy's mode: {e}"))?;
-    let copied = File::open(&copy_path)
-        .map_err(|e| format!("could not open the private copy: {e}"))?;
+    let copied =
+        File::open(&copy_path).map_err(|e| format!("could not open the private copy: {e}"))?;
     copied
         .sync_all()
         .map_err(|e| format!("could not fsync the private copy: {e}"))?;
@@ -947,7 +945,9 @@ fn sha256_file(path: &Path) -> Result<String, String> {
             break;
         }
         if remaining < read as u64 {
-            return Err(format!("the file at {path:?} exceeds the 16 MiB helper bound"));
+            return Err(format!(
+                "the file at {path:?} exceeds the 16 MiB helper bound"
+            ));
         }
         remaining -= read as u64;
         hasher.update(&chunk[..read]);
@@ -961,11 +961,13 @@ fn sha256_file(path: &Path) -> Result<String, String> {
 /// read-only rootfs, caps dropped, non-root, no-new-privileges, bounded
 /// everything, log-driver none, helper bound read-only as the only extra
 /// mount) and the helper as the (PID 1) entrypoint:
+///
 /// 1. EXEC: `<secs> /bin/true` must exit 0 — the helper really runs in an
 ///    enforced container as PID 1;
 /// 2. THE MALICIOUS REPRO: a check that SIGSTOPs every other process in the
 ///    namespace then sleeps must STILL end by the deadline (exit 124) — this
 ///    is the exact proof the replaced busybox watchdog failed.
+///
 /// Any wrong rc, surviving container, or management uncertainty fails the
 /// sandbox closed.
 pub(crate) fn verify_supervisor(

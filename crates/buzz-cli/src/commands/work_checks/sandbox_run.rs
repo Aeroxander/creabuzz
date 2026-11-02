@@ -15,9 +15,9 @@ use serde_json::{json, Value};
 use super::checks::{now_secs, CheckSpec, RunnerOptions};
 use super::runner::CheckOutcome;
 use super::sandbox::{
-    PreparedSandbox, ReadySandbox, SandboxTelemetry, CONTAINER_LABEL,
-    SANDBOX_ARTIFACT_MOUNT, SANDBOX_CPUS, SANDBOX_LOG_DRIVER, SANDBOX_MEMORY_BYTES,
-    SANDBOX_PIDS_LIMIT, SANDBOX_TMPFS, SANDBOX_TMPFS_BYTES, SANDBOX_USER,
+    PreparedSandbox, ReadySandbox, SandboxTelemetry, CONTAINER_LABEL, SANDBOX_ARTIFACT_MOUNT,
+    SANDBOX_CPUS, SANDBOX_LOG_DRIVER, SANDBOX_MEMORY_BYTES, SANDBOX_PIDS_LIMIT, SANDBOX_TMPFS,
+    SANDBOX_TMPFS_BYTES, SANDBOX_USER,
 };
 use super::sandbox_ops as ops;
 use super::sandbox_ops::CLIENT_KILL_WAIT;
@@ -807,14 +807,10 @@ fn verify_container(
             ("bind", d) if d == ready.supervisor.entrypoint => {
                 supervisor_binds += 1;
                 if rw {
-                    failures.push(
-                        "the trusted supervisor bind is not read-only at the daemon"
-                            .into(),
-                    );
+                    failures
+                        .push("the trusted supervisor bind is not read-only at the daemon".into());
                 }
-                if str_of(&mount["Source"])
-                    != ready.supervisor.host_copy.display().to_string()
-                {
+                if str_of(&mount["Source"]) != ready.supervisor.host_copy.display().to_string() {
                     failures.push(
                         "the trusted supervisor bind's source is not the prepared \
                          private hash-pinned copy"

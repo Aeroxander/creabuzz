@@ -58,8 +58,7 @@ pub(super) const FIXTURE_IMAGE: &str = "alpine:3.20";
 /// docker tests then SKIP with the printed reason — an unavailable daemon
 /// must never silently count as a pass.
 pub(super) fn supervisor_fixture() -> Option<std::path::PathBuf> {
-    static FIXTURE: std::sync::OnceLock<Option<std::path::PathBuf>> =
-        std::sync::OnceLock::new();
+    static FIXTURE: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
     FIXTURE
         .get_or_init(|| {
             if !docker_available() {
@@ -74,10 +73,7 @@ pub(super) fn supervisor_fixture() -> Option<std::path::PathBuf> {
                 .expect("repo root from CARGO_MANIFEST_DIR");
             let built = repo_root.join("target").join("buzz-check-supervisor");
             let script = repo_root.join("scripts").join("build-check-supervisor.sh");
-            let already = built
-                .metadata()
-                .map(|m| m.is_file())
-                .unwrap_or(false)
+            let already = built.metadata().map(|m| m.is_file()).unwrap_or(false)
                 && built
                     .with_extension("")
                     .to_string_lossy()
@@ -108,7 +104,6 @@ pub(super) fn supervisor_fixture() -> Option<std::path::PathBuf> {
         })
         .clone()
 }
-
 
 pub(super) fn opts(
     dir: &std::path::Path,

@@ -25,10 +25,18 @@ import {
   KIND_LAUNCH_RECEIPT,
   KIND_LAUNCH_RECORD,
   KIND_LAUNCH_UPDATE,
-  KIND_SCORE_ROOT,
 } from "../../shared/constants/kinds.ts";
+import {
+  contentObject,
+  int,
+  str,
+  strs,
+  tagValue,
+  tagValues,
+} from "./lib/nostr-fields.ts";
 
 export { launchRemovals, removedLaunchIds } from "./lib/launch-removals.ts";
+export { type ScoreRoot, parseScoreRoot } from "./lib/score-root-model.ts";
 
 export type LaunchStage =
   | "draft"
@@ -251,12 +259,6 @@ type ProposalKind = "plain" | "futarchy-budget" | "signal";
  * shape).
  */
 import type { ProposalIntent } from "./lib/vote-tx.ts";
-import { eventContentObject } from "../../shared/lib/event-fields.ts";
-
-/** The mirror's JSON body; malformed mirrors read as empty and are dropped by the caller. */
-function contentObject(event: NostrEvent): Record<string, unknown> {
-  return eventContentObject(event) ?? {};
-}
 
 export type { ProposalIntent };
 
@@ -331,29 +333,8 @@ export interface Launch {
   receipts: LaunchReceipt[];
 }
 
-function tagValue(event: NostrEvent, name: string): string | null {
-  const tag = event.tags.find((t) => t[0] === name);
-  return tag && tag.length >= 2 ? tag[1] : null;
-}
-
-function tagValues(event: NostrEvent, name: string): string[] {
-  return event.tags
-    .filter((t) => t[0] === name && t.length >= 2)
-    .map((t) => t[1]);
-}
-
 export function launchCoordinate(author: string, launchId: string): string {
   return `${KIND_LAUNCH_RECORD}:${author}:${launchId}`;
-}
-
-function str(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function int(value: unknown): number | null {
-  return typeof value === "number" && Number.isSafeInteger(value)
-    ? value
-    : null;
 }
 
 /**
@@ -389,12 +370,6 @@ function parseLaunchChat(value: unknown): LaunchChat {
     backers: room(object.backers),
     board: room(object.board),
   };
-}
-
-function strs(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((v): v is string => typeof v === "string")
-    : [];
 }
 
 /**
@@ -904,77 +879,6 @@ export function hasFounderCommitments(record: LaunchRecord): boolean {
     Boolean(record.budget) &&
     Boolean(record.updateCadence)
   );
-}
-
-export interface ScoreRoot {
-  /**
-   * The signed record's **event id** — one publisher's signature, so two
-   * publishers' records for the same `program:epoch` never share an id
-   * (selection, cache keys and proofs reads always answer for exactly the
-   * record chosen). The replaceable coordinate it carries separately.
-   */
-  id: string;
-  /** The record's `d` tag: `program:epoch`, validated against the content. */
-  coordinate: string;
-  author: string;
-  createdAt: number;
-  program: string;
-  root: string;
-  epoch: string;
-  /** The proofs pointer as the record carries it (unfiltered, for transparency). */
-  indexerUrl: string | null;
-  /** The proofs pointer this app may actually follow; null when it may not. */
-  proofUrl: string | null;
-  anchorBlock: number | null;
-  /**
-   * Whether the record's publisher is one this community has accepted
-   * (`lib/score-root-policy.ts`). A `publisher-claim` is never shown as the
-   * community's reputation — only as what that publisher signed.
-   */
-  standing: "accepted" | "publisher-claim";
-}
-
-/**
- * Parse a score-root record (kind 37006, d = program:epoch).
- *
- * Callers verify a record's signature first (`lib/score-root-policy.ts`
- * `verifySignedEvent` — the read surface does not check signatures itself);
- * this parser parses whatever it is given without crash or invention, and the
- * classifying layer decisions rest on the verified keys, not on the fields.
- * A trustgraph operator publishes the proven Merkle root of a community's
- * scores each epoch; clients verify individual score claims against it with
- * `lib/trust-score.ts` (no prover needed). Malformed records are refused
- * rather than shown as authoritative — including one whose `d` tag does not
- * name the program and epoch its own content says: a record that cannot keep
- * itself together proves nothing about the tree it claims.
- */
-export function parseScoreRoot(event: NostrEvent): ScoreRoot | null {
-  if (event.kind !== KIND_SCORE_ROOT) return null;
-  if (typeof event.id !== "string" || event.id.length === 0) return null;
-  const coordinate = tagValue(event, "d");
-  if (!coordinate) return null;
-  const body = contentObject(event);
-  const program = str(body.program);
-  const root = str(body.root);
-  const epoch = str(body.epoch);
-  if (!program || !root || !/^0x[0-9a-fA-F]{64}$/.test(root)) return null;
-  if (!epoch || coordinate !== `${program}:${epoch}`) return null;
-  return {
-    // The signature marks this exact record; the coordinate does not. An id
-    // that is only the coordinate would let two publishers' records share a
-    // selection, a cache slot and a proofs answer.
-    id: event.id,
-    coordinate,
-    author: event.pubkey,
-    createdAt: event.created_at,
-    program,
-    root,
-    epoch,
-    indexerUrl: str(body.indexerUrl),
-    proofUrl: null,
-    anchorBlock: int(body.anchorBlock),
-    standing: "publisher-claim",
-  };
 }
 
 interface VestingTranche {
