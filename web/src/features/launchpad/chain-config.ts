@@ -139,6 +139,13 @@ export interface ChainEnv {
   /** Weekly rounds between holders and new buyers per chain (D131), as JSON `{ "<chainId>": "0x…" }`. */
   VITE_WEEKLY_ROUNDS?: string;
   /**
+   * Which score-root publishers each community has accepted, as JSON keyed by
+   * relay host: `{"localhost:3000":{"publishers":["<hex>"],"programs":["…"]}}`.
+   * A community with no entry accepts none; its score roots are shown labelled
+   * as the publisher's own claim (`lib/score-root-policy.ts`).
+   */
+  VITE_SCORE_ROOT_PUBLISHERS?: string;
+  /**
    * $CREATE per chain, as JSON: `{"31337":"0x…"}` (N6). The platform's work token: staked to judge cases and posted as a
    * bond. A chain with no entry offers neither.
    */

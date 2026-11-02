@@ -340,8 +340,9 @@ function MilestoneCard({
               </>
             ) : null}
             <p className="mt-2 text-xs text-muted-foreground">
-              This is the text the claim committed to on the network: it
-              matches.
+              This is the text the claim committed to: the hash matches, so this
+              is the packet as it was stored. A matching hash does not prove
+              what the packet says.
             </p>
           </details>
         ) : entry.evidenceMissing ? (

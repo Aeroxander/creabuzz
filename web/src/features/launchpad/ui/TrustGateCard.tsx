@@ -76,8 +76,8 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
   const bundle = useQuery({
     queryKey: ["trust-bundle", selected?.id ?? ""],
     queryFn: async ({ signal }) => {
-      if (!selected?.indexerUrl) return null;
-      const response = await timedFetchStreamed(selected.indexerUrl, {
+      if (!selected?.proofUrl) return null;
+      const response = await timedFetchStreamed(selected.proofUrl, {
         signal,
       });
       const body: unknown = await response.json();
@@ -87,7 +87,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
           : null;
       return parseBundleEntries(proofs, selected.root);
     },
-    enabled: Boolean(selected?.indexerUrl),
+    enabled: Boolean(selected?.proofUrl),
     staleTime: 300_000,
   });
 
@@ -181,7 +181,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
               <option value="">Choose an epoch…</option>
               {records.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.program} · epoch {r.epoch}
+                  {`${r.program} · epoch ${r.epoch}${r.standing === "publisher-claim" ? " (publisher's own claim)" : ""}`}
                 </option>
               ))}
             </select>
@@ -189,7 +189,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
               <p className="mt-1 text-black/70 dark:text-white/70">
                 root {shortHex(selected.root)}
                 {selected.anchorBlock != null
-                  ? ` · anchored at block ${selected.anchorBlock}`
+                  ? ` · the record asserts block ${selected.anchorBlock} (unverified: not checked against the chain)`
                   : ""}
                 {gateMatches === true
                   ? " · the gate on-chain matches this root"
@@ -203,19 +203,32 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
                 per epoch)
               </p>
             )}
+            {selected && selected.standing === "publisher-claim" ? (
+              <p className="mt-1 text-black/60 dark:text-white/60">
+                This community has not named an accepted scoring publisher, so
+                this record is shown as its publisher&apos;s own claim — not as
+                the community&apos;s reputation.
+              </p>
+            ) : null}
           </section>
 
           {/* The graph: the roster + the Merkle tree every consumer verifies. */}
           <section aria-label="Trust graph">
             <h4 className="font-medium">The graph</h4>
+            <p className="text-black/60 dark:text-white/60">
+              An included score is proven to be in the list. That says nothing
+              about how the scores were computed — only a working method read
+              and its result checked would.
+            </p>
             {!selected ? (
               <p className="text-black/60 dark:text-white/60">
                 choose an epoch to load its proofs bundle
               </p>
-            ) : !selected.indexerUrl ? (
+            ) : !selected.proofUrl ? (
               <p className="text-black/60 dark:text-white/60">
-                this record carries no proofs pointer. Only the root ships; the
-                workspace data stays private
+                this record carries no proofs pointer, or its address is not one
+                this app may load. Only the root ships; the workspace data stays
+                private
               </p>
             ) : bundle.isLoading ? (
               <p className="text-black/60 dark:text-white/60">

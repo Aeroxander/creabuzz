@@ -25,6 +25,7 @@ import {
 } from "../lib/dao-overview";
 import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import { isContributorProject } from "../lib/funding";
+import { nextActionOf } from "../lib/next-action";
 import { openWorkAreas, recordSources } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
@@ -179,8 +180,12 @@ export function DaoOverview({
         ifIgnored: "Holders read the latest note before voting on money.",
       });
   }
-  // An item's button: its tab, or the check note on this page.
-  const openItem = (item: AttentionItem) =>
+  // An item's button: its tab, or the check note on this page. The shape both
+  // the attention items and the consolidated next action share.
+  const openItem = (item: {
+    tab: AttentionItem["tab"];
+    claim?: AttentionItem["claim"];
+  }) =>
     item.tab === "overview"
       ? document
           .querySelector<HTMLElement>('[data-testid="check-note"]')
@@ -218,6 +223,10 @@ export function DaoOverview({
   // What this person can do now, and their own work waiting on someone else, said apart.
   const items = ranked.filter((item) => item.actor !== "others");
   const waiting = ranked.filter((item) => item.actor === "others");
+  // The single thing this person acts on first: the top of the ranked queue,
+  // named with whose turn it is and when it changes by itself (`lib/next-action.ts`).
+  const lead = nextActionOf(items, clock);
+  const rest = lead ? items.slice(1) : items;
   // A read that failed with nothing earlier to show: an empty list would be a guess, not an answer.
   const unread = [decisions, work, challengeLock].some(
     (q) => q.isError && q.data === undefined,
@@ -280,36 +289,67 @@ export function DaoOverview({
               </p>
             )
           ) : (
-            <ul className="mt-2 divide-y divide-border/60">
-              {items.map((item) => (
-                <li
-                  className="flex items-start justify-between gap-3 py-2"
-                  data-testid="dao-attention"
-                  key={item.key}
+            <>
+              {lead ? (
+                <div
+                  className="mt-2 rounded-lg border border-primary/30 bg-primary/5 p-3"
+                  data-testid="dao-next-action"
                 >
-                  <span className="text-sm">
-                    {item.text}
-                    {item.why || item.ifIgnored || item.due ? (
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {item.due !== undefined && item.due > clock
-                          ? `Closes ${deadline(item.due)}. `
-                          : ""}
-                        {item.why ? `${item.why} ` : ""}
-                        {item.ifIgnored ?? ""}
-                      </span>
-                    ) : null}
-                  </span>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-primary-ink">
+                    Your one next action
+                  </h4>
+                  <p className="mt-1 text-sm font-medium">{lead.text}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Whose turn: {lead.role}.{" "}
+                    {lead.due !== undefined
+                      ? `It changes by itself ${deadline(lead.due)}. `
+                      : ""}
+                    {lead.why ? `${lead.why} ` : ""}
+                    {lead.ifIgnored ?? ""}
+                  </p>
                   <Button
-                    onClick={() => openItem(item)}
+                    className="mt-2"
+                    onClick={() => openItem(lead)}
                     size="sm"
                     type="button"
-                    variant="outline"
                   >
-                    {item.action}
+                    {lead.action}
                   </Button>
-                </li>
-              ))}
-            </ul>
+                </div>
+              ) : null}
+              {rest.length > 0 ? (
+                <ul className="mt-2 divide-y divide-border/60">
+                  {rest.map((item) => (
+                    <li
+                      className="flex items-start justify-between gap-3 py-2"
+                      data-testid="dao-attention"
+                      key={item.key}
+                    >
+                      <span className="text-sm">
+                        {item.text}
+                        {item.why || item.ifIgnored || item.due ? (
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {item.due !== undefined && item.due > clock
+                              ? `Closes ${deadline(item.due)}. `
+                              : ""}
+                            {item.why ? `${item.why} ` : ""}
+                            {item.ifIgnored ?? ""}
+                          </span>
+                        ) : null}
+                      </span>
+                      <Button
+                        onClick={() => openItem(item)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        {item.action}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
           )}
           {waiting.length > 0 ? (
             <div className="mt-3" data-testid="dao-waiting-others">

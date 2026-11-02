@@ -27,7 +27,6 @@ import {
   bondShortfall,
   canAcceptClaim,
   canExpire,
-  claimStatusLabel,
   encodeBind,
   encodeBond,
   encodeCallId,
@@ -74,6 +73,7 @@ import { ReviewActions } from "./ReviewActions";
 import { ClaimReviewNote } from "./ClaimReviewNote";
 import { type ClaimReview, useReviewReasons } from "../use-review-reasons";
 import { nextMoment, refreshDelay } from "../lib/work-refresh";
+import { workClaimStatus } from "../lib/work-status";
 import { ShortName } from "./ShortName";
 
 const sameAddress = (a: string | null, b: string) =>
@@ -745,7 +745,7 @@ function MandateCard({
                     data-testid="work-claim-status"
                   >
                     <Chip tone={statusTone(claim.record.status)}>
-                      {claimStatusLabel(claim.record)}
+                      {workClaimStatus(claim.record, claim.project !== null)}
                     </Chip>{" "}
                     · submitted by {labelOf(claim.record.contributor)}
                     {claim.record.amount > 0n

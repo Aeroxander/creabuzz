@@ -7,8 +7,9 @@
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
+import { agreementNextAction } from "../lib/agreement-next";
 import { plannedMilestoneTokens } from "../lib/milestone-plan";
-import { span } from "../lib/challenge-copy";
+import { deadline, span } from "../lib/challenge-copy";
 import { formatShares } from "../lib/shares-format";
 import { isEvmAddress, type LaunchRecord } from "../models";
 import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
@@ -56,6 +57,28 @@ export function MilestoneSummaryCard({
               ? "How they are judged could not be read just now."
               : "How they are judged is chosen when the project launches: holders can object, or named reviewers approve. It is shown here from then on."}
       </p>
+      {lock
+        ? (() => {
+            // The one thing the agreement has open, whose turn it is and when
+            // it changes by itself — from the lock read this card already
+            // holds (`lib/agreement-next.ts`). Unreadable means quiet: no
+            // next action is guessed.
+            const next = agreementNextAction(lock);
+            return next ? (
+              <p
+                className="mt-2 rounded-lg bg-black/5 p-2 text-xs text-black/70 dark:bg-white/5 dark:text-white/70"
+                data-testid="launch-agreement-next"
+              >
+                The one thing next: milestone {next.index + 1} —{" "}
+                {next.state.toLowerCase()}. Turn to act: {next.role}
+                {next.due !== null && next.due > lock.now
+                  ? `, and it changes by itself ${deadline(next.due)}`
+                  : ""}
+                .
+              </p>
+            ) : null;
+          })()
+        : null}
       <ol className="mt-3 divide-y divide-black/10 text-sm dark:divide-white/10">
         {milestones.map((milestone, index) => (
           <li

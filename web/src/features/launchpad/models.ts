@@ -913,8 +913,17 @@ export interface ScoreRoot {
   program: string;
   root: string;
   epoch: string;
+  /** The proofs pointer as the record carries it (unfiltered, for transparency). */
   indexerUrl: string | null;
+  /** The proofs pointer this app may actually follow; null when it may not. */
+  proofUrl: string | null;
   anchorBlock: number | null;
+  /**
+   * Whether the record's publisher is one this community has accepted
+   * (`lib/score-root-policy.ts`). A `publisher-claim` is never shown as the
+   * community's reputation — only as what that publisher signed.
+   */
+  standing: "accepted" | "publisher-claim";
 }
 
 /**
@@ -923,7 +932,9 @@ export interface ScoreRoot {
  * A trustgraph operator publishes the proven Merkle root of a community's
  * scores each epoch; clients verify individual score claims against it with
  * `lib/trust-score.ts` (no prover needed). Malformed records are refused
- * rather than shown as authoritative.
+ * rather than shown as authoritative — including one whose `d` tag does not
+ * name the program and epoch its own content says: a record that cannot keep
+ * itself together proves nothing about the tree it claims.
  */
 export function parseScoreRoot(event: NostrEvent): ScoreRoot | null {
   if (event.kind !== KIND_SCORE_ROOT) return null;
@@ -934,15 +945,18 @@ export function parseScoreRoot(event: NostrEvent): ScoreRoot | null {
   const root = str(body.root);
   const epoch = str(body.epoch);
   if (!program || !root || !/^0x[0-9a-fA-F]{64}$/.test(root)) return null;
+  if (!epoch || id !== `${program}:${epoch}`) return null;
   return {
     id,
     author: event.pubkey,
     createdAt: event.created_at,
     program,
     root,
-    epoch: epoch || id,
+    epoch,
     indexerUrl: str(body.indexerUrl),
+    proofUrl: null,
     anchorBlock: int(body.anchorBlock),
+    standing: "publisher-claim",
   };
 }
 
