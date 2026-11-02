@@ -557,13 +557,16 @@ the quantity is reserved | Offered…` — and the run's own card tracked
 `Offered` → `Agreed` → `Settled` while exactly 8e18 Shares were minted. Nothing
 in the lane drops an agreement.
 
-The defect that *is* real is narrower: between binding the submission and
-settlement the card keeps reading `Agreed; the quantity is reserved`. The
-attempt's own states (submitted, in review, window passed, ready to settle) never
-appear, so a reviewer or beneficiary sees no change until the reward settles.
-The card gets those words from the attempt, and the attempt is not being matched
-to the agreement's `claimId` in the work read; the record's own fields (accepted,
-settled) do show. That is the next fix.
+A second correction, from reading the cards directly: the attempt's review
+state **is** shown, in the card's next-step line, while the badge stays the
+record's own state. On the same world, the agreement left mid-review reads
+`Agreed; the quantity is reserved` beside *"The review did not conclude in the
+agreed period: the attempt lapses on its own, and the reservation then releases
+by expiry"*, and a settled one reads `Settled` beside *"The agreement settled
+exactly on its terms."* So nothing is missing from the card; the badge is
+record-level by design (offered / agreed / settled) and the step line carries
+the attempt. Whether the badge should also mirror the attempt is a design
+choice, not a defect, and no fix is needed for the MVP.
 
 **Host note.** `cast send` intermittently panics building macOS proxy settings
 (`system-configuration` returns NULL) before reaching the node; the journey

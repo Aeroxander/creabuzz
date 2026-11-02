@@ -148,9 +148,12 @@ async function capture(state, expect) {
   for (let i = 0; i < (await cards.count()); i += 1) {
     const card = cards.nth(i);
     const label = await card.getByTestId("agreed-state").innerText().catch(() => "?");
+    // The badge is the record's own state (offered/agreed/settled); the attempt's
+    // review state is carried by the next-step line, so both are captured.
+    const next = await card.getByTestId("agreed-next").innerText().catch(() => "");
     const text = (await card.innerText()).replace(/\s+/g, " ");
     seen.push(`${label}`);
-    if (text.includes(`${HUMAN_SHARES} Shares`)) mine = { card, label, text };
+    if (text.includes(`${HUMAN_SHARES} Shares`)) mine = { card, label, next, text };
   }
   if (!mine) {
     throw new Error(`no card names ${HUMAN_SHARES} Shares; cards: ${seen.join(" | ")}`);
@@ -161,6 +164,7 @@ async function capture(state, expect) {
   const file = path.join(SHOTS, `agreement-${state}.png`);
   await mine.card.screenshot({ path: file });
   console.log(`[${state}] cards=${seen.length} (${seen.join(" | ")}) this=${mine.label}`);
+  console.log(`[${state}] next: ${mine.next.replace(/\s+/g, " ").slice(0, 200)}`);
   console.log(`[${state}] shot: ${file}`);
 }
 
