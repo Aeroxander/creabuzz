@@ -547,16 +547,23 @@ record ends `terminalKind = 1` (settled), `agreementState = 9`, and
 `agreementOfClaim(claimId)` names the agreement — so the settlement path is
 real, exact and once-only.
 
-**A real defect the browser run found (not yet fixed).** With **two**
-agreements in the same work area, the section renders only **one** card — the
-older one. On a world where an earlier run had left an unaccepted offer, every
-capture showed that offer's state (`Offered…`) even after the second agreement
-was accepted, approved and settled; `eth_getLogs` for `AgreementProposed`
-reported two logs while the page rendered `cards=1`. On a world with a single
-agreement the card tracked correctly (`Offered, waiting for the named person` →
-`Agreed; the quantity is reserved`), and a settled single agreement rendered
-`Settled` with its recipients. The next fix is in the lane's id collection /
-rendering, not in the contracts.
+**Correction to an earlier claim, and the defect that is real.** A previous
+note here said two agreements in one work area collapse to a single card. That
+was wrong, and it was my measurement: `agreed-rewards` is the outer section, so
+counting it always returns one. Counting the cards themselves
+(`agreed-agreement`) on a world holding **four** agreements returns **four**, each
+with its own state — `Offered, waiting for the named person | Settled | Agreed;
+the quantity is reserved | Offered…` — and the run's own card tracked
+`Offered` → `Agreed` → `Settled` while exactly 8e18 Shares were minted. Nothing
+in the lane drops an agreement.
+
+The defect that *is* real is narrower: between binding the submission and
+settlement the card keeps reading `Agreed; the quantity is reserved`. The
+attempt's own states (submitted, in review, window passed, ready to settle) never
+appear, so a reviewer or beneficiary sees no change until the reward settles.
+The card gets those words from the attempt, and the attempt is not being matched
+to the agreement's `claimId` in the work read; the record's own fields (accepted,
+settled) do show. That is the next fix.
 
 **Host note.** `cast send` intermittently panics building macOS proxy settings
 (`system-configuration` returns NULL) before reaching the node; the journey

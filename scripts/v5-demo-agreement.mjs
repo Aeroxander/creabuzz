@@ -30,6 +30,8 @@ const SHARES = process.env.SHARES ?? "";
 const APP = process.env.APP_URL ?? "";
 const SHOTS = process.env.SHOTS ?? "";
 const AMOUNT = BigInt(process.env.SHARES_AMOUNT ?? "5000000000000000000");
+if (AMOUNT % 10n ** 18n !== 0n) throw new Error("SHARES_AMOUNT must be whole Shares");
+const HUMAN_SHARES = (AMOUNT / 10n ** 18n).toString();
 const RELAY_WS = process.env.RELAY_WS ?? "ws://127.0.0.1:3030";
 
 if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(RPC_HTTP)) {
@@ -71,7 +73,7 @@ const offline = (args) => execFileSync("cast", args, { encoding: "utf8" }).trim(
 // revert comes back as a parsed receipt with a non-1 status and is NOT retried.
 const send = (who, to, sig, params) => {
   let last = "";
-  for (let attempt = 1; attempt <= 12; attempt += 1) {
+  for (let attempt = 1; attempt <= 40; attempt += 1) {
     try {
       const out = cast(["send", to, sig, ...params, "--private-key", KEY[who], "--json"]);
       const receipt = JSON.parse(out);
@@ -80,10 +82,10 @@ const send = (who, to, sig, params) => {
     } catch (error) {
       last = String(error?.stderr ?? error?.message ?? error);
       if (!/system-configuration|NULL object|Unexpected non-whitespace/.test(last)) throw error;
-      execFileSync("sleep", ["2"]);
+      execFileSync("sleep", ["3"]);
     }
   }
-  throw new Error(`${sig} could not be sent after 12 attempts: ${last.slice(0, 300)}`);
+  throw new Error(`${sig} could not be sent after 40 attempts: ${last.slice(0, 300)}`);
 };
 const call = (to, sig, params = []) => cast(["call", to, sig, ...params]);
 const warp = (seconds) => {
@@ -128,21 +130,38 @@ await page.addInitScript(
   [RELAY_WS, RPC_HTTP],
 );
 
-/** The Agreed rewards card's own words, and a picture of it, at one state. */
-async function capture(state) {
+/**
+ * The Agreed rewards cards' own words, and a picture of this run's card, at one
+ * state. Every agreement in the work area is its own card (`agreed-agreement`);
+ * this run's is the one naming the quantity it agreed, so a world that already
+ * holds other agreements cannot be mistaken for this one.
+ */
+async function capture(state, expect) {
   await page.goto(APP, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(4000);
   await page.getByRole("tab", { name: "Work" }).click();
   await page.waitForTimeout(6000);
-  const cards = page.getByTestId("agreed-rewards");
+  const cards = page.getByTestId("agreed-agreement");
   await cards.first().waitFor({ state: "visible", timeout: 30_000 });
-  const all = await cards.allInnerTexts();
-  const text = all.map((t) => t.replace(/\s+/g, " ")).join(" || ");
+  const seen = [];
+  let mine = null;
+  for (let i = 0; i < (await cards.count()); i += 1) {
+    const card = cards.nth(i);
+    const label = await card.getByTestId("agreed-state").innerText().catch(() => "?");
+    const text = (await card.innerText()).replace(/\s+/g, " ");
+    seen.push(`${label}`);
+    if (text.includes(`${HUMAN_SHARES} Shares`)) mine = { card, label, text };
+  }
+  if (!mine) {
+    throw new Error(`no card names ${HUMAN_SHARES} Shares; cards: ${seen.join(" | ")}`);
+  }
+  if (expect && !mine.label.toLowerCase().includes(expect.toLowerCase())) {
+    throw new Error(`expected this card to read ${expect}, got ${mine.label}`);
+  }
   const file = path.join(SHOTS, `agreement-${state}.png`);
-  await cards.first().screenshot({ path: file });
-  console.log(`[${state}] cards=${all.length}: ${text.slice(0, 500)}`);
+  await mine.card.screenshot({ path: file });
+  console.log(`[${state}] cards=${seen.length} (${seen.join(" | ")}) this=${mine.label}`);
   console.log(`[${state}] shot: ${file}`);
-  return text;
 }
 
 // 1 — the manager offers exact terms.
@@ -156,11 +175,11 @@ send("manager", BUDGET, "proposeAgreement(bytes32,address,uint128,uint64,bytes32
   ZERO32,
   ZERO32,
 ]);
-await capture("1-proposed");
+await capture("1-proposed", "Offered");
 
 // 2 — the beneficiary accepts the exact terms (the reservation lands).
 send("beneficiary", BUDGET, "acceptAgreement(bytes32,address[],uint16[])", [agreementId, "[]", "[]"]);
-await capture("2-accepted");
+await capture("2-accepted", "Agreed");
 
 // 3 — the beneficiary files, states the agreed check, and binds it.
 send("beneficiary", CLAIMS, "submitClaim(bytes32,uint256,uint256,bytes32)", [CLAIM_ID, "0", "0", EVIDENCE]);
@@ -197,7 +216,7 @@ const fields = call(
   .map((line) => line.trim().split(" ")[0]);
 const terminal = fields[10];
 if (terminal !== "1") throw new Error(`terminalKind should be settled (1), got ${terminal}`);
-await capture("6-settled");
+await capture("6-settled", "Settled");
 
 console.log(
   `\nPASS: one agreement proposed, accepted, submitted, approved, challenged, settled — ` +
