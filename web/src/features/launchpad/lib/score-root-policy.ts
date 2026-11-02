@@ -1,25 +1,34 @@
 /**
- * Who may publish a score root this community treats as its own.
+ * Who may publish a score root this community treats as its own — and what
+ * the client does before it trusts any of it.
  *
  * Score-root records (the `d = <program>:<epoch>` Merkle-root records the
- * scoring operator publishes) are signed by whoever wrote them, and a relay
- * stores records from anyone. Reading them with no filter would present any
- * member's root as the community's reputation. This module is the client-side
- * policy: a build names, per community (a community is a server; the web
- * client talks to one), which publisher keys and score programs it has
- * accepted. With a policy, only accepted publishers' records are fetched and
- * kept — the Nostr query itself is filtered by author, and every returned
- * record is filtered again, so a server that ignores the author filter cannot
- * reshape the list. Without a policy nothing is accepted: roots are labelled
- * as the publisher's own claim, never as authoritative community reputation.
+ * scoring operator publishes) are signed by whoever wrote them, and the
+ * query surface stores records from anyone **without checking signatures**:
+ * whatever bytes a server answers with are what callers see. So before a
+ * record's `pubkey` means anything, the record's own id hash and signature
+ * are verified here — a forged event is dropped, never classified. That is
+ * also why a server that answers for a wrong author list cannot reshape the
+ * list: the author a signature proves is the only author that counts.
  *
- * The policy is per community and never defaulted to the server's own key:
- * an operator that publishes with a key other than the relay's is fine as long
- * as the build accepts that key.
+ * The policy itself: a build names, per community (a community is a server;
+ * the web client talks to one), which publisher keys and score programs it
+ * has accepted. With a policy, only accepted publishers' records are fetched
+ * and kept — the Nostr query is filtered by the accepted publishers, and
+ * every returned record is verified, parsed and filtered again. Without a
+ * policy nothing is accepted: roots are labelled as the publisher's own
+ * claim, never as authoritative community reputation. The policy is per
+ * community and never defaulted to the server's own key: an operator that
+ * publishes with a key other than the relay's is fine as long as the build
+ * accepts that key.
  *
  * Alias-free with `.ts` specifiers, so `score-root-policy.test.mjs` runs it
  * under `node --test` like its neighbours.
  */
+
+import { verifyEvent } from "nostr-tools";
+
+import { parseScoreRoot, type ScoreRoot } from "../models.ts";
 
 /** The policy a build configures for one community. */
 export interface ScorePublisherPolicy {
@@ -37,10 +46,34 @@ const KEY_RE = /^[0-9a-f]{64}$/;
 const DEFAULT_PROGRAM = "trustgraphs.output.nostr-member.v1";
 
 /**
- * The settings this module reads; shaped like `chain-config.ts`'s `ChainEnv`,
- * but structural so tests can call it without importing Vite types.
+ * A signed Nostr event as it arrives from the query surface — shapes that
+ * may or may not be a real event. Nothing here is trusted before
+ * {@link verifySignedEvent} passes.
  */
-type PartialEnv = { VITE_SCORE_ROOT_PUBLISHERS?: string };
+export type RawEvent = Record<string, unknown>;
+
+/**
+ * Whether the bytes really are the event they say: the id hash matches the
+ * serialization and the signature matches the id and key. Malformed input
+ * (a missing or wrong-typed field) is simply not verified — never a crash,
+ * and never a pass.
+ */
+export function verifySignedEvent(event: unknown): boolean {
+  if (event === null || typeof event !== "object") return false;
+  const e = event as Record<string, unknown>;
+  if (
+    typeof e.id !== "string" ||
+    typeof e.pubkey !== "string" ||
+    typeof e.sig !== "string"
+  ) {
+    return false;
+  }
+  try {
+    return verifyEvent(e as never);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * The policy for the community behind `relayUrl`, or null when this build
@@ -49,7 +82,7 @@ type PartialEnv = { VITE_SCORE_ROOT_PUBLISHERS?: string };
  */
 export function acceptedPublisherPolicy(input: {
   relayUrl: string;
-  env?: PartialEnv;
+  env?: { VITE_SCORE_ROOT_PUBLISHERS?: string };
 }): ScorePublisherPolicy | null {
   const raw = input.env?.VITE_SCORE_ROOT_PUBLISHERS?.trim();
   if (!raw || !input.relayUrl) return null;
@@ -102,6 +135,29 @@ export function acceptedPublisherPolicy(input: {
 }
 
 /**
+ * The stable cache scope for one query: the community's host plus the
+ * policy's accepted publishers and programs, order-normalized so two builds
+ * that list the same accepts in different orders share one cache. Another
+ * community's roots — or roots accepted under a different policy — never
+ * stand in for this one's.
+ */
+export function scoreRootsQueryScope(
+  relayUrl: string,
+  policy: ScorePublisherPolicy | null,
+): string {
+  const suffix = policy
+    ? [...policy.publishers].sort().join(",") +
+      "|" +
+      [...policy.programs].sort().join(",")
+    : "no-policy";
+  try {
+    return `${new URL(relayUrl).host.toLowerCase()}:${suffix}`;
+  } catch {
+    return `:${suffix}`;
+  }
+}
+
+/**
  * Where a score-root record stands with this community. `accepted` only says
  * its publisher is one the community has accepted and its program is one it
  * reads: the root itself is still whatever that publisher signed.
@@ -121,16 +177,38 @@ export type RootStanding = "accepted" | "publisher-claim";
 
 const HOST_LOCAL = new Set(["localhost", "[::1]", "::1"]);
 const isLocalHost = (host: string) =>
-  HOST_LOCAL.has(host) || host.endsWith(".localhost") || host === "127.0.0.1";
+  host !== "" &&
+  (HOST_LOCAL.has(host) ||
+    host.endsWith(".localhost") ||
+    host === "127.0.0.1" ||
+    host.startsWith("127."));
+
+const isLocalCommunity = (relayUrl: string): boolean => {
+  try {
+    return isLocalHost(new URL(relayUrl).hostname);
+  } catch {
+    return false;
+  }
+};
 
 /**
  * The proofs pointer a record may serve, or null when it may not. Only
- * `https` is allowed (and plain `http` on this machine, for development), so
- * no record can hand the app a `javascript:`/`data:` link or point a fetch
- * somewhere arbitrary. Null means "no pointer", not "broken link": the UI
- * says the record carries no proofs pointer only the root ships from.
+ * `https` is allowed, and plain `http` only when this machine is both
+ * (a) the client's own community and (b) the pointer's host — a record from
+ * a remote community naming this visitor's localhost is never followed.
+ * URLs carrying embedded credentials are refused, and the pointer must not
+ * pretend to be another scheme (`javascript:`, `data:`, `file:` …).
+ *
+ * This scheme filter is **not** containment of where a read goes: a `https`
+ * pointer still points wherever its publisher wants. It goes nowhere the
+ * person did not ask: the pointer is only followed on an explicit read when
+ * someone opens the proofs (a click or a chosen epoch), never fetched on the
+ * strength of the record alone, and the screens say where a link leads.
  */
-export function safeProofUrl(value: string | null): string | null {
+export function safeProofUrl(
+  value: string | null,
+  communityUrl?: string,
+): string | null {
   if (!value) return null;
   let url: URL;
   try {
@@ -138,9 +216,76 @@ export function safeProofUrl(value: string | null): string | null {
   } catch {
     return null;
   }
+  // An address with a username/password (or a port on a scheme that does not
+  // take one parsed oddly) is not a proofs pointer; it is a credential box.
+  if (url.username !== "" || url.password !== "") return null;
   if (url.protocol === "https:") return url.toString();
-  if (url.protocol === "http:" && isLocalHost(url.hostname)) {
-    return url.toString();
+  if (url.protocol === "http:") {
+    return isLocalCommunity(communityUrl ?? "") && isLocalHost(url.hostname)
+      ? url.toString()
+      : null;
   }
   return null;
+}
+
+/** The filter the score-root read sends; every field is named in the shared filter type. */
+export interface ScoreRootsFilter {
+  /** One kind only — the relay's p-gate needs explicit kinds. */
+  kinds: number[];
+  authors?: string[];
+  limit?: number;
+  /** Tag filters, as the shared filter type shapes them. None are sent today. */
+  [tag: `#${string}`]: string[] | undefined;
+}
+
+/**
+ * The read side's whole filter chain, bound to the production calls
+ * `fetchScoreRoots` makes (and to the same chain in tests — the query is
+ * injected, the rest is this module's real code):
+ *
+ * 1. the query names the accepted publishers, when there are any;
+ * 2. every answer is **signature-verified before its `pubkey` is read** — a
+ *    forged record is dropped here, before classification;
+ * 3. the strict parser keeps a record only when its `d` coordinate names the
+ *    program and epoch its own content says (`program:epoch`);
+ * 4. with a policy, only accepted publishers' records survive; without one,
+ *    everything readable survives labelled a publisher claim;
+ * 5. the proofs pointer is filtered before anything may follow it;
+ * 6. the "latest" root is not the server's first answer: newest signed
+ *    record first, ties by lowest event id.
+ */
+export async function collectScoreRoots(input: {
+  /** The community the query belongs to (the relay this client talks to). */
+  relayUrl: string;
+  policy: ScorePublisherPolicy | null;
+  /** The score-root kind, from the shared kind table in the caller. */
+  kind: number;
+  /** The real query surface in production; a fixture in tests. */
+  query: (filter: ScoreRootsFilter) => Promise<readonly unknown[]>;
+}): Promise<ScoreRoot[]> {
+  const filter: ScoreRootsFilter = { kinds: [input.kind], limit: 50 };
+  // The query itself is filtered: the server only has to answer for the
+  // publishers the community accepted. Because what comes back is verified,
+  // a server that ignores this filter cannot pass a stranger off as one.
+  if (input.policy) filter.authors = [...input.policy.publishers];
+  const events = await input.query(filter);
+  const roots: ScoreRoot[] = [];
+  for (const event of events) {
+    if (!verifySignedEvent(event)) continue;
+    const parsed = parseScoreRoot(event as never);
+    if (!parsed) continue;
+    const root = parsed;
+    root.standing = standingOf(root, input.policy);
+    if (input.policy && root.standing !== "accepted") continue;
+    root.proofUrl = safeProofUrl(root.indexerUrl, input.relayUrl);
+    roots.push(root);
+  }
+  // Signed records from different publishers for the same program:epoch are
+  // distinct rows (each carries its own event id), so a selection or a cached
+  // proofs read can never be answered for one with the other's.
+  roots.sort(
+    (a, b) =>
+      b.createdAt - a.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  return roots;
 }

@@ -32,8 +32,9 @@ import { supersedingTime } from "./lib/record-time";
 import { launchQueryFilter } from "./lib/launch-query";
 import {
   acceptedPublisherPolicy,
-  safeProofUrl,
-  standingOf,
+  collectScoreRoots,
+  scoreRootsQueryScope,
+  type ScorePublisherPolicy,
 } from "./lib/score-root-policy";
 import { viteEnv } from "./chain-config";
 import { evidenceQueryKey } from "./use-evidence";
@@ -56,7 +57,6 @@ import {
   buildLaunches,
   launchCoordinate,
   launchRemovals,
-  parseScoreRoot,
   type Launch,
   type LaunchChat,
   type LaunchStage,
@@ -167,64 +167,41 @@ const scoreRootsQueryKey = ["launchpad", "score-roots"];
  * The community's trustgraph score roots (kind 37006).
  *
  * A scoring operator publishes the proven Merkle root per epoch; clients
- * verify individual score claims against it (`lib/trust-score.ts`). Who may
- * publish one this community calls its own is a policy, not a guess: with
- * `lib/score-root-policy.ts` configured, the Nostr query asks only for the
- * accepted publishers' records *and* every returned record is filtered again,
- * so a server that ignores the author filter cannot reshape the list. Without
- * a policy nothing is dropped silently — every readable root comes back
- * labelled as its publisher's own claim, and the screens say so instead of
- * presenting it as the community's reputation.
+ * verify individual score claims against it (`lib/trust-score.ts`). Reading
+ * them trusts nothing by itself — the query surface does not check
+ * signatures, so `collectScoreRoots` (`lib/score-root-policy.ts`) verifies
+ * every answer's id hash and signature before its `pubkey` means anything,
+ * then applies the community's accepted-publisher policy (an `authors` filter
+ * on the query *and* on the returned records) and returns the roots sorted
+ * newest-signed first.
+ *
+ * The relay URL and the policy are captured **once per query**: the query key
+ * (`scoreRootsQueryScope`) and the `queryFn` read the same captured values,
+ * so what was keyed cannot drift from what was fetched when either changes
+ * while the read is in flight.
  */
-export async function fetchScoreRoots(): Promise<ScoreRoot[]> {
-  const policy = acceptedPublisherPolicy({
-    relayUrl: relayWsUrl(),
+export async function fetchScoreRoots(
+  relayUrl: string = relayWsUrl(),
+  policy: ScorePublisherPolicy | null = acceptedPublisherPolicy({
+    relayUrl,
     env: viteEnv(),
+  }),
+): Promise<ScoreRoot[]> {
+  return collectScoreRoots({
+    relayUrl,
+    policy,
+    kind: LAUNCHPAD_SCORE_ROOT_KIND,
+    query: (filter) => queryEvents(relayUrl, filter),
   });
-  const filter: Parameters<typeof queryEvents>[1] = {
-    kinds: [LAUNCHPAD_SCORE_ROOT_KIND],
-    limit: 50,
-  };
-  // The query itself is filtered: the server only has to answer for the
-  // publishers the community accepted.
-  if (policy) filter.authors = [...policy.publishers];
-  const events = await queryEvents(relayWsUrl(), filter);
-  const roots: ScoreRoot[] = [];
-  for (const event of events) {
-    const root = parseScoreRoot(event);
-    if (!root) continue;
-    // Returned records filtered too — and claims the policy does not accept
-    // are kept only so they can say they are a claim; with a policy the query
-    // already named the accepted publishers, so anything else is dropped.
-    root.standing = standingOf(root, policy);
-    if (policy && root.standing !== "accepted") continue;
-    root.proofUrl = safeProofUrl(root.indexerUrl);
-    roots.push(root);
-  }
-  // Stable "latest": newest first, ties by lowest id. No reliance on what
-  // order the server happened to answer in.
-  roots.sort(
-    (a, b) =>
-      b.createdAt - a.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-  );
-  return roots;
 }
 
 export function useScoreRoots() {
-  const policy = acceptedPublisherPolicy({
-    relayUrl: relayWsUrl(),
-    env: viteEnv(),
-  });
-  // The cache is scoped by community and policy: another community's roots —
-  // or roots accepted under a different policy — never stand in for this one's.
-  const scope = `${new URL(relayWsUrl()).host}:${
-    policy
-      ? `${policy.publishers.join(",")}|${policy.programs.join(",")}`
-      : "no-policy"
-  }`;
+  // One read, one policy: captured here so the key and the fetch agree.
+  const relay = relayWsUrl();
+  const policy = acceptedPublisherPolicy({ relayUrl: relay, env: viteEnv() });
   return useQuery({
-    queryKey: [...scoreRootsQueryKey, scope],
-    queryFn: fetchScoreRoots,
+    queryKey: [...scoreRootsQueryKey, scoreRootsQueryScope(relay, policy)],
+    queryFn: () => fetchScoreRoots(relay, policy),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
