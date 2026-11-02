@@ -46,13 +46,6 @@ const KEY_RE = /^[0-9a-f]{64}$/;
 const DEFAULT_PROGRAM = "trustgraphs.output.nostr-member.v1";
 
 /**
- * A signed Nostr event as it arrives from the query surface — shapes that
- * may or may not be a real event. Nothing here is trusted before
- * {@link verifySignedEvent} passes.
- */
-export type RawEvent = Record<string, unknown>;
-
-/**
  * Whether the bytes really are the event they say: the id hash matches the
  * serialization and the signature matches the id and key. Malformed input
  * (a missing or wrong-typed field) is simply not verified — never a crash,
@@ -181,7 +174,7 @@ const isLocalHost = (host: string) =>
   (HOST_LOCAL.has(host) ||
     host.endsWith(".localhost") ||
     host === "127.0.0.1" ||
-    host.startsWith("127."));
+    /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(host));
 
 const isLocalCommunity = (relayUrl: string): boolean => {
   try {

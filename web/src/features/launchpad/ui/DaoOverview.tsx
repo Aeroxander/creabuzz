@@ -25,7 +25,7 @@ import {
 } from "../lib/dao-overview";
 import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import { isContributorProject } from "../lib/funding";
-import { nextActionOf } from "../lib/next-action";
+import { duePhrase, nextActionOf } from "../lib/next-action";
 import { openWorkAreas, recordSources } from "../lib/ways-to-help";
 import type { Launch } from "../models";
 import { useDaoHoldings } from "../use-dao-holdings";
@@ -224,7 +224,7 @@ export function DaoOverview({
   const items = ranked.filter((item) => item.actor !== "others");
   const waiting = ranked.filter((item) => item.actor === "others");
   // The single thing this person acts on first: the top of the ranked queue,
-  // named with whose turn it is and when it changes by itself (`lib/next-action.ts`).
+  // named with whose turn it is and when its window closes (`lib/next-action.ts`).
   const lead = nextActionOf(items, clock);
   const rest = lead ? items.slice(1) : items;
   // A read that failed with nothing earlier to show: an empty list would be a guess, not an answer.
@@ -300,14 +300,24 @@ export function DaoOverview({
                   </h4>
                   <p className="mt-1 text-sm font-medium">{lead.text}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Whose turn: {lead.role}.{" "}
-                    {lead.due !== undefined
-                      ? `It changes by itself ${deadline(lead.due)}. `
-                      : ""}
-                    {lead.why ? `${lead.why} ` : ""}
+                    {/**
+                     * Whose turn is said as the person's ("yours — holder"),
+                     * not as an echo of "you": the role words already speak
+                     * about the reader.
+                     */}
+                    Whose turn:{" "}
+                    {lead.role.endsWith(" (you)")
+                      ? `yours — ${lead.role.replace(" (you)", "")}`
+                      : lead.role}
+                    . {duePhrase(lead, deadline)}
+                    {lead.why ? ` ${lead.why} ` : ""}
                     {lead.ifIgnored ?? ""}
                   </p>
+                  {/* One prominent button, named beyond one verb: with two open items ("Vote" twice on a page of
+                      decisions), the accessible name carries the sentence, so repeated buttons are distinguishable by
+                      ear and by screen. */}
                   <Button
+                    aria-label={`${lead.action} — ${lead.text}`}
                     className="mt-2"
                     onClick={() => openItem(lead)}
                     size="sm"
@@ -338,6 +348,7 @@ export function DaoOverview({
                         ) : null}
                       </span>
                       <Button
+                        aria-label={`${item.action} — ${item.text}`}
                         onClick={() => openItem(item)}
                         size="sm"
                         type="button"
@@ -367,11 +378,12 @@ export function DaoOverview({
                       {item.text}
                       {item.due !== undefined && item.due > clock ? (
                         <span className="mt-0.5 block text-xs text-muted-foreground">
-                          {`Changes ${deadline(item.due)}.`}
+                          {duePhrase(item, deadline)}
                         </span>
                       ) : null}
                     </span>
                     <Button
+                      aria-label={`${item.action} — ${item.text}`}
                       onClick={() => openItem(item)}
                       size="sm"
                       type="button"

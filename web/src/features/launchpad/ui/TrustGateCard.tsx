@@ -8,14 +8,27 @@
  * rebuilt root that disagrees with the published one is called contradicted,
  * and nothing here is inferred from a name — the graph is the Merkle tree
  * every consumer verifies the same way (`trust-score.ts` = the hook).
+ *
+ * The proofs bundle is loaded only when the reader asks (an explicit load,
+ * re-read by pressing again), and the read is named by the signed record it
+ * answers for — event id, root, and the pointer this app may follow — so a
+ * fetch can never be answered for one publisher's record (or another
+ * community's) with another's. Changing the epoch, or the list of records
+ * changing under a choice, cancels the read and clears the approval.
  */
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
 import { ethCall, getRpcEndpoint } from "../chain";
+import { viteEnv } from "../chain-config";
+import { relayWsUrl } from "@/shared/lib/relay-url";
+import {
+  acceptedPublisherPolicy,
+  scoreRootsQueryScope,
+} from "../lib/score-root-policy";
 import type { Launch, ScoreRoot } from "../models";
 import { useScoreRoots } from "../use-launches";
 import {
@@ -52,10 +65,13 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
   const [pending, setPending] = useState(false);
   const picker = useSenderPicker();
 
+  // Keyed by the node being asked as well as the hook: the same address on
+  // another chain (or pointed at another node) is a different gate, and one
+  // answer must never stand for both.
+  const endpoint = getRpcEndpoint();
   const gate = useQuery({
-    queryKey: ["trust-gate", hook?.address ?? ""],
+    queryKey: ["trust-gate", endpoint ?? "", hook?.address ?? ""],
     queryFn: async () => {
-      const endpoint = getRpcEndpoint();
       if (!hook || !endpoint) return null;
       const [rootData, minData] = await Promise.all([
         ethCall(endpoint, hook.address, SELECTOR_SCORE_ROOT),
@@ -73,26 +89,124 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
   const records: ScoreRoot[] = roots.data ?? [];
   const selected = records.find((r) => r.id === selectedId) ?? null;
 
+  /**
+   * The proofs are fetched only when the reader asks, and only for the epoch
+   * they asked for. Nothing here loads on its own while a page opens: a remote
+   * fetch that a reader never asked for is hidden anyway, and one keyed
+   * loosely would be answered for another epoch. The query is keyed by the
+   * community and accepted-publisher policy a read belongs to (the same
+   * captured scope the roots read was keyed by, `lib/score-root-policy.ts` —
+   * not hand-rolled here), then by the signed record's event id and the root
+   * and the pointer it may follow: one cache slot answers for exactly one
+   * record of one community under one policy, and the reader's own signal
+   * cancels an in-flight read when the choice or the scope changes.
+   */
+  const [approval, setApproval] = useState<{
+    id: string;
+    scope: string;
+  } | null>(null);
+  // The same values the roots read was captured with, this render: the scope
+  // string the bundle query keys by, so the cache cannot ignore the policy
+  // the community accepted.
+  const relay = relayWsUrl();
+  const policy = acceptedPublisherPolicy({ relayUrl: relay, env: viteEnv() });
+  const scope = scoreRootsQueryScope(relay, policy);
+  const queryClient = useQueryClient();
+  // The approval is bound to the scope it was given in: a signed record
+  // cross-posted into another community (or a policy change) does not carry
+  // it. The bundle query only runs for a record approved in this scope.
+  const approved =
+    selected && approval?.id === selected.id && approval.scope === scope
+      ? selected
+      : null;
+
   const bundle = useQuery({
-    queryKey: ["trust-bundle", selected?.id ?? ""],
-    queryFn: async ({ signal }) => {
-      if (!selected?.proofUrl) return null;
-      const response = await timedFetchStreamed(selected.proofUrl, {
-        signal,
-      });
+    queryKey: [
+      "trust-bundle",
+      approved ? scope : "",
+      approved?.id ?? "",
+      approved?.root ?? "",
+      approved?.proofUrl ?? "",
+    ],
+    queryFn: async ({ queryKey, signal }) => {
+      const [, , recordId, root, proofUrl] = queryKey as [
+        string,
+        string,
+        string,
+        string,
+        string,
+      ];
+      // The record still on the scoped list and agreeing with the key is the fetch target: not whatever is selected now, so an answer for one record cannot land in another's slot.
+      const answer =
+        records.find(
+          (r) =>
+            r.id === recordId && r.root === root && r.proofUrl === proofUrl,
+        ) ?? null;
+      if (!answer?.proofUrl) return null;
+      const response = await timedFetchStreamed(answer.proofUrl, { signal });
       const body: unknown = await response.json();
       const proofs =
         body !== null && typeof body === "object"
           ? (body as Record<string, unknown>).proofs
           : null;
-      return parseBundleEntries(proofs, selected.root);
+      return parseBundleEntries(proofs, answer.root);
     },
-    enabled: Boolean(selected?.proofUrl),
+    enabled: Boolean(approved?.proofUrl),
     staleTime: 300_000,
+    refetchOnWindowFocus: false, // the button re-reads; the page never does
   });
 
   const entries: BundleEntry[] = bundle.data ?? [];
   const tree = useMemo(() => treeLevels(entries), [entries]);
+
+  // A scope change — the community (relay) or the accepted-publisher policy —
+  // ends the world the choice was made in: the old scope's read is cancelled
+  // (only that one), and both the approval and the selected epoch are
+  // dropped, even if a record with the same id exists under the new scope.
+  const previousScope = useRef(scope);
+  useEffect(() => {
+    const previous = previousScope.current;
+    previousScope.current = scope;
+    if (previous === scope) return;
+    void queryClient.cancelQueries({ queryKey: ["trust-bundle", previous] });
+    setApproval(null);
+    setSelectedId("");
+  }, [scope, queryClient]);
+
+  // A choice also ends when its record leaves the scoped list; only the read
+  // approved in this scope is cancelled.
+  useEffect(() => {
+    if (!selectedId) return;
+    if (!records.some((r) => r.id === selectedId)) {
+      void queryClient.cancelQueries({
+        queryKey: ["trust-bundle", scope, selectedId],
+      });
+      setApproval(null);
+      setSelectedId("");
+    }
+  }, [records, selectedId, scope, queryClient]);
+
+  const chooseEpoch = (id: string) => {
+    if (id === selectedId) return;
+    if (approval) {
+      // Only the read approved so far: a record approved under another scope
+      // never had a read running, and this scope's other slots are idle.
+      void queryClient.cancelQueries({
+        queryKey: ["trust-bundle", approval.scope],
+      });
+    }
+    setSelectedId(id);
+    setApproval(null);
+  };
+
+  // The one way proofs are fetched: the reader loads the chosen epoch's
+  // bundle in this scope (and asks again, by pressing again, to re-read it).
+  const loadProofs = () => {
+    if (!selected?.proofUrl) return;
+    if (approval?.id === selected.id && approval.scope === scope)
+      void bundle.refetch();
+    else setApproval({ id: selected.id, scope });
+  };
 
   // The honest verdicts: published root vs live gate, rebuilt root vs
   // published root. Contradicted is shown as contradicted.
@@ -175,7 +289,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
             <select
               aria-label="Score root record"
               className="rounded-md border bg-transparent px-2 py-1"
-              onChange={(event) => setSelectedId(event.target.value)}
+              onChange={(event) => chooseEpoch(event.target.value)}
               value={selectedId}
             >
               <option value="">Choose an epoch…</option>
@@ -222,7 +336,8 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
             </p>
             {!selected ? (
               <p className="text-black/60 dark:text-white/60">
-                choose an epoch to load its proofs bundle
+                choose an epoch, then load its proofs to check them against the
+                root
               </p>
             ) : !selected.proofUrl ? (
               <p className="text-black/60 dark:text-white/60">
@@ -230,15 +345,42 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
                 this app may load. Only the root ships; the workspace data stays
                 private
               </p>
+            ) : !approved ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-black/60 dark:text-white/60">
+                  The proofs live somewhere other than this workspace; the page
+                  fetches them only when you ask.
+                </p>
+                <Button
+                  data-testid="trust-gate-load-proofs"
+                  onClick={loadProofs}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Load the proofs for this epoch
+                </Button>
+              </div>
             ) : bundle.isLoading ? (
               <p className="text-black/60 dark:text-white/60">
                 fetching the proofs bundle…
               </p>
             ) : entries.length === 0 ? (
-              <p className="text-black/60 dark:text-white/60">
-                unreadable bundle: the indexer did not answer or the entries
-                were malformed (dropped, never guessed)
-              </p>
+              <>
+                <p className="text-black/60 dark:text-white/60">
+                  unreadable bundle: the indexer did not answer or the entries
+                  were malformed (dropped, never guessed)
+                </p>
+                <Button
+                  data-testid="trust-gate-reload-proofs"
+                  onClick={loadProofs}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Read the proofs again
+                </Button>
+              </>
             ) : (
               <>
                 <p className="text-black/70 dark:text-white/70">
@@ -285,6 +427,16 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
                     </li>
                   ))}
                 </ul>
+                <Button
+                  className="mt-2"
+                  data-testid="trust-gate-reload-proofs"
+                  onClick={loadProofs}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Read the proofs again
+                </Button>
               </>
             )}
           </section>

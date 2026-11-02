@@ -60,9 +60,10 @@ export function MilestoneSummaryCard({
       {lock
         ? (() => {
             // The one thing the agreement has open, whose turn it is and when
-            // it changes by itself — from the lock read this card already
+            // its window closes — from the lock read this card already
             // holds (`lib/agreement-next.ts`). Unreadable means quiet: no
-            // next action is guessed.
+            // next action is guessed, and the date is named as what closes
+            // (a window or a vote), never as a moment that acts on its own.
             const next = agreementNextAction(lock);
             return next ? (
               <p
@@ -70,11 +71,12 @@ export function MilestoneSummaryCard({
                 data-testid="launch-agreement-next"
               >
                 The one thing next: milestone {next.index + 1} —{" "}
-                {next.state.toLowerCase()}. Turn to act: {next.role}
-                {next.due !== null && next.due > lock.now
-                  ? `, and it changes by itself ${deadline(next.due)}`
+                {next.state.toLowerCase()}. Whose turn: {next.role}.
+                {next.due !== null &&
+                next.due > lock.now &&
+                next.dateLine !== null
+                  ? ` ${next.dateLine} ${deadline(next.due)}.`
                   : ""}
-                .
               </p>
             ) : null;
           })()

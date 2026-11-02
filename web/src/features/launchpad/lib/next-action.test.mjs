@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { nextActionOf, nextActionRole } from "./next-action.ts";
+import { duePhrase, nextActionOf, nextActionRole } from "./next-action.ts";
 
 const item = (over = {}) => ({
   key: "k",
@@ -63,4 +63,29 @@ test("a date that has passed is dropped, so the copy never says a closed deadlin
   assert.equal(open?.due, 200);
   const closed = nextActionOf([item({ due: 50 })], 100);
   assert.equal(closed?.due, undefined);
+});
+
+test("the date on an item names the window that closes, never a clock that acts", () => {
+  const format = (seconds) => `FEB ${seconds}`;
+  // A vote closes at its end; nothing executes itself there.
+  assert.equal(
+    duePhrase({ kind: "vote", due: 900 }, format),
+    "The vote ends FEB 900.",
+  );
+  // A submission's review window ends, and whoever has not answered has missed it.
+  assert.equal(
+    duePhrase({ kind: "review", due: 700 }, format),
+    "The review window ends FEB 700.",
+  );
+  // A piece of the reader's own work cannot be touched before the wait is over.
+  assert.equal(
+    duePhrase({ kind: "waiting", due: 600 }, format),
+    "You can act on it after FEB 600.",
+  );
+  // The fallback is a window too: it names nothing that would happen on its own.
+  assert.equal(
+    duePhrase({ kind: "award", due: 500 }, format),
+    "The window ends FEB 500.",
+  );
+  assert.equal(duePhrase({ kind: "payout", due: undefined }, format), null);
 });

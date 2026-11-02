@@ -4,7 +4,7 @@
  * The "Needs you" list already ranks what is waiting, most urgent first
  * (`dao-overview.ts` `attentionItems`, `challenge-attention.ts`). This module
  * answers the question that list answers and one more: of those, which single
- * thing comes first, whose turn it is on it, and when it changes by itself.
+ * thing comes first, whose turn it is on it, and the moment its window closes.
  * It adds no reads and no records: everything comes off the items the page
  * already computed.
  *
@@ -17,11 +17,17 @@ import type { AttentionItem } from "./dao-overview.ts";
 export interface NextAction {
   /** What it is, in one sentence (the item's own text). */
   text: string;
+  /** What kind of thing it is, so a page can name its window accurately. */
+  kind: AttentionItem["kind"];
   /** Who has this turn: "contributor", "reviewer", "manager", "holders"… */
   role: string;
   /** The one verb label for the affordance. */
   action: string;
-  /** Unix seconds when this changes by itself, when there is such a moment. */
+  /**
+   * Unix seconds when the window this sits in closes (a review deadline, a
+   * vote ending), when there is one. A clock closes the window; it never
+   * does the work that follows.
+   */
   due: number | undefined;
   /** Why it is shown to this person, in a few words (the item's own reason). */
   why?: string;
@@ -30,6 +36,32 @@ export interface NextAction {
   /** Where the answer lives — the tab the item already points at. */
   tab: AttentionItem["tab"];
   claim?: AttentionItem["claim"];
+}
+
+/**
+ * What the one date on an item marks, in words a page can show as it is: the
+ * window that closes, named per kind. Never "it changes by itself" — a clock
+ * closes a window; it does not run contracts, post a payout or unlock
+ * Shares, so the words never claim it does.
+ */
+export function duePhrase(
+  item: Pick<AttentionItem, "kind" | "due">,
+  format: (seconds: number) => string,
+): string | null {
+  if (item.due === undefined) return null;
+  const at = format(item.due);
+  switch (item.kind) {
+    case "vote":
+      return `The vote ends ${at}.`;
+    case "review":
+      return `The review window ends ${at}.`;
+    // A piece of the reader's own work that is waiting on someone: before
+    // that moment nothing can be done about it, after it some action opens.
+    case "waiting":
+      return `You can act on it after ${at}.`;
+    default:
+      return `The window ends ${at}.`;
+  }
 }
 
 /**
@@ -70,12 +102,13 @@ export function nextActionOf(
   items: readonly AttentionItem[],
   now: number,
 ): NextAction | null {
-  // Something with a moment after which it changes by itself outranks the
-  // rest in `rankAttention` already; take the newest ranked answer.
+  // Something with a window that closes outranks the rest in `rankAttention`
+  // already; take the newest ranked answer.
   const item = items.find((i) => i.actor !== "others") ?? null;
   if (!item) return null;
   return {
     text: item.text,
+    kind: item.kind,
     role: nextActionRole(item),
     action: item.action,
     due: item.due !== undefined && item.due > now ? item.due : undefined,

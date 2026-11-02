@@ -15,9 +15,15 @@ const milestone = (index, stage, extra = {}) => ({
   ...extra,
 });
 
+const DAY = 86_400;
 const view = (milestones) =>
   /** A lock reply reduced to what this module reads. */
-  ({ milestones, terms: {}, team: [], now: 100 });
+  ({
+    milestones,
+    terms: { clawback: 30 * DAY },
+    team: [],
+    now: 100,
+  });
 
 test("a vote that ended is the next action, before anything earlier in order", () => {
   const next = agreementNextAction(
@@ -35,7 +41,7 @@ test("a vote that ended is the next action, before anything earlier in order", (
   assert.equal(next?.role, "anyone");
 });
 
-test("an open vote carries the date the vote ends", () => {
+test("an open vote carries the date the vote ends, named as a vote", () => {
   const next = agreementNextAction(
     view([
       milestone(0, "waiting", { phase: "pending", windowEnds: 300 }),
@@ -47,6 +53,7 @@ test("an open vote carries the date the vote ends", () => {
   );
   assert.equal(next?.index, 1);
   assert.equal(next?.due, 900);
+  assert.equal(next?.dateLine, "The vote ends");
   assert.match(next?.role, /holders/);
 });
 
@@ -70,6 +77,18 @@ test("a waiting window is named to holders with the date it closes", () => {
   assert.equal(next?.index, 1);
   assert.equal(next?.state, "Open to objections");
   assert.equal(next?.due, 700);
+  assert.equal(next?.dateLine, "The window to object ends");
+});
+
+test("an unlocked milestone inside the clawback period is dated by the end of the chance to object, not by the unlock's own day", () => {
+  const next = agreementNextAction(
+    view([milestone(0, "unlocked-open", { phase: "stood", unlockedAt: 200 })]),
+  );
+  assert.equal(next?.index, 0);
+  assert.equal(next?.state, "Unlocked");
+  assert.equal(next?.role, "holders who can object");
+  assert.equal(next?.due, 200 + 30 * DAY);
+  assert.equal(next?.dateLine, "The window to object ends");
 });
 
 test("every milestone stood through its windows: nothing is the next action", () => {

@@ -26,8 +26,14 @@ export interface AgreementNext {
   state: string;
   /** Whose turn it is on it. */
   role: string;
-  /** Unix seconds when this changes by itself, when there is such a moment. */
+  /** Unix seconds when the open window or vote ends, or null. */
   due: number | null;
+  /**
+   * What the date `due` is for, so a page names the window instead of
+   * implying a clock acts: "The objection window ends", "The vote ends".
+   * Null when there is no such moment.
+   */
+  dateLine: string | null;
 }
 
 /**
@@ -55,8 +61,29 @@ function roleForStage(m: ChallengeMilestone): string {
   }
 }
 
-/** When the state changes by itself, or null. */
-function dueForStage(m: ChallengeMilestone): number | null {
+/**
+ * What the date on a milestone's stage marks: the moment the open window or
+ * vote ends. A clock ends a window; it never publishes, finishes or settles
+ * — the words name what closes and let the text say who acts after.
+ */
+function dateLineForStage(m: ChallengeMilestone): string | null {
+  switch (m.stage) {
+    case "waiting":
+    case "unlocked-open":
+      return "The window to object ends";
+    case "voting":
+    case "late-voting":
+      return "The vote ends";
+    default:
+      return null;
+  }
+}
+
+/** When the open window or vote ends, or null. */
+function dueForStage(
+  m: ChallengeMilestone,
+  terms: ChallengeLockView["terms"],
+): number | null {
   const open = m.objection?.open ? m.objection : null;
   switch (m.stage) {
     case "waiting":
@@ -70,8 +97,11 @@ function dueForStage(m: ChallengeMilestone): number | null {
     case "voting":
     case "late-voting":
       return open !== null ? open.voteEnds : null;
+    // It unlocked, and holders may still object to it once, until the
+    // clawback period is over: that end is the date the chance closes (the
+    // unlock's own date is already past).
     case "unlocked-open":
-      return m.unlockedAt > 0 ? m.unlockedAt : null;
+      return m.unlockedAt > 0 ? m.unlockedAt + terms.clawback : null;
     case "unlocked":
       return null;
   }
@@ -105,7 +135,7 @@ export function agreementNextAction(
       m,
       index,
       role: roleForStage(m),
-      due: dueForStage(m),
+      due: dueForStage(m, view.terms),
     }))
     .filter(({ m }) => m.stage !== "unlocked")
     .sort(
@@ -120,5 +150,6 @@ export function agreementNextAction(
     state: CHALLENGE_STAGE_LABEL[first.m.stage],
     role: first.role,
     due: first.due,
+    dateLine: first.due !== null ? dateLineForStage(first.m) : null,
   };
 }

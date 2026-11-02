@@ -278,6 +278,13 @@ test("the anchor block stays the record's own claim, never marked verified", () 
 });
 
 test("proof pointers allow only browser-safe origins on the community's own machine", () => {
+  assert.equal(
+    safeProofUrl(
+      "http://localhost:8080/proofs.json",
+      "wss://127.attacker.example",
+    ),
+    null,
+  );
   const pol = config(
     JSON.stringify({ "localhost:3000": { publishers: ["a".repeat(64)] } }),
   );
