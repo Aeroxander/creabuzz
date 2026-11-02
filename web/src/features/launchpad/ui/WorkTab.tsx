@@ -52,7 +52,6 @@ import { PaidLine, statusTone } from "./ClaimPaidLine";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { mayOfferVote, openVoteFor } from "../lib/proposal-gate";
 import { knownTitles, shortNameBeside, workTitle } from "../lib/work-titles";
-import { managersFor } from "../lib/dao-overview";
 import { FailureNote, WalletStrip } from "./account-widgets";
 import { BondReturn } from "./BondReturn";
 import { useEvidencePackets } from "../use-evidence";
@@ -60,6 +59,13 @@ import { lockKindOf, useChallengeLock } from "../use-challenge-lock";
 import { useWalletLabels } from "../use-wallet-labels";
 import { EvidenceBlock } from "./EvidenceBlock";
 import { FileClaimCard } from "./FileClaimCard";
+import { AgreedRewardsSection } from "./AgreedRewardsSection";
+import {
+  agreedAwaitingBind,
+  approvedQuorumStands,
+  awardVoteBlockedOn,
+} from "../lib/agreed-lane";
+import { type AgreementsLane, useAgreements } from "../use-agreements";
 import { ChallengeLockedCard } from "./ChallengeLockedCard";
 import { LockedSharesCard } from "./LockedSharesCard";
 import { AllowanceNote } from "./AllowanceNote";
@@ -75,15 +81,17 @@ import { type ClaimReview, useReviewReasons } from "../use-review-reasons";
 import { nextMoment, refreshDelay } from "../lib/work-refresh";
 import { workClaimStatus } from "../lib/work-status";
 import { ShortName } from "./ShortName";
+import {
+  AgreedBindNote,
+  AwardHelp,
+  ChallengeHelp,
+  DecisionHelp,
+  shortDate,
+  waitingFor,
+} from "./ClaimSideNotes";
 
 const sameAddress = (a: string | null, b: string) =>
   a !== null && a.toLowerCase() === b.toLowerCase();
-const date = (seconds: number) =>
-  new Date(seconds * 1000).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
 
 /**
  * The work a project's DAO has set aside money or Shares for: its budgets, the projects inside them and the claims
@@ -119,6 +127,10 @@ export function WorkTab({
     dao,
   );
   const work = useWork(dao, wallet.address);
+  // The agreed-reward lane each budget carries: offers, their exact terms and the one step open now.
+  const agreements = useAgreements(launch, dao, wallet.address, work.data);
+  const agreementLanes =
+    agreements.data?.state === "ready" ? agreements.data.lanes : null;
   // When and in which transaction each paid claim was paid out (the same read the Track record tab uses).
   const payouts = useRecordEvents(dao, work.data);
   const context = useDecisionContext(dao);
@@ -266,7 +278,7 @@ export function WorkTab({
       window.removeEventListener("focus", onVisible);
     };
   }, []);
-  // A claim whose challenge window ends, or whose deadline passes, changes by itself: read the page again just after.
+  // A claim's challenge window or deadline passes without a transaction: read the page again just after.
   const nextChange = work.data ? nextMoment(work.data) : null;
   const chainTimeNow = work.data?.chainTime ?? 0;
   useEffect(() => {
@@ -432,6 +444,25 @@ export function WorkTab({
               This DAO has more work than is shown here. The newest is listed.
             </p>
           ) : null}
+          <AgreedRewardsSection
+            areas={areas}
+            busy={busy}
+            dao={dao}
+            failed={agreements.isError}
+            gate={gate}
+            labelOf={labelOf}
+            launch={launch}
+            loading={
+              agreements.isLoading ||
+              (agreements.data === undefined && !agreements.isError)
+            }
+            mandates={work.data?.mandates ?? []}
+            onRetry={() => void agreements.refetch()}
+            onSendBatch={sendBatch}
+            read={agreements.data}
+            titles={titles}
+            wallet={wallet.address}
+          />
           <FileClaimCard
             areas={areas}
             picked={picked}
@@ -444,6 +475,9 @@ export function WorkTab({
           />
           {work.data?.mandates.map((mandate) => (
             <MandateCard
+              agreementsLane={
+                agreementLanes?.get(mandate.address.toLowerCase()) ?? null
+              }
               bounties={bounties.data}
               busy={busy}
               chainTime={work.data?.chainTime ?? 0}
@@ -479,31 +513,9 @@ export function WorkTab({
   );
 }
 
-function DecisionHelp({ onOpenDecisions }: { onOpenDecisions?: () => void }) {
-  return (
-    <p className="mt-2 text-xs text-muted-foreground" data-testid="work-help">
-      New work budgets, work areas and awards are put to a vote
-      {onOpenDecisions ? (
-        <>
-          {" "}
-          on the{" "}
-          <button
-            className="underline"
-            data-testid="work-open-decisions"
-            onClick={onOpenDecisions}
-            type="button"
-          >
-            Decisions tab
-          </button>
-        </>
-      ) : null}
-      .
-    </p>
-  );
-}
-
 function MandateCard({
   mandate,
+  agreementsLane,
   bounties,
   chainTime,
   wallet,
@@ -550,6 +562,8 @@ function MandateCard({
     refetch: () => void;
   };
   mandate: MandateView;
+  /** This budget's agreed-reward lane, when it could be read: which claims settle on agreed terms. */
+  agreementsLane: AgreementsLane | null;
   /** The bounties on this DAO's work areas; undefined while read, or when the build names no bounty contract. */
   bounties: WorkBounties | undefined;
   chainTime: number;
@@ -609,6 +623,10 @@ function MandateCard({
   const owes = mandate.walletIsReviewer
     ? bondShortfall(mandate.bond, mandate.walletStake)
     : 0n;
+  const awaitingAgreedBind = agreedAwaitingBind(
+    agreementsLane ?? undefined,
+    mandate.claims,
+  );
   const postBond = async () => {
     if (!mandate.bond) return;
     // The approval first (on the bond's own token), then the bond: one step, and with a wallet the bond only once the
@@ -632,7 +650,9 @@ function MandateCard({
         {mandate.closed ? (
           <Chip>Closed</Chip>
         ) : (
-          <Chip icon={CalendarClock}>Open until {date(mandate.expiresAt)}</Chip>
+          <Chip icon={CalendarClock}>
+            Open until {shortDate(mandate.expiresAt)}
+          </Chip>
         )}
       </div>
       {mandate.isMilestonePanel ? (
@@ -726,6 +746,20 @@ function MandateCard({
             const challengeKind = challengeFor(claim.record.status);
             const pastChallengeWindow =
               claim.record.status === "Approved" && step.kind === "payout";
+            // Agreed work settles on its own terms: the discretionary award vote
+            // is refused by the escrow on every bound attempt, superseded ones
+            // included, so it is not offered there.
+            const awardCheck = awardVoteBlockedOn(
+              agreementsLane ?? undefined,
+              claim.id,
+            );
+            const awardBlocked =
+              awardCheck === true ||
+              (awardCheck === null && agreementsLane?.linksUnreadable === true);
+            // Finishing an agreed attempt may only approve it: any other state
+            // could turn it down (and slash), so no generic finish is offered.
+            const finishAllowed =
+              awardCheck !== true || approvedQuorumStands(claim);
             return (
               <li
                 className="rounded-xl border border-border/60 p-3 text-sm"
@@ -756,12 +790,23 @@ function MandateCard({
                   </span>
                 </div>
                 <p className="mt-1" data-testid="work-claim-next">
-                  {waitingFor(step, claim, mandate, chainTime, labelOf)}
+                  {step.kind === "settle" && !finishAllowed ? (
+                    <>
+                      The panel&apos;s answers stand against this attempt
+                      {claim.record.expiresAt > 0
+                        ? `, and its review ends ${shortDate(claim.record.expiresAt)}`
+                        : ""}
+                      . It is not finished here; once that ends, anyone can
+                      close it as lapsed and the reservation releases.
+                    </>
+                  ) : (
+                    waitingFor(step, claim, mandate, chainTime, labelOf)
+                  )}
                   {step.kind === "stuck" && step.lapsesAt > 0
-                    ? ` Its deadline is ${date(step.lapsesAt)}.`
+                    ? ` Its deadline is ${shortDate(step.lapsesAt)}.`
                     : null}
                   {step.kind === "none" && step.readyAt !== undefined
-                    ? ` The window ends on ${date(step.readyAt)}.`
+                    ? ` The window ends on ${shortDate(step.readyAt)}.`
                     : null}
                 </p>
                 <ClaimReviewNote
@@ -786,6 +831,7 @@ function MandateCard({
                 <EvidenceBlock
                   busy={busy !== null}
                   claim={claim}
+                  claimContext={{ chainId: launch.record.chainId ?? null }}
                   mine={mine}
                   onRepublish={(text, check) =>
                     republish(claim.id, label, text, check)
@@ -809,7 +855,9 @@ function MandateCard({
                   </p>
                 ) : null}
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {step.kind === "bind" && step.who === "manager"
+                  {step.kind === "bind" &&
+                  step.who === "manager" &&
+                  !awaitingAgreedBind.has(claim.id.toLowerCase())
                     ? myProjects
                         .filter((project) =>
                           // Only where the budget would take it: the same check `fundMilestone` makes.
@@ -844,6 +892,12 @@ function MandateCard({
                           </Button>
                         ))
                     : null}
+                  <AgreedBindNote
+                    show={
+                      step.kind === "bind" &&
+                      awaitingAgreedBind.has(claim.id.toLowerCase())
+                    }
+                  />
                   {reviewerTurn && wallet ? (
                     <ReviewActions
                       blocked={busy !== null || gate !== null}
@@ -858,7 +912,7 @@ function MandateCard({
                       verifiers={mandate.verifiersAddress}
                     />
                   ) : null}
-                  {step.kind === "settle" ? (
+                  {step.kind === "settle" && finishAllowed ? (
                     <Button
                       data-testid="work-settle"
                       disabled={busy !== null || gate !== null}
@@ -916,58 +970,22 @@ function MandateCard({
                     </Button>
                   ) : null}
                 </div>
-                {/* Not on one's own work, and only for someone who could open the vote (never a visitor). */}
-                {onChallenge &&
-                challengeKind &&
-                !pastChallengeWindow &&
-                !mine &&
-                offerVote ? (
-                  <p
-                    className="mt-2 text-xs text-muted-foreground"
-                    data-testid="work-challenge-help"
-                  >
-                    {challengeKind === "freeze"
-                      ? sharesOnly
-                        ? "Doubt it? Shareholders can freeze it: while it is frozen, no Shares can be awarded for it."
-                        : "Doubt it? Shareholders can freeze it: nothing is paid while it is frozen."
-                      : sharesOnly
-                        ? "A vote can reject it for good: nothing is awarded for it."
-                        : "A vote can reject it for good: the money goes back to the budget and the deposit to the contributor."}{" "}
-                    <button
-                      className="underline"
-                      data-testid="work-challenge"
-                      onClick={() =>
-                        onChallenge({
-                          kind: challengeKind,
-                          mandate: mandate.address,
-                          claimId: claim.id,
-                        })
-                      }
-                      type="button"
-                    >
-                      {challengeKind === "freeze"
-                        ? "Put a freeze to a vote"
-                        : "Put a rejection to a vote"}
-                    </button>
-                  </p>
-                ) : null}
+                <ChallengeHelp
+                  challengeKind={challengeKind}
+                  claimId={claim.id}
+                  mandate={mandate.address}
+                  mine={mine}
+                  offerVote={offerVote}
+                  onChallenge={onChallenge}
+                  pastChallengeWindow={pastChallengeWindow}
+                  sharesOnly={sharesOnly}
+                />
                 {step.kind === "award" ? (
-                  <p
-                    className="mt-2 text-xs text-muted-foreground"
-                    data-testid="work-award-help"
-                  >
-                    Awarding Shares is a decision the DAO votes on.{" "}
-                    {onOpenDecisions ? (
-                      <button
-                        className="underline"
-                        data-testid="work-award-open"
-                        onClick={onOpenDecisions}
-                        type="button"
-                      >
-                        Open it on the Decisions tab
-                      </button>
-                    ) : null}
-                  </p>
+                  <AwardHelp
+                    awardBlocked={awardBlocked}
+                    awardCheck={awardCheck}
+                    onOpenDecisions={onOpenDecisions}
+                  />
                 ) : null}
               </li>
             );
@@ -976,24 +994,4 @@ function MandateCard({
       )}
     </Card>
   );
-}
-
-/**
- * What a submission waits for, naming the person when one manager can accept it ("Waiting for Frida Lund to accept it
- * for review."), else the step as it is.
- */
-function waitingFor(
-  step: ReturnType<typeof claimStep>,
-  claim: MandateView["claims"][number],
-  mandate: MandateView,
-  now: number,
-  labelOf: (address: string) => string,
-): string {
-  if (step.kind !== "bind" || step.who !== "manager") return step.text;
-  const managers = managersFor(claim, mandate, now);
-  // A wallet nobody has put a name to would only be an address: the general words say more then.
-  const name = managers.length === 1 ? labelOf(managers[0]) : null;
-  return name && !name.startsWith("0x")
-    ? `Waiting for ${name} to accept it for review.`
-    : step.text;
 }

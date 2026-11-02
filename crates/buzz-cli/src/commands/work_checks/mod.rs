@@ -245,9 +245,23 @@ pub(super) async fn cmd_work_checks(
         }
     }
 
+    // The ONE indexed context tag the reader queries by: `<lowercase
+    // mandate>:<lowercase claim id>:<lowercase evidence hash>`, `0x` prefixes
+    // kept. The relay pushes this single value into SQL before LIMIT for a
+    // kind-47010-only filter, so a claim's own records cannot be starved off
+    // the page by newer unrelated runs. The longer `claim`/`evidence`/`mandate`
+    // tags stay for display and for readers that parse them.
+    let context_tag = format!(
+        "{}:{}:{}",
+        mandate.as_str().to_lowercase(),
+        claim.as_str().to_lowercase(),
+        evidence_hash.as_str().to_lowercase(),
+    );
     let tags = vec![
         Tag::parse(["a", coordinate.as_str()])
             .map_err(|e| CliError::Other(format!("bad a tag: {e}")))?,
+        Tag::parse(["c", context_tag.as_str()])
+            .map_err(|e| CliError::Other(format!("bad c tag: {e}")))?,
         Tag::parse(["claim", claim.as_str()])
             .map_err(|e| CliError::Other(format!("bad claim tag: {e}")))?,
         Tag::parse(["evidence", evidence_hash.as_str()])

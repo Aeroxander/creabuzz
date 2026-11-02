@@ -760,7 +760,9 @@ fn verify_container(
         .unwrap_or_default();
     // EXACTLY TWO read-only binds: the artifact snapshot and the hash-pinned
     // trusted supervisor copy. Anything else — a host home, a socket, a
-    // writable helper — is a containment failure.
+    // writable helper — is a containment failure. Order is the daemon's to
+    // choose (Docker does not guarantee it preserves the argv order), so the
+    // comparison is a set: same two entries, no extras, no duplicates.
     let expected_binds = [
         format!(
             "{}:{SANDBOX_ARTIFACT_MOUNT}:ro",
@@ -772,7 +774,11 @@ fn verify_container(
             ready.supervisor.entrypoint,
         ),
     ];
-    if binds.len() != 2 || binds.as_slice() != expected_binds.as_slice() {
+    let mut actual_sorted = binds.clone();
+    actual_sorted.sort();
+    let mut expected_sorted = expected_binds.to_vec();
+    expected_sorted.sort();
+    if actual_sorted != expected_sorted {
         failures.push(format!(
             "the bind mounts are not exactly the read-only artifact snapshot and \
              the read-only trusted supervisor (expected {expected_binds:?}, found \

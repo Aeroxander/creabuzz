@@ -257,9 +257,9 @@ export async function readAgreementRows(
 
 // ── bounded discovery ───────────────────────────────────────────────────────
 
-/** Topic0 of `AgreementProposed(bytes32 indexed, bytes32 indexed, address indexed, uint128, uint64, uint64, uint64, bytes32, bytes32, bytes32)`. */
+/** Topic0 of `AgreementProposed(bytes32 indexed, bytes32 indexed, address indexed, uint128, uint64, uint64, bytes32)`. */
 export const TOPIC_AGREEMENT_PROPOSED = topicOf(
-  "AgreementProposed(bytes32,bytes32,address,uint128,uint64,uint64,uint64,bytes32,bytes32,bytes32)",
+  "AgreementProposed(bytes32,bytes32,address,uint128,uint64,uint64,bytes32)",
 );
 
 export const AGREEMENTS_DISCOVERY_LIMIT = 50;
@@ -271,10 +271,16 @@ export interface DiscoveredOffer {
   shares: bigint;
   workDeadline: number;
   revisionDeadline: number;
-  reviewPeriod: number;
-  criteriaHash: string;
-  policyRef: string;
   splitHash: string;
+  /**
+   * Not carried by the proposal event: the review period, the criteria hash and
+   * the policy reference live on the agreement record (`agreements(bytes32)`),
+   * which the row read supplies. Kept as nullable here so a caller can never
+   * mistake an event field for one of them.
+   */
+  reviewPeriod: number | null;
+  criteriaHash: string | null;
+  policyRef: string | null;
 }
 
 /**
@@ -334,7 +340,10 @@ export function decodeAgreementProposed(log: unknown): DiscoveredOffer | null {
     return out;
   };
   const words = wordsOf(data);
-  if (words.length < 7) return null;
+  // The event carries four data words: shares, workDeadline, revisionDeadline,
+  // splitHash. The record (not the log) holds the review period, criteria hash
+  // and policy reference, so they are never invented here.
+  if (words.length < 4) return null;
   const addressOf = (w: bigint): string =>
     `0x${w.toString(16).padStart(40, "0")}`;
   const bytes32Of = (w: bigint): string =>
@@ -343,12 +352,7 @@ export function decodeAgreementProposed(log: unknown): DiscoveredOffer | null {
     w > BigInt(Number.MAX_SAFE_INTEGER) ? null : Number(w);
   const workDeadline = seconds(words[1]);
   const revisionDeadline = seconds(words[2]);
-  const reviewPeriod = seconds(words[3]);
-  if (
-    workDeadline === null ||
-    revisionDeadline === null ||
-    reviewPeriod === null
-  ) {
+  if (workDeadline === null || revisionDeadline === null) {
     // An event with impossible timestamps is past what this reader tracks; it
     // counts toward truncation above rather than being silently cut.
     return null;
@@ -360,10 +364,10 @@ export function decodeAgreementProposed(log: unknown): DiscoveredOffer | null {
     shares: words[0],
     workDeadline,
     revisionDeadline,
-    reviewPeriod,
-    criteriaHash: bytes32Of(words[4]),
-    policyRef: bytes32Of(words[5]),
-    splitHash: bytes32Of(words[6]),
+    splitHash: bytes32Of(words[3]),
+    reviewPeriod: null,
+    criteriaHash: null,
+    policyRef: null,
   };
 }
 

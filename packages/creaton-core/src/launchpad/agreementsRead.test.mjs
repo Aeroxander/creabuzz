@@ -346,9 +346,6 @@ const offerLog = (
     shares = 101n,
     workDeadline = 1600,
     revisionDeadline = 3000000,
-    reviewPeriod = 604800,
-    criteriaHash = "0x" + "55".repeat(32),
-    policyRef = "0x" + "66".repeat(32),
     splitHash = "0x" + "88".repeat(32),
   } = {},
 ) => ({
@@ -359,14 +356,14 @@ const offerLog = (
     projectId,
     "0x000000000000000000000000" + beneficiary.slice(2),
   ],
+  // The contract's own event: shares, workDeadline, revisionDeadline, splitHash.
+  // The review period, criteria hash and policy reference are NOT in the log —
+  // they are read from the agreement record.
   data:
     "0x" +
     BigInt(shares).toString(16).padStart(64, "0") +
     BigInt(workDeadline).toString(16).padStart(64, "0") +
     BigInt(revisionDeadline).toString(16).padStart(64, "0") +
-    BigInt(reviewPeriod).toString(16).padStart(64, "0") +
-    mh(criteriaHash, 64) +
-    mh(policyRef, 64) +
     mh(splitHash, 64),
 });
 
@@ -434,7 +431,14 @@ test("an omitted start block is refused; too many logs mark truncation; malforme
 test("decodeAgreementProposed keeps the event's own words, and refuses another event's", () => {
   const o = decodeAgreementProposed(offerLog(AGREEMENT_ID));
   assert.equal(o.agreementId, AGREEMENT_ID);
-  assert.equal(o.policyRef, "0x" + "66".repeat(32));
+  assert.equal(o.shares, 101n);
+  assert.equal(o.workDeadline, 1600);
+  assert.equal(o.revisionDeadline, 3000000);
+  assert.equal(o.splitHash, "0x" + "88".repeat(32));
+  // The log does not carry these: they come from the record, never invented.
+  assert.equal(o.reviewPeriod, null);
+  assert.equal(o.criteriaHash, null);
+  assert.equal(o.policyRef, null);
   assert.equal(decodeAgreementProposed({ topics: ["0xdead"] }), null);
   assert.equal(
     decodeAgreementProposed({
