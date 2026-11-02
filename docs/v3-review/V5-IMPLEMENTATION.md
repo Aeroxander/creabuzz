@@ -593,3 +593,34 @@ the badge stays record-level and the step line carries the attempt.
 **Host note.** `cast send` intermittently panics building macOS proxy settings
 (`system-configuration` returns NULL) before reaching the node; the journey
 script retries that specific startup failure and never retries a parsed revert.
+
+## Consolidated local gate run (2026-11-03)
+
+Every command below was run from the worktree on branch `v5-governance-rework`;
+each result is the command's own exit status, not a summary of someone else's run.
+
+| Gate | Command | Result |
+|---|---|---|
+| Formatting | `just fmt-check` | **exit 0** |
+| File sizes | `just file-size-check` | **exit 0** |
+| Majeur fork | `just majeur-fork-check` | **exit 0** — 100 regions, 773 lines, nothing else changed |
+| Web checks | `just web-check` | **exit 0** (biome, pubkey truncation, px-text, copy, kinds, templates, knip) |
+| Contracts build | `forge build --offline --root contracts` | **exit 0** — compiles, no internal compiler error |
+| Contracts tests | `forge test --offline --root contracts` | **734 passed, 0 failed, 2 skipped** (69 suites, 71 s) |
+| Workspace clippy | `cargo clippy --workspace --all-targets --exclude buzz-voice -- -D warnings` | **exit 0, zero warnings** |
+| Touched crate tests | `cargo test -p buzz-cli -p buzz-core -p buzz-relay` | **2744 passed, 1 failed, 514 ignored** |
+
+**Whole-workspace clippy is no longer blocked.** The only crate it could not build
+is `buzz-voice`, whose `sherpa-onnx-sys` build script downloads a native archive
+and this host has no DNS. Excluding exactly that crate (nothing else) lets the
+gate run, and it passes with `-D warnings`.
+
+**The one failing test is pre-existing.** `cargo test -p buzz-relay` fails
+`api::mesh_demo::tests::demo_join_forwarded_arm_round_trips_echo` with a 504
+(the demo join's echo wait times out; `mesh_demo.rs:339` expects 200). This
+branch does not touch that file (`git diff --name-only 8fecc3258..HEAD -- crates/buzz-relay/src/api/mesh_demo.rs`
+is empty), and the same test **fails identically on the base commit**: a detached
+worktree at `8fecc3258` with its own target dir ran it and got
+`FAILED … finished in 10.11s`, same panic line. So it is an existing
+environment/behaviour failure, not a regression from this work, and it is left
+for the mesh owners rather than papered over.
