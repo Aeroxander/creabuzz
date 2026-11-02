@@ -17,6 +17,7 @@ import {
 import { hashText } from "@creaton/core/launchpad/work.ts";
 import type { ClaimView } from "@creaton/core/launchpad/work.ts";
 import { linkLabel } from "../lib/link-label";
+import { ChecksRunSection } from "./ChecksRunSection";
 
 const URL_RE = /(https?:\/\/[^\s<>"')]+)/g;
 
@@ -68,6 +69,7 @@ export function EvidenceBlock({
   unreadable,
   incomplete = false,
   busy,
+  claimContext,
 }: {
   claim: ClaimView;
   standing: EvidenceStanding;
@@ -81,6 +83,11 @@ export function EvidenceBlock({
   /** The launch has more updates than were read: "nothing found" may only mean "nothing found in the newest ones". */
   incomplete?: boolean;
   onRetry: () => void;
+  /**
+   * The checked context the claim already carries, when the caller has it: today the evidence packet names the mandate,
+   * so this is optional and the chain id only sharpens the reads' cache scoping. Nothing is inferred from it.
+   */
+  claimContext?: { chainId?: string | number | null };
 }) {
   const [evidence, setEvidence] = useState("");
   const [check, setCheck] = useState("");
@@ -172,6 +179,19 @@ export function EvidenceBlock({
             </p>
           </>
         ) : null}
+        {/* Executed results live beside the supplied descriptions, from the
+            publisher's own bounded runs; the section says how to read them
+            and keeps its model commentary separate. The mandate is the
+            submission's own binding: the section refuses to bind results to
+            a claim id alone. */}
+        <ChecksRunSection
+          chainId={claimContext?.chainId ?? null}
+          claim={{
+            id: claim.id,
+            mandate: standing.packet.mandate,
+            record: claim.record,
+          }}
+        />
       </div>
     );
   }

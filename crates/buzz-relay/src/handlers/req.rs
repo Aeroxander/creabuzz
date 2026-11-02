@@ -982,6 +982,12 @@ pub(crate) fn count_fallback_exceeded(candidate_count: usize) -> bool {
 /// authorized channel scope (#h single or multi, injected by caller), #p (single),
 /// #d (single, NIP-33-only kinds), #e (any).
 ///
+/// The kind-47010 `#c` context triplet is pushed for READS (query_events, the
+/// WS REQ and bridge query paths) before SQL `LIMIT` via
+/// `EventQuery::custom_tag`, but NOT for the fast COUNT `count_events()` SQL,
+/// which cannot bind a generic tag — so `#c` filters stay non-fully-pushable
+/// here and COUNT uses the exact filtered-scan fallback.
+///
 /// Anything else (multi-#p, #t, #a, search, #d on non-NIP-33) requires
 /// post-filtering and cannot use the fast COUNT path.
 pub fn filter_fully_pushable(filter: &Filter) -> bool {
@@ -1015,6 +1021,18 @@ pub fn filter_fully_pushable(filter: &Filter) -> bool {
             }
             "e" => {
                 // #e is fully pushed (any count) via JSONB containment.
+            }
+            "c" => {
+                // #c is pushed for READS (query_events) pre-LIMIT via
+                // EventQuery::custom_tag, but the fast COUNT SQL cannot bind a
+                // generic tag (buzz-db's count builder has no custom_tag
+                // predicate), so full-pushability stays FALSE: COUNT must keep
+                // using the exact filtered-scan fallback, which honors the
+                // pushdown. Upgrading count truthfulness requires adding the
+                // containment predicate to the buzz-db COUNT builder first.
+                if !tag_values.is_empty() {
+                    return false;
+                }
             }
             _ => {
                 // Any other generic tag (#t, #a, etc.) is not pushed.
@@ -1190,6 +1208,36 @@ fn filter_to_query_params(
         .filter(|values| !values.is_empty())
         .map(|values| values.iter().map(|v| v.to_string()).collect());
 
+    // Push the work-check-run context triplet (#c, exactly one value) into SQL
+    // via JSONB containment before LIMIT. The `c` tag has no dedicated column
+    // and previously only reached the Rust post-filter, so many newer
+    // unrelated kind 47010 records could fill the page and starve the queried
+    // target. Only push when the filter exclusively targets kind 47010 with a
+    // single-valued #c; every other shape (mixed or other kinds, multi-valued
+    // #c) keeps the caller's post-filter behavior.
+    let filter_is_work_check_run_only = kinds.as_ref().is_some_and(|ks| {
+        !ks.is_empty()
+            && ks
+                .iter()
+                .all(|&k| k == buzz_core::kind::KIND_WORK_CHECK_RUN as i32)
+    });
+    let c_tag_key = nostr::SingleLetterTag::lowercase(nostr::Alphabet::C);
+    let custom_tag = if filter_is_work_check_run_only {
+        filter
+            .generic_tags
+            .get(&c_tag_key)
+            .and_then(|values| {
+                if values.len() == 1 {
+                    values.iter().next().map(|v| v.to_string())
+                } else {
+                    None
+                }
+            })
+            .map(|value| ("c".to_string(), value))
+    } else {
+        None
+    };
+
     EventQuery {
         channel_id,
         kinds,
@@ -1204,6 +1252,7 @@ fn filter_to_query_params(
         ids,
         e_tags,
         d_tag_values,
+        custom_tag,
         // Fail closed: every client-facing read excludes admin-only kinds
         // (the audit chain) unless the caller proved an owner/admin role and
         // flips this off.
@@ -2547,6 +2596,122 @@ mod tests {
             .limit(1);
         let q = filter_to_query_params(&other, None, community);
         assert_eq!(q.d_tag_values, None);
+    }
+
+    /// Canonical work-check-run `#c` triplet: `<lowercase
+    /// mandate>:<claimId>:<evidenceHash>` with 0x prefixes retained. This is
+    /// exactly the constraint the UI sends as
+    /// `{"kinds":[47010],"#c":[<triplet>],"limit":50}`.
+    fn work_check_run_triplet() -> String {
+        let mandate = format!("0x{}", "a1".repeat(4));
+        let claim = "claim-0001";
+        let evidence = format!("0x{}", "be".repeat(33));
+        format!("{mandate}:{claim}:{evidence}")
+    }
+
+    fn work_check_run_filter(value: &str, limit: usize) -> Filter {
+        serde_json::from_value(serde_json::json!({
+            "kinds": [47010],
+            "#c": [value],
+            "limit": limit,
+        }))
+        .expect("parse canonical work-check-run filter JSON")
+    }
+
+    /// The UI queries work-check-run records by their canonical `#c` triplet.
+    /// That constraint must land in `EventQuery::custom_tag` — the JSONB
+    /// containment predicate applied before SQL `LIMIT` on the read path — so
+    /// newer unrelated kind 47010 records cannot starve the queried target off
+    /// the page. Runtime proof: scripts/work-check-query-e2e.sh.
+    #[test]
+    fn work_check_run_c_filter_pushed_before_limit() {
+        let community = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::new_v4());
+        let triplet = work_check_run_triplet();
+
+        let filter = work_check_run_filter(&triplet, 1);
+        let q = filter_to_query_params(&filter, None, community);
+        assert_eq!(
+            q.custom_tag,
+            Some(("c".to_string(), triplet)),
+            "single-valued #c on a kind-47010-only filter must reach the SQL pushdown"
+        );
+        assert_eq!(q.limit, Some(1));
+        assert_eq!(q.community_id, community);
+
+        // Full pushability stays FALSE: the read pushdown exists only in the
+        // query_events builder; buzz-db's COUNT SQL cannot bind a generic tag
+        // yet, so claiming exactness would make fast COUNT over-count (caught
+        // live: it returned 61 instead of 1). COUNT must use the exact
+        // filtered-scan fallback, which honors custom_tag.
+        assert!(!filter_fully_pushable(&filter));
+    }
+
+    /// Every other shape keeps the pre-existing behavior: no SQL pushdown and
+    /// no pushability upgrade (fast COUNT stays off, post-filter still runs).
+    #[test]
+    fn work_check_run_c_pushdown_stays_off_for_other_shapes() {
+        let community = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::new_v4());
+        let triplet = work_check_run_triplet();
+        let other_triplet = format!("0x{}:claim-2:0x{}", "ff".repeat(2), "99".repeat(33));
+        let mixed_kinds: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [47010, 1],
+            "#c": [triplet],
+            "limit": 50,
+        }))
+        .expect("parse mixed-kind filter");
+        let other_kind: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [1],
+            "#c": [triplet],
+            "limit": 50,
+        }))
+        .expect("parse other-kind filter");
+        let kindless: Filter = serde_json::from_value(serde_json::json!({
+            "#c": [triplet],
+            "limit": 50,
+        }))
+        .expect("parse kindless filter");
+        let multi_c: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [47010],
+            "#c": [triplet, other_triplet],
+            "limit": 50,
+        }))
+        .expect("parse multi-valued #c filter");
+        let extra_tag: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [47010],
+            "#c": [triplet],
+            "#t": ["provenance-issue"],
+            "limit": 50,
+        }))
+        .expect("parse extra-tag filter");
+
+        for filter in [&mixed_kinds, &other_kind, &kindless, &multi_c] {
+            let q = filter_to_query_params(filter, None, community);
+            assert_eq!(
+                q.custom_tag, None,
+                "non-narrow work-check-run filter must keep the post-filter path: {filter:?}"
+            );
+            assert!(!filter_fully_pushable(filter));
+        }
+
+        // Kind 47010 with no #c at all: nothing to push, no constraint lost.
+        let no_c: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [47010],
+            "limit": 50,
+        }))
+        .expect("parse no-#c filter");
+        let q = filter_to_query_params(&no_c, None, community);
+        assert_eq!(q.custom_tag, None);
+        assert!(filter_fully_pushable(&no_c));
+
+        // #c is still pushed for the narrow kind even when an unpushable
+        // sibling tag forces COUNT back onto post-filtering.
+        let q = filter_to_query_params(&extra_tag, None, community);
+        assert_eq!(
+            q.custom_tag,
+            Some(("c".to_string(), triplet.clone())),
+            "unknown sibling tags must not unbind the #c SQL constraint"
+        );
+        assert!(!filter_fully_pushable(&extra_tag));
     }
 
     #[test]

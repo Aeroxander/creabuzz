@@ -39,8 +39,9 @@ use buzz_core::kind::{
     KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
     KIND_TEAM_CATALOG, KIND_TEAM_RUN, KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE,
     KIND_USER_STATUS, KIND_WIKI_CORRECTION, KIND_WIKI_PAGE, KIND_WORKFLOW_DEF,
-    KIND_WORKFLOW_TRIGGER, KIND_WORK_TAKEN_ON, RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE,
-    RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_ACCESS, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_WORKFLOW_TRIGGER, KIND_WORK_CHECK_RUN, KIND_WORK_TAKEN_ON, RELAY_ADMIN_ADD_MEMBER,
+    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_ACCESS,
+    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -622,7 +623,11 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_FORECAST
         // Work taken on and a project's focus: statements, no money and no rights.
         | KIND_WORK_TAKEN_ON
-        | KIND_PROJECT_FOCUS => Ok(Scope::MessagesWrite),
+        | KIND_PROJECT_FOCUS
+        // A check-run record: the contributor's own bounded execution records
+        // for a claim. A statement of what ran, no money and no rights; the
+        // reviewer's verdict stays theirs.
+        | KIND_WORK_CHECK_RUN => Ok(Scope::MessagesWrite),
         // NIP-ORG: org nodes, grants, and budgets are ordinary member writes
         // (same model as forum posts). Structural authorization (grant chains,
         // budget limits) is layered on top; the relay validates envelopes and
@@ -893,6 +898,9 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // Work taken on and a project's focus name their launch in an `a` tag.
             | KIND_WORK_TAKEN_ON
             | KIND_PROJECT_FOCUS
+            // A check-run record names its launch in an `a` tag and its claim
+            // via `claim`/`evidence` tags; it belongs to no channel.
+            | KIND_WORK_CHECK_RUN
             // NIP-ORG: the org graph is a community-level object, addressed by
             // (pubkey, kind, d_tag) exactly like a project (30621) or a launch
             // record (37001). One org belongs to the whole community, not to a

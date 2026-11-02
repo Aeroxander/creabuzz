@@ -114,6 +114,7 @@ PILOT=(
 # the LBAMM evaluation's (its lock-guard steps still run here, nightly).
 LATER=(
   web-project-story-e2e
+  work-check-query-e2e
   cli-milestone-e2e
   web-record-e2e
   web-milestone-e2e
@@ -195,6 +196,7 @@ journey_ports() {
     # The pilot build, from a folder of its own, against a stubbed server.
     web-pilot-e2e) echo 4186 ;;
     web-project-story-e2e) echo 4196 ;;
+    work-check-query-e2e) ;; # Allocates its own loopback ports; no fixed port dependency.
     *) echo 4173 ;;
   esac
 }
