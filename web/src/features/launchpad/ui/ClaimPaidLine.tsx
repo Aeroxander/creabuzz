@@ -59,5 +59,6 @@ const STATUS_TONES: Record<ClaimStatus, ChipTone> = {
   Frozen: "danger",
   Recovered: "danger",
   Expired: "neutral",
+  Retired: "neutral",
 };
 export const statusTone = (status: ClaimStatus) => STATUS_TONES[status];
