@@ -255,9 +255,14 @@ contract WorkAreaBountyTest is Test {
         claims.submitClaim("loose", 0, 0, keccak256("loose"));
         claims.setCheck("loose", DOCS_CHECK);
         vm.stopPrank();
-        _approve("loose");
+        // A submission with no work area cannot even be reviewed: the panel's
+        // review readiness requires the binding first, so no approval (and so no
+        // bounty settlement) is reachable for it. That is the stronger form of
+        // "this bounty pays only for a work area's work".
+        vm.prank(R1);
+        vm.expectRevert(abi.encodeWithSelector(VerifierSet.NotReadyForReview.selector, bytes32("loose")));
+        panel.attest("loose", true);
         vm.warp(block.timestamp + 7 days);
-
         vm.expectRevert(abi.encodeWithSelector(WorkAreaBounty.NotThisWorkArea.selector, bytes32("loose")));
         bounty.settle(id, "loose");
     }

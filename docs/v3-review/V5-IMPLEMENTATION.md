@@ -396,3 +396,76 @@ That run exposed and fixed two real defects: the container read-back compared
 `HostConfig.Binds` as an ordered list, so a daemon that returns the same two
 read-only binds in another order was reported as a containment failure (now a
 set comparison), and the publisher did not emit the `c` context tag at all.
+
+## Running the new pieces by hand
+
+Everything below is local-only. Nothing here deploys to a public network or
+turns trading on.
+
+1. **Deploy the creation version on a scratch chain.**
+   `./scripts/v5-local-fixture.sh` starts its own anvil on a free loopback port,
+   deploys the factory, policy, summoner, market factory and kit as real
+   transactions, launches one project, reads every binding back with `cast`, and
+   kills only the anvil it started. It prints the addresses and the receipt
+   statuses; a failure is a real revert or a limit violation, not a skip.
+2. **Run a claim's declared checks.**
+   `buzz launchpad work-checks --launch … --claim … --mandate … --evidence-hash …
+   --check-hash … --checks checks.json --dir <artifact> --sandbox-image alpine:3.20
+   --sandbox-supervisor target/buzz-check-supervisor`
+   builds the trusted supervisor once with `scripts/build-check-supervisor.sh`,
+   runs each check inside the enforced container, and signs a record you can
+   publish beside the claim. `--no-publish` prints the signed record instead.
+3. **Settle an accepted agreement.**
+   `node scripts/agreement-finalizer.mjs run --journal <dir> --rpc
+   http://127.0.0.1:8545 --opt-in-fixture-writes --fixture-key <well-known anvil
+   key> --job chain=31337,dao=…,mandate=…,agreement=…,action=start-window` (then
+   `action=settle-agreement`). It refuses a public RPC, a non-anvil node, a
+   changed chain, a claim without an approval quorum, and a claim with an
+   objection quorum (which would slash). `status`, `retry` and `reconcile` are
+   the recovery commands; nothing is deleted on failure.
+4. **Walk the agreed-reward flow in the app.** Manager proposes a fixed Share
+   quantity against a work area; the beneficiary accepts the exact terms and
+   sees the reservation; the beneficiary submits once (three calls, retryable
+   one at a time); a reviewer may ask for changes without voting; the panel
+   approves; after the challenge window anyone settles and the record shows the
+   exact recipients. Confirm the legacy "open an award vote" button is gone for
+   that claim, and that a publish failure survives a reload.
+
+## What is still not proven
+
+- No browser run has happened on this host: Chromium fails before rendering with
+  a macOS MachPort permission error, and the public Playwright image cannot be
+  pulled through this Docker credential helper. The agreed-reward screens are
+  covered by type checks, unit tests and the full web test suite, not by a
+  person or a browser.
+- Human acceptance of the new flow is outstanding, and so is an independent
+  security and legal review of secondary trading.
+- Real-chain reorg handling, a frozen claim settled on a real chain, and killing
+  a real anvil mid-broadcast are covered only by fake-node tests.
+- `TreasuryMandateFactory` has 23 bytes of creation-code headroom; any further
+  growth there will need splitting.
+
+## Whole-suite results and gate status
+
+- `forge test --offline --root contracts`: **734 passed, 0 failed, 2 skipped**
+  across 69 suites. One regression surfaced here and was fixed: a work-area
+  bounty test expected an approved claim bound to no work area, which the new
+  review-readiness guard makes unreachable — attesting such a claim now reverts
+  `NotReadyForReview` before any approval exists, so the test asserts that
+  earlier, stronger refusal and still proves the bounty refuses a foreign area.
+- `cargo test -p buzz-cli --lib 'work_checks::'`: **51 passed, 0 failed**;
+  `cargo test -p buzz-relay --lib 'handlers::req'`: **73 passed, 0 failed,
+  2 pre-existing ignored**; `cargo clippy -p buzz-cli -p buzz-core -p buzz-relay
+  --all-targets` and `cargo fmt --check` are clean.
+- `scripts/agreement-finalizer.test.mjs`: **34 passed, 0 failed, 0 skipped**,
+  including the real-chain journey.
+- `pnpm -C web test`: **2581 passed, 0 failed**; `pnpm -C web typecheck` clean;
+  `check:copy`, `check:px-text`, `check:kinds` and the file-size ratchet pass.
+- `just clippy` (whole workspace) cannot run in this environment: the
+  `sherpa-onnx-sys` build script tries to download a native archive and DNS is
+  unavailable, so the workspace lint stops before reaching this change. Clippy
+  scoped to the three touched crates is clean; the full-workspace run remains a
+  CI-side check.
+- `just web-check` currently fails only on `knip` unused exports introduced by
+  the new modules; that is being cleared. No behavioural failure is outstanding
+  in the suites above.
