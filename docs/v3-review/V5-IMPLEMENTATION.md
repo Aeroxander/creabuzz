@@ -529,3 +529,35 @@ Two host quirks the script works around, both real and worth knowing:
 deployment and read goes over the node's WebSocket transport; and `dev-chain.sh`
 boots anvil with `nohup`, which cannot detach without a controlling terminal, so
 the demo starts anvil itself and lets the chain script skip its own boot.
+
+### The agreed-reward journey, driven end to end
+
+`scripts/v5-demo-agreement.mjs` runs one agreement against the demo world with
+real transactions — propose (manager) → accept (beneficiary) → submit claim,
+state the agreed check, bind → two reviewers approve → `ClaimStake.settle`
+starts the challenge window → time passes → anyone calls
+`DAO.settleAgreement` — and photographs the Work tab's Agreed rewards card after
+each step. A full run finished:
+
+> PASS: one agreement proposed, accepted, submitted, approved, challenged,
+> settled — 5000000000000000000 Shares minted exactly (challenge window 604800s)
+
+Six screenshots were written with six distinct SHA-256 hashes. On chain the
+record ends `terminalKind = 1` (settled), `agreementState = 9`, and
+`agreementOfClaim(claimId)` names the agreement — so the settlement path is
+real, exact and once-only.
+
+**A real defect the browser run found (not yet fixed).** With **two**
+agreements in the same work area, the section renders only **one** card — the
+older one. On a world where an earlier run had left an unaccepted offer, every
+capture showed that offer's state (`Offered…`) even after the second agreement
+was accepted, approved and settled; `eth_getLogs` for `AgreementProposed`
+reported two logs while the page rendered `cards=1`. On a world with a single
+agreement the card tracked correctly (`Offered, waiting for the named person` →
+`Agreed; the quantity is reserved`), and a settled single agreement rendered
+`Settled` with its recipients. The next fix is in the lane's id collection /
+rendering, not in the contracts.
+
+**Host note.** `cast send` intermittently panics building macOS proxy settings
+(`system-configuration` returns NULL) before reaching the node; the journey
+script retries that specific startup failure and never retries a parsed revert.

@@ -49,7 +49,9 @@ content.tokenPlan = {
 const signed = finalizeEvent(
   {
     kind: 37001,
-    created_at: Math.floor(Date.now() / 1000),
+    // One second after the record it replaces: a replaceable event with an
+    // equal timestamp loses to the lower id, so the token plan would vanish.
+    created_at: Math.max(Math.floor(Date.now() / 1000), event.created_at + 1),
     tags: event.tags,
     content: JSON.stringify(content),
   },
