@@ -225,6 +225,82 @@ grep -E 'creation bytes|EIP-3860 limit|runtime bytes|EIP-170 limit' "$RUN/script
 
 echo
 echo "=== cleanup ==="
+if [[ "${V5_DEMO:-}" == "1" ]]; then
+  # ── demo mode: keep the world up and serve the app on it ──────────────────
+  RELAY="${V5_DEMO_RELAY:-http://127.0.0.1:3030}"
+  WEB_PORT="${V5_DEMO_WEB_PORT:-5173}"
+  curl -sf -m 3 "${RELAY}/health" >/dev/null 2>&1 \
+    || fail "no relay at ${RELAY}; start one first (or set V5_DEMO_RELAY)"
+  export BUZZ_RELAY_URL="$RELAY"
+  export BUZZ_PRIVATE_KEY="${FOUNDER_PK#0x}"
+  FOUNDER_PUB=$(node -e 'const {getPublicKey}=require(process.argv[1]+"/nostr-tools");console.log(getPublicKey(Buffer.from(process.argv[2].replace(/^0x/,""),"hex")))' \
+    "$ROOT/web/node_modules" "$FOUNDER_PK")
+  [[ "$FOUNDER_PUB" =~ ^[0-9a-f]{64}$ ]] || fail "could not derive the founder's public key"
+  "$ROOT/target/debug/buzz" launchpad curate demo --name "Docs Demo" \
+    --pitch "A local project for trying the agreed-reward flow by hand." \
+    --chain 31337 --treasury "$DAO" --token "$SHARES" >/dev/null \
+    || fail "could not publish the launch record"
+  # The DAO really was summoned by this fixture's own launch transaction, so the
+  # launch gets a truthful summon receipt pointing at that transaction: the app
+  # then shows the project's governance tabs instead of the sale page.
+  SUMMON_TX=$(jq -r '.receipts[-1].transactionHash' "$FOUNDRY_BROADCAST/V5LocalFixture.s.sol/31337/run-latest.json")
+  [[ "$SUMMON_TX" =~ ^0x[0-9a-f]{64}$ ]] || fail "no summon transaction in the broadcast log"
+  "$ROOT/target/debug/buzz" launchpad record-receipt demo --table summon --tx "$SUMMON_TX" >/dev/null \
+    || fail "could not publish the summon receipt"
+  # The launch record must say the project's token is a DAO's Shares, or the app
+  # shows the sale page instead of the project's governance tabs. `curate` has no
+  # flag for it, so the founder re-signs their own record with that field added.
+  FOUNDER_PK="$FOUNDER_PK" FOUNDER_PUB="$FOUNDER_PUB" RELAY="$RELAY" \
+    node "$ROOT/scripts/v5-demo-token-plan.mjs" || fail "could not set the DAO token plan on the record"
+  ( cd "$ROOT/web" && VITE_LAUNCHPAD_CHAIN_ID=31337 node_modules/.bin/vite --host 127.0.0.1 --port "$WEB_PORT" --strictPort \
+      >"$RUN/vite.log" 2>&1 ) &
+  VITE_PID=$!
+  cleanup_demo() {
+    kill "$VITE_PID" 2>/dev/null || true
+    wait "$VITE_PID" 2>/dev/null || true
+    cleanup
+    echo
+    echo "[demo] stopped (chain and web server are down)"
+  }
+  trap cleanup_demo EXIT INT TERM
+  for _ in $(seq 1 60); do
+    curl -sf -m 2 "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  curl -sf -m 2 "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 \
+    || { tail -20 "$RUN/vite.log"; fail "the web server did not start"; }
+  cat <<INFO
+
+────────────────────────────────────────────────────────────────────────────
+Demo world is up. Ctrl-C here stops the chain and the web server.
+
+  App          http://localhost:${WEB_PORT}/launchpad/demo?author=${FOUNDER_PUB}
+  Relay        ${RELAY}   (already running; this script does not stop it)
+  Chain        http://127.0.0.1:${PORT}   (chain id 31337)
+  DAO          ${DAO}
+  Work budget  ${BUDGET}
+  Shares       ${SHARES}
+  Market       ${MARKET}
+
+  In the app's devtools console, once (this tab only):
+
+    localStorage.setItem("buzz.relayUrl", "ws://127.0.0.1:3030");
+    localStorage.setItem("buzz.launchpad.rpc", "http://127.0.0.1:${PORT}");
+    location.reload();
+
+  Anvil accounts (public dev keys, no value):
+    founder      ${FOUNDER_PK}
+    deployer     ${DEPLOYER_PK}
+
+  Try: Work tab → the founder (manager of the "docs" work area) proposes a
+  fixed Share reward; the beneficiary accepts; they submit once; a reviewer
+  asks for changes (not a vote); the panel approves; after the challenge
+  window anyone settles and the record shows the exact recipients.
+────────────────────────────────────────────────────────────────────────────
+INFO
+  while true; do sleep 30; done
+fi
+
 cleanup
 trap - EXIT INT TERM
 if kill -0 "$ANVIL_PID" 2>/dev/null; then

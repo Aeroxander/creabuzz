@@ -491,3 +491,41 @@ turns trading on.
 
 `v5-local-fixture` is now registered in the gate's later set, so the sweep runs
 the real deployment proof alongside the query fixture.
+
+## A world you can click through, and real browser evidence
+
+**Browser execution works on this host** with the pinned headless shell and the
+sandbox disabled — the earlier MachPort failure was the browser sandbox, not the
+app:
+
+```bash
+export PW_CHROMIUM_PATH="$HOME/Library/Caches/ms-playwright/chromium_headless_shell-1223/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+export PW_CHROMIUM_EXTRA_ARGS="--disable-gpu --disable-dev-shm-usage --single-process"
+```
+
+With that, `scripts/web-project-story-e2e.sh` **passes** (1 test, 0 failures,
+twice) and writes seven distinct screenshots. Getting there exposed a real
+harness defect rather than a product one: the spec's RPC stub keyed answers by
+`contract|selector+args` while the router looked up `contract|selector`, so every
+per-argument read was dead and the page correctly reported that it could not read
+the project.
+
+**A demo world for hand testing.** `./scripts/v5-demo-world.sh` deploys the
+creation version on a throwaway anvil (real transactions, chain id 31337),
+publishes a launch record plus its summon receipt to a local relay, marks the
+record as a DAO's Shares, serves the app on `:5173`, and stays up until Ctrl-C.
+The parent ran it and confirmed in a real browser that the project page renders
+its governance tabs and the **Agreed rewards** card:
+
+> Agreed rewards — Work whose exact reward is promised before it starts. The
+> quantity is fixed in Shares, not in money and not as a percentage of the
+> project… Work budget · 0 agreements · Agreed rewards run on their exact terms
+> here. No agreed work is listed here yet.
+
+Screenshot: `demo-agreed.png` (36 KB, 1280 wide) and `demo-work.png` (371 KB).
+
+Two host quirks the script works around, both real and worth knowing:
+`cast`'s HTTP client panics here (a macOS system-configuration NULL), so every
+deployment and read goes over the node's WebSocket transport; and `dev-chain.sh`
+boots anvil with `nohup`, which cannot detach without a controlling terminal, so
+the demo starts anvil itself and lets the chain script skip its own boot.

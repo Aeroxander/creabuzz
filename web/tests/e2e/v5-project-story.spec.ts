@@ -110,8 +110,17 @@ const LOCK = `0x${"33".repeat(20)}`;
 const POLICY = `0x${"44".repeat(20)}`;
 const FACTORY = `0x${"55".repeat(20)}`;
 const CURRENCY = `0x${"66".repeat(20)}`;
+const GATE = `0x${"99".repeat(20)}`;
 const FOUNDER = `0x${"77".repeat(20)}`;
-const THE_TEAM = 25_000_000n * 10n ** 18n;
+const HOLDER = `0x${"88".repeat(20)}`;
+const ZERO = `0x${"0".repeat(40)}`;
+/** The Shares the record plans for the DAO, and the part of them the team's milestones hold back (25%). */
+const SUPPLY = 20_000_000n * 10n ** 18n;
+const THE_TEAM = (SUPPLY * 25n) / 100n;
+/** What the raise brought in, in the sale currency's own units (USDC has 6 decimals). */
+const RAISED = 149_999_999_998n;
+/** The Shares the connected holder bought: a twentieth of them all. */
+const HOLDER_SHARES = SUPPLY / 20n;
 
 const word = (value: bigint | number) =>
   BigInt(value).toString(16).padStart(64, "0");
@@ -147,23 +156,31 @@ const milestoneState = (args: {
 const NO_OBJECTION = "0".repeat(64 * 9);
 
 const answers: Record<string, string> = {};
+/** The key a read is answered under: its contract and its calldata, lower case, without the `0x`. */
+const callKey = (to: string, data: string) =>
+  `${to.toLowerCase()}|${data.toLowerCase().replace(/^0x/, "")}`;
+/** An answer for every call of this function, whatever its arguments. */
 const answer = (to: string, signature: string, reply: string) => {
-  answers[
-    `${to.toLowerCase()}|${selectorOf(signature).slice(2).toLowerCase()}`
-  ] = reply;
+  answers[callKey(to, selectorOf(signature))] = reply;
 };
 /** Same, for a call with arguments: the reply may differ per argument. */
+const answerArgs = (
+  to: string,
+  signature: string,
+  args: (bigint | string | number)[],
+  reply: string,
+) => {
+  const words = args
+    .map((arg) => (typeof arg === "string" ? wordAddr(arg) : word(arg)))
+    .join("");
+  answers[callKey(to, `${selectorOf(signature)}${words}`)] = reply;
+};
 const answerCall = (
   to: string,
   signature: string,
-  args: bigint | string | number,
+  arg: bigint | string | number,
   reply: string,
-) => {
-  const word_ = typeof args === "string" ? wordAddr(args) : word(args);
-  answers[
-    `${to.toLowerCase()}|${selectorOf(signature).slice(2).toLowerCase()}${word_}`
-  ] = reply;
-};
+) => answerArgs(to, signature, [arg], reply);
 
 // The DAO names its contracts.
 answer(DAO, "shares()", `0x${wordAddr(SHARES)}`);
@@ -218,14 +235,96 @@ for (const index of [0, 1]) {
   answerCall(LOCK, "objection(uint256)", index, `0x${NO_OBJECTION}`);
 }
 answerCall(LOCK, "lockedOf(address)", FOUNDER, `0x${word(THE_TEAM)}`);
+// How the connected wallet's vote would count on each milestone: the holder's
+// Shares count, the team's do not, and neither has voted yet.
+for (const index of [0, 1]) {
+  answerArgs(
+    LOCK,
+    "voteWeight(uint256,address)",
+    [index, HOLDER],
+    `0x${word(HOLDER_SHARES)}`,
+  );
+  answerArgs(
+    LOCK,
+    "voteWeight(uint256,address)",
+    [index, FOUNDER],
+    `0x${word(0)}`,
+  );
+  answerArgs(
+    LOCK,
+    "hasVoted(uint256,address)",
+    [index, HOLDER],
+    `0x${word(0)}`,
+  );
+  answerArgs(
+    LOCK,
+    "hasVoted(uint256,address)",
+    [index, FOUNDER],
+    `0x${word(0)}`,
+  );
+}
+answerCall(LOCK, "isTeam(address)", HOLDER, `0x${word(0)}`);
+answerCall(LOCK, "isTeam(address)", FOUNDER, `0x${word(1)}`);
 // Decisions: the DAO has opened none.
 answer(POLICY, "mandateFactory()", `0x${wordAddr(FACTORY)}`);
 answer(DAO, "proposalThreshold()", `0x${word(1)}`);
 answer(DAO, "getProposalCount()", `0x${word(0)}`);
 // The holder reads the decisions too: their voting capacity is an answer.
-answerCall(POLICY, "capacity(address)", `0x${"88".repeat(20)}`, `0x${word(1)}`);
+answerCall(POLICY, "capacity(address)", HOLDER, `0x${word(HOLDER_SHARES)}`);
+// The team votes with its locked Shares from the first day.
+answerCall(POLICY, "capacity(address)", FOUNDER, `0x${word(THE_TEAM)}`);
 // Work: the factory has made no mandates for this DAO.
-answer(FACTORY, "milestoneMandate(address)", `0x${"00".repeat(32)}`);
+answer(FACTORY, "milestoneMandate(address)", `0x${wordAddr(ZERO)}`);
+
+// ── the three numbers the page opens with, and what leaving is worth ─────────
+// Every Share the record planned, and who holds them: the team's tranche is
+// locked behind the milestones, the holder's came from the sale.
+answer(SHARES, "totalSupply()", `0x${word(SUPPLY)}`);
+answerCall(SHARES, "balanceOf(address)", HOLDER, `0x${word(HOLDER_SHARES)}`);
+answerCall(SHARES, "balanceOf(address)", FOUNDER, `0x${word(THE_TEAM)}`);
+answerCall(SHARES, "balanceOf(address)", DAO, `0x${word(0)}`);
+answer(SHARES, "awardsOnly()", `0x${word(0)}`);
+// The raise's money is in the treasury; no separate Loot token exists.
+answerCall(CURRENCY, "balanceOf(address)", DAO, `0x${word(RAISED)}`);
+answerCall(CURRENCY, "balanceOf(address)", SHARES, `0x${word(0)}`);
+answer(DAO, "loot()", `0x${wordAddr(ZERO)}`);
+// Leaving is permanent in a DAO made after the switch was removed, and members
+// can still leave with their part of the treasury.
+answer(DAO, "leaving()", `0x${word(1)}`);
+answer(DAO, "ragequittable()", `0x${word(1)}`);
+// What a decision waits: the DAO's delay, then the lane's review.
+answer(DAO, "timelockDelay()", `0x${word(DAY)}`);
+// The DAO's own turnout and approval bars, which raise a lane's and never lower it.
+answer(DAO, "quorumBps()", `0x${word(2000)}`);
+answer(DAO, "quorumAbsolute()", `0x${word(0)}`);
+answer(DAO, "minYesVotesAbsolute()", `0x${word(0)}`);
+/** `lanes(uint256)` → quorumBps, approvalBps, review, hold, exclusive. */
+const lane = (quorumBps: number, approvalBps: number, review: number) =>
+  `0x${[quorumBps, approvalBps, review, 0, 0].map(word).join("")}`;
+answerCall(POLICY, "lanes(uint256)", 0, lane(2000, 5000, 2 * DAY));
+answerCall(POLICY, "lanes(uint256)", 1, lane(1000, 5000, DAY));
+// No address is left out of the votes: the auction holds nothing unclaimed here.
+answer(POLICY, "excludedHolders()", `0x${word(32)}${word(0)}`);
+
+// ── what the Shares allow: new ones only for work, and trading ───────────────
+// A DAO that keeps these rules: up to 2% a year for accepted work, no lock on
+// transfers, no notice to unlock them, and the team's tranche still held back.
+answer(SHARES, "issuanceCapBps()", `0x${word(200)}`);
+answer(SHARES, "yearStart()", `0x${word(0)}`);
+answer(SHARES, "yearBase()", `0x${word(SUPPLY)}`);
+answer(SHARES, "issuedThisYear()", `0x${word(0)}`);
+answer(SHARES, "transfersLocked()", `0x${word(0)}`);
+answer(SHARES, "unlockNoticeRequired()", `0x${word(0)}`);
+answer(SHARES, "unlockAnnouncedAt()", `0x${word(0)}`);
+answer(SHARES, "transferExempt()", `0x${wordAddr(ZERO)}`);
+answer(LOCK, "totalLocked()", `0x${word(THE_TEAM)}`);
+// A factory made before the funding-terms contract: it answers with no address.
+answer(FACTORY, "fundingTerms()", `0x${wordAddr(ZERO)}`);
+
+// ── the gate the live raise wired: the epoch's root, and the score it asks ───
+// The first publisher's root, and the score its first member just reaches.
+answer(GATE, "scoreRoot()", bundleA.root);
+answer(GATE, "minScore()", `0x${word(50)}`);
 
 const RPC_STUB = "http://stub.local/rpc";
 
@@ -249,10 +348,11 @@ const stubRoute = async (route: import("@playwright/test").Route) => {
     return reply({ timestamp: `0x${word(NOW)}`, number: `0x${word(1024)}` });
   if (request.method === "eth_call") {
     const [call] = (request.params ?? []) as [{ to: string; data: string }];
+    const to = call.to.toLowerCase();
+    const data = call.data.toLowerCase().replace(/^0x/, "");
+    // The exact call first (an answer that depends on the argument), then the function's answer for any argument.
     const hit =
-      answers[
-        `${call.to.toLowerCase()}|${call.data.slice(2, 10).toLowerCase()}`
-      ];
+      answers[`${to}|${data}`] ?? answers[`${to}|${data.slice(0, 8)}`];
     if (hit) return reply(hit);
     return route.fulfill({
       status: 200,
@@ -382,14 +482,12 @@ test("the front page shows one next action, the window it waits on, and reads fa
   test.setTimeout(180_000);
   const relay = createMockRelay();
   relay.seed(record("Story DAO", "graduated"));
-  relay.seed(record("Ledger Live", "live", `0x${"99".repeat(20)}`));
+  relay.seed(record("Ledger Live", "live", GATE));
   relay.seed(recordA);
   relay.seed(recordB);
 
   // ── The holder's front page: ONE next action, in words that stay true ──────
-  const holder = await storyPage(relay, context, {
-    wallet: `0x${"88".repeat(20)}`,
-  });
+  const holder = await storyPage(relay, context, { wallet: HOLDER });
   await holder.route(RPC_STUB, stubRoute);
   await openDao(holder);
 
@@ -421,8 +519,10 @@ test("the front page shows one next action, the window it waits on, and reads fa
   // ── The same page names the same moment for the agreement ──────────────────
   await openDao(holder);
   const raiseDetails = holder.getByTestId("dao-raise-details");
-  await expect(raiseDetails.locator("summary")).toBeVisible();
-  await raiseDetails.locator("summary").click();
+  // The raise's own disclosure, not the "Technical details" one folded inside it.
+  const raiseSummary = raiseDetails.locator("summary").first();
+  await expect(raiseSummary).toBeVisible();
+  await raiseSummary.click();
   const agreementNext = holder.getByTestId("launch-agreement-next");
   await expect(agreementNext).toContainText("The one thing next: milestone 1");
   await expect(agreementNext).toContainText(
@@ -503,9 +603,10 @@ test("the front page shows one next action, the window it waits on, and reads fa
   await expect(epochSelect.locator("option")).toHaveCount(3, {
     timeout: 30_000,
   }); // placeholder + two signed records
-  await expect(epochSelect.locator("option")).toContainText(
-    /publisher's own claim/,
-  );
+  // Both signed records name the claim they are: a reader choosing one is choosing a publisher's word, not "the score".
+  await expect(
+    epochSelect.locator("option").filter({ hasText: /publisher's own claim/ }),
+  ).toHaveCount(2);
 
   // No remote proofs are fetched — not on opening, not on choosing.
   await epochSelect.selectOption(recordA.id);
