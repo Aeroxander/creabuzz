@@ -47,8 +47,12 @@ pub struct VoteArgs {
 
 const RPC_TIMEOUT: Duration = buzz_evm_allowance::DEFAULT_RPC_TIMEOUT;
 /// Executing a passed proposal can deploy contracts (a mandate and its reviewer panel), which costs far more than
-/// the 300k a spend is held to. Still a hard cap, and the client holds it under its own ceiling.
-const PROCESS_GAS_CAP: u64 = 6_000_000;
+/// the 300k a spend is held to. This is the library's own ceiling for exactly that case
+/// (`tx::MAX_GAS_CEILING`), not a looser number of our own: it stays a hard cap, and anything above it is refused.
+///
+/// It was 6,000,000 until a work-budget proposal on a real local chain estimated 6,988,081 — a mandate, its claim
+/// escrow, a verifier panel and the first project, which is inside the ceiling and outside the old cap.
+const PROCESS_GAS_CAP: u64 = buzz_evm_allowance::tx::MAX_GAS_CEILING;
 /// Opening a proposal pays for the action it carries, byte by byte (calldata, hashing, the event): this much on top of
 /// the usual cap for each byte, so a large batch is not refused for being large while a small one keeps the tight cap.
 const PROPOSE_GAS_PER_ACTION_BYTE: u64 = 40;

@@ -1061,3 +1061,27 @@ now checks the app's own sentence, which means the same thing and says more.
   sandbox permits), and a second page brings the whole browser down. The
   challenge journey passes because it never opens two at once; the wallet
   journey earlier worked around the same thing with one browser per role.
+
+### The gas cap that blocked `web-record-e2e`
+
+The journey failed with `executeByVotes failed: gas estimate 6988081 exceeds
+the 6000000 cap`. That cap is `PROCESS_GAS_CAP` in `launchpad_gov.rs`, set when
+executing a passed proposal meant "a mandate and its reviewer panel". A
+work-budget proposal costs more than that: a mandate, its claim escrow, a
+verifier panel and the first project, measured at **6,988,081** on a real local
+chain.
+
+The library already defines the right ceiling for this exact case —
+`tx::MAX_GAS_CEILING` (8,000,000), documented as "enough to deploy a mandate and
+its reviewer panel in one governance execution, far under a block". The CLI was
+holding a tighter number of its own, below the ceiling and below what the
+deployment actually costs. It now uses the library's ceiling rather than a
+hand-picked constant, so the bound stays hard and single-sourced.
+
+`cargo build`, `cargo clippy -p buzz-cli --all-targets` and the crate's
+`launchpad_gov` tests (7/7) pass, and the journey is green:
+
+```
+1 passed, 0 failed, 0 blocked, 0 skipped
+RESULT web-record-e2e exit=0
+```
