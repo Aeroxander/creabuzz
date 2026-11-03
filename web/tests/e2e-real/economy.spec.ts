@@ -18,6 +18,7 @@ import {
 } from "nostr-tools/pure";
 import { wizardToPublish } from "../helpers/wizard";
 import { PORT, createCommunity, unique } from "./community-helpers";
+import { connectToHost } from "./host-socket";
 import { checksumAddress } from "../../src/features/identity/lib/wallet-proof";
 
 /**
@@ -118,21 +119,27 @@ interface RelayEvent {
 /**
  * Ask the real server for records, as any client could: a WebSocket of the test's own, signed in with a key of its own
  * (the server asks every reader to prove a key), then one REQ.
+ *
+ * The community lives at `<name>.localhost:<port>`, which Chromium sends to loopback by itself and the operating system's
+ * resolver does not — so the socket dials loopback and says which community it is for in the `Host` header, which is
+ * exactly how the relay picks a community for any connection. The read is still this community's, and no other's.
  */
 async function readRecords(
   host: string,
   filter: Record<string, unknown>,
 ): Promise<RelayEvent[]> {
   const readerKey = generateSecretKey();
+  const socket = await connectToHost(host).catch((error: Error) => {
+    throw new Error(`could not reach ${host}: ${error.message}`);
+  });
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(`ws://${host}`);
     const found: RelayEvent[] = [];
     const timer = setTimeout(() => {
       socket.close();
       reject(new Error(`no answer from ${host}`));
     }, 15_000);
-    socket.onmessage = (message) => {
-      const frame = JSON.parse(String(message.data)) as unknown[];
+    socket.onmessage = (text) => {
+      const frame = JSON.parse(text) as unknown[];
       if (frame[0] === "AUTH") {
         const proof = finalizeEvent(
           {
@@ -159,7 +166,11 @@ async function readRecords(
         else resolve(found);
       }
     };
-    socket.onerror = () => reject(new Error(`could not reach ${host}`));
+    socket.onerror = (error) => {
+      clearTimeout(timer);
+      socket.close();
+      reject(new Error(`could not reach ${host}: ${error.message}`));
+    };
   });
 }
 
@@ -283,6 +294,13 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
     await person.page
       .getByRole("button", { name: "Join this community" })
       .click();
+    // Joining saves the community's address for this browser and reloads onto it, so the directory card goes away. Until
+    // that lands the page is still the card — and `user-chip` is already there from the account, so it proves nothing
+    // about the join; a check that fails or is still running leaves the card (with its problem) in place.
+    await expect(person.page.getByTestId("community-join-problem")).toHaveCount(
+      0,
+      { timeout: 30_000 },
+    );
     await expect(person.page.getByTestId("user-chip")).toBeVisible({
       timeout: 30_000,
     });
@@ -310,11 +328,17 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   };
   const linking = Promise.all([founder, labor, capital].map(linkWallet));
   await linking;
-  // The server holds one verified record per person, each authored by the person's own Nostr key.
-  const links = await readRecords(host, { kinds: [37017] });
-  expect(links.map((record) => record.pubkey).sort()).toEqual(
-    [founder, labor, capital].map((person) => person.pubkey).sort(),
-  );
+  // The server holds one verified record per person, each authored by the person's own Nostr key. Each page shows the
+  // address as soon as its own publish is away, so wait for all three to land rather than reading the instant they do.
+  await expect
+    .poll(
+      async () =>
+        (await readRecords(host, { kinds: [37017] }))
+          .map((record) => record.pubkey)
+          .sort(),
+      { timeout: 60_000 },
+    )
+    .toEqual([founder, labor, capital].map((person) => person.pubkey).sort());
   say("all three wallets are linked");
 
   // ── The founder sets up a sale in the wizard: the project's own Shares, a window a few blocks away ──
@@ -720,8 +744,10 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   );
   await open(founder, "Work");
   await founder.page.getByTestId("work-settle").click();
+  // The chain's word for the end of review is `Approved`; the Work tab calls it "Review complete", so no one reads the
+  // reviewers' verdict as an award of money (D180's reporting rule).
   await expect(founder.page.getByTestId("work-claim-status")).toContainText(
-    "Approved",
+    "Review complete",
     { timeout: 60_000 },
   );
   say("the claim was approved");
@@ -792,7 +818,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   await open(founder, "Work");
   await secondOnFounder.getByTestId("work-settle").click();
   await expect(secondOnFounder.getByTestId("work-claim-status")).toContainText(
-    "Approved",
+    "Review complete",
     { timeout: 60_000 },
   );
   say("a second claim was approved, inside its challenge window");

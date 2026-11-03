@@ -1352,3 +1352,50 @@ teardown of the previous one. The one test that needed a second person
 The fix belongs in the runner rather than the spec: either give this file a
 browser per test (the `ownPage` pattern applied to the fixture) or run it where
 Chromium is not `--single-process`. Recorded, not guessed at.
+
+### `web-economy-e2e`: the `.localhost` read, and two defects it was hiding
+
+The relay routes by the `Host` header, and a self-serve community lives at
+`<name>.localhost:<port>`. Chromium sends every `*.localhost` name to loopback;
+the operating system resolver does not, so Node could not reach it at all — and
+Node's global `WebSocket` (undici) drops a `Host` header passed in its options,
+which was verified against a raw listener rather than assumed.
+
+`web/tests/e2e-real/host-socket.ts` is a deliberately small RFC 6455 client that
+does the one thing the browser does: dial loopback and say which community it
+wants in the `Host` header. The read keeps its NIP-42 AUTH (signed against
+`ws://<community host>`, which is what the relay derives from that header), the
+same REQ and the same assertions. Fail-closed was checked too: an unmapped host
+gets the relay's `404` instead of an upgrade, so the read is scoped to that
+community and not "any relay answered".
+
+Fixing the read exposed three real problems it had been hiding, all in the
+spec's own flow:
+
+1. **The join step raced and never joined.** After "Join this community" the
+   page runs an async server check and only then saves the address and reloads.
+   The test asserted `user-chip` — already visible because the person is signed
+   into the deployment's own community — and moved on, cancelling the switch. The
+   contributors' `kind:37017` links were therefore published into the *deployment*
+   community, not the one they joined. It now waits for the join to land, so a
+   failed or pending check fails loudly.
+2. **The links read raced the publishes** — the page shows the address before
+   the record is acknowledged — and is now polled like the existing bid read.
+3. **A stale copy expectation**: the Work tab says "Review complete", the word
+   `work-status.ts` deliberately gives the chain's `Approved`.
+
+```
+PASS web-economy-e2e
+1 passed, 0 failed, 0 blocked, 0 skipped
+```
+
+### Nine browser journeys pass
+
+`web-challenge-e2e`, `web-record-e2e`, `web-post-bounty-e2e`,
+`web-milestone-e2e`, `web-dao-journey-e2e`, `web-rounds-e2e`,
+`shares-erc20c-e2e`, `web-self-serve-e2e`, `web-economy-e2e` — all 1/1 against a
+real local chain or relay. `web-dao-launch-e2e` passes 5 of 9; the other four
+die at 4–5 ms on a per-test context under `--single-process` Chromium, which is
+a runner limitation recorded above, not a product defect.
+
+`just web-check` exits 0 and `pnpm -C web typecheck` is clean with these changes.
