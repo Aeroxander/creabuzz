@@ -407,10 +407,20 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
 
   // ── 5. Bidding closes, anyone settles, and both orders fill the same lots at one price ─────────────────
   await passTime(3 * DAY + 60);
+  // The bidder's page is left open and never reloaded: the card re-reads on its own while a round is live, so it
+  // notices that bidding closed and tells the bidder its bid is waiting on someone to settle.
+  await expect(bidder.getByTestId("trading-settle-notice")).toContainText(
+    "Anyone can settle it",
+    { timeout: 75_000 },
+  );
+  say("the bidder's open page noticed the round closing, with no reload");
   await founder.reload();
   await expect(founder.getByTestId("trading-round-status")).toContainText(
     "Bidding is over.",
     { timeout: 60_000 },
+  );
+  await expect(founder.getByTestId("trading-settle-notice")).toContainText(
+    "costs only a network fee",
   );
   await expect(founder.getByTestId("trading-settle")).toBeVisible();
   // While bidding is open there is no offer or bid left to place, and the round is settled by the button, not by time.

@@ -8,6 +8,7 @@ import {
   claimDue,
   factoryMissingLine,
   listingDetailLine,
+  LIVE_REFRESH_MS,
   listingTermsLine,
   lotPriceLine,
   lotSizeLine,
@@ -15,10 +16,12 @@ import {
   money,
   nextRoundChip,
   nextRoundLine,
+  refreshEveryMs,
   roundLine,
   sellHolds,
   sellOrderLine,
   sellPlan,
+  settleNoticeLine,
   shareUnits,
   stepAtLeast,
   stepAtMost,
@@ -445,4 +448,54 @@ test("a wallet's own orders read as sentences, before and after the result", () 
     bidOrderLine(round(), bid({ lots: 2n, maxStep: 1 }), USDC),
     "You bid for 2 lots at up to 1.008 USDC a lot.",
   );
+});
+
+test("the card re-reads on its own only while a round ends by the clock", () => {
+  // Taking orders and waiting to settle both end with no one acting, so the card keeps looking.
+  for (const phase of ["bidding", "settling"]) {
+    assert.equal(
+      refreshEveryMs(market({ round: round({ phase }) })),
+      LIVE_REFRESH_MS,
+      phase,
+    );
+  }
+  // A finished round, no round, and every read that did not complete change only when someone acts.
+  for (const phase of ["settled", "void"]) {
+    assert.equal(
+      refreshEveryMs(market({ round: round({ phase }) })),
+      false,
+      phase,
+    );
+  }
+  assert.equal(refreshEveryMs(market()), false);
+  assert.equal(refreshEveryMs(undefined), false);
+  assert.equal(refreshEveryMs({ kind: "absent" }), false);
+  assert.equal(refreshEveryMs({ kind: "unreadable", reason: "x" }), false);
+  assert.ok(LIVE_REFRESH_MS >= 10_000, "never a tight loop on the node");
+});
+
+test("a wallet with an order in a round waiting to settle is told who can settle it and by when", () => {
+  const waiting = round({ phase: "settling" });
+  const withSell = { sell: sell(), bid: null };
+  const notice = settleNoticeLine(waiting, withSell);
+  assert.match(notice, /Anyone can settle it/);
+  assert.match(notice, /only a network fee/);
+  assert.match(notice, /by Oct 19/);
+  assert.match(notice, /the round is void and you take back what you put in/);
+  assert.equal(
+    settleNoticeLine(waiting, { sell: null, bid: bid() }),
+    notice,
+    "a bid waits the same way",
+  );
+  // A bid already taken back has nothing left in the round to wait for.
+  assert.equal(
+    settleNoticeLine(waiting, { sell: null, bid: bid({ cancelled: true }) }),
+    null,
+  );
+  // Someone with no order is not told about an order.
+  assert.equal(settleNoticeLine(waiting, { sell: null, bid: null }), null);
+  // Only a round waiting to settle has the notice: bidding has its own sentence, a finished one pays out.
+  for (const phase of ["bidding", "settled", "void", "none"]) {
+    assert.equal(settleNoticeLine(round({ phase }), withSell), null, phase);
+  }
 });

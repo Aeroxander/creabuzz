@@ -54,6 +54,7 @@ import {
   sellHolds,
   sellOrderLine,
   sellPlan,
+  settleNoticeLine,
   shareUnits,
   tokenUnreadableLine,
   tradingStateLine,
@@ -244,6 +245,7 @@ function TradingRound({
   const takingOrders = bidding && listingEnabled;
   const due = claimDue(round, wallet, facts.lotSize);
   const { sell, bid } = wallet;
+  const settleNotice = settleNoticeLine(round, wallet);
   return (
     <div
       className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3"
@@ -252,6 +254,15 @@ function TradingRound({
       <p className="text-sm" data-testid="trading-round-status">
         {roundLine(round, facts)}
       </p>
+      {settleNotice ? (
+        <p
+          className="text-sm"
+          data-testid="trading-settle-notice"
+          role="status"
+        >
+          {settleNotice}
+        </p>
+      ) : null}
       {sell ? (
         <p className="text-sm" data-testid="trading-my-sell">
           {sellOrderLine(round, sell, facts)}

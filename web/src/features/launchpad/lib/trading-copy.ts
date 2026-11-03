@@ -299,6 +299,43 @@ export function stepAtMost(
   return level > BigInt(round.levels) ? round.levels : Number(level);
 }
 
+/** How often the card re-reads while a round is live, so it notices a round closing on its own. */
+export const LIVE_REFRESH_MS = 30_000;
+
+/**
+ * How long the card waits before reading the market again: every `LIVE_REFRESH_MS`
+ * while a round is taking orders or waiting to be settled (the two phases that end
+ * by the clock, with no one acting), and never otherwise. A settled or void round,
+ * no round, and a read that did not complete change only when someone acts, and an
+ * unreadable read has its own "Try again".
+ */
+export function refreshEveryMs(
+  read: SecondaryMarketRead | undefined,
+): number | false {
+  if (read === undefined || read.kind !== "present" || read.round === null) {
+    return false;
+  }
+  return read.round.phase === "bidding" || read.round.phase === "settling"
+    ? LIVE_REFRESH_MS
+    : false;
+}
+
+/**
+ * What a wallet with an order in a round waiting to settle is told: its Shares and
+ * money are held until someone settles, anyone can, and by when. Null when the round
+ * is not waiting, or the wallet has nothing in it (a taken-back bid is already out).
+ */
+export function settleNoticeLine(
+  round: Pick<RoundView, "phase" | "settleDeadline">,
+  wallet: Pick<WalletView, "sell" | "bid">,
+): string | null {
+  if (round.phase !== "settling") return null;
+  const waiting =
+    wallet.sell !== null || (wallet.bid !== null && !wallet.bid.cancelled);
+  if (!waiting) return null;
+  return `Your order is waiting for the round to be settled. Anyone can settle it and it costs only a network fee. If nobody does by ${date(round.settleDeadline)}, the round is void and you take back what you put in.`;
+}
+
 /** What one side of a wallet's orders says, before and after the round's result. */
 export function sellOrderLine(
   round: Pick<RoundView, "phase" | "minPrice" | "step">,

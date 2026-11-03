@@ -16,6 +16,7 @@ import {
 
 import { getRpcEndpoint } from "./chain";
 import { secondaryMarketFactory } from "./chain-config";
+import { refreshEveryMs } from "./lib/trading-copy";
 import { endpointChain } from "./use-work";
 
 /** Where every query about the secondary market lives, so a step sent from one re-reads it. */
@@ -147,6 +148,9 @@ export function useSecondary(input: {
     enabled: factory !== null,
     staleTime: 10_000,
     refetchOnWindowFocus: false,
+    // A round closes and times out by the clock, with no one acting, so a card left open re-reads
+    // while one is live and shows "Settle the round" the moment bidding ends.
+    refetchInterval: (q) => refreshEveryMs(q.state.data?.read),
     queryFn: async (): Promise<SecondaryMarketView> => {
       const chain = endpointChain(getRpcEndpoint());
       const now = await chain.now();
