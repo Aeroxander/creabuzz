@@ -47,14 +47,18 @@ export function TradingListingForm({
   const present = read?.kind === "present" ? read : null;
   const listing = present?.listing ?? null;
   const lotSize = view?.facts?.lotSize ?? null;
-  const decimals = ctx.currencyDecimals;
+  // The market's own quote token, not the launch record's sale currency: a DAO whose record
+  // names a different token than the market's quote would otherwise publish a listing priced
+  // off by that token's scale — the same defect class as a hardcoded 6 decimals.
+  const decimals = view?.facts?.quoteDecimals ?? null;
+  const symbol = view?.facts?.quoteSymbol ?? null;
   const dirty =
     minText !== "" || maxText !== "" || levelsText !== "" || enabled === "off";
   /** A price as this form writes it, in the sale currency when its decimals are known. */
   const money = (value: bigint) =>
-    decimals === null
+    decimals === null || symbol === null
       ? `${value.toString()} base units`
-      : `${listingPrice(value, decimals)} ${ctx.currencySymbol}`;
+      : `${listingPrice(value, decimals)} ${symbol ?? ""}`.trim();
   const lot =
     lotSize !== null
       ? `one lot of ${formatUnits(lotSize, 18)} Shares`
@@ -100,7 +104,7 @@ export function TradingListingForm({
           maxPrice: 0n,
           levels: 0,
           quoteDecimals: decimals,
-          quoteSymbol: ctx.currencySymbol,
+          quoteSymbol: symbol ?? "",
         }),
       );
     }
@@ -117,7 +121,7 @@ export function TradingListingForm({
         ),
         levels: levelsText.trim() === "" ? 0 : Number(levelsText),
         quoteDecimals: decimals,
-        quoteSymbol: ctx.currencySymbol,
+        quoteSymbol: symbol ?? "",
         lotSize: lotSize ?? undefined,
       }),
     );
@@ -131,7 +135,7 @@ export function TradingListingForm({
     minText,
     maxText,
     levelsText,
-    ctx.currencySymbol,
+    symbol,
   ]);
 
   if (factory !== null && query.isPending) {
@@ -179,7 +183,7 @@ export function TradingListingForm({
           <TextField
             hint={`Each price is for ${lot}. Nothing sells below the lowest price or above the highest.`}
             inputMode="decimal"
-            label={`Lowest price per lot (${ctx.currencySymbol})`}
+            label={`Lowest price per lot (${symbol ?? "base units"})`}
             onChange={setMinText}
             placeholder={
               listing?.enabled && decimals !== null
@@ -192,7 +196,7 @@ export function TradingListingForm({
           <TextField
             hint="The grid runs from the lowest price to the highest, and a round's price is one level on it. Nothing sells outside the two, however much is bid."
             inputMode="decimal"
-            label={`Highest price per lot (${ctx.currencySymbol})`}
+            label={`Highest price per lot (${symbol ?? "base units"})`}
             onChange={setMaxText}
             placeholder={
               listing?.enabled && decimals !== null
