@@ -99,6 +99,19 @@ executes after the DAO's one-day timelock — the same path as any other DAO cal
 cast calldata 'configureListing(bool,uint128,uint128,uint32)' true 1500 4500 8
 ```
 
+**In the app** this is the decision kind **"Publish a secondary market listing"**
+(`secondary-listing`): the form reads the DAO's market and its lot size, asks for
+the lowest price, the highest and the number of steps, and opens the vote. It
+renders the terms back in words before you send — *"Open a market for 40 Shares
+between 1.60 and 8.00 USDC, in 64 price steps"* — and refuses locally the four
+things the market would refuse (`InvalidTerms`): a price of zero, a highest not
+above the lowest, steps outside 1–64, and a range the steps do not divide.
+Turning it off is the same kind with the switch cleared, and its words are
+*"Stop new trading rounds (settlement and claims continue)"*.
+
+The `cast calldata` below is the same call, for operators who prefer the
+command line or need to check what the app built.
+
 The output is the calldata the proposal carries; the market is its target and the
 value is zero. `true` turns the listing on. The next three numbers are the terms,
 and they are frozen into every round opened from them:
