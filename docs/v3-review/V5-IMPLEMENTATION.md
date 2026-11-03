@@ -1515,3 +1515,26 @@ There were two:
 No other liveness assertion in this document depends on `pgrep`. The remaining
 process statements are about containers and are measured with `docker`, which
 answers correctly on this host.
+
+### The two human steps: decided
+
+Both of the items this document kept listing as outstanding were put to the
+author, who decided them:
+
+1. **Hand acceptance of the agreed-reward flow — waived, on the agent evidence.**
+   The author chose to accept the browser-driven run as sufficient rather than
+   walk the flow personally. That evidence is: propose, accept, submit, both
+   reviewer approvals, review finished, challenge window passed and settlement,
+   every step signed by a wallet in the app, with `terminalKind = 1`, the claim
+   `Paid`, exactly `7e18` Shares minted, `agreementOfClaim` unchanged, and four
+   distinct screenshots (`docs/v3-review/V5-IMPLEMENTATION.md`, the agreed-reward
+   section). This is a recorded decision, not an untested gap — but it is also
+   the author's acceptance of agent-run evidence, and a person has still not
+   clicked through the flow.
+2. **The secondary-trading review — the author sends the packet.** They have a
+   reviewer arranged and will send `docs/v3-review/SECONDARY-TRADING-REVIEW.md`
+   themselves. No sign-off exists yet; trading stays off until one does.
+
+So neither is an open agent task any more, and neither is a completed human
+step. The distinction is worth keeping: the product's readiness for real money
+rests on the author's decision plus an external review that has not happened.
