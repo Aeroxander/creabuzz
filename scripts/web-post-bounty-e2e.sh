@@ -30,7 +30,7 @@ CREATE_TOKEN="$(role "$DEPLOYMENTS/create-31337.json" create-token)"
 CREATE_FAUCET="$(role "$DEPLOYMENTS/create-31337.json" create-faucet)"
 [[ "$COURT" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no court was deployed"
 # Dev appeals to the court, which costs a fee: 10 dev USDC is plenty.
-cast send "$CURRENCY" "mint(address,uint256)" "$CONTRIBUTOR" 10000000 --private-key "$KEY_FOUNDER" --rpc-url "$RPC" >/dev/null \
+cast send "$CURRENCY" "mint(address,uint256)" "$CONTRIBUTOR" 10000000 --private-key "$KEY_FOUNDER" --rpc-url "$CAST_RPC" >/dev/null \
   || fail "could not give Dev dev USDC"
 step "open bounty ${OPEN_BOUNTY}  court ${COURT}  currency ${CURRENCY}"
 

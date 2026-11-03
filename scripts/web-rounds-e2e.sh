@@ -40,7 +40,7 @@ if [[ "$CHAIN" == "local" ]]; then
   CONTRIBUTOR_KIT="$(role "$DEPLOYMENTS/contributor-kit-31337.json" contributor-kit)"
   WEEKLY_ROUNDS="$(role "$DEPLOYMENTS/weekly-rounds-31337.json" weekly-rounds)"
   for pair in "$FOUNDER:1000000000" "$MANAGER:100000000" "$CONTRIBUTOR:100000000"; do
-    cast send "$CURRENCY" "mint(address,uint256)" "${pair%%:*}" "${pair##*:}" --private-key "$KEY_FOUNDER" --rpc-url "$RPC" \
+    cast send "$CURRENCY" "mint(address,uint256)" "${pair%%:*}" "${pair##*:}" --private-key "$KEY_FOUNDER" --rpc-url "$CAST_RPC" \
       >/dev/null || fail "could not give ${pair%%:*} dev USDC"
   done
   BUILD_ENV=(VITE_LAUNCHPAD_CHAIN_ID=31337 VITE_LOCAL_USDC="$CURRENCY")
@@ -64,21 +64,21 @@ else
   # their own (EIP-7702), so make them plain accounts with a faucet's worth of test ETH, and write their test USDC into
   # Circle's balance slot (9) as a faucet would send it.
   for who in "$FOUNDER" "$REVIEWER1" "$REVIEWER2" "$CONTRIBUTOR" "$MANAGER"; do
-    cast rpc --rpc-url "$RPC" anvil_setCode "$who" 0x >/dev/null
-    cast rpc --rpc-url "$RPC" anvil_setBalance "$who" "$(cast to-hex "$(cast to-wei 0.1)")" >/dev/null
+    cast rpc --rpc-url "$CAST_RPC" anvil_setCode "$who" 0x >/dev/null
+    cast rpc --rpc-url "$CAST_RPC" anvil_setBalance "$who" "$(cast to-hex "$(cast to-wei 0.1)")" >/dev/null
   done
   for pair in "$FOUNDER:1000000000" "$MANAGER:100000000" "$CONTRIBUTOR:100000000"; do
-    cast rpc --rpc-url "$RPC" anvil_setStorageAt "$SEPOLIA_USDC" "$(cast index address "${pair%%:*}" 9)" \
+    cast rpc --rpc-url "$CAST_RPC" anvil_setStorageAt "$SEPOLIA_USDC" "$(cast index address "${pair%%:*}" 9)" \
       "$(cast to-uint256 "${pair##*:}")" >/dev/null
   done
   # A real node refuses an event read from block 0, so a Sepolia build is told where this chain's history starts.
   BUILD_ENV=(VITE_LAUNCHPAD_CHAIN_ID="$SEPOLIA_CHAIN_ID" VITE_CHAIN_RPC_URL="$RPC"
     VITE_HISTORY_FROM_BLOCKS="{\"${SEPOLIA_CHAIN_ID}\":${FROM_BLOCK}}")
 fi
-CHAIN_ID="$(cast chain-id --rpc-url "$RPC")"
+CHAIN_ID="$(cast chain-id --rpc-url "$CAST_RPC")"
 [[ "$CONTRIBUTOR_KIT" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no contributor kit was deployed"
 [[ "$WEEKLY_ROUNDS" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no weekly rounds were deployed"
-[[ "$(cast call "$WEEKLY_ROUNDS" "currency()(address)" --rpc-url "$RPC" | tr '[:upper:]' '[:lower:]')" == "$(tr '[:upper:]' '[:lower:]' <<<"$CURRENCY")" ]] \
+[[ "$(cast call "$WEEKLY_ROUNDS" "currency()(address)" --rpc-url "$CAST_RPC" | tr '[:upper:]' '[:lower:]')" == "$(tr '[:upper:]' '[:lower:]' <<<"$CURRENCY")" ]] \
   || fail "the rounds are not paid in this chain's USDC"
 step "chain ${CHAIN_ID}  contributor kit ${CONTRIBUTOR_KIT}  weekly rounds ${WEEKLY_ROUNDS}  currency ${CURRENCY}"
 
@@ -90,7 +90,7 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
     node_modules/.bin/vite build >/dev/null 2>&1 || fail "web build failed"
 fi
 step "running the browser spec"
-FIRST_BLOCK="$(cast block-number --rpc-url "$RPC")"
+FIRST_BLOCK="$(cast block-number --rpc-url "$CAST_RPC")"
 E2E_ANVIL_URL="$RPC" E2E_KIT="$CONTRIBUTOR_KIT" E2E_WEEKLY_ROUNDS="$WEEKLY_ROUNDS" E2E_CURRENCY="$CURRENCY" \
   E2E_REVIEWER1="$REVIEWER1" E2E_REVIEWER2="$REVIEWER2" E2E_CONTRIBUTOR="$CONTRIBUTOR" E2E_MANAGER="$MANAGER" \
   E2E_FOUNDER="$FOUNDER" \

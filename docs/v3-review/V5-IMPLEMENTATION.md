@@ -1085,3 +1085,36 @@ hand-picked constant, so the bound stays hard and single-sourced.
 1 passed, 0 failed, 0 blocked, 0 skipped
 RESULT web-record-e2e exit=0
 ```
+
+### The later journey set: what runs, and what each failure actually is
+
+Every journey in the gate's later set was run with the headless-shell flags.
+Three pass; the rest fail for reasons that are now named rather than guessed.
+
+| Journey | Result | Cause |
+|---|---|---|
+| `web-challenge-e2e` | **1 passed** | — |
+| `web-record-e2e` | **1 passed** | after the gas-cap fix above |
+| `web-dao-journey-e2e` | fails | `locator.click` timed out after the spec's own 420 s budget — a UI step never became clickable |
+| `web-economy-e2e` | fails | `browserType.launch: Target page, context or browser has been closed` |
+| `web-post-bounty-e2e` | fails | `browserContext.newPage: Target page, context or browser has been closed` |
+| `web-rounds-e2e` | fails | copy mismatch: the app says *"You bid for 30 new **Shares** at up to 1.8 USDC."*, the spec expects *"30 new **non-voting s**hares"* |
+| `web-milestone-e2e` | fails | `browser.newPage: … closed` |
+
+**The browser-closed failures are one host limitation.** This machine's Chromium
+only runs `--single-process` (the only mode its sandbox permits), and any second
+page or context brings the whole browser down. `web-challenge-e2e` and
+`web-record-e2e` pass because they never open two at once; the wallet journey
+earlier worked around it with one browser per role. The fix belongs in those
+specs (or in the environment), not in the product.
+
+**The rounds mismatch is a real question, not a stale string.** `rounds-copy.ts`
+deliberately distinguishes "Shares" from "non-voting shares" by the round's
+`asShares` terms (D177), and the app chose the voting word for this world. Either
+the journey's fixture now sells voting Shares (and the spec is stale) or the copy
+branch picks the wrong word for this round. That needs a decision, so the
+assertion was **not** edited to match.
+
+Two more cast-over-HTTP panics were fixed in the journey scripts themselves
+(`web-post-bounty-e2e.sh`, `web-rounds-e2e.sh`), which is why those two now reach
+the browser instead of dying at boot.
