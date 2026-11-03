@@ -748,3 +748,35 @@ itself.
 failed earlier, at the chain send ("The offer did not reach the chain") on a
 world mutated by many runs, so the publish was never attempted. The next step is
 one clean run on a fresh world.
+
+### The wallet journey now completes in the app
+
+One clean world (`scripts/v5-demo-world.sh`, chain `:51321`) and
+`scripts/v5-demo-wallet-journey.mjs` with the hex identity:
+
+```
+[propose] wallet 0x70997970…79C8 signed it; card reads: Offered, waiting for the named person
+[accept]  wallet 0x15d34AAf…6A65 signed it; card reads: Agreed; the quantity is reserved
+[submit]  next: The panel judges one attempt at a time against the agreed criteria;
+          no decision lands by itself and nothing accepts automatically.
+PASS: proposed, accepted and submitted through the app, each signed by a wallet
+```
+
+Three checks, all from outside the app:
+
+1. **An app-originated `47003` landed.** The relay holds two updates from the
+   launch author; the new one is this run's, written by the app:
+   `Agreed work: the first guide, finished and rev…`, agreement
+   `0xa4fe5326db31…`, criteria `docs merged and reviewed`. (The other is the
+   earlier manual probe with the placeholder id `0x1111…`.)
+2. **The submission bound.** The agreement reads beneficiary
+   `0x15d34AAf…6A65`, quantity `3e18`, `claimId 0x9620dc97…`, and
+   `agreementOfClaim(0x9620dc97…) == 0xa4fe5326db31…` — the bind landed.
+3. **It is in review**: the claim's status is `0` (`Open`), with no verdict yet.
+
+Screenshots: `wallet-1-proposed.png` (102 KB), `wallet-2-accepted.png`
+(147 KB), `wallet-3-submitted.png` (97 KB) — three distinct hashes.
+
+The root cause of every earlier attempt was the identity format: the app accepts
+a 64-hex key (re-encrypted NIP-49 on read) or an `ncryptsec1` blob, never a
+bech32 `nsec1…`. With the hex key the same journey completes.
