@@ -71,7 +71,11 @@ export function useFunding(dao: string, wallet: string | null) {
         chain.now(),
         chain.call(dao, encodeCall0("shares()")),
       ]);
-      const exchange = await readExchangeIfAny(chain, decodeAddress(sharesHex));
+      // The DAO's own Shares, kept: a funding round sells either these (they vote)
+      // or the DAO's loot (they do not), and the round card names which by
+      // comparing the round's token with this address.
+      const daoShares = decodeAddress(sharesHex);
+      const exchange = await readExchangeIfAny(chain, daoShares);
       const roundsOn =
         exchange !== null &&
         exitExchangeState(exchange, at, now).phase === "on";
@@ -94,6 +98,7 @@ export function useFunding(dao: string, wallet: string | null) {
       return {
         contract,
         rounds: at,
+        shares: daoShares,
         usdc: currency,
         now,
         terms,

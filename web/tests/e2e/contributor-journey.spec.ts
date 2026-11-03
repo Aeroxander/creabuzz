@@ -741,8 +741,11 @@ test("a contributor project is started from the page, work is claimed the same d
   // ── 3. the founder (the first project's manager) takes it on, two reviewers approve, it is finished ──
   // "Needs you" names the submission, and its button opens that claim on the Work tab.
   await refresh(founder, "Overview");
+  // The lead action is not under `dao-attention` (only the ones after it are), so
+  // the item is picked from the card by its own words rather than by which list it
+  // happens to be in.
   const accept = founder
-    .getByTestId("dao-attention")
+    .getByTestId("dao-needs-you")
     .filter({ hasText: "submitted “Write docs”" });
   await expect(accept).toContainText(
     "Accept it so the reviewers can judge it.",

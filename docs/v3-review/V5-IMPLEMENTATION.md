@@ -1216,3 +1216,63 @@ web-milestone-e2e     1 passed, 0 failed, 0 blocked, 0 skipped   exit=0
 Four browser journeys now pass against a real local chain:
 `web-challenge-e2e`, `web-record-e2e`, `web-post-bounty-e2e`,
 `web-milestone-e2e`.
+
+### The rounds copy defect, found at its source
+
+The round card said "You bid for 30 new **Shares**" for a non-voting funding
+round while the funding card correctly said "non-voting shares". The cause is
+one wrong argument, not the naming helper: `roundUnit(round, daoShares)` names
+what a round sells by comparing the round's token with the DAO's Shares, and
+`FundingCard` passed `shares={round.shares}` — the round's **own** token — so the
+helper compared a value with itself and always answered "Shares".
+
+`useFunding` already read the DAO's `shares()` (for the exit-exchange lookup) and
+threw the value away; it now returns it, and `FundingCard` passes that. The
+contracts are right: `openFunding` sets the round token from
+`FundingTerms.reserve`, which is `asShares ? shares() : loot()`, and
+`MolochPatched` deploys Shares and Loot as two distinct clones, so a non-voting
+sale's token can never equal the DAO's Shares.
+
+`packages/creaton-core/src/launchpad/rounds-copy.test.mjs` pins `roundUnit`'s
+behaviour for all three cases plus the unknown-address fallback, including the
+regression itself (calling it with the round's token always reads "Shares").
+5 tests pass; the web suite is still 2581/2581 and typecheck is clean.
+
+**Not yet verified end to end:** `web-rounds-e2e` now fails *earlier*, at a
+treasury-balance assertion (`expect(await usdcOf(dao)).toBe(300n * USD)`, received
+203 USDC), so the copy assertion it was failing on is never reached. That is a
+journey-state problem ahead of the copy, and it needs its own pass.
+
+### clippy with no network: `just clippy-offline`
+
+`buzz-voice` was excluded from the workspace lint only because
+`sherpa-onnx-sys` downloads a native archive at build time and this host has no
+DNS. The crate's build script honours `DOCS_RS`, its upstream switch for "no
+native artifacts": it returns before downloading and emits no link directives,
+so the same Rust is compiled and linted — clippy never links. `buzz-voice` has
+no feature that makes the native dependency optional, and
+`SHERPA_ONNX_ARCHIVE_DIR` cannot skip the download (both were tried).
+
+A `clippy-offline` recipe now runs `DOCS_RS=1 cargo clippy --workspace
+--all-targets -- -D warnings` and exits 0 with `buzz-voice` included. The
+committed `clippy` recipe is untouched, so CI keeps linting the full workspace.
+
+### The journey specs that assumed every item is `dao-attention`
+
+`web-dao-journey-e2e` timed out waiting for `dao-attention`'s button. The
+diagnosis is that the spec was stale, not that the app lost an affordance: the
+overview now leads with one action (`dao-next-action`) and only the items after
+it render under `dao-attention`; the lead's button calls the same `openItem` and
+lands on the same tab, and `v5-project-story.spec.ts` already asserts that a
+single open item leaves `dao-attention` empty. The click is now scoped to the
+`dao-needs-you` card by the button's accessible name, which works whichever list
+the item is in and is stricter than before (it pins the name).
+
+The same latent breakage in `contributor-journey.spec.ts` and
+`launchpad-shouldfix-work.spec.ts` is fixed the same way, by picking the item
+from the card by its own words.
+
+A second stale assertion followed: the spec expected the claim chip to read
+"Approved" once the panel finished, but `work-status.ts` deliberately maps that
+record state to "Review complete" (the review is complete; the challenge window
+and settlement come after). The assertion now expects the app's real word.

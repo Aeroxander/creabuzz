@@ -308,7 +308,14 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await expect(founder.getByTestId("dao-figure-yours")).toContainText(
     "200,000,000 Shares",
   );
-  await founder.getByTestId("dao-attention").getByRole("button").click();
+  // The card leads with one action now (the rest, if any, sit under `dao-attention`),
+  // so the button is found by what it does, not by which list it is in.
+  await founder
+    .getByTestId("dao-needs-you")
+    .getByRole("button", {
+      name: "Vote — Open for your vote: Set aside a work budget.",
+    })
+    .click();
   await expect(founder.getByTestId("decisions-tab")).toBeVisible();
   await carryOut(founder, 175_000, 90_000);
 
@@ -381,8 +388,10 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   }
   await refresh(manager, "Work");
   await manager.getByTestId("work-settle").click();
+  // The chip reads the review's outcome, not the record's enum: once the panel has
+  // finished, the claim says "Review complete" and the challenge window opens.
   await expect(manager.getByTestId("work-claim-status")).toContainText(
-    "Approved",
+    "Review complete",
     { timeout: 60_000 },
   );
   await pass(700_000);

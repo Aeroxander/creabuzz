@@ -159,6 +159,14 @@ fmt-check:
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
 
+# The same lint on a machine with no network. `sherpa-onnx-sys` (through
+# `buzz-voice`) downloads a native archive from GitHub at build time; `DOCS_RS=1`
+# is its upstream switch for "no native artifacts", which skips the download and
+# the link directives while compiling the same Rust — so clippy still lints every
+# crate, `buzz-voice` included. CI keeps the plain `clippy` above.
+clippy-offline:
+    DOCS_RS=1 cargo clippy --workspace --all-targets -- -D warnings
+
 # Install JS dependencies (pnpm workspace — installs all packages from root)
 desktop-install:
     pnpm install
