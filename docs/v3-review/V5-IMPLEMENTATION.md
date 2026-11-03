@@ -1500,3 +1500,18 @@ matched its own command line — the second attempt excludes `$$` and matches
 Ports `5173`, `8545`, `19556` and `19557` are free. The single relay is kept on
 purpose: it is the shared local service the demo and the browser journeys use,
 and it holds no world state of its own.
+
+### Re-checking the ledger's liveness claims with a tool that works
+
+Because `pgrep` silently returns nothing here, every "gone"/"no processes"
+claim in this document was re-checked with `ps -eo pid,command` and `lsof`.
+There were two:
+
+| Claim | Where | Re-checked |
+|---|---|---|
+| "the fixture relay PID and both owned containers were gone" | the isolated query-fixture run | **holds** — `lsof -iTCP:3030` shows exactly one listener (the deliberate relay, PID 64659), and `docker ps -a` shows no `workcheck`/`probe`/`fixture` container |
+| "the repeated demo-world runs left no processes behind" | the demo housekeeping | **was false**, corrected above; now 0 fixture/demo/anvil/vite processes |
+
+No other liveness assertion in this document depends on `pgrep`. The remaining
+process statements are about containers and are measured with `docker`, which
+answers correctly on this host.
