@@ -1433,3 +1433,26 @@ local chain or relay, in real browsers.
 
 `web-sepolia-fork-e2e` is the one journey that cannot run here: it needs a
 Sepolia RPC, and this host has no DNS.
+
+### The secondary-trading review packet
+
+`docs/v3-review/SECONDARY-TRADING-REVIEW.md` is the packet for the outside
+review of secondary trading: the three surfaces and their complete admin powers
+(with the guard that enforces each), the founder sale schedule and transfer
+restrictions, the activation reads that prove trading is off by default, the
+contract tests that pin each invariant by name, what the tests do **not** cover,
+the seven open questions, and how to reproduce every piece of evidence locally.
+
+Its claims were checked against the contracts rather than recalled: `NotDao` on
+`configureListing` (`SecondaryMarket.sol:222`), `ListingNotEnabled` on both
+`openRound` and `sell` (`:238`, `:267`), `EVERY = 7 days` (`:67`), no sender
+guard on `settle`/`claimShares`/`claimQuote`, and the creation-block guards in
+`ActivationVoting.configureSecondary`.
+
+### Housekeeping
+
+The repeated demo-world runs left no processes behind: no `v5-demo-world.sh`, no
+`anvil`, and no chain on `:8545`. One orphaned `vite` dev server on `:5173`
+outlived its world (its chain was gone, so it could not work) and was stopped.
+The local relay on `:3030` is kept deliberately — it is the shared service the
+demo and the journeys use.
