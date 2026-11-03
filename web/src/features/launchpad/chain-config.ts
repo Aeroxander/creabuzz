@@ -138,6 +138,8 @@ export interface ChainEnv {
   VITE_OPEN_BOUNTIES?: string;
   /** Weekly rounds between holders and new buyers per chain (D131), as JSON `{ "<chainId>": "0x…" }`. */
   VITE_WEEKLY_ROUNDS?: string;
+  /** The SecondaryMarketFactory this build knows on a chain: `marketOf(dao)` names a DAO's market. */
+  VITE_SECONDARY_MARKET_FACTORY?: string;
   /**
    * Which score-root publishers each community has accepted, as JSON keyed by
    * relay host: `{"localhost:3000":{"publishers":["<hex>"],"programs":["…"]}}`.
@@ -266,6 +268,20 @@ export function weeklyRounds(
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
   return addressForChain(env?.VITE_WEEKLY_ROUNDS, chainId);
+}
+
+/**
+ * The secondary-market factory this build knows on `chainId`, or null when it names none.
+ *
+ * One factory serves every DAO a kit made: `marketOf(dao)` answers that DAO's market, or the zero
+ * address when it has none. Trading is off by default — a market exists from launch, but it sells
+ * nothing until the DAO publishes a listing and the founder's schedule has released units.
+ */
+export function secondaryMarketFactory(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_SECONDARY_MARKET_FACTORY, chainId);
 }
 
 function addressForChain(
