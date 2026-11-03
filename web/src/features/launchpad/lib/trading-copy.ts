@@ -12,8 +12,11 @@
  * the node did not answer is not evidence that the DAO has none.
  *
  * Units: a price is quote base units per whole lot, and a lot is the market's
- * own `lotSize` Shares base units. Like the weekly rounds' copy, money is
- * shown in USDC's six decimals, the quote this kit's markets take.
+ * own `lotSize` Shares base units. The quote token is whatever the DAO's kit was
+ * launched with, so its own decimals and symbol are arguments here
+ * (`QuoteUnits`), never a constant: a price written at a guessed scale is wrong
+ * by the factor the guess is wrong by, which is the same defect as a read that
+ * did not complete (Review-Proven Rule 1).
  */
 
 import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
@@ -26,7 +29,13 @@ import {
   type WalletView,
 } from "@creaton/core/launchpad/secondary.ts";
 
-const QUOTE_DECIMALS = 6;
+/** What every price is written in: the market's own quote token, as the token names itself. */
+export interface QuoteUnits {
+  /** The token's decimals: one whole unit is `10 ** quoteDecimals` base units. */
+  quoteDecimals: number;
+  /** The token's own symbol, as it answers `symbol()` (e.g. "USDC"). */
+  quoteSymbol: string;
+}
 
 const date = (seconds: number) =>
   new Date(seconds * 1000).toLocaleString("en-US", {
@@ -43,9 +52,14 @@ const day = (seconds: number) =>
     day: "numeric",
   });
 
-/** Quote base units as money, keeping every decimal a grid step can name. */
-export const money = (units: bigint) =>
-  `${formatUnits(units, QUOTE_DECIMALS, QUOTE_DECIMALS)} USDC`;
+/**
+ * Quote base units as money at the token's own scale, keeping every decimal it
+ * can name: "1 USDC" at six, "1 FQ" at eighteen. The fraction is cut at the
+ * token's own decimals and its trailing zeros trimmed, so a whole price reads as
+ * a whole number however many decimals the token has.
+ */
+export const money = (units: bigint, quote: QuoteUnits) =>
+  `${formatUnits(units, quote.quoteDecimals, quote.quoteDecimals)} ${quote.quoteSymbol}`;
 
 /** Whole lots, in words: "1 lot", "3 lots". */
 export const lots = (count: bigint) =>
@@ -67,12 +81,22 @@ export function unreadableLine(): string {
   return "The market couldn't be read just now, so this page can't say whether this DAO has one. Reload to try again.";
 }
 
+/**
+ * The market was found but its price token would not say its decimals or its
+ * symbol. Every price would then be printed at a guessed scale, so none is
+ * printed at all: this is the same refusal as any other read we do not have.
+ */
+export function tokenUnreadableLine(): string {
+  return "The market's price token couldn't be read just now, so no price can be shown. Reload to try again.";
+}
+
 /** The listing's terms in words: the range a lot may trade in, and how many steps divide it. */
 export function listingTermsLine(
   listing: Pick<Listing, "minPrice" | "maxPrice" | "levels">,
+  quote: QuoteUnits,
 ): string {
   const steps = `${listing.levels} ${listing.levels === 1 ? "step" : "steps"}`;
-  return `from ${money(listing.minPrice)} to ${money(listing.maxPrice)} a lot, in ${steps}`;
+  return `from ${money(listing.minPrice, quote)} to ${money(listing.maxPrice, quote)} a lot, in ${steps}`;
 }
 
 /** Where the latest round stands, said plainly; nothing traded when it settled or went void with no orders. */
@@ -88,6 +112,7 @@ export function roundLine(
     | "minPrice"
     | "step"
   >,
+  quote: QuoteUnits,
 ): string {
   switch (round.phase) {
     case "bidding":
@@ -98,7 +123,7 @@ export function roundLine(
       // Nothing was offered or bid: a price would be a claim about a trade nobody made.
       return round.asked === 0n && round.wanted === 0n
         ? "Settled. Nothing traded: everyone takes back theirs."
-        : `Settled at ${money(lotPriceAt(round, round.price))} a lot, after offers closed ${day(round.closesAt)}. Everyone collects their own result.`;
+        : `Settled at ${money(lotPriceAt(round, round.price), quote)} a lot, after offers closed ${day(round.closesAt)}. Everyone collects their own result.`;
     case "void":
       return "Nobody settled it in time: nothing traded, so everyone takes back what they put in.";
     case "none":
@@ -110,8 +135,9 @@ export function roundLine(
 export function lotPriceLine(
   round: Pick<RoundView, "minPrice" | "step" | "levels">,
   level: number,
+  quote: QuoteUnits,
 ): string {
-  return `${money(lotPriceAt(round, level))} a lot at step ${level} of ${round.levels}`;
+  return `${money(lotPriceAt(round, level), quote)} a lot at step ${level} of ${round.levels}`;
 }
 
 /** What one lot is, so a price per lot means something: the market's own bundle of Shares. */
@@ -123,11 +149,12 @@ export function lotSizeLine(lotSize: bigint): string {
 export function listingDetailLine(
   listing: Pick<Listing, "minPrice" | "maxPrice" | "levels">,
   lotSize: bigint,
+  quote: QuoteUnits,
 ): string {
   const size = lotSizeLine(lotSize);
   if (listing.levels <= 0) return size;
   const step = (listing.maxPrice - listing.minPrice) / BigInt(listing.levels);
-  return `${size} Each step is ${money(step)} apart.`;
+  return `${size} Each step is ${money(step, quote)} apart.`;
 }
 
 /** When the market allows its next round: a week after the last one opened. A chip carries no full stop. */
@@ -144,10 +171,15 @@ export function nextRoundLine(opensAt: number): string {
  * What trading is doing, in one or two sentences. The three states that matter
  * are told apart: no market for this DAO, a market with no listing, and a
  * listing that is on. An unreadable read says only that it could not be read.
+ *
+ * `quote` is the market's own price token, and null when it could not be read:
+ * a listing that is on cannot state its terms without it, so that case is said
+ * as the unreadable read it is rather than printed at a guessed scale.
  */
 export function tradingStateLine(
   read: SecondaryMarketRead,
   now: number,
+  quote: QuoteUnits | null,
 ): string {
   if (read.kind === "unreadable") return unreadableLine();
   if (read.kind === "absent") {
@@ -157,7 +189,8 @@ export function tradingStateLine(
   if (!listing.enabled) {
     return "Trading is off: the DAO has no open listing. Opening one is the DAO's decision.";
   }
-  const terms = `Trading is on: ${listingTermsLine(listing)}.`;
+  if (quote === null) return unreadableLine();
+  const terms = `Trading is on: ${listingTermsLine(listing, quote)}.`;
   const phase =
     round === null
       ? "No round has opened yet."
@@ -182,12 +215,13 @@ export function sellPlan(
   round: Pick<RoundView, "minPrice" | "step" | "levels">,
   lotsText: string,
   priceText: string,
+  quote: QuoteUnits,
 ): { problem: string } | { lots: bigint; level: number } {
   const whole = wholeLots(lotsText);
   if ("problem" in whole) return whole;
   let price: bigint;
   try {
-    price = priceOf(priceText, "The lowest price");
+    price = priceOf(priceText, "The lowest price", quote.quoteDecimals);
   } catch (error) {
     return { problem: messageOf(error) };
   }
@@ -203,19 +237,20 @@ export function bidPlan(
   round: Pick<RoundView, "minPrice" | "step" | "levels">,
   lotsText: string,
   priceText: string,
+  quote: QuoteUnits,
 ): { problem: string } | { lots: bigint; level: number } {
   const whole = wholeLots(lotsText);
   if ("problem" in whole) return whole;
   let price: bigint;
   try {
-    price = priceOf(priceText, "The highest price");
+    price = priceOf(priceText, "The highest price", quote.quoteDecimals);
   } catch (error) {
     return { problem: messageOf(error) };
   }
   const level = stepAtMost(round, price);
   if (level === null) {
     return {
-      problem: `Bid at least ${money(round.minPrice)} a lot: this round's lowest.`,
+      problem: `Bid at least ${money(round.minPrice, quote)} a lot: this round's lowest.`,
     };
   }
   return { lots: whole.lots, level };
@@ -268,8 +303,9 @@ export function stepAtMost(
 export function sellOrderLine(
   round: Pick<RoundView, "phase" | "minPrice" | "step">,
   sell: { lots: bigint; minStep: number; filled: bigint },
+  quote: QuoteUnits,
 ): string {
-  const at = money(lotPriceAt(round, sell.minStep));
+  const at = money(lotPriceAt(round, sell.minStep), quote);
   const offer = `You offer ${lots(sell.lots)} at ${at} a lot or more.`;
   if (round.phase === "settled") {
     return `${offer} Sold: ${lots(sell.filled)} at the round's price.`;
@@ -283,8 +319,9 @@ export function sellOrderLine(
 export function bidOrderLine(
   round: Pick<RoundView, "phase" | "minPrice" | "step">,
   bid: { lots: bigint; maxStep: number; filled: bigint; cancelled: boolean },
+  quote: QuoteUnits,
 ): string {
-  const at = money(lotPriceAt(round, bid.maxStep));
+  const at = money(lotPriceAt(round, bid.maxStep), quote);
   if (bid.cancelled) {
     return `You took back your bid for ${lots(bid.lots)} at up to ${at} a lot. The money is yours to collect.`;
   }
@@ -356,22 +393,22 @@ function wholeLots(text: string): { lots: bigint } | { problem: string } {
 }
 
 /** A typed price as quote base units, or a thrown problem the form shows. */
-function priceOf(text: string, what: string): bigint {
+function priceOf(text: string, what: string, decimals: number): bigint {
   const trimmed = text.trim();
   const parts = trimmed.split(".");
   if (
     parts.length > 2 ||
     !/^\d+$/.test(parts[0] ?? "") ||
     (parts[1] !== undefined && !/^\d+$/.test(parts[1])) ||
-    (parts[1]?.length ?? 0) > QUOTE_DECIMALS
+    (parts[1]?.length ?? 0) > decimals
   ) {
     throw new Error(
-      `${what} must be a number with at most ${QUOTE_DECIMALS} decimal places.`,
+      `${what} must be a number with at most ${decimals} decimal places.`,
     );
   }
   return (
-    BigInt(parts[0]) * 10n ** BigInt(QUOTE_DECIMALS) +
-    BigInt((parts[1] ?? "").padEnd(QUOTE_DECIMALS, "0") || "0")
+    BigInt(parts[0]) * 10n ** BigInt(decimals) +
+    BigInt((parts[1] ?? "").padEnd(decimals, "0") || "0")
   );
 }
 

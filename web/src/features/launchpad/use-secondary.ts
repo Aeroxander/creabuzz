@@ -6,6 +6,7 @@ import {
   encodeCall0,
 } from "@creaton/core/launchpad/work.ts";
 import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
+import type { WorkChain } from "@creaton/core/launchpad/workRead.ts";
 import {
   decodeRound,
   readSecondaryMarket,
@@ -28,6 +29,10 @@ export interface SecondaryMarketFacts {
   sharesToken: string;
   /** The token a buyer pays with, lowercased. */
   quoteToken: string;
+  /** The quote token's own decimals: the scale every price is written at. */
+  quoteDecimals: number;
+  /** The quote token's own symbol, as the token names itself. */
+  quoteSymbol: string;
 }
 
 /** Everything one read of a DAO's market answered. */
@@ -40,9 +45,86 @@ export interface SecondaryMarketView {
   roundId: bigint | null;
   /** The chain's clock when it was read, for the round's windows. */
   now: number;
+  /**
+   * The market was found, but its price token would not say its decimals or its
+   * symbol. `read` is then `unreadable` and there are no `facts`: a price written
+   * at a guessed scale would be wrong by the factor the guess is wrong by.
+   */
+  tokenUnreadable: boolean;
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+/** The most decimals a price scale may have: `decimals()` is a uint8, and no token in use goes near this. */
+const MAX_QUOTE_DECIMALS = 36;
+/** The most characters a token symbol may be, so a token cannot write a paragraph where a unit goes. */
+const MAX_SYMBOL = 32;
+
+/** One 32-byte word, or null when the answer is not exactly one. */
+function wordOf(hex: string): bigint | null {
+  const body = typeof hex === "string" ? hex.replace(/^0x/, "") : "";
+  return /^[0-9a-fA-F]{64}$/.test(body) ? BigInt(`0x${body}`) : null;
+}
+
+/** The token's `decimals()`, or null when it did not answer a scale a price can be written at. */
+function decodeDecimals(hex: string): number | null {
+  const word = wordOf(hex);
+  if (word === null || word > BigInt(MAX_QUOTE_DECIMALS)) return null;
+  return Number(word);
+}
+
+/** Printable ASCII, cut at the first zero byte; null when it is not a symbol a person could read. */
+function textOf(hexBytes: string): string | null {
+  let text = "";
+  for (const byte of hexBytes.match(/.{2}/g) ?? []) {
+    const code = Number.parseInt(byte, 16);
+    if (code === 0) break;
+    if (code < 0x20 || code > 0x7e) return null;
+    text += String.fromCharCode(code);
+  }
+  return text.length > 0 && text.length <= MAX_SYMBOL ? text : null;
+}
+
+/** The token's `symbol()`, as the standard string or a `bytes32`, or null when it did not answer one. */
+function decodeSymbol(hex: string): string | null {
+  const body = typeof hex === "string" ? hex.replace(/^0x/, "") : "";
+  if (body.length === 0 || body.length % 64 !== 0) return null;
+  if (!/^[0-9a-fA-F]*$/.test(body)) return null;
+  const words = body.match(/.{64}/g) ?? [];
+  // The standard string shape: the offset of the bytes, their length, then the bytes right-padded.
+  if (words.length >= 3 && BigInt(`0x${words[0]}`) === 32n) {
+    const length = Number(BigInt(`0x${words[1]}`));
+    if (length === 0 || length > MAX_SYMBOL) return null;
+    return textOf(body.slice(128, 128 + length * 2));
+  }
+  // A token whose `symbol()` is a `bytes32` answers one right-padded word.
+  return words.length === 1 ? textOf(words[0]) : null;
+}
+
+/**
+ * The market's price token's own units, or null when it would not say them.
+ *
+ * A token that does not implement `decimals()`/`symbol()`, or answers something
+ * that is not a scale and a symbol, gives us no scale to write a price at. That
+ * is a read we do not have — never 6 and "USDC", which would misprint every
+ * price of a token with other decimals (Review-Proven Rule 1).
+ */
+async function readQuoteUnits(
+  chain: Pick<WorkChain, "call">,
+  quoteToken: string,
+): Promise<{ decimals: number; symbol: string } | null> {
+  try {
+    const [decimalsHex, symbolHex] = await Promise.all([
+      chain.call(quoteToken, encodeCall0("decimals()")),
+      chain.call(quoteToken, encodeCall0("symbol()")),
+    ]);
+    const decimals = decodeDecimals(decimalsHex);
+    const symbol = decodeSymbol(symbolHex);
+    return decimals === null || symbol === null ? null : { decimals, symbol };
+  } catch {
+    // A token that does not implement them refuses the call: the same "no answer" as a nonsense one.
+    return null;
+  }
+}
 
 /**
  * The DAO's secondary market (docs/v3-review/SECONDARY-LISTING-SPEC.md), when
@@ -76,7 +158,13 @@ export function useSecondary(input: {
       });
       // No market to ask: the listing, the round and the wallet's orders are all the read has to say.
       if (read.kind !== "present") {
-        return { read, facts: null, roundId: null, now };
+        return {
+          read,
+          facts: null,
+          roundId: null,
+          now,
+          tokenUnreadable: false,
+        };
       }
       // The market's three constants, without which a lot has no size and an
       // approval no target. A zero answer is a read we do not have, not a market
@@ -95,6 +183,23 @@ export function useSecondary(input: {
       }
       if (sharesToken === ZERO_ADDRESS || quoteToken === ZERO_ADDRESS) {
         throw new Error("the market did not report its tokens");
+      }
+      // Half of every price is the quote token's own scale, so the token is read
+      // for it: a token that will not say its decimals or its symbol leaves no
+      // price to show, and that is a read we do not have rather than a guess.
+      const quote = await readQuoteUnits(chain, quoteToken);
+      if (quote === null) {
+        return {
+          read: {
+            kind: "unreadable",
+            reason:
+              "the market's price token did not say its decimals and its symbol",
+          },
+          facts: null,
+          roundId: null,
+          now,
+          tokenUnreadable: true,
+        };
       }
       // The adapter returns the latest round without its id, and every order
       // names one. `roundCount` is that id (ids start at 1), but it is read
@@ -120,9 +225,16 @@ export function useSecondary(input: {
       }
       return {
         read,
-        facts: { lotSize, sharesToken, quoteToken },
+        facts: {
+          lotSize,
+          sharesToken,
+          quoteToken,
+          quoteDecimals: quote.decimals,
+          quoteSymbol: quote.symbol,
+        },
         roundId,
         now,
+        tokenUnreadable: false,
       };
     },
   });

@@ -55,6 +55,7 @@ import {
   sellOrderLine,
   sellPlan,
   shareUnits,
+  tokenUnreadableLine,
   tradingStateLine,
   unreadableLine,
 } from "../lib/trading-copy";
@@ -97,6 +98,8 @@ export function TradingCard({
   const blocked = sender.busy !== null || sender.gate !== null;
   const present = read?.kind === "present" ? read : null;
   const round = present?.round ?? null;
+  // What prices are written in: the market's own quote token, as it names itself.
+  const quote = data?.facts ?? null;
   const over = round?.phase === "settled" || round?.phase === "void";
   const nextOpenAt = round === null ? 0 : round.opensAt + SECONDARY_EVERY;
   const canOpen =
@@ -122,7 +125,7 @@ export function TradingCard({
           data-testid="trading-unreadable"
           role="status"
         >
-          {unreadableLine()}{" "}
+          {data?.tokenUnreadable ? tokenUnreadableLine() : unreadableLine()}{" "}
           <button
             className="underline"
             onClick={() => void query.refetch()}
@@ -138,7 +141,7 @@ export function TradingCard({
       ) : (
         <>
           <p className="mt-1 text-sm" data-testid="trading-state">
-            {tradingStateLine(data.read, data.now)}
+            {tradingStateLine(data.read, data.now, quote)}
           </p>
           <MoreInfo label="How trading works" testId="trading-how">
             Sellers offer Shares they already hold, in whole lots at a lowest
@@ -152,7 +155,11 @@ export function TradingCard({
           </MoreInfo>
           {present?.listing.enabled && data.facts ? (
             <p className="mt-2 text-sm" data-testid="trading-listing">
-              {listingDetailLine(present.listing, data.facts.lotSize)}
+              {listingDetailLine(
+                present.listing,
+                data.facts.lotSize,
+                data.facts,
+              )}
             </p>
           ) : null}
           {canOpen && present ? (
@@ -243,16 +250,16 @@ function TradingRound({
       data-testid="trading-round"
     >
       <p className="text-sm" data-testid="trading-round-status">
-        {roundLine(round)}
+        {roundLine(round, facts)}
       </p>
       {sell ? (
         <p className="text-sm" data-testid="trading-my-sell">
-          {sellOrderLine(round, sell)}
+          {sellOrderLine(round, sell, facts)}
         </p>
       ) : null}
       {bid ? (
         <p className="text-sm" data-testid="trading-my-bid">
-          {bidOrderLine(round, bid)}
+          {bidOrderLine(round, bid, facts)}
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2">
@@ -368,7 +375,7 @@ function TradingRound({
               >
                 {busy === "trading-claim-quote"
                   ? "Collecting…"
-                  : `Collect ${money(due.quote)}`}
+                  : `Collect ${money(due.quote, facts)}`}
               </Button>
             ) : null}
           </div>
@@ -430,7 +437,7 @@ function SellForm({
   const [priceText, setPriceText] = useState("");
   const plan =
     lotsInput.trim() && priceText.trim()
-      ? sellPlan(round, lotsInput, priceText)
+      ? sellPlan(round, lotsInput, priceText, facts)
       : null;
   const go = async () => {
     if (!plan || "problem" in plan) return;
@@ -465,7 +472,7 @@ function SellForm({
         />
         <Field
           id={`${formId}-price`}
-          label="Lowest price a lot (USDC)"
+          label={`Lowest price a lot (${facts.quoteSymbol})`}
           onChange={setPriceText}
           placeholder="1.02"
           testId="trading-sell-price"
@@ -475,7 +482,7 @@ function SellForm({
       <PlanLine
         line={
           plan && !("problem" in plan)
-            ? `This holds ${lotsLabel(plan.lots)} (${shareUnits(sellHolds(plan.lots, facts.lotSize))} Shares) until the round settles. ${lotPriceLine(round, plan.level)}.`
+            ? `This holds ${lotsLabel(plan.lots)} (${shareUnits(sellHolds(plan.lots, facts.lotSize))} Shares) until the round settles. ${lotPriceLine(round, plan.level, facts)}.`
             : null
         }
         problem={plan && "problem" in plan ? plan.problem : null}
@@ -527,7 +534,7 @@ function BidForm({
   const [priceText, setPriceText] = useState("");
   const plan =
     lotsInput.trim() && priceText.trim()
-      ? bidPlan(round, lotsInput, priceText)
+      ? bidPlan(round, lotsInput, priceText, facts)
       : null;
   const go = async () => {
     if (!plan || "problem" in plan) return;
@@ -562,7 +569,7 @@ function BidForm({
         />
         <Field
           id={`${formId}-price`}
-          label="Highest price a lot (USDC)"
+          label={`Highest price a lot (${facts.quoteSymbol})`}
           onChange={setPriceText}
           placeholder="1.05"
           testId="trading-bid-price"
@@ -572,7 +579,7 @@ function BidForm({
       <PlanLine
         line={
           plan && !("problem" in plan)
-            ? `This bid holds ${money(bidHolds(round, plan.lots, plan.level))} until the round settles. You pay the round's price, never more than yours, and get back the rest. ${lotPriceLine(round, plan.level)}.`
+            ? `This bid holds ${money(bidHolds(round, plan.lots, plan.level), facts)} until the round settles. You pay the round's price, never more than yours, and get back the rest. ${lotPriceLine(round, plan.level, facts)}.`
             : null
         }
         problem={plan && "problem" in plan ? plan.problem : null}
