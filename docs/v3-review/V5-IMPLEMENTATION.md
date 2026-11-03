@@ -700,3 +700,27 @@ proposal transaction itself was refused by the wallet
 ("The offer did not reach the chain"), on a demo world mutated by many earlier
 runs. The chain calls are proven (`v5-demo-agreement.mjs` settles end to end);
 what remains is the app's publish write and the submit form, on a fresh world.
+
+### Where the publish write actually fails (narrowed)
+
+The relay is not the blocker. Posting the exact event shape the app builds —
+kind `47003`, tags `[["a","37001:<author>:demo"]]`, content with `title`, `body`
+and `agreement{id, mandate, projectId, deliverable, criteriaWords}` — directly to
+the local relay as the launch author returns:
+
+```
+HTTP 200 {"accepted":true,"event_id":"b4f024cd…","message":""}
+```
+
+So the shape, the tags and the author binding are accepted.
+
+In the browser, with a wallet connected and the retry pressed, **no `EVENT`
+frame carrying kind 47003 is ever sent** (the socket shows only `REQ` frames and
+the `OK` acknowledgements for auth events). The failure therefore sits in the
+app's client-side publish path (`publishMirror` → `signAsUser` →
+`publishEvent`) *before* anything reaches the socket — not in the relay, the
+event shape, or the tags.
+
+That is the next concrete step: instrument `publishMirror`/`publishEvent` in the
+app (they throw away the underlying error and the caller shows a generic
+sentence) and fix whichever of signing or the WS publish is failing.
