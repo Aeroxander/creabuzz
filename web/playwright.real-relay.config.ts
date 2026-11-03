@@ -24,5 +24,20 @@ export default defineConfig({
   use: {
     baseURL: process.env.BUZZ_REAL_RELAY_URL ?? "http://localhost:3199",
     ...devices["Desktop Chrome"],
+    // The same escape hatch the other configs have: a machine whose Chromium is
+    // older than the pinned build, or whose sandbox needs GPU-less headless
+    // (PW_CHROMIUM_EXTRA_ARGS). Without it this suite launches the pinned
+    // browser, which dies before the first page on such a host.
+    ...(process.env.PW_CHROMIUM_PATH
+      ? {
+          launchOptions: {
+            executablePath: process.env.PW_CHROMIUM_PATH,
+            args: [
+              "--no-sandbox",
+              ...(process.env.PW_CHROMIUM_EXTRA_ARGS?.split(" ") ?? []),
+            ],
+          },
+        }
+      : {}),
   },
 });

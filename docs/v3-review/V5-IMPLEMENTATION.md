@@ -1118,3 +1118,51 @@ assertion was **not** edited to match.
 Two more cast-over-HTTP panics were fixed in the journey scripts themselves
 (`web-post-bounty-e2e.sh`, `web-rounds-e2e.sh`), which is why those two now reach
 the browser instead of dying at boot.
+
+### Two more journey findings, diagnosed rather than guessed
+
+**`web-economy-e2e` was launching the wrong browser.** It runs under
+`playwright.real-relay.config.ts`, the one config with no `PW_CHROMIUM_PATH`
+escape hatch, so it launched the pinned Chromium — which dies on this host
+before the first page. The config now takes the same hatch the other configs
+have. That moved the failure from
+
+```
+browserType.launch: Target page, context or browser has been closed   (0 ms)
+```
+
+to
+
+```
+browserContext.newPage: Target page, context or browser has been closed  (64 ms)
+```
+
+which is the real remaining cause and is **not** a config problem: the spec's
+own doc comment says "One person: a browser of their own", but `arrive()` calls
+`browser.newContext()`, so all three people share one browser. With
+`--single-process` Chromium (the only mode this sandbox permits) the second
+context kills it. The fix is the pattern the wallet journey already uses — one
+launched browser per person, closed at the end of the test — and it is a change
+to `web/tests/e2e-real/economy.spec.ts` alone.
+
+**The rounds copy mismatch is a real cross-surface inconsistency.** In one
+funding round the app says two different things about the same units:
+
+- the funding card reads *"On sale for the project: 40 new **non-voting shares**
+  at 1.65 USDC each or more"* — from the funding terms (`asShares = false`);
+- the round card reads *"You bid for 30 new **Shares** at up to 1.8 USDC."* —
+  from `roundUnit(round, daoShares)`, which compares the round's token
+  (`round.shares`) with the DAO's Shares address and returns "Shares" when they
+  are equal.
+
+`WeeklyRounds.openFunding` sets the round's token from
+`IFundingTerms.reserve(dao)`, which is `asShares ? shares() : loot()`. So the
+round token should differ from the DAO's Shares for a non-voting sale. Either
+`reserve()` returned `shares()` for a round whose terms say otherwise, or the
+DAO's `loot()` is the same address as its `shares()` in this world — and if it
+is, the funding card's "non-voting shares" is the misleading surface, not the
+round card's "Shares".
+
+That needs a decision about which surface is right, so the spec's assertion was
+**not** edited. The evidence needed to settle it is one read on a live world:
+`terms.asShares`, `dao.shares()`, `dao.loot()`, and the round's `shares` field.
