@@ -1276,3 +1276,16 @@ A second stale assertion followed: the spec expected the claim chip to read
 "Approved" once the panel finished, but `work-status.ts` deliberately maps that
 record state to "Review complete" (the review is complete; the challenge window
 and settlement come after). The assertion now expects the app's real word.
+
+### Five browser journeys now pass
+
+After the two stale-spec fixes (`dao-needs-you` locator, "Review complete" chip),
+`web-dao-journey-e2e` passes:
+
+```
+web-dao-journey-e2e   1 passed, 0 failed, 0 blocked, 0 skipped   exit=0
+```
+
+So the full set of browser journeys against a real local chain is:
+`web-challenge-e2e`, `web-record-e2e`, `web-post-bounty-e2e`,
+`web-milestone-e2e`, `web-dao-journey-e2e` — five green.
