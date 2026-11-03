@@ -75,6 +75,11 @@ RPC_HOST="${RPC_HOST:-127.0.0.1}"
 RPC_PORT="${RPC_PORT:-8545}"
 _RPC_URL_FROM_ENV="${RPC_URL:-}"
 RPC_URL="${_RPC_URL_FROM_ENV:-http://$RPC_HOST:$RPC_PORT}"
+# Foundry's HTTP client panics on this host (macOS `system-configuration` returns
+# NULL while building its proxy matcher) before the request reaches the node, so
+# every `cast` call goes over the node's WebSocket transport — the same endpoint,
+# same JSON-RPC. `RPC_URL` stays http for the app and for curl.
+CAST_RPC_URL="${RPC_URL/http:/ws:}"
 
 # RPC_URL is the single source of truth for the endpoint: when the caller gave
 # one, host and port follow it. Otherwise the probe could check one port while
@@ -168,17 +173,32 @@ manifest_role() { # <file> <role>
 
 code_bytes() { # <address> -> decimal code size (0 = nothing deployed)
   local code
-  code=$(cast code "$1" --rpc-url "$RPC_URL" 2>/dev/null || echo "0x")
+  code=$(cast code "$1" --rpc-url "$CAST_RPC_URL" 2>/dev/null || echo "0x")
   if [[ "$code" == "0x" || -z "$code" ]]; then echo 0; return; fi
   echo $(( (${#code} - 2) / 2 ))
 }
 
+# Run a `cast send --json` and keep only the receipt line.
+#
+# Newer Foundry writes a log line (e.g. "alloy_provider::blocks: failed to fetch
+# block") to stderr, and every call site here merges the two streams so a failure
+# can be reported. `JSON.parse` then choked on the extra line and the deploy was
+# reported as "no code at <none>" even though the transaction had landed.
+send_json() {
+  local out
+  if ! out=$("$@" 2>&1); then
+    printf '%s' "$out"
+    return 1
+  fi
+  printf '%s\n' "$out" | grep -m1 '^{'
+}
+
 rpc_chain_id() {
-  cast chain-id --rpc-url "$RPC_URL" 2>/dev/null || true
+  cast chain-id --rpc-url "$CAST_RPC_URL" 2>/dev/null || true
 }
 
 rpc_client() {
-  cast rpc web3_clientVersion --rpc-url "$RPC_URL" 2>/dev/null | tr -d '"' || true
+  cast rpc web3_clientVersion --rpc-url "$CAST_RPC_URL" 2>/dev/null | tr -d '"' || true
 }
 
 rpc_alive() {
@@ -327,8 +347,20 @@ boot_anvil() {
   # --prune-history=500: the last 500 blocks' state stays in memory (about what anvil keeps there anyway) and none goes to
   # disk. Without it anvil spills older state to ~/.foundry/anvil/tmp (gigabytes on a long run) and leaves it there however
   # it is stopped, SIGINT included.
-  nohup anvil --host "$RPC_HOST" --port "$RPC_PORT" --chain-id "$DEV_CHAIN_ID" --prune-history=500 \
-    >"$LOG_FILE" 2>&1 &
+  # `nohup` cannot detach where there is no controlling terminal: it prints
+  # "nohup: can't detach from console: Inappropriate ioctl for device" and anvil
+  # never starts, which killed every journey with "no JSON-RPC after 10s". What
+  # nohup actually needs is stdin off the terminal, so that is redirected here
+  # and the process is backgrounded directly (setsid where it exists, which keeps
+  # it alive past the parent without a terminal).
+  if command -v setsid >/dev/null 2>&1; then
+    setsid anvil --host "$RPC_HOST" --port "$RPC_PORT" --chain-id "$DEV_CHAIN_ID" --prune-history=500 \
+      </dev/null >"$LOG_FILE" 2>&1 &
+  else
+    anvil --host "$RPC_HOST" --port "$RPC_PORT" --chain-id "$DEV_CHAIN_ID" --prune-history=500 \
+      </dev/null >"$LOG_FILE" 2>&1 &
+    disown 2>/dev/null || true
+  fi
   local pid=$!
   echo "$pid" >"$PID_FILE"
   local attempt
@@ -389,7 +421,7 @@ org_dao_deployed() {
   # different contract (it did: the dev currency's old address became the
   # OrgBinding). An OrgBinding answers `summoner()` with an address that has code.
   local summoner
-  summoner=$(cast call "$factory" "summoner()(address)" --rpc-url "$RPC_URL" 2>/dev/null || true)
+  summoner=$(cast call "$factory" "summoner()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null || true)
   [[ -n "$summoner" && "$(code_bytes "$summoner")" != "0" ]]
 }
 
@@ -403,8 +435,11 @@ deploy_org_dao() {
   mkdir -p "$STATE_DIR"
   if (
     cd "$REPO_ROOT/contracts"
+    # `--offline`: without it Foundry builds its HTTP client (and panics on this
+    # host's system-configuration) before it ever dials the WebSocket endpoint.
+    # Everything it needs is vendored, so nothing is fetched either way.
     PRIVATE_KEY="$ANVIL_KEY" forge script script/DeployOrgDao.s.sol \
-      --rpc-url "$RPC_URL" --broadcast -vv
+      --rpc-url "$CAST_RPC_URL" --broadcast --offline -vv
   ) 2>&1 | tee "$ORG_DAO_LOG"; then
     :
   else
@@ -436,7 +471,7 @@ currency_deployed() {
   [[ "$(code_bytes "$address")" != "0" ]] || return 1
   # Identity, not just code (see org_dao_deployed): the token must still say who it is.
   local symbol
-  symbol=$(cast call "$address" "symbol()(string)" --rpc-url "$RPC_URL" 2>/dev/null | tr -d '"' || true)
+  symbol=$(cast call "$address" "symbol()(string)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | tr -d '"' || true)
   [[ "$symbol" == "$CURRENCY_SYMBOL" ]]
 }
 
@@ -468,7 +503,7 @@ deploy_currency() {
   # `--create` goes immediately before the init code: with `cast send`, flags
   # that follow `--create` are parsed as call arguments and clap rejects them
   # ("unexpected argument '--private-key'").
-  if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
+  if ! receipt=$(send_json cast send --json --rpc-url "$CAST_RPC_URL" --private-key "$ANVIL_KEY" \
       --create "$data" 2>&1); then
     echo "$receipt" >&2
     fail_step "currency" "cast send --create failed"
@@ -527,12 +562,12 @@ artifact_field() { # <artifact.json> <dotted.path> -> value
   ' "$1" "$2"
 }
 
-lower_code() { cast code "$1" --rpc-url "$RPC_URL" 2>/dev/null | tr '[:upper:]' '[:lower:]'; }
+lower_code() { cast code "$1" --rpc-url "$CAST_RPC_URL" 2>/dev/null | tr '[:upper:]' '[:lower:]'; }
 
 deploy_artifact() { # <artifact.json> -> the address of a fresh deployment that takes no constructor arguments
   local bytecode receipt address
   bytecode=$(artifact_field "$1" bytecode.object) || return 1
-  receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" --create "0x${bytecode#0x}" 2>&1) \
+  receipt=$(send_json cast send --json --rpc-url "$CAST_RPC_URL" --private-key "$ANVIL_KEY" --create "0x${bytecode#0x}" 2>&1) \
     || { echo "$receipt" >&2; return 1; }
   address=$(node -e 'console.log(JSON.parse(process.argv[1]).contractAddress ?? "")' "$receipt")
   [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] || return 1
@@ -553,7 +588,7 @@ place_cca() {
   if [[ "$(lower_code "$CCA_FACTORY_ADDRESS")" == "$want" ]]; then
     echo "── cca: factory already at $CCA_FACTORY_ADDRESS — skipped (code matches the build)"
   else
-    cast rpc --rpc-url "$RPC_URL" anvil_setCode "$CCA_FACTORY_ADDRESS" "$want" >/dev/null \
+    cast rpc --rpc-url "$CAST_RPC_URL" anvil_setCode "$CCA_FACTORY_ADDRESS" "$want" >/dev/null \
       || fail_step "cca" "anvil_setCode for the factory failed"
     [[ "$(lower_code "$CCA_FACTORY_ADDRESS")" == "$want" ]] \
       || fail_step "cca" "factory code at $CCA_FACTORY_ADDRESS does not match the build"
@@ -565,11 +600,11 @@ place_cca() {
   else
     local bytecode receipt tmp code
     bytecode=$(artifact_field "$permit2_json" bytecode.object)
-    receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" --create "$bytecode") \
+    receipt=$(send_json cast send --json --rpc-url "$CAST_RPC_URL" --private-key "$ANVIL_KEY" --create "$bytecode") \
       || fail_step "cca" "deploying Permit2 failed"
     tmp=$(echo "$receipt" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).contractAddress))')
-    code=$(cast code "$tmp" --rpc-url "$RPC_URL")
-    cast rpc --rpc-url "$RPC_URL" anvil_setCode "$PERMIT2_ADDRESS" "$code" >/dev/null \
+    code=$(cast code "$tmp" --rpc-url "$CAST_RPC_URL")
+    cast rpc --rpc-url "$CAST_RPC_URL" anvil_setCode "$PERMIT2_ADDRESS" "$code" >/dev/null \
       || fail_step "cca" "anvil_setCode for Permit2 failed"
     [[ "$(code_bytes "$PERMIT2_ADDRESS")" != "0" ]] || fail_step "cca" "Permit2 has no code at $PERMIT2_ADDRESS"
     echo "  ✓ Permit2 at $PERMIT2_ADDRESS"
@@ -589,15 +624,15 @@ kit_address() {
 # it to predict where a new DAO's Shares will be (it sets the team's lock there before the DAO exists).
 shares_implementation() { # <summoner> -> address
   local dao shares code
-  dao=$(cast logs --json --rpc-url "$RPC_URL" --from-block 0 --address "$1" "NewDAO(address,address)" 2>/dev/null \
+  dao=$(cast logs --json --rpc-url "$CAST_RPC_URL" --from-block 0 --address "$1" "NewDAO(address,address)" 2>/dev/null \
     | node -e '
       const logs = JSON.parse(require("fs").readFileSync(0, "utf8"));
       if (logs.length) console.log("0x" + logs[logs.length - 1].topics[2].slice(-40));
     ' 2>/dev/null || true)
   [[ -n "$dao" ]] || return 1
-  shares=$(cast call "$dao" "shares()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}') || return 1
+  shares=$(cast call "$dao" "shares()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}') || return 1
   [[ -n "$shares" ]] || return 1
-  code=$(cast code "$shares" --rpc-url "$RPC_URL" 2>/dev/null) || return 1
+  code=$(cast code "$shares" --rpc-url "$CAST_RPC_URL" 2>/dev/null) || return 1
   # "0x" + 9 bytes (18 hex characters) of prefix, then 20 bytes (40 characters).
   [[ ${#code} -ge 60 ]] || return 1
   echo "0x${code:20:40}"
@@ -613,12 +648,12 @@ launch_kit_deployed() {
   [[ -n "$address" ]] || return 1
   [[ "$(code_bytes "$address")" != "0" ]] || return 1
   want_summoner=$(lower "$(manifest_role "$(org_manifest_path)" summoner)")
-  summoner=$(cast call "$address" "summoner()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
-  got_factory=$(cast call "$address" "factory()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  summoner=$(cast call "$address" "summoner()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  got_factory=$(cast call "$address" "factory()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ -n "$want_summoner" && "$(lower "$summoner")" == "$want_summoner" ]] \
     && [[ "$(lower "$got_factory")" == "$(lower "$CCA_FACTORY_ADDRESS")" ]] \
-    && [[ -n "$(cast call "$address" "sharesImplementation()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1)" ]] \
-    && [[ -n "$(cast call "$address" "mandateFactory()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1)" ]]
+    && [[ -n "$(cast call "$address" "sharesImplementation()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1)" ]] \
+    && [[ -n "$(cast call "$address" "mandateFactory()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1)" ]]
 }
 
 deploy_launch_kit() {
@@ -653,7 +688,7 @@ deploy_launch_kit() {
       "$shares_impl" "$lock_factory" "$challenge_factory") \
     || fail_step "launch-kit" "cast abi-encode constructor args failed"
   data="0x${bytecode#0x}${args#0x}"
-  if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
+  if ! receipt=$(send_json cast send --json --rpc-url "$CAST_RPC_URL" --private-key "$ANVIL_KEY" \
       --create "$data" 2>&1); then
     echo "$receipt" >&2
     fail_step "launch-kit" "cast send --create failed"
@@ -668,7 +703,7 @@ deploy_launch_kit() {
     || fail_step "launch-kit" "deploy tx mined as ${status:-unknown} (no address)"
   [[ "$(code_bytes "$address")" != "0" ]] \
     || fail_step "launch-kit" "receipt reported $address but there is no code there"
-  [[ "$(lower "$(cast call "$address" "sharesImplementation()(address)" --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')")" == "$(lower "$shares_impl")" ]] \
+  [[ "$(lower "$(cast call "$address" "sharesImplementation()(address)" --rpc-url "$CAST_RPC_URL" | head -1 | awk '{print $1}')")" == "$(lower "$shares_impl")" ]] \
     || fail_step "launch-kit" "the deployed kit does not report the Shares implementation $shares_impl"
   node -e '
     const fs = require("fs");
@@ -703,7 +738,7 @@ contributor_kit_deployed() {
   address=$(contributor_kit_address)
   [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] || return 1
   want_summoner=$(lower "$(manifest_role "$(org_manifest_path)" summoner)")
-  summoner=$(cast call "$address" "summoner()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  summoner=$(cast call "$address" "summoner()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ -n "$want_summoner" && "$(lower "$summoner")" == "$want_summoner" ]]
 }
 
@@ -725,7 +760,7 @@ deploy_contributor_kit() {
     || fail_step "contributor-kit" "cannot read the ContributorKit artifact"
   args=$(cast abi-encode "constructor(address)" "$summoner") \
     || fail_step "contributor-kit" "cast abi-encode constructor args failed"
-  if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
+  if ! receipt=$(send_json cast send --json --rpc-url "$CAST_RPC_URL" --private-key "$ANVIL_KEY" \
       --create "0x${bytecode#0x}${args#0x}" 2>&1); then
     echo "$receipt" >&2
     fail_step "contributor-kit" "cast send --create failed"
@@ -738,7 +773,7 @@ deploy_contributor_kit() {
   block=$(node -e 'console.log(Number(BigInt(JSON.parse(process.argv[1]).blockNumber ?? "0x0")))' "$receipt")
   [[ "$status" == "success" && -n "$address" && "$(code_bytes "$address")" != "0" ]] \
     || fail_step "contributor-kit" "deploy tx mined as ${status:-unknown} (no code at ${address:-<none>})"
-  [[ "$(lower "$(cast call "$address" "summoner()(address)" --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')")" == "$(lower "$summoner")" ]] \
+  [[ "$(lower "$(cast call "$address" "summoner()(address)" --rpc-url "$CAST_RPC_URL" | head -1 | awk '{print $1}')")" == "$(lower "$summoner")" ]] \
     || fail_step "contributor-kit" "the deployed kit does not report the summoner $summoner"
   node -e '
     const fs = require("fs");
@@ -772,9 +807,9 @@ work_bounty_deployed() {
   [[ -f "$(work_bounty_manifest_path)" ]] || return 1
   address=$(work_bounty_address)
   [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] || return 1
-  want_factory=$(cast call "$(manifest_role "$(org_manifest_path)" summoner)" "mandateFactory()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
-  factory=$(cast call "$address" "factory()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
-  currency=$(cast call "$address" "currency()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  want_factory=$(cast call "$(manifest_role "$(org_manifest_path)" summoner)" "mandateFactory()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  factory=$(cast call "$address" "factory()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  currency=$(cast call "$address" "currency()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ -n "$want_factory" && "$(lower "$factory")" == "$(lower "$want_factory")" && "$(lower "$currency")" == "$(lower "$(currency_address)")" ]]
 }
 
@@ -789,7 +824,7 @@ deploy_work_bounty() {
   summoner=$(manifest_role "$(org_manifest_path)" summoner)
   [[ -n "$summoner" && "$(code_bytes "$summoner")" != "0" ]] \
     || fail_step "work-bounty" "no deployed Summoner to read the work budget factory from (org dao step first)"
-  factory=$(cast call "$summoner" "mandateFactory()(address)" --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')
+  factory=$(cast call "$summoner" "mandateFactory()(address)" --rpc-url "$CAST_RPC_URL" | head -1 | awk '{print $1}')
   currency=$(currency_address)
   [[ -n "$currency" && "$(code_bytes "$currency")" != "0" ]] \
     || fail_step "work-bounty" "no currency token to pay bounties in (currency step first)"
@@ -801,7 +836,7 @@ deploy_work_bounty() {
     || fail_step "work-bounty" "cannot read the WorkAreaBounty artifact"
   args=$(cast abi-encode "constructor(address,address)" "$currency" "$factory") \
     || fail_step "work-bounty" "cast abi-encode constructor args failed"
-  if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
+  if ! receipt=$(send_json cast send --json --rpc-url "$CAST_RPC_URL" --private-key "$ANVIL_KEY" \
       --create "0x${bytecode#0x}${args#0x}" 2>&1); then
     echo "$receipt" >&2
     fail_step "work-bounty" "cast send --create failed"
@@ -847,7 +882,7 @@ currency_contract_deployed() {
   [[ -f "$manifest" ]] || return 1
   address=$(manifest_role "$manifest" "$role")
   [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] || return 1
-  currency=$(cast call "$address" "currency()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  currency=$(cast call "$address" "currency()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ "$(lower "$currency")" == "$(lower "$(currency_address)")" ]]
 }
 
@@ -855,7 +890,7 @@ currency_contract_deployed() {
 open_bounty_deployed() {
   local named
   currency_contract_deployed "$(open_bounty_manifest_path)" open-bounty || return 1
-  named=$(cast call "$(open_bounty_address)" "court()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  named=$(cast call "$(open_bounty_address)" "court()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ "$(lower "$named")" == "$(lower "$(court_address)")" ]]
 }
 
@@ -883,7 +918,7 @@ deploy_currency_contract() {
   else
     args=$(cast abi-encode "constructor(address)" "$currency")
   fi || fail_step "$role" "cast abi-encode constructor args failed"
-  if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
+  if ! receipt=$(send_json cast send --json --rpc-url "$CAST_RPC_URL" --private-key "$ANVIL_KEY" \
       --create "0x${bytecode#0x}${args#0x}" 2>&1); then
     echo "$receipt" >&2
     fail_step "$role" "cast send --create failed"
@@ -950,8 +985,8 @@ deploy_payouts_factory() {
   summoner=$(manifest_role "$(org_manifest_path)" summoner)
   [[ -n "$summoner" && "$(code_bytes "$summoner")" != "0" ]] \
     || fail_step "payouts-factory" "no deployed Summoner to read the payouts factory from (org dao step first)"
-  factory=$(cast call "$summoner" "mandateFactory()(address)" --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')
-  address=$(cast call "$factory" "payoutsFactory()(address)" --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')
+  factory=$(cast call "$summoner" "mandateFactory()(address)" --rpc-url "$CAST_RPC_URL" | head -1 | awk '{print $1}')
+  address=$(cast call "$factory" "payoutsFactory()(address)" --rpc-url "$CAST_RPC_URL" | head -1 | awk '{print $1}')
   [[ -n "$address" && "$(code_bytes "$address")" != "0" ]] \
     || fail_step "payouts-factory" "the work budget factory $factory names no payouts factory"
   write_one_role_manifest "$(payouts_factory_manifest_path)" payouts-factory "$address" "PayoutsFactory"
@@ -996,8 +1031,8 @@ court_deployed() {
   [[ -f "$(court_manifest_path)" ]] || return 1
   court=$(court_address)
   [[ -n "$court" && "$(code_bytes "$court")" != "0" ]] || return 1
-  stake=$(cast call "$court" "stakeToken()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
-  fee=$(cast call "$court" "feeToken()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  stake=$(cast call "$court" "stakeToken()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  fee=$(cast call "$court" "feeToken()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ "$(lower "$stake")" == "$(lower "$(create_token_address)")" && "$(lower "$fee")" == "$(lower "$(currency_address)")" ]]
 }
 
@@ -1064,7 +1099,7 @@ create_deployed() {
   token=$(create_token_address)
   faucet=$(create_faucet_address)
   [[ -n "$token" && "$(code_bytes "$token")" != "0" && -n "$faucet" && "$(code_bytes "$faucet")" != "0" ]] || return 1
-  named=$(cast call "$faucet" "token()(address)" --rpc-url "$RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
+  named=$(cast call "$faucet" "token()(address)" --rpc-url "$CAST_RPC_URL" 2>/dev/null | head -1 | awk '{print $1}' || true)
   [[ "$(lower "$named")" == "$(lower "$token")" ]]
 }
 
@@ -1077,7 +1112,7 @@ create_from_artifact() {
   fi
   bytecode=$(artifact_field "$REPO_ROOT/contracts/out/$contract.sol/$name.json" bytecode.object) \
     || fail_step "$role" "cannot read the $name artifact"
-  if ! receipt=$(cast send --json --rpc-url "$RPC_URL" --private-key "$ANVIL_KEY" \
+  if ! receipt=$(send_json cast send --json --rpc-url "$CAST_RPC_URL" --private-key "$ANVIL_KEY" \
       --create "0x${bytecode#0x}${args#0x}" 2>&1); then
     echo "$receipt" >&2
     fail_step "$role" "cast send --create $name failed"
@@ -1100,8 +1135,8 @@ deploy_test_create() {
   token=$(create_from_artifact create-token CreateToken \
     "$(cast abi-encode "constructor(string,string,address)" "Test CREATE" tCREATE "$deployer")")
   faucet=$(create_from_artifact create-faucet CreateFaucet "$(cast abi-encode "constructor(address)" "$token")")
-  cast send "$token" "transfer(address,uint256)" "$faucet" "$(cast call "$token" "totalSupply()(uint256)" --rpc-url "$RPC_URL" | awk '{print $1}')" \
-    --private-key "$ANVIL_KEY" --rpc-url "$RPC_URL" >/dev/null || fail_step "create" "could not fill the faucet"
+  cast send "$token" "transfer(address,uint256)" "$faucet" "$(cast call "$token" "totalSupply()(uint256)" --rpc-url "$CAST_RPC_URL" | awk '{print $1}')" \
+    --private-key "$ANVIL_KEY" --rpc-url "$CAST_RPC_URL" >/dev/null || fail_step "create" "could not fill the faucet"
   node -e '
     const fs = require("fs");
     const [file, chainId, token, faucet] = process.argv.slice(1);
@@ -1128,7 +1163,7 @@ fund_accounts() {
     # cast appends a hint like "1000000000000 [1e12]" once the value is large; take the first
     # word BEFORE any space is stripped, or a second run reads "1000000000000[1e12]" and fails.
     balance=$(cast call "$token" "balanceOf(address)(uint256)" "${DEV_ADDRESSES[$i]}" \
-      --rpc-url "$RPC_URL" | head -1 | awk '{print $1}')
+      --rpc-url "$CAST_RPC_URL" | head -1 | awk '{print $1}')
     [[ "$balance" =~ ^[0-9]+$ ]] \
       || fail_step "fund" "balanceOf(${DEV_ADDRESSES[$i]}) returned '$balance'"
     if (( balance >= CURRENCY_PER_ACCOUNT )); then
@@ -1137,7 +1172,7 @@ fund_accounts() {
     fi
     mint_amount=$(( CURRENCY_PER_ACCOUNT - balance ))
     if ! cast send "$token" "mint(address,uint256)" "${DEV_ADDRESSES[$i]}" "$mint_amount" \
-        --private-key "$ANVIL_KEY" --rpc-url "$RPC_URL" --json >/dev/null; then
+        --private-key "$ANVIL_KEY" --rpc-url "$CAST_RPC_URL" --json >/dev/null; then
       fail_step "fund" "mint to ${DEV_ROLES[$i]} (${DEV_ADDRESSES[$i]}) failed"
     fi
     echo "  ✓ ${DEV_ROLES[$i]}: minted +$mint_amount to 1e12 base units (1,000,000 dUSDC)"
@@ -1187,7 +1222,7 @@ up() {
   # A chain with no blocks has nothing deployed, so every manifest for its id is left over from another chain. Kept,
   # one can name an address this chain gives to a different contract that passes the "already deployed" check (a
   # matched exit, since retired, skipped because a work bounty landed at its old address and paid in the same currency).
-  if [[ "$(cast block-number --rpc-url "$RPC_URL" 2>/dev/null || echo "?")" == "0" ]]; then
+  if [[ "$(cast block-number --rpc-url "$CAST_RPC_URL" 2>/dev/null || echo "?")" == "0" ]]; then
     local stale
     for stale in "$DEPLOYMENTS_DIR"/*-"$CHAIN_ID".json; do
       [[ -f "$stale" ]] || continue
@@ -1267,7 +1302,7 @@ status() {
     running="yes"
     chain=$(rpc_chain_id)
     client=$(rpc_client)
-    block=$(cast block-number --rpc-url "$RPC_URL" 2>/dev/null || echo "?")
+    block=$(cast block-number --rpc-url "$CAST_RPC_URL" 2>/dev/null || echo "?")
   fi
 
   echo "════════════════════════ dev-chain status ═══════════════════════════════"

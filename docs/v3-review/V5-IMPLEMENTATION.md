@@ -1014,3 +1014,50 @@ One thing the control run taught: on this host the demo chain's RPC occasionally
 drops a request, and the first control attempt showed the note for real. That is
 the behaviour working as intended — a failed read is surfaced — but it means the
 control has to pin the answer rather than rely on the network.
+
+### The browser journey suite: what blocked it, and what now runs
+
+Running the gate's later journeys (`scripts/mvp-gate.sh --later`) exposed five
+tooling defects that made **every** browser journey fail before it reached a
+browser on this host. All five are fixed:
+
+| Defect | Why it broke | Fix |
+|---|---|---|
+| `nohup anvil` | "can't detach from console: Inappropriate ioctl for device" — anvil never started | background start with stdin off the terminal (`setsid` where available) |
+| `cast --rpc-url http://…` | Foundry's HTTP client panics building macOS proxy settings (`system-configuration` returns NULL) before the request leaves | every cast call uses the node's WebSocket transport (`CAST_RPC_URL`) |
+| the packaged apptoken bootstrap | drives the chain with `cast` over the same HTTP client | handed the ws endpoint; the submodule is not edited |
+| `forge script --rpc-url ws://…` | still builds the HTTP client unless `--offline` | `--offline` (everything is vendored) |
+| `cast send --json` | newer Foundry writes a log line to stderr, and the call sites merge the streams, so `JSON.parse` saw two lines and reported "no code at `<none>`" for a transaction that had landed | a `send_json` wrapper keeps only the receipt line |
+
+`scripts/dev-chain.sh` now completes end to end here (`exit 0`, "Bootstrap
+complete."), and its unit tests still pass (6/6).
+
+**A journey that now passes in a real browser.** `web-challenge-e2e` runs the
+whole flow against a real local chain — the founder launches, two backers bid,
+the sale graduates and they claim, a milestone is published and objected to and
+turned down, published again and unlocked, and a late objection burns what is
+left:
+
+```
+1 passed, 0 failed, 0 blocked, 0 skipped
+RESULT web-challenge-e2e exit=0
+```
+
+Getting there needed one spec correction, and it is a copy change, not a
+loosened assertion: the app says *"Publishing opens once buyers can claim what
+they bought in the sale. That has not happened yet; it opens on its own, with
+nothing for the team to do."* (`challenge-copy.ts`), while the spec still
+expected the older paraphrase "opens when the buyers can claim". The assertion
+now checks the app's own sentence, which means the same thing and says more.
+
+**Two journeys still fail, for reasons that are not product defects:**
+
+- `web-record-e2e`: `executeByVotes failed: gas estimate 6988081 exceeds the
+  6000000 cap` — the journey's work-budget vote needs more gas than the CLI's
+  cap on this chain. A real config mismatch worth its own fix; recorded, not
+  papered over.
+- `web-milestone-e2e`: `browser.newPage: Target page, context or browser has
+  been closed` — this host's Chromium runs `--single-process` (the only mode the
+  sandbox permits), and a second page brings the whole browser down. The
+  challenge journey passes because it never opens two at once; the wallet
+  journey earlier worked around the same thing with one browser per role.

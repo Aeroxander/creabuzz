@@ -19,14 +19,14 @@ world_up
 world_launch_with_lock
 
 step "the treasury is given 10,000 of the dev currency"
-cast send --rpc-url "$RPC" --private-key "$KEY_FOUNDER" "$CURRENCY" "mint(address,uint256)" "$DAO" 10000000000 >/dev/null \
+cast send --rpc-url "$CAST_RPC" --private-key "$KEY_FOUNDER" "$CURRENCY" "mint(address,uint256)" "$DAO" 10000000000 >/dev/null \
   || fail "could not fund the treasury"
 
 step "the DAO votes a work budget that holds 1,000, with two reviewers"
 intent=$(as $KEY_FOUNDER work mandate --dao "$DAO" --factory "$FACTORY" --currency "$CURRENCY" --decimals 6 \
   --budget 1000 --cap 500 --expires-in-days 90 --reviewer "$REVIEWER1" --reviewer "$REVIEWER2" --quorum 2)
 decide "$intent" 175000
-MANDATE=$(cast logs --json --rpc-url "$RPC" --from-block 0 --address "$FACTORY" \
+MANDATE=$(cast logs --json --rpc-url "$CAST_RPC" --from-block 0 --address "$FACTORY" \
   "MandateCreated(address,address,address,uint128,uint128,uint128,uint128)" \
   | node -e 'const l=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log("0x"+l[l.length-1].topics[2].slice(-40))')
 [[ "$MANDATE" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no MandateCreated event from the factory"

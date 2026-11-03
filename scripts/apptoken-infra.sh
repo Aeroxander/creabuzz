@@ -53,6 +53,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="${FOUNDRY_BIN:+${FOUNDRY_BIN}:}${HOME}/.foundry/bin:${PATH}"
 
 RPC_URL="${RPC_URL:-http://127.0.0.1:8545}"
+# Foundry's HTTP client panics on this host (macOS `system-configuration` NULL),
+# so every `cast` call uses the node's WebSocket transport instead.
+CAST_RPC_URL="${RPC_URL/http:/ws:}"
 
 # Deterministic infrastructure addresses (apptoken-dev bootstrap /
 # DeployAppToken.s.sol defaults).
@@ -100,7 +103,7 @@ lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
 code_bytes() { # <address> -> decimal code size
   local code
-  code=$(cast code "$1" --rpc-url "$RPC_URL" 2>/dev/null || echo "0x")
+  code=$(cast code "$1" --rpc-url "$CAST_RPC_URL" 2>/dev/null || echo "0x")
   if [[ "$code" == "0x" || -z "$code" ]]; then echo 0; return; fi
   echo $(( (${#code} - 2) / 2 ))
 }
@@ -120,7 +123,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if ! cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1; then
+if ! cast chain-id --rpc-url "$CAST_RPC_URL" >/dev/null 2>&1; then
   echo "no anvil at $RPC_URL — booting one (killed on exit; a pre-existing anvil is never touched)"
   # --prune-history=500: the last 500 blocks' state stays in memory (about what anvil keeps there anyway) and none goes to
   # disk. Without it anvil spills older state to ~/.foundry/anvil/tmp (gigabytes on a long run) and leaves it there however
@@ -128,14 +131,14 @@ if ! cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1; then
   anvil --port "${RPC_URL##*:}" --prune-history=500 >/dev/null 2>&1 &
   OWN_ANVIL_PID=$!
   for _ in $(seq 1 50); do
-    cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 && break
+    cast chain-id --rpc-url "$CAST_RPC_URL" >/dev/null 2>&1 && break
     sleep 0.2
   done
-  cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 \
+  cast chain-id --rpc-url "$CAST_RPC_URL" >/dev/null 2>&1 \
     || { echo "anvil did not start" >&2; exit 1; }
 fi
 
-CHAIN_ID=$(cast chain-id --rpc-url "$RPC_URL")
+CHAIN_ID=$(cast chain-id --rpc-url "$CAST_RPC_URL")
 case "$RPC_URL" in
   http://127.0.0.1:*|http://localhost:*|https://127.0.0.1:*|https://localhost:*) ;;
   *)
@@ -159,7 +162,7 @@ echo
 # 1. Probe: what is already on this chain?
 # ---------------------------------------------------------------------------
 
-BLOCK=$(cast block-number --rpc-url "$RPC_URL")
+BLOCK=$(cast block-number --rpc-url "$CAST_RPC_URL")
 echo "── probe: chain-id $CHAIN_ID at block $BLOCK"
 probe_row() {
   printf '  %-22s %-46s %8s bytes\n' "$1" "$2" "$(code_bytes "$2")"
@@ -184,12 +187,16 @@ if [[ "$(code_bytes "$ROUTER")" == "0" || "$(code_bytes "$STANDARD_FACTORY")" ==
   if [[ "$(code_bytes "$ARACHNID_PROXY")" == "0" ]]; then
     echo "   deploying the deterministic CREATE2 factory ($ARACHNID_PROXY)"
     cast rpc anvil_setBalance 0x3fab184622dc19b6109349b94811493bf2a45362 \
-      0xDE0B6B3A7640000 --rpc-url "$RPC_URL" >/dev/null
+      0xDE0B6B3A7640000 --rpc-url "$CAST_RPC_URL" >/dev/null
     cast publish \
       0xf8a58085174876e800830186a08080b853604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378163000000016000396000f3005820a]a465a695823124c04e363795aaee141612864f091e65bdc3baa755e18a7b1233880e4f8400d6ca6c001ca077c024b8b3aff8810719baf804159088e4085a83b401e45a347f60abb7c340a02349d6066ea5a31910aabd5e589a2a1cc8c0a20ad81f78e2fd3eb09382d4e1 \
-      --rpc-url "$RPC_URL" >/dev/null
+      --rpc-url "$CAST_RPC_URL" >/dev/null
   fi
-  if ! bash "$REPO_ROOT/apptoken-dev/local-environment/script/bootstrap.sh"; then
+  # The packaged bootstrap drives the chain with `cast`, and this host's Foundry
+  # HTTP client panics before it reaches the node, so it is handed the WebSocket
+  # endpoint. Every `RPC_URL` use inside it is a `cast` call, so nothing else
+  # changes for it. (The submodule is not edited.)
+  if ! RPC_URL="$CAST_RPC_URL" bash "$REPO_ROOT/apptoken-dev/local-environment/script/bootstrap.sh"; then
     fail_step "infra-bootstrap" "bootstrap.sh failed (step named in its output above)"
   fi
   record_step "infra-bootstrap" "$ROUTER" "ok — apptoken-dev bootstrap (DEV-ONLY)"
@@ -214,14 +221,14 @@ echo "│ NEVER mainnet: real chains use the governed admin (setAllowedTokenFact
 echo "└────────────────────────────────────────────────────────────────────────────┘"
 # Layout sanity (non-fatal): uint16 infrastructureFeeBPS occupies slot 0, so
 # storage slot 0 must read back the same fee `infrastructureFeeBPS()` reports.
-FEE_VIEW=$(cast call "$ROUTER" "infrastructureFeeBPS()(uint16)" --rpc-url "$RPC_URL" | head -1 | tr -d ' ')
-SLOT0=$(cast storage "$ROUTER" 0 --rpc-url "$RPC_URL")
+FEE_VIEW=$(cast call "$ROUTER" "infrastructureFeeBPS()(uint16)" --rpc-url "$CAST_RPC_URL" | head -1 | tr -d ' ')
+SLOT0=$(cast storage "$ROUTER" 0 --rpc-url "$CAST_RPC_URL")
 echo "  layout sanity: infrastructureFeeBPS()=$FEE_VIEW, storage slot 0=$(lower "$SLOT0")"
 
 patched=()
 for factory in "$STANDARD_FACTORY" "$STABLE_FACTORY" "$PROMO_POOL"; do
   allowed=$(cast call "$ROUTER" "allowedTokenFactory(address)(bool)" "$factory" \
-    --rpc-url "$RPC_URL" | head -1 | tr -d ' ')
+    --rpc-url "$CAST_RPC_URL" | head -1 | tr -d ' ')
   if [[ "$allowed" == "true" ]]; then
     echo "  ✓ $factory already allowlisted"
     continue
@@ -230,9 +237,9 @@ for factory in "$STANDARD_FACTORY" "$STABLE_FACTORY" "$PROMO_POOL"; do
   echo "  patching allowedTokenFactory[$factory] (slot $(lower "$slot")) -> true"
   cast rpc anvil_setStorageAt "$ROUTER" "$slot" \
     0x0000000000000000000000000000000000000000000000000000000000000001 \
-    --rpc-url "$RPC_URL" >/dev/null
+    --rpc-url "$CAST_RPC_URL" >/dev/null
   readback=$(cast call "$ROUTER" "allowedTokenFactory(address)(bool)" "$factory" \
-    --rpc-url "$RPC_URL" | head -1 | tr -d ' ')
+    --rpc-url "$CAST_RPC_URL" | head -1 | tr -d ' ')
   if [[ "$readback" != "true" ]]; then
     fail_step "router-allowlist-patch" "read-back for $factory is '$readback', expected true (slot-1 layout assumption wrong?)"
   fi
