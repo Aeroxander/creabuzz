@@ -800,3 +800,40 @@ branch changes no file in that crate. So all four failing crates
 (`buzz-agent`, `buzz-relay`, `buzz-feature-flags`, `git-sign-nostr`) are now
 either proven pre-existing or proven untouched-and-environment-bound; none is a
 regression from this work. The base worktree was removed afterwards.
+
+### The whole agreed-reward flow, driven from the app
+
+The gap was that approval, the challenge window and settlement had only ever
+been driven from the CLI. `scripts/v5-demo-wallet-journey.mjs` now runs all of
+it through the real screens with `window.ethereum` signing each call, on a demo
+world (`scripts/v5-demo-world.sh`):
+
+```
+[propose]  wallet 0x70997970…79C8 signed it; card reads: Offered, waiting for the named person
+[accept]   wallet 0x15d34AAf…6A65 signed it; card reads: Agreed; the quantity is reserved
+[submit]   next: The panel judges one attempt at a time against the agreed criteria…
+[submit]   bound claim 0xb81af6fa… in 0x10c6e953…
+[bind]     claim 0xb81af6fa… is bound to 0xc87808da29ed…
+[approve]  reviewerA 0x3C44CdDd…93BC signed the approval
+[approve]  reviewerB 0x90F79bf6…b906 signed the approval
+[window]   the approval quorum was finished, which starts the challenge window
+[settle]   wallet 0x15d34AAf…6A65 signed it; card reads Settled; exactly 7000000000000000000 Shares minted
+[chain]    terminalKind=1 agreementOfClaim matches; shares still reserved: 3000000000000000000
+PASS: proposed, accepted, submitted, approved by both reviewers, review finished,
+      challenge window passed and settled — all from the app; exactly 7e18 Shares minted
+```
+
+Read back from the chain, independently of the app: the agreement's beneficiary
+is `0x15d34AAf…6A65`, its quantity `7e18`, its `claimId` is the claim the app
+submitted, `terminalKind = 1` (settled), the claim's status is `4` (`Paid`), the
+beneficiary's balance is `13e18` (the `6e18` from the earlier run plus exactly
+`7e18`), and `agreementOfClaim` still names the same agreement — the exactly-once
+binding survived settlement.
+
+Four screenshots, four distinct SHA-256 hashes: `wallet-1-proposed.png` (97 KB),
+`wallet-2-accepted.png` (147 KB), `wallet-3-submitted.png` (97 KB),
+`wallet-4-settled.png` (90 KB).
+
+The script scopes every step to its own card (the one naming its own Share
+quantity) and reads the binding from the chain, so a world holding other
+agreements cannot make a step pass by acting on the wrong one.
