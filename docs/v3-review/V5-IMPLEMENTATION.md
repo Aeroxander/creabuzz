@@ -1538,3 +1538,28 @@ author, who decided them:
 So neither is an open agent task any more, and neither is a completed human
 step. The distinction is worth keeping: the product's readiness for real money
 rests on the author's decision plus an external review that has not happened.
+
+## Final consolidated gate run
+
+One pass over the whole tree at `97ff695b2`, every command's own
+exit status:
+
+| Gate | Result |
+|---|---|
+| `just fmt-check` | **exit 0** |
+| `just file-size-check` | **exit 0** (10 policy tests pass) |
+| `just majeur-fork-check` | **exit 0** (9 policy tests pass) |
+| `forge build --offline --root contracts` | **exit 0** |
+| `forge test --offline --root contracts` | **734 passed, 0 failed, 2 skipped** (69 suites) |
+| `just clippy-offline` | **exit 0** — whole workspace including `buzz-voice` |
+| `pnpm -C web test` | **2581 passed, 0 failed** |
+| `just web-check` | **exit 0** (biome, copy, px-text, kinds, templates, knip) |
+
+Plus, earlier in this document and unchanged by the above: ten browser journeys
+green against a real local chain or relay, the app-driven agreed-reward flow
+settling exactly, and the workspace test run (6783 passed, 13 failed, all proven
+pre-existing at base `8fecc3258`).
+
+Not run here, and why: `just ci` and `just check` include the desktop and mobile
+surfaces, which this work deliberately excludes; `web-sepolia-fork-e2e` needs a
+Sepolia RPC and this host has no DNS.
