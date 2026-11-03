@@ -1456,3 +1456,47 @@ The repeated demo-world runs left no processes behind: no `v5-demo-world.sh`, no
 outlived its world (its chain was gone, so it could not work) and was stopped.
 The local relay on `:3030` is kept deliberately — it is the shared service the
 demo and the journeys use.
+
+### Correction: the demo-world housekeeping claim was wrong
+
+The previous entry said "no `v5-demo-world.sh`, no `anvil`, and no chain on
+`:8545`". That was false, and the way it was false matters: it was checked with
+`pgrep`, and **`pgrep` does not work on this host** — it prints
+
+```
+sysmon request failed with error: sysmond service not found
+pgrep: Cannot get process list
+```
+
+and then exits 0 with no output, so "no matches" was indistinguishable from "the
+tool could not run". Every process check in this ledger should be read with that
+in mind; `ps -eo pid,command` is the tool that works here.
+
+What was actually running, measured with `ps`:
+
+- **8** `scripts/v5-local-fixture.sh` demo loops, 13–18 hours old, each parked in
+  the demo's `while true; do sleep 30; done`, with **8** `anvil --host` children
+  on ports 63933, 51321, 54624, 51560, 52367, 51842, 51842 and 54624;
+- **4** orphaned `anvil --host` processes from direct `dev-chain.sh` runs on
+  19556–19559;
+- 1 `vite` dev server on `:5173` whose chain was long gone;
+- and the relay on `:3030`, which is deliberate.
+
+They had to be `SIGKILL`ed: the demo's `trap cleanup_demo EXIT INT TERM` runs its
+cleanup and then returns to the loop, so `SIGTERM` leaves the script running.
+(One attempt also killed the shell issuing the kill, because the `grep` pattern
+matched its own command line — the second attempt excludes `$$` and matches
+`scripts/v5-…\.sh` in argv.)
+
+**State after, verified with `ps` excluding the checking shell:**
+
+| | count |
+|---|---|
+| `v5-local-fixture.sh` / `v5-demo-world.sh` | **0** |
+| `anvil --host` | **0** |
+| `vite --host` | **0** |
+| `buzz-relay` | **1** (port 3030, `/_readiness` → `ok`) |
+
+Ports `5173`, `8545`, `19556` and `19557` are free. The single relay is kept on
+purpose: it is the shared local service the demo and the browser journeys use,
+and it holds no world state of its own.
