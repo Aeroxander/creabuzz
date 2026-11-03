@@ -968,3 +968,49 @@ flag.
 - `just web-check`: **exit 0** (biome, copy, px-text, kinds, templates, knip)
 - `WorkTab.tsx` is **999 lines**, inside the 1000-line gate (the note lives in its
   own `PanelUnreadableNote.tsx`)
+
+### The two unreadable notes, seen in a real browser
+
+`readMilestonePanel`'s three-way fix was only proven by unit tests. The two
+notes it drives were rendered in Chromium against the live demo world, with the
+panel read made to fail **at the RPC layer** (a JSON-RPC error whose message is
+not a revert — the shape the reader classifies as `unreadable`), so the app's own
+code path produced the flag:
+
+```
+[work] note: Couldn't read which of this DAO's budgets is the milestone panel,
+             so the cards below may show it as an ordinary budget. Reload to try again.
+[work] cards still on screen: 3 agreed card(s)
+[composer] note: Couldn't read which budget is this DAO's milestone panel, so the
+                 forms below may offer it as an ordinary budget. Reload to try again.
+[composer] the kind picker is still offered: 1
+PASS: with 2 milestoneMandate read(s) failing, the Work tab and the decision
+      composer each say they could not read the panel, and both still render their content
+```
+
+**The control run matters as much as the failing one.** With the same
+interception answering the panel call with the zero address the chain really
+returns, neither note appears:
+
+```
+[work] control: the note is absent, and the tab still renders its content
+[composer] control: the note is absent, and the forms are still offered
+PASS (control): with the panel read answering normally, neither note appears
+```
+
+So the note is caused by the failed read, not rendered unconditionally — and it
+does not replace the cards or the forms.
+
+Screenshots (4, distinct hashes): `unreadable-work-tab.png` 440 KB
+`631020a1…`, `unreadable-work-note.png` 18 KB `baaca92f…`,
+`unreadable-composer.png` 449 KB `20a1f394…`, `unreadable-composer-note.png`
+11 KB `b5448424…`.
+
+Reproduce: `scripts/v5-demo-unreadable-notes.mjs` (needs the demo world and a
+fresh `vite build` — the dev server serves stale modules, which is what made the
+first attempt look like a product bug).
+
+One thing the control run taught: on this host the demo chain's RPC occasionally
+drops a request, and the first control attempt showed the note for real. That is
+the behaviour working as intended — a failed read is surfaced — but it means the
+control has to pin the answer rather than rely on the network.
