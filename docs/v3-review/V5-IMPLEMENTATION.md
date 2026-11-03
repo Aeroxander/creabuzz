@@ -1661,3 +1661,47 @@ Adapter 13/13, `daoActions` 24/24, trading-copy 13/13, `pnpm -C web test`
 **2594 passed**, typecheck clean, `just web-check` exit 0, contract suite
 **739 passed, 0 failed, 2 skipped**. One defect was caught in reconciliation:
 `SecondaryListingTerms` was exported but unused, which knip failed the gate on.
+
+### The trading journey, and two scale defects it exposed
+
+`scripts/web-trading-e2e.sh` proves a full round in the app on a real chain. It
+boots its own anvil, deploys the v5 creation version as real transactions, warps
+past the founder's 180-day schedule (and refuses to continue unless
+`saleCapacity(founder) > 0`), builds the app with the market factory, and drives
+the real Trading card:
+
+```
+PASS web-trading-e2e   1 passed, 0 failed, 0 blocked, 0 skipped
+```
+
+Eight steps, each checked against chain state: trading **off** with no listing
+and no offer/bid offered; the DAO publishing a listing (through the same anvil
+impersonation an operator would use) and the card showing the real terms; a
+round opened; a seller offering two lots (the market holds 2e18 Shares and
+`sharesIn` matches); a buyer bidding for them (the market holds 130e18 quote and
+`quoteIn` matches); settlement at one price with both orders filled; both sides
+collecting, with `quoteIn`/`sharesIn` and the market's balances ending at zero;
+and a wallet with no order offered no collect button, with `eth_call` proving the
+chain would refuse one.
+
+**Two defects it exposed, both the same class — a hardcoded scale.**
+
+1. The card assumed **six decimals and the word USDC**. The fixture's quote token
+   has eighteen, so a price of 1e18 base units rendered as
+   "1,000,000,000,000 USDC". It now reads the token's own `decimals()` and
+   `symbol()` (strict about both the ABI-string and `bytes32` shapes) and
+   threads them through every price formatter and the price input. An 18-decimal
+   quote now reads "2 FQ a lot"; a 6-decimal one is byte-identical to before.
+2. The **listing form** priced with the launch record's sale currency rather than
+   the market's quote token, so a DAO whose record named a different token would
+   have published a listing off by that token's scale. It now uses the market's
+   own decimals and symbol for both the draft and the field labels.
+
+A token whose scale cannot be read is now an `unreadable` read, not a defaulted
+one: *"The market's price token couldn't be read just now, so no price can be
+shown. Reload to try again."* — the same rule as every other reader here, and the
+journey's eighth step proves it (make `decimals()` refuse, no price is printed,
+"Try again" recovers).
+
+Gates: the journey passes, `pnpm -C web test` **2596 passed**, `just web-check`
+exit 0, file sizes pass.
