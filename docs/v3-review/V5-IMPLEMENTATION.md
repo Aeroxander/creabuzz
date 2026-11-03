@@ -672,3 +672,31 @@ from this work.
 
 Screenshots: `wallet-1-proposed.png` (105 KB) and `wallet-2-accepted.png`
 (111 KB), distinct hashes.
+
+### The publish affordance after a failed publish (fixed, partly verified)
+
+The offer's words are published beside the chain record, and the submission
+form needs them. When that publish failed, the retry panel lived only on the
+*closed* proposal card while the form stayed open — so the button a manager
+needs was unreachable, and the beneficiary's card correctly said the words were
+"not published here" and offered no form.
+
+`AgreedProposalForm` now closes the form when publishing fails and renders the
+pending-publish panel in **both** states. Verified against a freshly built app
+(the dev server was serving a stale module, which is what made earlier attempts
+look like a logic bug):
+
+```
+problem: The offer is on the chain, but its description and the work area's
+         words could not be published…
+form: 0   closed: 1   panel: 1   cards: 4
+```
+
+So the offer is on chain and the retry button is now on screen and clickable.
+
+**Not yet verified: the publish actually succeeding, and therefore the
+beneficiary's submit step.** The retry press still fails, and the last attempt's
+proposal transaction itself was refused by the wallet
+("The offer did not reach the chain"), on a demo world mutated by many earlier
+runs. The chain calls are proven (`v5-demo-agreement.mjs` settles end to end);
+what remains is the app's publish write and the submit form, on a fresh world.

@@ -204,10 +204,14 @@ export function AgreedProposalForm({
     try {
       await publishTerms(offer);
     } catch {
+      // The offer is on the chain; only the words are missing. Close the form so
+      // the pending-publish panel (which lives on the closed card) is the thing
+      // on screen, with its "Publish the words again" button reachable.
       setProposed(offer);
       setProblem(
         "The offer is on the chain, but its description and the work area's words could not be published. Until they are, the person it names cannot read what it is for. Press Publish the words again.",
       );
+      setOpened(false);
       return;
     }
     setOpened(false);
@@ -221,6 +225,38 @@ export function AgreedProposalForm({
 
   if (mine.length === 0) return null;
   const blocked = busy !== null || gate !== null;
+
+  // The offer is already on the chain; only its words are missing. This panel
+  // has to be reachable whether or not the form is open, so it is rendered in
+  // both states rather than only on the closed card.
+  const pendingPanel = proposed ? (
+    <div className="mt-2" data-testid="agreed-proposal-pending-publish">
+      <p className="text-sm text-amber-800 dark:text-amber-200">
+        The offer is on the chain, but its description and the work area's words
+        are not published yet, so the person it names cannot read what it is
+        for.
+      </p>
+      <Button
+        className="mt-2"
+        data-testid="agreed-proposal-publish"
+        disabled={blocked}
+        onClick={() => void retryPublish()}
+        size="sm"
+        type="button"
+      >
+        Publish the words again
+      </Button>
+      {problem ? (
+        <p
+          className="mt-2 text-sm text-red-700 dark:text-red-300"
+          data-testid="agreed-proposal-problem"
+          role="alert"
+        >
+          {problem}
+        </p>
+      ) : null}
+    </div>
+  ) : null;
 
   if (!opened) {
     return (
@@ -241,34 +277,7 @@ export function AgreedProposalForm({
         >
           Open the form
         </Button>
-        {proposed ? (
-          <div className="mt-2" data-testid="agreed-proposal-pending-publish">
-            <p className="text-sm text-amber-800 dark:text-amber-200">
-              The offer is on the chain, but its description and the work area's
-              words are not published yet, so the person it names cannot read
-              what it is for.
-            </p>
-            <Button
-              className="mt-2"
-              data-testid="agreed-proposal-publish"
-              disabled={blocked}
-              onClick={() => void retryPublish()}
-              size="sm"
-              type="button"
-            >
-              Publish the words again
-            </Button>
-            {problem ? (
-              <p
-                className="mt-2 text-sm text-red-700 dark:text-red-300"
-                data-testid="agreed-proposal-problem"
-                role="alert"
-              >
-                {problem}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        {pendingPanel}
       </Card>
     );
   }
@@ -276,6 +285,7 @@ export function AgreedProposalForm({
   return (
     <Card className="p-4" data-testid="agreed-proposal-form">
       <h3 className="text-sm font-semibold">Propose an agreed reward</h3>
+      {pendingPanel}
       <div className="mt-2 grid gap-2 text-sm">
         <label className="grid gap-1">
           <span className="font-medium">Work area</span>

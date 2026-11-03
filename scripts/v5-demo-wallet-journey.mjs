@@ -133,13 +133,34 @@ await runAs(manager, KEY.manager, async (managerPage) => {
   const due = new Date((chainNow + 7 * 86_400) * 1000).toISOString().slice(0, 10);
   await managerPage.getByTestId("agreed-proposal-deadline").fill(due);
   await managerPage.getByTestId("agreed-proposal-send").click();
+  await managerPage.waitForTimeout(8000);
+  if ((await cardFor(managerPage).count()) === 0) {
+    // No offer exists, so whatever the form says is why it was refused (as
+    // opposed to the publish problem, which only appears once the offer is on
+    // chain and is handled by the retry loop below).
+    const refused = managerPage.getByTestId("agreed-proposal-problem");
+    const why = (await refused.count())
+      ? (await refused.first().innerText()).replace(/\s+/g, " ")
+      : "no offer appeared and the form showed no reason";
+    throw new Error(`the form refused the offer: ${why}`);
+  }
   const offered = await waitForCardState(managerPage, "Offered");
   // The words the work is judged by are published beside the chain record; the
-  // beneficiary's submission form needs them, so the manager publishes now.
-  const publish = managerPage.getByTestId("agreed-proposal-publish");
-  if (await publish.count()) {
-    await publish.click();
+  // beneficiary's submission form needs them. If the automatic publish failed,
+  // the panel offers a retry — press it until the panel clears.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const panel = managerPage.getByTestId("agreed-proposal-pending-publish");
+    if (!(await panel.count())) break;
+    const why = await managerPage
+      .getByTestId("agreed-proposal-problem")
+      .innerText()
+      .catch(() => "");
+    console.log(`[propose] publish pending (${why.replace(/\s+/g, " ").slice(0, 120)}) — retrying`);
+    await managerPage.getByTestId("agreed-proposal-publish").click();
     await managerPage.waitForTimeout(6000);
+  }
+  if (await managerPage.getByTestId("agreed-proposal-pending-publish").count()) {
+    throw new Error("the offer's words still are not published after retries");
   }
   await offered.screenshot({ path: path.join(SHOTS, "wallet-1-proposed.png") });
   console.log(`[propose] wallet ${manager} signed it; card reads: ${await offered.getByTestId("agreed-state").innerText()}`);
