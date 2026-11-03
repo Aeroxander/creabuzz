@@ -65,6 +65,33 @@ async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
   return body.result;
 }
 
+/**
+ * Send a raw transaction and prove it landed.
+ *
+ * `eth_sendTransaction` answers with a hash even when the transaction reverts,
+ * and its JSON-RPC `error` field stays empty — so a reverted call used to look
+ * like a success here and only showed up much later as a wrong balance. Mine a
+ * block, read the receipt, and refuse anything that is not status 1.
+ */
+async function sendTx(tx: Record<string, unknown>): Promise<{
+  hash: string;
+  contractAddress: string | null;
+}> {
+  const hash = String(await rpc("eth_sendTransaction", [tx]));
+  await rpc("anvil_mine", ["0x1"]);
+  const receipt = (await rpc("eth_getTransactionReceipt", [hash])) as {
+    status?: string;
+    contractAddress?: string | null;
+  } | null;
+  if (!receipt) throw new Error(`no receipt for ${hash}`);
+  if (receipt.status !== "0x1") {
+    throw new Error(
+      `transaction ${hash} did not succeed (status ${receipt.status})`,
+    );
+  }
+  return { hash, contractAddress: receipt.contractAddress ?? null };
+}
+
 async function call(to: string, data: string): Promise<string> {
   return String(await rpc("eth_call", [{ to, data }, "latest"]));
 }
@@ -248,13 +275,11 @@ test("a member who wants out is matched with two who want in, and the treasury k
   const shares = wordAddress(await call(dao, "0x03314efa"));
   const sharesOf = async (holder: string) =>
     BigInt(await call(shares, `0x70a08231${addressArg(holder)}`));
-  await rpc("eth_sendTransaction", [
-    {
-      from: FOUNDER_WALLET,
-      to: CURRENCY,
-      data: `0xa9059cbb${addressArg(dao)}${amountArg(200n * USD)}`,
-    },
-  ]);
+  await sendTx({
+    from: FOUNDER_WALLET,
+    to: CURRENCY,
+    data: `0xa9059cbb${addressArg(dao)}${amountArg(200n * USD)}`,
+  });
   expect(await usdcOf(dao)).toBe(200n * USD);
 
   // ── 2. the DAO votes weekly rounds in; the vote can't switch them on ──────────────────────────────
@@ -435,13 +460,11 @@ test("a member who wants out is matched with two who want in, and the treasury k
 
   // ── 6. the DAO publishes funding terms: Loot for buyers, at most 100 new units ever (D133) ────────────
   // More money in the treasury first, so leaving pays 1.50 a unit (300 USDC, 200 units).
-  await rpc("eth_sendTransaction", [
-    {
-      from: FOUNDER_WALLET,
-      to: CURRENCY,
-      data: `0xa9059cbb${addressArg(dao)}${amountArg(97n * USD)}`,
-    },
-  ]);
+  await sendTx({
+    from: FOUNDER_WALLET,
+    to: CURRENCY,
+    data: `0xa9059cbb${addressArg(dao)}${amountArg(97n * USD)}`,
+  });
   expect(await usdcOf(dao)).toBe(300n * USD);
   await refresh(founder, "Funds");
   await expect(
@@ -631,23 +654,19 @@ test("a member who wants out is matched with two who want in, and the treasury k
       "utf8",
     ),
   ) as { bytecode: { object: string } };
-  const deployed = (await rpc("eth_sendTransaction", [
-    { from: FOUNDER_WALLET, data: artifact.bytecode.object },
-  ])) as string;
-  await rpc("anvil_mine", ["0x1"]);
-  const other = (
-    (await rpc("eth_getTransactionReceipt", [deployed])) as {
-      contractAddress: string;
-    }
-  ).contractAddress.toLowerCase();
-  await rpc("eth_sendTransaction", [
-    {
-      from: FOUNDER_WALLET,
-      to: other,
-      data: `0x40c10f19${addressArg(dao)}${amountArg(1000n * E18)}`,
-    },
-  ]);
-  await rpc("anvil_mine", ["0x1"]);
+  const deployed = await sendTx({
+    from: FOUNDER_WALLET,
+    data: artifact.bytecode.object,
+  });
+  if (!deployed.contractAddress) {
+    throw new Error("the deploy did not create a contract");
+  }
+  const other = deployed.contractAddress.toLowerCase();
+  await sendTx({
+    from: FOUNDER_WALLET,
+    to: other,
+    data: `0x40c10f19${addressArg(dao)}${amountArg(1000n * E18)}`,
+  });
   await refresh(second, "Funds");
   const secondCard = second.getByTestId("funding");
   await secondCard.getByTestId("funding-flag").click({ timeout: 30_000 });

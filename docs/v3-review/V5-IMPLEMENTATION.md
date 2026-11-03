@@ -1289,3 +1289,39 @@ web-dao-journey-e2e   1 passed, 0 failed, 0 blocked, 0 skipped   exit=0
 So the full set of browser journeys against a real local chain is:
 `web-challenge-e2e`, `web-record-e2e`, `web-post-bounty-e2e`,
 `web-milestone-e2e`, `web-dao-journey-e2e` — five green.
+
+### `web-rounds-e2e`: green, and the harness hole that made it flaky
+
+The rounds copy fix is verified end to end. The journey passes, and did so
+3/3 when the diagnosis lane ran it repeatedly at the same commit:
+
+```
+web-rounds-e2e   1 passed, 0 failed, 0 blocked, 0 skipped   exit=0
+```
+
+So the earlier `203 USDC, expected 300` was intermittent, not a stale
+expectation: the arithmetic is right (200 deposit → 203 after the founder
+collects 62 of a 65 settlement → 300 after the 97 transfer → 366 after the
+funding round), and every copy assertion in the spec, including the
+`non-voting shares` one the fix was for, matches what the app produces.
+
+**The real defect was in the spec's own helper.** `rpc()` checked only the
+JSON-RPC `error` field, and `eth_sendTransaction` answers with a hash even when
+the transaction *reverts* — so a failed transfer looked like a success and only
+surfaced much later as a wrong balance. That is the same "a caught failure is
+converted into a success" shape the repo's rules forbid, in test code.
+
+All four raw sends now go through `sendTx`, which mines a block, reads the
+receipt, and throws unless `status` is `0x1` (the pattern the same file already
+used for one deploy). The trigger of the original revert is still unconfirmed —
+the two silent mechanisms are a sender holding less than 97 USDC (a chain adopted
+from an earlier run) or a transaction left unmined — but either now fails at the
+sending line with the hash, instead of 200 lines later as a balance diff.
+
+### Six browser journeys pass
+
+`web-challenge-e2e`, `web-record-e2e`, `web-post-bounty-e2e`,
+`web-milestone-e2e`, `web-dao-journey-e2e`, `web-rounds-e2e` — all 1/1 against a
+real local chain. The only journey still failing is `web-economy-e2e`, on this
+host's inability to resolve `e2e-<id>.localhost` from Node (Chromium
+special-cases `*.localhost`; the OS resolver does not).
