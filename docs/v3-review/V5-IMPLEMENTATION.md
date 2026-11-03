@@ -1166,3 +1166,33 @@ round card's "Shares".
 That needs a decision about which surface is right, so the spec's assertion was
 **not** edited. The evidence needed to settle it is one read on a live world:
 `terms.asShares`, `dao.shares()`, `dao.loot()`, and the round's `shares` field.
+
+### `web-economy-e2e`: two real fixes, and the host limitation underneath
+
+The spec's own doc comment says "One person: a browser of their own", but
+`arrive()` called `browser.newContext()`, so all three people shared one
+browser — and this host's Chromium only runs `--single-process`, where the
+second context kills the whole browser. `arrive()` now launches its own browser
+from the project's `launchOptions` (so the same executable and sandbox flags
+apply) and a `test.afterEach` closes every one of them however the test ends.
+
+With that, the journey gets past both browser defects and reaches its first real
+step:
+
+```
+browserType.launch: … closed            (0 ms)    ← config had no PW_CHROMIUM_PATH hatch
+browserContext.newPage: … closed        (64 ms)   ← three people, one browser
+Error: could not reach e2e-…localhost:58985       ← the remaining blocker
+```
+
+**The remaining blocker is the host, not the product.** The community the
+founder creates is addressed as `e2e-<id>.localhost:<port>`, and the spec's raw
+`WebSocket` read in Node cannot resolve it. Chromium special-cases `*.localhost`
+to loopback; the operating system resolver (and therefore Node) does not. The
+same pattern is what `passkey-sign-in.spec.ts` uses, so it is a shared
+assumption rather than an economy-only one.
+
+So `web-economy-e2e` now fails one layer deeper, on a name-resolution limit of
+this machine. Recording that is more useful than another guess: the next step is
+either an `/etc/hosts`-style resolver for `*.localhost` or a spec change to
+address the relay by `127.0.0.1` with an explicit Host header.

@@ -173,6 +173,13 @@ async function callWord(to: string, data: string): Promise<bigint> {
 const dollarsOf = (holder: string) =>
   callWord(CURRENCY, `0x70a08231${word(holder)}`);
 
+/** Every browser `arrive` launches, closed after the test however it ends. */
+const launched: Browser[] = [];
+
+test.afterEach(async () => {
+  await Promise.all(launched.splice(0).map((own) => own.close()));
+});
+
 /** One person: a browser of their own, a brand-new wallet and, once they sign up, a brand-new Nostr account. */
 interface Person {
   name: string;
@@ -187,7 +194,18 @@ async function arrive(
   name: string,
   dollars: bigint,
 ): Promise<Person> {
-  const context = await browser.newContext({
+  // One launched browser per person, which is what this file always said it
+  // wanted ("a browser of their own"). `browser.newContext()` puts everyone in a
+  // single browser, and this host's Chromium only runs `--single-process`, where
+  // the second context kills the whole browser (`browserContext.newPage: Target
+  // page, context or browser has been closed`). The options come from the
+  // project, so the same executable and sandbox flags apply, and Playwright
+  // closes it when the test finishes.
+  const own = await browser
+    .browserType()
+    .launch(test.info().project.use.launchOptions);
+  launched.push(own);
+  const context = await own.newContext({
     viewport: { width: 1280, height: 900 },
   });
   // A step that cannot be taken says so after a minute, naming what it waited for, not after the whole test budget.
