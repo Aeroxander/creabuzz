@@ -126,6 +126,7 @@ LATER=(
   web-sepolia-fork-e2e
   web-rounds-e2e
   web-trading-e2e
+  secondary-keeper-e2e
   web-post-bounty-e2e
   web-self-serve-e2e
   shares-erc20c-e2e
