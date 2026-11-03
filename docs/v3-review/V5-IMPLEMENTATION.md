@@ -1399,3 +1399,37 @@ die at 4–5 ms on a per-test context under `--single-process` Chromium, which i
 a runner limitation recorded above, not a product defect.
 
 `just web-check` exits 0 and `pnpm -C web typecheck` is clean with these changes.
+
+### `web-dao-launch-e2e`: the last runner limitation, fixed
+
+The four tests that died at 4–5 ms were the ones relying on Playwright's shared
+per-worker browser: under `--single-process` Chromium the per-test context did
+not survive the previous test's teardown. Every test in the file now takes
+`{ browser }` and opens its own page with `ownPage(browser)`, the same pattern
+the other journeys use, with `closeOwnPages` registered once for the file.
+
+All nine tests pass:
+
+```
+✓ 1  the founder launches a project into its own DAO with one button (5.1s)
+✓ 2  on a test network a launch can wait less for objections (3.6s)
+✓ 3  a server that refuses the record after the DAO exists is retried (4.5s)
+✓ 4  a reload between the DAO and the record offers to finish saving (5.5s)
+✓ 5  a browser that forgot the launch finds its DAO on the chain (5.6s)
+✓ 6  a new launch defaults to the project's own Shares (450ms)
+✓ 7  a launch made in the wizard, as published, launches into its DAO (4.6s)
+✓ 8  with no wallet in the browser the launch is off (702ms)
+✓ 9  backers bid, the sale ends, and graduation pays the whole raise (8.4s)
+PASS web-dao-launch-e2e   1 passed, 0 failed, 0 blocked, 0 skipped
+```
+
+### Every later-set journey that can run here is green
+
+`web-challenge-e2e`, `web-record-e2e`, `web-post-bounty-e2e`,
+`web-milestone-e2e`, `web-dao-journey-e2e`, `web-rounds-e2e`,
+`shares-erc20c-e2e`, `web-self-serve-e2e`, `web-economy-e2e`,
+`web-dao-launch-e2e` (9/9 tests) — ten journeys, all passing, against a real
+local chain or relay, in real browsers.
+
+`web-sepolia-fork-e2e` is the one journey that cannot run here: it needs a
+Sepolia RPC, and this host has no DNS.
