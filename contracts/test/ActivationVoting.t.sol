@@ -566,6 +566,21 @@ contract ActivationVotingTest is Test {
         assertEq(policy.getPastCapacity(CAROL, snap2), 0e18, "the buyer did not inherit any of Bob's history");
     }
 
+    /// @dev The runbook's first open question, settled: does a founder's sale ceiling follow a
+    /// PARTIAL escrow return? The ceiling is `balance - still locked grant`, and escrowing lowers the
+    /// balance, so it must fall with the escrow and come back by exactly what returns — not by the
+    /// whole original escrow.
+    function test_the_founders_sale_ceiling_follows_a_partial_escrow_return() public {
+        uint256 before = policy.saleCapacity(ALICE);
+        assertEq(before, 40e18, "the founder's opening ceiling: 97 balance minus the 57 still locked");
+        _escrow(ALICE, 10e18);
+        assertEq(policy.saleCapacity(ALICE), before - 10e18, "escrowed units leave the ceiling");
+        vm.prank(address(market));
+        market.cancel(ALICE, 4e18); // a partial return: four of the ten come back
+        assertEq(policy.saleCapacity(ALICE), before - 6e18, "the returned part comes back exactly once");
+        assertEq(policy.escrowedBalance(ALICE), 6e18, "six are still escrowed");
+    }
+
     function test_unsold_units_return_to_the_original_seller_with_their_original_ages() public {
         // Bob's ONLY units are 10 bought fresh at epoch 9 (start+9d); he escrows the whole pot.
         _mint(BOB, 10e18);
