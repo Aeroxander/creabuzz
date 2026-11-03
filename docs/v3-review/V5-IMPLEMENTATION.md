@@ -724,3 +724,27 @@ event shape, or the tags.
 That is the next concrete step: instrument `publishMirror`/`publishEvent` in the
 app (they throw away the underlying error and the caller shows a generic
 sentence) and fix whichever of signing or the WS publish is failing.
+
+### Why the publish had no identity (root cause, fixed)
+
+The app's identity store accepts a legacy **64-hex** key (it re-encrypts it
+NIP-49 on first read) or an `ncryptsec1` blob — **not** a bech32 `nsec1…`. The
+journey script wrote `nsec1…`, so `existingUserPubkey()` returned `null` and
+every Nostr write failed before reaching the socket. That is exactly the
+"no EVENT frame" symptom: the relay was never the problem.
+
+Verified in the app's own module graph, with the hex key:
+
+```
+{"pub":"ba5734d8f7091719471e7f7ed6b9df170dc70cc661ca05e688601ad984f068b0"}
+```
+
+— the launch author, so signing and author binding are now correct. The script
+writes the hex key, and `AgreedProposalForm` now carries the publish error's
+message into its notice instead of a generic sentence, so the next failure names
+itself.
+
+**Not yet proven:** an app-originated `47003` publish landing. The last run
+failed earlier, at the chain send ("The offer did not reach the chain") on a
+world mutated by many runs, so the publish was never attempted. The next step is
+one clean run on a fresh world.

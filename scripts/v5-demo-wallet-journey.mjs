@@ -28,7 +28,6 @@ mkdirSync(SHOTS, { recursive: true });
 const here = path.dirname(new URL(import.meta.url).pathname);
 const require = createRequire(path.join(here, "..", "web", "node_modules", "package.json"));
 const { chromium } = require("@playwright/test");
-const { nip19 } = require("nostr-tools");
 
 const KEY = {
   manager: process.env.MANAGER_PK ?? "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
@@ -37,7 +36,11 @@ const KEY = {
 const offline = (args) => execFileSync("cast", args, { encoding: "utf8" }).trim();
 const wsRpc = RPC.replace(/^http/, "ws");
 const addressOf = (pk) => offline(["wallet", "address", "--private-key", pk]);
-const nsecOf = (pk) => nip19.nsecEncode(Uint8Array.from(Buffer.from(pk.replace(/^0x/, ""), "hex")));
+// The app stores its account key NIP-49-encrypted and accepts a legacy plain
+// 64-hex value (it re-encrypts on first read). A bech32 `nsec1…` is NOT one of
+// the accepted forms, so writing one leaves the app with no identity and every
+// Nostr write fails before it reaches the socket.
+const nsecOf = (pk) => pk.replace(/^0x/, "");
 const QUANTITY = process.env.QUANTITY ?? "3";
 
 const manager = addressOf(KEY.manager);

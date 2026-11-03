@@ -203,13 +203,17 @@ export function AgreedProposalForm({
     };
     try {
       await publishTerms(offer);
-    } catch {
+    } catch (error) {
       // The offer is on the chain; only the words are missing. Close the form so
       // the pending-publish panel (which lives on the closed card) is the thing
-      // on screen, with its "Publish the words again" button reachable.
+      // on screen, with its "Publish the words again" button reachable. The
+      // reason is carried through: "could not publish" alone leaves the manager
+      // with nothing to act on.
       setProposed(offer);
       setProblem(
-        "The offer is on the chain, but its description and the work area's words could not be published. Until they are, the person it names cannot read what it is for. Press Publish the words again.",
+        `The offer is on the chain, but its description and the work area's words could not be published (${
+          error instanceof Error ? error.message : String(error)
+        }). Until they are, the person it names cannot read what it is for. Press Publish the words again.`,
       );
       setOpened(false);
       return;
