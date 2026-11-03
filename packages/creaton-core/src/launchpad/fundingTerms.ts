@@ -396,19 +396,76 @@ export function fundingPhase(
   return "ready";
 }
 
-/** The funding-terms contract of a DAO, read from its work budget factory; null where the factory predates it. */
+/**
+ * What reading a DAO's funding-terms contract told us — three answers, never
+ * two. A failed read is `unreadable`, never `absent`: "this factory predates
+ * funding terms" is a claim about the contract, and a question the node did not
+ * answer is not evidence for it. Collapsing the two is how a timeout or a busy
+ * node turns into an authoritative "there is nothing here" (Review-Proven Rule
+ * 1: a caught failure is never converted into a successful absence).
+ */
+export type FundingContractRead =
+  | { kind: "present"; address: string }
+  | { kind: "absent" }
+  | { kind: "unreadable"; reason: string };
+
+/**
+ * Read the funding-terms contract of a DAO from its work budget factory.
+ *
+ * Only the contract's own refusal counts as absence: a revert means the
+ * selector is not there, which is exactly what a factory from before D133 does.
+ * A node that timed out, was unreachable or busy (`ChainReadError`), or that
+ * answered something which is not an address, is `unreadable` — so no caller
+ * can render a failed read as "predates funding terms".
+ */
 export async function readFundingContract(
   chain: Pick<WorkChain, "call">,
   factory: string,
-): Promise<string | null> {
+): Promise<FundingContractRead> {
+  let answer: string;
   try {
-    const at = decodeAddress(
-      await chain.call(factory, encodeCall0(FUNDING_SIGNATURES.fundingTerms)),
+    answer = await chain.call(
+      factory,
+      encodeCall0(FUNDING_SIGNATURES.fundingTerms),
     );
-    return /^0x0{40}$/.test(at) ? null : at;
-  } catch {
-    return null;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    // The node's own failures carry `ChainReadError`; anything that is not the
+    // contract saying "no such function" is a read we do not have.
+    const nodeSide =
+      (error instanceof Error && error.name === "ChainReadError") ||
+      !/revert/i.test(reason);
+    return nodeSide ? { kind: "unreadable", reason } : { kind: "absent" };
   }
+  // A well-formed answer is exactly one 32-byte word. Anything else — an empty
+  // `0x`, a short payload — is a read we do not have, never a zero address:
+  // `decodeWord("0x")` would otherwise return 0 and read as "absent".
+  if (!/^0x[0-9a-fA-F]{64}$/.test(answer)) {
+    return {
+      kind: "unreadable",
+      reason: `the factory answered ${answer}, which is not a 32-byte word`,
+    };
+  }
+  const at = decodeAddress(answer);
+  return /^0x0{40}$/.test(at)
+    ? { kind: "absent" }
+    : { kind: "present", address: at };
+}
+
+/**
+ * The contract a funding read should use, from the three-way answer: its
+ * address when the factory has one, `null` when the factory genuinely has none,
+ * and a thrown error when the read did not complete.
+ *
+ * This is the single place a caller may turn `FundingContractRead` into a
+ * maybe-address, so "the node did not answer" can never arrive at the UI as
+ * "this factory predates funding terms".
+ */
+export function fundingContractOrThrow(
+  read: FundingContractRead,
+): string | null {
+  if (read.kind === "unreadable") throw new Error(read.reason);
+  return read.kind === "present" ? read.address : null;
 }
 
 const words = (hex: string): bigint[] => {

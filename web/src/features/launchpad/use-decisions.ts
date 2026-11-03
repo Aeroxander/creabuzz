@@ -64,7 +64,9 @@ export function decisionContextQuery(dao: string | null) {
         policy,
         factory: factoryAddress,
         shares: decodeAddress(shares),
-        // The funding-terms contract of this DAO's summoner (D133); null on a factory from before it.
+        // The funding-terms contract of this DAO's summoner (D133): present,
+        // absent (a factory from before it), or unreadable — never a failed read
+        // folded into "absent".
         fundingTerms: await readFundingContract(
           endpointChain(endpoint),
           factoryAddress,

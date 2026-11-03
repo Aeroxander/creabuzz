@@ -10,6 +10,7 @@ import {
 } from "./chain-config";
 import {
   fundingPhase,
+  fundingContractOrThrow,
   readFundingContract,
   readFundingTerms,
 } from "@creaton/core/launchpad/fundingTerms.ts";
@@ -58,8 +59,12 @@ export function useFunding(dao: string, wallet: string | null) {
       const factory = decodeAddress(
         await chain.call(policy, encodeCall0(SIGNATURES.factory)),
       );
-      const contract = await readFundingContract(chain, factory);
-      // A DAO whose summoner predates funding terms has none to show.
+      // A DAO whose summoner genuinely has no funding terms has none to show; a
+      // read that did not complete throws, so the card says it could not read
+      // rather than hiding the section as though the contract were old.
+      const contract = fundingContractOrThrow(
+        await readFundingContract(chain, factory),
+      );
       if (!contract) return null;
       const [terms, now, sharesHex] = await Promise.all([
         readFundingTerms(chain, contract, dao),

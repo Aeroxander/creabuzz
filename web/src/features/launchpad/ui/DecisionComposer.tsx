@@ -228,7 +228,7 @@ export function DecisionComposer({
       return (
         weeklyRounds(ctx.chainId ?? null) !== null &&
         contributor &&
-        Boolean(ctx.fundingTerms)
+        ctx.fundingTerms?.kind === "present"
       );
     // Payouts count every holder from when they hold; locked team Shares are not handled, so contributor projects only.
     if (id === "payouts")
@@ -462,6 +462,21 @@ export function DecisionComposer({
       ) : null}
       {open ? (
         <div className="mt-3">
+          {ctx.fundingTerms?.kind === "unreadable" ? (
+            // The funding form needs the DAO's funding-terms contract. Without
+            // it the form is not offered — but saying nothing would read as
+            // "this project has none", which is a different claim from "the
+            // network did not answer".
+            <p
+              className="mb-2 text-sm text-muted-foreground"
+              data-testid="decision-funding-unreadable"
+              role="status"
+            >
+              Couldn&apos;t read this project&apos;s funding terms from the
+              network ({ctx.fundingTerms.reason}), so the funding forms are not
+              offered yet. Reload to try again.
+            </p>
+          ) : null}
           {/* On a phone the cards would stack far above the form they open: one list instead, the form right under it. */}
           <label className="flex flex-col gap-1 text-sm sm:hidden">
             <span className="font-medium">What kind of decision</span>

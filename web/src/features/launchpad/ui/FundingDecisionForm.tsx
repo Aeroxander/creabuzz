@@ -55,7 +55,8 @@ export function FundingDecisionForm({
   gate,
   onSubmit,
 }: FormProps) {
-  const terms = ctx.fundingTerms ?? null;
+  const terms =
+    ctx.fundingTerms?.kind === "present" ? ctx.fundingTerms.address : null;
   const read = useQuery({
     queryKey: ["launchpad", "funding", "form", terms, ctx.dao],
     enabled: terms !== null,

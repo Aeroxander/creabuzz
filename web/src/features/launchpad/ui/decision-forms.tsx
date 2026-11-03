@@ -22,6 +22,7 @@ import { readableQuotes, workTitle } from "../lib/work-titles";
 const WORK_AREA_NAME_HINT = "A short name, up to 32 characters.";
 import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 import type { DecisionsSnapshot } from "@creaton/core/launchpad/decisions.ts";
+import type { FundingContractRead } from "@creaton/core/launchpad/fundingTerms.ts";
 import {
   awardsUnderVote,
   waitingToFinish,
@@ -58,8 +59,8 @@ export interface FormContext {
   /** The DAO's voting policy and its Shares. */
   policy: string;
   sharesToken: string;
-  /** The funding-terms contract of the DAO's summoner (D133), or null where it has none. */
-  fundingTerms?: string | null;
+  /** The funding-terms contract of the DAO's summoner (D133): present, absent, or unreadable. */
+  fundingTerms?: FundingContractRead | null;
   /** The exact words of each of the team's milestones, in order (empty when the team's Shares are not locked). */
   milestoneWords: readonly string[];
   /** A contributor project: no sale, Shares-only work, so the forms speak of submissions, not money (D111). */

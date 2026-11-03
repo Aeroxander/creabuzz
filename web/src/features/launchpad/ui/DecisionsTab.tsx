@@ -206,7 +206,10 @@ export function DecisionsTab({
                     label: labelOf,
                     checkWords,
                     projectToken: context.data?.shares,
-                    fundingTerms: context.data?.fundingTerms ?? undefined,
+                    fundingTerms:
+                      context.data?.fundingTerms?.kind === "present"
+                        ? context.data.fundingTerms.address
+                        : undefined,
                     weeklyRounds:
                       weeklyRounds(launch.record.chainId ?? null) ?? undefined,
                     payoutsFactory:

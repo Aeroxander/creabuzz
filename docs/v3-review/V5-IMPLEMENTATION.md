@@ -837,3 +837,58 @@ Four screenshots, four distinct SHA-256 hashes: `wallet-1-proposed.png` (97 KB),
 The script scopes every step to its own card (the one naming its own Share
 quantity) and reads the binding from the chain, so a world holding other
 agreements cannot make a step pass by acting on the wrong one.
+
+### A failed read no longer claims "this factory predates funding terms"
+
+`readFundingContract` caught every failure and returned `null`, which the
+funding card rendered as "no funding terms" — a node timeout or a busy node
+presented as a fact about the contract. That is the Review-Proven Rule 1 shape
+(a caught failure converted into a successful absence), and it was reported by
+the browser-spec lane and left unfixed until now.
+
+**The read is now three-way, never two:**
+
+```ts
+type FundingContractRead =
+  | { kind: "present"; address: string }   // the factory named its contract
+  | { kind: "absent" }                     // it answered the zero address
+  | { kind: "unreadable"; reason: string }; // the read did not complete
+```
+
+Only two things count as `absent`: the contract answering the **zero address**,
+or the contract **reverting** the selector (what a factory from before D133
+does). Everything else is `unreadable`:
+
+- a node-side failure — timeout, unreachable, busy (`ChainReadError`);
+- any other error that is not a revert (an HTTP refusal, a transport `TypeError`);
+- an answer that is not exactly one 32-byte word. This last one mattered: an
+  empty `0x` from a non-contract address decoded to zero and read as `absent`
+  before the shape check was added.
+
+`fundingContractOrThrow` is now the **only** place that turns the three-way
+answer into a maybe-address: it returns the address, returns `null` for
+`absent`, and **throws** for `unreadable`. The funding card already renders a
+`query.isError` state ("The network did not answer, so funding can't be
+shown. Try again"), so a failed read is now said out loud instead of hiding the
+section; the decision composer shows `decision-funding-unreadable` with the
+reason rather than silently not offering the funding forms.
+
+**Regression tests, bound to the production seam** (`fundingTerms.test.mjs`):
+the three-way result for a real answer, the zero address, a revert, five kinds
+of failed read (timeout, unreachable, busy, transport `TypeError`, HTTP 503),
+three malformed answers, and `fundingContractOrThrow` throwing on `unreadable`.
+Falsifiability was checked by reverting each guard in turn:
+
+```
+=== guard 1 removed (any failure -> absent) ===   tests 7  pass 6  fail 1
+=== guard 2 removed (shape check dropped)  ===   tests 7  pass 6  fail 1
+=== restored                               ===   tests 7  pass 7  fail 0
+```
+
+Against the live demo chain: the real factory answers a 32-byte word naming
+`0xeEBe00Ac…8883` (→ `present`), and an address with no code fails the node call
+outright (→ `unreadable`, never `absent`).
+
+Gates after the change: `pnpm -C web test` **2581 passed, 0 failed**;
+`pnpm -C web typecheck` clean; `just web-check` **exit 0** (biome, copy,
+px-text, kinds, templates, knip); biome clean on all eight touched files.
