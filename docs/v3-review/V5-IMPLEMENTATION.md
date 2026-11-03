@@ -1589,3 +1589,75 @@ occupied with throwaway bids. Both are design limits, now stated in the packet.
 **Contract suite after the fixes: 738 passed, 0 failed, 2 skipped** (70 suites —
 the 734 plus the four review tests). `check-majeur-fork` passes: the F3 change is
 inside the `erc20c-surface` patch region (100 regions, 780 lines).
+
+## Secondary trading in the app
+
+The market was deployed and tested but had **no app surface at all** — no
+adapter, no UI, no operator path. It now has all three, and trading is still off
+by default.
+
+### The adapter
+
+`packages/creaton-core/src/launchpad/secondary.ts` reads a DAO's market from its
+factory: `marketOf(dao)` → the listing, the latest round, and the connected
+wallet's own orders. The read is **three-way** — `present` / `absent` /
+`unreadable` — following the same rule as the funding and panel reads: a failed
+read never becomes "this DAO has no market". Two details worth keeping:
+
+- an address word wider than 160 bits is rejected rather than truncated, so a
+  malformed answer cannot invent a market address;
+- `roundPhase` reproduces the contract's own void boundary exactly
+  (`!settled && now >= settleDeadline`), so the app and the chain agree on when a
+  round can be voided.
+
+Selectors are pinned against `cast sig`; 13 tests cover the three answers, the
+phase boundaries, and the encoder goldens.
+
+### The card
+
+`TradingCard` (on the treasury tab) states the position in plain words and
+offers what the wallet can do in the latest round: open, sell, bid, cancel,
+settle, collect. The four states a person can see:
+
+1. the build names no factory — "Trading isn't set up on this network…";
+2. **the market exists and the DAO has no open listing** — "Trading is off: the
+   DAO has no open listing. Opening one is the DAO's decision.";
+3. no market for this DAO at all;
+4. **the read failed** — said as a failure, never as state 3.
+
+A closed listing keeps its live rounds usable, which is what the contract does:
+settlement, refunds, returns and claims all keep working; only new offers and
+bids stop.
+
+The round id is fenced against `roundCount`, so a round opening between the two
+reads makes the read `unreadable` rather than placing an order in the wrong
+round.
+
+### Publishing a listing is a vote
+
+`configureListing` is `onlyDAO`, so the app cannot offer a switch. The
+`secondary-listing` decision kind builds exactly one call to the DAO's market,
+validated locally against the contract's own four `InvalidTerms` cases (a price
+of zero, a highest not above the lowest, steps outside 1–64, a range the steps do
+not divide), and reads back in words from the calldata alone. Its calldata was
+checked byte-for-byte against `cast calldata "configureListing(bool,uint128,uint128,uint32)"`.
+
+### The operator runbook
+
+`docs/v3-review/SECONDARY-TRADING-RUNBOOK.md` — the three gates, the two
+independent acts (listing and schedule release) with the call and the account
+that may make each, the exact reads with their off/on values, the round
+lifecycle, the off-switch **and what it does not do**, incident steps mapped to
+the review's F1–F3, and what is still uncovered.
+
+Its first open question — does a founder's sale ceiling follow a **partial**
+escrow return? — is now answered by a test rather than a guess: escrow 10,
+return 4, the ceiling moves by 10 and comes back by exactly 4
+(`test_the_founders_sale_ceiling_follows_a_partial_escrow_return`).
+
+### Gates
+
+Adapter 13/13, `daoActions` 24/24, trading-copy 13/13, `pnpm -C web test`
+**2594 passed**, typecheck clean, `just web-check` exit 0, contract suite
+**739 passed, 0 failed, 2 skipped**. One defect was caught in reconciliation:
+`SecondaryListingTerms` was exported but unused, which knip failed the gate on.
