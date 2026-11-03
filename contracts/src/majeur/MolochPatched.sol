@@ -1770,6 +1770,13 @@ contract Shares {
 
     function _validateTransfer(address from, address to, uint256 amount) internal {
         address validator = _transferValidator;
+        // The named exempt address — the DAO's secondary market — is exempt here for the same reason
+        // `_checkUnlocked` exempts it: the market's accounting assumes it can always return what it holds.
+        // A validator that refuses would freeze every seller's escrowed Shares, every cancelled offer and
+        // every void round's return, while quote claims kept working (review F3). A DAO can still set a
+        // validator for ordinary holder-to-holder transfers.
+        address exempt = transferExempt;
+        if (exempt != address(0) && (from == exempt || to == exempt)) return;
         if (validator != address(0) && msg.sender != validator) {
             IShareTransferValidator(validator).validateTransfer(msg.sender, from, to, 0, amount);
         }

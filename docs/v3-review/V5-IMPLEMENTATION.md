@@ -1563,3 +1563,29 @@ pre-existing at base `8fecc3258`).
 Not run here, and why: `just ci` and `just check` include the desktop and mobile
 surfaces, which this work deliberately excludes; `web-sepolia-fork-e2e` needs a
 Sepolia RPC and this host has no DNS.
+
+### Three defects found by the independent review, and fixed
+
+An outside reviewer read `SecondaryMarket.sol` and `SecondaryMarketFactory.sol`
+in full and reproduced three defects with forge tests. All three were real. Each
+is fixed, and each has a regression test that fails when its fix is reverted —
+checked by reverting each fix in turn:
+
+| Finding | Severity | Fix | Reverting the fix fails |
+|---|---|---|---|
+| **F1** `claimQuote` marked a seller's order paid before settlement (at `filled == 0`), so anyone could burn a seller's proceeds permanently | medium | the seller branch runs only when the round is settled or void | `test_a_sellers_proceeds_survive_a_pre_settle_claimQuote` |
+| **F2** `_removeFromList` swapped the last entry into the freed slot, so leftover lots did not go to the lowest order id as documented and as this packet claimed | low | shift instead of swap, keeping the list in order | `test_leftovers_follow_order_id_after_a_cancellation` |
+| **F3** a DAO-chosen Shares transfer validator saw the market's own transfers, so a refusing validator froze `cancelSell`, the unsold-lot return in `settle`, and a void round's `claimShares` | medium–high | the market (`transferExempt`) is exempt from the validator, as it already is from the transfer lock | `test_a_dao_validator_cannot_freeze_the_markets_escrow` |
+
+F3 also falsified a claim in the review packet — that the admin powers list was
+complete and that claims could not be paused. The packet now carries the
+correction, and its seven open questions are answered from the review (§10).
+
+The review's fourth finding is a measurement, not a defect: a 32×32 round with
+64 levels settles in **2.63M gas** (mock policy), the 33rd buyer is refused
+`TooManyBuyers`, and free cancellation until the close means buyer slots can be
+occupied with throwaway bids. Both are design limits, now stated in the packet.
+
+**Contract suite after the fixes: 738 passed, 0 failed, 2 skipped** (70 suites —
+the 734 plus the four review tests). `check-majeur-fork` passes: the F3 change is
+inside the `erc20c-surface` patch region (100 regions, 780 lines).

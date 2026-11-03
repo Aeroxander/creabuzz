@@ -53,9 +53,18 @@ The DAO is the only administrator, and its power is deliberately narrow.
 | Create the market for a DAO | `create(...)` on the factory | only the kit that created the factory (`NotAuthorizedKit`), one per DAO (`AlreadyListed`), and only after proving the DAO, its Shares, its policy and its quote token against pinned bytecode (`_prove`) | Cannot create a market for a counterfeit DAO or token (`test_a_counterfeit_dao_is_refused_at_the_bytecode_pin`, `test_a_counterfeit_token_and_policy_are_refused`) |
 
 There is **no** admin function to move user funds, cancel someone's order, change
-a round's terms after it opens, mint Shares, or pause claims. Settlement
-(`settle`) and claims (`claimShares`, `claimQuote`) are permissionless and
-ungated, which is what makes a stalled round recoverable by anyone.
+a round's terms after it opens, or mint Shares. Settlement (`settle`) and claims
+(`claimShares`, `claimQuote`) are permissionless and ungated, which is what makes
+a stalled round recoverable by anyone.
+
+**Correction, from the review below.** An earlier version of this section said
+the DAO could not pause claims. That was wrong: the DAO can set a Shares
+transfer validator at any time, and the validator saw the market's own transfers,
+so a refusing validator froze `cancelSell`, the unsold-lot return in `settle`,
+and a void round's `claimShares`. It is fixed — the market is the Shares' named
+exempt address and is now exempt from the validator as well as from the transfer
+lock — and pinned by
+`test_a_dao_validator_cannot_freeze_the_markets_escrow`. See §10.
 
 ### The one thing the market is trusted with
 
@@ -305,3 +314,89 @@ high-severity defect, or (b) found defects that are fixed and re-tested, and has
 stated a view on the seven open questions in §7. Trading activation stays off
 until that sign-off exists, and turning it on remains two deliberate DAO acts
 per project (§4), not a platform switch.
+
+---
+
+## 10. The first independent review: findings and what changed
+
+An outside reviewer read `SecondaryMarket.sol` and `SecondaryMarketFactory.sol`
+in full, the Shares transfer path in `MolochPatched.sol`, and the market's hooks
+in `ActivationVoting.sol`, and reproduced three defects with forge tests. All
+three were real and are now fixed, each with a regression test that fails when
+its fix is reverted (verified by reverting each fix in turn). Their tests live in
+`contracts/test/SecondaryMarketReview.t.sol`.
+
+### F1 — anyone could burn a seller's proceeds (medium) — fixed
+
+`claimQuote` marked a seller's order paid for **any** address holding a sell
+order, even before settlement when `filled` is still 0. An address with both a
+sell order and a cancelled bid was eligible for a pre-settle call, so anyone
+could pay its bid refund and, in the same call, mark its proceeds paid at zero.
+After settlement the seller had sold its Shares and `claimQuote` reverted
+`NothingToClaim`; the money stayed in the market for ever.
+
+Fixed by paying a seller's proceeds only when the round is settled or void.
+Pinned by `test_a_sellers_proceeds_survive_a_pre_settle_claimQuote`, which also
+proves both sides end up paid in full.
+
+### F2 — leftovers did not follow order id (low) — fixed
+
+`_removeFromList` swapped the last entry into the freed slot, so list position
+stopped matching order id, while the code and this packet both claimed leftovers
+go to the lowest order id. An actor could place a decoy order early, put their
+real order last, cancel the decoy and take its slot — worth at most one lot per
+leftover, but it makes the documented tie-break false and is exploitable by
+transaction ordering.
+
+Fixed by shifting on removal, so the list stays in order. Pinned by
+`test_leftovers_follow_order_id_after_a_cancellation`.
+
+### F3 — the DAO could freeze escrowed Shares (medium–high) — fixed
+
+`Shares.setTransferValidator` can be called by the DAO at any time, with no
+notice and no seal, and the validator saw every market transfer. With a refusing
+validator, `cancelSell`, the unsold-lot return inside `settle`, and a void
+round's `claimShares` all reverted, while quote claims kept working — so a DAO
+could hold every seller's escrowed Shares hostage.
+
+Fixed by exempting the market — the Shares' named `transferExempt` address — from
+the validator, for the same reason it is already exempt from the transfer lock:
+the market's accounting assumes it can always return what it holds. Ordinary
+holder-to-holder transfers still reach the validator (asserted in the same test).
+Pinned by `test_a_dao_validator_cannot_freeze_the_markets_escrow`.
+
+### F4 — a measurement, and a stated design limit (informational)
+
+A full round of 32 sellers, 32 buyers and 64 price levels settles for about
+**2.63M gas** — with the mock policy; the real policy's cost is unmeasured. The
+33rd buyer is refused `TooManyBuyers`, and because cancellation is free until
+bidding closes, someone can fill the buyer slots with throwaway bids and keep
+honest bidders out for the whole window. Orders are also visible and cancellable
+until the last second, so a bid can move the price and then be pulled. Both are
+**design choices to state**, not defects; they are now recorded in §6.
+
+### The seven questions, answered
+
+| Question | Answer |
+|---|---|
+| 1. Is the leftover tie-break exploitable by ordering transactions? | **Yes, it was** — that is F2, now fixed. Plain arrival order remains first-come-first-served. |
+| 2. Can the escrow accounting be driven to `LedgerShort`? | **No path found** in the market's own accounting: `sharesIn` and `quoteIn` stay conserved. The policy's `_migrateEscrow` side was not read closely — still open. |
+| 3. Can the exclusion set change after creation? | **No.** `_setExcluded` reverts once frozen and no other path was found. |
+| 4. Can `transferExempt` change and strand inventory? | **No** — it can only be set once. The real stranding route was the validator (F3), now fixed. |
+| 5. Is a Share a security? | For counsel. Unanswered here. |
+| 6. Does the founder schedule create disclosure obligations? | For counsel. |
+| 7. Does "exit is always allowed" undercut the schedule? | **Yes, in fact**: a founder can exit with unvested Shares for a pro-rata share of the treasury once one exists. The schedule restricts transfer and sale, not exit. Whether that matters legally is for counsel; the product fact is now stated plainly. |
+
+### Test-coverage gaps the review named
+
+- The flow tests run against a **mock policy**, and the policy tests against a
+  **shim market**; the real market and the real `ActivationVoting` meet only in a
+  few happy-path tests in `ContributorKitV2.t.sol`, with no adversarial or gas
+  coverage of that composition.
+- Fee-on-transfer quote tokens **fail closed** at bid (the exact-balance check
+  reverts) — safer than §6 previously implied.
+- A blacklist or negative rebase **on the market address itself** is not covered.
+- The `_migrateEscrow` path in the policy was not read closely.
+
+All four of these are still open. The packet is a description of what exists,
+not a claim that the review is finished.

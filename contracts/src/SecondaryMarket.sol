@@ -445,7 +445,11 @@ contract SecondaryMarket {
         BuyOrder storage b = bids[id][who];
         uint256 amount;
         uint256 price = priceAt(id, r.price);
-        if (s.lots != 0 && !s.proceedsPaid) {
+        // A seller's proceeds exist only once the round has settled: before that `filled` is still 0, and
+        // marking the order paid at zero would burn what settlement later owes it — permanently, because
+        // the only other claim path then reverts `NothingToClaim` (review F1). The seller branch therefore
+        // runs only when the round is settled or void; until then only a cancelled bid's refund is paid.
+        if ((r.settled || isVoid) && s.lots != 0 && !s.proceedsPaid) {
             s.proceedsPaid = true;
             amount += uint256(s.filled) * price;
         }
@@ -638,7 +642,10 @@ contract SecondaryMarket {
         uint256 n = list.length;
         for (uint256 i; i < n; ++i) {
             if (list[i] == who) {
-                if (i != n - 1) list[i] = list[n - 1];
+                // Shift, never swap with the last entry: the leftover-lot rule hands the remainder to the
+                // lowest order id, and a swap lets an early cancelled order pull a later order into its
+                // slot (review F2). The list is bounded by MAX_SELLERS / MAX_BUYERS.
+                for (uint256 j = i; j + 1 < n; ++j) list[j] = list[j + 1];
                 list.pop();
                 return;
             }
