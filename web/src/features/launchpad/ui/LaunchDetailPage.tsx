@@ -67,6 +67,7 @@ import { ProjectAgents } from "@/features/fleet/ui/ProjectAgents";
 import { ProjectDeliveryOverview } from "./ProjectDeliveryOverview";
 import { ContributorStatusNote } from "./ContributorStatusNote";
 import { DaoOverview } from "./DaoOverview";
+import { TradingCard } from "./TradingCard";
 import { MyBidsPanel } from "./MyBidsPanel";
 import { resolveDaoBinding } from "../lib/org-money";
 import { useOrgMoney } from "../use-launches";
@@ -576,12 +577,30 @@ export function LaunchDetailPage({
         />
       ) : null}
       {shown === "treasury" && contributor && workDao ? (
-        <ContributorFundsTab dao={workDao} launch={launch} />
+        <>
+          <ContributorFundsTab dao={workDao} launch={launch} />
+          <div className="max-w-3xl">
+            <TradingCard
+              chainId={launch.record.chainId ?? null}
+              dao={workDao}
+            />
+          </div>
+        </>
       ) : shown === "treasury" ? (
-        <TreasuryTab
-          launch={launch}
-          onOpenDecisions={() => setTab("decisions")}
-        />
+        <>
+          <TreasuryTab
+            launch={launch}
+            onOpenDecisions={() => setTab("decisions")}
+          />
+          {workDao ? (
+            <div className="max-w-3xl">
+              <TradingCard
+                chainId={launch.record.chainId ?? null}
+                dao={workDao}
+              />
+            </div>
+          ) : null}
+        </>
       ) : null}
       {shown === "decisions" && workDao ? (
         <DecisionsTab
