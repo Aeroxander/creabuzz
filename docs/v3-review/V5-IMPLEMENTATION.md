@@ -629,7 +629,9 @@ for the mesh owners rather than papered over.
 
 ### `cargo test --workspace --exclude buzz-voice --no-fail-fast`
 
-**6230 passed, 12 failed, 1380 ignored** across the workspace's test binaries
+**6783 passed, 13 failed, 1384 ignored** across every test binary in the
+workspace (12 distinct failing tests; one databricks test is reported by two
+targets)
 (`buzz-voice` alone is excluded: its `sherpa-onnx-sys` build script needs a
 download this host cannot make). Per-binary highlights: `buzz_acp` 1074/0,
 `buzz_cli` 771/0, `buzz_relay` 1623/1, `buzz_core` 350/0, `buzz_sdk` 338/0,
@@ -640,7 +642,7 @@ The 12 failures sit in four binaries, in crates this branch does not touch:
 
 | crate | failures | cause |
 |---|---|---|
-| `buzz-agent` | 9 (`databricks::tests::…`) | `NetworkUnavailable` — these OAuth/catalog tests need real HTTP |
+| `buzz-agent` | 9 distinct (`databricks::tests::…`) | `NetworkUnavailable` — these OAuth/catalog tests need real HTTP |
 | `buzz-relay` | 1 (`api::mesh_demo::…`) | echo timeout; **proven to fail identically at base `8fecc3258`** |
 | `buzz-feature-flags` | 1 (`relay_artifact_provider_features_require_exactly_one_selection`) | "expected static to compile successfully" — it compiles a fixture at test time |
 | `git-sign-nostr` | 1 (`test_parse_envelope_rejects_invalid_oa_pubkey`) | parser assertion; crate untouched by this branch |
