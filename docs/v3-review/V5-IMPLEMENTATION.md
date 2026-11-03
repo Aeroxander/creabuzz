@@ -1705,3 +1705,31 @@ journey's eighth step proves it (make `decimals()` refuse, no price is printed,
 
 Gates: the journey passes, `pnpm -C web test` **2596 passed**, `just web-check`
 exit 0, file sizes pass.
+
+### Settling without someone watching, and the listing vote
+
+The two-day settle window is not a wait: `settle` can run the moment bidding closes, and the window only says how long
+an unsettled round stays settleable before it goes void. The risk it carries is that nobody calls `settle`. A browser
+cannot settle by itself (settling is a transaction the visitor's wallet must approve), so there are two parts:
+
+- **The card notices on its own.** It re-reads every 30 seconds while a round is taking orders or waiting to settle
+  (`refreshEveryMs`), and a wallet with an order in a round waiting to settle is told that anyone can settle it, that it
+  costs only a network fee, and by when (`settleNoticeLine`). The journey leaves the bidder's page open and never
+  reloads it, and checks the notice appears; removing the refresh makes that step fail.
+- **A keeper for the unattended hours.** `scripts/secondary-keeper.sh` settles a closed round inside its window and,
+  only when told to, opens the week's round. `scripts/secondary-keeper-e2e.sh` runs it on a real local chain through a
+  round's whole life: it sends nothing with the listing off, opens nothing unless `KEEPER_OPEN=1`, does not settle while
+  bidding is open, settles once bidding closes, sends nothing for a settled or void round, and the ledgers end at zero.
+  It first failed for a real reason — `cast` does not read `ETH_PRIVATE_KEY`, so the keeper sent nothing — which is why the
+  key is `KEEPER_PRIVATE_KEY` and a refused send now prints its reason.
+
+Contract timings were not changed (3-day bidding, 2-day settle window, weekly cadence).
+
+**The listing vote is now exercised for real.** Every other trading test stood the DAO in with `vm.prank(dao)`.
+`SecondaryListingVote.t.sol` opens a proposal for `configureListing`, votes, waits out the review and delay, executes it,
+and then opens the round; it also shows the vote is refused before the review ends, that an unvoted proposal does nothing,
+and that the founder cannot call the market directly. The browser journey still publishes the listing by impersonating the
+DAO, so "create the decision in the app, vote, execute" is proven in the contract and not yet in a browser.
+
+Gates: copy tests 17/17, `pnpm -C web test` **2598 passed**, `pnpm check` exit 0, typecheck clean,
+`web-trading-e2e` passes, `secondary-keeper-e2e` passes, `scripts/test-mvp-gate.sh` passes.
