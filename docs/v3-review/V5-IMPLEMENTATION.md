@@ -1196,3 +1196,23 @@ So `web-economy-e2e` now fails one layer deeper, on a name-resolution limit of
 this machine. Recording that is more useful than another guess: the next step is
 either an `/etc/hosts`-style resolver for `*.localhost` or a spec change to
 address the relay by `127.0.0.1` with an explicit Host header.
+
+### One browser per person: two more journeys green
+
+`web/tests/e2e/helpers/own-browser.ts` now holds the pattern the wallet journey
+proved: `ownPage(browser)` launches a browser from the project's own
+`launchOptions` (so the same executable and sandbox flags apply), and
+`closeOwnPages` closes every one, registered with `test.afterEach` so a failing
+test cleans up too.
+
+`web-post-bounty-journey.spec.ts` (8 pages, both tests) and
+`launchpad-milestone.spec.ts` (4 people) use it. Both journeys pass:
+
+```
+web-post-bounty-e2e   1 passed, 0 failed, 0 blocked, 0 skipped   exit=0
+web-milestone-e2e     1 passed, 0 failed, 0 blocked, 0 skipped   exit=0
+```
+
+Four browser journeys now pass against a real local chain:
+`web-challenge-e2e`, `web-record-e2e`, `web-post-bounty-e2e`,
+`web-milestone-e2e`.

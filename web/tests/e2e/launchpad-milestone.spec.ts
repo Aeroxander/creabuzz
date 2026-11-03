@@ -3,6 +3,7 @@ import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
 import { publishedEvents } from "../helpers/published-events";
 import { PREVIEW_ORIGIN } from "./mock-relay";
+import { closeOwnPages, ownPage } from "./helpers/own-browser";
 
 /**
  * Unlocking the team's Shares in the browser, against a REAL local chain.
@@ -223,6 +224,9 @@ async function openRecord(page: Page) {
   await expect(page.getByTestId("record-tab")).toBeVisible({ timeout: 20_000 });
 }
 
+// Every browser `ownPage` launches is closed after each test, however it ends.
+test.afterEach(closeOwnPages);
+
 test("the founder sees what is locked, unlocks the first milestone with one click, and a stranger sees nothing of it", async ({
   page,
   browser,
@@ -269,14 +273,14 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   expect(balance).toBe(TEAM);
 
   // Someone with no team Shares has nothing locked, so the card is not shown to them.
-  const stranger = await browser.newPage();
+  const stranger = await ownPage(browser);
   await openWork(stranger, STRANGER);
   await expect(stranger.getByTestId("locked-shares")).toHaveCount(0);
   await stranger.close();
 
   // The track record is public: someone with no wallet sees the milestone that was reached, the one that was not, and
   // the work behind it with who approved it.
-  const reader = await browser.newPage();
+  const reader = await ownPage(browser);
   await openRecord(reader);
   await expect(reader.getByTestId("record-promise-summary")).toContainText(
     "1 of 2 milestones reached",
@@ -317,7 +321,7 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
 
   // What the founder holds, and for how long, is on their portfolio: the Shares, how long the holding has lasted, and
   // what is still locked. Someone with no Shares sees none.
-  const holder = await browser.newPage();
+  const holder = await ownPage(browser);
   await openPortfolio(holder, FOUNDER_WALLET);
   const row = holder.getByTestId("portfolio-holding");
   await expect(row).toBeVisible({ timeout: 30_000 });
@@ -338,7 +342,7 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   }
   await holder.close();
 
-  const nobody = await browser.newPage();
+  const nobody = await ownPage(browser);
   await openPortfolio(nobody, STRANGER);
   await expect(nobody.getByTestId("portfolio-holdings-empty")).toBeVisible({
     timeout: 30_000,
