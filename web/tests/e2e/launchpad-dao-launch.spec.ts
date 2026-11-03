@@ -3,6 +3,10 @@ import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
 import { wizardToPublish } from "../helpers/wizard";
 import { PREVIEW_ORIGIN } from "./mock-relay";
+import { closeOwnPages, ownPage } from "./helpers/own-browser";
+
+// Every browser `ownPage` launches is closed after each test, however it ends.
+test.afterEach(closeOwnPages);
 
 /**
  * Launch a project into its own DAO from the browser, against a REAL local chain.
@@ -661,7 +665,7 @@ test("with no wallet in the browser the launch is off, and nothing is sent", asy
 
 test("backers bid, the sale ends, and graduation pays the whole raise to the DAO", async ({
   page,
-  context,
+  browser,
 }) => {
   test.setTimeout(300_000);
   // The backer holds 1,000,000 of the sale currency (the dev chain funded them).
@@ -691,7 +695,7 @@ test("backers bid, the sale ends, and graduation pays the whole raise to the DAO
 
   // ── A backer bids through the real bid dialog ──────────────────────────────
   await mineTo(startBlock + 2);
-  const backerPage = await context.newPage();
+  const backerPage = await ownPage(browser);
   const backerRelay = await mockRelay(backerPage, launched);
   await installAnvilWallet(backerPage, BACKER, { rpcUrl: ANVIL_URL });
   await backerPage.addInitScript(

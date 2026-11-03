@@ -1325,3 +1325,30 @@ sending line with the hash, instead of 200 lines later as a balance diff.
 real local chain. The only journey still failing is `web-economy-e2e`, on this
 host's inability to resolve `e2e-<id>.localhost` from Node (Chromium
 special-cases `*.localhost`; the OS resolver does not).
+
+### The three never-run journeys
+
+| Journey | Result | What it needed |
+|---|---|---|
+| `shares-erc20c-e2e` | **1 passed** | its script drove `cast` over HTTP, which panics on this host — now over the WebSocket endpoint (11 call sites) |
+| `web-self-serve-e2e` | **1 passed** | its second person used `browser.newPage()`; now `ownPage` |
+| `web-dao-launch-e2e` | 5 of 9 pass | see below |
+
+`web-dao-launch-e2e` is **not** a single failure. Five of its nine tests pass
+(the founder launch, the refused-record retry, the forgotten-launch recovery,
+the wizard launch, and the backers-bid graduation, 4.6–8.6 s each), and four
+fail at **4–5 ms** with `browserContext.newPage: Target page, context or browser
+has been closed` — before the test body runs.
+
+The four that fail are exactly every second test (2, 4, 6, 8), and they take the
+same `{ page }` fixture as the five that pass, so this is not a fixture or a spec
+difference: it is the browser dying between tests. It reproduces **identically
+before** this session's `ownPage` change (the first run shows the same four at
+4 ms), so it is pre-existing and environmental — this host's Chromium runs
+`--single-process`, where Playwright's per-test context does not survive the
+teardown of the previous one. The one test that needed a second person
+(`backers bid…`) passes because it now launches its own browser.
+
+The fix belongs in the runner rather than the spec: either give this file a
+browser per test (the `ownPage` pattern applied to the fixture) or run it where
+Chromium is not `--single-process`. Recorded, not guessed at.
