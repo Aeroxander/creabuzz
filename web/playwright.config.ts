@@ -64,6 +64,7 @@ export default defineConfig({
         "**/contributor-journey.spec.ts",
         "**/post-bounty-journey.spec.ts",
         "**/rounds-journey.spec.ts",
+        "**/secondary-trading.spec.ts",
         "**/social-cashtag.spec.ts",
         "**/funding-status.spec.ts",
         // Overlay stacking: the header's blur must not trap popups behind page
