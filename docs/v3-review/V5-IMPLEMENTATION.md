@@ -892,3 +892,79 @@ outright (→ `unreadable`, never `absent`).
 Gates after the change: `pnpm -C web test` **2581 passed, 0 failed**;
 `pnpm -C web typecheck` clean; `just web-check` **exit 0** (biome, copy,
 px-text, kinds, templates, knip); biome clean on all eight touched files.
+
+### Auditing the rest of the launchpad readers for the same shape
+
+`readFundingContract` was not the only place a caught failure became an
+authoritative absence. Every chain reader in `packages/creaton-core/src/launchpad`
+and `web/src/features/launchpad` was swept for a `catch` that returns `null`,
+`[]`, `0n` or `""` after a chain call, and each was judged on whether that value
+is read as *absence* or as *unknown*:
+
+| Reader | Verdict |
+|---|---|
+| `readFundingContract` | fixed in the previous change (three-way result) |
+| **`readMilestonePanel`** | **was broken — fixed here** |
+| **`readPostCourt`** | **was broken — fixed here** |
+| `readReviewers` | already correct: `null` surfaces as `reviewersUnreadable` |
+| `readOpenedLogs` | `null` is a fallback (re-read per decision), not an absence claim |
+| `readChallengeLock` | already correct: `isRevert ? null : throw` |
+| `readPayouts` | already correct: `revert ? null : throw` |
+| `readExitFee`, `answers` | already correct: `isRefusal ? 0n/false : throw` |
+| `readExchangeIfAny` | already correct: `isRefusal ? null : throw` |
+| `readLane` | `null` renders as "could not read this budget's agreed rewards" |
+| `readU256` (`enforced-check`) | correct: `null` becomes "proposalThreshold unreadable. The claim stands unverified" |
+| `readContributions` | correct: `null` renders as "Unknown", never as zero |
+| `runway-read.balance` | nullable by type; no absence claim on it |
+
+#### `readMilestonePanel` — a failed read labelled the panel an ordinary budget
+
+The reader that finds which budget judges the team's milestones caught every
+failure and returned `null`, documented as "a factory made before panels existed
+has no such function". A timeout therefore made **every** budget read
+`isMilestonePanel: false`, so the panel was listed as "Not taking work now" and
+the decision forms offered it as an ordinary budget.
+
+It now answers three ways, like the funding read: the factory's own **revert** or
+the **zero address** is `absent`; no answer, or a reply that is not one 32-byte
+word, is `unreadable`. `WorkSnapshot` gains `milestonePanelUnreadable`, following
+the existing `reviewersUnreadable` / `bondUnreadable` idiom, and the Work tab
+renders `work-panel-unreadable` above the cards while the decision composer
+renders `decision-panel-unreadable` — so the mislabel is never shown without
+saying why.
+
+#### `readPostCourt` — a failed read hid the appeal path
+
+Same shape, same cause: `court()` caught every failure and returned `null`, and
+`null` means "this bounty names no court", so a timeout silently removed the
+appeal affordance from a bounty that has one. It now returns `null` only for the
+contract's own revert or the zero address, and **throws** on anything else
+(matching `readPayouts` and `readChallengeLock`, the closest analogues), so the
+post's bounty read fails visibly instead of quietly dropping appeals.
+
+#### Falsifiability
+
+Each guard was removed in turn and the matching test failed:
+
+```
+panel guard (revert-only) removed:  pass 22  fail 1
+panel guard (shape) removed:        pass 22  fail 1
+court guard (revert-only) removed:  pass 14  fail 1
+court guard (shape) removed:        pass 14  fail 1
+restored:                          pass 38  fail 0
+```
+
+Three fixtures had to be made truthful rather than tolerant: `openBounty`'s and
+`forecast`'s fake chains now answer `court()` with the zero address (their
+bounties genuinely name none) instead of relying on the reader to swallow an
+unmodelled call, and the `WorkSnapshot` literals in three tests carry the new
+flag.
+
+#### Gates after the change
+
+- core launchpad suite: **454 passed, 0 failed**
+- `pnpm -C web test`: **2581 passed, 0 failed**
+- `pnpm -C web typecheck`: clean
+- `just web-check`: **exit 0** (biome, copy, px-text, kinds, templates, knip)
+- `WorkTab.tsx` is **999 lines**, inside the 1000-line gate (the note lives in its
+  own `PanelUnreadableNote.tsx`)

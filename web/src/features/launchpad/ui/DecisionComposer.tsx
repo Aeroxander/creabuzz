@@ -462,6 +462,20 @@ export function DecisionComposer({
       ) : null}
       {open ? (
         <div className="mt-3">
+          {ctx.work?.milestonePanelUnreadable ? (
+            // Which budget judges the team's milestones did not come back.
+            // Saying nothing would let the panel be offered as an ordinary
+            // budget, which is a claim about the DAO we cannot make.
+            <p
+              className="mb-2 text-sm text-muted-foreground"
+              data-testid="decision-panel-unreadable"
+              role="status"
+            >
+              Couldn&apos;t read which budget is this DAO&apos;s milestone
+              panel, so the forms below may offer it as an ordinary budget.
+              Reload to try again.
+            </p>
+          ) : null}
           {ctx.fundingTerms?.kind === "unreadable" ? (
             // The funding form needs the DAO's funding-terms contract. Without
             // it the form is not offered — but saying nothing would read as

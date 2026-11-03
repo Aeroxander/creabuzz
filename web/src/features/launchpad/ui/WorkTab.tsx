@@ -74,6 +74,7 @@ import { useWorkBounties } from "../use-work-bounties";
 import { WorkAreaBounties } from "./WorkAreaBounties";
 import { HowItWorks } from "./HowItWorks";
 import { BudgetWorkAreas } from "./BudgetWorkAreas";
+import { PanelUnreadableNote } from "./PanelUnreadableNote";
 import { BudgetFigures } from "./BudgetFigures";
 import { ReviewActions } from "./ReviewActions";
 import { ClaimReviewNote } from "./ClaimReviewNote";
@@ -473,6 +474,7 @@ export function WorkTab({
             onSendBatch={sendBatch}
             wallet={wallet.address}
           />
+          <PanelUnreadableNote work={work.data} />
           {work.data?.mandates.map((mandate) => (
             <MandateCard
               agreementsLane={

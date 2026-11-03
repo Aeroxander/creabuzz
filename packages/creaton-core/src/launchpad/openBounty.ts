@@ -800,21 +800,39 @@ export async function readPostBountyCase(
   };
 }
 
-/** The court a bounty contract names and what an appeal costs; null for none, or a contract made before appeals. */
+/** The contract's own refusal: the function is not there. Never a node's failure. */
+const refused = (error: unknown): boolean =>
+  error instanceof Error && /revert/i.test(error.message);
+
+/**
+ * The court a bounty contract names and what an appeal costs.
+ *
+ * Null only when the bounty genuinely names none: its own refusal (a contract
+ * made before appeals has no `court()`) or the zero address. A node that did not
+ * answer — a timeout, an unreachable or busy node, a reply that is not a 32-byte
+ * word — is passed on, so a failed read can never hide the appeal path by
+ * looking like a bounty that named no court (Review-Proven Rule 1).
+ */
 export async function readPostCourt(
   chain: WorkChain,
   contract: string,
 ): Promise<PostBounties["court"]> {
-  let address: string;
+  let answer: string;
   try {
-    address = addressOf(
-      decodeWord(
-        await chain.call(contract, encodeCall0(OPEN_BOUNTY_SIGNATURES.court)),
-      ),
+    answer = await chain.call(
+      contract,
+      encodeCall0(OPEN_BOUNTY_SIGNATURES.court),
     );
-  } catch {
-    return null;
+  } catch (error) {
+    if (refused(error)) return null;
+    throw error;
   }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(answer)) {
+    throw new Error(
+      `the bounty answered ${answer} for court(), which is not a 32-byte word`,
+    );
+  }
+  const address = addressOf(decodeWord(answer));
   if (/^0x0{40}$/.test(address)) return null;
   const [feeToken, fee] = await Promise.all([
     chain.call(address, encodeCall0("feeToken()")),

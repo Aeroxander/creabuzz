@@ -136,6 +136,13 @@ export interface WorkSnapshot {
    * `mandates` when it could be read.
    */
   milestonePanel: string | null;
+  /**
+   * True when the panel question was not answered (a timeout, an unreachable or
+   * busy node, a reply that is not an address). `milestonePanel` is then null
+   * because we do not know, not because the DAO named none — a failed read is
+   * never "this factory has no panel" (Review-Proven Rule 1).
+   */
+  milestonePanelUnreadable: boolean;
   /** The chain's own clock when this was read. */
   chainTime: number;
   mandates: MandateView[];
@@ -517,23 +524,38 @@ async function readMandate(
 }
 
 /** A DAO's mandates and everything under them. `wallet` is the connected account, if any. */
-/** The mandate the DAO named as its milestone panel, or null: a factory made before panels existed has no such function. */
+/**
+ * What reading the DAO's named milestone panel told us — three answers, never
+ * two. A factory made before panels existed answers with its own refusal
+ * (a revert) or the zero address; a node that did not answer tells us nothing
+ * about the factory, so it is `unreadable` and never "the DAO named none".
+ */
+type MilestonePanelRead =
+  | { kind: "present"; address: string }
+  | { kind: "absent" }
+  | { kind: "unreadable" };
+
 async function readMilestonePanel(
   chain: WorkChain,
   factory: string,
   dao: string,
-): Promise<string | null> {
+): Promise<MilestonePanelRead> {
+  let answer: string;
   try {
-    const panel = decodeAddress(
-      await chain.call(
-        factory,
-        encodeFunctionData(SIGNATURES.milestoneMandate, ["address"], [dao]),
-      ),
+    answer = await chain.call(
+      factory,
+      encodeFunctionData(SIGNATURES.milestoneMandate, ["address"], [dao]),
     );
-    return /^0x0+$/.test(panel) ? null : panel.toLowerCase();
-  } catch {
-    return null;
+  } catch (error) {
+    // Only the factory's own refusal means "no such function here".
+    return isRevert(error) ? { kind: "absent" } : { kind: "unreadable" };
   }
+  // An empty or short answer is a read we do not have, not a zero address.
+  if (!/^0x[0-9a-fA-F]{64}$/.test(answer)) return { kind: "unreadable" };
+  const panel = decodeAddress(answer);
+  return /^0x0+$/.test(panel)
+    ? { kind: "absent" }
+    : { kind: "present", address: panel.toLowerCase() };
 }
 
 export async function readWork(
@@ -556,7 +578,9 @@ export async function readWork(
     const decoded = decodeMandateCreated(log as never);
     return decoded ? [decoded] : [];
   });
-  const milestonePanel = await readMilestonePanel(chain, factory, dao);
+  const panelRead = await readMilestonePanel(chain, factory, dao);
+  const milestonePanel =
+    panelRead.kind === "present" ? panelRead.address : null;
   // The panel is read whatever else was made after it: it is the one that matters for the team's Shares.
   const recent = created.slice(-MAX_MANDATES);
   const panelCreated = milestonePanel
@@ -575,6 +599,7 @@ export async function readWork(
   return {
     dao,
     milestonePanel,
+    milestonePanelUnreadable: panelRead.kind === "unreadable",
     chainTime,
     mandates,
     truncated:

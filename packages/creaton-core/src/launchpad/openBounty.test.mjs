@@ -309,6 +309,9 @@ function fakeChain({ tamperWords = false } = {}) {
         data === encodeCall0(OPEN_BOUNTY_SIGNATURES.currency)
       )
         return words(BigInt(USDC));
+      // This bounty names no court: the contract answers the zero address.
+      if (to === BOUNTY && data === encodeCall0(OPEN_BOUNTY_SIGNATURES.court))
+        return words(0);
       if (to === USDC && data === encodeCall0("decimals()")) return words(6);
       if (to === USDC && data === encodeCall0("symbol()")) {
         return `0x${word(32)}${word(4)}${Buffer.from("USDC").toString("hex").padEnd(64, "0")}`;
@@ -627,4 +630,50 @@ test("only a claimant appeals, and not while their claim is with the court", () 
   const open = withCourt({ appeal: appealed("open") });
   assert.equal(walletCan(open, claimant, open.deadline).withdrawClaim, false);
   assert.equal(walletCan(open, claimant, open.deadline).appeal, false);
+});
+
+test("a court read that got no answer fails the read, never hides the appeal path", async () => {
+  const base = fakeChain();
+  const courtData = encodeCall0(OPEN_BOUNTY_SIGNATURES.court);
+  const withCourtAnswer = (answer) => ({
+    ...base,
+    call: async (to, data) => {
+      if (to === BOUNTY && data === courtData) {
+        if (answer instanceof Error) throw answer;
+        return answer;
+      }
+      return base.call(to, data);
+    },
+  });
+
+  // The node did not answer. A bounty that names a court would then be shown
+  // with no appeal path at all, which is a claim we cannot make from silence.
+  await assert.rejects(
+    () =>
+      readPostBounties(
+        withCourtAnswer(new Error("The chain node did not answer in time.")),
+        BOUNTY,
+        POST,
+        BEN,
+        keccak,
+      ),
+    /did not answer in time/,
+    "a failed court read must not read as a bounty with no court",
+  );
+
+  // A reply that is not one 32-byte word is the same: not a claim about the bounty.
+  await assert.rejects(
+    () => readPostBounties(withCourtAnswer("0x"), BOUNTY, POST, BEN, keccak),
+    /not a 32-byte word/,
+  );
+
+  // The contract's own refusal IS "this bounty has no court", and stays a read.
+  const read = await readPostBounties(
+    withCourtAnswer(new Error("execution reverted")),
+    BOUNTY,
+    POST,
+    BEN,
+    keccak,
+  );
+  assert.equal(read.court, null);
 });
