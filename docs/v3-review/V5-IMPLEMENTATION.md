@@ -624,3 +624,49 @@ worktree at `8fecc3258` with its own target dir ran it and got
 `FAILED … finished in 10.11s`, same panic line. So it is an existing
 environment/behaviour failure, not a regression from this work, and it is left
 for the mesh owners rather than papered over.
+
+## Repo-wide unit gate and a wallet-signed journey
+
+### `cargo test --workspace --exclude buzz-voice --no-fail-fast`
+
+**6230 passed, 12 failed, 1380 ignored** across the workspace's test binaries
+(`buzz-voice` alone is excluded: its `sherpa-onnx-sys` build script needs a
+download this host cannot make). Per-binary highlights: `buzz_acp` 1074/0,
+`buzz_cli` 771/0, `buzz_relay` 1623/1, `buzz_core` 350/0, `buzz_sdk` 338/0,
+`buzz_auth` 261/0, `buzz_db` 168/0 (+515 ignored, they need Postgres),
+`buzz_workflow` 175/0, `buzz_media` 166/0, `buzz_backend_kubernetes` 157/0.
+
+The 12 failures sit in four binaries, in crates this branch does not touch:
+
+| crate | failures | cause |
+|---|---|---|
+| `buzz-agent` | 9 (`databricks::tests::…`) | `NetworkUnavailable` — these OAuth/catalog tests need real HTTP |
+| `buzz-relay` | 1 (`api::mesh_demo::…`) | echo timeout; **proven to fail identically at base `8fecc3258`** |
+| `buzz-feature-flags` | 1 (`relay_artifact_provider_features_require_exactly_one_selection`) | "expected static to compile successfully" — it compiles a fixture at test time |
+| `git-sign-nostr` | 1 (`test_parse_envelope_rejects_invalid_oa_pubkey`) | parser assertion; crate untouched by this branch |
+
+`git diff --name-only 8fecc3258..HEAD` is empty for `buzz-agent`,
+`buzz-feature-flags` and `git-sign-nostr`, so none of those failures can come
+from this work.
+
+### The same journey with a wallet signing in the browser
+
+`scripts/v5-demo-wallet-journey.mjs` drives the real screens with
+`window.ethereum` backed by the demo chain's unlocked anvil accounts:
+
+- **propose** — the manager opens the proposal form, fills the work area, the
+  deliverable, the area's exact criteria words, the beneficiary, the quantity
+  and a deadline, and sends it: the card reads
+  `Offered, waiting for the named person`;
+- **accept** — the beneficiary signs and the card reads
+  `Agreed; the quantity is reserved`;
+- **submit** — **blocked**, and this is a real finding: the submission form only
+  renders once the work's words are published beside the chain record, and the
+  proposal's publish affordance did not appear after sending (the relay holds
+  zero `47003` updates from the launch author). The card correctly says the words
+  "are not published here" and offers no form. So the manager's publish step is
+  missing from the flow as shipped, and the beneficiary cannot submit from the
+  app until it exists.
+
+Screenshots: `wallet-1-proposed.png` (105 KB) and `wallet-2-accepted.png`
+(111 KB), distinct hashes.
