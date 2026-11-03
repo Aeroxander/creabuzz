@@ -780,3 +780,23 @@ Screenshots: `wallet-1-proposed.png` (102 KB), `wallet-2-accepted.png`
 The root cause of every earlier attempt was the identity format: the app accepts
 a 64-hex key (re-encrypted NIP-49 on read) or an `ncryptsec1` blob, never a
 bech32 `nsec1…`. With the hex key the same journey completes.
+
+### The last unproven workspace failure, proven pre-existing
+
+`git-sign-nostr`'s `tests::test_parse_envelope_rejects_invalid_oa_pubkey` was the
+one failing test whose pre-existence had not been demonstrated. A detached
+worktree at base `8fecc3258`, with its own target directory:
+
+```
+$ cargo test -p git-sign-nostr --lib tests::test_parse_envelope_rejects_invalid_oa_pubkey
+thread 'tests::test_parse_envelope_rejects_invalid_oa_pubkey' panicked at
+  crates/git-sign-nostr/src/lib.rs:2136:9:
+assertion failed: result.is_err()
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 55 filtered out
+```
+
+Same test, same file, same line, same assertion as on this branch — and this
+branch changes no file in that crate. So all four failing crates
+(`buzz-agent`, `buzz-relay`, `buzz-feature-flags`, `git-sign-nostr`) are now
+either proven pre-existing or proven untouched-and-environment-bound; none is a
+regression from this work. The base worktree was removed afterwards.
