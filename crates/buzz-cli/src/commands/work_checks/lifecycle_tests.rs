@@ -22,7 +22,9 @@ use std::time::{Duration, Instant};
 use super::checks::{CheckSpec, RunnerOptions};
 use super::sandbox;
 use super::sandbox_ops as ops;
-use super::tests::{checks_decls, docker_available, docker_lock, opts, FIXTURE_IMAGE};
+use super::tests::{
+    checks_decls, docker_available, docker_lock, fixture_image_available, opts, FIXTURE_IMAGE,
+};
 
 /// Make an executable shell-script stand-in for the docker CLI with the
 /// given body. Nothing on the host is affected beyond one leaked temp dir.
@@ -959,6 +961,12 @@ fn the_deadline_survives_host_cli_death_during_a_malicious_stop() {
 fn an_untrusted_helper_is_refused_fail_closed() {
     if !docker_available() {
         eprintln!("skip: docker not available");
+        return;
+    }
+    if !fixture_image_available() {
+        eprintln!(
+            "skip: the fixture image {FIXTURE_IMAGE} is not on this machine (nothing is pulled)"
+        );
         return;
     }
     let _guard = docker_lock();

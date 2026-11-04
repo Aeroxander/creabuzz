@@ -50,6 +50,19 @@ pub(super) fn docker_available() -> bool {
 
 pub(super) const FIXTURE_IMAGE: &str = "alpine:3.20";
 
+/// Whether the fixture image is already on this machine. Nothing is ever pulled, so a test that uses the image
+/// directly (not through `supervisor_fixture`, which already skips) skips when it is absent, as it does without docker.
+pub(super) fn fixture_image_available() -> bool {
+    std::process::Command::new("docker")
+        .args(["image", "inspect", FIXTURE_IMAGE])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 /// The trusted supervisor fixture, built ONCE OFFLINE per test process from
 /// this repo's own source (`scripts/check-supervisor.rs`) by the offline
 /// build script (cached rust image, cached alpine smoke check, no pulls).
