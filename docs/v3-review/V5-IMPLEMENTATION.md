@@ -380,6 +380,35 @@ Noted, not resolved here: Foundry 1.4.3 produces different bytecode for
 artifact was stale. The deployment path is the larger number, so the limits hold
 either way, but a reproducible-artifact check for that contract remains open.
 
+### Size budgets (reference table, measured 2026-11-04)
+
+One reference build path: **`forge script` through `./scripts/v5-local-fixture.sh`**,
+read back from a local anvil node. It is the path that actually deploys, and it
+gives the larger `ActivationVoting` number (23,687 against 23,446 from
+`forge build`), so quote that one. Creation payloads include constructor
+arguments; limits are EIP-3860 49,152 (creation) and EIP-170 24,576 (runtime).
+
+| Contract | Creation payload | Spare | Runtime | Spare |
+|---|---|---|---|---|
+| `TreasuryMandateFactory` | **49,129** | **23** | 21,086 | 3,490 |
+| `Summoner` | 47,901 | 1,251 | 1,970 | 22,606 |
+| Moloch (implementation) | 45,661 | 3,491 | **23,970** | **606** |
+| `SecondaryMarketFactory` | 30,731 | 18,421 | 17,087 | 7,489 |
+| `ContributorKitV2` | 30,029 | 19,123 | 15,792 | 8,784 |
+| `ActivationVoting` (implementation) | 23,886 | 25,266 | 23,687 | 889 |
+| `SecondaryMarket` | 14,588 | 34,564 | 13,413 | 11,163 |
+| Shares (implementation) | 12,842 | 36,310 | 12,824 | 11,752 |
+
+The tightest limits are the mandate factory's creation payload (23 bytes) and
+Moloch's runtime (606 bytes). No other gate checks sizes, and Foundry tests waive
+both limits for `new`, so any change that touches `TreasuryMandate`, `ClaimStake`,
+`ActivationVoting`, Moloch or Shares, or their factories, must re-run
+`./scripts/v5-local-fixture.sh` and update this table. The script needs `anvil`,
+`cast`, `forge`, `jq`, `python3` and `curl`, keeps its scratch files under
+`$TMPDIR` (or `/tmp`) and removes them on exit; its self-test is
+`scripts/test-v5-local-fixture.sh`, which also proves that Ctrl-C and `SIGTERM`
+stop a demo world (chain and web server) instead of leaving it running.
+
 ### Real CLI run of the artifact check
 
 The built CLI was run against a fixture artifact with three declared checks

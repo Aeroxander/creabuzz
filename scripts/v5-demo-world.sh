@@ -24,6 +24,8 @@
 #
 # Usage: ./scripts/v5-demo-world.sh
 # Env:   V5_DEMO_RELAY (default http://127.0.0.1:3030), V5_DEMO_WEB_PORT (default 5173)
+#        V5_DEMO_RELAY must be on this machine (it signs launch records with a public key);
+#        V5_DEMO_ALLOW_REMOTE_RELAY=1 overrides that on purpose.
 
 set -euo pipefail
 

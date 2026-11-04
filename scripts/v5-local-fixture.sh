@@ -6,13 +6,44 @@
 #
 # Safety: loopback only (127.0.0.1), chain id 31337, well-known anvil fixture keys hardcoded below,
 # no .env read, no stored wallet, no real funds. It kills only the anvil process it started (captured
-# PID, `trap` on exit) — never `pkill`, never a port it did not bind.
+# PID, `trap` on exit) — never `pkill`, never a port it did not bind. Its scratch directory (under $TMPDIR, or
+# /tmp) is removed on exit; set V5_FIXTURE_KEEP_RUN=1 to keep it for inspection.
+#
+# Demo mode (V5_DEMO=1, see scripts/v5-demo-world.sh) publishes launch records signed with the public anvil
+# founder key, so it only talks to a relay on this machine unless V5_DEMO_ALLOW_REMOTE_RELAY=1 says otherwise.
+# Self-test: scripts/test-v5-local-fixture.sh.
 set -euo pipefail
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+for TOOL in anvil cast forge jq python3 curl; do
+  command -v "$TOOL" >/dev/null || fail "missing tool: $TOOL"
+done
+
+# --- demo mode only talks to a relay on this machine (checked before anything starts) ----------
+if [[ "${V5_DEMO:-}" == "1" && "${V5_DEMO_ALLOW_REMOTE_RELAY:-}" != "1" ]]; then
+  [[ "${V5_DEMO_RELAY:-http://127.0.0.1:3030}" =~ ^https?://(127\.[0-9]+\.[0-9]+\.[0-9]+|localhost|\[::1\])(:[0-9]+)?(/|$) ]] \
+    || fail "V5_DEMO_RELAY must be a relay on this machine (127.x.x.x, localhost or [::1]); this demo signs launch records with a public key. Set V5_DEMO_ALLOW_REMOTE_RELAY=1 to override."
+fi
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CONTRACTS="$ROOT/contracts"
-TMPROOT=/private/var/folders/dp/7wgk6ts95jlfk8m4qmft73g40000gn/T/opencode
-RUN=$(mktemp -d "$TMPROOT/v5-local-fixture.XXXXXX")
+RUN=$(mktemp -d "${TMPDIR:-/tmp}/v5-local-fixture.XXXXXX")
+ANVIL_PID=""
+
+# Stops what this script started and removes its scratch directory. Installed before anything is started, so it
+# is safe at any point. INT and TERM exit (a signal trap that returns would resume the interrupted command), and
+# the EXIT trap then runs this.
+cleanup() {
+  if [[ -n "$ANVIL_PID" ]] && kill -0 "$ANVIL_PID" 2>/dev/null; then
+    kill "$ANVIL_PID" 2>/dev/null || true
+    wait "$ANVIL_PID" 2>/dev/null || true
+  fi
+  [[ "${V5_FIXTURE_KEEP_RUN:-}" == "1" ]] || rm -rf "$RUN"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Build output stays out of the worktree.
 export FOUNDRY_OUT="$RUN/out"
@@ -31,8 +62,6 @@ REVIEWER_B=0x90F79bf6EB2c4f870365E785982E1f101E93b906 # anvil account 3
 DEPLOYER=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266       # anvil account 0
 FOUNDER=0x70997970C51812dc3A010C7d01b50e0d17dc79C8        # anvil account 1
 
-fail() { echo "FAIL: $*" >&2; exit 1; }
-
 # --- a free high loopback port, then anvil bound to exactly that port -------------------------
 PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
 # Foundry's HTTP client panics in this sandbox (macOS system-configuration returns NULL), so the
@@ -41,13 +70,6 @@ RPC="ws://127.0.0.1:$PORT"
 
 anvil --host 127.0.0.1 --port "$PORT" --chain-id 31337 --silent >"$RUN/anvil.log" 2>&1 &
 ANVIL_PID=$!
-cleanup() {
-  if kill -0 "$ANVIL_PID" 2>/dev/null; then
-    kill "$ANVIL_PID" 2>/dev/null || true
-    wait "$ANVIL_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT INT TERM
 
 for _ in $(seq 1 100); do
   if cast chain-id --rpc-url "$RPC" >/dev/null 2>&1; then break; fi
@@ -73,7 +95,13 @@ V5_REVIEWER_A="$REVIEWER_A" V5_REVIEWER_B="$REVIEWER_B" \
 SUMMARY=$(grep -o 'FIXTURE_JSON {.*}' "$RUN/script.log" | head -1 | sed 's/^FIXTURE_JSON //')
 [ -n "$SUMMARY" ] || fail "the fixture did not print its summary line"
 echo "$SUMMARY" | jq . >"$RUN/summary.json"
-addr() { echo "$SUMMARY" | jq -r ".$1"; }
+# One address out of the summary; a missing key (jq's "null") or anything but an address stops the run, naming the key.
+addr() {
+  local value
+  value=$(echo "$SUMMARY" | jq -r ".$1 // empty")
+  [[ "$value" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "the fixture summary has no address for '$1' (got '$value')"
+  echo "$value"
+}
 
 KIT=$(addr kit)
 MARKET_FACTORY=$(addr marketFactory)
@@ -254,19 +282,22 @@ if [[ "${V5_DEMO:-}" == "1" ]]; then
     node "$ROOT/scripts/v5-demo-token-plan.mjs" || fail "could not set the DAO token plan on the record"
   # The factory, so the app can find this DAO's market with `marketOf(dao)`. Trading is still off:
   # the market exists from launch and sells nothing until a listing is published.
+  # `exec` makes vite itself the background process, so VITE_PID is vite and not the subshell around it.
   ( cd "$ROOT/web" && VITE_LAUNCHPAD_CHAIN_ID=31337 \
       VITE_SECONDARY_MARKET_FACTORY="{\"31337\":\"$MARKET_FACTORY\"}" \
-      node_modules/.bin/vite --host 127.0.0.1 --port "$WEB_PORT" --strictPort \
+      exec node_modules/.bin/vite --host 127.0.0.1 --port "$WEB_PORT" --strictPort \
       >"$RUN/vite.log" 2>&1 ) &
   VITE_PID=$!
+  IDLE_PID=""
   cleanup_demo() {
     kill "$VITE_PID" 2>/dev/null || true
     wait "$VITE_PID" 2>/dev/null || true
+    [[ -z "$IDLE_PID" ]] || kill "$IDLE_PID" 2>/dev/null || true
     cleanup
     echo
     echo "[demo] stopped (chain and web server are down)"
   }
-  trap cleanup_demo EXIT INT TERM
+  trap cleanup_demo EXIT
   for _ in $(seq 1 60); do
     curl -sf -m 2 "http://127.0.0.1:${WEB_PORT}/" >/dev/null 2>&1 && break
     sleep 1
@@ -302,7 +333,12 @@ Demo world is up. Ctrl-C here stops the chain and the web server.
   window anyone settles and the record shows the exact recipients.
 ────────────────────────────────────────────────────────────────────────────
 INFO
-  while true; do sleep 30; done
+  # `wait` (unlike a foreground `sleep`) returns as soon as a trapped signal arrives, so Ctrl-C stops the demo at once.
+  while true; do
+    sleep 30 &
+    IDLE_PID=$!
+    wait "$IDLE_PID" || true
+  done
 fi
 
 cleanup
@@ -311,5 +347,5 @@ if kill -0 "$ANVIL_PID" 2>/dev/null; then
   fail "anvil pid $ANVIL_PID is still alive"
 fi
 echo "  anvil pid $ANVIL_PID is gone"
-echo "  run directory: $RUN"
+if [[ "${V5_FIXTURE_KEEP_RUN:-}" == "1" ]]; then echo "  run directory kept: $RUN"; else echo "  run directory removed: $RUN"; fi
 echo "PASS: creation version deploys and launches inside the real EVM limits on local anvil"

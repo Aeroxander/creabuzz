@@ -106,6 +106,8 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - name: The pinned compiler
         run: scripts/ensure-solc.sh && forge --version
+      - name: The size-limit fixture's own self-test (local anvil)
+        run: scripts/test-v5-local-fixture.sh
 
       - name: Get pnpm store directory
         id: pnpm-cache
