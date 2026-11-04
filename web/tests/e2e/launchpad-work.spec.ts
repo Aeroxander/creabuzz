@@ -272,7 +272,7 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
     { timeout: 60_000 },
   );
   await expect(second.getByTestId("work-claim-status")).toContainText(
-    "Approved",
+    "Review complete",
   );
 
   // ── nothing is payable inside the window, even for the contributor ─────────
@@ -309,7 +309,7 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   );
   // The award is the DAO's vote: the page sends the member to the Decisions tab to open it.
   await expect(contributor.getByTestId("work-award-help")).toContainText(
-    "Awarding Shares is a decision the DAO votes on",
+    "awarding Shares for it is a discretionary decision the DAO votes on",
   );
   await expect(contributor.getByTestId("work-failure")).toHaveCount(0);
 

@@ -113,6 +113,9 @@ PILOT=(
 # features, a community of your own (self-serve) is off on the pilot server, and the Shares transfer-validator journey is
 # the LBAMM evaluation's (its lock-guard steps still run here, nightly).
 LATER=(
+  web-project-story-e2e
+  work-check-query-e2e
+  v5-local-fixture
   cli-milestone-e2e
   web-record-e2e
   web-milestone-e2e
@@ -122,6 +125,8 @@ LATER=(
   web-economy-e2e
   web-sepolia-fork-e2e
   web-rounds-e2e
+  web-trading-e2e
+  secondary-keeper-e2e
   web-post-bounty-e2e
   web-self-serve-e2e
   shares-erc20c-e2e
@@ -193,6 +198,8 @@ journey_ports() {
     shares-erc20c-e2e) ;;
     # The pilot build, from a folder of its own, against a stubbed server.
     web-pilot-e2e) echo 4186 ;;
+    web-project-story-e2e) echo 4196 ;;
+    work-check-query-e2e) ;; # Allocates its own loopback ports; no fixed port dependency.
     *) echo 4173 ;;
   esac
 }

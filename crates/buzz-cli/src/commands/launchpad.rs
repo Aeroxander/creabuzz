@@ -652,6 +652,55 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             verdict,
             tx,
         } => cmd_verdict(client, &id, &claim_id, &verdict, &tx).await,
+        LaunchpadCmd::WorkChecks {
+            launch,
+            launch_author,
+            claim,
+            mandate,
+            evidence_hash,
+            check_text,
+            check_hash,
+            work_area_text,
+            work_area_hash,
+            checks,
+            dir,
+            timeout_secs,
+            total_cap_secs,
+            output_cap_bytes,
+            env,
+            summarize,
+            model,
+            no_publish,
+            sandbox_image,
+            sandbox_supervisor,
+        } => {
+            crate::commands::work_checks::cmd_work_checks(
+                &crate::commands::work_checks::WorkChecksArgs {
+                    launch,
+                    launch_author,
+                    claim,
+                    mandate,
+                    evidence_hash,
+                    check_text,
+                    check_hash,
+                    work_area_text,
+                    work_area_hash,
+                    checks_file: checks,
+                    dir,
+                    timeout_secs,
+                    total_cap_secs,
+                    output_cap_bytes,
+                    envs: env,
+                    summarize,
+                    model,
+                    no_publish,
+                    sandbox_image,
+                    sandbox_supervisor,
+                },
+                client,
+            )
+            .await
+        }
         LaunchpadCmd::RecordReceipt { id, table, tx } => {
             let owner = client.keys().public_key().to_hex();
             let tx_tag = Tag::parse(["tx", tx.as_str()])

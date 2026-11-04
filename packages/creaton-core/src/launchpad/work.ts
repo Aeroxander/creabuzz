@@ -300,6 +300,7 @@ const CLAIM_STATUSES = [
   "Paid",
   "Recovered",
   "Expired",
+  "Retired",
 ] as const;
 export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
 
@@ -722,6 +723,12 @@ export function nextStep(
         who: "nobody",
         // The contract zeroes the stake when it settles, so whether there was a deposit is not readable here.
         text: "Turned down by the reviewers. To try again, fix the work and submit it under a new name.",
+      };
+    case "Retired":
+      return {
+        kind: "none",
+        who: "nobody",
+        text: "Replaced by a new submission. This attempt cannot earn another reward or receive more reviews.",
       };
     case "Expired":
       return {

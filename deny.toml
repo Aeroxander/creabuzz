@@ -33,6 +33,7 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "zip 8.6.0 via buzz-mesh-smoke → mesh-llm v0.76.2; manual entry copy, never extracts; fix in unreleased mesh-llm#2471" },
     { id = "RUSTSEC-2026-0368", reason = "zip 8.6.0 via buzz-mesh-smoke → mesh-llm v0.76.2; manual entry copy, never extracts; fix in unreleased mesh-llm#2471" },
     { id = "RUSTSEC-2026-0369", reason = "zip 8.6.0 via buzz-mesh-smoke → mesh-llm v0.76.2; manual entry copy, never extracts; fix in unreleased mesh-llm#2471" },
+    { id = "RUSTSEC-2026-0429", reason = "zip 8.6.0 via buzz-mesh-smoke → mesh-llm v0.76.2; the bug is in ZipArchive::extract, which mesh-llm never calls (no extract or ZipStreamReader call at the pinned commit a0c1e66, checked 2026-11-04); recheck on the mesh-llm bump" },
     # zbus 5 D-Bus crates (zvariant, zbus_names, zvariant_derive) — unmaintained,
     # not vulnerable. Only path: buzz-mesh-smoke → mesh-llm → keyring 4 →
     # zbus-secret-service-keyring-store / secret-service 5 → zbus 5.

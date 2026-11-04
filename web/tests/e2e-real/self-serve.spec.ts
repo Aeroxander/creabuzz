@@ -1,4 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import { closeOwnPages, ownPage } from "../e2e/helpers/own-browser";
+
+// Every browser `ownPage` launches is closed after each test, however it ends.
+test.afterEach(closeOwnPages);
 import { generateSecretKey } from "nostr-tools/pure";
 
 /**
@@ -74,7 +78,7 @@ test("a person starts a community, owns it, and sets up a team in it", async ({
   });
 
   // A second person cannot take the same name, and is told so in words.
-  const other = await browser.newPage();
+  const other = await ownPage(browser);
   await signInAsNewAccount(other);
   await createCommunity(other, name);
   await expect(other.getByTestId("community-create-error")).toHaveText(

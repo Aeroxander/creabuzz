@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { wizardToPublish } from "../helpers/wizard";
-import { getPublicKey } from "nostr-tools/pure";
+import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import { PREVIEW_ORIGIN } from "./mock-relay";
 
 /**
@@ -8,11 +8,11 @@ import { PREVIEW_ORIGIN } from "./mock-relay";
  * made-up pubkey meant it never rendered. The seed is the fixed test key.
  */
 const FOUNDER_NSEC = "22".repeat(32);
-const FOUNDER = getPublicKey(
-  Uint8Array.from(FOUNDER_NSEC.match(/.{2}/g) ?? [], (byte) =>
-    Number.parseInt(byte, 16),
-  ),
+const FOUNDER_SECRET = Uint8Array.from(
+  FOUNDER_NSEC.match(/.{2}/g) ?? [],
+  (byte) => Number.parseInt(byte, 16),
 );
+const FOUNDER = getPublicKey(FOUNDER_SECRET);
 
 /** The launch page folds its contract addresses, proofs and raw record counts under one heading; open it to read them. */
 async function openTechnicalDetails(page: Page) {
@@ -81,21 +81,23 @@ function record(auction?: string) {
 }
 
 function scoreRoot() {
-  return {
-    id: "score-root-1",
-    pubkey: FOUNDER,
-    created_at: 300,
-    kind: 37006,
-    tags: [["d", "trustgraphs.output.nostr-member.v1:12"]],
-    content: JSON.stringify({
-      program: "trustgraphs.output.nostr-member.v1",
-      root: `0x${"11".repeat(32)}`,
-      epoch: "12",
-      anchorBlock: 500,
-      indexerUrl: "https://idx.example.com",
-    }),
-    sig: "sig",
-  };
+  // Signed for real: the client checks a score root's id and signature before it shows one (a forged record is
+  // dropped), so a made-up id and "sig" would never reach the card.
+  return finalizeEvent(
+    {
+      kind: 37006,
+      created_at: 300,
+      tags: [["d", "trustgraphs.output.nostr-member.v1:12"]],
+      content: JSON.stringify({
+        program: "trustgraphs.output.nostr-member.v1",
+        root: `0x${"11".repeat(32)}`,
+        epoch: "12",
+        anchorBlock: 500,
+        indexerUrl: "https://idx.example.com",
+      }),
+    },
+    FOUNDER_SECRET,
+  );
 }
 
 function update() {
@@ -634,7 +636,7 @@ test("a published score root is shown as a community data plane", async ({
   );
   await expect(page.getByTestId("launch-score-roots")).toContainText("12");
   await expect(page.getByTestId("launch-score-roots")).toContainText(
-    "Recorded onchain in block 500",
+    "The record asserts chain block 500; it stays unverified",
   );
   await expect(page.getByTestId("launch-score-roots")).toContainText(
     "Scores are published as a signed list",

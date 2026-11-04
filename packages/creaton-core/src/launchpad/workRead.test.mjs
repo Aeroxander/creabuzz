@@ -288,6 +288,7 @@ test("a DAO with no mandates, and a claim nobody can read, are quiet rather than
   assert.deepEqual(empty, {
     dao: DAO,
     milestonePanel: null,
+    milestonePanelUnreadable: false,
     chainTime: 2_000_000_000,
     mandates: [],
     truncated: false,
@@ -462,6 +463,64 @@ test("the mandate a DAO named as its milestone panel is read as that, and a fact
         : base.call(to, data),
   };
   assert.equal((await readWork(zero, DAO, null)).milestonePanel, null);
+});
+
+test('a panel read that got no answer is unreadable, never "this DAO named no panel"', async () => {
+  const base = chain([]);
+  const panelData = encodeFunctionData(
+    SIGNATURES.milestoneMandate,
+    ["address"],
+    [DAO],
+  );
+  /** The base chain, with the panel question answered however `answer` says. */
+  const panelAnswers = (answer) => ({
+    ...base,
+    call: async (to, data) => {
+      if (to === FACTORY && data === panelData) {
+        if (answer instanceof Error) throw answer;
+        return answer;
+      }
+      return base.call(to, data);
+    },
+  });
+
+  // The node did not answer. We do not know which budget judges the team's
+  // milestones, so nothing may read this as "the DAO named none".
+  const silent = await readWork(
+    panelAnswers(new Error("The chain node did not answer in time.")),
+    DAO,
+    null,
+  );
+  assert.equal(silent.milestonePanel, null);
+  assert.equal(
+    silent.milestonePanelUnreadable,
+    true,
+    "a timeout must be unreadable, not an absent panel",
+  );
+
+  // A reply that is not one 32-byte word is the same: not a claim about the factory.
+  for (const short of ["0x", "0x1234"]) {
+    const read = await readWork(panelAnswers(short), DAO, null);
+    assert.equal(
+      read.milestonePanelUnreadable,
+      true,
+      `${short} is not an answer`,
+    );
+    assert.equal(read.milestonePanel, null);
+  }
+
+  // The factory's own refusal is the one thing that means "no such function".
+  const refused = await readWork(
+    panelAnswers(new Error("execution reverted")),
+    DAO,
+    null,
+  );
+  assert.equal(refused.milestonePanel, null);
+  assert.equal(
+    refused.milestonePanelUnreadable,
+    false,
+    "a revert is the factory saying it has no panel, not a failed read",
+  );
 });
 
 test("a bond a reviewer asked back is read as an amount and a time, and nothing pending is none", async () => {

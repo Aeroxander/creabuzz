@@ -25,10 +25,18 @@ import {
   KIND_LAUNCH_RECEIPT,
   KIND_LAUNCH_RECORD,
   KIND_LAUNCH_UPDATE,
-  KIND_SCORE_ROOT,
 } from "../../shared/constants/kinds.ts";
+import {
+  contentObject,
+  int,
+  str,
+  strs,
+  tagValue,
+  tagValues,
+} from "./lib/nostr-fields.ts";
 
 export { launchRemovals, removedLaunchIds } from "./lib/launch-removals.ts";
+export { type ScoreRoot, parseScoreRoot } from "./lib/score-root-model.ts";
 
 export type LaunchStage =
   | "draft"
@@ -251,12 +259,6 @@ type ProposalKind = "plain" | "futarchy-budget" | "signal";
  * shape).
  */
 import type { ProposalIntent } from "./lib/vote-tx.ts";
-import { eventContentObject } from "../../shared/lib/event-fields.ts";
-
-/** The mirror's JSON body; malformed mirrors read as empty and are dropped by the caller. */
-function contentObject(event: NostrEvent): Record<string, unknown> {
-  return eventContentObject(event) ?? {};
-}
 
 export type { ProposalIntent };
 
@@ -331,29 +333,8 @@ export interface Launch {
   receipts: LaunchReceipt[];
 }
 
-function tagValue(event: NostrEvent, name: string): string | null {
-  const tag = event.tags.find((t) => t[0] === name);
-  return tag && tag.length >= 2 ? tag[1] : null;
-}
-
-function tagValues(event: NostrEvent, name: string): string[] {
-  return event.tags
-    .filter((t) => t[0] === name && t.length >= 2)
-    .map((t) => t[1]);
-}
-
 export function launchCoordinate(author: string, launchId: string): string {
   return `${KIND_LAUNCH_RECORD}:${author}:${launchId}`;
-}
-
-function str(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function int(value: unknown): number | null {
-  return typeof value === "number" && Number.isSafeInteger(value)
-    ? value
-    : null;
 }
 
 /**
@@ -389,12 +370,6 @@ function parseLaunchChat(value: unknown): LaunchChat {
     backers: room(object.backers),
     board: room(object.board),
   };
-}
-
-function strs(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((v): v is string => typeof v === "string")
-    : [];
 }
 
 /**
@@ -904,46 +879,6 @@ export function hasFounderCommitments(record: LaunchRecord): boolean {
     Boolean(record.budget) &&
     Boolean(record.updateCadence)
   );
-}
-
-export interface ScoreRoot {
-  id: string;
-  author: string;
-  createdAt: number;
-  program: string;
-  root: string;
-  epoch: string;
-  indexerUrl: string | null;
-  anchorBlock: number | null;
-}
-
-/**
- * Parse a score-root record (kind 37006, d = program:epoch).
- *
- * A trustgraph operator publishes the proven Merkle root of a community's
- * scores each epoch; clients verify individual score claims against it with
- * `lib/trust-score.ts` (no prover needed). Malformed records are refused
- * rather than shown as authoritative.
- */
-export function parseScoreRoot(event: NostrEvent): ScoreRoot | null {
-  if (event.kind !== KIND_SCORE_ROOT) return null;
-  const id = tagValue(event, "d");
-  if (!id) return null;
-  const body = contentObject(event);
-  const program = str(body.program);
-  const root = str(body.root);
-  const epoch = str(body.epoch);
-  if (!program || !root || !/^0x[0-9a-fA-F]{64}$/.test(root)) return null;
-  return {
-    id,
-    author: event.pubkey,
-    createdAt: event.created_at,
-    program,
-    root,
-    epoch: epoch || id,
-    indexerUrl: str(body.indexerUrl),
-    anchorBlock: int(body.anchorBlock),
-  };
 }
 
 interface VestingTranche {

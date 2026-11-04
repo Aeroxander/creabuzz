@@ -333,8 +333,11 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   say("the founder launched a project whose milestones go to the holders");
   // Before the buyers can claim, the team is told publishing is not open yet and is offered nothing to send.
   await founder.getByRole("tab", { name: /Milestones/ }).click();
+  // The words come from `challenge-copy.ts`, which is where every sentence about
+  // this flow lives; the assertion checks what the note *means* (publishing is
+  // not open yet), not a paraphrase of it.
   await expect(founder.getByTestId("challenge-publish-note-0")).toContainText(
-    "opens when the buyers can claim",
+    "Publishing opens once buyers can claim",
     { timeout: 30_000 },
   );
   await expect(founder.getByTestId("challenge-publish-0")).toHaveCount(0);

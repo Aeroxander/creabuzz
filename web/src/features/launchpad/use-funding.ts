@@ -10,6 +10,7 @@ import {
 } from "./chain-config";
 import {
   fundingPhase,
+  fundingContractOrThrow,
   readFundingContract,
   readFundingTerms,
 } from "@creaton/core/launchpad/fundingTerms.ts";
@@ -58,15 +59,23 @@ export function useFunding(dao: string, wallet: string | null) {
       const factory = decodeAddress(
         await chain.call(policy, encodeCall0(SIGNATURES.factory)),
       );
-      const contract = await readFundingContract(chain, factory);
-      // A DAO whose summoner predates funding terms has none to show.
+      // A DAO whose summoner genuinely has no funding terms has none to show; a
+      // read that did not complete throws, so the card says it could not read
+      // rather than hiding the section as though the contract were old.
+      const contract = fundingContractOrThrow(
+        await readFundingContract(chain, factory),
+      );
       if (!contract) return null;
       const [terms, now, sharesHex] = await Promise.all([
         readFundingTerms(chain, contract, dao),
         chain.now(),
         chain.call(dao, encodeCall0("shares()")),
       ]);
-      const exchange = await readExchangeIfAny(chain, decodeAddress(sharesHex));
+      // The DAO's own Shares, kept: a funding round sells either these (they vote)
+      // or the DAO's loot (they do not), and the round card names which by
+      // comparing the round's token with this address.
+      const daoShares = decodeAddress(sharesHex);
+      const exchange = await readExchangeIfAny(chain, daoShares);
       const roundsOn =
         exchange !== null &&
         exitExchangeState(exchange, at, now).phase === "on";
@@ -89,6 +98,7 @@ export function useFunding(dao: string, wallet: string | null) {
       return {
         contract,
         rounds: at,
+        shares: daoShares,
         usdc: currency,
         now,
         terms,

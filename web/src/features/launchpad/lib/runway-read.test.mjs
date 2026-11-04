@@ -44,6 +44,7 @@ const claim = (id, status, amount) => ({
 const work = (over = {}) => ({
   dao: DAO,
   milestonePanel: null,
+  milestonePanelUnreadable: false,
   chainTime: 10_000,
   truncated: false,
   mandates: [

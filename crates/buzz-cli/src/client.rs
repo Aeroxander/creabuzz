@@ -920,6 +920,30 @@ impl BuzzClient {
         .await
     }
 
+    /// POST to the relay's AI gateway and return the raw response body.
+    ///
+    /// Used by `buzz launchpad work-checks --summarize` (`/llm/chat/completions`,
+    /// the same service the web helpers reach). One attempt with a caller-sized
+    /// budget: AI answers can be slow, and a failed ask must degrade to "no
+    /// model interpretation", not fail the run that produced it.
+    pub(crate) async fn ask_llm(&self, url: &str, body: Vec<u8>) -> Result<String, CliError> {
+        let auth = sign_nip98(&self.keys, "POST", url, Some(&body))?;
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(120))
+            .connect_timeout(Duration::from_secs(15))
+            .build()?;
+        let resp = self
+            .with_auth_tag(
+                http.post(url)
+                    .header("Authorization", auth)
+                    .header("Content-Type", "application/json")
+                    .body(body),
+            )
+            .send()
+            .await?;
+        self.handle_response(resp).await
+    }
+
     /// Send a state-changing JSON command exactly once. Ambiguous delivery
     /// never invites an automatic re-run with a newly observed version.
     pub async fn post_json_once_authed(

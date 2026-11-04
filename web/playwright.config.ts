@@ -64,6 +64,7 @@ export default defineConfig({
         "**/contributor-journey.spec.ts",
         "**/post-bounty-journey.spec.ts",
         "**/rounds-journey.spec.ts",
+        "**/secondary-trading.spec.ts",
         "**/social-cashtag.spec.ts",
         "**/funding-status.spec.ts",
         // Overlay stacking: the header's blur must not trap popups behind page
@@ -112,16 +113,23 @@ export default defineConfig({
         "**/launchpad-revenue-pledge.spec.ts",
         "**/portfolio.spec.ts",
         "**/tour.spec.ts",
+        // Phase A review: the project front page as one story (one next action, honest window dates, failed reads).
+        "**/v5-project-story.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],
         // Escape hatch for machines whose Chromium is older than the build the
-        // pinned Playwright wants (never `playwright install` for this).
+        // pinned Playwright wants (never `playwright install` for this), or
+        // whose sandbox needs GPU-less headless (PW_CHROMIUM_EXTRA_ARGS, e.g.
+        // `--disable-gpu`).
         ...(process.env.PW_CHROMIUM_PATH
           ? {
               launchOptions: {
                 executablePath: process.env.PW_CHROMIUM_PATH,
-                args: ["--no-sandbox"],
+                args: [
+                  "--no-sandbox",
+                  ...(process.env.PW_CHROMIUM_EXTRA_ARGS?.split(" ") ?? []),
+                ],
               },
             }
           : {}),

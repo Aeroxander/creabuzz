@@ -201,7 +201,10 @@ function FundingTerms({ dao }: { dao: string }) {
               me={sender.wallet.address}
               onSend={sender.send}
               round={round}
-              shares={round.shares}
+              // The DAO's Shares, not the round's token: `roundUnit` names what the
+              // round sells by comparing the two, and comparing the token with itself
+              // always said "Shares" even for a non-voting sale.
+              shares={data.shares}
               side={data.wallet}
             />
           ) : null}

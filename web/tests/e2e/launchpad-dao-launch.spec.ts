@@ -3,6 +3,10 @@ import { getPublicKey } from "nostr-tools/pure";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
 import { wizardToPublish } from "../helpers/wizard";
 import { PREVIEW_ORIGIN } from "./mock-relay";
+import { closeOwnPages, ownPage } from "./helpers/own-browser";
+
+// Every browser `ownPage` launches is closed after each test, however it ends.
+test.afterEach(closeOwnPages);
 
 /**
  * Launch a project into its own DAO from the browser, against a REAL local chain.
@@ -255,9 +259,10 @@ const tag = (event: StoredEvent, name: string) =>
   event.tags.find(([k]) => k === name)?.[1] ?? "";
 
 test("the founder launches a project into its own DAO with one button, and the page saves it", async ({
-  page,
+  browser,
 }) => {
   test.setTimeout(180_000);
+  const page = await ownPage(browser);
   const startBlock = (await head()) + 500;
   const relay = await mockRelay(page, launchRecord(startBlock));
   await installAnvilWallet(page, FOUNDER_WALLET, { rpcUrl: ANVIL_URL });
@@ -397,9 +402,10 @@ test("the founder launches a project into its own DAO with one button, and the p
 });
 
 test("on a test network a launch can wait less for objections, and the lock keeps the waits typed (D138)", async ({
-  page,
+  browser,
 }) => {
   test.setTimeout(180_000);
+  const page = await ownPage(browser);
   const DAY = 86_400;
   const startBlock = (await head()) + 500;
   const relay = await mockRelay(page, launchRecord(startBlock));
@@ -439,9 +445,10 @@ test("on a test network a launch can wait less for objections, and the lock keep
 });
 
 test("a server that refuses the record after the DAO exists is retried without sending the money step again", async ({
-  page,
+  browser,
 }) => {
   test.setTimeout(180_000);
+  const page = await ownPage(browser);
   const startBlock = (await head()) + 500;
   let refuse = true;
   const relay = await mockRelay(page, launchRecord(startBlock), {
@@ -472,9 +479,10 @@ test("a server that refuses the record after the DAO exists is retried without s
 });
 
 test("a reload between the DAO and the record offers to finish saving, never a second launch", async ({
-  page,
+  browser,
 }) => {
   test.setTimeout(180_000);
+  const page = await ownPage(browser);
   const startBlock = (await head()) + 500;
   let refuse = true;
   const relay = await mockRelay(page, launchRecord(startBlock), {
@@ -508,9 +516,10 @@ test("a reload between the DAO and the record offers to finish saving, never a s
 });
 
 test("a browser that forgot the launch finds its DAO on the chain instead of making a second one", async ({
-  page,
+  browser,
 }) => {
   test.setTimeout(180_000);
+  const page = await ownPage(browser);
   const startBlock = (await head()) + 500;
   let refuse = true;
   const record = launchRecord(startBlock);
@@ -557,8 +566,9 @@ test("a browser that forgot the launch finds its DAO on the chain instead of mak
 });
 
 test("a new launch defaults to the project's own Shares on a network that has a launch kit", async ({
-  page,
+  browser,
 }) => {
+  const page = await ownPage(browser);
   await mockRelay(page, launchRecord((await head()) + 500));
   await page.addInitScript(
     ([nsec, rpcUrl]) => {
@@ -581,9 +591,10 @@ test("a new launch defaults to the project's own Shares on a network that has a 
 });
 
 test("a launch made in the wizard, as published, launches into its DAO", async ({
-  page,
+  browser,
 }) => {
   test.setTimeout(180_000);
+  const page = await ownPage(browser);
   const relay = await mockRelay(page, launchRecord((await head()) + 500));
   await installAnvilWallet(page, FOUNDER_WALLET, { rpcUrl: ANVIL_URL });
   await page.addInitScript(
@@ -636,8 +647,9 @@ test("a launch made in the wizard, as published, launches into its DAO", async (
 });
 
 test("with no wallet in the browser the launch is off, and nothing is sent", async ({
-  page,
+  browser,
 }) => {
+  const page = await ownPage(browser);
   const startBlock = (await head()) + 500;
   await mockRelay(page, launchRecord(startBlock));
   await page.addInitScript(
@@ -660,10 +672,10 @@ test("with no wallet in the browser the launch is off, and nothing is sent", asy
 });
 
 test("backers bid, the sale ends, and graduation pays the whole raise to the DAO", async ({
-  page,
-  context,
+  browser,
 }) => {
   test.setTimeout(300_000);
+  const page = await ownPage(browser);
   // The backer holds 1,000,000 of the sale currency (the dev chain funded them).
   expect(await balanceOf(CURRENCY, BACKER)).toBeGreaterThan(
     400_000n * 10n ** 6n,
@@ -691,7 +703,7 @@ test("backers bid, the sale ends, and graduation pays the whole raise to the DAO
 
   // ── A backer bids through the real bid dialog ──────────────────────────────
   await mineTo(startBlock + 2);
-  const backerPage = await context.newPage();
+  const backerPage = await ownPage(browser);
   const backerRelay = await mockRelay(backerPage, launched);
   await installAnvilWallet(backerPage, BACKER, { rpcUrl: ANVIL_URL });
   await backerPage.addInitScript(

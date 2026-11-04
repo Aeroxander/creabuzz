@@ -349,7 +349,7 @@ test("a DAO pays a contributor money for a claim, with a deposit, all from the p
   await refresh(manager, "Work");
   await manager.getByTestId("work-settle").click();
   await expect(manager.getByTestId("work-claim-status")).toContainText(
-    "Approved",
+    "Review complete",
     { timeout: 60_000 },
   );
 

@@ -276,6 +276,9 @@ test("a post bounty's state is read with its earliest run", async () => {
   const chain = {
     now: async () => 2 * DAY,
     call: async (_to, data) => {
+      // This bounty names no court: the contract answers the zero address, so
+      // the court read is a real answer rather than a failed one.
+      if (data === encodeCall0(OPEN_BOUNTY_SIGNATURES.court)) return words(0);
       assert.equal(
         data,
         encodeFunctionData(OPEN_BOUNTY_SIGNATURES.bounties, ["uint256"], [7n]),

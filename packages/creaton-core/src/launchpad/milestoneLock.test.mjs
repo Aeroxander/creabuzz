@@ -155,6 +155,7 @@ const claim = (over = {}, record = {}) => ({
 const work = (...claims) => ({
   dao: DAO,
   milestonePanel: null,
+  milestonePanelUnreadable: false,
   chainTime: 1,
   truncated: false,
   mandates: [{ address: MANDATE, claimsAddress: CLAIMS, claims }],

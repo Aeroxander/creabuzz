@@ -14,6 +14,10 @@ import {
   selectorOf,
 } from "./evmAbi.ts";
 import { hashText, idLabel, idWord } from "./work.ts";
+// The listing vote's own words live beside its calldata (`secondaryListing.ts`), so composing one
+// and reading one back cannot drift apart. The import points this way only: that module takes this
+// file's error type and number formatting, and nothing here runs at its import time.
+import { describeSecondaryListing } from "./secondaryListing.ts";
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const ZERO_ADDRESS = `0x${"0".repeat(40)}`;
@@ -577,6 +581,7 @@ export interface ActionDescription {
     | "close-budget"
     | "slash"
     | "trading"
+    | "secondary-listing"
     | "payouts"
     | "batch"
     | "voting-rules"
@@ -929,6 +934,8 @@ export function describeAction(
 ): ActionDescription {
   const single = describeCall(action, ctx);
   if (single) return single;
+  const listing = describeSecondaryListing(action, ctx);
+  if (listing) return listing;
   const batch = decodeBatch(action.data);
   if (batch) {
     // A work budget with money: approve the factory for exactly the budget, create it, clear the approval. Only that

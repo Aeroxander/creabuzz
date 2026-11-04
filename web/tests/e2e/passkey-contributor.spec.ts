@@ -389,7 +389,7 @@ test("a founder and a contributor with no wallet start a project, do the work an
   await refresh(founder, "Work");
   await founder.getByTestId("work-settle").click();
   await expect(founder.getByTestId("work-claim-status")).toContainText(
-    "Approved",
+    "Review complete",
     { timeout: 120_000 },
   );
 

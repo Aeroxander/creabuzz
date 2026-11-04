@@ -17,6 +17,7 @@ import {
   payDecision,
   projectDecision,
 } from "./daoActions.ts";
+import { secondaryListingDecision } from "./secondaryListing.ts";
 
 const WAD = 10n ** 18n;
 const DAO = "0x00000000000000000000000000000000000000d0";
@@ -652,4 +653,199 @@ test("a decision names people when it is given a way to, and writes the full add
   assert.deepEqual(describeAction(draft, { ...ctx, label }).lines, [
     `To Alex (${R1.slice(0, 6)}…)`,
   ]);
+});
+
+// ---- the secondary-market listing ------------------------------------------------------------------
+//
+// `SecondaryMarket.configureListing` is `onlyDAO`, so publishing a listing is a vote. The golden below is
+// `cast calldata "configureListing(bool,uint128,uint128,uint32)" true 1600000 8000000 64`.
+
+const MARKET = "0x00000000000000000000000000000000000000e5";
+const LISTING = {
+  market: MARKET,
+  enabled: true,
+  minPrice: 1_600_000n,
+  maxPrice: 8_000_000n,
+  levels: 64,
+  quoteDecimals: 6,
+  quoteSymbol: "USDC",
+  lotSize: 40n * WAD,
+};
+
+test("a secondary listing is one call to the DAO's market, as cast encodes it", () => {
+  const d = secondaryListingDecision(LISTING);
+  assert.equal(d.to, MARKET);
+  assert.equal(d.lane, "unrestricted");
+  assert.equal(
+    d.data,
+    "0x1ecf441900000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000186a0000000000000000000000000000000000000000000000000000000000007a12000000000000000000000000000000000000000000000000000000000000000040",
+  );
+  // Turning it off is the same call with no terms, which is what the contract writes.
+  assert.equal(
+    secondaryListingDecision({
+      ...LISTING,
+      enabled: false,
+      minPrice: 0n,
+      maxPrice: 0n,
+      levels: 0,
+    }).data,
+    "0x1ecf44190000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  );
+});
+
+test("a listing says what one price buys, and turning it off says what carries on", () => {
+  const open = secondaryListingDecision(LISTING);
+  assert.equal(
+    open.title,
+    "Open a market for 40 Shares between 1.60 and 8.00 USDC, in 64 price steps",
+  );
+  // The step a voter is agreeing to, worked out rather than left to them.
+  assert.match(open.lines[0], /^Each step is 0\.10 USDC/);
+  assert.ok(
+    open.lines.some((line) => /never reaches a round already open/.test(line)),
+    open.lines.join(" | "),
+  );
+
+  const shut = secondaryListingDecision({
+    ...LISTING,
+    enabled: false,
+    minPrice: 0n,
+    maxPrice: 0n,
+    levels: 0,
+  });
+  assert.equal(
+    shut.title,
+    "Stop new trading rounds (settlement and claims continue)",
+  );
+  assert.ok(
+    shut.lines.some((line) =>
+      /settlement, refunds, returns and claims/.test(line),
+    ),
+    shut.lines.join(" | "),
+  );
+
+  // Without a lot size read, the words say "per lot" rather than inventing what one lot is.
+  const unread = secondaryListingDecision({ ...LISTING, lotSize: undefined });
+  assert.equal(
+    unread.title,
+    "Open a market between 1.60 and 8.00 USDC, in 64 price steps",
+  );
+});
+
+test("a listing vote reads back as the same action, and one the contract would refuse stays unknown", () => {
+  const ctx = { currencyDecimals: 6, currencySymbol: "USDC" };
+  const open = describeAction(secondaryListingDecision(LISTING), ctx);
+  assert.equal(open.kind, "secondary-listing");
+  // Reading a call back knows only what the calldata carries: the lot size is not in it.
+  assert.equal(
+    open.title,
+    "Open a market between 1.60 and 8.00 USDC, in 64 price steps",
+  );
+
+  const shut = describeAction(
+    secondaryListingDecision({
+      ...LISTING,
+      enabled: false,
+      minPrice: 0n,
+      maxPrice: 0n,
+      levels: 0,
+    }),
+    ctx,
+  );
+  assert.equal(shut.kind, "secondary-listing");
+  assert.equal(
+    shut.title,
+    "Stop new trading rounds (settlement and claims continue)",
+  );
+
+  // Without the quote's decimals a price is only put in base units, never in a currency we cannot read.
+  const blind = describeAction(secondaryListingDecision(LISTING), {});
+  assert.match(
+    blind.title,
+    /between 1600000 base units and 8000000 base units/,
+  );
+
+  // A hand-built vote that turns the listing off with terms still only stops new rounds: the contract
+  // writes zeros and ignores whatever terms came with it.
+  const junkOff = `0x1ecf4419${"0".repeat(64)}${"0".repeat(63)}5${"0".repeat(63)}5${"0".repeat(63)}5`;
+  assert.equal(
+    describeAction({ to: MARKET, data: junkOff }, ctx).title,
+    "Stop new trading rounds (settlement and claims continue)",
+  );
+
+  // `configureListing(true, 0, …)` is a call the market reverts: it is not dressed up as a listing.
+  const refusedTerms = `0x1ecf4419${"0".repeat(63)}1${"0".repeat(64)}${"0".repeat(64)}${"0".repeat(64)}`;
+  assert.equal(
+    describeAction({ to: MARKET, data: refusedTerms }, ctx).kind,
+    "unknown",
+  );
+  // A bare selector, or one extra word, is not this function either.
+  assert.equal(
+    describeAction({ to: MARKET, data: "0x1ecf4419" }, ctx).kind,
+    "unknown",
+  );
+  assert.equal(
+    describeAction({ to: MARKET, data: `0x1ecf4419${"0".repeat(64)}` }, ctx)
+      .kind,
+    "unknown",
+  );
+});
+
+test("a listing the market would refuse is refused with the field to fix", () => {
+  refused(
+    () => secondaryListingDecision({ ...LISTING, market: "0x12" }),
+    "market",
+  );
+  // The contract's InvalidTerms: a lowest price above zero, a highest above it, 1 to 64 steps, and a
+  // range its steps divide evenly.
+  refused(
+    () => secondaryListingDecision({ ...LISTING, minPrice: 0n }),
+    "minPrice",
+  );
+  refused(
+    () => secondaryListingDecision({ ...LISTING, maxPrice: 1_600_000n }),
+    "maxPrice",
+  );
+  refused(
+    () => secondaryListingDecision({ ...LISTING, maxPrice: 1_000_000n }),
+    "maxPrice",
+  );
+  refused(
+    () => secondaryListingDecision({ ...LISTING, minPrice: 1n << 128n }),
+    "minPrice",
+  );
+  refused(() => secondaryListingDecision({ ...LISTING, levels: 0 }), "levels");
+  refused(() => secondaryListingDecision({ ...LISTING, levels: 65 }), "levels");
+  refused(
+    () => secondaryListingDecision({ ...LISTING, levels: 2.5 }),
+    "levels",
+  );
+  // 6_400_000 base units cannot be cut into three whole steps.
+  refused(() => secondaryListingDecision({ ...LISTING, levels: 3 }), "levels");
+  // Turning it off carries no terms, so terms sent with it are refused rather than ignored.
+  refused(
+    () =>
+      secondaryListingDecision({
+        ...LISTING,
+        enabled: false,
+        maxPrice: 0n,
+        levels: 0,
+      }),
+    "enabled",
+  );
+  refused(
+    () =>
+      secondaryListingDecision({
+        ...LISTING,
+        enabled: false,
+        minPrice: 0n,
+        maxPrice: 0n,
+      }),
+    "enabled",
+  );
+  // A quote whose decimals nobody read cannot have prices put in words.
+  refused(
+    () => secondaryListingDecision({ ...LISTING, quoteDecimals: -1 }),
+    "quoteDecimals",
+  );
 });

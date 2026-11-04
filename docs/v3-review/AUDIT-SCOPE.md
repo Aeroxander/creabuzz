@@ -440,3 +440,129 @@ milestone-panel claim (always zero-amount) can be moved to `Paid` by anyone afte
 whose payout step now lets anyone try (`work.payoutByAnyone`), with a quarter of generated claims asking no money. Five
 hand mutations of the new guards each failed a test; `scripts/contracts-mutation-check.mjs` should gain them once the
 change is committed.
+
+## 13. Agreed contribution rewards (2026-11-02, not deployed)
+
+Development spec [AWARD-MECHANICS-SPEC.md](AWARD-MECHANICS-SPEC.md), implemented and re-reviewed on
+`v5-governance-rework`. Not deployed, no address or manifest changed; the pilot keeps the deployed contracts. The
+discretionary _rewards-after-delivery_ path is unchanged (`awardContribution` keeps `onlyDAO`); this adds the
+agreed-before-delivery regime for Share budgets, gated by factory provenance, with the terms-bound settlement as
+the ONLY award path for an agreed delivery.
+
+**`TreasuryMandate` — additions (additive; every pre-existing function keeps its behaviour).**
+- Records and counters: `agreements` (13-field public record), `splits` (declared split, public getter), outstanding
+  `sharesReserved` (per work area) and `sharesReservedTotal` (mandate-wide), `mandateSharesAwarded` (both lanes),
+  and `agreementOfClaim` (a permanent claim→agreement pointer; a claim a mandate takes once is that mandate's
+  delivery history). Legacy `consumeContribution` now subtracts the outstanding reservation from the area ceiling,
+  maintains `mandateSharesAwarded`, and REFUSES any agreement-linked delivery (`agreementOfClaim[claimId] != 0`) —
+  the discretionary award can never eat a promised entitlement, whole or in part.
+- Candidate constants, disclosed at acceptance (not policy changes): `CORRECTIONS_GRACE = 14 days` (obligation
+  window for reviewer-requested corrections) and public `REVIEW_PERIOD = 7 days` (per-attempt review window;
+  browser/finalizer lanes read `agreements(id).reviewPeriod` at acceptance).
+- `proposeAgreement(bytes32 projectId, address beneficiary, uint128 shares, uint64 workDeadline, bytes32 slot, bytes32 policyRef, bytes32 splitHash)`
+  — the project's manager only, never rewarding themselves. The id is `keccak256(abi.encode(projectId, slot))`: the
+  canonical DELIVERABLE slot of the work area, assignable once (tombstoned drafts stay spent); distinct slots —
+  or a declared split — are the explicit way several rewards exist beside one work. Titles and similarity are not
+  identity. `splitHash = keccak256(abi.encode(parties, percentages))` commits the split in the proposal (zero: no
+  split). Quantities are rejected as unmintable-in-whole at proposal time: the Shares token stores supply in
+  uint96, so a promise above `type(uint96).max` (never mintable) reverts `InvalidProject` via `shares >> 96 != 0`
+  before any acceptance or effort; `type(uint96).max` itself records, accepts and reserves exactly (both sides
+  covered on a dedicated large-ceiling mandate in the max-boundary test).
+- `acceptAgreement(bytes32 agreementId, address[] parties, uint16[] percentages)` — the exact beneficiary only;
+  confirms the committed split (codec: ≤4 distinct real non-manager parties, exact percentages, every part and the
+  residual at least one whole unit), reserves atomically against BOTH ceilings, records the accepted `reviewPeriod`.
+- `bindSubmission(bytes32 agreementId, bytes32 claimId)` — the manager OR the exact beneficiary (no third party; no
+  realized post-effort discretion: the beneficiary files and binds their own delivery in one batch, the manager may
+  still assist, and the attempt is ALWAYS the beneficiary's own zero-money exact-check claim — the binding cannot
+  channel anyone else's delivery into the agreement). First attempt by `workDeadline`, revisions
+  by `revisionDeadline`. A revision requires either a terminal attempt (rejected/expired/unwound/retired) or the
+  corrections route (§ below) and RETIRES the replaced zero-money attempt in the same call (`ClaimStake.retire`:
+  terminal, no verdict ever, stake back unslashed or owed; `agreementOfClaim` keeps pointing at the agreement, so no
+  superseded attempt can ever be consumed by another door). Binding pins `ClaimStake.setExpiry(claimId,
+  now + reviewPeriod)` (treasury-only bounded move while open; frozen/approved releases are untouched), registers
+  the settlement recipients as review-excluded on the panel (one transaction with the lock), and emits
+  `AgreementBound(agreementId, claimId, attempts, reviewDeadline)`.
+- `releaseAgreement(bytes32 agreementId)` — permissionless. Draft cancellation tombstones (kind 2, no reservation);
+  unsubmitted work releases kind 2/3; a SUBMITTED attempt releases ONLY on its own terminal state (rejected,
+  expired, unwound, retired) — closure and a frozen/disputed claim release nothing in flight; anything Approved
+  (or already finished) keeps its road to the terms-bound settlement.
+- `settleAgreement(bytes32 agreementId) → (address[] parties, uint256[] portions)` — the mandate's door is
+  `onlyDAO`; permissionless settle runs through `Moloch.settleAgreement(address mandate, bytes32 agreementId)`
+  (kept as the § Phase-B patch; the kit/token lane may now edit `MolochPatched.sol` while preserving this
+  function's selector and gates). The claim must still be the agreed criteria, Approved-or-Paid, its own window
+  elapsed (`claims.payout` holds the authoritative check in the same call), unfrozen, unconsumed. Portions are the
+  EXACT total: declared parties 1..n-1 take their stated share rounded down and the first party (beneficiary)
+  carries the deterministic residual — the minted whole equals `agreements(id).shares` precisely. Mint authority:
+  `Moloch.settleAgreement` mints through the same `awarding()`-gated mint (`Shares.mintFromMoloch`), recipient and
+  quantity always record-derived, restricted to mandates the DAO's birth factory made.
+- `agreementState(bytes32) → AgreementState`: truthful derivation —
+  `None₍0₎ DRAFT₍1₎ AGREED₍2₎ SUBMITTED₍3₎ IN_REVIEW₍4₎ CORRECTIONS₍5₎ ACCEPTED₍6₎ CHALLENGE_WINDOW₍7₎ READY_TO_SETTLE₍8₎ SETTLED₍9₎ DISPUTED₍10₎ CANCELLED₍11₎ EXPIRED₍12₎`
+  (a finished-but-unsettled claim truthfully reads READY_TO_SETTLE, not submitted; a quorum carried into the escrow
+  reads ACCEPTED;CORRECTIONS is exactly "a formal corrections request exists on an open attempt").
+- Capability marker: `AGREEMENTS_VERSION() → uint16 = 1` (a `pure` function; the frozen
+  TypeScript/script adapters probe exactly this selector). A REVERTING call means the mandate
+  predates this flow; treat it as "no capability", never as a zero value, and a failed RPC read is retried, not
+  read as legacy-empty.
+- Events: `AgreementProposed(agreementId, projectId, beneficiary, shares, workDeadline, revisionDeadline,
+  splitHash)` — `criteriaHash`, `policyRef` and `reviewPeriod` are permanent on the record
+  (`agreements(id)`), so the proposal emit stays the lean announcement; `AgreementAccepted(agreementId, beneficiary, shares)`,
+  `AgreementBound(agreementId, claimId, attempts, reviewDeadline)`, `AgreementReleased(agreementId, kind, shares)`,
+  `AgreementSettled(agreementId, claimId, beneficiary, shares)`.
+
+**`VerifierSet` — additions (new panels only; standalone/legacy sets default unchanged).**
+- `setBoundReviews()` — owner-once at birth (every new TreasuryMandate panel turns it on in its constructor); when
+  on, no reviewer can `attest` or `requestCorrections` on a claim whose acceptance check the mandate has not yet
+  locked AND whose payment exclusions are not installed (one transaction at bind) — pre-bound weight cannot land,
+  so a coauthor can never bless work that pays them before their exclusion exists, and nobody spends their
+  one-shot on a self-rewarding draft.
+- `requestCorrections(bytes32 claimId, bytes32 reasonHash)` — the NON-final route: same shared guards as `attest`
+  (claim exists in the wired escrow, claimant recusal, no declared recipient may judge, active reviewer, bond),
+  plus open-attempt-only (`ReviewResolved` after any verdict/retirement/freeze/payout/expiry) and one request per
+  reviewer per claim. It never touches the verdict counters and never feeds a quorum; the mandate's corrections
+  route reads `correctionsCount(claimId) > 0` and `agreementState` shows CORRECTIONS.
+- `excludeFromReview(bytes32 claimId, address[] parties)` — owner (the mandate) names the settlement recipients at
+  bind; reverts on a second registration. `BoundReviewsSet()`, `CorrectionsRequested(claimId, verifier, reasonHash)`,
+  `ExcludedFromReview(claimId, parties)` events.
+
+**`ClaimStake` — additions (treasury-only; legacy behaviour kept).**
+- `Status.Retired` (appended as 7) and `retire(bytes32 claimId)` — zero-money attempts only, terminal, stake back
+  unslashed or owed; `settle`/`freeze`/`payout` refuse it; history keeps the record.
+- `setExpiry(bytes32 claimId, uint64 when_)` — pins one Open claim's lapse (bounded move; after a verdict the
+  expiration is frozen) so the review clock is chain state.
+
+**`MolochPatched`** is released unchanged from Phase B (the `agreed-settlement` patch only): the kit/token lane now
+owns that file; this section stays current only while its `settleAgreement(address,bytes32)` selector and gates are
+preserved.
+
+**Candidate timings for the parent spec** (onchain, disclosed at acceptance; not silently changed): first attempt by
+`workDeadline` (proposal term ≤ project expiry); reviewer-requested corrections rebind until `workDeadline + 14
+days`; each attempt's review concludes within `now + 7 days` of its bind (pinned on the claim; an unreviewed
+attempt expires by itself, stake returned and the unearned reservation released by explicit action; reviewer
+absence and split deadlock recover through the DAO's existing dispute/freeze resolution (freeze → resolve →
+terminal) or new mutually accepted terms — the panel is never silently replaced, nothing accepts automatically,
+no automatic fake acceptance, no automatic currency funding.
+
+**What to check.** The three handoff gaps: (1) corrections are a real non-final route (formal `requestCorrections`,
+never an objection vote; rebind retires the old attempt atomically with its stake returned; old approvals never
+carry; a superseded attempt cannot earn anywhere); (2) no reviewer weight (vote or corrections request) before the
+mandate's bind on new panels, and a declared recipient never weighs in on their own claim; (3) the review window
+is part of the accepted terms and chain-pinned, with expiry → explicit release, frozen/approved entitlements
+preserved; plus: exact-total settlement (residual to the first party), one-slot-one-deliverable assignment,
+reservations within both ceilings, and the legacy award never touching agreement deliveries.
+
+**Tests.** `test/ContributionAgreement.t.sol` (38 test functions over the shared fixture via
+`test/helpers/AgreementFixture.sol`, including the fuzz run and the max-boundary pair) and
+`test/ContributionAgreementSplits.t.sol` (6). A hand mutation of each new guard fails its test (retire-call
+drop → stake-recovery test fails; review-clock pin drop → the pinned-expiry test fails; bound-review flag off →
+both pre-bind tests fail; residual→floors → the exact-total test fails; the B2 gate drop → the legacy-award test
+fails). Falsifiability honours the existing suites: D174 `FinishStep` (8), `TreasuryMandate` size/`create` suite
+(8, including the factory's 49,152-byte initcode budget — after trimming, 49,093), ` MolochPatched` (9),
+`EquityMandate` (9), `ClaimStakeCurrency` (3), `ContributorKit` (9), `MilestoneLock` (17), `IssuanceRule` (1),
+`DaoGovernanceJourney` (1), plus the `MoneyPaths` (10) and `BondSlashFuzz` (1) invariant runs — all green on this
+build.
+
+**Remaining known limits.** Reviewer/per-verdict fees stay out (candidate 0 per the spec); the mandate-level
+ceiling check is implied by the per-area check plus budget carving — the counters still exist and are checked;
+the `agreementState` view is derived, so the browser should read it + `agreements(id)` (the 13-field record) +
+the version getter; correction requests do not extend the review clock — a replacement attempt gets a fresh
+period only by being bound again inside the revision window.

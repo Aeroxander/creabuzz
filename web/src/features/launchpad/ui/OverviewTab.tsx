@@ -464,7 +464,9 @@ function ProvenCommitmentsCard({ launch }: { launch: TabLaunch }) {
  * Shows the latest epoch's root, its program, and the indexer that serves
  * proofs. It does not claim a score for any member here — verification of an
  * individual claim happens against a specific leaf+proof
- * (`lib/trust-score.ts`), surfaced where a score is claimed.
+ * (`lib/trust-score.ts`), surfaced where a score is claimed. With no accepted
+ * scoring publisher configured (`lib/score-root-policy.ts`), the latest root
+ * is shown as its publisher's own claim, never as the community's reputation.
  */
 function ScoreRootsCard() {
   const roots = useScoreRoots();
@@ -489,17 +491,40 @@ function ScoreRootsCard() {
           </dd>
         </div>
       </dl>
+      <p
+        className={
+          latest.standing === "accepted"
+            ? "mt-2 text-xs text-black/60 dark:text-white/60"
+            : "mt-2 text-xs text-amber-800 dark:text-amber-200"
+        }
+        data-testid="launch-score-roots-standing"
+      >
+        {latest.standing === "accepted" ? (
+          <>
+            {truncatePubkey(latest.author)} published this list, and this
+            community has accepted them as a scoring publisher.
+          </>
+        ) : (
+          <>
+            Published by {truncatePubkey(latest.author)} as their own claim.
+            This community has not named an accepted scoring publisher, so this
+            is a claim by one publisher — never community reputation.
+          </>
+        )}
+      </p>
       <p className="mt-2 text-xs text-black/60 dark:text-white/60">
         Scores are published as a signed list. A score shown on a profile is
-        only marked proven after we check it against this list.
+        only marked proven after we check it against this list — proven to be in
+        the list, that is, not proven right: how the scores were computed is not
+        proven by this.
         {latest.anchorBlock !== null
-          ? ` Recorded onchain in block ${latest.anchorBlock}.`
+          ? ` The record asserts chain block ${latest.anchorBlock}; it stays unverified until it is checked against an answer from the network.`
           : ""}
       </p>
-      {latest.indexerUrl ? (
+      {latest.proofUrl ? (
         <a
           className="mt-1 inline-block text-xs text-primary-ink underline"
-          href={latest.indexerUrl}
+          href={latest.proofUrl}
           rel="noreferrer"
           target="_blank"
         >

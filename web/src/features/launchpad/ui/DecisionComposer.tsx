@@ -55,6 +55,8 @@ import {
 import { PayoutsForm } from "./PayoutsForm";
 import { FundingDecisionForm } from "./FundingDecisionForm";
 import { RoundsDecisionForm } from "./RoundsDecisionForm";
+import { TradingListingForm } from "./TradingListingForm";
+import { useSecondary } from "../use-secondary";
 import {
   cannotOpenDecision,
   cannotOpenLine,
@@ -73,6 +75,7 @@ type Kind =
   | "trading"
   | "rounds"
   | "funding"
+  | "secondary-listing"
   | "payouts";
 
 /** The decisions whose forms pick from the DAO's work budgets and claims. */
@@ -143,6 +146,12 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
       "Publish funding terms (what buyers get, and the most the project can ever sell), or open a sale within them. Nothing sells until 30 days after terms are published.",
   },
   {
+    id: "secondary-listing",
+    label: "Publish a secondary market listing",
+    about:
+      "Let holders offer Shares and buyers bid, between a lowest and a highest price. Turning it off stops new rounds; settlement and claims carry on.",
+  },
+  {
     id: "payouts",
     label: "Pay holders",
     about:
@@ -209,6 +218,12 @@ export function DecisionComposer({
   const usdc = contributor
     ? usdcAddress(ctx.chainId ?? null, localUsdcAddress())
     : null;
+  // The DAO's own market, read once for the whole page: the trading card reads the same query.
+  const secondary = useSecondary({
+    chainId: ctx.chainId ?? null,
+    dao: ctx.dao,
+    wallet: ctx.wallet,
+  });
   const usdcHeld = useQuery({
     queryKey: ["launchpad", "contributor-funds", ctx.dao, usdc ?? "none"],
     enabled: usdc !== null,
@@ -228,7 +243,18 @@ export function DecisionComposer({
       return (
         weeklyRounds(ctx.chainId ?? null) !== null &&
         contributor &&
-        Boolean(ctx.fundingTerms)
+        ctx.fundingTerms?.kind === "present"
+      );
+    // A listing is published by the DAO into its own market, so it is offered only where that market exists: this
+    // build has to name its factory, and the factory must not say this DAO has none. While the read has not answered
+    // (or could not) the form is still offered, and says what it could not read.
+    if (id === "secondary-listing")
+      return (
+        raisesOffered() &&
+        secondary.factory !== null &&
+        ctx.currencyDecimals !== null &&
+        ctx.sharesToken !== "" &&
+        secondary.query.data?.read.kind !== "absent"
       );
     // Payouts count every holder from when they hold; locked team Shares are not handled, so contributor projects only.
     if (id === "payouts")
@@ -462,6 +488,35 @@ export function DecisionComposer({
       ) : null}
       {open ? (
         <div className="mt-3">
+          {ctx.work?.milestonePanelUnreadable ? (
+            // Which budget judges the team's milestones did not come back.
+            // Saying nothing would let the panel be offered as an ordinary
+            // budget, which is a claim about the DAO we cannot make.
+            <p
+              className="mb-2 text-sm text-muted-foreground"
+              data-testid="decision-panel-unreadable"
+              role="status"
+            >
+              Couldn&apos;t read which budget is this DAO&apos;s milestone
+              panel, so the forms below may offer it as an ordinary budget.
+              Reload to try again.
+            </p>
+          ) : null}
+          {ctx.fundingTerms?.kind === "unreadable" ? (
+            // The funding form needs the DAO's funding-terms contract. Without
+            // it the form is not offered — but saying nothing would read as
+            // "this project has none", which is a different claim from "the
+            // network did not answer".
+            <p
+              className="mb-2 text-sm text-muted-foreground"
+              data-testid="decision-funding-unreadable"
+              role="status"
+            >
+              Couldn&apos;t read this project&apos;s funding terms from the
+              network ({ctx.fundingTerms.reason}), so the funding forms are not
+              offered yet. Reload to try again.
+            </p>
+          ) : null}
           {/* On a phone the cards would stack far above the form they open: one list instead, the form right under it. */}
           <label className="flex flex-col gap-1 text-sm sm:hidden">
             <span className="font-medium">What kind of decision</span>
@@ -648,6 +703,15 @@ export function DecisionComposer({
               ctx={ctx}
               gate={gate}
               key={`w${formKey}`}
+              onSubmit={submit}
+            />
+          ) : kind === "secondary-listing" ? (
+            <TradingListingForm
+              blocked={blocked}
+              busy={busy}
+              ctx={ctx}
+              gate={gate}
+              key={`l${formKey}`}
               onSubmit={submit}
             />
           ) : kind === "trading" ? (

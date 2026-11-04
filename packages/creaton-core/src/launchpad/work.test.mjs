@@ -103,6 +103,17 @@ test("ids are labels or words, and read back as labels when they are one", () =>
   assert.match(idLabel(hash), /^0xabababab…abab$/);
 });
 
+test("a retired agreement attempt remains readable and offers no award or review", () => {
+  const record = decodeClaim(
+    `0x${[DAVE, 0, 0, 7, `0x${"11".repeat(32)}`, `0x${"22".repeat(32)}`, 9999, 0].map(word).join("")}`,
+  );
+  assert.equal(record.status, "Retired");
+  const step = nextStep({ record }, 10_000, 7 * 86_400);
+  assert.equal(step.kind, "none");
+  assert.equal(step.who, "nobody");
+  assert.match(step.text, /replaced/i);
+});
+
 test("a claim record and a project record decode from their words", () => {
   const claim = decodeClaim(
     `0x${[DAVE, 0, 0, 4, `0x${"11".repeat(32)}`, `0x${"22".repeat(32)}`, 9999, 1000].map(word).join("")}`,

@@ -56,7 +56,8 @@ contract ClaimStake {
         Frozen, // governance froze the claim (suspicion of fraud)
         Paid, // approved + paid out
         Recovered, // frozen claim unwound: stake back to contributor, reserve to treasury
-        Expired // the claim ran out of time unapproved: returned, unslashed (G2)
+        Expired, // the claim ran out of time unapproved: returned, unslashed (G2)
+        Retired // replaced by a corrected attempt: terminal, no verdict, stake back unslashed, no reward
     }
 
     struct MilestoneClaim {
@@ -91,6 +92,10 @@ contract ClaimStake {
     event CheckSet(bytes32 indexed claimId, bytes32 checkHash);
     event ClaimExpired(bytes32 indexed claimId, uint256 stakeReturned, uint256 reserveReturned);
     event WindowsSet(uint64 claimWindow, uint64 challengeWindow);
+    /// @notice The treasury pinned / reset one claim's own lapse time (bounded adjustment while the claim is open).
+    event ClaimExpirySet(bytes32 indexed claimId, uint64 expiresAt);
+    /// @notice A zero-money attempt a corrections flow replaced: terminal, stake returned unslashed, no verdict.
+    event ClaimRetired(bytes32 indexed claimId, uint256 stakeReturned);
 
     error NotClaimant(address caller);
     error CheckLocked(bytes32 claimId);
@@ -321,6 +326,38 @@ contract ClaimStake {
         claimWindow = claimWindow_;
         challengeWindow = challengeWindow_;
         emit WindowsSet(claimWindow_, challengeWindow_);
+    }
+
+    /// @notice Pin one claim's own lapse to `when_` (bounded adjustment while the claim is still Open: an agreed
+    /// delivery carries its own review timing; the treasury — here the binding mandate — may shorten or lengthen a
+    /// claim that has no verdict yet, and after a verdict the expiration is frozen for good). Zero not allowed, and
+    /// the past is not either, so a window can never be a sentence.
+    function setExpiry(bytes32 claimId, uint64 when_) external {
+        if (msg.sender != treasury) revert NotTreasury();
+        MilestoneClaim storage claim = claims[claimId];
+        if (claim.contributor == address(0)) revert UnknownClaim(claimId);
+        if (claim.status != Status.Open) revert ClaimClosed(claimId);
+        if (when_ <= block.timestamp) revert BadWindow_();
+        claim.expiresAt = when_;
+        emit ClaimExpirySet(claimId, when_);
+    }
+
+    /// @notice Retirement of a zero-money attempt that a corrections flow replaced: the treasury (the mandate)
+    /// closes it as terminal — no verdict, no award, no settle/freeze/payout after, and the contributor's stake, if
+    /// they answered with one, comes back unslashed (owed to them when the currency refuses). The record and its id
+    /// keep their place in history, and no attempt of the same delivery can ever be consumed by another reward path.
+    function retire(bytes32 claimId) external {
+        if (msg.sender != treasury) revert NotTreasury();
+        MilestoneClaim storage claim = claims[claimId];
+        if (claim.contributor == address(0)) revert UnknownClaim(claimId);
+        if (claim.status != Status.Open) revert ClaimClosed(claimId);
+        // A paid attempt is ordinary milestone money: only work recognised in Shares alone is retired here.
+        if (claim.amount != 0) revert ClaimClosed(claimId);
+        claim.status = Status.Retired;
+        uint256 stakeBack = claim.stake;
+        claim.stake = 0;
+        emit ClaimRetired(claimId, stakeBack);
+        _payOrOwe(claim.contributor, stakeBack);
     }
 
     /// @notice Who filed this claim — the one fact `VerifierSet` needs to

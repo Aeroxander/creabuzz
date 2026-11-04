@@ -10,6 +10,7 @@ import {
   describeFunding,
   FUNDING_NOTICE,
   FUNDING_SIGNATURES,
+  fundingContractOrThrow,
   fundingPhase,
   feePercent,
   lowerCapDecision,
@@ -285,11 +286,20 @@ test("a DAO's terms, tranche and watched tokens are read from its summoner's fun
     },
     reserved: 0n,
   });
-  assert.equal(
+  // Three answers, never two. `present` names the contract; `absent` is the
+  // contract's own zero address; `unreadable` is a read we do not have.
+  assert.deepEqual(
     await readFundingContract({ call: async () => words(BigInt(TERMS)) }, DAO),
-    TERMS,
+    { kind: "present", address: TERMS },
   );
-  assert.equal(
+  assert.deepEqual(
+    await readFundingContract({ call: async () => words(0n) }, DAO),
+    { kind: "absent" },
+    "the zero address is the factory saying it has no funding terms",
+  );
+  // A revert is the contract refusing the selector — what a factory from before
+  // D133 does. This is the only failure that may read as absence.
+  assert.deepEqual(
     await readFundingContract(
       {
         call: async () => {
@@ -298,7 +308,87 @@ test("a DAO's terms, tranche and watched tokens are read from its summoner's fun
       },
       DAO,
     ),
-    null,
-    "a factory from before funding terms has none",
+    { kind: "absent" },
+  );
+
+  // The defect this guards: a node that did not answer must NEVER read as
+  // "this factory predates funding terms". Each of these is a failure the
+  // caller has to show as a failure.
+  const unreadable = [
+    [
+      "a timeout",
+      Object.assign(new Error("The chain node did not answer in time."), {
+        name: "ChainReadError",
+      }),
+    ],
+    [
+      "an unreachable node",
+      Object.assign(new Error("Could not reach the chain node."), {
+        name: "ChainReadError",
+      }),
+    ],
+    [
+      "a busy node",
+      Object.assign(new Error("The chain node is busy."), {
+        name: "ChainReadError",
+      }),
+    ],
+    ["a plain transport failure", new TypeError("fetch failed")],
+    ["an http refusal", new Error("rpc http 503")],
+  ];
+  for (const [why, error] of unreadable) {
+    const read = await readFundingContract(
+      {
+        call: async () => {
+          throw error;
+        },
+      },
+      DAO,
+    );
+    assert.equal(
+      read.kind,
+      "unreadable",
+      `${why} must be unreadable, not absent`,
+    );
+    assert.notEqual(read.kind, "absent", `${why} must not read as "predates"`);
+    assert.match(
+      read.reason,
+      new RegExp(
+        error.message.slice(0, 18).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      ),
+      "the reason is carried through",
+    );
+  }
+
+  // An answer that is not an address is a read we do not have either.
+  for (const bad of ["0x", "0x1234", "not-hex"]) {
+    const read = await readFundingContract({ call: async () => bad }, DAO);
+    assert.equal(
+      read.kind,
+      "unreadable",
+      `an answer of ${bad} is not an address`,
+    );
+  }
+});
+
+/**
+ * The seam every funding card goes through: `FundingContractRead` becomes a
+ * maybe-address here and nowhere else, so a failed read throws instead of
+ * arriving at the UI as "this factory predates funding terms".
+ */
+test("a funding read that did not complete throws at the caller seam", () => {
+  assert.equal(
+    fundingContractOrThrow({ kind: "present", address: TERMS }),
+    TERMS,
+  );
+  assert.equal(fundingContractOrThrow({ kind: "absent" }), null);
+  assert.throws(
+    () =>
+      fundingContractOrThrow({
+        kind: "unreadable",
+        reason: "The chain node did not answer in time.",
+      }),
+    /did not answer in time/,
+    "a failed read must not become a null the UI renders as absence",
   );
 });

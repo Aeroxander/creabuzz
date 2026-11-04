@@ -30,6 +30,13 @@ import { type BuiltOn, builtOnCoordinate, type RemixTerms } from "./lib/remix";
 import { type RevenuePledge, revenuePledgeContent } from "./lib/revenue-pledge";
 import { supersedingTime } from "./lib/record-time";
 import { launchQueryFilter } from "./lib/launch-query";
+import {
+  acceptedPublisherPolicy,
+  collectScoreRoots,
+  scoreRootsQueryScope,
+  type ScorePublisherPolicy,
+} from "./lib/score-root-policy";
+import { viteEnv } from "./chain-config";
 import { evidenceQueryKey } from "./use-evidence";
 import {
   KIND_APPROVAL_DENY,
@@ -50,7 +57,6 @@ import {
   buildLaunches,
   launchCoordinate,
   launchRemovals,
-  parseScoreRoot,
   type Launch,
   type LaunchChat,
   type LaunchStage,
@@ -158,24 +164,44 @@ export function useLaunches() {
 const scoreRootsQueryKey = ["launchpad", "score-roots"];
 
 /**
- * The community's latest trustgraph score roots (kind 37006).
+ * The community's trustgraph score roots (kind 37006).
  *
- * An operator publishes the proven Merkle root per epoch; clients verify
- * individual score claims against it (`lib/trust-score.ts`). Fetching them is
- * a plain Nostr query — no trustgraphs deployment required for the read side.
+ * A scoring operator publishes the proven Merkle root per epoch; clients
+ * verify individual score claims against it (`lib/trust-score.ts`). Reading
+ * them trusts nothing by itself — the query surface does not check
+ * signatures, so `collectScoreRoots` (`lib/score-root-policy.ts`) verifies
+ * every answer's id hash and signature before its `pubkey` means anything,
+ * then applies the community's accepted-publisher policy (an `authors` filter
+ * on the query *and* on the returned records) and returns the roots sorted
+ * newest-signed first.
+ *
+ * The relay URL and the policy are captured **once per query**: the query key
+ * (`scoreRootsQueryScope`) and the `queryFn` read the same captured values,
+ * so what was keyed cannot drift from what was fetched when either changes
+ * while the read is in flight.
  */
-export async function fetchScoreRoots(): Promise<ScoreRoot[]> {
-  const events = await queryEvents(relayWsUrl(), {
-    kinds: [LAUNCHPAD_SCORE_ROOT_KIND],
-    limit: 50,
+export async function fetchScoreRoots(
+  relayUrl: string = relayWsUrl(),
+  policy: ScorePublisherPolicy | null = acceptedPublisherPolicy({
+    relayUrl,
+    env: viteEnv(),
+  }),
+): Promise<ScoreRoot[]> {
+  return collectScoreRoots({
+    relayUrl,
+    policy,
+    kind: LAUNCHPAD_SCORE_ROOT_KIND,
+    query: (filter) => queryEvents(relayUrl, filter),
   });
-  return events.map(parseScoreRoot).filter((r): r is ScoreRoot => r !== null);
 }
 
 export function useScoreRoots() {
+  // One read, one policy: captured here so the key and the fetch agree.
+  const relay = relayWsUrl();
+  const policy = acceptedPublisherPolicy({ relayUrl: relay, env: viteEnv() });
   return useQuery({
-    queryKey: scoreRootsQueryKey,
-    queryFn: fetchScoreRoots,
+    queryKey: [...scoreRootsQueryKey, scoreRootsQueryScope(relay, policy)],
+    queryFn: () => fetchScoreRoots(relay, policy),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });

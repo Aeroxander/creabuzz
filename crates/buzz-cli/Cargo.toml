@@ -109,6 +109,11 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # Random number generation — full jitter for exponential backoff in with_retry
 rand = { workspace = true }
 
+# Readable artifact snapshot container for `work-checks` (kind:47010): the
+# exclusive, self-removing 0700 temp root the read-only sandbox snapshot
+# lives under (was dev-only; now the snapshot code runs in production).
+tempfile = "3"
+
 [dev-dependencies]
 # Scratch files for channel-templates.json fixtures in tests
 tempfile = "3"

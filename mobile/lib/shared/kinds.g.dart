@@ -1005,4 +1005,62 @@ class Kinds {
   /// publish it: the relay requires the `a` tag's author to be the signer.
   /// Global-only. See `docs/nips/NIP-LP.md`.
   static const int KIND_PROJECT_FOCUS = 37020;
+
+  /// NIP-LP: work check run — one signed record of having run a claim's declared
+  /// checks against a local artifact (regular, append-only; 47009 is retired).
+  ///
+  /// Signed by whoever ran the checks (typically the contributor or their
+  /// agent). It references the claim identity via tags — exactly one `a`
+  /// (`37001:<launch-author>:<launch-id>`), one `claim` (`0x` + 64 hex claim
+  /// id), one `evidence` (`0x` + 64 hex: the evidence hash the checks ran
+  /// against, equal to the claim's committed evidence hash for the run to be
+  /// relevant) and one `mandate` (`0x` + 40 hex) — and carries the executed
+  /// results in `content`:
+  ///
+  /// ```json
+  /// {
+  ///   "v": 1,
+  ///   "run": "<0x + 64 hex sha256 over the run's identity inputs>",
+  ///   "claim": { "id": "<0x64hex>", "mandate": "<0x40hex>" },
+  ///   "evidenceHash": "<0x64hex>",
+  ///   "criteria": {
+  ///     "claimCheck": { "hash": "<0x64hex>", "words": "…" | null },
+  ///     "workArea":   { "hash": "<0x64hex>", "words": "…" | null }
+  ///   },
+  ///   "checks": [{
+  ///     "name": "<≤64 chars>", "argv": ["…"], "auxiliary": false,
+  ///     "status": "passed" | "failed" | "timed-out" | "not-run",
+  ///     "exitStatus": null | 0..255, "stdout": "…", "stderr": "…",
+  ///     "truncated": false, "startedAt": 0, "endedAt": 0, "durationMs": 0
+  ///   }],
+  ///   "envNames": [], "artifacts": [],
+  ///   "limitations": ["…"],
+  ///   "model": { "service": "…", "summary": "…", "disclosure": "…" }
+  /// }
+  /// ```
+  ///
+  /// `checks[].argv` is the exact argv that was executed — the runner passes it
+  /// to the program entry point directly, with no shell, so a single string is
+  /// never interpreted as a command line. `auxiliary = true` means the check
+  /// mapped to no accepted criterion and is labelled as such. `not-run` marks a
+  /// check the overall time budget skipped; `timed-out` marks one the per-check
+  /// budget stopped (whole process tree, SIGKILL) — its result is unknown and
+  /// is reported as such, never as a pass. Output excerpts are bounded per
+  /// stream with `truncated` marking a cut, and obvious secrets were scrubbed
+  /// before signing. `criteria.words` carries the words of an accepted criterion
+  /// the run itself hash-bound (`criteria.*.hash`), so a reader can re-check the
+  /// binding; `model` is optional and clearly separate: model interpretation,
+  /// checked output only, no confidence or verdict authority.
+  ///
+  /// These are the contributor's own execution records, not independent
+  /// verification: the runner never fetches network resources, its environment
+  /// starts empty beyond what the operator explicitly passed, and a creator
+  /// agent's self-assessment is never labelled a verification. A reviewer's
+  /// verdict stays theirs; this record is evidence to read, not a proof.
+  ///
+  /// Stored globally (channel_id = NULL) like the other NIP-LP mirrors — a
+  /// stray `h` never channel-scopes it. Every run is a new event; the newest
+  /// record for a `(claim id, evidence hash)` pair is what reviewers read,
+  /// older ones kept as history.
+  static const int KIND_WORK_CHECK_RUN = 47010;
 }

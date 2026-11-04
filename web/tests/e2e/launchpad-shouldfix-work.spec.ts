@@ -548,8 +548,9 @@ test("two reviewers turn work down with a reason: the founder closes it from Nee
   // The founder manages the work area: Needs you offers the close, and it opens the claim on the Work tab.
   const founder = await openAs(browser, "founder", relay, world);
   await founder.goto(projectPath("overview"));
+  // The lead action is not under `dao-attention`, so pick the item by its words.
   const item = founder
-    .getByTestId("dao-attention")
+    .getByTestId("dao-needs-you")
     .filter({ hasText: "Enough reviewers turned down “translate”" });
   await expect(item).toBeVisible({ timeout: 20_000 });
   await item.getByRole("button", { name: "Close it as turned down" }).click();

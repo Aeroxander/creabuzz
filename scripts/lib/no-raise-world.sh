@@ -21,6 +21,10 @@ done
 
 PORT="${ANVIL_PORT:-$((18000 + RANDOM % 1000))}"
 RPC="http://127.0.0.1:${PORT}"
+# Foundry's HTTP client panics on this host (macOS `system-configuration` returns
+# NULL before the request leaves), so every `cast` call uses the node's WebSocket
+# transport. `RPC` stays http for the app and for curl.
+CAST_RPC="${RPC/http:/ws:}"
 STATE="$(mktemp -d)"
 DEPLOYMENTS="$REPO_ROOT/contracts/deployments"
 BACKUP="$(mktemp -d)"
@@ -61,9 +65,9 @@ world_up() {
   DAO=$(awk '/^  DAO: / {print $2; exit}' "$STATE/org-dao.log")
   [[ "$DAO" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no DAO address in the dev chain's org-dao log"
   CURRENCY=$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(m.roles[0].address)' "$DEPLOYMENTS/dev-currency-31337.json")
-  POLICY=$(cast call "$DAO" "votingWeight()(address)" --rpc-url "$RPC")
-  FACTORY=$(cast call "$POLICY" "mandateFactory()(address)" --rpc-url "$RPC")
-  SHARES=$(cast call "$DAO" "shares()(address)" --rpc-url "$RPC")
+  POLICY=$(cast call "$DAO" "votingWeight()(address)" --rpc-url "$CAST_RPC")
+  FACTORY=$(cast call "$POLICY" "mandateFactory()(address)" --rpc-url "$CAST_RPC")
+  SHARES=$(cast call "$DAO" "shares()(address)" --rpc-url "$CAST_RPC")
   step "dao ${DAO}  mandate factory ${FACTORY}"
 
   # A journey that never runs the CLI (WORLD_NO_CLI=1) skips building it.
@@ -77,8 +81,8 @@ world_up() {
 # `as <key> <buzz args…>` runs one command as one account; stdout is the command's JSON.
 as() { local key="$1"; shift; BUZZ_EVM_RPC_URL="$RPC" BUZZ_SPENDER_KEY="$key" "$BUZZ" launchpad "$@"; }
 jget() { node -e 'const o=JSON.parse(require("fs").readFileSync(0,"utf8"));const v=o[process.argv[1]];console.log(typeof v==="object"?JSON.stringify(v):v)' "$1"; }
-warp() { cast rpc --rpc-url "$RPC" anvil_increaseTime "$1" >/dev/null; cast rpc --rpc-url "$RPC" anvil_mine 1 >/dev/null; }
-shares_of() { cast call "$SHARES" "balanceOf(address)(uint256)" "$1" --rpc-url "$RPC" | awk '{print $1}'; }
+warp() { cast rpc --rpc-url "$CAST_RPC" anvil_increaseTime "$1" >/dev/null; cast rpc --rpc-url "$CAST_RPC" anvil_mine 1 >/dev/null; }
+shares_of() { cast call "$SHARES" "balanceOf(address)(uint256)" "$1" --rpc-url "$CAST_RPC" | awk '{print $1}'; }
 
 # A DAO decision: open it, back it, wait out the review, queue it, wait out the delay, execute it.
 decide() { # <intent json> <review seconds>
@@ -103,11 +107,11 @@ world_mandate() { # a Shares-only mandate with three reviewers (the contributor 
     ${REVIEWER_BOND:+--decimals 6 --reviewer-bond "$REVIEWER_BOND"})
   [[ "$(echo "$intent" | jget lane)" == "unrestricted" ]] || fail "a mandate should take the full vote"
   decide "$intent" 175000
-  MANDATE=$(cast logs --json --rpc-url "$RPC" --from-block 0 --address "$FACTORY" \
+  MANDATE=$(cast logs --json --rpc-url "$CAST_RPC" --from-block 0 --address "$FACTORY" \
     "MandateCreated(address,address,address,uint128,uint128,uint128,uint128)" \
     | node -e 'const l=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log("0x"+l[l.length-1].topics[2].slice(-40))')
   [[ "$MANDATE" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "no MandateCreated event from the factory"
-  [[ "$(cast call "$FACTORY" "daos(address)(address)" "$MANDATE" --rpc-url "$RPC")" == "$DAO" ]] \
+  [[ "$(cast call "$FACTORY" "daos(address)(address)" "$MANDATE" --rpc-url "$CAST_RPC")" == "$DAO" ]] \
     || fail "the factory does not know mandate $MANDATE as this DAO's"
   step "mandate ${MANDATE}"
 }

@@ -3,6 +3,7 @@ import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { installAnvilWallet } from "../helpers/anvil-wallet";
 import { PREVIEW_ORIGIN } from "./mock-relay";
+import { closeOwnPages, ownPage } from "./helpers/own-browser";
 
 /**
  * Money behind a post (N2), entirely from the post's page, against a REAL local chain with the real `OpenBounty`.
@@ -172,6 +173,9 @@ async function forecast(page: Page, percent: string, reason: string) {
 }
 
 const card = (page: Page) => page.getByTestId("post-bounty");
+// Every browser `ownPage` launches is closed after each test, however it ends.
+test.afterEach(closeOwnPages);
+
 const item = (page: Page) => card(page).getByTestId("post-bounty-item").first();
 const status = (page: Page) => item(page).getByTestId("post-bounty-status");
 
@@ -182,14 +186,14 @@ async function refresh(page: Page) {
 }
 
 test("money behind a post is paid to the work most of it backs for nine days, and a dip stops it in time", async ({
-  context,
+  browser,
 }) => {
   test.setTimeout(Number(process.env.E2E_TIMEOUT_MS ?? 600_000));
   expect(getPublicKey(AUTHOR_KEY)).toBe(POST.pubkey);
   const devBefore = await usdcOf(DEV);
 
   // ── Ben puts 50 behind his own post ───────────────────────────────────────────────────────────
-  const ben = await context.newPage();
+  const ben = await ownPage(browser);
   await open(ben, BEN, KEYS.ben);
   await expect(card(ben)).toContainText("None yet.", { timeout: 30_000 });
   await card(ben).getByTestId("post-bounty-open").click();
@@ -215,7 +219,7 @@ test("money behind a post is paid to the work most of it backs for nine days, an
   );
 
   // ── Cara adds 50 ────────────────────────────────────────────────────────────────────────────────
-  const cara = await context.newPage();
+  const cara = await ownPage(browser);
   await open(cara, CARA, KEYS.cara);
   await item(cara).getByTestId("post-bounty-add").click();
   await item(cara).getByTestId("post-bounty-add-amount").fill("50");
@@ -233,7 +237,7 @@ test("money behind a post is paid to the work most of it backs for nine days, an
   );
 
   // ── Dev submits work ────────────────────────────────────────────────────────────────────────────
-  const dev = await context.newPage();
+  const dev = await ownPage(browser);
   await open(dev, DEV, KEYS.dev);
   await item(dev).getByTestId("post-bounty-file").click();
   await item(dev)
@@ -303,7 +307,7 @@ test("money behind a post is paid to the work most of it backs for nine days, an
 
   // ── Nine days with the majority: anyone pays, here Eve, who put nothing in ──────────────────────
   await pass(2 * 86_400);
-  const eve = await context.newPage();
+  const eve = await ownPage(browser);
   await open(eve, EVE, KEYS.eve);
   await expect(status(eve)).toContainText("Anyone can pay it now.", {
     timeout: 30_000,
@@ -327,7 +331,7 @@ test("money behind a post is paid to the work most of it backs for nine days, an
     { timeout: 30_000 },
   );
   // ── Cara's profile shows how accurate her forecast was: 80% on something that got done scores 96 ─────
-  const profile = await context.newPage();
+  const profile = await ownPage(browser);
   await open(profile, EVE, KEYS.eve, `/u/${CARA_PUBKEY}`);
   await expect(profile.getByTestId("profile-forecasts")).toHaveText(
     "Forecasts: 96 out of 100 over 1 settled bounty. Always saying 50% would score 75.",
@@ -370,7 +374,7 @@ test("money behind a post is paid to the work most of it backs for nine days, an
 });
 
 test("work nobody backed is appealed, a juror drawn by stake upholds it, and anyone pays it", async ({
-  context,
+  browser,
 }) => {
   test.skip(!COURT, "set E2E_COURT (scripts/web-post-bounty-e2e.sh does)");
   test.setTimeout(Number(process.env.E2E_TIMEOUT_MS ?? 600_000));
@@ -378,7 +382,7 @@ test("work nobody backed is appealed, a juror drawn by stake upholds it, and any
     card(page).getByTestId("post-bounty-item").last();
 
   // ── Ben puts 20 behind the post; Dev submits work; nobody backs it ─────────────────────────────
-  const ben = await context.newPage();
+  const ben = await ownPage(browser);
   await open(ben, BEN, KEYS.ben);
   await card(ben).getByTestId("post-bounty-open").click();
   await card(ben)
@@ -390,7 +394,7 @@ test("work nobody backed is appealed, a juror drawn by stake upholds it, and any
     "Takes money and work until",
     { timeout: 60_000 },
   );
-  const dev = await context.newPage();
+  const dev = await ownPage(browser);
   await open(dev, DEV, KEYS.dev);
   await latest(dev).getByTestId("post-bounty-file").click();
   await latest(dev)
@@ -425,7 +429,7 @@ test("work nobody backed is appealed, a juror drawn by stake upholds it, and any
   await expect(latest(dev).getByTestId("post-bounty-case")).toBeVisible();
 
   // ── Eve takes test CREATE, stakes three seats and is the only juror ─────────────────────────────
-  const eve = await context.newPage();
+  const eve = await ownPage(browser);
   await open(eve, EVE, KEYS.eve, "/court");
   const juror = eve.getByTestId("court-juror");
   await expect(juror).toBeVisible({ timeout: 30_000 });
