@@ -43,8 +43,19 @@ export function decisionTitler(input: {
   /** The DAO's own Shares, so a bond paid in them reads as "the project's own token". */
   projectToken?: string;
   label?: DescribeContext["label"];
+  /** The DAO's own market and its price units, so a listing vote can be told from a call that only looks like one. */
+  secondaryMarket?: DescribeContext["secondaryMarket"];
 }): (decision: Decision) => string {
-  const { launch, dao, factory, mandates, bonds, projectToken, label } = input;
+  const {
+    launch,
+    dao,
+    factory,
+    mandates,
+    bonds,
+    projectToken,
+    label,
+    secondaryMarket,
+  } = input;
   const sale = launch.record.currency
     ? recordSaleCurrency(launch.record)
     : null;
@@ -54,6 +65,7 @@ export function decisionTitler(input: {
     mandates,
     bonds,
     projectToken,
+    secondaryMarket,
     weeklyRounds: weeklyRounds(launch.record.chainId ?? null) ?? undefined,
     payoutsFactory: payoutsFactory(launch.record.chainId ?? null) ?? undefined,
     label,

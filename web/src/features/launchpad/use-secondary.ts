@@ -5,6 +5,7 @@ import {
   decodeWord,
   encodeCall0,
 } from "@creaton/core/launchpad/work.ts";
+import type { DescribeContext } from "@creaton/core/launchpad/daoActions.ts";
 import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
 import {
   encodeAllowance,
@@ -46,6 +47,11 @@ export interface SecondaryMarketFacts {
 export interface SecondaryMarketView {
   /** The adapter's three-way answer: a market, genuinely none, or a read we do not have. */
   read: SecondaryMarketRead;
+  /**
+   * The DAO's market address once the factory named one, even when its price token could not be read and `read` is
+   * `unreadable`: turning trading off needs only this, so the DAO is never left without its off switch.
+   */
+  market: string | null;
   /** The market's lot size and tokens, or null when there is no market to ask. */
   facts: SecondaryMarketFacts | null;
   /**
@@ -224,6 +230,7 @@ export function useSecondary(input: {
       if (read.kind !== "present") {
         return {
           read,
+          market: null,
           facts: null,
           funds: null,
           roundId: null,
@@ -263,6 +270,7 @@ export function useSecondary(input: {
             reason:
               "the market's price token did not say its decimals and its symbol",
           },
+          market: read.market,
           facts: null,
           funds: null,
           roundId: null,
@@ -316,6 +324,7 @@ export function useSecondary(input: {
           : NO_EARLIER;
       return {
         read,
+        market: read.market,
         facts: {
           lotSize,
           sharesToken,
@@ -332,4 +341,69 @@ export function useSecondary(input: {
     },
   });
   return { factory, query };
+}
+
+/**
+ * The DAO's market and the units its price token says it uses, for putting a vote that names it in words. Null when
+ * the DAO has none. A read that did not complete throws, so a vote is never described against a market we guessed.
+ */
+async function readMarketForWords(
+  chain: Pick<WorkChain, "call">,
+  input: { factory: string; dao: string },
+): Promise<DescribeContext["secondaryMarket"] | null> {
+  // An empty or malformed answer is a read we do not have, never "this DAO has no market" (Review-Proven Rule 1).
+  const word = wordOf(
+    await chain.call(
+      input.factory,
+      encodeFunctionData(
+        SECONDARY_SIGNATURES.marketOf,
+        ["address"],
+        [input.dao],
+      ),
+    ),
+  );
+  if (word === null || word >= 1n << 160n) {
+    throw new Error("the factory did not answer an address");
+  }
+  if (word === 0n) return null;
+  const answer = `0x${word.toString(16).padStart(40, "0")}`;
+  const quoteToken = decodeAddress(
+    await chain.call(answer, encodeCall0("quote()")),
+  );
+  if (quoteToken === ZERO_ADDRESS) {
+    throw new Error("the market did not report its price token");
+  }
+  const units = await readQuoteUnits(chain, quoteToken);
+  // A token that would not say its units leaves the market's prices in base units: never a guessed currency.
+  return {
+    address: answer,
+    quoteDecimals: units?.decimals,
+    quoteSymbol: units?.symbol,
+  };
+}
+
+/**
+ * The market a decision of this DAO may be aimed at, for `describeDecision`: a vote that publishes or stops a listing
+ * is put in words only when it is aimed at this address, and its prices use this market's own price token. Undefined
+ * while it is read, when this build names no market factory, when the DAO has none or the read failed, and every one
+ * of those leaves a listing vote described as an action this app does not know.
+ */
+export function useSecondaryMarketForWords(input: {
+  chainId: string | number | null;
+  dao: string | null;
+}): DescribeContext["secondaryMarket"] | undefined {
+  const factory = secondaryMarketFactory(input.chainId);
+  const dao = input.dao;
+  const query = useQuery({
+    queryKey: [...SECONDARY_QUERY, "words", dao, factory],
+    enabled: factory !== null && dao !== null,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    queryFn: () =>
+      readMarketForWords(endpointChain(getRpcEndpoint()), {
+        factory: factory as string,
+        dao: dao as string,
+      }),
+  });
+  return query.data ?? undefined;
 }

@@ -247,12 +247,12 @@ export function DecisionComposer({
       );
     // A listing is published by the DAO into its own market, so it is offered only where that market exists: this
     // build has to name its factory, and the factory must not say this DAO has none. While the read has not answered
-    // (or could not) the form is still offered, and says what it could not read.
+    // (or could not) the form is still offered, and says what it could not read. The form prices in the market's own
+    // token, so the launch record's currency is no condition: it could never take away the way to stop trading.
     if (id === "secondary-listing")
       return (
         raisesOffered() &&
         secondary.factory !== null &&
-        ctx.currencyDecimals !== null &&
         ctx.sharesToken !== "" &&
         secondary.query.data?.read.kind !== "absent"
       );

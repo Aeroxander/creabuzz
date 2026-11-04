@@ -48,10 +48,13 @@ interface SecondaryListingTerms {
 export interface SecondaryListingInput extends SecondaryListingTerms {
   /** The DAO's own market, as `SecondaryMarketFactory.marketOf(dao)` answers it. */
   market: string;
-  /** The quote token's decimals, so a price reads as money rather than base units. */
-  quoteDecimals: number;
+  /**
+   * The quote token's decimals, so a price reads as money rather than base units. Needed to open or change a listing;
+   * turning one off carries no prices, so it is composed without them.
+   */
+  quoteDecimals?: number;
   /** The quote token's name, as the vote says it ("USDC"). */
-  quoteSymbol: string;
+  quoteSymbol?: string;
   /**
    * Shares in one lot (18 decimals), so the vote says what one price buys. Left out, the words say
    * "per lot" instead of a number nobody read.
@@ -183,10 +186,15 @@ export function secondaryListingDecision(
   input: SecondaryListingInput,
 ): DecisionDraft {
   const market = marketAddress(input.market);
+  // Prices are only scaled on the way on. Turning the listing off carries none, and the contract never touches the
+  // token for it, so a token that would not say its units must not stop the DAO from stopping new rounds.
+  const decimals = input.quoteDecimals;
   if (
-    !Number.isInteger(input.quoteDecimals) ||
-    input.quoteDecimals < 0 ||
-    input.quoteDecimals > 36
+    input.enabled &&
+    (decimals === undefined ||
+      !Number.isInteger(decimals) ||
+      decimals < 0 ||
+      decimals > 36)
   ) {
     throw new DecisionInputError(
       "quoteDecimals",
@@ -210,7 +218,7 @@ export function secondaryListingDecision(
     lane: "unrestricted",
     ...words({
       terms,
-      quoteDecimals: input.quoteDecimals,
+      quoteDecimals: decimals,
       quoteSymbol: input.quoteSymbol,
       lotSize: input.lotSize,
     }),
@@ -218,15 +226,20 @@ export function secondaryListingDecision(
 }
 
 /**
- * A listing vote in words, or null when the action is not the market's `configureListing`. The
- * selector exists only on the market and the calldata carries every term, so nothing is claimed
- * beyond what the call says; a call whose terms the contract would refuse is not dressed up as one
- * it would take, and stays unknown.
+ * A listing vote in words, or null when the action is not `configureListing` on the DAO's own market.
+ * Any contract can carry that selector, so the call is only a listing when it is aimed at the market
+ * the context names; with no market named, or another one, it stays unknown. Prices are written in
+ * that market's own quote units, and in base units when the market's token did not say them. The
+ * calldata carries every term, so nothing is claimed beyond what the call says; a call whose terms
+ * the contract would refuse is not dressed up as one it would take, and stays unknown.
  */
 export function describeSecondaryListing(
   action: { to: string; data: string },
   ctx: DescribeContext,
 ): ActionDescription | null {
+  const market = ctx.secondaryMarket;
+  if (!market || action.to.toLowerCase() !== market.address.toLowerCase())
+    return null;
   const data = action.data.toLowerCase();
   if (!data.startsWith(selectorOf(SECONDARY_SIGNATURES.configureListing)))
     return null;
@@ -250,8 +263,10 @@ export function describeSecondaryListing(
       kind: "secondary-listing",
       ...words({
         terms,
-        quoteDecimals: ctx.currencyDecimals,
-        quoteSymbol: ctx.currencySymbol,
+        // A symbol without the scale it goes with would label base units as money.
+        quoteDecimals: market.quoteDecimals,
+        quoteSymbol:
+          market.quoteDecimals === undefined ? undefined : market.quoteSymbol,
       }),
     };
   } catch {

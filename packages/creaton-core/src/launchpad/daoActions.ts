@@ -611,6 +611,17 @@ export interface DescribeContext {
   currencySymbol?: string;
   /** The DAO's own Shares (18 decimals), so a bond paid in them is described as the project's own token. */
   projectToken?: string;
+  /**
+   * The DAO's own secondary market, as its factory names it, with the units its price token says it uses. A call to the
+   * listing function is put in words only when it is aimed at this address, and its prices are written at this
+   * market's own scale, never the launch record's sale currency. The units are left out when the token would not say
+   * them, and prices are then shown in base units.
+   */
+  secondaryMarket?: {
+    address: string;
+    quoteDecimals?: number;
+    quoteSymbol?: string;
+  };
   /** The weekly rounds contract this app knows on the DAO's network (D131), so a vote naming it is told apart from one naming anything else. */
   weeklyRounds?: string;
   /** The funding-terms contract of the DAO's summoner (D133), so its votes are put in words. */

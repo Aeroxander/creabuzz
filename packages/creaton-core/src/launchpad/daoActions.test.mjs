@@ -17,6 +17,7 @@ import {
   payDecision,
   projectDecision,
 } from "./daoActions.ts";
+import { describeDecision } from "./decisionDescribe.ts";
 import { secondaryListingDecision } from "./secondaryListing.ts";
 
 const WAD = 10n ** 18n;
@@ -733,7 +734,11 @@ test("a listing says what one price buys, and turning it off says what carries o
 });
 
 test("a listing vote reads back as the same action, and one the contract would refuse stays unknown", () => {
-  const ctx = { currencyDecimals: 6, currencySymbol: "USDC" };
+  const ctx = {
+    currencyDecimals: 6,
+    currencySymbol: "USDC",
+    secondaryMarket: { address: MARKET, quoteDecimals: 6, quoteSymbol: "USDC" },
+  };
   const open = describeAction(secondaryListingDecision(LISTING), ctx);
   assert.equal(open.kind, "secondary-listing");
   // Reading a call back knows only what the calldata carries: the lot size is not in it.
@@ -759,7 +764,9 @@ test("a listing vote reads back as the same action, and one the contract would r
   );
 
   // Without the quote's decimals a price is only put in base units, never in a currency we cannot read.
-  const blind = describeAction(secondaryListingDecision(LISTING), {});
+  const blind = describeAction(secondaryListingDecision(LISTING), {
+    secondaryMarket: { address: MARKET },
+  });
   assert.match(
     blind.title,
     /between 1600000 base units and 8000000 base units/,
@@ -788,6 +795,137 @@ test("a listing vote reads back as the same action, and one the contract would r
     describeAction({ to: MARKET, data: `0x1ecf4419${"0".repeat(64)}` }, ctx)
       .kind,
     "unknown",
+  );
+});
+
+test("a listing is described only when it is aimed at the DAO's own market, and in that market's own quote units", () => {
+  const OTHER = "0x00000000000000000000000000000000000000f6";
+  const market18 = {
+    address: MARKET,
+    quoteDecimals: 18,
+    quoteSymbol: "DAI",
+  };
+  // The launch record says USDC at 6 decimals; the market quotes in an 18-decimal token.
+  const recordCtx = { currencyDecimals: 6, currencySymbol: "USDC" };
+  const dai = secondaryListingDecision({
+    ...LISTING,
+    minPrice: 1_600_000_000_000_000_000n,
+    maxPrice: 8_000_000_000_000_000_000n,
+    levels: 64,
+    quoteDecimals: 18,
+    quoteSymbol: "DAI",
+  });
+  const read = describeAction(dai, { ...recordCtx, secondaryMarket: market18 });
+  assert.equal(read.kind, "secondary-listing");
+  // The market's scale, never the record's: at 6 decimals this would read 1600000000000.00 USDC.
+  assert.equal(
+    read.title,
+    "Open a market between 1.60 and 8.00 DAI, in 64 price steps",
+  );
+  assert.ok(!/USDC/.test(read.title + read.lines.join(" ")));
+
+  // A market whose token did not say its units: base units, never the record's currency.
+  const unread = describeAction(dai, {
+    ...recordCtx,
+    secondaryMarket: { address: MARKET },
+  });
+  assert.equal(unread.kind, "secondary-listing");
+  assert.match(unread.title, /between 1600000000000000000 base units and /);
+  assert.ok(!/USDC/.test(unread.title));
+
+  // The same selector and terms sent to any other contract is not a listing.
+  const elsewhere = { ...dai, to: OTHER };
+  assert.equal(
+    describeAction(elsewhere, { ...recordCtx, secondaryMarket: market18 }).kind,
+    "unknown",
+  );
+  assert.equal(
+    describeDecision(elsewhere, { ...recordCtx, secondaryMarket: market18 })
+      .kind,
+    "unknown",
+  );
+  // The address match ignores case, as every other describer's does.
+  assert.equal(
+    describeAction(
+      { ...dai, to: MARKET.toUpperCase().replace("0X", "0x") },
+      { secondaryMarket: market18 },
+    ).kind,
+    "secondary-listing",
+  );
+  // Without a market to compare against, nothing can be called a listing; and so for turning one off.
+  assert.equal(describeAction(dai, recordCtx).kind, "unknown");
+  const off = secondaryListingDecision({
+    ...LISTING,
+    enabled: false,
+    minPrice: 0n,
+    maxPrice: 0n,
+    levels: 0,
+  });
+  assert.equal(describeAction(off, recordCtx).kind, "unknown");
+  assert.equal(
+    describeAction({ ...off, to: OTHER }, { secondaryMarket: market18 }).kind,
+    "unknown",
+  );
+  assert.equal(
+    describeAction(off, { secondaryMarket: market18 }).kind,
+    "secondary-listing",
+  );
+});
+
+test("a decision that is not a plain call, or that carries ETH, is never read as an ordinary listing", () => {
+  const ctx = {
+    secondaryMarket: { address: MARKET, quoteDecimals: 6, quoteSymbol: "USDC" },
+  };
+  const listing = secondaryListingDecision(LISTING);
+  const plain = { to: listing.to, data: listing.data, op: 0, value: 0n };
+  assert.equal(describeDecision(plain, ctx).kind, "secondary-listing");
+  // Run as the DAO itself, the same calldata does something else entirely.
+  const delegated = describeDecision({ ...plain, op: 1 }, ctx);
+  assert.equal(delegated.kind, "unknown");
+  assert.match(delegated.lines.join(" "), /as the DAO itself/);
+  // Sending ETH is not part of a listing.
+  const paid = describeDecision({ ...plain, value: 1n }, ctx);
+  assert.equal(paid.kind, "unknown");
+  assert.match(paid.lines.join(" "), /ETH/);
+  // The guard covers every kind of action, not only this one.
+  const pay = payDecision({
+    currency: CUR,
+    currencyDecimals: 6,
+    currencySymbol: "USDC",
+    recipient: R1,
+    amount: 5_000_000n,
+  });
+  assert.equal(
+    describeDecision({ to: pay.to, data: pay.data, op: 1, value: 0n }, {}).kind,
+    "unknown",
+  );
+});
+
+test("the vote to stop new rounds is composed without the price token's units, and a listing still needs them", () => {
+  const stop = {
+    market: MARKET,
+    enabled: false,
+    minPrice: 0n,
+    maxPrice: 0n,
+    levels: 0,
+  };
+  const off = secondaryListingDecision({ ...stop });
+  assert.equal(off.to, MARKET);
+  assert.equal(
+    off.title,
+    "Stop new trading rounds (settlement and claims continue)",
+  );
+  // Whatever a form could not read is no reason to refuse turning trading off.
+  for (const quoteDecimals of [undefined, Number.NaN, 2.5, -1, 99]) {
+    assert.equal(
+      secondaryListingDecision({ ...stop, quoteDecimals }).data,
+      off.data,
+    );
+  }
+  // Turning it on prices a grid, so the scale must be known.
+  refused(
+    () => secondaryListingDecision({ ...LISTING, quoteDecimals: undefined }),
+    "quoteDecimals",
   );
 });
 

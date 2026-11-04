@@ -8,18 +8,11 @@
 
 import { useMemo, useState } from "react";
 
-import { formatUnits, parseUnits } from "@creaton/core/launchpad/daoActions.ts";
-import {
-  listingPrice,
-  secondaryListingDecision,
-} from "@creaton/core/launchpad/secondaryListing.ts";
+import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
+import { listingPrice } from "@creaton/core/launchpad/secondaryListing.ts";
 import { SelectField, TextField } from "./decision-fields";
-import {
-  attempt,
-  type DraftResult,
-  DraftPanel,
-  type FormProps,
-} from "./decision-forms";
+import { type DraftResult, DraftPanel, type FormProps } from "./decision-forms";
+import { listingFormDraft } from "../lib/listing-draft";
 import { useSecondary } from "../use-secondary";
 
 export function TradingListingForm({
@@ -64,79 +57,36 @@ export function TradingListingForm({
       ? `one lot of ${formatUnits(lotSize, 18)} Shares`
       : "one whole lot of Shares";
 
-  const result = useMemo<DraftResult>(() => {
-    if (factory === null) {
-      return {
-        problem: "This build knows no secondary market on this network.",
-      };
-    }
-    if (!read) {
-      return {
-        problem: query.isError
-          ? "The market could not be read. Reload to try again."
-          : "Reading the market…",
-      };
-    }
-    if (read.kind === "absent") {
-      return {
-        problem:
-          "This project has no secondary market to publish a listing in.",
-      };
-    }
-    if (read.kind === "unreadable") {
-      return {
-        problem: `The market could not be read (${read.reason}). Reload to try again.`,
-      };
-    }
-    if (decimals === null) {
-      return {
-        problem: "This project has no sale currency to price a market in.",
-      };
-    }
-    const market = read.market;
-    if (enabled === "off") {
-      // Disabling carries no terms: the contract writes zeros and ignores whatever is sent.
-      return attempt(() =>
-        secondaryListingDecision({
-          market,
-          enabled: false,
-          minPrice: 0n,
-          maxPrice: 0n,
-          levels: 0,
-          quoteDecimals: decimals,
-          quoteSymbol: symbol ?? "",
-        }),
-      );
-    }
-    return attempt(() =>
-      secondaryListingDecision({
+  const market = view?.market ?? null;
+  const result = useMemo<DraftResult>(
+    () =>
+      listingFormDraft({
+        factoryKnown: factory !== null,
+        failed: query.isError,
+        read,
         market,
-        enabled: true,
-        minPrice: parseUnits(minText, decimals, "minPrice", "The lowest price"),
-        maxPrice: parseUnits(
-          maxText,
-          decimals,
-          "maxPrice",
-          "The highest price",
-        ),
-        levels: levelsText.trim() === "" ? 0 : Number(levelsText),
-        quoteDecimals: decimals,
-        quoteSymbol: symbol ?? "",
-        lotSize: lotSize ?? undefined,
+        quote:
+          decimals !== null && symbol !== null ? { decimals, symbol } : null,
+        lotSize,
+        enabled,
+        minText,
+        maxText,
+        levelsText,
       }),
-    );
-  }, [
-    factory,
-    read,
-    lotSize,
-    query.isError,
-    decimals,
-    enabled,
-    minText,
-    maxText,
-    levelsText,
-    symbol,
-  ]);
+    [
+      factory,
+      query.isError,
+      read,
+      market,
+      decimals,
+      symbol,
+      lotSize,
+      enabled,
+      minText,
+      maxText,
+      levelsText,
+    ],
+  );
 
   if (factory !== null && query.isPending) {
     return (
@@ -165,7 +115,13 @@ export function TradingListingForm({
                 ? `The market is open: prices from ${money(listing.minPrice)} to ${money(listing.maxPrice)}, in ${listing.levels} steps.`
                 : "The market is off: no round can open until a listing is published."}
       </p>
-      {present ? (
+      {market !== null && view?.tokenUnreadable ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          The market&apos;s price token isn&apos;t answering, so prices
+          can&apos;t be set right now. You can still stop new rounds.
+        </p>
+      ) : null}
+      {market !== null ? (
         <SelectField
           hint="Turning it off stops new rounds. Rounds already open or settled still settle, refund and pay out, and every claim still works."
           label="The listing"

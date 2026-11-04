@@ -34,6 +34,7 @@ import { useDecisionContext, useDecisions } from "../use-decisions";
 import { usePaymentRuns, useSpendingSummary } from "../use-spending";
 import { useChallengeLock } from "../use-challenge-lock";
 import { useRecordEvents, useWork } from "../use-work";
+import { useSecondaryMarketForWords } from "../use-secondary";
 import { decisionStage } from "./DecisionCard";
 import { bondsOf, decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
@@ -96,6 +97,10 @@ export function DaoOverview({
     shares: context.data?.shares ?? null,
     wallet,
   });
+  const secondaryMarket = useSecondaryMarketForWords({
+    chainId: launch.record.chainId ?? null,
+    dao,
+  });
   const titleOf = decisionTitler({
     launch,
     dao,
@@ -103,6 +108,7 @@ export function DaoOverview({
     mandates: work.data?.mandates.map((m) => m.address),
     bonds: bondsOf(work.data),
     projectToken: context.data?.shares,
+    secondaryMarket,
   });
 
   const { spending, labelOf } = useSpendingSummary({

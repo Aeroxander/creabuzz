@@ -42,6 +42,7 @@ import { useDaoHoldings } from "../use-dao-holdings";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { usePeopleWithWallets } from "../use-people";
 import { useDaoHolders, useRecordEvents, useWork } from "../use-work";
+import { useSecondaryMarketForWords } from "../use-secondary";
 import { bondsOf, decisionTitler } from "./decision-title";
 import { Figure } from "./Figure";
 import { HoldersCard } from "./HoldersCard";
@@ -110,6 +111,10 @@ export function RecordTab({
   const [filter, setFilter] = useState<"all" | LedgerKind>("all");
   const [shown, setShown] = useState(PAGE);
 
+  const secondaryMarket = useSecondaryMarketForWords({
+    chainId: launch.record.chainId ?? null,
+    dao,
+  });
   const titleOf = decisionTitler({
     launch,
     dao,
@@ -117,6 +122,7 @@ export function RecordTab({
     mandates: work.data?.mandates.map((m) => m.address),
     bonds: bondsOf(work.data),
     projectToken: context.data?.shares,
+    secondaryMarket,
   });
   // The launch record carries each milestone's words; the chain only holds their hash, so match them up.
   const milestoneWords = new Map(

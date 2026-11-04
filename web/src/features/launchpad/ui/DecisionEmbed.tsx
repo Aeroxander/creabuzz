@@ -23,6 +23,7 @@ import { describeDecision } from "../lib/decision-describe";
 import { decisionStage } from "../lib/decision-stage";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { useLaunch } from "../use-launches";
+import { useSecondaryMarketForWords } from "../use-secondary";
 
 const shares = (wei: bigint) => formatUnits(wei, 18, 0);
 
@@ -31,6 +32,10 @@ export function DecisionEmbed({ link }: { link: DecisionLink }) {
   const dao = launch ? daoOfLaunch(launch) : null;
   const decisions = useDecisions(dao, null);
   const context = useDecisionContext(dao);
+  const secondaryMarket = useSecondaryMarketForWords({
+    chainId: launch?.record.chainId ?? null,
+    dao,
+  });
 
   if (isLoading) {
     return (
@@ -93,6 +98,7 @@ export function DecisionEmbed({ link }: { link: DecisionLink }) {
     ? describeDecision(decision.action, {
         dao,
         factory: context.data?.factory,
+        secondaryMarket,
       })
     : null;
   const title =

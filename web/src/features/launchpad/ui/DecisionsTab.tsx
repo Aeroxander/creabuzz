@@ -15,6 +15,7 @@ import { recordSaleCurrency } from "../chain";
 import type { Launch } from "../models";
 import { useDecisionContext, useDecisions } from "../use-decisions";
 import { useWork } from "../use-work";
+import { useSecondaryMarketForWords } from "../use-secondary";
 import { useWalletSend } from "../use-wallet-send";
 import { Button } from "@/shared/ui/button";
 import { proposalTopic } from "@/features/board/lib/proposal-link";
@@ -58,6 +59,11 @@ export function DecisionsTab({
   const currencyDecimals = sale?.decimals;
   const snapshot = decisions.data;
   const context = useDecisionContext(dao);
+  // The DAO's own market and its price units, so a listing vote is only described when it is aimed there.
+  const secondaryMarket = useSecondaryMarketForWords({
+    chainId: launch.record.chainId ?? null,
+    dao,
+  });
   const work = useWork(dao, wallet.address);
   // The case against each money vote, as its proposer answered before opening it (CHALLENGER-PLAN.md).
   const challenges = useChallenges(launch);
@@ -206,6 +212,7 @@ export function DecisionsTab({
                     label: labelOf,
                     checkWords,
                     projectToken: context.data?.shares,
+                    secondaryMarket,
                     fundingTerms:
                       context.data?.fundingTerms?.kind === "present"
                         ? context.data.fundingTerms.address
