@@ -784,7 +784,7 @@ test("a contributor project is started from the page, work is claimed the same d
   await refresh(founder, "Work");
   await founder.getByTestId("work-settle").click();
   await expect(founder.getByTestId("work-claim-status")).toContainText(
-    "Approved",
+    "Review complete",
     { timeout: 60_000 },
   );
   await pass(700_000);
@@ -1451,7 +1451,7 @@ test("several people earn in one contributor project: two first projects, and a 
     const card = claimCard(founder, claim);
     await card.getByTestId("work-settle").click();
     await expect(card.getByTestId("work-claim-status")).toContainText(
-      "Approved",
+      "Review complete",
       { timeout: 60_000 },
     );
   }
