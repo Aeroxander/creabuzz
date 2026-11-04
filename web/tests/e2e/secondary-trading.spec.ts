@@ -434,7 +434,7 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   await expect(founder.getByTestId("trading-bid")).toHaveCount(0);
   await founder.getByTestId("trading-settle").click();
   await expect(founder.getByTestId("trading-round-status")).toContainText(
-    `Settled at 1 ${QUOTE_SYMBOL} a lot`,
+    `Settled: 2 lots traded at 1 ${QUOTE_SYMBOL} a lot`,
     { timeout: 90_000 },
   );
   const round = await callWords(MARKET, `${SIG.rounds}${word(1n)}`);
@@ -509,7 +509,7 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
     timeout: 60_000,
   });
   await expect(third.getByTestId("trading-round-status")).toContainText(
-    `Settled at 1 ${QUOTE_SYMBOL} a lot`,
+    `Settled: 2 lots traded at 1 ${QUOTE_SYMBOL} a lot`,
   );
   await expect(third.getByTestId("trading-claim")).toHaveCount(0);
   await expect(third.getByTestId("trading-claim-shares")).toHaveCount(0);
@@ -693,6 +693,108 @@ test("a round nobody settled still pays out after the next round opens: each wal
   });
   expect(await callWord(MARKET, `${SIG.quoteIn}${word(2n)}`)).toBe(0n);
   say("both sides collected round 2 from the card while round 3 was open");
+
+  await context.close();
+});
+
+test("a settled round where the offer and the bid never cross says nothing traded, and prints no price", async ({
+  browser,
+}) => {
+  test.setTimeout(600_000);
+  const context = await browser.newContext();
+  const relay = createMockRelay();
+  relay.seed(launchRecord());
+  const say = (what: string) => console.log(`[trading] ${what}`);
+
+  // The journeys above left round 3 open and empty. Run the whole file, not this test alone.
+  expect(await callWord(MARKET, SIG.roundCount)).toBe(3n);
+
+  // ── One offer at the top of the grid, one bid at the bottom: they can never meet ─────────────────────────
+  const founder = await personPage(
+    context,
+    relay,
+    FOUNDER_WALLET,
+    FOUNDER_NSEC,
+  );
+  await openTrading(founder);
+  await expect(founder.getByTestId("trading-sell")).toBeVisible({
+    timeout: 60_000,
+  });
+  const founderSharesBefore = await balanceOf(SHARES, FOUNDER_WALLET);
+  await founder.getByTestId("trading-sell").click();
+  await founder.getByTestId("trading-sell-lots").fill("1");
+  await founder.getByTestId("trading-sell-price").fill(HIGH_TEXT);
+  await founder.getByTestId("trading-sell-submit").click();
+  await expect(founder.getByTestId("trading-my-sell")).toContainText(
+    "You offer 1 lot at",
+    { timeout: 90_000 },
+  );
+  const bidder = await personPage(context, relay, BIDDER_WALLET, BIDDER_NSEC);
+  await openTrading(bidder);
+  await expect(bidder.getByTestId("trading-bid")).toBeVisible({
+    timeout: 60_000,
+  });
+  const bidderQuoteBefore = await balanceOf(QUOTE, BIDDER_WALLET);
+  await bidder.getByTestId("trading-bid").click();
+  await bidder.getByTestId("trading-bid-lots").fill("1");
+  await bidder.getByTestId("trading-bid-price").fill(LOW_TEXT);
+  await bidder.getByTestId("trading-bid-submit").click();
+  await expect(bidder.getByTestId("trading-my-bid")).toContainText(
+    "You bid for 1 lot at up to",
+    { timeout: 90_000 },
+  );
+  say("round 3 holds one offer at the top and one bid at the bottom");
+
+  // ── Settle it: nothing matches, but the chain still stores level 0 and both totals stay non-zero ────────
+  await passTime(3 * DAY + 60);
+  await founder.reload();
+  await expect(founder.getByTestId("trading-settle")).toBeVisible({
+    timeout: 60_000,
+  });
+  await founder.getByTestId("trading-settle").click();
+  await expect(founder.getByTestId("trading-round-status")).toContainText(
+    "Settled.",
+    { timeout: 90_000 },
+  );
+  const round = await callWords(MARKET, `${SIG.rounds}${word(3n)}`);
+  expect(round[9]).toBe(1n); // settled
+  expect(round[8]).toBe(0n); // the stored level is the grid's lowest step, a price nobody traded at
+  expect(round[6]).toBe(1n); // asked: the open total, untouched by settling
+  expect(round[7]).toBe(1n); // wanted
+  // The page says what happened, and names no price for a trade that never was.
+  await expect(founder.getByTestId("trading-round-status")).toHaveText(
+    "Settled. Nothing crossed, so nothing traded.",
+  );
+  await expect(founder.getByTestId("trading-round-status")).not.toContainText(
+    `${QUOTE_SYMBOL} a lot`,
+  );
+  await expect(founder.getByTestId("trading-my-sell")).toContainText(
+    "Nothing sold: your Shares are back with you.",
+  );
+  await expect(founder.getByTestId("trading-my-sell")).not.toContainText(
+    "round's price",
+  );
+  // The seller's unsold Shares went back in the settling transaction.
+  expect(await balanceOf(SHARES, FOUNDER_WALLET)).toBe(founderSharesBefore);
+
+  await bidder.reload();
+  await expect(bidder.getByTestId("trading-round-status")).toHaveText(
+    "Settled. Nothing crossed, so nothing traded.",
+    { timeout: 60_000 },
+  );
+  await expect(bidder.getByTestId("trading-my-bid")).toContainText(
+    "Nothing bought: your money is yours to collect.",
+  );
+  await expect(bidder.getByTestId("trading-my-bid")).not.toContainText(
+    "round's price",
+  );
+  // The whole bid comes back by the card's own button.
+  await expect(bidder.getByTestId("trading-claim-quote")).toBeVisible();
+  await bidder.getByTestId("trading-claim-quote").click();
+  await expect
+    .poll(() => balanceOf(QUOTE, BIDDER_WALLET), { timeout: 90_000 })
+    .toBe(bidderQuoteBefore);
+  say("a round that matched nothing says so, and everyone has their own back");
 
   await context.close();
 });

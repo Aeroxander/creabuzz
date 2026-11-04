@@ -198,6 +198,7 @@ test("a DAO with a market reads its listing, its latest round and the wallet's o
     settled: false,
     sellersShare: false,
     phase: "bidding",
+    matched: 0n,
   });
   assert.deepEqual(read.wallet, {
     address: WALLET,
@@ -566,7 +567,7 @@ const idOf = (data) => BigInt(`0x${data.slice(10, 74)}`);
  * A market whose rounds each open a week after the last. `orders` says which rounds the wallet has an
  * offer (`s`) or a bid (`b`) in, and `settled` which rounds settled; the rest are past their deadline at `now`.
  */
-function marketOfRounds(orders, settled = []) {
+function marketOfRounds(orders, settled = [], matchedBy = {}) {
   const calls = [];
   const week = 7 * 86_400;
   return {
@@ -585,6 +586,9 @@ function marketOfRounds(orders, settled = []) {
           settled: settled.includes(Number(id)) ? 1n : 0n,
         });
       }
+      // A settled round's result: nothing crossed unless the test says lots did.
+      if (sig === sel("clearingOf"))
+        return words(0, matchedBy[Number(id)] ?? 0, 0);
       const mine = orders[Number(id)] ?? {};
       if (sig === sel("sells"))
         return mine.s ? sell(mine.s) : words(0, 0, 0, 0, 0, 0);
@@ -703,5 +707,72 @@ test("an earlier round that cannot be read fails the read, never a wallet owed n
       now: LATER,
     }),
     /no round/,
+  );
+});
+
+/** `clearingOf`'s three words: level, matched lots, sellers share. */
+const clearing = (level, matched, sellersShare = 0n) =>
+  words(level, matched, sellersShare);
+
+test("a settled round carries the lots that really traded, read from the market", async () => {
+  // Offers and bids that never cross: asked and wanted stay the open totals, the market answers matched 0.
+  const none = fakeChain({
+    [sel("rounds")]: () => round({ settled: 1n, asked: 1n, wanted: 1n }),
+    [sel("clearingOf")]: () => clearing(0n, 0n),
+  });
+  const a = await readSecondaryMarket(none, INPUT);
+  assert.equal(a.round.phase, "settled");
+  assert.equal(a.round.matched, 0n);
+  // The round it asks about is the latest one, by id.
+  const asked = none.calls.find((c) => c.data.startsWith(sel("clearingOf")));
+  assert.equal(asked.to, MARKET);
+  assert.equal(
+    asked.data,
+    encodeFunctionData(SECONDARY_SIGNATURES.clearingOf, ["uint256"], [7n]),
+  );
+  const some = fakeChain({
+    [sel("rounds")]: () => round({ settled: 1n, price: 3n }),
+    [sel("clearingOf")]: () => clearing(3n, 5n),
+  });
+  assert.equal((await readSecondaryMarket(some, INPUT)).round.matched, 5n);
+  // A round still open is not asked: its clearing is a preview, not a result.
+  const open = fakeChain();
+  assert.equal((await readSecondaryMarket(open, INPUT)).round.matched, 0n);
+  assert.ok(
+    !open.calls.some((c) => c.data.startsWith(sel("clearingOf"))),
+    "an open round is never asked for its clearing",
+  );
+});
+
+test("a settled round whose clearing cannot be read is an unreadable market, never zero lots", async () => {
+  const chain = fakeChain({
+    [sel("rounds")]: () => round({ settled: 1n }),
+    [sel("clearingOf")]: () => {
+      throw new Error("rpc http 503");
+    },
+  });
+  const read = await readSecondaryMarket(chain, INPUT);
+  assert.equal(read.kind, "unreadable");
+  assert.match(read.reason, /rpc http 503/);
+});
+
+test("an earlier settled round carries its matched lots too", async () => {
+  const chain = marketOfRounds(
+    { 1: { s: { lots: 1n } }, 2: { s: {} } },
+    [1, 2],
+    { 2: 2 },
+  );
+  const read = await readEarlierRounds(chain, {
+    market: MARKET,
+    wallet: WALLET,
+    latest: 3n,
+    now: LATER,
+  });
+  assert.deepEqual(
+    read.rounds.map((r) => [r.id, r.round.matched]),
+    [
+      [2n, 2n],
+      [1n, 0n],
+    ],
   );
 });

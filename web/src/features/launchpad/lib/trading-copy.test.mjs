@@ -67,6 +67,7 @@ const round = (over = {}) => ({
   settled: false,
   sellersShare: false,
   phase: "bidding",
+  matched: 0n,
   ...over,
 });
 
@@ -91,6 +92,7 @@ const wideRound = (over = {}) => ({
   settled: false,
   sellersShare: false,
   phase: "bidding",
+  matched: 0n,
   ...over,
 });
 
@@ -158,8 +160,8 @@ test("a price is written at the quote token's own scale, whatever its decimals",
     "A lot is 1 Shares. Each step is 1 FQ apart.",
   );
   assert.equal(
-    roundLine(wideRound({ phase: "settled", settled: true }), FQ),
-    "Settled at 1 FQ a lot, after offers closed Oct 17. Everyone collects their own result.",
+    roundLine(wideRound({ phase: "settled", settled: true, matched: 2n }), FQ),
+    "Settled: 2 lots traded at 1 FQ a lot, after offers closed Oct 17. Everyone collects their own result.",
   );
   assert.equal(
     sellOrderLine(wideRound(), sell({ lots: 2n }), FQ),
@@ -260,15 +262,11 @@ test("a round's status carries its deadline, and a settled one its price", () =>
     /^Bidding is over\. Anyone can settle it until Oct 19/,
   );
   assert.equal(
-    roundLine(round({ phase: "settled", settled: true, price: 2 }), USDC),
-    "Settled at 1.016 USDC a lot, after offers closed Oct 17. Everyone collects their own result.",
-  );
-  assert.equal(
     roundLine(
-      round({ phase: "settled", settled: true, asked: 0n, wanted: 0n }),
+      round({ phase: "settled", settled: true, price: 2, matched: 2n }),
       USDC,
     ),
-    "Settled. Nothing traded: everyone takes back theirs.",
+    "Settled: 2 lots traded at 1.016 USDC a lot, after offers closed Oct 17. Everyone collects their own result.",
   );
   assert.match(
     roundLine(round({ phase: "void" }), USDC),
@@ -277,6 +275,107 @@ test("a round's status carries its deadline, and a settled one its price", () =>
   assert.equal(
     roundLine(round({ phase: "none" }), USDC),
     "No round has opened yet.",
+  );
+});
+
+test("a settled round that matched nothing never prints a price", () => {
+  const NOTHING = "Settled. Nothing crossed, so nothing traded.";
+  // Orders on both sides that do not cross: asked and wanted are running totals of the open orders, so they
+  // are not zero, but no lot changed hands. The old line printed the lowest price of the grid here.
+  assert.equal(
+    roundLine(
+      round({
+        phase: "settled",
+        settled: true,
+        asked: 1n,
+        wanted: 1n,
+        matched: 0n,
+      }),
+      USDC,
+    ),
+    NOTHING,
+  );
+  // Offers only, and bids only.
+  assert.equal(
+    roundLine(
+      round({
+        phase: "settled",
+        settled: true,
+        asked: 3n,
+        wanted: 0n,
+        matched: 0n,
+      }),
+      USDC,
+    ),
+    NOTHING,
+  );
+  assert.equal(
+    roundLine(
+      round({
+        phase: "settled",
+        settled: true,
+        asked: 0n,
+        wanted: 4n,
+        matched: 0n,
+      }),
+      USDC,
+    ),
+    NOTHING,
+  );
+  // Nothing at all was offered or bid: the same plain answer, whatever the stored price.
+  assert.equal(
+    roundLine(
+      round({ phase: "settled", settled: true, asked: 0n, wanted: 0n }),
+      USDC,
+    ),
+    NOTHING,
+  );
+});
+
+test("a settled round that traded says how much, next to the price", () => {
+  // One lot, a one-lot round: the volume is part of the sentence, singular.
+  assert.equal(
+    roundLine(
+      round({
+        phase: "settled",
+        settled: true,
+        price: 2,
+        asked: 1n,
+        wanted: 1n,
+        matched: 1n,
+      }),
+      USDC,
+    ),
+    "Settled: 1 lot traded at 1.016 USDC a lot, after offers closed Oct 17. Everyone collects their own result.",
+  );
+  assert.equal(
+    roundLine(
+      round({
+        phase: "settled",
+        settled: true,
+        price: 2,
+        asked: 5n,
+        wanted: 3n,
+        matched: 3n,
+      }),
+      USDC,
+    ),
+    "Settled: 3 lots traded at 1.016 USDC a lot, after offers closed Oct 17. Everyone collects their own result.",
+  );
+  // Level zero is a real price when something traded at it.
+  assert.match(
+    roundLine(
+      round({
+        phase: "settled",
+        settled: true,
+        price: 0,
+        asked: 2n,
+        wanted: 2n,
+        matched: 2n,
+      }),
+      USDC,
+    ),
+    /^Settled: 2 lots traded at 1 USDC a lot/,
   );
 });
 
@@ -443,6 +542,27 @@ test("a wallet's own orders read as sentences, before and after the result", () 
     ),
     "You offer 2 lots at 1.008 USDC a lot or more. Sold: 1 lot at the round's price.",
   );
+  // An order that filled nothing, in a settled round, never claims a price it did not trade at.
+  const none = sellOrderLine(
+    round({ phase: "settled" }),
+    sell({ lots: 2n, minStep: 5, filled: 0n }),
+    USDC,
+  );
+  assert.equal(
+    none,
+    "You offer 2 lots at 1.04 USDC a lot or more. Nothing sold: your Shares are back with you.",
+  );
+  assert.doesNotMatch(none, /round's price/);
+  const noneBid = bidOrderLine(
+    round({ phase: "settled" }),
+    bid({ lots: 2n, maxStep: 2, filled: 0n }),
+    USDC,
+  );
+  assert.equal(
+    noneBid,
+    "You bid for 2 lots at up to 1.016 USDC a lot. Nothing bought: your money is yours to collect.",
+  );
+  assert.doesNotMatch(noneBid, /round's price/);
   assert.match(
     bidOrderLine(round(), bid({ cancelled: true }), USDC),
     /money is yours to collect/,

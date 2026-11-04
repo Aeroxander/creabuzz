@@ -340,6 +340,13 @@ export interface RoundRecord {
 /** A round plus where it stands now. */
 export interface RoundView extends RoundRecord {
   phase: RoundPhase;
+  /**
+   * The whole lots that really changed hands: what `clearingOf` answers for a settled round, 0 for any
+   * other. `asked` and `wanted` are running totals of the open orders and say nothing about this, and a
+   * settled round that matched nothing still stores a price level (0), so only `matched` tells a trade
+   * from a round where nothing crossed.
+   */
+  matched: bigint;
 }
 
 /** One seller's offer in one round, as `sells(uint256,address)` returns it. */
@@ -446,6 +453,35 @@ export function decodeClearing(hex: string): ClearingView {
     matched: w[1],
     sellersShare: flag(w[2], "clearingOf().sellersShare"),
   };
+}
+
+/**
+ * A round as the page shows it: its record, its phase now, and the lots it matched. Only a settled round
+ * is asked for its clearing, since for an open one it is a preview and for a void one nothing traded; the
+ * orders are not touched by settling, so `clearingOf` still answers the recorded result. A failed call
+ * throws: a clearing we could not read is not a round that matched nothing (Review-Proven Rule 1).
+ */
+async function viewRound(
+  chain: Pick<WorkChain, "call">,
+  market: string,
+  id: bigint,
+  record: RoundRecord,
+  now: number,
+): Promise<RoundView> {
+  const phase = roundPhase(record, now);
+  const matched = record.settled
+    ? decodeClearing(
+        await chain.call(
+          market,
+          encodeFunctionData(
+            SECONDARY_SIGNATURES.clearingOf,
+            ["uint256"],
+            [id],
+          ),
+        ),
+      ).matched
+    : 0n;
+  return { ...record, phase, matched };
 }
 
 /** What one lot costs at grid level `level`, as the round's frozen grid prices it. */
@@ -596,10 +632,7 @@ export async function readSecondaryMarket(
     if (record.opensAt === 0) {
       return { kind: "present", market, listing, round: null, wallet: mine };
     }
-    const round: RoundView = {
-      ...record,
-      phase: roundPhase(record, input.now),
-    };
+    const round = await viewRound(chain, market, latest, record, input.now);
     if (!wallet)
       return { kind: "present", market, listing, round, wallet: mine };
     const order = (signature: string) =>
@@ -709,7 +742,7 @@ export async function readEarlierRounds(
       if (sell.lots === 0n && bid.lots === 0n) return null;
       return {
         id,
-        round: { ...record, phase: roundPhase(record, input.now) },
+        round: await viewRound(chain, market, id, record, input.now),
         sell: sell.lots === 0n ? null : sell,
         bid: bid.lots === 0n ? null : bid,
       };

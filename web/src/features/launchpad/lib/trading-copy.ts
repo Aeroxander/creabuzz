@@ -100,15 +100,14 @@ export function listingTermsLine(
   return `from ${money(listing.minPrice, quote)} to ${money(listing.maxPrice, quote)} a lot, in ${steps}`;
 }
 
-/** Where the latest round stands, said plainly; nothing traded when it settled or went void with no orders. */
+/** Where the latest round stands, said plainly; a settled round names a price only when lots traded at it. */
 export function roundLine(
   round: Pick<
     RoundView,
     | "phase"
     | "closesAt"
     | "settleDeadline"
-    | "asked"
-    | "wanted"
+    | "matched"
     | "price"
     | "minPrice"
     | "step"
@@ -121,10 +120,11 @@ export function roundLine(
     case "settling":
       return `Bidding is over. Anyone can settle it until ${date(round.settleDeadline)}.`;
     case "settled":
-      // Nothing was offered or bid: a price would be a claim about a trade nobody made.
-      return round.asked === 0n && round.wanted === 0n
-        ? "Settled. Nothing traded: everyone takes back theirs."
-        : `Settled at ${money(lotPriceAt(round, round.price), quote)} a lot, after offers closed ${day(round.closesAt)}. Everyone collects their own result.`;
+      // Only matched lots are a trade. Offers and bids can both be on the table and never cross, and the
+      // stored price is then the grid's lowest step: a price nobody traded at.
+      return round.matched > 0n
+        ? `Settled: ${lots(round.matched)} traded at ${money(lotPriceAt(round, round.price), quote)} a lot, after offers closed ${day(round.closesAt)}. Everyone collects their own result.`
+        : "Settled. Nothing crossed, so nothing traded.";
     case "void":
       return "Nobody settled it in time: nothing traded, so everyone takes back what they put in.";
     case "none":
@@ -346,7 +346,9 @@ export function sellOrderLine(
   const at = money(lotPriceAt(round, sell.minStep), quote);
   const offer = `You offer ${lots(sell.lots)} at ${at} a lot or more.`;
   if (round.phase === "settled") {
-    return `${offer} Sold: ${lots(sell.filled)} at the round's price.`;
+    return sell.filled === 0n
+      ? `${offer} Nothing sold: your Shares are back with you.`
+      : `${offer} Sold: ${lots(sell.filled)} at the round's price.`;
   }
   if (round.phase === "void")
     return `${offer} The round went void, so they come back to you.`;
@@ -365,7 +367,9 @@ export function bidOrderLine(
   }
   const offer = `You bid for ${lots(bid.lots)} at up to ${at} a lot.`;
   if (round.phase === "settled") {
-    return `${offer} Bought: ${lots(bid.filled)} at the round's price.`;
+    return bid.filled === 0n
+      ? `${offer} Nothing bought: your money is yours to collect.`
+      : `${offer} Bought: ${lots(bid.filled)} at the round's price.`;
   }
   if (round.phase === "void") {
     return `${offer} The round went void, so your money comes back to you.`;
