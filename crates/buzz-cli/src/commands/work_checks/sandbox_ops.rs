@@ -11,13 +11,69 @@
 //! malicious stop-everything-the-watchdog repro — before anything runs.
 //! Every surprise fails closed; there is no fallback anywhere.
 
-use std::fs::{DirBuilder, File};
+use std::fs::File;
 use std::io::{Read as _, Write as _};
-use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+/// The file-mode and owner calls this module's checks stand on exist only on Unix. Anywhere else each one
+/// answers an error, so every check that needs one refuses: the sandbox never runs on a host that cannot
+/// prove its private root, its owner or its supervisor's mode (there is no fallback).
+#[cfg(unix)]
+mod host {
+    use std::fs::{DirBuilder, Metadata, Permissions};
+    use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _};
+    use std::path::Path;
+
+    pub(super) fn mode_of(meta: &Metadata) -> Result<u32, String> {
+        Ok(meta.permissions().mode())
+    }
+
+    pub(super) fn uid_of(meta: &Metadata) -> Result<u32, String> {
+        Ok(meta.uid())
+    }
+
+    pub(super) fn set_mode(path: &Path, mode: u32) -> std::io::Result<()> {
+        std::fs::set_permissions(path, Permissions::from_mode(mode))
+    }
+
+    pub(super) fn create_dir_with_mode(path: &Path, mode: u32) -> std::io::Result<()> {
+        DirBuilder::new().mode(mode).create(path)
+    }
+}
+
+#[cfg(not(unix))]
+mod host {
+    use std::fs::Metadata;
+    use std::path::Path;
+
+    const UNSUPPORTED: &str =
+        "work checks need a Unix host: file modes and owners cannot be proven here";
+
+    pub(super) fn mode_of(_: &Metadata) -> Result<u32, String> {
+        Err(UNSUPPORTED.into())
+    }
+
+    pub(super) fn uid_of(_: &Metadata) -> Result<u32, String> {
+        Err(UNSUPPORTED.into())
+    }
+
+    pub(super) fn set_mode(_: &Path, _: u32) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            UNSUPPORTED,
+        ))
+    }
+
+    pub(super) fn create_dir_with_mode(_: &Path, _: u32) -> std::io::Result<()> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            UNSUPPORTED,
+        ))
+    }
+}
 
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
@@ -371,7 +427,7 @@ fn ensure_private_root(root: &Path, what: &str) -> Result<PathBuf, String> {
             if !existing.is_dir() {
                 return Err(format!("refusing {what} root: {root:?} is not a directory"));
             }
-            let mode = existing.permissions().mode() & 0o777;
+            let mode = host::mode_of(&existing)? & 0o777;
             if mode != ROOT_MODE {
                 return Err(format!(
                     "refusing {what} root: {root:?} carries mode {mode:o}, not the \
@@ -386,9 +442,7 @@ fn ensure_private_root(root: &Path, what: &str) -> Result<PathBuf, String> {
             }
         }
         Err(_) => {
-            DirBuilder::new()
-                .mode(ROOT_MODE)
-                .create(root)
+            host::create_dir_with_mode(root, ROOT_MODE)
                 .map_err(|e| format!("could not create the private {what} root: {e}"))?;
         }
     }
@@ -404,13 +458,14 @@ fn try_probe_owner(root: &Path, probe_path: &Path) -> Option<String> {
     let _ = std::fs::remove_file(probe_path);
     let file_metadata = std::fs::metadata(probe_path).ok()?;
     let dir_metadata = std::fs::metadata(root).ok()?;
-    use std::os::unix::fs::MetadataExt as _;
-    if file_metadata.uid() != dir_metadata.uid() {
+    let (file_uid, dir_uid) = match (host::uid_of(&file_metadata), host::uid_of(&dir_metadata)) {
+        (Ok(file_uid), Ok(dir_uid)) => (file_uid, dir_uid),
+        (Err(reason), _) | (_, Err(reason)) => return Some(reason),
+    };
+    if file_uid != dir_uid {
         Some(format!(
-            "the directory is not owned by this process's account (dir uid {}, \
-             this process's files uid {})",
-            dir_metadata.uid(),
-            file_metadata.uid()
+            "the directory is not owned by this process's account (dir uid {dir_uid}, \
+             this process's files uid {file_uid})"
         ))
     } else {
         None
@@ -492,8 +547,7 @@ fn persist_entry_atomic(root: &Path, dest: &Path, body: &str) -> Result<(), Stri
     let tmp = root.join(&unique);
     let mut file =
         File::create(&tmp).map_err(|e| format!("could not create the entry temp: {e}"))?;
-    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
-        .map_err(|e| format!("could not confine the entry temp: {e}"))?;
+    host::set_mode(&tmp, 0o600).map_err(|e| format!("could not confine the entry temp: {e}"))?;
     file.write_all(body.as_bytes())
         .map_err(|e| format!("could not write the entry: {e}"))?;
     file.flush()
@@ -855,7 +909,7 @@ fn read_verified_manifest(
     if !binary_meta.file_type().is_file() {
         return Err("refusing the supervisor binary: it is not a regular file".into());
     }
-    let mode = binary_meta.permissions().mode();
+    let mode = host::mode_of(&binary_meta)?;
     let privilege_bits = mode & (0o4000 | 0o2000);
     if privilege_bits != 0 {
         return Err(
@@ -881,7 +935,7 @@ fn read_verified_manifest(
     let copy_path = root.join(format!("supervisor-{:.16}", binary_sha_prefix(&binary_sha)));
     std::fs::copy(binary_path, &copy_path)
         .map_err(|e| format!("could not copy the supervisor into the private bind root: {e}"))?;
-    std::fs::set_permissions(&copy_path, std::fs::Permissions::from_mode(0o755))
+    host::set_mode(&copy_path, 0o755)
         .map_err(|e| format!("could not set the supervisor copy's mode: {e}"))?;
     let copied =
         File::open(&copy_path).map_err(|e| format!("could not open the private copy: {e}"))?;
