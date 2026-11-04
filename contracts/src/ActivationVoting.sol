@@ -57,8 +57,9 @@ import {TreasuryMandateFactory} from "./TreasuryMandate.sol";
 /// genuine founder burn adds `min(amount, lockedBeforeBurn)` to `burnedLocked` — the PRE-burn
 /// tracked capacity, since the formula never reads the balance. Later awards or mints to the
 /// founder are unrestricted and never shift the grant. Sale eligibility only — not financial
-/// vesting, not a withdrawal lock — and NO token-level guard enforces it in this deploy: the
-/// guard's wiring lives in the kit/Shares lane that reads `saleCapacity`/`lockedAt` here.
+/// vesting, not a withdrawal lock. The token-level guard is `Shares._moveTokens` →
+/// `_checkSaleCapacity`, which reads `saleCapacity` here; the kit binds it once through
+/// `Shares.setSalePolicy`. Burns and exits (`ragequit`, a forfeited milestone) never reach it.
 ///
 /// @dev Layout note: `ISecondaryPolicy` is implemented by ABI identity rather than inheritance —
 /// `AllocationVoting`'s public `dao` state variable and this contract's own method set give the
@@ -218,7 +219,7 @@ contract ActivationVoting is AllocationVoting {
     /// @notice An existing `holder`'s offerable-now ceiling, independent of voting maturity. For
     /// the founder: balance minus the still-locked remaining grant. For anyone else there is no
     /// sale restriction at all and this is simply the balance. (The token-level guard enforcing
-    /// this lives in the kit/Shares lane; this policy only supplies the number.)
+    /// this is `Shares._checkSaleCapacity` on every real move; this policy only supplies the number.)
     function saleCapacity(address holder) external view returns (uint256) {
         uint256 bal = capacity[holder];
         if (holder != founder || !configured) return bal;
@@ -284,8 +285,10 @@ contract ActivationVoting is AllocationVoting {
         saleStart = start;
         saleCliff = cliff;
         saleDuration = duration;
-        // The market holds the entire sale inventory; none of it is ever reachable voting supply,
-        // and its whole raw balance is deducted by the supply path exactly once.
+        // The market holds only order escrow (and any donations), never a minted founder grant:
+        // the kit mints that to the founder, and a mint to the market reverts `MintToMarket`.
+        // None of the market's balance is ever reachable voting supply, and its whole raw balance
+        // is deducted by the supply path exactly once.
         _setExcluded(marketAddr, true);
         // Birth-binding complete: the variant freezes its exclusion list here — no later
         // `setExcluded` (add, remove, or the market's own un-exclude) can change the denominator's
@@ -442,9 +445,10 @@ contract ActivationVoting is AllocationVoting {
             return;
         }
         if (!configured) {
+            // Unconfigured means legacy: raw balances only. No pending is ever tracked before
+            // configuration, so the sender's capacity can never fall below a pending amount the
+            // peel (configured branches only) would have had to release, and no exit reverts.
             super._ownershipChanged(isLoot, from, to, amount);
-            _receiverInflow(to, amount);
-            _pushHistories(from, to);
             return;
         }
 

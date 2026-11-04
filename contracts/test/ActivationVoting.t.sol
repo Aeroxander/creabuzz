@@ -819,6 +819,77 @@ contract ActivationVotingTest is Test {
         fresh = ActivationVoting(freshDAO.votingWeight());
     }
 
+    /// @dev Before `configureSecondary` the policy must behave exactly like the legacy
+    /// one-holder-one-raw-balance weight: no pending ledger is ever tracked, so an award minted
+    /// to a holder never makes `pending > raw balance` and a later ragequit or transfer cannot
+    /// underflow `capacity - pending` (a revert here would block a financial exit).
+    function test_unconfigured_policy_award_then_ragequit_and_transfer_do_not_revert_or_track_pending() public {
+        (ActivationVoting fresh, Moloch freshDAO) = _unconfiguredPolicy();
+        Shares freshShares = freshDAO.shares();
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(0);
+
+        // a reviewed award: minted by the DAO to a contributor who had nothing before
+        vm.prank(address(freshDAO));
+        freshShares.mintFromMoloch(BOB, 50e18);
+
+        // legacy weight: the award counts in full the moment a proposal snapshot is taken
+        _next();
+        vm.prank(ALICE);
+        freshDAO.castVote(1, 1, 1e18);
+        uint48 snap = freshDAO.snapshotBlock(1);
+        _next();
+        assertEq(fresh.getPastCapacity(BOB, snap), 50e18, "the award is plain raw balance");
+        assertEq(
+            fresh.votingSupplyAt(freshShares.getPastTotalSupply(snap), snap),
+            150e18,
+            "no ghost pending shrinks the quorum denominator"
+        );
+
+        // a partial exit inside the maturity window (before the fix: Panic 0x11 in _liveCapacity)
+        vm.prank(BOB);
+        freshDAO.ragequit(tokens, 10e18, 0);
+        assertEq(freshShares.balanceOf(BOB), 40e18);
+
+        // a transfer out of the freshly awarded balance, and a full exit of the remainder
+        vm.prank(BOB);
+        freshShares.transfer(CAROL, 15e18);
+        vm.prank(BOB);
+        freshDAO.ragequit(tokens, 25e18, 0);
+        assertEq(freshShares.balanceOf(BOB), 0);
+        assertEq(freshShares.balanceOf(CAROL), 15e18);
+
+        // the receiver's units are plain raw balance too: she can leave fully at once
+        vm.prank(CAROL);
+        freshDAO.ragequit(tokens, 15e18, 0);
+        assertEq(freshShares.balanceOf(CAROL), 0);
+
+        // after every flow the denominator is still the plain supply
+        _next();
+        vm.prank(ALICE);
+        freshDAO.castVote(2, 1, 1e18);
+        uint48 snap2 = freshDAO.snapshotBlock(2);
+        _next();
+        assertEq(fresh.votingSupplyAt(freshShares.getPastTotalSupply(snap2), snap2), 100e18);
+    }
+
+    /// @dev The exit-right half on its own: a fresh award, then ragequit inside the maturity
+    /// window, partial and full (financial exit rights stay intact before configuration).
+    function test_unconfigured_policy_ragequit_of_a_fresh_award_never_reverts() public {
+        (, Moloch freshDAO) = _unconfiguredPolicy();
+        Shares freshShares = freshDAO.shares();
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(0);
+        vm.prank(address(freshDAO));
+        freshShares.mintFromMoloch(BOB, 50e18);
+        vm.prank(BOB);
+        freshDAO.ragequit(tokens, 10e18, 0);
+        assertEq(freshShares.balanceOf(BOB), 40e18);
+        vm.prank(BOB);
+        freshDAO.ragequit(tokens, 40e18, 0);
+        assertEq(freshShares.balanceOf(BOB), 0);
+    }
+
     function test_schedule_end_uint64_boundary_and_overflow_error_selector() public {
         (ActivationVoting fresh, Moloch freshDAO) = _unconfiguredPolicy();
         uint64 boundaryStart = type(uint64).max - 200;

@@ -687,6 +687,34 @@ contract ContributorKitV2Test is ContributorKitV2Base {
         legacyTokens.setLockGuard(address(this));
     }
 
+    /// @dev The legacy entry point is inherited by this kit and never configures the secondary
+    /// policy, so the born DAO runs the variant policy UNCONFIGURED. That must behave exactly like
+    /// legacy: a reviewed award followed at once by a ragequit (partial, then full)
+    /// never reverts (this launch keeps share transfers closed, so exit is the path that matters), and the receiver's units are plain raw balance (no pending ledger).
+    function test_legacy_launch_over_the_variant_summoner_lets_an_award_holder_exit() public {
+        ContributorKit.Params memory base = baseParams(bytes32("legacy-on-v2"));
+        vm.prank(FOUNDER);
+        (address daoAddr, address budgetAddr) = kit.launch(base);
+        Moloch dao = Moloch(payable(daoAddr));
+        Shares tokens = dao.shares();
+        ActivationVoting variant = ActivationVoting(dao.votingWeight());
+        assertFalse(variant.isConfigured(), "the legacy launch never configures the secondary");
+
+        _award(dao, TreasuryMandate(budgetAddr), keccak256("legacy-award"), DAVE, 40e18);
+        assertEq(tokens.balanceOf(DAVE), 40e18);
+
+        address[] memory exitTokens = new address[](1);
+        exitTokens[0] = address(0);
+        vm.prank(DAVE);
+        dao.ragequit(exitTokens, 10e18, 0); // inside the maturity window: partial exit
+        assertEq(tokens.balanceOf(DAVE), 30e18);
+
+        vm.prank(DAVE);
+        dao.ragequit(exitTokens, 30e18, 0); // the rest leaves too
+        assertEq(tokens.balanceOf(DAVE), 0);
+        assertEq(tokens.balanceOf(FOUNDER), 200e18, "the founder's bootstrap is untouched");
+    }
+
     /// @dev Clearing the matched-exit exchange does not strand anyone: the market returns a
     /// seller's own escrow to them regardless of anything downstream.
     function test_clearing_the_exit_exchange_still_returns_a_sellers_own_escrow() public {
