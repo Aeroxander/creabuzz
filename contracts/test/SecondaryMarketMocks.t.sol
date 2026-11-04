@@ -46,27 +46,43 @@ contract BlockableQuote is FixedQuote {
     }
 }
 
-/// @notice A hostile quote: outbound transfers re-enter whatever market function a test has armed,
-/// to prove a callback can never re-run or corrupt an order's state changes.
+/// @notice A hostile quote: the next outbound transfer, once armed, re-enters the market with the exact
+/// calldata a test hands it, to prove a callback can never re-run or corrupt an order's state changes.
+/// The nested call comes from this token's own address, so a test that wants it to act as a seller or a
+/// buyer gives the token Shares, quote and approvals first (see `approveMarket`).
 contract ReentrantQuote is FixedQuote {
     address public target;
-    bytes4 public selector;
-    /// @dev The assertions read these two: the reentries happened, and the market refused them all.
+    bytes public payload;
+    /// @dev The assertions read these: how often the hook fired, whether the nested call went through,
+    /// and the selector it reverted with. The hook disarms itself before calling, so it fires once.
     uint256 public pokes;
     uint256 public refusals;
+    bool public lastOk;
+    bytes4 public lastRevert;
 
     constructor() FixedQuote() {}
 
-    function arm(address market, bytes4 sel) external {
+    /// @dev Arm the next outbound transfer to call `market` with the well-formed `data`.
+    function arm(address market, bytes calldata data) external {
         target = market;
-        selector = sel;
+        payload = data;
+    }
+
+    /// @dev Let `market` pull this token's own balance of both tokens, so it can act as a seller and a buyer.
+    function approveMarket(address market, IERC20 shares) external {
+        _approve(address(this), market, type(uint256).max);
+        shares.approve(market, type(uint256).max);
     }
 
     function _update(address from, address to, uint256 amount) internal override {
         super._update(from, to, amount);
         if (from != address(0) && target != address(0)) {
+            address t = target;
+            target = address(0);
             pokes += 1;
-            (bool ok,) = target.call(abi.encodePacked(selector, abi.encode(uint256(1))));
+            (bool ok, bytes memory ret) = t.call(payload);
+            lastOk = ok;
+            lastRevert = ret.length >= 4 ? bytes4(ret) : bytes4(0);
             if (!ok) refusals += 1;
         }
     }
