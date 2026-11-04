@@ -18,10 +18,12 @@ import {
   encodeSell,
   encodeSettle,
   lotPriceAt,
+  readEarlierRounds,
   readSecondaryMarket,
   roundPhase,
   SECONDARY_BIDDING,
   SECONDARY_EVERY,
+  SECONDARY_LOOKBACK,
   SECONDARY_SETTLE_WINDOW,
   SECONDARY_SIGNATURES,
 } from "./secondary.ts";
@@ -553,4 +555,153 @@ test("a holder's actions are the contract's calls", () => {
   assert.throws(() => encodeBid(MARKET, 7n, 1n, 65_536), /16 bits/);
   assert.throws(() => encodeClaimShares(MARKET, 7n, "nope"), /not an address/);
   assert.throws(() => encodeSettle("nope", 7n), /not an address/);
+});
+
+// ---- earlier rounds ----------------------------------------------------------------------------------------------
+
+/** The round id a call names: its first argument word. */
+const idOf = (data) => BigInt(`0x${data.slice(10, 74)}`);
+
+/**
+ * A market whose rounds each open a week after the last. `orders` says which rounds the wallet has an
+ * offer (`s`) or a bid (`b`) in, and `settled` which rounds settled; the rest are past their deadline at `now`.
+ */
+function marketOfRounds(orders, settled = []) {
+  const calls = [];
+  const week = 7 * 86_400;
+  return {
+    calls,
+    call: async (to, data) => {
+      calls.push({ to, data });
+      const id = idOf(data);
+      const sig = data.slice(0, 10);
+      const opensAt = BigInt(1_000_000) + (id - 1n) * BigInt(week);
+      if (sig === sel("rounds")) {
+        return round({
+          opensAt,
+          closesAt: opensAt + BigInt(SECONDARY_BIDDING),
+          settleDeadline:
+            opensAt + BigInt(SECONDARY_BIDDING + SECONDARY_SETTLE_WINDOW),
+          settled: settled.includes(Number(id)) ? 1n : 0n,
+        });
+      }
+      const mine = orders[Number(id)] ?? {};
+      if (sig === sel("sells"))
+        return mine.s ? sell(mine.s) : words(0, 0, 0, 0, 0, 0);
+      if (sig === sel("bids"))
+        return mine.b ? bid(mine.b) : words(0, 0, 0, 0, 0, 0, 0);
+      throw new Error(`no answer for ${sig}`);
+    },
+  };
+}
+
+const LATER = 1_000_000 + 40 * 86_400;
+
+test("a wallet's earlier rounds are read by their own ids, newest first, and rounds it never joined are left out", async () => {
+  const chain = marketOfRounds(
+    {
+      3: { s: { lots: 2n } },
+      2: {},
+      1: { b: { lots: 3n, maxStep: 4n, filled: 1n }, s: { lots: 1n } },
+    },
+    [1],
+  );
+  const read = await readEarlierRounds(chain, {
+    market: MARKET,
+    wallet: WALLET,
+    latest: 4n,
+    now: LATER,
+  });
+  assert.deepEqual(
+    read.rounds.map((r) => [r.id, r.round.phase]),
+    [
+      [3n, "void"],
+      [1n, "settled"],
+    ],
+  );
+  assert.equal(read.rounds[0].sell.lots, 2n);
+  assert.equal(read.rounds[0].bid, null);
+  assert.equal(read.rounds[1].bid.lots, 3n);
+  assert.equal(read.rounds[1].sell.lots, 1n);
+  assert.equal(read.unchecked, 0n);
+  // The latest round is the market read's, never this one's: only ids 1..3 are asked about.
+  assert.deepEqual([...new Set(chain.calls.map((c) => idOf(c.data)))].sort(), [
+    1n,
+    2n,
+    3n,
+  ]);
+});
+
+test("the look-back is bounded, and the rounds it did not look at are counted, not hidden", async () => {
+  const chain = marketOfRounds({ 4: { s: {} }, 3: { s: {} } });
+  const read = await readEarlierRounds(chain, {
+    market: MARKET,
+    wallet: WALLET,
+    latest: 12n,
+    now: LATER,
+  });
+  assert.equal(SECONDARY_LOOKBACK, 8);
+  assert.equal(chain.calls.length, 3 * SECONDARY_LOOKBACK);
+  assert.deepEqual(
+    [...new Set(chain.calls.map((c) => idOf(c.data)))].sort((a, b) =>
+      a < b ? -1 : 1,
+    ),
+    [4n, 5n, 6n, 7n, 8n, 9n, 10n, 11n],
+  );
+  assert.deepEqual(
+    read.rounds.map((r) => r.id),
+    [4n],
+  );
+  assert.equal(read.unchecked, 3n);
+});
+
+test("a market on its first round has no earlier ones to read", async () => {
+  const chain = marketOfRounds({});
+  assert.deepEqual(
+    await readEarlierRounds(chain, {
+      market: MARKET,
+      wallet: WALLET,
+      latest: 1n,
+      now: LATER,
+    }),
+    { rounds: [], unchecked: 0n },
+  );
+  assert.equal(chain.calls.length, 0);
+});
+
+test("an earlier round that cannot be read fails the read, never a wallet owed nothing", async () => {
+  const base = marketOfRounds({ 1: { s: {} } });
+  const failing = {
+    call: async (to, data) => {
+      if (data.startsWith(sel("sells")) && idOf(data) === 1n) {
+        throw new Error("rpc http 503");
+      }
+      return base.call(to, data);
+    },
+  };
+  await assert.rejects(
+    readEarlierRounds(failing, {
+      market: MARKET,
+      wallet: WALLET,
+      latest: 3n,
+      now: LATER,
+    }),
+    /rpc http 503/,
+  );
+  // A zeroed round below the count is not this market's answer.
+  const zeroed = {
+    call: async (to, data) =>
+      data.startsWith(sel("rounds"))
+        ? round({ opensAt: 0n })
+        : base.call(to, data),
+  };
+  await assert.rejects(
+    readEarlierRounds(zeroed, {
+      market: MARKET,
+      wallet: WALLET,
+      latest: 3n,
+      now: LATER,
+    }),
+    /no round/,
+  );
 });

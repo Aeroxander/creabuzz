@@ -21,6 +21,8 @@
 #   6. both collect (the buyer its Shares and its overpaid money, the seller the proceeds) and the round's ledgers end
 #      at zero;
 #   7. a wallet with no order in the round is offered no collect button, and the chain would refuse one.
+#   8. a second test: a round nobody settles goes void, the next week's round opens, and the card still offers each
+#      wallet what the void round owes it (the seller's Shares, the buyer's money) as 'Collect from an earlier round'.
 # Every step is a button on the page and a transaction on the chain, and each is checked against the chain.
 #
 # ⚠️  DEV ONLY. Anvil dev keys (public), a local chain, nothing else.

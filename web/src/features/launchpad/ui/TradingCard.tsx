@@ -67,6 +67,7 @@ import {
   useSecondary,
 } from "../use-secondary";
 import { FailureNote, WalletStrip } from "./account-widgets";
+import { TradingEarlier } from "./TradingEarlier";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;
 
@@ -199,6 +200,17 @@ export function TradingCard({
               round={round}
               roundId={data.roundId}
               wallet={present.wallet}
+            />
+          ) : null}
+          {present && data.facts && round && data.roundId !== null ? (
+            <TradingEarlier
+              blocked={blocked}
+              busy={sender.busy}
+              earlier={data.earlier}
+              facts={data.facts}
+              market={present.market}
+              me={sender.wallet.address}
+              onSend={sender.send}
             />
           ) : null}
         </>

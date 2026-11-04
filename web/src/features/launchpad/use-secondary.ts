@@ -9,6 +9,8 @@ import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
 import type { WorkChain } from "@creaton/core/launchpad/workRead.ts";
 import {
   decodeRound,
+  type EarlierRoundsRead,
+  readEarlierRounds,
   readSecondaryMarket,
   SECONDARY_SIGNATURES,
   type SecondaryMarketRead,
@@ -44,6 +46,11 @@ export interface SecondaryMarketView {
   facts: SecondaryMarketFacts | null;
   /** The latest round's id, which every order names; null before the first round. */
   roundId: bigint | null;
+  /**
+   * The rounds before the latest that the connected wallet made an offer or a bid in, newest first. A finished
+   * round keeps owing its orders after a newer one opens, so these are read too.
+   */
+  earlier: EarlierRoundsRead;
   /** The chain's clock when it was read, for the round's windows. */
   now: number;
   /**
@@ -54,6 +61,7 @@ export interface SecondaryMarketView {
   tokenUnreadable: boolean;
 }
 
+const NO_EARLIER: EarlierRoundsRead = { rounds: [], unchecked: 0n };
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 /** The most decimals a price scale may have: `decimals()` is a uint8, and no token in use goes near this. */
 const MAX_QUOTE_DECIMALS = 36;
@@ -166,6 +174,7 @@ export function useSecondary(input: {
           read,
           facts: null,
           roundId: null,
+          earlier: NO_EARLIER,
           now,
           tokenUnreadable: false,
         };
@@ -201,6 +210,7 @@ export function useSecondary(input: {
           },
           facts: null,
           roundId: null,
+          earlier: NO_EARLIER,
           now,
           tokenUnreadable: true,
         };
@@ -227,6 +237,17 @@ export function useSecondary(input: {
         }
         roundId = count;
       }
+      // What earlier rounds still owe this wallet: they stay claimable after a newer round opens, and a failed
+      // read throws rather than showing a wallet with nothing owed (Review-Proven Rule 1).
+      const earlier =
+        roundId !== null && input.wallet
+          ? await readEarlierRounds(chain, {
+              market: read.market,
+              wallet: input.wallet,
+              latest: roundId,
+              now,
+            })
+          : NO_EARLIER;
       return {
         read,
         facts: {
@@ -237,6 +258,7 @@ export function useSecondary(input: {
           quoteSymbol: quote.symbol,
         },
         roundId,
+        earlier,
         now,
         tokenUnreadable: false,
       };

@@ -6,6 +6,9 @@ import {
   bidOrderLine,
   bidPlan,
   claimDue,
+  earlierDues,
+  earlierLimitLine,
+  earlierRoundLine,
   factoryMissingLine,
   listingDetailLine,
   LIVE_REFRESH_MS,
@@ -498,4 +501,67 @@ test("a wallet with an order in a round waiting to settle is told who can settle
   for (const phase of ["bidding", "settled", "void", "none"]) {
     assert.equal(settleNoticeLine(round({ phase }), withSell), null, phase);
   }
+});
+
+// ---- earlier rounds ----------------------------------------------------------------------------------------------
+
+const earlier = (id, phase, orders, over = {}) => ({
+  id,
+  round: round({ phase, settled: phase === "settled", ...over }),
+  sell: orders.sell ?? null,
+  bid: orders.bid ?? null,
+});
+
+test("each earlier round owes by its own result, so an older round is not lost behind a newer one", () => {
+  const owed = earlierDues(
+    [
+      // Newest first: a void round owes both sides everything it took in.
+      earlier(3n, "void", {
+        sell: sell({ lots: 3n }),
+        bid: bid({ lots: 2n, maxStep: 1 }),
+      }),
+      // A settled one owes the buyer's Shares and refund at its own price.
+      earlier(
+        2n,
+        "settled",
+        { bid: bid({ lots: 5n, maxStep: 4, filled: 3n }) },
+        { price: 2 },
+      ),
+      // Everything here was already collected.
+      earlier(
+        1n,
+        "settled",
+        {
+          sell: sell({ filled: 2n, proceedsPaid: true }),
+          bid: bid({ filled: 3n, sharesPaid: true, refundDone: true }),
+        },
+        { price: 2 },
+      ),
+    ],
+    LOT,
+  );
+  assert.deepEqual(
+    owed.map((o) => [o.earlier.id, o.due]),
+    [
+      [3n, { shares: 3n * LOT, quote: 2n * 1_008_000n }],
+      [2n, { shares: 3n * LOT, quote: 5n * 1_032_000n - 3n * 1_016_000n }],
+    ],
+  );
+  assert.deepEqual(earlierDues([], LOT), []);
+});
+
+test("an earlier round says what became of it, and the look-back limit is said out loud", () => {
+  assert.match(
+    earlierRoundLine(round({ phase: "void" })),
+    /was never settled, so what you put into it is yours to take back/,
+  );
+  assert.match(
+    earlierRoundLine(round({ phase: "settled" })),
+    /has settled, and you still have something to collect/,
+  );
+  assert.equal(earlierLimitLine(8, 0n), null);
+  assert.equal(
+    earlierLimitLine(8, 3n),
+    "This page checks your last 8 rounds. Anything an older round owes you is still yours, but it can't be collected from here.",
+  );
 });

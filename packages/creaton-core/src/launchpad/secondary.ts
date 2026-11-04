@@ -629,3 +629,94 @@ export async function readSecondaryMarket(
     return { kind: "unreadable", reason: reasonOf(error) };
   }
 }
+
+// ---- the wallet's earlier rounds -----------------------------------------------------------------
+
+/**
+ * How many rounds before the latest one are checked for what a wallet is still
+ * owed. A claim never expires and anyone may open the next round a week after
+ * the last, so a finished round keeps owing its orders after the page has moved
+ * on to a newer one; the look-back is bounded so one read stays a fixed number
+ * of calls (Review-Proven Rule 4), and a round older than it is reported as
+ * `unchecked`, never silently hidden.
+ */
+export const SECONDARY_LOOKBACK = 8;
+
+/** One earlier round the wallet took part in, with its orders in it. */
+export interface EarlierRound {
+  /** The round's id, which every claim names. */
+  id: bigint;
+  round: RoundView;
+  /** The wallet's offer in that round, or null when it made none. */
+  sell: SellOrderView | null;
+  /** The wallet's bid in that round, or null when it made none. */
+  bid: BidOrderView | null;
+}
+
+/** The wallet's earlier rounds that hold an order of its own, newest first, and how many older rounds were not looked at. */
+export interface EarlierRoundsRead {
+  rounds: EarlierRound[];
+  /** Rounds older than the look-back, which this read did not ask about. */
+  unchecked: bigint;
+}
+
+/**
+ * The rounds before `latest` that `wallet` made an offer or a bid in, looking at
+ * the last {@link SECONDARY_LOOKBACK} of them. The latest round is read with the
+ * market itself ({@link readSecondaryMarket}); this reads the ones it left
+ * behind, so a settled or void round that still owes the wallet is not lost when
+ * a newer round opens.
+ *
+ * A failed call throws: a round we could not read is not a round with nothing in
+ * it (Review-Proven Rule 1). Round ids start at 1 and `latest` is the market's
+ * `roundCount`, so every id below it exists; a zeroed record would mean the
+ * answer is not this market's and throws too.
+ */
+export async function readEarlierRounds(
+  chain: Pick<WorkChain, "call">,
+  input: { market: string; wallet: string; latest: bigint; now: number },
+): Promise<EarlierRoundsRead> {
+  const market = address(input.market, "The market");
+  const wallet = address(input.wallet, "The wallet");
+  if (input.latest < 1n) return { rounds: [], unchecked: 0n };
+  const lowest =
+    input.latest > BigInt(SECONDARY_LOOKBACK)
+      ? input.latest - BigInt(SECONDARY_LOOKBACK)
+      : 1n;
+  const ids: bigint[] = [];
+  for (let id = input.latest - 1n; id >= lowest; id--) ids.push(id);
+  const read = await Promise.all(
+    ids.map(async (id): Promise<EarlierRound | null> => {
+      const order = (signature: string) =>
+        chain.call(
+          market,
+          encodeFunctionData(signature, ["uint256", "address"], [id, wallet]),
+        );
+      const [roundHex, sellHex, bidHex] = await Promise.all([
+        chain.call(
+          market,
+          encodeFunctionData(SECONDARY_SIGNATURES.rounds, ["uint256"], [id]),
+        ),
+        order(SECONDARY_SIGNATURES.sells),
+        order(SECONDARY_SIGNATURES.bids),
+      ]);
+      const record = decodeRound(roundHex);
+      if (record.opensAt === 0) {
+        throw new Error(`the market has no round ${id} below its count`);
+      }
+      const sell = decodeSell(sellHex);
+      const bid = decodeBid(bidHex);
+      if (sell.lots === 0n && bid.lots === 0n) return null;
+      return {
+        id,
+        round: { ...record, phase: roundPhase(record, input.now) },
+        sell: sell.lots === 0n ? null : sell,
+        bid: bid.lots === 0n ? null : bid,
+      };
+    }),
+  );
+  return {
+    rounds: read.filter((r): r is EarlierRound => r !== null),
+    unchecked: lowest - 1n,
+  };
+}

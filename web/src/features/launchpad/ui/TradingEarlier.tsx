@@ -1,0 +1,172 @@
+/**
+ * What earlier rounds still owe the connected wallet, on the Trading card.
+ *
+ * A round is settled or void within five days, but anyone may open the next one a
+ * week after the last, and nothing pays a round's orders out on its own: a
+ * settled round still owes the buyer's Shares and refund and the seller's
+ * proceeds, and a void round owes both sides everything. A claim never expires,
+ * so each such round keeps its own row here, collected with that round's own id,
+ * after the card has moved on to the newest round (Review-Proven Rule 6: the
+ * newest round must not hide the only way to collect an older one).
+ */
+
+import { useId } from "react";
+
+import { Button } from "@/shared/ui/button";
+
+import {
+  encodeClaimQuote,
+  encodeClaimShares,
+  type EarlierRoundsRead,
+  SECONDARY_LOOKBACK,
+} from "@creaton/core/launchpad/secondary.ts";
+
+import {
+  earlierDues,
+  earlierLimitLine,
+  earlierRoundLine,
+  money,
+  shareUnits,
+} from "../lib/trading-copy";
+import type { SecondaryMarketFacts } from "../use-secondary";
+
+/**
+ * One row per earlier round that still owes `me` something, and a note when older
+ * rounds were not checked. Shows nothing when there is nothing to say.
+ */
+export function TradingEarlier({
+  earlier,
+  facts,
+  market,
+  me,
+  blocked,
+  busy,
+  onSend,
+}: {
+  earlier: EarlierRoundsRead;
+  facts: SecondaryMarketFacts;
+  market: string;
+  /** The connected wallet, or null: with none there is nothing to collect for. */
+  me: string | null;
+  blocked: boolean;
+  busy: string | null;
+  onSend: (key: string, to: string, data: string) => Promise<boolean>;
+}) {
+  const headingId = useId();
+  if (!me) return null;
+  const owed = earlierDues(earlier.rounds, facts.lotSize);
+  const limit = earlierLimitLine(SECONDARY_LOOKBACK, earlier.unchecked);
+  if (owed.length === 0 && limit === null) return null;
+  return (
+    <div
+      className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3"
+      data-testid="trading-earlier-block"
+    >
+      {owed.length > 0 ? (
+        <section
+          aria-labelledby={headingId}
+          className="flex flex-col gap-2"
+          data-testid="trading-earlier"
+        >
+          <h3 className="text-sm font-semibold" id={headingId}>
+            Collect from an earlier round
+          </h3>
+          {owed.map(({ earlier: row, due }) => (
+            <EarlierRow
+              blocked={blocked}
+              busy={busy}
+              due={due}
+              facts={facts}
+              id={row.id}
+              key={row.id.toString()}
+              market={market}
+              me={me}
+              onSend={onSend}
+              round={row.round}
+            />
+          ))}
+        </section>
+      ) : null}
+      {limit !== null ? (
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="trading-earlier-limit"
+          role="status"
+        >
+          {limit}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function EarlierRow({
+  id,
+  round,
+  due,
+  facts,
+  market,
+  me,
+  blocked,
+  busy,
+  onSend,
+}: {
+  id: bigint;
+  round: EarlierRoundsRead["rounds"][number]["round"];
+  due: { shares: bigint; quote: bigint };
+  facts: SecondaryMarketFacts;
+  market: string;
+  me: string;
+  blocked: boolean;
+  busy: string | null;
+  onSend: (key: string, to: string, data: string) => Promise<boolean>;
+}) {
+  const lineId = useId();
+  const sharesKey = `trading-earlier-claim-shares-${id}`;
+  const quoteKey = `trading-earlier-claim-quote-${id}`;
+  return (
+    <div
+      className="flex flex-col gap-2"
+      data-round-id={id.toString()}
+      data-testid="trading-earlier-round"
+    >
+      <p className="text-sm" id={lineId}>
+        {earlierRoundLine(round)}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {due.shares > 0n ? (
+          <Button
+            aria-describedby={lineId}
+            data-testid="trading-earlier-claim-shares"
+            disabled={blocked}
+            onClick={() =>
+              void onSend(sharesKey, market, encodeClaimShares(market, id, me))
+            }
+            size="sm"
+            type="button"
+          >
+            {busy === sharesKey
+              ? "Collecting…"
+              : `Collect ${shareUnits(due.shares)} Shares`}
+          </Button>
+        ) : null}
+        {due.quote > 0n ? (
+          <Button
+            aria-describedby={lineId}
+            data-testid="trading-earlier-claim-quote"
+            disabled={blocked}
+            onClick={() =>
+              void onSend(quoteKey, market, encodeClaimQuote(market, id, me))
+            }
+            size="sm"
+            type="button"
+          >
+            {busy === quoteKey
+              ? "Collecting…"
+              : `Collect ${money(due.quote, facts)}`}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}

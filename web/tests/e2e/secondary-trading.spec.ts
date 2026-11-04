@@ -22,7 +22,10 @@ import { createMockRelay } from "./mock-relay";
  *   6. both collect: the buyer the Shares, the seller the money, the buyer what it overpaid — and the round's ledgers
  *      end at zero;
  *   7. someone with no order in the round is offered no collect button at all (the chain would refuse one);
- *   8. a price token that will not say its decimals is said so, and no price is printed at a guessed scale.
+ *   8. a price token that will not say its decimals is said so, and no price is printed at a guessed scale;
+ *   9. (second test) a round nobody settled goes void, the next week's round opens, and the card still offers each
+ *      wallet what the void round owes it (the seller's Shares, the buyer's money), because a claim never expires and
+ *      the new round must not hide it.
  *
  * What is stubbed: the relay (a mock, in the spec) and the wallets (`window.ethereum` forwarding to Anvil's accounts).
  */
@@ -49,6 +52,9 @@ test.skip(
     !THIRD_WALLET,
   "set E2E_ANVIL_URL, E2E_QUOTE, E2E_SHARES, E2E_DAO, E2E_MARKET, E2E_POLICY, E2E_FOUNDER, E2E_BIDDER and E2E_THIRD (scripts/web-trading-e2e.sh does)",
 );
+
+// The second test continues the world the first one leaves (one settled round), so the file runs in order.
+test.describe.configure({ mode: "serial" });
 
 const FOUNDER_NSEC = "22".repeat(32);
 const BIDDER_NSEC = "33".repeat(32);
@@ -553,6 +559,140 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   say(
     "a price token that could not be read printed no price, and trying again found it",
   );
+
+  await context.close();
+});
+
+test("a round nobody settled still pays out after the next round opens: each wallet collects it from the card", async ({
+  browser,
+}) => {
+  test.setTimeout(600_000);
+  const context = await browser.newContext();
+  const relay = createMockRelay();
+  relay.seed(launchRecord());
+  const say = (what: string) => console.log(`[trading] ${what}`);
+
+  // The journey above left round 1 settled and collected. Run the whole file, not this test alone.
+  expect(await callWord(MARKET, SIG.roundCount)).toBe(1n);
+
+  // ── Round 2 opens a week after round 1 did, with one offer and one bid, and nobody settles it ────────────
+  await passTime(5 * DAY);
+  const founder = await personPage(
+    context,
+    relay,
+    FOUNDER_WALLET,
+    FOUNDER_NSEC,
+  );
+  await openTrading(founder);
+  await expect(founder.getByTestId("trading-open")).toBeVisible({
+    timeout: 60_000,
+  });
+  await founder.getByTestId("trading-open").click();
+  await expect(founder.getByTestId("trading-round-status")).toContainText(
+    "Offers and bids close",
+    { timeout: 90_000 },
+  );
+  expect(await callWord(MARKET, SIG.roundCount)).toBe(2n);
+
+  const founderSharesBefore = await balanceOf(SHARES, FOUNDER_WALLET);
+  await founder.getByTestId("trading-sell").click();
+  await founder.getByTestId("trading-sell-lots").fill(LOTS.toString());
+  await founder.getByTestId("trading-sell-price").fill(LOW_TEXT);
+  await founder.getByTestId("trading-sell-submit").click();
+  await expect(founder.getByTestId("trading-my-sell")).toContainText(
+    "You offer 2 lots at",
+    { timeout: 90_000 },
+  );
+  expect(await balanceOf(SHARES, FOUNDER_WALLET)).toBe(
+    founderSharesBefore - SHARES_MOVED,
+  );
+
+  const bidder = await personPage(context, relay, BIDDER_WALLET, BIDDER_NSEC);
+  await openTrading(bidder);
+  await expect(bidder.getByTestId("trading-bid")).toBeVisible({
+    timeout: 60_000,
+  });
+  const bidderQuoteBefore = await balanceOf(QUOTE, BIDDER_WALLET);
+  await bidder.getByTestId("trading-bid").click();
+  await bidder.getByTestId("trading-bid-lots").fill(LOTS.toString());
+  await bidder.getByTestId("trading-bid-price").fill(HIGH_TEXT);
+  await bidder.getByTestId("trading-bid-submit").click();
+  await expect(bidder.getByTestId("trading-my-bid")).toContainText(
+    "You bid for 2 lots at up to",
+    { timeout: 90_000 },
+  );
+  expect(await balanceOf(QUOTE, BIDDER_WALLET)).toBe(
+    bidderQuoteBefore - BID_ESCROW,
+  );
+  say("round 2 holds one offer and one bid");
+
+  // ── Nobody settles: round 2 goes void, a week passes, and round 3 opens ─────────────────────────────────
+  await passTime(7 * DAY + 60);
+  await founder.reload();
+  await expect(founder.getByTestId("trading-open")).toBeVisible({
+    timeout: 60_000,
+  });
+  // While round 2 is the latest, its payout is the round's own (a void round owes both sides everything).
+  await expect(founder.getByTestId("trading-claim-shares")).toBeVisible();
+  await founder.getByTestId("trading-open").click();
+  await expect
+    .poll(() => callWord(MARKET, SIG.roundCount), { timeout: 90_000 })
+    .toBe(3n);
+  say("round 3 opened while round 2 still owes both sides");
+
+  // ── The card still offers what round 2 owes: the page is on round 3, and round 3 owes this wallet nothing ──
+  await expect(founder.getByTestId("trading-round-status")).toContainText(
+    "Offers and bids close",
+    { timeout: 60_000 },
+  );
+  await expect(founder.getByTestId("trading-claim")).toHaveCount(0);
+  await expect(founder.getByTestId("trading-earlier")).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(founder.getByTestId("trading-earlier")).toContainText(
+    "Collect from an earlier round",
+  );
+  await expect(founder.getByTestId("trading-earlier-round")).toHaveCount(1);
+  // The seller is owed its own Shares back, and no money: nothing of its offer sold.
+  await expect(
+    founder.getByTestId("trading-earlier-claim-shares"),
+  ).toContainText("Collect 2 Shares");
+  await expect(founder.getByTestId("trading-earlier-claim-quote")).toHaveCount(
+    0,
+  );
+  await founder.getByTestId("trading-earlier-claim-shares").click();
+  await expect
+    .poll(() => balanceOf(SHARES, FOUNDER_WALLET), { timeout: 90_000 })
+    .toBe(founderSharesBefore);
+  // Collected: the row is gone and the round's Shares ledger is empty.
+  await expect(founder.getByTestId("trading-earlier")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  expect(await callWord(MARKET, `${SIG.sharesIn}${word(2n)}`)).toBe(0n);
+
+  await bidder.reload();
+  await expect(bidder.getByTestId("trading-claim")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  await expect(bidder.getByTestId("trading-earlier")).toBeVisible({
+    timeout: 60_000,
+  });
+  // The buyer is owed its whole bid back: the round never settled, so no price was set.
+  await expect(bidder.getByTestId("trading-earlier-claim-quote")).toContainText(
+    `Collect 130 ${QUOTE_SYMBOL}`,
+  );
+  await expect(bidder.getByTestId("trading-earlier-claim-shares")).toHaveCount(
+    0,
+  );
+  await bidder.getByTestId("trading-earlier-claim-quote").click();
+  await expect
+    .poll(() => balanceOf(QUOTE, BIDDER_WALLET), { timeout: 90_000 })
+    .toBe(bidderQuoteBefore);
+  await expect(bidder.getByTestId("trading-earlier")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  expect(await callWord(MARKET, `${SIG.quoteIn}${word(2n)}`)).toBe(0n);
+  say("both sides collected round 2 from the card while round 3 was open");
 
   await context.close();
 });

@@ -21,6 +21,7 @@
 
 import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import {
+  type EarlierRound,
   lotPriceAt,
   type Listing,
   type RoundView,
@@ -415,6 +416,52 @@ export function claimDue(
     quote += escrow - spent;
   }
   return { shares, quote };
+}
+
+/** One earlier round that still owes the wallet something, and what. */
+export interface EarlierDue {
+  earlier: EarlierRound;
+  due: ClaimDue;
+}
+
+/**
+ * The earlier rounds that still owe this wallet Shares or money, each with what
+ * it owes, in the order given (newest first). A round with nothing left to
+ * collect is left out, so a collected round stops being offered.
+ */
+export function earlierDues(
+  rounds: readonly EarlierRound[],
+  lotSize: bigint,
+): EarlierDue[] {
+  const owed: EarlierDue[] = [];
+  for (const earlier of rounds) {
+    const due = claimDue(earlier.round, earlier, lotSize);
+    if (due.shares > 0n || due.quote > 0n) owed.push({ earlier, due });
+  }
+  return owed;
+}
+
+/** Why an earlier round is still on the card: what became of it, and that what it owes is the wallet's. */
+export function earlierRoundLine(
+  round: Pick<RoundView, "phase" | "opensAt">,
+): string {
+  return round.phase === "void"
+    ? `The round that opened ${day(round.opensAt)} was never settled, so what you put into it is yours to take back.`
+    : `The round that opened ${day(round.opensAt)} has settled, and you still have something to collect from it.`;
+}
+
+/**
+ * Said when the card did not look at every earlier round. A claim never expires,
+ * so what an older round owes is still the wallet's, but this page cannot offer
+ * to collect it; saying so beats a round that is silently not there.
+ */
+export function earlierLimitLine(
+  checked: number,
+  unchecked: bigint,
+): string | null {
+  return unchecked > 0n
+    ? `This page checks your last ${checked} rounds. Anything an older round owes you is still yours, but it can't be collected from here.`
+    : null;
 }
 
 /** Whole lots, or why the text is not a number of lots. */
