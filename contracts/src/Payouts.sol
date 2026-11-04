@@ -13,6 +13,7 @@ interface IPayoutsDao {
 interface ILockGuarded {
     function lockGuard() external view returns (address);
     function lockGuardSet() external view returns (bool);
+    function transferExempt() external view returns (address);
 }
 
 /// @title Payouts
@@ -21,7 +22,11 @@ interface ILockGuarded {
 ///   of it is credited to holders and the rest goes to the treasury. Nothing else counts as revenue.
 /// - **A payout the DAO votes**: `declare(amount)` takes that much from the treasury, all for holders.
 ///
-/// Who counts: every Share and Loot outside the DAO's own holding, which is what leaving pays out on. Each holder's part is
+/// Who counts: every Share and Loot outside the DAO's own holding and outside the DAO's secondary market (the Shares'
+/// one `transferExempt` address, read once when this module is made), which holds Shares only in passing: round escrow,
+/// a buyer's Shares not yet claimed, a void round's Shares. Those units earn nothing while the market holds them, so
+/// no payout is credited to an address that can forward it to nobody, and no other holder's part is diluted by them;
+/// they count again from the moment they reach a person. Each holder's part is
 /// kept with a running total per unit, and the DAO tells this contract of every change in who holds what (transfers,
 /// mints, burns), so units count only from the moment they are held: nobody is paid for payouts made before they held
 /// them, and what was credited stays theirs after they sell, leave or are banned. Each holder withdraws their own.
@@ -42,6 +47,9 @@ contract Payouts {
     uint64 public constant SPLIT_NOTICE = 30 days;
 
     address public immutable dao;
+    /// @notice The DAO's secondary market (its Shares' `transferExempt` address when this module was made, zero for
+    /// none): its holdings never count, like the DAO's own.
+    address public immutable market;
     IERC20 public immutable shares;
     IERC20 public immutable loot;
     IERC20 public immutable currency;
@@ -95,6 +103,7 @@ contract Payouts {
             revert InvalidSetup();
         }
         dao = dao_;
+        market = ILockGuarded(shares_).transferExempt();
         shares = IERC20(shares_);
         loot = IERC20(IPayoutsDao(dao_).loot());
         if (shares.totalSupply() + loot.totalSupply() >= MAX_UNITS) revert InvalidSetup();
@@ -104,11 +113,13 @@ contract Payouts {
 
     // ---- told by the DAO -----------------------------------------------------------------------------------------
 
-    /// @notice A change in who holds units: what `from` was credited stays theirs; `to` counts from now.
+    /// @notice A change in who holds units: what `from` was credited stays theirs; `to` counts from now. The DAO and
+    /// its market hold no units, so a move into either only ends the sender's count, and a move out of either only
+    /// starts the receiver's.
     function ownershipChanged(bool, address from, address to, uint256 amount) external onlyDao {
         int256 delta = int256(perUnit * amount);
-        if (from != address(0) && from != dao) correction[from] += delta;
-        if (to != address(0) && to != dao) correction[to] -= delta;
+        if (_counts(from)) correction[from] += delta;
+        if (_counts(to)) correction[to] -= delta;
     }
 
     // ---- money in --------------------------------------------------------------------------------------------------
@@ -117,7 +128,7 @@ contract Payouts {
     /// Anyone may call it, once the DAO has named this contract.
     function distribute() external nonReentrant {
         _named();
-        uint256 fresh = currency.balanceOf(address(this)) - reserved;
+        uint256 fresh = _balance() - reserved;
         if (fresh == 0) revert NothingNew();
         uint256 holders = fresh * splitBps / 10_000;
         uint256 credited = holders == 0 ? 0 : _credit(holders);
@@ -130,9 +141,9 @@ contract Payouts {
     /// @notice Pay holders `amount` from the treasury, all of it: a payout the DAO voted.
     function declare(uint256 amount) external onlyDao nonReentrant {
         _named();
-        uint256 before = currency.balanceOf(address(this));
+        uint256 before = _balance();
         currency.safeTransferFrom(dao, address(this), amount);
-        uint256 received = currency.balanceOf(address(this)) - before;
+        uint256 received = _balance() - before;
         if (received != amount) revert ShortTransfer(amount, received);
         _credit(amount);
         emit Declared(amount, perUnit);
@@ -171,13 +182,14 @@ contract Payouts {
 
     // ---- reads -----------------------------------------------------------------------------------------------------
 
-    /// @notice The units that count now: every Share and Loot outside the DAO's own holding.
+    /// @notice The units that count now: every Share and Loot outside the DAO's own holding and its market's.
     function counting() public view returns (uint256) {
-        return shares.totalSupply() + loot.totalSupply() - shares.balanceOf(dao) - loot.balanceOf(dao);
+        return shares.totalSupply() + loot.totalSupply() - _held(dao) - _held(market);
     }
 
+    /// @notice The units `who` holds that count: none for the DAO or its market.
     function unitsOf(address who) public view returns (uint256) {
-        return who == dao ? 0 : shares.balanceOf(who) + loot.balanceOf(who);
+        return _counts(who) ? _held(who) : 0;
     }
 
     /// @notice What `who` can withdraw now.
@@ -189,6 +201,21 @@ contract Payouts {
     }
 
     // ---- inside ----------------------------------------------------------------------------------------------------
+
+    /// @dev What this module holds of the payout currency.
+    function _balance() private view returns (uint256) {
+        return currency.balanceOf(address(this));
+    }
+
+    /// @dev Whether `who` can hold units that count: not nobody, not the DAO, not its market.
+    function _counts(address who) private view returns (bool) {
+        return who != address(0) && who != dao && who != market;
+    }
+
+    /// @dev Every Share and Loot `who` holds; zero for the zero address, which is what `market` is when there is none.
+    function _held(address who) private view returns (uint256) {
+        return shares.balanceOf(who) + loot.balanceOf(who);
+    }
 
     function _named() private view {
         if (IPayoutsDao(dao).payouts() != address(this)) revert NotNamed();

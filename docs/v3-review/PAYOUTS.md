@@ -20,6 +20,14 @@ who holds what (transfers, mints, burns, sales in weekly rounds, leaving), throu
 voting ledger. So units count from the moment they are held: a buyer gets nothing for payouts made before they bought,
 and a seller, someone who left or someone banned keeps what was credited to them and collects it themselves.
 
+Shares held by the DAO's secondary market do not count either, like the DAO's own (the market is the Shares' one
+`transferExempt` address, read once when the module is made). That covers a seller's Shares in round escrow, a buyer's
+Shares until they claim them, and a void round's Shares until their owner claims them back. The consequence: escrowed
+or unclaimed Shares earn nothing while the market holds them (the same rule the old weekly rounds had), and in return
+nothing is credited to an address that cannot pay it on, and nobody else's part is diluted by those units. A buyer
+counts from the moment the Shares reach them, a seller again from the moment theirs return. A DAO that gets a market
+after naming its module is not covered; the kit makes the market at birth, so a kit-made project always is.
+
 Money moves out of the treasury when it is credited, so leaving cannot pay it twice.
 
 ## What stops it from going wrong

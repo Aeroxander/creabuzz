@@ -367,7 +367,7 @@ memory. Three consecutive runs exited 0; the final run reported **8/8 receipts
   launch block, cliff 0, duration 15,552,000.
 
 Creation payloads as the node received them, against EIP-3860's 49,152:
-`TreasuryMandateFactory` **49,129** (23 bytes of headroom — a real constraint for
+`TreasuryMandateFactory` **49,126** (26 bytes of headroom — a real constraint for
 future work), `Summoner` 47,832, `SecondaryMarketFactory` 30,559,
 `ContributorKitV2` 29,960, `ActivationVoting` 23,886. Runtimes against
 EIP-170's 24,576: Moloch 23,970, `ActivationVoting` 23,687, mandate factory
@@ -390,7 +390,7 @@ arguments; limits are EIP-3860 49,152 (creation) and EIP-170 24,576 (runtime).
 
 | Contract | Creation payload | Spare | Runtime | Spare |
 |---|---|---|---|---|
-| `TreasuryMandateFactory` | **49,129** | **23** | 21,086 | 3,490 |
+| `TreasuryMandateFactory` | **49,126** | **26** | 21,086 | 3,490 |
 | `Summoner` | 47,901 | 1,251 | 1,970 | 22,606 |
 | Moloch (implementation) | 45,661 | 3,491 | **23,970** | **606** |
 | `SecondaryMarketFactory` | 30,731 | 18,421 | 17,087 | 7,489 |
@@ -471,7 +471,7 @@ turns trading on.
   security and legal review of secondary trading.
 - Real-chain reorg handling, a frozen claim settled on a real chain, and killing
   a real anvil mid-broadcast are covered only by fake-node tests.
-- `TreasuryMandateFactory` has 23 bytes of creation-code headroom; any further
+- `TreasuryMandateFactory` has 26 bytes of creation-code headroom; any further
   growth there will need splitting.
 
 ## Whole-suite results and gate status
