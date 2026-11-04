@@ -73,6 +73,9 @@ contract AgreementFixture is VotingFixture {
 
     function setUp() public override {
         super.setUp();
+        // A real chain's clock (~1.7e9) is far past any window length; a tiny fixture clock would make the
+        // "elapsed since release" arithmetic pass vacuously for claims that were never released.
+        vm.warp(1_700_000_000);
         vm.prank(address(dao));
         dao.setQuorumBps(500);
         currency = new MandateCurrency();

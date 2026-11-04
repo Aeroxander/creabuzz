@@ -801,10 +801,13 @@ contract TreasuryMandate {
         if (status == ClaimStake.Status.Rejected || status >= ClaimStake.Status.Recovered) {
             return AgreementState.EXPIRED;
         }
-        if (status == ClaimStake.Status.Paid || block.timestamp >= _releasedAt(a.claimId) + claims.challengeWindow()) {
-            return AgreementState.READY_TO_SETTLE;
+        // The window runs from release, so only an approved claim has one; an open claim was never released.
+        if (status == ClaimStake.Status.Paid) return AgreementState.READY_TO_SETTLE;
+        if (status == ClaimStake.Status.Approved) {
+            return block.timestamp >= _releasedAt(a.claimId) + claims.challengeWindow()
+                ? AgreementState.READY_TO_SETTLE
+                : AgreementState.CHALLENGE_WINDOW;
         }
-        if (status == ClaimStake.Status.Approved) return AgreementState.CHALLENGE_WINDOW;
         // Open attempt: quorum on the record is accepted; a formal corrections request is the non-final route;
         // any verdict mark in flight reviews; an untouched bound attempt is submitted.
         if (verifiers.approvalCount(a.claimId) >= verifiers.quorum()) return AgreementState.ACCEPTED;

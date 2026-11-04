@@ -828,6 +828,37 @@ contract ContributionAgreementTest is AgreementFixture {
         assertEq(uint8(_state(id)), uint8(TreasuryMandate.AgreementState.SETTLED));
     }
 
+    /// @dev On a real chain block.timestamp is ~1.7e9, far past the challenge window length. An unreviewed claim
+    /// (never released, so releasedAt is 0) must still read as the review chain says, not READY_TO_SETTLE.
+    function test_agreement_state_reads_the_review_chain_at_a_realistic_timestamp() public {
+        bytes32 id = _proposeAndAccept(DAVE, bytes32("slot"), 10e18);
+        _bind(id, "work");
+        assertEq(uint8(_state(id)), uint8(TreasuryMandate.AgreementState.SUBMITTED), "bound, unreviewed");
+        vm.prank(ALICE);
+        panel.attest("work", true);
+        assertEq(uint8(_state(id)), uint8(TreasuryMandate.AgreementState.IN_REVIEW), "one approval");
+        vm.prank(CAROL);
+        panel.attest("work", true);
+        assertEq(uint8(_state(id)), uint8(TreasuryMandate.AgreementState.ACCEPTED), "quorum on the record");
+        vm.prank(STRANGER);
+        claims.settle("work");
+        assertEq(uint8(_state(id)), uint8(TreasuryMandate.AgreementState.CHALLENGE_WINDOW), "released, window open");
+        _warpPastWindow();
+        assertEq(uint8(_state(id)), uint8(TreasuryMandate.AgreementState.READY_TO_SETTLE), "window over");
+        _settle(id);
+        assertEq(uint8(_state(id)), uint8(TreasuryMandate.AgreementState.SETTLED));
+    }
+
+    /// @dev Same realistic clock, corrections route: a formal corrections request reads CORRECTIONS.
+    function test_agreement_state_reads_corrections_at_a_realistic_timestamp() public {
+        bytes32 id = _proposeAndAccept(DAVE, bytes32("slot"), 10e18);
+        _bind(id, "work");
+        assertEq(uint8(_state(id)), uint8(TreasuryMandate.AgreementState.SUBMITTED));
+        vm.prank(ALICE);
+        panel.requestCorrections("work", keccak256("tighten the figures"));
+        assertEq(uint8(_state(id)), uint8(TreasuryMandate.AgreementState.CORRECTIONS));
+    }
+
     function test_a_claim_finished_by_anyone_reads_ready_to_settle_and_still_settles() public {
         bytes32 id = _proposeAndAccept(DAVE, bytes32("slot"), 10e18);
         _bind(id, "work");
