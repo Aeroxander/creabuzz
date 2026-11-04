@@ -2,12 +2,14 @@
 pragma solidity ^0.8.30;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SecondaryMarketFixture} from "./SecondaryMarketMocks.t.sol";
 import {DummyMandateFactory, FixedQuote, MockSecondaryPolicy, TestListingKit} from "./SecondaryMarketMocks.t.sol";
 import {ISecondaryPolicy} from "../src/interfaces/ISecondaryPolicy.sol";
 import {SecondaryMarket} from "../src/SecondaryMarket.sol";
 import {SecondaryMarketFactory} from "../src/SecondaryMarketFactory.sol";
-import {Call, Shares, Summoner} from "../src/majeur/MolochPatched.sol";
+import {Call, Moloch, Shares, Summoner, Unauthorized} from "../src/majeur/MolochPatched.sol";
+import {ContributorKitV2Base} from "./ContributorKitV2.t.sol";
 
 /// @title Secondary market provenance and the D179 counterfeit regressions
 /// @notice Nothing may list without the pinned summoner's real bytecode, real clone identity, real
@@ -35,6 +37,72 @@ contract DustQuote is ERC20 {
 
     function mint(address who, uint256 amount) external {
         _mint(who, amount);
+    }
+}
+
+/// @dev A policy stand-in whose three answers the test chooses: the one thing a counterfeit DAO would
+/// hand the factory in place of the real policy clone.
+contract StubPolicy {
+    address public dao;
+    address public market;
+    address public mandateFactory;
+
+    function set(address dao_, address market_, address mandateFactory_) external {
+        dao = dao_;
+        market = market_;
+        mandateFactory = mandateFactory_;
+    }
+}
+
+/// @dev A Shares stand-in answering only the two reads a market constructor makes.
+contract StubShares {
+    address public DAO;
+    address public transferExempt;
+
+    function set(address dao_, address exempt_) external {
+        DAO = dao_;
+        transferExempt = exempt_;
+    }
+}
+
+/// @dev A counterfeit DAO WITH code: it deploys its own Shares clone of the REAL Shares implementation at
+/// exactly the CREATE2 address a real DAO would use (its own address as salt), becomes that token's DAO,
+/// installs the exemption, and answers `shares()` and `votingWeight()` consistently. Every getter the
+/// factory reads is therefore consistent; only the DAO's runtime bytecode betrays it.
+contract FakeDao {
+    address public shares;
+    address public votingWeight;
+
+    function deployShares(address sharesImplementation) external returns (address s) {
+        bytes memory initcode = abi.encodePacked(
+            hex"602d5f8160095f39f35f5f365f5f37365f73", sharesImplementation, hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
+        );
+        bytes32 salt = bytes32(bytes20(address(this)));
+        assembly ("memory-safe") {
+            s := create2(0, add(initcode, 0x20), mload(initcode), salt)
+        }
+        require(s != address(0), "clone failed");
+        Shares(s).init(new address[](0), new uint256[](0));
+        shares = s;
+    }
+
+    function finish(address exempt, address policy) external {
+        Shares(shares).lockTransfersWithNotice(exempt);
+        votingWeight = policy;
+    }
+}
+
+/// @dev The attacker's uninitialised proxy: a byte-for-byte copy of the pinned summoner's DAO proxy
+/// runtime, deployed by anyone with a plain CREATE, never initialised.
+library RawProxy {
+    function deploy(address implementation) internal returns (address proxy) {
+        bytes memory initcode = abi.encodePacked(
+            hex"602d5f8160095f39f35f5f365f5f37365f73", implementation, hex"5af43d5f5f3e6029573d5ffd5b3d5ff3"
+        );
+        assembly ("memory-safe") {
+            proxy := create(0, add(initcode, 0x20), mload(initcode))
+        }
+        require(proxy != address(0), "proxy failed");
     }
 }
 
@@ -150,6 +218,229 @@ contract SecondaryMarketProvenance is SecondaryMarketFixture {
         assertEq(unlisted.shares.transferExempt() == marketAddr, false);
     }
 
+    // ---- single-fault pins on every factory guard ---------------------------------------------------------------
+    //
+    // Several guards share one error selector, so each case below is built from an otherwise honest DAO
+    // born through the real summoner, then breaks exactly ONE fact. `test_the_single_fault_fixture_is_honest`
+    // proves the same birth lists when nothing is broken, so a revert here can only come from the fault.
+
+    address internal constant ATTACKER = address(0xA77AC4);
+
+    /// @dev An honest unlisted DAO through the real summoner, with the policy's one market optionally
+    /// named wrong at birth. The Shares' birth exemption always names the honest predicted market.
+    function _born(uint256 n, FixedQuote q, address policyMarketOverride)
+        internal
+        returns (Launch memory born, address market)
+    {
+        address[] memory holders = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+        holders[0] = address(uint160(0x9E0000 + n));
+        holders[1] = address(uint160(0x9F0000 + n));
+        amounts[0] = 40e18;
+        amounts[1] = 30e18;
+        bytes32 salt = bytes32(uint256(100 + n));
+        (address daoAddr, address sharesAddr, address policyAddr) = _predictWithSalt(summoner, holders, amounts, salt);
+        market = f.predict(daoAddr, sharesAddr, policyAddr, address(q), LOT_SIZE);
+        Call[] memory setup = new Call[](2);
+        setup[0] = Call(sharesAddr, 0, abi.encodeCall(Shares.lockTransfersWithNotice, (market)));
+        setup[1] = Call(
+            policyAddr,
+            0,
+            abi.encodeCall(
+                MockSecondaryPolicy.setMarket, (policyMarketOverride == address(0) ? market : policyMarketOverride)
+            )
+        );
+        born.dao = summoner.summon("ORG3", "OG3", "", 5000, true, address(0), salt, holders, amounts, setup);
+        vm.roll(block.number + 1);
+        born.shares = born.dao.shares();
+        born.policy = MockSecondaryPolicy(born.dao.votingWeight());
+        born.quote = q;
+        assertEq(address(born.dao), daoAddr, "the DAO came out where it was predicted");
+        assertEq(address(born.shares), sharesAddr, "the Shares clone where it was predicted");
+        assertEq(address(born.policy), policyAddr, "the policy clone where it was predicted");
+    }
+
+    function _kitCreates(Launch memory b, uint256 lot) internal returns (SecondaryMarket) {
+        vm.prank(address(kit));
+        return f.create(address(b.dao), address(b.shares), ISecondaryPolicy(address(b.policy)), b.quote, lot);
+    }
+
+    function test_the_single_fault_fixture_is_honest() public {
+        (Launch memory b, address market) = _born(1, new FixedQuote(), address(0));
+        SecondaryMarket made = _kitCreates(b, LOT_SIZE);
+        assertEq(address(made), market, "the honest birth lists at its predicted market");
+        assertEq(f.marketOf(address(b.dao)), market);
+    }
+
+    /// @dev `Moloch.shares()` must name the token the caller passes (line: shares() != sharesToken).
+    function test_guard_the_dao_must_name_the_token_it_is_listed_with() public {
+        (Launch memory b,) = _born(2, new FixedQuote(), address(0));
+        vm.mockCall(address(b.dao), abi.encodeWithSignature("shares()"), abi.encode(address(0xDEAD)));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenShares.selector);
+        _kitCreates(b, LOT_SIZE);
+    }
+
+    /// @dev The DAO's own `votingWeight()` must be the policy the caller passes. The foreign policy
+    /// agrees with the DAO, the predicted market and the mandate factory, so only this pin can refuse it.
+    function test_guard_the_dao_must_name_the_policy_it_is_listed_with() public {
+        (Launch memory b,) = _born(3, new FixedQuote(), address(0));
+        StubPolicy foreign = new StubPolicy();
+        address market = f.predict(address(b.dao), address(b.shares), address(foreign), address(b.quote), LOT_SIZE);
+        foreign.set(address(b.dao), market, summoner.mandateFactory());
+        vm.prank(address(kit));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenPolicy.selector);
+        f.create(address(b.dao), address(b.shares), ISecondaryPolicy(address(foreign)), b.quote, LOT_SIZE);
+    }
+
+    /// @dev The token must be exactly the Shares clone the DAO deploys itself. The DAO's `shares()` is
+    /// made to agree with a counterfeit token that agrees with everything else, so the CREATE2
+    /// prediction is the only guard that can refuse it.
+    function test_guard_the_token_must_be_the_predicted_shares_clone() public {
+        (Launch memory b,) = _born(4, new FixedQuote(), address(0));
+        StubShares fake = new StubShares();
+        address market = f.predict(address(b.dao), address(fake), address(b.policy), address(b.quote), LOT_SIZE);
+        fake.set(address(b.dao), market);
+        vm.mockCall(address(b.dao), abi.encodeWithSignature("shares()"), abi.encode(address(fake)));
+        vm.mockCall(address(b.policy), abi.encodeWithSignature("market()"), abi.encode(market));
+        vm.prank(address(kit));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenShares.selector);
+        f.create(address(b.dao), address(fake), ISecondaryPolicy(address(b.policy)), b.quote, LOT_SIZE);
+    }
+
+    /// @dev The token's own `DAO()` must be the listed DAO.
+    function test_guard_the_token_must_belong_to_the_dao() public {
+        (Launch memory b,) = _born(5, new FixedQuote(), address(0));
+        vm.mockCall(address(b.shares), abi.encodeWithSignature("DAO()"), abi.encode(address(0xDA0)));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenShares.selector);
+        _kitCreates(b, LOT_SIZE);
+    }
+
+    /// @dev The policy's `dao()` must be the listed DAO.
+    function test_guard_the_policy_must_belong_to_the_dao() public {
+        (Launch memory b,) = _born(6, new FixedQuote(), address(0));
+        Launch memory other = _launchNewDao();
+        vm.mockCall(address(b.policy), abi.encodeWithSignature("dao()"), abi.encode(address(other.dao)));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenPolicy.selector);
+        _kitCreates(b, LOT_SIZE);
+    }
+
+    /// @dev The policy's one market, set at birth, must be the market these exact bindings predict.
+    function test_guard_the_policy_must_name_the_predicted_market() public {
+        // The birth named a different market than the bindings predict.
+        (Launch memory wrong,) = _born(7, new FixedQuote(), address(0xBAD));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenPolicy.selector);
+        _kitCreates(wrong, LOT_SIZE);
+        // The birth was honest, but the caller asks for a different lot size than it was predicted for.
+        (Launch memory honest,) = _born(8, new FixedQuote(), address(0));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenPolicy.selector);
+        _kitCreates(honest, 2 * LOT_SIZE);
+        // Or for a different (real) quote than it was predicted for.
+        FixedQuote otherQuote = new FixedQuote();
+        vm.prank(address(kit));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenPolicy.selector);
+        f.create(
+            address(honest.dao), address(honest.shares), ISecondaryPolicy(address(honest.policy)), otherQuote, LOT_SIZE
+        );
+        assertEq(f.marketOf(address(honest.dao)), address(0), "nothing listed by any refused attempt");
+    }
+
+    /// @dev The policy must come from the pinned summoner's own mandate factory. A DAO of the pinned
+    /// summoner always gets a clone of the one policy implementation, so an honest birth cannot differ
+    /// here; the fault is injected on the single read.
+    function test_guard_the_policy_must_come_from_the_pinned_mandate_factory() public {
+        (Launch memory b,) = _born(9, new FixedQuote(), address(0));
+        vm.mockCall(address(b.policy), abi.encodeWithSignature("mandateFactory()"), abi.encode(address(0xF00D)));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenPolicy.selector);
+        _kitCreates(b, LOT_SIZE);
+    }
+
+    // ---- the direct-constructor attack ------------------------------------------------------------------------
+
+    /// @dev Anyone may try `new SecondaryMarket(realDao, realShares, realPolicy, ...)` without the
+    /// factory: the Shares' one exemption names the factory's market and the policy names the same one,
+    /// so the lookalike can never hold the exemption, and an account with no code cannot even be a maker.
+    function test_a_direct_constructor_by_an_attacker_is_refused() public {
+        vm.expectRevert(SecondaryMarket.InvalidSetup.selector);
+        new SecondaryMarket(address(l.dao), address(l.shares), ISecondaryPolicy(address(l.policy)), l.quote, LOT_SIZE);
+        vm.prank(ATTACKER);
+        vm.expectRevert(SecondaryMarket.InvalidSetup.selector);
+        new SecondaryMarket(address(l.dao), address(l.shares), ISecondaryPolicy(address(l.policy)), l.quote, LOT_SIZE);
+        assertEq(f.marketOf(address(l.dao)), address(l.market), "the one market stays the factory's");
+    }
+
+    /// @dev A direct `new SecondaryMarket(...)` whose every fact is made consistent with the address it
+    /// will land on (fresh stubs and a fresh CREATE address each time, since a refused creation still
+    /// spends a nonce), so a case that breaks exactly one fact can only be refused by that fact's check.
+    /// `sender == address(0)` means this test contract deploys; otherwise that code-less account does.
+    function _direct(address daoArg, address tokenArg, address quoteArg, uint256 lot, address sender, bool expectFail)
+        internal
+        returns (address made, address self)
+    {
+        StubShares s = new StubShares();
+        StubPolicy p = new StubPolicy();
+        address from = sender == address(0) ? address(this) : sender;
+        self = vm.computeCreateAddress(from, vm.getNonce(from));
+        s.set(daoArg, self);
+        p.set(daoArg, self, address(0));
+        address token = tokenArg == address(0) ? address(s) : tokenArg;
+        if (expectFail) vm.expectRevert(SecondaryMarket.InvalidSetup.selector);
+        if (sender != address(0)) vm.prank(sender);
+        made = address(new SecondaryMarket(daoArg, token, ISecondaryPolicy(address(p)), ERC20(quoteArg), lot));
+    }
+
+    function test_constructor_control_all_facts_consistent() public {
+        (address made, address self) =
+            _direct(address(l.dao), address(0), address(l.quote), LOT_SIZE, address(0), false);
+        assertEq(made, self, "the consistent stubs do construct: only one fact breaks each case below");
+    }
+
+    function test_constructor_refuses_an_account_without_code_as_maker() public {
+        _direct(address(l.dao), address(0), address(l.quote), LOT_SIZE, ATTACKER, true);
+    }
+
+    function test_constructor_refuses_a_code_less_dao() public {
+        _direct(address(0x9001), address(0), address(l.quote), LOT_SIZE, address(0), true);
+    }
+
+    function test_constructor_refuses_a_code_less_token() public {
+        _direct(address(l.dao), address(0x9002), address(l.quote), LOT_SIZE, address(0), true);
+    }
+
+    function test_constructor_refuses_a_code_less_quote() public {
+        _direct(address(l.dao), address(0), address(0x9003), LOT_SIZE, address(0), true);
+    }
+
+    function test_constructor_refuses_a_zero_lot_size() public {
+        _direct(address(l.dao), address(0), address(l.quote), 0, address(0), true);
+    }
+
+    function _brokenFact(uint256 which) internal {
+        StubShares s = new StubShares();
+        StubPolicy p = new StubPolicy();
+        address dao = address(l.dao);
+        address self = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        s.set(which == 1 ? address(0xDA0) : dao, which == 2 ? address(0xE0E) : self);
+        p.set(which == 3 ? address(0xDA0) : dao, which == 4 ? address(0xBAD) : self, address(0));
+        vm.expectRevert(SecondaryMarket.InvalidSetup.selector);
+        new SecondaryMarket(dao, address(s), ISecondaryPolicy(address(p)), l.quote, LOT_SIZE);
+    }
+
+    function test_constructor_refuses_a_token_that_belongs_to_another_dao() public {
+        _brokenFact(1);
+    }
+
+    function test_constructor_refuses_a_token_whose_exemption_is_not_itself() public {
+        _brokenFact(2);
+    }
+
+    function test_constructor_refuses_a_policy_that_belongs_to_another_dao() public {
+        _brokenFact(3);
+    }
+
+    function test_constructor_refuses_a_policy_that_names_another_market() public {
+        _brokenFact(4);
+    }
+
     // ---- helpers ------------------------------------------------------------------------------------------------
 
     /// @dev A second honest DAO under the same summoner, born right but left uncreated, so counterfeited
@@ -226,5 +517,77 @@ contract SecondaryMarketProvenance is SecondaryMarketFixture {
         born.policy = MockSecondaryPolicy(born.dao.votingWeight());
         born.quote = q;
         born.market = SecondaryMarket(address(0));
+    }
+}
+
+/// @title The DAO bytecode pin, proved against the real ContributorKitV2
+/// @notice The pin is what makes every other getter trustworthy, so it is exercised with the real kit as
+/// the authorised caller (the only caller `create` accepts) and counterfeit DAOs that agree with the
+/// factory on every other getter: only the runtime-bytecode hash can refuse them.
+contract SecondaryMarketDaoPin is ContributorKitV2Base {
+    function _fakeBindings(FakeDao fake) internal returns (address shares, StubPolicy policy, address market) {
+        shares = fake.deployShares(marketFactory.sharesImplementation());
+        policy = new StubPolicy();
+        market = marketFactory.predict(address(fake), shares, address(policy), address(quote), LOT_SIZE);
+        policy.set(address(fake), market, summoner.mandateFactory());
+        fake.finish(market, address(policy));
+    }
+
+    function test_a_counterfeit_dao_with_code_and_consistent_getters_is_refused() public {
+        FakeDao fake = new FakeDao();
+        (address shares, StubPolicy policy, address market) = _fakeBindings(fake);
+        // Every getter the factory reads agrees: the only difference is the DAO's runtime bytecode.
+        assertEq(fake.shares(), shares);
+        assertEq(fake.votingWeight(), address(policy));
+        assertEq(Shares(shares).DAO(), address(fake));
+        assertEq(Shares(shares).transferExempt(), market);
+        assertEq(policy.market(), market);
+        assertTrue(address(fake).code.length != 0, "the fake has code, so a code-length check would pass it");
+        assertTrue(address(fake).codehash != marketFactory.daoRuntimeHash());
+        vm.prank(address(kit));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenDao.selector);
+        marketFactory.create(address(fake), shares, ISecondaryPolicy(address(policy)), IERC20(address(quote)), LOT_SIZE);
+        assertEq(marketFactory.marketOf(address(fake)), address(0));
+    }
+
+    function test_a_dao_of_another_summoner_is_refused() public {
+        // A second summoner's DAO: its proxy points at that summoner's own Moloch implementation.
+        Summoner other = new Summoner(summoner.policyImplementation());
+        assertTrue(other.getImplementation() != summoner.getImplementation());
+        address[] memory holders = new address[](1);
+        uint256[] memory amounts = new uint256[](1);
+        holders[0] = address(0xA11CE);
+        amounts[0] = 10e18;
+        Moloch dao =
+            other.summon("OTHER", "OTH", "", 5000, true, address(0), bytes32(0), holders, amounts, new Call[](0));
+        vm.roll(block.number + 1);
+        address otherShares = address(dao.shares());
+        address otherPolicy = dao.votingWeight();
+        vm.prank(address(kit));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenDao.selector);
+        marketFactory.create(address(dao), otherShares, ISecondaryPolicy(otherPolicy), IERC20(address(quote)), LOT_SIZE);
+    }
+
+    /// @dev Anyone can deploy a byte-identical proxy of the real implementation, and it passes the
+    /// bytecode pin by design. It is safe because only the pinned summoner can initialise it
+    /// (`Moloch.init` requires `msg.sender == SUMMONER`), so it never gets a Shares clone, a policy
+    /// or any state, and the `shares()` read refuses it.
+    function test_an_uninitialised_proxy_of_the_real_implementation_cannot_list() public {
+        address proxy = RawProxy.deploy(marketFactory.molochImplementation());
+        assertEq(proxy.codehash, marketFactory.daoRuntimeHash(), "it passes the bytecode pin by design");
+        // Nobody but the summoner can initialise it.
+        vm.expectRevert(Unauthorized.selector);
+        Moloch(payable(proxy))
+            .init("X", "X", "", 5000, true, address(0), new address[](0), new uint256[](0), new Call[](0));
+        assertEq(address(Moloch(payable(proxy)).shares()), address(0));
+        // Offering the empty token and policy it really has...
+        vm.prank(address(kit));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenShares.selector);
+        marketFactory.create(proxy, address(0), ISecondaryPolicy(address(0)), IERC20(address(quote)), LOT_SIZE);
+        // ...or the token a real DAO at that address would have had (nobody can deploy it there).
+        vm.prank(address(kit));
+        vm.expectRevert(SecondaryMarketFactory.UnprovenShares.selector);
+        marketFactory.create(proxy, address(0xBEEF), ISecondaryPolicy(address(0)), IERC20(address(quote)), LOT_SIZE);
+        assertEq(marketFactory.marketOf(proxy), address(0));
     }
 }
