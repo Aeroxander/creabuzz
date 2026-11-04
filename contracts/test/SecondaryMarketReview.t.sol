@@ -19,7 +19,7 @@ contract RefusingValidator {
 /// Each fails if its fix is reverted: that was checked by reverting all three and watching them
 /// fail at the assertions below. The fourth is the review's measurement, kept because it states a
 /// real bound (settle cost and the 32-order cap) rather than a behaviour to protect.
-contract SecondaryMarketReview is SecondaryMarketFlowsFixture {
+abstract contract SecondaryMarketReviewCases is SecondaryMarketFlowsFixture {
     /// F1: a seller's proceeds may not be paid — or burned — before the round settles.
     ///
     /// The defect: `claimQuote` marked a seller's order paid for any address holding one, even before
@@ -137,10 +137,12 @@ contract SecondaryMarketReview is SecondaryMarketFlowsFixture {
 
     /// F4 (measurement): what a full-size round costs to settle, and the order cap it runs into.
     ///
-    /// 32 sellers, 32 buyers and 64 price levels settle for about 2.6M gas with the mock policy (the real
-    /// policy's cost is unmeasured). The 33rd buyer is refused with `TooManyBuyers`, and because
-    /// cancellation is free until bidding closes, someone can fill the buyer slots with throwaway bids and
-    /// keep honest bidders out for the whole window. That is a stated limit of the design, not a defect.
+    /// 32 sellers, 32 buyers and 64 price levels. The number logged here is warm and settles in the same
+    /// block as the offers (it ran 2.6M gas with the mock policy), so it flatters the real cost: the real
+    /// policy's cold, cross-block figure is measured in `SecondaryMarketRealGas` and recorded in the review
+    /// packet. The 33rd buyer is refused with `TooManyBuyers`, and because cancellation is free until
+    /// bidding closes, someone can fill the buyer slots with throwaway bids and keep honest bidders out for
+    /// the whole window. That is a stated limit of the design, not a defect.
     function test_a_full_round_settles_and_a_33rd_buyer_is_shut_out() public {
         address[] memory holders = new address[](32);
         uint256[] memory amounts = new uint256[](32);
@@ -174,5 +176,15 @@ contract SecondaryMarketReview is SecondaryMarketFlowsFixture {
         uint256 g = gasleft();
         m.market.settle(id);
         emit log_named_uint("settle gas, 32 sellers x 32 buyers x 64 levels", g - gasleft());
+    }
+}
+
+/// @notice The review's regressions against the stood-in policy.
+contract SecondaryMarketReview is SecondaryMarketReviewCases {}
+
+/// @notice The same regressions against a real `ContributorKitV2` launch and the real policy hooks.
+contract SecondaryMarketReviewReal is SecondaryMarketReviewCases {
+    function _useRealKit() internal pure override returns (bool) {
+        return true;
     }
 }

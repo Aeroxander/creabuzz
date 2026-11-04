@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {SecondaryMarket} from "../src/SecondaryMarket.sol";
 import {SecondaryMarketFlowsFixture} from "./helpers/SecondaryMarketFlowsFixture.sol";
+import {MockSecondaryPolicy} from "./SecondaryMarketMocks.t.sol";
 
 /// @title Secondary market resolution: void rounds, the settle window, the disposition gates, and resale
 /// @notice A round nobody settled pays everything back by claim, disabling the listing only stops new
@@ -10,7 +11,7 @@ import {SecondaryMarketFlowsFixture} from "./helpers/SecondaryMarketFlowsFixture
 /// integer the market's own orders compute, so the seller's and the buyer's arithmetic can never drift apart.
 /// @dev One of the `SecondaryMarketFlows*` contracts the flow suite is split across for compiler tag space.
 
-contract SecondaryMarketFlowsResolution is SecondaryMarketFlowsFixture {
+abstract contract SecondaryMarketFlowsResolutionCases is SecondaryMarketFlowsFixture {
     // ---- void rounds and the settle window ----------------------------------------------------------------------
 
     function test_void_round_claims_everything_back_without_a_settle() public {
@@ -138,11 +139,16 @@ contract SecondaryMarketFlowsResolution is SecondaryMarketFlowsFixture {
         vm.prank(STANDIN);
         l.market.claimShares(id, B1);
         assertEq(l.shares.balanceOf(B1), 15e18, "the buyer holds whole lots under the lock");
-        assertEq(
-            l.policy.heldSince(B1),
-            uint64(block.number),
-            "the claim gave the buyer a fresh acquisition, not the seller's age"
-        );
+        if (_policyIsMock()) {
+            assertEq(
+                MockSecondaryPolicy(address(l.policy)).heldSince(B1),
+                uint64(block.number),
+                "the claim gave the buyer a fresh acquisition, not the seller's age"
+            );
+        } else {
+            assertEq(l.policy.escrowedBalance(B1), 0, "the buyer inherited no seller escrow or age");
+            assertEq(l.policy.saleCapacity(B1), 15e18, "what the buyer claimed is theirs to resell");
+        }
         vm.prank(STANDIN);
         l.market.claimQuote(id, S1);
         assertEq(l.quote.balanceOf(S1), uint256(15) * 1_600, "the seller was paid at the clearing price");
@@ -203,5 +209,16 @@ contract SecondaryMarketFlowsResolution is SecondaryMarketFlowsFixture {
         assertEq(l.quote.balanceOf(address(l.dao)), 0, "the DAO takes nothing from a secondary sale");
         assertEq(l.quote.balanceOf(address(l.market)), 0);
         assertEq(l.shares.balanceOf(B2), 20e18);
+    }
+}
+
+/// @notice The resolution cases against the stood-in policy.
+contract SecondaryMarketFlowsResolution is SecondaryMarketFlowsResolutionCases {}
+
+/// @notice The same cases against a real `ContributorKitV2` launch and the real policy hooks: a void round
+/// with the real `prepareEscrowReturn` hook, a disabled listing mid-round, and a resale of claimed Shares.
+contract SecondaryMarketFlowsResolutionReal is SecondaryMarketFlowsResolutionCases {
+    function _useRealKit() internal pure override returns (bool) {
+        return true;
     }
 }

@@ -7,11 +7,16 @@ import {ActivationVoting} from "../src/ActivationVoting.sol";
 import {TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 import {ISecondaryPolicy} from "../src/interfaces/ISecondaryPolicy.sol";
 
-/// @dev A minimal REAL market shim moving actual Shares through the policy's registered market
+/// @dev A minimal market shim moving actual Shares through the policy's registered market
 /// identity, so every token hook this suite exercises runs the production path — Shares transfer →
 /// Moloch.onOwnershipChanged → ActivationVoting._ownershipChanged — never a direct ledger poke.
-/// (The real `SecondaryMarket`+Factory are another lane's unit; this shim only performs the flows
-/// the pinned `ISecondaryPolicy` escrow semantics define.)
+/// The shim performs one hook call per step, which keeps these unit cases small and exact. It does
+/// NOT reproduce the real `SecondaryMarket.settle` ordering (consume per seller when anything sold,
+/// then prepare and return the unsold remainder, each skipped at a zero amount), and a regression in
+/// that ordering passes every case here. The real market against this real policy is covered in
+/// `SecondaryMarketRealPolicy.t.sol` (call order, ages, void rounds, gas) and by the real-market
+/// walk `ActivationVotingRealMarketFuzz` in `ActivationVotingFuzz.t.sol` (escrow books against the
+/// market's balance and the quorum denominator at registered snapshots, at every step).
 contract SecondaryShim {
     Shares public immutable underlying;
     ISecondaryPolicy public immutable policy;

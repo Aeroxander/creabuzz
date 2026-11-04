@@ -253,7 +253,7 @@ contract SecondaryMarketProvenance is SecondaryMarketFixture {
         born.dao = summoner.summon("ORG3", "OG3", "", 5000, true, address(0), salt, holders, amounts, setup);
         vm.roll(block.number + 1);
         born.shares = born.dao.shares();
-        born.policy = MockSecondaryPolicy(born.dao.votingWeight());
+        born.policy = ISecondaryPolicy(born.dao.votingWeight());
         born.quote = q;
         assertEq(address(born.dao), daoAddr, "the DAO came out where it was predicted");
         assertEq(address(born.shares), sharesAddr, "the Shares clone where it was predicted");
@@ -514,7 +514,7 @@ contract SecondaryMarketProvenance is SecondaryMarketFixture {
             summoner.summon("ORG2", "OG2", "", 5000, true, address(0), bytes32(uint256(9)), holders, amounts, setup);
         vm.roll(block.number + 1);
         born.shares = born.dao.shares();
-        born.policy = MockSecondaryPolicy(born.dao.votingWeight());
+        born.policy = ISecondaryPolicy(born.dao.votingWeight());
         born.quote = q;
         born.market = SecondaryMarket(address(0));
     }

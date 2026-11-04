@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {SecondaryMarket} from "../src/SecondaryMarket.sol";
 import {SecondaryMarketFlowsFixture} from "./helpers/SecondaryMarketFlowsFixture.sol";
+import {MockSecondaryPolicy} from "./SecondaryMarketMocks.t.sol";
 
 /// @title Secondary market behaviour under a real Summoner-born DAO: the listing decision, order intake,
 /// and cancels
@@ -108,7 +109,9 @@ contract SecondaryMarketFlows is SecondaryMarketFlowsFixture {
         // The deposit went through the DAO's ownership hook, so the policy holds the seller escrow
         // and its original acquisition, exactly what a later return must keep and a sale consumes.
         assertEq(l.policy.escrowedBalance(S1), 10e18);
-        assertTrue(l.policy.heldSince(S1) != 0, "the deposit registered the seller's acquisition age");
+        assertTrue(
+            MockSecondaryPolicy(address(l.policy)).heldSince(S1) != 0, "the deposit registered the seller's acquisition age"
+        );
         assertEq(l.shares.balanceOf(S1), 30e18);
         assertEq(l.shares.balanceOf(address(l.market)), 10e18);
         (,,,,,, uint256 askedAfterSell,,,,) = l.market.rounds(id);

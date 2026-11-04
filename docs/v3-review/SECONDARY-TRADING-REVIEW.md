@@ -227,7 +227,7 @@ Stated plainly, because a reviewer should not spend time discovering these:
 3. **The market has never run against a real quote token with fee-on-transfer,
    rebasing or blacklist behaviour.** `test_a_blocked_quote_strands_no_payout`
    covers a blocking token; fee-on-transfer is not covered.
-4. **No gas-limit analysis for a round with the maximum number of orders.**
+4. **Gas for a round with the maximum number of orders is measured, and the worst shapes exceed a 2^24 per-transaction cap** (see F4); whether that changes `MAX_ACTIVE_SELLERS` is undecided.
 5. **No real-chain reorg testing.** Reorg behaviour is covered only by fake-node
    tests in the agreement finalizer, not for the market.
 6. **Upgradeability is absent by design** — the market is immutable and
@@ -367,9 +367,37 @@ Pinned by `test_a_dao_validator_cannot_freeze_the_markets_escrow`.
 
 ### F4 — a measurement, and a stated design limit (informational)
 
-A full round of 32 sellers, 32 buyers and 64 price levels settles for about
-**2.63M gas** — with the mock policy; the real policy's cost is unmeasured. The
-33rd buyer is refused `TooManyBuyers`, and because cancellation is free until
+A full round of 32 sellers, 32 buyers and 64 price levels settled for about
+**2.63M gas** with the mock policy, but that figure was misleading twice over:
+the mock's hooks are trivial, and a test runs as one transaction, so every slot
+was warm and the policy's per-block history rows were overwritten instead of
+appended. Measured against the **real policy** (a real `ContributorKitV2`
+launch), with every touched contract cooled and the settle three days of blocks
+after the offers, as a real settler's transaction would meet it
+(`SecondaryMarketRealGas`):
+
+| Shape (32 sellers x 32 buyers x 64 levels) | Settle gas | Share of 2^24 (16,777,216) |
+|---|---|---|
+| Typical: one fresh lineage per seller, mixed fills | 11.29M | 67% |
+| Typical: one fresh lineage per seller, every seller part-filled | 17.48M | 104% |
+| Five fresh lineages per seller, mixed fills | 14.45M | 86% |
+| Five fresh lineages per seller, every seller part-filled | **20.87M** | 124% |
+| Eight histogram slots populated (5 escrowed + 3 in the wallet), each seller sold one lot | 18.86M | 112% |
+
+The cost is per seller (about 350k to 650k gas each: the policy appends a
+seven-word history row, vote checkpoints and the escrow-book writes for
+every seller the loop returns Shares to), so it scales with the number of
+**part-filled** sellers. It stays below typical block gas limits (30M and up)
+but **exceeds the 2^24 per-transaction cap** some chains enforce (EIP-7825) in
+the part-filled shapes, including the ordinary one-lineage shape. A round whose
+settle cannot be mined goes void after the two-day window: nobody loses funds
+(every seller's Shares and every buyer's quote come back by claim, which is the
+tested void path), but that round does not trade. This is an open decision on
+`MAX_ACTIVE_SELLERS` (currently 32) or on the settle's per-seller work, not
+changed by this review; see the options in the batch report. The suite pins
+each figure with an upper bound, so the number cannot grow unnoticed.
+
+The 33rd buyer is refused `TooManyBuyers`, and because cancellation is free until
 bidding closes, someone can fill the buyer slots with throwaway bids and keep
 honest bidders out for the whole window. Orders are also visible and cancellable
 until the last second, so a bid can move the price and then be pulled. Both are
@@ -389,10 +417,22 @@ until the last second, so a bid can move the price and then be pulled. Both are
 
 ### Test-coverage gaps the review named
 
-- The flow tests run against a **mock policy**, and the policy tests against a
-  **shim market**; the real market and the real `ActivationVoting` meet only in a
-  few happy-path tests in `ContributorKitV2.t.sol`, with no adversarial or gas
-  coverage of that composition.
+- The flow tests used to run only against a **mock policy**, and the policy tests
+  against a **shim market**. The adversarial, review and resolution suites now run
+  twice, against the mock and against a real `ContributorKitV2` launch
+  (`SecondaryMarketAdversaryReal`, `SecondaryMarketReviewReal`,
+  `SecondaryMarketFlowsResolutionReal`); `SecondaryMarketRealPolicy` adds the
+  settle call order (observable in the ages a seller gets back), a multi-seller
+  partial-fill round, a buyer who is also a seller, a void round with a donation
+  and a third-party claim, a ragequit by a mixed holder, and the real hooks'
+  refusals; `ActivationVotingRealMarketFuzz` walks the real market and asserts, at
+  every step, that escrow books never exceed the vault and that no hook reverts
+  inside a market action, and at snapshots that the quorum denominator equals the
+  sum of eligible amounts. The shims stay for the policy's unit cases and say so.
+  Not reachable and so not tested: a real-hook revert that wedges a round (the
+  market is the only caller of the hooks, the DAO cannot burn market inventory
+  because burns are a holder's own exit, and the books are only moved by the
+  market).
 - Fee-on-transfer quote tokens **fail closed** at bid (the exact-balance check
   reverts) — safer than §6 previously implied.
 - A blacklist or negative rebase **on the market address itself** is not covered.

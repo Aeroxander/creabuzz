@@ -8,11 +8,15 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ISecondaryPolicy} from "../src/interfaces/ISecondaryPolicy.sol";
 import {SecondaryMarket} from "../src/SecondaryMarket.sol";
 import {SecondaryMarketFactory} from "../src/SecondaryMarketFactory.sol";
+import {RealKitHarness} from "./helpers/SecondaryMarketRealFixture.sol";
 
 /// @title Secondary market test seams
-/// @dev Each helper here stands in for a piece that arrives later. There is no production policy yet:
-/// ActivationVoting and ContributorKitV2 land separately, and the market's crossing with them is
-/// validated in that kit journey, not here. `MockSecondaryPolicy` holds what the market must not get
+/// @dev The helpers here are the fast, isolated half of the suites. The production policy
+/// (`ActivationVoting`, born by `ContributorKitV2`) exists, and the suites that matter most for the
+/// market's crossing with it run against it too: `SecondaryMarketFixture._useRealKit()` switches a
+/// suite's launches to the real kit (see `SecondaryMarketAdversaryReal`, `SecondaryMarketReviewReal`,
+/// `SecondaryMarketFlowsResolutionReal`, `SecondaryMarketRealPolicy`). The mock stays as the quick
+/// baseline and as the place its own books are read. `MockSecondaryPolicy` holds what the market must not get
 /// away with ignoring: a deposit registers the seller's escrow through the DAO's `ownershipChanged`
 /// callback (never by the market's word alone), `prepareEscrowReturn` pins one same-transaction return
 /// to the original seller, and `consumeSoldEscrow` consumes the sold seller-age credit.
@@ -226,7 +230,7 @@ abstract contract SecondaryMarketFixture is Test {
     struct Launch {
         Moloch dao;
         Shares shares;
-        MockSecondaryPolicy policy;
+        ISecondaryPolicy policy;
         FixedQuote quote;
         SecondaryMarket market;
     }
@@ -241,9 +245,101 @@ abstract contract SecondaryMarketFixture is Test {
     SecondaryMarketFactory internal factory;
     address internal _kitAddress;
 
+    /// @dev Whether `Launch.policy` is the stood-in `MockSecondaryPolicy` (true) or the real
+    /// `ActivationVoting` born by `ContributorKitV2` (the real fixture overrides this). A few mock-only
+    /// reads, such as `heldSince`, are skipped on the real policy, which has no such book.
+    function _policyIsMock() internal view returns (bool) {
+        return !_useRealKit();
+    }
+
+    /// @dev Which composition a launch runs: the stood-in policy (default) or the production one, a
+    /// real `ContributorKitV2` launch. The real variants of a suite are the same cases with this
+    /// overridden to true, so the two never drift apart.
+    function _useRealKit() internal view virtual returns (bool) {
+        return false;
+    }
+
+    address internal constant KIT_FOUNDER = address(0xF0);
+    uint256 internal constant FOUNDER_GRANT = 2_000e18;
+
+    RealKitHarness internal harness;
+    uint256 internal realLaunches;
+    /// @dev The reviewed-award budget each real launch was born with, by DAO (for scenarios that award Shares).
+    mapping(address => address) internal budgetOf;
+
+    /// @dev One launch through the real kit with `quoteIn` as the market's quote. The kit only ever mints
+    /// the founder's grant, so the requested holders are seeded by buying from the founder through the real
+    /// market at the grid floor, exactly as real holders acquire Shares (fresh acquisitions in the real
+    /// policy), then the born state is restored: listing off, the next round allowed to open at once.
+    function _launchReal(address[] memory holders, uint256[] memory amounts, ERC20 quoteIn)
+        internal
+        returns (Launch memory l)
+    {
+        if (address(harness) == address(0)) {
+            harness = new RealKitHarness();
+            harness.setUp();
+        }
+        (address daoAddr, address budgetAddr, address policyAddr, address marketAddr) =
+            harness.launchReal(bytes32(++realLaunches), address(quoteIn), FOUNDER_GRANT);
+        budgetOf[daoAddr] = budgetAddr;
+        l.dao = Moloch(payable(daoAddr));
+        l.shares = l.dao.shares();
+        l.policy = ISecondaryPolicy(policyAddr);
+        l.quote = FixedQuote(address(quoteIn));
+        l.market = SecondaryMarket(marketAddr);
+        _seed(l, holders, amounts);
+        (bool listed,,,) = l.market.listing();
+        assertFalse(listed, "nothing is listed before the DAO decides");
+    }
+
+    function _seed(Launch memory l, address[] memory holders, uint256[] memory amounts) internal {
+        vm.warp(block.timestamp + 1 days); // the one-day schedule has released the whole grant
+        vm.prank(address(l.dao));
+        l.market.configureListing(true, MIN_PRICE, MAX_PRICE, LEVELS);
+        vm.prank(KIT_FOUNDER);
+        l.shares.approve(address(l.market), type(uint256).max);
+        uint256 next;
+        while (next < holders.length) {
+            uint256 first = next;
+            uint256 count;
+            uint256 lots;
+            for (; next < holders.length && count < l.market.MAX_ACTIVE_BUYERS(); ++next) {
+                if (amounts[next] == 0) continue;
+                assertEq(amounts[next] % LOT_SIZE, 0, "seeded balances are whole lots");
+                lots += amounts[next] / LOT_SIZE;
+                ++count;
+            }
+            if (count == 0) break;
+            uint256 id = l.market.openRound();
+            vm.prank(KIT_FOUNDER);
+            l.market.sell(id, uint128(lots), 0);
+            for (uint256 i = first; i < next; ++i) {
+                if (amounts[i] == 0) continue;
+                uint128 want = uint128(amounts[i] / LOT_SIZE);
+                l.quote.mint(holders[i], uint256(want) * MIN_PRICE);
+                vm.prank(holders[i]);
+                l.quote.approve(address(l.market), type(uint256).max);
+                vm.prank(holders[i]);
+                l.market.bid(id, want, 0);
+            }
+            (,,,, uint64 closesAt,,,,,,) = l.market.rounds(id);
+            vm.warp(closesAt);
+            l.market.settle(id);
+            for (uint256 i = first; i < next; ++i) {
+                if (amounts[i] == 0) continue;
+                l.market.claimShares(id, holders[i]);
+            }
+            l.market.claimQuote(id, KIT_FOUNDER);
+            vm.warp(l.market.lastOpenAt() + WEEK);
+        }
+        vm.prank(address(l.dao));
+        l.market.configureListing(false, 0, 0, 0);
+        vm.roll(block.number + 1);
+    }
+
     /// @dev A launch with `holders` starting with the given Shares, locked at birth to move only
     /// through the predicted market, up but unlisted until the DAO decides otherwise.
-    function _launch(address[] memory holders, uint256[] memory amounts) internal returns (Launch memory l) {
+    function _launch(address[] memory holders, uint256[] memory amounts) internal virtual returns (Launch memory l) {
         return _launchWithQuote(holders, amounts, new FixedQuote(), true);
     }
 
@@ -251,8 +347,13 @@ abstract contract SecondaryMarketFixture is Test {
     /// so counterfeited creations and adversarial tokens get their own honest DAO each time.
     function _launchWithQuote(address[] memory holders, uint256[] memory amounts, ERC20 quoteIn, bool kitCreates)
         internal
+        virtual
         returns (Launch memory l)
     {
+        if (_useRealKit()) {
+            assertTrue(kitCreates, "the real kit always creates its market");
+            return _launchReal(holders, amounts, quoteIn);
+        }
         if (address(summoner) == address(0)) {
             vm.warp(1 days);
             mf = new DummyMandateFactory();
@@ -280,7 +381,7 @@ abstract contract SecondaryMarketFixture is Test {
         vm.roll(block.number + 1);
 
         l.shares = l.dao.shares();
-        l.policy = MockSecondaryPolicy(l.dao.votingWeight());
+        l.policy = ISecondaryPolicy(l.dao.votingWeight());
         assertEq(address(l.dao), daoAddr, "the DAO came out where it was predicted");
         assertEq(address(l.shares), sharesAddr, "the Shares clone where it was predicted");
         assertEq(address(l.policy), policyAddr, "the policy clone where it was predicted");

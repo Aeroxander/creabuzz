@@ -6,8 +6,13 @@ import {AllocationVoting} from "../src/AllocationVoting.sol";
 import {ActivationVoting} from "../src/ActivationVoting.sol";
 import {TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 import {ISecondaryPolicy} from "../src/interfaces/ISecondaryPolicy.sol";
+import {SecondaryMarket} from "../src/SecondaryMarket.sol";
+import {SecondaryMarketFlowsFixture} from "./helpers/SecondaryMarketFlowsFixture.sol";
 
-/// @dev Same real-market shim as the unit suite.
+/// @dev Same market shim as the unit suite: a stand-in that performs the flows the pinned escrow semantics
+/// define, one hook call per step. It does NOT reproduce the real market's settle ordering (consume, then
+/// prepare, then transfer, with each hook skipped at a zero amount); `ActivationVotingRealMarketFuzz` below
+/// drives the same invariants through the real `SecondaryMarket` instead.
 contract FuzzShim {
     Shares public immutable underlying;
     ISecondaryPolicy public immutable policy;
@@ -238,4 +243,212 @@ contract ActivationVotingFuzzTest is Test {
     }
 
 
+}
+
+/// @notice The same invariants as the walk above, driven through the REAL `SecondaryMarket` and a real
+/// `ContributorKitV2` launch instead of a shim: sells and bids, cancels, settles, void rounds, claims by
+/// anyone, ragequits and unattributed donations, across days. The shim's one-call-per-step sales cannot reach
+/// the real ordering (consume per seller when something sold, prepare then return when something is unsold),
+/// partial fills across several sellers, a buyer who is also a seller, or a claim on a void round.
+/// @dev Per step: the policy's escrow books never exceed what the market physically holds; no policy hook ever
+/// reverts inside a market action (`MarketInventoryShort`, `PreparedReturnMismatch`, `LedgerCorrupt`,
+/// `MarketOnly` would wedge a round to void); and, at registered snapshots, the quorum denominator equals the
+/// sum of every holder's eligible amount. At the end every round is resolved and claimed and the market holds
+/// exactly the donations, with the same amount left in the donors' escrow credit.
+contract ActivationVotingRealMarketFuzz is SecondaryMarketFlowsFixture {
+    function _useRealKit() internal pure override returns (bool) {
+        return true;
+    }
+
+    uint256 private _pid;
+    mapping(address => uint256) private _donated;
+    uint256 private _donatedTotal;
+
+    function _who(uint256 r) internal pure returns (address) {
+        uint256 k = r % 6;
+        if (k == 0) return S1;
+        if (k == 1) return S2;
+        if (k == 2) return S3;
+        if (k == 3) return B1;
+        if (k == 4) return B2;
+        return B3;
+    }
+
+    function _everyone() internal pure returns (address[] memory all) {
+        all = new address[](7);
+        all[0] = KIT_FOUNDER;
+        all[1] = S1;
+        all[2] = S2;
+        all[3] = S3;
+        all[4] = B1;
+        all[5] = B2;
+        all[6] = B3;
+    }
+
+    /// @dev One market action as `caller`. A refusal is fine (a closed round, no order, no funds); a refusal
+    /// from the policy's own books is never fine, because it would wedge the round.
+    function _act(address caller, bytes memory data) internal returns (bool ok) {
+        vm.prank(caller);
+        bytes memory ret;
+        (ok, ret) = address(l.market).call(data);
+        if (!ok && ret.length >= 4) {
+            bytes4 sel = bytes4(ret);
+            assertTrue(
+                sel != ActivationVoting.MarketInventoryShort.selector
+                    && sel != ActivationVoting.PreparedReturnMismatch.selector
+                    && sel != ActivationVoting.LedgerCorrupt.selector && sel != ActivationVoting.MarketOnly.selector
+                    && sel != SecondaryMarket.LedgerShort.selector,
+                "a policy or ledger error wedged a market action"
+            );
+        }
+    }
+
+    function _books() internal view {
+        address[] memory all = _everyone();
+        uint256 escrowed;
+        for (uint256 i; i < all.length; ++i) {
+            escrowed += l.policy.escrowedBalance(all[i]);
+        }
+        assertLe(escrowed, l.shares.balanceOf(address(l.market)), "escrowed books exceed the market vault");
+    }
+
+    function _denominator() internal {
+        vm.roll(vm.getBlockNumber() + 1);
+        uint256 pid = ++_pid;
+        vm.prank(KIT_FOUNDER);
+        l.dao.openProposal(pid);
+        uint48 snap = l.dao.snapshotBlock(pid);
+        vm.roll(vm.getBlockNumber() + 1);
+        ActivationVoting policy = ActivationVoting(address(l.policy));
+        address[] memory all = _everyone();
+        uint256 summed;
+        for (uint256 i; i < all.length; ++i) {
+            summed += policy.getPastCapacity(all[i], snap);
+        }
+        assertEq(
+            policy.votingSupplyAt(l.dao.supplySnapshot(pid), snap),
+            summed,
+            "the quorum denominator is the sum of every holder's eligible amount"
+        );
+    }
+
+    function _resolveAndClaimAll() internal {
+        uint256 rounds = l.market.roundCount();
+        for (uint256 id = 1; id <= rounds; ++id) {
+            (,,,, uint64 closesAt, uint64 deadline,,,, bool settled,) = l.market.rounds(id);
+            if (!settled && vm.getBlockTimestamp() < deadline) {
+                if (vm.getBlockTimestamp() < closesAt) vm.warp(closesAt);
+                l.market.settle(id);
+            }
+            address[] memory all = _everyone();
+            for (uint256 i; i < all.length; ++i) {
+                _act(STANDIN, abi.encodeCall(SecondaryMarket.claimShares, (id, all[i])));
+                _act(STANDIN, abi.encodeCall(SecondaryMarket.claimQuote, (id, all[i])));
+            }
+        }
+    }
+
+    function testFuzz_the_real_market_path_keeps_books_ages_and_the_denominator(uint256 seed, uint8[14] memory ops)
+        external
+    {
+        _walk(seed, ops);
+    }
+
+    /// @dev The walk must really trade, or its invariants hold vacuously: across a few seeds of a fixed
+    /// open/sell/bid/settle/claim script at least one round fills lots, through the production market.
+    function test_the_walk_really_trades() public {
+        uint8[14] memory ops = [0, 1, 1, 1, 3, 3, 3, 7, 8, 8, 9, 10, 0, 11];
+        uint256 best;
+        for (uint256 seed; seed < 12; ++seed) {
+            uint256 snap = vm.snapshotState();
+            uint256 filled = _walk(seed, ops);
+            if (filled > best) best = filled;
+            assertTrue(vm.revertToState(snap));
+        }
+        assertGt(best, 0, "some seed fills lots through the real market");
+    }
+
+    /// @dev Returns the lots sold across every round the walk ran.
+    function _walk(uint256 seed, uint8[14] memory ops) internal returns (uint256 filledLots) {
+        _mintQuote(S1, 1_000_000e6);
+        _mintQuote(S2, 1_000_000e6);
+        _mintQuote(S3, 1_000_000e6);
+        _enableListing(l);
+        for (uint256 i; i < ops.length; ++i) {
+            uint256 r = uint256(keccak256(abi.encode(seed, i, ops[i])));
+            uint256 id = l.market.roundCount();
+            address a = _who(r >> 8);
+            uint256 op = ops[i] % 12;
+            uint256 lots = 1 + (r >> 16) % 12;
+            uint16 step = uint16((r >> 40) % 9);
+            if (op == 0) {
+                // Block time only moves forward: wait for the cadence if it has not elapsed yet.
+                uint256 due = l.market.lastOpenAt() + WEEK + (r >> 60) % 2 days;
+                if (due > vm.getBlockTimestamp()) vm.warp(due);
+                _act(STANDIN, abi.encodeCall(SecondaryMarket.openRound, ()));
+            } else if (op == 1 || op == 2) {
+                uint256 held = l.shares.balanceOf(a) / LOT_SIZE;
+                if (held != 0 && id != 0) {
+                    _act(a, abi.encodeCall(SecondaryMarket.sell, (id, uint128(lots > held ? held : lots), step)));
+                }
+            } else if (op == 3 || op == 4) {
+                if (id != 0) _act(a, abi.encodeCall(SecondaryMarket.bid, (id, uint128(lots), step)));
+            } else if (op == 5) {
+                if (id != 0) _act(a, abi.encodeCall(SecondaryMarket.cancelSell, (id)));
+            } else if (op == 6) {
+                if (id != 0) _act(a, abi.encodeCall(SecondaryMarket.cancelBid, (id)));
+            } else if (op == 7) {
+                if (id != 0) {
+                    (,,,, uint64 closesAt,,,,,,) = l.market.rounds(id);
+                    if (vm.getBlockTimestamp() < closesAt) vm.warp(closesAt);
+                    _act(STANDIN, abi.encodeCall(SecondaryMarket.settle, (id)));
+                }
+            } else if (op == 8) {
+                if (id != 0) {
+                    _act(STANDIN, abi.encodeCall(SecondaryMarket.claimShares, (id, a)));
+                    _act(STANDIN, abi.encodeCall(SecondaryMarket.claimQuote, (id, a)));
+                }
+            } else if (op == 9) {
+                uint256 bal = l.shares.balanceOf(a);
+                if (bal != 0) {
+                    address[] memory tokens = new address[](1);
+                    vm.prank(a);
+                    try l.dao.ragequit(tokens, 1 + (r >> 20) % bal, 0) {} catch {}
+                }
+            } else if (op == 10) {
+                vm.warp(vm.getBlockTimestamp() + 1 days + (r >> 20) % 3 days);
+            } else {
+                uint256 bal = l.shares.balanceOf(a);
+                if (bal >= 1e18) {
+                    vm.prank(a);
+                    l.shares.transfer(address(l.market), 1e18);
+                    _donated[a] += 1e18;
+                    _donatedTotal += 1e18;
+                }
+            }
+            vm.roll(vm.getBlockNumber() + 1);
+            _books();
+            if (i % 5 == 4) _denominator();
+        }
+
+        // Let every round run out its window, then pay everything: only donations may remain.
+        vm.warp(vm.getBlockTimestamp() + 3 days);
+        _resolveAndClaimAll();
+        vm.warp(vm.getBlockTimestamp() + 3 days);
+        _resolveAndClaimAll();
+        address[] memory all = _everyone();
+        for (uint256 i; i < all.length; ++i) {
+            assertEq(l.policy.escrowedBalance(all[i]), _donated[all[i]], "only a donor's own donation stays in escrow");
+        }
+        assertEq(l.shares.balanceOf(address(l.market)), _donatedTotal, "the market holds exactly the donations");
+        assertEq(l.quote.balanceOf(address(l.market)), 0, "no quote is stranded");
+        _denominator();
+        for (uint256 id = 1; id <= l.market.roundCount(); ++id) {
+            address[] memory sellers = l.market.roundSellers(id);
+            for (uint256 i; i < sellers.length; ++i) {
+                (,, uint128 filled,,,) = l.market.sells(id, sellers[i]);
+                filledLots += filled;
+            }
+        }
+    }
 }

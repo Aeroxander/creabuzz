@@ -23,7 +23,12 @@ contract Dusty {
     }
 }
 
-contract SecondaryMarketAdversary is SecondaryMarketFixture {
+/// @dev The cases are written once and run twice: against the stood-in mock policy
+/// (`SecondaryMarketAdversary`) and against the production composition, a real `ContributorKitV2`
+/// launch with the real `ActivationVoting` policy and its real escrow hooks
+/// (`SecondaryMarketAdversaryReal`). A case that holds only under the mock proves nothing about the
+/// real consume -> prepare -> transfer ordering, the real escrow books or the real hooks' own reverts.
+abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
     address internal constant S1 = address(0x5E1101);
     address internal constant S2 = address(0x5E1102);
     address internal constant S3 = address(0x5E1103);
@@ -33,6 +38,8 @@ contract SecondaryMarketAdversary is SecondaryMarketFixture {
     address internal constant ROGUE = address(0x9C01);
 
     Launch internal l;
+    /// @dev Total Shares at launch: 90 whole lots under the mock; the founder's whole grant under the real kit.
+    uint256 internal supply0;
 
     function setUp() public {
         address[] memory holders = new address[](3);
@@ -51,6 +58,7 @@ contract SecondaryMarketAdversary is SecondaryMarketFixture {
         l.quote.mint(B2, 1_000_000e6);
         _approve(l, B1);
         _approve(l, B2);
+        supply0 = l.shares.totalSupply();
     }
 
     /// @dev A fresh honest launch under the same summoner, the sellers stocked, with a hostile or
@@ -87,7 +95,7 @@ contract SecondaryMarketAdversary is SecondaryMarketFixture {
         assertFalse(minted, "nothing can be minted through the market");
         (bool left,) = address(l.market).call(abi.encodePacked(leave, abi.encode(uint256(1), new address[](0))));
         assertFalse(left, "no arbitrary-token claimAndLeave exists");
-        assertEq(l.shares.totalSupply(), 90e18, "and no extra Shares appeared in the whole flow");
+        assertEq(l.shares.totalSupply(), supply0, "and no extra Shares appeared in the whole flow");
     }
 
     function test_the_dao_and_the_market_cannot_sell_inventory() public {
@@ -533,5 +541,15 @@ contract SecondaryMarketAdversary is SecondaryMarketFixture {
             uint256(bFilled) * LOT_SIZE,
             "the market holds exactly what the buyers still claim"
         );
+    }
+}
+
+/// @notice The cases against the stood-in policy (fast, and the only place the mock's own books are read).
+contract SecondaryMarketAdversary is SecondaryMarketAdversaryCases {}
+
+/// @notice The same cases against a real `ContributorKitV2` launch and the real `ActivationVoting` hooks.
+contract SecondaryMarketAdversaryReal is SecondaryMarketAdversaryCases {
+    function _useRealKit() internal pure override returns (bool) {
+        return true;
     }
 }

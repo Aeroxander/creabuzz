@@ -1611,7 +1611,9 @@ complete and that claims could not be paused. The packet now carries the
 correction, and its seven open questions are answered from the review (§10).
 
 The review's fourth finding is a measurement, not a defect: a 32×32 round with
-64 levels settles in **2.63M gas** (mock policy), the 33rd buyer is refused
+64 levels settled in **2.63M gas** with the mock policy (a warm, same-block figure; against
+the real policy, cold and across blocks, it is 11.3M to 20.9M by shape, see the review packet's F4
+and its open `MAX_ACTIVE_SELLERS` decision), the 33rd buyer is refused
 `TooManyBuyers`, and free cancellation until the close means buyer slots can be
 occupied with throwaway bids. Both are design limits, now stated in the packet.
 
