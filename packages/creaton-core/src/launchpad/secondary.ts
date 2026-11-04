@@ -29,7 +29,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 /** The most grid levels a listing may set (`SecondaryMarket.MAX_LEVELS`). */
 const MAX_LEVELS = 64;
 /** The most lots one order holds (`SecondaryMarket.MAX_ORDER_LOTS`). */
-const MAX_ORDER_LOTS = 1n << 96n;
+export const MAX_ORDER_LOTS = 1n << 96n;
 
 /** How long a round takes orders (`SecondaryMarket.BIDDING`). */
 export const SECONDARY_BIDDING = 3 * 86_400;

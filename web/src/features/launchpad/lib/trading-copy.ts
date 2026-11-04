@@ -24,6 +24,7 @@ import {
   type EarlierRound,
   lotPriceAt,
   type Listing,
+  MAX_ORDER_LOTS,
   type RoundView,
   SECONDARY_EVERY,
   type SecondaryMarketRead,
@@ -37,6 +38,27 @@ export interface QuoteUnits {
   /** The token's own symbol, as it answers `symbol()` (e.g. "USDC"). */
   quoteSymbol: string;
 }
+
+/**
+ * What the connected wallet holds in this market, read together with the market so a form can say what is possible
+ * before anything is signed. Base units throughout: Shares at their own scale, quote at the token's.
+ */
+export interface WalletFunds {
+  /** The Shares the market's policy lets this wallet offer now (`saleCapacity`), whatever it holds. */
+  saleCapacity: bigint;
+  /** The Shares this wallet holds. */
+  shares: bigint;
+  /** The quote token this wallet holds. */
+  quote: bigint;
+  /** What the quote token already lets this market take from the wallet. */
+  quoteAllowance: bigint;
+}
+
+/** The quote token's units plus the market's lot size: what a seller's form needs to turn lots into Shares. */
+export type SellUnits = QuoteUnits & { lotSize: bigint };
+
+/** The largest amount one call can carry (`uint256`): a total at or above it is no amount at all. */
+const WORD = 1n << 256n;
 
 const date = (seconds: number) =>
   new Date(seconds * 1000).toLocaleString("en-US", {
@@ -211,18 +233,22 @@ export function tradingStateLine(
   return `${terms} ${phase}${next}`;
 }
 
-/** A seller's form: the whole lots they offer, and the lowest step their price means. */
+/**
+ * A seller's form: the whole lots they offer, and the lowest step their price means. An offer the wallet cannot make
+ * now is a problem here, in words, so no approval is asked for it (the market would refuse it: `NoCapacity`).
+ */
 export function sellPlan(
   round: Pick<RoundView, "minPrice" | "step" | "levels">,
   lotsText: string,
   priceText: string,
-  quote: QuoteUnits,
+  units: SellUnits,
+  funds: WalletFunds,
 ): { problem: string } | { lots: bigint; level: number } {
   const whole = wholeLots(lotsText);
   if ("problem" in whole) return whole;
   let price: bigint;
   try {
-    price = priceOf(priceText, "The lowest price", quote.quoteDecimals);
+    price = priceOf(priceText, "The lowest price", units.quoteDecimals);
   } catch (error) {
     return { problem: messageOf(error) };
   }
@@ -230,15 +256,26 @@ export function sellPlan(
   if (level === null) {
     return { problem: "That price is above this round's highest." };
   }
+  const held = sellHolds(whole.lots, units.lotSize);
+  if (held >= WORD) {
+    return { problem: "That is more Shares than a single order can hold." };
+  }
+  if (whole.lots > offerableLots(funds, units.lotSize)) {
+    return { problem: sellRoomLine(funds, units.lotSize) };
+  }
   return { lots: whole.lots, level };
 }
 
-/** A buyer's form: the whole lots they bid for, and the highest step their price means. */
+/**
+ * A buyer's form: the whole lots they bid for, and the highest step their price means. A bid the wallet cannot pay
+ * for is a problem here, so no approval is asked for it.
+ */
 export function bidPlan(
   round: Pick<RoundView, "minPrice" | "step" | "levels">,
   lotsText: string,
   priceText: string,
   quote: QuoteUnits,
+  funds: WalletFunds,
 ): { problem: string } | { lots: bigint; level: number } {
   const whole = wholeLots(lotsText);
   if ("problem" in whole) return whole;
@@ -254,8 +291,85 @@ export function bidPlan(
       problem: `Bid at least ${money(round.minPrice, quote)} a lot: this round's lowest.`,
     };
   }
+  const holds = bidHolds(round, whole.lots, level);
+  if (holds >= WORD) {
+    return { problem: "That is more money than a single order can hold." };
+  }
+  if (holds > funds.quote) {
+    return {
+      problem: `This bid holds ${money(holds, quote)} until the round settles, and you hold ${money(funds.quote, quote)}.`,
+    };
+  }
   return { lots: whole.lots, level };
 }
+
+/** The whole lots this wallet can offer now: what is unlocked and held, in lots of the market's size. */
+function offerableLots(funds: WalletFunds, lotSize: bigint): bigint {
+  const room =
+    funds.saleCapacity < funds.shares ? funds.saleCapacity : funds.shares;
+  return room / lotSize;
+}
+
+/**
+ * What a wallet can offer now, and why when it is less than it holds. Shares a wallet holds are not all offerable at
+ * once (a founder's unlock over time), and the reason is said instead of a refusal after an approval.
+ */
+export function sellRoomLine(funds: WalletFunds, lotSize: bigint): string {
+  const room = offerableLots(funds, lotSize);
+  const locked = funds.saleCapacity < funds.shares;
+  if (room > 0n) {
+    const more = locked ? " The rest of your Shares unlock over time." : "";
+    return `You can offer up to ${lots(room)} now (${shareUnits(room * lotSize)} Shares).${more}`;
+  }
+  if (funds.shares < lotSize) {
+    return funds.shares === 0n
+      ? "You hold no Shares in this project, so there is nothing to offer."
+      : "You hold less than one whole lot of Shares, so there is nothing to offer.";
+  }
+  return "None of your Shares can be offered yet: Shares unlock over time. Try again later.";
+}
+
+/** What the wallet holds to bid with, so a bid is written against a real figure. */
+export function quoteHeldLine(funds: WalletFunds, quote: QuoteUnits): string {
+  return `You hold ${money(funds.quote, quote)}.`;
+}
+
+/**
+ * A failed order's refusal in plain words, whichever way the network spells it. The checks before a send catch these
+ * first; this is for the case they could not know (another wallet filled the round, a market's own limit). Text that
+ * names none of them is returned as it came, so no real answer is hidden.
+ */
+export function tradingFailureLine(message: string): string {
+  for (const [name, line] of REFUSALS) {
+    if (new RegExp(`\\b${name}\\b`).test(message)) return line;
+  }
+  return message;
+}
+
+const REFUSALS: readonly (readonly [string, string])[] = [
+  [
+    "NoCapacity",
+    "Not all of those Shares can be offered yet: Shares unlock over time. Offer fewer, or try again later.",
+  ],
+  ["DaoCannotSell", "The project's own Shares can't be offered here."],
+  [
+    "BadAmount",
+    "The amount that arrived didn't match what the order asked for, so it was refused and nothing was sold or bought.",
+  ],
+  [
+    "TooManySellers",
+    "This round already has as many offers as it can take. Try again in the next round.",
+  ],
+  [
+    "TooManyBuyers",
+    "This round already has as many bids as it can take. Try again in the next round.",
+  ],
+  [
+    "OneOrderPerSide",
+    "You already have an order on that side of this round. Take it back first to change it.",
+  ],
+  ["BiddingOver", "Offers and bids for this round have closed."],
+];
 
 /** The money a bid holds until the round settles: whole lots at the step's price. */
 export function bidHolds(
@@ -468,7 +582,7 @@ export function earlierLimitLine(
     : null;
 }
 
-/** Whole lots, or why the text is not a number of lots. */
+/** Whole lots, or why the text is not a number of lots. No more than one order can hold, as the contract caps it. */
 function wholeLots(text: string): { lots: bigint } | { problem: string } {
   const trimmed = text.trim();
   if (!/^\d+$/.test(trimmed)) {
@@ -477,6 +591,9 @@ function wholeLots(text: string): { lots: bigint } | { problem: string } {
   const count = BigInt(trimmed);
   if (count === 0n)
     return { problem: "An order holds at least one whole lot." };
+  if (count > MAX_ORDER_LOTS) {
+    return { problem: "That is more lots than one order can hold." };
+  }
   return { lots: count };
 }
 

@@ -18,21 +18,19 @@
 import { CalendarClock } from "lucide-react";
 import { useId, useState } from "react";
 
+import type { SenderCall } from "@/features/identity/lib/sponsoredSender";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Chip } from "@/shared/ui/chip";
 import { Input } from "@/shared/ui/input";
 import { MoreInfo } from "@/shared/ui/more-info";
 
-import { encodeApproveBounty } from "@creaton/core/launchpad/workBounty.ts";
 import {
-  encodeBid,
   encodeCancelBid,
   encodeCancelSell,
   encodeClaimQuote,
   encodeClaimShares,
   encodeOpenRound,
-  encodeSell,
   encodeSettle,
   type RoundView,
   SECONDARY_EVERY,
@@ -50,16 +48,21 @@ import {
   lots as lotsLabel,
   money,
   nextRoundChip,
+  quoteHeldLine,
   roundLine,
   sellHolds,
   sellOrderLine,
   sellPlan,
+  sellRoomLine,
   settleNoticeLine,
   shareUnits,
   tokenUnreadableLine,
+  tradingFailureLine,
   tradingStateLine,
   unreadableLine,
+  type WalletFunds,
 } from "../lib/trading-copy";
+import { bidCalls, placeOrder, sellCalls } from "../lib/trading-orders";
 import { useChainSend } from "../use-chain-send";
 import {
   type SecondaryMarketFacts,
@@ -70,6 +73,8 @@ import { FailureNote, WalletStrip } from "./account-widgets";
 import { TradingEarlier } from "./TradingEarlier";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;
+/** Put one order on the network as one step: every call built first, then sent together (`lib/trading-orders.ts`). */
+type Place = (key: string, build: () => SenderCall[]) => Promise<boolean>;
 
 /**
  * The DAO's secondary market on a project's Funds tab, where this build names
@@ -96,6 +101,8 @@ export function TradingCard({
     wallet: sender.wallet.address,
   });
   const data = query.data;
+  const place: Place = (key, build) =>
+    placeOrder(key, build, sender.sendBatch, sender.reportFailure);
   const read = data?.read ?? null;
   const blocked = sender.busy !== null || sender.gate !== null;
   const present = read?.kind === "present" ? read : null;
@@ -193,9 +200,11 @@ export function TradingCard({
               blocked={blocked}
               busy={sender.busy}
               facts={data.facts}
+              funds={data.funds}
               listingEnabled={present.listing.enabled}
               market={present.market}
               me={sender.wallet.address}
+              onPlace={place}
               onSend={sender.send}
               round={round}
               roundId={data.roundId}
@@ -217,7 +226,10 @@ export function TradingCard({
       )}
       <WalletStrip testIdPrefix="trading" wallet={sender.wallet} />
       {sender.failure ? (
-        <FailureNote message={sender.failure} testId="trading-failure" />
+        <FailureNote
+          message={tradingFailureLine(sender.failure)}
+          testId="trading-failure"
+        />
       ) : null}
     </Card>
   );
@@ -233,23 +245,28 @@ function TradingRound({
   roundId,
   market,
   facts,
+  funds,
   listingEnabled,
   wallet,
   me,
   blocked,
   busy,
+  onPlace,
   onSend,
 }: {
   round: RoundView;
   roundId: bigint;
   market: string;
   facts: SecondaryMarketFacts;
+  /** What the connected wallet can offer and pay with; null with no wallet connected. */
+  funds: WalletFunds | null;
   /** A closed listing takes no new offer or bid; settling, taking one back and collecting still work. */
   listingEnabled: boolean;
   wallet: WalletView;
   me: string | null;
   blocked: boolean;
   busy: string | null;
+  onPlace: Place;
   onSend: Send;
 }) {
   const [form, setForm] = useState<"sell" | "bid" | null>(null);
@@ -404,27 +421,29 @@ function TradingRound({
           </div>
         ) : null}
       </div>
-      {takingOrders && me && form === "sell" ? (
+      {takingOrders && me && funds && form === "sell" ? (
         <SellForm
           blocked={blocked}
           busy={busy}
           facts={facts}
+          funds={funds}
           id={roundId}
           market={market}
           onDone={() => setForm(null)}
-          onSend={onSend}
+          onPlace={onPlace}
           round={round}
         />
       ) : null}
-      {takingOrders && me && form === "bid" ? (
+      {takingOrders && me && funds && form === "bid" ? (
         <BidForm
           blocked={blocked}
           busy={busy}
           facts={facts}
+          funds={funds}
           id={roundId}
           market={market}
           onDone={() => setForm(null)}
-          onSend={onSend}
+          onPlace={onPlace}
           round={round}
         />
       ) : null}
@@ -433,26 +452,29 @@ function TradingRound({
 }
 
 /**
- * The offer form: whole lots at a lowest price. The Shares are approved to the
- * market first, then the offer escrows exactly those lots.
+ * The offer form: whole lots at a lowest price, held to what the wallet can
+ * offer now. The Shares are approved to the market and the offer escrows exactly
+ * those lots, as one step.
  */
 function SellForm({
   round,
   market,
   facts,
+  funds,
   id,
   blocked,
   busy,
-  onSend,
+  onPlace,
   onDone,
 }: {
   round: RoundView;
   market: string;
   facts: SecondaryMarketFacts;
+  funds: WalletFunds;
   id: bigint;
   blocked: boolean;
   busy: string | null;
-  onSend: Send;
+  onPlace: Place;
   onDone: () => void;
 }) {
   const formId = useId();
@@ -460,29 +482,29 @@ function SellForm({
   const [priceText, setPriceText] = useState("");
   const plan =
     lotsInput.trim() && priceText.trim()
-      ? sellPlan(round, lotsInput, priceText, facts)
+      ? sellPlan(round, lotsInput, priceText, facts, funds)
       : null;
   const go = async () => {
     if (!plan || "problem" in plan) return;
-    const amount = sellHolds(plan.lots, facts.lotSize);
-    const allowed = await onSend(
-      "trading-allow-shares",
-      facts.sharesToken,
-      encodeApproveBounty(market, amount),
-    );
-    if (!allowed) return;
-    if (
-      await onSend(
-        "trading-sell",
+    const placed = await onPlace("trading-sell", () =>
+      sellCalls({
         market,
-        encodeSell(market, id, plan.lots, plan.level),
-      )
-    ) {
-      onDone();
-    }
+        roundId: id,
+        lots: plan.lots,
+        level: plan.level,
+        facts,
+      }),
+    );
+    if (placed) onDone();
   };
   return (
     <div className="mt-2 grid gap-2" data-testid="trading-sell-form">
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid="trading-sell-room"
+      >
+        {sellRoomLine(funds, facts.lotSize)}
+      </p>
       <div className="flex flex-wrap items-end gap-2">
         <Field
           id={`${formId}-lots`}
@@ -519,37 +541,36 @@ function SellForm({
         size="sm"
         type="button"
       >
-        {busy === "trading-allow-shares"
-          ? "Approving…"
-          : busy === "trading-sell"
-            ? "Offering…"
-            : "Offer them"}
+        {busy === "trading-sell" ? "Offering…" : "Offer them"}
       </Button>
     </div>
   );
 }
 
 /**
- * The bid form: whole lots at a highest price. The money the bid holds is
- * approved to the market first, then escrowed by the bid.
+ * The bid form: whole lots at a highest price, held to the money the wallet
+ * holds. The money the bid holds is approved to the market (unless it already
+ * is) and escrowed by the bid, as one step.
  */
 function BidForm({
   round,
   market,
   facts,
+  funds,
   id,
   blocked,
   busy,
-  onSend,
+  onPlace,
   onDone,
 }: {
   round: RoundView;
   market: string;
   facts: SecondaryMarketFacts;
+  funds: WalletFunds;
   id: bigint;
   blocked: boolean;
   busy: string | null;
-  onSend: Send;
+  onPlace: Place;
   onDone: () => void;
 }) {
   const formId = useId();
@@ -557,29 +578,31 @@ function BidForm({
   const [priceText, setPriceText] = useState("");
   const plan =
     lotsInput.trim() && priceText.trim()
-      ? bidPlan(round, lotsInput, priceText, facts)
+      ? bidPlan(round, lotsInput, priceText, facts, funds)
       : null;
   const go = async () => {
     if (!plan || "problem" in plan) return;
-    const holds = bidHolds(round, plan.lots, plan.level);
-    const allowed = await onSend(
-      "trading-allow-quote",
-      facts.quoteToken,
-      encodeApproveBounty(market, holds),
-    );
-    if (!allowed) return;
-    if (
-      await onSend(
-        "trading-bid",
+    const placed = await onPlace("trading-bid", () =>
+      bidCalls({
         market,
-        encodeBid(market, id, plan.lots, plan.level),
-      )
-    ) {
-      onDone();
-    }
+        roundId: id,
+        round,
+        lots: plan.lots,
+        level: plan.level,
+        allowance: funds.quoteAllowance,
+        facts,
+      }),
+    );
+    if (placed) onDone();
   };
   return (
     <div className="mt-2 grid gap-2" data-testid="trading-bid-form">
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid="trading-bid-room"
+      >
+        {quoteHeldLine(funds, facts)}
+      </p>
       <div className="flex flex-wrap items-end gap-2">
         <Field
           id={`${formId}-lots`}
@@ -616,11 +639,7 @@ function BidForm({
         size="sm"
         type="button"
       >
-        {busy === "trading-allow-quote"
-          ? "Approving…"
-          : busy === "trading-bid"
-            ? "Bidding…"
-            : "Place the bid"}
+        {busy === "trading-bid" ? "Bidding…" : "Place the bid"}
       </Button>
     </div>
   );

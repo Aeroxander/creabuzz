@@ -19,16 +19,19 @@ import {
   money,
   nextRoundChip,
   nextRoundLine,
+  quoteHeldLine,
   refreshEveryMs,
   roundLine,
   sellHolds,
   sellOrderLine,
   sellPlan,
+  sellRoomLine,
   settleNoticeLine,
   shareUnits,
   stepAtLeast,
   stepAtMost,
   tokenUnreadableLine,
+  tradingFailureLine,
   tradingStateLine,
   unreadableLine,
 } from "./trading-copy.ts";
@@ -116,6 +119,21 @@ const bid = (over = {}) => ({
   refundDone: false,
   ...over,
 });
+
+/**
+ * What a wallet holds in a market that trades in `LOT`-sized lots: plenty of everything, so a test says what it limits.
+ * Quantities are base units: Shares at the lot's own scale, quote at the token's.
+ */
+const funds = (over = {}) => ({
+  saleCapacity: 1_000n * LOT,
+  shares: 1_000n * LOT,
+  quote: 1_000_000n * USD,
+  quoteAllowance: 0n,
+  ...over,
+});
+/** The market's own units for a seller's form: the quote token's and the lot's size. */
+const SELL_USDC = { ...USDC, lotSize: LOT };
+const SELL_FQ = { ...FQ, lotSize: LOT };
 
 const WALLET = `0x${"be".repeat(20)}`;
 const market = (over = {}) => ({
@@ -421,50 +439,220 @@ test("a typed price becomes the step at or above it (a seller) or at or below it
 });
 
 test("the two order forms say what is wrong before anything is sent", () => {
-  assert.deepEqual(sellPlan(round(), "2", "1.008", USDC), {
+  assert.deepEqual(sellPlan(round(), "2", "1.008", SELL_USDC, funds()), {
     lots: 2n,
     level: 1,
   });
   assert.match(
-    sellPlan(round(), "0", "1", USDC).problem,
+    sellPlan(round(), "0", "1", SELL_USDC, funds()).problem,
     /at least one whole lot/,
   );
   assert.match(
-    sellPlan(round(), "1.5", "1", USDC).problem,
+    sellPlan(round(), "1.5", "1", SELL_USDC, funds()).problem,
     /whole number of lots/,
   );
   assert.match(
-    sellPlan(round(), "1", "1.1", USDC).problem,
+    sellPlan(round(), "1", "1.1", SELL_USDC, funds()).problem,
     /above this round's highest/,
   );
-  assert.deepEqual(bidPlan(round(), "2", "1.05", USDC), { lots: 2n, level: 6 });
+  assert.deepEqual(bidPlan(round(), "2", "1.05", USDC, funds()), {
+    lots: 2n,
+    level: 6,
+  });
   assert.match(
-    bidPlan(round(), "2", "0.9", USDC).problem,
+    bidPlan(round(), "2", "0.9", USDC, funds()).problem,
     /Bid at least 1 USDC a lot/,
   );
   assert.match(
-    bidPlan(round(), "2", "1.0000001", USDC).problem,
+    bidPlan(round(), "2", "1.0000001", USDC, funds()).problem,
     /decimal places/,
   );
   // The same typed text means the token's own units: "1" is one whole FQ, which is step 0 of this grid, and the form
   // takes as many decimals as the token has.
-  assert.deepEqual(sellPlan(wideRound(), "2", "1", FQ), { lots: 2n, level: 0 });
-  assert.deepEqual(sellPlan(wideRound(), "2", "65", FQ), {
+  assert.deepEqual(sellPlan(wideRound(), "2", "1", SELL_FQ, funds()), {
+    lots: 2n,
+    level: 0,
+  });
+  assert.deepEqual(sellPlan(wideRound(), "2", "65", SELL_FQ, funds()), {
     lots: 2n,
     level: 64,
   });
-  assert.deepEqual(sellPlan(wideRound(), "2", "1.000000000000000001", FQ), {
-    lots: 2n,
-    level: 1,
-  });
+  assert.deepEqual(
+    sellPlan(wideRound(), "2", "1.000000000000000001", SELL_FQ, funds()),
+    {
+      lots: 2n,
+      level: 1,
+    },
+  );
   assert.match(
-    bidPlan(wideRound(), "2", "0.5", FQ).problem,
+    bidPlan(wideRound(), "2", "0.5", FQ, funds()).problem,
     /Bid at least 1 FQ a lot/,
   );
   // A seventh decimal is refused on a six-decimal token; a nineteenth on an eighteen-decimal one.
   assert.match(
-    sellPlan(wideRound(), "1", "1.0000000000000000001", FQ).problem,
+    sellPlan(wideRound(), "1", "1.0000000000000000001", SELL_FQ, funds())
+      .problem,
     /at most 18 decimal places/,
+  );
+});
+
+test("an oversized number of lots is refused in words, never planned (the contract's own cap)", () => {
+  const huge = "99999999999999999999999999999";
+  const cap = (1n << 96n).toString();
+  const overCap = ((1n << 96n) + 1n).toString();
+  const rich = funds({
+    saleCapacity: 1n << 200n,
+    shares: 1n << 200n,
+    quote: 1n << 200n,
+  });
+  for (const text of [huge, overCap]) {
+    assert.match(
+      sellPlan(round(), text, "1", SELL_USDC, rich).problem,
+      /more lots than one order can hold/,
+    );
+    assert.match(
+      bidPlan(round(), text, "1.05", USDC, rich).problem,
+      /more lots than one order can hold/,
+    );
+  }
+  // The cap itself is a whole order, as the contract takes it.
+  assert.deepEqual(sellPlan(round(), cap, "1", SELL_USDC, rich), {
+    lots: 1n << 96n,
+    level: 0,
+  });
+});
+
+test("an order whose total does not fit a 256-bit amount is refused in words", () => {
+  const cap = (1n << 96n).toString();
+  const rich = funds({
+    saleCapacity: 1n << 255n,
+    shares: 1n << 255n,
+    quote: 1n << 255n,
+  });
+  // 2^96 lots of 2^200 Shares is 2^296: no balance holds that, and no call could carry it.
+  assert.match(
+    sellPlan(round(), cap, "1", { ...USDC, lotSize: 1n << 200n }, rich).problem,
+    /more Shares than/,
+  );
+  const dear = round({ minPrice: 1n, step: 1n << 200n, levels: 8 });
+  assert.match(
+    bidPlan(dear, cap, "1".padEnd(62, "0"), USDC, rich).problem,
+    /more money than/,
+  );
+});
+
+test("an offer is held to what the wallet can offer now, and says why", () => {
+  // Nothing unlocked yet (a founder's schedule at birth): the plan is a problem, with the reason.
+  const locked = sellPlan(
+    round(),
+    "1",
+    "1",
+    SELL_USDC,
+    funds({ saleCapacity: 0n }),
+  );
+  assert.match(locked.problem, /unlock over time/);
+  assert.doesNotMatch(locked.problem, /NoCapacity|revert|capacity/i);
+  // Part unlocked: the most it can offer is the whole lots inside it.
+  const part = sellPlan(
+    round(),
+    "4",
+    "1",
+    SELL_USDC,
+    funds({ saleCapacity: 3n * LOT + 5n, shares: 10n * LOT }),
+  );
+  assert.match(part.problem, /up to 3 lots now/);
+  assert.match(part.problem, /rest .* unlock over time/);
+  assert.deepEqual(
+    sellPlan(
+      round(),
+      "3",
+      "1",
+      SELL_USDC,
+      funds({ saleCapacity: 3n * LOT + 5n, shares: 10n * LOT }),
+    ),
+    { lots: 3n, level: 0 },
+  );
+  // Shares it does not hold cannot be offered however much is unlocked.
+  assert.match(
+    sellPlan(
+      round(),
+      "2",
+      "1",
+      SELL_USDC,
+      funds({ saleCapacity: 9n * LOT, shares: LOT }),
+    ).problem,
+    /up to 1 lot now/,
+  );
+  assert.match(
+    sellPlan(
+      round(),
+      "1",
+      "1",
+      SELL_USDC,
+      funds({ saleCapacity: 9n * LOT, shares: LOT - 1n }),
+    ).problem,
+    /less than one whole lot/,
+  );
+});
+
+test("the offer form's room line says how much can be offered now", () => {
+  assert.equal(
+    sellRoomLine(funds({ saleCapacity: 3n * LOT, shares: 3n * LOT }), LOT),
+    "You can offer up to 3 lots now (300 Shares).",
+  );
+  assert.match(
+    sellRoomLine(funds({ saleCapacity: 0n, shares: 3n * LOT }), LOT),
+    /None of your Shares can be offered yet.*unlock over time/,
+  );
+  assert.match(
+    sellRoomLine(funds({ saleCapacity: 0n, shares: 0n }), LOT),
+    /hold no Shares/,
+  );
+  assert.match(
+    sellRoomLine(funds({ saleCapacity: 2n * LOT, shares: 5n * LOT }), LOT),
+    /up to 2 lots now.*rest .* unlock over time/,
+  );
+});
+
+test("a bid is held to the money the wallet holds", () => {
+  // Two lots at step 6 (1.048 USDC) hold 2.096 USDC.
+  const broke = bidPlan(round(), "2", "1.05", USDC, funds({ quote: USD }));
+  assert.match(broke.problem, /hold 1 USDC/);
+  assert.match(broke.problem, /2\.096 USDC/);
+  assert.equal(
+    quoteHeldLine(funds({ quote: 2_096_000n }), USDC),
+    "You hold 2.096 USDC.",
+  );
+  assert.deepEqual(
+    bidPlan(round(), "2", "1.05", USDC, funds({ quote: 2_096_000n })),
+    { lots: 2n, level: 6 },
+  );
+});
+
+test("a failed order is said in plain words, whichever way the network spells the refusal", () => {
+  for (const [name, words] of [
+    ["NoCapacity", /unlock over time/],
+    ["DaoCannotSell", /project's own Shares/],
+    ["BadAmount", /didn't match/],
+    ["TooManySellers", /as many offers as/],
+    ["TooManyBuyers", /as many bids as/],
+    ["OneOrderPerSide", /already have an order/],
+    ["BiddingOver", /have closed/],
+  ]) {
+    for (const spelling of [
+      `execution reverted: ${name}()`,
+      `The contract function "sell" reverted with the following reason: ${name}()`,
+      `reverted with custom error '${name}()'`,
+    ]) {
+      const line = tradingFailureLine(spelling);
+      assert.match(line, words, spelling);
+      assert.doesNotMatch(line, new RegExp(name), spelling);
+    }
+  }
+  // Anything else is left as it came, so no real answer is hidden.
+  assert.equal(
+    tradingFailureLine("Part of this went through"),
+    "Part of this went through",
   );
 });
 

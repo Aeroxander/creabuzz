@@ -6,6 +6,10 @@ import {
   encodeCall0,
 } from "@creaton/core/launchpad/work.ts";
 import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
+import {
+  encodeAllowance,
+  encodeBalanceOf,
+} from "@creaton/core/launchpad/workBounty.ts";
 import type { WorkChain } from "@creaton/core/launchpad/workRead.ts";
 import {
   decodeRound,
@@ -18,7 +22,7 @@ import {
 
 import { getRpcEndpoint } from "./chain";
 import { secondaryMarketFactory } from "./chain-config";
-import { refreshEveryMs } from "./lib/trading-copy";
+import { refreshEveryMs, type WalletFunds } from "./lib/trading-copy";
 import { endpointChain } from "./use-work";
 
 /** Where every query about the secondary market lives, so a step sent from one re-reads it. */
@@ -44,6 +48,12 @@ export interface SecondaryMarketView {
   read: SecondaryMarketRead;
   /** The market's lot size and tokens, or null when there is no market to ask. */
   facts: SecondaryMarketFacts | null;
+  /**
+   * What the connected wallet can offer and pay with in this market: the Shares it may offer now, the Shares and quote
+   * it holds, and what the quote already lets the market take. Null with no wallet or no market. A read that did not
+   * complete throws, so the card says it could not read: never a wallet that "holds nothing".
+   */
+  funds: WalletFunds | null;
   /** The latest round's id, which every order names; null before the first round. */
   roundId: bigint | null;
   /**
@@ -59,6 +69,48 @@ export interface SecondaryMarketView {
    * at a guessed scale would be wrong by the factor the guess is wrong by.
    */
   tokenUnreadable: boolean;
+}
+
+/** One 32-byte answer as a number, or a thrown error: a short or empty answer is a read we do not have, never zero. */
+function strictWord(hex: string, what: string): bigint {
+  const word = wordOf(hex);
+  if (word === null) throw new Error(`${what} did not answer a number`);
+  return word;
+}
+
+/**
+ * What `wallet` can offer and pay with in the market: `saleCapacity` on the market's own policy, the Shares and quote
+ * it holds, and the quote's allowance to the market. Every answer must be a number or the whole read throws.
+ */
+async function readWalletFunds(
+  chain: Pick<WorkChain, "call">,
+  input: {
+    market: string;
+    wallet: string;
+    sharesToken: string;
+    quoteToken: string;
+    policyHex: string;
+  },
+): Promise<WalletFunds> {
+  const policy = decodeAddress(input.policyHex);
+  if (policy === ZERO_ADDRESS) {
+    throw new Error("the market did not report its sale policy");
+  }
+  const [capacityHex, sharesHex, quoteHex, allowanceHex] = await Promise.all([
+    chain.call(
+      policy,
+      encodeFunctionData("saleCapacity(address)", ["address"], [input.wallet]),
+    ),
+    chain.call(input.sharesToken, encodeBalanceOf(input.wallet)),
+    chain.call(input.quoteToken, encodeBalanceOf(input.wallet)),
+    chain.call(input.quoteToken, encodeAllowance(input.wallet, input.market)),
+  ]);
+  return {
+    saleCapacity: strictWord(capacityHex, "the sale policy"),
+    shares: strictWord(sharesHex, "the Shares token"),
+    quote: strictWord(quoteHex, "the price token"),
+    quoteAllowance: strictWord(allowanceHex, "the price token"),
+  };
 }
 
 const NO_EARLIER: EarlierRoundsRead = { rounds: [], unchecked: 0n };
@@ -173,6 +225,7 @@ export function useSecondary(input: {
         return {
           read,
           facts: null,
+          funds: null,
           roundId: null,
           earlier: NO_EARLIER,
           now,
@@ -182,12 +235,14 @@ export function useSecondary(input: {
       // The market's three constants, without which a lot has no size and an
       // approval no target. A zero answer is a read we do not have, not a market
       // that trades nothing (Review-Proven Rule 1).
-      const [lotHex, sharesHex, quoteHex, countHex] = await Promise.all([
-        chain.call(read.market, encodeCall0("lotSize()")),
-        chain.call(read.market, encodeCall0("sharesToken()")),
-        chain.call(read.market, encodeCall0("quote()")),
-        chain.call(read.market, encodeCall0(SECONDARY_SIGNATURES.roundCount)),
-      ]);
+      const [lotHex, sharesHex, quoteHex, countHex, policyHex] =
+        await Promise.all([
+          chain.call(read.market, encodeCall0("lotSize()")),
+          chain.call(read.market, encodeCall0("sharesToken()")),
+          chain.call(read.market, encodeCall0("quote()")),
+          chain.call(read.market, encodeCall0(SECONDARY_SIGNATURES.roundCount)),
+          chain.call(read.market, encodeCall0("policy()")),
+        ]);
       const lotSize = decodeWord(lotHex);
       const sharesToken = decodeAddress(sharesHex);
       const quoteToken = decodeAddress(quoteHex);
@@ -209,6 +264,7 @@ export function useSecondary(input: {
               "the market's price token did not say its decimals and its symbol",
           },
           facts: null,
+          funds: null,
           roundId: null,
           earlier: NO_EARLIER,
           now,
@@ -237,6 +293,16 @@ export function useSecondary(input: {
         }
         roundId = count;
       }
+      // What this wallet can offer and pay with, so a form can say what is possible before anything is signed.
+      const funds = input.wallet
+        ? await readWalletFunds(chain, {
+            market: read.market,
+            wallet: input.wallet,
+            sharesToken,
+            quoteToken,
+            policyHex,
+          })
+        : null;
       // What earlier rounds still owe this wallet: they stay claimable after a newer round opens, and a failed
       // read throws rather than showing a wallet with nothing owed (Review-Proven Rule 1).
       const earlier =
@@ -257,6 +323,7 @@ export function useSecondary(input: {
           quoteDecimals: quote.decimals,
           quoteSymbol: quote.symbol,
         },
+        funds,
         roundId,
         earlier,
         now,

@@ -109,6 +109,8 @@ const SIG = {
   sharesIn: "0x5e8d2ba3",
   roundCount: "0x127f0b3f",
   saleCapacity: "0x80b4dee2",
+  /** `allowance(owner, spender)`: what a token already lets the market take. */
+  allowance: "0xdd62ed3e",
   claimQuote: "0x4e0add6a",
   configureListing: "0x1ecf4419",
   /** The quote token's own scale, whose read this journey refuses at the end. */
@@ -340,10 +342,57 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   expect(await callWord(MARKET, SIG.roundCount)).toBe(1n);
   say("the DAO published a listing and the founder opened a round");
 
+  // ── 2b. An offer the wallet cannot make is refused on the page, with the reason, before anything is signed ──
+  // Someone who holds no Shares has nothing the policy lets them offer (`saleCapacity` is 0 for them).
+  const nobody = await personPage(context, relay, THIRD_WALLET, THIRD_NSEC);
+  await openTrading(nobody);
+  expect(await balanceOf(SHARES, THIRD_WALLET)).toBe(0n);
+  expect(
+    await callWord(POLICY, `${SIG.saleCapacity}${word(THIRD_WALLET)}`),
+  ).toBe(0n);
+  await nobody.getByTestId("trading-sell").click();
+  await expect(nobody.getByTestId("trading-sell-room")).toContainText(
+    "You hold no Shares in this project, so there is nothing to offer.",
+  );
+  await nobody.getByTestId("trading-sell-lots").fill("1");
+  await nobody.getByTestId("trading-sell-price").fill(LOW_TEXT);
+  await expect(nobody.getByTestId("trading-sell-plan-problem")).toContainText(
+    "You hold no Shares in this project, so there is nothing to offer.",
+  );
+  await expect(nobody.getByTestId("trading-sell-submit")).toBeDisabled();
+  // Nothing was approved or offered: the page refused it, not the chain after a signature.
+  expect(
+    await callWord(
+      SHARES,
+      `${SIG.allowance}${word(THIRD_WALLET)}${word(MARKET)}`,
+    ),
+  ).toBe(0n);
+  expect(await callWord(MARKET, SIG.roundCount)).toBe(1n);
+  say("a wallet with nothing to offer is told so before it signs anything");
+
   // ── 3. The founder offers two lots at the lowest step; the market holds their Shares ────────────────────
   const founderSharesBefore = await balanceOf(SHARES, FOUNDER_WALLET);
   expect(founderSharesBefore).toBeGreaterThanOrEqual(SHARES_MOVED);
   await founder.getByTestId("trading-sell").click();
+  // More lots than the wallet may offer now: the page says how many it can, and the button stays off.
+  const offerable =
+    (await callWord(POLICY, `${SIG.saleCapacity}${word(FOUNDER_WALLET)}`)) /
+    WAD;
+  const offerableNow =
+    offerable < founderSharesBefore / WAD
+      ? offerable
+      : founderSharesBefore / WAD;
+  await expect(founder.getByTestId("trading-sell-room")).toContainText(
+    `You can offer up to ${offerableNow} lots now`,
+  );
+  await founder
+    .getByTestId("trading-sell-lots")
+    .fill((offerableNow + 1n).toString());
+  await founder.getByTestId("trading-sell-price").fill(LOW_TEXT);
+  await expect(founder.getByTestId("trading-sell-plan-problem")).toContainText(
+    `You can offer up to ${offerableNow} lots now`,
+  );
+  await expect(founder.getByTestId("trading-sell-submit")).toBeDisabled();
   await founder.getByTestId("trading-sell-lots").fill(LOTS.toString());
   await founder.getByTestId("trading-sell-price").fill(LOW_TEXT);
   await expect(founder.getByTestId("trading-sell-plan-problem")).toHaveCount(0);

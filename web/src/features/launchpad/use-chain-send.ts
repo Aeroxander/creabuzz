@@ -56,9 +56,12 @@ export function useChainSend(
     }
   };
 
+  /** Say why a step was not sent when it never reached the network (an order that could not be put together). */
+  const reportFailure = (message: string) => setFailure(message);
+
   /** Send one transaction; true once it landed and the page re-read what it shows. */
   const send = (key: string, to: string, data: string): Promise<boolean> =>
     sendBatch(key, [{ to, data }]);
 
-  return { wallet, gate, busy, failure, send, sendBatch };
+  return { wallet, gate, busy, failure, send, sendBatch, reportFailure };
 }
