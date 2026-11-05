@@ -789,6 +789,63 @@ abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
             "the market holds exactly what the buyers still claim"
         );
     }
+
+    /// @dev The grid is the DAO's to choose, so the fuzz walks the terms themselves: odd floors and steps, floors that
+    /// are not multiples of 100, up to 64 levels and prices far above any real token. Whatever the terms, the one
+    /// `priceAt` grid decides both sides: the round settles, the fills are exact, seller proceeds plus buyer
+    /// refunds equal the intake to the unit, and the market ends holding no quote.
+    function testFuzz_settle_pays_out_the_intake_exactly_on_any_grid(
+        uint128 minSeed,
+        uint128 stepSeed,
+        uint32 levelsSeed,
+        uint128 sellerLots,
+        uint16 sellerStep,
+        uint128 buyerLots,
+        uint16 buyerStep
+    ) public {
+        uint32 levels = uint32(1 + uint256(levelsSeed) % l.market.MAX_LEVELS());
+        uint128 minPrice = uint128(1 + uint256(minSeed) % (1 << 100));
+        uint128 step = uint128(1 + uint256(stepSeed) % (1 << 40));
+        sellerLots = 1 + sellerLots % 40;
+        buyerLots = 1 + buyerLots % 20;
+        sellerStep = uint16(uint256(sellerStep) % (uint256(levels) + 1));
+        buyerStep = uint16(uint256(buyerStep) % (uint256(levels) + 1));
+        vm.prank(address(l.dao));
+        l.market.configureListing(true, minPrice, minPrice + uint128(levels) * step, levels);
+        uint256 id = l.market.openRound();
+        l.quote.mint(B2, uint256(buyerLots) * (uint256(minPrice) + uint256(buyerStep) * step));
+        vm.prank(S1);
+        l.market.sell(id, sellerLots, sellerStep);
+        vm.prank(B2);
+        l.market.bid(id, buyerLots, buyerStep);
+        uint256 intake = l.market.quoteIn(id);
+        assertEq(intake, uint256(buyerLots) * l.market.priceAt(id, buyerStep), "the intake is the escrow at the grid");
+        (uint256 level, uint256 matched,) = l.market.clearingOf(id);
+        _toSettle(l, id);
+        l.market.settle(id);
+        (,,,,,,,, uint16 roundPrice,,) = l.market.rounds(id);
+        assertEq(uint256(roundPrice), level, "the preview and the settle agree on any grid");
+        (,, uint128 sFilled,,,) = l.market.sells(id, S1);
+        (,, uint128 bFilled,,,,) = l.market.bids(id, B2);
+        assertEq(uint256(sFilled), matched, "the seller filled exactly the matched lots");
+        assertEq(uint256(bFilled), matched, "the buyer filled exactly the matched lots");
+        uint256 sellerBefore = l.quote.balanceOf(S1);
+        uint256 buyerBefore = l.quote.balanceOf(B2);
+        uint256 price = l.market.priceAt(id, level);
+        if (matched > 0) {
+            l.market.claimQuote(id, S1);
+        }
+        uint256 buyerOwes = uint256(buyerLots) * l.market.priceAt(id, buyerStep) - matched * price;
+        if (buyerOwes > 0) {
+            l.market.claimQuote(id, B2);
+        }
+        uint256 toSeller = l.quote.balanceOf(S1) - sellerBefore;
+        uint256 toBuyer = l.quote.balanceOf(B2) - buyerBefore;
+        assertEq(toSeller, matched * price, "the seller is paid the matched lots at the one clearing price");
+        assertEq(toBuyer, buyerOwes, "the buyer gets back exactly the escrow the fill did not use");
+        assertEq(toSeller + toBuyer, intake, "payouts sum to the intake");
+        assertEq(l.market.quoteIn(id), 0, "no quote is left on the ledger");
+    }
 }
 
 /// @notice The cases against the stood-in policy (fast, and the only place the mock's own books are read).
