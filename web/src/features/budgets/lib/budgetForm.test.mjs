@@ -11,6 +11,7 @@ import {
   buildOrgBudgetContent,
   budgetSubjectError,
   describeBudgetLimits,
+  describeOnExceed,
   isBudgetSubject,
   isLimitFieldValid,
   normalizeBudgetSubject,
@@ -121,5 +122,16 @@ describe("limit fields", () => {
     assert.ok(isLimitFieldValid(""));
     assert.ok(isLimitFieldValid("3"));
     assert.ok(!isLimitFieldValid("x"));
+  });
+});
+
+describe("what happens past a limit", () => {
+  it("maps known codes to plain sentences and keeps unknown text", () => {
+    assert.equal(
+      describeOnExceed("require-approval"),
+      "the agent has to ask for approval first",
+    );
+    assert.equal(describeOnExceed("reject"), "the agent is stopped");
+    assert.equal(describeOnExceed("custom-rule"), "custom-rule");
   });
 });

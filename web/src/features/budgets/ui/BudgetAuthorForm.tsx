@@ -12,6 +12,7 @@ import {
   COMMUNITY_DEFAULT_SUBJECT,
   ENFORCEMENT_LABEL,
   budgetSubjectError,
+  describeOnExceed,
   isLimitFieldValid,
   parseLimitField,
   type BudgetLimitInput,
@@ -292,7 +293,7 @@ export function BudgetList() {
               </p>
             )}
             <p className="mt-1 text-2xs text-black/60 dark:text-white/60">
-              If a limit is passed: {budget.onExceed}
+              If a limit is passed, {describeOnExceed(budget.onExceed)}.
             </p>
           </li>
         );

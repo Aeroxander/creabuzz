@@ -188,6 +188,21 @@ export function buildOrgBudgetContent(input: OrgBudgetContentInput): string {
   });
 }
 
+/**
+ * Plain sentence for what happens when an agent passes a limit. The stored
+ * code stays unchanged; unknown codes fall back to the stored text.
+ */
+export function describeOnExceed(onExceed: string): string {
+  switch (onExceed) {
+    case "require-approval":
+      return "the agent has to ask for approval first";
+    case "reject":
+      return "the agent is stopped";
+    default:
+      return onExceed;
+  }
+}
+
 /** Parse a non-negative whole number from a form field; empty → undefined. */
 export function parseLimitField(raw: string): number | undefined {
   const trimmed = raw.trim();
