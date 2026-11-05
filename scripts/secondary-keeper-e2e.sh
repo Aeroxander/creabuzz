@@ -28,14 +28,16 @@ cd "$REPO_ROOT"
 # shellcheck source=/dev/null
 . "$REPO_ROOT/bin/activate-hermit" >/dev/null 2>&1 || true
 export PATH="${FOUNDRY_BIN:-}:${HOME}/.foundry/bin:${PATH}"
-for tool in forge cast anvil node; do
+for tool in forge cast anvil node python3; do
   command -v "$tool" >/dev/null 2>&1 || { echo "missing tool: $tool (set FOUNDRY_BIN for foundry)"; exit 2; }
 done
 
 step() { printf '\033[36m[secondary-keeper-e2e]\033[0m %s\n' "$*"; }
 fail() { printf '\033[31m[secondary-keeper-e2e] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 
-PORT="${ANVIL_PORT:-$((19000 + RANDOM % 1000))}"
+# shellcheck source=scripts/lib/local-anvil.sh
+. "$REPO_ROOT/scripts/lib/local-anvil.sh"
+PORT="${ANVIL_PORT:-$(free_loopback_port)}"
 # Foundry's HTTP client panics in this sandbox, so every `cast` call reaches the node over its WebSocket transport.
 RPC="ws://127.0.0.1:${PORT}"
 STATE="$(mktemp -d)"
@@ -66,8 +68,7 @@ cleanup() {
 trap cleanup EXIT
 
 step "booting anvil on ${RPC}"
-anvil --host 127.0.0.1 --port "$PORT" --chain-id 31337 --silent >"$STATE/anvil.log" 2>&1 &
-ANVIL_PID=$!
+start_local_anvil "$PORT" "$STATE/anvil.log"
 for _ in $(seq 1 100); do
   cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 && break
   sleep 0.2

@@ -200,6 +200,8 @@ journey_ports() {
     web-pilot-e2e) echo 4186 ;;
     web-project-story-e2e) echo 4196 ;;
     work-check-query-e2e) ;; # Allocates its own loopback ports; no fixed port dependency.
+    # A chain on a free port and the command line (the fixture's optional demo server is on :5173, set by V5_DEMO_WEB_PORT).
+    v5-local-fixture | secondary-keeper-e2e) ;;
     *) echo 4173 ;;
   esac
 }

@@ -108,6 +108,8 @@ jobs:
         run: scripts/ensure-solc.sh && forge --version
       - name: The size-limit fixture's own self-test (local anvil)
         run: scripts/test-v5-local-fixture.sh
+      - name: The trading journeys' own self-test (local anvil, stand-in browser)
+        run: scripts/test-e2e-script-hygiene.sh
 
       - name: Get pnpm store directory
         id: pnpm-cache

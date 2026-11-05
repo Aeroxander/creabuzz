@@ -36,7 +36,8 @@
 # Chromium (set PW_CHROMIUM_PATH if the pinned Playwright wants a newer build than the machine has).
 #
 # Usage:  scripts/web-trading-e2e.sh [playwright args, e.g. -g "settle"]
-# Env:    ANVIL_PORT (default random high port), SKIP_BUILD=1 (reuse web/dist)
+# Env:    ANVIL_PORT (default: a free port the kernel picks; refused when something holds it),
+#         SKIP_BUILD=1 (reuse web/dist, only a build this script made for this chain and market factory)
 
 set -euo pipefail
 
@@ -46,14 +47,16 @@ cd "$REPO_ROOT"
 # shellcheck source=/dev/null
 . "$REPO_ROOT/bin/activate-hermit" >/dev/null 2>&1 || true
 export PATH="${FOUNDRY_BIN:-}:${HOME}/.foundry/bin:${PATH}"
-for tool in forge cast anvil node; do
+for tool in forge cast anvil node python3; do
   command -v "$tool" >/dev/null 2>&1 || { echo "missing tool: $tool (set FOUNDRY_BIN for foundry)"; exit 2; }
 done
 
 step() { printf '\033[36m[web-trading-e2e]\033[0m %s\n' "$*"; }
 fail() { printf '\033[31m[web-trading-e2e] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 
-PORT="${ANVIL_PORT:-$((18000 + RANDOM % 1000))}"
+# shellcheck source=scripts/lib/local-anvil.sh
+. "$REPO_ROOT/scripts/lib/local-anvil.sh"
+PORT="${ANVIL_PORT:-$(free_loopback_port)}"
 # Foundry's HTTP client panics in this sandbox (macOS system-configuration returns NULL), so every `cast` call reaches
 # the node over its WebSocket transport: same JSON-RPC, same anvil, no proxy machinery. The app and the browser spec use
 # plain HTTP, which this host's node and Chromium both serve fine.
@@ -94,8 +97,7 @@ if lsof -ti tcp:4173 >/dev/null 2>&1; then
 fi
 
 step "booting anvil on ${HTTP_RPC} (state in ${STATE})"
-anvil --host 127.0.0.1 --port "$PORT" --chain-id 31337 --silent >"$STATE/anvil.log" 2>&1 &
-ANVIL_PID=$!
+start_local_anvil "$PORT" "$STATE/anvil.log"
 for _ in $(seq 1 100); do
   cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 && break
   sleep 0.2
@@ -157,11 +159,22 @@ LISTING="$(cast call "$MARKET" "listing()(bool,uint128,uint128,uint32)" --rpc-ur
 [[ "$(printf '%s' "$LISTING" | cut -d' ' -f1)" == "false" ]] || fail "the listing is not disabled at birth ($LISTING)"
 
 cd "$REPO_ROOT/web"
+# The build records what it was made for next to the bundle. A minified bundle does not carry the factory address in a form
+# worth searching for, and a fresh anvil gives the same address to the same deployer, so the record is the check: SKIP_BUILD=1
+# reuses web/dist only for this chain and factory, and any other build (another script's, an older run's) has no such record.
+BUILD_MARKER="$REPO_ROOT/web/dist/.web-trading-e2e-build"
+BUILD_RECORD="chain=${CHAIN_ID} secondaryMarketFactory=${MARKET_FACTORY}"
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   step "building the web app"
-  VITE_LAUNCHPAD_CHAIN_ID=31337 \
-    VITE_SECONDARY_MARKET_FACTORY="{\"31337\":\"${MARKET_FACTORY}\"}" \
-    node_modules/.bin/vite build >/dev/null 2>&1 || fail "web build failed"
+  # env -i keeps any VITE_ setting from the caller's shell out of the build: it has only what is named here.
+  env -i PATH="$PATH" HOME="$HOME" VITE_LAUNCHPAD_CHAIN_ID="$CHAIN_ID" \
+    VITE_SECONDARY_MARKET_FACTORY="{\"${CHAIN_ID}\":\"${MARKET_FACTORY}\"}" \
+    node_modules/.bin/vite build >"$STATE/web-build.log" 2>&1 \
+    || { tail -20 "$STATE/web-build.log"; fail "web build failed"; }
+  printf '%s\n' "$BUILD_RECORD" >"$BUILD_MARKER"
+else
+  [[ -f "$BUILD_MARKER" && "$(cat "$BUILD_MARKER")" == "$BUILD_RECORD" ]] \
+    || fail "SKIP_BUILD=1 but web/dist was not built by this script for ${BUILD_RECORD} (stale build; it does not match): run again without SKIP_BUILD"
 fi
 step "running the browser spec"
 E2E_ANVIL_URL="$HTTP_RPC" E2E_QUOTE="$QUOTE" E2E_SHARES="$SHARES" E2E_DAO="$DAO" \
