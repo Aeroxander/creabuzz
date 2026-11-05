@@ -40,7 +40,9 @@ import {
   cardMode,
   claimDue,
   collectQuoteLabel,
+  type FailureMark,
   factoryMissingLine,
+  failureStands,
   listingDetailLine,
   nextRoundChip,
   roundLine,
@@ -49,7 +51,8 @@ import {
   shareUnits,
   staleReadLine,
   tokenUnreadableLine,
-  tradingFailureLine,
+  tradingFailure,
+  tradingLimits,
   tradingStateLine,
   unreadableLine,
   type WalletFunds,
@@ -114,6 +117,29 @@ export function TradingCard({
     (round === null || (over && (data?.now ?? 0) >= nextOpenAt));
   const waitingForNext =
     present?.listing.enabled === true && round !== null && over && !canOpen;
+  // A failure note belongs to the read and the round it was raised on. It is recorded once the step has finished
+  // (its own refresh included), so that refresh does not clear it; a later successful read, or a round that opened or
+  // moved to its next phase, does.
+  const roundKey =
+    round === null || data?.roundId == null
+      ? "none"
+      : `${data.roundId}:${round.phase}`;
+  const failureMark = useRef<FailureMark | null>(null);
+  const { failure, busy, clearFailure } = sender;
+  useEffect(() => {
+    if (failure === null) {
+      failureMark.current = null;
+      return;
+    }
+    if (busy !== null) return;
+    const now = { readAt: query.dataUpdatedAt, round: roundKey };
+    const mark = failureMark.current;
+    if (mark === null || mark.failure !== failure) {
+      failureMark.current = { failure, ...now };
+    } else if (!failureStands(mark, now)) {
+      clearFailure();
+    }
+  }, [failure, busy, clearFailure, query.dataUpdatedAt, roundKey]);
 
   return (
     <Card className="p-4" data-testid="trading">
@@ -177,6 +203,13 @@ export function TradingCard({
             and everyone takes back what they put in. Trading moves existing
             Shares between people: it does not raise money for the project, and
             it does not promise a next buyer.
+          </MoreInfo>
+          <MoreInfo label="Before you trade" testId="trading-limits">
+            <ul className="list-disc pl-4">
+              {tradingLimits().map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
           </MoreInfo>
           {present?.listing.enabled && data.facts?.quoteKnown ? (
             <p className="mt-2 text-sm" data-testid="trading-listing">
@@ -257,7 +290,7 @@ export function TradingCard({
       <WalletStrip testIdPrefix="trading" wallet={sender.wallet} />
       {sender.failure ? (
         <FailureNote
-          message={tradingFailureLine(sender.failure)}
+          failure={tradingFailure(sender.failure)}
           testId="trading-failure"
         />
       ) : null}

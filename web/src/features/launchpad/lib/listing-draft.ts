@@ -72,7 +72,7 @@ export function listingFormDraft(input: ListingFormInput): ListingFormResult {
     }
     if (read.kind === "unreadable") {
       return {
-        problem: `The market could not be read (${read.reason}). Reload to try again.`,
+        problem: "The market could not be read. Reload to try again.",
       };
     }
     if (quote === null) {

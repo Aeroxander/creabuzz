@@ -13,6 +13,7 @@ import { listingPrice } from "@creaton/core/launchpad/secondaryListing.ts";
 import { SelectField, TextField } from "./decision-fields";
 import { type DraftResult, DraftPanel, type FormProps } from "./decision-forms";
 import { listingFormDraft } from "../lib/listing-draft";
+import { LISTING_OFF_HINT, unreviewedLine } from "../lib/trading-copy";
 import { useSecondary } from "../use-secondary";
 
 export function TradingListingForm({
@@ -36,6 +37,8 @@ export function TradingListingForm({
   const [maxText, setMaxText] = useState("");
   const [levelsText, setLevelsText] = useState("");
 
+  // Said until the release decision records an outside review (`MARKET_REVIEWED`); a DAO voting on prices should know.
+  const unreviewed = unreviewedLine();
   const view = query.data ?? null;
   const read = view?.read ?? null;
   const present = read?.kind === "present" ? read : null;
@@ -103,13 +106,22 @@ export function TradingListingForm({
         rounds. Publishing it is a vote: nothing opens until holders back it and
         it takes effect.
       </p>
+      {unreviewed ? (
+        <p
+          className="rounded-lg border border-amber-500/40 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid="listing-unreviewed"
+          role="note"
+        >
+          {unreviewed}
+        </p>
+      ) : null}
       <p className="text-sm" data-testid="listing-market-state">
         {!read
           ? query.isError
             ? "Couldn't read this project's market from the network. Reload to try again."
             : "Reading the market…"
           : read.kind === "unreadable"
-            ? `Couldn't read this project's market from the network (${read.reason}). Reload to try again.`
+            ? "Couldn't read this project's market from the network. Reload to try again."
             : read.kind === "absent"
               ? "This project has no secondary market, so there is no listing to publish."
               : listing?.enabled
@@ -124,7 +136,7 @@ export function TradingListingForm({
       ) : null}
       {market !== null ? (
         <SelectField
-          hint="Turning it off stops new rounds. Rounds already open or settled still settle, refund and pay out, and every claim still works."
+          hint={LISTING_OFF_HINT}
           label="The listing"
           onChange={(value) => setEnabled(value === "off" ? "off" : "on")}
           options={[

@@ -14,16 +14,12 @@ import { Input } from "@/shared/ui/input";
 import type { RoundView } from "@creaton/core/launchpad/secondary.ts";
 
 import {
-  bidHolds,
   bidPlan,
-  lotPriceLine,
-  lots as lotsLabel,
-  money,
+  bidPlanLine,
   quoteHeldLine,
-  sellHolds,
   sellPlan,
+  sellPlanLine,
   sellRoomLine,
-  shareUnits,
   type WalletFunds,
 } from "../lib/trading-copy";
 import type { SecondaryMarketFacts } from "../lib/secondary-read";
@@ -94,9 +90,7 @@ export function SellForm({
         if (placed) onDone();
       }}
       planFor={(lots, price) => sellPlan(round, lots, price, facts, funds)}
-      planLine={(plan) =>
-        `This holds ${lotsLabel(plan.lots)} (${shareUnits(sellHolds(plan.lots, facts.lotSize))} Shares) until the round settles. ${lotPriceLine(round, plan.level, facts)}.`
-      }
+      planLine={(plan) => sellPlanLine(round, plan, facts)}
       priceLabel={`Lowest price a lot (${facts.quoteSymbol})`}
       pricePlaceholder="1.02"
       room={sellRoomLine(funds, facts.lotSize)}
@@ -149,9 +143,7 @@ export function BidForm({
         if (placed) onDone();
       }}
       planFor={(lots, price) => bidPlan(round, lots, price, facts, funds)}
-      planLine={(plan) =>
-        `This bid holds ${money(bidHolds(round, plan.lots, plan.level), facts)} until the round settles. You pay the round's price, never more than yours, and get back the rest. ${lotPriceLine(round, plan.level, facts)}.`
-      }
+      planLine={(plan) => bidPlanLine(round, plan, facts)}
       priceLabel={`Highest price a lot (${facts.quoteSymbol})`}
       pricePlaceholder="1.05"
       room={quoteHeldLine(funds, facts)}

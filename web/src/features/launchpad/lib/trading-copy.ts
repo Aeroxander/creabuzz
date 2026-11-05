@@ -313,13 +313,15 @@ function offerableLots(funds: WalletFunds, lotSize: bigint): bigint {
 
 /**
  * What a wallet can offer now, and why when it is less than it holds. Shares a wallet holds are not all offerable at
- * once (a founder's unlock over time), and the reason is said instead of a refusal after an approval.
+ * once (a founder's sale schedule releases them over time), and the reason is said instead of a refusal after an approval.
  */
 export function sellRoomLine(funds: WalletFunds, lotSize: bigint): string {
   const room = offerableLots(funds, lotSize);
   const locked = funds.saleCapacity < funds.shares;
   if (room > 0n) {
-    const more = locked ? " The rest of your Shares unlock over time." : "";
+    const more = locked
+      ? " Some of your Shares are not yet released for sale under the project's sale schedule. They become offerable as the schedule runs."
+      : "";
     return `You can offer up to ${lots(room)} now (${shareUnits(room * lotSize)} Shares).${more}`;
   }
   if (funds.shares < lotSize) {
@@ -327,7 +329,7 @@ export function sellRoomLine(funds: WalletFunds, lotSize: bigint): string {
       ? "You hold no Shares in this project, so there is nothing to offer."
       : "You hold less than one whole lot of Shares, so there is nothing to offer.";
   }
-  return "None of your Shares can be offered yet: Shares unlock over time. Try again later.";
+  return "None of your Shares are released for sale yet under the project's sale schedule. They become offerable as the schedule runs.";
 }
 
 /** What the wallet holds to bid with, so a bid is written against a real figure. */
@@ -335,22 +337,79 @@ export function quoteHeldLine(funds: WalletFunds, quote: QuoteUnits): string {
   return `You hold ${money(funds.quote, quote)}.`;
 }
 
+/** A failed step as people read it: plain words with a next step, and the raw words kept for a collapsed disclosure. */
+export interface TradingFailure {
+  /** What happened and what to do next. */
+  text: string;
+  /** The network's or wallet's own words, for Technical details; null when `text` says it all. */
+  detail: string | null;
+}
+
+/** What a step that is refused for a reason this page has no words for is said as. */
+const REFUSED_TEXT =
+  "That step was refused, so nothing changed. Refresh and try again.";
+
 /**
- * A failed order's refusal in plain words, whichever way the network spells it. The checks before a send catch these
- * first; this is for the case they could not know (another wallet filled the round, a market's own limit). Text that
- * names none of them is returned as it came, so no real answer is hidden.
+ * Words the network and a browser wallet use that are not words for people: a revert, a status, a URL, a hex blob.
+ * A sentence containing any of them is never shown in main copy, however it is capitalised.
  */
-export function tradingFailureLine(message: string): string {
+const RAW_WORDS =
+  /revert|\bRPC\b|\bHTTP\b|\bURL\b|\bstatus\b|0x[0-9a-fA-F]{4,}|Details:|Version:|Failed to fetch|NetworkError|Load failed|\bgas\b/i;
+
+/**
+ * A failed step in plain words, whichever way the network spells the refusal. The checks before a send catch these
+ * first; this is for the case they could not know (another wallet filled the round, a market's own limit). A refusal
+ * the market names is said as a sentence with a next step. A sentence the app already wrote for people (the passkey
+ * path rewrites most errors) is kept as it is. Anything else, such as a browser wallet's own text, is said as
+ * {@link REFUSED_TEXT}, with the raw words under Technical details only.
+ */
+export function tradingFailure(message: string): TradingFailure {
+  const raw = message.trim();
+  const detail = raw === "" ? null : raw;
   for (const [name, line] of REFUSALS) {
-    if (new RegExp(`\\b${name}\\b`).test(message)) return line;
+    if (new RegExp(`\\b${name}\\b`).test(raw)) return { text: line, detail };
   }
-  return message;
+  if (
+    /^[A-Z][^\n]*[.!?]$/.test(raw) &&
+    !RAW_WORDS.test(raw) &&
+    !/^[A-Za-z-]+:\s/.test(raw)
+  ) {
+    return { text: raw, detail: null };
+  }
+  return { text: REFUSED_TEXT, detail };
+}
+
+/** {@link tradingFailure}'s plain words alone. */
+export function tradingFailureLine(message: string): string {
+  return tradingFailure(message).text;
+}
+
+/**
+ * What the card knew when a failure note was raised: the note, when the card last read the market, and which round
+ * and phase it showed (`round id:phase`).
+ */
+export interface FailureMark {
+  failure: string;
+  readAt: number;
+  round: string;
+}
+
+/**
+ * Whether a failure note still describes what the card shows. A note belongs to the read and the round it was raised
+ * on: a later successful read, a new round, or a round that moved to its next phase makes it stale, and a stale note
+ * ("Offers and bids have closed") must not sit beside a card that has since moved on (Review-Proven Rule 2).
+ */
+export function failureStands(
+  mark: FailureMark,
+  now: { readAt: number; round: string },
+): boolean {
+  return mark.readAt === now.readAt && mark.round === now.round;
 }
 
 const REFUSALS: readonly (readonly [string, string])[] = [
   [
     "NoCapacity",
-    "Not all of those Shares can be offered yet: Shares unlock over time. Offer fewer, or try again later.",
+    "Not all of those Shares are released for sale yet under the project's sale schedule. Offer fewer: more become offerable as the schedule runs.",
   ],
   ["DaoCannotSell", "The project's own Shares can't be offered here."],
   [
@@ -369,8 +428,119 @@ const REFUSALS: readonly (readonly [string, string])[] = [
     "OneOrderPerSide",
     "You already have an order on that side of this round. Take it back first to change it.",
   ],
-  ["BiddingOver", "Offers and bids for this round have closed."],
+  [
+    "BiddingOver",
+    "Offers and bids for this round have closed. Refreshing now to show where it stands.",
+  ],
+  [
+    "ListingNotEnabled",
+    "Trading has been turned off for this project, so no round opens and no new offer or bid is taken. Rounds already open or settled still pay out, so collect anything you are owed.",
+  ],
+  [
+    "TooSoon",
+    "A new round can't open yet: rounds open at least a week apart. Come back when the next round date shows.",
+  ],
+  ["UnknownRound", "That round wasn't found. Refresh the page and try again."],
+  [
+    "BiddingOpen",
+    "Bidding for this round is still open, so it can't be settled yet. Try again when bidding has closed.",
+  ],
+  [
+    "SettleOver",
+    "The time to settle this round has passed, so nothing traded. Everyone takes back what they put in: use the collect buttons.",
+  ],
+  [
+    "AlreadySettled",
+    "Someone settled this round just before you. Refreshing now.",
+  ],
+  [
+    "BadLots",
+    "That number of lots isn't allowed. Use a whole number of lots, at least one and no more than one order can hold.",
+  ],
+  [
+    "BadStep",
+    "That price isn't one of this round's steps. Pick a price inside this round's range.",
+  ],
+  [
+    "NoOrder",
+    "You have no order in this round to take back. Refresh to see where it stands.",
+  ],
+  [
+    "NothingToClaim",
+    "You have nothing left to collect from this round. It may already be collected: refresh to check.",
+  ],
+  [
+    "LedgerShort",
+    "The market's own count didn't add up for this step, so it was refused and nothing changed. Refresh and try again; if it keeps happening, tell whoever runs this site.",
+  ],
 ];
+
+/**
+ * Whether an outside security review and a legal review of the market have been done and the human release decision
+ * (SECONDARY-LISTING-SPEC.md: no real-value use before both) has recorded it. Flipped only as part of that decision,
+ * with the test that pins it; until then every place that explains trading says the market is not reviewed.
+ */
+export const MARKET_REVIEWED = false;
+
+/** The one-line notice that the market's code has not been independently reviewed; null once it has been. */
+export function unreviewedLine(
+  reviewed: boolean = MARKET_REVIEWED,
+): string | null {
+  return reviewed
+    ? null
+    : "This market has not been independently reviewed. Do not trade with money you cannot lose.";
+}
+
+/** What holding Shares in a round costs: no vote, no payouts, until they are collected. */
+const HELD_LINE =
+  "Shares held in a round don't vote and don't earn payouts. They count again once they are collected.";
+
+/** When bought Shares can vote. The delay is the voting rule's, not this page's. */
+const VOTE_DELAY_LINE =
+  "Shares you buy can vote about a week (7 to 8 days) after you collect them.";
+
+/** An order is filled by the round's result, not by its owner. */
+const PART_FILL_LINE =
+  "An offer or a bid may be filled in part, or not at all. When more is wanted on one side than the other, that side shares what trades. What isn't filled comes back to you.";
+
+/**
+ * The limits of weekly trading, in plain words: what the page owes anyone deciding to trade (the secondary listing
+ * spec asks that the restriction to weekly rounds and the limits are explained honestly). Shown on the card.
+ */
+export function tradingLimits(): string[] {
+  return [
+    HELD_LINE,
+    VOTE_DELAY_LINE,
+    "For now, these weekly rounds are the only way to sell Shares here.",
+    PART_FILL_LINE,
+    "The market's code has not had an outside security or legal review yet.",
+  ];
+}
+
+/** What an offer holds and risks, said where the person is about to make it. */
+export function sellPlanLine(
+  round: Pick<RoundView, "minPrice" | "step" | "levels">,
+  plan: { lots: bigint; level: number },
+  units: SellUnits,
+): string {
+  return `This holds ${lots(plan.lots)} (${shareUnits(sellHolds(plan.lots, units.lotSize))} Shares) until the round settles. ${lotPriceLine(round, plan.level, units)}. ${HELD_LINE} ${PART_FILL_LINE}`;
+}
+
+/** What a bid holds and risks, said where the person is about to make it. */
+export function bidPlanLine(
+  round: Pick<RoundView, "minPrice" | "step" | "levels">,
+  plan: { lots: bigint; level: number },
+  quote: QuoteUnits,
+): string {
+  return `This bid holds ${money(bidHolds(round, plan.lots, plan.level), quote)} until the round settles. You pay the round's price, never more than yours, and get back the rest. ${lotPriceLine(round, plan.level, quote)}. ${PART_FILL_LINE} ${VOTE_DELAY_LINE}`;
+}
+
+/**
+ * What turning the listing off does, as the market does it: nothing new is taken, what is already in motion
+ * finishes. Shared by the vote form and its title.
+ */
+export const LISTING_OFF_HINT =
+  "No round opens and no new offer or bid is taken, until a later vote publishes terms again. Rounds already open or settled still settle, refund and pay out.";
 
 /** The money a bid holds until the round settles: whole lots at the step's price. */
 export function bidHolds(

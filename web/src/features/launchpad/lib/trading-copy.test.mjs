@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   bidHolds,
@@ -43,6 +45,23 @@ import {
   UNKNOWN_QUOTE,
   unreadableLine,
 } from "./trading-copy.ts";
+import * as copy from "./trading-copy.ts";
+
+// The disclosure and failure helpers, read off the module so one missing export fails its own test.
+const {
+  bidPlanLine,
+  failureStands,
+  LISTING_OFF_HINT,
+  MARKET_REVIEWED,
+  sellPlanLine,
+  tradingFailure,
+  tradingLimits,
+  unreviewedLine,
+} = copy;
+
+/** A sibling file's source, for the wiring a node test cannot mount. */
+const read = (name) =>
+  readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8");
 
 const USD = 1_000_000n;
 const E18 = 10n ** 18n;
@@ -583,7 +602,8 @@ test("an offer is held to what the wallet can offer now, and says why", () => {
     SELL_USDC,
     funds({ saleCapacity: 0n }),
   );
-  assert.match(locked.problem, /unlock over time/);
+  assert.match(locked.problem, /sale schedule/);
+  assert.doesNotMatch(locked.problem, /unlock|unvested|Try again later/i);
   assert.doesNotMatch(locked.problem, /NoCapacity|revert|capacity/i);
   // Part unlocked: the most it can offer is the whole lots inside it.
   const part = sellPlan(
@@ -594,7 +614,8 @@ test("an offer is held to what the wallet can offer now, and says why", () => {
     funds({ saleCapacity: 3n * LOT + 5n, shares: 10n * LOT }),
   );
   assert.match(part.problem, /up to 3 lots now/);
-  assert.match(part.problem, /rest .* unlock over time/);
+  assert.match(part.problem, /not yet released for sale .* sale schedule/);
+  assert.doesNotMatch(part.problem, /unlock|unvested/i);
   assert.deepEqual(
     sellPlan(
       round(),
@@ -635,7 +656,11 @@ test("the offer form's room line says how much can be offered now", () => {
   );
   assert.match(
     sellRoomLine(funds({ saleCapacity: 0n, shares: 3n * LOT }), LOT),
-    /None of your Shares can be offered yet.*unlock over time/,
+    /None of your Shares .* released for sale yet .* sale schedule.*become offerable as the schedule runs/,
+  );
+  assert.doesNotMatch(
+    sellRoomLine(funds({ saleCapacity: 0n, shares: 3n * LOT }), LOT),
+    /Try again later|unlock/i,
   );
   assert.match(
     sellRoomLine(funds({ saleCapacity: 0n, shares: 0n }), LOT),
@@ -643,7 +668,7 @@ test("the offer form's room line says how much can be offered now", () => {
   );
   assert.match(
     sellRoomLine(funds({ saleCapacity: 2n * LOT, shares: 5n * LOT }), LOT),
-    /up to 2 lots now.*rest .* unlock over time/,
+    /up to 2 lots now.*not yet released for sale .* sale schedule/,
   );
 });
 
@@ -663,29 +688,91 @@ test("a bid is held to the money the wallet holds", () => {
 });
 
 test("a failed order is said in plain words, whichever way the network spells the refusal", () => {
+  // Every refusal the market can give a person, each with a next step and none with its code in the main words.
   for (const [name, words] of [
-    ["NoCapacity", /unlock over time/],
+    ["NoCapacity", /sale schedule/],
     ["DaoCannotSell", /project's own Shares/],
     ["BadAmount", /didn't match/],
     ["TooManySellers", /as many offers as/],
     ["TooManyBuyers", /as many bids as/],
     ["OneOrderPerSide", /already have an order/],
     ["BiddingOver", /have closed/],
+    ["ListingNotEnabled", /turned off.*still pay out/],
+    ["TooSoon", /can't open yet.*a week apart/],
+    ["UnknownRound", /wasn't found.*Refresh/],
+    ["BiddingOpen", /still open.*Try again when bidding has closed/],
+    ["SettleOver", /time to settle.*passed.*takes back/],
+    [
+      "AlreadySettled",
+      /^Someone settled this round just before you\. Refreshing now\.$/,
+    ],
+    ["BadLots", /whole number of lots/],
+    ["BadStep", /range/],
+    ["NoOrder", /no order/],
+    ["NothingToClaim", /nothing left to collect/],
+    ["LedgerShort", /nothing changed.*Refresh and try again/],
   ]) {
     for (const spelling of [
       `execution reverted: ${name}()`,
+      `execution reverted: ${name}(7)`,
       `The contract function "sell" reverted with the following reason: ${name}()`,
       `reverted with custom error '${name}()'`,
     ]) {
-      const line = tradingFailureLine(spelling);
-      assert.match(line, words, spelling);
-      assert.doesNotMatch(line, new RegExp(name), spelling);
+      const failure = tradingFailure(spelling);
+      assert.match(failure.text, words, spelling);
+      assert.doesNotMatch(failure.text, new RegExp(name), spelling);
+      assert.equal(failure.detail, spelling, "the raw words are kept apart");
+      assert.equal(tradingFailureLine(spelling), failure.text);
     }
   }
-  // Anything else is left as it came, so no real answer is hidden.
+  // A sentence the app already wrote for people (the passkey path's) is kept, with nothing to hide.
+  assert.deepEqual(tradingFailure("Part of this went through"), {
+    text: "That step was refused, so nothing changed. Refresh and try again.",
+    detail: "Part of this went through",
+  });
+  const written =
+    "You closed the passkey prompt, or it timed out, so nothing was sent. Press the button again and confirm with your passkey.";
+  assert.deepEqual(tradingFailure(written), { text: written, detail: null });
+});
+
+test("a raw wallet or network error never reaches the main words", () => {
+  for (const raw of [
+    "HTTP request failed.\n\nStatus: 429\nURL: https://rpc.example/key\nDetails: Too Many Requests",
+    "execution reverted: 0x4e487b71",
+    "Internal JSON-RPC error.",
+    'The contract function "settle" reverted.\n\nContract Call:\n  address: 0xabc',
+    "Failed to fetch",
+    "",
+  ]) {
+    const failure = tradingFailure(raw);
+    assert.equal(
+      failure.text,
+      "That step was refused, so nothing changed. Refresh and try again.",
+      raw,
+    );
+    assert.equal(failure.detail, raw === "" ? null : raw);
+    assert.doesNotMatch(failure.text, /HTTP|429|revert|0x|RPC/);
+  }
+});
+
+test("a failure note stands only while the card still shows the round and the read it was raised on", () => {
+  const raised = { failure: "x", readAt: 100, round: "3:bidding" };
   assert.equal(
-    tradingFailureLine("Part of this went through"),
-    "Part of this went through",
+    failureStands(raised, { readAt: 100, round: "3:bidding" }),
+    true,
+  );
+  // A later successful read clears it (and so does a round that moved on, or a new round).
+  assert.equal(
+    failureStands(raised, { readAt: 101, round: "3:bidding" }),
+    false,
+  );
+  assert.equal(
+    failureStands(raised, { readAt: 100, round: "3:settling" }),
+    false,
+  );
+  assert.equal(
+    failureStands(raised, { readAt: 100, round: "4:bidding" }),
+    false,
   );
 });
 
@@ -1163,4 +1250,96 @@ test("an earlier settled round still owes a part-filled seller its remainder, un
     earlierDues(rounds, LOT).map((o) => [o.earlier.id, o.due]),
     [[3n, { shares: 3n * LOT, quote: 0n }]],
   );
+});
+
+// ---- disclosures ---------------------------------------------------------------------------------------------------
+
+test("the limits of weekly trading are said in plain words, each once", () => {
+  const limits = tradingLimits();
+  const text = limits.join(" ");
+  assert.match(
+    text,
+    /Shares held in a round don't vote and don't earn payouts/,
+  );
+  assert.match(text, /vote .* about a week \(7 to 8 days\) after you collect/);
+  assert.match(text, /only way to sell Shares here/);
+  assert.match(text, /filled in part, or not at all/);
+  assert.match(text, /not .* outside security or legal review/);
+  assert.equal(limits.length, 5);
+  assert.equal(new Set(limits).size, 5);
+  // Plain words: no contract names, no event numbers, no citations.
+  assert.doesNotMatch(
+    text,
+    /pro rata|escrow|Payouts\.sol|kind \d|NIP|ActivationVoting/i,
+  );
+});
+
+test("the review notice is tied to one release switch, which is off", () => {
+  assert.equal(MARKET_REVIEWED, false);
+  assert.match(unreviewedLine(), /not been independently reviewed/);
+  assert.match(unreviewedLine(), /Do not trade with money you cannot lose/);
+  assert.equal(unreviewedLine(true), null);
+});
+
+test("the offer and bid previews say what holding and filling mean at the moment of acting", () => {
+  const plan = { lots: 3n, level: 6 };
+  const sellLine = sellPlanLine(round(), plan, SELL_USDC);
+  assert.match(
+    sellLine,
+    /This holds 3 lots \(300 Shares\) until the round settles/,
+  );
+  assert.match(sellLine, /don't vote and don't earn payouts/);
+  assert.match(sellLine, /filled in part, or not at all/);
+  assert.match(sellLine, /1\.048 USDC a lot at step 6/);
+  const bidLine = bidPlanLine(round(), plan, USDC);
+  assert.match(bidLine, /This bid holds 3\.144 USDC until the round settles/);
+  assert.match(bidLine, /never more than yours, and get back the rest/);
+  assert.match(bidLine, /filled in part, or not at all/);
+  assert.match(bidLine, /about a week \(7 to 8 days\) after you collect them/);
+});
+
+test("the card and the forms say these limits where the person acts", () => {
+  const forms = read("../ui/TradingOrderForms.tsx");
+  assert.match(forms, /sellPlanLine\(/);
+  assert.match(forms, /bidPlanLine\(/);
+  const card = read("../ui/TradingCard.tsx");
+  assert.match(card, /tradingLimits\(\)/);
+  const listing = read("../ui/TradingListingForm.tsx");
+  assert.match(listing, /unreviewedLine\(\)/);
+  assert.match(listing, /\{unreviewed\}/);
+  assert.match(listing, /data-testid="listing-unreviewed"/);
+});
+
+// ---- the off switch and raw reasons --------------------------------------------------------------------------------
+
+test("turning the listing off is said as the contract does it: no new round, offer or bid", () => {
+  assert.equal(
+    LISTING_OFF_HINT,
+    "No round opens and no new offer or bid is taken, until a later vote publishes terms again. Rounds already open or settled still settle, refund and pay out.",
+  );
+  const form = read("../ui/TradingListingForm.tsx");
+  assert.match(form, /hint=\{LISTING_OFF_HINT\}/);
+  assert.doesNotMatch(form, /Turning it off stops new rounds/);
+  const composer = read("../ui/DecisionComposer.tsx");
+  assert.doesNotMatch(composer, /Turning it off stops new rounds/);
+  assert.match(
+    composer,
+    /Turning it off opens no round and takes no new offer or bid; settlement and claims carry on\./,
+  );
+});
+
+test("a failed market read never puts the network's own words into the page", () => {
+  const form = read("../ui/TradingListingForm.tsx");
+  const draft = read("./listing-draft.ts");
+  assert.doesNotMatch(form, /read\.reason/);
+  assert.doesNotMatch(draft, /read\.reason/);
+});
+
+test("the card clears a failure note once its read or round has moved on, through the one rule", () => {
+  const card = read("../ui/TradingCard.tsx");
+  assert.match(card, /failureStands\(/);
+  assert.match(card, /clearFailure\(\)/);
+  assert.match(card, /tradingFailure\(sender\.failure\)/);
+  const send = read("../use-chain-send.ts");
+  assert.match(send, /clearFailure/);
 });

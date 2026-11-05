@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import type { SenderCall } from "@/features/identity/lib/sponsoredSender";
 
@@ -63,5 +63,17 @@ export function useChainSend(
   const send = (key: string, to: string, data: string): Promise<boolean> =>
     sendBatch(key, [{ to, data }]);
 
-  return { wallet, gate, busy, failure, send, sendBatch, reportFailure };
+  /** Drop the failure note: for a screen that knows the page has moved on since the step failed. */
+  const clearFailure = useCallback(() => setFailure(null), []);
+
+  return {
+    wallet,
+    gate,
+    busy,
+    failure,
+    send,
+    sendBatch,
+    reportFailure,
+    clearFailure,
+  };
 }

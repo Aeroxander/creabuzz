@@ -149,7 +149,7 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     id: "secondary-listing",
     label: "Publish a secondary market listing",
     about:
-      "Let holders offer Shares and buyers bid, between a lowest and a highest price. Turning it off stops new rounds; settlement and claims carry on.",
+      "Let holders offer Shares and buyers bid, between a lowest and a highest price. Turning it off opens no round and takes no new offer or bid; settlement and claims carry on.",
   },
   {
     id: "payouts",
