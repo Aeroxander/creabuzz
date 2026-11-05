@@ -407,7 +407,7 @@ function FundForm({
       return;
     }
     if (balance !== null && amount > balance) {
-      setProblem(`Your wallet holds ${money(balance)}, less than that.`);
+      setProblem(`Your account holds ${money(balance)}, less than that.`);
       return;
     }
     const deadline = withDeadline
@@ -445,7 +445,7 @@ function FundForm({
         />
         {balance !== null ? (
           <span className="text-xs text-muted-foreground">
-            Your wallet holds {money(balance)}.
+            Your account holds {money(balance)}.
           </span>
         ) : null}
       </div>
@@ -484,7 +484,7 @@ function FundForm({
           type="button"
         >
           {busy?.startsWith("bounty-")
-            ? "Waiting for your wallet…"
+            ? "Waiting for your approval…"
             : "Put it in"}
         </Button>
         <Button onClick={onCancel} size="sm" type="button" variant="outline">

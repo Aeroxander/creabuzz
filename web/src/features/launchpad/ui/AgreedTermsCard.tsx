@@ -440,7 +440,7 @@ export function AgreedTermsCard({
                 type="button"
                 variant="outline"
               >
-                Release the reservation
+                Release the Shares set aside
               </Button>
             ) : null}
             {claimHref ? (

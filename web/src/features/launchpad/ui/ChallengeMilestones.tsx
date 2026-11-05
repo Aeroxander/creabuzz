@@ -131,7 +131,8 @@ export function ChallengeMilestones({
           <ol className="mt-1 list-decimal space-y-1 pl-5">
             <li>
               The team publishes its evidence and posts a bond of{" "}
-              {money(terms.bond)}.
+              {money(terms.bond)}. A bond is a deposit the team loses if holders
+              turn the milestone down.
             </li>
             <li>
               For {span(terms.window)} (longer for a bigger milestone, and

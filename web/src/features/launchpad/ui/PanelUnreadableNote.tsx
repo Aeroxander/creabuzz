@@ -1,7 +1,7 @@
 import type { WorkSnapshot } from "@creaton/core/launchpad/workRead.ts";
 
 /**
- * Says out loud that the DAO's answer about which budget is its milestone panel
+ * Says out loud that the DAO's answer about which work budget holds the milestone reviewers
  * did not arrive.
  *
  * `WorkSnapshot.milestonePanelUnreadable` is set when the factory question got
@@ -22,9 +22,9 @@ export function PanelUnreadableNote({
       data-testid="work-panel-unreadable"
       role="status"
     >
-      Couldn&apos;t read which of this project&apos;s budgets is the milestone
-      panel, so the cards below may show it as an ordinary budget. Reload to try
-      again.
+      Couldn&apos;t read which of this project&apos;s work budgets holds the
+      milestone reviewers, so the cards below may show it as an ordinary budget.
+      Reload to try again.
     </p>
   );
 }

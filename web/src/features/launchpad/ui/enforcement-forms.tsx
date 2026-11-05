@@ -40,7 +40,7 @@ const until = (seconds: number) =>
 /** A budget by when it is open until, never by its contract's address. */
 const budgetName = (m: MandateView) =>
   m.isMilestonePanel
-    ? "the milestone panel"
+    ? "the milestone reviewers"
     : `the work budget open until ${until(m.expiresAt)}`;
 
 interface Pick {
@@ -252,7 +252,7 @@ export function CloseBudgetForm({
       <p className="text-sm text-muted-foreground">
         {ctx.contributor
           ? "Close a work budget early. No new work can be submitted in it, and no more Shares can be awarded through it."
-          : "Close a work budget early. No new work can be submitted in it and the money not set aside for a submission goes back to the project. Submissions whose money is already set aside keep their own payment rules. The milestone panel is not offered here: closing it would leave the team's locked Shares with no way to unlock."}
+          : "Close a work budget early. No new work can be submitted in it and the money not set aside for a submission goes back to the project. Submissions whose money is already set aside keep their own payment rules. The milestone reviewers are not offered here: closing it would leave the team's locked Shares with no way to unlock."}
       </p>
       {pick.gone ? (
         <p

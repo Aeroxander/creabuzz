@@ -15,7 +15,7 @@ test("each budget's contracts get plain names, found by lowercase address", () =
   assert.equal(names.get(`0x${"1".repeat(40)}`), "A work budget");
   assert.equal(names.get(`0x${"2".repeat(40)}`), "Reviewers' bonds");
   assert.equal(names.get(`0x${"3".repeat(40)}`), "Contributors' deposits");
-  assert.equal(names.get(`0x${"4".repeat(40)}`), "The milestone panel");
+  assert.equal(names.get(`0x${"4".repeat(40)}`), "Milestone reviewers");
 });
 
 test("with no work read there is nothing to name", () => {

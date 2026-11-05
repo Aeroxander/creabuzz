@@ -490,7 +490,7 @@ function ObjectForm({
     >
       <p>
         {unlocked
-          ? "This milestone has already unlocked. If holders agree with your objection, the team's remaining locked Shares are destroyed and its bond is forfeited. What already unlocked stays unlocked."
+          ? "This milestone has already unlocked. If holders agree with your objection, the team's remaining locked Shares are destroyed and its bond is lost. What already unlocked stays unlocked."
           : "If holders agree with your objection, the milestone is turned down and the team has to try again with a longer window."}{" "}
         Holders vote, and the team&apos;s own Shares do not count. Your vote
         counts for {shares(weight)}.

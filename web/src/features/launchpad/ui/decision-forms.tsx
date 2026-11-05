@@ -320,7 +320,7 @@ export function ProjectForm({
             value: m.address,
             label:
               ctx.work?.milestonePanel === m.address.toLowerCase()
-                ? "The milestone panel (judges your team's milestones)"
+                ? "Milestone reviewers (judge your team's milestones)"
                 : budgetName(m),
           }))}
           testId="project-budget"

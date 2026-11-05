@@ -397,7 +397,7 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   // The page re-reads after each step that landed, so the row may be rebuilt: what survives is the saved submission,
   // and the row says what is left of it.
   await expect(interrupted.getByTestId("milestone-resume-1")).toContainText(
-    "Still to do: state which milestone it is for",
+    "Still to do: say which milestone it is for",
     { timeout: 60_000 },
   );
   expect(await lockedOf(FOUNDER_WALLET)).toBe(SECOND_TRANCHE);
@@ -409,7 +409,7 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   const resume = resumed.getByTestId("milestone-resume-1");
   await expect(resume).toBeVisible({ timeout: 30_000 });
   await expect(resume).toContainText(
-    "Still to do: state which milestone it is for",
+    "Still to do: say which milestone it is for",
   );
   await expect(resume).toContainText("https://example.com/mainnet");
   await expect(resumed.getByTestId("milestone-evidence-1")).toHaveCount(0);

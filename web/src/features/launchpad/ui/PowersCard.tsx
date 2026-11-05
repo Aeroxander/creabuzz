@@ -270,9 +270,8 @@ function PowersCard({
         <div className="mt-2 text-sm" data-testid="launch-powers-panel">
           {panel ? (
             <p>
-              The milestone panel has {panel.reviewers} reviewer
-              {panel.reviewers === 1 ? "" : "s"}, and {panel.quorum} must agree
-              on each milestone.{" "}
+              The milestone reviewers are a group of {panel.reviewers}, and{" "}
+              {panel.quorum} must agree on each milestone.{" "}
               {panel.closed
                 ? "It is closed."
                 : `It stays open until ${day(panel.expiresAt)}.`}

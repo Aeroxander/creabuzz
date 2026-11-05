@@ -43,7 +43,7 @@ function amountOf(
   }
   if (amount === 0n) return "Put in more than zero.";
   if (balance !== null && amount > balance) {
-    return `Your wallet holds ${money(balance)}, less than that.`;
+    return `Your account holds ${money(balance)}, less than that.`;
   }
   return amount;
 }
@@ -108,7 +108,7 @@ function Actions({
           size="sm"
           type="button"
         >
-          {busy !== null ? "Waiting for your wallet…" : label}
+          {busy !== null ? "Waiting for your approval…" : label}
         </Button>
         <Button onClick={onCancel} size="sm" type="button" variant="outline">
           Cancel
@@ -227,7 +227,7 @@ export function OpenPostBountyForm({
         />
         {balance !== null ? (
           <span className="text-xs text-muted-foreground">
-            Your wallet holds {money(balance)}.
+            Your account holds {money(balance)}.
           </span>
         ) : null}
       </div>

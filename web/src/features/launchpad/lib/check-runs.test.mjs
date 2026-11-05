@@ -329,7 +329,9 @@ test("binding tags: a mismatch between a record's tags and its own text is named
   const record = parseVerifiedCheckRun(event);
   assert.ok(record);
   assert.equal(
-    record.selfContradictions.some((line) => line.includes("submission ID label")),
+    record.selfContradictions.some((line) =>
+      line.includes("submission ID label"),
+    ),
     true,
   );
   // The content (what the publisher signed twice-set) stays what it binds to.

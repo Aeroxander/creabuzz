@@ -410,7 +410,7 @@ export function AgreedProposalForm({
                   className="grid flex-1 gap-1 text-xs"
                   htmlFor={`agreed-proposal-coauthor-${part.key}`}
                 >
-                  Coauthor {index + 1} wallet
+                  Coauthor {index + 1} account address
                   <Input
                     data-testid={`agreed-proposal-coauthor-${index}`}
                     id={`agreed-proposal-coauthor-${part.key}`}

@@ -17,7 +17,7 @@ export function contractNames(
   for (const mandate of work?.mandates ?? []) {
     names.set(
       mandate.address.toLowerCase(),
-      mandate.isMilestonePanel ? "The milestone panel" : "A work budget",
+      mandate.isMilestonePanel ? "Milestone reviewers" : "A work budget",
     );
     names.set(mandate.verifiersAddress.toLowerCase(), "Reviewers' bonds");
     names.set(mandate.claimsAddress.toLowerCase(), "Contributors' deposits");
