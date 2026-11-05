@@ -150,9 +150,10 @@ export function TradingForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
             ))}
           </ul>
           <p className="mt-2">
-            The contracts check none of this. A vote can announce trading
-            without it; what protects holders is the 30 days, in which anyone
-            can leave with their share of the treasury.
+            Nothing in the app&apos;s code enforces this list. A vote can
+            announce trading without it; what protects holders is the 30 days,
+            in which anyone can leave with their share of the project&apos;s
+            money.
           </p>
           <label className="mt-2 flex items-start gap-2">
             <input

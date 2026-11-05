@@ -14,6 +14,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { truncatePubkey } from "@/shared/lib/pubkey";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
 import { toast } from "sonner";
 
 import { recordSaleCurrency } from "../chain";
@@ -260,10 +261,13 @@ export function MyBidsPanel({
                 Reading bids…
               </p>
             ) : snap.status === "error" ? (
-              <p className="mt-2 text-sm text-red-700 dark:text-red-300">
-                We couldn&apos;t read your bids just now. Press Refresh to try
-                again. Details: {snap.error}
-              </p>
+              <div className="mt-2">
+                <p className="text-sm text-red-700 dark:text-red-300">
+                  We couldn&apos;t read your bids just now. Press Refresh to try
+                  again.
+                </p>
+                <TechnicalDetails className="mt-1" detail={snap.error} />
+              </div>
             ) : snap.snapshot.bids.length === 0 ? (
               <p className="mt-2 text-sm text-black/60 dark:text-white/60">
                 This account has no bids on this sale.

@@ -24,6 +24,7 @@ function read(relativePath) {
 }
 
 const CHECKBOX_LABEL = "Sign as agent instead of me";
+const BID_CHECKBOX_LABEL = "Record this bid under your helper instead of you";
 
 /**
  * The disclosure lives in the dialog; the body it opens — checkbox, explainer
@@ -57,11 +58,11 @@ test("the launch agent option sits in an Advanced disclosure", () => {
 test("the bid agent option sits in an Advanced disclosure", () => {
   const source = read("src/features/launchpad/ui/RecordBidDialog.tsx");
   assert.match(source, /data-testid="bid-advanced"/);
-  assert.match(source, new RegExp(CHECKBOX_LABEL));
+  assert.match(source, new RegExp(BID_CHECKBOX_LABEL));
   assert.match(source, /data-testid="bid-as-agent-explainer"/);
   assert.match(
     source,
-    /signed by this browser&apos;s agent key \(an\s*\n?\s*attested AI-agent identity\) instead of your personal key\. Use it when\s+an\s+agent manages the bid&apos;s follow-up/,
+    /recorded\s+under\s+the\s+helper\s+set\s+up\s+in\s+this\s+browser\s+instead\s+of\s+under\s+you\.\s+Use\s+it\s+when\s+your\s+helper\s+looks\s+after\s+the\s+bid\s+afterwards\./,
   );
   assert.doesNotMatch(source, /Record this bid as an agent/);
 });

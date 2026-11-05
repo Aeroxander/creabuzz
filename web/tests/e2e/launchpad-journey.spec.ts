@@ -479,7 +479,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   );
   // The bar is the app's policy: nothing is offered until the proposer says they checked it.
   await expect(founder.getByTestId("trading-bar")).toContainText(
-    "The contracts check none of this",
+    "Nothing in the app's code enforces this list",
   );
   await expect(founder.getByTestId("decision-draft-submit")).toHaveCount(0);
   await founder.getByTestId("trading-bar-checked").check();
@@ -494,7 +494,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await founder.getByTestId("decision-new").click();
   await founder.getByTestId("decision-kind-trading").click();
   await expect(founder.getByTestId("trading-state")).toContainText(
-    "Trading was announced. It can open from",
+    "Trading was announced. A second vote can open it from",
     { timeout: 30_000 },
   );
   // Inside the 30 days the only step is to withdraw it.

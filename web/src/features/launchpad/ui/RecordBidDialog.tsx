@@ -282,8 +282,8 @@ export function RecordBidDialog({
       </h2>
       <UnauditedNotice chainId={record.chainId} />
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        Your bid goes from your wallet straight to the auction, and is recorded
-        on this launch&apos;s page so the founder and others can see it.
+        Your bid goes from your account straight to the sale, and is recorded on
+        this launch&apos;s page so the founder and others can see it.
       </p>
       {record.unlocks?.mode === "milestones" ? (
         // Said next to the money: the lock is on the team's own tokens, not on what backers put in.
@@ -291,11 +291,11 @@ export function RecordBidDialog({
           className="mt-2 rounded-lg bg-black/5 p-2 text-xs text-black/70 dark:bg-white/5 dark:text-white/70"
           data-testid="bid-agreement-note"
         >
-          Before you bid: your money goes to the project&apos;s treasury, which
-          holders vote on, and the team votes too. The milestones lock the
+          Before you bid: your money becomes part of the project&apos;s money,
+          which holders vote on, and the team votes too. The milestones lock the
           team&apos;s own tokens until each milestone has been reached and
-          judged; they do not stop a vote from spending the treasury. If the
-          sale misses its minimum, every bid is refunded.
+          judged; they do not stop a vote from spending the project&apos;s
+          money. If the sale misses its minimum, every bid is refunded.
         </p>
       ) : null}
       {!auction ? (
@@ -322,8 +322,9 @@ export function RecordBidDialog({
               type="text"
             />
             <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-              The most you will spend. You pay the clearing price (the one price
-              every winning bid pays) for what you win; the rest is refunded.
+              The most you will spend. You pay the clearing price (the going
+              price at each moment of the sale) for what you win; the rest is
+              refunded.
             </p>
           </div>
           <div>
@@ -388,7 +389,7 @@ export function RecordBidDialog({
         <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
           Advanced
           <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
-            record a bid made elsewhere, bucket, who signs
+            record a bid made elsewhere, bid group, who records it
           </span>
         </summary>
         <div className="mt-2">
@@ -420,7 +421,7 @@ export function RecordBidDialog({
         </div>
         <div className="mt-2">
           <label className="text-sm font-medium" htmlFor="bid-bucket">
-            Bucket
+            Bid group
           </label>
           <Input
             id="bid-bucket"
@@ -441,15 +442,15 @@ export function RecordBidDialog({
             onChange={(e) => setAsAgent(e.target.checked)}
             type="checkbox"
           />
-          Sign as agent instead of me
+          Record this bid under your helper instead of you
         </label>
         <p
           className="mt-1 text-xs text-black/60 dark:text-white/60"
           data-testid="bid-as-agent-explainer"
         >
-          The bid record will be signed by this browser&apos;s agent key (an
-          attested AI-agent identity) instead of your personal key. Use it when
-          an agent manages the bid&apos;s follow-up.
+          The note of this bid will be recorded under the helper set up in this
+          browser instead of under you. Use it when your helper looks after the
+          bid afterwards.
         </p>
       </details>
       {/* §7 "Launch page copy": said before the bid button, every time. */}

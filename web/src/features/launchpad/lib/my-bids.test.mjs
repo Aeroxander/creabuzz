@@ -441,7 +441,10 @@ const CLAIM_TABLE = [
     name: "claim needs the claim block (NotClaimable, StepStorage.sol:57)",
     bidView: bid({ exitedBlock: 5n, tokensFilled: 5n }),
     auction: auctionCtx({ currentBlock: 1050n }),
-    expect: { kind: "unavailable", reason: /block 1100/ },
+    expect: {
+      kind: "unavailable",
+      reason: /not open yet.*a little after the sale ends/,
+    },
   },
   {
     name: "exited + filled + graduated + past claim block → claim",

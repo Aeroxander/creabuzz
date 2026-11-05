@@ -839,7 +839,7 @@ export function settleNoticeLine(
   const waiting =
     wallet.sell !== null || (wallet.bid !== null && !wallet.bid.cancelled);
   if (!waiting) return null;
-  return `Your order is waiting for the round to be settled. Anyone can settle it and it costs only a network fee. If nobody does by ${date(round.settleDeadline)}, the round is void and you take back what you put in.`;
+  return `Your order is waiting for the round to be settled. Anyone can settle it and it costs only a network fee. If nobody does by ${date(round.settleDeadline)}, the round is not settled and you take back what you put in.`;
 }
 
 /**

@@ -437,7 +437,8 @@ export function deriveClaimPlan(
   if (auction.currentBlock < auction.claimBlock) {
     return {
       kind: "unavailable",
-      reason: `Collecting tokens opens at network block ${auction.claimBlock}.`,
+      reason:
+        "Collecting tokens is not open yet. It opens a little after the sale ends. Check back later.",
     };
   }
   return { kind: "claim" };

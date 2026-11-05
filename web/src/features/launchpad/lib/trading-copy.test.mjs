@@ -1010,7 +1010,10 @@ test("a wallet with an order in a round waiting to settle is told who can settle
   assert.match(notice, /Anyone can settle it/);
   assert.match(notice, /only a network fee/);
   assert.match(notice, /by Oct 19/);
-  assert.match(notice, /the round is void and you take back what you put in/);
+  assert.match(
+    notice,
+    /the round is not settled and you take back what you put in/,
+  );
   assert.equal(
     settleNoticeLine(waiting, { sell: null, bid: bid() }),
     notice,
