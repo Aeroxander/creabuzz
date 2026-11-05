@@ -16,7 +16,10 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, Users } from "lucide-react";
 
 import type { DaoCard } from "@/features/discover/lib/directory";
-import { canBackLaunch } from "@/features/discover/lib/directory";
+import {
+  canBackLaunch,
+  deploymentRoleName,
+} from "@/features/discover/lib/directory";
 import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
@@ -177,9 +180,9 @@ export function DiscoverDaoCard({
   }
   const address = card.dao ?? card.contract?.address ?? null;
   const addressLabel = card.dao
-    ? "Project address"
+    ? "Network address"
     : card.contract
-      ? `Contract · ${card.contract.role}`
+      ? `Contract · ${deploymentRoleName(card.contract.role)}`
       : "Address on the network";
   return (
     <li>

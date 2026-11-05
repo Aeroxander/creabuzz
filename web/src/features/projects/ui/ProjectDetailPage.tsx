@@ -160,8 +160,8 @@ function TeamMap({
                 data-testid={`team-source-${member.source}`}
                 title={
                   member.source === "grant"
-                    ? "Recorded: the founder approved this role on the board"
-                    : "Declared in the founder's pitch, not yet approved on the board"
+                    ? "Recorded: the founder approved this person's stake in the project"
+                    : "Declared in the founder's pitch. The founder has not approved it yet."
                 }
               >
                 {member.source === "grant" ? "recorded" : "declared"}

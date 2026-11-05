@@ -211,7 +211,7 @@ describe("deriveDirectory — DAOs from kind:37018 deployments", () => {
     assert.equal(card.dao, null, "a summoner contract is not a treasury");
     assert.deepEqual(card.contract, { role: "summoner", address: SUMMONER });
     assert.equal(card.addressUrl, `${SEPOLIA}/address/${SUMMONER}`);
-    assert.deepEqual(card.sources, ["summoner deployment record"]);
+    assert.deepEqual(card.sources, ["Project setup contract record"]);
     assert.equal(card.hasPitch, false, "no pitch claimed that does not exist");
   });
 
@@ -233,7 +233,7 @@ describe("deriveDirectory — DAOs from kind:37018 deployments", () => {
     });
     assert.deepEqual(card.sources, [
       "Project setup record",
-      "summoner deployment record",
+      "Project setup contract record",
     ]);
   });
 });

@@ -252,7 +252,7 @@ test("the directory lists DAOs, live launches, and open projects", async ({
   const orion = page.getByTestId("discover-dao").filter({
     hasText: "orion",
   });
-  await expect(orion).toContainText("Contract · summoner");
+  await expect(orion).toContainText("Contract · project setup");
   await expect(orion).toContainText(SUMMONER);
 
   // Section 2 — launches: stage, target, and a CTA that matches the stage.

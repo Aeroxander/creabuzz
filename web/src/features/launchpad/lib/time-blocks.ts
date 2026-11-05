@@ -191,9 +191,9 @@ export function describeSaleBlocks(plan: SaleBlockPlan): string {
       : `${roundReadable(seconds / 3_600)} hour${roundReadable(seconds / 3_600) === 1 ? "" : "s"}`;
   const source =
     plan.source === "measured"
-      ? `a block every ${roundReadable(plan.secondsPerBlock)}s on this chain`
-      : `this chain's default of a block every ${roundReadable(plan.secondsPerBlock)}s (the chain could not be read)`;
-  return `That's ≈ ${plan.windowBlocks.toLocaleString("en-US")} blocks for ${duration} at ${source}. The app rounds ${plan.marginBlocks.toLocaleString("en-US")} blocks longer than asked so a slow chain can't close the sale early.`;
+      ? "how fast the network is running now"
+      : "the network's usual pace (we could not read its current pace)";
+  return `The sale will run for about ${duration}, going by ${source}. The app adds a small margin so a slow network cannot end the sale early.`;
 }
 
 function roundReadable(value: number): number {

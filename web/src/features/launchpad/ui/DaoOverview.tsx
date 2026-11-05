@@ -253,7 +253,7 @@ export function DaoOverview({
     holdings.data?.sharesInAll &&
     holdings.data.sharesInAll > 0n &&
     holdings.data.yourShares !== null
-      ? `${((Number(holdings.data.yourShares) / Number(holdings.data.sharesInAll)) * 100).toFixed(1)}% of the DAO`
+      ? `${((Number(holdings.data.yourShares) / Number(holdings.data.sharesInAll)) * 100).toFixed(1)}% of the project`
       : undefined;
   const latest = (decisions.data?.decisions ?? []).slice(0, 3);
 

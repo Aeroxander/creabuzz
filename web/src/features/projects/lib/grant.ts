@@ -143,13 +143,13 @@ export function buildOwnershipGrantTemplate(input: OwnershipGrantInput): {
   const nodeId = input.nodeId.trim();
   if (!PROJECT_ID_RE.test(nodeId)) {
     throw new GrantValidationError(
-      `Project id "${nodeId}" is not a valid org-node id.`,
+      `The page address "${nodeId}" is not valid. Use lowercase letters, numbers and dashes.`,
     );
   }
   const role = input.role.trim();
   if (!ROLE_SLUG_RE.test(role)) {
     throw new GrantValidationError(
-      `Role id "${role}" must be 1-12 characters of a-z, 0-9 and dashes.`,
+      `The role name "${role}" must be 1 to 12 characters: lowercase letters, numbers and dashes.`,
     );
   }
   if (!Number.isInteger(input.pct) || input.pct < 1 || input.pct > 100) {
@@ -158,10 +158,14 @@ export function buildOwnershipGrantTemplate(input: OwnershipGrantInput): {
     );
   }
   if (!PUBKEY_RE.test(input.grantee)) {
-    throw new GrantValidationError("The grantee is not a valid pubkey.");
+    throw new GrantValidationError(
+      "We could not find the account to give the stake to. Reload the page and try again.",
+    );
   }
   if (!PUBKEY_RE.test(input.issuer)) {
-    throw new GrantValidationError("The issuer is not a valid pubkey.");
+    throw new GrantValidationError(
+      "Your account is not ready yet. Reload the page and try again.",
+    );
   }
 
   return {

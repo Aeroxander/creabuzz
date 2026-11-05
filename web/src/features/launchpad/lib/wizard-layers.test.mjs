@@ -106,6 +106,11 @@ test("planSaleBlocks: start buffer, end safety margin, claim delay", () => {
     describeSaleBlocks(plan).length > 0,
     "the human summary is non-empty",
   );
+  assert.doesNotMatch(
+    describeSaleBlocks(plan),
+    /block|chain/i,
+    "the summary speaks in time and 'the network', never blocks or a chain",
+  );
 });
 
 test("planSaleBlocks rejects unusable windows", () => {

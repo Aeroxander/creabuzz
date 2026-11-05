@@ -20,6 +20,7 @@ import { useLaunches } from "@/features/launchpad/use-launches";
 import { existingUserPubkey, userPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { Modal } from "@/features/launchpad/ui/Modal";
 import {
@@ -626,10 +627,15 @@ export function PitchDialog({
                   Your project was created, but the pitch didn't send, so it
                   isn't on the board yet.{" "}
                   <span className="text-muted-foreground">
-                    {partial.message}
+                    {partial.reason}
                   </span>
                 </span>
               </p>
+              <TechnicalDetails
+                className="mt-1"
+                detail={partial.detail}
+                testId="pitch-partial-error-details"
+              />
               <Button
                 className="mt-2"
                 disabled={create.isPending}
@@ -653,6 +659,15 @@ export function PitchDialog({
                 messageTestId="pitch-error-message"
                 onUnlocked={() => lastInput && publish(lastInput)}
                 testId="pitch-sign-recovery"
+              />
+              <TechnicalDetails
+                className="mt-1"
+                detail={
+                  publishError instanceof PitchPublishError
+                    ? publishError.detail
+                    : null
+                }
+                testId="pitch-error-details"
               />
             </div>
           ) : null}

@@ -167,6 +167,23 @@ export type DiscoverFilter =
   | "ideas";
 
 /**
+ * What a deployed contract's role is called on a card. The raw role names are the app's own, not words a reader knows:
+ * the project maker, its setup helper, and the template each new project is copied from.
+ */
+export function deploymentRoleName(role: string): string {
+  switch (role) {
+    case "summoner":
+      return "project setup";
+    case "factory":
+      return "setup helper";
+    case "implementation":
+      return "project template";
+    default:
+      return "project";
+  }
+}
+
+/**
  * The chips this build shows. A contributor-only build (`raisesOffered()` false) has no fundraising and no pitch board,
  * and every project there is a DAO from day one, so a DAOs chip would list the same projects again: its chips are the
  * projects and the ideas.
@@ -468,7 +485,10 @@ export function deriveDirectory(input: {
     card.deploymentTx ??= deployment.tx;
     card.chainId ??= toChainNumber(deployment.chainId);
     card.updatedAt = Math.max(card.updatedAt, deployment.createdAt);
-    card.sources.push(`${deployment.role} deployment record`);
+    const roleName = deploymentRoleName(deployment.role);
+    card.sources.push(
+      `${roleName.charAt(0).toUpperCase()}${roleName.slice(1)} contract record`,
+    );
   }
   // A contributor project has its DAO from the first day, with no sale and so no summon receipt: its record names it.
   for (const launch of launches) {

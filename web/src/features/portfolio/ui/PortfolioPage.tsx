@@ -454,16 +454,20 @@ function HoldingRow({ held }: { held: HeldInDao }) {
 
 function HoldingsSection({
   holdings,
+  walletExplained = false,
 }: {
   holdings: ReturnType<typeof useHoldings>;
+  /** True when the section above already said what a wallet is, so it is not said twice on one screen. */
+  walletExplained?: boolean;
 }) {
   const { wallet } = holdings;
   let body: ReactNode;
   if (holdings.owners.length === 0) {
     body = (
       <Muted testId="portfolio-holdings-no-wallet">
-        Shares are kept in a wallet: an app that holds your money and proves it
-        is you. Connect yours to see what you hold here.
+        {walletExplained
+          ? "Shares are kept in the wallet you connect. Connect it to see what you hold here."
+          : "Shares are kept in a wallet: an app that holds your money and proves it is you. Connect yours to see what you hold here."}
       </Muted>
     );
   } else if (holdings.error) {
@@ -662,7 +666,7 @@ export function PortfolioPage() {
         <>
           <WorkSection holdsShares={holdsShares} />
           <BackingSection />
-          <HoldingsSection holdings={holdings} />
+          <HoldingsSection holdings={holdings} walletExplained />
         </>
       ) : (
         <>

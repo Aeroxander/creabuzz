@@ -96,17 +96,15 @@ export function OverviewTab({
     [
       "Auction window",
       record.startBlock && record.endBlock
-        ? `${formatBlocks(record.endBlock - record.startBlock)} (blocks ${record.startBlock} → ${record.endBlock})`
+        ? formatBlocks(record.endBlock - record.startBlock)
         : "Not set on this record",
     ],
     [
       "Collection opens",
       record.claimBlock
-        ? `Block ${record.claimBlock}${
-            record.endBlock
-              ? ` · ${formatBlocks(record.claimBlock - record.endBlock)} after the close`
-              : ""
-          }`
+        ? record.endBlock
+          ? `${formatBlocks(record.claimBlock - record.endBlock)} after the sale closes`
+          : "After the sale closes"
         : "Not set on this record",
     ],
     [
@@ -321,6 +319,22 @@ export function OverviewTab({
           <div className="flex justify-between gap-2 py-1.5">
             <dt className="text-black/60 dark:text-white/60">Network</dt>
             <dd className="tabular-nums">{record.chainId ?? "Undeployed"}</dd>
+          </div>
+          <div className="flex justify-between gap-2 py-1.5">
+            <dt className="text-black/60 dark:text-white/60">
+              Sale window (block numbers)
+            </dt>
+            <dd className="tabular-nums">
+              {record.startBlock && record.endBlock
+                ? `${record.startBlock} → ${record.endBlock}`
+                : "—"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-2 py-1.5">
+            <dt className="text-black/60 dark:text-white/60">
+              Collection opens (block number)
+            </dt>
+            <dd className="tabular-nums">{record.claimBlock || "—"}</dd>
           </div>
         </dl>
         <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">

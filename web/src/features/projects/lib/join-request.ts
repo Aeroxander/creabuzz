@@ -160,7 +160,7 @@ export function buildJoinRequestTemplate(input: JoinRequestInput): {
   const projectId = input.projectId.trim();
   if (!PROJECT_ID_RE.test(projectId)) {
     throw new JoinRequestValidationError(
-      "That is not a valid project address.",
+      "That is not a valid page address. Use lowercase letters, numbers and dashes.",
     );
   }
   const role = input.role.trim();

@@ -33,6 +33,7 @@ import {
 import { existingUserPubkey, userPubkey } from "@/shared/lib/identity";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
+import { failureWords, type FailureWords } from "@/shared/lib/readable-error";
 import { parseOwnershipGrant, type OwnershipGrant } from "./lib/grant";
 import { parseJoinRequest, type JoinRequest } from "./lib/join-request";
 import { GENERIC_REFUSAL } from "./lib/request-answer-copy";
@@ -242,10 +243,21 @@ export class PitchPublishError extends Error {
   readonly nodeId: string;
   /** True when the org node reached the relay and only the pitch failed. */
   readonly nodePublished: boolean;
+  /** Why it failed, in plain words with the next step (the message without its opening line). */
+  readonly reason: string;
+  /** The server's or browser's own words, for a collapsed Technical details; null when the reason says it all. */
+  readonly detail: string | null;
 
-  constructor(message: string, nodeId: string, nodePublished: boolean) {
-    super(message);
+  constructor(
+    opening: string,
+    failure: FailureWords,
+    nodeId: string,
+    nodePublished: boolean,
+  ) {
+    super(`${opening} ${failure.text}`);
     this.name = "PitchPublishError";
+    this.reason = failure.text;
+    this.detail = failure.detail;
     this.nodeId = nodeId;
     this.nodePublished = nodePublished;
   }
@@ -288,7 +300,8 @@ export function useCreatePitch() {
           );
         } catch (error) {
           throw new PitchPublishError(
-            `Your project could not be created: ${messageOf(error)}`,
+            "Your project could not be created. Nothing was published.",
+            failureWords(error),
             input.pitch.nodeId,
             false,
           );
@@ -299,7 +312,8 @@ export function useCreatePitch() {
         await publishTemplate(pitchTemplate);
       } catch (error) {
         throw new PitchPublishError(
-          `Your pitch did not send: ${messageOf(error)}`,
+          "Your pitch did not send.",
+          failureWords(error),
           input.pitch.nodeId,
           nodeExists,
         );
@@ -308,8 +322,4 @@ export function useCreatePitch() {
       return { nodeId: input.pitch.nodeId };
     },
   });
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
