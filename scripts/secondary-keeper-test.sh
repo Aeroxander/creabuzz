@@ -13,7 +13,8 @@
 #   5. `--once` (cron) exits 1 when a send was refused for a real reason, 2 when the market could not be read, 0 when
 #      nothing was wrong or the chain only said the action was not needed; a refused send is re-checked against the
 #      round, and a round that is now settled is not a failure;
-#   6. a keystore key never reaches a command line (`ps` would show it).
+#   6. `--once` also treats the DAO switching the listing off (ListingNotEnabled) as not a failure for an openRound;
+#   7. a keystore key never reaches a command line (`ps` would show it).
 # Usage:  scripts/secondary-keeper-test.sh        (foundry's `cast` on PATH or in ~/.foundry/bin, only for `cast sig`)
 
 set -euo pipefail
@@ -33,6 +34,7 @@ export STATE
 
 # A fake node. Reads: the market is a given state (files in $STATE). Estimates and sends fail with the text in
 # $STATE/est_<open|settle> and $STATE/send_<open|settle> while that file exists. A sent openRound moves lastOpenAt.
+# $STATE/listing, when present, replaces the listing() answer.
 cat >"$BIN/cast" <<'STUB'
 #!/usr/bin/env bash
 cmd="$1"; shift
@@ -46,14 +48,17 @@ case "$cmd" in
     case "$2" in
       "roundCount()(uint256)") cat "$STATE/roundCount" ;;
       rounds*) cat "$STATE/round" ;;
-      "listing()(bool,uint128,uint128,uint32)") printf 'true\n0\n0\n0\n' ;;
+      "listing()(bool,uint128,uint128,uint32)") if [[ -e "$STATE/listing" ]]; then cat "$STATE/listing"; else printf 'true\n0\n0\n0\n'; fi ;;
       "lastOpenAt()(uint256)") cat "$STATE/lastOpenAt" ;;
     esac ;;
   estimate|send)
     sig="$2"; kind=settle; [[ "$sig" == "openRound()" ]] && kind=open
     if [[ -e "$STATE/${cmd/estimate/est}_$kind" ]]; then
-      # a send that fails but still lands the settle another way (someone else's), when the scenario asks for it
-      if [[ "$cmd" == "send" && -e "$STATE/settled_on_send" ]]; then sed -i '10s/.*/true/' "$STATE/round"; fi
+      # a call that fails but still lands the settle another way (someone else's), when the scenario asks for it. The
+      # rewrite goes through a temp file: `sed -i` takes a different argument on BSD sed (macOS).
+      if [[ ( "$cmd" == "send" && -e "$STATE/settled_on_send" ) || ( "$cmd" == "estimate" && -e "$STATE/settled_on_est" ) ]]; then
+        sed '10s/.*/true/' "$STATE/round" >"$STATE/round.new" && mv "$STATE/round.new" "$STATE/round"
+      fi
       cat "$STATE/${cmd/estimate/est}_$kind" >&2; exit 1
     fi
     if [[ "$cmd" == "send" ]]; then
@@ -105,7 +110,7 @@ check() { # check <name> <condition exit status>
   if [[ "$2" == 0 ]]; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi
 }
 reset() {
-  rm -f "$STATE"/est_* "$STATE"/send_* "$STATE/settled_on_send"
+  rm -f "$STATE"/est_* "$STATE"/send_* "$STATE/settled_on_send" "$STATE/settled_on_est" "$STATE/listing" "$STATE/round.new"
   echo 0 >"$STATE/roundCount"
   echo 0 >"$STATE/lastOpenAt"
   # rounds(): 11 words; closed (5th) at 1000000-10, settle deadline (6th) far ahead, not settled (10th)
@@ -114,6 +119,7 @@ reset() {
 ALREADY=$("$REAL_CAST" sig 'AlreadySettled(uint256)')
 OVER=$("$REAL_CAST" sig 'SettleOver(uint256)')
 TOOSOON=$("$REAL_CAST" sig 'TooSoon(uint256)')
+NOTENABLED=$("$REAL_CAST" sig 'ListingNotEnabled()')
 revert() { echo "Error: server returned an error response: error code 3: execution reverted: custom error $1: , data: \"$1\""; }
 
 echo "-- openRound: failed sends never end the retries"
@@ -193,6 +199,76 @@ reset
 echo 3 >"$STATE/roundCount"
 run_once
 check "once: a healthy pass exits 0 and settles" "$([[ "$RC" == 0 && "$(sent)" == settle ]] && echo 0 || echo 1)"
+
+echo "-- --once: the estimate re-checks the round, and a benign refusal at send time is not a failure"
+reset
+echo 3 >"$STATE/roundCount"
+echo "Error: server unavailable" >"$STATE/est_settle"
+touch "$STATE/settled_on_est"
+run_once KEEPER_MAX_ATTEMPTS=24
+check "once: an estimate refused for a round that is now settled exits 0" "$([[ "$RC" == 0 ]] && echo 0 || echo 1)"
+check "once: and says the round is already settled" "$(printf '%s' "$OUT" | grep -q 'already settled' && echo 0 || echo 1)"
+check "once: and is not an ERROR" "$([[ "$(errors)" == 0 ]] && echo 0 || echo 1)"
+reset
+echo 3 >"$STATE/roundCount"
+echo "Error: server unavailable" >"$STATE/est_settle"
+run_once KEEPER_MAX_ATTEMPTS=24
+check "once: an estimate refused for an unsettled round still exits 1" "$([[ "$RC" == 1 ]] && echo 0 || echo 1)"
+reset
+echo 3 >"$STATE/roundCount"
+revert "$ALREADY" >"$STATE/send_settle"
+run_once KEEPER_MAX_ATTEMPTS=24
+check "once: AlreadySettled at send time exits 0" "$([[ "$RC" == 0 && "$(errors)" == 0 ]] && echo 0 || echo 1)"
+revert "$OVER" >"$STATE/send_settle"
+run_once KEEPER_MAX_ATTEMPTS=24
+check "once: SettleOver at send time exits 0" "$([[ "$RC" == 0 && "$(errors)" == 0 ]] && echo 0 || echo 1)"
+reset
+revert "$TOOSOON" >"$STATE/send_open"
+run_once KEEPER_OPEN=1 KEEPER_MAX_ATTEMPTS=24
+check "once: TooSoon at send time exits 0" "$([[ "$RC" == 0 && "$(errors)" == 0 ]] && echo 0 || echo 1)"
+revert "$NOTENABLED" >"$STATE/send_open"
+run_once KEEPER_OPEN=1 KEEPER_MAX_ATTEMPTS=24
+check "once: ListingNotEnabled at send time exits 0" "$([[ "$RC" == 0 && "$(errors)" == 0 ]] && echo 0 || echo 1)"
+echo "Error: insufficient funds for gas" >"$STATE/send_open"
+run_once KEEPER_OPEN=1 KEEPER_MAX_ATTEMPTS=24
+check "once: an openRound refused at send time for a real reason exits 1" "$([[ "$RC" == 1 ]] && echo 0 || echo 1)"
+reset
+echo 3 >"$STATE/roundCount"
+echo "Error: insufficient funds for gas" >"$STATE/send_settle"
+run_once KEEPER_MAX_ATTEMPTS=24
+check "once: a settle refused at send time for a real reason (control) exits 1" "$([[ "$RC" == 1 ]] && echo 0 || echo 1)"
+
+echo "-- --once: the DAO switching the listing off is not a failure"
+reset
+revert "$NOTENABLED" >"$STATE/est_open"
+run_once KEEPER_OPEN=1 KEEPER_MAX_ATTEMPTS=24
+check "once: ListingNotEnabled (selector) at estimate exits 0" "$([[ "$RC" == 0 && "$(errors)" == 0 ]] && echo 0 || echo 1)"
+echo "Error: server returned an error response: error code 3: execution reverted: ListingNotEnabled()" >"$STATE/est_open"
+run_once KEEPER_OPEN=1 KEEPER_MAX_ATTEMPTS=24
+check "once: ListingNotEnabled (name) at estimate exits 0" "$([[ "$RC" == 0 && "$(errors)" == 0 ]] && echo 0 || echo 1)"
+reset
+echo 3 >"$STATE/roundCount"
+revert "$NOTENABLED" >"$STATE/est_settle"
+run_once KEEPER_MAX_ATTEMPTS=24
+check "once: ListingNotEnabled is still not a benign reason for a settle" "$([[ "$RC" == 1 ]] && echo 0 || echo 1)"
+
+echo "-- --once: an unreadable market exits 2 (the opening pass included)"
+reset
+echo 3 >"$STATE/roundCount"
+echo garbage >"$STATE/round"
+run_once KEEPER_OPEN=1
+check "once: an unreadable round row exits 2" "$([[ "$RC" == 2 ]] && printf '%s' "$OUT" | grep -q 'round 3 was not readable' && echo 0 || echo 1)"
+reset
+printf 'garbage\n0\n0\n0\n' >"$STATE/listing"
+run_once KEEPER_OPEN=1
+check "once: an unreadable listing exits 2" "$([[ "$RC" == 2 ]] && printf '%s' "$OUT" | grep -q 'listing was not readable' && echo 0 || echo 1)"
+reset
+echo garbage >"$STATE/lastOpenAt"
+run_once KEEPER_OPEN=1
+check "once: an unreadable lastOpenAt exits 2" "$([[ "$RC" == 2 ]] && printf '%s' "$OUT" | grep -q 'listing was not readable' && echo 0 || echo 1)"
+reset
+run_once KEEPER_OPEN=1
+check "once: a healthy opening pass exits 0 and opens" "$([[ "$RC" == 0 && "$(sent)" == open ]] && echo 0 || echo 1)"
 
 echo "-- the key stays off the command line"
 reset

@@ -91,6 +91,7 @@ SEND_FAILED=0
 SEL_SETTLED="$(cast sig 'AlreadySettled(uint256)' 2>/dev/null || true)"
 SEL_OVER="$(cast sig 'SettleOver(uint256)' 2>/dev/null || true)"
 SEL_SOON="$(cast sig 'TooSoon(uint256)' 2>/dev/null || true)"
+SEL_NOTENABLED="$(cast sig 'ListingNotEnabled()' 2>/dev/null || true)"
 
 say() { printf '%s secondary-keeper: %s\n' "$(date -u +%FT%TZ)" "$*"; }
 
@@ -125,12 +126,13 @@ failed() { # failed <key> <label> <why>
 
 # True when the chain's answer `text` says the action `key` is not needed (any more) or not yet allowed: a settle that
 # someone else got in first (AlreadySettled) or whose window has closed (SettleOver), or an openRound inside its week
-# (TooSoon). Nothing is wrong then, so it is not a failure.
+# (TooSoon), or one the DAO switched off between the read and the send (ListingNotEnabled; the next pass reads the
+# listing as off and does nothing). Nothing is wrong then, so it is not a failure.
 benign() { # benign <key> <text>
   local sel
   case "$1" in
     settle_*) for sel in AlreadySettled "$SEL_SETTLED" SettleOver "$SEL_OVER"; do [[ -n "$sel" && "$2" == *"$sel"* ]] && return 0; done ;;
-    open_*) for sel in TooSoon "$SEL_SOON"; do [[ -n "$sel" && "$2" == *"$sel"* ]] && return 0; done ;;
+    open_*) for sel in TooSoon "$SEL_SOON" ListingNotEnabled "$SEL_NOTENABLED"; do [[ -n "$sel" && "$2" == *"$sel"* ]] && return 0; done ;;
   esac
   return 1
 }
