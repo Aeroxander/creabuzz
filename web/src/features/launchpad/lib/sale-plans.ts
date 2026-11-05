@@ -58,23 +58,23 @@ export const SALE_PLANS: Readonly<Record<SaleKind, SalePlan>> = {
     key: "fixed-price",
     label: "Fixed price",
     blurb:
-      "One price, one flat release across the window. The whole tranche sells at the price you set or every bid refunds.",
+      "One price, with tokens released evenly across the sale. The whole batch sells at the price you set, or every bid is refunded.",
     shape: "flat",
     thresholdPercent: 100,
   },
   "liquidity-bootstrap": {
     key: "liquidity-bootstrap",
-    label: "Liquidity bootstrap",
+    label: "Front-loaded sale",
     blurb:
-      "Most of the tranche comes online in the first third of the window. It all sells, or every bid refunds.",
+      "Most of the batch is released in the first third of the sale. It all sells, or every bid is refunded.",
     shape: "front-loaded",
     thresholdPercent: 100,
   },
   "graduating-auction": {
     key: "graduating-auction",
-    label: "Graduating auction",
+    label: "Standard auction",
     blurb:
-      "A release that starts fast and tapers. It all sells at the floor or higher, or every bid refunds.",
+      "Tokens are released fast at first, then more slowly. It all sells at the floor price or higher, or every bid is refunded.",
     shape: "standard",
     thresholdPercent: 100,
   },

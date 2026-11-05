@@ -43,7 +43,10 @@ test("the milestone lock screens call the locked asset Shares, and keep the bond
 test("the launch review's late-objection line does not repeat the old refusal ending", () => {
   const fields = source("./LaunchReviewFields.tsx");
   assert.doesNotMatch(fields, /still\s+locked\s+stays\s+at\s+stake/);
-  assert.match(fields, /upheld late objection can still burn the Shares/);
+  assert.match(
+    fields,
+    /late\s+objection\s+that\s+holders\s+agree\s+with\s+can\s+still\s+destroy\s+the\s+Shares/,
+  );
 });
 
 test("'Open the claim on the Work tab' lands on that claim: the address feeds the Work tab's focus", () => {

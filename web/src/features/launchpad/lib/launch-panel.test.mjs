@@ -93,7 +93,7 @@ test("another token that is not an address, not yet read, or no token at all is 
   assert.match(
     named({ bondOther: addr }, { currencyDecimals: 6, other: "unreadable" })
       .problem,
-    /does not look like a token/,
+    /is not a token on this network/,
   );
   // The other token only matters when there is a bond to pay in it.
   assert.ok(

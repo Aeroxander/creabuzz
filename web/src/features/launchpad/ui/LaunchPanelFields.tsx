@@ -60,7 +60,7 @@ export function LaunchPanelFields({
             testId="launch-panel-people"
           />
         }
-        hint="One wallet address per line."
+        hint="One account address per line, starting with 0x."
         label="Reviewers"
         onChange={(reviewers) => patch({ reviewers })}
         placeholder="0x…"
@@ -76,7 +76,7 @@ export function LaunchPanelFields({
         value={draft.quorum}
       />
       <TextField
-        hint="Optional. Each reviewer posts this before judging, and loses it if the DAO finds they approved carelessly. Leave empty for none."
+        hint="Optional. A bond is a deposit each reviewer puts down before judging. They lose it if the project finds they approved carelessly. Leave empty for none."
         inputMode="decimal"
         label="Bond each reviewer must post"
         onChange={(bond) => patch({ bond })}
@@ -109,8 +109,9 @@ export function LaunchPanelFields({
                 value={draft.bondOther}
               />
               <p className="text-xs text-amber-700 dark:text-amber-300">
-                A bond only deters if it keeps its value and nobody involved can
-                freeze or inflate it. Check the token before you launch.
+                A bond only works if it keeps its value and nobody involved can
+                freeze it or create more of it. Check the token before you
+                launch.
               </p>
             </>
           ) : null}
@@ -123,9 +124,9 @@ export function LaunchPanelFields({
         The reviewers are fixed, and the panel stays open for {PANEL_OPEN_YEARS}{" "}
         years. If too few of them can be reached, or the panel runs out, no
         milestone can be approved and the locked Shares stay locked; the only
-        thing the DAO can then do with them is give them up and burn them. Ask
-        your reviewers first, and name more people than the number who must
-        agree.
+        thing the project can then do with them is give them up and destroy
+        them. Ask your reviewers first, and name more people than the number who
+        must agree.
       </p>
       {spare !== null && spare.spare < 1 ? (
         <p

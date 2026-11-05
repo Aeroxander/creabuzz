@@ -34,7 +34,7 @@ export function validateVesting(
     issues.push({
       field: "vesting",
       severity: "error",
-      message: "Cliff cannot be negative.",
+      message: "The waiting period cannot be negative.",
     });
   }
   const total = vesting.tranches.reduce((acc, t) => acc + t.percent, 0);
@@ -42,7 +42,7 @@ export function validateVesting(
     issues.push({
       field: "vesting",
       severity: "error",
-      message: `Tranches must sum to 100% (got ${total}%).`,
+      message: `The parts must add up to 100% (they add up to ${total}%).`,
     });
   }
   for (let i = 1; i < vesting.tranches.length; i++) {
@@ -50,7 +50,7 @@ export function validateVesting(
       issues.push({
         field: "vesting",
         severity: "error",
-        message: "Price multiples must be strictly ascending.",
+        message: "Each price multiple must be higher than the one before.",
       });
       break;
     }
@@ -61,14 +61,14 @@ export function validateVesting(
       field: "vesting",
       severity: "warning",
       message:
-        "A tranche at 1x would unlock at the raise price. Performance means above it.",
+        "A part at 1x would unlock at the raise price. Price-based unlocks should start above it.",
     });
   }
   if (vesting.twapWindow !== null && vesting.twapWindow <= 0) {
     issues.push({
       field: "vesting",
       severity: "warning",
-      message: "The TWAP window must be positive blocks.",
+      message: "The price-averaging window must be more than 0 blocks.",
     });
   }
   return issues;

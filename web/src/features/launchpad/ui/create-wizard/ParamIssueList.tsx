@@ -19,7 +19,7 @@ export function ParamIssueList({
           key={`${issue.field}-${issue.message}`}
         >
           {issue.severity === "error" ? "✗ " : "! "}
-          {issue.field}: {issue.message}
+          {issue.message}
         </li>
       ))}
     </ul>

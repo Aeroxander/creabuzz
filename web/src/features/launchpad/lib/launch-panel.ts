@@ -151,7 +151,8 @@ export function panelFromDraft(
       }
       if (facts.other === "unreadable") {
         return {
-          problem: "That address does not look like a token on this network.",
+          problem:
+            "That address is not a token on this network. Check it and try again.",
         };
       }
       if (facts.other === "loading") return { problem: "Reading that token…" };

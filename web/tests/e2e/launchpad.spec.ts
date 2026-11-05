@@ -260,7 +260,7 @@ test("the create form refuses parameters the auction contract would reject", asy
   // Name and slug first: the form is invalid without them, which would make the
   // enabled/disabled assertion below prove nothing.
   await page.getByTestId("launch-advanced").locator("> summary").click();
-  await page.getByLabel("Launch id").fill("nebula-two");
+  await page.getByLabel("Page address").fill("nebula-two");
   // (Opened the Advanced drawer above: the token's own Name field is on the page too, so pick the launch's by id.)
   await page.locator("#launch-name").fill("Nebula Two");
 
@@ -273,7 +273,7 @@ test("the create form refuses parameters the auction contract would reject", asy
   // A floor below MIN_FLOOR_PRICE, on top of a spacing that does not divide it.
   await page.getByTestId("launch-advanced-sale").locator("summary").click();
   await page.getByLabel("Floor price").fill("1000000");
-  await page.getByLabel("Tick spacing").fill("100");
+  await page.getByLabel("Price step").fill("100");
   const issues = page.getByTestId("launch-param-issues");
   await expect(issues).toBeVisible();
   await expect(issues).toContainText("floorPrice");
@@ -286,7 +286,7 @@ test("the create form refuses parameters the auction contract would reject", asy
 test("recommended terms fill in deployable numbers", async ({ page }) => {
   await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page.getByTestId("launch-advanced").locator("> summary").click();
-  await page.getByLabel("Launch id").fill("nebula-three");
+  await page.getByLabel("Page address").fill("nebula-three");
   // (Opened the Advanced drawer above: the token's own Name field is on the page too, so pick the launch's by id.)
   await page.locator("#launch-name").fill("Nebula Three");
   await page.getByLabel("Floor price").fill("1000000");
@@ -294,7 +294,7 @@ test("recommended terms fill in deployable numbers", async ({ page }) => {
 
   await expect(page.getByTestId("launch-param-issues")).toBeHidden();
   const floor = await page.getByLabel("Floor price").inputValue();
-  const spacing = await page.getByLabel("Tick spacing").inputValue();
+  const spacing = await page.getByLabel("Price step").inputValue();
   // On the grid and above the contract minimum, without the reader checking by
   // hand: the two numbers the contract is strictest about.
   expect(BigInt(floor)).toBeGreaterThanOrEqual((1n << 32n) + 1n);
@@ -425,7 +425,7 @@ test("an allocation that does not add up blocks the launch", async ({
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Four");
   await page.getByTestId("launch-advanced").locator("> summary").click();
-  await page.getByLabel("Launch id").fill("nebula-four");
+  await page.getByLabel("Page address").fill("nebula-four");
   const sale = page.getByTestId("launch-allocation-sale");
   await sale.fill("85"); // the standard split is 75 / 25 / 0
   await expect(page.getByTestId("launch-allocation-issue")).toContainText(
@@ -523,7 +523,7 @@ test("an oversized monthly budget warns but never blocks", async ({ page }) => {
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Five");
   await page.getByTestId("launch-advanced").locator("> summary").click();
-  await page.getByLabel("Launch id").fill("nebula-five");
+  await page.getByLabel("Page address").fill("nebula-five");
   await page.getByTestId("launch-advanced-sale").locator("summary").click();
   await page.getByTestId("launch-budget").fill("1000000000000");
   await expect(page.getByTestId("launch-param-issues")).toContainText(
@@ -558,7 +558,7 @@ test("a founder can commit the longer story on create", async ({ page }) => {
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Six");
   await page.getByTestId("launch-advanced").locator("> summary").click();
-  await page.getByLabel("Launch id").fill("nebula-six");
+  await page.getByLabel("Page address").fill("nebula-six");
   await page.getByTestId("launch-advanced-founder").locator("summary").click();
   await page
     .getByTestId("launch-long-pitch")
@@ -602,7 +602,7 @@ test("Quick start prices the supply on the form, so a sale that must sell out ca
   await step.getByLabel("Symbol").fill("NQK");
   await step.getByLabel(/supply/i).fill("1000000000");
   await page.getByTestId("launch-advanced").locator("> summary").click();
-  await page.getByLabel("Launch id").fill("nebula-quick");
+  await page.getByLabel("Page address").fill("nebula-quick");
   await wizardToPublish(page);
   await page.getByRole("button", { name: /Publish launch/ }).click();
   const record = () =>
@@ -721,7 +721,7 @@ test("performance vesting is validated and published", async ({ page }) => {
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Seven");
   await page.getByTestId("launch-advanced").locator("> summary").click();
-  await page.getByLabel("Launch id").fill("nebula-seven");
+  await page.getByLabel("Page address").fill("nebula-seven");
   // A tranche at 1x warns (raise price is not performance); descending plus a
   // bad sum blocks.
   await page.getByTestId("launch-advanced-vesting").locator("summary").click();
@@ -763,7 +763,7 @@ test("an agent-run launch is badged and attested", async ({ page }) => {
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Nebula Nine");
   await page.getByTestId("launch-advanced").locator("> summary").click();
-  await page.getByLabel("Launch id").fill("nebula-nine");
+  await page.getByLabel("Page address").fill("nebula-nine");
   // The toggle moved behind the Advanced disclosure — the shared prelude
   // opened it the way a reader would; reach the checkbox inside.
   await wizardToPublish(page);

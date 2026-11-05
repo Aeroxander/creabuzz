@@ -327,7 +327,7 @@ export function ipRecordFromDraft(
     const checked = parseIpDocument(doc);
     if (checked === null) {
       return {
-        problem: `The ${name} needs a title, an https link and a fingerprint of 64 characters, or leave all three empty.`,
+        problem: `The ${name} needs a title, a link starting with https and a fingerprint of 64 characters, or leave all three empty.`,
       };
     }
     parsed.push(checked);

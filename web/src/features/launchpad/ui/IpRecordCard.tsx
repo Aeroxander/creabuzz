@@ -255,6 +255,10 @@ function Editor({ launch, onDone }: { launch: Launch; onDone: () => void }) {
         </div>
       ) : null}
 
+      <p className="text-xs text-black/60 dark:text-white/60">
+        A fingerprint is a short code made from a file. If the file changes, the
+        code changes, so anyone can tell.
+      </p>
       {draft.holder !== "open" ? (
         <IpDocumentField
           hint={
@@ -337,6 +341,10 @@ export function IpRecordCard({ launch }: { launch: Launch }) {
           </Button>
         ) : null}
       </div>
+      <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+        IP means the rights to the project&apos;s work, such as its code, name
+        and designs.
+      </p>
       <div className="mt-2">
         <Standing raised={raised} record={launch.record.ipRecord} />
       </div>

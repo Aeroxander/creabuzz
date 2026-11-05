@@ -237,7 +237,7 @@ function TokenStep({ controller }: { controller: WizardController }) {
         <Field
           id="launch-symbol"
           label="Symbol"
-          hint="A short ticker, like NEB."
+          hint="A short code for the token, like NEB."
         >
           <input
             className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm uppercase text-black dark:border-white/15 dark:text-white"
@@ -457,7 +457,7 @@ function UnlockStep({ controller }: { controller: WizardController }) {
       <Select
         hint={
           ownDao
-            ? "Your team's Shares are yours to vote with from the start. A milestone decides when a part of them can be sold or taken out of the DAO."
+            ? "Your team's Shares are yours to vote with from the start. A milestone decides when part of them can be sold, or used to leave with a share of the project's money."
             : "What has to happen before you can sell your own tokens."
         }
         id="unlock-mode"
@@ -478,7 +478,7 @@ function UnlockStep({ controller }: { controller: WizardController }) {
                 {
                   value: "time",
                   label: ownDao
-                    ? "Released over time (not available with its own DAO)"
+                    ? "Released over time (not available for this project)"
                     : "Released over a few months",
                 },
               ]
@@ -508,7 +508,7 @@ function UnlockStep({ controller }: { controller: WizardController }) {
       {wizard.unlockMode === "none" ? (
         <p className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10">
           {ownDao
-            ? "Nothing is locked: your team Shares can be sold or taken out of the DAO straight away."
+            ? "Nothing is locked: your team Shares can be sold, or used to leave with a share of the project's money, straight away."
             : "Nothing locks: everything your allocation holds releases when the sale closes."}
         </p>
       ) : null}
@@ -517,7 +517,7 @@ function UnlockStep({ controller }: { controller: WizardController }) {
         data-testid="unlock-gap"
       >
         {ownDao
-          ? "These milestones are enforced when you launch: the part tied to each one cannot be sold or taken out of the DAO until the milestone is reached. By default you publish evidence and holders get a week to object; you can name reviewers instead when you launch. The words of a milestone are what it is judged by."
+          ? "These milestones are enforced when you launch: the part tied to each one cannot be sold, or used to leave with a share of the project's money, until the milestone is reached. By default you publish evidence and holders get a week to object; you can name reviewers instead when you launch. A milestone is judged by exactly the words you write."
           : UNLOCK_ENFORCEMENT_GAP}
       </p>
       {unlocks.customLadderNote ? (
@@ -619,13 +619,13 @@ function MilestoneEditor({ controller }: { controller: WizardController }) {
           data-testid="milestone-sum"
         >
           {total === 100
-            ? "Adds up to 100% of your milestone allocation."
+            ? "Adds up to 100% of what the milestones unlock."
             : `These add up to ${total}%. They need to add up to 100%.`}
         </span>
       </div>
       <p className="text-xs text-black/60 dark:text-white/60">
         {controller.unlocks.ownDao
-          ? "The DAO's reviewers decide whether each milestone was met."
+          ? "The project's reviewers decide whether each milestone was met."
           : "You confirm each milestone yourself for now."}
       </p>
       {unlocks.issues.length > 0 ? (
@@ -652,9 +652,10 @@ function DaoStep({ controller }: { controller: WizardController }) {
             Your project gets its own DAO when it launches
           </p>
           <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-            Everyone who holds Shares votes on how the money is spent, from the
-            first day. The DAO is created in the same step that opens the sale;
-            there is nothing to set up afterwards.
+            A DAO is a project run by its holders&apos; votes, with its money
+            held in the open. Everyone who holds Shares votes on how the money
+            is spent, from the first day. It is created in the same step that
+            opens the sale; there is nothing to set up afterwards.
           </p>
         </div>
       ) : (
@@ -689,9 +690,9 @@ function DaoStep({ controller }: { controller: WizardController }) {
         </fieldset>
       )}
       <Select
-        hint="Shown on the project page. Starting with none is a fine choice; you can decide later."
+        hint="Whether a company or similar body stands behind the project. Shown on the project page. Starting with none is a fine choice; you can decide later."
         id="dao-legal-wrapper"
-        label="Legal wrapper"
+        label="Legal structure"
         onChange={(event) => patch({ legalWrapper: event.target.value })}
         options={[
           { value: "none", label: "None for now (default)" },

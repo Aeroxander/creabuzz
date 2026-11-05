@@ -22,7 +22,7 @@ test("tranches that do not sum to 100 are refused", () => {
     tranches: [{ multiple: 2, percent: 60 }],
     twapWindow: null,
   });
-  assert.ok(issues.some((i) => i.message.includes("sum to 100")));
+  assert.ok(issues.some((i) => i.message.includes("add up to 100")));
   assert.equal(issues[0].severity, "error");
 });
 
@@ -35,7 +35,9 @@ test("descending multiples are refused", () => {
     ],
     twapWindow: null,
   });
-  assert.ok(issues.some((i) => i.message.includes("ascending")));
+  assert.ok(
+    issues.some((i) => i.message.includes("higher than the one before")),
+  );
 });
 
 test("a 1x tranche warns (that is the raise price, not performance)", () => {

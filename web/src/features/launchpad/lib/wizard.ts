@@ -109,7 +109,8 @@ export const WIZARD_STEPS: readonly WizardStepMeta[] = [
     key: "dao",
     label: "Rules",
     title: "After the raise",
-    blurb: "Whether the project becomes a DAO, and what it may spend.",
+    blurb:
+      "Whether holders vote on the project's money, and what it may spend.",
   },
 ];
 
@@ -529,7 +530,7 @@ export function wizardStepIssues(
   if (step === "token") {
     if (form.name.trim().length === 0) issues.push("Give the launch a name.");
     if (form.symbol.trim().length === 0) {
-      issues.push("The token needs a symbol.");
+      issues.push("Add a short symbol for the token, like NEB.");
     }
     if (!isWholeTokenSupply(form.supply) || BigInt(form.supply) === 0n) {
       issues.push("Total supply must be a whole number greater than zero.");
@@ -543,7 +544,7 @@ export function wizardStepIssues(
     const id = effectiveLaunchId(form);
     if (!isLaunchSlug(id)) {
       issues.push(
-        "Launch id must be lowercase letters, digits, dashes or underscores.",
+        "The page address can use only lowercase letters, numbers, dashes and underscores.",
       );
     }
   }
@@ -587,7 +588,7 @@ export function wizardStepIssues(
     // record cannot be edited into something else after it is published.
     if (form.tokenMode === "dao" && wizard.unlockMode === "time") {
       issues.push(
-        "A project with its own DAO locks its team's Shares behind milestones, or not at all. Choose milestones or no lock.",
+        "Because holders run this project, its team's Shares can be locked only behind milestones, or not at all. Choose milestones or no lock.",
       );
     }
     for (const issue of unlockPlanIssues(
@@ -598,7 +599,9 @@ export function wizardStepIssues(
   }
   if (step === "dao") {
     if (form.budget.trim() !== "" && !/^\d+$/.test(form.budget.trim())) {
-      issues.push("Monthly budget must be a whole number of base units.");
+      issues.push(
+        "The monthly budget must be a whole number in the currency's smallest unit.",
+      );
     }
   }
   return issues;
@@ -670,7 +673,7 @@ export function publishIssues(
     filtered.push({
       field: "chainId",
       severity: "error",
-      message: "Chain id must be a number, e.g. 11155111.",
+      message: "The network ID must be a number, for example 11155111.",
     });
   }
   for (const field of ["auction", "treasury"] as const) {
@@ -679,7 +682,8 @@ export function publishIssues(
       filtered.push({
         field,
         severity: "error",
-        message: "Auction and treasury must be 0x addresses when set.",
+        message:
+          "The sale and money addresses must be full addresses starting with 0x, or left empty.",
       });
     }
   }

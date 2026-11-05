@@ -1,7 +1,7 @@
 import type { SaleCurrency } from "@creaton/core/launchpad/sale-currency.ts";
 
 const BLURB: Record<string, string> = {
-  usdc: "Steady dollar prices",
+  usdc: "A digital dollar, so prices stay steady",
   eth: "Bidders pay with plain ETH",
 };
 

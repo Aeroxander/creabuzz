@@ -92,18 +92,18 @@ export function validateLaunchParams(
     issues.push({ field, severity: "warning" as const, message });
 
   if (input.supply <= 0n) {
-    error("supply", "The sale needs a supply greater than zero.");
+    error("supply", "The sale needs more than zero tokens to sell.");
   } else if (input.supply > MAX_TOTAL_SUPPLY) {
     error(
       "supply",
-      "Supply is above the auction's ceiling (2^100 units), which the clearing price cannot support.",
+      "That is more tokens than a sale can handle (the limit is 2^100 smallest units). Lower the total supply.",
     );
   }
 
   if (input.tickSpacing < MIN_TICK_SPACING) {
     error(
       "tickSpacing",
-      `Tick spacing must be at least ${MIN_TICK_SPACING}: spacing 1 lets rounding move the price off an initialized tick.`,
+      `The price step must be at least ${MIN_TICK_SPACING}: with a step of 1, rounding can push a price off its level.`,
     );
   }
   if (input.floorPrice === 0n) {
@@ -111,7 +111,7 @@ export function validateLaunchParams(
   } else if (input.floorPrice < MIN_FLOOR_PRICE) {
     error(
       "floorPrice",
-      "The floor price is too low for the auction to price anything. Raise it.",
+      "The floor price is too low for the sale to work. Raise it.",
     );
   }
 
@@ -120,12 +120,12 @@ export function validateLaunchParams(
     if (input.tickSpacing > ceiling) {
       error(
         "tickSpacing",
-        "Tick spacing is above the maximum this supply supports; the auction cannot be deployed.",
+        "The price step is too large for this many tokens, so the sale cannot be created. Lower it.",
       );
     } else if (input.floorPrice + input.tickSpacing > ceiling) {
       error(
         "floorPrice",
-        "Floor price plus tick spacing is above the maximum this supply supports; the auction cannot be deployed.",
+        "The floor price plus the price step is too high for this many tokens, so the sale cannot be created. Lower the price.",
       );
     }
   }
@@ -133,7 +133,7 @@ export function validateLaunchParams(
   if (input.tickSpacing > 0n && input.floorPrice % input.tickSpacing !== 0n) {
     error(
       "floorPrice",
-      `Floor price must be a multiple of the tick spacing (${input.tickSpacing}); the floor is the first tick.`,
+      `The floor price must be a multiple of the price step (${input.tickSpacing}), because the floor is the first price level.`,
     );
   }
 
@@ -149,28 +149,31 @@ export function validateLaunchParams(
     if (input.budget * 6n > input.requiredCurrencyRaised) {
       warn(
         "budget",
-        "Monthly budget: above a sixth of the graduation threshold. At the cap the auction refills the treasury every six months.",
+        "The monthly budget is above a sixth of the raise target, so the money raised would last less than six months.",
       );
     }
   }
   if (input.startBlock >= input.endBlock) {
-    error("endBlock", "The auction must end after it starts.");
+    error("endBlock", "The sale must end after it starts.");
   }
   if (input.endBlock > input.startBlock && input.claimBlock < input.endBlock) {
-    error("claimBlock", "Claims cannot open before the auction ends.");
+    error("claimBlock", "People cannot collect before the sale ends.");
   }
 
   if (input.steps.length === 0) {
-    error("steps", "An auction needs at least one issuance step.");
+    error("steps", "The sale needs at least one release step.");
   }
   let sumMps = 0n;
   let sumDelta = 0n;
   input.steps.forEach((step, index) => {
     if (step.blockDelta === 0n) {
-      error(`steps[${index}]`, "A step cannot last zero blocks.");
+      error(`steps[${index}]`, "A release step must last at least one block.");
     }
     if (step.mps === 0n) {
-      error(`steps[${index}]`, "A step must sell something every block.");
+      error(
+        `steps[${index}]`,
+        "A release step must sell something in every block.",
+      );
     }
     sumMps += step.mps * step.blockDelta;
     sumDelta += step.blockDelta;
@@ -178,7 +181,7 @@ export function validateLaunchParams(
   if (input.steps.length > 0 && sumMps !== MPS) {
     error(
       "steps",
-      `Issuance must add up to 100%: the steps sum to ${sumMps} of ${MPS} milli-bips.`,
+      `The release steps must add up to 100%: they add up to ${sumMps} of ${MPS} milli-bips.`,
     );
   }
   if (
@@ -187,35 +190,35 @@ export function validateLaunchParams(
   ) {
     error(
       "endBlock",
-      `The steps span ${sumDelta} blocks, ending at ${input.startBlock + sumDelta} rather than ${input.endBlock}.`,
+      `The release steps last ${sumDelta} blocks and end at block ${input.startBlock + sumDelta}, not block ${input.endBlock}.`,
     );
   }
   const last = input.steps[input.steps.length - 1];
   if (last && last.mps * last.blockDelta < MPS / 100n) {
     warn(
       "steps",
-      "The final step sells under 1% of the supply, so almost all of it clears before the auction ends.",
+      "The last release step sells under 1% of the tokens, so almost all of them are sold before the sale ends.",
     );
   }
 
   if (input.requiredCurrencyRaised === 0n) {
     warn(
       "requiredCurrencyRaised",
-      "With no graduation threshold the auction graduates however little it raises.",
+      "With no raise target, the sale goes ahead however little it raises.",
     );
   } else if (input.supply > 0n) {
     const maxRaised = (input.supply * maxBidPrice(input.supply)) / Q96;
     if (input.requiredCurrencyRaised > maxRaised) {
       error(
         "requiredCurrencyRaised",
-        "The threshold is above the most this supply could ever raise, so the auction can never graduate.",
+        "The raise target is higher than this many tokens could ever raise, so the sale can never reach it.",
       );
     } else {
       const floorRaised = (input.supply * input.floorPrice) / Q96;
       if (input.requiredCurrencyRaised > floorRaised) {
         warn(
           "requiredCurrencyRaised",
-          "The threshold is above what selling the whole supply at the floor price would raise, so it needs bids well above the floor.",
+          "The raise target is above what selling every token at the floor price would raise, so it needs bids well above the floor.",
         );
       }
     }

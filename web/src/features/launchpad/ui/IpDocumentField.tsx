@@ -77,7 +77,7 @@ export function IpDocumentField({
         />
       </label>
       <label className="flex flex-col gap-1 text-xs">
-        Choose the file to fingerprint it
+        Choose a file to fill in its fingerprint
         <input
           accept=".pdf,.txt,.md,.doc,.docx"
           data-testid={`ip-doc-${slot}-file`}

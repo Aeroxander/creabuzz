@@ -70,7 +70,10 @@ test("the defaults list says what the founder was not asked", () => {
   assert.equal(byLabel.Token, "Nebula Token (NEB)");
   assert.equal(byLabel["Tokens for sale"], "50% of 400M");
   assert.equal(byLabel["Your own tokens unlock"], "Beta shipped, Release 1.0");
-  assert.equal(byLabel["If the target is met"], "It becomes a DAO");
+  assert.equal(
+    byLabel["If the target is met"],
+    "Holders vote on the money (a DAO)",
+  );
 });
 
 test("an unreadable supply or no milestones still reads sensibly", () => {
@@ -85,7 +88,7 @@ test("an unreadable supply or no milestones still reads sensibly", () => {
   const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
   assert.equal(byLabel["Tokens for sale"], "20% of the supply");
   assert.equal(byLabel["Your own tokens unlock"], "On a schedule");
-  assert.equal(byLabel["If the target is met"], "No DAO");
+  assert.equal(byLabel["If the target is met"], "Not set up as a DAO");
 });
 
 test("every starting milestone says what will exist and where it can be seen, not just a name", () => {

@@ -171,7 +171,7 @@ export function DaoLaunchPanel({
         id: "send",
         label: "Create the DAO and open the sale",
         detail:
-          "One transaction. It mints the Shares, locks the team's allocation, and sends the raise to the DAO.",
+          "One step on the network. It creates the Shares, locks the team's allocation, and sends the raise to the DAO.",
         status: (currentIsSend
           ? "running"
           : phase(progress.launched !== null || sent, "send")) as StepStatus,
@@ -225,11 +225,12 @@ export function DaoLaunchPanel({
         Launch with its own DAO
       </h3>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        One transaction creates the project's DAO and opens the sale of its
-        Shares. The raise goes straight to the DAO's treasury, never to your
-        wallet, and backers can leave with their part of it. Your team
+        A DAO is a project run by its holders&apos; votes, with its money held
+        in the open. One step creates the project&apos;s DAO and opens the sale
+        of its Shares. The raise goes straight to the DAO&apos;s money, never to
+        your own account, and backers can leave with their part of it. Your team
         allocation is yours to vote with from the start; the part tied to a
-        milestone cannot be sold or taken out until that milestone is reached.
+        milestone cannot be sold or withdrawn until that milestone is reached.
       </p>
       {summary ? (
         <dl
@@ -254,7 +255,7 @@ export function DaoLaunchPanel({
           </dt>
           <dd>
             {percentText(summary.backersExitBpsBeforeMilestones)} of what is
-            left in the treasury before the first milestone
+            left of the project&apos;s money before the first milestone
             {summary.team > 0n
               ? `, and ${percentText(summary.backersExitBps)} once every milestone has unlocked (your team's Shares count only as they unlock)`
               : ""}

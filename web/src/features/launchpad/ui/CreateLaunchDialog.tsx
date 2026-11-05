@@ -611,7 +611,7 @@ export function CreateLaunchDialog({
     }
     if (rawBlocks === "incomplete") {
       setError(
-        "Raw blocks: set all three, with claims opening at or after the end.",
+        "Set all three block numbers in Advanced, with collecting opening at or after the end, or clear them.",
       );
       return;
     }
@@ -688,11 +688,11 @@ export function CreateLaunchDialog({
 
   const conversion =
     blockTime === null
-      ? "Reading this chain's block time…"
+      ? "Working out the sale dates from the network…"
       : plan === null
         ? blockTime.head === null
-          ? "This chain could not be read, so the launch will publish with no block window. Set raw blocks in Advanced if you know them."
-          : "Pick an end date in the future to see the window."
+          ? "We could not reach the network, so the sale will be published without dates. If you know them, set the block numbers in Advanced."
+          : "Pick an end date in the future to see the sale dates."
         : `${describeSaleBlocks(plan)}${
             rawBlocks !== null && rawBlocks !== "incomplete"
               ? " Advanced overrides this window."
@@ -701,11 +701,11 @@ export function CreateLaunchDialog({
 
   const moneySummary =
     form.requiredRaised.trim() === "" || form.requiredRaised.trim() === "0"
-      ? "No graduation line yet. Pick a price so there is one."
+      ? "No raise target yet. Pick a price to set one."
       : `Priced at ${formatQ96PerToken(form.floorPrice, {
           currencyDecimals: saleCurrency.decimals,
           ...(saleCurrency.kind === "eth" ? { unit: "ETH" } : {}),
-        })} a token. Graduates at ${formatMoney(form.requiredRaised, saleCurrency)} raised; below that, every bid refunds.`;
+        })} a token. The sale goes ahead if it raises ${formatMoney(form.requiredRaised, saleCurrency)}; below that, every bid is refunded.`;
 
   const ownDao = tokenMode === "dao";
   const controller: WizardController = {
@@ -793,18 +793,18 @@ export function CreateLaunchDialog({
       },
       customLadderNote:
         vestingDirty && !isEdit
-          ? "A custom price ladder from Advanced also applies on top of this plan."
+          ? "The price-based unlocks you set in Advanced also apply on top of this plan."
           : null,
     },
     dao: {
       share: budgetShareValue,
       onShare: (value) => setBudget(budgetForShare(form.requiredRaised, value)),
       capNote: capLine
-        ? `${capLine} Publishing still works, and the launch shows the warning. Summoning the DAO with a budget over the cap won't go through.`
+        ? `${capLine} You can still publish, and the launch page shows this warning. Creating the project with a budget over this limit will not go through.`
         : null,
       equity,
       equityNote: project
-        ? `${equity?.length ?? 0} ${(equity?.length ?? 0) === 1 ? "person" : "people"} from the project's team list. The DAO starts with exactly these Shares.`
+        ? `${equity?.length ?? 0} ${(equity?.length ?? 0) === 1 ? "person" : "people"} from the project's team list. The project's Shares start out split exactly like this.`
         : "No team list for this project yet. Until you add one, you hold all the Shares.",
     },
     stepIssues,
@@ -929,7 +929,7 @@ export function CreateLaunchDialog({
               <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
                 Advanced
                 <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
-                  exact values, raw blocks, cliffs and hooks
+                  exact values, block numbers and price-based unlocks
                 </span>
               </summary>
               <div className="mt-3 flex flex-col gap-3">

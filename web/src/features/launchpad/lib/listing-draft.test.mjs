@@ -57,7 +57,7 @@ test("a market whose price token will not say its units can still be stopped, an
   // Publishing prices needs the scale, so that stays refused, with the reason.
   const on = listingFormDraft(blind);
   assert.ok("problem" in on);
-  assert.match(on.problem, /could not be read/);
+  assert.match(on.problem, /could not load the market/);
 });
 
 test("stopping needs a market to aim at: not one that is absent, unread or not yet known", () => {

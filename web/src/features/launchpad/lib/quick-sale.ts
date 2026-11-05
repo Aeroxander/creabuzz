@@ -111,7 +111,9 @@ export function quickDefaultRows(input: {
     },
     {
       label: "If the target is met",
-      value: input.formDao ? "It becomes a DAO" : "No DAO",
+      value: input.formDao
+        ? "Holders vote on the money (a DAO)"
+        : "Not set up as a DAO",
     },
   ];
 }

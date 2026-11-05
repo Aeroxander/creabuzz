@@ -1873,7 +1873,7 @@ test("a launch can be bound to a discussion channel", async ({ page }) => {
     .first()
     .click();
   await page.getByTestId("launch-advanced").locator("> summary").click();
-  await page.getByLabel("Launch id").fill("channel-bound");
+  await page.getByLabel("Page address").fill("channel-bound");
   await page
     .getByTestId("wizard-step-token")
     .getByLabel("Name", { exact: true })

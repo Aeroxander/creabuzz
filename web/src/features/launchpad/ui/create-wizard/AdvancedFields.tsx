@@ -153,8 +153,8 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
     <>
       <Field
         id="launch-id"
-        label="Launch id"
-        hint="Lowercase slug. Permanent: it addresses the launch on the server. Left empty, it is derived from the name."
+        label="Page address"
+        hint="The web address of the launch page: lowercase letters, numbers and dashes. It cannot be changed later. Leave empty to use the name."
       >
         <Input
           id="launch-id"
@@ -188,7 +188,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
               data-testid="launch-long-pitch"
               className="w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
               onChange={(e) => setLongPitch(e.target.value)}
-              placeholder="What is already built, who is on the team, what you will build next, and what would show the thesis is wrong."
+              placeholder="What is already built, who is on the team, what you will build next, and what would show the idea is wrong."
               rows={4}
               value={longPitch}
             />
@@ -196,7 +196,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           <Field
             id="launch-ip-list"
             label="Committed assets"
-            hint="One link per line: repos, docs, social accounts, domains."
+            hint="One link per line: code, documents, social accounts or web addresses you own."
           >
             <textarea
               id="launch-ip-list"
@@ -211,13 +211,13 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           <Field
             id="launch-update-cadence"
             label="Update cadence"
-            hint='What you commit to telling investors, e.g. "monthly with KPIs".'
+            hint='What you commit to telling investors, for example "monthly, with numbers".'
           >
             <Input
               id="launch-update-cadence"
               data-testid="launch-update-cadence"
               onChange={(e) => setUpdateCadence(e.target.value)}
-              placeholder="monthly with KPIs"
+              placeholder="monthly, with numbers"
               value={updateCadence}
             />
           </Field>
@@ -235,10 +235,10 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           >
             <p className="text-xs text-black/60 dark:text-white/60">
               Sell the project's own Shares. One launch creates the project's
-              DAO and the sale together: the raise lands in the DAO, the team's
+              DAO and the sale together: the raise goes to the DAO, the team's
               Shares unlock over time, and everyone who buys can vote and leave
-              with their share of the treasury. Name, symbol and total supply
-              are on the first step.
+              with their share of the project's money. Name, symbol and total
+              supply are on the first step.
             </p>
             {daoKitMissing ? (
               <p
@@ -291,7 +291,11 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
       </div>
 
       <div className="flex flex-col gap-3">
-        <Field id="launch-chain" label="Chain id" hint="11155111 = Sepolia.">
+        <Field
+          id="launch-chain"
+          label="Network ID"
+          hint="11155111 is the Sepolia test network."
+        >
           <Input
             id="launch-chain"
             onChange={(e) => setChainId(e.target.value)}
@@ -302,7 +306,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
         <Field
           id="launch-admission"
           label="Bid access"
-          hint="Curated picks who can bid. Community is open to everyone."
+          hint="Curated: you pick who can bid. Community: anyone can bid."
         >
           <div className="flex gap-1 rounded-lg bg-black/5 p-1 dark:bg-white/10">
             {(["curated", "community"] as const).map((track) => (
@@ -342,25 +346,25 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           {...(initial ? { open: true } : {})}
         >
           <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
-            Performance vesting (optional)
+            Price-based unlocks (optional)
           </summary>
           <div className="mt-3">
             <div
               className="rounded-lg border border-black/10 p-3 dark:border-white/10"
               data-testid="launch-vesting"
             >
-              <p className="text-sm font-medium">Performance vesting</p>
+              <p className="text-sm font-medium">Price-based unlocks</p>
               <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-                Tranches unlock as the token price reaches multiples of the
-                raise price (2x up to 32x by default). This is recorded on the
-                launch for now; onchain enforcement comes with verifier
-                milestones.
+                Parts unlock as the token price reaches multiples of the raise
+                price (2x up to 32x by default). This is recorded on the launch
+                for now; the network will enforce it later, with milestone
+                reviewers.
               </p>
               <label
                 className="mt-2 block text-sm text-black/60 dark:text-white/60"
                 htmlFor="launch-cliff"
               >
-                Cliff (blocks)
+                Wait before any unlock (blocks)
               </label>
               <Input
                 id="launch-cliff"
@@ -381,7 +385,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
                 className="mt-2 block text-sm text-black/60 dark:text-white/60"
                 htmlFor="launch-tranches"
               >
-                Tranches (multiple:percent, one per line)
+                Parts (multiple:percent, one per line)
               </label>
               <textarea
                 id="launch-tranches"
@@ -436,7 +440,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
         <Field
           id="launch-floor"
           label="Floor price"
-          hint="Smallest currency units. The wizard's price writes this; type here to override it."
+          hint="In the currency's smallest units. The price you set in the steps fills this in; type here to override it."
         >
           <Input
             id="launch-floor"
@@ -447,8 +451,8 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
         </Field>
         <Field
           id="launch-threshold"
-          label="Graduation threshold"
-          hint="Minimum proceeds, in currency base units. Miss it and every bid refunds in full."
+          label="Raise target (smallest units)"
+          hint="The least the sale must raise, in the currency's smallest units. Miss it and every bid is refunded in full."
         >
           <Input
             id="launch-threshold"
@@ -459,8 +463,8 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
         </Field>
         <Field
           id="launch-window"
-          label="Sale window (raw blocks)"
-          hint="The wizard derives these from the dates you picked. Override all three, or leave them empty."
+          label="Sale dates (block numbers)"
+          hint="The steps fill these in from the dates you picked. Override all three, or leave them empty."
         >
           <div className="flex gap-1">
             <Input
@@ -480,18 +484,18 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
               value={endBlockRaw}
             />
             <Input
-              aria-label="Claims open at block"
+              aria-label="Collecting opens at block"
               data-testid="launch-claim-block"
               inputMode="numeric"
               onChange={(e) => setClaimBlockRaw(e.target.value)}
-              placeholder="claims"
+              placeholder="collect"
               value={claimBlockRaw}
             />
           </div>
           {rawBlocks === "incomplete" ? (
             <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-              Set all three blocks, with claims at or after the end, or clear
-              them and let the wizard convert your dates.
+              Set all three block numbers, with collecting opening at or after
+              the end, or clear them and we will work them out from your dates.
             </p>
           ) : null}
         </Field>
@@ -502,7 +506,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
         {...(initial ? { open: true } : {})}
       >
         <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
-          Sale &amp; treasury details
+          Sale and money details
           <span className="ml-2 text-xs font-normal text-black/50 dark:text-white/50">
             defaults are fine to start
           </span>
@@ -511,7 +515,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           <Field
             id="launch-budget"
             label="Monthly budget"
-            hint="Operating budget in currency base units; above a sixth of the threshold this warns."
+            hint="The monthly operating budget, in the currency's smallest units. Above a sixth of the raise target, you get a warning."
           >
             <Input
               id="launch-budget"
@@ -524,8 +528,8 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           </Field>
           <Field
             id="launch-tick"
-            label="Tick spacing"
-            hint="Price granularity."
+            label="Price step"
+            hint="The gap between allowed bid prices, in the same units as the floor price."
           >
             <Input
               id="launch-tick"
@@ -536,8 +540,8 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           </Field>
           <Field
             id="launch-auction"
-            label="Auction contract"
-            hint="Optional now. Link it when the sale deploys."
+            label="Sale contract"
+            hint="Optional for now. Add it once the sale is created."
           >
             <Input
               id="launch-auction"
@@ -548,8 +552,8 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
           </Field>
           <Field
             id="launch-treasury"
-            label="Treasury"
-            hint="Receives the minted supply. Optional now."
+            label="Treasury (the project's money)"
+            hint="Receives the newly created supply. Optional for now."
           >
             <Input
               id="launch-treasury"

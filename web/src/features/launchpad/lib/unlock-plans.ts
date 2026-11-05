@@ -65,7 +65,7 @@ export interface UnlockPlan {
 
 /** The exact wording the dialog prints, so copy and report cannot drift. */
 export const UNLOCK_ENFORCEMENT_GAP =
-  "Milestone payouts can be enforced onchain: each milestone becomes a claim whose payout is held in escrow and released only when enough verifiers approve it. It is optional per launch; until a milestone is escrowed and claimed, releasing it is a treasury decision recorded on the launch.";
+  "The network can enforce milestone payouts: each milestone becomes a submission, its payout is set aside, and it is released only when enough reviewers approve it. This is optional for each launch. Until a milestone is set aside and submitted, releasing it is a decision about the project's money, recorded on the launch.";
 
 export const MIN_MILESTONES = 2;
 export const MAX_MILESTONES = 4;
@@ -156,7 +156,7 @@ export function unlockPlanIssues(plan: UnlockPlan): UnlockIssue[] {
     if (!SHORT_VESTING_MONTHS.includes(plan.months ?? 0)) {
       issues.push({
         severity: "error",
-        message: "Short vesting is 3 or 6 months.",
+        message: "A short unlock schedule is 3 or 6 months.",
       });
     }
     return issues;
@@ -165,7 +165,7 @@ export function unlockPlanIssues(plan: UnlockPlan): UnlockIssue[] {
   if (rows.length < MIN_MILESTONES || rows.length > MAX_MILESTONES) {
     issues.push({
       severity: "error",
-      message: `A milestone plan needs ${MIN_MILESTONES}–${MAX_MILESTONES} rows.`,
+      message: `A milestone plan needs ${MIN_MILESTONES}–${MAX_MILESTONES} milestones.`,
     });
   }
   if (rows.some((row) => row.label.trim().length === 0)) {
@@ -177,20 +177,20 @@ export function unlockPlanIssues(plan: UnlockPlan): UnlockIssue[] {
   if (new Set(rows.map((row) => row.claim)).size !== rows.length) {
     issues.push({
       severity: "error",
-      message: "Milestone claim ids must be unique.",
+      message: "Every milestone needs its own ID.",
     });
   }
   const total = rows.reduce((sum, row) => sum + row.percent, 0);
   if (total !== 100) {
     issues.push({
       severity: "error",
-      message: `Milestone tranches must add up to 100% of the milestone allocation (they add up to ${total}%).`,
+      message: `The milestone parts must add up to 100% of what the milestones unlock (they add up to ${total}%).`,
     });
   }
   if (rows.some((row) => row.percent <= 0)) {
     issues.push({
       severity: "error",
-      message: "Every milestone releases something.",
+      message: "Every milestone must unlock more than 0%.",
     });
   }
   return issues;

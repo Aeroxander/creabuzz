@@ -14,7 +14,7 @@ const CHOICES: { mode: ReviewMode; title: string; detail: string }[] = [
     mode: "challenge",
     title: "Holders can object (recommended)",
     detail:
-      "The team publishes evidence, holders get time to object, and with no objection anyone can finalize the unlock. There are no reviewers to find or keep reachable.",
+      "The team publishes evidence, holders get time to object, and with no objection anyone can complete the unlock. There are no reviewers to find or keep reachable.",
   },
   {
     mode: "panel",
@@ -118,23 +118,24 @@ export function LaunchReviewFields({
               <li>
                 {waits.clawback === 0
                   ? "No objection is possible after an unlock."
-                  : `For ${span(waits.clawback)} after an unlock one more objection is possible, and if holders uphold it your remaining locked Shares are burned.`}
+                  : `For ${span(waits.clawback)} after an unlock one more objection is possible, and if holders agree with it your remaining locked Shares are destroyed.`}
               </li>
               <li>
                 Milestones are published in order, and the next only once the
-                one before has had its time for late objections. Until then, an
-                upheld late objection can still burn the Shares behind the later
-                milestones. Once the last one has unlocked, only your bond
-                stands behind it.
+                one before has had its time for late objections. Until then, a
+                late objection that holders agree with can still destroy the
+                Shares behind the later milestones. Once the last one has
+                unlocked, only your bond (the deposit you put down) stands
+                behind it.
               </li>
             </ul>
             <p className="mt-2" data-testid="launch-earliest-unlocks">
               For example, with a 20% / 30% / 50% milestone split, the earliest
               unlocks are days {exampleDays.join(", ")} after the first report,
-              and you can reclaim the final bond on day{" "}
+              and you can get the final bond back on day{" "}
               {exampleDays[2] + waits.clawback / 86_400}. This assumes immediate
               publication when allowed, no objections or retries, and someone
-              finalizing each unlock. Actual delivery and objections can make it
+              completing each unlock. Actual delivery and objections can make it
               take longer.
             </p>
             <p className="mt-2">
@@ -145,11 +146,11 @@ export function LaunchReviewFields({
           <TextField
             hint={
               defaultBond !== null
-                ? `You post this with each milestone and get it back ${bondBack}, unless holders turn it down. Leave empty for ${formatAtomic(defaultBond, currencyDecimals, { maxFractionDigits: 2 })} ${currencySymbol}, 1% of your raise target.`
-                : `You post this with each milestone and get it back ${bondBack}, unless holders turn it down. Leave empty for 1% of your raise target.`
+                ? `You put this down with each milestone and get it back ${bondBack}, unless holders turn it down. Leave empty for ${formatAtomic(defaultBond, currencyDecimals, { maxFractionDigits: 2 })} ${currencySymbol}, 1% of your raise target.`
+                : `You put this down with each milestone and get it back ${bondBack}, unless holders turn it down. Leave empty for 1% of your raise target.`
             }
             inputMode="decimal"
-            label={`Bond you post with each milestone (${currencySymbol})`}
+            label={`Bond you put down with each milestone (${currencySymbol})`}
             onChange={(challengeBond) => onChange({ ...draft, challengeBond })}
             placeholder="Default"
             testId="launch-challenge-bond"

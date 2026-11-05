@@ -51,7 +51,7 @@ export function saleSteps(
     },
     {
       key: "deploy",
-      label: "Deploy the token and the sale",
+      label: "Set up the token and the sale",
       hint: "One guided flow on the Manage tab.",
       done: Boolean(record.auction && record.token),
       action: "manage",

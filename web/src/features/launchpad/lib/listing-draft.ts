@@ -43,14 +43,14 @@ export function listingFormDraft(input: ListingFormInput): ListingFormResult {
   const { read, market, quote } = input;
   if (!input.factoryKnown) {
     return {
-      problem: "This build knows no secondary market on this network.",
+      problem: "This version of the app has no weekly market on this network.",
     };
   }
   if (!read) {
     return {
       problem: input.failed
-        ? "The market could not be read. Reload to try again."
-        : "Reading the market…",
+        ? "We could not load the market. Reload the page to try again."
+        : "Loading the market…",
     };
   }
   try {
@@ -70,18 +70,18 @@ export function listingFormDraft(input: ListingFormInput): ListingFormResult {
     }
     if (read.kind === "absent") {
       return {
-        problem:
-          "This project has no secondary market to publish a listing in.",
+        problem: "This project has no weekly market to list Shares in.",
       };
     }
     if (read.kind === "unreadable") {
       return {
-        problem: "The market could not be read. Reload to try again.",
+        problem: "We could not load the market. Reload the page to try again.",
       };
     }
     if (quote === null) {
       return {
-        problem: "The market's price token could not be read just now.",
+        problem:
+          "We could not load the market's price token just now. Try again in a moment.",
       };
     }
     return {
