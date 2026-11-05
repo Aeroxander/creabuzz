@@ -9,7 +9,10 @@ import {
   claimDue,
   collectQuoteLabel,
   earlierDues,
+  earlierAllCheckedLine,
   earlierLimitLine,
+  checkOlderLabel,
+  olderFailedLine,
   earlierRoundLine,
   factoryMissingLine,
   listingDetailLine,
@@ -967,8 +970,28 @@ test("an earlier round says what became of it, and the look-back limit is said o
   assert.equal(earlierLimitLine(8, 0n), null);
   assert.equal(
     earlierLimitLine(8, 3n),
-    "This page checks your last 8 rounds. Anything an older round owes you is still yours, but it can't be collected from here.",
+    "This page has checked your last 8 rounds. Rounds 1 to 3 are not checked yet. Anything an older round owes you is still yours.",
   );
+  assert.equal(
+    earlierLimitLine(8, 1n),
+    "This page has checked your last 8 rounds. Round 1 is not checked yet. Anything an older round owes you is still yours.",
+  );
+  // Once more is checked the line counts them all, and the button's own words say what it does.
+  assert.match(earlierLimitLine(16, 2n), /last 16 rounds/);
+  assert.equal(checkOlderLabel(false), "Check older rounds");
+  assert.equal(checkOlderLabel(true), "Checking…");
+  assert.equal(
+    earlierAllCheckedLine(),
+    "Every round has been checked. Nothing older is waiting for you.",
+  );
+  assert.match(olderFailedLine(), /could not check/i);
+  for (const line of [
+    earlierLimitLine(8, 3n),
+    olderFailedLine(),
+    earlierAllCheckedLine(),
+  ]) {
+    assert.doesNotMatch(line, /relay|nsec|rpc|revert|0x|cast/i);
+  }
 });
 
 test("a part-filled seller in a settled round is owed its unsold lots as Shares, and stops being owed once they are collected", () => {

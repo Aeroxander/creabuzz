@@ -411,8 +411,10 @@ has not been paid, and it will look like a missing payment when it is an
 unclaimed one.
 
 The app's Trading card collects from the latest round and the last 8 earlier
-rounds; if a wallet is owed by a round older than that, the card says older
-rounds were not checked, and the claim needs the `cast` commands above.
+rounds. If a wallet may be owed by an older round, the card names the round ids
+not checked yet and offers "Check older rounds", which reads the next fixed block
+of 8 ids and repeats down to round 1. The `cast` commands above still work for
+any round.
 
 ### Keeping rounds moving without anyone watching
 

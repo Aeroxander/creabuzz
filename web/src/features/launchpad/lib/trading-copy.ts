@@ -667,16 +667,32 @@ export function earlierRoundLine(
 
 /**
  * Said when the card did not look at every earlier round. A claim never expires,
- * so what an older round owes is still the wallet's, but this page cannot offer
- * to collect it; saying so beats a round that is silently not there.
+ * so what an older round owes is still the wallet's; the line names the ids not
+ * yet looked at (they are always the oldest, 1 up to `unchecked`) and the card
+ * offers {@link checkOlderLabel} to look at the next block.
  */
 export function earlierLimitLine(
   checked: number,
   unchecked: bigint,
 ): string | null {
-  return unchecked > 0n
-    ? `This page checks your last ${checked} rounds. Anything an older round owes you is still yours, but it can't be collected from here.`
-    : null;
+  if (unchecked <= 0n) return null;
+  const left = unchecked === 1n ? "Round 1 is" : `Rounds 1 to ${unchecked} are`;
+  return `This page has checked your last ${checked} rounds. ${left} not checked yet. Anything an older round owes you is still yours.`;
+}
+
+/** The button that checks the next block of older rounds. */
+export function checkOlderLabel(checking: boolean): string {
+  return checking ? "Checking…" : "Check older rounds";
+}
+
+/** Said once the oldest round is checked and the wallet was owed nothing more. */
+export function earlierAllCheckedLine(): string {
+  return "Every round has been checked. Nothing older is waiting for you.";
+}
+
+/** Said when a block of older rounds could not be read, so it is not mistaken for rounds with nothing in them. */
+export function olderFailedLine(): string {
+  return "We could not check the older rounds just now. Try again.";
 }
 
 /** Whole lots, or why the text is not a number of lots. No more than one order can hold, as the contract caps it. */

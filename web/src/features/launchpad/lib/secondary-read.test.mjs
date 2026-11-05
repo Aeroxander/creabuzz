@@ -8,8 +8,11 @@ import { selectorOf } from "@creaton/core/launchpad/evmAbi.ts";
 import { listingFormDraft } from "./listing-draft.ts";
 import { LIVE_REFRESH_MS, SLOW_REFRESH_MS } from "./trading-copy.ts";
 import {
+  olderBlockBefore,
+  mergeOlderRounds,
   pollSecondary,
   readMarketForWords,
+  readOlderBlock,
   readSecondaryView,
   readWalletFunds,
 } from "./secondary-read.ts";
@@ -466,4 +469,90 @@ test("the off switch survives a price token that stopped answering", async () =>
     form(view, { enabled: "on", minText: "1", maxText: "2", levelsText: "4" }),
   );
   assert.ok("problem" in on, "prices still need the token's scale");
+});
+
+// ---- older rounds: the next fixed block, one click at a time -----------------------------------------------------
+
+test("older blocks start at the lowest id already checked and step down by the look-back until round 1", () => {
+  // 20 ids are unchecked (1..20): blocks start below 21, 13, 5, and then there is nothing left.
+  assert.deepEqual(
+    [0, 1, 2, 3].map((i) => olderBlockBefore(20n, i)),
+    [21n, 13n, 5n, null],
+  );
+  // Exactly one block's worth, and none.
+  assert.deepEqual(
+    [olderBlockBefore(8n, 0), olderBlockBefore(8n, 1)],
+    [9n, null],
+  );
+  assert.equal(olderBlockBefore(0n, 0), null);
+  // A fixed block is never round 0: the last block's `before` is always above 1.
+  for (let unchecked = 1n; unchecked < 40n; unchecked++) {
+    for (let i = 0; olderBlockBefore(unchecked, i) !== null; i++) {
+      assert.ok(olderBlockBefore(unchecked, i) > 1n);
+    }
+  }
+});
+
+test("an older block is read at the chain's own time, asking only the ids below its bound", async () => {
+  const asked = [];
+  const chain = {
+    now: async () => NOW,
+    call: async (_to, data) => {
+      asked.push(data.slice(0, 10));
+      if (data.startsWith(sel("rounds(uint256)"))) return round();
+      if (data.startsWith(sel("sells(uint256,address)")))
+        return words(1, 0, 0, 0, 0, 0);
+      if (data.startsWith(sel("bids(uint256,address)")))
+        return words(0, 0, 0, 0, 0, 0, 0);
+      return words(0, 0, 0);
+    },
+  };
+  const read = await readOlderBlock(chain, {
+    market: MARKET,
+    wallet: WALLET,
+    latest: 30n,
+    before: 3n,
+  });
+  assert.equal(read.unchecked, 0n);
+  assert.ok(asked.length >= 6, "ids 2 and 1 were asked about");
+  await assert.rejects(
+    readOlderBlock(
+      {
+        now: async () => NOW,
+        call: async () => {
+          throw new Error("rpc 503");
+        },
+      },
+      { market: MARKET, wallet: WALLET, latest: 30n, before: 3n },
+    ),
+    /rpc 503/,
+  );
+});
+
+test("older blocks merge newest first and count as checked only up to the first block that has not arrived", () => {
+  const row = (id) => ({ id, round: {}, sell: null, bid: null });
+  const block = (ids, unchecked) => ({
+    data: { rounds: ids.map(row), unchecked },
+  });
+  const ok = mergeOlderRounds(20n, [block([12n, 9n], 12n), block([4n], 4n)]);
+  assert.deepEqual(
+    ok.rounds.map((r) => r.id),
+    [12n, 9n, 4n],
+  );
+  assert.equal(ok.unchecked, 4n);
+  // A failed or pending first block leaves everything unchecked, even if a later block arrived.
+  const gap = mergeOlderRounds(20n, [{ data: undefined }, block([4n], 4n)]);
+  assert.deepEqual(gap.rounds, []);
+  assert.equal(gap.unchecked, 20n);
+  // The second block failing keeps the first's rows and counts only the first as checked.
+  const half = mergeOlderRounds(20n, [block([12n], 12n), { data: undefined }]);
+  assert.deepEqual(
+    half.rounds.map((r) => r.id),
+    [12n],
+  );
+  assert.equal(half.unchecked, 12n);
+  // Nothing asked yet.
+  assert.deepEqual(mergeOlderRounds(20n, []), { rounds: [], unchecked: 20n });
+  // Past the end it never goes below zero.
+  assert.equal(mergeOlderRounds(3n, [block([], 0n)]).unchecked, 0n);
 });

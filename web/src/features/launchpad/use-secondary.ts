@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useRef } from "react";
 
 import type { DescribeContext } from "@creaton/core/launchpad/daoActions.ts";
@@ -6,8 +6,10 @@ import type { DescribeContext } from "@creaton/core/launchpad/daoActions.ts";
 import { getRpcEndpoint } from "./chain";
 import { secondaryMarketFactory } from "./chain-config";
 import {
+  olderBlockBefore,
   pollSecondary,
   readMarketForWords,
+  readOlderBlock,
   readSecondaryView,
   type SecondaryMarketView,
 } from "./lib/secondary-read";
@@ -79,4 +81,49 @@ export function useSecondaryMarketForWords(input: {
       }),
   });
   return query.data ?? undefined;
+}
+
+/**
+ * The older rounds the card did not check at first, one fixed block of ids per entry, in order: block 0 is the one just
+ * below the card's own window and each next block the next ids down. The query key names the market, the wallet, the
+ * latest round and the block's own bound, so a block read for another wallet or an earlier latest round is never taken
+ * for this one, and a step the wallet sends (which invalidates `SECONDARY_QUERY`) re-reads them. `blocks` is how many
+ * the person has asked for; each ask is one more bounded block, never all of them at once.
+ */
+export function useOlderRounds(input: {
+  market: string;
+  wallet: string | null;
+  latest: bigint;
+  unchecked: bigint;
+  blocks: number;
+}) {
+  const { market, wallet, latest, unchecked } = input;
+  const befores: bigint[] = [];
+  for (let i = 0; i < input.blocks; i++) {
+    const before = olderBlockBefore(unchecked, i);
+    if (before === null) break;
+    befores.push(before);
+  }
+  return useQueries({
+    queries: befores.map((before) => ({
+      queryKey: [
+        ...SECONDARY_QUERY,
+        "older",
+        market,
+        wallet,
+        latest.toString(),
+        before.toString(),
+      ],
+      enabled: wallet !== null,
+      staleTime: 10_000,
+      refetchOnWindowFocus: false,
+      queryFn: () =>
+        readOlderBlock(endpointChain(getRpcEndpoint()), {
+          market,
+          wallet: wallet as string,
+          latest,
+          before,
+        }),
+    })),
+  });
 }

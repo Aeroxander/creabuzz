@@ -23,6 +23,7 @@ import {
   type EarlierRoundsRead,
   readEarlierRounds,
   readSecondaryMarket,
+  SECONDARY_LOOKBACK,
   SECONDARY_SIGNATURES,
   type SecondaryMarketRead,
 } from "@creaton/core/launchpad/secondary.ts";
@@ -124,6 +125,57 @@ export async function readWalletFunds(
     quote: strictWord(quoteHex, "the price token"),
     quoteAllowance: strictWord(allowanceHex, "the price token"),
   };
+}
+
+/**
+ * Where the `index`th block of older rounds starts, as the `before` bound of `readEarlierRounds`, or null when no such
+ * block is left. `unchecked` is how many of the oldest ids (1 to `unchecked`) the card's own window left out; block 0
+ * is the one just below the window, and each next block is the next fixed {@link SECONDARY_LOOKBACK} ids down, so
+ * every id is read exactly once and round 0 never (Review-Proven Rule 4).
+ */
+export function olderBlockBefore(
+  unchecked: bigint,
+  index: number,
+): bigint | null {
+  const before = unchecked + 1n - BigInt(index) * BigInt(SECONDARY_LOOKBACK);
+  return before > 1n && index >= 0 ? before : null;
+}
+
+/**
+ * One block of older rounds, read at the chain's own time. A failed call throws, so a block that could not be read is
+ * never taken for one the wallet has nothing in (Review-Proven Rule 1).
+ */
+export async function readOlderBlock(
+  chain: Pick<WorkChain, "call" | "now">,
+  input: { market: string; wallet: string; latest: bigint; before: bigint },
+): Promise<EarlierRoundsRead> {
+  return readEarlierRounds(chain, {
+    market: input.market,
+    wallet: input.wallet,
+    latest: input.latest,
+    before: input.before,
+    now: await chain.now(),
+  });
+}
+
+/**
+ * The older blocks read so far, merged newest first, and how many ids are still unchecked. Only the blocks that
+ * arrived in order count as checked: a block that failed or is still being read leaves its ids unchecked, and the
+ * blocks after it are not shown until it arrives, so "checked" is never claimed over a gap.
+ */
+export function mergeOlderRounds(
+  unchecked: bigint,
+  blocks: readonly { data?: EarlierRoundsRead | undefined }[],
+): EarlierRoundsRead {
+  const rounds: EarlierRoundsRead["rounds"] = [];
+  let loaded = 0n;
+  for (const block of blocks) {
+    if (!block.data) break;
+    rounds.push(...block.data.rounds);
+    loaded++;
+  }
+  const left = unchecked - loaded * BigInt(SECONDARY_LOOKBACK);
+  return { rounds, unchecked: left > 0n ? left : 0n };
 }
 
 const NO_EARLIER: EarlierRoundsRead = { rounds: [], unchecked: 0n };

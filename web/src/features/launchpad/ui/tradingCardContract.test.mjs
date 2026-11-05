@@ -73,3 +73,21 @@ test("the listing form asks for the market alone: a wallet read failing must not
   // Price boxes need the token's scale; the off switch does not.
   assert.match(form, /!view\?\.tokenUnreadable/);
 });
+
+test("the earlier-rounds block offers to check the next block of older rounds, and the card hands it the latest round id", () => {
+  const card = source("./TradingCard.tsx");
+  assert.match(card, /latest=\{data\.roundId\}/);
+  const earlier = source("./TradingEarlier.tsx");
+  // The button is the way back to a round older than the first window (Review-Proven Rule 6).
+  assert.match(earlier, /data-testid="trading-earlier-check"/);
+  assert.match(earlier, /useOlderRounds\(/);
+  assert.match(earlier, /mergeOlderRounds\(earlier\.unchecked, blocks\)/);
+  // A block that failed is said so and retried, never shown as checked.
+  assert.match(earlier, /olderFailedLine\(\)/);
+  assert.match(earlier, /next\?\.refetch\(\)/);
+  const hook = source("../use-secondary.ts");
+  // Every block's key names the wallet, the latest round and its own bound, and a sent step invalidates it.
+  assert.match(hook, /\.\.\.SECONDARY_QUERY,\s*"older"/);
+  assert.match(hook, /latest\.toString\(\)/);
+  assert.match(hook, /before\.toString\(\)/);
+});

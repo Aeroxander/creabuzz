@@ -240,6 +240,7 @@ export function TradingCard({
               blocked={blocked}
               busy={sender.busy}
               earlier={data.earlier}
+              latest={data.roundId}
               facts={data.facts}
               market={present.market}
               me={sender.wallet.address}

@@ -277,9 +277,9 @@ Stated plainly, because a reviewer should not spend time discovering these:
    code (§2). (b) `test_claims_survive_a_cleared_or_replaced_exit_exchange`
    covers only a cleared exit exchange, never a named or replaced one (§5).
    (c) The Trading card reads the latest round and
-   the last 8 earlier rounds; a wallet owed money by a round older than that
-   must collect with the `cast` commands in the runbook, because claims never
-   expire. (d) The clearing rule fills the short side's crossing orders whole
+   the last 8 earlier rounds, and "Check older rounds" reads the next block of 8
+   ids on each click down to round 1 (each read is bounded); the `cast` commands
+   in the runbook also work for any round, because claims never expire. (d) The clearing rule fills the short side's crossing orders whole
    and pro-rates **all** crossing orders on the long side, including orders
    strictly better than the price; whether to keep that or add price priority
    is a product decision, and no money is mis-paid either way (`LedgerShort`

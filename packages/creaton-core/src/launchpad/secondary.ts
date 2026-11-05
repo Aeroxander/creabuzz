@@ -715,10 +715,17 @@ export interface EarlierRoundsRead {
 
 /**
  * The rounds before `latest` that `wallet` made an offer or a bid in, looking at
- * the last {@link SECONDARY_LOOKBACK} of them. The latest round is read with the
- * market itself ({@link readSecondaryMarket}); this reads the ones it left
- * behind, so a settled or void round that still owes the wallet is not lost when
- * a newer round opens.
+ * one block of {@link SECONDARY_LOOKBACK} ids ending just below `before`, which
+ * is `latest` unless said otherwise. The latest round is read with the market
+ * itself ({@link readSecondaryMarket}); this reads the ones it left behind, so a
+ * settled or void round that still owes the wallet is not lost when a newer
+ * round opens.
+ *
+ * A round older than the block is counted in `unchecked`, never hidden: to reach
+ * it, read again with `before` set to the lowest id just checked
+ * (`unchecked + 1`), which asks the next fixed block and so on down to round 1.
+ * Each read stays a fixed number of calls (Review-Proven Rule 4); `before`
+ * above `latest` is refused, since the latest round is not an earlier one.
  *
  * A failed call throws: a round we could not read is not a round with nothing in
  * it (Review-Proven Rule 1). Round ids start at 1 and `latest` is the market's
@@ -727,17 +734,31 @@ export interface EarlierRoundsRead {
  */
 export async function readEarlierRounds(
   chain: Pick<WorkChain, "call">,
-  input: { market: string; wallet: string; latest: bigint; now: number },
+  input: {
+    market: string;
+    wallet: string;
+    latest: bigint;
+    /** Read the ids below this one; defaults to `latest`. */
+    before?: bigint;
+    now: number;
+  },
 ): Promise<EarlierRoundsRead> {
   const market = address(input.market, "The market");
   const wallet = address(input.wallet, "The wallet");
   if (input.latest < 1n) return { rounds: [], unchecked: 0n };
+  const before = input.before ?? input.latest;
+  if (before < 1n || before > input.latest) {
+    throw new Error(
+      `the rounds to read start before round ${before}, which is not one from 1 to ${input.latest}`,
+    );
+  }
+  if (before === 1n) return { rounds: [], unchecked: 0n };
   const lowest =
-    input.latest > BigInt(SECONDARY_LOOKBACK)
-      ? input.latest - BigInt(SECONDARY_LOOKBACK)
+    before > BigInt(SECONDARY_LOOKBACK)
+      ? before - BigInt(SECONDARY_LOOKBACK)
       : 1n;
   const ids: bigint[] = [];
-  for (let id = input.latest - 1n; id >= lowest; id--) ids.push(id);
+  for (let id = before - 1n; id >= lowest; id--) ids.push(id);
   const read = await Promise.all(
     ids.map(async (id): Promise<EarlierRound | null> => {
       const order = (signature: string) =>

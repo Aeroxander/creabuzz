@@ -660,6 +660,118 @@ test("the look-back is bounded, and the rounds it did not look at are counted, n
   assert.equal(read.unchecked, 3n);
 });
 
+/** The distinct round ids a market was asked about, newest first. */
+const askedIds = (chain) =>
+  [...new Set(chain.calls.map((c) => idOf(c.data)))].sort((a, b) =>
+    a < b ? 1 : -1,
+  );
+
+test("the look-back boundary: which ids are asked, how many are left unchecked, and never round 0", async () => {
+  // Only latest = 8 separates a strict from a loose comparison with the look-back; 9 and 10 pin the offset.
+  const cases = [
+    { latest: 2n, ids: [1n], unchecked: 0n },
+    { latest: 8n, ids: [7n, 6n, 5n, 4n, 3n, 2n, 1n], unchecked: 0n },
+    { latest: 9n, ids: [8n, 7n, 6n, 5n, 4n, 3n, 2n, 1n], unchecked: 0n },
+    { latest: 10n, ids: [9n, 8n, 7n, 6n, 5n, 4n, 3n, 2n], unchecked: 1n },
+  ];
+  for (const { latest, ids, unchecked } of cases) {
+    const chain = marketOfRounds({});
+    const read = await readEarlierRounds(chain, {
+      market: MARKET,
+      wallet: WALLET,
+      latest,
+      now: LATER,
+    });
+    assert.deepEqual(askedIds(chain), ids, `ids asked at latest ${latest}`);
+    assert.equal(read.unchecked, unchecked, `unchecked at latest ${latest}`);
+    assert.equal(chain.calls.length, 3 * ids.length);
+    assert.ok(!chain.calls.some((c) => idOf(c.data) === 0n), "round 0 asked");
+  }
+});
+
+test("an earlier block is read with a before bound: the next fixed block of ids below it, merged by the caller", async () => {
+  const chain = marketOfRounds({ 20: { s: {} }, 12: { b: {} }, 11: { s: {} } });
+  // The card's own window at latest 30 is 22..29; asking before 22 reads 14..21 and leaves 13 ids unchecked.
+  const first = await readEarlierRounds(chain, {
+    market: MARKET,
+    wallet: WALLET,
+    latest: 30n,
+    before: 22n,
+    now: LATER,
+  });
+  assert.deepEqual(askedIds(chain), [21n, 20n, 19n, 18n, 17n, 16n, 15n, 14n]);
+  assert.deepEqual(
+    first.rounds.map((r) => r.id),
+    [20n],
+  );
+  assert.equal(first.unchecked, 13n);
+  // The next block starts at the previous block's lowest id, so no id is skipped or read twice.
+  const again = marketOfRounds({ 12: { b: {} }, 11: { s: {} } });
+  const second = await readEarlierRounds(again, {
+    market: MARKET,
+    wallet: WALLET,
+    latest: 30n,
+    before: 14n,
+    now: LATER,
+  });
+  assert.deepEqual(askedIds(again), [13n, 12n, 11n, 10n, 9n, 8n, 7n, 6n]);
+  assert.deepEqual(
+    second.rounds.map((r) => r.id),
+    [12n, 11n],
+  );
+  assert.equal(second.unchecked, 5n);
+  // The last block runs out at id 1 and never asks for round 0.
+  const last = marketOfRounds({ 1: { s: {} } });
+  const end = await readEarlierRounds(last, {
+    market: MARKET,
+    wallet: WALLET,
+    latest: 30n,
+    before: 6n,
+    now: LATER,
+  });
+  assert.deepEqual(askedIds(last), [5n, 4n, 3n, 2n, 1n]);
+  assert.deepEqual(
+    end.rounds.map((r) => r.id),
+    [1n],
+  );
+  assert.equal(end.unchecked, 0n);
+});
+
+test("a before bound that is not an id below or at the latest round is refused, and before 1 reads nothing", async () => {
+  const chain = marketOfRounds({});
+  await assert.rejects(
+    readEarlierRounds(chain, {
+      market: MARKET,
+      wallet: WALLET,
+      latest: 5n,
+      before: 6n,
+      now: LATER,
+    }),
+    /before/,
+  );
+  assert.deepEqual(
+    await readEarlierRounds(chain, {
+      market: MARKET,
+      wallet: WALLET,
+      latest: 5n,
+      before: 1n,
+      now: LATER,
+    }),
+    { rounds: [], unchecked: 0n },
+  );
+  assert.equal(chain.calls.length, 0);
+  await assert.rejects(
+    readEarlierRounds(chain, {
+      market: MARKET,
+      wallet: WALLET,
+      latest: 5n,
+      before: 0n,
+      now: LATER,
+    }),
+    /before/,
+  );
+});
+
 test("a market on its first round has no earlier ones to read", async () => {
   const chain = marketOfRounds({});
   assert.deepEqual(
