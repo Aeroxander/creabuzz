@@ -103,3 +103,33 @@ test("the card renders nothing where the build offers no trading, and the projec
   assert.match(card, /shownTerms\(present\.listing, round\)/);
   assert.match(card, /roundLine\(round, facts, listingEnabled\)/);
 });
+
+test("the Try again buttons sit beside the status text, not inside the status element", () => {
+  const card = source("./TradingCard.tsx");
+  // A button inside a role=status paragraph is read as part of the announcement and is not a separate stop.
+  const inStatus = /<p\b[^>]*role="status"[^>]*>(?:(?!<\/p>)[\s\S])*<button\b/;
+  assert.doesNotMatch(card, inStatus);
+  // The text is still a status, and each retry button is still there.
+  assert.match(card, /data-testid="trading-unreadable"/);
+  assert.match(card, /data-testid="trading-stale"/);
+  assert.equal(card.match(/Try again/g)?.length, 2);
+});
+
+test("the settle notice lives in a region that is always mounted, so its arrival is announced", () => {
+  const card = source("./TradingCard.tsx");
+  const at = card.indexOf('data-testid="trading-settle-notice"');
+  assert.ok(at > 0, "the notice is rendered");
+  // Its element is the always-mounted one: no conditional render wraps the element that carries the test id.
+  const open = card.lastIndexOf("<p", at);
+  const before = card.slice(Math.max(0, open - 40), open);
+  assert.doesNotMatch(
+    before,
+    /\?\s*\(\s*$/,
+    "the notice is not mounted only with its text",
+  );
+  const tag = card.slice(open, card.indexOf(">", at));
+  assert.match(tag, /aria-live="polite"/);
+  assert.match(tag, /role="status"/);
+  // Empty, it takes no room.
+  assert.match(card, /settleNotice \? "text-sm" : "sr-only"/);
+});

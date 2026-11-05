@@ -177,12 +177,10 @@ function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
           {factoryMissingLine()}
         </p>
       ) : mode === "unreadable" ? (
-        <p
-          className="mt-1 text-sm text-muted-foreground"
-          data-testid="trading-unreadable"
-          role="status"
-        >
-          {unreadableLine()}{" "}
+        <div className="mt-1 text-sm text-muted-foreground">
+          <p className="inline" data-testid="trading-unreadable" role="status">
+            {unreadableLine()}
+          </p>{" "}
           <button
             className="underline"
             onClick={() => void query.refetch()}
@@ -190,7 +188,7 @@ function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
           >
             Try again
           </button>
-        </p>
+        </div>
       ) : mode === "reading" || data === undefined ? (
         <p className="mt-1 text-sm text-muted-foreground" role="status">
           Reading…
@@ -203,12 +201,10 @@ function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
               : tradingStateLine(data.read, data.now, quote)}
           </p>
           {query.isError ? (
-            <p
-              className="mt-1 text-sm text-muted-foreground"
-              data-testid="trading-stale"
-              role="status"
-            >
-              {staleReadLine(query.dataUpdatedAt)}{" "}
+            <div className="mt-1 text-sm text-muted-foreground">
+              <p className="inline" data-testid="trading-stale" role="status">
+                {staleReadLine(query.dataUpdatedAt)}
+              </p>{" "}
               <button
                 className="underline"
                 onClick={() => void query.refetch()}
@@ -216,7 +212,7 @@ function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
               >
                 Try again
               </button>
-            </p>
+            </div>
           ) : null}
           <p className="mt-1 text-sm" data-testid="trading-not-funding">
             {NOT_FUNDING_LINE}
@@ -442,15 +438,15 @@ function TradingRound({
       >
         {roundLine(round, facts, listingEnabled)}
       </p>
-      {settleNotice ? (
-        <p
-          className="text-sm"
-          data-testid="trading-settle-notice"
-          role="status"
-        >
-          {settleNotice}
-        </p>
-      ) : null}
+      {/* Always in the page, so the notice is announced when the round starts waiting; it takes no room while empty. */}
+      <p
+        aria-live="polite"
+        className={settleNotice ? "text-sm" : "sr-only"}
+        data-testid="trading-settle-notice"
+        role="status"
+      >
+        {settleNotice}
+      </p>
       {/* Always in the page, so a new order is announced when it appears; it takes no room while empty. */}
       <div
         aria-live="polite"
