@@ -755,25 +755,30 @@ test("a raw wallet or network error never reaches the main words", () => {
   }
 });
 
-test("a failure note stands only while the card still shows the round and the read it was raised on", () => {
-  const raised = { failure: "x", readAt: 100, round: "3:bidding" };
-  assert.equal(
-    failureStands(raised, { readAt: 100, round: "3:bidding" }),
-    true,
-  );
-  // A later successful read clears it (and so does a round that moved on, or a new round).
-  assert.equal(
-    failureStands(raised, { readAt: 101, round: "3:bidding" }),
-    false,
-  );
-  assert.equal(
-    failureStands(raised, { readAt: 100, round: "3:settling" }),
-    false,
-  );
-  assert.equal(
-    failureStands(raised, { readAt: 100, round: "4:bidding" }),
-    false,
-  );
+test("a failure note survives a poll that changes nothing, and goes when the round or phase moves on", () => {
+  const raised = { failure: "x", round: "3:bidding" };
+  // A successful re-read of the same round and phase (the card polls every 30 s) advances the read time but is not a
+  // reason to drop a note about a dismissed prompt or a refused wallet. Extra read-time fields must not matter.
+  for (const readAt of [100, 101, 130_000]) {
+    assert.equal(failureStands(raised, { readAt, round: "3:bidding" }), true);
+  }
+  // A round that moved to its next phase, or a new round, makes the note stale.
+  assert.equal(failureStands(raised, { round: "3:settling" }), false);
+  assert.equal(failureStands(raised, { round: "4:bidding" }), false);
+  assert.equal(failureStands(raised, { round: "none" }), false);
+});
+
+test("the card keeps the failure note across polls: its clearing rule never reads the poll time", () => {
+  const card = read("../ui/TradingCard.tsx");
+  const start = card.indexOf("const failureMark = useRef");
+  const end = card.indexOf("return (", start);
+  assert.ok(start > 0 && end > start);
+  const effect = card.slice(start, end);
+  assert.match(effect, /failureStands\(/);
+  assert.doesNotMatch(effect, /dataUpdatedAt|readAt/);
+  // The next user action clears it: every new send attempt starts by dropping the old note.
+  const send = read("../use-chain-send.ts");
+  assert.match(send, /setBusy\(key\);\s*setFailure\(null\);/);
 });
 
 test("an order's escrow is whole lots at its step's price", () => {

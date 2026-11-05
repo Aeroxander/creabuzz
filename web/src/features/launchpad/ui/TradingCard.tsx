@@ -122,9 +122,10 @@ export function TradingCard({
     (round === null || (over && (data?.now ?? 0) >= nextOpenAt));
   const waitingForNext =
     present?.listing.enabled === true && round !== null && over && !canOpen;
-  // A failure note belongs to the read and the round it was raised on. It is recorded once the step has finished
-  // (its own refresh included), so that refresh does not clear it; a later successful read, or a round that opened or
-  // moved to its next phase, does.
+  // A failure note belongs to the round and phase it was raised on. It is recorded once the step has finished (its own
+  // refresh included), so that refresh does not clear it; a round that opened or moved to its next phase does. A poll
+  // that finds nothing new does not: the note is often about the wallet, not the chain, and the person may be mid-read.
+  // The next step the person takes drops it too (the sender clears it when a new send starts).
   const roundKey =
     round === null || data?.roundId == null
       ? "none"
@@ -140,14 +141,13 @@ export function TradingCard({
       return;
     }
     if (busy !== null) return;
-    const now = { readAt: query.dataUpdatedAt, round: roundKey };
     const mark = failureMark.current;
     if (mark === null || mark.failure !== failure) {
-      failureMark.current = { failure, ...now };
-    } else if (!failureStands(mark, now)) {
+      failureMark.current = { failure, round: roundKey };
+    } else if (!failureStands(mark, { round: roundKey })) {
       clearFailure();
     }
-  }, [failure, busy, clearFailure, query.dataUpdatedAt, roundKey]);
+  }, [failure, busy, clearFailure, roundKey]);
 
   return (
     <Card className="p-4" data-testid="trading" ref={cardRef}>

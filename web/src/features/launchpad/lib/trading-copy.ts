@@ -440,25 +440,26 @@ export function tradingFailureLine(message: string): string {
 }
 
 /**
- * What the card knew when a failure note was raised: the note, when the card last read the market, and which round
- * and phase it showed (`round id:phase`).
+ * What the card showed when a failure note was raised: the note, and which round and phase it showed
+ * (`round id:phase`).
  */
 export interface FailureMark {
   failure: string;
-  readAt: number;
   round: string;
 }
 
 /**
- * Whether a failure note still describes what the card shows. A note belongs to the read and the round it was raised
- * on: a later successful read, a new round, or a round that moved to its next phase makes it stale, and a stale note
- * ("Offers and bids have closed") must not sit beside a card that has since moved on (Review-Proven Rule 2).
+ * Whether a failure note still describes what the card shows. A note belongs to the round and phase it was raised on:
+ * a new round, or a round that moved to its next phase, makes it stale, and a stale note ("Offers and bids have
+ * closed") must not sit beside a card that has since moved on (Review-Proven Rule 2). A poll that re-reads the same
+ * round and phase changes nothing, so it keeps the note: many failures (a dismissed passkey prompt, a refused wallet)
+ * say nothing about chain state and would otherwise vanish within 30 seconds of being raised.
  */
 export function failureStands(
   mark: FailureMark,
-  now: { readAt: number; round: string },
+  now: { round: string },
 ): boolean {
-  return mark.readAt === now.readAt && mark.round === now.round;
+  return mark.round === now.round;
 }
 
 const REFUSALS: readonly (readonly [string, string])[] = [
