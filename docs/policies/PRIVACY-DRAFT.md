@@ -4,14 +4,14 @@ Last updated: [date]
 
 ## Who we are
 
-[Operator name and legal form] runs this Creaton server at [address] and decides what is done with your data. In data protection law that makes us the controller. This note says what we keep, why, who else sees it, and what you can ask us to do. Write to us at [email].
+[Operator name and legal form] runs this Creaton server at [address] and decides what is done with your data. [Role under data protection law and controller identity: counsel to choose] This note says what we keep, why, who else sees it, and what you can ask us to do. Write to us at [email].
 
 - [Representative for people in the EU or UK: counsel to choose between naming one, or stating that none is needed because the operator is in the EU or does not offer the service to people there.]
 - [Controller details: counsel to confirm which legal entity or person is the controller.]
 
 ## Age
 
-You must be 18 or older to use this service. People under 18 may not use it. We do not knowingly keep data about anyone under 18. At sign-up you confirm your age in a box; we do not check it and we do not keep your answer. If we learn that someone under 18 has an account, we may close it and delete what we hold about them on our server (see "Your rights" for what stays). If you are a parent or guardian and think this has happened, write to [email].
+You must be 18 or older to use this service. People under 18 may not use it. We do not knowingly keep data about anyone under 18. [At sign-up you confirm your age in a box; we do not check it and we do not keep your answer. Owner: the box shows only when it is switched on, and the compose files do not do that yet; remove this bracket once it shows by default.] If we learn that someone under 18 has an account, we may close it and delete what we hold about them on our server (see "Your rights" for what stays). If you are a parent or guardian and think this has happened, write to [email].
 
 ## What is public
 
@@ -21,10 +21,10 @@ Everything you post in public places is public by design: your profile (name, pi
 
 This server and its backups run on [hosting provider and country].
 
-- The public records above, so we can show them. We keep them until you or a moderator remove them, or you ask us to delete your data.
+- The public records above, so we can show them. A post a moderator removes is hidden from view, but we keep it on our side, for appeals and logs, until we delete it by hand. It may also stay in backups. We delete your records when you ask us to delete your data (see "Your rights"). [What an author's own delete removes from the server: owner to trace and state before promising more.]
 - Pictures you upload. We strip location and camera data from them.
-- **Messages** (in the main menu): end-to-end encrypted with your key. We store them but cannot read what they say; we can see whose accounts they are between and when they were sent.
-- **Everything inside a community**, its private rooms and boards and its direct messages included: these are **not** end-to-end encrypted. They are protected on the way to us and stored on our server, where the people who run it can read them. We read them only to keep the service running, to handle a report, or when the law requires it. When someone reports a message, the community's moderators who handle the report see it.
+- **Private messages** (in the main menu): end-to-end encrypted with your key. We store them but cannot read what they say. The sender shown on a stored message is a throwaway key and its time is blurred. Our security record (below) can still show which signed-in account sent it, and when. [Whether a stored private message shows who it is addressed to: owner to confirm.]
+- **Community messages**, meaning everything inside a community, its private rooms and boards and its direct messages included: these are **not** end-to-end encrypted. They are protected on the way to us and stored on our server, where the people who run it can read them. We read them only to keep the service running, to handle a report, or when the law requires it. When someone reports a message, the community's moderators who handle the report see it.
 - [Disk encryption: owner to state after checking with the hosting provider whether the server's disks are encrypted, and say so here, or delete this line.]
 - Proof that you agreed to the terms, when you join by invite link: your public key, the version of the terms, and the time. Other sign-ups leave a note only in your own browser.
 - Technical logs. They record when a connection opens and closes, the public key of the account that signed in, errors, and each use of the AI helpers (who and how many bytes). The address a connection comes from is probably our own proxy's, not yours. Our web server software keeps no access log, but its error lines may include an IP address. Logs are kept by size, not by time: each service keeps its latest five files of 10 MB and writes over the oldest. [Visitor IP addresses in logs: owner to confirm on the live server whether they appear, and say so here.]
@@ -59,18 +59,26 @@ Your key, settings and drafts are stored in your browser, along with a note of t
 
 ## Other services
 
-Some steps go through other companies. For each one we say what it sees, whether it acts on our behalf (a processor) or on its own account (an independent controller), and how data that leaves your country is protected. We pass them only what each step needs.
+Some steps go through other companies. For each one we say what it sees, whether it acts on our behalf and on our instructions (a processor) or for its own purposes (an independent controller), and how data that leaves your country is protected. We pass them only what each step needs.
 
-- **The chain node for the page**, [name of the page's chain node provider]: the app in your browser asks it for public blockchain records, so it sees your IP address and which accounts and projects you look at. [If this server does not set its own node on the test network, the app uses a public default node, publicnode.com: owner to confirm which applies.]
+- **The chain node for the page**, [name of the page's chain node provider]. A chain node is the service the app asks for public blockchain records. Here the app in your browser asks it, so it sees your IP address and which accounts and projects you look at. [If this server does not set its own node on the test network, the app uses a public default node, publicnode.com: owner to confirm which applies.]
   - Role: [processor or independent controller: counsel to choose].
   - Transfer outside your country: [counsel to choose the safeguard between an adequacy decision, standard contractual clauses or another mechanism, and name the country].
-- **The chain node for our server**, [name of the server's chain node provider]: our server asks it to check a passkey account when you link it to your name. It sees our server's IP address, your account's address and the signed text, not your IP address.
+- **The chain node for our server**, [name of the server's chain node provider]. This is the same kind of service. Our server asks it to check a passkey account when you link it to your name. It sees our server's IP address, your account's address and the signed text, not your IP address.
   - Role: [processor or independent controller: counsel to choose].
   - Transfer outside your country: [counsel to choose the safeguard between an adequacy decision, standard contractual clauses or another mechanism, and name the country].
-- **The AI service**, [name of the AI service this server is set up to use], [if this server has one switched on]: the AI helpers (checking your work before you submit it, the "Help me fill this in" questions, drafting a check note, and the follow-up questions and summary before a vote) send what you typed there, with the project details the helper names beside its button, from our server to that service. The AI service sees that text, not your key or your IP address. Our server notes that you used it and how much, to count it against your allowance, and logs who used it and how many bytes, not the text. If the service returns an error, a short part of its error message is logged. Its answer is shown only to you until you choose to save or post something. What the AI service keeps, and for how long, is set by its own terms: [what those terms say, or a link to them].
+- **The AI service**, used by the AI helpers: checking your work before you submit it, the "Help me fill this in" questions, drafting a check note, and the follow-up questions and summary before a vote.
+  - Name: [name of the AI service this server is set up to use]
+  - Whether it is on: [if this server has one switched on: owner to confirm, or delete this item]
+  - What is sent: what you typed, with the project details the helper names beside its button, goes from our server to that service.
+  - What the service sees: that text. It does not see your key or your IP address.
+  - What we log: that you used it and how much, to count it against your allowance, and who used it and how many bytes, not the text. If the service returns an error, a short part of its error message is logged.
+  - What comes back: its answer is shown only to you until you choose to save or post something.
+  - What it keeps: this is set by the service's own terms.
+  - [What those terms say about keeping data, and for how long: owner to state, or link to them]
   - Role: [processor or independent controller: counsel to choose].
   - Transfer outside your country: [counsel to choose the safeguard between an adequacy decision, standard contractual clauses or another mechanism, and name the country].
-- **ZeroDev**, for passkey accounts: each on-chain step you take from a passkey account goes from your browser through ZeroDev's bundler, and its paymaster covers the fee when our sponsor policy allows. ZeroDev sees your account's address, the step and your IP address. [How long ZeroDev keeps this: owner to say after checking its terms.]
+- **ZeroDev**, for passkey accounts: each on-chain step you take from a passkey account goes from your browser to ZeroDev. ZeroDev sends the step on to the blockchain network and pays its fee, as long as our spending limit for these fees allows. ZeroDev sees your account's address, the step and your IP address. [How long ZeroDev keeps this: owner to say after checking its terms.]
   - Role: [processor or independent controller: counsel to choose].
   - Transfer outside your country: [counsel to choose the safeguard between an adequacy decision, standard contractual clauses or another mechanism, and name the country].
 - **The error collector**, if error reporting is switched on, sees your IP address when your browser sends a report.
@@ -84,7 +92,7 @@ Some steps go through other companies. For each one we say what it sees, whether
 
 ## Automatic checks and decisions
 
-No AI and no score decides your reward, your Shares, your standing or your access by itself on this server. People decide, and some rules then run without a person looking each time, such as a submission that lapses when nobody settles it, limits on how fast you can post, and refused file types. The terms list them in the section "Automatic checks and rules". The AI helpers send what you type to the AI service (see above) and only give advice. If weekly Share sales open, a published member score could decide who may bid. This note will change before that.
+People decide your reward, your Shares, your standing and your access on this server. Some rules then run without a person looking each time, such as a submission that lapses when nobody settles it, limits on how fast you can post, and refused file types. The terms list them in the section "Automatic checks and rules". The AI helpers send what you type to the AI service (see above) and only give advice. If weekly Share sales open, a published member score could decide who may bid. This note will change before that.
 
 You can ask a person to look at an automatic outcome that affects you, and give your view. Write to [email]. [Whether any of these rules is a decision based only on automated processing that has a legal or similarly significant effect: counsel to confirm.]
 
@@ -92,15 +100,15 @@ You can ask a person to look at an automatic outcome that affects you, and give 
 
 Depending on where you live (for example under the GDPR) you can ask us to:
 
-- give you a copy of the data we hold about you, in a form you can use elsewhere;
+- give you a copy of your data. Today the copy holds your posts and messages (removed ones too), your profile, your room memberships, the wallet addresses linked to you, when you accepted the terms, and the reports you made. It does not hold reports about you, the security record, usage counts for the AI helpers or read marks. It is a file of JSON lines taken from our database, not a ready-made format for another service. [Reusable copy of all the data we hold: owner and counsel to decide whether the copy must widen and what format it takes.];
 - correct it (you can edit your profile yourself in the app);
 - delete it;
 - restrict it, so that we only store it while you challenge its accuracy or our reasons for using it;
-- stop using it for a reason of ours (object);
-- stop using it where you gave your consent (withdraw consent; this does not undo what was done before). [Uses that rely on consent: counsel to list them, or say there are none.]
+- object to uses we base on our own interests (see "Why we use your data");
+- stop using it where you gave your consent (withdraw consent; this does not undo what was done before). [Uses that rely on consent: counsel to list them, or say there are none.];
 - have a person look at an automatic outcome (see above).
 
-Write to [email]. A person on our team handles each request by hand and answers within [number] days. We first ask you to prove it is you from inside the app. Today a person makes your copy and sends it to you. [You can download your data from the app.]
+Write to [email]. We first ask you to prove it is you from inside the app. Today a person makes your copy and sends it to you, and deletes your data by hand. [A person answers each request within a set number of days: owner to decide and state the number.] [Handling of requests to restrict or object to the use of your data: owner and counsel to set the step; no tool or process exists for it yet.] [You can download your data from the app.]
 
 We can delete what is on our server: your posts and profile, your room memberships, reactions, wallet links and read marks. We cannot delete copies on other servers or anything on a blockchain. Backups keep it until they expire. Reports about you and records of moderators' actions, the security record and usage counts are not removed when we delete your account. You can also complain to your data protection authority.
 

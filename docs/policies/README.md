@@ -4,7 +4,9 @@
 advice. The lawyer's first review is answered point by point in `LAWYER-FEEDBACK-RESPONSE.md`: hand that file back with
 the drafts. It also lists what is still open, who owns each item, and the order to settle things in.
 
-Two kinds of bracket are left on purpose. Both stop the server from starting until they are dealt with:
+Two kinds of bracket are left on purpose. The guard that refuses to start while a bracket is left is in the compose
+start script only (see below); a direct run of the server serves brackets as they are. Deal with both kinds before
+launch:
 
 - A fill-in or a choice: the operator fills it in (name, address, emails, periods, hosting) or counsel chooses (legal
   basis, controller, transfer safeguards, liability cap, governing law, copyright agent, EU dispute body).
