@@ -23,6 +23,24 @@ contract Dusty {
     }
 }
 
+/// @dev A hostile exit exchange: every call into it, `transfer` and `transferFrom` included, reverts. The DAO can
+/// name any address as the exit exchange, so the market's claims must not depend on one that misbehaves.
+contract RevertingExchange {
+    error ExchangeDown();
+
+    function transfer(address, uint256) external pure returns (bool) {
+        revert ExchangeDown();
+    }
+
+    function transferFrom(address, address, uint256) external pure returns (bool) {
+        revert ExchangeDown();
+    }
+
+    fallback() external payable {
+        revert ExchangeDown();
+    }
+}
+
 /// @dev The cases are written once and run twice: against the stood-in mock policy
 /// (`SecondaryMarketAdversary`) and against the production composition, a real `ContributorKitV2`
 /// launch with the real `ActivationVoting` policy and its real escrow hooks
@@ -82,20 +100,109 @@ abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
 
     // ---- no primary funding, no minting, no claimAndLeave ----------------------------------------------------------
 
-    function test_no_primary_mint_funding_or_claimandleave_entrypoint_exists() public {
-        bytes4 funding = bytes4(keccak256("openFunding(address)"));
-        bytes4 settleTerms = bytes4(keccak256("settleFunding(uint256)"));
-        bytes4 minting = bytes4(keccak256("mintFromMoloch(address,uint256)"));
-        bytes4 leave = bytes4(keccak256("claimAndLeave(uint256,address[])"));
-        (bool opened,) = address(l.market).call(abi.encodePacked(funding, abi.encode(address(0x9991))));
-        assertFalse(opened, "no funding can be opened on the market");
-        (bool settled,) = address(l.market).call(abi.encodePacked(settleTerms, abi.encode(uint256(1))));
-        assertFalse(settled, "no funding can be settled on the market");
-        (bool minted,) = address(l.market).call(abi.encodePacked(minting, abi.encode(address(0x9991), uint256(1))));
-        assertFalse(minted, "nothing can be minted through the market");
-        (bool left,) = address(l.market).call(abi.encodePacked(leave, abi.encode(uint256(1), new address[](0))));
-        assertFalse(left, "no arbitrary-token claimAndLeave exists");
-        assertEq(l.shares.totalSupply(), supply0, "and no extra Shares appeared in the whole flow");
+    /// @dev The D179 entrypoints, by their real WeeklyRounds selectors: `open(address)` (finding 1, the fake-DAO
+    /// round), `openFunding(address)`, `finishFunding(uint256)` and `claimAndLeave(uint256,address[])`. Each call
+    /// must fail with EMPTY revert data: the market has no fallback, so an absent selector reverts bare, while a
+    /// present one that merely guards itself would revert with a custom error or message.
+    function test_no_d179_primary_funding_open_or_claimandleave_entrypoint_exists() public {
+        bytes[4] memory calls = [
+            abi.encodeWithSignature("open(address)", address(0x9991)),
+            abi.encodeWithSignature("openFunding(address)", address(0x9991)),
+            abi.encodeWithSignature("finishFunding(uint256)", uint256(1)),
+            abi.encodeWithSignature("claimAndLeave(uint256,address[])", uint256(1), new address[](0))
+        ];
+        for (uint256 i; i < calls.length; ++i) {
+            (bool ok, bytes memory ret) = address(l.market).call(calls[i]);
+            assertFalse(ok, "a D179 entrypoint answered on the market");
+            assertEq(ret.length, 0, "the selector must be absent, not merely guarded");
+        }
+    }
+
+    /// @dev The market's whole external surface is an allowlist. Any new external function, public variable or
+    /// constant changes the compiled method identifiers and fails here until a reviewer adds it on purpose, so a
+    /// primary-raise, mint or fake-DAO entrypoint cannot slip in unseen. The identifiers come from the compiled
+    /// artifact itself (`test/ffi/market-abi.mjs`), so this binds the shipped bytecode's ABI.
+    function test_the_market_abi_matches_the_reviewed_allowlist() public {
+        string[] memory allowed = new string[](38);
+        allowed[0] = "BIDDING()";
+        allowed[1] = "EVERY()";
+        allowed[2] = "FEE_BPS()";
+        allowed[3] = "MAX_ACTIVE_BUYERS()";
+        allowed[4] = "MAX_ACTIVE_SELLERS()";
+        allowed[5] = "MAX_LEVELS()";
+        allowed[6] = "MAX_LOT_SIZE()";
+        allowed[7] = "MAX_ORDER_LOTS()";
+        allowed[8] = "SETTLE_WINDOW()";
+        allowed[9] = "bid(uint256,uint128,uint16)";
+        allowed[10] = "bids(uint256,address)";
+        allowed[11] = "cancelBid(uint256)";
+        allowed[12] = "cancelSell(uint256)";
+        allowed[13] = "claimQuote(uint256,address)";
+        allowed[14] = "claimShares(uint256,address)";
+        allowed[15] = "clearingOf(uint256)";
+        allowed[16] = "configureListing(bool,uint128,uint128,uint32)";
+        allowed[17] = "dao()";
+        allowed[18] = "factory()";
+        allowed[19] = "lastOpenAt()";
+        allowed[20] = "listing()";
+        allowed[21] = "lotSize()";
+        allowed[22] = "nextOrderId()";
+        allowed[23] = "openRound()";
+        allowed[24] = "policy()";
+        allowed[25] = "priceAt(uint256,uint256)";
+        allowed[26] = "quote()";
+        allowed[27] = "quoteIn(uint256)";
+        allowed[28] = "roundBuyers(uint256)";
+        allowed[29] = "roundCount()";
+        allowed[30] = "roundSellers(uint256)";
+        allowed[31] = "rounds(uint256)";
+        allowed[32] = "sell(uint256,uint128,uint16)";
+        allowed[33] = "sells(uint256,address)";
+        allowed[34] = "settle(uint256)";
+        allowed[35] = "sharesIn(uint256)";
+        allowed[36] = "sharesToken()";
+        allowed[37] = "voided(uint256)";
+
+        string[] memory cmd = new string[](4);
+        cmd[0] = "node";
+        cmd[1] = string.concat(vm.projectRoot(), "/test/ffi/market-abi.mjs");
+        cmd[2] = string.concat(vm.projectRoot(), "/out/SecondaryMarket.sol/SecondaryMarket.json");
+        cmd[3] = "selectors";
+        bytes memory out = vm.ffi(cmd);
+        assertEq(out.length, allowed.length * 4, "the compiled market ABI and the reviewed allowlist differ in size");
+        for (uint256 i; i < allowed.length; ++i) {
+            bytes4 want = bytes4(keccak256(bytes(allowed[i])));
+            bool found;
+            for (uint256 j; j < out.length / 4; ++j) {
+                bytes4 got = bytes4(out[j * 4]) | (bytes4(out[j * 4 + 1]) >> 8) | (bytes4(out[j * 4 + 2]) >> 16)
+                    | (bytes4(out[j * 4 + 3]) >> 24);
+                if (got == want) {
+                    found = true;
+                    break;
+                }
+            }
+            assertTrue(found, string.concat("allowlisted function missing from the compiled ABI: ", allowed[i]));
+        }
+    }
+
+    /// @dev A whole honest round, every claim paid, leaves the Shares supply exactly where launch put it.
+    function test_a_full_round_mints_no_shares() public {
+        uint256 id = _openRoundWith(l);
+        vm.prank(S1);
+        l.market.sell(id, 10, 0);
+        vm.prank(B2);
+        l.market.bid(id, 5, 1);
+        _toSettle(l, id);
+        l.market.settle(id);
+        vm.prank(STANDIN);
+        l.market.claimQuote(id, S1);
+        vm.prank(STANDIN);
+        l.market.claimShares(id, S1);
+        vm.prank(STANDIN);
+        l.market.claimShares(id, B2);
+        vm.prank(STANDIN);
+        l.market.claimQuote(id, B2);
+        assertEq(l.shares.totalSupply(), supply0, "no Shares were minted or burned by the secondary market");
     }
 
     function test_the_dao_and_the_market_cannot_sell_inventory() public {
@@ -410,7 +517,7 @@ abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
 
     // ---- exit-exchange independence ------------------------------------------------------------------------------
 
-    function test_claims_survive_a_cleared_or_replaced_exit_exchange() public {
+    function test_claims_survive_a_cleared_exit_exchange() public {
         uint256 id = _openRoundWith(l);
         vm.prank(S1);
         l.market.sell(id, 10, 0);
@@ -444,6 +551,93 @@ abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
             1_000_000e6 - uint256(10_500) + uint256(2_500),
             "escrow at its 2100 limit; five lots cost 1600 each"
         );
+        assertEq(l.shares.balanceOf(address(l.market)), 0);
+    }
+
+    /// @dev The DAO announces `exchange`, the notice passes, and anyone switches it on: the production path.
+    function _installExitExchange(address exchange) internal {
+        vm.prank(address(l.dao));
+        l.shares.announceExitExchange(exchange);
+        vm.warp(block.timestamp + l.shares.UNLOCK_NOTICE());
+        l.shares.activateExitExchange();
+        assertEq(l.shares.exitExchange(), exchange, "the exchange is live");
+    }
+
+    /// @dev One round with an offered, a cancelled and a part-filled seller and a part-filled buyer, left
+    /// settled-open: orders placed, bidding over, settle run, nothing claimed.
+    function _settledRound() internal returns (uint256 id) {
+        id = _openRoundWith(l);
+        vm.prank(S1);
+        l.market.sell(id, 10, 0);
+        vm.prank(S2);
+        l.market.sell(id, 4, 0);
+        vm.prank(B2);
+        l.market.bid(id, 5, 1);
+        vm.prank(S2);
+        l.market.cancelSell(id);
+        assertEq(l.shares.balanceOf(S2), 30e18, "a cancelled offer comes straight home");
+        _toSettle(l, id);
+        l.market.settle(id);
+    }
+
+    function _claimEverything(uint256 id) internal {
+        vm.prank(STANDIN);
+        l.market.claimQuote(id, S1);
+        vm.prank(STANDIN);
+        l.market.claimShares(id, S1);
+        vm.prank(STANDIN);
+        l.market.claimShares(id, B2);
+        vm.prank(STANDIN);
+        l.market.claimQuote(id, B2);
+        assertEq(l.shares.balanceOf(S1), 35e18, "the sold five left, the unsold five came back");
+        assertEq(l.shares.balanceOf(B2), 5e18);
+        assertEq(l.quote.balanceOf(S1), uint256(5) * 1_600);
+        assertEq(l.shares.balanceOf(address(l.market)), 0, "the vault is empty again");
+    }
+
+    /// @dev An exchange that is announced, switched on after the notice, and reverts on every transfer call.
+    /// It is installed BEFORE the round opens, so cancel, settle and every claim run with it live.
+    function test_claims_survive_an_installed_exit_exchange_that_reverts() public {
+        _installExitExchange(address(new RevertingExchange()));
+        uint256 id = _settledRound();
+        _claimEverything(id);
+    }
+
+    /// @dev The exchange is replaced AFTER the round settled and the notice passed: the first exchange is live
+    /// while orders are placed, a second is announced, goes live 30 days later, and only then are claims paid.
+    function test_claims_survive_an_exit_exchange_replaced_after_the_notice() public {
+        _installExitExchange(address(new RevertingExchange()));
+        uint256 id = _settledRound();
+        address second = address(new RevertingExchange());
+        vm.prank(address(l.dao));
+        l.shares.announceExitExchange(second);
+        vm.warp(block.timestamp + l.shares.UNLOCK_NOTICE());
+        l.shares.activateExitExchange();
+        assertEq(l.shares.exitExchange(), second, "the exchange was replaced under the settled round");
+        _claimEverything(id);
+    }
+
+    /// @dev A round nobody settled is void; its payback by claim also survives a replaced hostile exchange.
+    function test_void_round_claims_survive_a_replaced_exit_exchange() public {
+        _installExitExchange(address(new RevertingExchange()));
+        uint256 id = _openRoundWith(l);
+        vm.prank(S1);
+        l.market.sell(id, 10, 0);
+        vm.prank(B2);
+        l.market.bid(id, 5, 1);
+        _toVoid(l, id);
+        address second = address(new RevertingExchange());
+        vm.prank(address(l.dao));
+        l.shares.announceExitExchange(second);
+        vm.warp(block.timestamp + l.shares.UNLOCK_NOTICE());
+        l.shares.activateExitExchange();
+        assertTrue(l.market.voided(id));
+        vm.prank(STANDIN);
+        l.market.claimShares(id, S1);
+        vm.prank(STANDIN);
+        l.market.claimQuote(id, B2);
+        assertEq(l.shares.balanceOf(S1), 40e18, "the whole offer came home");
+        assertEq(l.quote.balanceOf(B2), 1_000_000e6, "the whole escrow came back");
         assertEq(l.shares.balanceOf(address(l.market)), 0);
     }
 

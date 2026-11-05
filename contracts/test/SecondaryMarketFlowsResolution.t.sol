@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+import {ActivationVoting} from "../src/ActivationVoting.sol";
 import {SecondaryMarket} from "../src/SecondaryMarket.sol";
 import {SecondaryMarketFlowsFixture} from "./helpers/SecondaryMarketFlowsFixture.sol";
 import {MockSecondaryPolicy} from "./SecondaryMarketMocks.t.sol";
@@ -267,6 +268,18 @@ abstract contract SecondaryMarketFlowsResolutionCases is SecondaryMarketFlowsFix
         } else {
             assertEq(l.policy.escrowedBalance(B1), 0, "the buyer inherited no seller escrow or age");
             assertEq(l.policy.saleCapacity(B1), 15e18, "what the buyer claimed is theirs to resell");
+            // The raw balance says nothing about age: register a real snapshot and read the buyer's
+            // voting eligibility. Units that kept the seller's age would count here; fresh ones are zero.
+            vm.roll(block.number + 1);
+            vm.prank(KIT_FOUNDER);
+            l.dao.openProposal(1);
+            uint48 snap = l.dao.snapshotBlock(1);
+            vm.roll(block.number + 1);
+            assertEq(
+                ActivationVoting(address(l.policy)).getPastCapacity(B1, snap),
+                0,
+                "the claim gave the buyer fresh units, not the seller's age"
+            );
         }
         vm.prank(STANDIN);
         l.market.claimQuote(id, S1);
