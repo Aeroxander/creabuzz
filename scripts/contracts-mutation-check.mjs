@@ -1849,6 +1849,13 @@ const MUTATIONS = [
     SM_TESTS,
   ],
   [
+    "Secondary market: a bid is cancelled twice (the same lots leave the round's demand again)",
+    SM,
+    "if (lots == 0 || o.cancelled) revert NoOrder();",
+    "if (lots == 0) revert NoOrder();",
+    SM_TESTS,
+  ],
+  [
     "Secondary market: a round is settled twice",
     SM,
     "if (r.settled) revert AlreadySettled(id);",

@@ -50,6 +50,8 @@ const REQUIRED = [
   ["SecondaryMarket.sol", "revert BiddingOver(id);\n        if (lots == 0"],
   ["SecondaryMarket.sol", "revert BiddingOver(id);\n        SellOrder storage o"],
   ["SecondaryMarket.sol", "revert BiddingOver(id);\n        BuyOrder storage o"],
+  // a bid is cancelled once: a repeat must be refused as NoOrder, not subtract the same lots from the round again
+  ["SecondaryMarket.sol", "lots == 0 || o.cancelled"],
   ["SecondaryMarket.sol", "revert AlreadySettled("],
   ["SecondaryMarket.sol", "revert TooSoon("],
   ["SecondaryMarket.sol", "revert DaoCannotSell()"],
