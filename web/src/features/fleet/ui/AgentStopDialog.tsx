@@ -22,10 +22,10 @@ type AgentStopDialogProps = {
 };
 
 const STEP_LABELS: Record<string, string> = {
-  budget: "Setting the stop budget",
+  budget: "Setting its budget to zero",
   ban: "Banning",
   seats: "Removing its seats",
-  grants: "Revoking its permissions",
+  grants: "Taking away its permissions",
 };
 
 function failureLines(
@@ -136,8 +136,8 @@ export function AgentStopDialog({
         className="mt-1 text-xs text-black/60 dark:text-white/60"
         id="agent-stop-description"
       >
-        {names} will be stopped: no budget, no permissions, and removed from its
-        seats.
+        {names} will be stopped: it gets no budget, loses its permissions and is
+        taken off its seats.
       </p>
       <label className="mt-3 flex items-center gap-2 text-xs text-black dark:text-white">
         <input

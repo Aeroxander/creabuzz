@@ -47,9 +47,9 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
       <Card className="p-4">
         <h2 className="text-lg font-bold">People & agents</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          See project work and the founder-managed community helper seats. Seats
-          belong to the community; only team-signed tasks count as project work
-          here. Other participants’ updates remain on the workspace board.
+          See the project's work and the helper seats its founders manage. Seats
+          belong to the whole community. Only tasks the team created count as
+          project work here. Other people's updates stay on the workspace board.
         </p>
         <div className="mt-3 flex flex-wrap gap-3">
           <Link
@@ -70,8 +70,8 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
           </Link>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          A seat or task assignment does not grant wallet authority. Budget
-          controls distinguish recorded limits from enforced limits. Usage in AI
+          A seat or a task does not let a helper move any money. Each limit says
+          whether it is only written down or actually enforced. Usage in AI
           helpers covers this browser's helper, not all project agents.
         </p>
       </Card>
@@ -80,8 +80,8 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
       work.isError ||
       work.data?.incomplete ? (
         <Card className="p-3 text-sm" role="status">
-          Some agent, role or work records could not be read. Keep unknown
-          activity and authority unverified.{" "}
+          Some helper, role or work records could not be loaded. Treat anything
+          missing here as unconfirmed.{" "}
           <Button
             size="sm"
             variant="outline"
@@ -92,12 +92,12 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
               void work.refetch();
             }}
           >
-            Reload records
+            Reload the records
           </Button>
         </Card>
       ) : null}
       {roster.loading || org.loading || work.isPending ? (
-        <p className="text-sm">Reading agents and assigned work…</p>
+        <p className="text-sm">Loading helpers and their work…</p>
       ) : null}
       {!roster.loading &&
       !org.loading &&
@@ -107,8 +107,8 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
       !work.data.incomplete &&
       !agents.length ? (
         <p className="text-sm text-muted-foreground">
-          No announced helpers are linked to this project's seats or tasks yet.
-          Open role management to give a helper a seat.
+          No helpers that have announced themselves are linked to this project's
+          seats or tasks yet. Open role management to give a helper a seat.
         </p>
       ) : null}
       {agents.map((agent) => {
@@ -140,7 +140,7 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
                 {agent.name}
               </h3>
               <span className="text-xs text-muted-foreground">
-                {agent.alive ? agent.status : "No recent heartbeat"}
+                {agent.alive ? agent.status : "Not seen recently"}
               </span>
             </div>
             <p className="mt-1 text-sm">
@@ -148,7 +148,7 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
                 ? roles
                     .map((r) => `${r.name} · managed by ${nameOf(r.pubkey)}`)
                     .join("; ")
-                : "Assigned work here; no project-authored seat was found."}
+                : "Has work here; no seat from this project was found."}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Last announcement {new Date(agent.updatedAt).toLocaleString()} ·{" "}
@@ -191,12 +191,12 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
                 Founder-recorded budget & approval limits
               </h4>
               {budgets.loading ? (
-                <p>Reading limits…</p>
+                <p>Loading limits…</p>
               ) : budgets.error ? (
                 <p role="status">
-                  Could not read limits.{" "}
+                  Could not load the limits.{" "}
                   <Button size="sm" variant="outline" onClick={budgets.reload}>
-                    Retry budgets
+                    Reload the limits
                   </Button>
                 </p>
               ) : applicable.length ? (
@@ -210,7 +210,7 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
                       <li key={`${b.id}:${row.key}`}>
                         {row.text} ·{" "}
                         {row.enforcement === "onchain"
-                          ? "Onchain binding recorded; allowance not verified here"
+                          ? "A limit on the network is recorded; not checked here"
                           : ENFORCEMENT_LABEL[row.enforcement]}
                         {b.subject === "*" ? " · Community default" : ""}
                       </li>
@@ -219,18 +219,18 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
                 </ul>
               ) : (
                 <p>
-                  No applicable limit found in the latest budget records. This
-                  does not establish unlimited authority.
+                  No limit found in the latest budget records. That does not
+                  mean there is no limit.
                 </p>
               )}
               <p className="mt-1 text-muted-foreground">
-                These are recorded limits, not measured spending or a live
-                allowance balance.
+                These are the limits that were recorded, not what has been spent
+                or what is left.
               </p>
             </div>
             <details className="mt-3 text-xs">
               <summary className="cursor-pointer">
-                Announced tools and recorded role scope
+                Tools it announced and what its seat covers
               </summary>
               <p className="mt-2 break-words">
                 Tools: {agent.tools.join(", ") || "Not announced"}. These
@@ -243,7 +243,7 @@ export function ProjectAgents({ launch }: { launch: Launch }) {
                       null,
                       2,
                     )
-                  : "No project-authored role scope recorded."}
+                  : "The project has not recorded what this seat covers."}
               </pre>
             </details>
           </Card>

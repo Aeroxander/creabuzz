@@ -36,7 +36,7 @@ interface SignedEvent {
 export class RepoSignerUnknownError extends Error {
   constructor() {
     super(
-      "This server doesn't say which key it signs its code records with, so its branches and tags can't be shown safely. Ask whoever runs the server to give it a permanent signing key, then try again.",
+      "This server doesn't say which signing key it uses for its code records, so its branches and tags can't be shown safely. Ask whoever runs the server to set a permanent signing key, then try again.",
     );
     this.name = "RepoSignerUnknownError";
   }

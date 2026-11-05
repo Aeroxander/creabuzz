@@ -28,16 +28,16 @@ export function ScopeEditor({
   const [picked, setPicked] = useState<string>(scope ?? "");
   return (
     <section
-      aria-label={conflicting ? "Settle scope" : "Change scope"}
+      aria-label={conflicting ? "Choose team" : "Change team"}
       className="border-b border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]"
       data-testid="wiki-scope-editor"
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-2xs font-medium text-black/70 dark:text-white/70">
-          {conflicting ? "Settle scope" : "Page scope"}
+          {conflicting ? "Choose team" : "Who can edit"}
         </span>
         <label className="sr-only" htmlFor="wiki-scope-select">
-          Team this page is scoped to
+          Team that can edit this page
         </label>
         <select
           className="rounded border border-black/15 bg-white px-2 py-1 text-2xs dark:border-white/15 dark:bg-white/10"
@@ -65,7 +65,7 @@ export function ScopeEditor({
           onClick={() => onSave(picked === "" ? null : picked)}
           type="button"
         >
-          Save scope
+          Save team
         </button>
         <button
           className="rounded border border-black/15 px-2 py-1 text-2xs dark:border-white/15"

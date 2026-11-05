@@ -51,7 +51,10 @@ async function publishSigned(template: {
   tags: string[][];
   content: string;
 }): Promise<void> {
-  await publishAsUser(template, "The server refused this change.");
+  await publishAsUser(
+    template,
+    "The server did not accept this change. Try again.",
+  );
 }
 
 export interface TaskPlanning {

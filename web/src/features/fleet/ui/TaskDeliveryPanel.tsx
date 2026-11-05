@@ -75,17 +75,17 @@ export function TaskDeliveryPanel({
     setMessage(null);
     const url = output.trim() ? outputUrl(output) : null;
     if (output.trim() && !url) {
-      setMessage("Use an http or https link for the output.");
+      setMessage("Use a web link that starts with http or https.");
       return;
     }
     if (project && !launch) {
       setMessage(
-        "This project could not be found. Retry the project read or choose another project.",
+        "This project could not be found. Reload the projects or choose another one.",
       );
       return;
     }
     if (!project && (url || claimKey)) {
-      setMessage("Choose a project for these delivery references.");
+      setMessage("Choose a project for these delivery links.");
       return;
     }
     setBusy(true);
@@ -97,7 +97,7 @@ export function TaskDeliveryPanel({
           ? item.delivery.claim
           : null;
       if (claimKey && !selected && !original)
-        throw new Error("Read the project's claims before linking one.");
+        throw new Error("Load the project's submissions before linking one.");
       await onSave(
         project
           ? {
@@ -127,9 +127,9 @@ export function TaskDeliveryPanel({
     >
       <h4 className="text-sm font-semibold">Delivery & payment</h4>
       <p className="text-xs text-muted-foreground">
-        Link the project, its output and an existing funding claim. Finishing or
-        approving this task never sends money. A reference does not establish
-        that a claim was filed for this task or approved by the project.
+        Link the project, its output and an existing submission. Finishing or
+        approving this task never sends money. A link does not prove that a
+        submission was made for this task or approved by the project.
       </p>
       <label className="block text-xs">
         Project
@@ -184,7 +184,7 @@ export function TaskDeliveryPanel({
       {launch && daoOfLaunch(launch) ? (
         <>
           <label className="block text-xs">
-            Onchain claim
+            Submission recorded on the network
             <select
               className="mt-1 w-full rounded border border-input bg-background p-2 text-sm"
               value={claimKey}
@@ -192,15 +192,15 @@ export function TaskDeliveryPanel({
               onChange={(e) => setClaimKey(e.target.value)}
               data-testid="task-delivery-claim"
             >
-              <option value="">No linked claim</option>
+              <option value="">No linked submission</option>
               {claimKey && !selected ? (
                 <option value={claimKey}>
-                  Previously linked claim (not read yet)
+                  Linked earlier (not loaded yet)
                 </option>
               ) : null}
               {claims.map((c) => (
                 <option key={c.key} value={c.key}>
-                  {claimStatusLabel(c.claim.record)} · claim{" "}
+                  {claimStatusLabel(c.claim.record)} · submission{" "}
                   {c.claim.id.slice(0, 10)}… · budget {c.mandate.slice(0, 10)}…
                 </option>
               ))}
@@ -210,7 +210,7 @@ export function TaskDeliveryPanel({
             <p className="text-xs text-muted-foreground">
               {chain.isPending
                 ? "Checking the selected network…"
-                : `Select this project's network (${launch.record.chainId ?? "unknown"}) to read its claims.`}
+                : `Switch to this project's network (${launch.record.chainId ?? "unknown"}) to load its submissions.`}
             </p>
           ) : null}
           {work.isError || chain.isError ? (
@@ -222,14 +222,14 @@ export function TaskDeliveryPanel({
                 if (correctChain) void work.refetch();
               }}
             >
-              Retry claim read
+              Reload submissions
             </Button>
           ) : null}
           {selected ? (
             <p className="text-xs" data-testid="task-delivery-status">
-              Read from the chain: {claimStatusLabel(selected.claim.record)} ·
-              filed by {walletLabel(selected.claim.record.contributor)}. Review
-              and payment remain separate actions.
+              Read from the network: {claimStatusLabel(selected.claim.record)} ·
+              submitted by {walletLabel(selected.claim.record.contributor)}.
+              Review and payment are separate steps.
             </p>
           ) : null}
         </>

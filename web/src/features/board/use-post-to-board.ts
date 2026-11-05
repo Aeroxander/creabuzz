@@ -46,7 +46,7 @@ export function usePostToBoard() {
       if (problem) throw new Error(problem);
       const signed = await publishAsUser(
         postDraft({ boardId, title, body }),
-        "The server didn't accept your post.",
+        "The server didn't accept your post. Try again.",
       );
       void queryClient.invalidateQueries({ queryKey: ["board-feed"] });
       void queryClient.invalidateQueries({ queryKey: ["board", boardId] });

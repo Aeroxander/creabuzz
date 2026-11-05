@@ -285,7 +285,7 @@ function OrgChartView({
       <div className="space-y-4">
         {loading && forest.length === 0 ? (
           <p className="text-xs text-black/60 dark:text-white/60">
-            Loading org chart…
+            Loading the team chart…
           </p>
         ) : (
           forest.map((root) => (

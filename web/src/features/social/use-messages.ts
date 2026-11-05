@@ -137,7 +137,9 @@ export function useSendMessage() {
       const community = relayWsUrl();
       const ok = (r: { accepted: boolean; message?: string }) => {
         if (!r.accepted)
-          throw new Error(r.message ?? "The server refused this message.");
+          throw new Error(
+            r.message ?? "The server did not accept this message. Try again.",
+          );
       };
       ok(await publishEvent(community, toRecipient, { signAuth: signAsUser }));
       ok(await publishEvent(community, toSelf, { signAuth: signAsUser }));

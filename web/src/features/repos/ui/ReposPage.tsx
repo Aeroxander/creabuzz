@@ -109,7 +109,7 @@ function CommunityConnectionError({ error }: { error: Error }) {
       window.location.reload();
     } catch {
       setConnectError(
-        "That doesn't look like a server address. It should look like wss://community.example.com.",
+        "That doesn't look like a server address. It should look like community.example.com.",
       );
     }
   };
@@ -124,7 +124,7 @@ function CommunityConnectionError({ error }: { error: Error }) {
           <CreatonMark className="h-full w-full" label="Creaton" />
         </div>
         <QueryError
-          description="The server didn't answer when asked for this community's code."
+          description="The server didn't answer, so this community's code can't be shown."
           error={error}
           message={errorMessage(error)}
           onRetry={retry}
@@ -156,7 +156,7 @@ function CommunityConnectionError({ error }: { error: Error }) {
           <Input
             id="server-address"
             type="text"
-            placeholder="wss://community.example.com"
+            placeholder="community.example.com"
             value={serverInput}
             onChange={(e) => setServerInput(e.target.value)}
             aria-invalid={connectError ? true : undefined}

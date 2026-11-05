@@ -148,17 +148,17 @@ export function sortQueue(
 }
 
 const REPORT_TYPE_LABEL: Record<ReportType, string> = {
-  illegal: "Illegal content",
-  nudity: "Nudity",
-  malware: "Malware",
-  spam: "Spam",
-  impersonation: "Impersonation",
-  profanity: "Profanity",
-  other: "Other",
+  illegal: "Something illegal",
+  nudity: "Sexual content",
+  malware: "A harmful link or file",
+  spam: "Spam or a scam",
+  impersonation: "Pretending to be someone else",
+  profanity: "Abuse or hateful language",
+  other: "Something else",
 };
 
 export function reportTypeLabel(reportType: ReportType): string {
-  return REPORT_TYPE_LABEL[reportType] ?? "Other";
+  return REPORT_TYPE_LABEL[reportType] ?? "Something else";
 }
 
 const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {

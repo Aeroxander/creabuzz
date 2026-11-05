@@ -44,12 +44,12 @@ export function useBoardActions(
       }) =>
         send(
           postDraft({ boardId, ...input }),
-          "The server didn't accept your post.",
+          "The server didn't accept your post. Try again.",
         ),
       comment: (input: { root: string; parent: string; body: string }) =>
         send(
           commentDraft({ boardId, ...input }),
-          "The server didn't accept your reply.",
+          "The server didn't accept your reply. Try again.",
         ),
       /**
        * Vote the way asked. Asking for the vote already cast takes it back, and
@@ -66,7 +66,7 @@ export function useBoardActions(
           for (const id of current.myVoteIds) {
             await send(
               deletionDraft({ boardId, target: id }),
-              "The server didn't take your vote back.",
+              "The server didn't take your vote back. Try again.",
             );
           }
         };
@@ -76,7 +76,7 @@ export function useBoardActions(
         }
         await send(
           voteDraft({ boardId, target, direction: wanted }),
-          "The server didn't accept your vote.",
+          "The server didn't accept your vote. Try again.",
         );
         try {
           await clearOld();
@@ -92,13 +92,13 @@ export function useBoardActions(
       remove: (target: string) =>
         send(
           deletionDraft({ boardId, target }),
-          "The server didn't delete that.",
+          "The server didn't delete that. Try again.",
         ),
       /** Remove someone else's post or reply; the server refuses anyone who does not own or administer the board. */
       moderate: (target: string, reason?: string) =>
         send(
           moderationDeletionDraft({ boardId, target, reason }),
-          "The server didn't remove that.",
+          "The server didn't remove that. Try again.",
         ),
     };
   }, [boardId, add]);

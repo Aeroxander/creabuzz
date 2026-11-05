@@ -101,7 +101,7 @@ export function useBudgets(): {
     budgets: query.data ?? [],
     loading: query.isPending,
     error: query.isError
-      ? "The server did not answer the budget query. Check the connection, then retry."
+      ? "The server did not answer, so the budgets can't be shown. Check your connection, then try again."
       : null,
     reload: () => {
       void query.refetch();

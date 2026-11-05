@@ -114,8 +114,8 @@ export function BudgetAuthorForm() {
           Create budget
         </h3>
         <p className="text-2xs text-black/60 dark:text-white/60">
-          Cap an agent’s runs, messages, or spend. Each limit says plainly
-          whether the server enforces it or it is only advisory.
+          Cap what an agent can run, send or spend. Each limit says whether the
+          server enforces it or it is only a note.
         </p>
       </div>
       <label className="block">
@@ -130,7 +130,7 @@ export function BudgetAuthorForm() {
       </label>
       <label className="block">
         <span className="text-2xs font-medium text-black/70 dark:text-white/70">
-          Covers agent (64-hex public key, or * for all agents)
+          Covers agent (its 64-character public key, or * for all agents)
         </span>
         <input
           className="mt-0.5 w-full rounded-md border border-black/10 bg-background px-2 py-1.5 text-sm dark:border-white/10"
@@ -292,7 +292,7 @@ export function BudgetList() {
               </p>
             )}
             <p className="mt-1 text-2xs text-black/60 dark:text-white/60">
-              on exceed: {budget.onExceed}
+              If a limit is passed: {budget.onExceed}
             </p>
           </li>
         );

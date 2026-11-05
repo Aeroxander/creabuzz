@@ -128,11 +128,14 @@ test("a post can be removed and its author banned; a member banned; a file only 
 
 test("the heading names the kind of report and what it is about", () => {
   const [home] = parseEscalatedReports([row()]);
-  assert.equal(aboutLine(home), "Spam · about a post on Home");
+  assert.equal(aboutLine(home), "Spam or a scam · about a post on Home");
   const [room] = parseEscalatedReports([row({ channelId: "ch1" })]);
-  assert.equal(aboutLine(room), "Spam · about a message or board post");
+  assert.equal(
+    aboutLine(room),
+    "Spam or a scam · about a message or board post",
+  );
   const [member] = parseEscalatedReports([row({ targetKind: "pubkey" })]);
-  assert.equal(aboutLine(member), "Spam · about a member");
+  assert.equal(aboutLine(member), "Spam or a scam · about a member");
 });
 
 test("removal and bans carry their retry key; closing does not", () => {
@@ -174,7 +177,7 @@ test("refusals are said in plain words, and a report someone else dealt with is 
     refusalWords(409, "report is not open (current status: resolved)"),
     /already dealt with/,
   );
-  assert.match(refusalWords(403, null), /didn’t accept you/);
+  assert.match(refusalWords(403, null), /doesn’t list you/);
   assert.equal(
     refusalWords(500, null),
     "Couldn’t apply the action. Try again.",

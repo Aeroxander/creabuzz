@@ -304,7 +304,9 @@ export function useKnowledge(enabled = true): KnowledgeState {
         signAuth: signAsUser,
       });
       if (!result.accepted) {
-        throw new Error(result.message ?? "Server rejected the restore");
+        throw new Error(
+          result.message ?? "The server did not accept the restore. Try again.",
+        );
       }
       await eventsQuery.refetch();
     },
@@ -328,7 +330,7 @@ export function useKnowledge(enabled = true): KnowledgeState {
           content: payload.content,
           created_at: payload.created_at,
         },
-        "Server rejected the suggestion",
+        "The server did not accept the suggestion. Try again.",
       );
       await eventsQuery.refetch();
     },

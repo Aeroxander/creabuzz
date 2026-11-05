@@ -173,7 +173,7 @@ test("a board's owner sees its open reports, removes a reported post with a reas
   const rows = page.getByTestId("board-report-row");
   await expect(rows).toHaveCount(2);
   const first = rows.filter({ hasText: "Cheap watches" });
-  await expect(first).toContainText("Spam · a post by Ann");
+  await expect(first).toContainText("Spam or a scam · a post by Ann");
   await expect(first).toContainText("Why: selling things");
   // Who reported is never shown here.
   await expect(page.getByTestId("board-reports")).not.toContainText(

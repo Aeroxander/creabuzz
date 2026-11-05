@@ -130,7 +130,7 @@ export function ConversationPage() {
       >
         {!me ? (
           <EmptyState title="Sign in to send messages">
-            Messages are end-to-end encrypted with your key.
+            Only you and the person you write to can read your messages.
           </EmptyState>
         ) : conversations.isLoading ? (
           <TimelineSkeleton />
@@ -146,7 +146,8 @@ export function ConversationPage() {
           />
         ) : messages.length === 0 ? (
           <p className="py-16 text-center text-sm text-black/60 dark:text-white/60">
-            No messages yet. Say hello. Messages are end-to-end encrypted.
+            No messages yet. Say hello. Only you and the person you write to can
+            read your messages.
           </p>
         ) : (
           messages.map((m) => {

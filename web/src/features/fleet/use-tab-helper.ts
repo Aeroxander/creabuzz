@@ -118,7 +118,7 @@ export function useTabHelper(channels: Channel[]): TabHelper {
           for (const draft of drafts) {
             await publishAsUser(
               draft,
-              "The server did not accept the seat change.",
+              "The server did not accept the seat change. Try again.",
             );
           }
         } catch (problem) {

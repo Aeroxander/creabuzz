@@ -33,7 +33,7 @@ export async function escalatePost(input: {
         parent: input.post.id,
         body: escalationNote({ finderReward: input.finderReward }),
       }),
-      "The server didn't accept the note under the post.",
+      "The server didn't accept the note under the post. Try again.",
     );
     return { noted: true };
   } catch {

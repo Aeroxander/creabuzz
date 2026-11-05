@@ -78,7 +78,9 @@ async function fetchBoardReports(boardId: string): Promise<ModerationReport[]> {
     throw new Error("Only this board's moderators can see its reports.");
   }
   if (!response.ok) {
-    throw new Error(`The server didn't send the reports (${response.status}).`);
+    throw new Error(
+      "The server didn't send the reports. Try again in a minute.",
+    );
   }
   return parseModerationReports(await response.json());
 }
@@ -186,7 +188,7 @@ export function useBoardReports(
   const resolve = async (row: BoardReportRow, action: "delete" | "dismiss") => {
     await publishAsUser(
       buildResolveReport({ reportEventId: row.report.reportEventId, action }),
-      "The server didn't close the report.",
+      "The server didn't close the report. Try again.",
     );
   };
 
@@ -207,7 +209,7 @@ export function useBoardReports(
               target: row.report.target,
               reason,
             }),
-            "The server didn't remove that.",
+            "The server didn't remove that. Try again.",
           );
           removedHere.current.add(row.report.id);
         }

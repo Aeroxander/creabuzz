@@ -757,7 +757,9 @@ test("the server's owner sees each escalated report, who sent it, the community 
 
   const list = page.getByTestId("escalated-reports");
   const row = list.getByTestId("escalated-report-row");
-  await expect(row).toContainText("Spam · about a message or board post");
+  await expect(row).toContainText(
+    "Spam or a scam · about a message or board post",
+  );
   await expect(row.getByTestId("escalated-report-community")).toContainText(
     "In alpha.example.com · sent on",
   );

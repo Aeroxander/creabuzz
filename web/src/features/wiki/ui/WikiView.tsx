@@ -412,7 +412,7 @@ export function WikiView({
           knowledge.agent.length === 0 ? (
           <div className="p-2">
             <QueryError
-              description="The server did not answer the wiki page query, so there is no known list of pages."
+              description="The server did not answer, so the list of pages can't be shown."
               message={errorMessage(loadError)}
               onRetry={() => void refetchPages()}
               testId="wiki-load-error"
@@ -532,9 +532,9 @@ export function WikiView({
               onClick={exportWiki}
               disabled={pages.length === 0}
               className="inline-flex items-center gap-1 rounded border border-black/15 px-2 py-1 disabled:opacity-50 dark:border-white/15"
-              aria-label="Export wiki as markdown"
+              aria-label="Export all wiki pages"
               data-testid="wiki-export"
-              title="Download all pages as one markdown file"
+              title="Download all pages as one file"
             >
               <Download className="h-3 w-3" /> Export
             </button>
@@ -618,11 +618,11 @@ export function WikiView({
                 data-testid="wiki-scope-open"
                 title={
                   conflicting
-                    ? "Settle this page's team scope"
-                    : "Change this page's team scope"
+                    ? "Choose which team can edit this page"
+                    : "Change which team can edit this page"
                 }
               >
-                {conflicting ? "Settle scope" : "Change scope"}
+                {conflicting ? "Choose team" : "Change team"}
               </button>
             ) : null}
             {activeSlug ? (
@@ -691,10 +691,10 @@ export function WikiView({
                   void queryClient.invalidateQueries({
                     queryKey: ["knowledge-pages"],
                   });
-                  toast.success("Page scope saved");
+                  toast.success("Saved: which team can edit this page");
                 })
                 .catch((error: unknown) =>
-                  toast.error("Couldn't save the page scope", {
+                  toast.error("Couldn't save which team can edit", {
                     description: failureWords(error).text,
                   }),
                 )
@@ -776,7 +776,7 @@ export function WikiView({
                   role="status"
                 >
                   {conflicting
-                    ? "This page's history disagrees about its team scope. An admin needs to settle it before anyone can edit."
+                    ? "The records disagree about which team can edit this page. An admin needs to choose one before anyone can edit."
                     : "Only this team's seat holders can edit this page. You can read it and propose a change."}
                 </p>
                 <div className="min-h-0 flex-1 overflow-y-auto">
@@ -803,7 +803,7 @@ export function WikiView({
                       setContent(e.target.value);
                     }}
                     className="h-full min-h-[60vh] w-full resize-none rounded-md border border-black/10 bg-white p-3 font-mono text-sm text-black outline-none focus:ring-1 focus:ring-black dark:border-white/10 dark:bg-white/5 dark:text-white dark:focus:ring-white"
-                    placeholder="Write in markdown. [[Other Page]] links create the graph."
+                    placeholder="Write here. Put a page name in double square brackets, like [[Other Page]], to link to it."
                     data-testid="wiki-editor"
                   />
                 ) : (
@@ -847,7 +847,7 @@ export function WikiView({
           confirmLabel={dialog === "new" ? "Create page" : "Rename page"}
           description={
             dialog === "new"
-              ? "Pages are addressable by name, so the name is permanent until you rename the page."
+              ? "Links to a page use its name, so the name stays the same until you rename the page."
               : `Rename “${dialog.rename}”. The old name is deleted and its content moves to the new one.`
           }
           initialValue={dialog === "new" ? "" : dialog.rename}

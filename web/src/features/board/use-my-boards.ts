@@ -75,8 +75,8 @@ export function useMyBoards(): MyBoards {
       await publishAsUser(
         membershipDraft({ boardId, join }),
         join
-          ? "The server didn't let you join that board."
-          : "The server didn't let you leave that board.",
+          ? "The server didn't let you join that board. Try again."
+          : "The server didn't let you leave that board. Try again.",
       );
       setPending((previous) => new Map(previous).set(boardId, join));
       void queryClient.invalidateQueries({ queryKey: ["my-boards", me] });

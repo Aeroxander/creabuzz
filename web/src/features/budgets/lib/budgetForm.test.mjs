@@ -28,7 +28,7 @@ describe("budget subjects", () => {
   });
 
   it("rejects an org node id with a readable reason", () => {
-    assert.match(budgetSubjectError("team-x") ?? "", /64-hex public key/);
+    assert.match(budgetSubjectError("team-x") ?? "", /64-character public key/);
     assert.equal(budgetSubjectError(AGENT_A), null);
   });
 });
@@ -75,7 +75,7 @@ describe("honest enforcement labels (advisory rule)", () => {
     }
     for (const key of ["tasks.approve", "spend"]) {
       assert.equal(byKey.get(key)?.enforcement, "advisory", key);
-      assert.equal(byKey.get(key)?.badge, "Advisory", key);
+      assert.equal(byKey.get(key)?.badge, "Not enforced", key);
     }
   });
 
@@ -86,7 +86,7 @@ describe("honest enforcement labels (advisory rule)", () => {
       onchain: { contract: "0xabc", chain: "eip155:1" },
     });
     assert.equal(rows[0].enforcement, "onchain");
-    assert.equal(rows[0].badge, "Enforced onchain");
+    assert.equal(rows[0].badge, "Enforced by the network");
   });
 
   it("every form field declares its enforcement; advisory ones say why", () => {
@@ -104,7 +104,7 @@ describe("honest enforcement labels (advisory rule)", () => {
           ? ENFORCEMENT_LABEL.advisory
           : ENFORCEMENT_LABEL.relay,
         field.enforcement === "advisory"
-          ? "Advisory"
+          ? "Not enforced"
           : "Enforced by the server",
         field.key,
       );

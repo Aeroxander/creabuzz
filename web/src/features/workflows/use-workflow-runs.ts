@@ -225,7 +225,10 @@ export function useWorkflowRuns(): RunListState {
       setActingFor(key, true);
       clearError(key);
       try {
-        await publishAsUser(template, "The server rejected the change.");
+        await publishAsUser(
+          template,
+          "The server did not accept the change. Try again.",
+        );
         onDone();
         void refresh();
       } catch (error) {

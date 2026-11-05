@@ -130,7 +130,7 @@ function UsageCard() {
       <div className="flex items-center gap-2">
         <Gauge className="h-3.5 w-3.5 text-black/60 dark:text-white/60" />
         <h3 className="text-xs font-semibold uppercase tracking-wide text-black/60 dark:text-white/60">
-          This tab agent · usage
+          This tab's helper · usage
         </h3>
         <span className="ml-auto text-xs text-black/60 dark:text-white/60">
           ~${totals.est.toFixed(3)}
@@ -147,13 +147,15 @@ function UsageCard() {
           <p className="text-sm font-semibold text-black dark:text-white">
             {totals.prompt.toLocaleString()}
           </p>
-          <p className="text-2xs text-black/60 dark:text-white/60">prompt tk</p>
+          <p className="text-2xs text-black/60 dark:text-white/60">tokens in</p>
         </div>
         <div className="rounded-md bg-black/[0.03] p-1.5 dark:bg-white/5">
           <p className="text-sm font-semibold text-black dark:text-white">
             {totals.completion.toLocaleString()}
           </p>
-          <p className="text-2xs text-black/60 dark:text-white/60">output tk</p>
+          <p className="text-2xs text-black/60 dark:text-white/60">
+            tokens out
+          </p>
         </div>
       </div>
       <button
@@ -161,7 +163,7 @@ function UsageCard() {
         onClick={() => resetUsage()}
         className="mt-1.5 text-2xs text-black/60 hover:text-black/70 dark:text-white/60 dark:hover:text-white/70"
       >
-        Reset ledger
+        Reset counts
       </button>
     </section>
   );
@@ -236,7 +238,7 @@ function TasksSection({
       </div>
       {taskLoadError && tasks.length === 0 ? (
         <QueryError
-          description="The server did not answer the task query, so no tasks can be listed."
+          description="The server did not answer, so the tasks can't be shown."
           error={taskLoadError}
           message={errorMessage(taskLoadError)}
           onRetry={onRetry}

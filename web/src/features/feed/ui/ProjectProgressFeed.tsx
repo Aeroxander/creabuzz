@@ -222,17 +222,17 @@ function ProgressList({
             variant="outline"
             onClick={() => void lists.refetch()}
           >
-            Retry follows
+            Try again
           </Button>
         </p>
       ) : null}
       {!ready && !failed && visible.length === 0 ? (
-        <p className="mt-3 text-sm">Reading progress…</p>
+        <p className="mt-3 text-sm">Loading updates…</p>
       ) : null}
       {ready && !visible.length ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          No reports in this view yet. Follow a project or share what shipped,
-          an artifact and what comes next.
+          No updates here yet. Follow a project, or share what you finished, the
+          work you made and what comes next.
         </p>
       ) : null}
       {project &&
@@ -240,8 +240,8 @@ function ProgressList({
       /^[a-f0-9]{64}$/i.test(linkedId) &&
       focusedIndex < 0 ? (
         <p className="mt-2 text-sm" role="status">
-          The shared report was not found in the latest loaded updates. This
-          does not mean it was deleted.
+          That update is not among the latest ones loaded here. This does not
+          mean it was deleted.
         </p>
       ) : null}
       <ol className="mt-3 space-y-3">
@@ -365,7 +365,7 @@ function ProgressList({
       </div>
       {all.length >= 100 ? (
         <p className="mt-2 text-xs text-muted-foreground">
-          Showing the latest 100 loaded reports.
+          Showing the latest 100 updates.
         </p>
       ) : null}
       {message ? (

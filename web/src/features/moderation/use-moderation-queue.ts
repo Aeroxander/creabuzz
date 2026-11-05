@@ -291,7 +291,10 @@ export function useModerationQueue(roomPath: string): ModerationQueueState {
   // A refusal arrives as `publishAsUser` says it (a restriction in plain words, any other reason as the server gave
   // it); `perform` puts it in words for people, so the server's internal failures never reach the row.
   const publishTemplate = useCallback(async (template: EventTemplate) => {
-    await publishAsUser(template, "The server rejected the action.");
+    await publishAsUser(
+      template,
+      "The server did not accept the action. Try again.",
+    );
   }, []);
 
   /**
@@ -323,14 +326,18 @@ export function useModerationQueue(roomPath: string): ModerationQueueState {
           );
         } else if (action === "timeout") {
           if (!person || !options?.expiresAt) {
-            throw new Error("Couldn’t resolve who to time out.");
+            throw new Error(
+              "Couldn’t tell who wrote this, so they can’t be muted here. The report is still open.",
+            );
           }
           await publishTemplate(
             buildTimeout({ pubkey: person, expiresAt: options.expiresAt }),
           );
         } else if (action === "ban") {
           if (!person) {
-            throw new Error("Couldn’t resolve who to ban.");
+            throw new Error(
+              "Couldn’t tell who wrote this, so they can’t be banned here. The report is still open.",
+            );
           }
           await publishTemplate(buildBan({ pubkey: person }));
         }

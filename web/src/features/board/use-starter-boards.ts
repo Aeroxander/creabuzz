@@ -33,7 +33,7 @@ export function useStarterBoards(existingNames: readonly string[]) {
         );
         await publisher.publish(
           made,
-          `The server didn't create the ${board.name} board.`,
+          `The server didn't create the ${board.name} board. Try again.`,
         );
         await publisher.publish(
           seed,

@@ -62,7 +62,7 @@ export function useBoardMembers(boardId: string, enabled: boolean) {
     async (pubkey: string) => {
       await publishAsUser(
         buildAddMemberEvent({ channelId: boardId, pubkey, role: "member" }),
-        "The server didn't add them.",
+        "The server didn't add them. Try again.",
       );
       setAdded((previous) => [...previous, { pubkey, role: "member" }]);
       setRemoved((previous) => {
@@ -81,7 +81,7 @@ export function useBoardMembers(boardId: string, enabled: boolean) {
     async (pubkey: string) => {
       await publishAsUser(
         buildRemoveMemberEvent({ channelId: boardId, pubkey }),
-        "The server didn't remove them.",
+        "The server didn't remove them. Try again.",
       );
       setAdded((previous) => previous.filter((m) => m.pubkey !== pubkey));
       setRemoved((previous) => new Set([...previous, pubkey]));

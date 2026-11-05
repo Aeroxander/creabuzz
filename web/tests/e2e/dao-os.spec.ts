@@ -323,7 +323,7 @@ test("task links persist through status changes and connect output to the projec
     "https://example.com/demo",
   );
   await expect(agent.getByTestId("agent-budget-context")).toContainText(
-    "allowance not verified here",
+    "not checked here",
   );
   await expectAccessible(page, "Project agent supervision");
 });
@@ -465,7 +465,7 @@ test("agent-record retry keeps the page and active project tab", async ({
   await page.evaluate(() => {
     (window as Window & { retryMarker?: string }).retryMarker = "same-document";
   });
-  const reload = page.getByRole("button", { name: "Reload records" });
+  const reload = page.getByRole("button", { name: "Reload the records" });
   await expect(reload).toBeEnabled();
   relay.setClosingSockets(false);
   await reload.click();

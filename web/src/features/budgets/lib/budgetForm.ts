@@ -42,7 +42,7 @@ export function budgetSubjectError(
   const trimmed = (subject ?? "").trim();
   if (!trimmed) return "Pick the agent this budget covers.";
   if (isBudgetSubject(trimmed)) return null;
-  return 'A budget covers an agent (its 64-hex public key) or all agents ("*"). An org node id is not a valid subject.';
+  return "A budget covers one agent (use its 64-character public key) or all agents (use *). A team name does not work here.";
 }
 
 // ── Limits ─────────────────────────────────────────────────────────────────
@@ -51,8 +51,8 @@ export type BudgetEnforcement = "relay" | "onchain" | "advisory";
 
 export const ENFORCEMENT_LABEL: Record<BudgetEnforcement, string> = {
   relay: "Enforced by the server",
-  onchain: "Enforced onchain",
-  advisory: "Advisory",
+  onchain: "Enforced by the network",
+  advisory: "Not enforced",
 };
 
 export type BudgetLimitKey =
@@ -79,54 +79,54 @@ export type BudgetLimitField = {
 export const BUDGET_LIMIT_FIELDS: readonly BudgetLimitField[] = [
   {
     key: "runs",
-    label: "Max Runs",
+    label: "Max runs",
     placeholder: "e.g. 100",
     enforcement: "relay",
   },
   {
     key: "messages",
-    label: "Max Messages",
+    label: "Max messages",
     placeholder: "e.g. 500",
     enforcement: "relay",
   },
   {
     key: "llmCalls",
-    label: "Max LLM Calls",
+    label: "Max AI calls",
     placeholder: "e.g. 200",
     enforcement: "relay",
   },
   {
     key: "llmCostCents",
-    label: "Max LLM Spend (cents)",
+    label: "Max AI spend (cents)",
     placeholder: "e.g. 500",
     enforcement: "relay",
-    note: "Dollar-denominated LLM budget in cents. Needs the server's LLM prices configured; without them the gateway refuses the agent rather than run it unmetered.",
+    note: "A dollar limit on AI use, in cents. The server needs the AI prices set up. Without them it stops the helper instead of letting it run uncounted.",
   },
   {
     key: "taskCreate",
-    label: "Task Create Limit",
+    label: "Max tasks created",
     placeholder: "e.g. 10",
     enforcement: "relay",
   },
   {
     key: "proposals",
-    label: "Max Proposals",
+    label: "Max proposals",
     placeholder: "e.g. 2",
     enforcement: "relay",
   },
   {
     key: "taskApprove",
-    label: "Task Approve Limit",
+    label: "Max tasks approved",
     placeholder: "e.g. 5",
     enforcement: "advisory",
     note: "The server does not count task approvals.",
   },
   {
     key: "spend",
-    label: "Max Spend (cents)",
+    label: "Max spending (cents)",
     placeholder: "e.g. 50000",
     enforcement: "advisory",
-    note: "Only an on-chain allowance can stop spending.",
+    note: "Only a spending limit built into the contract can stop spending.",
   },
 ];
 
@@ -251,12 +251,12 @@ export function describeBudgetLimits(budget: {
     rows.push(["messages", `${limits.messages} messages/${window}`, "relay"]);
   }
   if (limits.llmCalls != null) {
-    rows.push(["llmCalls", `${limits.llmCalls} LLM calls/${window}`, "relay"]);
+    rows.push(["llmCalls", `${limits.llmCalls} AI calls/${window}`, "relay"]);
   }
   if (limits.llmCostCents != null) {
     rows.push([
       "llmCostCents",
-      `${limits.llmCostCents}¢ LLM spend/${window}`,
+      `${limits.llmCostCents}¢ AI spend/${window}`,
       "relay",
     ]);
   }

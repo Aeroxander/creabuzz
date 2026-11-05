@@ -31,12 +31,12 @@ export type LiveStatus =
 const SAVE_FALLBACK = "Edits reach others when a page is saved.";
 
 const UNAVAILABLE_DETAIL: Record<LiveUnavailableReason, string> = {
-  "no-identity": `Live co-editing is unavailable: it needs a signed-in identity to prove you are a community member. ${SAVE_FALLBACK}`,
-  "no-member-list": `Live co-editing is unavailable: this server publishes no member list, so collaborators cannot be verified. ${SAVE_FALLBACK}`,
+  "no-identity": `Live co-editing is unavailable: you need to be signed in with an account so the page can tell you are a community member. ${SAVE_FALLBACK}`,
+  "no-member-list": `Live co-editing is unavailable: this server publishes no member list, so we cannot tell who is a member. ${SAVE_FALLBACK}`,
   "member-list-error": `Live co-editing is unavailable: the community member list could not be loaded. Reopen the page to try again. ${SAVE_FALLBACK}`,
-  "not-member": `Live co-editing is unavailable: it is limited to verified community members and this identity is not one. ${SAVE_FALLBACK}`,
-  "room-failed": `Live co-editing is unavailable: the peer-to-peer room could not be opened. ${SAVE_FALLBACK}`,
-  "cannot-sign": `Live co-editing is unavailable: your identity could not sign the update (unlock your passkey or approve the signing request). ${SAVE_FALLBACK}`,
+  "not-member": `Live co-editing is unavailable: it is limited to verified community members and this account is not one. ${SAVE_FALLBACK}`,
+  "room-failed": `Live co-editing is unavailable: the shared editing session could not be started. Reopen the page to try again. ${SAVE_FALLBACK}`,
+  "cannot-sign": `Live co-editing is unavailable: your changes could not be confirmed with your account. Unlock your passkey or approve the request, then reopen the page. ${SAVE_FALLBACK}`,
   "too-large": `Live co-editing is unavailable: this page is too large to sync live. ${SAVE_FALLBACK}`,
 };
 
@@ -63,12 +63,12 @@ export function describeLive(
   const notes: string[] = [];
   if ((counts.strangers ?? 0) > 0) {
     notes.push(
-      `${counts.strangers} unverified ${counts.strangers === 1 ? "peer is" : "peers are"} in the room and receive nothing.`,
+      `${counts.strangers} ${counts.strangers === 1 ? "person who is not a confirmed member is" : "people who are not confirmed members are"} connected to this page and ${counts.strangers === 1 ? "gets" : "get"} none of your changes.`,
     );
   }
   if ((counts.rejected ?? 0) > 0) {
     notes.push(
-      `${counts.rejected} received ${counts.rejected === 1 ? "update was" : "updates were"} ignored (unsigned, invalid, or not from a member).`,
+      `${counts.rejected} ${counts.rejected === 1 ? "change" : "changes"} from others ${counts.rejected === 1 ? "was" : "were"} ignored (not confirmed, not valid, or not from a member).`,
     );
   }
   const suffix = notes.length > 0 ? ` ${notes.join(" ")}` : "";
@@ -92,7 +92,7 @@ export function describeLive(
         detail:
           counts.peers === 0
             ? `Live co-editing is on for verified community members only. Nobody else is connected; ${SAVE_FALLBACK.toLowerCase()}${suffix}`
-            : `${counts.peers} other verified ${counts.peers === 1 ? "member is" : "members are"} connected. Only signed updates from community members are applied.${suffix}`,
+            : `${counts.peers} other verified ${counts.peers === 1 ? "member is" : "members are"} connected. Only changes confirmed as coming from community members are applied.${suffix}`,
         editors,
       };
   }

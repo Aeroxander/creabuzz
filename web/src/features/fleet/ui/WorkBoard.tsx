@@ -359,7 +359,7 @@ export function WorkBoard({
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col p-4">
         <PageHeader title="Tasks" />
         <QueryError
-          description="The server did not answer the task and issue query, so this board has nothing to show."
+          description="The server did not answer, so this board has nothing to show."
           error={loadError}
           message={errorMessage(loadError)}
           onRetry={reload}

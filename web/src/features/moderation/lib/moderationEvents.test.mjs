@@ -179,7 +179,7 @@ describe("queue rows", () => {
     assert.equal(rows.length, 1);
     assert.equal(rows[0].reportEventId, REPORT);
     assert.equal(rows[0].reportType, "spam");
-    assert.equal(reportTypeLabel(rows[0].reportType), "Spam");
+    assert.equal(reportTypeLabel(rows[0].reportType), "Spam or a scam");
   });
 
   it("keeps a row read without who reported it (a board's moderators' read)", () => {

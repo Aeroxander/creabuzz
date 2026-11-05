@@ -139,7 +139,10 @@ const listWriter = createListWriter({
       write.author,
     ),
   publish: (template) =>
-    publishAsUser(template, "The server refused this change to your follows."),
+    publishAsUser(
+      template,
+      "The server did not accept this change to who you follow. Try again.",
+    ),
 });
 
 const listScope = (me: string) => `${relayWsUrl()}|${me}`;
@@ -286,7 +289,10 @@ export async function publishFeedEvent(
   template: EventTemplate,
   { mirror = false }: { mirror?: boolean } = {},
 ): Promise<NostrEvent> {
-  const signed = await publishAsUser(template, "The server refused this post.");
+  const signed = await publishAsUser(
+    template,
+    "The server did not accept this post. Try again.",
+  );
   if (shouldMirror(signed, mirror)) {
     void mirrorToOutbox(signed);
   }

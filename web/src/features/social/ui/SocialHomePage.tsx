@@ -231,7 +231,7 @@ export function SocialHomePage() {
         ) : timeline.error ? (
           <div className="p-4">
             <QueryError
-              description="The server did not answer the feed query, so no posts can be shown."
+              description="The server did not answer, so no posts can be shown."
               error={timeline.error}
               kinds={[KIND_TEXT_NOTE]}
               onRetry={timeline.refetch}

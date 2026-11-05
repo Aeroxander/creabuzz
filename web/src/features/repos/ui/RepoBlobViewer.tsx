@@ -170,10 +170,8 @@ function HtmlRunView({ doc }: { doc: string }) {
         className="text-xs text-black/60 dark:text-white/60"
         data-testid="repo-html-preview-note"
       >
-        Sandboxed preview. The page's own scripts do not run here: the
-        document's Content-Security-Policy applies to this frame, and relaxing
-        it would also relax it for the app. Static content, styles and inlined
-        assets render.
+        Preview only. This page's scripts do not run here, so buttons and
+        animations may not work. Text, styles and images show as they will.
       </p>
     </div>
   );
@@ -216,8 +214,8 @@ function ViewerBody({
     case "binary":
       return (
         <div className="rounded-lg border border-black/10 bg-white/50 p-6 text-sm text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60">
-          Binary file: {formatBytes(view.sizeBytes)}. Use the Download button
-          above to save it.
+          This file can't be shown as text ({formatBytes(view.sizeBytes)}). Use
+          the Download button above to save it.
         </div>
       );
     case "too-large":

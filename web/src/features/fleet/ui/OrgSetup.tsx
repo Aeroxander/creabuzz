@@ -122,7 +122,7 @@ export function OrgSetup({
         <h2 className="text-lg font-semibold">{draft.name.trim()} is ready</h2>
         <p className="mt-1 text-sm text-muted-foreground" role="status">
           Your organization now shows up below. Invite people to a channel, or
-          open a project's page to give the team a treasury and a vote.
+          open a project's page to give the team shared money and a vote.
         </p>
       </Card>
     );

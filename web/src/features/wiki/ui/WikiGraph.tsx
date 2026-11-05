@@ -39,13 +39,14 @@ export function WikiGraph({ pages }: { pages: WikiPage[] }) {
   return (
     <div className="min-h-0 flex-1 overflow-auto p-4">
       <p className="mb-2 text-xs text-black/60 dark:text-white/60">
-        {nodes.size} nodes · {edges.size} links · from [[wiki links]] and #tags
+        {nodes.size} items · {edges.size} links · built from [[page links]] and
+        #tags
       </p>
       <svg
         ref={svgRef}
         viewBox="0 0 600 600"
         role="img"
-        aria-label="Wiki knowledge graph: pages and links between them"
+        aria-label="Map of wiki pages and the links between them"
         className="h-[560px] w-full max-w-[640px] rounded-md border border-black/10 bg-white dark:border-white/10 dark:bg-white/5"
         data-testid="wiki-graph"
       >

@@ -140,32 +140,32 @@ export function useBoardModerationActions(boardId: string) {
       thread: (post: string, action: ThreadAction, reason?: string) =>
         send(
           threadDraft({ boardId, post, action, reason }),
-          `The server didn't ${action} that thread.`,
+          `The server didn't ${action} that thread. Try again.`,
         ),
       mute: (person: string, until: number, reason?: string) =>
         send(
           muteDraft({ boardId, person, until, reason }),
-          "The server didn't mute them.",
+          "The server didn't mute them. Try again.",
         ),
       unmute: (person: string) =>
         send(
           unmuteDraft({ boardId, person }),
-          "The server didn't lift the mute.",
+          "The server didn't lift the mute. Try again.",
         ),
       setRules: (rules: string) =>
         send(
           rulesDraft({ boardId, rules }),
-          "The server didn't save the rules.",
+          "The server didn't save the rules. Try again.",
         ),
       appoint: (person: string, until?: number) =>
         send(
           appointDraft({ boardId, person, until }),
-          "The server didn't appoint them.",
+          "The server didn't appoint them. Try again.",
         ),
       dismiss: (person: string) =>
         send(
           dismissDraft({ boardId, person }),
-          "The server didn't end that appointment.",
+          "The server didn't end that appointment. Try again.",
         ),
     }),
     [boardId, send],

@@ -167,6 +167,6 @@ test("org view falls back to the roster when no nodes exist", async ({
   await expect(page.getByTestId("org-no-helpers")).toHaveText(
     "No AI helpers here yet.",
   );
-  await expect(page.getByText("Loading org chart…")).toBeHidden();
+  await expect(page.getByText("Loading the team chart…")).toBeHidden();
   await expect(page.getByText("CTO", { exact: true })).toBeHidden();
 });

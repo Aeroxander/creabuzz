@@ -270,7 +270,7 @@ export function refusalWords(status: number, message: string | null): string {
     return "Someone has already dealt with this report. Refresh to see where it stands.";
   }
   if (status === 401 || status === 403) {
-    return "The server didn’t accept you as one of the people who run it. Sign in with that key and try again.";
+    return "The server doesn’t list you as one of the people who run it. Sign in with the account that runs the server, then try again.";
   }
   return "Couldn’t apply the action. Try again.";
 }

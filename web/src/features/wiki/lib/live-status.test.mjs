@@ -65,7 +65,7 @@ test("no member list and no identity are named explicitly", () => {
   assert.match(
     describeLive({ state: "unavailable", reason: "no-identity" }, { peers: 0 })
       .detail,
-    /signed-in identity/,
+    /signed in with an account/,
   );
 });
 
@@ -82,12 +82,12 @@ test("strangers and dropped updates are surfaced, not hidden", () => {
   );
   assert.match(
     text.detail,
-    /2 unverified peers are in the room and receive nothing/,
+    /2 people who are not confirmed members are connected to this page and get none of your changes/,
   );
-  assert.match(text.detail, /1 received update was ignored/);
+  assert.match(text.detail, /1 change from others was ignored/);
   assert.doesNotMatch(
     describeLive({ state: "verified" }, { peers: 0 }).detail,
-    /unverified|ignored/,
+    /not confirmed|ignored/,
   );
 });
 

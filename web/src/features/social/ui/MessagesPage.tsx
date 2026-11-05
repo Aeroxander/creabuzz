@@ -131,7 +131,7 @@ export function MessagesPage() {
       </PageBar>
       {!me ? (
         <EmptyState title="Sign in to send messages">
-          Messages are end-to-end encrypted with your key.
+          Only you and the person you write to can read your messages.
         </EmptyState>
       ) : (
         <>
@@ -155,8 +155,8 @@ export function MessagesPage() {
               testId="social-messages-empty"
               title="Your inbox is empty"
             >
-              Messages are end-to-end encrypted. Start one with the pencil
-              above.
+              Only you and the person you write to can read your messages. Start
+              one with the pencil above.
             </EmptyState>
           ) : (
             shown.map((c) => {

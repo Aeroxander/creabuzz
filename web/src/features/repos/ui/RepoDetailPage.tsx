@@ -55,7 +55,7 @@ function CopyableUrl({ url }: { url: string }) {
         type="button"
         onClick={handleCopy}
         className="shrink-0 text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
-        aria-label="Copy clone URL"
+        aria-label="Copy download address"
       >
         {copied ? (
           <Check className="h-4 w-4 text-green-500" />
