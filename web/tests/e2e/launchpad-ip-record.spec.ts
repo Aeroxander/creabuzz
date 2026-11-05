@@ -274,7 +274,7 @@ test("a half-filled document is refused and nothing is published", async ({
   await page.getByTestId("ip-doc-assignment-title").fill("Commitment");
   await page.getByTestId("ip-save").click();
   await expect(page.getByTestId("ip-problem")).toContainText(
-    "needs a title, an https link and a fingerprint",
+    "needs a title, a link starting with https and a fingerprint",
   );
   expect(relay.events.filter((e) => e.kind === 37001)).toHaveLength(1);
 

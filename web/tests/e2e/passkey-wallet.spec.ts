@@ -143,7 +143,7 @@ test("when the network cannot be reached, a smart account's address is not shown
   chain.setMode("down");
   await page.goto(`http://localhost:4173/u/${pubkey}`);
   const card = page.getByTestId("payment-wallet");
-  await expect(card).toContainText("could not be made just now", {
+  await expect(card).toContainText("the check did not go through", {
     timeout: 30_000,
   });
   await expect(card.getByTestId("payment-wallet-address")).toHaveCount(0);

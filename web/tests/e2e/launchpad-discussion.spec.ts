@@ -118,7 +118,7 @@ test("a discussion started under a decision is tied to it, listed there, and sho
   // Nobody has talked about it yet; the section says what votes on a board are.
   const discussion = page.getByTestId("decision-discussion");
   await expect(page.getByTestId("discussion-empty")).toBeVisible();
-  await expect(discussion).toContainText("they are not the DAO's vote");
+  await expect(discussion).toContainText("they are not the project's vote");
 
   // Start the discussion: the title is started for the author, who adds the details.
   await page.getByTestId("discussion-start").click();

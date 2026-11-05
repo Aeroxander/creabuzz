@@ -276,7 +276,7 @@ test("the create form refuses parameters the auction contract would reject", asy
   await page.getByLabel("Price step").fill("100");
   const issues = page.getByTestId("launch-param-issues");
   await expect(issues).toBeVisible();
-  await expect(issues).toContainText("floorPrice");
+  await expect(issues).toContainText("floor price is too low");
   await wizardToPublish(page);
   await expect(
     page.getByRole("button", { name: /Publish launch/ }),
@@ -527,7 +527,7 @@ test("an oversized monthly budget warns but never blocks", async ({ page }) => {
   await page.getByTestId("launch-advanced-sale").locator("summary").click();
   await page.getByTestId("launch-budget").fill("1000000000000");
   await expect(page.getByTestId("launch-param-issues")).toContainText(
-    "Monthly budget",
+    "monthly budget is above a sixth",
   );
   // Warned, not blocked: publish stays enabled.
   await wizardToPublish(page);
@@ -729,7 +729,7 @@ test("performance vesting is validated and published", async ({ page }) => {
   await expect(vesting).toBeVisible();
   await page.getByTestId("launch-tranches").fill("4:50\n2:50");
   await expect(page.getByTestId("launch-vesting-issue")).toContainText(
-    "ascending",
+    "must be higher than the one before",
   );
   // A valid ladder publishes with the record.
   await page
@@ -1189,7 +1189,7 @@ test("a project with its own DAO says what can and cannot be changed, before a b
     await expect(powers).toBeVisible({ timeout: 15_000 });
     await expect(powers).toContainText("No vote can undo");
     await expect(powers).toContainText("The holders can change by vote");
-    await expect(powers).toContainText("Spend the money the DAO holds");
+    await expect(powers).toContainText("Spend the project's money");
     await expect(powers).toContainText("The team votes too");
     await expect(powers).toContainText("you can leave with your share");
     // Before the project has a DAO, which rule judges the milestones is not known, so nothing is said of reviewers; what is
@@ -1205,7 +1205,7 @@ test("a project with its own DAO says what can and cannot be changed, before a b
       "unlock only when the named reviewers",
     );
     await expect(powers).toContainText(
-      "Give up a team member's unearned Shares",
+      "Take back a team member's unearned Shares",
     );
   } finally {
     servedTokenMode = "mint";
@@ -1228,10 +1228,10 @@ test("a project that does not lock the team's Shares says so, and drops the line
     );
     await expect(page.getByTestId("launch-powers-panel")).toHaveCount(0);
     await expect(powers).not.toContainText(
-      "Give up a team member's unearned Shares",
+      "Take back a team member's unearned Shares",
     );
     // What a vote can decide is true either way.
-    await expect(powers).toContainText("Spend the money the DAO holds");
+    await expect(powers).toContainText("Spend the project's money");
   } finally {
     servedTokenMode = "mint";
   }

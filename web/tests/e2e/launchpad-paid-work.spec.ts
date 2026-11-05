@@ -427,7 +427,7 @@ test("a manual treasury payment selects a verified Nostr recipient on the right 
   );
   publicWallets.push(revoked);
   await picker.selectOption(pubkey);
-  await expect(page.getByRole("alert")).toContainText("proof changed");
+  await expect(page.getByRole("alert")).toContainText("payment wallet changed");
   await expect(page.getByTestId("pay-recipient")).toHaveValue("");
   publicWallets = [valid, forged, paymentRecord()];
   await refresh(page, "Decisions");
