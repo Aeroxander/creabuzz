@@ -1,197 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
 
-import {
-  decodeAddress,
-  decodeWord,
-  encodeCall0,
-} from "@creaton/core/launchpad/work.ts";
 import type { DescribeContext } from "@creaton/core/launchpad/daoActions.ts";
-import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
-import {
-  encodeAllowance,
-  encodeBalanceOf,
-} from "@creaton/core/launchpad/workBounty.ts";
-import type { WorkChain } from "@creaton/core/launchpad/workRead.ts";
-import {
-  decodeRound,
-  type EarlierRoundsRead,
-  readEarlierRounds,
-  readSecondaryMarket,
-  SECONDARY_SIGNATURES,
-  type SecondaryMarketRead,
-} from "@creaton/core/launchpad/secondary.ts";
 
 import { getRpcEndpoint } from "./chain";
 import { secondaryMarketFactory } from "./chain-config";
-import { refreshEveryMs, type WalletFunds } from "./lib/trading-copy";
+import {
+  pollSecondary,
+  readMarketForWords,
+  readSecondaryView,
+  type SecondaryMarketView,
+} from "./lib/secondary-read";
 import { endpointChain } from "./use-work";
 
 /** Where every query about the secondary market lives, so a step sent from one re-reads it. */
 export const SECONDARY_QUERY = ["launchpad", "secondary"] as const;
-
-/** The market's own constants a price cannot be read without. */
-export interface SecondaryMarketFacts {
-  /** Shares base units in one lot: what every price is quoted per. */
-  lotSize: bigint;
-  /** The token a seller escrows, lowercased. */
-  sharesToken: string;
-  /** The token a buyer pays with, lowercased. */
-  quoteToken: string;
-  /** The quote token's own decimals: the scale every price is written at. */
-  quoteDecimals: number;
-  /** The quote token's own symbol, as the token names itself. */
-  quoteSymbol: string;
-}
-
-/** Everything one read of a DAO's market answered. */
-export interface SecondaryMarketView {
-  /** The adapter's three-way answer: a market, genuinely none, or a read we do not have. */
-  read: SecondaryMarketRead;
-  /**
-   * The DAO's market address once the factory named one, even when its price token could not be read and `read` is
-   * `unreadable`: turning trading off needs only this, so the DAO is never left without its off switch.
-   */
-  market: string | null;
-  /** The market's lot size and tokens, or null when there is no market to ask. */
-  facts: SecondaryMarketFacts | null;
-  /**
-   * What the connected wallet can offer and pay with in this market: the Shares it may offer now, the Shares and quote
-   * it holds, and what the quote already lets the market take. Null with no wallet or no market. A read that did not
-   * complete throws, so the card says it could not read: never a wallet that "holds nothing".
-   */
-  funds: WalletFunds | null;
-  /** The latest round's id, which every order names; null before the first round. */
-  roundId: bigint | null;
-  /**
-   * The rounds before the latest that the connected wallet made an offer or a bid in, newest first. A finished
-   * round keeps owing its orders after a newer one opens, so these are read too.
-   */
-  earlier: EarlierRoundsRead;
-  /** The chain's clock when it was read, for the round's windows. */
-  now: number;
-  /**
-   * The market was found, but its price token would not say its decimals or its
-   * symbol. `read` is then `unreadable` and there are no `facts`: a price written
-   * at a guessed scale would be wrong by the factor the guess is wrong by.
-   */
-  tokenUnreadable: boolean;
-}
-
-/** One 32-byte answer as a number, or a thrown error: a short or empty answer is a read we do not have, never zero. */
-function strictWord(hex: string, what: string): bigint {
-  const word = wordOf(hex);
-  if (word === null) throw new Error(`${what} did not answer a number`);
-  return word;
-}
-
-/**
- * What `wallet` can offer and pay with in the market: `saleCapacity` on the market's own policy, the Shares and quote
- * it holds, and the quote's allowance to the market. Every answer must be a number or the whole read throws.
- */
-async function readWalletFunds(
-  chain: Pick<WorkChain, "call">,
-  input: {
-    market: string;
-    wallet: string;
-    sharesToken: string;
-    quoteToken: string;
-    policyHex: string;
-  },
-): Promise<WalletFunds> {
-  const policy = decodeAddress(input.policyHex);
-  if (policy === ZERO_ADDRESS) {
-    throw new Error("the market did not report its sale policy");
-  }
-  const [capacityHex, sharesHex, quoteHex, allowanceHex] = await Promise.all([
-    chain.call(
-      policy,
-      encodeFunctionData("saleCapacity(address)", ["address"], [input.wallet]),
-    ),
-    chain.call(input.sharesToken, encodeBalanceOf(input.wallet)),
-    chain.call(input.quoteToken, encodeBalanceOf(input.wallet)),
-    chain.call(input.quoteToken, encodeAllowance(input.wallet, input.market)),
-  ]);
-  return {
-    saleCapacity: strictWord(capacityHex, "the sale policy"),
-    shares: strictWord(sharesHex, "the Shares token"),
-    quote: strictWord(quoteHex, "the price token"),
-    quoteAllowance: strictWord(allowanceHex, "the price token"),
-  };
-}
-
-const NO_EARLIER: EarlierRoundsRead = { rounds: [], unchecked: 0n };
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-/** The most decimals a price scale may have: `decimals()` is a uint8, and no token in use goes near this. */
-const MAX_QUOTE_DECIMALS = 36;
-/** The most characters a token symbol may be, so a token cannot write a paragraph where a unit goes. */
-const MAX_SYMBOL = 32;
-
-/** One 32-byte word, or null when the answer is not exactly one. */
-function wordOf(hex: string): bigint | null {
-  const body = typeof hex === "string" ? hex.replace(/^0x/, "") : "";
-  return /^[0-9a-fA-F]{64}$/.test(body) ? BigInt(`0x${body}`) : null;
-}
-
-/** The token's `decimals()`, or null when it did not answer a scale a price can be written at. */
-function decodeDecimals(hex: string): number | null {
-  const word = wordOf(hex);
-  if (word === null || word > BigInt(MAX_QUOTE_DECIMALS)) return null;
-  return Number(word);
-}
-
-/** Printable ASCII, cut at the first zero byte; null when it is not a symbol a person could read. */
-function textOf(hexBytes: string): string | null {
-  let text = "";
-  for (const byte of hexBytes.match(/.{2}/g) ?? []) {
-    const code = Number.parseInt(byte, 16);
-    if (code === 0) break;
-    if (code < 0x20 || code > 0x7e) return null;
-    text += String.fromCharCode(code);
-  }
-  return text.length > 0 && text.length <= MAX_SYMBOL ? text : null;
-}
-
-/** The token's `symbol()`, as the standard string or a `bytes32`, or null when it did not answer one. */
-function decodeSymbol(hex: string): string | null {
-  const body = typeof hex === "string" ? hex.replace(/^0x/, "") : "";
-  if (body.length === 0 || body.length % 64 !== 0) return null;
-  if (!/^[0-9a-fA-F]*$/.test(body)) return null;
-  const words = body.match(/.{64}/g) ?? [];
-  // The standard string shape: the offset of the bytes, their length, then the bytes right-padded.
-  if (words.length >= 3 && BigInt(`0x${words[0]}`) === 32n) {
-    const length = Number(BigInt(`0x${words[1]}`));
-    if (length === 0 || length > MAX_SYMBOL) return null;
-    return textOf(body.slice(128, 128 + length * 2));
-  }
-  // A token whose `symbol()` is a `bytes32` answers one right-padded word.
-  return words.length === 1 ? textOf(words[0]) : null;
-}
-
-/**
- * The market's price token's own units, or null when it would not say them.
- *
- * A token that does not implement `decimals()`/`symbol()`, or answers something
- * that is not a scale and a symbol, gives us no scale to write a price at. That
- * is a read we do not have — never 6 and "USDC", which would misprint every
- * price of a token with other decimals (Review-Proven Rule 1).
- */
-async function readQuoteUnits(
-  chain: Pick<WorkChain, "call">,
-  quoteToken: string,
-): Promise<{ decimals: number; symbol: string } | null> {
-  try {
-    const [decimalsHex, symbolHex] = await Promise.all([
-      chain.call(quoteToken, encodeCall0("decimals()")),
-      chain.call(quoteToken, encodeCall0("symbol()")),
-    ]);
-    const decimals = decodeDecimals(decimalsHex);
-    const symbol = decodeSymbol(symbolHex);
-    return decimals === null || symbol === null ? null : { decimals, symbol };
-  } catch {
-    // A token that does not implement them refuses the call: the same "no answer" as a nonsense one.
-    return null;
-  }
-}
 
 /**
  * The DAO's secondary market (docs/v3-review/SECONDARY-LISTING-SPEC.md), when
@@ -201,7 +24,8 @@ async function readQuoteUnits(
  *
  * A factory this build does not name is not an absent market: the read is not
  * attempted and the card says trading is not set up here. A read that did not
- * complete is `unreadable` — never "this DAO has no market".
+ * complete throws, so the query keeps the last good view and retries — never
+ * "this DAO has no market".
  */
 export function useSecondary(input: {
   chainId: string | number | null;
@@ -209,177 +33,26 @@ export function useSecondary(input: {
   wallet: string | null;
 }) {
   const factory = secondaryMarketFactory(input.chainId);
+  // How many errors each query had when it last succeeded, so the polling backoff counts failures in a row.
+  const calm = useRef(new Map<string, number>());
   const query = useQuery({
     queryKey: [...SECONDARY_QUERY, input.dao, input.wallet, factory],
     enabled: factory !== null,
     staleTime: 10_000,
     refetchOnWindowFocus: false,
-    // A round closes and times out by the clock, with no one acting, so a card left open re-reads
-    // while one is live and shows "Settle the round" the moment bidding ends.
-    refetchInterval: (q) => refreshEveryMs(q.state.data?.read),
-    queryFn: async (): Promise<SecondaryMarketView> => {
-      const chain = endpointChain(getRpcEndpoint());
-      const now = await chain.now();
-      const read = await readSecondaryMarket(chain, {
+    // A round closes and times out by the clock, with no one acting, so a card left open re-reads while one is live
+    // and shows "Settle the round" the moment bidding ends; a finished round re-reads when the next may open; and a
+    // read that failed is looked at again, slower each time, so a node coming back needs no reload.
+    refetchInterval: (q) => pollSecondary(q, calm.current),
+    // A read that did not complete throws (and so retries), keeping the last good view in the query.
+    queryFn: (): Promise<SecondaryMarketView> =>
+      readSecondaryView(endpointChain(getRpcEndpoint()), {
         factory: factory as string,
         dao: input.dao,
         wallet: input.wallet,
-        now,
-      });
-      // No market to ask: the listing, the round and the wallet's orders are all the read has to say.
-      if (read.kind !== "present") {
-        return {
-          read,
-          market: null,
-          facts: null,
-          funds: null,
-          roundId: null,
-          earlier: NO_EARLIER,
-          now,
-          tokenUnreadable: false,
-        };
-      }
-      // The market's three constants, without which a lot has no size and an
-      // approval no target. A zero answer is a read we do not have, not a market
-      // that trades nothing (Review-Proven Rule 1).
-      const [lotHex, sharesHex, quoteHex, countHex, policyHex] =
-        await Promise.all([
-          chain.call(read.market, encodeCall0("lotSize()")),
-          chain.call(read.market, encodeCall0("sharesToken()")),
-          chain.call(read.market, encodeCall0("quote()")),
-          chain.call(read.market, encodeCall0(SECONDARY_SIGNATURES.roundCount)),
-          chain.call(read.market, encodeCall0("policy()")),
-        ]);
-      const lotSize = decodeWord(lotHex);
-      const sharesToken = decodeAddress(sharesHex);
-      const quoteToken = decodeAddress(quoteHex);
-      if (lotSize === 0n) {
-        throw new Error("the market did not report how many Shares one lot is");
-      }
-      if (sharesToken === ZERO_ADDRESS || quoteToken === ZERO_ADDRESS) {
-        throw new Error("the market did not report its tokens");
-      }
-      // Half of every price is the quote token's own scale, so the token is read
-      // for it: a token that will not say its decimals or its symbol leaves no
-      // price to show, and that is a read we do not have rather than a guess.
-      const quote = await readQuoteUnits(chain, quoteToken);
-      if (quote === null) {
-        return {
-          read: {
-            kind: "unreadable",
-            reason:
-              "the market's price token did not say its decimals and its symbol",
-          },
-          market: read.market,
-          facts: null,
-          funds: null,
-          roundId: null,
-          earlier: NO_EARLIER,
-          now,
-          tokenUnreadable: true,
-        };
-      }
-      // The adapter returns the latest round without its id, and every order
-      // names one. `roundCount` is that id (ids start at 1), but it is read
-      // after the round, so a round opening in between would name the wrong one:
-      // the id counts only if it still opens when the round we hold opened.
-      let roundId: bigint | null = null;
-      if (read.round !== null) {
-        const count = decodeWord(countHex);
-        const at = decodeRound(
-          await chain.call(
-            read.market,
-            encodeFunctionData(
-              SECONDARY_SIGNATURES.rounds,
-              ["uint256"],
-              [count],
-            ),
-          ),
-        );
-        if (at.opensAt !== read.round.opensAt) {
-          throw new Error("the market opened a round while it was being read");
-        }
-        roundId = count;
-      }
-      // What this wallet can offer and pay with, so a form can say what is possible before anything is signed.
-      const funds = input.wallet
-        ? await readWalletFunds(chain, {
-            market: read.market,
-            wallet: input.wallet,
-            sharesToken,
-            quoteToken,
-            policyHex,
-          })
-        : null;
-      // What earlier rounds still owe this wallet: they stay claimable after a newer round opens, and a failed
-      // read throws rather than showing a wallet with nothing owed (Review-Proven Rule 1).
-      const earlier =
-        roundId !== null && input.wallet
-          ? await readEarlierRounds(chain, {
-              market: read.market,
-              wallet: input.wallet,
-              latest: roundId,
-              now,
-            })
-          : NO_EARLIER;
-      return {
-        read,
-        market: read.market,
-        facts: {
-          lotSize,
-          sharesToken,
-          quoteToken,
-          quoteDecimals: quote.decimals,
-          quoteSymbol: quote.symbol,
-        },
-        funds,
-        roundId,
-        earlier,
-        now,
-        tokenUnreadable: false,
-      };
-    },
+      }),
   });
   return { factory, query };
-}
-
-/**
- * The DAO's market and the units its price token says it uses, for putting a vote that names it in words. Null when
- * the DAO has none. A read that did not complete throws, so a vote is never described against a market we guessed.
- */
-async function readMarketForWords(
-  chain: Pick<WorkChain, "call">,
-  input: { factory: string; dao: string },
-): Promise<DescribeContext["secondaryMarket"] | null> {
-  // An empty or malformed answer is a read we do not have, never "this DAO has no market" (Review-Proven Rule 1).
-  const word = wordOf(
-    await chain.call(
-      input.factory,
-      encodeFunctionData(
-        SECONDARY_SIGNATURES.marketOf,
-        ["address"],
-        [input.dao],
-      ),
-    ),
-  );
-  if (word === null || word >= 1n << 160n) {
-    throw new Error("the factory did not answer an address");
-  }
-  if (word === 0n) return null;
-  const answer = `0x${word.toString(16).padStart(40, "0")}`;
-  const quoteToken = decodeAddress(
-    await chain.call(answer, encodeCall0("quote()")),
-  );
-  if (quoteToken === ZERO_ADDRESS) {
-    throw new Error("the market did not report its price token");
-  }
-  const units = await readQuoteUnits(chain, quoteToken);
-  // A token that would not say its units leaves the market's prices in base units: never a guessed currency.
-  return {
-    address: answer,
-    quoteDecimals: units?.decimals,
-    quoteSymbol: units?.symbol,
-  };
 }
 
 /**

@@ -41,7 +41,9 @@ import {
   bidHolds,
   bidOrderLine,
   bidPlan,
+  cardMode,
   claimDue,
+  collectQuoteLabel,
   factoryMissingLine,
   listingDetailLine,
   lotPriceLine,
@@ -56,6 +58,7 @@ import {
   sellRoomLine,
   settleNoticeLine,
   shareUnits,
+  staleReadLine,
   tokenUnreadableLine,
   tradingFailureLine,
   tradingStateLine,
@@ -64,11 +67,8 @@ import {
 } from "../lib/trading-copy";
 import { bidCalls, placeOrder, sellCalls } from "../lib/trading-orders";
 import { useChainSend } from "../use-chain-send";
-import {
-  type SecondaryMarketFacts,
-  SECONDARY_QUERY,
-  useSecondary,
-} from "../use-secondary";
+import type { SecondaryMarketFacts } from "../lib/secondary-read";
+import { SECONDARY_QUERY, useSecondary } from "../use-secondary";
 import { FailureNote, WalletStrip } from "./account-widgets";
 import { TradingEarlier } from "./TradingEarlier";
 
@@ -107,8 +107,13 @@ export function TradingCard({
   const blocked = sender.busy !== null || sender.gate !== null;
   const present = read?.kind === "present" ? read : null;
   const round = present?.round ?? null;
-  // What prices are written in: the market's own quote token, as it names itself.
-  const quote = data?.facts ?? null;
+  // What prices are written in: the market's own quote token, as it names itself. Null when it would not say.
+  const quote = data?.facts?.quoteKnown ? data.facts : null;
+  const mode = cardMode({
+    factoryKnown: factory !== null,
+    data,
+    failed: query.isError,
+  });
   const over = round?.phase === "settled" || round?.phase === "void";
   const nextOpenAt = round === null ? 0 : round.opensAt + SECONDARY_EVERY;
   const canOpen =
@@ -120,7 +125,7 @@ export function TradingCard({
   return (
     <Card className="p-4" data-testid="trading">
       <h2 className="text-base font-semibold">Trading</h2>
-      {factory === null ? (
+      {mode === "missing" ? (
         <p
           className="mt-1 text-sm text-muted-foreground"
           data-testid="trading-state"
@@ -128,13 +133,13 @@ export function TradingCard({
         >
           {factoryMissingLine()}
         </p>
-      ) : query.isError || read?.kind === "unreadable" ? (
+      ) : mode === "unreadable" ? (
         <p
           className="mt-1 text-sm text-muted-foreground"
           data-testid="trading-unreadable"
           role="status"
         >
-          {data?.tokenUnreadable ? tokenUnreadableLine() : unreadableLine()}{" "}
+          {unreadableLine()}{" "}
           <button
             className="underline"
             onClick={() => void query.refetch()}
@@ -143,15 +148,33 @@ export function TradingCard({
             Try again
           </button>
         </p>
-      ) : data === undefined ? (
+      ) : mode === "reading" || data === undefined ? (
         <p className="mt-1 text-sm text-muted-foreground" role="status">
           Reading…
         </p>
       ) : (
         <>
           <p className="mt-1 text-sm" data-testid="trading-state">
-            {tradingStateLine(data.read, data.now, quote)}
+            {data.tokenUnreadable && present?.listing.enabled
+              ? tokenUnreadableLine()
+              : tradingStateLine(data.read, data.now, quote)}
           </p>
+          {query.isError ? (
+            <p
+              className="mt-1 text-sm text-muted-foreground"
+              data-testid="trading-stale"
+              role="status"
+            >
+              {staleReadLine(query.dataUpdatedAt)}{" "}
+              <button
+                className="underline"
+                onClick={() => void query.refetch()}
+                type="button"
+              >
+                Try again
+              </button>
+            </p>
+          ) : null}
           <MoreInfo label="How trading works" testId="trading-how">
             Sellers offer Shares they already hold, in whole lots at a lowest
             price, and buyers bid for whole lots at a highest one, for three
@@ -162,7 +185,7 @@ export function TradingCard({
             Shares between people: it does not raise money for the project, and
             it does not promise a next buyer.
           </MoreInfo>
-          {present?.listing.enabled && data.facts ? (
+          {present?.listing.enabled && data.facts?.quoteKnown ? (
             <p className="mt-2 text-sm" data-testid="trading-listing">
               {listingDetailLine(
                 present.listing,
@@ -203,6 +226,7 @@ export function TradingCard({
               funds={data.funds}
               listingEnabled={present.listing.enabled}
               market={present.market}
+              tokenUnreadable={data.tokenUnreadable}
               me={sender.wallet.address}
               onPlace={place}
               onSend={sender.send}
@@ -248,6 +272,7 @@ function TradingRound({
   facts,
   funds,
   listingEnabled,
+  tokenUnreadable,
   wallet,
   me,
   blocked,
@@ -263,6 +288,11 @@ function TradingRound({
   funds: WalletFunds | null;
   /** A closed listing takes no new offer or bid; settling, taking one back and collecting still work. */
   listingEnabled: boolean;
+  /**
+   * The price token would not say its units: no new offer or bid is taken, since no price can be written or checked,
+   * while settling, taking an order back and collecting need none of them and stay.
+   */
+  tokenUnreadable: boolean;
   wallet: WalletView;
   me: string | null;
   blocked: boolean;
@@ -272,7 +302,7 @@ function TradingRound({
 }) {
   const [form, setForm] = useState<"sell" | "bid" | null>(null);
   const bidding = round.phase === "bidding";
-  const takingOrders = bidding && listingEnabled;
+  const takingOrders = bidding && listingEnabled && !tokenUnreadable;
   const due = claimDue(round, wallet, facts.lotSize);
   const { sell, bid } = wallet;
   const settleNotice = settleNoticeLine(round, wallet);
@@ -416,7 +446,7 @@ function TradingRound({
               >
                 {busy === "trading-claim-quote"
                   ? "Collecting…"
-                  : `Collect ${money(due.quote, facts)}`}
+                  : collectQuoteLabel(due.quote, facts)}
               </Button>
             ) : null}
           </div>

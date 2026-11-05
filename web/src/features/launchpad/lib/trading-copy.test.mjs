@@ -5,7 +5,9 @@ import {
   bidHolds,
   bidOrderLine,
   bidPlan,
+  cardMode,
   claimDue,
+  collectQuoteLabel,
   earlierDues,
   earlierLimitLine,
   earlierRoundLine,
@@ -27,12 +29,15 @@ import {
   sellPlan,
   sellRoomLine,
   settleNoticeLine,
+  SLOW_REFRESH_MS,
+  staleReadLine,
   shareUnits,
   stepAtLeast,
   stepAtMost,
   tokenUnreadableLine,
   tradingFailureLine,
   tradingStateLine,
+  UNKNOWN_QUOTE,
   unreadableLine,
 } from "./trading-copy.ts";
 
@@ -761,7 +766,7 @@ test("a wallet's own orders read as sentences, before and after the result", () 
   );
 });
 
-test("the card re-reads on its own only while a round ends by the clock", () => {
+test("the card re-reads on its own while a round ends by the clock", () => {
   // Taking orders and waiting to settle both end with no one acting, so the card keeps looking.
   for (const phase of ["bidding", "settling"]) {
     assert.equal(
@@ -770,19 +775,111 @@ test("the card re-reads on its own only while a round ends by the clock", () => 
       phase,
     );
   }
-  // A finished round, no round, and every read that did not complete change only when someone acts.
+  assert.ok(LIVE_REFRESH_MS >= 10_000, "never a tight loop on the node");
+});
+
+test("a finished round keeps the card looking, so a tab left open sees the next round", () => {
+  const next = OCT_14 + 7 * 86_400;
   for (const phase of ["settled", "void"]) {
+    const read = market({ round: round({ phase }) });
+    // Waiting for the next round to be allowed: look again when it is, not a week later.
+    assert.equal(refreshEveryMs(read, next - 120), 120_000, phase);
+    assert.equal(refreshEveryMs(read, next - 5), 5_000, phase);
+    // Never a tight loop, and never longer than the slow poll.
+    assert.equal(refreshEveryMs(read, next - 1), 1_000, phase);
+    assert.equal(refreshEveryMs(read, next), SLOW_REFRESH_MS, phase);
     assert.equal(
-      refreshEveryMs(market({ round: round({ phase }) })),
-      false,
+      refreshEveryMs(read, next - 3 * 86_400),
+      SLOW_REFRESH_MS,
       phase,
     );
+    // Allowed already (the open button shows) or someone else opened it: the slow poll finds out.
+    assert.equal(refreshEveryMs(read, next + 10), SLOW_REFRESH_MS, phase);
   }
-  assert.equal(refreshEveryMs(market()), false);
+  // A closed listing may be published again, and a market with no round may have one opened by someone else.
+  const off = market({ round: round({ phase: "settled" }) });
+  off.listing = { ...off.listing, enabled: false };
+  assert.equal(refreshEveryMs(off, OCT_14), SLOW_REFRESH_MS);
+  assert.equal(refreshEveryMs(market()), SLOW_REFRESH_MS);
+});
+
+test("a read with no market and no answer has nothing to look at again", () => {
   assert.equal(refreshEveryMs(undefined), false);
   assert.equal(refreshEveryMs({ kind: "absent" }), false);
   assert.equal(refreshEveryMs({ kind: "unreadable", reason: "x" }), false);
-  assert.ok(LIVE_REFRESH_MS >= 10_000, "never a tight loop on the node");
+});
+
+test("after failed reads the card keeps looking, slower each time, up to a cap", () => {
+  const live = market({ round: round({ phase: "bidding" }) });
+  const waits = [1, 2, 3, 4, 5, 20].map((n) => refreshEveryMs(live, 0, n));
+  assert.deepEqual(
+    waits,
+    [60_000, 120_000, 240_000, 300_000, 300_000, 300_000],
+  );
+  // Failing with nothing read yet is still looked at again; only a market we know is absent is left alone.
+  assert.equal(refreshEveryMs(undefined, 0, 1), 60_000);
+  assert.equal(refreshEveryMs({ kind: "absent" }, 0, 1), 60_000);
+  assert.ok(refreshEveryMs(live, 0, 1) >= LIVE_REFRESH_MS);
+});
+
+test("the card keeps what it last read on screen when a refresh fails, and says so", () => {
+  const view = { read: market() };
+  // Nothing ever read: the unreadable block, with its retry.
+  assert.equal(
+    cardMode({ factoryKnown: true, data: undefined, failed: true }),
+    "unreadable",
+  );
+  assert.equal(
+    cardMode({ factoryKnown: true, data: undefined, failed: false }),
+    "reading",
+  );
+  assert.equal(
+    cardMode({ factoryKnown: false, data: view, failed: true }),
+    "missing",
+  );
+  // Something read earlier: the card, failed refresh or not.
+  assert.equal(
+    cardMode({ factoryKnown: true, data: view, failed: false }),
+    "ready",
+  );
+  assert.equal(
+    cardMode({ factoryKnown: true, data: view, failed: true }),
+    "ready",
+  );
+  // A view that is itself an unreadable answer is not something to keep on screen.
+  assert.equal(
+    cardMode({
+      factoryKnown: true,
+      data: { read: { kind: "unreadable", reason: "x" } },
+      failed: false,
+    }),
+    "unreadable",
+  );
+});
+
+test("the refresh note says when what is shown was read, in plain words", () => {
+  const line = staleReadLine(Date.UTC(2026, 9, 14, 15, 7), "UTC");
+  assert.equal(
+    line,
+    "Could not refresh just now. What is shown was read at 3:07 PM.",
+  );
+  assert.doesNotMatch(line, /relay|nsec|rpc|revert|0x/i);
+});
+
+test("a collect button names the money in the token's units, or just says so when the token will not say them", () => {
+  assert.equal(
+    collectQuoteLabel(1_500_000n, { ...USDC, quoteKnown: true }),
+    "Collect 1.5 USDC",
+  );
+  assert.equal(collectQuoteLabel(1_500_000n, USDC), "Collect 1.5 USDC");
+  assert.equal(
+    collectQuoteLabel(1_500_000n, { ...UNKNOWN_QUOTE, quoteKnown: false }),
+    "Collect your money",
+  );
+});
+
+test("amounts the token will not give units for are written as base units, never a guessed currency", () => {
+  assert.equal(money(1_500_000n, UNKNOWN_QUOTE), "1,500,000 base units");
 });
 
 test("a wallet with an order in a round waiting to settle is told who can settle it and by when", () => {

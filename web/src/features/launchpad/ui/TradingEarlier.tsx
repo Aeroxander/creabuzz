@@ -26,10 +26,10 @@ import {
   earlierDues,
   earlierLimitLine,
   earlierRoundLine,
-  money,
+  collectQuoteLabel,
   shareUnits,
 } from "../lib/trading-copy";
-import type { SecondaryMarketFacts } from "../use-secondary";
+import type { SecondaryMarketFacts } from "../lib/secondary-read";
 
 /**
  * One row per earlier round that still owes `me` something, and a note when older
@@ -164,7 +164,7 @@ function EarlierRow({
           >
             {busy === quoteKey
               ? "Collecting…"
-              : `Collect ${money(due.quote, facts)}`}
+              : collectQuoteLabel(due.quote, facts)}
           </Button>
         ) : null}
       </div>

@@ -23,11 +23,12 @@ export function TradingListingForm({
   onSubmit,
 }: FormProps) {
   // The DAO's own market, read once for the whole page: the factory this build knows names it, so nobody types an
-  // address here.
+  // address here. Read without the wallet: the listing, the terms and the off switch are the DAO's, and a wallet's
+  // balances or earlier rounds failing to read must not take the switch away (Review-Proven Rule 6).
   const { factory, query } = useSecondary({
     chainId: ctx.chainId ?? null,
     dao: ctx.dao,
-    wallet: ctx.wallet,
+    wallet: null,
   });
 
   const [enabled, setEnabled] = useState<"on" | "off">("on");
@@ -43,8 +44,8 @@ export function TradingListingForm({
   // The market's own quote token, not the launch record's sale currency: a DAO whose record
   // names a different token than the market's quote would otherwise publish a listing priced
   // off by that token's scale — the same defect class as a hardcoded 6 decimals.
-  const decimals = view?.facts?.quoteDecimals ?? null;
-  const symbol = view?.facts?.quoteSymbol ?? null;
+  const decimals = view?.facts?.quoteKnown ? view.facts.quoteDecimals : null;
+  const symbol = view?.facts?.quoteKnown ? view.facts.quoteSymbol : null;
   const dirty =
     minText !== "" || maxText !== "" || levelsText !== "" || enabled === "off";
   /** A price as this form writes it, in the sale currency when its decimals are known. */
@@ -134,7 +135,7 @@ export function TradingListingForm({
           value={enabled}
         />
       ) : null}
-      {present && enabled === "on" ? (
+      {present && !view?.tokenUnreadable && enabled === "on" ? (
         <>
           <TextField
             hint={`Each price is for ${lot}. Nothing sells below the lowest price or above the highest.`}

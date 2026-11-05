@@ -418,22 +418,96 @@ export function stepAtMost(
 /** How often the card re-reads while a round is live, so it notices a round closing on its own. */
 export const LIVE_REFRESH_MS = 30_000;
 
+/** The slowest the card re-reads, while the tab is visible: a round can open by the clock or by someone else. */
+export const SLOW_REFRESH_MS = 5 * 60_000;
+
 /**
- * How long the card waits before reading the market again: every `LIVE_REFRESH_MS`
- * while a round is taking orders or waiting to be settled (the two phases that end
- * by the clock, with no one acting), and never otherwise. A settled or void round,
- * no round, and a read that did not complete change only when someone acts, and an
- * unreadable read has its own "Try again".
+ * How long the card waits before reading the market again, or false for never.
+ *
+ * Every `LIVE_REFRESH_MS` while a round is taking orders or waiting to be settled (the two phases that end by the
+ * clock, with no one acting). A settled or void round waits for the next one: the card looks again when it may open
+ * (`SECONDARY_EVERY` after this one did), and otherwise every `SLOW_REFRESH_MS`, as it does with a closed listing or
+ * no round yet, because anyone may open one and a tab left open must not keep saying "Next round from ..." forever.
+ * A DAO with no market, and a read we do not have, change by nobody's clock and are not polled.
+ *
+ * After `failures` reads in a row that did not complete the card still looks again, slower each time up to the slow
+ * poll: a node that was down comes back without anyone reloading, and a persistent failure cannot become a tight
+ * loop (Review-Proven Rule 4). `now` is the chain's clock when `read` was made.
  */
 export function refreshEveryMs(
   read: SecondaryMarketRead | undefined,
+  now = 0,
+  failures = 0,
 ): number | false {
-  if (read === undefined || read.kind !== "present" || read.round === null) {
-    return false;
+  if (failures > 0) {
+    return Math.min(
+      LIVE_REFRESH_MS * 2 ** Math.min(failures, 8),
+      SLOW_REFRESH_MS,
+    );
   }
-  return read.round.phase === "bidding" || read.round.phase === "settling"
-    ? LIVE_REFRESH_MS
-    : false;
+  if (read === undefined || read.kind !== "present") return false;
+  const round = read.round;
+  if (round === null) return SLOW_REFRESH_MS;
+  if (round.phase === "bidding" || round.phase === "settling") {
+    return LIVE_REFRESH_MS;
+  }
+  const untilNext = round.opensAt + SECONDARY_EVERY - now;
+  if (read.listing.enabled && untilNext > 0) {
+    return Math.min(Math.max(untilNext * 1000, 1000), SLOW_REFRESH_MS);
+  }
+  return SLOW_REFRESH_MS;
+}
+
+/** What the card is showing: no market factory here, nothing read yet, a read it cannot show, or the market. */
+export type CardMode = "missing" | "reading" | "unreadable" | "ready";
+
+/**
+ * What the card shows, from what it has. Anything read earlier stays on screen: a refresh that fails is a note above
+ * it, never a replacement, so the order boxes, the Settle and Collect buttons and what a person had typed stay put.
+ * The unreadable block is only for a card with nothing at all to show (Review-Proven Rule 6: the way back stays).
+ */
+export function cardMode(input: {
+  factoryKnown: boolean;
+  data: { read: SecondaryMarketRead } | undefined;
+  failed: boolean;
+}): CardMode {
+  if (!input.factoryKnown) return "missing";
+  if (input.data !== undefined && input.data.read.kind !== "unreadable") {
+    return "ready";
+  }
+  return input.failed || input.data !== undefined ? "unreadable" : "reading";
+}
+
+/** The note above what the card last read, when the refresh after it did not complete. */
+export function staleReadLine(readAtMs: number, timeZone?: string): string {
+  const at = new Date(readAtMs).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  });
+  return `Could not refresh just now. What is shown was read at ${at}.`;
+}
+
+/**
+ * The units amounts are written in when the price token would not say its own: base units, labelled as such. Never a
+ * guessed currency; used only to show what is owed, since no price is written or taken without the token's units.
+ */
+export const UNKNOWN_QUOTE: QuoteUnits = {
+  quoteDecimals: 0,
+  quoteSymbol: "base units",
+};
+
+/**
+ * What a collect button says for money owed. The token's units when they are known; "Collect your money" when the
+ * token would not name them, so the claim is offered without printing an amount at a guessed scale.
+ */
+export function collectQuoteLabel(
+  amount: bigint,
+  quote: QuoteUnits & { quoteKnown?: boolean },
+): string {
+  return quote.quoteKnown === false
+    ? "Collect your money"
+    : `Collect ${money(amount, quote)}`;
 }
 
 /**
