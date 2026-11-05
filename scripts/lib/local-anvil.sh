@@ -19,7 +19,10 @@ free_loopback_port() {
 # that process reports it is listening. Fails when the port is already held, or the process exits or never listens.
 start_local_anvil() {
   local port="$1" log="$2" _
-  python3 -c 'import socket, sys; s=socket.socket(); s.bind(("127.0.0.1", int(sys.argv[1]))); s.close()' "$port" 2>/dev/null \
+  [[ "$port" =~ ^[0-9]+$ ]] && ((10#$port >= 1 && 10#$port <= 65535)) \
+    || fail "ANVIL_PORT must be a number from 1 to 65535 (got '${port}'; unset it to pick a free port)"
+  # SO_REUSEADDR as anvil sets it: a live listener still fails the bind, a lingering closed connection (TIME_WAIT) does not.
+  python3 -c 'import socket, sys; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", int(sys.argv[1]))); s.close()' "$port" 2>/dev/null \
     || fail "port ${port} is already in use: not starting a chain next to another one (unset ANVIL_PORT to pick a free port)"
   anvil --host 127.0.0.1 --port "$port" --chain-id 31337 >"$log" 2>&1 &
   ANVIL_PID=$!
