@@ -161,8 +161,8 @@ const MUTATIONS = [
   [
     "the claim escrow expects a bool from transfer again (D68 / ES-4 undone)",
     "contracts/src/ClaimStake.sol",
-    "        if (total != 0) currency.safeTransfer(claim.contributor, total);",
-    "        if (total != 0) require(currency.transfer(claim.contributor, total));",
+    "            currency.safeTransfer(claim.contributor, claim.amount + claim.stake);",
+    "            require(currency.transfer(claim.contributor, claim.amount + claim.stake));",
     "test/ClaimStakeCurrency.t.sol",
   ],
   [
@@ -228,8 +228,8 @@ const MUTATIONS = [
   [
     "D73: a lock guard can be installed after \"none\" was chosen",
     "contracts/src/majeur/MolochPatched.sol",
-    "        require(!lockGuardSet, LockGuardSet());",
-    "",
+    "        require(!lockGuardSet, LockGuardSet());\n        lockGuardSet = true;",
+    "        lockGuardSet = true;",
     "test/ExitProtections.t.sol",
   ],
   [
@@ -270,8 +270,8 @@ const MUTATIONS = [
   [
     "D77: Shares move between wallets while locked (the exemption lets everything through)",
     "contracts/src/majeur/MolochPatched.sol",
-    "        if (exempt != address(0) && (from == exempt || to == exempt)) return;",
-    "        if (exempt != address(0)) return;",
+    "        address exempt = transferExempt;\n        if (exempt != address(0) && (from == exempt || to == exempt)) return;\n    // @@CREABUZZ PATCH END shares-transfer-exempt",
+    "        address exempt = transferExempt;\n        if (exempt != address(0)) return;\n    // @@CREABUZZ PATCH END shares-transfer-exempt",
     "test/TransferLock.t.sol",
   ],
   [
@@ -718,23 +718,37 @@ const MUTATIONS = [
   [
     "N10: a seller loses what was credited to them",
     "contracts/src/Payouts.sol",
-    "if (from != address(0) && from != dao) correction[from] += delta;",
+    "if (_counts(from)) correction[from] += delta;",
     "// removed",
     "test/Payouts.t.sol",
   ],
   [
     "N10: a new holder is paid for payouts before they held",
     "contracts/src/Payouts.sol",
-    "if (to != address(0) && to != dao) correction[to] -= delta;",
+    "if (_counts(to)) correction[to] -= delta;",
     "// removed",
     "test/Payouts.t.sol",
   ],
   [
     "N10: the DAO's own holding counts",
     "contracts/src/Payouts.sol",
-    "return shares.totalSupply() + loot.totalSupply() - shares.balanceOf(dao) - loot.balanceOf(dao);",
-    "return shares.totalSupply() + loot.totalSupply();",
+    "return shares.totalSupply() + loot.totalSupply() - _held(dao) - _held(market);",
+    "return shares.totalSupply() + loot.totalSupply() - _held(market);",
     "test/Payouts.t.sol",
+  ],
+  [
+    "N10: the DAO's market's escrowed Shares count as held units",
+    "contracts/src/Payouts.sol",
+    "return shares.totalSupply() + loot.totalSupply() - _held(dao) - _held(market);",
+    "return shares.totalSupply() + loot.totalSupply() - _held(dao);",
+    ["test/Payouts.t.sol", "test/PayoutsMarket.t.sol"],
+  ],
+  [
+    "N10: the DAO's market is paid for the Shares it escrows",
+    "contracts/src/Payouts.sol",
+    "return who != address(0) && who != dao && who != market;",
+    "return who != address(0) && who != dao;",
+    ["test/Payouts.t.sol", "test/PayoutsMarket.t.sol"],
   ],
   [
     "N10: it pays before the DAO named it",

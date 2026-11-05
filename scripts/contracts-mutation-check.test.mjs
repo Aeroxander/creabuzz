@@ -28,6 +28,15 @@ test("every secondary-market entry's guard is in its file exactly once and its t
   assert.match(out.stdout, /every entry is well formed/);
 });
 
+// A stale entry anywhere in the file (a guard rewritten, a test file renamed) turns a real run's mutation into a silent
+// SKIPPED, so --check covers every entry, not only the secondary-market ones above.
+test("every entry in the file, old or new, still finds its guard exactly once (no forge run)", () => {
+  assert.ok(entries.length > 0, "no entries listed");
+  const out = run("--check");
+  assert.equal(out.status, 0, out.stdout + out.stderr);
+  assert.match(out.stdout, new RegExp(`every entry is well formed \\(${entries.length} checked\\)`));
+});
+
 // A guard nobody mutates is a guard nobody has proved a test notices (TESTING.md). These are the secondary-market
 // candidate's guards, located by their text, so a rewritten guard that drops its entry fails here.
 const REQUIRED = [
@@ -91,6 +100,12 @@ const REQUIRED = [
   ["ContributorKitV2.sol", "p.saleStart"],
   ["ContributorKitV2.sol", "p.saleCliff > p.saleDuration"],
   ["ContributorKitV2.sol", "p.lotSize > MAX_LOT_SIZE_BOUND"],
+  // Payouts: who counts toward a payout (the DAO and its market hold no units that count)
+  ["Payouts.sol", "if (_counts(from)) correction[from] += delta;"],
+  ["Payouts.sol", "if (_counts(to)) correction[to] -= delta;"],
+  ["Payouts.sol", "- _held(dao) - _held(market)"],
+  ["Payouts.sol", "return who != address(0) && who != dao && who != market;"],
+  ["Payouts.sol", "_held(market)"],
 ];
 
 for (const [file, part] of REQUIRED) {
@@ -105,5 +120,12 @@ test("each secondary-market entry names the test files that must catch it", () =
   for (const e of mine) {
     assert.ok(Array.isArray(e.tests) && e.tests.length > 0, `${e.name}: no test files named`);
     for (const t of e.tests) assert.ok(existsSync(join(dirname(SCRIPT), "..", "contracts", t)), `${e.name}: ${t} missing`);
+  }
+});
+
+test("the Payouts market-exclusion entries name the tests that exercise the market", () => {
+  for (const guard of ["who != dao && who != market", "- _held(dao) - _held(market)"]) {
+    const hits = at("Payouts.sol", guard).filter((e) => e.tests.includes("test/PayoutsMarket.t.sol"));
+    assert.ok(hits.length >= 1, `no Payouts entry on ${guard} names test/PayoutsMarket.t.sol`);
   }
 });
