@@ -93,9 +93,11 @@ test("the recovery banner renders inline with the approved wording", () => {
   assert.match(banner, /role="alert"/);
   assert.match(banner, /data-testid="identity-recovery-banner"/);
   assert.ok(
-    banner.includes(
-      "Your saved key can't be read. Paste your recovery key, or start over.",
-    ),
+    banner
+      .replace(/\s+/g, " ")
+      .includes(
+        "Your saved account can't be read. Paste your recovery key, or start over.",
+      ),
     "the banner keeps the approved wording",
   );
 });

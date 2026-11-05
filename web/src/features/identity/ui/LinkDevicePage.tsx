@@ -171,8 +171,9 @@ export function LinkDevicePage() {
           <p className="mt-2 text-sm text-muted-foreground">
             This browser has a saved account but it can&rsquo;t be opened, so
             nothing was shared with the desktop app. If you have your recovery
-            key, use it to sign in on the app. Otherwise you can start over with
-            a new account. This discards the unreadable one for good.
+            key, paste it into the profile menu on this site. Otherwise you can
+            start over with a new account. This discards the unreadable one for
+            good.
           </p>
           {confirmReset ? (
             <div className="mt-4 rounded-md border border-black/10 p-3 text-sm dark:border-white/10">

@@ -62,7 +62,7 @@ export interface ContributorGateInput {
 }
 
 export const LOCKED_GATE_MESSAGE =
-  "Unlock your passkey first: the project is published under your name, and this browser cannot sign until you do.";
+  "Unlock your passkey first: the project is published under your name, and this browser needs your passkey to confirm it.";
 
 export function contributorGate(input: ContributorGateInput): ContributorGate {
   const { network, wallet, label } = input;
