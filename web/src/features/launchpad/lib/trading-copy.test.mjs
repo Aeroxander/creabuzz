@@ -29,6 +29,8 @@ import {
   quoteHeldLine,
   refreshEveryMs,
   roundLine,
+  roundTerms,
+  shownTerms,
   sellHolds,
   sellOrderLine,
   sellPlan,
@@ -1508,4 +1510,58 @@ test("the card, the listing form and the vote all show the price token and its w
   assert.match(draft, /saleCurrency/);
   const page = read("../ui/LaunchDetailPage.tsx");
   assert.match(page, /saleCurrency=\{launch\.record\.currency/);
+});
+
+test("a live round states the terms it trades on, never the DAO's newer listing", () => {
+  // The DAO changed its listing after the round opened: the round keeps the grid it copied (1 to 1.064, 8 steps).
+  const changed = { ...listing, minPrice: 2n * USD, maxPrice: 4n * USD };
+  assert.deepEqual(roundTerms(round()), {
+    minPrice: USD,
+    maxPrice: 1_064_000n,
+    levels: 8,
+  });
+  for (const phase of ["bidding", "settling"]) {
+    const read = market({ listing: changed, round: round({ phase }) });
+    const line = tradingStateLine(read, OCT_17, USDC);
+    assert.match(
+      line,
+      /this round trades from 1 USDC to 1\.064 USDC a lot/,
+      phase,
+    );
+    // The listing's own terms are only the next round's.
+    assert.match(line, /Next round: from 2 USDC to 4 USDC a lot/, phase);
+    assert.doesNotMatch(line, /Trading is on: from 2 USDC/, phase);
+    assert.deepEqual(
+      shownTerms(changed, round({ phase })),
+      roundTerms(round()),
+    );
+  }
+  // The same terms say nothing extra, and a finished round shows the listing: it is what the next one will use.
+  const same = tradingStateLine(market({ round: round() }), OCT_14, USDC);
+  assert.doesNotMatch(same, /this round trades|Next round:/);
+  const over = market({
+    listing: changed,
+    round: round({ phase: "settled", settled: true }),
+  });
+  assert.match(
+    tradingStateLine(over, OCT_17, USDC),
+    /^Trading is on: from 2 USDC to 4 USDC a lot/,
+  );
+  assert.equal(shownTerms(changed, round({ phase: "settled" })), changed);
+  assert.equal(shownTerms(changed, null), changed);
+});
+
+test("a round still open under a listing the DAO switched off does not say orders are taken", () => {
+  assert.match(roundLine(round(), USDC), /^Offers and bids close Oct 17/);
+  assert.match(roundLine(round(), USDC, true), /^Offers and bids close Oct 17/);
+  const off = roundLine(round(), USDC, false);
+  assert.match(off, /no new offers or bids are taken/);
+  assert.match(off, /Oct 17/);
+  assert.match(off, /still settles/);
+  assert.doesNotMatch(off, /^Offers and bids close/);
+  // Only the taking of orders changes; the other phases say what they said.
+  assert.equal(
+    roundLine(round({ phase: "settling" }), USDC, false),
+    roundLine(round({ phase: "settling" }), USDC),
+  );
 });

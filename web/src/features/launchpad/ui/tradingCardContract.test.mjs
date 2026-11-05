@@ -91,3 +91,15 @@ test("the earlier-rounds block offers to check the next block of older rounds, a
   assert.match(hook, /latest\.toString\(\)/);
   assert.match(hook, /before\.toString\(\)/);
 });
+
+test("the card renders nothing where the build offers no trading, and the project page needs no second check", () => {
+  const card = source("./TradingCard.tsx");
+  assert.match(
+    card,
+    /import \{ tradingOffered \} from "\.\.\/lib\/trading-offered"/,
+  );
+  assert.match(card, /if \(!tradingOffered\(\)\) return null;/);
+  // The live round's own terms and the listing switch reach the copy.
+  assert.match(card, /shownTerms\(present\.listing, round\)/);
+  assert.match(card, /roundLine\(round, facts, listingEnabled\)/);
+});

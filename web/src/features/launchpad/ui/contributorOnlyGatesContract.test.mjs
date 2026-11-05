@@ -98,3 +98,16 @@ test("the contributor project's DAO card on Discover shows no address", () => {
   assert.doesNotMatch(body, /AddressLine|addressUrl|font-mono/);
   assert.match(body, /Open project/);
 });
+
+test("the Trading card renders nothing in a contributor-only build or one that names no market factory", () => {
+  const card = source("./TradingCard.tsx");
+  assert.match(card, /if \(!tradingOffered\(\)\) return null;/);
+  const offered = source("../lib/trading-offered.ts");
+  assert.match(offered, /raisesOffered\(env\) && secondaryMarketNamed\(env\)/);
+  // The Dockerfile names no factory for the hosted image, so the card is absent there even without the second check.
+  const docker = readFileSync(
+    fileURLToPath(new URL("../../../../../Dockerfile", import.meta.url)),
+    "utf8",
+  );
+  assert.doesNotMatch(docker, /VITE_SECONDARY_MARKET_FACTORY/);
+});

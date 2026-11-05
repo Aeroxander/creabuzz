@@ -565,7 +565,7 @@ const STOPS: Stop[] = [
       // A contributor project offers no money decisions (D108).
     )
     .filter((stop) => !/-(pay|unwind|slash)$/.test(stop.name))
-    // The hosted build offers no trading decision: Shares are never put up for sale there.
+    // The hosted build offers no trading decision, and its Funds tab no Trading card: Shares are never put up for sale there.
     .filter((stop) => !(CONTRIBUTOR_ONLY && stop.name.endsWith("-trading"))),
   { name: "g28-project-work-reviewer", who: "rui", path: project("work") },
   { name: "g29-project-overview-reviewer", who: "rui", path: project() },

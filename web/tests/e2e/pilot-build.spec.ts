@@ -372,6 +372,24 @@ test("Home's navigation says Your work, and only to someone with an account", as
   });
 });
 
+test("a contributor project's Funds tab shows no Trading card: trading is off in the pilot build", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed(contributorProject);
+  await quietChain(page);
+  await relay.install(page);
+  await signIn(page);
+  await page.goto(`/launchpad/docs-commons?author=${FOUNDER}&tab=treasury`);
+  await expect(
+    page.getByRole("tab", { name: "Funds", exact: true }),
+  ).toHaveAttribute("aria-selected", "true", { timeout: 20_000 });
+  // The Funds tab itself is there; the card, and its line about a network without trading, are not.
+  await expect(page.getByTestId("contributor-funds")).toBeVisible();
+  await expect(page.getByTestId("trading")).toHaveCount(0);
+  await expect(page.getByText(/Trading isn't set up/)).toHaveCount(0);
+});
+
 for (const scheme of ["light", "dark"] as const) {
   test(`a contributor project's page is accessible on a phone (${scheme})`, async ({
     page,

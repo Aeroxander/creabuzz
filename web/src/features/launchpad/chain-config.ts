@@ -285,6 +285,30 @@ export function secondaryMarketFactory(
   return addressForChain(env?.VITE_SECONDARY_MARKET_FACTORY, chainId);
 }
 
+/**
+ * Whether this build names a secondary-market factory on any network at all. A build that names none (the hosted
+ * pilot image sets none) has no trading to show anywhere; one that names a factory for another network than a
+ * project's still has a card to say trading is not set up on that one.
+ */
+export function secondaryMarketNamed(
+  env: ChainEnv | undefined = viteEnv(),
+): boolean {
+  const raw = env?.VITE_SECONDARY_MARKET_FACTORY?.trim();
+  if (!raw) return false;
+  try {
+    const map: unknown = JSON.parse(raw);
+    if (map === null || typeof map !== "object" || Array.isArray(map)) {
+      return false;
+    }
+    return Object.values(map).some(
+      (address) =>
+        typeof address === "string" && /^0x[0-9a-fA-F]{40}$/.test(address),
+    );
+  } catch {
+    return false;
+  }
+}
+
 function addressForChain(
   value: string | undefined,
   chainId: string | number | null,

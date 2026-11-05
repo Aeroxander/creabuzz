@@ -49,6 +49,7 @@ import {
   sellOrderLine,
   settleNoticeLine,
   shareUnits,
+  shownTerms,
   staleReadLine,
   tokenUnreadableLine,
   tradingFailure,
@@ -58,6 +59,7 @@ import {
   type WalletFunds,
 } from "../lib/trading-copy";
 import { placeOrder } from "../lib/trading-orders";
+import { tradingOffered } from "../lib/trading-offered";
 import { useChainSend } from "../use-chain-send";
 import type { SecondaryMarketFacts } from "../lib/secondary-read";
 import { SECONDARY_QUERY, useSecondary } from "../use-secondary";
@@ -75,17 +77,23 @@ type Send = (key: string, to: string, data: string) => Promise<boolean>;
  * week's round, offer Shares, bid, take an order back, settle, and collect what
  * a finished round owes it.
  */
-export function TradingCard({
-  dao,
-  chainId,
-  saleCurrency,
-}: {
+export function TradingCard(props: TradingCardProps) {
+  // Trading is off by default: a build that names no market factory (the hosted pilot) and the contributor-only
+  // build show no card at all, rather than a card saying trading is not set up. This is a component of its own so
+  // the hooks below never run, and read nothing, where it is off.
+  if (!tradingOffered()) return null;
+  return <TradingCardBody {...props} />;
+}
+
+type TradingCardProps = {
   dao: string;
   /** The project's own network, as its record names it. */
   chainId: string | null;
   /** The project's recorded sale currency, so a price token that is not it is said plainly. */
   saleCurrency?: string | null;
-}) {
+};
+
+function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
   const network = chainId === null ? null : Number(chainId);
   const sender = useChainSend(
     network !== null && Number.isInteger(network) ? network : null,
@@ -235,7 +243,7 @@ export function TradingCard({
           {present?.listing.enabled && data.facts?.quoteKnown ? (
             <p className="mt-2 text-sm" data-testid="trading-listing">
               {listingDetailLine(
-                present.listing,
+                shownTerms(present.listing, round),
                 data.facts.lotSize,
                 data.facts,
               )}
@@ -420,7 +428,7 @@ function TradingRound({
         tabIndex={-1}
         {...homeFocus("round")}
       >
-        {roundLine(round, facts)}
+        {roundLine(round, facts, listingEnabled)}
       </p>
       {settleNotice ? (
         <p

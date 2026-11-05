@@ -1649,9 +1649,14 @@ phase boundaries, and the encoder goldens.
 
 `TradingCard` (on the treasury tab) states the position in plain words and
 offers what the wallet can do in the latest round: open, sell, bid, cancel,
-settle, collect. The four states a person can see:
+settle, collect. A build that names no factory on any network, and the
+contributor-only hosted build, render no card at all (trading stays off by
+default). A live round is described by the terms it opened with; the DAO's
+current listing is shown as the next round's when it differs. The four states
+a person can see:
 
-1. the build names no factory — "Trading isn't set up on this network…";
+1. the build names a factory, but not for this project's network — "Trading
+   isn't set up on this network…";
 2. **the market exists and the DAO has no open listing** — "Trading is off: the
    DAO has no open listing. Opening one is the DAO's decision.";
 3. no market for this DAO at all;

@@ -164,6 +164,40 @@ export function listingTermsLine(
   return `from ${money(listing.minPrice, quote)} to ${money(listing.maxPrice, quote)} a lot, in ${steps}`;
 }
 
+/**
+ * The terms a round trades on: the grid it copied from the listing when it opened. The listing can be changed by the
+ * DAO afterwards, but never reaches a round already open.
+ */
+export function roundTerms(
+  round: Pick<RoundView, "minPrice" | "step" | "levels">,
+): Pick<Listing, "minPrice" | "maxPrice" | "levels"> {
+  return {
+    minPrice: round.minPrice,
+    maxPrice: round.minPrice + round.step * BigInt(round.levels),
+    levels: round.levels,
+  };
+}
+
+/** A round that is taking offers and bids, or waiting to be settled, trades on its own terms, whatever the listing says. */
+function roundIsLive(round: Pick<RoundView, "phase"> | null): boolean {
+  return (
+    round !== null && (round.phase === "bidding" || round.phase === "settling")
+  );
+}
+
+/**
+ * The terms to show for what is happening now: the live round's own, else the listing's (what the next round will
+ * use). Returns the listing object itself when the round is not live.
+ */
+export function shownTerms<
+  L extends Pick<Listing, "minPrice" | "maxPrice" | "levels">,
+>(
+  listing: L,
+  round: Pick<RoundView, "phase" | "minPrice" | "step" | "levels"> | null,
+): L | Pick<Listing, "minPrice" | "maxPrice" | "levels"> {
+  return round !== null && roundIsLive(round) ? roundTerms(round) : listing;
+}
+
 /** Where the latest round stands, said plainly; a settled round names a price only when lots traded at it. */
 export function roundLine(
   round: Pick<
@@ -177,10 +211,14 @@ export function roundLine(
     | "step"
   >,
   quote: QuoteUnits,
+  listingEnabled = true,
 ): string {
   switch (round.phase) {
     case "bidding":
-      return `Offers and bids close ${date(round.closesAt)}.`;
+      // A listing the DAO switched off takes no new orders, though the round still runs out and settles.
+      return listingEnabled
+        ? `Offers and bids close ${date(round.closesAt)}.`
+        : `The DAO has turned trading off, so no new offers or bids are taken. This round closes ${date(round.closesAt)} and still settles.`;
     case "settling":
       return `Bidding is over. Anyone can settle it until ${date(round.settleDeadline)}.`;
     case "settled":
@@ -255,7 +293,24 @@ export function tradingStateLine(
     return "Trading is off: the DAO has no open listing. Opening one is the DAO's decision.";
   }
   if (quote === null) return unreadableLine();
-  const terms = `Trading is on: ${listingTermsLine(listing, quote)}.`;
+  // A live round trades on the terms it opened with; the listing's are then only the next round's.
+  const live = round !== null && roundIsLive(round) ? roundTerms(round) : null;
+  // The grid is its lowest price, its step and its step count; a listing whose range does not divide evenly rounds
+  // its step down, exactly as the round it opens does.
+  const listingStep =
+    listing.levels > 0
+      ? (listing.maxPrice - listing.minPrice) / BigInt(listing.levels)
+      : 0n;
+  const differs =
+    live !== null &&
+    round !== null &&
+    (live.minPrice !== listing.minPrice ||
+      live.levels !== listing.levels ||
+      round.step !== listingStep);
+  const terms =
+    live !== null && differs
+      ? `Trading is on: this round trades ${listingTermsLine(live, quote)}. Next round: ${listingTermsLine(listing, quote)}.`
+      : `Trading is on: ${listingTermsLine(listing, quote)}.`;
   const phase =
     round === null
       ? "No round has opened yet."
