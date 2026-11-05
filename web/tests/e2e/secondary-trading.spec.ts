@@ -345,7 +345,7 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   );
   await openTrading(founder);
   await expect(founder.getByTestId("trading-state")).toContainText(
-    "Trading is off: the DAO has no open listing.",
+    "Trading is off: the project has no open listing.",
   );
   await expect(founder.getByTestId("trading-listing")).toHaveCount(0);
   await expect(founder.getByTestId("trading-open")).toHaveCount(0);

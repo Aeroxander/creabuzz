@@ -295,7 +295,7 @@ export interface BidActions {
 }
 
 const WALK_CONSISTENT =
-  "Checkpoint data is inconsistent with this bid. Refresh, and report this if it persists.";
+  "The sale data on this page does not match your bid. Refresh, and tell the team if it keeps happening.";
 
 /**
  * Derive the exit plan. Port of exitHooks.ts:408-510; branch citations live in
@@ -309,7 +309,10 @@ export function deriveExitPlan(input: BidDerivationInput): ExitPlan {
   const { bid, checkpoints, auction } = input;
   const maxPrice = bid.maxPrice;
   if (bid.exitedBlock !== 0n) {
-    return { kind: "unavailable", reason: "This bid is already exited." };
+    return {
+      kind: "unavailable",
+      reason: "The unspent money from this bid was already taken back.",
+    };
   }
   const walkConsistent =
     checkpoints.length > 0 &&
@@ -324,7 +327,7 @@ export function deriveExitPlan(input: BidDerivationInput): ExitPlan {
     return {
       kind: "unavailable",
       reason:
-        "Exit opens when the auction ends. Early exit needs a graduated auction.",
+        "You can take back unspent money when the sale ends. Before then, only if the sale has already raised its minimum.",
     };
   }
 
@@ -377,7 +380,7 @@ export function deriveExitPlan(input: BidDerivationInput): ExitPlan {
     return {
       kind: "unavailable",
       reason:
-        "Exit opens at the auction end, or earlier if this bid is outbid on a graduated auction.",
+        "You can take back unspent money when the sale ends, or earlier if the price rises above your highest price and the sale has already raised its minimum.",
     };
   }
 
@@ -416,25 +419,25 @@ export function deriveClaimPlan(
   if (bid.exitedBlock === 0n) {
     return {
       kind: "unavailable",
-      reason: "Claim unlocks after this bid is exited.",
+      reason: "You can collect tokens after you take back the unspent money.",
     };
   }
   if (bid.tokensFilled === 0n) {
     return {
       kind: "unavailable",
-      reason: "Nothing left to claim. This bid is settled.",
+      reason: "Nothing left to collect. This bid is finished.",
     };
   }
   if (!auction.graduated) {
     return {
       kind: "unavailable",
-      reason: "Tokens can only be claimed on a graduated auction.",
+      reason: "Tokens are only handed out if the sale raised its minimum.",
     };
   }
   if (auction.currentBlock < auction.claimBlock) {
     return {
       kind: "unavailable",
-      reason: `Claim unlocks at block ${auction.claimBlock}.`,
+      reason: `Collecting tokens opens at network block ${auction.claimBlock}.`,
     };
   }
   return { kind: "claim" };
@@ -505,9 +508,9 @@ export type ExitStepId = "checkpoint" | "exit" | "claim";
 
 /** Human names for the steps; failure messages name the failed step. */
 export const EXIT_STEP_LABELS: Record<ExitStepId, string> = {
-  checkpoint: "Write checkpoint",
-  exit: "Exit bid",
-  claim: "Claim tokens",
+  checkpoint: "Saving the sale's price record",
+  exit: "Taking back unspent money",
+  claim: "Collecting tokens",
 };
 
 /** A labeled step whose call is built at send time (fresh hints post-prep). */

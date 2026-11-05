@@ -239,17 +239,17 @@ const EXIT_TABLE = [
       bidView: bid({ exitedBlock: 5n }),
       checkpoints: [cp(10n, 50n, 0n, TAIL_NEXT)],
     }),
-    expect: { kind: "unavailable", reason: /already exited/ },
+    expect: { kind: "unavailable", reason: /already taken back/ },
   },
   {
     name: "inconsistent walk: first checkpoint not at bid.startBlock",
     input: input({ checkpoints: [cp(9n, 50n, 0n, TAIL_NEXT)] }),
-    expect: { kind: "unavailable", reason: /inconsistent/ },
+    expect: { kind: "unavailable", reason: /does not match your bid/ },
   },
   {
     name: "inconsistent walk: start checkpoint at/above maxPrice (:366 forbids it)",
     input: input({ checkpoints: [cp(10n, MAX_PRICE, 0n, TAIL_NEXT)] }),
-    expect: { kind: "unavailable", reason: /inconsistent/ },
+    expect: { kind: "unavailable", reason: /does not match your bid/ },
   },
   {
     name: "inconsistent walk: non-monotonic clearing price (:586)",
@@ -260,7 +260,7 @@ const EXIT_TABLE = [
         cp(30n, 40n, 20n, TAIL_NEXT),
       ],
     }),
-    expect: { kind: "unavailable", reason: /inconsistent/ },
+    expect: { kind: "unavailable", reason: /does not match your bid/ },
   },
   {
     name: "not graduated + over → exitBid full refund (:499-501)",
@@ -276,7 +276,7 @@ const EXIT_TABLE = [
       checkpoints: [cp(10n, 50n, 0n, TAIL_NEXT)],
       auction: auctionCtx({ graduated: false, currentBlock: 500n }),
     }),
-    expect: { kind: "unavailable", reason: /auction ends/ },
+    expect: { kind: "unavailable", reason: /sale ends/ },
   },
   {
     name: "outbid (== then >): partial exit with exact hints, early exit (:559-572)",
@@ -350,7 +350,7 @@ const EXIT_TABLE = [
   {
     name: "live + not outbid yet → unavailable (:503-504/:559 gate it)",
     input: input({ checkpoints: [cp(10n, 50n, 0n, TAIL_NEXT)] }),
-    expect: { kind: "unavailable", reason: /auction end/ },
+    expect: { kind: "unavailable", reason: /sale ends/ },
   },
   {
     name: "live + partially filled at == maxPrice but not outbid → unavailable",
@@ -358,7 +358,7 @@ const EXIT_TABLE = [
       checkpoints: [cp(10n, 50n, 0n, 20n), cp(20n, MAX_PRICE, 10n, TAIL_NEXT)],
       auction: auctionCtx({ liveClearingPrice: MAX_PRICE }),
     }),
-    expect: { kind: "unavailable", reason: /auction end/ },
+    expect: { kind: "unavailable", reason: /sale ends/ },
   },
   {
     name: "over + final materialized + maxPrice > final → exitBid (:504)",
@@ -423,19 +423,19 @@ const CLAIM_TABLE = [
     name: "claim needs a prior exit (BidNotExited, :651)",
     bidView: bid({ exitedBlock: 0n, tokensFilled: 5n }),
     auction: auctionCtx({ currentBlock: 1200n }),
-    expect: { kind: "unavailable", reason: /exited/ },
+    expect: { kind: "unavailable", reason: /take back the unspent money/ },
   },
   {
     name: "exited with zero fill is settled (:655-658 zeroed it)",
     bidView: bid({ exitedBlock: 5n, tokensFilled: 0n }),
     auction: auctionCtx({ currentBlock: 1200n }),
-    expect: { kind: "unavailable", reason: /settled/ },
+    expect: { kind: "unavailable", reason: /finished/ },
   },
   {
     name: "claim needs graduation (NotGraduated, :606)",
     bidView: bid({ exitedBlock: 5n, tokensFilled: 5n }),
     auction: auctionCtx({ graduated: false, currentBlock: 1200n }),
-    expect: { kind: "unavailable", reason: /graduated/ },
+    expect: { kind: "unavailable", reason: /raised its minimum/ },
   },
   {
     name: "claim needs the claim block (NotClaimable, StepStorage.sol:57)",

@@ -223,13 +223,15 @@ export function RecordBidDialog({
       });
       const result = await sender.sendCalls(calls);
       if (!TX_HASH_RE.test(result.txHash))
-        throw new Error("The sender returned an invalid hash.");
+        throw new Error(
+          "We did not get a valid confirmation ID back. Check whether the bid went through before you send it again.",
+        );
       setTx(result.txHash);
       // Sending the bid is the act; recording it is not a second decision. The
       // manual button stays for a record that fails or a bid made elsewhere.
       publishBid(result.txHash);
     } catch (err) {
-      setError(senderErrorMessage(err, "The bid was not sent."));
+      setError(senderErrorMessage(err, "The bid was not sent. Try again."));
     } finally {
       setSending(false);
     }
@@ -255,12 +257,14 @@ export function RecordBidDialog({
   const submit = () => {
     if (isPublishing) return;
     if (tx.trim() !== "" && !TX_HASH_RE.test(tx.trim())) {
-      setError("Transaction hash must be 0x + 64 hex characters.");
+      setError(
+        "That confirmation ID is not valid. It is 0x followed by 64 letters and numbers.",
+      );
       return;
     }
     if (tx.trim() === "") {
       setError(
-        "Send the bid first, or paste the hash of a bid you made elsewhere.",
+        "Send the bid first, or paste the confirmation ID of a bid you made elsewhere.",
       );
       return;
     }
@@ -296,8 +300,8 @@ export function RecordBidDialog({
       ) : null}
       {!auction ? (
         <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          This launch has no auction contract linked yet, so it cannot accept
-          bids. You can compose the terms below but nothing will send.
+          This launch has no sale set up yet, so it cannot take bids. You can
+          fill in the details below, but nothing will be sent.
         </p>
       ) : null}
       <SenderPickerControls state={picker} testIdPrefix="bid-" />
@@ -318,8 +322,8 @@ export function RecordBidDialog({
               type="text"
             />
             <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-              The most you will spend. You pay the clearing price for what you
-              win; the rest is refunded.
+              The most you will spend. You pay the clearing price (the one price
+              every winning bid pays) for what you win; the rest is refunded.
             </p>
           </div>
           <div>
@@ -349,9 +353,10 @@ export function RecordBidDialog({
           {floorPriceQ96 !== null
             ? formatQ96PerToken(floorPriceQ96, priceFormat(cur))
             : "unknown"}
+          {" (the lowest price the sale allows)"}
           {clearing !== null
             ? ` · current clearing price ${formatQ96PerToken(clearing, priceFormat(cur))} (your highest price must be above it)`
-            : " · the clearing price could not be read; the contract still enforces that your price is above it when the bid lands"}
+            : " · the clearing price could not be read; the sale will still refuse your bid unless your price is above it"}
           {plan && budgetAtomic !== null
             ? ` · you are bidding ${formatMoney(budgetAtomic, cur)}`
             : ""}
@@ -388,7 +393,7 @@ export function RecordBidDialog({
         </summary>
         <div className="mt-2">
           <label className="text-sm font-medium" htmlFor="bid-tx">
-            Bid made outside this page? Its transaction hash
+            Bid made outside this page? Its confirmation ID
           </label>
           <div className="mt-1 flex gap-2">
             <Input

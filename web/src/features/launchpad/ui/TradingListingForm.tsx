@@ -111,9 +111,9 @@ export function TradingListingForm({
   return (
     <div className="mt-3 grid gap-3" data-testid="form-secondary-listing">
       <p className="text-sm text-muted-foreground">
-        Publish the DAO&apos;s listing in its secondary market, or stop new
-        rounds. Publishing it is a vote: nothing opens until holders back it and
-        it takes effect.
+        Publish the project&apos;s listing (the price range for its weekly
+        market), or stop new rounds. Publishing it is a vote: nothing opens
+        until holders back it and it takes effect.
       </p>
       {unreviewed ? (
         <p
@@ -132,7 +132,7 @@ export function TradingListingForm({
           : read.kind === "unreadable"
             ? "Couldn't read this project's market from the network. Reload to try again."
             : read.kind === "absent"
-              ? "This project has no secondary market, so there is no listing to publish."
+              ? "This project has no market, so there is no listing to publish."
               : listing?.enabled
                 ? `The market is open: prices from ${money(listing.minPrice)} to ${money(listing.maxPrice)}, in ${listing.levels} steps.`
                 : "The market is off: no round can open until a listing is published."}
@@ -146,7 +146,7 @@ export function TradingListingForm({
       ) : null}
       {market !== null && view?.tokenUnreadable ? (
         <p className="text-sm text-muted-foreground" role="status">
-          The market&apos;s price token isn&apos;t answering, so prices
+          The market&apos;s price token couldn&apos;t be read, so prices
           can&apos;t be set right now. You can still stop new rounds.
         </p>
       ) : null}
@@ -179,7 +179,7 @@ export function TradingListingForm({
             value={minText}
           />
           <TextField
-            hint="The grid runs from the lowest price to the highest, and a round's price is one level on it. Nothing sells outside the two, however much is bid."
+            hint="Prices run in steps from the lowest to the highest, and a round's price is one of those steps. Nothing sells outside that range, however much is bid."
             inputMode="decimal"
             label={`Highest price per lot (${symbol ?? "base units"})`}
             onChange={setMaxText}
@@ -192,7 +192,7 @@ export function TradingListingForm({
             value={maxText}
           />
           <TextField
-            hint="How many steps the range is cut into, 1 to 64. The market refuses a range its steps do not divide evenly, so every level is a whole price."
+            hint="How many steps the range is cut into, 1 to 64. The market refuses a range its steps do not divide evenly, so every step is a whole price."
             inputMode="numeric"
             label="Price steps"
             onChange={setLevelsText}

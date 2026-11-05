@@ -113,7 +113,7 @@ export function validateBid(
         field: "maxPrice",
         severity: "error",
         message:
-          "This max price is above the ceiling the token supply allows, so the bid won't go through. Lower the max price.",
+          "Your highest price is above the ceiling the token supply allows, so the bid won't go through. Lower your highest price.",
       });
     }
   }
@@ -125,14 +125,14 @@ export function validateBid(
       field: "maxPrice",
       severity: "error",
       message:
-        "Max price must sit on the auction's tick grid (the price step this auction uses), or the bid won't go through.",
+        "Your highest price must be a multiple of this sale's price step, or the bid won't go through.",
     });
   }
   if (plan.maxPriceQ96 <= context.clearingPriceQ96) {
     issues.push({
       field: "maxPrice",
       severity: "error",
-      message: "Max price must be above the current clearing price.",
+      message: "Your highest price must be above the current clearing price.",
     });
   }
   return issues;

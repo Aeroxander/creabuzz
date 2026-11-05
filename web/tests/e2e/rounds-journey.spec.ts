@@ -349,7 +349,7 @@ test("a member who wants out is matched with two who want in, and the treasury k
   );
   await founder.getByTestId("rounds-offer-amount").fill("50");
   await expect(founder.getByTestId("rounds-offer-plan")).toContainText(
-    "you keep 1 USDC a Share after the treasury's cut",
+    "you keep 1 USDC a Share after the project's cut",
   );
   await expect(founder.getByTestId("rounds-offer-plan")).toContainText(
     "Leaving now pays about 1 USDC a Share.",
@@ -421,7 +421,7 @@ test("a member who wants out is matched with two who want in, and the treasury k
   const founderMoney = await usdcOf(FOUNDER_WALLET);
   await refresh(founder, "Funds");
   await expect(founder.getByTestId("rounds-my-sell")).toContainText(
-    "Sold: 50 Shares, for 62 USDC after the cut.",
+    "Sold: 50 Shares, for 62 USDC after the project's cut.",
     { timeout: 30_000 },
   );
   await founder.getByTestId("rounds-collect").click();

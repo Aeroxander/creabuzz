@@ -144,7 +144,7 @@ export function factoryMissingLine(): string {
  * could not see the factory's answer.
  */
 export function unreadableLine(): string {
-  return "The market couldn't be read just now, so this page can't say whether this DAO has one. Reload to try again.";
+  return "The market couldn't be read just now, so this page can't say whether this project has one. Reload to try again.";
 }
 
 /**
@@ -219,7 +219,7 @@ export function roundLine(
       // A listing the DAO switched off takes no new orders, though the round still runs out and settles.
       return listingEnabled
         ? `Offers and bids close ${date(round.closesAt)}.`
-        : `The DAO has turned trading off, so no new offers or bids are taken. This round closes ${date(round.closesAt)} and still settles.`;
+        : `The project has turned trading off, so no new offers or bids are taken. This round closes ${date(round.closesAt)} and still settles.`;
     case "settling":
       return `Bidding is over. Anyone can settle it until ${date(round.settleDeadline)}.`;
     case "settled":
@@ -287,11 +287,11 @@ export function tradingStateLine(
 ): string {
   if (read.kind === "unreadable") return unreadableLine();
   if (read.kind === "absent") {
-    return "This DAO has no secondary market. A DAO made before the market existed, or made without one, has none.";
+    return "This project has no market for its Shares. A project made before the market existed, or made without one, has none.";
   }
   const { listing, round } = read;
   if (!listing.enabled) {
-    return "Trading is off: the DAO has no open listing. Opening one is the DAO's decision.";
+    return "Trading is off: the project has no open listing. Opening one is the project's decision.";
   }
   if (quote === null) return unreadableLine();
   // A live round trades on the terms it opened with; the listing's are then only the next round's.
@@ -321,7 +321,7 @@ export function tradingStateLine(
           ? "A round is waiting to be settled."
           : round.phase === "settled"
             ? "The latest round has settled."
-            : "The latest round went void, so everyone takes back what they put in.";
+            : "The latest round was not settled in time, so everyone takes back what they put in.";
   const next =
     round !== null &&
     (round.phase === "settled" || round.phase === "void") &&
@@ -877,8 +877,8 @@ export function sellOrderLine(
   }
   if (round.phase === "void") {
     return sell.escrowReturned
-      ? `${offer} The round went void, so they are back with you.`
-      : `${offer} The round went void, so they are yours to take back.`;
+      ? `${offer} The round was not settled in time, so they are back with you.`
+      : `${offer} The round was not settled in time, so they are yours to take back.`;
   }
   return offer;
 }
@@ -900,7 +900,7 @@ export function bidOrderLine(
       : `${offer} Bought: ${lots(bid.filled)} at the round's price.`;
   }
   if (round.phase === "void") {
-    return `${offer} The round went void, so your money comes back to you.`;
+    return `${offer} The round was not settled in time, so your money comes back to you.`;
   }
   return offer;
 }

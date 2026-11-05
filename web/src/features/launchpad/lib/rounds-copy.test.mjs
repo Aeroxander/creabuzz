@@ -176,7 +176,7 @@ test("what leaving pays now: the floor less the exit fee, saying when one applie
 test("the offer form shows what a seller keeps beside what leaving pays", () => {
   assert.equal(
     offerPlanLine(1_240_000n, 980_000n),
-    "If the round settles there, you keep 1.24 USDC a Share after the treasury's cut. A higher price pays you more; below it, nothing sells. Leaving now pays about 0.98 USDC a Share.",
+    "If the round settles there, you keep 1.24 USDC a Share after the project's cut. A higher price pays you more; below it, nothing sells. Leaving now pays about 0.98 USDC a Share.",
   );
   assert.doesNotMatch(offerPlanLine(1_240_000n, null), /Leaving/);
 });

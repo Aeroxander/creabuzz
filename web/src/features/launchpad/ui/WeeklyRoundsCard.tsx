@@ -102,12 +102,14 @@ export function WeeklyRoundsCard({ dao }: { dao: string }) {
           </p>
           <MoreInfo label="How a round works" testId="rounds-how">
             Sellers offer Shares with a lowest price and buyers bid with a
-            highest one, for three days. Then anyone settles it at one price:
-            the highest at which bids still take everything offered. The price
-            never goes below what leaving the project pays. A fifth of a
-            seller&apos;s gain above that goes to the treasury. Anyone can still
-            leave at any time, and if nobody settles within two days, everyone
-            takes back what they put in.
+            highest one, for three days. Then anyone settles the round, which
+            works out the one price and who gets what: the highest price at
+            which buyers still take everything offered. The price never goes
+            below the floor price, which is what leaving the project pays. A
+            fifth of a seller&apos;s gain above that goes into the
+            project&apos;s money. Anyone can still leave at any time, and if
+            nobody settles within two days, everyone takes back what they put
+            in.
           </MoreInfo>
           {data.state.phase === "ready" ? (
             <Button
@@ -383,7 +385,7 @@ export function RoundPanel({
       {sell ? (
         <OrderLine
           testId="rounds-my-sell"
-          text={`You offer ${sharesText(sell.amount)} Shares at ${usdc(round.floor + BigInt(sell.step) * round.step)} or more.${over && sold ? ` Sold: ${sharesText(sold.units)} Shares, for ${usdc(sold.money)} after the cut.` : ""}${sell.claimed ? " Collected." : ""}`}
+          text={`You offer ${sharesText(sell.amount)} Shares at ${usdc(round.floor + BigInt(sell.step) * round.step)} or more.${over && sold ? ` Sold: ${sharesText(sold.units)} Shares, for ${usdc(sold.money)} after the project's cut.` : ""}${sell.claimed ? " Collected." : ""}`}
         />
       ) : null}
       {bid ? (

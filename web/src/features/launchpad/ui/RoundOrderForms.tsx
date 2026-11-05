@@ -111,7 +111,7 @@ export function OfferForm({
         type="button"
       >
         {busy === "rounds-allow-shares"
-          ? "Allowing…"
+          ? "Approving…"
           : busy === "rounds-offer"
             ? "Offering…"
             : "Offer them"}
@@ -205,7 +205,7 @@ export function BidForm({
         type="button"
       >
         {busy === "rounds-allow-usdc"
-          ? "Allowing…"
+          ? "Approving…"
           : busy === "rounds-bid"
             ? "Bidding…"
             : "Place the bid"}

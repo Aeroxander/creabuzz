@@ -218,15 +218,15 @@ test("a price is written at the quote token's own scale, whatever its decimals",
 test("no market, no listing and a listing that is on are told apart", () => {
   assert.match(
     tradingStateLine({ kind: "absent" }, OCT_14, null),
-    /has no secondary market/,
+    /has no market for its Shares/,
   );
   const off = tradingStateLine(
     market({ listing: { ...listing, enabled: false } }),
     OCT_14,
     USDC,
   );
-  assert.match(off, /Trading is off: the DAO has no open listing\./);
-  assert.match(off, /Opening one is the DAO's decision\./);
+  assert.match(off, /Trading is off: the project has no open listing\./);
+  assert.match(off, /Opening one is the project's decision\./);
   const on = tradingStateLine(market({ round: round() }), OCT_14, USDC);
   assert.equal(
     on,
@@ -267,7 +267,7 @@ test("a listing that is on names the round's phase, and the next opening when th
   );
   assert.match(
     tradingStateLine(market({ round: round({ phase: "void" }) }), OCT_19, USDC),
-    /went void/,
+    /was not settled in time/,
   );
   // A settled round inside the week since it opened names when the next one may open.
   const settled = tradingStateLine(
@@ -295,7 +295,7 @@ test("an unreadable read never reads as a DAO with no market", () => {
     null,
   );
   assert.match(line, /couldn't be read/);
-  assert.doesNotMatch(line, /has no secondary market/i);
+  assert.doesNotMatch(line, /has no market for its Shares/i);
   assert.doesNotMatch(line, /no market/i);
   assert.equal(line, unreadableLine());
   assert.match(factoryMissingLine(), /isn't set up on this network/);
@@ -1235,7 +1235,7 @@ test("a seller's line says what sold and what is left to take back, then that it
   );
   assert.equal(
     sellOrderLine(round({ phase: "void" }), sell({ lots: 2n }), USDC),
-    "You offer 2 lots at 1 USDC a lot or more. The round went void, so they are yours to take back.",
+    "You offer 2 lots at 1 USDC a lot or more. The round was not settled in time, so they are yours to take back.",
   );
   assert.equal(
     sellOrderLine(
@@ -1243,7 +1243,7 @@ test("a seller's line says what sold and what is left to take back, then that it
       sell({ lots: 2n, escrowReturned: true }),
       USDC,
     ),
-    "You offer 2 lots at 1 USDC a lot or more. The round went void, so they are back with you.",
+    "You offer 2 lots at 1 USDC a lot or more. The round was not settled in time, so they are back with you.",
   );
 });
 
@@ -1353,7 +1353,10 @@ test("the card and the forms say these limits where the person acts", () => {
   assert.match(card, /tradingLimits\(\)/);
   // The how-it-works text must not promise that unsold Shares return by themselves.
   assert.doesNotMatch(card, /Unsold Shares come\s+back to their seller/);
-  assert.match(card, /Unsold Shares wait\s+for their\s+seller to collect them/);
+  assert.match(
+    card,
+    /Unsold\s+Shares\s+wait\s+for\s+their\s+seller\s+to\s+collect\s+them/,
+  );
   const listing = read("../ui/TradingListingForm.tsx");
   assert.match(listing, /unreviewedLine\(\)/);
   assert.match(listing, /\{unreviewed\}/);

@@ -223,8 +223,8 @@ export function MyBidsPanel({
       </div>
       {groups.length === 0 ? (
         <p className="rounded-lg bg-black/5 p-3 text-sm text-black/60 dark:bg-white/5 dark:text-white/60">
-          No connected account found. Connect a browser wallet, or set up
-          passkey sign-in from your profile menu, to see your bids here.
+          No connected account found. Connect a wallet app, or set up passkey
+          sign-in from your profile menu, to see your bids here.
         </p>
       ) : null}
       {groups.map((group) => {
@@ -261,11 +261,12 @@ export function MyBidsPanel({
               </p>
             ) : snap.status === "error" ? (
               <p className="mt-2 text-sm text-red-700 dark:text-red-300">
-                Could not read bids: {snap.error}
+                We couldn&apos;t read your bids just now. Press Refresh to try
+                again. Details: {snap.error}
               </p>
             ) : snap.snapshot.bids.length === 0 ? (
               <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-                No bids from this account on this auction.
+                This account has no bids on this sale.
               </p>
             ) : (
               <ul className="mt-2 flex flex-col gap-2">
@@ -334,7 +335,7 @@ function ClaimAllButton({
       size="sm"
       variant="outline"
     >
-      Claim all ({claimable.length})
+      Collect all ({claimable.length})
     </Button>
   );
 }
@@ -493,9 +494,12 @@ function MoneyActionDialog({
       ) : null}
       {done ? (
         <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
-          Done. Receipts:{" "}
+          Done. Confirmation IDs:{" "}
           {[...completedExitSteps(state)]
-            .map((step) => `${step}: ${state.receipts[step]?.txHash ?? "…"}`)
+            .map(
+              (step) =>
+                `${EXIT_STEP_LABELS[step]}: ${state.receipts[step]?.txHash ?? "…"}`,
+            )
             .join(", ")}
         </p>
       ) : null}
@@ -510,7 +514,7 @@ function MoneyActionDialog({
             onClick={() => void run(resumeExitFromState(state))}
             size="sm"
           >
-            Retry remaining
+            Retry the rest
           </Button>
         ) : (
           <Button

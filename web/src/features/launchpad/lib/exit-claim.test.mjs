@@ -209,7 +209,10 @@ test("runExitFlow names the failed step on a thrown send error", async () => {
   );
   assert.equal(rec.state.phase, "failed");
   assert.equal(rec.state.failedStep, "exit");
-  assert.equal(rec.state.errorMessage, "Exit bid failed: wallet locked");
+  assert.equal(
+    rec.state.errorMessage,
+    "Taking back unspent money failed: wallet locked",
+  );
 });
 
 test("runExitFlow treats a mined revert as a failed step, never a success", async () => {
@@ -225,7 +228,7 @@ test("runExitFlow treats a mined revert as a failed step, never a success", asyn
   assert.equal(rec.state.steps.claim, "failed");
   assert.match(
     rec.state.errorMessage,
-    /Claim tokens failed: the step failed on the network \(confirmation ID 0xdead\)/,
+    /Collecting tokens failed: the step failed on the network \(confirmation ID 0xdead\)/,
   );
 });
 
@@ -258,7 +261,7 @@ test("runExitFlow keeps completed steps and retry re-sends only the remainder", 
   await runExitFlow(twoStepExecution(), deps, rec.dispatch);
   assert.equal(rec.state.phase, "failed");
   assert.equal(rec.state.failedStep, "exit");
-  assert.match(rec.state.errorMessage, /^Exit bid failed: /);
+  assert.match(rec.state.errorMessage, /^Taking back unspent money failed: /);
   assert.deepEqual(remainingExitSteps(rec.state), ["exit"]);
   assert.deepEqual([...completedExitSteps(rec.state)], ["checkpoint"]);
 
@@ -293,15 +296,18 @@ test("runExitFlow names the step when the fresh exit build rejects", async () =>
   await runExitFlow(execution, deps, rec.dispatch);
   assert.equal(rec.state.phase, "failed");
   assert.equal(rec.state.failedStep, "exit");
-  assert.equal(rec.state.errorMessage, "Exit bid failed: not derivable");
+  assert.equal(
+    rec.state.errorMessage,
+    "Taking back unspent money failed: not derivable",
+  );
   assert.equal(sends.length, 1, "nothing is sent for a step that cannot build");
 });
 
 test("EXIT_STEP_LABELS drives the failure message prefix", async () => {
   assert.deepEqual(Object.values(EXIT_STEP_LABELS).sort(), [
-    "Claim tokens",
-    "Exit bid",
-    "Write checkpoint",
+    "Collecting tokens",
+    "Saving the sale's price record",
+    "Taking back unspent money",
   ]);
 });
 

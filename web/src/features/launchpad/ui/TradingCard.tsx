@@ -227,14 +227,16 @@ function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
             {NOT_FUNDING_LINE}
           </p>
           <MoreInfo label="How trading works" testId="trading-how">
-            Sellers offer Shares they already hold, in whole lots at a lowest
-            price, and buyers bid for whole lots at a highest one, for three
-            days. Then anyone settles the round at one price. Unsold Shares wait
-            for their seller to collect them, and a buyer&apos;s money above the
-            price comes back to them. If nobody settles within two days the
-            round is void and everyone takes back what they put in. Trading
-            moves existing Shares between people: it does not raise money for
-            the project, and it does not promise a next buyer.
+            A lot is a fixed bundle of Shares. The project&apos;s listing sets
+            the lowest and highest price a lot can sell for. Sellers offer whole
+            lots they already hold at a lowest price, and buyers bid for whole
+            lots at a highest one, for three days. Then anyone settles the
+            round, which works out the one price and who gets what. Unsold
+            Shares wait for their seller to collect them, and a buyer&apos;s
+            money above the price comes back to them. If nobody settles within
+            two days, nothing trades and everyone takes back what they put in.
+            Trading moves existing Shares between people: it does not raise
+            money for the project, and it does not promise a next buyer.
           </MoreInfo>
           <MoreInfo label="Before you trade" testId="trading-limits">
             <ul className="list-disc pl-4">

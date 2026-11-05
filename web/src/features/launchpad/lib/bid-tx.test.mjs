@@ -179,7 +179,7 @@ test("validateBid flags tick misalignment, sub-clearing and over-ceiling prices"
   );
   assert.ok(
     issues.some(
-      (i) => i.field === "maxPrice" && i.message.includes("tick grid"),
+      (i) => i.field === "maxPrice" && i.message.includes("price step"),
     ),
   );
   // At or below clearing

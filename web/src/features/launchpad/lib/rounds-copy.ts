@@ -57,7 +57,7 @@ export function roundsStateLine(
     case "on":
       return "Once a week, members who want out are matched with people who want in, at one price, never below what leaving pays.";
     case "other":
-      return "Another contract was voted in to move Shares, so weekly rounds aren't on. Turn it off first, then start rounds.";
+      return "Another contract was voted in to move Shares, so weekly rounds aren't on. Turn that one off first, then start rounds.";
   }
 }
 
@@ -143,7 +143,7 @@ export function sellPlan(
     return { problem: "That price is above this round's highest." };
   if (isDao && step < 2) {
     return {
-      problem: "The DAO sells at least 2% above what leaving pays.",
+      problem: "The project sells at least 2% above what leaving pays.",
     };
   }
   const at = grid.floor + BigInt(step) * grid.step;
@@ -248,7 +248,7 @@ export function historyRow(round: PastRound): {
 
 /** The Offer Shares form: what a seller keeps at their price, beside what leaving pays now. */
 export function offerPlanLine(keepsEach: bigint, leavingEach: bigint | null) {
-  const keeps = `If the round settles there, you keep ${usdc(keepsEach)} a Share after the treasury's cut. A higher price pays you more; below it, nothing sells.`;
+  const keeps = `If the round settles there, you keep ${usdc(keepsEach)} a Share after the project's cut. A higher price pays you more; below it, nothing sells.`;
   return leavingEach === null
     ? keeps
     : `${keeps} Leaving now pays about ${usdc(leavingEach)} a Share.`;

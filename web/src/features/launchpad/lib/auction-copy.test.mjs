@@ -73,8 +73,8 @@ test("a reverted step names the step, the tx, what already landed, and the retry
     },
   ]);
   const message = auctionFailureMessage(state);
-  assert.match(message, /was reverted onchain: execution reverted/);
-  assert.ok(message.includes(`Transaction: ${TX}.`));
+  assert.match(message, /was rejected by the network: execution reverted/);
+  assert.ok(message.includes(`Confirmation ID: ${TX}.`));
   assert.match(message, /Already done: .*Graduation executor/);
   assert.match(message, /runs again from this step/);
 });
@@ -98,7 +98,7 @@ test("an unknown outcome warns it may have gone through and says how retry check
   assert.match(message, /No steps were completed\./);
 });
 
-test("a link failure says the onchain work is done and names the auction", () => {
+test("a link failure says the deploy is done and names the auction", () => {
   const state = run("community", [
     { type: "begin", mode: "fresh" },
     { type: "prepared", auctionAddress: AUCTION },
@@ -107,7 +107,7 @@ test("a link failure says the onchain work is done and names the auction", () =>
   ]);
   const message = auctionFailureMessage(state);
   assert.ok(message.includes(AUCTION));
-  assert.match(message, /onchain work is complete/);
+  assert.match(message, /deploy itself is complete/);
   assert.match(message, /Retry record update/);
 });
 
@@ -317,7 +317,7 @@ test("declining in the wallet is reported as nothing sent, never as an unknown o
   assert.match(message, /nothing was sent for this step/);
   assert.match(message, /Already done: Graduation executor\./);
   assert.doesNotMatch(message, /may or may not/);
-  assert.doesNotMatch(message, /Transaction:/);
+  assert.doesNotMatch(message, /Confirmation ID:/);
 });
 
 test("a reason that ends without punctuation still reads as separate sentences", () => {

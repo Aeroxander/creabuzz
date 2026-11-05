@@ -31,22 +31,22 @@ export const AUCTION_STEP_COPY: Record<
   { label: string; detail: string }
 > = {
   hook: {
-    label: "Bid gate",
-    detail: "Limits how much each wallet can bid (curated track only).",
+    label: "Bid limits",
+    detail: "Limits how much each account can bid (curated track only).",
   },
   executor: {
     label: "Graduation executor",
     detail:
-      "The contract that receives the raise and the unsold tokens when the auction ends.",
+      "The contract that collects the money raised and any unsold tokens when the auction ends.",
   },
   auction: {
     label: "Auction",
     detail: "Creates the auction itself.",
   },
   hookAuction: {
-    label: "Lock the bid gate to the auction",
+    label: "Lock the bid limits to the auction",
     detail:
-      "Makes sure only this auction can use the bid gate (curated track only).",
+      "Makes sure only this auction can use the bid limits (curated track only).",
   },
   fund: {
     label: "Fund the auction",
@@ -59,7 +59,7 @@ export const AUCTION_STEP_COPY: Record<
   bind: {
     label: "Link the executor to the auction",
     detail:
-      "Makes the executor serve this one auction and no other. Only the treasury wallet can do this.",
+      "Makes the executor serve this one auction and no other. Only the treasury wallet (the one that holds the project's money) can do this.",
   },
 };
 
@@ -69,11 +69,12 @@ export const GRADUATION_STEP_COPY: Record<
 > = {
   execute: {
     label: "Execute graduation",
-    detail: "One transaction: sweeps the raise, splits it, records the result.",
+    detail:
+      "One step: moves the money raised to where it belongs, splits it, and records the result.",
   },
   mirrorSweep: {
-    label: "Publish the sweep receipt",
-    detail: "Records that transaction on this launch's page.",
+    label: "Publish the transfer receipt",
+    detail: "Records that step on this launch's page.",
   },
   mirrorLock: {
     label: "Publish the reserve receipt",
@@ -174,7 +175,7 @@ export function graduationReadinessText(
     case "blocked":
       return "Graduation cannot run right now. The technical detail below says what the contract objected to.";
     case "misconfigured":
-      return "This auction was not deployed with the graduation executor as its funds and tokens recipient, so graduation cannot run. The launch has to be redeployed.";
+      return "This auction was not set up to send its money and tokens to the graduation executor, so graduation cannot run. The launch has to be deployed again.";
     default:
       return readiness.message;
   }
@@ -191,11 +192,11 @@ export function auctionFailureMessage(
   }
   if (failure.stage === "link") {
     const auctionAddress = state.auctionAddress ?? "(address unavailable)";
-    return `Every deploy transaction confirmed and the auction is at ${auctionAddress}, but saving it to the launch record failed: ${failure.reason} The onchain work is complete. Use “Retry record update” to link it.`;
+    return `Every deploy step went through and the auction is at ${auctionAddress}, but saving it to the launch record failed: ${failure.reason} The deploy itself is complete. Use “Retry record update” to link it.`;
   }
   const stepId = failure.step ?? "auction";
   const label = auctionStepLabel(stepId);
-  const txNote = failure.txHash ? ` Transaction: ${failure.txHash}.` : "";
+  const txNote = failure.txHash ? ` Confirmation ID: ${failure.txHash}.` : "";
   const completed = AUCTION_DEPLOY_STEPS.filter(
     (s) => state.steps[s.id]?.status === "done",
   ).map((s) => auctionStepLabel(s.id));
@@ -211,7 +212,7 @@ export function auctionFailureMessage(
   }
   const outcome =
     failure.outcome === "reverted"
-      ? "was reverted onchain"
+      ? "was rejected by the network"
       : failure.outcome === "unknown"
         ? "ended without a receipt, so it may or may not have gone through"
         : "failed before it was sent";
@@ -271,7 +272,7 @@ export function walletGate(
     return {
       ok: false,
       reason: "wrong-chain",
-      message: `Your wallet is on chain ${input.walletChainId}, but this launch is on chain ${input.launchChainId}. Switch networks in your wallet.`,
+      message: `Your wallet is on network ${input.walletChainId}, but this launch is on network ${input.launchChainId}. Switch networks in your wallet.`,
     };
   }
   return { ok: true };
@@ -322,7 +323,7 @@ export function deployGate(input: {
     return {
       ok: false,
       reason: "not-treasury",
-      message: `Only the launch's treasury wallet can finish this deploy, because the last step binds the executor to the auction and only the treasury may do that. Connect ${input.treasury}.`,
+      message: `Only the launch's treasury wallet can finish this deploy, because the last step links the executor to the auction and only the treasury may do that. Connect ${input.treasury}.`,
     };
   }
   return { ok: true };

@@ -60,7 +60,9 @@ export function TradingForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
     if (state.phase !== "locked" && state.phase !== "ready")
       return { problem: "Where trading stands has not been read yet." };
     if (!checked)
-      return { problem: "Tick the box once you have checked the bar above." };
+      return {
+        problem: "Tick the box once you have checked each point above.",
+      };
     return attempt(() =>
       state.phase === "locked"
         ? announceTradingDecision(shares)
@@ -99,12 +101,12 @@ export function TradingForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
     <div className="mt-3 grid gap-3" data-testid="form-trading">
       <p className="text-sm" data-testid="trading-state">
         {state.phase === "open"
-          ? "Trading is open: Shares can be sent between wallets. A vote can lock it again at once."
+          ? "Trading is open: Shares can be sent from one person to another. A vote can lock it again at once."
           : state.phase === "announced" && state.opensAt
-            ? `Trading was announced. It can open from ${when(state.opensAt)}, by a second vote; until then the Shares refuse it.`
+            ? `Trading was announced. A second vote can open it from ${when(state.opensAt)}; until then it stays locked.`
             : state.phase === "ready" && state.opensAt
               ? `Trading was announced, and the 30 days passed on ${when(state.opensAt)}. A vote can open it now.`
-              : "Trading is locked: Shares cannot be sent between wallets, so nobody can sell them. Opening it takes two votes: one announces it, and the second can only run 30 days later."}
+              : "Trading is locked: Shares cannot be sent to anyone else, so nobody can sell them. Opening it takes two votes: one announces it, and the second can only run 30 days later."}
       </p>
       {state.phase === "ready" ? (
         <fieldset className="flex flex-col gap-1 text-sm">
