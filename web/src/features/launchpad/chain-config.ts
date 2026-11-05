@@ -274,8 +274,9 @@ export function weeklyRounds(
  * The secondary-market factory this build knows on `chainId`, or null when it names none.
  *
  * One factory serves every DAO a kit made: `marketOf(dao)` answers that DAO's market, or the zero
- * address when it has none. Trading is off by default — a market exists from launch, but it sells
- * nothing until the DAO publishes a listing and the founder's schedule has released units.
+ * address when it has none. Trading is off by default — a market exists from launch, but no round can open
+ * until the DAO publishes a listing. That vote is the only deliberate act: the founder's schedule limits only
+ * the founder's own sales and runs on the clock, so other holders can offer as soon as a listing exists.
  */
 export function secondaryMarketFactory(
   chainId: string | number | null,

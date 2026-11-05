@@ -20,7 +20,7 @@ something already live.
 
 | Surface | File |
 |---|---|
-| The market itself (rounds, orders, clearing, claims) | `contracts/src/SecondaryMarket.sol` (657 lines) |
+| The market itself (rounds, orders, clearing, claims) | `contracts/src/SecondaryMarket.sol` (664 lines) |
 | Market creation, provenance and pinning | `contracts/src/SecondaryMarketFactory.sol` (201 lines) |
 | Voting maturity, founder sale schedule, escrow accounting | `contracts/src/ActivationVoting.sol` (835 lines) |
 | Shares transfer policy and the lock guard | `contracts/src/ContributorKitV2.sol`, and the Shares token inside `contracts/src/majeur/MolochPatched.sol` |
@@ -147,13 +147,24 @@ back from node state, not from the script's memory):
 | `market.listing()` | `(false, 0, 0, 0)` | no listing exists, so `openRound` reverts `ListingNotEnabled` |
 | `shares.transfersLocked()` | `true` | Shares cannot move freely |
 | `shares.transferExempt()` | the market | the market is the only free path |
-| `shares.saleEligibleOf(founder)` | `(0, 1)` | nothing sellable yet |
-| `policy.saleCapacity(founder)` | `0` | the schedule has released nothing |
+| `shares.saleEligibleOf(founder)` | `(0, 1)` | the founder has nothing sellable yet (true of the founder only) |
+| `policy.saleCapacity(founder)` | `0` | the schedule has released nothing to the founder |
 | `marketFactory.marketOf(dao)` | the market | one market per DAO |
 
-Turning trading on is therefore **two independent acts**: the DAO configures a
-listing, and the schedule releases units. Neither happens by default, and
-`configureListing` cannot be reached by anyone but the DAO.
+Turning trading on is therefore **one deliberate act**, the DAO's listing vote
+(`configureListing`, which nobody but the DAO can reach). It does not happen by
+default. The founder's schedule is not a second act: it is the clock, and it
+limits only the founder's own sales.
+
+One qualification, because it matters once the project is no longer brand new:
+the schedule constrains the founder and only the founder
+(`ActivationVoting.saleCapacity` returns the plain balance for every other
+holder; `test_non_founders_have_no_sale_restriction`). Any other holder — a
+contributor who was awarded Shares, for example — may offer their own Shares as
+soon as a listing exists, whatever the founder's schedule says. So a listing
+alone sells nothing on a project whose only holder is the founder, and the
+"nothing sellable yet" rows above are the birth state of the founder only; on a
+project with other holders, a listing alone can produce trades.
 
 ---
 
@@ -269,7 +280,7 @@ Stated plainly, because a reviewer should not spend time discovering these:
 3. **The market has never run against a real quote token with fee-on-transfer,
    rebasing or blacklist behaviour.** `test_a_blocked_quote_strands_no_payout`
    covers a blocking token; fee-on-transfer is not covered.
-4. **Gas for a round with the maximum number of orders is measured, and the worst shapes exceed a 2^24 per-transaction cap** (see F4); whether that changes `MAX_ACTIVE_SELLERS` is undecided.
+4. **Gas for a round with the maximum number of orders is measured on the real policy, and the heaviest settle is about 21% of the 2^24 per-transaction cap** (see F4). It was over the cap before settle stopped returning unsold Shares; `MAX_ACTIVE_SELLERS` stays 32.
 5. **No real-chain reorg testing.** Reorg behaviour is covered only by fake-node
    tests in the agreement finalizer, not for the market.
 6. **Open gaps recorded here so nobody discovers them.** (a) Which quote tokens
@@ -288,6 +299,28 @@ Stated plainly, because a reviewer should not spend time discovering these:
    `SecondaryMarketFactory` pins bytecode. That removes upgrade risk but also
    removes the ability to fix a defect; a replacement market is a new deployment
    and a DAO decision.
+
+
+8. **Design limits and open product decisions the tests record but cannot settle.**
+   None of these loses money; each is a choice about who the round serves, and
+   each is a decision for the product owner, not a defect found by a test.
+   (a) *Buyer-slot griefing.* The 33rd buyer is refused `TooManyBuyers`, and
+   cancellation is free until bidding closes, so someone can fill all 32 buyer
+   slots with throwaway bids and keep honest bidders out for the whole window.
+   (b) *A bid can move the price and then be pulled.* Orders are visible and
+   cancellable until the last second; the clearing is honest about the orders
+   that exist when it runs, and cannot make a late withdrawal honest.
+   (c) *Free size inflation under pro-rata allocation.* The oversubscribed side
+   is shared pro rata by stated lots, and whatever is not filled comes back in
+   full, so overstating an order's size costs only the time the money or Shares
+   sit in the market, and takes lots from honest orders on that side. Stating a
+   true size is not rewarded. (d) *Slot squatting on the seller side.* The same
+   free cancellation lets holders fill the 32 seller seats with offers at a price
+   nobody will pay (`TooManySellers`) and withdraw them before the close,
+   keeping honest sellers out of the week's round. Whether to add a cost,
+   a deposit, price priority, or a smaller allocation share for late or very
+   large orders is an open product decision for each of (a) to (d); nothing in
+   the code changes until it is made.
 
 ---
 
@@ -368,8 +401,8 @@ high-severity defect, or (b) found defects that are fixed and re-tested, and has
 stated a view on the seven open questions in §7. That sign-off, and the legal
 view, are release gates owned by people: nothing in the software checks for a
 sign-off. Trading is off by default only because a listing starts disabled and
-no hosted build names a market factory; turning it on remains two deliberate DAO
-acts per project (§4), not a platform switch.
+no hosted build names a market factory; turning it on remains one deliberate DAO
+act (the listing vote) per project (§4), not a platform switch.
 
 ---
 
@@ -422,7 +455,7 @@ the market's accounting assumes it can always return what it holds. Ordinary
 holder-to-holder transfers still reach the validator (asserted in the same test).
 Pinned by `test_a_dao_validator_cannot_freeze_the_markets_escrow`.
 
-### F4 — a measurement, and a stated design limit (informational)
+### F4 — a measurement, fixed in the code it found (informational)
 
 A full round of 32 sellers, 32 buyers and 64 price levels settled for about
 **2.63M gas** with the mock policy, but that figure was misleading twice over:
@@ -431,34 +464,44 @@ was warm and the policy's per-block history rows were overwritten instead of
 appended. Measured against the **real policy** (a real `ContributorKitV2`
 launch), with every touched contract cooled and the settle three days of blocks
 after the offers, as a real settler's transaction would meet it
-(`SecondaryMarketRealGas`):
+(`SecondaryMarketRealGas`), the first real-policy measurement of settle was
+11.29M to 20.87M gas (up to 124% of 2^24, the per-transaction cap some chains
+enforce under EIP-7825). The cost was per part-filled seller (about 350k to 650k
+gas each: the history row, vote checkpoints and escrow-book writes for every
+seller whose Shares the loop returned), so a part-filled round near 32 sellers
+could not be mined under that cap. It would go void after the two-day window:
+nobody lost funds, because every seller's Shares and every buyer's quote come
+back by claim, but that round did not trade, and a griefer who filled the
+seller seats against less than the supply could make it happen on purpose.
 
-| Shape (32 sellers x 32 buyers x 64 levels) | Settle gas | Share of 2^24 (16,777,216) |
-|---|---|---|
-| Typical: one fresh lineage per seller, mixed fills | 11.29M | 67% |
-| Typical: one fresh lineage per seller, every seller part-filled | 17.48M | 104% |
-| Five fresh lineages per seller, mixed fills | 14.45M | 86% |
-| Five fresh lineages per seller, every seller part-filled | **20.87M** | 124% |
-| Eight histogram slots populated (5 escrowed + 3 in the wallet), each seller sold one lot | 18.86M | 112% |
+It is fixed in the contract. `settle` no longer returns anything: it books the
+clearing, the fills and the policy's sold-escrow hook, and a part-filled
+seller's unsold remainder is returned by `claimShares`, exactly as a void
+round's whole offer already is (one seller per transaction, callable by anyone,
+no deadline). Re-measured after that change, same method:
 
-The cost is per seller (about 350k to 650k gas each: the policy appends a
-seven-word history row, vote checkpoints and the escrow-book writes for
-every seller the loop returns Shares to), so it scales with the number of
-**part-filled** sellers. It stays below typical block gas limits (30M and up)
-but **exceeds the 2^24 per-transaction cap** some chains enforce (EIP-7825) in
-the part-filled shapes, including the ordinary one-lineage shape. A round whose
-settle cannot be mined goes void after the two-day window: nobody loses funds
-(every seller's Shares and every buyer's quote come back by claim, which is the
-tested void path), but that round does not trade. This is an open decision on
-`MAX_ACTIVE_SELLERS` (currently 32) or on the settle's per-seller work, not
-changed by this review; see the options in the batch report. The suite pins
-each figure with an upper bound, so the number cannot grow unnoticed.
+| Shape (32 sellers x 32 buyers x 64 levels) | Settle gas | Share of 2^24 (16,777,216) | Worst single seller claim |
+|---|---|---|---|
+| Typical: one fresh lineage per seller, mixed fills | 2.40M | 14% | 0.48M |
+| Typical: one fresh lineage per seller, every seller part-filled | 2.97M | 18% | 0.48M |
+| Five fresh lineages per seller, mixed fills | 2.88M | 17% | 0.72M |
+| Five fresh lineages per seller, every seller part-filled | **3.58M** | 21% | 0.61M |
+| Eight histogram slots populated (5 escrowed + 3 in the wallet), each seller sold one lot | 3.15M | 19% | 0.59M |
+
+The heaviest settle is about a fifth of the cap, so it fits one transaction on a
+chain that enforces it, and `MAX_ACTIVE_SELLERS` stays 32. The suite requires
+every shape to stay under half the cap and pins each figure with an upper bound,
+so the number cannot grow unnoticed; it also asserts that settle moves no
+Shares. No economic parameter changed.
 
 The 33rd buyer is refused `TooManyBuyers`, and because cancellation is free until
 bidding closes, someone can fill the buyer slots with throwaway bids and keep
 honest bidders out for the whole window. Orders are also visible and cancellable
 until the last second, so a bid can move the price and then be pulled. Both are
-**design choices to state**, not defects; they are now recorded in §6.
+**design choices to state**, not defects; they are recorded in §6, item 8,
+together with two consequences of the same free cancellation and pro-rata
+allocation that this review found: free size inflation and seller-side slot
+squatting. All four are open product decisions.
 
 ### The seven questions, answered
 
@@ -470,7 +513,7 @@ until the last second, so a bid can move the price and then be pulled. Both are
 | 4. Can `transferExempt` change and strand escrow? | **No** — it can only be set once. The real stranding route was the validator (F3), now fixed. |
 | 5. Is a Share a security? | For counsel. Unanswered here. |
 | 6. Does the founder schedule create disclosure obligations? | For counsel. |
-| 7. Does "exit is always allowed" undercut the schedule? | **Yes, in fact**: a founder can exit with unvested Shares for a pro-rata share of the treasury once one exists. The schedule restricts transfer and sale, not exit. Whether that matters legally is for counsel; the product fact is now stated plainly. |
+| 7. Does "exit is always allowed" undercut the schedule? | **Yes, in fact**: a founder can exit with Shares not yet released for sale, for a pro-rata share of the treasury once one exists. The schedule restricts transfer and sale, not exit. Whether that matters legally is for counsel; the product fact is now stated plainly. |
 
 ### Test-coverage gaps the review named
 
@@ -495,5 +538,5 @@ until the last second, so a bid can move the price and then be pulled. Both are
 - A blacklist or negative rebase **on the market address itself** is not covered.
 - The `_migrateEscrow` path in the policy was not read closely.
 
-All four of these are still open. The packet is a description of what exists,
-not a claim that the review is finished.
+The first gap is closed; the other three are still open. The packet is a
+description of what exists, not a claim that the review is finished.

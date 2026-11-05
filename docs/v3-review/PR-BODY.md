@@ -20,9 +20,10 @@ deployments keep their old behaviour exactly.
 
 **Secondary market, off by default.** One market per DAO, created by the
 factory with bytecode-pinned provenance. A DAO must publish a listing before any
-round can open, and the founder's schedule must have released units before
-anything is sellable. Shares stay transfer-locked at birth with the market as the
-only exempt path.
+round can open; that vote is the only deliberate act. The founder's sale schedule
+limits only the founder's own sales and runs on the clock, so other holders can
+offer as soon as a listing exists. Shares stay transfer-locked at birth with the
+market as the only exempt path.
 
 **Activation and maturity.** Voting weight is a frozen pair: ownership at
 `B-1` plus a maturity cutoff fixed when the proposal opens, used for both voter

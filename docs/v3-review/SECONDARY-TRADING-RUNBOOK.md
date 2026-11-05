@@ -13,9 +13,10 @@ so that a market was bound at birth. A DAO launched by the older kit has no
 market (`marketOf(dao)` is zero) and cannot get one: a market is created once per
 DAO, by the kit, and never again. This runbook does not apply to it.
 
-**Status.** Trading is off by default (a listing starts disabled) and stays off until two separate acts
-happen, both of which are described in §2. This document does not turn anything
-on; it describes how to do it deliberately and how to prove what state you are in.
+**Status.** Trading is off by default (a listing starts disabled) and stays off until the DAO votes to
+publish a listing, which is the one deliberate act and is described in §2. The founder's sale schedule is a
+separate clock that limits only the founder's own sales. This document does not turn anything on; it
+describes how to do it deliberately and how to prove what state you are in.
 
 Related reading: the review packet ([SECONDARY-TRADING-REVIEW.md](SECONDARY-TRADING-REVIEW.md))
 for what the code does and what it does not, and the candidate design
@@ -40,7 +41,7 @@ packet.
 
 No independent human audit has happened. An internal agent review pass has
 happened and its three findings are fixed (§6 below). That is not an outside
-review and not the review being finished: the four gaps listed in §10 of the
+review and not the review being finished: the gaps listed in §10 of the
 packet, repeated in §7 here, are still open. Read them before you decide, and do
 not describe the market to anyone as "audited".
 
@@ -55,9 +56,9 @@ will reach:
   framing holds (§7, question 5 of the packet);
 - what the founder's sale schedule obliges the project to disclose (question 6);
 - and what it means that **exit is always allowed**, even while the founder's
-  schedule is still locked, so a founder can leave with unvested Shares and take
-  a pro-rata share of the treasury once one exists (question 7 — the packet
-  answers this one "yes, in fact").
+  schedule has not yet released them for sale, so a founder can leave with Shares
+  not yet released for sale and take a pro-rata share of the treasury once one
+  exists (question 7 — the packet answers this one "yes, in fact").
 
 This is not a formality that can be done after the listing is on. If counsel's
 answer is "not in this jurisdiction", the listing stays off there.
@@ -85,13 +86,15 @@ afterwards.
 
 ---
 
-## 2. The two acts
+## 2. The listing vote, and the founder's clock
 
-Turning trading on is two independent acts, one a decision and one the passage of
-time. Neither happens by default. Neither is a platform switch, and no deployment
-turns them on.
+Turning trading on takes one deliberate act: the DAO votes to publish a listing.
+It does not happen by default, it is not a platform switch, and no deployment
+does it. Separately, the founder's own sales are limited by a schedule that runs
+on the clock and needs no act at all. The schedule constrains the founder and
+only the founder; every other holder can offer as soon as a listing exists.
 
-### Act 1 — the DAO publishes a listing
+### The listing vote — the DAO publishes a listing
 
 **Who:** the DAO itself, and nobody else. `configureListing` reverts `NotDao` for
 every other sender. In practice this means a proposal that passes, is queued, and
@@ -142,9 +145,10 @@ afterwards. Disabling the listing does stop new offers and bids — including in
 live round, because those two calls read the listing as it is at that moment —
 but it never stops settlement, refunds, returns or claims (§5).
 
-### Act 2 — the schedule releases units
+### The founder's clock — the schedule releases units
 
-**Who:** nobody. There is no call for this, and that is the point.
+**Who:** nobody. There is no call for this, and that is the point. It is the
+passage of time, not a DAO act.
 
 The founder's sale schedule was frozen at launch by `configureSecondary`, in the
 launch transaction: a start, a cliff, and a duration. What the founder may sell
@@ -177,16 +181,17 @@ The founder still has to *offer* the units: `sell(id, lots, minStep)` moves
 `lots * lotSize` Shares from the founder into the market's keeping for that
 round. A released unit that is never offered is never sold.
 
-### Neither by default, and one without the other sells nothing
+### What a listing alone does, and what the clock adds
 
-- **Listing only.** `openRound()` works, the round opens, buyers can bid. At
-  launch the founder is the only holder, and the founder's `sell` reverts
-  `NoCapacity` until the schedule releases something. The round matches zero
-  lots, settles at zero, and every buyer claims their money back in full. No
-  trade, no loss.
-- **Schedule only.** `saleCapacity(founder)` rises, but `openRound()` reverts
+- **Listing, on a brand-new project.** `openRound()` works, the round opens,
+  buyers can bid. At launch the founder is the only holder, and the founder's
+  `sell` reverts `NoCapacity` until the schedule releases something. The round
+  matches zero lots, settles at zero, and every buyer claims their money back in
+  full. No trade, no loss.
+- **The clock alone.** `saleCapacity(founder)` rises, but `openRound()` reverts
   `ListingNotEnabled` and so does `sell`. Nothing can happen at all.
-- **Both.** A trade can happen. That is the whole activation.
+- **Listing, once the founder's clock has released units.** The founder can
+  offer what has been released, and a trade can happen.
 
 One qualification, because it matters once the project is no longer brand new:
 the schedule constrains the founder and only the founder. Any other holder — a
@@ -226,10 +231,10 @@ nothing below applies.
 | Read | "Off" | "On" | What it tells you |
 |---|---|---|---|
 | `marketOf(dao)` | `0x0000…0000` | the market address, with code | This DAO has its one market. Never changes once set. |
-| `listing()` | `(false, 0, 0, 0)` | `(true, minPrice, maxPrice, levels)` | Whether a listing exists and its terms. This is act 1. |
+| `listing()` | `(false, 0, 0, 0)` | `(true, minPrice, maxPrice, levels)` | Whether a listing exists and its terms. This is the listing vote. |
 | `roundCount()` | `0` | `>= 1` | Whether any round has ever been opened. |
 | `rounds(n)` | the call reverts `UnknownRound` (no such round) | returns a round with `opensAt != 0` | One round's frozen terms, times and result. |
-| `saleCapacity(founder)` | `0` | `> 0` | How much of the founder's grant the schedule has released. This is act 2. |
+| `saleCapacity(founder)` | `0` | `> 0` | How much of the founder's grant the schedule has released. This is the founder's clock. |
 | `saleEligibleOf(founder)` | `(0, 1)` | `(n > 0, 1)` | The same number as the Shares see it; version `1` means a sale policy is bound. |
 | `transfersLocked()` | `true` | `true` | Not the trading switch, so the value is the same either way. `true` is the birth value and stays `true` when the market is open. |
 | `transferExempt()` | anything other than `$MARKET` | `$MARKET` | The market is the one address Shares may move to and from while locked. If this is not the market, trading cannot work and cannot be fixed — it is set once. |
@@ -256,7 +261,7 @@ the level, and confusing the two produces a wrong explanation to users:
 cast call --rpc-url "$RPC" $MARKET 'priceAt(uint256,uint256)(uint256)' $N 3
 ```
 
-### Before act 1
+### Before the listing vote
 
 ```bash
 cast call --rpc-url "$RPC" $MARKET 'listing()(bool,uint128,uint128,uint32)'
@@ -271,7 +276,7 @@ That is the state the kit's read-back asserts at launch, and the state a local
 fixture checks against live node state (`scripts/v5-local-fixture.sh`). If you see
 it, nothing has been turned on.
 
-### After act 1, before act 2
+### After the listing vote, before the founder's clock releases anything
 
 ```bash
 cast call --rpc-url "$RPC" $MARKET 'listing()(bool,uint128,uint128,uint32)'
@@ -284,7 +289,7 @@ cast call --rpc-url "$RPC" $POLICY 'saleCapacity(address)(uint256)' $FOUNDER
 `NoCapacity`. This is the state in which a round can open and match nothing; it
 is safe, but it is not trading.
 
-### After act 2
+### After the founder's clock has released units
 
 ```bash
 cast call --rpc-url "$RPC" $POLICY 'saleCapacity(address)(uint256)' $FOUNDER
@@ -379,8 +384,9 @@ cast send --rpc-url "$RPC" --private-key "$KEY" $MARKET 'settle(uint256)' $N
 Settlement produces one price per lot: the lowest grid level whose uniform price
 matches the most whole lots. Everyone who crosses that price fills whole on the
 short side; the oversubscribed side shares the remainder in whole lots, pro rata,
-with the leftover lots going to the lowest order id. Sellers' unsold Shares are
-returned to the seller inside the settle transaction itself.
+with the leftover lots going to the lowest order id. `settle` moves no Shares: it
+books each order's fill and nothing else. Sellers' unsold Shares go back to the
+seller when `claimShares` is called for them (below), one seller per transaction.
 
 **Void.** If the settle window passes with no settlement, the round is void:
 `voided(id)` returns `true`, `settle` now reverts `SettleOver`, and the round is
@@ -394,11 +400,11 @@ cast send --rpc-url "$RPC" --private-key "$KEY" $MARKET 'claimShares(uint256,add
 cast send --rpc-url "$RPC" --private-key "$KEY" $MARKET 'claimQuote(uint256,address)' $N $WHO
 ```
 
-**Getting paid is something a user does, or anyone does for them.** Only the
-seller's unsold Shares come back on their own — in the settle transaction, or on
-a cancel during bidding. Everything else is a recorded right that has to be
-claimed:
+**Getting paid is something a user does, or anyone does for them.** Only a
+cancelled offer's Shares come back on their own, in the cancel transaction.
+Everything else is a recorded right that has to be claimed:
 
+- a seller's unsold Shares: `claimShares(id, seller)`, for `(lots - filled) * lotSize`;
 - a seller's proceeds: `claimQuote(id, seller)`, for `filled * price`;
 - a buyer's Shares: `claimShares(id, buyer)`, fresh, with no inherited age;
 - a buyer's refund of everything above the clearing price, or the whole escrow if
@@ -449,14 +455,14 @@ RPC_URL=<node> MARKET=<market address> KEEPER_PRIVATE_KEY=<gas-only key> KEEPER_
 
 ## 5. Turning it off
 
-The off-switch is the same call as act 1, with `false`:
+The off-switch is the same call as the listing vote, with `false`:
 
 ```bash
 cast calldata 'configureListing(bool,uint128,uint128,uint32)' false 0 0 0
 ```
 
 The last three arguments are ignored when disabling; the listing is set to
-`(false, 0, 0, 0)`. Like act 1, it is a DAO call: a proposal, a vote, and the
+`(false, 0, 0, 0)`. Like the listing vote, it is a DAO call: a proposal, a vote, and the
 one-day timelock. **You cannot stop trading in the next block.** Plan for the
 delay.
 
@@ -473,8 +479,8 @@ delay.
 - It does not stop cancellations. `cancelSell` and `cancelBid` never read the
   listing either, so a seller can still pull out of a live round while bidding is
   open.
-- It does not stop claims, refunds or returns. Nothing in `claimShares`,
-  `claimQuote`, or the unsold-lot return inside `settle` reads the listing.
+- It does not stop claims, refunds or returns. Nothing in `claimShares` (which
+  includes a seller's unsold return) or `claimQuote` reads the listing.
 - It does not cancel, shorten or void an open round. There is no such function.
 - It does not unlock or re-lock Shares. The transfer lock is a separate switch
   with a separate 30-day notice, and the market works with the lock still on
@@ -582,7 +588,7 @@ and the transaction hashes.
 | The quote token blacklists or negatively rebases the market's own address | **Engineering.** Untested (§7). Stop the listing and escalate; do not attempt workarounds. |
 | `LedgerShort`, or `quoteIn`/`sharesIn` that do not match the round's orders | **Engineering.** Stop the listing, do not touch the funds, preserve the round number and reads. |
 | `MarketInventoryShort` from the policy | **Engineering.** The escrow books claim more than the market holds. |
-| A settle at the maximum order count runs out of gas | **Engineering.** The real policy's gas cost is unmeasured (§7). |
+| A settle at the maximum order count runs out of gas, or the keeper warns that a settle is at or over the 2^24 cap | **Engineering.** The measured worst case is about a fifth of the cap (§7), so this means something changed. Do not touch the funds; a round that cannot be settled goes void and refunds by claim. |
 | A defect in the market's own logic | **Engineering and a product decision.** The market cannot be upgraded or patched; replacing it means a new deployment and a DAO decision. |
 
 Never escalate by asking engineering to move funds. Nobody can, including them.
@@ -593,19 +599,40 @@ Never escalate by asking engineering to move funds. Nobody can, including them.
 
 ### Still open after the first review
 
-These are from §6 and §10 of the review packet and were still open when it was
-written. Do not describe the market to users, or to counsel, as though they were
-closed.
+These come from §6 and §10 of the review packet. The first two bullets have
+since been measured or covered and say so; the rest are still open. Do not
+describe the market to users, or to counsel, as though the open ones were closed.
 
-- **The real policy's gas cost is unmeasured.** The only measurement is a full
-  round of 32 sellers, 32 buyers and 64 levels at about **2.63M gas with a mock
-  policy** (finding F4). The real `ActivationVoting` costs more, and nobody has
-  measured how much. Until someone does, treat a maximally full round as an
-  unknown and prefer smaller rounds on a real deployment.
-- **The real market and the real `ActivationVoting` have no adversarial
-  coverage.** The market's flow tests run against a mock policy; the policy's
-  tests run against a shim market; the two meet only in a few happy-path tests in
-  `ContributorKitV2.t.sol`. Nobody has attacked the composition.
+- **The heaviest settle is measured on the real policy, and it fits one
+  transaction.** A full round of 32 sellers, 32 buyers and 64 levels, on a real
+  `ContributorKitV2` launch with every touched contract cooled and three days of
+  blocks after the offers (`SecondaryMarketRealGas`), re-measured after settle
+  stopped returning unsold Shares. These are the review packet's F4 figures:
+
+| Shape (32 sellers x 32 buyers x 64 levels) | Settle gas | Share of 2^24 (16,777,216) | Worst single seller claim |
+|---|---|---|---|
+| Typical: one fresh lineage per seller, mixed fills | 2.40M | 14% | 0.48M |
+| Typical: one fresh lineage per seller, every seller part-filled | 2.97M | 18% | 0.48M |
+| Five fresh lineages per seller, mixed fills | 2.88M | 17% | 0.72M |
+| Five fresh lineages per seller, every seller part-filled | **3.58M** | 21% | 0.61M |
+| Eight histogram slots populated, each seller sold one lot | 3.15M | 19% | 0.59M |
+
+  `settle` now only books fills and moves no Shares; each seller's unsold return
+  is that seller's own `claimShares`. Before settle stopped returning unsold
+  Shares, a part-filled round near 32 sellers could not be mined on a chain that
+  enforces the 2^24 per-transaction cap (EIP-7825): the part-filled shapes cost
+  17.5M to 20.9M gas, the round went void, and the sellers and buyers took
+  everything back by claim. Funds were safe throughout, because void rounds
+  refund by claim. A full round is no longer a reason for caution; the
+  suite fails any shape over half the cap, and the keeper warns if an estimate is
+  at or over it.
+- **The real market and the real `ActivationVoting` are tested together.** The
+  adversarial, review and resolution suites run against a real `ContributorKitV2`
+  launch as well as the mock policy (`SecondaryMarketAdversaryReal`,
+  `SecondaryMarketReviewReal`, `SecondaryMarketFlowsResolutionReal`), and
+  `ActivationVotingRealMarketFuzz` walks the real market and checks the escrow
+  books at every step. This is the author's own coverage, not an outside attack
+  on the composition.
 - **Fee-on-transfer quote tokens fail closed.** The exact-balance check reverts
   the bid, so such a token is unusable rather than unsafe. That is the safer
   failure, but it is a failure: a project launched with a fee-on-transfer quote
@@ -633,9 +660,19 @@ These are choices in the design. They will be reported as bugs; they are not.
   honest bidders out for the whole three-day window. It costs the griefer nothing
   and nobody loses money: the cost is that the round's demand is not the demand
   that existed, and honest bidders wait a week.
+- **Seller seats can be squatted the same way.** A holder with a lot to spare in
+  each of 32 wallets can fill the 32 seller seats with offers at a price nobody
+  will pay, cancel at the last moment, and keep honest sellers out of the round
+  (`TooManySellers`). It costs nothing and no money is lost. Whether to bound it
+  is an open product decision (packet §6).
 - **Orders are visible and cancellable until the last second.** A bid can move
   the price and then be pulled. The clearing is honest about the orders that
   exist when it runs; it cannot make a late withdrawal honest.
+- **A larger order takes a larger share when its side is oversubscribed.** The
+  oversubscribed side is shared pro rata by stated size, and what is not filled
+  comes back in full, so overstating an order's size costs only the time the
+  money or Shares sit in the market. Honest sizes are not rewarded. Whether to
+  change the rule is an open product decision (packet §6).
 - **One price per round, one round a week, 32 sellers and 32 buyers.** A round is
   a weekly clearing, not a continuous market. Someone who wants to trade now may
   have to wait, and a round that does not cross simply does not trade.
@@ -644,9 +681,10 @@ These are choices in the design. They will be reported as bugs; they are not.
   one, and no way to add one without a new deployment.
 - **The founder can exit while their sale schedule is locked.** The schedule
   restricts transfer and sale; a burn (a direct exit) never passes through it.
-  Once the treasury holds something, a founder can leave with unvested Shares and
-  take a pro-rata share. The packet states this plainly (question 7); it is a
-  product fact for counsel, not a defect to fix.
+  Once the treasury holds something, a founder can leave with Shares not yet
+  released for sale and take a pro-rata share. Exit is always allowed; the packet
+  states this plainly (question 7); it is a product fact for counsel, not a
+  defect to fix.
 - **The DAO cannot sell inventory through the market, and the market cannot mint.**
   It only ever sells Shares a holder put into it.
 - **A blocked quote token can delay payouts indefinitely.** The right to be paid

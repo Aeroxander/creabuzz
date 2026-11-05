@@ -1612,8 +1612,9 @@ correction, and its seven open questions are answered from the review (§10).
 
 The review's fourth finding is a measurement, not a defect: a 32×32 round with
 64 levels settled in **2.63M gas** with the mock policy (a warm, same-block figure; against
-the real policy, cold and across blocks, it is 11.3M to 20.9M by shape, see the review packet's F4
-and its open `MAX_ACTIVE_SELLERS` decision), the 33rd buyer is refused
+the real policy, cold and across blocks, it first measured 11.3M to 20.9M by shape, over the 2^24
+per-transaction cap, and was fixed by moving the unsold return from settle to `claimShares`: it is now
+2.4M to 3.6M, see the review packet's F4), the 33rd buyer is refused
 `TooManyBuyers`, and free cancellation until the close means buyer slots can be
 occupied with throwaway bids. Both are design limits, now stated in the packet.
 
@@ -1675,9 +1676,9 @@ checked byte-for-byte against `cast calldata "configureListing(bool,uint128,uint
 
 ### The operator runbook
 
-`docs/v3-review/SECONDARY-TRADING-RUNBOOK.md` — the three gates, the two
-independent acts (listing and schedule release) with the call and the account
-that may make each, the exact reads with their off/on values, the round
+`docs/v3-review/SECONDARY-TRADING-RUNBOOK.md` — the three gates, the one
+deliberate act (the DAO's listing vote) and the founder's clock (schedule release),
+with the call and the account that may make each, the exact reads with their off/on values, the round
 lifecycle, the off-switch **and what it does not do**, incident steps mapped to
 the review's F1–F3, and what is still uncovered.
 
