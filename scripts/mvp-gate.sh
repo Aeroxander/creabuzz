@@ -27,7 +27,7 @@
 #           --list   print the journeys it would run, and run nothing
 #           --outside print the journey scripts no set runs, each with the reason, and run nothing
 #         A journey script (scripts/*-e2e.sh) in no set and with no reason is reported as a WARNING on standard error.
-#         In CI: .github/workflows/mvp-gate.yml (not pushed; docs/v3-review/MVP-GATE-CI.md).
+#         In CI: .github/workflows/mvp-gate.yml (on the fork since 2026-11-01; docs/v3-review/MVP-GATE-CI.md).
 # Env:   LOG_DIR (default: a temp directory; each journey's full log is kept there)
 #         KEEP_GATE_STATE=1 keeps the run's own scratch directory (its anvil state) instead of removing it
 #         JOURNEY_DIR where the journey scripts are (default: scripts; scripts/test-mvp-gate.sh points it at stand-ins)

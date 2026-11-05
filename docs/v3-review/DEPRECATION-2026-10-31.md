@@ -44,8 +44,10 @@ where taken. The screen re-check's open items (STILL #10 to STILL #96, NEW1 to N
   links, error reports, the contributor journeys from the command line, pages and passkey accounts, work and paid work);
   `--later` runs the raise, milestone and optional-feature journeys; `--list` shows the set. Invite links and error
   reports were not in the gate before. The hosted social run now fails on a missing social spec or a media store that
-  is down (the picture test used to skip). Nothing runs the gate on its own, and its last recorded pass is from
-  2026-10-28: commit, then run it ([STATUS.md](STATUS.md), "The gates").
+  is down (the picture test used to skip). As of 2026-10-31 nothing ran the gate on its own and its last recorded pass
+  was from 2026-10-28. Since 2026-11-01 `.github/workflows/mvp-gate.yml` runs `--pilot` on pull requests and `--later`
+  nightly on the fork; the gate now holds 27 journeys, and its last recorded full pass is 2026-10-31
+  ([STATUS.md](STATUS.md), "The gates").
 - **#33** `scripts/sepolia-deploy.sh` prints the pilot's settings alone, and the optional features' only with
   `--optional`; `just dev-chain` prints a contributor-only build's settings first (with `VITE_CONTRIBUTOR_ONLY=1`), and
   the rest only with `DEV_CHAIN_ALL=1`. Both still deploy everything: a pilot-only deploy would change the Forge deploy

@@ -366,41 +366,50 @@ memory. Three consecutive runs exited 0; the final run reported **8/8 receipts
 - the policy's frozen schedule reads market, founder, grant `2e20`, start = the
   launch block, cliff 0, duration 15,552,000.
 
-Creation payloads as the node received them, against EIP-3860's 49,152:
-`TreasuryMandateFactory` **49,126** (26 bytes of headroom — a real constraint for
-future work), `Summoner` 47,832, `SecondaryMarketFactory` 30,559,
-`ContributorKitV2` 29,960, `ActivationVoting` 23,886. Runtimes against
-EIP-170's 24,576: Moloch 23,970, `ActivationVoting` 23,687, mandate factory
-21,086, market factory 16,984, work budget 16,505, kit 15,792, market 13,310,
-Shares 12,755, Summoner 1,970.
+Creation payloads as the node received them, against EIP-3860's 49,152
+(re-measured 2026-11-05, see the size budgets below; an earlier pass on
+2026-11-04 read `TreasuryMandateFactory` 49,126, `Summoner` 47,832,
+`SecondaryMarketFactory` 30,559, `ContributorKitV2` 29,960 and
+`ActivationVoting` 23,886, before the later source changes):
+`TreasuryMandateFactory` **49,116** (36 bytes of headroom, the tightest
+budget and a real constraint for future work), `Summoner` 47,901,
+`SecondaryMarketFactory` 30,419, `ContributorKitV2` 29,704, `ActivationVoting`
+23,604. Runtimes against EIP-170's 24,576: Moloch 23,970, `ActivationVoting`
+23,405, mandate factory 21,076, market factory 16,775, work budget 16,495, kit
+15,467, market 13,112, Shares 12,824, Summoner 1,970.
 
-Noted, not resolved here: Foundry 1.4.3 produces different bytecode for
-`ActivationVoting` from `forge build` (23,446 runtime) versus `forge script`
-(23,687) with identical sources and metadata, and the checked-in `out/`
-artifact was stale. The deployment path is the larger number, so the limits hold
-either way, but a reproducible-artifact check for that contract remains open.
+History, no longer true at this commit: on 2026-11-04 Foundry 1.4.3 produced
+different bytecode for `ActivationVoting` from `forge build` (23,446 runtime)
+versus `forge script` (23,687) with identical sources and metadata, and the
+checked-in `out/` artifact was stale. On 2026-11-05 `forge build --sizes` and the
+`forge script` run read back from anvil agree (23,405 runtime). Moloch reads the
+same on both paths (23,970); the earlier 24,575 and 24,529 figures in other
+documents were measured before the T5 removals. Whether the two paths stay equal
+after a compiler or Foundry upgrade is not guaranteed, so compare both paths
+whenever either changes.
 
-### Size budgets (reference table, measured 2026-11-04)
+### Size budgets (reference table, measured 2026-11-05)
 
 One reference build path: **`forge script` through `./scripts/v5-local-fixture.sh`**,
-read back from a local anvil node. It is the path that actually deploys, and it
-gives the larger `ActivationVoting` number (23,687 against 23,446 from
-`forge build`), so quote that one. Creation payloads include constructor
+read back from a local anvil node. It is the path that actually deploys, so quote
+it; `forge build --sizes` gave the same numbers on 2026-11-05 (creation figures
+there leave out constructor arguments, so a few bytes lower for contracts that
+take them). Creation payloads include constructor
 arguments; limits are EIP-3860 49,152 (creation) and EIP-170 24,576 (runtime).
 
 | Contract | Creation payload | Spare | Runtime | Spare |
 |---|---|---|---|---|
-| `TreasuryMandateFactory` | **49,126** | **26** | 21,086 | 3,490 |
+| `TreasuryMandateFactory` | **49,116** | **36** | 21,076 | 3,500 |
 | `Summoner` | 47,901 | 1,251 | 1,970 | 22,606 |
 | Moloch (implementation) | 45,661 | 3,491 | **23,970** | **606** |
-| `SecondaryMarketFactory` | 30,731 | 18,421 | 17,087 | 7,489 |
-| `ContributorKitV2` | 30,029 | 19,123 | 15,792 | 8,784 |
-| `ActivationVoting` (implementation) | 23,886 | 25,266 | 23,687 | 889 |
-| `SecondaryMarket` | 14,588 | 34,564 | 13,413 | 11,163 |
+| `SecondaryMarketFactory` | 30,419 | 18,733 | 16,775 | 7,801 |
+| `ContributorKitV2` | 29,704 | 19,448 | 15,467 | 9,109 |
+| `ActivationVoting` (implementation) | 23,604 | 25,548 | 23,405 | 1,171 |
+| `SecondaryMarket` | 14,276 | 34,876 | 13,112 | 11,464 |
 | Shares (implementation) | 12,842 | 36,310 | 12,824 | 11,752 |
 
-The tightest limits are the mandate factory's creation payload (23 bytes) and
-Moloch's runtime (606 bytes). No other gate checks sizes, and Foundry tests waive
+The tightest limits are the mandate factory's creation payload (36 bytes of
+the 49,152) and Moloch's runtime (606 bytes of the 24,576). No other gate checks sizes, and Foundry tests waive
 both limits for `new`, so any change that touches `TreasuryMandate`, `ClaimStake`,
 `ActivationVoting`, Moloch or Shares, or their factories, must re-run
 `./scripts/v5-local-fixture.sh` and update this table. The script needs `anvil`,

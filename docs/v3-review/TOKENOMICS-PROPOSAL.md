@@ -139,7 +139,8 @@ installed later and a burn of a holder's Shares; both are closed in the write-up
   guard), alongside the D51 subtraction.
 - `setRagequittable` is deleted from the patched DAO; every DAO made here is born with leaving on (the kit already
   passes `ragequittable = true`).
-- The patched DAO is 1 byte under the size limit (24,575 of 24,576). Removing the unused share sale, permits and
+- The patched DAO was 1 byte under the size limit when this was written (24,575 of 24,576; it is 23,970 now, 606 spare,
+  measured 2026-11-05). Removing the unused share sale, permits and
   allowances (T5) frees far more than these changes need. Measure with `forge build --sizes` before deciding the order.
 - The web exit preview (`ragequit-position.ts`) subtracts the same amount, so the screen still matches the chain.
 

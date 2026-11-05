@@ -1,9 +1,9 @@
 # MVP gate: the end-to-end journeys of scripts/mvp-gate.sh, in CI.
 #
-# NOT PUSHED. This file was written on the local branch v4-governance-rework (2026-11-01) and has never run on GitHub.
-# Publishing it (pushing the branch, opening a pull request) is the owner's decision; any pull request that carries it
-# stays a draft until the owner says otherwise. docs/v3-review/MVP-GATE-CI.md says what it runs, what it needs, and what
-# a green run does NOT prove.
+# PUSHED TO THE FORK. Written on the local branch v4-governance-rework (2026-11-01), pushed with it to the fork
+# (Aeroxander/creabuzz) the same day, and first run there on draft pull request #1. Opening any other pull request that
+# carries it, or pushing it upstream, is the owner's decision; such a pull request stays a draft until the owner says
+# otherwise. docs/v3-review/MVP-GATE-CI.md says what it runs, what it needs, and what a green run does NOT prove.
 #
 # Two runs, one job:
 #   - pull requests that touch what the pilot runs on: `scripts/mvp-gate.sh --pilot` (the pilot set, about an hour;

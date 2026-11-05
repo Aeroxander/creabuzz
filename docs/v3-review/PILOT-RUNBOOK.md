@@ -131,8 +131,8 @@ before inviting anyone.
    reviewer's name show in the founder's reviewer picker (step 6). Nor do they sign in with a passkey against a real
    server, or read "Your work" from one: check both by hand in the practice project. Under `--pilot` the contributor
    journey runs in the contributor-only build the image makes (`PILOT_BUILD=1`), with none of the optional features; the
-   full gate runs it with them on. A CI job for the gate is written
-   ([MVP-GATE-CI.md](MVP-GATE-CI.md)) but not pushed; publishing it is your call, and green CI does not replace these
+   full gate runs it with them on. A CI job for the gate runs on the fork
+   ([MVP-GATE-CI.md](MVP-GATE-CI.md)); opening it upstream is your call, and green CI does not replace these
    hand checks.
 11. **The report**: a copy of [PILOT-REPORT.md](PILOT-REPORT.md) to fill in as it runs.
 

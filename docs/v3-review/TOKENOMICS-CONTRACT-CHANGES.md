@@ -51,11 +51,13 @@ made it check the wrong numbers. Both are fixed in `DaoLaunchKit`, written up in
 
 ## 0. Measured first
 
-Built in a scratch copy of `contracts/` at `1bcb885c0` (solc 0.8.37, `via_ir`, 200 runs), nothing committed:
+Built in a scratch copy of `contracts/` at `1bcb885c0` (solc 0.8.37, `via_ir`, 200 runs), nothing committed. This table is that
+snapshot and is not refreshed; the current `Moloch` is 23,970 of 24,576 (606 spare, measured 2026-11-05, see
+[V5-IMPLEMENTATION.md](V5-IMPLEMENTATION.md), "Size budgets"):
 
 | Contract | Today | Limit | Note |
 |---|---|---|---|
-| `Moloch` (runtime) | 24,575 | 24,576 | 1 byte spare |
+| `Moloch` (runtime) | 24,575 (23,970 now) | 24,576 | 1 byte spare then; 606 now |
 | `Moloch` without `setPermit`, `spendPermit`, `setAllowance`, `spendAllowance`, `setSale`, `buyShares`, `setRagequittable` | **21,806** | 24,576 | 2,769 bytes freed |
 | The same plus a prototype of D72's subtraction and D76's award flag | **21,842** | 24,576 | +36 bytes; 2,734 spare |
 | `Summoner` (creation code, carries `Moloch`) | 43,336 → 40,603 | 49,152 | follows `Moloch` |

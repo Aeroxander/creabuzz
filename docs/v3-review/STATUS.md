@@ -74,21 +74,32 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
   their rights on a real server, plus `web/tests/e2e-real/passkey-sign-in.spec.ts`, passkey sign-up and sign-in again
   against that real server). Under `--pilot` the page contributor journey (`web-contributor-e2e`) runs in the
   contributor-only build the pilot ships (`PILOT_BUILD=1`, since 2026-11-01). `scripts/mvp-gate.sh` runs all
-  twenty-two, the pilot set first;
-  `--later` runs the raise, milestone, optional-feature and self-serve journeys alone (twelve); `--list` shows what
+  27 (10 pilot, then 17 later), the pilot set first;
+  `--later` runs the raise, milestone, optional-feature, self-serve and weekly-sales (secondary market) journeys alone
+  (17); `--list` shows what
   would run; `--outside` lists the four journey scripts no set runs, each with its reason. A journey script in no set
   and with no reason is printed as a warning on every run ([MVP-GATE-CI.md](MVP-GATE-CI.md)).
 - **Pilot set, 2026-11-01: all ten pass locally; nine of ten in CI.** The first CI run (`.github/workflows/mvp-gate.yml`,
   pushed to the fork with draft PR Aeroxander/creabuzz#1) passed every journey but `web-social-hosted-e2e`. There,
   `follow-notify.spec.ts` lost one of two follows clicked within a second (twice, on the slower runner). It passed
-  locally, and the hashtag-search test in the same suite is flaky in both places. A local run hit a Redis outage
+  locally. **Follow-notify fix, 2026-11-02 (commit 8fecc32): awaits a CI confirmation.** The spec now waits for the
+  first follow to show as pending before it clicks the second; it has passed only locally so far, and no CI run since
+  is recorded here. The spec keeps its trace (what Bob's page sent and heard), printed when the follow check fails, so
+  a repeat failure names its cause. The hashtag-and-mention test in `social.spec.ts` (it waits 15 seconds for the
+  mention list) was flaky in both places and has no recorded root cause; it now prints the same kind of trace (follow
+  list and profile frames, the options shown, the server's follow list for Dev) when that wait fails, and the next
+  failure should be read from that output. A local run hit a Redis outage
   (Docker Desktop had quit) on the two journeys that start a server; rerun with Redis up, both passed.
-- **Last full pass of all twenty-two: 2026-10-31**, the 16 journeys of that day after the D150, D151 and D152 removals. Added since and
-  not yet in a full pass: `web-pilot-e2e` (pilot set) and, on 2026-11-01, `web-rounds-e2e`, `web-post-bounty-e2e`,
-  `web-self-serve-e2e` and `shares-erc20c-e2e` (later set; no gate ran them before).
+- **Last full pass: 2026-10-31**, the 16 journeys of that day after the D150, D151 and D152 removals. No full pass of
+  all 27 is recorded since. Added after it and not yet in a full pass: `web-pilot-e2e` (pilot set) and, in the later
+  set, `web-rounds-e2e`, `web-post-bounty-e2e`, `web-self-serve-e2e` and `shares-erc20c-e2e` (no gate ran them
+  before), then `web-project-story-e2e`, `work-check-query-e2e`, `v5-local-fixture`, `web-trading-e2e` and
+  `secondary-keeper-e2e`.
 - **The CI job runs on the fork:** `.github/workflows/mvp-gate.yml` runs `--pilot` on pull requests that touch the
   web app, server crates, packages, contracts, scripts, deployment config or the database, and `--later` nightly,
-  with Postgres, Redis, MinIO, Foundry and a browser, and uploads every log. Its first run was on 2026-11-01 (above).
+  with Postgres, Redis, MinIO, Foundry and a browser, and uploads every log. It is pushed: the workflow is in
+  `origin/v4-governance-rework` (the fork) since 2026-11-01, and its first run was that day (above). This file records
+  no result of a nightly `--later` run.
 - **Not covered by it**, so checked by hand ([PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md)): a reviewer acting from a
   passkey account, the name link against a real invite-only server, "Your work" read from a real server, a
   passkey-account holder whose access is restricted (the browser-wallet holder is `web-restricted-holder-e2e`), the

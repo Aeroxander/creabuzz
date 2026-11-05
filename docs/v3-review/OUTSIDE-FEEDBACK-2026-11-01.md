@@ -61,7 +61,7 @@ These are the known security findings this plan covers; the audits do not show t
 
 | Item | Status |
 |---|---|
-| CI for the pilot gate (A 1.2, critique 4) | Written as its own job, `.github/workflows/mvp-gate.yml` ([MVP-GATE-CI.md](MVP-GATE-CI.md)). It is **not pushed**: the remote is public, and publishing is your call. It has never run. A green run would not replace the hosted image, the passkey reviewer, the name link or device recovery. |
+| CI for the pilot gate (A 1.2, critique 4) | Written as its own job, `.github/workflows/mvp-gate.yml` ([MVP-GATE-CI.md](MVP-GATE-CI.md)). It was **not pushed** when this was written: the remote is public, and publishing is your call. (Later the same day the branch was pushed to the fork and the job ran there; see [STATUS.md](STATUS.md), "The gates".) A green run would not replace the hosted image, the passkey reviewer, the name link or device recovery. |
 | Gate coverage (B 9) | Every `*-e2e.sh` has a home or a stated reason, and an unknown one prints a warning. New journeys: `web-restricted-holder-e2e` (a banned holder still reaches their evidence and can leave) and a "Your work" step. The pilot gate runs the contributor journey in the contributor-only build. |
 | Restore rehearsal (A 1.3, critique 5) | yours: [RESTORE-REHEARSAL.md](RESTORE-REHEARSAL.md) restores the real backup on another machine and checks posts, images, policies, identity and git. `test-compose-backup.sh` stays separate coverage and verifies only its own scratch deployment. |
 | Holder access after a ban (A 4.1, critique 6) | Model and tested fallback in [HOLDER-ACCESS-MODEL.md](HOLDER-ACCESS-MODEL.md). No private evidence is made public. The hand test is yours. |

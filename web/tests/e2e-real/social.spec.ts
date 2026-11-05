@@ -60,6 +60,52 @@ async function signInAsDev(page: Page, fixture: Fixture) {
 const postCard = (page: Page, text: string) =>
   page.getByTestId("social-post").filter({ hasText: text }).first();
 
+/**
+ * What the page sends and hears about follow lists (kind 3) and profiles (kind 0), plus relay answers and errors, as
+ * short lines with the time since this call. The mention list is built from exactly these, so the lines are printed
+ * when it does not appear. The returned array fills as frames pass.
+ */
+function traceFollowAndProfileFrames(page: Page): string[] {
+  const trace: string[] = [];
+  const started = Date.now();
+  page.on("websocket", (socket) => {
+    const note = (dir: string, raw: string | Buffer) => {
+      const text = typeof raw === "string" ? raw : raw.toString();
+      let line: string | null = null;
+      try {
+        const frame = JSON.parse(text);
+        if (frame[0] === "REQ") {
+          const kinds = (frame.slice(2) as { kinds?: number[] }[]).flatMap(
+            (f) => f.kinds ?? [],
+          );
+          if (kinds.includes(0) || kinds.includes(3))
+            line = `REQ ${String(frame[1]).slice(0, 12)} ${text.slice(0, 160)}`;
+        } else if (frame[0] === "EVENT") {
+          const event = frame[2] ?? frame[1];
+          if (event?.kind === 0 || event?.kind === 3)
+            line = `EVENT kind ${event.kind} by ${String(event.pubkey).slice(0, 8)} created_at=${event.created_at}${
+              event.kind === 3
+                ? ` p=${(event.tags as string[][]).filter((t) => t[0] === "p").length}`
+                : ""
+            }`;
+        } else if (
+          ["EOSE", "CLOSED", "NOTICE", "AUTH", "OK"].includes(frame[0])
+        )
+          line = text.slice(0, 160);
+      } catch {
+        // not JSON: not a Nostr frame
+      }
+      if (line)
+        trace.push(
+          `+${Date.now() - started}ms ${dir} ${socket.url().replace(/^wss?:\/\//, "")} ${line}`,
+        );
+    };
+    socket.on("framesent", (f) => note("->", f.payload));
+    socket.on("framereceived", (f) => note("<-", f.payload));
+  });
+  return trace;
+}
+
 /** The feed pages as you scroll; an old seeded post may be several pages down. */
 async function scrollUntilVisible(page: Page, text: string) {
   for (let i = 0; i < 25; i += 1) {
@@ -133,7 +179,8 @@ test("a post with a hashtag and a mention is stored with the right tags and find
 }) => {
   test.slow();
   const fixture = fixtureOrSkip();
-  await signInAsDev(page, fixture);
+  const errors = await signInAsDev(page, fixture);
+  const trace = traceFollowAndProfileFrames(page);
   await page.goto("/social");
   const tag = `tag${RUN}`;
   const input = page.getByTestId("social-composer-input");
@@ -141,7 +188,37 @@ test("a post with a hashtag and a mention is stored with the right tags and find
   await input.pressSequentially("hello @Alic");
   // Mentions autocomplete from the people you follow.
   const option = page.getByRole("option", { name: /Alice Archer/ });
-  await expect(option).toBeVisible({ timeout: 15_000 });
+  try {
+    await expect(option).toBeVisible({ timeout: 15_000 });
+  } catch (error) {
+    // The list needs Dev's follow list (kind 3) and the followed people's profiles (kind 0). Print what the page asked
+    // for and heard, what the server holds for Dev, and what the box and list show, so a CI failure names its cause.
+    const listed = await page
+      .getByRole("option")
+      .allTextContents()
+      .catch(() => []);
+    const typed = await input.inputValue().catch(() => "?");
+    const serverFollows = (
+      (await readAs("dev", {
+        kinds: [3],
+        authors: [fixture.people.dev],
+      }).catch(() => [])) as { created_at: number; tags: string[][] }[]
+    )
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, 1)
+      .map((e) => e.tags.filter((t) => t[0] === "p").map((t) => t[1]));
+    console.log(
+      [
+        `mention list trace (alice=${fixture.people.alice.slice(0, 8)} dev=${fixture.people.dev.slice(0, 8)}):`,
+        ...trace,
+        `box: ${JSON.stringify(typed)}`,
+        `options shown: ${JSON.stringify(listed)}`,
+        `server follow list of dev (newest): ${JSON.stringify(serverFollows)}`,
+        `page errors: ${JSON.stringify(errors)}`,
+      ].join("\n"),
+    );
+    throw error;
+  }
   await option.click();
   await input.pressSequentially(`welcome to #${tag}`);
   await page.getByTestId("social-composer-submit").click();

@@ -24,8 +24,8 @@ node scripts/check-majeur-fork.mjs
 cd contracts && forge build --sizes | grep -E "Moloch "
 ```
 
-Working looks like: `ok` and a Moloch runtime size of 24,575 of 24,576 bytes (solc 0.8.37 since D70; it was 24,529 with
-0.8.30). If forge says "No solc version exists that matches the version requirement: …, =0.8.37", your forge predates
+Working looks like: `ok` and a Moloch runtime size of 23,970 of 24,576 bytes (606 spare, solc 0.8.37, measured 2026-11-05; it was 24,575 after
+D70 and 24,529 with 0.8.30, before the T5 removals). If forge says "No solc version exists that matches the version requirement: …, =0.8.37", your forge predates
 that compiler: run `scripts/ensure-solc.sh` once.
 
 ## 2. A project that never raised, with the command line alone

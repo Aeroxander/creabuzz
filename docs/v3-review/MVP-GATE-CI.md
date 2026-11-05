@@ -1,9 +1,12 @@
 # The MVP gate in CI
 
-Written 2026-11-01 (outside review A 1.2 and B 9, with the critique's corrections). **Not pushed.** The workflow
-[`.github/workflows/mvp-gate.yml`](../../.github/workflows/mvp-gate.yml) exists only on the local branch
-`v4-governance-rework` and has never run on GitHub. Pushing the branch or opening a pull request is the owner's call;
-any pull request that carries it stays a draft until the owner says otherwise.
+Written 2026-11-01 (outside review A 1.2 and B 9, with the critique's corrections). **Pushed to the fork, and run
+there.** The workflow [`.github/workflows/mvp-gate.yml`](../../.github/workflows/mvp-gate.yml) is in
+`origin/v4-governance-rework` (https://github.com/Aeroxander/creabuzz) and ran for the first time on 2026-11-01, on the
+draft pull request Aeroxander/creabuzz#1 ([STATUS.md](STATUS.md), "The gates": nine of ten pilot journeys passed, the
+tenth was a flaky follow check). It was written as not pushed; that stopped being true when the branch was pushed.
+Opening any pull request that carries it, and any push to the upstream repository, remains the owner's call, and a
+pull request that carries it stays a draft until the owner says otherwise.
 
 A green gate is not the pilot's go-ahead. It does not replace the hand tests in
 [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md): the hosted image itself, a reviewer acting from a passkey account, the name
@@ -71,11 +74,13 @@ keeps reading evidence, voting and leaving with `buzz org ragequit`; [HOLDER-ACC
 and `web/tests/e2e-real/passkey-sign-in.spec.ts` (signing up with a passkey and signing in again after a reload, with
 Chrome's virtual authenticator).
 
-**Later set** (`--later`, twelve): `cli-milestone-e2e`, `web-record-e2e`, `web-milestone-e2e`, `web-dao-launch-e2e`,
-`web-challenge-e2e`, `web-dao-journey-e2e`, `web-economy-e2e`, `web-sepolia-fork-e2e`, and, new on 2026-11-01,
-`web-rounds-e2e`, `web-post-bounty-e2e`, `web-self-serve-e2e` and `shares-erc20c-e2e`. The four new ones were in no set
-before, so nothing ran them; they have not been run since they were added to the set, so the first nightly run may find
-them broken.
+**Later set** (`--later`, 17; with the 10 pilot journeys that is 27): `web-project-story-e2e`, `work-check-query-e2e`,
+`v5-local-fixture`, `cli-milestone-e2e`, `web-record-e2e`, `web-milestone-e2e`, `web-dao-launch-e2e`,
+`web-challenge-e2e`, `web-dao-journey-e2e`, `web-economy-e2e`, `web-sepolia-fork-e2e`, `web-rounds-e2e`,
+`web-trading-e2e`, `secondary-keeper-e2e`, `web-post-bounty-e2e`, `web-self-serve-e2e` and `shares-erc20c-e2e`. The
+four added on 2026-11-01 (`web-rounds-e2e`, `web-post-bounty-e2e`, `web-self-serve-e2e`,
+`shares-erc20c-e2e`) were in no set before, and the weekly-sales and fixture journeys were added later still; no
+recorded nightly run has played them, so the first one may find them broken.
 
 **Outside both sets, each with a reason** (`scripts/mvp-gate.sh --outside` prints them):
 
