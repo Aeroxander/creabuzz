@@ -8,8 +8,10 @@ import {
   contributorIssue,
   contributorRecordInput,
   contributorSalt,
+  CALL_SUMMONER,
   contributorTerms,
   createAddress,
+  daoMadeByKit,
   encodeKitLaunch,
   encodePredictDao,
   formatBps,
@@ -19,6 +21,7 @@ import {
   newDaoLogFilter,
   sharePreview,
   withReviewer,
+  wordAddress,
 } from "./contributor-project.ts";
 import { isContributorProject } from "../../launchpad/lib/funding.ts";
 import { reviewerList as raiseReviewerList } from "../../launchpad/lib/launch-panel.ts";
@@ -529,3 +532,112 @@ test("the kit-made-it log filter asks the DAO factory for NewDAO(kit, dao)", () 
     /invalid address/,
   );
 });
+
+// ---- daoMadeByKit: the pre-summon refusal glue ------------------------------------------------------
+{
+  const FACTORY = `0x${"5a".repeat(20)}`;
+  const KIT = `0x${"c1".repeat(20)}`;
+  const OTHER_KIT = `0x${"c2".repeat(20)}`;
+  const DAO = `0x${"da".repeat(20)}`;
+  const OTHER_DAO = `0x${"db".repeat(20)}`;
+  const word = (address) => `0x${"0".repeat(24)}${address.slice(2)}`;
+
+  /** A node whose only log is the one the factory wrote for `(logKit, logDao)`; it records every call it gets. */
+  function node({ logKit = KIT, logDao = DAO, logFactory = FACTORY } = {}) {
+    const calls = [];
+    const filters = [];
+    const real = newDaoLogFilter(logFactory, logKit, logDao);
+    return {
+      calls,
+      filters,
+      call: async (to, data) => {
+        calls.push({ to, data });
+        return word(FACTORY);
+      },
+      getLogs: async (filter) => {
+        filters.push(filter);
+        const same =
+          filter.address === real.address &&
+          filter.topics.length === real.topics.length &&
+          filter.topics.every((t, i) => t === real.topics[i]);
+        return same ? [{ address: real.address, topics: real.topics }] : [];
+      },
+    };
+  }
+
+  test("daoMadeByKit is false when the factory logged nothing", async () => {
+    const n = {
+      call: async () => word(FACTORY),
+      getLogs: async () => [],
+    };
+    assert.equal(await daoMadeByKit(n, KIT, DAO), false);
+  });
+
+  test("daoMadeByKit is true only for the factory log of exactly this kit and dao", async () => {
+    assert.equal(await daoMadeByKit(node(), KIT, DAO), true);
+  });
+
+  test("daoMadeByKit refuses a log written for another kit or another dao", async () => {
+    assert.equal(
+      await daoMadeByKit(node({ logKit: OTHER_KIT }), KIT, DAO),
+      false,
+    );
+    assert.equal(
+      await daoMadeByKit(node({ logDao: OTHER_DAO }), KIT, DAO),
+      false,
+    );
+    // Swapped arguments do not match the log either.
+    assert.equal(await daoMadeByKit(node(), DAO, KIT), false);
+    // A log from some other contract than the kit's own factory does not count.
+    assert.equal(
+      await daoMadeByKit(
+        node({ logFactory: `0x${"5b".repeat(20)}` }),
+        KIT,
+        DAO,
+      ),
+      false,
+    );
+  });
+
+  test("daoMadeByKit reads the factory from the kit and scans the whole chain", async () => {
+    const n = node();
+    await daoMadeByKit(n, KIT, DAO);
+    assert.deepEqual(n.calls, [{ to: KIT, data: CALL_SUMMONER }]);
+    assert.equal(n.filters.length, 1);
+    assert.deepEqual(n.filters[0], {
+      ...newDaoLogFilter(wordAddress(word(FACTORY)), KIT, DAO),
+      fromBlock: "0x0",
+      toBlock: "latest",
+    });
+  });
+
+  test("daoMadeByKit fails closed when a node call fails", async () => {
+    const boom = new Error("node down");
+    await assert.rejects(
+      daoMadeByKit(
+        {
+          call: async () => word(FACTORY),
+          getLogs: async () => {
+            throw boom;
+          },
+        },
+        KIT,
+        DAO,
+      ),
+      boom,
+    );
+    await assert.rejects(
+      daoMadeByKit(
+        {
+          call: async () => {
+            throw boom;
+          },
+          getLogs: async () => [{}],
+        },
+        KIT,
+        DAO,
+      ),
+      boom,
+    );
+  });
+}

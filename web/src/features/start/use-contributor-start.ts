@@ -67,7 +67,7 @@ import {
   type ContributorDraft,
   contributorSalt,
   contributorTerms,
-  newDaoLogFilter,
+  daoMadeByKit,
   wordAddress,
 } from "./lib/contributor-project";
 
@@ -200,17 +200,15 @@ export function useContributorStart() {
           call: (to, data) => ethCall(endpoint, to, data),
           codeAt: (address) => isContractDeployed(endpoint, address),
           // Whether the kit's own DAO factory logged this DAO as made by the kit (a pre-summoned look-alike has no such log).
-          madeByKit: async (kit, dao) => {
-            const summoner = wordAddress(
-              await ethCall(endpoint, kit, CALL_SUMMONER),
-            );
-            const logs = await ethGetLogs(endpoint, {
-              ...newDaoLogFilter(summoner, kit, dao),
-              fromBlock: "0x0",
-              toBlock: "latest",
-            });
-            return logs.length > 0;
-          },
+          madeByKit: (kit, dao) =>
+            daoMadeByKit(
+              {
+                call: (to, data) => ethCall(endpoint, to, data),
+                getLogs: (filter) => ethGetLogs(endpoint, filter),
+              },
+              kit,
+              dao,
+            ),
           // The pending count: a budget another project is making in a block not yet mined is counted too.
           nonceOf: (address) => ethPendingNonce(endpoint, address),
           send: async (to, data) => {

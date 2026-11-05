@@ -757,6 +757,33 @@ export function wordAddress(word: string): string {
   return `0x${hex.slice(24, 64).toLowerCase()}`;
 }
 
+/**
+ * Whether the kit's own DAO factory logged `dao` as made by `kit`. The factory is read from the kit (`call` is an
+ * `eth_call`), then `getLogs` scans the whole chain for `newDaoLogFilter`. A pre-summoned look-alike at the predicted
+ * address has no such log, so this is false for it. A node error rejects (it fails closed); it is never read as false.
+ */
+export async function daoMadeByKit(
+  node: {
+    call: (to: string, data: string) => Promise<string>;
+    getLogs: (filter: {
+      address: string;
+      topics: string[];
+      fromBlock: string;
+      toBlock: string;
+    }) => Promise<readonly unknown[]>;
+  },
+  kit: string,
+  dao: string,
+): Promise<boolean> {
+  const summoner = wordAddress(await node.call(kit, CALL_SUMMONER));
+  const logs = await node.getLogs({
+    ...newDaoLogFilter(summoner, kit, dao),
+    fromBlock: "0x0",
+    toBlock: "latest",
+  });
+  return logs.length > 0;
+}
+
 // ---- the public record --------------------------------------------------------------------------
 
 /** What the project publishes once its DAO exists: contributors only, the DAO's own Shares, nothing for sale. */
