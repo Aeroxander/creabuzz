@@ -8,6 +8,8 @@ date order. What the 2026-10-31 pass hid or retired, and what waits on your call
 
 The branch `v4-governance-rework` is pushed to the fork (https://github.com/Aeroxander/creabuzz, since 2026-11-01); draft PR Aeroxander/creabuzz#1 runs CI against `ci-base`, not the fork's `main`, which still holds 12 older SIWE commits this branch reworked. D146 to D150 are committed locally (D150 removed the LBAMM market, the pre-kit raise path, the old tokenomics and money forecasts from the app; tag `pre-deprecation-2026-10-31` keeps them).
 
+A plain-words copy pass rewrote the web app's user-facing text for readers new to crypto and DAOs (no number, economic setting or trading switch changed); what changed, and the legal lines left for you and counsel, is in [COPY-PASS-1.md](COPY-PASS-1.md).
+
 ## Scope
 
 - **The MVP is the server, the web app and contributor projects**: no raise, no sale, no market (D137). New Shares come
