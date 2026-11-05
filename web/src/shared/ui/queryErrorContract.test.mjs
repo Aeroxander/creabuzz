@@ -80,8 +80,10 @@ test("auth-required has its own copy and is derived from the raw error", () => {
 test("answered failures say the refusal in plain words or give guidance, not 'did not answer'", () => {
   assert.match(
     source,
-    /plainRefusalText\(relayMessage \?\? ""\) \?\?\s*relayFailureGuidance\(relayMessage \?\? "", kinds\)/,
+    /plainRefusalText\(relayMessage \?\? ""\) \?\?\s*relayFailureGuidance\(relayMessage \?\? ""\)/,
     "an answered refusal must replace the caller's unanswered copy",
   );
   assert.match(source, /const detailMessage = relayMessage \?\? message;/);
+  // Record numbers are for whoever helps, so they sit under Technical details, not in the main sentence.
+  assert.match(source, /unknownKindsDetail\(relayMessage \?\? "", kinds\)/);
 });

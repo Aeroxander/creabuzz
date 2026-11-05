@@ -22,6 +22,7 @@ const ROOT = new URL("../../../../", import.meta.url);
 const FILES = [
   "src/features/channels/ui/ChannelSidebar.tsx",
   "src/features/channels/ui/ChannelTimeline.tsx",
+  "src/features/channels/ui/CommunityShell.tsx",
   "src/features/channels/ui/CreateChannelDialog.tsx",
   "src/features/channels/lib/system-notes.ts",
 ];

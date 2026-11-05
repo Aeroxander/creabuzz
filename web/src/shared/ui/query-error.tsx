@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 
 import {
   relayFailureGuidance,
+  unknownKindsDetail,
   relayFailureOutcome,
   relayMessageOf,
 } from "@/shared/lib/relay-failure";
@@ -93,10 +94,13 @@ export function QueryError({
     ? AUTH_REQUIRED_DESCRIPTION
     : answered
       ? (plainRefusalText(relayMessage ?? "") ??
-        relayFailureGuidance(relayMessage ?? "", kinds))
+        relayFailureGuidance(relayMessage ?? ""))
       : description;
   // The server's own wording, or the caller's, is evidence for whoever helps: kept under Technical details.
   const detailMessage = relayMessage ?? message;
+  const kindsDetail = answered
+    ? unknownKindsDetail(relayMessage ?? "", kinds)
+    : null;
   const retryNow = () => {
     onRetry?.();
   };
@@ -124,7 +128,7 @@ export function QueryError({
           The server may be offline or unreachable from this browser.
         </p>
       ) : null}
-      {detailMessage || relayUrl ? (
+      {detailMessage || kindsDetail || relayUrl ? (
         <details
           className="max-w-md text-xs text-black/60 dark:text-white/60"
           data-testid={`${testId}-details`}
@@ -135,6 +139,11 @@ export function QueryError({
           {detailMessage ? (
             <p className="mt-1 break-words" data-testid={`${testId}-message`}>
               {detailMessage}
+            </p>
+          ) : null}
+          {kindsDetail ? (
+            <p className="mt-1 break-words" data-testid={`${testId}-kinds`}>
+              Record numbers: {kindsDetail}
             </p>
           ) : null}
           {relayUrl ? (

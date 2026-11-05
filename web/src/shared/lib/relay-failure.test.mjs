@@ -8,6 +8,7 @@ import {
   relayAnswered,
   relayFailureGuidance,
   relayFailureOutcome,
+  unknownKindsDetail,
   relayMessageOf,
 } from "./relay-failure.ts";
 import {
@@ -153,30 +154,30 @@ test("auth-required wording and error notices are matched narrowly", () => {
   assert.equal(isErrorNotice("welcome to the relay"), false);
 });
 
-test("unknown-kind guidance names the kinds and the relay-side fix", () => {
-  const guided = relayFailureGuidance(
-    "restricted: unknown event kind",
-    [37015, 37016],
-  );
+test("unknown-kind guidance gives the fix in plain words and keeps the numbers for Technical details", () => {
+  const guided = relayFailureGuidance("restricted: unknown event kind");
   assert.equal(
     guided,
-    "This server is older than this app and doesn't know these records (kind 37015, 37016). Ask whoever runs it to update it, or use a newer server.",
+    "This server is older than this app and doesn't know some of these records. Ask whoever runs it to update it, or use a newer server.",
   );
-  // Without caller-supplied kinds it falls back to whatever the relay named.
-  assert.match(
-    relayFailureGuidance("restricted: unknown event kind 30180"),
-    /\(kind 30180\)/,
+  assert.doesNotMatch(guided, /\d{3,}|kind/i);
+  // The numbers go to the Technical details line: the caller's, else whatever the relay named.
+  assert.equal(
+    unknownKindsDetail("restricted: unknown event kind", [37015, 37016]),
+    "37015, 37016",
   );
-  assert.match(
-    relayFailureGuidance("restricted: unknown event kind"),
-    /older than this app and doesn't know these records/,
+  assert.equal(
+    unknownKindsDetail("restricted: unknown event kind 30180"),
+    "30180",
+  );
+  assert.equal(unknownKindsDetail("restricted: unknown event kind"), null);
+  assert.equal(
+    unknownKindsDetail("restricted: not a community member", [37015]),
+    null,
   );
 
   // Any other refusal gets the honest generic line, not the upgrade advice.
-  const generic = relayFailureGuidance(
-    "restricted: not a community member",
-    [37015],
-  );
+  const generic = relayFailureGuidance("restricted: not a community member");
   assert.match(generic, /refused this request/);
   assert.doesNotMatch(generic, /older than this app/);
 });

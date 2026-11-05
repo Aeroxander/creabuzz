@@ -368,7 +368,7 @@ export function CommunityShell({
         {sidebarOpen ? (
           <button
             type="button"
-            aria-label="Close channel list"
+            aria-label="Close room list"
             className="fixed inset-0 z-30 cursor-default bg-black/40 lg:hidden"
             onClick={() => setSidebarOpen(false)}
           />
@@ -628,7 +628,7 @@ export function CommunityShell({
               type="button"
               aria-controls="channel-sidebar"
               aria-expanded={sidebarOpen}
-              aria-label="Open channel list"
+              aria-label="Open room list"
               className="rounded-md p-1.5 text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10"
               data-testid="open-channel-list"
               onClick={() => setSidebarOpen(true)}

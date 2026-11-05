@@ -9,6 +9,7 @@ import {
   KIND_APPROVAL_REQUEST,
   approvalDetailRows,
   approvalHeadline,
+  approvalPreview,
   approvalStatus,
   buildResolutionMap,
   parseApprovalRequest,
@@ -122,5 +123,9 @@ describe("resolution + status", () => {
       { label: "Limit", value: "100" },
     ]);
     assert.equal(approvalHeadline(request), "AI helper limit reached");
+    assert.equal(
+      approvalPreview(request),
+      "An AI helper has used up its limit of 100 runs per day. Approve to let it keep going.",
+    );
   });
 });

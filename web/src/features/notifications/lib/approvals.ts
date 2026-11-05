@@ -195,7 +195,10 @@ export function approvalDetailRows(
     });
   }
   if (request.counterType !== null) {
-    rows.push({ label: "Measured by", value: request.counterType });
+    rows.push({
+      label: "Measured by",
+      value: counterWords(request.counterType) ?? request.counterType,
+    });
   }
   if (request.window !== null) {
     rows.push({ label: "Period", value: request.window });
@@ -212,13 +215,21 @@ export function approvalHeadline(request: ApprovalRequest): string {
     : "Your approval is needed";
 }
 
+/** What a limit counts, in words a person reads. Unknown counters give null, so the sentence leaves the unit out. */
+function counterWords(counterType: string | null): string | null {
+  if (counterType === "runs") return "runs";
+  if (counterType === "llmCostCents") return "cents of AI spending";
+  return null;
+}
+
 export function approvalPreview(request: ApprovalRequest): string {
   if (request.kind !== "budget-overrun") {
     return "An automation is waiting for your approval.";
   }
-  const counter = request.counterType ?? "spend";
-  const windowPart = request.window ? ` per ${request.window}` : "";
-  const limitPart =
-    request.limit !== null ? ` (limit ${request.limit}${windowPart})` : "";
-  return `An AI helper reached its ${counter} budget${limitPart} and needs your approval to continue.`;
+  const unit = counterWords(request.counterType);
+  const amount =
+    request.limit !== null
+      ? ` of ${request.limit}${unit ? ` ${unit}` : ""}${request.window ? ` per ${request.window}` : ""}`
+      : "";
+  return `An AI helper has used up its limit${amount}. Approve to let it keep going.`;
 }

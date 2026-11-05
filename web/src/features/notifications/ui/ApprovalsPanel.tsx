@@ -96,7 +96,7 @@ export function ApprovalsPanel() {
             ) : (
               <div className="mt-1.5 flex items-center gap-1.5">
                 <button
-                  aria-label={`Approve ${approvalHeadline(item)}`}
+                  aria-label="Approve this request"
                   className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-2xs font-medium text-primary-foreground disabled:opacity-50"
                   data-testid="approval-approve"
                   disabled={busy}
@@ -109,7 +109,7 @@ export function ApprovalsPanel() {
                   {error ? "Try again" : "Approve"}
                 </button>
                 <button
-                  aria-label={`Reject ${approvalHeadline(item)}`}
+                  aria-label="Decline this request"
                   className="inline-flex items-center gap-1 rounded-md border border-black/10 px-2 py-1 text-2xs font-medium text-black/70 disabled:opacity-50 dark:border-white/10 dark:text-white/70"
                   data-testid="approval-reject"
                   disabled={busy}
@@ -119,7 +119,7 @@ export function ApprovalsPanel() {
                   type="button"
                 >
                   <X className="h-3 w-3" />
-                  Reject
+                  Decline
                 </button>
                 {error ? (
                   <button

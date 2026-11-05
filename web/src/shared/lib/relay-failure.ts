@@ -204,24 +204,31 @@ function kindsNamedIn(message: string): string | null {
 }
 
 /**
+ * The record numbers behind an "unknown event kind" refusal, for the Technical details disclosure only (never main
+ * copy). Null for any other refusal, or when no number is known.
+ */
+export function unknownKindsDetail(
+  message: string,
+  kinds?: readonly number[],
+): string | null {
+  if (!/unknown event kind/i.test(message)) return null;
+  return kinds && kinds.length > 0 ? formatKinds(kinds) : kindsNamedIn(message);
+}
+
+/**
  * Plain-language guidance for an answered refusal.
  *
  * "Unknown event kind" is almost always a relay older than this build (the
  * relay does not validate kinds on the read path, so the string arrives from
  * an ingest/rejection), and the fix is the relay's, not the reader's — say
- * which kind and what to do. Anything else gets the honest generic line: the
+ * what to do. The record numbers stay out of this sentence (see
+ * `unknownKindsDetail`). Anything else gets the honest generic line: the
  * relay answered, its words are above, and an empty page would be a lie about
  * what is stored here.
  */
-export function relayFailureGuidance(
-  message: string,
-  kinds?: readonly number[],
-): string {
+export function relayFailureGuidance(message: string): string {
   if (/unknown event kind/i.test(message)) {
-    const named =
-      kinds && kinds.length > 0 ? formatKinds(kinds) : kindsNamedIn(message);
-    const scope = named ? ` (kind ${named})` : "";
-    return `This server is older than this app and doesn't know these records${scope}. Ask whoever runs it to update it, or use a newer server.`;
+    return "This server is older than this app and doesn't know some of these records. Ask whoever runs it to update it, or use a newer server.";
   }
   // A restriction on the reader (a ban, a timeout) is said plainly; its raw wording is then not repeated.
   const restricted = restrictionText(message);
