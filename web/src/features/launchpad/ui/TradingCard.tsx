@@ -65,6 +65,7 @@ import { FailureNote, GateNote, WalletStrip } from "./account-widgets";
 import { QuoteTokenNote } from "./QuoteTokenNote";
 import { TradingEarlier } from "./TradingEarlier";
 import { BidForm, type Place, SellForm } from "./TradingOrderForms";
+import { homeFocus, rescueFocus, useFocusRescue } from "./useFocusRescue";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;
 
@@ -129,6 +130,9 @@ export function TradingCard({
       ? "none"
       : `${data.roundId}:${round.phase}`;
   const failureMark = useRef<FailureMark | null>(null);
+  // A one-shot button (collect, settle, take back, open) that leaves holding the cursor hands it to the result line.
+  const cardRef = useRef<HTMLDivElement>(null);
+  useFocusRescue(cardRef);
   const { failure, busy, clearFailure } = sender;
   useEffect(() => {
     if (failure === null) {
@@ -146,8 +150,14 @@ export function TradingCard({
   }, [failure, busy, clearFailure, query.dataUpdatedAt, roundKey]);
 
   return (
-    <Card className="p-4" data-testid="trading">
-      <h2 className="text-base font-semibold">Trading</h2>
+    <Card className="p-4" data-testid="trading" ref={cardRef}>
+      <h2
+        className="text-base font-semibold outline-none"
+        tabIndex={-1}
+        {...homeFocus("card")}
+      >
+        Trading
+      </h2>
       {mode === "missing" ? (
         <p
           className="mt-1 text-sm text-muted-foreground"
@@ -246,6 +256,7 @@ export function TradingCard({
               className="mt-2"
               data-testid="trading-open"
               disabled={blocked}
+              {...rescueFocus("round")}
               onClick={() =>
                 void sender.send(
                   "trading-open",
@@ -403,7 +414,12 @@ function TradingRound({
       className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3"
       data-testid="trading-round"
     >
-      <p className="text-sm" data-testid="trading-round-status">
+      <p
+        className="text-sm outline-none"
+        data-testid="trading-round-status"
+        tabIndex={-1}
+        {...homeFocus("round")}
+      >
         {roundLine(round, facts)}
       </p>
       {settleNotice ? (
@@ -449,6 +465,7 @@ function TradingRound({
             aria-describedby={gateNoteId}
             data-testid="trading-cancel-sell"
             disabled={blocked}
+            {...rescueFocus("round")}
             onClick={() =>
               void onSend(
                 "trading-cancel-sell",
@@ -468,6 +485,7 @@ function TradingRound({
             aria-describedby={gateNoteId}
             data-testid="trading-cancel-bid"
             disabled={blocked}
+            {...rescueFocus("round")}
             onClick={() =>
               void onSend(
                 "trading-cancel-bid",
@@ -515,6 +533,7 @@ function TradingRound({
             aria-describedby={gateNoteId}
             data-testid="trading-settle"
             disabled={blocked}
+            {...rescueFocus("round")}
             onClick={() =>
               void onSend(
                 "trading-settle",
@@ -535,6 +554,7 @@ function TradingRound({
                 aria-describedby={gateNoteId}
                 data-testid="trading-claim-shares"
                 disabled={blocked}
+                {...rescueFocus("round")}
                 onClick={() =>
                   void onSend(
                     "trading-claim-shares",
@@ -555,6 +575,7 @@ function TradingRound({
                 aria-describedby={gateNoteId}
                 data-testid="trading-claim-quote"
                 disabled={blocked}
+                {...rescueFocus("round")}
                 onClick={() =>
                   void onSend(
                     "trading-claim-quote",

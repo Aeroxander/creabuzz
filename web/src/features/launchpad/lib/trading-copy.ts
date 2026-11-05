@@ -275,6 +275,9 @@ export function tradingStateLine(
   return `${terms} ${phase}${next}`;
 }
 
+/** Why an order plan does not hold, and which field to send the cursor to so the person can fix it. */
+export type PlanProblem = { problem: string; field: "lots" | "price" };
+
 /**
  * A seller's form: the whole lots they offer, and the lowest step their price means. An offer the wallet cannot make
  * now is a problem here, in words, so no approval is asked for it (the market would refuse it: `NoCapacity`).
@@ -285,25 +288,31 @@ export function sellPlan(
   priceText: string,
   units: SellUnits,
   funds: WalletFunds,
-): { problem: string } | { lots: bigint; level: number } {
+): PlanProblem | { lots: bigint; level: number } {
   const whole = wholeLots(lotsText);
-  if ("problem" in whole) return whole;
+  if ("problem" in whole) return { ...whole, field: "lots" };
   let price: bigint;
   try {
     price = priceOf(priceText, "The lowest price", units.quoteDecimals);
   } catch (error) {
-    return { problem: messageOf(error) };
+    return { problem: messageOf(error), field: "price" };
   }
   const level = stepAtLeast(round, price);
   if (level === null) {
-    return { problem: "That price is above this round's highest." };
+    return {
+      problem: "That price is above this round's highest.",
+      field: "price",
+    };
   }
   const held = sellHolds(whole.lots, units.lotSize);
   if (held >= WORD) {
-    return { problem: "That is more Shares than a single order can hold." };
+    return {
+      problem: "That is more Shares than a single order can hold.",
+      field: "lots",
+    };
   }
   if (whole.lots > offerableLots(funds, units.lotSize)) {
-    return { problem: sellRoomLine(funds, units.lotSize) };
+    return { problem: sellRoomLine(funds, units.lotSize), field: "lots" };
   }
   return { lots: whole.lots, level };
 }
@@ -318,28 +327,33 @@ export function bidPlan(
   priceText: string,
   quote: QuoteUnits,
   funds: WalletFunds,
-): { problem: string } | { lots: bigint; level: number } {
+): PlanProblem | { lots: bigint; level: number } {
   const whole = wholeLots(lotsText);
-  if ("problem" in whole) return whole;
+  if ("problem" in whole) return { ...whole, field: "lots" };
   let price: bigint;
   try {
     price = priceOf(priceText, "The highest price", quote.quoteDecimals);
   } catch (error) {
-    return { problem: messageOf(error) };
+    return { problem: messageOf(error), field: "price" };
   }
   const level = stepAtMost(round, price);
   if (level === null) {
     return {
       problem: `Bid at least ${money(round.minPrice, quote)} a lot: this round's lowest.`,
+      field: "price",
     };
   }
   const holds = bidHolds(round, whole.lots, level);
   if (holds >= WORD) {
-    return { problem: "That is more money than a single order can hold." };
+    return {
+      problem: "That is more money than a single order can hold.",
+      field: "lots",
+    };
   }
   if (holds > funds.quote) {
     return {
       problem: `This bid holds ${money(holds, quote)} until the round settles, and you hold ${money(funds.quote, quote)}.`,
+      field: "lots",
     };
   }
   return { lots: whole.lots, level };

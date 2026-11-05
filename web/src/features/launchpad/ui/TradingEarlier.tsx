@@ -36,6 +36,7 @@ import {
   type SecondaryMarketFacts,
 } from "../lib/secondary-read";
 import { useOlderRounds } from "../use-secondary";
+import { homeFocus, rescueFocus } from "./useFocusRescue";
 
 /**
  * One row per earlier round that still owes `me` something, and a note when older
@@ -131,15 +132,18 @@ export function TradingEarlier({
       {limit !== null ? (
         <div className="flex flex-col items-start gap-2">
           <p
-            className="text-sm text-muted-foreground"
+            className="text-sm text-muted-foreground outline-none"
             data-testid="trading-earlier-limit"
             role="status"
+            tabIndex={-1}
+            {...homeFocus("older")}
           >
             {limit}
           </p>
           <Button
             data-testid="trading-earlier-check"
             disabled={checking}
+            {...rescueFocus("older")}
             onClick={checkOlder}
             size="sm"
             type="button"
@@ -150,9 +154,11 @@ export function TradingEarlier({
         </div>
       ) : allChecked ? (
         <p
-          className="text-sm text-muted-foreground"
+          className="text-sm text-muted-foreground outline-none"
           data-testid="trading-earlier-all-checked"
           role="status"
+          tabIndex={-1}
+          {...homeFocus("older")}
         >
           {earlierAllCheckedLine(owed.length > 0)}
         </p>
@@ -212,6 +218,7 @@ function EarlierRow({
             aria-describedby={describedBy}
             data-testid="trading-earlier-claim-shares"
             disabled={blocked}
+            {...rescueFocus("round")}
             onClick={() =>
               void onSend(sharesKey, market, encodeClaimShares(market, id, me))
             }
@@ -228,6 +235,7 @@ function EarlierRow({
             aria-describedby={describedBy}
             data-testid="trading-earlier-claim-quote"
             disabled={blocked}
+            {...rescueFocus("round")}
             onClick={() =>
               void onSend(quoteKey, market, encodeClaimQuote(market, id, me))
             }

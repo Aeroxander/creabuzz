@@ -258,6 +258,67 @@ async function personPage(
 }
 
 /** Open the project's Treasury tab, where the market's card lives, and wait for the card to have read the chain. */
+/**
+ * Collect (or take back, or settle) by keyboard alone, the way a keyboard or screen-reader user does: the button goes
+ * away once the step has landed and the page has refreshed, and the cursor must not be dropped on the page body. It
+ * ends inside the card, on something that can be read, so the next Tab or arrow starts from the result.
+ */
+async function activateByKeyboardAndKeepFocus(
+  page: Page,
+  testId: string,
+): Promise<void> {
+  const button = page.getByTestId(testId);
+  await button.focus();
+  await page.keyboard.press("Enter");
+  await expect(button).toHaveCount(0, { timeout: 90_000 });
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const active = document.activeElement;
+          return (
+            active !== null &&
+            active !== document.body &&
+            active.closest('[data-testid="trading"]') !== null
+          );
+        }),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+}
+
+/**
+ * Fill both fields, press Enter in the price field, and check the form said why instead of doing nothing: the problem
+ * is in the polite region, the field it belongs to is marked invalid and holds the cursor, and the field is tied to the
+ * region by `aria-describedby`. Leaves the form open.
+ */
+async function expectEnterSaysWhy(
+  page: Page,
+  prefix: string,
+  want: { lots: string; price: string; problem: string; invalid: string },
+): Promise<void> {
+  const lots = page.getByTestId(`${prefix}-lots`);
+  const price = page.getByTestId(`${prefix}-price`);
+  await lots.fill(want.lots);
+  await price.fill(want.price);
+  await price.focus();
+  await page.keyboard.press("Enter");
+  const problem = page.getByTestId(`${prefix}-plan-problem`);
+  await expect(problem).toContainText(want.problem);
+  const field = page.getByTestId(want.invalid);
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  await expect(field).toBeFocused();
+  // Only the field with the mistake is marked: the other one is fine.
+  const other = page.getByTestId(
+    want.invalid === `${prefix}-lots` ? `${prefix}-price` : `${prefix}-lots`,
+  );
+  await expect(other).not.toHaveAttribute("aria-invalid", "true");
+  const live = await page.getByTestId(`${prefix}-plan-live`).getAttribute("id");
+  expect((await field.getAttribute("aria-describedby")) ?? "").toContain(
+    live ?? "never",
+  );
+}
+
 async function openTrading(page: Page): Promise<void> {
   await page.goto(`/launchpad/${LAUNCH_ID}?author=${FOUNDER}&tab=treasury`);
   await expect(page.getByTestId("trading")).toBeVisible({ timeout: 60_000 });
@@ -362,7 +423,11 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   await expect(nobody.getByTestId("trading-sell-plan-problem")).toContainText(
     "You hold no Shares in this project, so there is nothing to offer.",
   );
-  await expect(nobody.getByTestId("trading-sell-submit")).toBeDisabled();
+  // The send button stays reachable; pressing it says the problem again, hands the cursor to the lots and sends nothing.
+  await nobody.getByTestId("trading-sell-submit").click();
+  await expect(nobody.getByTestId("trading-sell-lots")).toBeFocused();
+  await expect(nobody.getByTestId("trading-sell-plan-problem")).toBeVisible();
+  await expect(nobody.getByTestId("trading-my-sell")).toHaveCount(0);
   // Nothing was approved or offered: the page refused it, not the chain after a signature.
   expect(
     await callWord(
@@ -377,7 +442,7 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   const founderSharesBefore = await balanceOf(SHARES, FOUNDER_WALLET);
   expect(founderSharesBefore).toBeGreaterThanOrEqual(SHARES_MOVED);
   await founder.getByTestId("trading-sell").click();
-  // More lots than the wallet may offer now: the page says how many it can, and the button stays off.
+  // More lots than the wallet may offer now: the page says how many it can, and sending sends nothing.
   const offerable =
     (await callWord(POLICY, `${SIG.saleCapacity}${word(FOUNDER_WALLET)}`)) /
     WAD;
@@ -396,7 +461,9 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   await expect(founder.getByTestId("trading-sell-plan-problem")).toContainText(
     `You can offer up to ${offerableNow} lots now`,
   );
-  await expect(founder.getByTestId("trading-sell-submit")).toBeDisabled();
+  await founder.getByTestId("trading-sell-submit").click();
+  await expect(founder.getByTestId("trading-sell-lots")).toBeFocused();
+  await expect(founder.getByTestId("trading-my-sell")).toHaveCount(0);
   await founder.getByTestId("trading-sell-lots").fill(LOTS.toString());
   await founder.getByTestId("trading-sell-price").fill(LOW_TEXT);
   await expect(founder.getByTestId("trading-sell-plan-problem")).toHaveCount(0);
@@ -517,7 +584,7 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   );
   const bidderSharesBefore = await balanceOf(SHARES, BIDDER_WALLET);
   await expect(bidder.getByTestId("trading-claim-shares")).toBeVisible();
-  await bidder.getByTestId("trading-claim-shares").click();
+  await activateByKeyboardAndKeepFocus(bidder, "trading-claim-shares");
   await expect
     .poll(() => balanceOf(SHARES, BIDDER_WALLET), { timeout: 90_000 })
     .toBe(bidderSharesBefore + SHARES_MOVED);
@@ -543,7 +610,7 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
     `Collect 2 ${QUOTE_SYMBOL}`,
   );
   await expect(founder.getByTestId("trading-claim-shares")).toHaveCount(0);
-  await founder.getByTestId("trading-claim-quote").click();
+  await activateByKeyboardAndKeepFocus(founder, "trading-claim-quote");
   await expect
     .poll(() => balanceOf(QUOTE, FOUNDER_WALLET), { timeout: 90_000 })
     .toBe(founderQuoteBefore + PROCEEDS);
@@ -715,7 +782,7 @@ test("a round nobody settled still pays out after the next round opens: each wal
   await expect(founder.getByTestId("trading-earlier-claim-quote")).toHaveCount(
     0,
   );
-  await founder.getByTestId("trading-earlier-claim-shares").click();
+  await activateByKeyboardAndKeepFocus(founder, "trading-earlier-claim-shares");
   await expect
     .poll(() => balanceOf(SHARES, FOUNDER_WALLET), { timeout: 90_000 })
     .toBe(founderSharesBefore);
@@ -839,7 +906,7 @@ test("a settled round where the offer and the bid never cross says nothing trade
     "Collect 1 Shares",
   );
   await expect(founder.getByTestId("trading-claim-quote")).toHaveCount(0);
-  await founder.getByTestId("trading-claim-shares").click();
+  await activateByKeyboardAndKeepFocus(founder, "trading-claim-shares");
   await expect
     .poll(() => balanceOf(SHARES, FOUNDER_WALLET), { timeout: 90_000 })
     .toBe(founderSharesBefore);
@@ -1105,15 +1172,22 @@ test("trading by keyboard and screen reader: focus follows the form, Enter sends
   const controls = await trigger.getAttribute("aria-controls");
   expect(controls).toBeTruthy();
   await expect(founder.locator(`[id="${controls}"]`)).toBeVisible();
+  // The copy button's accessible name starts with its visible words (label in name), then says which token.
+  await expect(founder.getByTestId("quote-token-copy")).toHaveAccessibleName(
+    /^Copy address\b.*\b0x[0-9a-f]{4}/i,
+  );
   // The plan and problem text lives in one polite region that is in the page before it says anything.
   const live = founder.getByTestId("trading-sell-plan-live");
   await expect(live).toHaveAttribute("aria-live", "polite");
   await expect(live).toHaveText("");
 
-  // Tab walks lots, price, then Cancel (the disabled send button is skipped); Enter on Cancel closes the form and
-  // hands focus back to the trigger.
+  // Tab walks lots, price, the send button (it stays reachable while the plan is unfinished, so Enter on it can say
+  // what is missing), then Cancel; Enter on Cancel closes the form and hands focus back to the trigger.
   await founder.keyboard.press("Tab");
   await expect(founder.getByTestId("trading-sell-price")).toBeFocused();
+  await founder.keyboard.press("Tab");
+  await expect(founder.getByTestId("trading-sell-submit")).toBeFocused();
+  await expect(founder.getByTestId("trading-sell-submit")).toBeEnabled();
   await founder.keyboard.press("Tab");
   await expect(founder.getByTestId("trading-sell-cancel")).toBeFocused();
   await founder.keyboard.press("Enter");
@@ -1122,6 +1196,30 @@ test("trading by keyboard and screen reader: focus follows the form, Enter sends
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
   say(
     "the offer form takes focus when opened and gives it back when cancelled",
+  );
+
+  // ── Enter with a plan that does not hold says why, marks the field and sends nothing ────────────────────
+  await founder.keyboard.press("Enter");
+  await expect(founder.getByTestId("trading-sell-lots")).toBeFocused();
+  await expectEnterSaysWhy(founder, "trading-sell", {
+    lots: "0",
+    price: "1",
+    problem: "at least one whole lot",
+    invalid: "trading-sell-lots",
+  });
+  await expectEnterSaysWhy(founder, "trading-sell", {
+    lots: "1",
+    price: "abc",
+    problem: "a number like 1.05",
+    invalid: "trading-sell-price",
+  });
+  // Nothing was sent: no order line, and the market still holds none of the round's Shares.
+  await expect(founder.getByTestId("trading-my-sell")).toHaveCount(0);
+  expect(await callWord(MARKET, `${SIG.sharesIn}${word(5n)}`)).toBe(0n);
+  await founder.getByTestId("trading-sell-cancel").click();
+  await expect(trigger).toBeFocused();
+  say(
+    "Enter on an unfinished offer says why, marks the field and sends nothing",
   );
 
   // ── Typing: a comma is a decimal point; an unfinished price is not shouted at ──────────────────────────
@@ -1192,6 +1290,30 @@ test("trading by keyboard and screen reader: focus follows the form, Enter sends
   await bidder.keyboard.press("Space");
   await expect(bidder.getByTestId("trading-bid-lots")).toBeFocused();
   await expect(bidTrigger).toHaveAttribute("aria-expanded", "true");
+  await expectEnterSaysWhy(bidder, "trading-bid", {
+    lots: "",
+    price: "",
+    problem: "whole number of lots",
+    invalid: "trading-bid-lots",
+  });
+  await expectEnterSaysWhy(bidder, "trading-bid", {
+    lots: "0",
+    price: "1",
+    problem: "at least one whole lot",
+    invalid: "trading-bid-lots",
+  });
+  await expectEnterSaysWhy(bidder, "trading-bid", {
+    lots: "1",
+    price: "abc",
+    problem: "a number like 1.05",
+    invalid: "trading-bid-price",
+  });
+  await expect(bidder.getByTestId("trading-my-bid")).toHaveCount(0);
+  // Cancel and open it afresh: a form that has been told off starts clean.
+  await bidder.getByTestId("trading-bid-cancel").click();
+  await expect(bidTrigger).toBeFocused();
+  await bidder.keyboard.press("Space");
+  await expect(bidder.getByTestId("trading-bid-lots")).toBeFocused();
   await bidder.keyboard.type("1");
   await bidder.keyboard.press("Tab");
   await bidder.keyboard.type(HIGH_TEXT);

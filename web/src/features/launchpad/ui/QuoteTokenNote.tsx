@@ -40,7 +40,7 @@ export function QuoteTokenNote({
       <p className="text-sm" data-testid="quote-token-line">
         {identity.line}{" "}
         <Button
-          aria-label={`Copy the price token's address, ${identity.short}`}
+          aria-label={`Copy address, price token ${identity.short}`}
           data-testid="quote-token-copy"
           onClick={() => void copy()}
           size="sm"

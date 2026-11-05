@@ -3,7 +3,9 @@
  * one). Both are one real form, so Enter sends from any field, and they share what a keyboard and a screen reader
  * need: the cursor lands in the first field when the form opens, a Cancel closes it, the plan and the problem are
  * said in one polite region that is in the page before it has anything to say, a problem waits until the person has
- * left a field (an unfinished "1." is not a mistake yet), and each field names the room line and that region.
+ * left a field (an unfinished "1." is not a mistake yet) or pressed send, and each field names the room line and that
+ * region. The send button stays enabled (only a step in flight turns it off), so Enter with a plan that does not hold
+ * says why: the problem is shown, the field it belongs to is marked and takes the cursor, and nothing is sent.
  */
 
 import { type Ref, useEffect, useId, useRef, useState } from "react";
@@ -16,6 +18,7 @@ import type { RoundView } from "@creaton/core/launchpad/secondary.ts";
 import {
   bidPlan,
   bidPlanLine,
+  type PlanProblem,
   quoteHeldLine,
   sellPlan,
   sellPlanLine,
@@ -178,7 +181,7 @@ function OrderForm({
   lotsLabel: string;
   priceLabel: string;
   pricePlaceholder: string;
-  planFor: (lots: string, price: string) => Planned | { problem: string };
+  planFor: (lots: string, price: string) => Planned | PlanProblem;
   planLine: (plan: Planned) => string;
   submitLabel: string;
   busyLabel: string;
@@ -192,23 +195,40 @@ function OrderForm({
   const roomId = `${fieldId}-room`;
   const statusId = `${fieldId}-status`;
   const lotsRef = useRef<HTMLInputElement>(null);
+  const priceRef = useRef<HTMLInputElement>(null);
   const [lotsInput, setLotsInput] = useState("");
   const [priceText, setPriceText] = useState("");
   // A problem is told once both fields have been left (or a send was tried): "1." on the way to "1.05" is not a
   // mistake yet, and tabbing on from the first field must not announce the second one's unfinished text.
   const [left, setLeft] = useState({ lots: false, price: false });
+  // How many times send was pressed with a plan that does not hold; each one hands the cursor to the field to fix.
+  const [tries, setTries] = useState(0);
+  const toFocus = useRef<"lots" | "price" | null>(null);
   // The person opened this form to fill it in: the cursor starts in its first field.
   useEffect(() => {
     lotsRef.current?.focus();
   }, []);
-  const plan =
-    lotsInput.trim() && priceText.trim() ? planFor(lotsInput, priceText) : null;
-  const ok = plan !== null && !("problem" in plan);
-  const problem =
-    plan && "problem" in plan && left.lots && left.price ? plan.problem : null;
-  const line = ok ? planLine(plan) : null;
+  // After the render that shows the problem, so the field is announced with its problem already in the region.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `tries` is the trigger; the field is read from the ref.
+  useEffect(() => {
+    const name = toFocus.current;
+    toFocus.current = null;
+    (name === "price" ? priceRef : lotsRef).current?.focus();
+  }, [tries]);
+  const result = planFor(lotsInput, priceText);
+  const problem = "problem" in result ? result : null;
+  const plan = "problem" in result ? null : result;
+  const filled = lotsInput.trim() !== "" && priceText.trim() !== "";
+  const shown =
+    problem !== null && (tries > 0 || (filled && left.lots && left.price))
+      ? problem
+      : null;
+  const line = plan ? planLine(plan) : null;
   const describedBy = `${roomId} ${statusId}`;
-  const field = { describedBy, invalid: problem !== null };
+  const field = (name: "lots" | "price") => ({
+    describedBy,
+    invalid: shown?.field === name,
+  });
   return (
     <form
       className="mt-2 grid gap-2"
@@ -218,9 +238,12 @@ function OrderForm({
       onSubmit={(event) => {
         event.preventDefault();
         if (blocked) return;
-        // Enter with a plan that does not hold says why instead of doing nothing.
-        if (!ok) {
+        // Enter with a plan that does not hold says why instead of doing nothing, and sends the cursor to the field
+        // to fix.
+        if (plan === null) {
           setLeft({ lots: true, price: true });
+          toFocus.current = problem?.field ?? "lots";
+          setTries((n) => n + 1);
           return;
         }
         void onSend(plan);
@@ -235,7 +258,7 @@ function OrderForm({
       </p>
       <div className="flex flex-wrap items-end gap-2">
         <Field
-          {...field}
+          {...field("lots")}
           id={`${fieldId}-lots`}
           inputMode="numeric"
           inputRef={lotsRef}
@@ -247,8 +270,9 @@ function OrderForm({
           value={lotsInput}
         />
         <Field
-          {...field}
+          {...field("price")}
           id={`${fieldId}-price`}
+          inputRef={priceRef}
           label={priceLabel}
           onChange={setPriceText}
           onLeave={() => setLeft((was) => ({ ...was, price: true }))}
@@ -264,12 +288,12 @@ function OrderForm({
         id={statusId}
         role="status"
       >
-        {problem ? (
+        {shown ? (
           <span
             className="text-red-700 dark:text-red-300"
             data-testid={`${testPrefix}-plan-problem`}
           >
-            {problem}
+            {shown.problem}
           </span>
         ) : line ? (
           <span
@@ -284,7 +308,7 @@ function OrderForm({
         <Button
           aria-describedby={gateNoteId}
           data-testid={`${testPrefix}-submit`}
-          disabled={blocked || !ok}
+          disabled={blocked}
           size="sm"
           type="submit"
         >

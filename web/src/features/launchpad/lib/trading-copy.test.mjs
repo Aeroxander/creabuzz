@@ -1460,6 +1460,32 @@ test("the identity and its warning are worded for people", () => {
   assert.match(warning, /Check the token address before/);
 });
 
+test("the copy-address button's accessible name starts with its visible words (label in name)", () => {
+  const note = read("../ui/QuoteTokenNote.tsx");
+  const element = note.match(
+    /<Button\b(?:(?!<Button)[\s\S])*?data-testid="quote-token-copy"[\s\S]*?<\/Button>/,
+  );
+  assert.ok(element, "the copy button is found");
+  const text = element[0].match(/\n\s*>\s*([^<{]+?)\s*<\/Button>$/);
+  assert.ok(text, "the copy button has plain visible text");
+  const visible = text[1];
+  assert.equal(visible, "Copy address");
+  const label = element[0].match(/aria-label=\{`([^`]*)`\}/);
+  assert.ok(label, "the copy button carries an aria-label");
+  // WCAG 2.5.3: speech input says what it sees, so the visible words open the name and the token follows.
+  assert.ok(
+    label[1].startsWith(visible),
+    `the name "${label[1]}" must start with "${visible}"`,
+  );
+  assert.match(label[1], /\$\{identity\.short\}/);
+});
+
+test("an order form's send button stays reachable while the plan is unfinished, so Enter can say what is missing", () => {
+  const forms = read("../ui/TradingOrderForms.tsx");
+  assert.doesNotMatch(forms, /disabled=\{blocked \|\| !ok\}/);
+  assert.match(forms, /disabled=\{blocked\}/);
+});
+
 test("the card, the listing form and the vote all show the price token and its warning through the one rule", () => {
   const note = read("../ui/QuoteTokenNote.tsx");
   assert.match(note, /quoteIdentity\(/);
