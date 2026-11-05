@@ -6,16 +6,27 @@ import { InviteRequestError, inviteProblem } from "./invite-errors.ts";
 
 const AGREEMENT = { code: "abc", version: "v2", ageConfirmed: true };
 
-/** A server that takes the request and never answers: only the request's own signal ends it. */
+/**
+ * A server that takes the request and never answers: only the request's own signal ends it.
+ * AbortSignal.timeout runs on an unref'd timer, so a pending request alone does not keep Node
+ * running; the server holds the loop open while it waits, as a real socket would. The hold is
+ * let go when the signal aborts and by release(), so nothing outlives the test.
+ */
 function silentServer() {
   const asked = [];
+  let keepAlive;
+  const release = () => clearInterval(keepAlive);
   const request = (url, init) => {
     asked.push({ url, init });
+    keepAlive = setInterval(() => {}, 1_000);
     return new Promise((_, reject) => {
-      init?.signal?.addEventListener("abort", () => reject(init.signal.reason));
+      init?.signal?.addEventListener("abort", () => {
+        release();
+        reject(init.signal.reason);
+      });
     });
   };
-  return { asked, request };
+  return { asked, request, release };
 }
 
 test("agreeing to the terms waits as long as loading them does", () => {
@@ -25,16 +36,20 @@ test("agreeing to the terms waits as long as loading them does", () => {
 // A bounded test of its own: without the bound in the code this one waits for good, and is failed by its own timeout.
 test("a server that never answers the agreement is given up on, and the page says so in words", {
   timeout: 5_000,
-}, async () => {
-  const { asked, request } = silentServer();
+}, async (t) => {
+  const { asked, request, release } = silentServer();
+  // Also runs when the test is failed by its own timeout, so a missing bound cannot leave the process alive.
+  t.after(release);
   const started = Date.now();
   const failure = await acceptJoinPolicy(AGREEMENT, {
     request,
     timeoutMs: 30,
-  }).then(
-    () => null,
-    (error) => error,
-  );
+  })
+    .then(
+      () => null,
+      (error) => error,
+    )
+    .finally(release);
   assert.ok(failure, "the request must end with a failure, not wait for good");
   assert.equal(failure.name, "TimeoutError");
   assert.ok(Date.now() - started < 2_000);
