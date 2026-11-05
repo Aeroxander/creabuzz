@@ -49,8 +49,8 @@ const shares = (wei: bigint) => formatAtomic(wei, 18, { maxFractionDigits: 2 });
 
 /** What each step of a submission is, for the sentence that says what is left. */
 const STEP_WORDS: Record<SubmitStep, string> = {
-  file: "file the claim",
-  check: "state which milestone it is for",
+  file: "record the submission",
+  check: "say which milestone it is for",
   bind: "send it to the reviewers",
   publish: "publish the evidence",
 };
@@ -413,8 +413,8 @@ export function MilestoneRow({
           {canSubmit && (!words || !panel) ? (
             <p className="text-muted-foreground">
               {panel
-                ? "This launch's record does not have the milestone's words, so it cannot be submitted from here."
-                : "This launch has no milestone panel to submit to."}
+                ? "This project's record is missing the milestone's words, so it can't be submitted from here."
+                : "This project has no milestone reviewers to submit to."}
             </p>
           ) : null}
           {progress.stage === "filed" && claim && panel && !resuming ? (

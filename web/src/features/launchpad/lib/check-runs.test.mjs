@@ -329,7 +329,7 @@ test("binding tags: a mismatch between a record's tags and its own text is named
   const record = parseVerifiedCheckRun(event);
   assert.ok(record);
   assert.equal(
-    record.selfContradictions.some((line) => line.includes("claim id tag")),
+    record.selfContradictions.some((line) => line.includes("submission ID label")),
     true,
   );
   // The content (what the publisher signed twice-set) stays what it binds to.
@@ -356,7 +356,7 @@ test("no sandbox tag means the record claims nothing certain, visibly", () => {
   assert.ok(record);
   assert.equal(record.sandboxClaim, null);
   assert.equal(
-    record.selfContradictions.some((line) => line.includes("sandbox tag")),
+    record.selfContradictions.some((line) => line.includes("protected space")),
     true,
     "a record asserting enforcement cannot be silent about that in what it ignores",
   );

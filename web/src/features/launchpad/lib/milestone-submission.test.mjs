@@ -104,7 +104,7 @@ test("a claim that cannot be continued says why instead of being filed over", ()
   );
   assert.match(
     String(problem(claim({}, { evidenceHash: hashText("something else") }))),
-    /not what was filed/,
+    /not what was sent/,
   );
   assert.match(
     String(problem(claim({}, { checkHash: hashText("other words") }))),
@@ -294,7 +294,7 @@ test("a draft whose name someone else filed first says so instead of offering a 
         nameTaken: nameTakenByOther([theirs], draft, WALLET),
       }).problem,
     ),
-    /Someone else filed a claim under this submission's name/,
+    /Someone else already used this submission's name/,
   );
 });
 

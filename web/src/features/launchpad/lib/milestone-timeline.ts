@@ -161,20 +161,20 @@ function headlineFor(
     case "finish":
       return "The waiting period is over. The team can finish the release now.";
     case "ready":
-      return "Approved and past the waiting period. The release can be claimed now.";
+      return "Approved and past the waiting period. It can be released now.";
     case "unlocked":
       return input.unlockedFor.of > 1 &&
         input.unlockedFor.unlocked < input.unlockedFor.of
         ? `Unlocked for ${input.unlockedFor.unlocked} of ${input.unlockedFor.of} team members.`
-        : `Unlocked${input.releasedAt ? ` on ${day(input.releasedAt)}` : ""}. These tokens can now be moved.`;
+        : `Unlocked${input.releasedAt ? ` on ${day(input.releasedAt)}` : ""}. These Shares can now be moved.`;
     case "frozen":
-      return "A DAO vote froze this claim. Nothing unlocks while it is frozen.";
+      return "A project vote froze this submission. Nothing unlocks while it is frozen.";
     case "turned-down":
       return input.status === "Rejected"
-        ? "The reviewers turned this claim down. The team can submit the milestone again."
-        : "This claim is closed. The team can submit the milestone again.";
+        ? "The reviewers turned this submission down. The team can submit the milestone again."
+        : "This submission is closed. The team can submit the milestone again.";
     case "given-up":
-      return "The DAO gave these tokens up: they were burned and never released.";
+      return "The project gave these Shares up: they were destroyed and never released.";
   }
 }
 

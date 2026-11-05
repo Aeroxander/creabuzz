@@ -309,7 +309,7 @@ test("a claim goes from filed to taken, one person at a time, each from their ow
   );
   // The award is the DAO's vote: the page sends the member to the Decisions tab to open it.
   await expect(contributor.getByTestId("work-award-help")).toContainText(
-    "awarding Shares for it is a discretionary decision the DAO votes on",
+    "Awarding Shares for it is a judgment call that the project votes on",
   );
   await expect(contributor.getByTestId("work-failure")).toHaveCount(0);
 

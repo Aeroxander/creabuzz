@@ -43,7 +43,7 @@ test("every stage has its own sentence, naming who and when", () => {
     ],
     [
       { kind: "in-window", claimId: "0x1", contributor: DAVE, payableAt: 900 },
-      "Dave's work was approved. It can be paid from day 900, unless the DAO stops it before then.",
+      "Dave's work was approved. It can be paid from day 900, unless the project stops it before then.",
     ],
     [
       { kind: "open" },

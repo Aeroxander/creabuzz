@@ -141,7 +141,7 @@ export function WorkBudgetForm({
           if (otherDecimals.isError)
             throw new DecisionInputError(
               "reviewerBondToken",
-              "That address does not look like a token on this chain.",
+              "That address does not look like a token on this network.",
             );
           if (otherDecimals.data === undefined)
             throw new DecisionInputError(
@@ -232,7 +232,7 @@ export function WorkBudgetForm({
         awarded without them.
       </p>
       <TextField
-        hint="Shares the DAO may award from this budget, in all."
+        hint="The most Shares the project may award from this budget, in all."
         inputMode="decimal"
         label="Shares to set aside"
         onChange={setShareBudget}
@@ -252,7 +252,7 @@ export function WorkBudgetForm({
       {ctx.currencyDecimals !== null ? (
         <>
           <TextField
-            hint="Optional. Money moves from the treasury into the budget now."
+            hint="Optional. This money moves from the project's money into the budget now."
             inputMode="decimal"
             label="Money to set aside"
             onChange={setMoney}
@@ -310,7 +310,7 @@ export function WorkBudgetForm({
         value={quorum}
       />
       <TextField
-        hint="Optional. Each reviewer posts this before judging a submission. The DAO can take it after a disputed approval, so judging carelessly costs them. Leave empty for none."
+        hint="Optional. Each reviewer posts this before judging a submission. The project can take it after a disputed approval, so judging carelessly costs them. Leave empty for none."
         inputMode="decimal"
         label="Bond each reviewer must post"
         onChange={setBond}

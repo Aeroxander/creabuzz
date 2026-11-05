@@ -33,7 +33,7 @@ export function bountyStatusLine(
     case "payable":
       return `${words.who(stage.contributor)}'s work was approved and the wait is over. Anyone can pay it now.`;
     case "in-window":
-      return `${words.who(stage.contributor)}'s work was approved. It can be paid from ${words.date(stage.payableAt)}, unless the DAO stops it before then.`;
+      return `${words.who(stage.contributor)}'s work was approved. It can be paid from ${words.date(stage.payableAt)}, unless the project stops it before then.`;
     case "open":
       return `Takes money until ${words.date(bounty.deadline)}. It pays whoever's work for this area the reviewers approve by then, after the ${waitDays(bounty.window)} wait.`;
     case "waiting":

@@ -42,9 +42,9 @@ export function PaidLine({
           {money || sharesOnly ? null : " · No money was asked for."}
         </>
       ) : money ? (
-        "Paid; its payout transaction was not found in the history this page reads."
+        "Paid. We could not find the payment in the records this page reads. Refresh in a moment."
       ) : (
-        "Finished; its transaction was not found in the history this page reads."
+        "Finished. We could not find the step in the records this page reads. Refresh in a moment."
       )}
     </p>
   );

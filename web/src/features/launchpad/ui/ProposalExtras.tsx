@@ -88,7 +88,7 @@ function Header({ children }: { children: ReactNode }) {
     >
       <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         <ScrollText aria-hidden className="h-3.5 w-3.5" />
-        About a DAO decision
+        About a project decision
       </p>
       {children}
     </div>
@@ -137,7 +137,7 @@ export function ProposalExtras({
   if (launches.isLoading) {
     body = (
       <p className="mt-1 text-xs text-muted-foreground" role="status">
-        Checking which DAO this is about…
+        Checking which project this is about…
       </p>
     );
   } else if (!launch) {
@@ -146,8 +146,8 @@ export function ProposalExtras({
         className="mt-1 text-xs text-muted-foreground"
         data-testid="proposal-unverified"
       >
-        This post says it is about a DAO decision, but this app doesn't know
-        that DAO, so nothing here has been checked.
+        This post says it is about a project decision, but this app doesn't know
+        that project, so nothing here has been checked.
       </p>
     );
   } else if (decisions.isLoading) {
@@ -163,7 +163,7 @@ export function ProposalExtras({
         data-testid="proposal-unreadable"
         role="alert"
       >
-        Couldn't read the decision from the chain just now.{" "}
+        Couldn't read the decision from the network just now.{" "}
         <button
           className="underline"
           onClick={() => void decisions.refetch()}
@@ -183,8 +183,8 @@ export function ProposalExtras({
           className="mt-1 text-xs text-muted-foreground"
           data-testid="proposal-missing"
         >
-          That decision isn't in {launchTitle(launch)}'s DAO. It may be on the
-          newest page not shown here, or the post may be mistaken.
+          That decision isn't in {launchTitle(launch)}'s decisions. It may be on
+          a newer page than the one shown, or the post may be mistaken.
         </p>
       );
     } else {
@@ -256,8 +256,8 @@ export function ProposalExtras({
     <Header>
       {body}
       <p className="mt-2 text-xs text-muted-foreground">
-        Votes on this board show what people think. They are not the DAO's vote,
-        which happens on the decision itself.
+        Votes on this board show what people think. They are not the project's
+        vote, which happens on the decision itself.
       </p>
     </Header>
   );

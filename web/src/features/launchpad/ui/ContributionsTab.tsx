@@ -118,7 +118,7 @@ function AwardStoryLine({
       ) : story.evidenceState === "missing" ? (
         <span>No evidence was published for it.</span>
       ) : story.evidenceState === "not-found" ? (
-        <span>Its evidence was not found in the history this page read.</span>
+        <span>Its evidence was not found in the records this page read.</span>
       ) : story.evidenceState === "unreadable" ? (
         <span>
           Couldn&apos;t read its evidence just now.{" "}
@@ -129,7 +129,7 @@ function AwardStoryLine({
       ) : story.evidenceState === "reading" ? (
         <span>Reading its evidence…</span>
       ) : (
-        <span>Its evidence is on the Work tab with the claim.</span>
+        <span>Its evidence is on the Work tab with the submission.</span>
       )}
     </div>
   );
@@ -511,8 +511,8 @@ export function ContributionsTab({
         ) : null}
         {snapshot.truncated ? (
           <p className="text-xs text-amber-700 dark:text-amber-300">
-            This DAO has more work budgets or awards than this page reads; the
-            oldest are shown.
+            This project has more work budgets or awards than this page reads.
+            The oldest are shown.
           </p>
         ) : null}
       </Card>
@@ -536,8 +536,8 @@ export function ContributionsTab({
             >
               The founder chose the first budget&apos;s reviewers and runs its
               work areas: they accept each submission for review. Leaving pays
-              your part of what the treasury holds now; it does not protect your
-              share of the project.
+              your part of the money the project holds now. It does not protect
+              your share of the project.
             </p>
             {launch.record.reviewerTies ? (
               <p

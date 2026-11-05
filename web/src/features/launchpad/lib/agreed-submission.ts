@@ -323,7 +323,7 @@ export function planBeneficiaryCalls(input: {
       return {
         calls: [],
         problem:
-          "A submission already exists under this attempt with different text. This award keeps that attempt; take a new agreement for different work.",
+          "A submission already exists under this attempt with different text. The award stays with that attempt; make a new agreement for different work.",
       };
     }
   }

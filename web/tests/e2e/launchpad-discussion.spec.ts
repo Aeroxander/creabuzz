@@ -152,7 +152,7 @@ test("a discussion started under a decision is tied to it, listed there, and sho
     { timeout: 30_000 },
   );
   await expect(header).toContainText("for Nebula DAO");
-  await expect(header).toContainText("They are not the DAO's vote");
+  await expect(header).toContainText("They are not the project's vote");
   // ...and the author's share of the DAO beside their name, read from the Shares contract.
   await expect(page.getByTestId("author-badge").first()).toContainText(
     "% of Shares",
@@ -188,7 +188,7 @@ test("a post that names a DAO the app does not know shows no chain figures and s
     `/c/${COMMUNITY_HOST}?channel=${BOARD}&post=${"post-stranger".padEnd(64, "0")}`,
   );
   await expect(page.getByTestId("proposal-unverified")).toContainText(
-    "doesn't know that DAO",
+    "doesn't know that project",
     {
       timeout: 20_000,
     },

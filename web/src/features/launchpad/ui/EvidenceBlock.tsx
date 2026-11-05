@@ -140,9 +140,9 @@ export function EvidenceBlock({
         </p>
         {/* The hash binds the packet to what was submitted; reading it is on the reviewer. */}
         <p className="mt-1 text-xs text-muted-foreground">
-          The hash matches what this submission committed to, so this is the
-          evidence as it was filed. That says nothing about whether it is true —
-          read it before you judge.
+          Its fingerprint matches what this submission recorded, so this is the
+          evidence as it was submitted. That does not show it is true. Read it
+          before you judge.
         </p>
         <p
           className="mt-1 whitespace-pre-wrap"

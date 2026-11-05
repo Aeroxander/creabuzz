@@ -75,7 +75,7 @@ test("capability words keep a failed read apart from a legacy deployment", () =>
   // A version getter that refuses is never read as "before agreed rewards".
   assert.doesNotMatch(capabilityHeadline("unreadable"), /before|legacy/);
   assert.match(capabilityHeadline("unreadable"), /could not read/i);
-  assert.match(capabilityHeadline("known-legacy"), /manual flow/);
+  assert.match(capabilityHeadline("known-legacy"), /the way it always has/);
 });
 
 function row(hex) {

@@ -85,7 +85,7 @@ export function remainingSteps(input: {
     if (input.nameTaken) {
       return {
         problem:
-          "Someone else filed a claim under this submission's name first, so it cannot be filed. Press Start over to send the same text under a new name.",
+          "Someone else already used this submission's name, so it cannot be sent. Press Start over to send the same text under a new name.",
       };
     }
     return { steps: ["file", "check", "bind", "publish"] };
@@ -93,13 +93,13 @@ export function remainingSteps(input: {
   if (claim.record.status !== "Open") {
     return {
       problem:
-        "That claim is no longer open, so it cannot be continued. Press Start over to make a new submission.",
+        "That submission is no longer open, so it cannot be continued. Press Start over to make a new one.",
     };
   }
   if (hashText(draft.evidence) !== claim.record.evidenceHash.toLowerCase()) {
     return {
       problem:
-        "The saved text is not what was filed with that claim. Press Start over to make a new submission.",
+        "The saved text is not what was sent with that submission. Press Start over to make a new one.",
     };
   }
   const steps: SubmitStep[] = [];
@@ -108,7 +108,7 @@ export function remainingSteps(input: {
   else if (current !== checkHash.toLowerCase()) {
     return {
       problem:
-        "That claim names different words for its criterion, so it cannot be this milestone's. Press Start over to make a new submission.",
+        "That submission names different words for what counts as done, so it cannot be this milestone's. Press Start over to make a new one.",
     };
   }
   if (claim.project === null) steps.push("bind");
@@ -121,11 +121,11 @@ export const CLAIM_NAMES_USED_UP = `This milestone has been submitted ${MAX_MILE
 
 /** Said when the wallet or milestone changed while a name was being checked: nothing is sent under the old one. */
 export const CLAIM_CHECK_SUPERSEDED =
-  "The connected wallet changed while this submission's name was being checked, so nothing was sent. Your text is still in the box. Submit again to send it from this wallet.";
+  "Your account changed while this submission's name was being checked, so nothing was sent. Your text is still in the box. Submit again to send it from this account.";
 
 /** Said when the network could not say whether a name is free: nothing is sent, and trying again is safe. */
 export const CLAIM_NAME_UNCHECKED =
-  "Could not check with the network that this submission's name is free, so nothing was sent. Your text is still in the box. Try again in a moment.";
+  "Couldn't check that this submission's name is free, so nothing was sent. Your text is still in the box. Try again in a moment.";
 
 /**
  * Whether the milestone panel's record for one claim name is empty, from its `claims(bytes32)` read: an unused name reads

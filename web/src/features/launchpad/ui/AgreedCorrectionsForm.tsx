@@ -91,7 +91,7 @@ export function AgreedCorrectionsForm({
       ]);
       if (!sent) {
         setProblem(
-          "Your words are published, but the request did not reach the chain. Press again to send it.",
+          "Your words are published, but the request did not reach the network. Press again to send it.",
         );
         return;
       }

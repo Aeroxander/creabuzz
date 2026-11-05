@@ -69,9 +69,9 @@ export function AgreedRewardsSection({
     <Card className="p-4" data-testid="agreed-rewards">
       <h2 className="text-base font-semibold">Agreed rewards</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Work whose exact reward is promised before it starts. The quantity is
-        fixed in Shares, not in money and not as a percentage of the project,
-        and it settles on those terms without a new award vote.
+        Work whose exact reward is promised before it starts. The reward is a
+        fixed number of Shares, not money and not a percentage of the project.
+        It is paid on those terms without a new award vote.
       </p>
       {loading ? (
         <p
@@ -165,8 +165,7 @@ function MandateLane({
       >
         <p>
           Could not read this budget's agreed rewards just now, so nothing is
-          assumed about whether it has them. Its existing manual flow is
-          unchanged.
+          assumed about whether it has them. Its existing process is unchanged.
         </p>
         <Button
           className="mt-2"
@@ -192,7 +191,7 @@ function MandateLane({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">
-          {mandate.isMilestonePanel ? "Milestone panel" : "Work budget"}
+          {mandate.isMilestonePanel ? "Milestone reviewers" : "Work budget"}
         </h3>
         <span className="text-xs text-muted-foreground">
           {lane.capability === "supported"
@@ -248,7 +247,8 @@ function MandateLane({
           data-testid="agreed-rewards-words-unreadable"
         >
           The descriptions people published for these offers could not be read
-          just now, so they are not shown. Their on-chain terms are below.
+          just now, so they are not shown. Their terms, as recorded on the
+          network, are below.
         </p>
       ) : null}
       {lane.linksUnreadable ? (

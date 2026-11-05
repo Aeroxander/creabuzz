@@ -108,7 +108,7 @@ export function milestoneProgress(
     return {
       stage: "frozen",
       done: 2,
-      text: "Frozen. The DAO is deciding what happens to this claim.",
+      text: "Frozen. The project is deciding what happens to this submission.",
       claim,
     };
   }
@@ -118,8 +118,8 @@ export function milestoneProgress(
       done: 0,
       text:
         status === "Rejected"
-          ? "The reviewers turned this claim down. You can submit the milestone again."
-          : "This claim is closed. You can submit the milestone again.",
+          ? "The reviewers turned this submission down. You can submit the milestone again."
+          : "This submission is closed. You can submit the milestone again.",
       claim,
     };
   }

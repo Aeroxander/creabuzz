@@ -404,7 +404,7 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   );
   // The award is the DAO's vote, and the page sends them to where it is made.
   await expect(contributor.getByTestId("work-award-help")).toContainText(
-    "decision the DAO votes on",
+    "judgment call that the project votes on",
   );
 
   // ── 4. the founder awards Shares for it, in a form, and the contributor ends up holding them ────

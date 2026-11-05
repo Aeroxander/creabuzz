@@ -149,21 +149,21 @@ export function ChallengeMilestones({
             </li>
             <li>
               For {span(terms.clawback)} after an unlock, one more objection is
-              possible. If holders uphold it, the team&apos;s remaining locked
-              Shares are burned.
+              possible. If holders agree with it, the team&apos;s remaining
+              locked Shares are destroyed.
             </li>
           </ol>
           <p className="mt-2 text-muted-foreground">
             Milestones are published in order, and the next only once the one
             before has had its time for late objections. So the Shares still
-            ahead stay locked, and are burned, while an earlier milestone can be
-            objected to. Once the last one has unlocked, what stands behind it
-            is the bond.
+            ahead stay locked, and can be destroyed, while an earlier milestone
+            can be objected to. Once the last one has unlocked, what stands
+            behind it is the bond.
           </p>
         </details>
         <p className="mt-2 text-sm text-muted-foreground">
-          Backers can still leave with their share of the treasury while a
-          milestone waits.
+          Backers can still leave with their share of the project's money while
+          a milestone waits.
         </p>
         <p className="mt-2 text-sm" data-testid="challenge-summary">
           {unlocked} of {countOf(view.milestones.length, "milestone")} unlocked.{" "}
@@ -174,8 +174,9 @@ export function ChallengeMilestones({
           data-testid="challenge-limits"
         >
           What this does not do: it holds back the team&apos;s original Shares.
-          Holders can still vote to spend the treasury or to issue more Shares
-          or non-voting shares, and those votes do not wait for milestones.{" "}
+          Holders can still vote to spend the project's money or to issue more
+          Shares or non-voting shares, and those votes do not wait for
+          milestones.{" "}
           <button className="underline" onClick={onOpenDecisions} type="button">
             See the decisions
           </button>

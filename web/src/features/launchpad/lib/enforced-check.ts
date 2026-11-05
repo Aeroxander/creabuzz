@@ -63,20 +63,20 @@ export function verifyEnforced(
           return {
             clause,
             status: "unverifiable",
-            detail: `${clause.action}: proposalThreshold unreadable. The claim stands unverified`,
+            detail: `${clause.action}: the minimum votes needed to propose could not be read just now. The claim stands unverified`,
           };
         }
         if (state.proposalThreshold > 0n) {
           return {
             clause,
             status: "verified",
-            detail: `${clause.action}: backed by proposalThreshold = ${state.proposalThreshold} (live)`,
+            detail: `${clause.action}: backed by the project's rule that you need at least ${state.proposalThreshold} votes to propose (checked now)`,
           };
         }
         return {
           clause,
           status: "contradicted",
-          detail: `${clause.action}: claimed, but proposalThreshold = 0. Anyone may propose`,
+          detail: `${clause.action}: claimed, but the minimum votes needed to propose is 0. Anyone may propose`,
         };
       }
       case "ragequit": {
@@ -84,21 +84,21 @@ export function verifyEnforced(
           return {
             clause,
             status: "unverifiable",
-            detail: `${clause.action}: ragequittable unreadable. The claim stands unverified`,
+            detail: `${clause.action}: whether leaving with your share is switched on could not be read just now. The claim stands unverified`,
           };
         }
         if (state.ragequittable) {
           return {
             clause,
             status: "verified",
-            detail: `${clause.action}: backed by ragequittable = true (live)`,
+            detail: `${clause.action}: backed by leaving with your share being switched on (checked now)`,
           };
         }
         // The sharp case: an exit right with the door welded shut.
         return {
           clause,
           status: "contradicted",
-          detail: `${clause.action}: claimed, but ragequittable = false. The exit right does not exist`,
+          detail: `${clause.action}: claimed, but leaving with your share is switched off. The exit right does not exist`,
         };
       }
       default: {
@@ -112,7 +112,7 @@ export function verifyEnforced(
         return {
           clause,
           status: "unverifiable",
-          detail: `${clause.action}: mechanism "${mechanism || "none"}" not checked here`,
+          detail: `${clause.action}: this rule (${mechanism || "none"}) cannot be checked here`,
         };
       }
     }

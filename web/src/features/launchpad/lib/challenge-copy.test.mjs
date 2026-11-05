@@ -238,7 +238,7 @@ test("the headline says where a milestone stands and what happens next, in plain
   );
   assert.match(
     say(m({ stage: "unlocked-open", phase: "stood", unlockedAt: NOW - DAY })),
-    /29 days more a holder can raise one more objection/,
+    /29 days more, a holder can raise one more objection/,
   );
   assert.match(
     say(m({ stage: "unlocked", phase: "stood", unlockedAt: NOW - 40 * DAY })),
@@ -253,7 +253,7 @@ test("the headline says where a milestone stands and what happens next, in plain
         objection: objection({ late: true }),
       }),
     ),
-    /remaining locked Shares are burned/,
+    /remaining locked Shares are destroyed/,
   );
 });
 
@@ -318,7 +318,7 @@ test("the team cannot publish before the lock's earliest block, or before the mi
   // What is said instead of the button.
   assert.match(
     challengePublishBlock(0, TERMS, first(100)),
-    /opens once buyers can claim what they bought in the sale/,
+    /opens once buyers can collect what they bought in the sale/,
   );
   assert.match(
     challengePublishBlock(2, TERMS, after(stages.pending)),
@@ -442,7 +442,7 @@ test("an unlocked milestone says how it got through: nobody objected is not the 
   );
   assert.match(
     upheld,
-    /holders upheld it: the team's remaining locked Shares were burned/,
+    /holders agreed: the team's remaining locked Shares were destroyed/,
   );
   // Still inside the month, it says how it got through and what can still happen.
   const inMonth = say(

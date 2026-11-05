@@ -52,7 +52,7 @@ const CHECK_STATUSES = ["passed", "failed", "timed-out", "not-run"] as const;
 const STATUS_WORDS = {
   passed: "Passed",
   failed: "Failed",
-  "timed-out": "Timed out — stopped, result unknown",
+  "timed-out": "Timed out: stopped, result unknown",
   "not-run": "Not run",
 };
 
@@ -231,17 +231,21 @@ function parseCheckRun(event: {
       // exactly when it names the same value the content names.
       if (tag.toLowerCase() !== claimed) {
         selfContradictions.push(
-          `The record's ${word} tag does not match its own text; the page binds what the record's text says, and cannot agree with both.`,
+          `The record's ${word} label does not match its own text. This page goes by the text.`,
         );
       }
     } else {
-      selfContradictions.push(`The record carries no ${word} tag.`);
+      selfContradictions.push(`The record has no ${word} label.`);
     }
     return claimed;
   };
-  const claimId = bind(claim.id, "claim", "claim id");
-  const mandate = bind(claim.mandate, "mandate", "mandate");
-  const evidenceHashBound = bind(evidenceHash, "evidence", "evidence hash");
+  const claimId = bind(claim.id, "claim", "submission ID");
+  const mandate = bind(claim.mandate, "mandate", "work area");
+  const evidenceHashBound = bind(
+    evidenceHash,
+    "evidence",
+    "evidence fingerprint",
+  );
 
   // The run's sandbox word: what the record says, from the tag the server
   // can see. With no tag at all the record claims nothing certain — said,
@@ -254,14 +258,16 @@ function parseCheckRun(event: {
         ? "unchecked"
         : null;
   if (sandboxTag === null) {
-    selfContradictions.push("The record carries no sandbox tag.");
+    selfContradictions.push(
+      "The record does not say whether the checks ran in a protected space.",
+    );
   }
   if (
     sandboxClaim &&
     sandboxClaim !== (body.sandboxEnforced === true ? "enforced" : "unchecked")
   ) {
     selfContradictions.push(
-      "The record's sandbox tag and its own sandboxEnforced field disagree.",
+      "The record contradicts itself about whether the checks ran in a protected space.",
     );
   }
 

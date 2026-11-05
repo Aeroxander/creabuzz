@@ -465,8 +465,8 @@ function FundForm({
       ) : null}
       <p className="text-xs text-muted-foreground">
         Paid to the work the reviewers approve in time, after the{" "}
-        {waitDays(window)} wait; if none is, it comes back to you. Your wallet
-        asks twice: to allow the amount, then to put it in.
+        {waitDays(window)} wait; if none is, it comes back to you. You approve
+        twice: first to let it take that amount, then to put it in.
       </p>
       <UnauditedNotice chainId={chainId} />
       {gate ? <p className="text-xs text-muted-foreground">{gate}</p> : null}

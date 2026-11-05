@@ -146,13 +146,16 @@ export function proposalPlan(input: ProposalDraft): ProposalPlan {
     };
   }
   if (!addressOk(beneficiary)) {
-    return { kind: "problem", problem: "Name the person's wallet address." };
+    return {
+      kind: "problem",
+      problem: "Enter the account address of the person.",
+    };
   }
   if (beneficiary === manager) {
     return {
       kind: "problem",
       problem:
-        "A work area's manager cannot be the beneficiary of its own offer. Name someone else.",
+        "A work area's manager cannot receive its own offer. Name someone else.",
     };
   }
   if (typeof input.shares !== "bigint" || input.shares <= 0n) {
@@ -164,7 +167,7 @@ export function proposalPlan(input: ProposalDraft): ProposalPlan {
   if (input.shares >= SHARES_MAX_EXCLUSIVE) {
     return {
       kind: "problem",
-      problem: "That quantity is more than the Shares token can ever hold.",
+      problem: "That is more Shares than can ever exist.",
     };
   }
   const deadline = Number(input.workDeadline);
@@ -195,7 +198,7 @@ export function proposalPlan(input: ProposalDraft): ProposalPlan {
   if (!WORD_RE.test(input.policyRef)) {
     return {
       kind: "problem",
-      problem: "The reviewer panel this offer names could not be read.",
+      problem: "The reviewers this offer names could not be read.",
     };
   }
   let slot: string;
@@ -227,14 +230,14 @@ export function proposalPlan(input: ProposalDraft): ProposalPlan {
       if (!addressOk(address)) {
         return {
           kind: "problem",
-          problem: "Every coauthor needs a wallet address.",
+          problem: "Every coauthor needs an account address.",
         };
       }
       if (seen.has(address)) {
         return {
           kind: "problem",
           problem:
-            "A split names each person once, and never the work area's manager.",
+            "Each person can be named only once, and never the work area's manager.",
         };
       }
       if (
@@ -255,7 +258,7 @@ export function proposalPlan(input: ProposalDraft): ProposalPlan {
     if (declared >= AGREEMENTS_SPLIT_ALL) {
       return {
         kind: "problem",
-        problem: "Leave the beneficiary a part of the quantity.",
+        problem: "Leave the person the offer names a part of the Shares.",
       };
     }
     percentages[0] = AGREEMENTS_SPLIT_ALL - declared;
@@ -269,7 +272,7 @@ export function proposalPlan(input: ProposalDraft): ProposalPlan {
       return {
         kind: "problem",
         problem:
-          "That split leaves someone less than one whole Share. Raise the quantity or the part.",
+          "That split leaves someone less than one whole Share. Raise the number of Shares or the part.",
       };
     }
     splitHash = splitHashOf(parties, percentages);
@@ -355,7 +358,7 @@ export function acceptancePlan(input: {
     return {
       kind: "problem",
       problem:
-        "The split these terms commit to could not be read, so they cannot be accepted yet. Refresh in a minute.",
+        "The split in these terms could not be read, so they cannot be accepted yet. Refresh in a minute.",
     };
   }
   let parties: string[] = [];
@@ -365,7 +368,7 @@ export function acceptancePlan(input: {
       return {
         kind: "problem",
         problem:
-          "The declared split does not match what this offer committed to, so nothing was sent.",
+          "The split does not match what this offer says, so nothing was sent.",
       };
     }
     try {
@@ -380,14 +383,14 @@ export function acceptancePlan(input: {
       return {
         kind: "problem",
         problem:
-          "The declared split does not fit this quantity, so nothing was sent.",
+          "The split does not fit the number of Shares, so nothing was sent.",
       };
     }
   } else if (terms.splitHash !== ZERO_WORD) {
     return {
       kind: "problem",
       problem:
-        "This offer commits to a split that has not been read, so it cannot be accepted yet. Refresh in a minute.",
+        "The split in this offer has not been read yet, so it cannot be accepted. Refresh in a minute.",
     };
   }
   try {
@@ -455,13 +458,13 @@ export function agreementStateWords(
     case "offered":
       return "Offered, waiting for the named person";
     case "agreed":
-      return "Agreed; the quantity is reserved";
+      return "Agreed; the Shares are set aside";
     case "settled":
       return "Settled";
     case "cancelled":
       return "Taken off the board";
     case "expired":
-      return "Expired; the reservation was released";
+      return "Expired; the Shares set aside were released";
     default:
       return "No offer stands here";
   }
@@ -479,10 +482,10 @@ export function reviewerPolicyWords(input: {
   unreadable?: boolean;
 }): string {
   if (input.unreadable) {
-    return "The reviewer panel could not be read just now, so how many must agree is not shown.";
+    return "The reviewers could not be read just now, so how many must agree is not shown.";
   }
   if (input.panel > 0 && input.quorum > 0) {
-    return `${input.quorum} of the ${input.panel} reviewers on this budget's panel must agree. Reviewing is voluntary and unpaid.`;
+    return `${input.quorum} of the ${input.panel} reviewers on this work budget must agree. Reviewing is voluntary and unpaid.`;
   }
   if (input.quorum > 0) {
     return `${input.quorum} reviewers must agree. Reviewing is voluntary and unpaid.`;

@@ -433,8 +433,9 @@ export function WorkTab({
       ) : work.data && work.data.mandates.length === 0 ? (
         <Card className="p-4 text-sm" data-testid="work-empty">
           <p>
-            Nothing has been set aside for work yet. A work budget is created by
-            a vote of the DAO.
+            Nothing has been set aside for work yet. A vote of the project's
+            holders sets up a work budget: a limit on the Shares and money that
+            can be awarded for work.
           </p>
           <DecisionHelp onOpenDecisions={onOpenDecisions} />
         </Card>
@@ -442,7 +443,8 @@ export function WorkTab({
         <>
           {work.data?.truncated ? (
             <p className="text-sm text-muted-foreground" role="status">
-              This DAO has more work than is shown here. The newest is listed.
+              This project has more work than is shown here. The newest is
+              listed.
             </p>
           ) : null}
           <AgreedRewardsSection
@@ -646,7 +648,7 @@ function MandateCard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-base font-semibold">
           <span title={mandate.address}>
-            {mandate.isMilestonePanel ? "Milestone panel" : "Work budget"}
+            {mandate.isMilestonePanel ? "Milestone reviewers" : "Work budget"}
           </span>
         </h3>
         {mandate.closed ? (
@@ -678,9 +680,10 @@ function MandateCard({
           data-testid="work-bond-owed"
         >
           <p>
-            You are a reviewer here. Post a bond of {bondMoney(owes)} before you
-            judge a claim. You can ask for it back later; it stays at risk for
-            14 days after you do.
+            You are a reviewer here. Post a bond of {bondMoney(owes)} (a deposit
+            you lose if you approve carelessly) before you judge a submission.
+            You can ask for it back later, but it stays at risk for 14 days
+            after you do.
           </p>
           <Button
             className="mt-2"
@@ -794,12 +797,13 @@ function MandateCard({
                 <p className="mt-1" data-testid="work-claim-next">
                   {step.kind === "settle" && !finishAllowed ? (
                     <>
-                      The panel&apos;s answers stand against this attempt
+                      The reviewers&apos; answers stand against this attempt
                       {claim.record.expiresAt > 0
                         ? `, and its review ends ${shortDate(claim.record.expiresAt)}`
                         : ""}
-                      . It is not finished here; once that ends, anyone can
-                      close it as lapsed and the reservation releases.
+                      . It is not finished here. Once that ends, anyone can
+                      close it as lapsed and what was set aside for it is
+                      released.
                     </>
                   ) : (
                     waitingFor(step, claim, mandate, chainTime, labelOf)
@@ -852,8 +856,8 @@ function MandateCard({
                     <code className="break-all">
                       {claim.record.contributor}
                     </code>
-                    . This is the wallet that submitted the work; changing a
-                    profile wallet cannot redirect it.
+                    . This is the account that submitted the work. Changing the
+                    payment account on a profile cannot redirect it.
                   </p>
                 ) : null}
                 <div className="mt-2 flex flex-wrap gap-2">

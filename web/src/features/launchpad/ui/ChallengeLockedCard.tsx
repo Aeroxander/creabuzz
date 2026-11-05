@@ -27,10 +27,10 @@ export function ChallengeLockedCard({
     <Card className="p-4" data-testid="challenge-locked-shares">
       <h3 className="text-sm font-semibold">Your team Shares</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        These Shares are yours and count when the DAO votes. The part tied to a
-        milestone cannot be sold or taken out of the DAO until that milestone is
-        reached. You publish each milestone on the Milestones tab; holders then
-        have time to object.
+        These Shares are yours and count when the project votes. The part tied
+        to a milestone cannot be sold or taken out of the project until that
+        milestone is reached. You publish each milestone on the Milestones tab;
+        holders then have time to object.
       </p>
       <p className="mt-2 text-sm" data-testid="challenge-locked-total">
         {view.locked === 0n

@@ -87,8 +87,8 @@ export function AgreedTermsCard({
       >
         <p className="font-medium">An agreement could not be read</p>
         <p className="mt-1 text-muted-foreground">
-          Its record did not come back in a shape this page can show. Nothing is
-          assumed about it.
+          Its record came back in a form this page can't show, so nothing is
+          shown about it.
         </p>
         <Button
           className="mt-2"
@@ -249,7 +249,7 @@ export function AgreedTermsCard({
       <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
         <div>
           <dt className="font-medium text-muted-foreground">
-            The exact quantity
+            The exact number of Shares
           </dt>
           <dd className="mt-0.5">
             <span className="font-semibold tabular-nums">
@@ -265,15 +265,15 @@ export function AgreedTermsCard({
           <dd className="mt-0.5">
             {splitUnreadable ? (
               <p>
-                The split these terms commit to could not be read, so who
-                receives the quantity is not shown here. Refresh in a minute.
+                The split in these terms could not be read, so who receives the
+                Shares is not shown here. Refresh in a minute.
               </p>
             ) : null}
             <ul className="grid gap-1">
               {figures.map((figure, index) => (
                 <li key={figure.address}>
                   {labelOf(figure.address)}
-                  {index === 0 ? " (the beneficiary)" : ""}:{" "}
+                  {index === 0 ? " (the person named)" : ""}:{" "}
                   <span className="font-semibold tabular-nums">
                     {quantityWords(figure.quantity)}
                   </span>{" "}
@@ -286,9 +286,9 @@ export function AgreedTermsCard({
             </ul>
             {splitUnreadable ? null : (
               <p className="mt-1 text-muted-foreground">
-                The parts add up to the exact quantity; rounding dust goes to
-                the beneficiary. These recipients are fixed by both signatures
-                and cannot be added to later.
+                The parts add up to the exact number of Shares. Any rounding
+                leftover goes to the person named. These recipients are fixed
+                once both sides approve, and cannot be added to later.
               </p>
             )}
           </dd>
@@ -299,7 +299,8 @@ export function AgreedTermsCard({
           </dt>
           <dd className="mt-0.5">
             {date(terms.workDeadline)}. A first submission after that cannot be
-            bound, and anyone may release the reservation.
+            linked to this agreement, and anyone may release the Shares set
+            aside.
           </dd>
         </div>
         <div>
@@ -315,15 +316,15 @@ export function AgreedTermsCard({
           </dd>
         </div>
         <div>
-          <dt className="font-medium text-muted-foreground">The panel</dt>
+          <dt className="font-medium text-muted-foreground">The reviewers</dt>
           <dd className="mt-0.5">
             {reviewerPolicyWords({
               quorum: mandate.quorum,
               panel: mandate.reviewers.length,
               unreadable: mandate.reviewersUnreadable,
             })}{" "}
-            These are the keys this budget records, not a claim about who is
-            behind them.
+            These are the accounts this work budget lists, not a statement about
+            who is behind them.
           </dd>
         </div>
         <div>
@@ -340,7 +341,7 @@ export function AgreedTermsCard({
       {descriptor && !deliverable ? (
         <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
           A description was published for this offer, but it does not match the
-          offer's own slot, so it is not shown as its terms.
+          offer, so it is not shown as its terms.
         </p>
       ) : null}
 
@@ -359,8 +360,8 @@ export function AgreedTermsCard({
           ) : null}
           {step.kind === "settle-claim" ? (
             <p className="mt-0.5 text-xs text-muted-foreground">
-              The panel reached its actual quorum. Finishing the review on the
-              submission starts the challenge window; nothing is paid before it
+              Enough reviewers approved it. Finishing the review on the
+              submission starts the objection window. Nothing is paid before it
               ends.
             </p>
           ) : null}
@@ -368,9 +369,9 @@ export function AgreedTermsCard({
           mandate.quorum > 0 &&
           item.claim.objections >= mandate.quorum ? (
             <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-200">
-              The panel reached its quorum against this attempt, so nothing is
-              paid for it. After its review ends, anyone may close it as lapsed,
-              and the reservation then releases by explicit action.
+              Enough reviewers turned this attempt down, so nothing is paid for
+              it. After its review ends, anyone may close it as lapsed, which
+              releases the Shares set aside.
               {item.claim.record.expiresAt > 0
                 ? ` Its review ends ${date(item.claim.record.expiresAt)}.`
                 : ""}
@@ -390,8 +391,8 @@ export function AgreedTermsCard({
             ) : null}
             {step.kind === "accept" && !isBeneficiary ? (
               <p className="text-xs text-muted-foreground">
-                {labelOf(terms.beneficiary)} accepts it from the wallet it
-                names. Accepting is when the quantity is reserved.
+                {labelOf(terms.beneficiary)} accepts it from the account it
+                names. The Shares are set aside when it is accepted.
               </p>
             ) : null}
             {step.kind === "settle-agreement" && splitUnreadable ? (

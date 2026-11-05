@@ -35,7 +35,7 @@ test("the milestone lock screens call the locked asset Shares, and keep the bond
     }
   }
   const challenge = source("./ChallengeMilestones.tsx");
-  assert.match(challenge, /issue more Shares\s+or non-voting shares/);
+  assert.match(challenge, /issue\s+more\s+Shares\s+or\s+non-voting\s+shares/);
   assert.match(challenge, /of the bond token/);
   assert.match(challenge, /Shares still locked\./);
 });
@@ -49,7 +49,7 @@ test("the launch review's late-objection line does not repeat the old refusal en
   );
 });
 
-test("'Open the claim on the Work tab' lands on that claim: the address feeds the Work tab's focus", () => {
+test("'Open the submission on the Work tab' lands on that submission: the address feeds the Work tab's focus", () => {
   const page = source("./LaunchDetailPage.tsx");
   assert.match(page, /focusClaim=\{initialClaim\}/);
   assert.doesNotMatch(page, /onOpenWork=\{\(\) => setTab\("work"\)\}/);

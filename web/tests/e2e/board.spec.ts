@@ -1093,10 +1093,10 @@ test("a thread that names a DAO the app does not know says it was not checked, a
     "Fund the trailer",
   );
   await expect(page.getByTestId("proposal-unverified")).toContainText(
-    "doesn't know that DAO",
+    "doesn't know that project",
   );
   await expect(page.getByTestId("proposal-header")).toContainText(
-    "not the DAO's vote",
+    "not the project's vote",
   );
   await expect(page.getByTestId("proposal-status")).toHaveCount(0);
   await expect(page.getByTestId("author-badge")).toHaveCount(0);

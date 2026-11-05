@@ -38,7 +38,7 @@ export function postBountyLine(
     case "refunds":
       return bounty.appeal.state === "refused" ||
         bounty.appeal.state === "upheld"
-        ? "The court did not uphold the work in time. Everyone can take their money back."
+        ? "The court did not agree with the work in time. Everyone can take their money back."
         : "No work kept a majority in time. Everyone can take their money back.";
     case "window":
       return `Nothing was agreed by the deadline. Anyone whose work is here can appeal to the court until ${words.date(stage.until)}; then everyone can take their money back.`;
@@ -102,7 +102,7 @@ export function addMoneyLine(
     "The work most of the money backs for nine days is paid.",
     `If none is, you can take yours back after ${deadline}, or from ${refundsFrom} if a piece of work is still running then.`,
     court
-      ? "If work was filed, that waits three more days in case it goes to the court, and for as long as the court has it."
+      ? "If work was submitted, that waits three more days in case it goes to the court, and for as long as the court has it."
       : null,
     "If you back a piece of work, this adds to your backing.",
   ]

@@ -536,7 +536,7 @@ export function FileClaimCard({
             {open.map((m, i) => (
               <option key={m.address} value={i}>
                 {m.isMilestonePanel
-                  ? "The milestone panel (for your team's milestones)"
+                  ? "Milestone reviewers (for your team's milestones)"
                   : `Work budget ${i + 1}`}
               </option>
             ))}

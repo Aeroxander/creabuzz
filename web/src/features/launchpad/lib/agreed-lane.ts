@@ -34,13 +34,13 @@ export function capabilityHeadline(
 ): string {
   switch (capability) {
     case "supported":
-      return "Agreed rewards run on their exact terms here.";
+      return "Agreed rewards are paid on their exact terms here.";
     case "unsupported":
-      return "Agreed rewards on this budget use a version this screen cannot follow yet. Existing work keeps working as before; nothing is changed or held up.";
+      return "This work budget uses a newer version of agreed rewards that this page cannot show yet. Existing work carries on as before; nothing is changed or held up.";
     case "known-legacy":
-      return "This budget ran before agreed rewards existed, so it keeps its existing manual flow.";
+      return "This work budget started before agreed rewards existed, so it keeps working the way it always has.";
     default:
-      return "Could not read this budget's agreed rewards just now. Nothing here is left out on purpose — try again in a minute.";
+      return "Could not read this work budget's agreed rewards just now. Nothing is hidden on purpose. Try again in a minute.";
   }
 }
 
@@ -156,7 +156,7 @@ export function laneStep(
         return {
           kind: "info",
           actor: "none",
-          note: "The attempt's state could not be read yet, so nothing is named as a next step here.",
+          note: "We could not read where this attempt stands yet, so no next step is shown. Try again in a moment.",
           due: null,
           dueLine: null,
         };
@@ -208,8 +208,8 @@ export function laneStep(
             status === "Approved"
               ? claim.record.releasedAt + context.challengeWindow
               : null,
-          dueLine: "The challenge window ends",
-          note: "Approved on its exact terms. Once the challenge window ends, anyone can settle the agreement at its reserved quantity. Nothing can be paid inside the window.",
+          dueLine: "The objection window ends",
+          note: "Approved on its exact terms. Once the objection window ends, anyone can settle the agreement at the Shares set aside for it. Nothing is paid before then.",
         };
       }
       return { ...base, kind: "settle-agreement" };

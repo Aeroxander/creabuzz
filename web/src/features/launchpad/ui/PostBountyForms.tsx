@@ -246,8 +246,8 @@ export function OpenPostBountyForm({
       <p className="text-xs text-muted-foreground">
         Anyone can add money and submit work. Each person who puts money in
         backs one piece of work; the work most of the money backs for nine days
-        is paid. If none is, everyone gets their money back. Your wallet asks
-        twice: once to allow the amount, once to put it in.
+        is paid. If none is, everyone gets their money back. You approve twice:
+        first to let it take that amount, then to put it in.
       </p>
       <UnauditedNotice chainId={chainId} />
       <Problem text={problem} />

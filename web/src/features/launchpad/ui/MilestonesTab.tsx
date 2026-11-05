@@ -152,7 +152,7 @@ function PanelMilestones({ launch, dao, onOpenDecisions }: MilestonesTabProps) {
               ? `, ${formatShares(summary.released)} released`
               : ""}
             {summary.givenUp > 0n
-              ? `, ${formatShares(summary.givenUp)} given up by the DAO`
+              ? `, ${formatShares(summary.givenUp)} given up by the project`
               : ""}
             .
           </p>
@@ -166,8 +166,8 @@ function PanelMilestones({ launch, dao, onOpenDecisions }: MilestonesTabProps) {
             {reviewerAddresses.length > 0
               ? reviewerAddresses.map(labelOf).join(", ")
               : "named at launch"}
-            . {panel.quorum} must agree on a milestone. The panel is fixed when
-            the project launches: nobody can swap in friendlier reviewers later,
+            . {panel.quorum} must agree on a milestone. The reviewers are fixed
+            when the project launches: nobody can swap in friendlier ones later,
             and if too few of them can be reached the locked Shares stay locked.
           </p>
         ) : null}
@@ -186,8 +186,9 @@ function PanelMilestones({ launch, dao, onOpenDecisions }: MilestonesTabProps) {
           data-testid="milestones-limits"
         >
           What this does not do: it holds back the team&apos;s original Shares.
-          Holders can still vote to spend the treasury or to issue more Shares
-          or non-voting shares, and those votes do not wait for milestones.{" "}
+          Holders can still vote to spend the project's money or to issue more
+          Shares or non-voting shares, and those votes do not wait for
+          milestones.{" "}
           <button className="underline" onClick={onOpenDecisions} type="button">
             See the decisions
           </button>
@@ -340,9 +341,9 @@ function MilestoneCard({
               </>
             ) : null}
             <p className="mt-2 text-xs text-muted-foreground">
-              This is the text the claim committed to: the hash matches, so this
-              is the packet as it was stored. A matching hash does not prove
-              what the packet says.
+              This is the text the submission recorded. Its fingerprint matches,
+              so it is exactly what was stored. A match does not prove that what
+              it says is true.
             </p>
           </details>
         ) : entry.evidenceMissing ? (
@@ -350,8 +351,8 @@ function MilestoneCard({
             className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100"
             data-testid={`milestone-evidence-missing-${entry.index}`}
           >
-            No evidence matching this claim could be found. Reviewers cannot
-            approve what they cannot read.
+            No evidence matching this submission could be found. Reviewers
+            cannot approve what they cannot read.
           </p>
         ) : null}
 
@@ -367,7 +368,7 @@ function MilestoneCard({
             onClick={() => onOpenClaim(focus)}
             type="button"
           >
-            Open the claim on the Work tab
+            Open the submission on the Work tab
           </button>
         ) : null}
       </Card>

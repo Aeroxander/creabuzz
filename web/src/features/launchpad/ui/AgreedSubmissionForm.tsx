@@ -168,7 +168,7 @@ export function AgreedSubmissionForm({
       const fresh = await attemptRead.refetch();
       if (fresh.error) {
         setProblem(
-          "Could not read the chain for this attempt just now. Nothing was published; try again.",
+          "Couldn't read this attempt from the network just now. Nothing was published. Try again.",
         );
         return;
       }
@@ -178,7 +178,7 @@ export function AgreedSubmissionForm({
         record.evidenceHash.toLowerCase() !== hashText(submitted).toLowerCase()
       ) {
         setProblem(
-          "The chain holds different text under this attempt, so this copy is not published over it. Leave the form as it is, or ask the project's manager to look at the attempt id below.",
+          "The network holds different text for this attempt, so this copy was not published over it. Leave the form as it is, or ask the project's manager to look at the attempt ID below.",
         );
         return;
       }
@@ -229,7 +229,7 @@ export function AgreedSubmissionForm({
       const fresh = await attemptRead.refetch();
       if (fresh.error || !fresh.data) {
         setProblem(
-          "Could not read the chain for this attempt just now, so nothing was sent. Try again.",
+          "Couldn't read this attempt from the network just now, so nothing was sent. Try again.",
         );
         return;
       }
@@ -271,7 +271,7 @@ export function AgreedSubmissionForm({
         !(await onSendBatch(`agreed-${terms.id.toLowerCase()}`, plan.calls))
       ) {
         setProblem(
-          "The send to the chain did not finish. Nothing was lost. Press again to send what is still missing, under the same attempt.",
+          "Sending to the network did not finish. Nothing was lost. Press again to send what is still missing, under the same attempt.",
         );
         return;
       }
@@ -283,7 +283,7 @@ export function AgreedSubmissionForm({
         await publishEvidence();
       } catch {
         setProblem(
-          "Your work landed, but its evidence could not be published, and reviewers cannot approve what they cannot read. Press Publish the evidence again to press the words through.",
+          "Your work was sent, but its evidence could not be published, and reviewers cannot approve what they cannot read. Press Publish the evidence again to try once more.",
         );
         return;
       }
@@ -300,9 +300,9 @@ export function AgreedSubmissionForm({
     return (
       <div className="mt-2 text-sm">
         <p data-testid="agreed-submission-pending-publish" role="status">
-          The attempt went to the chain, but its evidence could not be
-          published: reviewers cannot approve what they cannot read. A copy is
-          kept in this browser.
+          The attempt was sent to the network, but its evidence could not be
+          published, and reviewers cannot approve what they cannot read. A copy
+          is kept in this browser.
         </p>
         <Button
           className="mt-2"
@@ -331,8 +331,9 @@ export function AgreedSubmissionForm({
   return (
     <div className="mt-2 grid gap-2">
       <p className="text-xs text-muted-foreground">
-        This attempt asks for no money: the agreed quantity of Shares is already
-        reserved. One press sends the claim, its check and its binding in order.
+        This attempt asks for no money: the agreed Shares are already set aside.
+        One press sends the submission, the words it is judged against, and its
+        link to the agreement, in order.
       </p>
       <div className="flex flex-col gap-1 text-sm">
         <label className="font-medium" htmlFor="agreed-artifact-input">
@@ -373,7 +374,7 @@ export function AgreedSubmissionForm({
           value={notMet}
         />
         <span className="font-mono text-xs text-muted-foreground break-all">
-          The attempt names its own id on the chain
+          The attempt's own ID on the network
           {kept ? " (kept in this browser)" : ""}:{" "}
           <code data-testid="agreed-attempt-id">{claimId}</code>
         </span>

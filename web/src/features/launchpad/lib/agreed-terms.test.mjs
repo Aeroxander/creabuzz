@@ -344,7 +344,7 @@ test("the panel is named as it stands, and an unreadable one is never a number",
 
 test("each record state reads as what it is", () => {
   assert.match(agreementStateWords("offered"), /waiting/);
-  assert.match(agreementStateWords("agreed"), /reserved/);
+  assert.match(agreementStateWords("agreed"), /set aside/);
   assert.match(agreementStateWords("settled"), /Settled/);
   assert.match(agreementStateWords("expired"), /released/);
 });

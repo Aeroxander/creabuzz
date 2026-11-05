@@ -171,9 +171,9 @@ export function ChallengeMilestoneCard({
               As things stand it would{" "}
               {objectionCarries(objection, terms.minRejectBps)
                 ? m.phase === "stood"
-                  ? "be upheld: the team's remaining locked Shares would be burned."
-                  : "be upheld: the milestone would be turned down."
-                : "not be upheld: the milestone would stand."}
+                  ? "be agreed with: the team's remaining locked Shares would be destroyed."
+                  : "be agreed with: the milestone would be turned down."
+                : "not be agreed with: the milestone would stand."}
             </p>
           </div>
         ) : null}
@@ -193,8 +193,8 @@ export function ChallengeMilestoneCard({
               <Linked text={standing.packet.evidence} />
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              This is the text the team committed to on the network: it matches,
-              and it is judged against the milestone&apos;s words above.
+              This is the text the team recorded on the network. It matches, and
+              it is judged against the milestone&apos;s words above.
             </p>
           </details>
         ) : evidenceView === "unreadable" ? (
@@ -223,7 +223,7 @@ export function ChallengeMilestoneCard({
             data-testid={`challenge-evidence-mismatch-${index}`}
           >
             Something was published for this milestone, but it is not what the
-            team submitted to the lock. Do not rely on it.
+            team recorded. Do not rely on it.
           </p>
         ) : evidenceView === "incomplete" ? (
           <div
@@ -251,8 +251,8 @@ export function ChallengeMilestoneCard({
             className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100"
             data-testid={`challenge-evidence-missing-${index}`}
           >
-            The team has not published text matching what it submitted to the
-            lock. Holders cannot judge what they cannot read.
+            The team has not published text matching what it recorded. Holders
+            cannot judge what they cannot read.
           </p>
         ) : null}
 
@@ -490,14 +490,14 @@ function ObjectForm({
     >
       <p>
         {unlocked
-          ? "This milestone has already unlocked. If holders uphold your objection, the team's remaining locked Shares are burned and its bond is forfeited; what already unlocked stays unlocked."
-          : "If holders uphold your objection, the milestone is turned down and the team has to try again with a longer window."}{" "}
+          ? "This milestone has already unlocked. If holders agree with your objection, the team's remaining locked Shares are destroyed and its bond is forfeited. What already unlocked stays unlocked."
+          : "If holders agree with your objection, the milestone is turned down and the team has to try again with a longer window."}{" "}
         Holders vote, and the team&apos;s own Shares do not count. Your vote
         counts for {shares(weight)}.
       </p>
       <p className="mt-2">
         {deposit > 0n
-          ? `You post a deposit of ${money(deposit)}. You get it back, with half of the team's bond, if holders uphold your objection. If they do not, it goes to the DAO.`
+          ? `You put down a deposit of ${money(deposit)}. If holders agree with your objection, you get it back plus half of the team's bond. If they do not, the deposit goes to the project.`
           : "It costs nothing to object, but holders may not back you."}
       </p>
       <div className="mt-2 flex flex-wrap gap-2">

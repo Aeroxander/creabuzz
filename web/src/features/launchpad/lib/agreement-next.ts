@@ -57,7 +57,7 @@ function roleForStage(m: ChallengeMilestone): string {
     case "late-vote-ended":
       return "anyone";
     case "unlocked":
-      return "no one — it is done";
+      return "no one: it is done";
   }
 }
 

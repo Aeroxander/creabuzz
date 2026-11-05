@@ -45,7 +45,7 @@ describe("verifyEnforced — claims become checkable", () => {
       ragequittable: true,
     });
     assert.equal(out[0].status, "verified");
-    assert.match(out[0].detail, /proposalThreshold = 100/);
+    assert.match(out[0].detail, /at least 100 votes to propose/);
     assert.equal(out[2].status, "verified");
   });
 

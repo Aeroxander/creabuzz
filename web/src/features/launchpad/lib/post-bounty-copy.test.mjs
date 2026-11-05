@@ -92,7 +92,7 @@ test("every stage has its own sentence, naming who and when", () => {
   const refused = { ...bounty, appeal: { ...bounty.appeal, state: "refused" } };
   assert.equal(
     postBountyLine({ kind: "refunds" }, refused, claims, words),
-    "The court did not uphold the work in time. Everyone can take their money back.",
+    "The court did not agree with the work in time. Everyone can take their money back.",
   );
 });
 

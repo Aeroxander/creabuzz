@@ -171,7 +171,7 @@ test("a turned-down claim is shown as such, with an earlier attempt counted, and
   assert.equal(entries[0].earlierAttempts, 1);
   const only = build({ panel: panel([first]) }).entries[0];
   assert.equal(only.stage, "turned-down");
-  assert.match(only.headline, /turned this claim down/);
+  assert.match(only.headline, /turned this submission down/);
 });
 
 test("a frozen claim says nothing unlocks while it is frozen", () => {

@@ -117,7 +117,7 @@ export function AgreedProposalForm({
       onRefresh();
     } catch {
       setProblem(
-        "Still could not publish the offer's description. The offer itself is on the chain; press again to publish the words.",
+        "Still could not publish the offer's description. The offer itself is saved on the network. Press again to publish the words.",
       );
     }
   };
@@ -190,7 +190,7 @@ export function AgreedProposalForm({
     );
     if (!sent) {
       setProblem(
-        "The offer did not reach the chain. Nothing is reserved and nobody is bound. Press again to send it.",
+        "The offer did not reach the network. No Shares are set aside and nobody is committed. Press again to send it.",
       );
       return;
     }
@@ -211,7 +211,7 @@ export function AgreedProposalForm({
       // with nothing to act on.
       setProposed(offer);
       setProblem(
-        `The offer is on the chain, but its description and the work area's words could not be published (${
+        `The offer is saved on the network, but its description and the work area's words could not be published (${
           error instanceof Error ? error.message : String(error)
         }). Until they are, the person it names cannot read what it is for. Press Publish the words again.`,
       );
@@ -236,9 +236,9 @@ export function AgreedProposalForm({
   const pendingPanel = proposed ? (
     <div className="mt-2" data-testid="agreed-proposal-pending-publish">
       <p className="text-sm text-amber-800 dark:text-amber-200">
-        The offer is on the chain, but its description and the work area's words
-        are not published yet, so the person it names cannot read what it is
-        for.
+        The offer is saved on the network, but its description and the work
+        area's words are not published yet, so the person it names cannot read
+        what it is for.
       </p>
       <Button
         className="mt-2"
@@ -267,9 +267,9 @@ export function AgreedProposalForm({
       <Card className="p-4" data-testid="agreed-proposal-closed">
         <h3 className="text-sm font-semibold">Propose an agreed reward</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Promise one exact quantity of Shares for one deliverable before the
-          work starts. The person it names accepts, and the quantity is reserved
-          then — not before.
+          Promise an exact number of Shares for one deliverable before the work
+          starts. The person you name accepts, and the Shares are set aside
+          then, not before.
         </p>
         <Button
           className="mt-2"
@@ -333,8 +333,8 @@ export function AgreedProposalForm({
             value={deliverable}
           />
           <span className="text-xs text-muted-foreground">
-            One deliverable, one offer. Its exact words become the slot this
-            offer is bound to.
+            One deliverable, one offer. Its exact words tie this offer to that
+            one piece of work.
           </span>
         </label>
         <label className="grid gap-1">
@@ -348,7 +348,7 @@ export function AgreedProposalForm({
           />
           <span className="text-xs text-muted-foreground">
             {areaWords && areaWords === criteriaWords
-              ? "These are the work area's published words, checked against the chain."
+              ? "These are the work area's published words, checked against the network."
               : "These must be the work area's exact words. The offer is judged against them."}
           </span>
         </label>
@@ -358,7 +358,7 @@ export function AgreedProposalForm({
             data-testid="agreed-proposal-beneficiary"
             id="agreed-proposal-beneficiary"
             onChange={(event) => setBeneficiary(event.target.value)}
-            placeholder="Their wallet address"
+            placeholder="Their account address"
             value={beneficiary}
           />
         </label>
@@ -400,8 +400,8 @@ export function AgreedProposalForm({
           </summary>
           <p className="mt-1 text-xs text-muted-foreground">
             Leave this empty and the person named above receives the whole
-            quantity. Parts are fixed by both signatures and cannot be added to
-            later.
+            quantity. Parts are fixed once both sides approve, and cannot be
+            added to later.
           </p>
           <div className="mt-2 grid gap-2">
             {coauthors.map((part, index) => (

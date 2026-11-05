@@ -153,9 +153,9 @@ export function ChecksRunSection({
       <div className="mt-2" data-testid="work-check-runs">
         <Heading>Checks run</Heading>
         <p className="mt-1 text-xs text-muted-foreground">
-          This page does not know which mandate this submission is bound to, so
-          it shows nothing rather than whatever results carry a matching claim
-          id. Binding to the project comes first; results are matched after.
+          This submission is not linked to a project yet, so no check records
+          are shown. Showing records that only share its ID could be wrong. They
+          appear once it is linked.
         </p>
       </div>
     );
@@ -166,10 +166,10 @@ export function ChecksRunSection({
       <div className="mt-2" data-testid="work-check-runs-empty">
         <Heading>Checks run</Heading>
         <p className="mt-1 text-xs text-muted-foreground">
-          No published check records matched this submission in what this page
-          asked for. The page cannot tell whether the declared checks were run
-          at all — a published record is the only sign of that. You can ask the
-          contributor to run their declared checks and publish the record.
+          No published check records match this submission. This page cannot
+          tell whether the checks the contributor named were run: a published
+          record is the only sign of that. You can ask the contributor to run
+          them and publish the record.
         </p>
         {coverage === "partial" ? <CoverageNote /> : null}
       </div>
@@ -180,25 +180,25 @@ export function ChecksRunSection({
       <div className="mt-2" data-testid="work-check-runs">
         <Heading>Checks run</Heading>
         <p className="mt-1 text-xs text-muted-foreground">
-          No published check record bound this submission — none matched this
-          claim's mandate, its claim id and its evidence hash together. What the
-          page found named the claim without binding it, so nothing is shown as
-          its result.
+          No published check record is tied to this submission: none matched its
+          work area, its ID and its evidence together. Some records mention it
+          without matching all three, so none is shown as its result.
         </p>
         {grouped.misattributed > 0 ? (
           <p className="mt-1 text-xs text-muted-foreground">
             {grouped.misattributed === 1
               ? "One record"
               : `${grouped.misattributed} records`}{" "}
-            carried this claim id under another mandate — another project or
-            market — and is not shown: matching by id alone would be a guess.
+            carried this submission's ID under another work area (another
+            project or market). It is not shown: matching on the ID alone would
+            be a guess.
           </p>
         ) : null}
         {grouped.stale > 0 ? (
           <p className="mt-1 text-xs text-muted-foreground">
             {grouped.stale === 1 ? "One record" : `${grouped.stale} records`}{" "}
-            named this claim but ran against other evidence than what the
-            submission committed to, and is not shown with it.
+            named this submission but ran against different evidence than the
+            submission recorded. It is not shown with it.
           </p>
         ) : null}
         {coverage === "partial" ? <CoverageNote /> : null}
@@ -234,18 +234,17 @@ export function ChecksRunSection({
         </code>{" "}
         on {date(newest.createdAt)} · record{" "}
         <code title={newest.eventId}>{truncatePubkey(newest.eventId)}</code>.
-        The signature says who signed; the record is their word. A check-run
-        record does not name a chain: it binds the mandate, the claim id and the
-        evidence hash its publisher tagged, on whatever network they signed it
-        in.
+        The signature shows who published it. The record is their word. It does
+        not say which network it was made on; it is tied to the work area,
+        submission ID and evidence its publisher labelled.
       </p>
       <p
         className="mt-1 text-xs text-muted-foreground"
         data-testid="work-check-runs-standing"
       >
-        These records are the publisher's own runs of the declared checks — not
-        verification by anyone else. Read them beside the work; they do not
-        replace your verdict.
+        These records are the publisher's own runs of the checks, not a check by
+        anyone else. Read them beside the work. They do not replace your
+        verdict.
         {newest.notIndependentVerification
           ? ` The record's own sentence: “${newest.notIndependentVerification}”`
           : null}
@@ -269,8 +268,8 @@ export function ChecksRunSection({
           {grouped.stale === 1
             ? "One earlier record"
             : `${grouped.stale} earlier records`}{" "}
-          named this claim but ran against other evidence and is not shown with
-          this submission.
+          named this submission but ran against different evidence. It is not
+          shown with this one.
         </p>
       ) : null}
       {grouped.misattributed > 0 ? (
@@ -281,7 +280,8 @@ export function ChecksRunSection({
           {grouped.misattributed === 1
             ? "One other record"
             : `${grouped.misattributed} other records`}{" "}
-          carried this claim id under another mandate and is not counted here.
+          carried this submission's ID under another work area. It is not
+          counted here.
         </p>
       ) : null}
       {coverage === "partial" ? <CoverageNote extra /> : null}
@@ -289,13 +289,13 @@ export function ChecksRunSection({
         className="mt-1 text-xs text-muted-foreground"
         data-testid="work-check-runs-tally"
       >
-        What the newest run's checks add up to: {counts.passed} passed ·{" "}
-        {counts.failed} failed · {counts.timedOut} timed out · {counts.notRun}{" "}
-        not run · {counts.auxiliary} extra · {counts.contradicted}{" "}
-        self-contradicted.{" "}
+        Totals for the newest run: {counts.passed} passed · {counts.failed}{" "}
+        failed · {counts.timedOut} timed out · {counts.notRun} not run ·{" "}
+        {counts.auxiliary} extra · {counts.contradicted} contradicting
+        themselves.{" "}
         {newest.summaryConsistent
-          ? "The record's own summary matches that."
-          : "The record's own summary does NOT match: the counts above are worked out from the checks list, and the claimed summary is not trusted."}
+          ? "The record's own summary agrees."
+          : "The record's own summary does NOT agree. The totals above are counted from the list of checks, and the record's summary is not trusted."}
       </p>
       <ul className="mt-1 flex flex-col gap-1">
         {boundChecks.map((check) => (
@@ -307,17 +307,17 @@ export function ChecksRunSection({
               {check.name}{" "}
               <span className="text-xs text-muted-foreground">
                 {check.selfContradicted
-                  ? `The record says passed but it exited ${check.exitStatus} — treat it as neither pass nor evidence; it is counted as self-contradicted`
+                  ? `The record says passed, but the check ended with exit code ${check.exitStatus}. Treat it as neither a pass nor evidence; it counts as contradicting itself`
                   : statusLabel(check.status)}
                 {check.exitStatus !== null && !check.selfContradicted
-                  ? ` · exited ${check.exitStatus}`
+                  ? ` · exit code ${check.exitStatus}`
                   : ""}
               </span>
             </p>
             {check.argv.length > 0 ? (
               <p className="break-words text-2xs text-muted-foreground">
                 {check.argv.join(" ")}
-                {check.argvCut ? " …(more arguments than the page holds)" : ""}
+                {check.argvCut ? " …(more than this page shows)" : ""}
               </p>
             ) : null}
             {check.notRunReason ? (
@@ -341,7 +341,7 @@ export function ChecksRunSection({
         {extra.length > 0 ? (
           <li className="mt-1" data-testid="work-check-runs-auxiliary">
             <p className="text-xs font-medium text-muted-foreground">
-              Other checks (outside the accepted criteria)
+              Other checks (not part of what counts as done)
             </p>
             {extra.map((check) => (
               <p
@@ -350,8 +350,8 @@ export function ChecksRunSection({
               >
                 {check.name} · {statusLabel(check.status)} ·{" "}
                 {criterionOf(check, claim) === "none"
-                  ? "no criterion was recorded for it anyway"
-                  : "its criterion hash is not what this claim commits to, so it counts as extra"}
+                  ? "nothing was recorded about what it checks, anyway"
+                  : "what it checks is not what this submission recorded, so it counts as extra"}
               </p>
             ))}
           </li>
@@ -390,10 +390,10 @@ function SandboxNote({ record }: { record: CheckRunRecord }) {
       data-testid="work-check-runs-sandbox"
     >
       {record.sandboxClaim === "enforced"
-        ? "The publisher reports the checks were confined (sandbox: enforced). That is their report, not a remote check — the page cannot attest the container. It does not say the work is good: only your verdict does."
+        ? "The publisher says the checks ran in a protected space. That is their report, and this page cannot confirm it. It does not say the work is good: only your verdict does."
         : record.sandboxClaim === "unchecked"
-          ? "The record's own sandbox report says the checks were not verified as confined (sandbox: unchecked) — as far as this record says, the checks ran unconfined, or did not run at all. Whatever it lists as passed is the publisher's word; read the output yourself."
-          : "The record says nothing certain about confinement (no sandbox claim attached), so the checks may have run unconfined. Whatever it lists as passed is the publisher's word; read the output yourself."}
+          ? "The record says the checks were not confirmed to run in a protected space, so they may have run without protection, or not at all. Whatever it lists as passed is the publisher's word; read the output yourself."
+          : "The record does not say whether the checks ran in a protected space, so they may have run without protection. Whatever it lists as passed is the publisher's word; read the output yourself."}
     </p>
   );
 }
@@ -407,7 +407,7 @@ function ModelBlock({ record }: { record: CheckRunRecord }) {
       data-testid="work-check-runs-model"
     >
       <p className="text-xs font-medium text-muted-foreground">
-        Model interpretation — commentary only
+        AI commentary: opinion only
       </p>
       <p className="mt-1 break-words whitespace-pre-wrap text-xs">
         {record.model.summary}

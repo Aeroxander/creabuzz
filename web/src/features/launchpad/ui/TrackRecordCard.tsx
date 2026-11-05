@@ -101,7 +101,7 @@ function TxRef({
   if (!txOk) {
     return (
       <span className="break-all text-amber-700 dark:text-amber-300">
-        tx {truncatePubkey(tx)} (malformed, not linkable)
+        confirmation ID {truncatePubkey(tx)} (unreadable, no link)
       </span>
     );
   }
@@ -110,7 +110,7 @@ function TxRef({
     return (
       <span
         className="break-all text-black/60 dark:text-white/60"
-        title="This network has no public page for transactions, so only its id is shown."
+        title="Only the record's ID is shown. Keep it if you need to look the record up later."
       >
         {truncatePubkey(tx)}
       </span>
@@ -175,21 +175,21 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
     <Card className="p-4" data-testid="launch-track-record">
       <h2 className="text-base font-semibold">Track record</h2>
       <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-        What the feed has actually recorded: milestone verdicts and claims (the
-        verdict word is <code>approve</code> or <code>reject</code>), settlement
-        receipts with their tx, and the community's contribution reviews. These
-        are outcomes, not a rating. Each figure can be traced to what it was
-        counted from, and a check that cannot be made says so.
+        What has actually been recorded: milestone verdicts and submissions (the
+        verdict is <code>approve</code> or <code>reject</code>), payment
+        receipts with their confirmation IDs, and the community's contribution
+        reviews. These are outcomes, not a rating. Each figure can be traced to
+        what it was counted from, and a check that cannot be made says so.
       </p>
 
       {state === "empty" ? (
         <div className="mt-3" data-testid="track-record-empty">
           <p className="text-sm">{EMPTY_TRACK_RECORD_COPY}</p>
           <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-            Strengthen your proof line: record a milestone claim or a verdict
-            from the launch's Manage tab and it appears here with its settlement
-            tx. The chain remains the ledger. This card only repeats what the
-            feed says.
+            To build your track record, record a milestone submission or a
+            verdict from the project's Manage tab. It then appears here with its
+            confirmation ID. The network's public record is the source of truth;
+            this card only repeats it.
           </p>
         </div>
       ) : (
@@ -203,7 +203,7 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
         <h3 className="text-sm font-semibold">Milestone timeline</h3>
         {record.timeline.length === 0 ? (
           <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-            No milestone verdicts or claims on this launch.
+            No milestone verdicts or submissions on this project.
           </p>
         ) : (
           <ol className="mt-2 flex flex-col gap-3">
@@ -225,22 +225,22 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
                     }`}
                   >
                     {entry.settled
-                      ? "settled on-chain"
+                      ? "settled on the network"
                       : entry.verdicts.length > 0
                         ? "verdict recorded, not settled"
-                        : "claim recorded, awaiting verdict"}
+                        : "submission recorded, awaiting verdict"}
                   </span>
                 </div>
                 {entry.claim ? (
                   <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-black/60 dark:text-white/60">
                     <span>
-                      Claim by {names(entry.claim.author)} ·{" "}
+                      Submitted by {names(entry.claim.author)} ·{" "}
                       {relativeTime(entry.claim.createdAt)}
                     </span>
                     <span className="break-all">
                       {entry.claim.evidenceOk && entry.claim.evidenceHash
                         ? `evidence ${entry.claim.evidenceHash.slice(0, 12)}…`
-                        : "evidence hash missing or malformed"}
+                        : "evidence fingerprint missing or unreadable"}
                     </span>
                     <TxRef
                       chainId={chainId}
@@ -250,8 +250,8 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
                   </p>
                 ) : (
                   <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-                    No claim mirror for this milestone. A verdict arrived
-                    without one.
+                    No submission is recorded for this milestone, but a verdict
+                    arrived without one.
                   </p>
                 )}
                 {entry.verdicts.length > 0 ? (
@@ -290,9 +290,9 @@ export function TrackRecordCard({ launch }: { launch: Launch }) {
       <section className="mt-4" aria-label="Community contributions">
         <h3 className="text-sm font-semibold">Community contributions</h3>
         <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-          Contribution records belong to the whole community, not one launch, so
-          these counts cover everyone here. When a record is updated, the newer
-          version replaces the older one instead of counting twice.
+          Contribution records belong to the whole community, not one project,
+          so these counts cover everyone here. When a record is updated, the
+          newer version replaces the older one instead of counting twice.
         </p>
         {community.isPending ? (
           <p className="mt-2 text-xs text-black/60 dark:text-white/60">

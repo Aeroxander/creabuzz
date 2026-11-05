@@ -26,7 +26,7 @@ export function isTxHash(value: string): boolean {
 
 /** The one wording the field and the handlers use for a bad tx hash. */
 export const TX_HASH_HINT =
-  "Settlement tx hash must be 0x followed by 64 hex characters.";
+  "The confirmation ID must be 0x followed by 64 letters and digits (0 to 9 and a to f).";
 
 /** Tags + content of a milestone claim mirror (47005, `kind=claim`). */
 export function claimReceiptParts(input: {

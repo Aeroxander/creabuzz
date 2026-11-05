@@ -101,8 +101,8 @@ export function AwardHelp({
         data-testid="work-award-agreed"
       >
         {awardCheck === true
-          ? "This work was agreed in advance, so its exact quantity settles from the agreement, not from a vote."
-          : "Could not check whether this work was agreed in advance, so no award vote is offered here. Refresh the page to check."}
+          ? "This work was agreed in advance, so its exact number of Shares comes from the agreement, not from a vote."
+          : "Couldn't check whether this work was agreed in advance, so no award vote is offered here. Refresh the page to check again."}
       </p>
     );
   }
@@ -111,8 +111,8 @@ export function AwardHelp({
       className="mt-2 text-xs text-muted-foreground"
       data-testid="work-award-help"
     >
-      This work carries no agreed reward: awarding Shares for it is a
-      discretionary decision the DAO votes on.{" "}
+      This work has no agreed reward. Awarding Shares for it is a judgment call
+      that the project votes on.{" "}
       {onOpenDecisions ? (
         <button
           className="underline"
@@ -185,8 +185,8 @@ export function AgreedBindNote({ show }: { show: boolean }) {
   if (!show) return null;
   return (
     <p className="text-xs text-muted-foreground" data-testid="work-agreed-bind">
-      This submission belongs to an agreed reward; its beneficiary binds it from
-      the agreement above.
+      This submission belongs to an agreed reward. The person named in the
+      agreement above links it to that agreement.
     </p>
   );
 }

@@ -50,7 +50,7 @@ export function MilestoneSummaryCard({
       </p>
       <p className="mt-1 text-sm" data-testid="launch-milestone-rule">
         {kind === "challenge" && lock
-          ? `How they are judged: holders can object. The team publishes evidence and posts a bond; its Shares unlock after the objection period (${span(lock.terms.window)} to start with, longer for a bigger milestone or a retry) unless holders successfully challenge the claim. Milestones go in order, each only once the one before has had its time for late objections.`
+          ? `How they are judged: holders can object. The team publishes evidence and posts a bond; its Shares unlock after the objection period (${span(lock.terms.window)} to start with, longer for a bigger milestone or a retry) unless holders object successfully. Milestones go in order, each only once the one before has had its time for late objections.`
           : kind === "panel"
             ? "How they are judged: named reviewers read the evidence and approve each milestone, and a waiting period follows in which anyone can object."
             : kind === "unreadable"

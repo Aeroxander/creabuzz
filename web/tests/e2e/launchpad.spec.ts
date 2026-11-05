@@ -980,7 +980,7 @@ test("a recorded verdict renders a timeline bound to its claim and derivation", 
   await expect(milestone).toHaveCount(1);
   await expect(milestone).toContainText("milestone-1");
   await expect(milestone).toContainText("approve");
-  await expect(milestone).toContainText("settled on-chain");
+  await expect(milestone).toContainText("settled on the network");
   await expect(milestone).toContainText("efef");
 });
 

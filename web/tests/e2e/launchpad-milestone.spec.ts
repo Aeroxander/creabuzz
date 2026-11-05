@@ -455,7 +455,7 @@ test("the founder sees what is locked, unlocks the first milestone with one clic
   );
   // It says what the lock does not do, so nobody mistakes it for a promise about the treasury.
   await expect(watcher.getByTestId("milestones-limits")).toContainText(
-    "Holders can still vote to spend the treasury",
+    "Holders can still vote to spend the project's money",
   );
   await expect(watcher.getByTestId("milestones-summary")).toContainText(
     "1 of 2 milestones reached",

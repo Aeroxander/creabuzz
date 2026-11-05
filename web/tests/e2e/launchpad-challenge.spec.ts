@@ -337,7 +337,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   // this flow lives; the assertion checks what the note *means* (publishing is
   // not open yet), not a paraphrase of it.
   await expect(founder.getByTestId("challenge-publish-note-0")).toContainText(
-    "Publishing opens once buyers can claim",
+    "Publishing opens once buyers can collect",
     { timeout: 30_000 },
   );
   await expect(founder.getByTestId("challenge-publish-0")).toHaveCount(0);
@@ -782,7 +782,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   // The milestone says so afterwards, instead of only "Unlocked".
   await openMilestones(backerTwo);
   await expect(backerTwo.getByTestId("challenge-headline-0")).toContainText(
-    "holders upheld it: the team's remaining locked Shares were burned",
+    "holders agreed: the team's remaining locked Shares were destroyed",
   );
   await openMilestones(founder);
   await expect(founder.getByTestId("challenge-summary")).toContainText(

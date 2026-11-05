@@ -346,7 +346,7 @@ test("a contributor project's page names what it is, sells nothing, and shows wh
   const story = people.nth(0).getByTestId("contribution-award-story").first();
   await expect(story).toContainText("Date not read");
   await expect(story).toContainText(
-    "Its evidence is on the Work tab with the claim.",
+    "Its evidence is on the Work tab with the submission.",
   );
   // A network with no public transaction page shows no transaction id in the story (a bare hash tells people nothing).
   await expect(story.getByTestId("tx-link")).toHaveCount(0);
