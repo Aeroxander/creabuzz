@@ -57,6 +57,23 @@ is public addresses only, and it is the one manifest in that folder git does not
 0.05 ETH, at 20 gwei about 0.95 ETH; on a quiet day Sepolia's gas price is far below 1 gwei. The rehearsal prints the figure
 for the day you run it: fund the deployer with that plus a margin from a Sepolia faucet. Test ETH has no price.
 
+**Gas on the live network is several times what the rehearsal shows (found 5 Nov 2026).** The rehearsal runs on a local fork
+with older gas rules. On live Sepolia the node priced creating the treasury-mandate factory at about 76.7 million gas, against
+about 13 million on the fork. A first real deploy with the script's plain settings ran every transaction out of gas and cost
+about 0.046 ETH for nothing. What worked, at a total cost of 0.00034 ETH (Sepolia's base fee is a few wei, so a 1 gwei tip
+is the whole cost; a tip of 0.001 gwei was included without delay):
+
+```bash
+SEPOLIA_FORGE_ARGS='--skip-simulation --slow --with-gas-price 3000000 --priority-gas-price 1000000' \
+  scripts/sepolia-deploy.sh --broadcast
+```
+
+`--skip-simulation` uses the node's own gas estimate, `--slow` sends each transaction after the one before it is confirmed
+(the later contracts need the earlier ones to exist), and the two price flags cap what the tool reserves up front.
+Budget for this before a mainnet deploy: contract creation may cost several times what the local tests measure, and a
+transaction may now ask for more than the old 16,777,216 cap. The deployed addresses are in
+`contracts/deployments/dao-launch-kit-11155111.json`.
+
 ## 2. Host the server
 
 The server is the existing relay, run from the Creaton stack in `deploy/compose` (its README, "Creaton", has the steps;

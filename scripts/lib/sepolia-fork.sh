@@ -48,10 +48,13 @@ sepolia_fork_up() { # <fork url> <port> <log file>
   fail "the fork did not come up as Sepolia"
 }
 
+# SEPOLIA_FORGE_ARGS (optional) is added to the forge script call. A real deploy on Sepolia needs it: since the network's
+# gas repricing the node asks several times what a local fork does for the same contract, so pass --skip-simulation (use
+# the node's own estimate) and a small --priority-gas-price. Left unset, the call is the rehearsal's.
 sepolia_deploy_kits() { # <rpc> <key> <log file>
   local rpc="$1" key="$2" log="$3"
   (cd "$_SEPOLIA_REPO/contracts" && FOUNDRY_LINT_LINT_ON_BUILD=false forge build >/dev/null) || fail "forge build failed"
-  (cd "$_SEPOLIA_REPO/contracts" && PRIVATE_KEY="$key" forge script script/DeployLaunchKit.s.sol --rpc-url "$rpc" --broadcast >"$log" 2>&1) \
+  (cd "$_SEPOLIA_REPO/contracts" && PRIVATE_KEY="$key" forge script script/DeployLaunchKit.s.sol --rpc-url "$rpc" --broadcast ${SEPOLIA_FORGE_ARGS:-} >"$log" 2>&1) \
     || { tail -40 "$log"; fail "forge script failed"; }
   [[ -f "$SEPOLIA_MANIFEST" ]] || fail "the deploy wrote no manifest ($SEPOLIA_MANIFEST)"
 }
@@ -69,7 +72,7 @@ sepolia_deploy_gas() {
     const receipts = run.receipts ?? [];
     const gas = receipts.reduce((sum, r) => sum + BigInt(r.gasUsed), 0n);
     const largest = (run.transactions ?? []).reduce((max, t) => {
-      const limit = BigInt(t.transaction.gas);
+      const limit = BigInt(t.transaction.gas ?? 0);
       return limit > max ? limit : max;
     }, 0n);
     console.log(`${gas} ${receipts.length} ${largest}`);
