@@ -38,7 +38,6 @@ import {
   settleNoticeLine,
   SLOW_REFRESH_MS,
   staleReadLine,
-  shareUnits,
   stepAtLeast,
   stepAtMost,
   tokenUnreadableLine,
@@ -179,7 +178,7 @@ test("money, lots and Shares read as plain figures", () => {
   assert.equal(money(1_064_000n, USDC), "1.064 USDC");
   assert.equal(lots(1n), "1 lot");
   assert.equal(lots(3n), "3 lots");
-  assert.equal(shareUnits(LOT), "100");
+  assert.equal(copy.sharesPhrase(LOT), "100 Shares");
 });
 
 test("a price is written at the quote token's own scale, whatever its decimals", () => {
@@ -204,7 +203,7 @@ test("a price is written at the quote token's own scale, whatever its decimals",
   );
   assert.equal(
     listingDetailLine(wideListing, E18, FQ),
-    "A lot is 1 Shares. Each step is 1 FQ apart.",
+    "A lot is 1 Share. Each step is 1 FQ apart.",
   );
   assert.equal(
     roundLine(wideRound({ phase: "settled", settled: true, matched: 2n }), FQ),
@@ -1564,4 +1563,110 @@ test("a round still open under a listing the DAO switched off does not say order
     roundLine(round({ phase: "settling" }), USDC, false),
     roundLine(round({ phase: "settling" }), USDC),
   );
+});
+
+// ---- B17: plain-words disclosures, precision, plurals, time zones ---------------------------------------------------
+
+test("Shares are counted in full precision and in the right number", () => {
+  // The default lot is one whole Share: singular, not "1 Shares".
+  assert.equal(copy.sharesPhrase(E18), "1 Share");
+  assert.equal(copy.sharesPhrase(LOT), "100 Shares");
+  assert.equal(copy.sharesPhrase(3n * E18 + E18 / 2n), "3.5 Shares");
+  assert.equal(copy.sharesPhrase(0n), "0 Shares");
+  // A unit under the old four-decimal cut still shows what really moves.
+  assert.equal(copy.sharesPhrase(10n ** 13n), "0.00001 Shares");
+  assert.equal(copy.sharesPhrase(E18 + 10n ** 13n), "1.00001 Shares");
+  assert.equal(copy.sharesPhrase(1n), "0.000000000000000001 Shares");
+  // The sentences built on it carry the same words.
+  assert.equal(lotSizeLine(E18), "A lot is 1 Share.");
+  assert.equal(lotSizeLine(10n ** 13n), "A lot is 0.00001 Shares.");
+  assert.match(
+    sellPlanLine(
+      round(),
+      { lots: 2n, level: 6 },
+      { ...SELL_USDC, lotSize: 10n ** 13n },
+    ),
+    /This holds 2 lots \(0\.00002 Shares\) until/,
+  );
+  assert.match(
+    sellPlanLine(
+      round(),
+      { lots: 1n, level: 6 },
+      { ...SELL_USDC, lotSize: E18 },
+    ),
+    /This holds 1 lot \(1 Share\) until/,
+  );
+  assert.equal(
+    sellRoomLine(funds({ saleCapacity: E18, shares: E18 }), E18),
+    "You can offer up to 1 lot now (1 Share).",
+  );
+});
+
+test("the buttons that collect Shares use the same count words", () => {
+  for (const file of ["../ui/TradingCard.tsx", "../ui/TradingEarlier.tsx"]) {
+    const source = read(file);
+    assert.match(source, /Collect \$\{sharesPhrase\(due\.shares\)\}/, file);
+    assert.doesNotMatch(source, /\) \}\s*Shares`/, file);
+    assert.doesNotMatch(source, /shareUnits\(/, file);
+  }
+  const form = read("../ui/TradingListingForm.tsx");
+  assert.doesNotMatch(form, /one lot of \$\{formatUnits/);
+});
+
+test("dates name their time zone", () => {
+  const withZone = /\d{1,2}:\d{2} [AP]M (UTC|GMT[+-]?\d*|[A-Z]{2,5})\b/;
+  assert.match(roundLine(round(), USDC), withZone);
+  assert.match(roundLine(round({ phase: "settling" }), USDC), withZone);
+  assert.match(nextRoundLine(OCT_14 + 7 * 86_400), withZone);
+});
+
+test("one always-visible line says trading does not fund the project or promise anything", () => {
+  assert.equal(
+    copy.NOT_FUNDING_LINE,
+    "Selling and buying here moves existing Shares between holders. It does not fund the project and does not promise a buyer, a price or a return.",
+  );
+  const card = read("../ui/TradingCard.tsx");
+  const at = card.indexOf("{NOT_FUNDING_LINE}");
+  assert.ok(at > 0, "the card must render the line");
+  // Not inside a collapsed disclosure: no MoreInfo is open between the last opening and the line.
+  const before = card.slice(0, at);
+  assert.ok(
+    before.lastIndexOf("<MoreInfo") === -1 ||
+      before.lastIndexOf("</MoreInfo>") > before.lastIndexOf("<MoreInfo"),
+    "the line must sit outside every MoreInfo",
+  );
+});
+
+test("a buyer is told what bought Shares are before bidding", () => {
+  const notes = copy.buyerNotes().join(" ");
+  assert.match(notes, /cannot be sent to anyone/);
+  assert.match(notes, /only offer them again in a later round/);
+  assert.match(notes, /can give out more Shares as pay/);
+  assert.match(notes, /lower/);
+  assert.match(notes, /get back less than you paid/);
+  assert.match(notes, /large share of the vote/);
+  // The vote delay comes from the one constant.
+  assert.ok(
+    [...copy.buyerNotes(), ...tradingLimits()].some((l) =>
+      l.includes(`(${copy.voteDelayDays()})`),
+    ),
+  );
+  assert.doesNotMatch(
+    notes,
+    /escrow|Payouts\.sol|kind \d|NIP|ActivationVoting|fee/i,
+  );
+  assert.equal(new Set(copy.buyerNotes()).size, copy.buyerNotes().length);
+  assert.match(read("../ui/TradingCard.tsx"), /buyerNotes\(\)/);
+});
+
+test("the offer and bid previews say what is paid and when Shares arrive", () => {
+  const plan = { lots: 3n, level: 6 };
+  const sellLine = sellPlanLine(round(), plan, SELL_USDC);
+  assert.match(
+    sellLine,
+    /round's single price for each lot that sells, never below your lowest price/,
+  );
+  const bidLine = bidPlanLine(round(), plan, USDC);
+  assert.match(bidLine, /Nothing may fill/);
+  assert.match(bidLine, /Bought Shares are collected in a separate step/);
 });

@@ -8,12 +8,15 @@
 
 import { useMemo, useState } from "react";
 
-import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import { listingPrice } from "@creaton/core/launchpad/secondaryListing.ts";
 import { SelectField, TextField } from "./decision-fields";
 import { type DraftResult, DraftPanel, type FormProps } from "./decision-forms";
 import { listingFormDraft } from "../lib/listing-draft";
-import { LISTING_OFF_HINT, unreviewedLine } from "../lib/trading-copy";
+import {
+  LISTING_OFF_HINT,
+  sharesPhrase,
+  unreviewedLine,
+} from "../lib/trading-copy";
 import { useSecondary } from "../use-secondary";
 import { QuoteTokenNote } from "./QuoteTokenNote";
 
@@ -59,7 +62,7 @@ export function TradingListingForm({
       : `${listingPrice(value, decimals)} ${symbol ?? ""}`.trim();
   const lot =
     lotSize !== null
-      ? `one lot of ${formatUnits(lotSize, 18)} Shares`
+      ? `one lot of ${sharesPhrase(lotSize)}`
       : "one whole lot of Shares";
 
   const market = view?.market ?? null;

@@ -25,6 +25,7 @@ import {
   quoteIdentityLine,
   quoteMismatchLine,
   shortToken,
+  sharesPhrase,
 } from "@creaton/core/launchpad/secondaryListing.ts";
 import {
   type EarlierRound,
@@ -47,8 +48,10 @@ export interface QuoteUnits {
 }
 
 export {
+  NOT_FUNDING_LINE,
   quoteDiffersFromSale,
   quoteIdentityLine,
+  sharesPhrase,
   shortToken,
 } from "@creaton/core/launchpad/secondaryListing.ts";
 
@@ -108,6 +111,7 @@ const date = (seconds: number) =>
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZoneName: "short",
   });
 
 /** A round's day without the time: when its offers closed, which is when its price was set. */
@@ -129,9 +133,6 @@ export const money = (units: bigint, quote: QuoteUnits) =>
 /** Whole lots, in words: "1 lot", "3 lots". */
 export const lots = (count: bigint) =>
   `${count.toString()} ${count === 1n ? "lot" : "lots"}`;
-
-/** Shares base units, trimmed: what one lot or one order holds. */
-export const shareUnits = (units: bigint) => formatUnits(units, 18, 4);
 
 /** This build names no market factory on this network, so there is nothing to read. */
 export function factoryMissingLine(): string {
@@ -245,7 +246,7 @@ export function lotPriceLine(
 
 /** What one lot is, so a price per lot means something: the market's own bundle of Shares. */
 export function lotSizeLine(lotSize: bigint): string {
-  return `A lot is ${shareUnits(lotSize)} Shares.`;
+  return `A lot is ${sharesPhrase(lotSize)}.`;
 }
 
 /** The listing's two concrete units: how big a lot is, and how far apart the grid's steps sit. */
@@ -432,7 +433,7 @@ export function sellRoomLine(funds: WalletFunds, lotSize: bigint): string {
     const more = locked
       ? " Some of your Shares are not yet released for sale under the project's sale schedule. They become offerable as the schedule runs."
       : "";
-    return `You can offer up to ${lots(room)} now (${shareUnits(room * lotSize)} Shares).${more}`;
+    return `You can offer up to ${lots(room)} now (${sharesPhrase(room * lotSize)}).${more}`;
   }
   if (funds.shares < lotSize) {
     return funds.shares === 0n
@@ -625,6 +626,14 @@ const VOTE_DELAY_LINE = `Shares you buy can vote about a week (${voteDelayDays()
 const PART_FILL_LINE =
   "An offer or a bid may be filled in part, or not at all. When more is wanted on one side than the other, that side shares what trades. What isn't filled waits for you to collect it.";
 
+/** What a seller is paid: one price for the whole round, never under the seller's own lowest price. */
+const SELL_PROCEEDS_LINE =
+  "What you receive is the round's single price for each lot that sells, never below your lowest price.";
+
+/** Bought Shares and refunds do not arrive by themselves: the buyer collects them. */
+const COLLECT_SEPARATE_LINE =
+  "Bought Shares are collected in a separate step after the round settles.";
+
 /**
  * The limits of weekly trading, in plain words: what the page owes anyone deciding to trade (the secondary listing
  * spec asks that the restriction to weekly rounds and the limits are explained honestly). Shown on the card.
@@ -639,13 +648,27 @@ export function tradingLimits(): string[] {
   ];
 }
 
+/**
+ * What a person should know before buying, in plain words (the weekly rounds audit, item 9 and 10): what bought
+ * Shares can and cannot do, what can lower their value, and that a buyer can come to hold much of the vote. The vote
+ * delay is said once, in {@link tradingLimits}, from its one constant.
+ */
+export function buyerNotes(): string[] {
+  return [
+    "Shares you buy cannot be sent to anyone. You can only offer them again in a later round.",
+    "A project can give out more Shares as pay, which lowers every holder's share of the project and of the vote.",
+    "You may get back less than you paid. Nothing says a later buyer will want your Shares, or at what price.",
+    "Buying in several rounds can give one buyer a large share of the vote.",
+  ];
+}
+
 /** What an offer holds and risks, said where the person is about to make it. */
 export function sellPlanLine(
   round: Pick<RoundView, "minPrice" | "step" | "levels">,
   plan: { lots: bigint; level: number },
   units: SellUnits,
 ): string {
-  return `This holds ${lots(plan.lots)} (${shareUnits(sellHolds(plan.lots, units.lotSize))} Shares) until the round settles. ${lotPriceLine(round, plan.level, units)}. ${HELD_LINE} ${PART_FILL_LINE}`;
+  return `This holds ${lots(plan.lots)} (${sharesPhrase(sellHolds(plan.lots, units.lotSize))}) until the round settles. ${lotPriceLine(round, plan.level, units)}. ${SELL_PROCEEDS_LINE} ${HELD_LINE} ${PART_FILL_LINE}`;
 }
 
 /** What a bid holds and risks, said where the person is about to make it. */
@@ -654,7 +677,7 @@ export function bidPlanLine(
   plan: { lots: bigint; level: number },
   quote: QuoteUnits,
 ): string {
-  return `This bid holds ${money(bidHolds(round, plan.lots, plan.level), quote)} until the round settles. You pay the round's price, never more than yours, and get back the rest. ${lotPriceLine(round, plan.level, quote)}. ${PART_FILL_LINE} ${VOTE_DELAY_LINE}`;
+  return `This bid holds ${money(bidHolds(round, plan.lots, plan.level), quote)} until the round settles. You pay the round's price, never more than yours, and get back the rest. ${lotPriceLine(round, plan.level, quote)}. Nothing may fill, and then all of this is yours to collect again. ${COLLECT_SEPARATE_LINE} ${PART_FILL_LINE} ${VOTE_DELAY_LINE}`;
 }
 
 /**

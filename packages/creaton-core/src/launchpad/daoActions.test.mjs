@@ -694,6 +694,18 @@ test("a secondary listing is one call to the DAO's market, as cast encodes it", 
   );
 });
 
+test("a listing vote says trading does not fund the project or promise liquidity, and counts a one-Share lot in the singular", () => {
+  const open = secondaryListingDecision(LISTING);
+  assert.ok(
+    open.lines.includes(
+      "Selling and buying here moves existing Shares between holders. It does not fund the project and does not promise a buyer, a price or a return.",
+    ),
+    open.lines.join(" | "),
+  );
+  const one = secondaryListingDecision({ ...LISTING, lotSize: WAD });
+  assert.match(one.title, /^Open a market for 1 Share between/);
+});
+
 test("a listing says what one price buys, and turning it off says what carries on", () => {
   const open = secondaryListingDecision(LISTING);
   assert.equal(

@@ -29,7 +29,7 @@ import {
   earlierRoundLine,
   collectQuoteLabel,
   olderFailedLine,
-  shareUnits,
+  sharesPhrase,
 } from "../lib/trading-copy";
 import {
   mergeOlderRounds,
@@ -227,7 +227,7 @@ function EarlierRow({
           >
             {busy === sharesKey
               ? "Collecting…"
-              : `Collect ${shareUnits(due.shares)} Shares`}
+              : `Collect ${sharesPhrase(due.shares)}`}
           </Button>
         ) : null}
         {due.quote > 0n ? (

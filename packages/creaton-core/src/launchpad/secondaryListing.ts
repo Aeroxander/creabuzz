@@ -33,6 +33,19 @@ const MAX_LEVELS = 64;
 /** Shares carry 18 decimals everywhere in the kit, so a lot size is read with them. */
 const SHARES_DECIMALS = 18;
 
+/**
+ * Shares base units as a count in words, at full precision with trailing zeros trimmed, so an amount the market really
+ * moves never reads as "0 Shares" and a whole one reads "1 Share", not "1 Shares".
+ */
+export function sharesPhrase(units: bigint): string {
+  const one = 10n ** BigInt(SHARES_DECIMALS);
+  return `${formatUnits(units, SHARES_DECIMALS, SHARES_DECIMALS)} ${units === one ? "Share" : "Shares"}`;
+}
+
+/** What trading is and is not, in plain words: said wherever a person is asked to take part in or vote on a market. */
+export const NOT_FUNDING_LINE =
+  "Selling and buying here moves existing Shares between holders. It does not fund the project and does not promise a buyer, a price or a return.";
+
 /** The start and end of a token address: enough to recognise it, never enough to prove it (see {@link quoteDiffersFromSale}). */
 export function shortToken(address: string): string {
   const lower = address.trim().toLowerCase();
@@ -199,9 +212,7 @@ function words(input: {
     };
   }
   const symbol = input.quoteSymbol ? ` ${input.quoteSymbol}` : "";
-  const lot = input.lotSize
-    ? ` for ${formatUnits(input.lotSize, SHARES_DECIMALS)} Shares`
-    : "";
+  const lot = input.lotSize ? ` for ${sharesPhrase(input.lotSize)}` : "";
   const step = (terms.maxPrice - terms.minPrice) / BigInt(terms.levels);
   // The token is named in full: a voter is agreeing to this token, and a short form can be forged.
   const token = input.quoteToken;
@@ -222,6 +233,7 @@ function words(input: {
       "A round opens when anyone asks, at least a week after the last one, and keeps the terms it opened with: a later change never reaches a round already open.",
       "Buyers pay into the market, and sellers' Shares are held by it until the round settles or goes void; claims then pay each side what it is owed.",
       "The DAO itself never sells in it.",
+      NOT_FUNDING_LINE,
     ],
   };
 }

@@ -37,6 +37,7 @@ import {
 
 import {
   bidOrderLine,
+  buyerNotes,
   cardMode,
   claimDue,
   collectQuoteLabel,
@@ -44,11 +45,12 @@ import {
   factoryMissingLine,
   failureStands,
   listingDetailLine,
+  NOT_FUNDING_LINE,
   nextRoundChip,
   roundLine,
   sellOrderLine,
   settleNoticeLine,
-  shareUnits,
+  sharesPhrase,
   shownTerms,
   staleReadLine,
   tokenUnreadableLine,
@@ -216,6 +218,9 @@ function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
               </button>
             </p>
           ) : null}
+          <p className="mt-1 text-sm" data-testid="trading-not-funding">
+            {NOT_FUNDING_LINE}
+          </p>
           <MoreInfo label="How trading works" testId="trading-how">
             Sellers offer Shares they already hold, in whole lots at a lowest
             price, and buyers bid for whole lots at a highest one, for three
@@ -229,6 +234,13 @@ function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
           <MoreInfo label="Before you trade" testId="trading-limits">
             <ul className="list-disc pl-4">
               {tradingLimits().map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </MoreInfo>
+          <MoreInfo label="Before you buy" testId="trading-buyer-notes">
+            <ul className="list-disc pl-4">
+              {buyerNotes().map((line) => (
                 <li key={line}>{line}</li>
               ))}
             </ul>
@@ -575,7 +587,7 @@ function TradingRound({
               >
                 {busy === "trading-claim-shares"
                   ? "Collecting…"
-                  : `Collect ${shareUnits(due.shares)} Shares`}
+                  : `Collect ${sharesPhrase(due.shares)}`}
               </Button>
             ) : null}
             {due.quote > 0n ? (

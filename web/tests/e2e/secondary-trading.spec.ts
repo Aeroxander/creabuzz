@@ -388,7 +388,7 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   );
   // The terms as the card reads them off the chain: one Share a lot, one whole token of quote apart.
   await expect(founder.getByTestId("trading-listing")).toContainText(
-    "A lot is 1 Shares.",
+    "A lot is 1 Share.",
   );
   await expect(founder.getByTestId("trading-listing")).toContainText(
     `Each step is 1 ${QUOTE_SYMBOL} apart.`,
@@ -903,7 +903,7 @@ test("a settled round where the offer and the bid never cross says nothing trade
   );
   expect(await callWord(MARKET, `${SIG.sharesIn}${word(3n)}`)).toBe(WAD);
   await expect(founder.getByTestId("trading-claim-shares")).toContainText(
-    "Collect 1 Shares",
+    "Collect 1 Share",
   );
   await expect(founder.getByTestId("trading-claim-quote")).toHaveCount(0);
   await activateByKeyboardAndKeepFocus(founder, "trading-claim-shares");
@@ -1259,7 +1259,7 @@ test("trading by keyboard and screen reader: focus follows the form, Enter sends
   // A decimal comma is accepted, and the valid plan is said in the same region.
   await founder.getByTestId("trading-sell-price").fill("1,05");
   await expect(founder.getByTestId("trading-sell-plan-problem")).toHaveCount(0);
-  await expect(live).toContainText("This holds 1 lot (1 Shares)");
+  await expect(live).toContainText("This holds 1 lot (1 Share)");
   await expect(founder.getByTestId("trading-sell-price")).not.toHaveAttribute(
     "aria-invalid",
     "true",
