@@ -261,7 +261,7 @@ export function OnboardingDialog({
         setError(
           failureWords(
             e,
-            "Your wallet did not sign in. Open your wallet, approve the request, then try again.",
+            "Your wallet app did not sign you in. Open it, approve the request, then try again.",
           ),
         );
         setSaving(false);
@@ -420,7 +420,7 @@ export function OnboardingDialog({
             data-testid="onboarding-wallet"
           >
             <Wallet className="h-4 w-4" />
-            Use my wallet instead
+            Use a wallet app instead
           </button>
         ) : null}
         {error ? (

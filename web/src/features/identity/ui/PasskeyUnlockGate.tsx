@@ -126,7 +126,7 @@ export function PasskeyUnlockGate({ children }: { children: React.ReactNode }) {
           {unlocking ? "Waiting for your passkey…" : "Sign in with passkey"}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Touch is required to unlock your account for this session.
+          Confirm with your passkey to unlock your account for this session.
         </p>
         <p
           className="mt-2 text-2xs text-black/60 dark:text-white/60"

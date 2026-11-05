@@ -26,7 +26,7 @@ export function IdentityRecoveryBanner() {
       window.location.reload();
     } catch {
       setImportError(
-        "That recovery key couldn't be imported. Check it and try again.",
+        "That recovery key didn't work. Check that you pasted all of it, then try again.",
       );
     }
   };
@@ -38,7 +38,7 @@ export function IdentityRecoveryBanner() {
       className="border-t border-black/10 px-3 py-2.5 dark:border-white/10"
     >
       <p className="text-sm text-black dark:text-white">
-        Your saved key can't be read: import your backup or start over
+        Your saved key can't be read. Paste your recovery key, or start over.
       </p>
       <form
         className="mt-2 flex flex-wrap items-center gap-1.5"
@@ -72,8 +72,8 @@ export function IdentityRecoveryBanner() {
       {confirmReset ? (
         <div className="mt-2 rounded-md border border-black/10 p-2 text-2xs dark:border-white/10">
           <p className="text-black/70 dark:text-white/70">
-            This removes the unreadable key and starts over with a new one. It
-            can't be undone.
+            This removes the key this browser can't read and gives you a new
+            account. It can't be undone.
           </p>
           <div className="mt-1.5 flex gap-1.5">
             <button

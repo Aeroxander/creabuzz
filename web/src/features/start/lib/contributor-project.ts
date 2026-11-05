@@ -438,7 +438,7 @@ export function contributorTerms(
     if (!ADDRESS_RE.test(reviewer))
       fail(
         "reviewers",
-        `"${reviewer.slice(0, 20)}" is not a wallet address (0x and 40 letters or numbers).`,
+        `"${reviewer.slice(0, 20)}" is not an account address (0x and 40 letters or numbers).`,
       );
     if (reviewer.toLowerCase() === ZERO)
       fail("reviewers", "A reviewer cannot be the empty address.");

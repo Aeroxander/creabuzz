@@ -177,7 +177,7 @@ export async function signInWithWallet(
       Number.parseInt(connectedChain, 16) !== chain
     ) {
       throw new Error(
-        `Switch your wallet to chain ${chain}, then link it again.`,
+        `Switch your wallet to network ${chain}, then connect it again.`,
       );
     }
   }
@@ -247,12 +247,12 @@ export async function signInWithWallet(
       ).state !== "verified"
     ) {
       throw new Error(
-        "The wallet signature did not match your account. Sign with an ordinary wallet, not a smart-contract one.",
+        "Your wallet's approval did not match your account. Use a standard wallet app, not a contract-based one, then try again.",
       );
     }
     if (existingUserPubkey() !== login.pubkey || relayWsUrl() !== relay)
       throw new Error(
-        "Your account or community changed while signing. Try again.",
+        "Your account or community changed while you were approving. Try again.",
       );
     // The public proof is valid independently of SIWE membership. Retain it
     // even if registration or publication fails, so the owner can retry it.

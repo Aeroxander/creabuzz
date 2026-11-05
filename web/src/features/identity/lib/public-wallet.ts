@@ -44,7 +44,7 @@ export async function publishPendingWalletProof(pubkey: string): Promise<void> {
   const event = readPendingWalletProof(pubkey);
   if (!event)
     throw new Error(
-      "The saved wallet proof expired or is unavailable. Link your wallet again.",
+      "The saved wallet update expired or is missing. Connect your wallet again.",
     );
   const relay = relayWsUrl();
   const storageKey = key(pubkey);
@@ -57,14 +57,14 @@ export async function publishPendingWalletProof(pubkey: string): Promise<void> {
       const proof = await signAsUser(template);
       if (proof.pubkey !== pubkey)
         throw new Error(
-          "The active signer changed. Try again from the original account.",
+          "Your account changed. Try again from the account you started with.",
         );
       return proof;
     },
   });
   if (!result.accepted)
     throw new Error(
-      result.message || "The server did not accept the wallet proof.",
+      result.message || "The server did not accept the wallet update.",
     );
   // An acknowledgement for this attempt must not erase another tab's newer update.
   const saved = window.localStorage.getItem(storageKey);

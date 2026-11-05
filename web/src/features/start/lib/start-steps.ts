@@ -59,7 +59,7 @@ export const START_STEPS: readonly StartStep[] = [
   {
     key: "run",
     title: "Run it together",
-    body: "After a raise the project becomes a DAO: owners vote on decisions, work is paid when reviewers approve it, and a public track record shows what happened.",
+    body: "After a raise the project is run by its owners: they vote on decisions, work is paid when reviewers approve it, and a public track record shows what happened.",
     action: "Try it with pretend money",
     target: { to: "/launchpad/$launchId", launchId: "nebula-sandbox" },
   },

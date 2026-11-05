@@ -45,7 +45,8 @@ export const CONTRIBUTOR_STEPS: readonly ContributorStep[] = [
 ];
 
 export const CONTRIBUTOR_STEP_LABELS: Record<ContributorStep, string> = {
-  create: "Make the project: its DAO, first work budget and work areas",
+  create:
+    "Make the project: its shared money and rules, first work budget and work areas",
   record: "Publish the project",
 };
 
@@ -205,13 +206,13 @@ async function makeProject(
   if (await fx.codeAt(dao)) {
     if (!(await kitMadeIt(job.kit, dao, fx)))
       throw new Error(
-        "this site cannot confirm that this project's kit made the DAO at the address this project would use. Nothing was sent. If you started this project a moment ago, press Try again in a minute. Otherwise discard it and start the project again: it then gets a new address.",
+        "We could not confirm that this project was made at the address we expect. Nothing was sent. If you started this project a moment ago, press Try again in a minute. Otherwise discard it and start the project again: it then gets a new address.",
       );
   } else {
     const summoner = wordAddress(await fx.call(job.kit, CALL_SUMMONER));
     if (job.expectedSummoner && summoner !== job.expectedSummoner.toLowerCase())
       throw new Error(
-        "this network's contributor kit makes a different kind of DAO from the one the app reads. Nothing was sent.",
+        "This network makes a different kind of project from the one this app reads. Nothing was sent.",
       );
     const factory = wordAddress(await fx.call(job.kit, CALL_BUDGET_FACTORY));
     const sent = await fx.send(
@@ -228,11 +229,11 @@ async function makeProject(
     createTx = sent.txHash;
     if (sent.status !== "success")
       throw new Error(
-        "the network turned the transaction down, so nothing was made. Most often another project was being set up at the same moment: try again.",
+        "The network turned the request down, so nothing was made. Most often another project was being set up at the same moment. Try again.",
       );
     if (!(await daoShows(dao, fx)))
       throw new Error(
-        `it was sent and confirmed (${sent.txHash}), but this site's view of the network does not show the DAO yet. Press Try again in a minute: it picks up the DAO once it shows, and never makes a second one.`,
+        `Your request went through (confirmation ${sent.txHash}), but this site cannot see the new project on the network yet. Press Try again in a minute: it picks the project up once it shows, and never makes a second one.`,
       );
   }
   const shares = wordAddress(await fx.call(dao, CALL_SHARES));

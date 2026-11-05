@@ -40,7 +40,9 @@ function walletProblem(error: unknown): FailureWords {
     detail: message.trim() === "" ? null : message,
   });
   if (code === 4001 || /reject|denied|declin|cancel/i.test(message)) {
-    return said("You cancelled in your wallet. Try again when you are ready.");
+    return said(
+      "You cancelled in your wallet app. Try again when you are ready.",
+    );
   }
   const words = failureWords(
     error,
@@ -48,7 +50,7 @@ function walletProblem(error: unknown): FailureWords {
   );
   if (words.detail !== null && /chain|network/i.test(message)) {
     return said(
-      "Your wallet is on another network. Switch networks in your wallet, then try again.",
+      "Your wallet app is on another network. Switch networks in it, then try again.",
     );
   }
   return words;
@@ -240,7 +242,7 @@ export function PaymentWalletCard({
                 rel="noopener noreferrer"
                 target="_blank"
               >
-                View on explorer
+                View public record
               </a>
             ) : null}
             {isSelf && !pending ? (
@@ -267,7 +269,7 @@ export function PaymentWalletCard({
             : result?.state === "invalid"
               ? "This wallet could not be confirmed. Ask them to connect it again before paying."
               : result?.state === "unreachable"
-                ? "This account linked a smart account, which has to be checked on the network, and that check could not be made just now. Try again in a moment."
+                ? "This account uses a wallet that can only be checked on the network, and the check did not go through. Try again in a moment."
                 : result?.state === "revoked"
                   ? "This account removed its public payment wallet."
                   : "No verified payment wallet has been shared."}
@@ -278,8 +280,8 @@ export function PaymentWalletCard({
           {pending ? (
             <>
               <p className="mb-2 text-xs text-muted-foreground">
-                A signed wallet update is saved in this browser but has not been
-                confirmed by the server.
+                Your wallet change is saved in this browser, but the server has
+                not confirmed it yet.
               </p>
               <Button
                 disabled={busy}
@@ -344,7 +346,7 @@ export function PaymentWalletCard({
           {dialog === "link" ? (
             <>
               <p className="mt-2 text-sm text-muted-foreground">
-                Projects send what you earn to this wallet. Connecting it does
+                This is where projects send what you earn. Connecting it does
                 not let anyone spend from it.
               </p>
               <p className="mt-4 text-sm" id="payment-wallet-public">
@@ -366,10 +368,10 @@ export function PaymentWalletCard({
                 data-testid="payment-wallet-how"
               >
                 {passkeySetup.ok
-                  ? "Use your passkey account, or a wallet in this browser. The first time, your passkey account is set up for you at no cost."
+                  ? "Use your passkey account, or a wallet app in this browser. The first time, your passkey account is set up for you at no cost."
                   : canSetUpPasskey
-                    ? "Set up passkey sign-in to be paid at your passkey account, or use a wallet in this browser."
-                    : `${passkeySetup.reason} You can use a wallet in this browser.`}
+                    ? "Set up passkey sign-in to be paid at your passkey account, or use a wallet app in this browser."
+                    : `${passkeySetup.reason} You can use a wallet app in this browser.`}
               </p>
               {canSetUpPasskey ? (
                 <Button
@@ -434,8 +436,8 @@ export function PaymentWalletCard({
                 variant="outline"
               >
                 {busy
-                  ? "Waiting for signatures…"
-                  : "Sign with my passkey account"}
+                  ? "Waiting for your approval…"
+                  : "Approve with my passkey account"}
               </Button>
             ) : null}
             <Button
@@ -460,7 +462,7 @@ export function PaymentWalletCard({
               }
             >
               {busy
-                ? "Waiting for signatures…"
+                ? "Waiting for your approval…"
                 : dialog === "link"
                   ? "Connect wallet"
                   : "Disconnect"}

@@ -152,7 +152,7 @@ export async function linkPasskeyAccount(
     resolvePaymentWallet([event], pubkey, now).state !== "unchecked"
   ) {
     throw new Error(
-      "The signed link did not match your account. Nothing was published.",
+      "Your approval did not match your account. Nothing was published.",
     );
   }
   // Kept in this browser until the server confirms it, so a refused or interrupted publish can be retried unchanged.

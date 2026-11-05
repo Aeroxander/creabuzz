@@ -87,7 +87,7 @@ export function contributorGate(input: ContributorGateInput): ContributorGate {
     return {
       ok: false,
       reason: "unavailable",
-      message: `Contributor projects cannot be started on ${label(chainId)} yet: this app does not know a contract there that makes one.`,
+      message: `Contributor projects cannot be started on ${label(chainId)} yet: this app cannot make them there.`,
     };
   if (!currency || decimals === null)
     return {
@@ -126,8 +126,8 @@ export function contributorGate(input: ContributorGateInput): ContributorGate {
             ? "Your passkey account could not be read. Reload the page to try again."
             : "Reading your passkey account…"
           : wallet.kind === null && wallet.passkeyOffered
-            ? `Set up passkey sign-in from your profile menu: your passkey account holds your starting Shares and makes the project${wallet.passkeyFeesOn ? `, with its fees covered on ${wallet.passkeyFeesOn}` : ""}. Or connect a wallet.`
-            : "Connect a wallet. It holds your starting Shares and sends the one transaction that makes the project.",
+            ? `Set up passkey sign-in from your profile menu: your passkey account holds your starting Shares and makes the project${wallet.passkeyFeesOn ? `, with its fees covered on ${wallet.passkeyFeesOn}` : ""}. Or connect a wallet app.`
+            : "Connect a wallet app. It holds your starting Shares and confirms the one step that makes the project.",
     };
   if (wallet.chainId !== chainId)
     return {
@@ -136,7 +136,7 @@ export function contributorGate(input: ContributorGateInput): ContributorGate {
       message:
         wallet.kind === "passkey"
           ? `Your passkey account works on ${label(wallet.chainId ?? 0)}, but this site's projects are on ${label(chainId)}.`
-          : `Your wallet is on another network. Switch it to ${label(chainId)}.`,
+          : `Your wallet app is on another network. Switch it to ${label(chainId)}.`,
     };
   return { ok: true };
 }

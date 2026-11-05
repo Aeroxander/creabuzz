@@ -283,7 +283,7 @@ export function CommunityHomePage() {
           // An archived community fails its reads by design; saying so turns a
           // mysterious error into an explanation. The error itself stays under Technical details.
           entry?.archived
-            ? "This community is archived, so its channels are no longer served."
+            ? "This community is archived, so its channels are no longer available."
             : undefined
         }
         message={errorMessage(channels.error)}
@@ -398,8 +398,8 @@ export function CommunityHomePage() {
           </p>
 
           <p className="mt-4 text-xs text-black/60 dark:text-white/60">
-            Joining doesn't require an account here. Creaton creates a local
-            identity only when you post or join privately.
+            Joining doesn't need an account here. An account is made in this
+            browser only when you post or join privately.
           </p>
         </div>
       </div>

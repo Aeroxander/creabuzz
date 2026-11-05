@@ -209,7 +209,7 @@ test("a DAO already at the predicted address that the kit did not make is refuse
   const out = await runContributorStart(job(), fx, t.dispatch);
   assert.equal(out.ok, false);
   assert.equal(out.step, "create");
-  assert.match(out.message, /cannot confirm/);
+  assert.match(out.message, /could not confirm/);
   assert.match(out.message, /Nothing was sent/);
   assert.match(out.message, /Try again/);
   assert.equal(state.sends.length, 0);
@@ -269,7 +269,7 @@ test("a kit that makes a different kind of DAO is refused before sending", async
   assert.equal(out.step, "create");
   assert.match(
     t.state.errorMessage,
-    /^Make the project: .* failed: this network's contributor kit/,
+    /^Make the project: .* failed: This network makes a different kind of project/,
   );
   assert.equal(state.sends.length, 0);
 });

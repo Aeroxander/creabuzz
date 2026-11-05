@@ -100,7 +100,7 @@ export function LinkDevicePage() {
           await signInPasskeyIdentity();
         } catch {
           setSignInError(
-            "Sign-in did not complete. Try again, or open the link from the desktop app once more.",
+            "Sign-in did not finish. Try again, or open the link from the desktop app once more.",
           );
           return;
         }
@@ -151,13 +151,11 @@ export function LinkDevicePage() {
 
       {phase === "no-identity" ? (
         <section data-testid="link-device-no-identity">
-          <h1 className="text-base font-semibold">
-            Create your identity first
-          </h1>
+          <h1 className="text-base font-semibold">Create your account first</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            There is no identity on this browser yet, so there is nothing to
-            link to the desktop app. Sign in or create your identity, then open
-            the desktop link again.
+            There is no account on this browser yet, so there is nothing to link
+            to the desktop app. Sign in or create your account, then open the
+            desktop link again.
           </p>
           <a className="mt-4 inline-block text-sm underline" href="/">
             Go to Creaton
@@ -168,18 +166,18 @@ export function LinkDevicePage() {
       {phase === "unreadable" ? (
         <section role="alert" data-testid="link-device-unreadable">
           <h1 className="text-base font-semibold">
-            Your saved identity can&rsquo;t be read
+            Your saved account can&rsquo;t be read
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            This browser has a saved identity but it can&rsquo;t be opened, so
-            nothing was shared with the desktop app. If you have a backup,
-            import it in the app. Otherwise you can reset to a new identity.
-            This discards the unreadable one for good.
+            This browser has a saved account but it can&rsquo;t be opened, so
+            nothing was shared with the desktop app. If you have your recovery
+            key, use it to sign in on the app. Otherwise you can start over with
+            a new account. This discards the unreadable one for good.
           </p>
           {confirmReset ? (
             <div className="mt-4 rounded-md border border-black/10 p-3 text-sm dark:border-white/10">
               <p>
-                Resetting removes the unreadable saved identity and creates a
+                Starting over removes the unreadable saved account and creates a
                 new one. This cannot be undone.
               </p>
               <div className="mt-3 flex gap-2">
@@ -192,7 +190,7 @@ export function LinkDevicePage() {
                     window.location.assign("/");
                   }}
                 >
-                  Reset identity
+                  Start over
                 </button>
                 <button
                   type="button"
@@ -211,7 +209,7 @@ export function LinkDevicePage() {
               className="mt-4 rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium dark:border-white/20"
               onClick={() => setConfirmReset(true)}
             >
-              Reset identity
+              Start over
             </button>
           )}
           <a className="mt-4 ml-2 inline-block text-sm underline" href="/">
@@ -228,7 +226,7 @@ export function LinkDevicePage() {
           <p className="mt-2 text-sm text-muted-foreground">
             {lockedPasskey
               ? "One passkey check logs this desktop in. Nothing is shared until you confirm here."
-              : "The desktop app will be able to sign as this account. Only confirm on a desktop you trust."}
+              : "The desktop app will be able to act as this account. Only confirm on a desktop you trust."}
           </p>
           <div
             className="mt-3 rounded-md border border-black/10 px-3 py-2 text-sm dark:border-white/10"
@@ -248,7 +246,7 @@ export function LinkDevicePage() {
               onClick={() => void confirm()}
             >
               {busy
-                ? "Waiting for passkey…"
+                ? "Waiting for your passkey…"
                 : lockedPasskey
                   ? "Continue with passkey"
                   : "Log in desktop"}
@@ -277,14 +275,14 @@ export function LinkDevicePage() {
             Link sent. Finish in your desktop app
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            The handoff was opened on this device. Finish the steps in the
-            desktop app to sign in there with this account.
+            The link was opened on this device. Finish the steps in the desktop
+            app to sign in there with this account.
           </p>
           {handoffUrl ? (
             <>
               <p className="mt-3 text-sm text-muted-foreground">
-                Nothing opened? Use this to open the desktop app again. It works
-                only once, and only on this device.
+                Nothing opened? Use this button to open the desktop app again.
+                It works only once, and only on this device.
               </p>
               <a
                 className="mt-2 inline-block rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
@@ -318,7 +316,7 @@ export function LinkDevicePage() {
 
       {phase === "error" ? (
         <section role="alert" data-testid="link-device-error">
-          <h1 className="text-base font-semibold">Something went wrong</h1>
+          <h1 className="text-base font-semibold">The link did not work</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             The link could not be prepared, so nothing was shared. Try again
             from the desktop app.

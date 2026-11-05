@@ -33,7 +33,7 @@ export interface SignRecoveryState {
 }
 
 const DEFAULT_BLOCKED =
-  "This browser cannot sign until its passkey is unlocked.";
+  "This browser cannot confirm your action until its passkey is unlocked.";
 
 /**
  * The recovery to render for a given identity state — or `null` when there is
@@ -69,7 +69,7 @@ export function deriveSignRecovery(
       headline: state.blockedReason,
       cta: "Create a passkey",
       helper:
-        "This browser has no passkey to unlock. Create one so signing has a key it can open.",
+        "This browser has no passkey yet. Create one so you can confirm your actions here.",
     };
   }
   return null;

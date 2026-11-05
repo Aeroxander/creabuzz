@@ -762,8 +762,8 @@ export function ContributorStartPage() {
             {wallet.address ? (
               <span className="text-xs text-muted-foreground">
                 {wallet.kind === "passkey"
-                  ? "Your passkey is asked once, and the fees are covered."
-                  : "Your wallet is asked once."}
+                  ? "You confirm once with your passkey, and we cover the fees."
+                  : "Your wallet app asks you to confirm once."}
               </span>
             ) : null}
           </div>

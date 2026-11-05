@@ -602,7 +602,7 @@ export function ProfileMenu({
                     )}
                   </div>
                   <p className="mt-2 text-xs text-black/60 dark:text-white/60">
-                    Conversation density
+                    Message spacing
                   </p>
                   <div
                     className="mt-1 flex items-center gap-1"

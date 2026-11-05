@@ -65,7 +65,7 @@ export function PaymentRecipientPicker({
       const wallet = fresh.data?.find((w) => w.event.pubkey === pubkey);
       if (!wallet)
         throw new Error(
-          "This person's wallet proof changed, expired or was removed. Ask them to confirm their payment wallet.",
+          "This person's payment wallet changed, expired or was removed. Ask them to connect it again.",
         );
       onPick(wallet.address);
     } catch (e) {
@@ -106,7 +106,7 @@ export function PaymentRecipientPicker({
         >
           <option value="">
             {checking
-              ? "Checking the latest proof…"
+              ? "Checking the latest details…"
               : "Choose a verified payment wallet…"}
           </option>
           {query.data.map((w) => (

@@ -12,7 +12,7 @@ import { PASSKEY_MODE_COPY, passkeyModeCopy } from "./mode-copy.ts";
 test("PRF mode says the key is re-derived at each signature", () => {
   assert.equal(
     passkeyModeCopy("prf"),
-    "Your passkey signs each time you post or vote",
+    "Your passkey asks you to confirm each time you post or vote",
   );
 });
 

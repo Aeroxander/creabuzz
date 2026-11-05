@@ -11,7 +11,7 @@
 import type { PasskeyMode } from "./passkey-identity.ts";
 
 export const PASSKEY_MODE_COPY: Record<PasskeyMode, string> = {
-  prf: "Your passkey signs each time you post or vote",
+  prf: "Your passkey asks you to confirm each time you post or vote",
   unlock: "Unlocked until you close this tab",
 };
 

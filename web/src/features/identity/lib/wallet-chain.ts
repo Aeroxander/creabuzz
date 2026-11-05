@@ -33,7 +33,7 @@ export function walletChainChecker(): ChainChecker | undefined {
     const served = Number(await chainIdOf(endpoint));
     if (served !== check.chain) {
       throw new Error(
-        `This site reads chain ${served}, not chain ${check.chain}.`,
+        `This site reads network ${served}, not network ${check.chain}.`,
       );
     }
     return isValidKernelSignature(
