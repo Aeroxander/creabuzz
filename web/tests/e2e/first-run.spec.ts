@@ -238,7 +238,7 @@ test("a person who joins another community is given their profile there, once, a
   ).toEqual(["Frida the Founder"]);
 });
 
-test("the top bar says Testnet beside the logo while the build cannot reach real money", async ({
+test("the top bar says Test version beside the logo while the build cannot reach real money", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -248,8 +248,8 @@ test("the top bar says Testnet beside the logo while the build cannot reach real
   await page.goto("/");
   const chip = page.getByTestId("testnet-chip");
   await expect(chip).toBeVisible();
-  await expectAccessible(page, "Home with the Testnet tag");
-  await expect(chip).toHaveText("Testnet");
+  await expectAccessible(page, "Home with the Test version tag");
+  await expect(chip).toHaveText("Test version");
   // Beside the logo, not somewhere else in the bar.
   const logo = await page
     .getByRole("link", { name: /home$/i })

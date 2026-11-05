@@ -25,14 +25,14 @@ test("a registered-but-locked passkey offers Sign in with passkey beside the ref
   const recovery = deriveSignRecovery({
     registered: true,
     active: false,
-    blockedReason: "Unlock your passkey before this browser can sign.",
+    blockedReason: "Unlock your passkey so this browser can confirm this.",
   });
   assert.ok(recovery, "a locked passkey must never be a dead end");
   assert.equal(recovery.action, "signin");
   assert.equal(recovery.cta, "Sign in with passkey");
   assert.equal(
     recovery.headline,
-    "Unlock your passkey before this browser can sign.",
+    "Unlock your passkey so this browser can confirm this.",
   );
 });
 
@@ -40,7 +40,7 @@ test("blocked with no registered passkey offers Create a passkey", () => {
   const recovery = deriveSignRecovery({
     registered: false,
     active: false,
-    blockedReason: "Unlock your passkey before this browser can sign.",
+    blockedReason: "Unlock your passkey so this browser can confirm this.",
   });
   assert.ok(
     recovery,

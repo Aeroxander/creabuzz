@@ -221,10 +221,10 @@ export function relayFailureGuidance(
     const named =
       kinds && kinds.length > 0 ? formatKinds(kinds) : kindsNamedIn(message);
     const scope = named ? ` (kind ${named})` : "";
-    return `This server is running an older build that doesn't know these records${scope}. Restart it from the current build, or point the app at a newer server.`;
+    return `This server is older than this app and doesn't know these records${scope}. Ask whoever runs it to update it, or use a newer server.`;
   }
   // A restriction on the reader (a ban, a timeout) is said plainly; its raw wording is then not repeated.
   const restricted = restrictionText(message);
   if (restricted !== null) return restricted;
-  return "The server answered but refused this request. Its own message is under Technical details. We're not showing a list, because an empty one would wrongly suggest there's nothing here.";
+  return "The server refused this request. Its own message is under Technical details. We're not showing an empty list, because that would wrongly suggest nothing is here.";
 }

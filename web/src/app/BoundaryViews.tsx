@@ -34,10 +34,11 @@ export function RouteErrorView({
         role="alert"
       >
         <h1 className="text-lg font-semibold text-black dark:text-white">
-          Something went wrong
+          This page hit a problem
         </h1>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          This view stopped responding to its data. Reloading usually clears it.
+          This page couldn&apos;t show its content. Try again, or reload the
+          page.
         </p>
         <TechnicalDetails
           className="mt-2 text-left"
@@ -79,7 +80,7 @@ export function NotFoundView() {
         data-testid="route-not-found"
       >
         <h1 className="text-lg font-semibold text-black dark:text-white">
-          Nothing here
+          Page not found
         </h1>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
           This page doesn&apos;t exist. It may have moved, or the link may be

@@ -120,7 +120,7 @@ export function SearchResults({
     return withBar(
       <div className="flex min-h-0 flex-1 items-center justify-center p-4">
         <QueryError
-          description="The server did not answer the search query."
+          description="The server did not answer the search."
           error={error}
           message={error.message}
           onRetry={() => void refetch()}
@@ -133,7 +133,7 @@ export function SearchResults({
           )}
           relayUrl={relayWsUrl()}
           testId="search-error"
-          title="Search failed"
+          title="Couldn't search"
         />
       </div>,
     );
@@ -144,7 +144,7 @@ export function SearchResults({
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-8 text-center">
         <SearchX className="h-7 w-7 text-black/60 dark:text-white/60" />
         <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-          No results for “{term}”.
+          Nothing matches “{term}”. Try different words.
         </p>
       </div>,
     );

@@ -154,7 +154,7 @@ export function useApprovals(): {
         const result = await publishEvent(relayWsUrl(), event);
         if (!result.accepted) {
           throw new Error(
-            result.message || "The server rejected the decision.",
+            result.message || "The server did not accept your decision.",
           );
         }
         setLocalResolved((current) => {

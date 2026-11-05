@@ -20,7 +20,7 @@ import { createMockRelay } from "./mock-relay";
 
 const FOUNDER_NSEC = "22".repeat(32);
 
-const LOCKED_MESSAGE = "Unlock your passkey before this browser can sign.";
+const LOCKED_MESSAGE = "Unlock your passkey so this browser can confirm this.";
 
 /** A registered passkey credential with nothing unlocked this session. */
 function seedLockedPasskey(page: import("@playwright/test").Page) {

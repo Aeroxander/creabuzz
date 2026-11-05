@@ -189,13 +189,16 @@ export function approvalDetailRows(
 ): ApprovalRowDetail[] {
   const rows: ApprovalRowDetail[] = [];
   if (request.subjectPubkey) {
-    rows.push({ label: "Agent", value: resolveName(request.subjectPubkey) });
+    rows.push({
+      label: "AI helper",
+      value: resolveName(request.subjectPubkey),
+    });
   }
   if (request.counterType !== null) {
-    rows.push({ label: "Counter", value: request.counterType });
+    rows.push({ label: "Measured by", value: request.counterType });
   }
   if (request.window !== null) {
-    rows.push({ label: "Window", value: request.window });
+    rows.push({ label: "Period", value: request.window });
   }
   if (request.limit !== null) {
     rows.push({ label: "Limit", value: String(request.limit) });
@@ -205,17 +208,17 @@ export function approvalDetailRows(
 
 export function approvalHeadline(request: ApprovalRequest): string {
   return request.kind === "budget-overrun"
-    ? "Budget approval needed"
-    : "Approval requested";
+    ? "AI helper limit reached"
+    : "Your approval is needed";
 }
 
 export function approvalPreview(request: ApprovalRequest): string {
   if (request.kind !== "budget-overrun") {
-    return "A workflow is waiting for approval.";
+    return "An automation is waiting for your approval.";
   }
   const counter = request.counterType ?? "spend";
   const windowPart = request.window ? ` per ${request.window}` : "";
   const limitPart =
     request.limit !== null ? ` (limit ${request.limit}${windowPart})` : "";
-  return `An agent hit its ${counter} budget${limitPart} and needs approval to continue.`;
+  return `An AI helper reached its ${counter} budget${limitPart} and needs your approval to continue.`;
 }

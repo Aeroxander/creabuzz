@@ -98,7 +98,7 @@ test("a read that needs sign-in says so, and a locked passkey's own sentence is 
   assert.doesNotMatch(readableError(authRequired), /auth-required/i);
   assert.equal(
     readableError(new SigningBlockedError()),
-    "Unlock your passkey before this browser can sign.",
+    "Unlock your passkey so this browser can confirm this.",
   );
   assert.equal(readableError(new Error("")), READ_UNANSWERED_TEXT);
 });

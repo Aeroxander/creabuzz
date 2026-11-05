@@ -218,7 +218,7 @@ export function DmView() {
             <QueryError
               error={error}
               title="Couldn't load conversations"
-              description="The server didn't answer the conversation list, so it is not known to be empty."
+              description="The server didn't answer, so we can't tell whether you have any conversations."
               message={errorMessage(error)}
               onRetry={() => void refetch()}
               testId="dm-list-error"

@@ -226,7 +226,7 @@ export function queryEvents(
             settleFailure(
               error instanceof Error
                 ? error
-                : new Error("Failed to sign server authentication."),
+                : new Error("Couldn't sign you in to the server. Try again."),
             );
           }
         }

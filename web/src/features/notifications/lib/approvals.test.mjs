@@ -116,11 +116,11 @@ describe("resolution + status", () => {
     assert.ok(request);
     const rows = approvalDetailRows(request, (pk) => `agent:${pk.slice(0, 4)}`);
     assert.deepEqual(rows, [
-      { label: "Agent", value: `agent:${AGENT.slice(0, 4)}` },
-      { label: "Counter", value: "runs" },
-      { label: "Window", value: "day" },
+      { label: "AI helper", value: `agent:${AGENT.slice(0, 4)}` },
+      { label: "Measured by", value: "runs" },
+      { label: "Period", value: "day" },
       { label: "Limit", value: "100" },
     ]);
-    assert.equal(approvalHeadline(request), "Budget approval needed");
+    assert.equal(approvalHeadline(request), "AI helper limit reached");
   });
 });

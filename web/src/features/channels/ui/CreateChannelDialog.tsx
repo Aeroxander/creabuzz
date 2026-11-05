@@ -461,7 +461,7 @@ export function CreateChannelDialog({
               )}
               {unresolvedSeats.length > 0 && (
                 <p className="text-xs text-amber-700 dark:text-amber-300">
-                  Some template members weren't found:{" "}
+                  We couldn't add everyone this template asks for:{" "}
                   {unresolvedSeats.join(", ")}.
                 </p>
               )}

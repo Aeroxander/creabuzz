@@ -39,7 +39,7 @@ export async function signForRelay(
     const durable = existingUserPubkey() !== null || hasNip07Provider();
     if (!durable) {
       throw new Error(
-        "Joining needs an account that survives a reload. Create your account here, or sign in with a signer extension.",
+        "Joining needs an account this browser keeps after a reload. Create your account here, or sign in with a sign-in extension.",
       );
     }
   }

@@ -270,7 +270,7 @@ test("a community with no channels offers community setup instead of showing a d
     "Nothing here yet",
   );
   await expect(
-    page.getByText("Select a channel to start reading."),
+    page.getByText("Select a room or board to start reading."),
   ).toHaveCount(0);
   await page.getByTestId("empty-community-start").click();
   await expect(page.getByTestId("start-project")).toBeVisible();
@@ -454,7 +454,7 @@ test("a community that has channels does not show the empty prompt", async ({
     "page",
   );
   await expect(
-    page.getByText("Select a channel to start reading."),
+    page.getByText("Select a room or board to start reading."),
   ).toHaveCount(0);
   await expect(page.getByTestId("empty-community")).toHaveCount(0);
 });

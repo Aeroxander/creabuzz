@@ -720,7 +720,7 @@ export function ChannelTimeline({
             title={
               messages.liveStatus === "refused"
                 ? liveRefusalText(messages.liveRefusal)
-                : "Live updates from the server have stopped; the client keeps retrying."
+                : "Live updates have stopped. This page keeps trying to reconnect."
             }
           >
             {messages.liveStatus === "refused" ? (
@@ -855,8 +855,8 @@ export function ChannelTimeline({
             data-testid="timeline-history-warning"
             role="status"
           >
-            Showing live messages only. The server didn't answer the history
-            request for this room.
+            Showing new messages only. The server didn't send this room's
+            earlier messages.
           </p>
         ) : null}
         {messages.isLoading ? (
@@ -870,7 +870,7 @@ export function ChannelTimeline({
           </div>
         ) : roots.length === 0 && messages.error ? (
           <QueryError
-            description={`The server did not answer the history query for #${channel.name}, so this room is not known to be empty.`}
+            description={`The server did not answer when asked for the messages in #${channel.name}, so we can't tell whether the room is empty.`}
             error={messages.error}
             message={errorMessage(messages.error)}
             onRetry={messages.refetch}
@@ -960,7 +960,7 @@ export function ChannelTimeline({
 
       <ConfirmDialog
         confirmLabel="Delete message"
-        description="The message is replaced with a deletion marker for everyone in this room."
+        description="Everyone in this room will see 'message deleted' in its place."
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => {
           const target = pendingDelete;

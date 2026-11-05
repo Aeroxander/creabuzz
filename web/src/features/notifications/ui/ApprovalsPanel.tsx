@@ -75,7 +75,7 @@ export function ApprovalsPanel() {
             ) : null}
             <p className="mt-0.5 text-2xs text-black/60 dark:text-white/60">
               Requested for{" "}
-              {item.subjectPubkey ? nameOf(item.subjectPubkey) : "an agent"}
+              {item.subjectPubkey ? nameOf(item.subjectPubkey) : "an AI helper"}
             </p>
             {error ? (
               <p

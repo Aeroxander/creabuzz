@@ -5,7 +5,7 @@ import test from "node:test";
 
 /**
  * Rule 6 contract: every surface that can demand a signature presents the
- * recovery inline — "Unlock your passkey before this browser can sign." must
+ * recovery inline — "Unlock your passkey so this browser can confirm this." must
  * never be a terminal state.
  *
  * JSX cannot be rendered under `node --test`, so the wiring is the seam:

@@ -64,7 +64,7 @@ export function TestnetChip() {
         ref={triggerRef}
         type="button"
       >
-        Testnet
+        Test version
       </button>
       {open ? (
         <Portal>
@@ -100,7 +100,9 @@ export function TestnetStrip() {
         onClick={() => setOpen((was) => !was)}
         type="button"
       >
-        <span className="font-semibold uppercase tracking-wide">Testnet</span>
+        <span className="font-semibold uppercase tracking-wide">
+          Test version
+        </span>
         <span>No real money here.</span>
         <Chevron aria-hidden className="ml-auto h-3.5 w-3.5 shrink-0" />
       </button>

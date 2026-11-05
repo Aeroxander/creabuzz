@@ -118,7 +118,7 @@ export function NotificationBell({
           >
             <ListChecks className="h-3.5 w-3.5 shrink-0" />
             <span className="flex-1 truncate text-left text-sm">
-              Workflow runs
+              Automations
             </span>
           </button>
           {view === "error" || stale ? (
@@ -198,7 +198,7 @@ export function NotificationBell({
           data-testid="workflow-runs-dialog"
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>Workflow runs</AlertDialogTitle>
+            <AlertDialogTitle>Automations</AlertDialogTitle>
             <AlertDialogDescription>
               Recent runs, what each step did, and anything waiting for your
               approval.

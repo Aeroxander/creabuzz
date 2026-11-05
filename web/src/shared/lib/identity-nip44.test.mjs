@@ -93,7 +93,7 @@ test("an override that answers null (locked) falls through to the stored key", a
 test("a registered-but-locked passkey blocks instead of using a stored key", async () => {
   await withIdentity(toHex(generateSecretKey()), async () => {
     setUserSigningBlockedReason(
-      () => "Unlock your passkey before this browser can sign.",
+      () => "Unlock your passkey so this browser can confirm this.",
     );
     await assert.rejects(
       nip44EncryptAsUser(getPublicKey(generateSecretKey()), "x"),

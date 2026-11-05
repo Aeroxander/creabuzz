@@ -814,7 +814,7 @@ export function CommunityShell({
                     </p>
                     <p className="max-w-sm">
                       {helpers
-                        ? "Pick a creative or a technical project and this community fills with channels, AI helpers and shared pages."
+                        ? "Pick a creative or a technical project and this community fills with rooms, AI helpers and shared pages."
                         : "Pick a creative or a technical project and this community fills with rooms and shared pages."}
                     </p>
                     <button
@@ -827,7 +827,7 @@ export function CommunityShell({
                     </button>
                   </>
                 ) : (
-                  "Select a channel to start reading."
+                  "Select a room or board to start reading."
                 )}
               </div>
             )}

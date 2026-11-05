@@ -700,7 +700,7 @@ test("a malformed relay payload shows a recoverable error, not a blank page", as
   await page.goto("/c");
   const boundary = page.getByTestId("route-error");
   await expect(boundary).toBeVisible();
-  await expect(boundary).toContainText("Something went wrong");
+  await expect(boundary).toContainText("This page hit a problem");
   // The crash's own words are kept for whoever helps, collapsed.
   await expect(page.getByTestId("route-error-details")).toHaveJSProperty(
     "open",
@@ -1397,7 +1397,7 @@ test("a refused search offers a retry", async ({ page }) => {
   // fails, which is exactly the state this panel exists for.
   const panel = page.getByTestId("search-error");
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText("Search failed");
+  await expect(panel).toContainText("Couldn't search");
   await expect(page.getByTestId("search-error-retry")).toBeVisible();
 });
 

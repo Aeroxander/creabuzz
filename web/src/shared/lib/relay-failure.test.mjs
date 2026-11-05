@@ -160,7 +160,7 @@ test("unknown-kind guidance names the kinds and the relay-side fix", () => {
   );
   assert.equal(
     guided,
-    "This server is running an older build that doesn't know these records (kind 37015, 37016). Restart it from the current build, or point the app at a newer server.",
+    "This server is older than this app and doesn't know these records (kind 37015, 37016). Ask whoever runs it to update it, or use a newer server.",
   );
   // Without caller-supplied kinds it falls back to whatever the relay named.
   assert.match(
@@ -169,7 +169,7 @@ test("unknown-kind guidance names the kinds and the relay-side fix", () => {
   );
   assert.match(
     relayFailureGuidance("restricted: unknown event kind"),
-    /older build that doesn't know these records/,
+    /older than this app and doesn't know these records/,
   );
 
   // Any other refusal gets the honest generic line, not the upgrade advice.
@@ -178,7 +178,7 @@ test("unknown-kind guidance names the kinds and the relay-side fix", () => {
     [37015],
   );
   assert.match(generic, /refused this request/);
-  assert.doesNotMatch(generic, /older build/);
+  assert.doesNotMatch(generic, /older than this app/);
 });
 
 test("a refusal that restricts the reader is said plainly, and the generic one points the right way", () => {

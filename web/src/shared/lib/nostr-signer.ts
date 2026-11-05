@@ -36,7 +36,7 @@ declare global {
 export class Nip07UnavailableError extends Error {
   constructor() {
     super(
-      "A Nostr signer browser extension is required to join in the browser.",
+      "Joining from this browser needs a sign-in extension, and none was found.",
     );
     this.name = "Nip07UnavailableError";
   }
@@ -51,7 +51,7 @@ export class Nip07UnavailableError extends Error {
  * re-throw it) — see `isSigningBlockedError`.
  */
 export const SIGNING_BLOCKED_MESSAGE =
-  "Unlock your passkey before this browser can sign.";
+  "Unlock your passkey so this browser can confirm this.";
 
 /**
  * Thrown when the durable identity exists but is not usable right now — the
@@ -221,7 +221,9 @@ export async function signNostrEvent(
       typeof signed.id !== "string" ||
       typeof signed.sig !== "string"
     ) {
-      throw new Error("The signer extension returned an invalid signature.");
+      throw new Error(
+        "Your sign-in extension gave an answer we could not use. Try again.",
+      );
     }
     return signed;
   }
@@ -233,7 +235,9 @@ export async function signNostrEvent(
   const secretKey = getEphemeralSecretKey();
   const signed = finalizeEvent(unsigned, secretKey);
   if (signed.pubkey !== getPublicKey(secretKey)) {
-    throw new Error("Failed to create the ephemeral browser identity.");
+    throw new Error(
+      "Couldn't set up a temporary account in this browser. Reload the page and try again.",
+    );
   }
   return signed;
 }

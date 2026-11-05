@@ -49,8 +49,8 @@ export type RosterAgent = {
 export const CHANNEL_TEMPLATES: readonly ChannelTemplate[] = [
   {
     id: "blank",
-    name: "Blank channel",
-    summary: "Start from scratch. Pick members yourself.",
+    name: "Blank room",
+    summary: "Start from scratch. Choose who joins yourself.",
     channelType: "stream",
     visibility: "open",
     topic: "",
@@ -58,17 +58,17 @@ export const CHANNEL_TEMPLATES: readonly ChannelTemplate[] = [
   },
   {
     id: "agent-workspace",
-    name: "Agent workspace",
-    summary: "A channel where every agent in your community is a member.",
+    name: "AI helpers room",
+    summary: "A room that every AI helper in your community joins.",
     channelType: "stream",
     visibility: "open",
-    topic: "Working session with the community's agents.",
+    topic: "Working session with the community's AI helpers.",
     seats: [{ type: "all-agents" }],
   },
   {
     id: "team-room",
     name: "Team room",
-    summary: "A private channel for one team's agents.",
+    summary: "A private room for one team's AI helpers.",
     channelType: "stream",
     visibility: "private",
     topic: "Team coordination.",
@@ -116,7 +116,7 @@ export function planTemplateAttachments(
   for (const seat of template.seats) {
     if (seat.type === "all-agents") {
       if (agents.length === 0) {
-        unresolvedSeats.push("no agents found in this community");
+        unresolvedSeats.push("no AI helpers in this community");
         continue;
       }
       for (const agent of agents) add(agent);
@@ -128,7 +128,7 @@ export function planTemplateAttachments(
       if (!teamName || members.length === 0) {
         unresolvedSeats.push(
           teamName
-            ? `no agents found for team "${teamName}"`
+            ? `no AI helpers found for team "${teamName}"`
             : "no team picked",
         );
         continue;
@@ -138,7 +138,7 @@ export function planTemplateAttachments(
     }
     const agent = agents.find((a) => a.id === seat.agentId);
     if (!agent) {
-      unresolvedSeats.push(`agent "${seat.agentId}" not found`);
+      unresolvedSeats.push(`AI helper "${seat.agentId}" not found`);
       continue;
     }
     add(agent);

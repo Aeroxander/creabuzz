@@ -36,7 +36,7 @@ test("everything in place: Start is offered", () => {
 test("a locked passkey stops Start before anything is sent, even with an account that could make the DAO", () => {
   const gate = contributorGate({
     ...ready,
-    signingBlocked: "Unlock your passkey before this browser can sign.",
+    signingBlocked: "Unlock your passkey so this browser can confirm this.",
   });
   assert.equal(gate.ok, false);
   assert.equal(gate.reason, "locked");
@@ -129,7 +129,7 @@ test("a project set up earlier is carried on only by its founder, and not while 
     canResume({
       job,
       wallet: "0xf00",
-      signingBlocked: "Unlock your passkey before this browser can sign.",
+      signingBlocked: "Unlock your passkey so this browser can confirm this.",
     }),
     false,
   );
