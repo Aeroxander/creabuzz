@@ -94,10 +94,10 @@ export async function readDaoGuarantees(
  * settings a vote can shorten for later decisions, to as little as a day, by a decision that itself waits today's notice.
  */
 export function noticeText(notice: Notice, of: "dao" | "plan"): string {
-  const numbers = `at least ${span(notice.full)} for anything that spends the treasury or changes the rules, ${span(notice.bounded)} for an award or a project inside a budget already voted`;
+  const numbers = `at least ${span(notice.full)} for anything that spends the project's money or changes the rules, ${span(notice.bounded)} for an award or a project inside a budget already voted`;
   const opening =
     of === "dao"
-      ? `With this DAO's settings today, every decision waits before it takes effect: ${numbers}.`
-      : `The DAO starts out with every decision waiting ${numbers}.`;
+      ? `With this project's settings today, every decision waits before it takes effect: ${numbers}.`
+      : `The project starts out with every decision waiting ${numbers}.`;
   return `${opening} These are settings, not promises: each decision keeps the waits in force when it opens, but a vote can shorten them for decisions opened later, to as little as a day, and that vote itself waits the notice in force when it is opened.`;
 }

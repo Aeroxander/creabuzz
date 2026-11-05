@@ -98,7 +98,7 @@ export function verifyEnforced(
         return {
           clause,
           status: "contradicted",
-          detail: `${clause.action}: claimed, but leaving with your share is switched off. The exit right does not exist`,
+          detail: `${clause.action}: claimed, but leaving with your share is switched off. The right to leave does not exist`,
         };
       }
       default: {
@@ -106,7 +106,7 @@ export function verifyEnforced(
           return {
             clause,
             status: "documented",
-            detail: `${clause.action}: gated by ${clause.checkpoint.approver ?? "human approval"} (documented policy, see the approval cards)`,
+            detail: `${clause.action}: needs approval from ${clause.checkpoint.approver ?? "a person"} (a stated rule, see the approval cards)`,
           };
         }
         return {

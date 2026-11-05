@@ -55,10 +55,11 @@ export function CourtPage() {
       <header>
         <h1 className="text-xl font-semibold">Court</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          People stake CREATE to judge disputes about work, against the words
-          written before it started. Jurors who vote with the final ruling are
-          paid; those who vote against it, or never open their vote, lose part
-          of their stake.
+          Jurors are people who put down a deposit in CREATE, the court's
+          deposit token, to judge disputes about work against the words written
+          before it started. Jurors who vote with the final ruling are paid.
+          Those who vote against it, or never open their vote, lose part of
+          their deposit.
         </p>
       </header>
       {!court ? (
@@ -176,7 +177,9 @@ function JurorCard({
     const value = amount();
     if (value === null || !side) return;
     if (value === 0n || value > side.create) {
-      setProblem(`You have ${formatUnits(side.create, 18)} CREATE to stake.`);
+      setProblem(
+        `You have ${formatUnits(side.create, 18)} CREATE to put down.`,
+      );
       return;
     }
     const seats = seatProblem(
@@ -225,9 +228,10 @@ function JurorCard({
     <Card className="flex flex-col gap-2 p-4" data-testid="court-juror">
       <h2 className="text-base font-semibold">Judge cases</h2>
       <p className="text-sm text-muted-foreground">
-        Each {formatUnits(data.seatStake, 18)} CREATE you stake is one seat.
-        Seats are drawn at random by stake; a seat on a case is held until it is
-        settled.
+        Each {formatUnits(data.seatStake, 18)} CREATE you put down is one seat,
+        the smallest deposit a juror can hold. Jurors are drawn at random,
+        weighted by how much each has put down. A seat on a case stays held
+        until the case is settled.
       </p>
       {side ? (
         <>
@@ -269,10 +273,10 @@ function JurorCard({
               type="button"
             >
               {busy === "court-allow"
-                ? "Allowing…"
+                ? "Approving…"
                 : busy === "court-stake"
-                  ? "Staking…"
-                  : "Stake"}
+                  ? "Adding…"
+                  : "Add deposit"}
             </Button>
             <Button
               data-testid="court-unstake-button"
@@ -326,7 +330,7 @@ function JurorCard({
                 type="button"
                 variant="outline"
               >
-                Withdraw what I'm owed
+                Collect what I'm owed
               </Button>
             ) : null}
           </div>

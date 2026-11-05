@@ -227,9 +227,9 @@ function claimOutcome(
     case "Expired":
       return "Ran out of time before it was approved. Nothing was paid.";
     case "Frozen":
-      return "Frozen by the DAO while it is checked. Nothing is paid meanwhile.";
+      return "Frozen by the project while it is checked. Nothing is paid meanwhile.";
     case "Recovered":
-      return "Unwound by the DAO after it was frozen.";
+      return "Rejected by the project after it was frozen.";
     default:
       return "";
   }
@@ -333,7 +333,7 @@ export function buildLedger(input: LedgerInput): LedgerEntry[] {
           key: `gave-up-${person.holder}-${tranche.index}`,
           when: 0,
           kind: "milestone",
-          text: `The DAO gave up ${labels.shares(tranche.amount)} Shares that ${who} had not earned yet.`,
+          text: `The project took back ${labels.shares(tranche.amount)} Shares that ${who} had not earned yet.`,
           tab: null,
         });
       }
@@ -372,7 +372,7 @@ export function watchNotes(input: {
 
   if (work.truncated || work.mandates.some((m) => m.truncated)) {
     notes.push(
-      "This DAO has more work than is shown here. Only the newest is counted, so the totals can be too low.",
+      "This project has more work than is shown here. Only the newest is counted, so the totals can be too low.",
     );
   }
   if (events.truncated) {
@@ -403,7 +403,7 @@ export function watchNotes(input: {
 
   if (events.lock === null) {
     notes.push(
-      "Nobody's Shares are held back behind milestones in this DAO, so the team can sell theirs whenever they like.",
+      "Nobody's Shares are held back behind milestones in this project, so the team can sell theirs whenever they like.",
     );
   }
   return notes;

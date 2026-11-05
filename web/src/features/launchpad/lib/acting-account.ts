@@ -84,12 +84,12 @@ export function accountGate(
   feesOn: string | null = feesCoveredOn(passkeyChainId()),
 ): string | null {
   if (account.kind === null) {
-    if (!account.passkeyOffered) return "Connect your wallet to act on this.";
+    if (!account.passkeyOffered) return "Connect a wallet app to take part.";
     const fees = feesOn ? ` (fees are covered on ${feesOn})` : "";
-    return `Set up passkey sign-in from your profile menu to act here${fees}, or add a wallet to this browser.`;
+    return `Set up passkey sign-in from your profile menu to act here${fees}, or add a wallet app to this browser.`;
   }
   if (!account.address) {
-    if (account.kind === "wallet") return "Connect your wallet to act on this.";
+    if (account.kind === "wallet") return "Connect a wallet app to take part.";
     return account.accountsChecked
       ? "Your passkey account could not be read. Reload the page to try again."
       : "Reading your passkey account…";
@@ -165,7 +165,7 @@ export const STILL_GOING_MESSAGE =
   "Another step from your account is still going through. Wait a minute, refresh the page, then press again.";
 /** The passkey's signature was not accepted. */
 const SIGNATURE_REFUSED_MESSAGE =
-  "Your passkey's signature was not accepted, so nothing was sent. Press the button again; if it happens again, tell whoever runs this site.";
+  "Your passkey's approval was not accepted, so nothing was sent. Press the button again; if it happens again, tell whoever runs this site.";
 /** The service that carries passkey steps did not answer: whether it went through is not known. */
 export const NO_ANSWER_MESSAGE =
   "The service that sends passkey steps did not answer. Refresh the page to see whether it went through before pressing again.";

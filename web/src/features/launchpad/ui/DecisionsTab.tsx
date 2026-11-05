@@ -182,7 +182,7 @@ export function DecisionsTab({
         <>
           {snapshot.truncated ? (
             <p className="text-sm text-muted-foreground" role="status">
-              This DAO has {snapshot.total} decisions. The newest{" "}
+              This project has {snapshot.total} decisions. The newest{" "}
               {snapshot.decisions.length} are shown.
             </p>
           ) : null}

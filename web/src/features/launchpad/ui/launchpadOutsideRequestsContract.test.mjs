@@ -133,7 +133,7 @@ test("the founder and overview screens describe what to check, not the ledger", 
     assert.doesNotMatch(text, /through your RPC endpoint/, file);
     assert.doesNotMatch(text, /Claim mirror recorded/, file);
   }
-  assert.match(source("./ManagePanel.tsx"), /the transaction is what counts/);
+  assert.match(source("./ManagePanel.tsx"), /the network is right/);
 });
 
 test("the graduation split shows the reserve as a percentage, not a contract field", () => {

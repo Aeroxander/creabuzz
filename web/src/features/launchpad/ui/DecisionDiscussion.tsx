@@ -112,7 +112,7 @@ export function DecisionDiscussion({
       </h4>
       <p className="text-xs text-muted-foreground">
         Talk it through on the community's boards. Votes on a board show what
-        people think; they are not the DAO's vote.
+        people think; they are not the project's vote.
       </p>
 
       {loading ? (

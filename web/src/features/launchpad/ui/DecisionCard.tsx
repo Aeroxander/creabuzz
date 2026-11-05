@@ -145,7 +145,7 @@ export function DecisionCard({
           <span
             className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300"
             data-testid="decision-no-review"
-            title="This pays straight out of the treasury. No reviewer checks anything before it goes."
+            title="This pays straight out of the project's money. No reviewer checks anything before it goes."
           >
             No reviewer
           </span>
@@ -181,9 +181,9 @@ export function DecisionCard({
         >
           Passes when at least {shares(rules.quorum)} Shares take part (for,
           against or neutral) and {Number(rules.approvalBps) / 100}% of them
-          back it, for {duration(rules.hold)} in a row. It then waits{" "}
-          {duration(rules.delay)} before it can take effect. Voting closes{" "}
-          {deadline(Number(rules.expiresAt))}.
+          back it, and that holds for {duration(rules.hold)} without a break. It
+          then waits {duration(rules.delay)} before it can take effect. Voting
+          closes {deadline(Number(rules.expiresAt))}.
         </p>
       ) : null}
 

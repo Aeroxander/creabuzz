@@ -142,7 +142,7 @@ export function CourtCaseCard({
       if (!(await reveal(salt, me))) {
         setPasting(true);
         setProblem(
-          "This wallet's signature doesn't open the seal, and this browser has no key for it. Paste the vote key you copied when you sealed, or use the browser you sealed in.",
+          "Your approval doesn't open the seal, and this browser has no key for it. Paste the vote key you copied when you sealed, or use the browser you sealed in.",
         );
       }
     });
@@ -246,7 +246,7 @@ export function CourtCaseCard({
                 {about.evidence}
               </a>
             ) : (
-              (about.evidence ?? "The claim could not be read.")
+              (about.evidence ?? "The submission could not be read.")
             )}
           </p>
           {about.post ? (
@@ -299,8 +299,8 @@ export function CourtCaseCard({
       {kase.period !== "ruled" && kase.round.drawn.length > 0 ? (
         <p className="text-muted-foreground" data-testid="court-case-round">
           Round {kase.rounds} of 3 · {kase.round.seats} seats ·{" "}
-          {kase.round.committed} of {kase.round.drawn.length} sealed ·{" "}
-          {kase.round.revealed} opened
+          {kase.round.committed} of {kase.round.drawn.length} jurors sealed
+          their vote · {kase.round.revealed} opened
           {kase.mine && kase.mine.seats > 0
             ? ` · you hold ${kase.mine.seats} ${kase.mine.seats === 1 ? "seat" : "seats"}`
             : ""}
@@ -414,8 +414,8 @@ export function CourtCaseCard({
       </div>
       {can.seal ? (
         <p className="text-xs text-muted-foreground">
-          Your wallet signs a message to seal the vote; nobody sees which way
-          you voted until the votes are opened. This browser keeps the key that
+          You approve a message to seal your vote. Nobody sees which way you
+          voted until the votes are opened. This browser keeps the key that
           opens it.
         </p>
       ) : null}

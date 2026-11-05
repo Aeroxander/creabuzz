@@ -76,8 +76,14 @@ test("a network failure is an error, never a guarantee", async () => {
 
 test("the notice is said as today's setting that a vote can shorten, never as a permanent floor", () => {
   const today = noticeText({ full: 3 * DAY, bounded: 2 * DAY }, "dao");
-  assert.match(today, /With this DAO's settings today, every decision waits/);
-  assert.match(today, /at least 3 days for anything that spends the treasury/);
+  assert.match(
+    today,
+    /With this project's settings today, every decision waits/,
+  );
+  assert.match(
+    today,
+    /at least 3 days for anything that spends the project's money/,
+  );
   assert.match(today, /2 days for an award or a project/);
   assert.match(today, /a vote can shorten them for decisions opened later/);
   assert.match(today, /as little as a day/);

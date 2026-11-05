@@ -161,7 +161,7 @@ export function RecordTab({
   if (!work.data || !decisions.data) {
     return (
       <Card className="p-4 text-sm" data-testid="record-tab">
-        Couldn't read this DAO from the network. Try again in a moment.
+        Couldn't read this project from the network. Try again in a moment.
       </Card>
     );
   }
@@ -202,9 +202,9 @@ export function RecordTab({
           <div className="min-w-0">
             <h2 className="text-base font-bold">Track record</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              What this DAO has done with its money, and how much of its team's
-              tokens have unlocked. It is read straight from the network, not
-              typed in, so anyone can check it and it cannot be edited
+              What this project has done with its money, and how much of its
+              team's tokens have unlocked. It is read straight from the network,
+              not typed in, so anyone can check it and it cannot be edited
               afterwards.
             </p>
           </div>
@@ -247,7 +247,7 @@ export function RecordTab({
         {money.length === 0 ? (
           <Figure
             label="Money set aside for work"
-            note="The DAO has not set any aside yet"
+            note="The project has not set any aside yet"
             testId="record-figure-approved"
             value="—"
           />
@@ -313,7 +313,7 @@ export function RecordTab({
                 {shares(promised.held)} Shares still held back,{" "}
                 {shares(promised.freed)} freed
                 {promised.givenUp > 0n
-                  ? `, ${shares(promised.givenUp)} given up by the DAO`
+                  ? `, ${shares(promised.givenUp)} given up by the project`
                   : ""}
                 .
               </span>
@@ -348,7 +348,7 @@ export function RecordTab({
                               ? `Reached on ${day(t.reachedAt)}`
                               : "Reached"
                             : t.forfeited
-                              ? "Given up by the DAO"
+                              ? "Given up by the project"
                               : "Not reached yet"}
                         </span>
                       </li>

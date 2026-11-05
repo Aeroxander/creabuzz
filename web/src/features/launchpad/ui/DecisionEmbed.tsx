@@ -63,7 +63,7 @@ export function DecisionEmbed({ link }: { link: DecisionLink }) {
   if (decisions.isLoading) {
     return frame(
       <p className="mt-1 text-xs text-muted-foreground" role="status">
-        Reading it from the chain…
+        Reading it from the network…
       </p>,
     );
   }
@@ -88,7 +88,7 @@ export function DecisionEmbed({ link }: { link: DecisionLink }) {
   if (!decision) {
     return frame(
       <p className="mt-1 text-xs text-muted-foreground">
-        That decision isn't in this project's DAO.
+        That decision isn't one of this project's.
       </p>,
     );
   }

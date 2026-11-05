@@ -250,24 +250,24 @@ export function voteControlLines(input: {
   const turnoutPct = (bars: Bars) =>
     percentOf(turnoutNeeded(control, bars), control.votingSupply);
   const lines = [
-    `${who} holds ${percentOf(weight, control.votingSupply)} of the votes that count today. A decision that spends the treasury or changes the rules needs ${turnoutPct(full)} of those votes to take part and ${pct(full.approvalBps)} of the votes cast in favour; an award or a work area inside a budget already voted needs ${turnoutPct(bounded)} and ${pct(bounded.approvalBps)}${governor.minYes > 0n ? `. Either needs at least ${shares(governor.minYes)} votes in favour` : ""}.`,
+    `${who} holds ${percentOf(weight, control.votingSupply)} of the votes that count today. A decision that spends the project's money or changes the rules needs ${turnoutPct(full)} of those votes to take part and ${pct(full.approvalBps)} of the votes cast in favour; an award or a work area inside a budget already voted needs ${turnoutPct(bounded)} and ${pct(bounded.approvalBps)}${governor.minYes > 0n ? `. Either needs at least ${shares(governor.minYes)} votes in favour` : ""}.`,
   ];
   const now = controlOf(weight, control, full);
   const small = controlOf(weight, control, bounded);
   lines.push(
     now === "nobody"
-      ? "No decision that spends the treasury or changes the rules can pass now: the DAO's minimum turnout is more than all the votes that count."
+      ? "No decision that spends the project's money or changes the rules can pass now: the project's minimum turnout is more than all the votes that count."
       : now === "alone"
         ? `So ${who} can pass any decision alone, even if every other holder votes against it.`
         : now === "unopposed"
           ? `So ${who} can pass a decision alone when nobody else votes, but holders who vote against it can stop it${small === "alone" ? ` (an award or a work area ${who} can pass even against everyone)` : ""}.`
           : small !== "shared"
-            ? `No single holder can pass a decision that spends the treasury or changes the rules alone, but ${who} can pass an award or a work area ${small === "alone" ? "even against everyone" : "that nobody else votes on"}.`
+            ? `No single holder can pass a decision that spends the project's money or changes the rules alone, but ${who} can pass an award or a work area ${small === "alone" ? "even against everyone" : "that nobody else votes on"}.`
             : "No single holder can pass a decision alone.",
   );
   if (kind === "raise" && control.waiting > 0n) {
     lines.push(
-      `${shares(control.waiting)} Shares bought in the sale are still waiting to be claimed and vote only once they are; with all of them claimed, ${who} would hold ${percentOf(weight, control.votingSupply + control.waiting)}.`,
+      `${shares(control.waiting)} Shares bought in the sale are still waiting to be collected and vote only once they are; with all of them collected, ${who} would hold ${percentOf(weight, control.votingSupply + control.waiting)}.`,
     );
   }
   // How many more Shares others need, per lane, is shown beside these lines as a table (`aloneUntil`).

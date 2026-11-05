@@ -441,7 +441,7 @@ test("work nobody backed is appealed, a juror drawn by stake upholds it, and any
   await juror.getByTestId("court-amount").fill("300");
   await juror.getByTestId("court-stake-button").click();
   await expect(juror.getByTestId("court-stake")).toHaveText(
-    "You stake 300 CREATE: 3 seats, 3 free.",
+    "Your deposit is 300 CREATE: 3 seats, 3 free.",
     { timeout: 60_000 },
   );
   const kase = eve.getByTestId("court-case").first();
@@ -488,7 +488,7 @@ test("work nobody backed is appealed, a juror drawn by stake upholds it, and any
   );
   await kase.getByTestId("court-seal-for").click();
   await expect(kase.getByTestId("court-case-round")).toContainText(
-    "1 of 1 sealed",
+    "1 of 1 jurors sealed their vote",
     { timeout: 60_000 },
   );
   await expect(kase.getByTestId("court-vote-key")).toBeVisible();

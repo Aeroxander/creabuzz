@@ -122,7 +122,7 @@ test("why the account cannot send yet, in words to act on", () => {
       1,
       label,
     ),
-    "Connect your wallet to act on this.",
+    "Connect a wallet app to take part.",
   );
   assert.equal(
     accountGate(
@@ -138,7 +138,7 @@ test("why the account cannot send yet, in words to act on", () => {
   );
   assert.equal(
     accountGate({ ...base, kind: "wallet", address: null }, 1, label),
-    "Connect your wallet to act on this.",
+    "Connect a wallet app to take part.",
   );
   assert.equal(
     accountGate(base, 1, label),
@@ -445,6 +445,6 @@ test("the passkey fee promise names the network it is true on, and makes none wi
   assert.doesNotMatch(onBase, /test network/);
   assert.equal(
     accountGate(none, 1, label, null),
-    "Set up passkey sign-in from your profile menu to act here, or add a wallet to this browser.",
+    "Set up passkey sign-in from your profile menu to act here, or add a wallet app to this browser.",
   );
 });

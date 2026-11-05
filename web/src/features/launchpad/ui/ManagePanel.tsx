@@ -126,7 +126,9 @@ export function ManagePanel({
     setMilestoneError(null);
     setMilestoneStatus(null);
     if (!EVIDENCE_HASH_RE.test(evidenceHash.trim())) {
-      setMilestoneError("Evidence hash must be 64 hex characters.");
+      setMilestoneError(
+        "The evidence fingerprint must be 64 letters and digits (0 to 9 and a to f).",
+      );
       return;
     }
     if (!isTxHash(txHash)) {
@@ -144,10 +146,12 @@ export function ManagePanel({
           tx: txHash.trim(),
         }),
       });
-      setMilestoneStatus("The claim is posted to the feed.");
+      setMilestoneStatus("The submission is posted to the feed.");
     } catch (err) {
       setMilestoneError(
-        err instanceof Error ? err.message : "Failed to record the claim.",
+        err instanceof Error
+          ? err.message
+          : "Couldn't record the submission. Try again.",
       );
     }
   };
@@ -175,7 +179,9 @@ export function ManagePanel({
       );
     } catch (err) {
       setMilestoneError(
-        err instanceof Error ? err.message : "Failed to record the verdict.",
+        err instanceof Error
+          ? err.message
+          : "Couldn't record the verdict. Try again.",
       );
     }
   };
@@ -232,21 +238,23 @@ export function ManagePanel({
       if (!calls) {
         setMilestoneError(
           kind === "fund" && record.claimStake && !record.token
-            ? "Link the token address on this launch before reserving a payout."
-            : "This launch isn't set up for onchain milestones yet. Link its milestone contracts on the launch record first.",
+            ? "Link this project's token address first, then set the payout aside."
+            : "This project can't hold milestone payments yet. Link its milestone contracts on its project page first.",
         );
         return;
       }
       const sender = resolveSender(milestoneSender);
       const result = await sender.sendCalls(calls);
       if (!isTxHash(result.txHash)) {
-        throw new Error("The sender returned an invalid hash.");
+        throw new Error(
+          "The request was sent but no confirmation ID came back. Check the record before you try again.",
+        );
       }
       setTxHash(result.txHash); // prefill for the receipt
-      setMilestoneStatus("Onchain step sent. The hash above is filled in.");
+      setMilestoneStatus("Sent. The confirmation ID above is filled in.");
     } catch (err) {
       setMilestoneError(
-        senderErrorMessage(err, "The onchain submit was not sent."),
+        senderErrorMessage(err, "Your submission was not sent. Try again."),
       );
     } finally {
       setOnchainSending(false);
@@ -267,7 +275,11 @@ export function ManagePanel({
       toast.success("Launch updated.");
       setEditOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Saving failed.");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Couldn't save your changes. Try again.",
+      );
     }
   };
 
@@ -501,10 +513,9 @@ export function ManagePanel({
         <Card className="p-4" data-testid="launch-graduation">
           <h2 className="text-base font-semibold">When the sale ends</h2>
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            If the sale reaches its goal, the money moves to your treasury, part
-            of the supply is set aside so people can trade it, and any tokens
-            that did not sell are returned. If it falls short, every bid is
-            refunded.
+            If the sale reaches its goal, the money goes to the project, part of
+            the supply is set aside so people can trade it, and any tokens that
+            did not sell are returned. If it falls short, every bid is refunded.
           </p>
           <details className="mt-2 text-xs text-black/60 dark:text-white/60">
             <summary className="cursor-pointer select-none">
@@ -513,9 +524,9 @@ export function ManagePanel({
             <p className="mt-1">
               A contract set up with the sale does all of this; nobody,
               including the founder, handles the money in between. The set-aside
-              supply is released only to the trading pool the treasury records.
-              If the pool never appears, the treasury can take it back. Each
-              step is a public transaction anyone can look up, and that is what
+              supply is released only to the trading pool the project has on
+              record. If the pool never appears, the project can take it back.
+              Each step is a public record anyone can look up, and that is what
               counts: this page only describes it.
             </p>
           </details>
@@ -525,24 +536,24 @@ export function ManagePanel({
           data-testid="launch-advanced-milestones"
         >
           <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
-            Milestone attestation
+            Milestone verdicts
             <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
-              for people who settle milestone claims
+              for people who settle milestone submissions
             </span>
           </summary>
           <div className="mt-3" data-testid="launch-milestones">
-            <h2 className="text-base font-semibold">Milestone attestation</h2>
+            <h2 className="text-base font-semibold">Milestone verdicts</h2>
             <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-              Reviewers settle a milestone claim on the network. Here you post
-              that claim and your verdict to the project&apos;s feed, so people
-              can see it, together with the transaction that settled it. A post
-              without that transaction won&apos;t go through. If the post and
-              the transaction ever disagree, the transaction is what counts.
+              Reviewers settle a milestone submission on the network. Here you
+              post that submission and your verdict to the project&apos;s feed,
+              with the confirmation ID of the step that settled it, so people
+              can check it. A post without that ID won&apos;t go through. If the
+              post and the network ever disagree, the network is right.
             </p>
             <div className="mt-3 flex flex-col gap-2">
               <HashPicker
                 id="claim-id"
-                label="Claim id"
+                label="Submission ID"
                 onValueChange={(v) => {
                   setClaimId(v);
                   // One dropdown drives the rest: known evidence + tx follow
@@ -558,19 +569,19 @@ export function ManagePanel({
               />
               <HashPicker
                 id="evidence-hash"
-                label="Evidence hash"
+                label="Evidence fingerprint"
                 onValueChange={setEvidenceHash}
                 options={milestoneChoicesList.evidenceByClaim[claimId] ?? []}
-                placeholder="64 hex chars of the canonical claim"
+                placeholder="64 letters and digits, with no 0x"
                 testId="evidence-hash"
                 value={evidenceHash}
               />
               <HashPicker
                 id="milestone-tx"
-                label="Settlement tx hash"
+                label="Settlement confirmation ID"
                 onValueChange={setTxHash}
                 options={milestoneChoicesList.txByClaim[claimId] ?? []}
-                placeholder="0x + 64 hex chars of the onchain tx"
+                placeholder="0x followed by 64 letters and digits"
                 testId="milestone-tx"
                 value={txHash}
               />
@@ -587,7 +598,7 @@ export function ManagePanel({
                   size="sm"
                   type="button"
                 >
-                  Record claim
+                  Record submission
                 </Button>
                 <Button
                   data-testid="verdict-approve"
@@ -637,7 +648,7 @@ export function ManagePanel({
                   type="button"
                   variant="outline"
                 >
-                  Submit claim onchain
+                  Send submission
                 </Button>
                 <Button
                   data-testid="attest-approve"
@@ -647,7 +658,7 @@ export function ManagePanel({
                   type="button"
                   variant="outline"
                 >
-                  Attest approve
+                  Send approval
                 </Button>
                 <Button
                   data-testid="attest-reject"
@@ -657,12 +668,12 @@ export function ManagePanel({
                   type="button"
                   variant="outline"
                 >
-                  Attest reject
+                  Send rejection
                 </Button>
               </div>
               <p className="mt-2 text-xs text-black/60 dark:text-white/60">
-                After the claim is submitted, the treasury reserves its payout.
-                Once enough verifiers attest, anyone can settle it, and the
+                After the submission is sent, the project sets its payout aside.
+                Once enough reviewers approve it, anyone can settle it, and the
                 contributor then collects the payout.
               </p>
               <div className="mt-1 flex flex-wrap gap-2">
@@ -678,7 +689,7 @@ export function ManagePanel({
                   type="button"
                   variant="outline"
                 >
-                  Reserve payout
+                  Set payout aside
                 </Button>
                 <Button
                   data-testid="settle-claim-onchain"

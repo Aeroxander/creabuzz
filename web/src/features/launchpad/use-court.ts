@@ -163,7 +163,7 @@ export async function voteSalt(
   round: number,
 ): Promise<string> {
   if (!wallet.wallet || !wallet.address) {
-    throw new Error("Connect your wallet first.");
+    throw new Error("Connect a wallet app first.");
   }
   const text = voteKeyMessage(court, id, round);
   const hex = `0x${Array.from(new TextEncoder().encode(text), (b) => b.toString(16).padStart(2, "0")).join("")}`;

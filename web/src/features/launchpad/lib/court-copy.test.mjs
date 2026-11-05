@@ -46,14 +46,14 @@ test("each period of a case reads as one sentence with its deadline", () => {
 
 test("a juror's stake is told in seats", () => {
   const seat = 100n * 10n ** 18n;
-  assert.equal(stakeLine(0n, 0n, seat), "You have nothing staked.");
+  assert.equal(stakeLine(0n, 0n, seat), "You have no deposit in the court.");
   assert.equal(
     stakeLine(3n * seat, seat, seat),
-    "You stake 300 CREATE: 3 seats, 2 free.",
+    "Your deposit is 300 CREATE: 3 seats, 2 free.",
   );
   assert.equal(
     stakeLine(seat + seat / 2n, 0n, seat),
-    "You stake 150 CREATE: 1 seat, 1 free.",
+    "Your deposit is 150 CREATE: 1 seat, 1 free.",
   );
 });
 
@@ -74,13 +74,13 @@ test("stakes and take-outs leave whole seats, as the court asks", () => {
   const seat = 100n * 10n ** 18n;
   assert.equal(
     seatProblem("stake", 0n, seat - 1n, seat),
-    "Stake at least 100 CREATE: one seat.",
+    "Put down at least 100 CREATE: one seat, the smallest deposit a juror can hold.",
   );
   assert.equal(seatProblem("stake", 0n, seat, seat), null);
   assert.equal(seatProblem("stake", seat, 1n, seat), null, "adding to a seat");
   assert.equal(
     seatProblem("unstake", 2n * seat, seat + 1n, seat),
-    "Take out all of it, or leave at least 100 CREATE: one seat.",
+    "Take out all of it, or leave at least 100 CREATE: one seat, the smallest deposit a juror can hold.",
   );
   assert.equal(seatProblem("unstake", 2n * seat, 2n * seat, seat), null);
   assert.equal(seatProblem("unstake", 2n * seat, seat, seat), null);

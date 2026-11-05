@@ -108,7 +108,9 @@ export function DelegationCard({
   const delegateName = delegate ? nameOf(delegate) : "";
 
   const options: DelegateOption[] = [
-    ...(holder ? [{ value: holder, label: "Back to myself (reclaim)" }] : []),
+    ...(holder
+      ? [{ value: holder, label: "Back to me (take my votes back)" }]
+      : []),
     ...members.filter(
       (m) => m.value.toLowerCase() !== (holder ?? "").toLowerCase(),
     ),
@@ -125,7 +127,9 @@ export function DelegationCard({
         { to: shares, data: encodeDelegate(delegatee), value: "0x0" },
       ]);
       if (!TX_HASH_RE.test(txHash)) {
-        throw new Error("The sender returned an invalid hash.");
+        throw new Error(
+          "The request was sent but no confirmation ID came back. Check your votes above, then try again.",
+        );
       }
       setLastTx(txHash);
       void current.refetch();
@@ -141,11 +145,13 @@ export function DelegationCard({
         });
       } catch {
         setError(
-          `Delegation landed (tx ${txHash.slice(0, 10)}…) but it could not be saved to this project's record. It still counts.`,
+          `Your votes were handed over (confirmation ${txHash.slice(0, 10)}…), but we could not save that to the project's record. They still count.`,
         );
       }
     } catch (err) {
-      setError(senderErrorMessage(err, "The delegation was not sent."));
+      setError(
+        senderErrorMessage(err, "Your votes were not handed over. Try again."),
+      );
     } finally {
       setPending(false);
     }
@@ -153,7 +159,7 @@ export function DelegationCard({
 
   return (
     <Card className="p-4" data-testid="delegation-card">
-      <h2 className="text-base font-semibold">Vote delegation</h2>
+      <h2 className="text-base font-semibold">Hand over your votes</h2>
       <p className="mt-1 text-xs text-black/60 dark:text-white/60">
         Hand your votes to someone you trust. They vote with your Shares, and
         your Shares stay yours: you can take the votes back at any time.
@@ -181,7 +187,7 @@ export function DelegationCard({
           className="mt-2 text-xs text-black/60 dark:text-white/60"
           role="status"
         >
-          Delegation opens once this project has a DAO.
+          You can hand over your votes once this project is set up for voting.
         </p>
       ) : (
         <div className="mt-2">
@@ -193,7 +199,7 @@ export function DelegationCard({
           <div className="mt-1">
             <HashPicker
               id="delegate-target"
-              label="Delegate to"
+              label="Hand votes to"
               onValueChange={setDelegatee}
               options={options}
               placeholder="Pick someone, or paste their account address"
@@ -209,7 +215,7 @@ export function DelegationCard({
               size="sm"
               type="button"
             >
-              Delegate votes
+              Hand over votes
             </Button>
           </div>
           {error ? (

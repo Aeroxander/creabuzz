@@ -230,7 +230,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
       ]);
       setLastTx(result.txHash);
     } catch (err) {
-      setError(senderErrorMessage(err, "The gate was not rotated."));
+      setError(senderErrorMessage(err, "The gate was not updated. Try again."));
     } finally {
       setPending(false);
     }
@@ -246,7 +246,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
         >
           {hook
             ? `bucket ${hook.bucket} · ${shortHex(hook.address)}`
-            : "no hook wired on this launch (pre-launch)"}
+            : "No trust gate is set up for this project yet"}
         </span>
       </div>
 
@@ -254,17 +254,18 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
         <div className="mt-3 space-y-3 text-xs">
           {/* Live gate state (EVM). */}
           <section aria-label="Gate state">
-            <h4 className="font-medium">Gate on-chain</h4>
+            <h4 className="font-medium">Gate on the network</h4>
             {gate.isLoading ? (
               <p className="text-black/60 dark:text-white/60">reading…</p>
             ) : gate.data?.root ? (
               <p className="text-black/70 dark:text-white/70">
-                scoreRoot {shortHex(gate.data.root)} · minScore{" "}
-                {gate.data.minScore?.toString() ?? "unreadable"}
+                Score list {shortHex(gate.data.root)} · minimum score{" "}
+                {gate.data.minScore?.toString() ?? "could not be read"}
               </p>
             ) : (
               <p className="text-black/60 dark:text-white/60">
-                unreadable: the chain did not answer (not the same as empty)
+                Could not be read: the network did not answer. That is not the
+                same as empty.
               </p>
             )}
             {hooks.length > 1 ? (
@@ -287,34 +288,34 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
           <section aria-label="Published roots">
             <h4 className="font-medium">Published score roots</h4>
             <select
-              aria-label="Score root record"
+              aria-label="Published score list"
               className="rounded-md border bg-transparent px-2 py-1"
               onChange={(event) => chooseEpoch(event.target.value)}
               value={selectedId}
             >
-              <option value="">Choose an epoch…</option>
+              <option value="">Choose a period…</option>
               {records.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {`${r.program} · epoch ${r.epoch}${r.standing === "publisher-claim" ? " (publisher's own claim)" : ""}`}
+                  {`${r.program} · period ${r.epoch}${r.standing === "publisher-claim" ? " (publisher's own claim)" : ""}`}
                 </option>
               ))}
             </select>
             {selected ? (
               <p className="mt-1 text-black/70 dark:text-white/70">
-                root {shortHex(selected.root)}
+                score list {shortHex(selected.root)}
                 {selected.anchorBlock != null
-                  ? ` · the record asserts block ${selected.anchorBlock} (unverified: not checked against the chain)`
+                  ? ` · the record says it was made at block ${selected.anchorBlock} (not checked against the network)`
                   : ""}
                 {gateMatches === true
-                  ? " · the gate on-chain matches this root"
+                  ? " · the gate on the network matches this list"
                   : gateMatches === false
-                    ? " · CONTRADICTED: the chain holds a different root"
+                    ? " · CONTRADICTED: the network holds a different list"
                     : ""}
               </p>
             ) : (
               <p className="mt-1 text-black/60 dark:text-white/60">
-                no score-root records yet (the scoring operator publishes one
-                per epoch)
+                No score lists published yet. The scoring operator publishes one
+                each period.
               </p>
             )}
             {selected && selected.standing === "publisher-claim" ? (
@@ -336,14 +337,14 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
             </p>
             {!selected ? (
               <p className="text-black/60 dark:text-white/60">
-                choose an epoch, then load its proofs to check them against the
-                root
+                Choose a period, then load its proofs to check them against the
+                published list.
               </p>
             ) : !selected.proofUrl ? (
               <p className="text-black/60 dark:text-white/60">
-                this record carries no proofs pointer, or its address is not one
-                this app may load. Only the root ships; the workspace data stays
-                private
+                This record has no link to its proofs, or the link is one this
+                app will not load. Only the list's fingerprint is shared. The
+                underlying data stays private.
               </p>
             ) : !approved ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -358,18 +359,18 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
                   type="button"
                   variant="outline"
                 >
-                  Load the proofs for this epoch
+                  Load the proofs for this period
                 </Button>
               </div>
             ) : bundle.isLoading ? (
               <p className="text-black/60 dark:text-white/60">
-                fetching the proofs bundle…
+                Loading the proofs…
               </p>
             ) : entries.length === 0 ? (
               <>
                 <p className="text-black/60 dark:text-white/60">
-                  unreadable bundle: the indexer did not answer or the entries
-                  were malformed (dropped, never guessed)
+                  The proofs could not be read: their host did not answer, or
+                  some entries were damaged and left out rather than guessed.
                 </p>
                 <Button
                   data-testid="trust-gate-reload-proofs"
@@ -386,11 +387,11 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
                 <p className="text-black/70 dark:text-white/70">
                   {entries.length} scored members ·{" "}
                   {entries.filter((e) => e.verified).length} proofs verified
-                  against the root
+                  against the published list
                   {rebuiltMatches === false
-                    ? " · CONTRADICTED: the rebuilt root differs from the published one"
+                    ? " · CONTRADICTED: the list rebuilt from these proofs differs from the published one"
                     : rebuiltMatches === true
-                      ? " · rebuilt root matches the published root"
+                      ? " · the list rebuilt from these proofs matches the published one"
                       : ""}
                 </p>
                 {tree ? (
@@ -443,20 +444,20 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
 
           {/* Rotation (owner-only on chain — the call reverts otherwise). */}
           <section aria-label="Rotate gate">
-            <h4 className="font-medium">Rotate gate</h4>
+            <h4 className="font-medium">Update the gate</h4>
             <p className="text-black/60 dark:text-white/60">
-              One call, owner-only: `setScoreRoot(root, minScore)` to the
-              selected epoch's root.
+              Owner only. Points the gate at the chosen period's score list and
+              sets the minimum score.
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <input
-                aria-label="minScore"
+                aria-label="Minimum score"
                 className="w-28 rounded-md border bg-transparent px-2 py-1"
                 onChange={(event) => setMinScoreInput(event.target.value)}
                 placeholder={
                   gate.data?.minScore != null
                     ? gate.data.minScore.toString()
-                    : "minScore"
+                    : "Minimum score"
                 }
                 type="text"
                 value={minScoreInput}
@@ -468,13 +469,13 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
                 size="sm"
                 type="button"
               >
-                Rotate to epoch {selected?.epoch ?? "…"}
+                Update to period {selected?.epoch ?? "…"}
               </Button>
               <SenderPickerControls state={picker} testIdPrefix="trust-gate-" />
             </div>
             {lastTx ? (
               <p className="mt-1 text-black/70 dark:text-white/70">
-                rotated · {shortHex(lastTx)}
+                Updated · confirmation {shortHex(lastTx)}
               </p>
             ) : null}
             {error ? (

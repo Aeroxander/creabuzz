@@ -135,7 +135,7 @@ export function DecisionVote({
     >
       <p className="text-sm" data-testid="decision-vote-summary" role="status">
         {!account && !forOther
-          ? "Sign in with your passkey or connect a wallet to vote."
+          ? "Sign in with your passkey or connect a wallet app to vote."
           : allocation.isError
             ? "Your Shares could not be read. Check the connection and try again."
             : !data

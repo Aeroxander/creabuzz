@@ -197,5 +197,5 @@ export function planVoteControlText(allocation: {
       : share >= 20
         ? "enough to pass a decision no backer votes on, but not one backers vote against"
         : "not enough to pass a decision alone";
-  return `The team's Shares vote from the first day; backers' Shares vote only once they are claimed from the sale, so until enough are claimed the team holds most of the votes that count and can pass decisions alone. Once every sale Share is claimed, the team holds ${rounded}% of the votes: ${power}.`;
+  return `The team's Shares vote from the first day; backers' Shares vote only once they are collected from the sale, so until enough are collected the team holds most of the votes that count and can pass decisions alone. Once every sale Share is collected, the team holds ${rounded}% of the votes: ${power}.`;
 }

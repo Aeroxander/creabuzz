@@ -102,7 +102,7 @@ export function TrustGraphCuratorPanel() {
       setBundle(built);
       setGateRoot(built.root);
       setComposeStatus(
-        `Score root composed for epoch ${built.epoch}: ${Object.keys(built.proofs).length} member${Object.keys(built.proofs).length === 1 ? "" : "s"}, every proof verified.`,
+        `Score list composed for period ${built.epoch}: ${Object.keys(built.proofs).length} member${Object.keys(built.proofs).length === 1 ? "" : "s"}, every proof verified.`,
       );
     } catch (err) {
       setComposeError(
@@ -126,13 +126,13 @@ export function TrustGraphCuratorPanel() {
         content: parts.content,
       });
       setPublishPhase("published");
-      setPublishStatus(`Score root published for epoch ${bundle.epoch}.`);
+      setPublishStatus(`Score list published for period ${bundle.epoch}.`);
     } catch (err) {
       // The record is replaceable per epoch — a retry replaces, never
       // duplicates, so the confirm stays armed with a way out.
       setPublishPhase("confirm");
       setPublishError(
-        `${err instanceof Error ? err.message : "The score root was not published."} You can publish again. The record is replaced, not duplicated.`,
+        `${err instanceof Error ? err.message : "The score list was not published."} You can publish again. The record is replaced, not duplicated.`,
       );
     }
   };
@@ -147,12 +147,12 @@ export function TrustGraphCuratorPanel() {
       const result = await resolveSender(sender).sendCalls([call]);
       setRotatePhase("sent");
       setRotateStatus(
-        `Gate rotated to ${gateRoot.trim().slice(0, 10)}… (transaction ${result.txHash}).`,
+        `Gate updated to ${gateRoot.trim().slice(0, 10)}… (confirmation ${result.txHash}).`,
       );
     } catch (err) {
       setRotatePhase("confirm");
       setRotateError(
-        `${senderErrorMessage(err, "The gate was not rotated.")} You can send the rotation again. Check the gate address first.`,
+        `${senderErrorMessage(err, "The gate was not updated.")} You can send the update again. Check the gate address first.`,
       );
     }
   };
@@ -165,17 +165,18 @@ export function TrustGraphCuratorPanel() {
     <Card className="p-4" data-testid="trustgraph-curator">
       <h2 className="text-base font-semibold">TrustGraph scores</h2>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        Compose this community&apos;s score root from a scores set, publish it
-        for an epoch, and rotate the onchain gate to the new root. Publishing
-        writes a signed record; the gate rotation is an onchain action the gate
-        owner confirms before it sends. Each step shows its result here.
+        Build this community&apos;s score list from a set of scores, publish it
+        for a period, and point the gate on the network at the new list.
+        Publishing saves a signed record. Updating the gate is a network step
+        the gate owner confirms before it is sent. Each step shows its result
+        here.
       </p>
 
       {/* ── compose ──────────────────────────────────────────────────────── */}
       <div className="mt-3 flex flex-col gap-2">
         <div>
           <label className="text-sm font-medium" htmlFor="trustgraph-epoch">
-            Epoch
+            Period
           </label>
           <Input
             data-testid="trustgraph-epoch"
@@ -199,7 +200,7 @@ export function TrustGraphCuratorPanel() {
           />
           <p className="mt-1 text-xs text-black/60 dark:text-white/60">
             One member and score per row, in the format shown. The scores stay
-            private. Only the proof-backed root is published.
+            private. Only a proof-backed fingerprint of the list is published.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -236,7 +237,7 @@ export function TrustGraphCuratorPanel() {
             size="sm"
             type="button"
           >
-            Compose score root
+            Build score list
           </Button>
         </div>
         {composeStatus ? (
@@ -280,12 +281,11 @@ export function TrustGraphCuratorPanel() {
               />
             </div>
             <p className="font-mono text-black/70 dark:text-white/70">
-              root: {bundle.root}
+              List fingerprint: {bundle.root}
             </p>
             <p className="text-black/60 dark:text-white/60">
               {memberCount} member proof{memberCount === 1 ? "" : "s"},
-              published as the score-root record (event 37006), replaceable per
-              epoch.
+              published as the score list record, replaceable for each period.
             </p>
             <pre className="max-h-48 overflow-auto rounded-md border border-black/15 p-2 font-mono text-3xs dark:border-white/15">
               {JSON.stringify(bundle.proofs, null, 2)}
@@ -300,7 +300,7 @@ export function TrustGraphCuratorPanel() {
           {publishPhase === "confirm" ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-black/70 dark:text-white/70">
-                Publish this score root for epoch {bundle.epoch}?
+                Publish this score list for period {bundle.epoch}?
               </span>
               <Button
                 data-testid="trustgraph-publish-confirm"
@@ -332,7 +332,7 @@ export function TrustGraphCuratorPanel() {
                 size="sm"
                 type="button"
               >
-                Publish score root
+                Publish score list
               </Button>
             </div>
           )}
@@ -360,10 +360,10 @@ export function TrustGraphCuratorPanel() {
 
       {/* ── gate rotation ───────────────────────────────────────────────── */}
       <div className="mt-4 border-t border-black/10 pt-3 dark:border-white/10">
-        <h3 className="text-sm font-semibold">Gate rotation</h3>
+        <h3 className="text-sm font-semibold">Update the gate</h3>
         <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-          Rotating points the onchain gate at a new score root and minimum
-          score. The gate owner&apos;s wallet sends this, and you confirm before
+          This points the gate on the network at a new score list and minimum
+          score. The gate owner&apos;s account sends it, and you confirm before
           it goes.
         </p>
         <div className="mt-2 flex flex-col gap-2">
@@ -373,13 +373,13 @@ export function TrustGraphCuratorPanel() {
                 className="text-sm font-medium"
                 htmlFor="trustgraph-gate-root"
               >
-                Gate root
+                Gate list fingerprint
               </label>
               <Input
                 data-testid="trustgraph-gate-root"
                 id="trustgraph-gate-root"
                 onChange={(e) => setGateRoot(e.target.value)}
-                placeholder="0x + 64 hex (filled in when you compose)"
+                placeholder="Filled in when you build the score list"
                 value={gateRoot}
               />
             </div>
@@ -414,7 +414,7 @@ export function TrustGraphCuratorPanel() {
           {rotatePhase === "confirm" ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-black/70 dark:text-white/70">
-                Rotate the gate to {gateRoot.trim().slice(0, 10)}… at minimum
+                Update the gate to {gateRoot.trim().slice(0, 10)}… at minimum
                 score {minScore.trim()}?
               </span>
               <Button
@@ -423,7 +423,7 @@ export function TrustGraphCuratorPanel() {
                 size="sm"
                 type="button"
               >
-                Confirm rotation
+                Confirm update
               </Button>
               <Button
                 data-testid="trustgraph-rotate-cancel"
@@ -450,7 +450,7 @@ export function TrustGraphCuratorPanel() {
                 type="button"
                 variant="outline"
               >
-                Rotate gate
+                Update gate
               </Button>
             </div>
           )}

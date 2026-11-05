@@ -109,25 +109,25 @@ export function seatProblem(
   const seat = formatUnits(seatStake, 18);
   if (kind === "stake") {
     return staked === 0n && amount < seatStake
-      ? `Stake at least ${seat} CREATE: one seat.`
+      ? `Put down at least ${seat} CREATE: one seat, the smallest deposit a juror can hold.`
       : null;
   }
   const left = staked - amount;
   return left > 0n && left < seatStake
-    ? `Take out all of it, or leave at least ${seat} CREATE: one seat.`
+    ? `Take out all of it, or leave at least ${seat} CREATE: one seat, the smallest deposit a juror can hold.`
     : null;
 }
 
-/** A juror's stake in a line. */
+/** A juror's deposit in a line. */
 export function stakeLine(
   staked: bigint,
   locked: bigint,
   seatStake: bigint,
 ): string {
-  if (staked === 0n) return "You have nothing staked.";
+  if (staked === 0n) return "You have no deposit in the court.";
   const seats = seatStake === 0n ? 0n : staked / seatStake;
   const free = seatStake === 0n ? 0n : (staked - locked) / seatStake;
-  return `You stake ${formatUnits(staked, 18)} CREATE: ${seats} ${seats === 1n ? "seat" : "seats"}, ${free} free.`;
+  return `Your deposit is ${formatUnits(staked, 18)} CREATE: ${seats} ${seats === 1n ? "seat" : "seats"}, ${free} free.`;
 }
 
 /** What the court owes a juror, naming only what is owed. */

@@ -56,16 +56,16 @@ export function OrgDiagnosticCard() {
   return (
     <Card className="m-4 mb-0 p-4" data-testid="org-diagnostic">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold">Org diagnostic</h3>
+        <h3 className="text-sm font-semibold">Team health check</h3>
         <span
           className="text-xs text-black/60 dark:text-white/60"
           role="status"
         >
           {diag.isLoading
-            ? "reading the event graph…"
+            ? "Reading the team's activity…"
             : report
               ? `${report.events} events · every figure can be recomputed from the raw events`
-              : "no window loaded"}
+              : "No activity loaded yet"}
         </span>
       </div>
 
@@ -88,7 +88,8 @@ export function OrgDiagnosticCard() {
               </>
             ) : (
               <p className="text-black/60 dark:text-white/60">
-                insufficient data (&lt;20 events), omitted, never zeroed
+                Not enough activity yet (fewer than 20 events), so nothing is
+                shown instead of a zero.
               </p>
             )}
           </section>
@@ -137,8 +138,8 @@ export function OrgDiagnosticCard() {
 
           {/* Instrument 4 — Cursor's thrash-vs-work scoreboard. */}
           {report.thrash ? (
-            <section aria-label="Churn vs progress">
-              <h4 className="font-medium">Churn vs progress</h4>
+            <section aria-label="Rework and progress">
+              <h4 className="font-medium">Rework and progress</h4>
               <p className="text-black/70 dark:text-white/70">
                 {report.thrash.revisions} revisions /{" "}
                 {report.thrash.coordinates} coordinates · rework{" "}
@@ -152,11 +153,11 @@ export function OrgDiagnosticCard() {
           ) : null}
 
           {/* Instrument 5 — drift probes (the AI Village shape). */}
-          <section aria-label="Drift probes">
-            <h4 className="font-medium">Drift probes</h4>
+          <section aria-label="Changes in behaviour">
+            <h4 className="font-medium">Changes in behaviour</h4>
             {report.drift.length === 0 ? (
               <p className="text-black/60 dark:text-white/60">
-                no actor had ≥8 events in both halves of the window
+                Nobody had at least 8 events in both halves of the period.
               </p>
             ) : (
               <p className="text-black/70 dark:text-white/70">
@@ -166,8 +167,8 @@ export function OrgDiagnosticCard() {
                     (p) =>
                       `${p.actor.slice(0, 8)}… moved ${(p.driftBp / 100).toFixed(0)}%`,
                   )
-                  .join(" · ") || "no flagged drift, distributions held"}
-                {" (movement only; “bad” is never inferred here)"}
+                  .join(" · ") || "No one changed their behaviour much."}
+                {" (this shows change only, never whether it is good or bad)"}
               </p>
             )}
           </section>

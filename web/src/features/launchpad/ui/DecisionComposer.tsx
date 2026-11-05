@@ -120,7 +120,8 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
   {
     id: "slash",
     label: "Take a reviewer's bond",
-    about: "After an approval you dispute. It is paid to the DAO.",
+    about:
+      "For an approval you dispute. A bond is the deposit a reviewer put down. It goes to the project.",
   },
   {
     id: "close",
@@ -131,7 +132,7 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     id: "trading",
     label: "Open trading",
     about:
-      "Let Shares be sent between wallets, and so bought and sold. It can open only 30 days after a vote announces it.",
+      "Let people send Shares to each other, so they can be bought and sold. It can open only 30 days after a vote announces it.",
   },
   {
     id: "rounds",
@@ -147,21 +148,21 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
   },
   {
     id: "secondary-listing",
-    label: "Publish a secondary market listing",
+    label: "Publish a weekly market listing",
     about:
-      "Let holders offer Shares and buyers bid, between a lowest and a highest price. Turning it off opens no round and takes no new offer or bid; settlement and claims carry on.",
+      "Let holders offer Shares and buyers bid, between a lowest and a highest price. Turning it off starts no new round and takes no new offer or bid. Rounds already open still settle, refund and pay out.",
   },
   {
     id: "payouts",
     label: "Pay holders",
     about:
-      "Share revenue with everyone holding Shares or non-voting shares, or pay them from the treasury.",
+      "Share revenue with everyone holding Shares or non-voting shares, or pay them from the project's money.",
   },
   {
     id: "pay",
-    label: "Pay from the treasury",
+    label: "Pay from the project's money",
     about:
-      "Send some of the treasury's money to someone. No reviewer checks it.",
+      "Send some of the project's money to someone. No reviewer checks it.",
   },
 ];
 
@@ -497,7 +498,7 @@ export function DecisionComposer({
               data-testid="decision-panel-unreadable"
               role="status"
             >
-              Couldn&apos;t read which budget is this DAO&apos;s milestone
+              Couldn&apos;t read which budget is this project&apos;s milestone
               panel, so the forms below may offer it as an ordinary budget.
               Reload to try again.
             </p>
@@ -731,11 +732,11 @@ export function DecisionComposer({
                 role="note"
               >
                 <p>
-                  This pays straight out of the treasury. No reviewer checks
-                  anything before it goes, and nothing checks what the money is
-                  spent on. If it is for work someone will do, set aside a work
-                  budget instead: the money then leaves only for work the
-                  reviewers approve.
+                  This pays straight out of the project&apos;s money. No
+                  reviewer checks anything before it goes, and nothing checks
+                  what the money is spent on. If it is for work someone will do,
+                  set aside a work budget instead: the money then leaves only
+                  for work the reviewers approve.
                 </p>
                 <Button
                   className="mt-2"

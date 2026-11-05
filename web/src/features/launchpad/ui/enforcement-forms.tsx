@@ -252,7 +252,7 @@ export function CloseBudgetForm({
       <p className="text-sm text-muted-foreground">
         {ctx.contributor
           ? "Close a work budget early. No new work can be submitted in it, and no more Shares can be awarded through it."
-          : "Close a work budget early. No new work can be submitted in it and the money not set aside for a submission goes back to the DAO. Submissions whose money is already set aside keep their own payment rules. The milestone panel is not offered here: closing it would leave the team's locked Shares with no way to unlock."}
+          : "Close a work budget early. No new work can be submitted in it and the money not set aside for a submission goes back to the project. Submissions whose money is already set aside keep their own payment rules. The milestone panel is not offered here: closing it would leave the team's locked Shares with no way to unlock."}
       </p>
       {pick.gone ? (
         <p
@@ -385,10 +385,11 @@ export function SlashForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
   return (
     <div className="mt-3 grid gap-3" data-testid="form-slash">
       <p className="text-sm text-muted-foreground">
-        Take some of a reviewer&apos;s bond after an approval you dispute. It is
-        paid to the DAO. This includes bond a reviewer has asked to take back
-        but has not received yet: it stays at risk until they do. No more than
-        the reviewer holds can be taken.
+        Take some of a reviewer&apos;s bond after an approval you dispute. A
+        bond is the deposit a reviewer put down. What is taken goes to the
+        project. This includes bond a reviewer has asked to get back but has not
+        received yet: it stays at risk until they do. No more than the reviewer
+        holds can be taken.
       </p>
       {unreadableBudgets > 0 ? (
         <p

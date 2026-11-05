@@ -66,13 +66,13 @@ interface ChallengeFacts {
 }
 
 const GOVERNANCE_WAITS =
-  "No decision of any kind can be opened before the buyers can claim their tokens.";
+  "No decision of any kind can be opened before the buyers can collect their tokens.";
 const LEAVING_PERMANENT =
-  "No vote can switch off leaving with your share of what the DAO holds, or take your Shares from you.";
+  "No vote can switch off leaving with your share of what the project holds, or take your Shares from you.";
 const LEAVING_OFF =
-  "This DAO was made with leaving switched off, and no vote can switch it on: members cannot take a share of the treasury out.";
+  "This project was made with leaving switched off, and no vote can switch it on: members cannot take out a share of the project's money.";
 const LEAVING_SWITCHABLE =
-  "Switch leaving off, or burn a holder's Shares: this DAO was made before those powers were removed.";
+  "Switch leaving off, or destroy a holder's Shares: this project was made before those powers were removed.";
 
 /**
  * What the DAO says about leaving: `plan` before it exists (the launch makes leaving permanent), its answers once read,
@@ -99,7 +99,7 @@ function ruleLines(rules: ShareRules | null): string[] {
   }
   if (rules.transfersLocked && rules.unlockNoticeRequired) {
     lines.push(
-      "Shares cannot be sent between wallets, so nobody can sell them, until a vote opens trading; that vote can only run 30 days after trading is announced, and you can leave in between.",
+      "Shares cannot be sent between accounts, so nobody can sell them, until a vote opens trading; that vote can only run 30 days after trading is announced, and you can leave in between.",
     );
   }
   return lines;
@@ -107,26 +107,26 @@ function ruleLines(rules: ShareRules | null): string[] {
 
 const LOCKED = [
   "The team's locked Shares unlock only when the named reviewers approve each milestone. The lock is set once, at launch.",
-  "Until then they cannot be sold, moved, or taken out by leaving the DAO.",
-  "Who judges the milestones is named at launch, with how many must agree. A vote cannot swap in a different panel.",
+  "Until then they cannot be sold, moved, or taken out by leaving the project.",
+  "Who judges the milestones is named at launch, with how many must agree. A vote cannot swap in different reviewers.",
 ] as const;
 
 /** Said when the project's rule for judging milestones is not known (no DAO yet, or it could not be read): true of every rule. */
 const LOCKED_RULE_UNKNOWN = [
   "The team's locked Shares unlock only when a milestone is reached and judged under the rule the project sets when it launches. The lock is set once, at launch.",
-  "Until then they cannot be sold, moved, or taken out by leaving the DAO.",
+  "Until then they cannot be sold, moved, or taken out by leaving the project.",
   "How milestones are judged is fixed at launch: no vote can change it, and no vote can free the locked Shares.",
 ] as const;
 
 const LOCKED_BY_OBJECTION = (c: ChallengeFacts) =>
   [
     `The team's locked Shares unlock only when a milestone is reached: the team publishes its evidence, holders have ${span(c.window)} to object, and a vote of holders can turn it down. The lock is set once, at launch.`,
-    "Until then they cannot be sold, moved, or taken out by leaving the DAO.",
+    "Until then they cannot be sold, moved, or taken out by leaving the project.",
     "How milestones are judged is set at launch. No vote can change it.",
   ] as const;
 
 const NOT_LOCKED = [
-  "The team's Shares are not locked. The team can sell or move them from the start, and they count when the DAO votes.",
+  "The team's Shares are not locked. The team can sell or move them from the start, and they count when the project votes.",
 ] as const;
 
 function votable(rules: ShareRules | null, leaving: Leaving): string[] {
@@ -134,7 +134,7 @@ function votable(rules: ShareRules | null, leaving: Leaving): string[] {
     ...(typeof leaving === "object" && !leaving.leavingPermanent
       ? [LEAVING_SWITCHABLE]
       : []),
-    "Spend the money the DAO holds.",
+    "Spend the project's money.",
     rules?.awardsOnly
       ? "Award new Shares for accepted work, within that limit."
       : "Issue new Shares.",
@@ -150,7 +150,7 @@ function votable(rules: ShareRules | null, leaving: Leaving): string[] {
 }
 
 const GIVE_UP =
-  "Give up a team member's unearned Shares. They are burned, never released for sale.";
+  "Take back a team member's unearned Shares. They are destroyed and never put up for sale.";
 
 function PowersCard({
   locked,
@@ -233,21 +233,22 @@ function PowersCard({
             could vote is against it. With less interest than that, including
             when nobody votes, the milestone stands.
             {challenge.bond
-              ? ` The team posts a bond of ${challenge.bond} with each milestone; it is forfeited if holders turn the milestone down.`
+              ? ` The team posts a bond of ${challenge.bond} with each milestone; the team loses it if holders turn the milestone down.`
               : ""}
           </p>
           <p className="mt-1">
             For {span(challenge.clawback)} after an unlock one more objection is
-            possible, and if holders uphold it the team&apos;s remaining locked
-            Shares are burned. Milestones are published in order, and the next
-            only once the one before has had its time for late objections, so
-            the Shares still ahead stay locked while an earlier milestone can be
-            objected to; what stands behind the last milestone is the bond.
+            possible, and if holders agree with it, the team&apos;s remaining
+            locked Shares are destroyed. Milestones are published in order, and
+            the next only once the one before has had its time for late
+            objections, so the Shares still ahead stay locked while an earlier
+            milestone can be objected to; what stands behind the last milestone
+            is the bond.
           </p>
           <p className="mt-1 text-black/60 dark:text-white/60">
             This protects you only as far as someone is watching: a milestone
             nobody objects to unlocks. You can leave with your share of the
-            treasury while one waits.
+            project&apos;s money while one waits.
           </p>
         </div>
       ) : locked && rule === "unknown" ? (
@@ -289,9 +290,9 @@ function PowersCard({
           <p className="mt-1 text-black/60 dark:text-white/60">
             That is the team&apos;s statement; the network cannot check it. The
             reviewers are fixed. If too few of them can be reached, or the panel
-            runs out, no milestone can be approved and the locked Shares stay
-            locked; the only thing the DAO can then do with them is give them up
-            and burn them.
+            closes, no milestone can be approved and the locked Shares stay
+            locked; the only thing the project can then do with them is give
+            them up and destroy them.
           </p>
         </div>
       ) : null}
@@ -322,13 +323,13 @@ function PowersCard({
         {guarantees === "plan"
           ? noticeText(DEFAULT_NOTICE, "plan")
           : guarantees === "unknown"
-            ? "Every decision waits before it takes effect. How long, under this DAO's settings today, could not be read just now; a vote can shorten those settings for decisions opened later."
+            ? "Every decision waits before it takes effect. How long, under this project's settings today, could not be read just now; a vote can shorten those settings for decisions opened later."
             : noticeText(guarantees.notice, "dao")}{" "}
         {guarantees === "unknown"
-          ? "Whether you can leave with your share before a decision takes effect is shown once this DAO's rules can be read."
+          ? "Whether you can leave with your share before a decision takes effect is shown once this project's rules can be read."
           : canLeave
-            ? `Until it takes effect, you can leave with your share of what the DAO holds${permanent ? "; no vote can switch that off" : ", for as long as leaving stays on"}. Money already moved into a work budget is not part of that share.`
-            : "Members cannot leave this DAO with a share of what it holds."}
+            ? `Until it takes effect, you can leave with your share of what the project holds${permanent ? "; no vote can switch that off" : ", for as long as leaving stays on"}. Money already moved into a work budget is not part of that share.`
+            : "Members cannot leave this project with a share of what it holds."}
       </p>
     </Card>
   );

@@ -135,7 +135,7 @@ export function ContributorSettings({
         <p className="mt-1 text-sm text-muted-foreground">
           {idea
             ? "The idea stops being listed."
-            : "The project stops being listed. Its DAO, its Shares and everything already decided stay on the network."}
+            : "The project stops being listed. The project itself, its Shares and everything already decided stay on the network."}
         </p>
         {confirmRemove ? (
           <div className="mt-2 flex gap-2">

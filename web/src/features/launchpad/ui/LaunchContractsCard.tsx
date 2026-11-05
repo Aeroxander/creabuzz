@@ -25,7 +25,7 @@ export function LaunchContractsCard({ record }: { record: LaunchRecord }) {
       {[
         ["Auction", record.auction],
         ["Token", record.token],
-        ["Treasury", record.treasury],
+        ["Project's money", record.treasury],
       ].map(([label, value]) => (
         <div
           key={label}

@@ -22,7 +22,7 @@ export function PanelUnreadableNote({
       data-testid="work-panel-unreadable"
       role="status"
     >
-      Couldn&apos;t read which of this DAO&apos;s budgets is the milestone
+      Couldn&apos;t read which of this project&apos;s budgets is the milestone
       panel, so the cards below may show it as an ordinary budget. Reload to try
       again.
     </p>

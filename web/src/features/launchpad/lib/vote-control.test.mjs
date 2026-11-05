@@ -157,7 +157,7 @@ test("every bar counts: the DAO's minimum in favour, its own turnout share, its 
       kind: "contributors",
       shares: (v) => `${v / WAD}`,
     }).join(" "),
-    /No decision that spends the treasury or changes the rules can pass now/,
+    /No decision that spends the project's money or changes the rules can pass now/,
   );
 });
 
@@ -220,11 +220,11 @@ test("the words say who decides now and what changes it, for a raise and for a c
   );
   assert.match(
     raise.join(" "),
-    /450 Shares bought in the sale are still waiting to be claimed/,
+    /450 Shares bought in the sale are still waiting to be collected/,
   );
   assert.match(
     raise.join(" "),
-    /with all of them claimed, Alice would hold 33\.3%/,
+    /with all of them collected, Alice would hold 33\.3%/,
   );
 
   const project = voteControlLines({
@@ -253,7 +253,7 @@ test("the words say who decides now and what changes it, for a raise and for a c
   });
   assert.match(
     awards.join(" "),
-    /No single holder can pass a decision that spends the treasury or changes the rules alone, but Alice can pass an award or a work area that nobody else votes on/,
+    /No single holder can pass a decision that spends the project's money or changes the rules alone, but Alice can pass an award or a work area that nobody else votes on/,
   );
   const shared = voteControlLines({
     who: "Alice",

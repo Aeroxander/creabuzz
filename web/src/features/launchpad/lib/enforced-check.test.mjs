@@ -55,7 +55,7 @@ describe("verifyEnforced — claims become checkable", () => {
       ragequittable: false,
     });
     assert.equal(out[2].status, "contradicted");
-    assert.match(out[2].detail, /exit right does not exist/);
+    assert.match(out[2].detail, /right to leave does not exist/);
   });
 
   it("threshold 0 contradicts the gating claim (anyone may propose)", () => {

@@ -148,8 +148,8 @@ export function DraftPanel({
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
             {result.draft.lane === "unrestricted"
-              ? "This changes what the DAO can do or spend, so it takes the full vote."
-              : "This is inside a budget the DAO already voted, so it takes the lighter vote."}{" "}
+              ? "This changes what the project can do or spend, so it needs the full vote."
+              : "This is inside a budget the project already voted on, so it needs the lighter vote."}{" "}
             Nothing happens until holders back it and it takes effect.
           </p>
           <Button
@@ -304,8 +304,8 @@ export function ProjectForm({
     <div className="mt-3 grid gap-3" data-testid="form-project">
       <p className="text-sm text-muted-foreground">
         Approve a work area inside a work budget. Its manager accepts submitted
-        work for review; the words below are what all of it is judged against,
-        exactly.
+        work for review. All of it is judged against the exact words you write
+        below.
       </p>
       {budgets.length === 0 ? (
         <p className="text-sm" data-testid="project-no-budget">
@@ -463,7 +463,7 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
       if (allowanceLeft !== null && amount > allowanceLeft) {
         throw new DecisionInputError(
           "shares",
-          `That is more new Shares than this year allows: ${formatUnits(allowanceLeft, 18)} are left to award.`,
+          `That is more than this year's limit on new Shares. ${formatUnits(allowanceLeft, 18)} can still be awarded this year.`,
         );
       }
       return awardDecision({
@@ -529,7 +529,7 @@ export function AwardForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
                   ? `The work area has ${formatUnits(left, 18)} Shares left to award.`
                   : null,
                 allowanceLeft !== null
-                  ? `This year's allowance of new Shares has ${formatUnits(allowanceLeft, 18)} left.`
+                  ? `This year's limit on new Shares has ${formatUnits(allowanceLeft, 18)} left.`
                   : null,
               ]
                 .filter(Boolean)
@@ -584,7 +584,7 @@ export function PayForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
       if (balance.data !== undefined && wei > balance.data)
         throw new DecisionInputError(
           "amount",
-          `The treasury holds only ${formatUnits(balance.data, decimals, 4)} ${ctx.currencySymbol}.`,
+          `The project's money holds only ${formatUnits(balance.data, decimals, 4)} ${ctx.currencySymbol}.`,
         );
       return payDecision({
         currency: ctx.currency,
@@ -599,26 +599,26 @@ export function PayForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
   return (
     <div className="mt-3 grid gap-3" data-testid="form-pay">
       <p className="text-sm text-muted-foreground">
-        Pay someone from the treasury. Nothing moves until holders back it and
-        it takes effect.
+        Pay someone from the project's money. Nothing moves until holders back
+        it and it takes effect.
       </p>
       <p
         className="text-xs text-muted-foreground"
         data-testid="pay-network-token"
       >
-        Network: chain {ctx.chainId ?? "unknown"}. Token: {ctx.currencySymbol}{" "}
+        Network ID: {ctx.chainId ?? "unknown"}. Token: {ctx.currencySymbol}{" "}
         <code className="break-all">{ctx.currency}</code>.
       </p>
       <p className="text-sm" data-testid="pay-balance">
         {balance.data === undefined
-          ? "Reading the treasury…"
-          : `The treasury holds ${formatUnits(balance.data, decimals, 4)} ${ctx.currencySymbol}.`}
+          ? "Reading the project's balance…"
+          : `The project's money holds ${formatUnits(balance.data, decimals, 4)} ${ctx.currencySymbol}.`}
       </p>
       <TextField
         after={
           <PaymentRecipientPicker chainId={ctx.chainId} onPick={setRecipient} />
         }
-        label="Who to pay (wallet address)"
+        label="Who to pay (account address)"
         onChange={setRecipient}
         placeholder="0x…"
         testId="pay-recipient"

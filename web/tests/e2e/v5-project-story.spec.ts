@@ -599,7 +599,7 @@ test("the front page shows one next action, the window it waits on, and reads fa
   // Two publishers' roots for the same epoch are two choices; the dropdown names the claim it is.
   const technical = live.getByTestId("launch-technical");
   await technical.locator("summary").click();
-  const epochSelect = live.getByLabel("Score root record");
+  const epochSelect = live.getByLabel("Published score list");
   await expect(epochSelect.locator("option")).toHaveCount(3, {
     timeout: 30_000,
   }); // placeholder + two signed records
@@ -619,10 +619,10 @@ test("the front page shows one next action, the window it waits on, and reads fa
     timeout: 20_000,
   });
   await expect(technical).toContainText(
-    "2 scored members · 2 proofs verified against the root",
+    "2 scored members · 2 proofs verified against the published list",
   );
   await expect(technical).toContainText(
-    "rebuilt root matches the published root",
+    "the list rebuilt from these proofs matches the published one",
   );
   expect(proofRequests).toBe(1);
 

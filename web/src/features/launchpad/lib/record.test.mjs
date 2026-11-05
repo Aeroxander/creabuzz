@@ -265,7 +265,7 @@ test("a reached milestone and a given-up one are both written down", () => {
     ledger[0].text,
     "Alice reached milestone 1. 100 Shares were freed.",
   );
-  assert.match(ledger[1].text, /gave up 60 Shares that Alice had not earned/);
+  assert.match(ledger[1].text, /took back 60 Shares that Alice had not earned/);
 });
 
 test("notes: a single reviewer approving everything, a cut-short history and a DAO with no lock are each said", () => {

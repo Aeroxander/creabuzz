@@ -1377,7 +1377,7 @@ test("turning the listing off is said as the contract does it: no new round, off
   assert.doesNotMatch(composer, /Turning it off stops new rounds/);
   assert.match(
     composer,
-    /Turning it off opens no round and takes no new offer or bid; settlement and claims carry on\./,
+    /Turning it off starts no new round and takes no new offer or bid\. Rounds already open still settle, refund and pay out\./,
   );
 });
 
