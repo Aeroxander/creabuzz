@@ -38,11 +38,13 @@ interface IMarketShareToken {
 /// matches the most lots. Every crossing order on the short side fills whole; all crossing orders on the
 /// long side (including any strictly better than the price) share the matched amount pro rata in whole
 /// lots, and leftover lots go to the lowest order ids, so the buyers' filled lots add up exactly to the
-/// sellers'. Sellers' unsold escrow returns to the original seller in the settle
-/// transaction itself (`policy.prepareEscrowReturn` then the transfer); buyers claim their Shares fresh
-/// (no inherited seller age) whenever; and every quote payout — proceeds and refunds alike — is an
-/// order's own recorded right, payable by `claimQuote` on demand, so a refusing or paused quote token
-/// can never stop collecting, settling, cancelling, claims or a Shares return.
+/// sellers'. Settle moves no Shares: it books the fills and tells the policy which escrow was sold. A
+/// seller's unsold remainder then returns to the original seller by `claimShares` (`policy.prepareEscrowReturn`
+/// then the transfer, one seller per transaction, callable by anyone, with no deadline), exactly as a void
+/// round's whole offer does; buyers claim their Shares fresh (no inherited seller age) whenever; and every
+/// quote payout — proceeds and refunds alike — is an order's own recorded right, payable by `claimQuote` on
+/// demand. A refusing or paused quote token therefore never blocks collecting, settling, cancelling or any
+/// Shares return, but `claimQuote` reverts, and quote payouts wait, until the token lets the transfer through.
 ///
 /// Disabling the listing stops new rounds, offers and bids only. Settle, refunds, returns and claims
 /// always stay available, even when the DAO clears or replaces `Shares.exitExchange`: the Shares pass
@@ -55,8 +57,11 @@ contract SecondaryMarket {
 
     /// @notice The most grid levels a round has (the clearing pass is bounded by this).
     uint256 public constant MAX_LEVELS = 64;
-    /// @notice The most active sellers one round accepts — the settle loop makes at most three policy/
-    /// token calls per seller, so the heaviest settle stays well inside one block.
+    /// @notice The most active sellers one round accepts. Settle makes at most one policy call per seller
+    /// (the sold-escrow hook) and no token transfer: measured against the real policy with 32 sellers, 32
+    /// buyers and 64 levels, the heaviest legal settle costs about 3.6M gas (about 21% of 2**24 = 16,777,216),
+    /// so it fits one transaction on chains that enforce the 2**24 per-transaction cap (EIP-7825). Each
+    /// seller's unsold-return, the heavy part (about 0.5M to 0.7M gas), is that seller's own `claimShares`.
     uint256 public constant MAX_ACTIVE_SELLERS = 32;
     /// @notice The most active buyers one round accepts.
     uint256 public constant MAX_ACTIVE_BUYERS = 32;
@@ -365,9 +370,11 @@ contract SecondaryMarket {
     /// the lowest grid level whose uniform price matches the most whole lots. Every crossing order on
     /// the short side fills whole; all crossing orders on the long side (including any strictly better
     /// than the price) share the matched amount pro rata, leftover lots going to the lowest order ids,
-    /// so the buyers' filled lots add up exactly to the sellers'. Sellers' unsold escrow returns in this
-    /// same transaction. Anyone may call it; nobody settling in time means the
-    /// round is void instead and claims pay everything back.
+    /// so the buyers' filled lots add up exactly to the sellers'. Settle only does the bounded
+    /// bookkeeping — clearing, the fills, and the policy's sold-escrow hook, with no token transfer — so it
+    /// fits one transaction at the heaviest legal round; each seller's unsold remainder is returned by
+    /// `claimShares`. Anyone may call it; nobody settling in time means the round is void instead and
+    /// claims pay everything back.
     function settle(uint256 id) external nonReentrant {
         Round storage r = _round(id);
         if (r.settled) revert AlreadySettled(id);
@@ -384,14 +391,6 @@ contract SecondaryMarket {
             SellOrder storage o = sells[id][seller];
             o.filled = uint128(sFill[i]);
             if (sFill[i] != 0) policy.consumeSoldEscrow(seller, uint256(sFill[i]) * lotSize);
-            uint256 unsold = uint256(o.lots - uint128(sFill[i])) * lotSize;
-            if (unsold != 0) {
-                policy.prepareEscrowReturn(seller, unsold);
-                IERC20(sharesToken).safeTransfer(seller, unsold);
-                o.escrowReturned = true;
-                if (sharesIn[id] < unsold) revert LedgerShort();
-                sharesIn[id] -= unsold;
-            }
         }
         for (uint256 i; i < m.bLots.length; ++i) {
             bids[id][_buyerList[id][i]].filled = uint128(bFill[i]);
@@ -402,17 +401,23 @@ contract SecondaryMarket {
     // ---- claiming -------------------------------------------------------------------------------------------------
 
     /// @notice Deliver round `id`'s Shares to `who`: what they bought — fresh, with no inherited seller
-    /// age — or, when a round went void, their own unsold offer back, with `policy.prepareEscrowReturn`
-    /// called immediately before the transfer in the same transaction. Anyone may call it; it only ever
-    /// pays `who` exactly what that one order owes, and repeats never pay twice. A blocked transfer ends
-    /// the call and the right stands for a repeat call later by anyone.
+    /// age — and the seller's own unsold remainder back: the whole offer when a round went void, or the
+    /// lots a settled round did not sell. `policy.prepareEscrowReturn` is called immediately before that
+    /// transfer in the same transaction. Settle never returns Shares itself (that keeps the
+    /// heaviest settle inside one transaction), so a part-filled seller's remainder waits here as the order's
+    /// standing right, with no deadline. Anyone may call it; it only ever pays `who` exactly what that one
+    /// order owes, and repeats never pay twice. A blocked transfer ends the call and the right stands for
+    /// a repeat call later by anyone.
     function claimShares(uint256 id, address who) external nonReentrant {
         Round storage r = _round(id);
         bool isVoid = !r.settled && block.timestamp >= r.settleDeadline;
         bool due;
         SellOrder storage s = sells[id][who];
-        if (s.lots != 0 && !s.escrowReturned && isVoid) {
-            uint256 amount = uint256(s.lots) * lotSize;
+        // A void round never filled anything, so `filled` is 0 and the whole offer is unsold; a settled
+        // round's `filled` was written by settle. A seller sold out whole has no remainder and no flag.
+        uint256 unsold = (r.settled || isVoid) && s.lots != 0 && !s.escrowReturned ? s.lots - s.filled : 0;
+        if (unsold != 0) {
+            uint256 amount = unsold * lotSize;
             s.escrowReturned = true;
             policy.prepareEscrowReturn(who, amount);
             IERC20(sharesToken).safeTransfer(who, amount);

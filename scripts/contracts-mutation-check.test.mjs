@@ -51,6 +51,10 @@ const REQUIRED = [
   ["SecondaryMarket.sol", "revert Reentrancy()"],
   // claim path
   ["SecondaryMarket.sol", "(r.settled || isVoid) &&"],
+  // the unsold remainder returns by claim, never in settle
+  ["SecondaryMarket.sol", "s.lots - s.filled"],
+  ["SecondaryMarket.sol", "s.escrowReturned = true"],
+  ["SecondaryMarket.sol", "consumeSoldEscrow(seller"],
   ["SecondaryMarket.sol", "quoteIn[id] < amount"],
   ["SecondaryMarket.sol", "quoteIn[id] -= amount"],
   // SecondaryMarketFactory

@@ -429,8 +429,11 @@ abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
         l.market.claimShares(id, B2);
         vm.prank(STANDIN);
         l.market.claimQuote(id, B2);
-        // The seller's unsold half already went home inside the settle transaction, so its shares
-        // claim has nothing left; it rightly refuses.
+        // The seller's unsold half is a standing right of its order: settle left it in the vault, and a
+        // claim returns it even though the exit exchange is gone. A repeat rightly refuses.
+        assertEq(l.shares.balanceOf(S1), 30e18, "settle left the unsold five in the vault");
+        vm.prank(STANDIN);
+        l.market.claimShares(id, S1);
         vm.prank(STANDIN);
         vm.expectRevert(SecondaryMarket.NothingToClaim.selector);
         l.market.claimShares(id, S1);
@@ -533,8 +536,17 @@ abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
         (,, uint128 bFilled,,,,) = l.market.bids(id, B2);
         assertEq(uint256(sFilled), uint256(bFilled), "conservation is exact in whole lots");
         assertEq(uint256(sFilled), matched, "each side filled exactly the matched lots of its own order");
-        // Conservation of the whole settle: every escrowed unit went back to the seller (their
-        // unsold whole lots) or now sits exactly owed to the buyer.
+        // Conservation of the whole settle: every escrowed unit is either the seller's unsold remainder
+        // (still held until claimed) or exactly owed to the buyer; the claim then returns the remainder.
+        assertEq(l.market.sharesIn(id), uint256(sellerLots) * LOT_SIZE, "settle moved no Shares");
+        assertEq(l.shares.balanceOf(address(l.market)), uint256(sellerLots) * LOT_SIZE, "the vault holds it all");
+        if (sellerLots > sFilled) {
+            l.market.claimShares(id, S1);
+            assertEq(l.shares.balanceOf(S1), (40 - uint256(sFilled)) * LOT_SIZE, "the unsold lots came home");
+        } else {
+            vm.expectRevert(SecondaryMarket.NothingToClaim.selector);
+            l.market.claimShares(id, S1);
+        }
         assertEq(l.market.sharesIn(id), uint256(bFilled) * LOT_SIZE, "escrow = unsold returned + buyer owed");
         assertEq(
             l.shares.balanceOf(address(l.market)),

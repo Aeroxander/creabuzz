@@ -136,7 +136,15 @@ contract SecondaryMarketRealPolicy is SecondaryMarketFlowsFixture {
         assertEq(f1, 30, "S1 sold 30 of 43 (pro rata plus the leftover lot)");
         assertEq(f2, 20, "S2 sold 20 of 30");
         assertEq(f3, 0, "S3 did not cross");
-        assertEq(l.policy.escrowedBalance(S1), 0, "consume + prepare + return closed S1's books");
+        // Settle only consumed the sold units, newest-first: each seller's unsold remainder is still held.
+        assertEq(l.policy.escrowedBalance(S1), 13e18, "consume took S1's 30 sold lots, the rest waits");
+        assertEq(l.policy.escrowedBalance(S2), 10e18);
+        assertEq(l.policy.escrowedBalance(S3), 23e18, "a zero fill consumed nothing");
+        assertEq(l.shares.balanceOf(address(l.market)), 96e18, "the vault holds every offered lot until claimed");
+        l.market.claimShares(id, S1);
+        l.market.claimShares(id, S2);
+        l.market.claimShares(id, S3);
+        assertEq(l.policy.escrowedBalance(S1), 0, "consume + claim's prepare + return closed S1's books");
         assertEq(l.policy.escrowedBalance(S2), 0);
         assertEq(l.policy.escrowedBalance(S3), 0, "a zero fill still returns through prepare");
         assertEq(l.shares.balanceOf(address(l.market)), 50e18, "the market holds only what the buyers are owed");
@@ -157,6 +165,99 @@ contract SecondaryMarketRealPolicy is SecondaryMarketFlowsFixture {
         assertEq(_policy().getPastCapacity(B1, snap), 0, "a buyer's units start fresh");
         _assertBooksAndDenominator(snap, pid);
         assertEq(l.shares.totalSupply(), 2_000e18 + 8e18, "only the two awards made new Shares");
+    }
+
+    // ---- the unsold remainder is claimed, not pushed by settle ----------------------------------------------------
+
+    /// @dev Settle keeps only the O(n) bookkeeping (clearing, fills, the sold-escrow hook), so one transaction
+    /// stays inside the 2**24 per-transaction cap. A part-filled seller's unsold Shares therefore stay in the
+    /// vault with their escrow book open after settle, and `claimShares` returns them through the real
+    /// prepare hook and transfer, to the original seller's oldest ages, exactly once, by anyone.
+    function test_a_part_filled_seller_claims_the_unsold_remainder_after_settle_exactly_once() public {
+        _mature();
+        uint256 id = _openRoundWith(l);
+        vm.prank(S1);
+        l.market.sell(id, 10, 0);
+        vm.prank(B1);
+        l.market.bid(id, 4, 6);
+        _toSettle(l, id);
+        l.market.settle(id);
+        (,, uint128 sold,, bool returnedAtSettle,) = l.market.sells(id, S1);
+        assertEq(sold, 4, "S1 sold 4 of 10 lots");
+        assertFalse(returnedAtSettle, "settle did not return the unsold remainder");
+        assertEq(l.shares.balanceOf(S1), 30e18, "the six unsold lots are still in the vault after settle");
+        assertEq(l.policy.escrowedBalance(S1), 6e18, "only the sold lots left S1's escrow book");
+        assertEq(l.market.sharesIn(id), 10e18, "the vault still holds the unsold six and the four owed to the buyer");
+
+        vm.expectEmit(true, true, false, true, address(l.market));
+        emit SecondaryMarket.SharesClaimed(id, S1, 6e18);
+        vm.prank(STANDIN);
+        l.market.claimShares(id, S1);
+        assertEq(l.shares.balanceOf(S1), 36e18, "the unsold six came home");
+        assertEq(l.policy.escrowedBalance(S1), 0, "the seller's book closed");
+        assertEq(l.market.sharesIn(id), 4e18, "only the buyer's four remain");
+        (,,,, bool returned,) = l.market.sells(id, S1);
+        assertTrue(returned);
+
+        vm.expectRevert(SecondaryMarket.NothingToClaim.selector);
+        l.market.claimShares(id, S1);
+        vm.expectRevert(SecondaryMarket.NothingToClaim.selector);
+        vm.prank(S1);
+        l.market.claimShares(id, S1);
+        assertEq(l.shares.balanceOf(S1), 36e18, "a repeat claim pays nothing more");
+
+        l.market.claimShares(id, B1);
+        l.market.claimQuote(id, S1);
+        l.market.claimQuote(id, B1);
+        (uint48 snap, uint256 pid) = _snapshot();
+        assertEq(_policy().getPastCapacity(S1, snap), 36e18, "the returned units kept their mature ages");
+        assertEq(l.market.sharesIn(id), 0);
+        assertEq(l.shares.balanceOf(address(l.market)), 0);
+        _assertBooksAndDenominator(snap, pid);
+    }
+
+    /// @dev The remainder is a standing right of the order: it does not lapse with the settle window, it is
+    /// not touched by the next round, and a seller who never calls anything again is still made whole by
+    /// anyone's claim, even while the same wallet has an order in a later round.
+    function test_an_unclaimed_remainder_survives_the_settle_window_and_the_next_round() public {
+        _mature();
+        uint256 first = _openRoundWith(l);
+        vm.prank(S1);
+        l.market.sell(first, 10, 0);
+        vm.prank(B1);
+        l.market.bid(first, 4, 6);
+        _toSettle(l, first);
+        l.market.settle(first);
+        assertFalse(l.market.voided(first), "a settled round is never void");
+
+        // Well past the settle deadline, and a whole second round later; S1 never touched anything.
+        vm.warp(block.timestamp + 60 days);
+        assertFalse(l.market.voided(first), "time does not void a settled round");
+        uint256 second = l.market.openRound();
+        vm.prank(S1);
+        l.market.sell(second, 5, 0);
+        vm.prank(B2);
+        l.market.bid(second, 5, 6);
+        _toSettle(l, second);
+        l.market.settle(second);
+        assertEq(l.policy.escrowedBalance(S1), 6e18, "round one's unsold six are still held, round two sold out");
+
+        vm.prank(STANDIN);
+        l.market.claimShares(first, S1);
+        assertEq(l.shares.balanceOf(S1), 40e18 - 10e18 - 5e18 + 6e18, "round one's remainder came home late");
+        assertEq(l.policy.escrowedBalance(S1), 0);
+        vm.expectRevert(SecondaryMarket.NothingToClaim.selector);
+        l.market.claimShares(second, S1);
+        l.market.claimShares(first, B1);
+        l.market.claimShares(second, B2);
+        l.market.claimQuote(first, S1);
+        l.market.claimQuote(first, B1);
+        l.market.claimQuote(second, S1);
+        l.market.claimQuote(second, B2);
+        assertEq(l.market.sharesIn(first), 0);
+        assertEq(l.market.sharesIn(second), 0);
+        assertEq(l.shares.balanceOf(address(l.market)), 0);
+        assertEq(l.quote.balanceOf(address(l.market)), 0);
     }
 
     // ---- one wallet on both sides --------------------------------------------------------------------------------
@@ -182,7 +283,8 @@ contract SecondaryMarketRealPolicy is SecondaryMarketFlowsFixture {
         (,, uint128 s2Bought,,,,) = l.market.bids(id, S2);
         assertEq(s2Sold, 7, "10 offered against 14 wanted at the floor: both sellers share 14 of 20");
         assertEq(s2Bought, 6, "the buyers fill whole");
-        l.market.claimShares(id, S2);
+        l.market.claimShares(id, S2); // S2's unsold three and the six it bought, in one call
+        l.market.claimShares(id, S1);
         l.market.claimShares(id, B1);
         l.market.claimQuote(id, S2); // S2's proceeds and its own bid's refund in one call
         l.market.claimQuote(id, S1);
@@ -260,6 +362,7 @@ contract SecondaryMarketRealPolicy is SecondaryMarketFlowsFixture {
         _toSettle(l, id);
         l.market.settle(id);
         l.market.claimShares(id, B2);
+        l.market.claimShares(id, S2);
         (uint48 snap, uint256 pid) = _snapshot();
         assertEq(l.shares.balanceOf(S2), 34e18 - 6e18 - 8e18);
         assertEq(_policy().getPastCapacity(S2, snap), 20e18, "the burn took the fresh units; all 20 left are mature");
@@ -303,10 +406,12 @@ contract SecondaryMarketRealPolicy is SecondaryMarketFlowsFixture {
 /// part-filled with five lineages, and every seller part-filled with all eight slots populated, which is the
 /// heaviest shape the settle loop can take. The round settles in one transaction, so the figure is what one
 /// settler pays in one block.
-/// @dev The asserted ceilings are UPPER bounds with about five percent headroom over the measured figures, which
-/// are recorded in `docs/v3-review/SECONDARY-TRADING-REVIEW.md`. Settling must fit one transaction, or the
-/// round goes void; the packet records that the heavier shapes do NOT fit a 2**24 per-transaction cap, which is
-/// a decision about `MAX_ACTIVE_SELLERS` that this suite deliberately does not make.
+/// @dev Settle does only the bounded bookkeeping (clearing, fills, the policy's sold-escrow hook) and returns no
+/// Shares; each seller's unsold remainder is returned by that seller's own `claimShares`. That is what keeps
+/// the heaviest legal settle inside one 2**24 (EIP-7825) transaction: it must fit, or the round goes void. The
+/// suite asserts every shape stays under half the cap (`TX_GAS_BUDGET`) and, tighter, under a per-shape ceiling
+/// with about five percent headroom over the measured figure; a single seller's claim is bounded separately.
+/// The figures are recorded in `docs/v3-review/SECONDARY-TRADING-REVIEW.md`.
 contract SecondaryMarketRealGas is SecondaryMarketFixture {
     function _useRealKit() internal pure override returns (bool) {
         return true;
@@ -314,13 +419,19 @@ contract SecondaryMarketRealGas is SecondaryMarketFixture {
 
     /// @dev The per-transaction gas ceiling some chains enforce (2**24, EIP-7825).
     uint256 internal constant TX_GAS_CAP = 16_777_216;
-    /// @dev The asserted ceilings, one per shape, each just above what it measures.
-    uint256 internal constant BOUND_MIXED = 15_200_000;
-    uint256 internal constant BOUND_HALF_FILLED = 21_900_000;
-    uint256 internal constant BOUND_EIGHT_SLOTS = 19_900_000;
+    /// @dev The most one seller's `claimShares` (prepare, transfer, the policy hook and the histogram restore) may cost.
+    uint256 internal constant BOUND_SELLER_CLAIM = 760_000;
+    /// @dev The margin every shape must keep under the cap: half of it. The heaviest measured settle is about
+    /// a fifth of 2**24, so a regression that reintroduces per-seller token transfers fails here long before
+    /// it reaches the cap, and a chain that enforces the cap can always mine the settle.
+    uint256 internal constant TX_GAS_BUDGET = TX_GAS_CAP / 2;
+    /// @dev The asserted ceilings, one per shape, each about five percent above what it measures.
+    uint256 internal constant BOUND_MIXED = 3_050_000;
+    uint256 internal constant BOUND_HALF_FILLED = 3_760_000;
+    uint256 internal constant BOUND_EIGHT_SLOTS = 3_310_000;
 
-    uint256 internal constant BOUND_TYPICAL_MIXED = 11_900_000;
-    uint256 internal constant BOUND_TYPICAL_HALF = 18_400_000;
+    uint256 internal constant BOUND_TYPICAL_MIXED = 2_520_000;
+    uint256 internal constant BOUND_TYPICAL_HALF = 3_120_000;
 
     /// @dev The fill shapes the same funded state is settled under.
     enum Shape {
@@ -407,9 +518,12 @@ contract SecondaryMarketRealGas is SecondaryMarketFixture {
         worst = worst > mixedGas ? worst : mixedGas;
         emit log_named_uint("worst measured settle gas on the real policy", worst);
         emit log_named_uint("as a share of the 2**24 per-transaction cap, in basis points", worst * 10_000 / TX_GAS_CAP);
-        // Upper bounds: each shape's recorded figure plus about five percent. Falsifiable: a heavier settle
-        // (an extra hook call, a wider history copy) fails here. They are NOT a claim that the shape fits a
-        // per-transaction cap; the review packet records that it does not, and the decision is the DAO's.
+        // The claim that matters: the heaviest legal settle fits one transaction on a chain that enforces the
+        // 2**24 cap, with a wide margin. Falsifiable: moving the unsold-return transfer (and its policy hook)
+        // back into settle takes the half-filled shapes to 17.5M-20.9M and fails this.
+        assertLt(worst, TX_GAS_BUDGET, "the heaviest settle fits one 2**24 transaction with a wide margin");
+        // Tighter per-shape ceilings: each shape's recorded figure plus about five percent, so a heavier settle
+        // (an extra hook call, a wider history copy) also fails here.
         assertLt(mixedGas, BOUND_MIXED, "mixed fills stay inside their recorded bound");
         assertLt(halfGas, BOUND_HALF_FILLED, "every seller half-filled stays inside its recorded bound");
         assertLt(eightGas, BOUND_EIGHT_SLOTS, "all eight histogram slots populated stays inside its bound");
@@ -439,6 +553,7 @@ contract SecondaryMarketRealGas is SecondaryMarketFixture {
         uint256 mixedGas = _runRound(m, Shape.Mixed);
         assertTrue(vm.revertToState(snapshot));
         uint256 halfGas = _runRound(m, Shape.HalfFilled);
+        assertLt(halfGas, TX_GAS_BUDGET, "a typical half-filled round fits one 2**24 transaction with a wide margin");
         assertLt(mixedGas, BOUND_TYPICAL_MIXED, "mixed fills with one lineage per seller stay inside their bound");
         assertLt(halfGas, BOUND_TYPICAL_HALF, "half fills with one lineage per seller stay inside their bound");
     }
@@ -512,17 +627,37 @@ contract SecondaryMarketRealGas is SecondaryMarketFixture {
             ? "settle gas, every seller sold one lot, all 8 slots populated"
             : allPartial ? "settle gas, every seller half-filled, 5 lineages" : "settle gas, mixed fills";
         emit log_named_uint(label, used);
+        _assertFillShape(m, id, allPartial);
+
+        // Settle returned nothing: a seller's escrow book still holds exactly its unsold lots, which only the
+        // claim below returns (that work is per seller and per transaction, not part of the settle).
+        for (uint256 i; i < SELLERS; ++i) {
+            (,, uint128 filled,,,) = m.market.sells(id, _seller(i));
+            assertEq(
+                m.policy.escrowedBalance(_seller(i)), (10 - uint256(filled)) * 1e18, "settle left only the unsold lots"
+            );
+        }
+
+        // The round then closes cleanly: every escrow book is empty and every seller's unsold units are home.
+        uint256 worstClaim;
+        for (uint256 i; i < SELLERS; ++i) {
+            _claimAll(m, id, _buyer(i));
+            uint256 c = gasleft();
+            try m.market.claimShares(id, _seller(i)) {}
+            catch (bytes memory e) {
+                assertEq(bytes4(e), SecondaryMarket.NothingToClaim.selector, "only an empty claim may refuse");
+            }
+            c -= gasleft();
+            if (c > worstClaim) worstClaim = c;
+            _claimAll(m, id, _seller(i));
+            assertEq(m.policy.escrowedBalance(_seller(i)), 0, "the seller's books closed");
+        }
+        // The hook-heavy work moved here, one seller per transaction: it is nowhere near the cap.
+        emit log_named_uint("worst single seller claimShares gas (unsold return)", worstClaim);
+        assertLt(worstClaim, BOUND_SELLER_CLAIM, "one seller's claim is a small transaction on its own");
         if (liveTail) {
             (uint256 slots,) = _populated(address(m.policy), 18, _seller(0));
             assertEq(slots, TAGS_BEFORE + TAGS_DURING, "the restored lineages fill all eight slots");
-        }
-        _assertFillShape(m, id, allPartial);
-
-        // The round then closes cleanly: every escrow book is empty and every seller's unsold units are home.
-        for (uint256 i; i < SELLERS; ++i) {
-            assertEq(m.policy.escrowedBalance(_seller(i)), 0, "the seller's books closed");
-            _claimAll(m, id, _buyer(i));
-            _claimAll(m, id, _seller(i));
         }
         assertEq(m.market.sharesIn(id), 0);
         assertEq(m.market.quoteIn(id), 0);

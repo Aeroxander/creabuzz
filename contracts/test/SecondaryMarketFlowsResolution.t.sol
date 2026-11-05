@@ -100,7 +100,10 @@ abstract contract SecondaryMarketFlowsResolutionCases is SecondaryMarketFlowsFix
         vm.prank(STANDIN);
         l.market.claimQuote(id, S1);
         assertEq(l.quote.balanceOf(S1), uint256(5) * 1_600, "5 of 40 sold at the floor");
-        assertEq(l.shares.balanceOf(S1), 35e18, "the unsold 5 came back in the settle transaction");
+        assertEq(l.shares.balanceOf(S1), 30e18, "settle left the unsold 5 in the vault");
+        vm.prank(STANDIN);
+        l.market.claimShares(id, S1);
+        assertEq(l.shares.balanceOf(S1), 35e18, "the unsold 5 came back by claim, with the listing off");
         vm.prank(STANDIN);
         l.market.claimQuote(id, B2);
         assertEq(

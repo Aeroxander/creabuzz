@@ -46,23 +46,40 @@ contract SecondaryMarketFlowsClearing is SecondaryMarketFlowsFixture {
         assertEq(b3Filled, 10);
         assertEq(b1Filled, 0);
 
-        // Sellers' unsold escrow already went home in the settle transaction itself.
-        assertTrue(s2Returned);
-        assertTrue(s3Returned);
-        assertTrue(s1Returned, "S1's unsold 14 lots went home inside the settle transaction");
+        // Settle returns no Shares: every seller's unsold escrow is still held, and only the sold lots left
+        // the seller's age credit.
+        assertFalse(s1Returned);
+        assertFalse(s2Returned);
+        assertFalse(s3Returned);
         assertFalse(s1Pays);
         assertFalse(s2Pays);
         assertFalse(b1Refunded, "non-crossing buyer refunds only by claim");
+        assertEq(l.shares.balanceOf(S1), 0, "S1's 14 unsold lots wait in the vault");
+        assertEq(l.shares.balanceOf(S2), 0);
+        assertEq(l.shares.balanceOf(S3), 0);
+        assertEq(l.market.sharesIn(id), 90 * LOT_SIZE, "the ledger still holds every escrowed lot");
+        assertEq(l.policy.escrowedBalance(S1), 14e18, "the sale consumed only the sold lots' age credit");
+        assertEq(l.policy.escrowedBalance(S2), 11e18);
+        assertEq(l.policy.escrowedBalance(S3), 20e18);
+
+        // Each seller claims its unsold whole lots back, exactly once, no rounding.
+        vm.startPrank(STANDIN);
+        l.market.claimShares(id, S1);
+        l.market.claimShares(id, S2);
+        l.market.claimShares(id, S3);
+        vm.expectRevert(SecondaryMarket.NothingToClaim.selector);
+        l.market.claimShares(id, S1);
+        vm.stopPrank();
         assertEq(l.shares.balanceOf(S1), 14e18, "the unsold whole lots back, no rounding");
         assertEq(l.shares.balanceOf(S2), 11e18, "the unsold whole lots back, no rounding");
         assertEq(l.shares.balanceOf(S3), 20e18);
         assertEq(l.market.sharesIn(id), (35 + 10) * LOT_SIZE, "the ledger holds just what the buyers will claim");
-        assertEq(l.policy.escrowedBalance(S1), 0, "the full sale consumed the seller's age credit");
-        assertEq(l.policy.escrowedBalance(S2), 0, "consume + prepare both landed");
+        assertEq(l.policy.escrowedBalance(S1), 0, "consume + prepare both landed");
+        assertEq(l.policy.escrowedBalance(S2), 0);
         assertEq(l.policy.escrowedBalance(S3), 0);
 
         // Proceeds at the one clearing price, claimable by anyone on behalf of the named owner. The
-        // zero-filled seller has no proceeds at all (its Shares went home in the settle), so its claim
+        // zero-filled seller has no proceeds at all (its Shares came back by the claim above), so its claim
         // rightly refuses.
         vm.startPrank(STANDIN);
         l.market.claimQuote(id, S1);

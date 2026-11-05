@@ -52,6 +52,8 @@ contract SecondaryMarketHandler is Test {
     uint256 public thirdPartyClaims;
     uint256 public voidClaimsPaid;
     uint256 public roundsDrained;
+    /// @dev Seller remainders of SETTLED rounds returned by a claim: the path settle no longer takes itself.
+    uint256 public settledRemainderClaims;
 
     // ---- independently measured flows per round -----------------------------------------------------------------
     mapping(uint256 => uint256) public quoteTakenIn;
@@ -255,7 +257,8 @@ contract SecondaryMarketHandler is Test {
         uint256 before = shares.balanceOf(address(market));
         vm.prank(outsiders[id % outsiders.length]);
         market.settle(id);
-        sharesPaidOut[id] += before - shares.balanceOf(address(market));
+        // Settle only books fills: it moves no Shares at all, so unsold remainders wait for their claim.
+        assertEq(shares.balanceOf(address(market)), before, "settle moves no Shares");
         roundsSettled++;
         (, uint256 matched,) = market.clearingOf(id);
         if (matched != 0) settledWithFill++;
@@ -287,6 +290,8 @@ contract SecondaryMarketHandler is Test {
         uint256 marketBefore = shares.balanceOf(address(market));
         uint256 whoBefore = shares.balanceOf(who);
         bool wasVoid = market.voided(id);
+        (uint128 sellLots,, uint128 sellFilled,, bool wasReturned,) = market.sells(id, who);
+        (,,,,,,,,, bool settledBefore,) = market.rounds(id);
         vm.prank(caller);
         try market.claimShares(id, who) {}
         catch (bytes memory err) {
@@ -296,6 +301,7 @@ contract SecondaryMarketHandler is Test {
         uint256 paid = marketBefore - shares.balanceOf(address(market));
         assertEq(shares.balanceOf(who) - whoBefore, paid, "a Shares claim pays the order's owner, whoever called");
         sharesPaidOut[id] += paid;
+        if (settledBefore && !wasReturned && sellLots > sellFilled) settledRemainderClaims++;
         _noteClaim(wasVoid, caller);
     }
 
@@ -410,7 +416,9 @@ contract SecondaryMarketInvariant is SecondaryMarketFixture {
             (uint128 sl,, uint128 sf,, bool returned, bool proceedsPaid) = l.market.sells(id, _actor(i));
             if (sl != 0) {
                 if (finished && !proceedsPaid) quoteOwed += uint256(sf) * price;
-                if (!v.settled && !returned) sharesOwed += uint256(sl) * LOT_SIZE;
+                // The unsold remainder (the whole offer until the round settles or goes void) is owed until the
+                // seller's claim returns it; settle itself returns nothing.
+                if (!returned) sharesOwed += uint256(sl - (v.settled ? sf : 0)) * LOT_SIZE;
             }
             (uint128 bl, uint16 maxStep, uint128 bf,, bool cancelled, bool sharesPaid, bool refundDone) =
                 l.market.bids(id, _actor(i));
@@ -609,13 +617,14 @@ contract SecondaryMarketInvariant is SecondaryMarketFixture {
     /// @dev One scripted round through the very handler the fuzzer drives: three sellers and three buyers
     /// with a pro-rata tie, an actor on both sides, a third-party drain, then a void round drained too.
     function test_handler_drives_a_real_pro_rata_round_and_a_void_round() public {
-        // Round 1 (opened in setUp): sellers 0,1,2 offer 3,4,5 lots at level 0; buyers 3,4,0 bid 5,5,4 at level 8.
+        // Round 1 (opened in setUp): sellers 0,1,2 offer 3,4,5 lots at level 0; buyers 3,4,0 bid 3,3,2 at level 8,
+        // so the sellers are the oversubscribed side and every one is part-filled (8 of 12 lots sell).
         handler.sell(0, 2, 0);
         handler.sell(1, 3, 0);
         handler.sell(2, 4, 0);
-        handler.bid(3, 4, 8);
-        handler.bid(4, 4, 8);
-        handler.bid(0, 3, 8); // actor 0 is on both sides
+        handler.bid(3, 2, 8);
+        handler.bid(4, 2, 8);
+        handler.bid(0, 1, 8); // actor 0 is on both sides
         assertEq(handler.ordersAccepted(), 6, "all six orders were accepted");
         assertEq(handler.selfTradeRounds(), 1, "one actor sat on both sides");
         handler.elapse(uint256(BIDDING)); // past closesAt
@@ -623,8 +632,11 @@ contract SecondaryMarketInvariant is SecondaryMarketFixture {
         assertEq(handler.roundsSettled(), 1, "the round settled");
         assertEq(handler.settledWithFill(), 1, "and matched lots");
         assertGt(handler.partialFilledOrders(), 0, "the oversubscribed side was filled pro rata");
+        assertEq(handler.settledRemainderClaims(), 0, "settle returned no remainder before any claim");
+        invariant_each_rounds_ledgers_equal_what_its_orders_are_owed();
         handler.drainRound(0, 9); // an outsider drains everything
         assertEq(handler.roundsDrained(), 1, "round one drained exactly");
+        assertGt(handler.settledRemainderClaims(), 0, "a part-filled seller's remainder came home by claim");
         assertGt(handler.thirdPartyClaims(), 0, "claims were paid for others by a third party");
         // Round 2 goes void: orders, then nobody settles.
         handler.sell(5, 1, 3);

@@ -11,7 +11,9 @@
 #   4. KEEPER_OPEN=1                    -> opens round 1; a second pass does not open another inside the week;
 #   5. an offer and a bid, still bidding -> the keeper does not settle (the chain would refuse it);
 #   6. bidding closed                   -> the keeper settles it; a second pass sends nothing more;
-#   7. both sides collect               -> the ledgers end at zero and the buyer holds the Shares;
+#      (an unfunded keeper that cannot send logs a loud ERROR with the reason and settles nothing);
+#   7. both sides collect               -> the seller's unsold lot waits until its claim (settle moves no Shares), then
+#                                          the ledgers end at zero and the buyer holds the Shares;
 #   8. a week later, KEEPER_OPEN=1      -> opens round 2; left unsettled past its deadline the round is void and the
 #                                          keeper sends nothing (it never pays gas for a transaction that must fail).
 #
@@ -51,6 +53,8 @@ THIRD=0x90F79bf6EB2c4f870365E785982E1f101E93b906  # anvil account 3
 DEPLOYER=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 FOUNDER=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 KEEPER=0x976EA74026E726554dB657fA54763abd0C3a0aa9
+BROKE_PK=0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356 # anvil account 7, emptied: cannot pay gas
+BROKE=0x14dC79964da2C08b23698B3D3cc7Ca32193d9955
 
 cleanup() {
   if [[ -n "${ANVIL_PID:-}" ]] && kill -0 "$ANVIL_PID" 2>/dev/null; then
@@ -141,7 +145,7 @@ expect "a second pass inside the week opens no other" "$(rounds_count)" "1"
 # 5. An offer and a bid while bidding is open; the keeper must not try to settle.
 cast send "$SHARES" "approve(address,uint256)" "$MARKET" 1000000000000000000000 --private-key "$FOUNDER_PK" --rpc-url "$RPC" >/dev/null
 cast send "$QUOTE" "approve(address,uint256)" "$MARKET" 1000000000000000000000 --private-key "$BIDDER_PK" --rpc-url "$RPC" >/dev/null
-cast send "$MARKET" "sell(uint256,uint128,uint16)" 1 2 0 --private-key "$FOUNDER_PK" --rpc-url "$RPC" >/dev/null
+cast send "$MARKET" "sell(uint256,uint128,uint16)" 1 3 0 --private-key "$FOUNDER_PK" --rpc-url "$RPC" >/dev/null
 cast send "$MARKET" "bid(uint256,uint128,uint16)" 1 2 64 --private-key "$BIDDER_PK" --rpc-url "$RPC" >/dev/null
 N1="$(nonce_of)"
 KEEPER_PRIVATE_KEY="$KEEPER_PK" keeper >/dev/null
@@ -150,6 +154,11 @@ expect "and sends no transaction for it" "$(nonce_of)" "$N1"
 
 # 6. Bidding closes: the keeper settles it, and a second pass sends nothing more.
 warp 259201 # three days and a second
+# A keeper that cannot pay for the transaction says so loudly, with the reason, and the round stays unsettled.
+cast rpc --rpc-url "$RPC" anvil_setBalance "$BROKE" 0x0 >/dev/null
+OUT="$(KEEPER_PRIVATE_KEY="$BROKE_PK" keeper)"
+[[ "$OUT" == *"ERROR: settle(round 1)"* ]] || fail "an unfunded keeper did not log a loud error: $OUT"
+expect "an unfunded keeper settles nothing" "$(settled_of 1)" "false"
 KEEPER_PRIVATE_KEY="$KEEPER_PK" keeper >/dev/null
 expect "the keeper settles a closed round" "$(settled_of 1)" "true"
 N2="$(nonce_of)"
@@ -160,6 +169,8 @@ expect "a settled round gets no second transaction" "$(nonce_of)" "$N2"
 cast send "$MARKET" "claimQuote(uint256,address)" 1 "$FOUNDER" --private-key "$FOUNDER_PK" --rpc-url "$RPC" >/dev/null
 cast send "$MARKET" "claimQuote(uint256,address)" 1 "$BIDDER" --private-key "$BIDDER_PK" --rpc-url "$RPC" >/dev/null
 cast send "$MARKET" "claimShares(uint256,address)" 1 "$BIDDER" --private-key "$BIDDER_PK" --rpc-url "$RPC" >/dev/null
+expect "settle returned no Shares: the seller's unsold lot waits in the vault" "$(call "$MARKET" "sharesIn(uint256)(uint256)" 1 | num 1)" "1000000000000000000"
+cast send "$MARKET" "claimShares(uint256,address)" 1 "$FOUNDER" --private-key "$BIDDER_PK" --rpc-url "$RPC" >/dev/null # anyone may send it
 expect "the quote ledger ends at zero" "$(call "$MARKET" "quoteIn(uint256)(uint256)" 1 | num 1)" "0"
 expect "the Shares ledger ends at zero" "$(call "$MARKET" "sharesIn(uint256)(uint256)" 1 | num 1)" "0"
 expect "the buyer holds the two lots" "$(call "$SHARES" "balanceOf(address)(uint256)" "$BIDDER" | num 1)" "2000000000000000000"
