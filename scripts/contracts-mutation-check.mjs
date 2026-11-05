@@ -12,11 +12,49 @@
  * Takes a few minutes per mutation (the patched DAO recompiles with via-IR).
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+// The secondary listing's contracts and the Foundry files that must catch a broken guard in each (relative to contracts/).
+const SM = "contracts/src/SecondaryMarket.sol";
+const FACTORY = "contracts/src/SecondaryMarketFactory.sol";
+const AV = "contracts/src/ActivationVoting.sol";
+const KIT2 = "contracts/src/ContributorKitV2.sol";
+const MOLOCH = "contracts/src/majeur/MolochPatched.sol";
+const SM_TESTS = [
+  "test/SecondaryMarketAdversary.t.sol",
+  "test/SecondaryMarketFlows.t.sol",
+  "test/SecondaryMarketFlowsClearing.t.sol",
+  "test/SecondaryMarketFlowsResolution.t.sol",
+  "test/SecondaryMarketGuardPins.t.sol",
+  "test/SecondaryMarketInvariant.t.sol",
+  "test/SecondaryMarketProvenance.t.sol",
+  "test/SecondaryMarketRealPolicy.t.sol",
+  "test/SecondaryMarketReview.t.sol",
+  "test/SecondaryListingVote.t.sol",
+];
+const KIT_TESTS = [
+  "test/ContributorKitV2.t.sol",
+  "test/ContributorKitV2Guards.t.sol",
+  "test/FounderSaleEligibility.t.sol",
+  "test/SecondaryMarketProvenance.t.sol",
+];
+const FACTORY_TESTS = [...SM_TESTS, "test/ContributorKitV2.t.sol"];
+const AV_TESTS = [
+  "test/ActivationVoting.t.sol",
+  "test/ActivationVotingFuzz.t.sol",
+  "test/FounderSaleEligibility.t.sol",
+  "test/HoldingAge.t.sol",
+  "test/SecondaryMarketRealPolicy.t.sol",
+  "test/SecondaryMarketReview.t.sol",
+  "test/SecondaryMarketInvariant.t.sol",
+  "test/SecondaryListingVote.t.sol",
+  "test/ContributorKitV2.t.sol",
+];
+const SHARES_TESTS = [...SM_TESTS, "test/FounderSaleEligibility.t.sol", "test/TransferLock.t.sol", "test/ExitExchange.t.sol"];
 
 /** [what is broken, file (from the repo root), the guard, its broken replacement, optional: an extra test file or "full"] */
 const MUTATIONS = [
@@ -1235,10 +1273,550 @@ const MUTATIONS = [
     "// removed",
     "test/FundingTerms.t.sol",
   ],
+  // ---- the secondary listing (D179/D180 candidate): SecondaryMarket, its factory, the activation policy and the V2 kit.
+  // Each names the test files that must catch it (and stops at the first failure); a MISSED line is a missing test.
+  // Guards are located by their text, so they survive line drift.
+  [
+    "Secondary market: anyone configures the listing",
+    SM,
+    "    function configureListing(bool enabled, uint128 minPrice, uint128 maxPrice, uint32 levels) external {\n        if (msg.sender != dao) revert NotDao();",
+    "    function configureListing(bool enabled, uint128 minPrice, uint128 maxPrice, uint32 levels) external {",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a listing with more price levels than the cap",
+    SM,
+    "levels == 0 || levels > MAX_LEVELS) revert InvalidTerms();",
+    "levels == 0) revert InvalidTerms();",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a price span the levels do not divide evenly",
+    SM,
+    "if (span % levels != 0) revert InvalidTerms();",
+    "span;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a round opens before the weekly gap has passed",
+    SM,
+    "if (lastOpenAt != 0 && block.timestamp < lastOpenAt + EVERY) revert TooSoon(lastOpenAt + EVERY);",
+    "lastOpenAt;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: the DAO sells its own inventory",
+    SM,
+    "if (msg.sender == dao) revert DaoCannotSell();",
+    "dao;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: an offer above the seller's sale capacity",
+    SM,
+    "if (policy.saleCapacity(msg.sender) < amount) revert NoCapacity();",
+    "amount;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: Shares taken in are not measured against the balance",
+    SM,
+    "if (received != before + amount) revert BadAmount();",
+    "received;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: quote taken in is not measured against the balance",
+    SM,
+    "if (received != before + escrow) revert BadAmount();",
+    "received;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: sell is reentrant",
+    SM,
+    "function sell(uint256 id, uint128 lots, uint16 minStep) external nonReentrant {",
+    "function sell(uint256 id, uint128 lots, uint16 minStep) external {",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: bid is reentrant",
+    SM,
+    "function bid(uint256 id, uint128 lots, uint16 maxStep) external nonReentrant {",
+    "function bid(uint256 id, uint128 lots, uint16 maxStep) external {",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: cancelSell is reentrant",
+    SM,
+    "function cancelSell(uint256 id) external nonReentrant {",
+    "function cancelSell(uint256 id) external {",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: cancelBid is reentrant",
+    SM,
+    "function cancelBid(uint256 id) external nonReentrant {",
+    "function cancelBid(uint256 id) external {",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: settle is reentrant",
+    SM,
+    "function settle(uint256 id) external nonReentrant {",
+    "function settle(uint256 id) external {",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: claimShares is reentrant",
+    SM,
+    "function claimShares(uint256 id, address who) external nonReentrant {",
+    "function claimShares(uint256 id, address who) external {",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: claimQuote is reentrant",
+    SM,
+    "function claimQuote(uint256 id, address who) external nonReentrant {",
+    "function claimQuote(uint256 id, address who) external {",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: the reentrancy lock never locks",
+    SM,
+    "if (_entered) revert Reentrancy();",
+    "_entered;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a seller's proceeds are paid before the round settles",
+    SM,
+    "if ((r.settled || isVoid) && s.lots != 0 && !s.proceedsPaid) {",
+    "if (s.lots != 0 && !s.proceedsPaid) {",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a quote claim is not checked against the round's own intake",
+    SM,
+    "if (quoteIn[id] < amount) revert LedgerShort();",
+    "amount;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a quote claim does not draw down the round's intake",
+    SM,
+    "quoteIn[id] -= amount;",
+    "amount;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: settling does not consume a seller's sold escrow",
+    SM,
+    "if (sFill[i] != 0) policy.consumeSoldEscrow(seller, uint256(sFill[i]) * lotSize);",
+    "sFill[i];",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: settling returns unsold Shares without preparing the escrow return",
+    SM,
+    "policy.prepareEscrowReturn(seller, unsold);",
+    "seller;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: cancelling an offer returns Shares without preparing the escrow return",
+    SM,
+    "policy.prepareEscrowReturn(msg.sender, amount);",
+    "amount;",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a void round returns Shares without preparing the escrow return",
+    SM,
+    "policy.prepareEscrowReturn(who, amount);",
+    "amount;",
+    SM_TESTS,
+  ],
+  [
+    "Market factory: anyone but the kit creates a market",
+    FACTORY,
+    "if (msg.sender != authorizedKit) revert NotAuthorizedKit();",
+    "authorizedKit;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: a second market for the same DAO",
+    FACTORY,
+    "if (marketOf[dao] != address(0)) revert AlreadyListed(dao);",
+    "dao;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: a DAO that is not the pinned runtime",
+    FACTORY,
+    "if (_codeHash(dao) != daoRuntimeHash) revert UnprovenDao();",
+    "dao;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: a quote token with no code",
+    FACTORY,
+    "if (address(quote).code.length == 0) revert UnprovenQuote();",
+    "quote;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: a lot size of zero or past 128 bits",
+    FACTORY,
+    "if (lotSize == 0 || lotSize > type(uint128).max) revert InvalidSetup();",
+    "lotSize;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: Shares the DAO does not name",
+    FACTORY,
+    "if (IProvenanceMoloch(dao).shares() != sharesToken) revert UnprovenShares();",
+    "sharesToken;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: a policy that is not the DAO's voting weight",
+    FACTORY,
+    "if (IProvenanceMoloch(dao).votingWeight() != address(policy)) revert UnprovenPolicy();",
+    "policy;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: Shares that are not the DAO's own clone",
+    FACTORY,
+    "if (sharesToken != _predictedShares(dao)) revert UnprovenShares();",
+    "sharesToken;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: Shares that name another DAO",
+    FACTORY,
+    "if (IMarketShareToken(sharesToken).DAO() != dao) revert UnprovenShares();",
+    "sharesToken;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: a policy bound to another DAO",
+    FACTORY,
+    "if (address(policy.dao()) != dao) revert UnprovenPolicy();",
+    "policy;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: a policy that names another market",
+    FACTORY,
+    "if (address(policy.market()) != predict(dao, sharesToken, address(policy), address(quote), lotSize)) {\n            revert UnprovenPolicy();\n        }",
+    "// removed",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: a policy from another summoner's mandate factory",
+    FACTORY,
+    "if (address(IProvenancePolicy(address(policy)).mandateFactory()) != address(summoner.mandateFactory())) {\n            revert UnprovenPolicy();\n        }",
+    "// removed",
+    FACTORY_TESTS,
+  ],
+  [
+    "Market factory: Shares whose exempt endpoint is not the new market",
+    FACTORY,
+    "if (IMarketShareToken(sharesToken).transferExempt() != address(market)) revert UnprovenShares();",
+    "market;",
+    FACTORY_TESTS,
+  ],
+  [
+    "Secondary market: a validator can freeze the market's escrow (the exemption in the transfer validator)",
+    MOLOCH,
+    "        address exempt = transferExempt;\n        if (exempt != address(0) && (from == exempt || to == exempt)) return;\n        if (validator != address(0)",
+    "        address exempt = transferExempt;\n        exempt;\n        if (validator != address(0)",
+    SHARES_TESTS,
+  ],
+  [
+    "Secondary market: the transfer lock stops the market's escrow (the exemption in the lock check)",
+    MOLOCH,
+    "    // @@CREABUZZ PATCH BEGIN shares-transfer-exempt\n        address exempt = transferExempt;\n        if (exempt != address(0) && (from == exempt || to == exempt)) return;",
+    "    // @@CREABUZZ PATCH BEGIN shares-transfer-exempt\n        address exempt = transferExempt;\n        exempt;",
+    SHARES_TESTS,
+  ],
+  [
+    "Secondary market: a move past the founder sale ceiling",
+    MOLOCH,
+    "if (policy != address(0) && amount > IShareSalePolicy(policy).saleCapacity(from)) {",
+    "if (false && amount > IShareSalePolicy(policy).saleCapacity(from)) {",
+    SHARES_TESTS,
+  ],
+  [
+    "Activation voting: Shares minted straight to the market",
+    AV,
+    "if (to == market_ && from == address(0)) revert MintToMarket();",
+    "market_;",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: the market is configured after the creation block",
+    AV,
+    "if (!initialized || initBlock == 0 || block.number != initBlock) revert NotInCreationBlock();",
+    "initialized;",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: the market is configured twice",
+    AV,
+    "if (configured) revert AlreadyConfigured();",
+    "configured;",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: a sale schedule whose cliff runs past its length, or with no length",
+    AV,
+    "initialGrant == 0 || initialGrant > type(uint96).max || cliff > duration || duration == 0",
+    "initialGrant == 0 || initialGrant > type(uint96).max",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: the exclusion list stays open after configuring",
+    AV,
+    "        exclusionsFrozen = true;\n        emit SecondaryConfigured(",
+    "        emit SecondaryConfigured(",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: a deposit into the market records no escrow",
+    AV,
+    "_escrowDeposit(from, amount);",
+    "from;",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: a prepared return moves a different amount than prepared",
+    AV,
+    "if (amount != prepared) revert PreparedReturnMismatch();",
+    "prepared;",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: a prepared return can be used twice",
+    AV,
+    "preparedReturnAmount[to] = 0;",
+    "to;",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: a returned offer keeps no original age",
+    AV,
+    "_unsettleReturn(to, amount);",
+    "to;",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: the market's books may claim more than its vault holds",
+    AV,
+    "if ((marketOutflow || to == market_) && escrowTotalMature + escrowTotalPending > capacity[market_]) {",
+    "if (false) {",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: a sale consumes more escrow credit than the seller has",
+    AV,
+    "if (amount > pendSum + matureOwned) revert MarketInventoryShort();",
+    "pendSum;",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: a return is prepared for more than the seller escrowed",
+    AV,
+    "if (amount > escrowMatureOwned[seller] + _histSum(escrowPend[seller])) revert MarketInventoryShort();",
+    "seller;",
+    AV_TESTS,
+  ],
+  [
+    "Activation voting: anyone but the market consumes or prepares escrow",
+    AV,
+    "if (!configured || msg.sender != market_) revert MarketOnly();",
+    "market_;",
+    AV_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the Shares' own DAO",
+    KIT2,
+    "tokens.DAO() != made.dao ||",
+    "false ||",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the transfer lock",
+    KIT2,
+    "|| !tokens.transfersLocked()",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the unlock notice",
+    KIT2,
+    "|| !tokens.unlockNoticeRequired()",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the market as the one exempt endpoint",
+    KIT2,
+    "|| tokens.transferExempt() != made.market",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the lock guard being empty",
+    KIT2,
+    "|| tokens.lockGuard() != address(0)",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the lock guard being sealed",
+    KIT2,
+    "|| !tokens.lockGuardSet()",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the sale policy",
+    KIT2,
+    "|| tokens.salePolicy() != made.policy",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the sale policy being sealed",
+    KIT2,
+    "|| !tokens.salePolicyChosen()",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the sale policy version",
+    KIT2,
+    "|| version != 1",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the founder starting with nothing to sell",
+    KIT2,
+    "|| eligible != 0",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips awards-only issuance",
+    KIT2,
+    "|| !tokens.awardsOnly()",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: the read-back skips the issuance cap",
+    KIT2,
+    "|| tokens.issuanceCapBps() != NO_CAP",
+    "|| false",
+    KIT_TESTS,
+  ],
+  // `p.quote == address(0)` is not given an entry: an address with no code is the zero address too, so the next clause
+  // already refuses it and removing the first changes nothing.
+  [
+    "Launch kit V2: a quote token with no code",
+    KIT2,
+    "|| p.quote.code.length == 0",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: a lot size of zero",
+    KIT2,
+    "|| p.lotSize == 0",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: a lot size past the bound",
+    KIT2,
+    "|| p.lotSize > MAX_LOT_SIZE_BOUND",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: a sale schedule with no length",
+    KIT2,
+    "|| p.saleDuration == 0",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: a sale cliff longer than the schedule",
+    KIT2,
+    "|| p.saleCliff > p.saleDuration",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: a sale that starts in the past",
+    KIT2,
+    "|| (p.saleStart != 0 && p.saleStart < block.timestamp)",
+    "|| false",
+    KIT_TESTS,
+  ],
+  [
+    "Launch kit V2: a sale schedule that runs off the 64-bit clock",
+    KIT2,
+    "if (uint256(saleStart) + p.saleCliff + p.saleDuration > type(uint64).max) revert InvalidTerms();",
+    "saleStart;",
+    KIT_TESTS,
+  ],
 ];
 
-const only = process.argv.slice(2).map(Number);
+const flags = process.argv.slice(2).filter((a) => a.startsWith("--"));
+const only = process.argv
+  .slice(2)
+  .filter((a) => !a.startsWith("--"))
+  .map(Number);
 const chosen = MUTATIONS.map((m, i) => [i, ...m]).filter(([i]) => only.length === 0 || only.includes(i));
+
+/** The test files an entry runs: its own list, or the money-path invariants plus the one extra file. */
+const testsOf = (extra) => (Array.isArray(extra) ? extra : extra && extra !== "full" ? [extra] : []);
+
+// --list prints every entry as JSON, for the script's own test to check which guards have an entry.
+if (flags.includes("--list")) {
+  console.log(
+    JSON.stringify(
+      chosen.map(([i, name, file, guard, broken, extra]) => ({ i, name, file, guard, broken, tests: testsOf(extra) })),
+    ),
+  );
+  process.exit(0);
+}
+
+// --check runs no forge: it proves each guard is still in its file exactly once, differs from its broken text, and that
+// every test file the entry names exists, so a rewritten guard cannot silently turn an entry into a SKIPPED one.
+if (flags.includes("--check")) {
+  const problems = [];
+  for (const [i, name, file, guard, broken, extra] of chosen) {
+    const source = readFileSync(join(ROOT, file), "utf8");
+    const found = source.split(guard).length - 1;
+    if (found !== 1) problems.push(`${i}. ${name}: the guard is in ${file} ${found} times, not once`);
+    if (guard === broken) problems.push(`${i}. ${name}: the broken text equals the guard`);
+    for (const t of testsOf(extra)) {
+      if (!existsSync(join(ROOT, "contracts", t))) problems.push(`${i}. ${name}: test file ${t} does not exist`);
+    }
+  }
+  if (problems.length) {
+    console.error(problems.join("\n"));
+    process.exit(1);
+  }
+  console.log(`every entry is well formed (${chosen.length} checked)`);
+  process.exit(0);
+}
 
 const dirty = execFileSync("git", ["status", "--porcelain", "--", ...new Set(chosen.map(([, , f]) => f))], {
   cwd: ROOT,
@@ -1261,8 +1839,14 @@ for (const [i, name, file, guard, broken, extra] of chosen) {
   writeFileSync(path, source.replace(guard, broken));
   let out;
   try {
-    // A filtered run compiles only what it needs; the kit's tests need the full build (they deploy its artifact).
-    const args = extra === "full" ? ["test"] : ["test", "--match-path", extra ? `{test/invariant/*,${extra}}` : "test/invariant/*"];
+    // A filtered run compiles only what it needs; the kit's tests need the full build (they deploy its artifact). An entry
+    // that lists its test files runs exactly those and stops at the first failure.
+    const args =
+      extra === "full"
+        ? ["test", "--offline"]
+        : Array.isArray(extra)
+          ? ["test", "--offline", "--fail-fast", "--match-path", `{${extra.join(",")}}`]
+          : ["test", "--offline", "--match-path", extra ? `{test/invariant/*,${extra}}` : "test/invariant/*"];
     out = spawnSync("forge", args, {
       env: { ...process.env, REQUIRE_CONTRACT_ARTIFACTS: "1" },
       cwd: join(ROOT, "contracts"),
@@ -1272,13 +1856,21 @@ for (const [i, name, file, guard, broken, extra] of chosen) {
   } finally {
     execFileSync("git", ["checkout", "--", file], { cwd: ROOT });
   }
+  // A forge that could not even start is an error to stop on, never a mutant that "no test noticed".
+  if (out.error) throw out.error;
   const text = `${out.stdout}${out.stderr}`;
   const reason = text.match(/\[FAIL: ([^\]]{0,140})/)?.[1];
+  // --fail-fast also marks tests it cancelled as `[FAIL]` (no reason, no gas), so name the one that carries a reason.
+  const failedTest = text.match(/\[FAIL: .*\]\s+(\w+\()/)?.[1];
   if (/Compiler run failed/.test(text)) {
     console.log(`${i}. ${name}: COMPILE ERROR`);
     missed++;
   } else if (reason) {
-    console.log(`${i}. ${name}: caught (${reason.replace(/; counterexample.*/, "")})`);
+    console.log(`${i}. ${name}: caught by ${failedTest ? `${failedTest})` : "a test"} (${reason.replace(/; counterexample.*/, "")})`);
+  } else if (out.status !== 0) {
+    const tail = text.split("\n").filter((l) => l.trim() && !/^\s*(-->|\|)|^Warning/.test(l)).slice(-6).join("\n    ");
+    console.log(`${i}. ${name}: ERROR (forge exited ${out.status} and no test failed)\n    ${tail}`);
+    missed++;
   } else {
     console.log(`${i}. ${name}: MISSED`);
     missed++;

@@ -40,9 +40,10 @@ contract SecondaryMarketFlows is SecondaryMarketFlowsFixture {
         vm.expectRevert(SecondaryMarket.InvalidTerms.selector);
         l.market.configureListing(true, MIN_PRICE, MIN_PRICE, 8);
         // A level count above the frozen cap cannot list either.
+        // The span is an exact multiple of the level count, so only the cap itself can refuse it.
         uint32 unboundedLevels = uint32(l.market.MAX_LEVELS() + 1);
         vm.expectRevert(SecondaryMarket.InvalidTerms.selector);
-        l.market.configureListing(true, MIN_PRICE, 100_000, unboundedLevels);
+        l.market.configureListing(true, MIN_PRICE, MIN_PRICE + uint128(unboundedLevels) * 100, unboundedLevels);
         vm.stopPrank();
     }
 

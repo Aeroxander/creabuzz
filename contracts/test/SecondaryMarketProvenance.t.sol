@@ -324,6 +324,20 @@ contract SecondaryMarketProvenance is SecondaryMarketFixture {
         _kitCreates(b, LOT_SIZE);
     }
 
+    /// @dev After the market exists, the Shares must still name it as their one exempt endpoint. The market's
+    /// own constructor reads the same getter first and sees the truth, so the factory's read-back is the
+    /// only check that can see the answer change afterwards: the first read is honest, the next one is not.
+    function test_guard_the_shares_must_still_name_the_new_market_after_creation() public {
+        (Launch memory b, address market) = _born(8, new FixedQuote(), address(0));
+        bytes[] memory answers = new bytes[](2);
+        answers[0] = abi.encode(market);
+        answers[1] = abi.encode(address(0xBAD));
+        vm.mockCalls(address(b.shares), abi.encodeWithSignature("transferExempt()"), answers);
+        vm.expectRevert(SecondaryMarketFactory.UnprovenShares.selector);
+        _kitCreates(b, LOT_SIZE);
+        assertEq(f.marketOf(address(b.dao)), address(0), "nothing was registered");
+    }
+
     /// @dev The policy's one market, set at birth, must be the market these exact bindings predict.
     function test_guard_the_policy_must_name_the_predicted_market() public {
         // The birth named a different market than the bindings predict.

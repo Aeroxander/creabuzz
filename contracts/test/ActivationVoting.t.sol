@@ -928,4 +928,51 @@ contract ActivationVotingTest is Test {
         assertTrue(policy.isConfigured());
         assertEq(policy.SECONDARY_POLICY_VERSION(), 1);
     }
+
+    // ------------------------------------------------------------------
+    // The one-time configuration: every refusal, one fault at a time
+    // ------------------------------------------------------------------
+
+    /// @dev Only the creation block may configure: a later block (a proposal's, or any other) is too late,
+    /// and the same call in the creation block goes through.
+    function test_configuring_after_the_creation_block_is_refused() public {
+        (ActivationVoting fresh, Moloch freshDAO) = _unconfiguredPolicy();
+        vm.roll(block.number + 1);
+        vm.prank(address(freshDAO));
+        vm.expectRevert(ActivationVoting.NotInCreationBlock.selector);
+        fresh.configureSecondary(address(market), ALICE, 60e18, uint64(block.timestamp), 0, 180 days);
+        assertFalse(fresh.isConfigured());
+    }
+
+    /// @dev Each field of the sale schedule and the two addresses refused on its own; the last call changes
+    /// nothing but the broken field back and is accepted, so every refusal above it was that one field.
+    function test_each_unusable_sale_schedule_or_address_is_refused() public {
+        (ActivationVoting fresh, Moloch freshDAO) = _unconfiguredPolicy();
+        uint64 at = uint64(block.timestamp);
+        address m = address(market);
+        vm.startPrank(address(freshDAO));
+        vm.expectRevert(ActivationVoting.InvalidSaleSchedule.selector);
+        fresh.configureSecondary(m, ALICE, 0, at, 0, 180 days); // no grant
+        vm.expectRevert(ActivationVoting.InvalidSaleSchedule.selector);
+        fresh.configureSecondary(m, ALICE, uint256(type(uint96).max) + 1, at, 0, 180 days); // grant past 96 bits
+        vm.expectRevert(ActivationVoting.InvalidSaleSchedule.selector);
+        fresh.configureSecondary(m, ALICE, 60e18, at, 181 days, 180 days); // cliff past the schedule
+        vm.expectRevert(ActivationVoting.InvalidSaleSchedule.selector);
+        fresh.configureSecondary(m, ALICE, 60e18, at, 0, 0); // no length
+        vm.expectRevert(ActivationVoting.InvalidSaleSchedule.selector);
+        fresh.configureSecondary(m, ALICE, 60e18, at - 1, 0, 180 days); // starts in the past
+        vm.expectRevert(AllocationVoting.InvalidInitialization.selector);
+        fresh.configureSecondary(address(0), ALICE, 60e18, at, 0, 180 days); // no market
+        vm.expectRevert(AllocationVoting.InvalidInitialization.selector);
+        fresh.configureSecondary(m, address(0), 60e18, at, 0, 180 days); // no founder
+        vm.expectRevert(AllocationVoting.InvalidInitialization.selector);
+        fresh.configureSecondary(address(freshDAO), ALICE, 60e18, at, 0, 180 days); // the DAO as its own market
+        vm.expectRevert(AllocationVoting.InvalidInitialization.selector);
+        fresh.configureSecondary(m, address(freshDAO), 60e18, at, 0, 180 days); // the DAO as the founder
+        assertFalse(fresh.isConfigured(), "none of them configured anything");
+        // A cliff exactly as long as the schedule is a legal shape.
+        fresh.configureSecondary(m, ALICE, 60e18, at, 180 days, 180 days);
+        vm.stopPrank();
+        assertTrue(fresh.isConfigured());
+    }
 }

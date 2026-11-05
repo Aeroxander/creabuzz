@@ -24,6 +24,9 @@ jobs:
         run: node scripts/check-foundry-lock.mjs
       - name: check-foundry-lock unit tests
         run: node --test scripts/check-foundry-lock.test.mjs
+      - name: mutation-check entries still match their guards
+        # No forge: proves each secondary-market guard is still in its file exactly once and has an entry.
+        run: node --test scripts/contracts-mutation-check.test.mjs
       - name: Install Foundry
         # The `stable` release channel; pin an exact version here when the
         # suite needs reproducibility beyond the repo's foundry.toml settings.
