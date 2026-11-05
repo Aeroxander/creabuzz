@@ -738,7 +738,7 @@ test("backers bid, the sale ends, and graduation pays the whole raise to the DAO
   );
   await page.getByTestId("graduation-execute").click();
   await expect(page.getByTestId("graduation-status")).toContainText(
-    "Graduation done",
+    "The sale is paid out",
     { timeout: 90_000 },
   );
   await expect(page.getByTestId("graduation-failure")).toHaveCount(0);

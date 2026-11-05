@@ -144,7 +144,8 @@ export function TreasuryTab({
       <Card className="p-4" data-testid="launch-treasury-plan">
         <h2 className="text-base font-semibold">Treasury plan</h2>
         <p className="mt-1 text-xs text-black/60 dark:text-white/60">
-          From the published terms: commitments, not a measured balance.
+          The money the project holds together. These figures come from the
+          published terms: commitments, not a measured balance.
         </p>
         <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
           {[
@@ -190,8 +191,8 @@ export function TreasuryTab({
         <h2 className="text-base font-semibold">Token balance</h2>
         {!record.token || !record.treasury ? (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            Add the token and treasury addresses to this project to see a
-            balance.
+            This project has no money account linked yet. Ask the founder to add
+            it.
           </p>
         ) : (
           <>
@@ -256,7 +257,8 @@ export function TreasuryTab({
             onClick={() => {
               setReturnProblem(null);
               onProposeReturn(
-                returnTitle.trim() || "Return the remaining treasury pro-rata",
+                returnTitle.trim() ||
+                  "Return the remaining money to holders, in proportion to their Shares",
               ).then(
                 () => setProposed(true),
                 () =>

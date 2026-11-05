@@ -27,6 +27,7 @@ import type {
   AuctionTxReceiptWithLogs,
 } from "@creaton/core/launchpad/auctionFlow.ts";
 import { decodeQuantity } from "../chain.ts";
+import { networkLabel } from "../chain-config.ts";
 import { walletError } from "@creaton/core/launchpad/wallet-errors.ts";
 import type { Eip1193ProviderLike } from "./wallet-sender.ts";
 
@@ -95,7 +96,7 @@ export function makeWalletAuctionEffects(
     );
     if (actual !== chainId) {
       throw new Error(
-        `Your wallet is on network ${actual}, but this project is on network ${chainId}. Switch networks in your wallet, then try again.`,
+        `Your wallet is on ${networkLabel(actual)}, but this project is on ${networkLabel(chainId)}. Switch networks in your wallet, then try again.`,
       );
     }
   };
@@ -147,7 +148,7 @@ export function makeWalletAuctionEffects(
         }
         if (now() >= deadline) {
           throw new Error(
-            `Your payment (confirmation ID ${hash}) was sent but not confirmed within ${Math.round(timeoutMs / 1000)}s. Check your wallet. If it went through, try again and this step will notice.`,
+            `Your step (confirmation ID ${hash}) was sent but not confirmed within ${Math.round(timeoutMs / 1000)}s. It may still go through, so money may still move. Check your wallet before trying again. If it went through, try again and this step will notice.`,
           );
         }
         await sleep(pollMs);

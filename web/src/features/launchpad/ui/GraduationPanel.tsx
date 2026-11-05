@@ -105,7 +105,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
     (state.phase === "mirrorFailed" ||
       state.txHashMissing ||
       (moneyLanded && state.failedStep !== "execute"))
-      ? " The graduation itself is complete on the network. Trying again only saves the remaining record and never sends the money again."
+      ? " The payout itself is complete. Trying again only saves the remaining record and never sends the money again."
       : "";
 
   // Manual hash recovery (the terminal `supply-hash` state): the founder
@@ -143,12 +143,12 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
       data-testid="graduation-panel"
     >
       <h3 className="text-sm font-semibold text-black dark:text-white">
-        Graduate the launch
+        Pay out the sale
       </h3>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
         {record.tokenPlan?.mode === "dao"
-          ? "Graduating pays out the sale. Once the sale has ended and raised enough, one step moves the money raised and the unsold tokens to the project's money and records it. Anyone can run it; the money can only go there."
-          : `Graduating pays out the sale. Once the sale has ended and raised enough, one step moves the money raised and the unsold tokens, sets ${DEFAULT_RESERVE_BPS / 100}% of the raise aside to back the token's price floor, sends the rest to the project's money, and records it. Anyone can run it; the money can only go to those two places.`}
+          ? "Paying out the sale (its technical name is graduation) comes once the sale has ended and raised enough: one step moves the money raised and the unsold tokens to the project's money and records it. Anyone can run it; the money can only go there."
+          : `Paying out the sale (its technical name is graduation) comes once the sale has ended and raised enough: one step moves the money raised and the unsold tokens, sets ${DEFAULT_RESERVE_BPS / 100}% of the raise aside to back the token's price floor, sends the rest to the project's money, and records it. Anyone can run it; the money can only go to those two places.`}
       </p>
       <UnauditedNotice chainId={record.chainId} />
       <WalletStrip testIdPrefix="graduation" wallet={wallet} />
@@ -214,7 +214,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
         </dl>
       ) : null}
       <ol
-        aria-label="Graduation steps"
+        aria-label="Payout steps"
         className={`mt-3 flex flex-col gap-1 ${alreadyGraduated && state.phase !== "done" ? "hidden" : ""}`}
       >
         {GRADUATION_STEPS.map((step) => {
@@ -242,7 +242,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
             size="sm"
             type="button"
           >
-            Graduate now
+            Pay out the sale
           </Button>
         ) : null}
         {state.phase === "failed" || state.phase === "mirrorFailed" ? (
@@ -277,7 +277,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
 
       {retry?.kind === "supply-hash" ? (
         <form
-          aria-label="Enter the confirmation ID of the graduation"
+          aria-label="Enter the confirmation ID of the payout"
           className="mt-2 flex flex-wrap items-center gap-2"
           data-testid="graduation-supply-hash-form"
           onSubmit={submitTxHash}
@@ -286,7 +286,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
             className="text-xs text-black/60 dark:text-white/60"
             htmlFor="graduation-tx-hash"
           >
-            Confirmation ID of the graduation
+            Confirmation ID of the payout
           </label>
           <input
             aria-describedby={
@@ -327,9 +327,9 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
         testId="graduation-status"
         text={
           state.phase === "running"
-            ? "Graduation in progress…"
+            ? "Paying out the sale…"
             : state.phase === "done"
-              ? "Graduation done and both records saved."
+              ? "The sale is paid out and both records are saved."
               : ""
         }
       />
@@ -348,8 +348,8 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
       ) : null}
       {state.graduationTxHash ? (
         <AddressRow
-          copyLabel="Copy graduation confirmation ID"
-          label="Graduation confirmation ID"
+          copyLabel="Copy payout confirmation ID"
+          label="Payout confirmation ID"
           value={state.graduationTxHash}
         />
       ) : null}

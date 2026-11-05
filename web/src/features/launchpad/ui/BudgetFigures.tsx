@@ -104,11 +104,22 @@ export function BudgetFigures({
           <p className="text-xs text-muted-foreground">Reviewer bond</p>
           <p className="mt-0.5 text-sm" data-testid="work-bond">
             {mandate.bond
-              ? `${bondMoney(mandate.bond.minBond)} each. A bond is a deposit a reviewer puts down; the project can take it after a disputed approval.`
+              ? `${bondMoney(mandate.bond.minBond)} each, which the project can take after a disputed approval`
               : "Could not be read. The network did not answer; this is not the same as no bond."}
           </p>
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Says once, above the list of work budgets, what a reviewer bond is (shown only when some budget asks for one). */
+export function BondNote({ mandates }: { mandates: MandateView[] }) {
+  if (!mandates.some((m) => m.bond || m.bondUnreadable)) return null;
+  return (
+    <p className="text-sm text-muted-foreground" data-testid="work-bond-help">
+      A bond is a deposit a reviewer puts down before judging. The project can
+      take it if they approve carelessly.
+    </p>
   );
 }

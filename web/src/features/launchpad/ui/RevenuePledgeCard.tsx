@@ -174,7 +174,11 @@ export function RevenuePledgeCard({ launch }: { launch: Launch }) {
       <p className="mt-2 text-sm" data-testid="pledge-sentence">
         {pledge
           ? pledgeSentence(pledge)
-          : "You have not pledged to pay in any of what the project earns. A pledge is how revenue reaches holders here: money paid in raises every Share's part of the treasury."}
+          : "You have not pledged to pay in any of what the project earns. A pledge is how revenue reaches holders here: money paid in raises every Share's part of the project's money."}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Net receipts means what is left of the project&apos;s income after its
+        costs.
       </p>
       {pledge?.document ? (
         <p className="mt-1 text-xs text-muted-foreground">

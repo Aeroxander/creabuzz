@@ -301,14 +301,18 @@ test("a return-capital proposal parses with its kind", () => {
     tags: [["a", coord]],
     content: JSON.stringify({
       kind: "return-capital",
-      title: "Return the remaining treasury pro-rata",
+      title:
+        "Return the remaining money to holders, in proportion to their Shares",
       state: "open",
     }),
     sig: "sig",
   };
   const parsed = parseLaunchProposal(prop);
   assert.equal(parsed.kind, "return-capital");
-  assert.equal(parsed.title, "Return the remaining treasury pro-rata");
+  assert.equal(
+    parsed.title,
+    "Return the remaining money to holders, in proportion to their Shares",
+  );
   assert.equal(parsed.state, "open");
 });
 
