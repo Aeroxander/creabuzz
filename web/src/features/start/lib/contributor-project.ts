@@ -13,7 +13,9 @@
  * 2. the project's public record, which names that DAO and says "contributors only".
  *
  * The DAO's address follows from the founder and a salt derived from the project, so a reload can ask the chain whether
- * this project's DAO already exists instead of making a second one.
+ * this project's DAO already exists instead of making a second one. The address is worked out from public values, so
+ * anyone can summon a DAO there first: a DAO found there counts only when the kit's own log says the kit made it
+ * (`newDaoLogFilter`), and the predicted address is never shown or published before the launch's receipt.
  *
  * Alias-free on purpose: `contributor-project.test.mjs` drives it under `node --test`.
  */
@@ -582,7 +584,9 @@ export function formatBps(bps: number): string {
 
 /**
  * The 32-byte salt for one project: the founder's public key and the project's id, under a fixed label. The kit scopes
- * it to the sending wallet too, so the same project from the same wallet always maps to the same DAO address.
+ * it to the sending wallet too, so the same project from the same wallet always maps to the same DAO address. It is
+ * derivable from public values, not a secret: it keeps two founders apart, it does not stop someone summoning a DAO at
+ * the address first (the flow then refuses that DAO and the founder starts again with a fresh project id).
  */
 export function contributorSalt(author: string, launchId: string): string {
   return `0x${bytesToHex(
@@ -709,6 +713,32 @@ export function encodePredictDao(
     ["address", "uint256", "bytes32"],
     [founder, founderWhole * SHARE_UNIT, salt],
   );
+}
+
+/** The DAO factory's `NewDAO(address indexed summoner, address indexed dao)` topic; `summoner` there is the caller. */
+export const NEW_DAO_TOPIC = `0x${bytesToHex(
+  keccak_256(utf8ToBytes("NewDAO(address,address)")),
+)}`;
+
+/**
+ * The log filter that finds the DAO factory's record of `dao` being summoned by `kit`: the factory (`summoner`) logs
+ * `NewDAO(caller, dao)` for every DAO it makes, so a hit proves the kit made it, and no hit proves nothing but that a
+ * DAO at that address came from someone else.
+ */
+export function newDaoLogFilter(
+  summoner: string,
+  kit: string,
+  dao: string,
+): { address: string; topics: string[] } {
+  const topic = (address: string) => {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address))
+      throw new Error("invalid address");
+    return `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}`;
+  };
+  return {
+    address: summoner,
+    topics: [NEW_DAO_TOPIC, topic(kit), topic(dao)],
+  };
 }
 
 export const CALL_SUMMONER = encodeFunctionData("summoner()", [], []);

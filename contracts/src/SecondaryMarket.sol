@@ -73,8 +73,9 @@ contract SecondaryMarket {
     uint256 public constant EVERY = 7 days;
     /// @notice The most lots one order holds, so every lots-by-anything product stays far inside 2**256.
     uint256 public constant MAX_ORDER_LOTS = 1 << 96;
-    /// @notice The most Shares base units one lot is, same reason. Terms stay integers end to end.
-    uint256 public constant MAX_LOT_SIZE = 1 << 128;
+    /// @notice The most Shares base units one lot is, same reason. Terms stay integers end to end. Inclusive,
+    /// and the same bound the factory and the launch kit enforce: a lot fits a `uint128`.
+    uint256 public constant MAX_LOT_SIZE = type(uint128).max;
     /// @notice The candidate fee: zero, fixed, and never a production promise.
     uint256 public constant FEE_BPS = 0;
 

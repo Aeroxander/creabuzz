@@ -43,6 +43,7 @@ const REQUIRED = [
   // SecondaryMarket: listing terms, round pacing, order intake, capacity, balance-delta intake checks
   ["SecondaryMarket.sol", "revert NotDao()"],
   ["SecondaryMarket.sol", "levels > MAX_LEVELS"],
+  ["SecondaryMarket.sol", "lotSize_ > MAX_LOT_SIZE"],
   ["SecondaryMarket.sol", "maxPrice <= minPrice || levels == 0"],
   ["SecondaryMarket.sol", "span % levels"],
   // the bidding-window check is written once per order call: each site needs its own entry

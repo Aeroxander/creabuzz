@@ -43,7 +43,10 @@ contract ContributorKit {
         string symbol;
         /// Whole-unit Shares (18 decimals) minted to the caller, the only holder.
         uint256 founderShares;
-        /// Scoped to the caller, so nobody else can take this project's DAO address first.
+        /// Mixed with the caller into the DAO's address, so two founders never share one. It is NOT a secret and does
+        /// not stop a pre-summon: `Summoner.summon` is public and hashes only the holders, their Shares and this
+        /// salt, all of which are public calldata, so anyone can make a DAO at the address first. The launch then
+        /// reverts and nothing is made; the founder retries with a new salt.
         bytes32 salt;
         /// The token claims name for an optional deposit. No money is set aside in the budget.
         address currency;

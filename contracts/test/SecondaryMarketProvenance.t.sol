@@ -200,6 +200,20 @@ contract SecondaryMarketProvenance is SecondaryMarketFixture {
         f.create(address(second.dao), address(second.shares), ISecondaryPolicy(address(second.policy)), second.quote, 0);
     }
 
+    /// @dev The factory's own bound on a lot is `type(uint128).max`; `2**128` is refused before any pin.
+    function test_a_lot_size_of_two_to_the_128_is_refused_by_the_factory() public {
+        Launch memory second = _launchNewDao();
+        vm.prank(address(kit));
+        vm.expectRevert(SecondaryMarketFactory.InvalidSetup.selector);
+        f.create(
+            address(second.dao),
+            address(second.shares),
+            ISecondaryPolicy(address(second.policy)),
+            second.quote,
+            uint256(1) << 128
+        );
+    }
+
     function test_a_dao_whose_birth_exemption_points_wrong_cannot_list() public {
         // A second DAO, but with a mis-installed exemption at birth (lockTransfers to zero): its market
         // prediction would still be correct, yet the market constructor refuses a token whose
@@ -426,6 +440,20 @@ contract SecondaryMarketProvenance is SecondaryMarketFixture {
 
     function test_constructor_refuses_a_zero_lot_size() public {
         _direct(address(l.dao), address(0), address(l.quote), 0, address(0), true);
+    }
+
+    /// @dev The cap on a lot is `type(uint128).max`, inclusive: the same bound the factory and the kit
+    /// enforce. `2**128` is past it, so the market must refuse it itself (a direct constructor call
+    /// never passes through the factory's own check).
+    function test_constructor_refuses_a_lot_size_of_two_to_the_128() public {
+        _direct(address(l.dao), address(0), address(l.quote), uint256(1) << 128, address(0), true);
+    }
+
+    function test_constructor_accepts_the_largest_lot_size() public {
+        (address made, address self) =
+            _direct(address(l.dao), address(0), address(l.quote), uint256(type(uint128).max), address(0), false);
+        assertEq(made, self);
+        assertEq(SecondaryMarket(made).lotSize(), uint256(type(uint128).max));
     }
 
     function _brokenFact(uint256 which) internal {

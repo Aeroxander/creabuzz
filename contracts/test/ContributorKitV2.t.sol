@@ -715,6 +715,47 @@ contract ContributorKitV2Test is ContributorKitV2Base {
         assertEq(tokens.balanceOf(FOUNDER), 200e18, "the founder's bootstrap is untouched");
     }
 
+    /// @dev The legacy entry point on THIS contract makes a sealed, market-less DAO: no market, no
+    /// sale policy, closed transfers, and no later vote can add any of them (the final zero guard).
+    /// An award still lands as plain raw balance, a ragequit works, and a wallet-to-wallet transfer
+    /// stays refused. Only `ContributorKitV2.launch` makes a DAO with a market.
+    function test_legacy_launch_over_the_variant_summoner_makes_a_sealed_marketless_dao() public {
+        ContributorKit.Params memory base = baseParams(bytes32("legacy-sealed"));
+        vm.prank(FOUNDER);
+        (address daoAddr, address budgetAddr) = kit.launch(base);
+        Moloch dao = Moloch(payable(daoAddr));
+        Shares tokens = dao.shares();
+
+        assertEq(kit.marketFactory().marketOf(daoAddr), address(0), "no market was ever made for it");
+        assertEq(tokens.salePolicy(), address(0), "no sale policy is bound");
+        assertTrue(tokens.lockGuardSet(), "the zero lock guard is final");
+        assertEq(tokens.transferExempt(), address(0), "no market endpoint is exempt from the lock");
+        assertTrue(tokens.transfersLocked());
+
+        // No vote, however carried, can add a market's sale ceiling afterwards.
+        address weight = dao.votingWeight();
+        vm.prank(daoAddr);
+        vm.expectRevert(Shares.LockGuardSet.selector);
+        tokens.setSalePolicy(weight);
+
+        // An award lands, and the holder cannot send it to another wallet (transfers are closed)...
+        _award(dao, TreasuryMandate(budgetAddr), keccak256("legacy-sealed-award"), DAVE, 40e18);
+        assertEq(tokens.balanceOf(DAVE), 40e18);
+        vm.prank(DAVE);
+        vm.expectRevert(Locked.selector);
+        tokens.transfer(R1, 1e18);
+        vm.prank(FOUNDER);
+        vm.expectRevert(Locked.selector);
+        tokens.transfer(R1, 1e18);
+
+        // ...but leaving by ragequit works.
+        address[] memory exitTokens = new address[](1);
+        exitTokens[0] = address(0);
+        vm.prank(DAVE);
+        dao.ragequit(exitTokens, 40e18, 0);
+        assertEq(tokens.balanceOf(DAVE), 0);
+    }
+
     /// @dev Clearing the matched-exit exchange does not strand anyone: the market returns a
     /// seller's own escrow to them regardless of anything downstream.
     function test_clearing_the_exit_exchange_still_returns_a_sellers_own_escrow() public {

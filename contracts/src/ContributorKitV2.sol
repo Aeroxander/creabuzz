@@ -20,8 +20,9 @@ import {TreasuryMandate, TreasuryMandateFactory} from "./TreasuryMandate.sol";
 ///
 /// What is added, all inside the DAO's own birth block and read back afterwards:
 /// - the Shares lock is announced with the predicted market as its one `transferExempt` endpoint —
-///   an immutable custody fact set at the token's birth, so no approval and no operator power is
-///   ever stored for trading;
+///   an immutable custody fact set at the token's birth, so the market is the one wallet the lock
+///   lets Shares reach and no operator power is ever stored for it. A seller still has to approve
+///   the market for the exact Shares an order escrows: the market pulls them with `transferFrom`;
 /// - the DAO's policy (the `ActivationVoting` variant, cloned from the summoner's pinned
 ///   implementation) is configured once with the market and the founder sale schedule. The schedule
 ///   describes SALE ELIGIBILITY ONLY: it is not conventional financial vesting, not a withdrawal
@@ -37,10 +38,13 @@ import {TreasuryMandate, TreasuryMandateFactory} from "./TreasuryMandate.sol";
 ///   implementations, and any missing code or wrong prediction reverts the whole launch.
 ///
 /// A market for a DAO is one, ever; after `launch` returns the kit holds nothing and keeps no role.
-/// The legacy `ContributorKit.launch` stays available unchanged on this contract (same immutables,
-/// same summoner serves both flows): it runs the old, manual/discretionary flow — binds no market,
-/// sets no sale policy — and its final zero lock guard permanently seals such a DAO's ability to
-/// ever add one. A new-flow DAO is made only by `ContributorKitV2.launch`.
+/// The legacy `ContributorKit.launch` is still callable on this contract (it is inherited, same
+/// immutables, same summoner serves both flows) and its terms are the legacy ones, but the DAO it
+/// makes is not byte-for-byte a legacy DAO: the summoner clones the `ActivationVoting` policy, which
+/// stays unconfigured and then counts votes like the legacy policy. That flow binds no market and
+/// sets no sale policy, and its final zero lock guard permanently seals such a DAO's ability to ever
+/// add one: no market, no founder schedule, no later fix. A DAO with a market is made only by
+/// `ContributorKitV2.launch`; use the legacy entry point on this address only to make that sealed kind.
 contract ContributorKitV2 is ContributorKit {
     /// @notice The one market factory this kit made from its summoner: only this kit's calls can
     /// open markets through it, and it is the only provenance check a market keeps.
@@ -79,9 +83,11 @@ contract ContributorKitV2 is ContributorKit {
         uint256 lotSize
     );
 
-    /// @dev Mirrors `SecondaryMarket.MAX_LOT_SIZE`: the market revalidates its own bound in its
-    /// constructor anyway, and the kit's readback ties `p.lotSize` to the market's stored one.
-    uint256 private constant MAX_LOT_SIZE_BOUND = 1 << 128;
+    /// @dev Mirrors `SecondaryMarket.MAX_LOT_SIZE` (inclusive, a `uint128`) and the market factory's own
+    /// bound: the market revalidates its bound in its constructor anyway, and the kit's readback ties
+    /// `p.lotSize` to the market's stored one. One bound everywhere, so a lot the kit accepts is a lot
+    /// the factory accepts.
+    uint256 private constant MAX_LOT_SIZE_BOUND = type(uint128).max;
 
     /// @dev Everything the read-back checks, in one place.
     struct Predictions {

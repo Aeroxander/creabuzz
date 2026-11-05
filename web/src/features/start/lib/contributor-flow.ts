@@ -92,6 +92,11 @@ export interface ContributorEffects {
   call(to: string, data: string): Promise<string>;
   /** Whether an address has code. */
   codeAt(address: string): Promise<boolean>;
+  /**
+   * Whether this kit itself summoned the DAO at `dao` (the DAO factory logged it as made by the kit). Anyone can summon
+   * a DAO at an address worked out from public values, so code at the address is not proof it is this project's.
+   */
+  madeByKit(kit: string, dao: string): Promise<boolean>;
   /** How many contracts an address has made (its nonce). */
   nonceOf(address: string): Promise<bigint>;
   /** Send one transaction from the founder's wallet and wait for its receipt. */
@@ -177,8 +182,15 @@ async function makeProject(
     ),
   );
   let createTx = job.createTx;
-  // Made already (a reload, or a send whose answer was lost)? Then use it: the address is this wallet's own.
-  if (!(await fx.codeAt(dao))) {
+  // Made already (a reload, or a send whose answer was lost)? Then use it, but only when the kit made it: the address
+  // follows from public values, so someone else could have summoned a DAO of their own there first. Adopting that one
+  // would publish a project whose DAO the founder does not control. Nothing is sent or published for it.
+  if (await fx.codeAt(dao)) {
+    if (!(await fx.madeByKit(job.kit, dao)))
+      throw new Error(
+        "a DAO already sits at the address this project would use, and it was not made by this project's kit (someone else made it first). Nothing was sent. Discard this attempt and start the project again: it then gets a new address.",
+      );
+  } else {
     const summoner = wordAddress(await fx.call(job.kit, CALL_SUMMONER));
     if (job.expectedSummoner && summoner !== job.expectedSummoner.toLowerCase())
       throw new Error(

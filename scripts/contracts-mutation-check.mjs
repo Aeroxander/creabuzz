@@ -1790,6 +1790,13 @@ const MUTATIONS = [
     KIT_TESTS,
   ],
   [
+    "Secondary market: a lot size past the bound",
+    SM,
+    "lotSize_ == 0 || lotSize_ > MAX_LOT_SIZE",
+    "lotSize_ == 0",
+    SM_TESTS,
+  ],
+  [
     "Launch kit V2: a sale schedule with no length",
     KIT2,
     "|| p.saleDuration == 0",

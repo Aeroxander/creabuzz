@@ -15,6 +15,8 @@ import {
   formatBps,
   remixFromDraft,
   KIT_LAUNCH_SIGNATURE,
+  NEW_DAO_TOPIC,
+  newDaoLogFilter,
   sharePreview,
   withReviewer,
 } from "./contributor-project.ts";
@@ -503,4 +505,27 @@ test("picking someone already among the reviewers changes nothing and says so", 
   assert.equal(withReviewer(`${R3};${R2}`, R2).added, false);
   // A longer entry that merely contains the address is not the same reviewer.
   assert.equal(withReviewer(`${R1}ff`, R1).added, true);
+});
+
+test("the kit-made-it log filter asks the DAO factory for NewDAO(kit, dao)", () => {
+  // Pinned with `cast sig-event "NewDAO(address,address)"`.
+  assert.equal(
+    NEW_DAO_TOPIC,
+    "0x567cac11d4a66456bbe20dc60d3579ec446a4e2fffae2a85f82ad0f1f18214f1",
+  );
+  const summoner = `0x${"5a".repeat(20)}`;
+  const kit = `0x${"C1".repeat(20)}`;
+  const dao = `0x${"da".repeat(20)}`;
+  assert.deepEqual(newDaoLogFilter(summoner, kit, dao), {
+    address: summoner,
+    topics: [
+      NEW_DAO_TOPIC,
+      `0x${"0".repeat(24)}${"c1".repeat(20)}`,
+      `0x${"0".repeat(24)}${"da".repeat(20)}`,
+    ],
+  });
+  assert.throws(
+    () => newDaoLogFilter(summoner, "0x12", dao),
+    /invalid address/,
+  );
 });

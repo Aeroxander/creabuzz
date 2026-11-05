@@ -75,6 +75,7 @@ function fakeChain({
   nonce = 7n,
   lag = 0,
   sendFails = null,
+  squatted = false,
 } = {}) {
   const state = {
     made,
@@ -88,6 +89,9 @@ function fakeChain({
     publishFails,
     revert,
     nonce,
+    // The made DAO was summoned by someone other than the kit (a pre-summon at the predicted address).
+    squatted,
+    kitChecks: [],
   };
   const fx = {
     async call(to, data) {
@@ -106,6 +110,10 @@ function fakeChain({
         return false;
       }
       return true;
+    },
+    async madeByKit(kit, dao) {
+      state.kitChecks.push({ kit, dao });
+      return !state.squatted;
     },
     async wait(ms) {
       state.waits.push(ms);
@@ -182,6 +190,29 @@ test("a project this wallet already made is used, never made twice", async () =>
   assert.equal(out.ok, true);
   assert.equal(state.sends.length, 0);
   assert.equal(out.job.dao, DAO);
+});
+
+test("a DAO already at the predicted address that the kit did not make is refused, never adopted or published", async () => {
+  // Anyone can summon a DAO at an address worked out from public calldata. Code at the address is not proof it is ours.
+  const { fx, state } = fakeChain({ made: true, squatted: true });
+  const t = tracker();
+  const out = await runContributorStart(job(), fx, t.dispatch);
+  assert.equal(out.ok, false);
+  assert.equal(out.step, "create");
+  assert.match(out.message, /not made by this project's kit/);
+  assert.match(out.message, /Nothing was sent/);
+  assert.equal(state.sends.length, 0);
+  assert.equal(state.published.length, 0);
+  assert.equal(out.job.dao, null);
+  assert.deepEqual(state.kitChecks, [{ kit: KIT, dao: DAO }]);
+});
+
+test("a DAO the kit made is still used, after asking the chain who made it", async () => {
+  const { fx, state } = fakeChain({ made: true });
+  const out = await runContributorStart(job(), fx, () => {});
+  assert.equal(out.ok, true);
+  assert.deepEqual(state.kitChecks, [{ kit: KIT, dao: DAO }]);
+  assert.equal(state.sends.length, 0);
 });
 
 test("a kit that makes a different kind of DAO is refused before sending", async () => {

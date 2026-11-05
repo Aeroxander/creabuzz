@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {ContributorKit} from "../src/ContributorKit.sol";
 import {ContributorKitV2} from "../src/ContributorKitV2.sol";
+import {SecondaryMarket} from "../src/SecondaryMarket.sol";
 import {ContributorKitV2Base} from "./ContributorKitV2.t.sol";
 
 /// @title ContributorKitV2 single-fault guards
@@ -36,6 +37,23 @@ contract ContributorKitV2GuardsTest is ContributorKitV2Base {
         ContributorKitV2.LaunchParams memory p = _params("hugeLot");
         p.lotSize = (uint256(1) << 128) + 1;
         _refused(p);
+    }
+
+    /// @dev The one bound is `type(uint128).max`, the same as the market factory's: `2**128` itself is
+    /// past it and the kit says so with its own typed refusal, not with the factory's `InvalidSetup`
+    /// from deep inside the launch.
+    function test_a_lot_size_of_two_to_the_128_is_refused_by_the_kit_itself() public {
+        ContributorKitV2.LaunchParams memory p = _params("limitLot");
+        p.lotSize = uint256(1) << 128;
+        _refused(p);
+    }
+
+    /// @dev The largest lot size every layer accepts launches (kit, factory and market agree).
+    function test_the_largest_lot_size_launches() public {
+        ContributorKitV2.LaunchParams memory p = _params("maxLot");
+        p.lotSize = uint256(type(uint128).max);
+        (,,, SecondaryMarket market) = _launchV2(p);
+        assertEq(market.lotSize(), uint256(type(uint128).max));
     }
 
     function test_a_sale_schedule_with_no_length_is_refused() public {
