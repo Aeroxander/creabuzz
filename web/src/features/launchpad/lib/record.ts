@@ -229,7 +229,7 @@ function claimOutcome(
     case "Frozen":
       return "Frozen by the project while it is checked. Nothing is paid meanwhile.";
     case "Recovered":
-      return "Rejected by the project after it was frozen.";
+      return "Frozen, then undone by the project. The contributor got their deposit back and the set-aside payment returned to the project.";
     default:
       return "";
   }

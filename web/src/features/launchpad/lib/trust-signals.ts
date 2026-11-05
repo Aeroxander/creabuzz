@@ -428,13 +428,13 @@ export function trackRecordDerivation(
     },
     {
       key: "word-sweep",
-      label: "Sweep receipts",
+      label: "Receipts for the money raised when the sale ended",
       value: record.counts.byWord.sweep,
       source: `kind ${KIND_LAUNCH_RECEIPT} · tag kind=sweep`,
     },
     {
       key: "word-lock",
-      label: "Lock receipts",
+      label: "Receipts for money set aside to back the price floor",
       value: record.counts.byWord.lock,
       source: `kind ${KIND_LAUNCH_RECEIPT} · tag kind=lock`,
     },

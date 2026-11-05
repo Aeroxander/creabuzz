@@ -202,7 +202,7 @@ export function CourtCaseCard({
         <p className="font-semibold">
           Case {key}
           {kase.about?.kind === "bounty"
-            ? ` · a bounty's claim ${kase.about.claim}`
+            ? ` · a bounty's submission ${kase.about.claim}`
             : kase.about?.kind === "remix"
               ? " · a remix's bond"
               : ""}
@@ -298,8 +298,10 @@ export function CourtCaseCard({
       ) : null}
       {kase.period !== "ruled" && kase.round.drawn.length > 0 ? (
         <p className="text-muted-foreground" data-testid="court-case-round">
-          Round {kase.rounds} of 3 · {kase.round.seats} seats ·{" "}
-          {kase.round.committed} of {kase.round.drawn.length} jurors sealed
+          Round {kase.rounds} of 3 · {kase.round.seats}{" "}
+          {kase.round.seats === 1 ? "seat" : "seats"} · {kase.round.committed}{" "}
+          of {kase.round.drawn.length}{" "}
+          {kase.round.drawn.length === 1 ? "juror has" : "jurors have"} sealed
           their vote · {kase.round.revealed} opened
           {kase.mine && kase.mine.seats > 0
             ? ` · you hold ${kase.mine.seats} ${kase.mine.seats === 1 ? "seat" : "seats"}`

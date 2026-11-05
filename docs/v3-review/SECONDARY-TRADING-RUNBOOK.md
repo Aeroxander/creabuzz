@@ -106,7 +106,7 @@ executes after the DAO's one-day timelock — the same path as any other DAO cal
 cast calldata 'configureListing(bool,uint128,uint128,uint32)' true 1500 4500 8
 ```
 
-**In the app** this is the decision kind **"Publish a secondary market listing"**
+**In the app** this is the decision kind **"Publish a weekly market listing"**
 (`secondary-listing`): the form reads the DAO's market and its lot size, asks for
 the lowest price, the highest and the number of steps, and opens the vote. It
 renders the terms back in words before you send — *"Open a market for 40 Shares

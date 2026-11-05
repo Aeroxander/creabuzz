@@ -488,7 +488,7 @@ test("work nobody backed is appealed, a juror drawn by stake upholds it, and any
   );
   await kase.getByTestId("court-seal-for").click();
   await expect(kase.getByTestId("court-case-round")).toContainText(
-    "1 of 1 jurors sealed their vote",
+    "1 of 1 juror has sealed their vote",
     { timeout: 60_000 },
   );
   await expect(kase.getByTestId("court-vote-key")).toBeVisible();

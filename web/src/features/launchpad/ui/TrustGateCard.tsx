@@ -239,16 +239,21 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
   return (
     <Card className="p-4" data-testid="trust-gate-card">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold">Trust gate (TrustGraph)</h3>
+        <h3 className="text-sm font-semibold">Trust gate</h3>
         <span
           className="text-xs text-black/60 dark:text-white/60"
           role="status"
         >
           {hook
-            ? `bucket ${hook.bucket} · ${shortHex(hook.address)}`
+            ? `bid group ${hook.bucket} · ${shortHex(hook.address)}`
             : "No trust gate is set up for this project yet"}
         </span>
       </div>
+
+      <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+        A trust gate lets only people with a high enough score place bids. Each
+        bid group has its own gate.
+      </p>
 
       {!hook ? null : (
         <div className="mt-3 space-y-3 text-xs">
@@ -270,14 +275,14 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
             )}
             {hooks.length > 1 ? (
               <select
-                aria-label="Gated bucket"
+                aria-label="Gated bid group"
                 className="mt-1 rounded-md border bg-transparent px-2 py-1"
                 onChange={(event) => setHookIndex(Number(event.target.value))}
                 value={hookIndex}
               >
                 {hooks.map((h, index) => (
                   <option key={h.address + h.bucket} value={index}>
-                    bucket {h.bucket}
+                    bid group {h.bucket}
                   </option>
                 ))}
               </select>
@@ -285,8 +290,8 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
           </section>
 
           {/* Published roots (Nostr 37006) — dropdown of epochs, no hashes. */}
-          <section aria-label="Published roots">
-            <h4 className="font-medium">Published score roots</h4>
+          <section aria-label="Published score lists">
+            <h4 className="font-medium">Published score lists</h4>
             <select
               aria-label="Published score list"
               className="rounded-md border bg-transparent px-2 py-1"
@@ -328,8 +333,8 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
           </section>
 
           {/* The graph: the roster + the Merkle tree every consumer verifies. */}
-          <section aria-label="Trust graph">
-            <h4 className="font-medium">The graph</h4>
+          <section aria-label="Check the scores">
+            <h4 className="font-medium">Check the scores</h4>
             <p className="text-black/60 dark:text-white/60">
               An included score is proven to be in the list. That says nothing
               about how the scores were computed — only a working method read
@@ -443,7 +448,7 @@ export function TrustGateCard({ launch }: { launch: Launch }) {
           </section>
 
           {/* Rotation (owner-only on chain — the call reverts otherwise). */}
-          <section aria-label="Rotate gate">
+          <section aria-label="Update the gate">
             <h4 className="font-medium">Update the gate</h4>
             <p className="text-black/60 dark:text-white/60">
               Owner only. Points the gate at the chosen period's score list and

@@ -11,6 +11,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { Card } from "@/shared/ui/card";
+import { modeCopy, readingCopy, statusWord } from "../lib/org-diag-copy";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import {
@@ -20,6 +21,26 @@ import {
   type DiagReport,
   type DiagEvent,
 } from "@creaton/core/launchpad/org-diag.ts";
+
+/** A figure with a plain name, its value, and one line on what it means. */
+function Figure({
+  label,
+  meaning,
+  value,
+}: {
+  label: string;
+  meaning: string;
+  value: string;
+}) {
+  return (
+    <div>
+      <p className="text-black/70 dark:text-white/70">
+        <span className="font-medium">{label}:</span> {value}
+      </p>
+      <p className="text-black/60 dark:text-white/60">{meaning}</p>
+    </div>
+  );
+}
 
 function pct(bp: number): string {
   return `${(bp / 100).toFixed(2)}%`;
@@ -64,7 +85,7 @@ export function OrgDiagnosticCard() {
           {diag.isLoading
             ? "Reading the team's activity…"
             : report
-              ? `${report.events} events · every figure can be recomputed from the raw events`
+              ? `${report.events} events counted · every figure can be recomputed from the saved activity`
               : "No activity loaded yet"}
         </span>
       </div>
@@ -72,18 +93,28 @@ export function OrgDiagnosticCard() {
       {!report ? null : (
         <div className="mt-3 space-y-3 text-xs">
           {/* Instrument 1 — Pentland's time signal (timing-only). */}
-          <section aria-label="Time signal">
+          <section aria-label="Activity rhythm">
             <h4 className="font-medium">Activity rhythm</h4>
             {report.timeSignal ? (
               <>
-                <p className="text-black/70 dark:text-white/70">
-                  burstiness {pct(report.timeSignal.burstinessBp)} · handoffs{" "}
-                  {pct(report.timeSignal.handoffRateBp)} · median lag{" "}
-                  {report.timeSignal.handoffMedianLagS}s ·{" "}
-                  {report.timeSignal.events} events
-                </p>
+                <Figure
+                  label="Work in rushes"
+                  meaning="How uneven the activity is. Higher means short rushes with quiet gaps between."
+                  value={pct(report.timeSignal.burstinessBp)}
+                />
+                <Figure
+                  label="Work passed between people"
+                  meaning="Share of actions that came within a minute of a different person's action."
+                  value={pct(report.timeSignal.handoffRateBp)}
+                />
+                <Figure
+                  label="Typical wait for the next person"
+                  meaning="When work was passed on, how long the next person took to act."
+                  value={`${report.timeSignal.handoffMedianLagS} seconds`}
+                />
                 <p className="text-black/60 dark:text-white/60">
-                  {report.timeSignal.reading}
+                  Based on {report.timeSignal.events} events.{" "}
+                  {readingCopy(report.timeSignal.reading)}
                 </p>
               </>
             ) : (
@@ -101,21 +132,32 @@ export function OrgDiagnosticCard() {
               <div className="grid grid-cols-3 gap-2">
                 {(
                   [
-                    ["communicate", report.tomasello.communicate],
-                    ["build trust", report.tomasello.buildTrust],
-                    ["institutionalize", report.tomasello.institutionalize],
+                    ["Talking", "Messages", report.tomasello.communicate],
+                    [
+                      "Building trust",
+                      "Contributions, access given or taken away",
+                      report.tomasello.buildTrust,
+                    ],
+                    [
+                      "Deciding",
+                      "Proposals, votes and approvals",
+                      report.tomasello.institutionalize,
+                    ],
                   ] as const
-                ).map(([label, layer]) => (
+                ).map(([label, meaning, layer]) => (
                   <div key={label}>
                     <p className="font-medium">{label}</p>
                     <p className="text-black/70 dark:text-white/70">
-                      {layer.events} · {pct(layer.shareBp)}
+                      {layer.events} events · {pct(layer.shareBp)}
+                    </p>
+                    <p className="text-black/60 dark:text-white/60">
+                      {meaning}
                     </p>
                   </div>
                 ))}
               </div>
               <p className="text-black/60 dark:text-white/60">
-                {report.tomasello.reading}
+                {readingCopy(report.tomasello.reading)}
               </p>
             </section>
           ) : null}
@@ -123,31 +165,49 @@ export function OrgDiagnosticCard() {
           {/* Instrument 3 — the WEF five failure modes. */}
           <section aria-label="Health checks">
             <h4 className="font-medium">Health checks</h4>
-            <div className="flex flex-wrap gap-2">
-              {report.wefModes.map((mode) => (
-                <span
-                  className={`rounded-full px-2 py-0.5 ${STATUS_TINT[mode.status] ?? ""}`}
-                  key={mode.mode}
-                  title={mode.note}
-                >
-                  {mode.mode}: {mode.signalEvents} · {mode.status}
-                </span>
-              ))}
-            </div>
+            <ul className="space-y-1">
+              {report.wefModes.map((mode) => {
+                const copy = modeCopy(mode.mode);
+                return (
+                  <li key={mode.mode}>
+                    <span
+                      className={`rounded-full px-2 py-0.5 ${STATUS_TINT[mode.status] ?? ""}`}
+                    >
+                      {copy.label}: {mode.signalEvents} events ·{" "}
+                      {statusWord(mode.status)}
+                    </span>
+                    {copy.meaning ? (
+                      <span className="ml-2 text-black/60 dark:text-white/60">
+                        {copy.meaning}
+                      </span>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
           </section>
 
           {/* Instrument 4 — Cursor's thrash-vs-work scoreboard. */}
           {report.thrash ? (
             <section aria-label="Rework and progress">
               <h4 className="font-medium">Rework and progress</h4>
-              <p className="text-black/70 dark:text-white/70">
-                {report.thrash.revisions} revisions /{" "}
-                {report.thrash.coordinates} coordinates · rework{" "}
-                {pct(report.thrash.reworkRateBp)} · settled{" "}
-                {pct(report.thrash.settledRateBp)}
-              </p>
+              <Figure
+                label="Edits"
+                meaning="How many times items were changed, and how many different items that covers."
+                value={`${report.thrash.revisions} edits across ${report.thrash.coordinates} items`}
+              />
+              <Figure
+                label="Edits that redo earlier work"
+                meaning="Share of edits that changed an item already edited before."
+                value={pct(report.thrash.reworkRateBp)}
+              />
+              <Figure
+                label="Items edited only once"
+                meaning="Share of items written once and then left alone."
+                value={pct(report.thrash.settledRateBp)}
+              />
               <p className="text-black/60 dark:text-white/60">
-                {report.thrash.reading}
+                {readingCopy(report.thrash.reading)}
               </p>
             </section>
           ) : null}
@@ -177,15 +237,26 @@ export function OrgDiagnosticCard() {
           {report.supervision ? (
             <section aria-label="Supervision">
               <h4 className="font-medium">Supervision</h4>
-              <p className="text-black/70 dark:text-white/70">
-                {report.supervision.approvalRequests} approval requests /{" "}
-                {report.supervision.actions} actions · saturation{" "}
-                {pct(report.supervision.saturationBp)} · top approver{" "}
-                {pct(report.supervision.topApproverShareBp)} ·{" "}
+              <Figure
+                label="Approval requests"
+                meaning="How many of the actions needed someone's approval."
+                value={`${report.supervision.approvalRequests} of ${report.supervision.actions} actions`}
+              />
+              <Figure
+                label="Share of actions waiting on approval"
+                meaning="The higher this is, the more reviewers are asked to look at."
+                value={pct(report.supervision.saturationBp)}
+              />
+              <Figure
+                label="Share of approvals from one reviewer"
+                meaning="How much of the approving falls on the busiest reviewer."
+                value={pct(report.supervision.topApproverShareBp)}
+              />
+              <p>
                 <span
                   className={`rounded-full px-2 py-0.5 ${STATUS_TINT[report.supervision.status] ?? ""}`}
                 >
-                  {report.supervision.status}
+                  {statusWord(report.supervision.status)}
                 </span>
               </p>
               <p className="text-black/60 dark:text-white/60">

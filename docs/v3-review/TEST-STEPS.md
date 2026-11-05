@@ -1575,7 +1575,7 @@ node scripts/contracts-mutation-check.mjs 74 75 76 77 78 79 80 81 82 83 84 85 86
 By hand (the dev chain, a web build with `VITE_OPEN_BOUNTIES`, `VITE_COURTS`, `VITE_CREATE_TOKENS`,
 `VITE_CREATE_FAUCETS`; two browser wallets on the dev chain):
 
-1. **Portfolio → Judging → Open the court.** Press **Get 1,000 test CREATE**, then stake 300: it says **You stake 300
+1. **Portfolio → Judging → Open the court.** Press **Get 1,000 test CREATE**, then add a deposit of 300: it says **Your deposit is 300
    CREATE: 3 seats, 3 free.** Pressing the faucet again says to come back tomorrow.
 2. On a post, put money behind it with one wallet; with the other, submit work. Move the chain past the deadline
    (`cast rpc anvil_increaseTime 2678400 && cast rpc anvil_mine`). The bounty says anyone whose work is there can
@@ -1586,7 +1586,7 @@ By hand (the dev chain, a web build with `VITE_OPEN_BOUNTIES`, `VITE_COURTS`, `V
    for the work** (your wallet signs a message, then sends), **Move on**, **Open my vote** (it signs the same message
    again), **Move on**: **The panel ruled for the work.**
 5. Move the chain 2 days, **Settle the case**: **Final ruling: for the work.** and **The court owes you 3 USDC.**
-   **Withdraw what I'm owed.** On the post, **Pay now** sends the pot to the one who submitted.
+   **Collect what I'm owed.** On the post, **Pay now** sends the pot to the one who submitted.
 6. Try the other way: seal **against**, settle, and the bounty's funders can take their money back at once.
 
 ## 4bn. Money forecasts (D120, 2026-10-26, test networks only)
@@ -1723,8 +1723,8 @@ On the test world (`KEEP=1 CAPTURE=0 WEB_FEATURES=mvp+forecasts scripts/web-scre
 
 On a dev chain with the court (`scripts/dev-chain.sh`, then the Court page):
 
-1. With no CREATE staked, type less than one seat (for example 50) and press **Stake**: it says "Stake at least 100
-   CREATE: one seat." and sends nothing. Stake 200, then try **Take out** 150: it asks you to take out all of it or leave
+1. With no CREATE put down, type less than one seat (for example 50) and press **Add deposit**: it says "Put down at least 100
+   CREATE: one seat, the smallest deposit a juror can hold." and sends nothing. Add a deposit of 200, then try **Take out** 150: it asks you to take out all of it or leave
    at least one seat. Taking out 100 or 200 works.
 2. Appeal a ruled first round when the court has fewer than seven free seats, wait 14 days on the chain clock and press
    the ending button: it reads "End it: the last ruling stands", the bounty gets the first round's ruling, and the
