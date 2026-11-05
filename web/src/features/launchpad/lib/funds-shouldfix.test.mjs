@@ -177,7 +177,7 @@ test("a wallet on another network is refused before anything is sent, and nothin
   assert.equal(wallet.sent.length, 0);
   assert.equal(state.phase, "failed");
   assert.equal(state.steps.exit, "failed");
-  assert.match(state.errorMessage ?? "", /chain 1/);
+  assert.match(state.errorMessage ?? "", /network 1/);
   assert.equal(published.length, 0);
 });
 
@@ -188,7 +188,7 @@ test("an exit the chain refused is a failed step, never 'Exit confirmed', and re
   assert.equal(state.phase, "failed");
   assert.equal(state.steps.exit, "failed");
   assert.equal(state.receipts.exit, undefined);
-  assert.match(state.errorMessage ?? "", /failed onchain/);
+  assert.match(state.errorMessage ?? "", /failed on the network/);
   assert.equal(published.length, 0);
 });
 

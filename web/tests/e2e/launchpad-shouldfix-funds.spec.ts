@@ -258,7 +258,7 @@ test("a wallet on another network is refused before anything is sent", async ({
   );
   await dialog.getByTestId("ragequit-run").click();
   await expect(dialog.getByTestId("ragequit-failure")).toContainText(
-    "Your wallet is on chain 1, but this launch is on chain 31337",
+    "Your wallet is on network 1, but this project is on network 31337",
   );
   await expect(dialog.getByTestId("ragequit-done")).toHaveCount(0);
   expect(chain.sent).toHaveLength(0);

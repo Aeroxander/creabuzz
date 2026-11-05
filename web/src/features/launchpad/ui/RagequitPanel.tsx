@@ -116,7 +116,7 @@ function ClaimRow({
   return (
     <li className="flex items-center justify-between gap-2 text-sm text-black/80 dark:text-white/80">
       <span className="text-black/60 dark:text-white/60">
-        The treasury holds {formatTokenAmount(pool, info)}
+        The project holds {formatTokenAmount(pool, info)}
       </span>
       <span className="font-medium" data-testid="ragequit-claim-row">
         You get {formatTokenAmount(due, info)}
@@ -218,8 +218,8 @@ export function RagequitPanel({
           Leave and take your share
         </h3>
         <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-          There is no DAO for this project yet, so there is nothing to leave.
-          This opens once the sale ends and the DAO starts.
+          This project has no shared money to leave yet. This opens once the
+          sale ends and the project is set up.
         </p>
       </section>
     );
@@ -234,13 +234,13 @@ export function RagequitPanel({
         Leave and take your share
       </h3>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-        Your Shares are a claim on what the treasury holds. If you want out, you
-        can give them up and take your part of it. Shares the DAO keeps for
-        itself do not count, so they never shrink what you get. Leaving pays
-        your part of what the treasury holds now; it does not protect your share
-        of the project itself.{" "}
+        Your Shares are a claim on the project&apos;s money. If you want out,
+        you can give them up and take your part of it. Shares the project keeps
+        for itself do not count, so they never shrink what you get. Leaving pays
+        your part of the money the project holds now; it does not protect your
+        share of the project itself.{" "}
         <span className="text-muted-foreground">
-          DAO {truncatePubkey(daoBinding.dao)}.
+          Project address {truncatePubkey(daoBinding.dao)}.
         </span>
       </p>
       {/* The picker sits here because the position is the SELECTED account's:
@@ -340,8 +340,8 @@ function PositionBody({
   if (position.zeroSupply) {
     return (
       <p className="mt-2 text-sm text-black/60 dark:text-white/60">
-        Nobody outside the DAO holds shares yet, so there is nothing to take
-        back.
+        Nobody but the project itself holds shares yet, so there is nothing to
+        take back.
       </p>
     );
   }
@@ -351,8 +351,8 @@ function PositionBody({
         className="mt-2 text-sm text-amber-800 dark:text-amber-200"
         data-testid="ragequit-locked"
       >
-        This DAO is not letting members leave right now, so there is nothing you
-        need to do.
+        This project is not letting members leave right now, so there is nothing
+        you need to do.
       </p>
     );
   }
@@ -369,10 +369,11 @@ function PositionBody({
         className="mt-2 text-sm text-amber-800 dark:text-amber-200"
         data-testid="ragequit-unknown"
       >
-        This app can&apos;t tell what leaving would pay. This DAO&apos;s exit
-        asks its milestone lock how many Shares are still locked, and the lock
-        is older than the DAO and cannot answer, so the chain would refuse the
-        exit. Your Shares are unchanged.
+        This app can&apos;t tell what leaving would pay. To work it out, the
+        project&apos;s exit needs to know how many Shares are still locked
+        behind milestones. The milestone lock is older than the project and
+        cannot say, so the network would refuse the exit. Your Shares are
+        unchanged.
       </p>
     );
   }
@@ -414,7 +415,7 @@ function PositionBody({
         ) : null}
         <dt>
           {position.exitRule === "legacy"
-            ? "Shares the treasury is shared among"
+            ? "Shares the project's money is shared among"
             : "Shares that can leave now"}
         </dt>
         <dd className="text-right">
@@ -440,7 +441,7 @@ function PositionBody({
         >
           This project&apos;s funding terms set an exit fee of{" "}
           {feePercent(Number(position.exitFeeBps))}: that part of your share
-          stays in the treasury, for those who stay. The amounts below are what
+          stays with the project, for those who stay. The amounts below are what
           you get after it.
         </p>
       ) : null}
@@ -449,9 +450,10 @@ function PositionBody({
           className="mt-2 text-sm text-black/60 dark:text-white/60"
           data-testid="ragequit-legacy"
         >
-          This DAO was made before Shares still locked behind milestones were
-          left out of an exit, so its exit still counts them: your part is
-          worked out over every Share outside the DAO, locked ones included.
+          This project was made before Shares still locked behind milestones
+          were left out of an exit, so its exit still counts them: your part is
+          worked out over every Share that is not the project&apos;s own, locked
+          ones included.
         </p>
       ) : null}
       <p className="mt-3 text-sm font-medium text-black dark:text-white">
@@ -460,7 +462,7 @@ function PositionBody({
       <ul className="mt-1 flex flex-col gap-1">
         {payable.length === 0 ? (
           <li className="text-sm text-black/60 dark:text-white/60">
-            The treasury holds nothing to take back right now.
+            The project holds no money to take back right now.
           </li>
         ) : null}
         {payable.map((row) => (
@@ -482,8 +484,8 @@ function PositionBody({
         </p>
       ) : (
         <p className="mt-2 text-xs text-muted-foreground">
-          This is worked out from the treasury as it is now. The exact amount is
-          fixed when the exit goes through.
+          This is worked out from the project&apos;s money as it is now. The
+          exact amount is fixed when the exit goes through.
         </p>
       )}
       <Button
@@ -665,7 +667,7 @@ function RagequitDialog({
               type: "step-failed",
               step: "mirror",
               message:
-                "your exit went through, but its transaction is not known here, so no record of it was saved",
+                "your exit went through, but its confirmation ID is not known here, so no record of it was saved",
             });
             return;
           }
@@ -757,7 +759,7 @@ function RagequitDialog({
           className="mt-1 text-sm text-amber-800 dark:text-amber-200"
           data-testid="ragequit-dialog-nothing"
         >
-          The treasury holds nothing you can take, so leaving now pays you
+          The project holds nothing you can take, so leaving now pays you
           nothing. Your {formatShares(sharesToBurn)} Shares are destroyed all
           the same, and you lose their votes.
         </p>
@@ -779,7 +781,7 @@ function RagequitDialog({
         {tokens
           .map((t) => infoOf(t).symbol ?? "the project's currency")
           .join(" and ")}
-        . Anything else the DAO holds stays in the treasury.
+        . Anything else the project holds stays with the project.
       </p>
       {recheck ? (
         <p
@@ -832,7 +834,7 @@ function RagequitDialog({
           {exitLanded && state.receipts.exit?.txHash ? (
             <>
               {" "}
-              The exit transaction:{" "}
+              Confirmation ID of the exit:{" "}
               <code className="break-all">{state.receipts.exit.txHash}</code>
             </>
           ) : null}
@@ -848,11 +850,11 @@ function RagequitDialog({
           {state.receipts.exit ? (
             <>
               {" "}
-              (tx{" "}
+              (confirmation ID{" "}
               <code className="break-all">{state.receipts.exit.txHash}</code>)
             </>
           ) : null}
-          , and the receipt is recorded.
+          , and a record of it is saved.
         </p>
       ) : null}
       <div className="mt-4 flex justify-end gap-2">
@@ -866,7 +868,7 @@ function RagequitDialog({
             onClick={() => void run(true)}
             size="sm"
           >
-            {exitLanded ? "Retry the record" : "Retry"}
+            {exitLanded ? "Save the record again" : "Retry"}
           </Button>
         ) : exitLanded ? null : (
           <Button

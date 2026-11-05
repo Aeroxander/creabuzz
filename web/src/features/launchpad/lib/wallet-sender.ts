@@ -27,7 +27,7 @@ export function createInjectedWalletSender(
   async function requireAddress(): Promise<string> {
     if (!wallet) {
       throw new Error(
-        "No wallet found in this browser. Bid on the auction contract directly, then paste the transaction hash below.",
+        "No wallet found in this browser. Bid on the sale's contract directly, then paste its confirmation ID below.",
       );
     }
     const accounts = (await wallet.request({
@@ -54,7 +54,7 @@ export function createInjectedWalletSender(
       const provider = wallet;
       if (!provider) {
         throw new Error(
-          "No wallet found in this browser. Bid on the auction contract directly, then paste the transaction hash below.",
+          "No wallet found in this browser. Bid on the sale's contract directly, then paste its confirmation ID below.",
         );
       }
       const from = await requireAddress();

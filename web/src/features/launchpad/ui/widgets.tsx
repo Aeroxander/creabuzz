@@ -138,10 +138,10 @@ export function ProgressBar({
             data-testid="launch-progress-source"
             title={
               data.source === "rpc"
-                ? "Live chain values."
+                ? "Live values from the network."
                 : data.source === "preview"
                   ? "Preview data, shown in development builds only."
-                  : `No chain data: ${data.reason ?? "unavailable"}.`
+                  : `No network data: ${data.reason ?? "unavailable"}.`
             }
           >
             {data.source === "rpc"
@@ -150,7 +150,7 @@ export function ProgressBar({
                 ? "Preview data"
                 : data.source === "simulated"
                   ? "Simulated"
-                  : "No chain data"}
+                  : "No network data"}
           </span>
         ) : null}
       </div>

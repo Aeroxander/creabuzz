@@ -109,11 +109,11 @@ export function FundingDecisionForm({
           : []),
         {
           value: "watch" as const,
-          label: "Stop sales while the treasury holds other tokens",
+          label: "Stop sales if the project holds other tokens",
         },
         {
           value: "accept" as const,
-          label: "Sell even while the treasury holds a token",
+          label: "Sell even if the project holds a token",
         },
       ]
     : [];
@@ -247,7 +247,7 @@ export function FundingDecisionForm({
       {view && !view.published ? (
         <>
           <SelectField
-            hint="Non-voting shares get the same part of the treasury and payouts as a Share, but no vote, so the people doing the work keep the say. This cannot change later."
+            hint="Non-voting shares get the same part of the project's money and payouts as a Share, but no vote, so the people doing the work keep the say. This cannot change later."
             label="What buyers get"
             onChange={(v) => setInstrument(v === "shares" ? "shares" : "loot")}
             options={[
@@ -267,7 +267,7 @@ export function FundingDecisionForm({
             value={capText}
           />
           <TextField
-            hint="The part of what leaving pays that stays in the treasury, for those who stay: at most 5%. It is not charged during the 30 days' notice, and a later vote can lower it but never raise it."
+            hint="The part of what leaving pays that stays with the project, for those who stay: at most 5%. It is not charged during the 30 days' notice, and a later vote can lower it but never raise it."
             inputMode="decimal"
             label="Exit fee (%)"
             onChange={setFeeText}
@@ -296,7 +296,7 @@ export function FundingDecisionForm({
             value={quantityText}
           />
           <TextField
-            hint="Bids set the price above this. Nothing sells below a share's part of the treasury, plus 2%."
+            hint="Bids set the price above this. Nothing sells below a share's part of the project's money, plus 2%."
             inputMode="decimal"
             label="Least price a share (USDC)"
             onChange={setPriceText}
@@ -317,8 +317,8 @@ export function FundingDecisionForm({
         <TextField
           hint={
             chosen === "watch"
-              ? `Sales stop while the treasury holds ETH or any of these, so a price set in USDC never gives buyers part of them for nothing. Any holder can add one too. Already watched: ${view.watched.length === 0 ? "none" : view.watched.join(", ")}.`
-              : "Sales go ahead although the treasury holds these, and buyers get part of them without paying for it. Only for tokens worth nothing, or when holders agree to share them."
+              ? `Sales stop while the project holds ETH or any of these, so a price set in USDC never gives buyers part of them for nothing. Any holder can add one too. Already on the watch list: ${view.watched.length === 0 ? "none" : view.watched.join(", ")}.`
+              : "Sales go ahead although the project holds these, and buyers get part of them without paying for it. Only for tokens worth nothing, or when holders agree to share them."
           }
           label="Token addresses (up to 16)"
           onChange={setTokensText}

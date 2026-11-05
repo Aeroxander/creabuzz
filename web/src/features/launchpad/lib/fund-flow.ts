@@ -79,11 +79,11 @@ export async function fetchGraduationState(
   ]);
   const executor = decodeAddressWord(
     executorRaw,
-    "the auction did not report a funds recipient, so it is not managed by a GraduationExecutor",
+    "the sale did not say where its money goes, so it does not use the standard payout step",
   );
   const currency = decodeAddressWord(
     currencyRaw,
-    "the auction did not answer currency()",
+    "the sale did not say which currency it raised in",
   );
   const [treasuryRaw, bpsRaw, recordRaw] = await Promise.all([
     ethCall(endpoint, executor, SELECTOR_TREASURY),
@@ -95,7 +95,7 @@ export async function fetchGraduationState(
     currency,
     treasury: decodeAddressWord(
       treasuryRaw,
-      "the executor did not report a treasury address. Check that the auction's funds recipient is a GraduationExecutor",
+      "the payout step did not say where the project's money goes. Check that the sale uses the standard payout step",
     ),
     reserveBps: decodeU256(bpsRaw),
     record: decodeGraduationRecord(recordRaw),
@@ -106,7 +106,7 @@ function decodeAddressWord(returnData: string, message: string): string {
   try {
     return addressWordValue(returnData);
   } catch {
-    throw new Error(`fund-flow: ${message}`);
+    throw new Error(message);
   }
 }
 
@@ -204,7 +204,7 @@ export async function fetchFundFlowPositions(
     if (balance === null) {
       // A failed read is an error, never a zero position (Review-Proven
       // Rule 1 — no terminal failure rendered as an authoritative empty).
-      throw new Error(`could not read ${currency} balance of ${holder}`);
+      throw new Error(`could not read the balance held by ${holder}`);
     }
     return balance;
   };

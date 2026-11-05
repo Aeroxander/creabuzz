@@ -389,7 +389,7 @@ test("a milestone is turned down by the holders, tried again, unlocks when nobod
   );
   await founder.getByTestId("graduation-execute").click();
   await expect(founder.getByTestId("graduation-status")).toContainText(
-    "Graduation executed",
+    "Graduation done",
     { timeout: 90_000 },
   );
   await mineTo(startBlock + 260 + 2);

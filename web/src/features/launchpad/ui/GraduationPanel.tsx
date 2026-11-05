@@ -105,7 +105,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
     (state.phase === "mirrorFailed" ||
       state.txHashMissing ||
       (moneyLanded && state.failedStep !== "execute"))
-      ? " The graduation itself is complete onchain. Retrying only publishes the remaining receipt and never sends the money again."
+      ? " The graduation itself is complete on the network. Trying again only saves the remaining record and never sends the money again."
       : "";
 
   // Manual hash recovery (the terminal `supply-hash` state): the founder
@@ -119,7 +119,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
       const txHash = hashDraft.trim();
       if (!GRADUATION_TX_HASH_RE.test(txHash)) {
         setHashError(
-          "Enter the full transaction hash: 0x followed by 64 hexadecimal characters.",
+          "Enter the full confirmation ID: 0x followed by 64 letters or numbers (0-9, a-f).",
         );
         return;
       }
@@ -147,8 +147,8 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
       </h3>
       <p className="mt-1 text-sm text-black/60 dark:text-white/60">
         {record.tokenPlan?.mode === "dao"
-          ? "Once the auction has ended and raised enough, one transaction sweeps the raise and the unsold supply to the DAO's treasury and records the graduation. Anyone can send it; the money can only go there."
-          : `Once the auction has ended and raised enough, one transaction sweeps the raise and the unsold supply, puts ${DEFAULT_RESERVE_BPS / 100}% of the raise into the reserve escrow that backs the token's price floor, sends the rest to the treasury, and records the graduation. Anyone can send it; the money can only go to those two places.`}
+          ? "Graduating pays out the sale. Once the sale has ended and raised enough, one step moves the money raised and the unsold tokens to the project's money and records it. Anyone can run it; the money can only go there."
+          : `Graduating pays out the sale. Once the sale has ended and raised enough, one step moves the money raised and the unsold tokens, sets ${DEFAULT_RESERVE_BPS / 100}% of the raise aside to back the token's price floor, sends the rest to the project's money, and records it. Anyone can run it; the money can only go to those two places.`}
       </p>
       <UnauditedNotice chainId={record.chainId} />
       <WalletStrip testIdPrefix="graduation" wallet={wallet} />
@@ -160,7 +160,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
         testId="graduation-readiness"
         text={
           state.phase === "checking"
-            ? "Reading the auction's graduation gates…"
+            ? "Checking whether the sale can be paid out…"
             : readiness
               ? graduationReadinessText(readiness)
               : ""
@@ -181,20 +181,20 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
           {[
             ["Raised", formatMoney(flow.result.currencyRaised, cur)],
             [
-              "Paid to the treasury",
+              "Paid to the project's money",
               formatMoney(flow.result.treasuryShare, cur),
             ],
             // A project with its own DAO keeps no reserve: the whole raise goes to the treasury.
             ...(flow.result.reserveEscrow > 0n
               ? [
                   [
-                    "Held in reserve for the price floor",
+                    "Set aside for the price floor",
                     formatMoney(flow.result.reserveEscrow, cur),
                   ],
                 ]
               : []),
             [
-              "Unsold tokens returned to the treasury",
+              "Unsold tokens returned to the project",
               formatAtomic(flow.result.unsoldTokens, 18, {
                 symbol: "tokens",
                 maxFractionDigits: 2,
@@ -242,7 +242,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
             size="sm"
             type="button"
           >
-            Execute graduation
+            Graduate now
           </Button>
         ) : null}
         {state.phase === "failed" || state.phase === "mirrorFailed" ? (
@@ -257,10 +257,10 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
               variant="outline"
             >
               {retry.kind === "check"
-                ? "Re-check readiness"
+                ? "Check readiness again"
                 : retry.kind === "mirror"
-                  ? "Retry receipt publish"
-                  : "Retry remaining steps"}
+                  ? "Save the record again"
+                  : "Try the remaining steps again"}
             </Button>
           ) : null
         ) : null}
@@ -277,7 +277,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
 
       {retry?.kind === "supply-hash" ? (
         <form
-          aria-label="Supply the graduation transaction hash"
+          aria-label="Enter the confirmation ID of the graduation"
           className="mt-2 flex flex-wrap items-center gap-2"
           data-testid="graduation-supply-hash-form"
           onSubmit={submitTxHash}
@@ -286,7 +286,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
             className="text-xs text-black/60 dark:text-white/60"
             htmlFor="graduation-tx-hash"
           >
-            Graduation transaction hash
+            Confirmation ID of the graduation
           </label>
           <input
             aria-describedby={
@@ -308,7 +308,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
             type="submit"
             variant="outline"
           >
-            Resume receipt publish
+            Save the record
           </Button>
           {hashError ? (
             <p
@@ -329,7 +329,7 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
           state.phase === "running"
             ? "Graduation in progress…"
             : state.phase === "done"
-              ? "Graduation executed and both receipts published."
+              ? "Graduation done and both records saved."
               : ""
         }
       />
@@ -341,15 +341,15 @@ export function GraduationPanel({ launch }: { launch: Launch }) {
       ) : null}
       {readiness?.executor ? (
         <AddressRow
-          copyLabel="Copy graduation executor address"
-          label="Graduation executor (the auction's funds recipient)"
+          copyLabel="Copy payout step address"
+          label="Payout step (where the sale's money goes first)"
           value={readiness.executor}
         />
       ) : null}
       {state.graduationTxHash ? (
         <AddressRow
-          copyLabel="Copy graduation transaction hash"
-          label="Graduation transaction"
+          copyLabel="Copy graduation confirmation ID"
+          label="Graduation confirmation ID"
           value={state.graduationTxHash}
         />
       ) : null}

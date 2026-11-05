@@ -113,7 +113,7 @@ export function useSenderPicker(
           setPasskeyNote(
             err instanceof Error
               ? err.message
-              : "Could not derive the account.",
+              : "Could not work out the account.",
           );
         }
       },
@@ -123,7 +123,7 @@ export function useSenderPicker(
     };
   }, [kind, sponsoredSender]);
 
-  let passkeyStatusText = "Deriving the account address…";
+  let passkeyStatusText = "Working out the account address…";
   if (!sponsoredStatus.available) {
     passkeyStatusText =
       `${sponsoredStatus.reason ?? ""} ${sponsoredStatus.action ?? ""}`.trim();

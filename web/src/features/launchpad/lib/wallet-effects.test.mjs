@@ -136,7 +136,7 @@ test("nothing is sent while the wallet is on the wrong chain", async () => {
   const provider = fakeProvider({ eth_chainId: "0x1" });
   await assert.rejects(
     effects(provider).send({ data: "0x6080" }),
-    /wallet is on chain 1, but this launch is on chain 31337/,
+    /wallet is on network 1, but this project is on network 31337/,
   );
   assert.equal(
     provider.log.some((r) => r.method === "eth_sendTransaction"),
@@ -158,7 +158,7 @@ test("the chain is verified before every send — a mid-flow switch refuses the 
   // interleave wallet prompts).
   await assert.rejects(
     e.send({ to: DEPLOYER, data: "0x" }),
-    /wallet is on chain 1, but this launch is on chain 31337/,
+    /wallet is on network 1, but this project is on network 31337/,
   );
   assert.equal(
     provider.log.filter((r) => r.method === "eth_sendTransaction").length,

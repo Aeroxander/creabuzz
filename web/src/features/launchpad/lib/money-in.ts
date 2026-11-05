@@ -107,9 +107,9 @@ export function moneyInHeadline(
 ): string {
   const count = summary.paidIn.length;
   if (count === 0) {
-    return "Nothing has been paid into the treasury besides the raise yet.";
+    return "Apart from the money raised, nothing has been paid in yet.";
   }
-  return `Besides the raise, ${money(summary.paidInTotal)} was paid into the treasury in ${count} payment${count === 1 ? "" : "s"}.`;
+  return `Apart from the money raised, ${money(summary.paidInTotal)} was paid in, in ${count} payment${count === 1 ? "" : "s"}.`;
 }
 
 /** What `readMoneyIn` needs of the chain (the record's chain fits). */

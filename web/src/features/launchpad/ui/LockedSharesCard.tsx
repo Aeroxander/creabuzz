@@ -46,9 +46,9 @@ export function LockedSharesCard({
     <Card className="p-4" data-testid="locked-shares">
       <h3 className="text-sm font-semibold">Your team Shares</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        These Shares are yours and count when the DAO votes. The part tied to a
-        milestone cannot be sold or taken out of the DAO until that milestone is
-        reached.
+        These Shares are yours and count when the project votes. The part tied
+        to a milestone cannot be sold, or given up when you leave, until that
+        milestone is reached.
       </p>
       <p className="mt-2 text-sm" data-testid="locked-shares-total">
         {allClear

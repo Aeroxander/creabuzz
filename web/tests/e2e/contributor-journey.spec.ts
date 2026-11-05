@@ -1233,7 +1233,7 @@ test("several people earn in one contributor project: two first projects, and a 
       await remix.getByTestId("remix-bond-days").fill("90");
       await remix.getByTestId("remix-bond-post").click();
       await expect(remix.getByTestId("remix-bond-line")).toContainText(
-        "This project posted a bond of 500 CREATE for Docs Commons, held until",
+        "This project put down a bond of 500 CREATE for Docs Commons, held until",
         { timeout: 60_000 },
       );
     }

@@ -1,5 +1,5 @@
 /**
- * "Does the treasury hold another token?" (D136), on the Funding card: sale prices count only the round's currency, and
+ * "Does the project's money include another token?" (D136), on the Funding card: sale prices count only the round's currency, and
  * a contract cannot list what it holds, so any holder who sees another token in the treasury can stop sales over it
  * until a vote decides. Lists the tokens already watched.
  */
@@ -33,18 +33,18 @@ export function FundingFlagForm({
   const valid = ADDRESS_RE.test(token.trim());
   return (
     <MoreInfo
-      label="Does the treasury hold another token?"
+      label="Does the project's money include another token?"
       testId="funding-flag"
     >
       <p>
-        Sale prices count only USDC, so if the treasury holds another token,
+        Sale prices count only USDC, so if the project holds another token,
         buyers would get part of it without paying for it. Any holder can stop
-        sales while the treasury holds it; only a vote can let them go ahead.
+        sales while the project holds it; only a vote can let them go ahead.
       </p>
       <p className="mt-1" data-testid="funding-watched">
         {watched.length === 0
-          ? "No other token is watched yet; ETH always is."
-          : `Watched besides ETH: ${watched.join(", ")}.`}
+          ? "No other token is on the watch list yet; ETH always is."
+          : `On the watch list besides ETH: ${watched.join(", ")}.`}
       </p>
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">

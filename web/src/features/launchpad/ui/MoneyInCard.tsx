@@ -97,9 +97,9 @@ export function MoneyInCard({
       >
         {pledge
           ? pledgeSentence(pledge)
-          : "The team has not pledged any of what the project earns to the treasury."}{" "}
-        What is paid in stays in the treasury, where every holder can leave with
-        their part of it.
+          : "The team has not pledged to pay in any of what the project earns."}{" "}
+        What is paid in stays in the project&apos;s money, where every holder
+        can leave with their part of it.
       </p>
     </Card>
   );
@@ -111,10 +111,9 @@ export function MoneyInUnavailable({ onRetry }: { onRetry: () => void }) {
     <Card className="p-4" data-testid="dao-money-in-unavailable">
       <h3 className="text-sm font-semibold">Money that came in</h3>
       <p className="mt-1 text-sm">
-        Couldn&apos;t tell what came into the treasury just now: looking up
-        where the raise and the bonds came from did not work, and without that
-        the raise could look like extra payments. Nothing is shown until it can
-        be read.
+        Couldn&apos;t work out what money came in just now. We could not look up
+        where the raise and the bonds came from, and without that the raise
+        could look like extra payments. Nothing is shown until it can be read.
       </p>
       <Button
         className="mt-2"

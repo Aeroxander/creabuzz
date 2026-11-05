@@ -72,7 +72,7 @@ test("a visitor reads the pledge, with the reminder that nothing enforces it, an
   );
   await open(page, relay, VISITOR_NSEC);
   await expect(page.getByTestId("pledge-sentence")).toHaveText(
-    "The team pledges 20% of the project's net receipts to the treasury, every quarter, for as long as the project earns. It is not written into a signed document on record. The contracts do not enforce it.",
+    "The team pledges 20% of the project's net receipts, to be paid into the project's money every quarter, for as long as the project earns. It is not written into a signed document on record. The contracts do not enforce it.",
   );
   await expect(page.getByTestId("pledge-edit")).toHaveCount(0);
 });

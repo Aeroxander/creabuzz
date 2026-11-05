@@ -48,9 +48,9 @@ test("where funding terms stand, in one sentence each", () => {
   assert.match(notes[0], /a later vote can raise it/);
   assert.match(notes[1], /no yearly limit/);
   assert.match(notes[2], /can leave with part of the money raised/);
-  assert.match(notes[3], /no milestone locks/);
+  assert.match(notes[3], /locked behind milestones/);
   assert.match(notes[4], /^You get non-voting shares: .* but no vote/);
-  assert.match(notes[5], /^Leaving keeps 2% of what it pays in the treasury/);
+  assert.match(notes[5], /^Of what leaving pays, 2% stays with the project/);
   assert.match(
     beforeYouBuy({ ...view, exitFeeBps: 0 })[5],
     /there is no exit fee/,

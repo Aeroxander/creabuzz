@@ -467,7 +467,7 @@ test("a contributor project keeps its funds and the way to leave (no sale is not
   });
   // This build names no contributor kit, so the DAO cannot be checked: it says so rather than show unverified money.
   await expect(page.getByTestId("contributor-funds-unchecked")).toContainText(
-    "could not be checked against the contributor kit",
+    "could not be checked against the standard way projects are made",
   );
   await expect(page.getByTestId("contributor-funds")).not.toContainText(
     /graduation|price floor|raise/i,

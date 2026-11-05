@@ -49,7 +49,7 @@ export function SpendingCard({
   return (
     <Card className="p-4" data-testid="dao-spending">
       <h3 className="text-sm font-semibold">
-        Where the treasury&apos;s money went
+        Where the project&apos;s money went
       </h3>
       <p className="mt-1 text-sm" data-testid="dao-spending-headline">
         {spendingHeadline(summary)}
@@ -95,11 +95,11 @@ export function SpendingCard({
                     {paidOn(run.at)} · <TxLink chainId={chainId} tx={run.tx} />
                   </>
                 ) : runs === null ? (
-                  "when it ran could not be read"
+                  "when it happened could not be read"
                 ) : runs ? (
-                  "its transaction was not found"
+                  "we could not find its record"
                 ) : (
-                  "reading when it ran…"
+                  "reading when it happened…"
                 )}
               </li>
             );
@@ -143,8 +143,8 @@ export function SpendingCard({
           className="mt-2 text-xs text-amber-700 dark:text-amber-300"
           data-testid="dao-spending-work-cut"
         >
-          This DAO has more work budgets or submissions than this page reads, so
-          the reviewed-work figures may be low.
+          This project has more work budgets or submissions than this page
+          reads, so the reviewed-work figures may be low.
         </p>
       ) : null}
       {summary.otherCurrencyBudgets > 0 ? (

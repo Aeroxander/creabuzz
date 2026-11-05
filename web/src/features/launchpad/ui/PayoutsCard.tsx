@@ -60,10 +60,10 @@ export function PayoutsCard({ dao }: { dao: string }) {
       ) : (
         <>
           <p data-testid="payouts-split">
-            Revenue sent to{" "}
+            Revenue sent to the payout address{" "}
             <span className="font-mono break-all">{data.module}</span> is split:{" "}
             {percent(data.splitBps)} to holders by how many Shares and
-            non-voting shares they hold, the rest to the treasury.
+            non-voting shares they hold, the rest to the project&apos;s money.
           </p>
           {data.pending ? (
             <p className="text-muted-foreground" data-testid="payouts-pending">
@@ -135,8 +135,9 @@ export function PayoutsCard({ dao }: { dao: string }) {
             ) : null}
           </div>
           <p className="text-xs text-muted-foreground">
-            Holders count from when they hold, keep what was paid to them after
-            they sell or leave, and collect it themselves. Test money only.
+            A holder counts from the moment they hold, keeps what was paid to
+            them after they sell or leave, and collects it themselves. Test
+            money only.
           </p>
         </>
       )}

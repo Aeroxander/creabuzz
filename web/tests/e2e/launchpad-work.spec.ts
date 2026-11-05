@@ -144,7 +144,7 @@ async function postBondIfAsked(page: Page) {
   await expect(
     page
       .getByTestId("work-reviewer")
-      .filter({ hasText: "bond not posted yet" }),
+      .filter({ hasText: "bond not put down yet" }),
   ).not.toHaveCount(0);
   await expect(page.getByTestId("work-approve")).toHaveCount(0);
   await page.getByTestId("work-post-bond").click();
@@ -152,7 +152,7 @@ async function postBondIfAsked(page: Page) {
     timeout: 90_000,
   });
   await expect(
-    page.getByTestId("work-reviewer").filter({ hasText: "bond posted" }),
+    page.getByTestId("work-reviewer").filter({ hasText: "bond put down" }),
   ).not.toHaveCount(0, { timeout: 30_000 });
 }
 

@@ -96,7 +96,7 @@ test("the pledge is said plainly, and always says the contracts do not enforce i
       until: null,
       document: DOC,
     }),
-    "The team pledges 50% of the project's net receipts to the treasury, every quarter, for as long as the project earns. It is written into “Revenue pledge, signed”. The contracts do not enforce it.",
+    "The team pledges 50% of the project's net receipts, to be paid into the project's money every quarter, for as long as the project earns. It is written into “Revenue pledge, signed”. The contracts do not enforce it.",
   );
   assert.equal(
     pledgeSentence({
@@ -106,6 +106,6 @@ test("the pledge is said plainly, and always says the contracts do not enforce i
       until: "2030-12-31",
       document: null,
     }),
-    "The team pledges 10% of the project's net receipts to the treasury, every month, until 2030-12-31. It is not written into a signed document on record. The contracts do not enforce it.",
+    "The team pledges 10% of the project's net receipts, to be paid into the project's money every month, until 2030-12-31. It is not written into a signed document on record. The contracts do not enforce it.",
   );
 });

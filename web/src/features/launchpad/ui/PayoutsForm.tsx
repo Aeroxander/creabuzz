@@ -77,7 +77,7 @@ export function PayoutsForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
         };
       }
       if (!predicted.data)
-        return { problem: "Working out the module's address…" };
+        return { problem: "Working out the payout address…" };
       return attempt(() =>
         startPayoutsDecision({
           dao: ctx.dao,
@@ -114,7 +114,7 @@ export function PayoutsForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
     <div className="mt-3 grid gap-3" data-testid="form-payouts">
       {payouts.data === null ? (
         <TextField
-          hint="The rest of each payment goes to the treasury. Changing it later takes a vote and 30 days' notice."
+          hint="The rest of each payment goes to the project's money. Changing it later takes a vote and 30 days' notice."
           inputMode="decimal"
           label="Share of revenue for holders (%)"
           onChange={setSplitText}
@@ -123,7 +123,7 @@ export function PayoutsForm({ ctx, blocked, busy, gate, onSubmit }: FormProps) {
         />
       ) : payouts.data ? (
         <TextField
-          hint="Taken from the treasury now and shared by everyone holding Shares or non-voting shares, by how many they hold."
+          hint="Taken from the project's money now and shared among everyone holding Shares or non-voting shares, in proportion to what they hold."
           inputMode="decimal"
           label="Amount to pay out (USDC)"
           onChange={setAmountText}

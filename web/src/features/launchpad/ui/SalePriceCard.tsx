@@ -51,7 +51,7 @@ export function SalePriceCard({ launch }: { launch: Launch }) {
           </dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt className="text-muted-foreground">Clearing price now</dt>
+          <dt className="text-muted-foreground">Price right now</dt>
           <dd className="font-bold" data-testid="launch-sale-clearing">
             {current !== null ? `${formatPrice(current)} ${symbol}` : "—"}
           </dd>

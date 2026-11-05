@@ -116,7 +116,7 @@ export async function runRagequitFlow(
         dispatch({
           type: "step-failed",
           step: "mirror",
-          message: "no confirmed exit to record",
+          message: "there is no confirmed exit to record",
         });
         return;
       }
@@ -129,7 +129,7 @@ export async function runRagequitFlow(
         dispatch({
           type: "step-failed",
           step: "mirror",
-          message: `${errorMessage(err)}. The exit itself landed (tx ${record.txHash}); retrying records it without sending again.`,
+          message: `${errorMessage(err)}. The exit itself went through (confirmation ID ${record.txHash}); trying again only saves the record and does not send the exit again.`,
         });
         return;
       }

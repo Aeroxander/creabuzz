@@ -69,13 +69,13 @@ export function beforeYouBuy(view: FundingTermsView): string[] {
     "The funding limit is the current one: a later vote can raise it, with 30 days' notice.",
     "Contributors can still be awarded new Shares for reviewed work, with no yearly limit.",
     "Shares already earned can leave with part of the money raised, as yours can.",
-    "This project's team has no milestone locks.",
+    "None of the team's Shares are locked behind milestones.",
     view.asShares
       ? "You get Shares, with a vote."
-      : "You get non-voting shares: the same part of the treasury and payouts as a Share, but no vote. For now you can leave with them at any time; selling them to a new buyer in a round comes later.",
+      : "You get non-voting shares: the same part of the project's money and payouts as a Share, but no vote. For now you can leave with them at any time; selling them to a new buyer in a round comes later.",
     view.exitFeeBps === 0
       ? "Leaving pays a whole share: there is no exit fee."
-      : `Leaving keeps ${feePercent(view.exitFeeBps)} of what it pays in the treasury, for those who stay. It is not charged while the terms are under notice, and a vote can lower it but never raise it.`,
+      : `Of what leaving pays, ${feePercent(view.exitFeeBps)} stays with the project, for those who stay. It is not charged while the terms are under notice, and a vote can lower it but never raise it.`,
   ];
 }
 

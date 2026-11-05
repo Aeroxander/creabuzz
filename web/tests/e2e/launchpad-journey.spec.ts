@@ -458,11 +458,11 @@ test("a DAO sets aside work, approves a project, pays out a claim and awards Sha
   await founder.reload();
   const moneyIn = founder.getByTestId("dao-money-in");
   await expect(moneyIn.getByTestId("dao-money-in-headline")).toContainText(
-    "Besides the raise, 1,500",
+    "Apart from the money raised, 1,500",
     { timeout: 30_000 },
   );
   await expect(moneyIn.getByTestId("dao-money-in-pledge")).toContainText(
-    "The team pledges 20% of the project's net receipts to the treasury, every quarter",
+    "The team pledges 20% of the project's net receipts, to be paid into the project's money every quarter",
   );
   await expect(moneyIn.getByTestId("dao-money-in-pledge")).toContainText(
     "The contracts do not enforce it.",

@@ -115,7 +115,7 @@ function Editor({ launch, onDone }: { launch: Launch; onDone: () => void }) {
         </label>
       </div>
       <IpDocumentField
-        hint="The signed document the pledge is written into, for example the operating agreement of the entity that holds the IP."
+        hint="The signed document the pledge is written into, for example the operating agreement of the legal entity that holds the project's intellectual property (IP)."
         label="Where it is written"
         onChange={(document) => patch({ document })}
         slot="pledge"
@@ -174,7 +174,7 @@ export function RevenuePledgeCard({ launch }: { launch: Launch }) {
       <p className="mt-2 text-sm" data-testid="pledge-sentence">
         {pledge
           ? pledgeSentence(pledge)
-          : "You have not pledged any of what the project earns to the treasury. A pledge is how revenue reaches holders here: money paid in raises every Share's part of the treasury."}
+          : "You have not pledged to pay in any of what the project earns. A pledge is how revenue reaches holders here: money paid in raises every Share's part of the treasury."}
       </p>
       {pledge?.document ? (
         <p className="mt-1 text-xs text-muted-foreground">
@@ -191,7 +191,8 @@ export function RevenuePledgeCard({ launch }: { launch: Launch }) {
       ) : null}
       <p className="mt-2 text-xs text-muted-foreground">
         Nothing is paid to holders automatically. What is paid in stays in the
-        treasury, where every holder can leave with their part of it.
+        project&apos;s money, where every holder can leave with their part of
+        it.
       </p>
       {editing ? (
         <Editor launch={launch} onDone={() => setEditing(false)} />

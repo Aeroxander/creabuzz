@@ -55,10 +55,10 @@ test("what cannot be sent is said before anything is asked", () => {
   const problem = (over) =>
     sendMoneyPlan({ held: usdc, amountText: "1", to: TO, from: FROM, ...over })
       .problem;
-  assert.match(problem({ to: "0x123" }), /full address/);
-  assert.match(problem({ to: `0x${"0".repeat(40)}` }), /full address/);
+  assert.match(problem({ to: "0x123" }), /full account address/);
+  assert.match(problem({ to: `0x${"0".repeat(40)}` }), /full account address/);
   assert.match(problem({ to: FROM }), /own address/);
-  assert.match(problem({ amountText: "0" }), /more than nothing/);
+  assert.match(problem({ amountText: "0" }), /amount above zero/);
   assert.match(problem({ amountText: "12.6" }), /holds 12.5 USDC/);
   assert.match(
     problem({ amountText: "1.0000001" }),

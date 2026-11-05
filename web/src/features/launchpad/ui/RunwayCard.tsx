@@ -32,7 +32,7 @@ export function RunwayCard({
       <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Figure
           icon={Landmark}
-          label="In the treasury"
+          label="Held by the project"
           testId="runway-free"
           value={money(figures.free)}
         />

@@ -76,14 +76,14 @@ test("money in is split into the raise, what came back, and what was paid in", (
   const money = (n) => `${n} USDC`;
   assert.equal(
     moneyInHeadline(summary, money),
-    "Besides the raise, 20000 USDC was paid into the treasury in 2 payments.",
+    "Apart from the money raised, 20000 USDC was paid in, in 2 payments.",
   );
   assert.equal(
     moneyInHeadline(
       summariseMoneyIn({ transfers: [], raise: [], budgets: [], locks: [] }),
       money,
     ),
-    "Nothing has been paid into the treasury besides the raise yet.",
+    "Apart from the money raised, nothing has been paid in yet.",
   );
 });
 

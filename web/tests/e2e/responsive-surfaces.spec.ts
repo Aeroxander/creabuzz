@@ -555,7 +555,7 @@ test("an unavailable chain read reports no amount", async ({ page }) => {
   await mockRelay(page);
   await page.goto("/launchpad/nebula");
   await expect(page.getByTestId("launch-progress-source")).toHaveText(
-    "No chain data",
+    "No network data",
   );
   // "0 / —" would read as a funded state of zero, not an unknown one.
   await expect(page.getByText("Raised").locator("..")).not.toContainText("0 /");

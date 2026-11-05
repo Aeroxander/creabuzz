@@ -242,7 +242,7 @@ test("a production build shows no fabricated funding figures", async ({
   await page.getByText("Nebula DAO").click();
   await expect(page).toHaveURL(/\/launchpad\/nebula/);
   await expect(page.getByTestId("launch-progress-source")).toHaveText(
-    "No chain data",
+    "No network data",
   );
   await expect(page.getByTestId("launch-progress-unavailable")).toContainText(
     "has no auction contract yet",
@@ -997,7 +997,7 @@ test("the sandbox walks a full raise, clearly badged as simulated", async ({
     timeout: 15_000,
   });
   await expect(page.getByText("Raise terms")).toBeVisible();
-  // The raise is alive and honest: Simulated, never "No chain data".
+  // The raise is alive and honest: Simulated, never "No network data".
   await expect(page.getByTestId("launch-progress-source")).toHaveText(
     "Simulated",
   );

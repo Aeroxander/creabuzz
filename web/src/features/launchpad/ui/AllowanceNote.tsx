@@ -44,9 +44,9 @@ export function AllowanceNote({
   if (read.isError && !read.data) {
     return (
       <p className="mt-2 text-sm" data-testid="work-allowance-unavailable">
-        Couldn&apos;t read this year&apos;s allowance of new Shares from the
-        network. The Shares still refuse an award over it, so check again before
-        proposing one.
+        Couldn&apos;t read this year&apos;s limit on new Shares from the
+        network. The Shares still refuse an award over the limit, so check again
+        before proposing one.
       </p>
     );
   }

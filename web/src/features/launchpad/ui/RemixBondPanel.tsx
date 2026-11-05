@@ -118,7 +118,7 @@ export function RemixBondPanel({
         <>
           <p data-testid="remix-bond-line">
             {bond.state === "held"
-              ? `This project posted a bond of ${formatUnits(bond.amount, 18)} CREATE for ${parent.record.name}, held until ${date(bond.releasesAt)}.`
+              ? `This project put down a bond of ${formatUnits(bond.amount, 18)} CREATE for ${parent.record.name}, held until ${date(bond.releasesAt)}.`
               : bond.state === "forfeited" || bond.state === "paid"
                 ? `The court found this project broke ${parent.record.name}'s terms: its ${formatUnits(bond.amount, 18)} CREATE bond went to ${parent.record.name}.`
                 : `Its bond of ${formatUnits(bond.amount, 18)} CREATE was returned.`}
@@ -187,18 +187,19 @@ export function RemixBondPanel({
         </>
       ) : data.founder === null ? (
         <p className="text-muted-foreground" data-testid="remix-bond-none">
-          No bond yet. Only the project&apos;s founder can post one.
+          No bond yet. Only the project&apos;s founder can put one down.
         </p>
       ) : sender.wallet.address?.toLowerCase() !== data.founder ? (
         <p className="text-muted-foreground" data-testid="remix-bond-none">
-          No bond yet. The project&apos;s founder can post one from their
+          No bond yet. The project&apos;s founder can put one down from their
           wallet.
         </p>
       ) : data.wallet && parentDao ? (
         <div className="flex flex-col gap-2" data-testid="remix-bond-form">
           <p className="text-muted-foreground">
-            Post a bond in CREATE for {parent.record.name}: if the court finds
-            this project broke its terms, the bond is theirs.
+            Put down a bond in CREATE (the court&apos;s deposit token) for{" "}
+            {parent.record.name}: if the court finds this project broke its
+            terms, the bond is theirs.
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <div className="flex flex-col gap-1">
@@ -235,7 +236,7 @@ export function RemixBondPanel({
               size="sm"
               type="button"
             >
-              Post the bond
+              Put down the bond
             </Button>
           </div>
         </div>

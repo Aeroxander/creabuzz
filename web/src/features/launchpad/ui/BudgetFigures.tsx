@@ -84,8 +84,8 @@ export function BudgetFigures({
                   ? reviewer.stake === null
                     ? " · bond could not be read"
                     : reviewer.stake >= mandate.bond.minBond
-                      ? " · bond posted"
-                      : " · bond not posted yet"
+                      ? " · bond put down"
+                      : " · bond not put down yet"
                   : ""}
                 {reviewer.pending
                   ? ` · ${bondMoney(reviewer.pending.amount)} waiting to be taken back`
@@ -104,7 +104,7 @@ export function BudgetFigures({
           <p className="text-xs text-muted-foreground">Reviewer bond</p>
           <p className="mt-0.5 text-sm" data-testid="work-bond">
             {mandate.bond
-              ? `${bondMoney(mandate.bond.minBond)} each, which the DAO can take after a disputed approval`
+              ? `${bondMoney(mandate.bond.minBond)} each. A bond is a deposit a reviewer puts down; the project can take it after a disputed approval.`
               : "Could not be read. The network did not answer; this is not the same as no bond."}
           </p>
         </div>

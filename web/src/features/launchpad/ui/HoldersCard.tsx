@@ -67,11 +67,11 @@ export function HoldersCard({
         <>
           <p className="mt-1 text-sm text-muted-foreground">
             {read.holders.length === read.found
-              ? `${countOf(read.found, "wallet")} ${read.found === 1 ? "holds" : "hold"} Shares.`
-              : `The largest ${read.holders.length} of ${read.found} wallets that hold Shares.`}{" "}
+              ? `${countOf(read.found, "account")} ${read.found === 1 ? "holds" : "hold"} Shares.`
+              : `The largest ${read.holders.length} of ${read.found} accounts that hold Shares.`}{" "}
             {read.tracked
-              ? "Time held is the average moment the Shares were acquired: buying more brings it down, and Shares passed to another wallet do not take their time with them."
-              : "This DAO was made before holding times were kept, so only what each wallet holds is shown."}
+              ? "Time held counts from the average date the Shares were acquired: buying more shortens it, and Shares passed to another account do not carry their time over."
+              : "This project was made before holding times were kept, so only what each account holds is shown."}
           </p>
           <ul className="mt-3 divide-y divide-border/60">
             {read.holders.map((holder) => {
@@ -85,7 +85,7 @@ export function HoldersCard({
                 >
                   <span className="min-w-0 font-medium">
                     {isDao
-                      ? "The DAO itself"
+                      ? "The project itself"
                       : (contracts?.get(holder.holder) ??
                         labelOf(holder.holder))}
                   </span>

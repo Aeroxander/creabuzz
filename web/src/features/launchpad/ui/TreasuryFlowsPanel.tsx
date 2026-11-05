@@ -66,6 +66,20 @@ export interface TreasuryFlowsPanelProps {
   chainId: number;
 }
 
+/** A budget window in words: "per week", and "this week" for the live reading. */
+const PER_WINDOW: Record<OrgBudget["windows"][number], string> = {
+  epoch: "in total",
+  day: "per day",
+  week: "per week",
+  month: "per month",
+};
+const THIS_WINDOW: Record<OrgBudget["windows"][number], string> = {
+  epoch: "in total",
+  day: "today",
+  week: "this week",
+  month: "this month",
+};
+
 /** How this panel prints an amount: money in the sale's own currency, tokens in their 18 decimals. */
 interface Amounts {
   money(value: bigint): string;
@@ -135,48 +149,48 @@ function SplitSection({
   return (
     <section data-testid="fundflow-split">
       <h4 className="text-sm font-semibold text-black dark:text-white">
-        What happened to the money at graduation
+        What happened to the money when the sale ended
       </h4>
       <p className="mt-1 text-sm text-black/70 dark:text-white/70">
-        The raise swept to the executor and split onchain:{" "}
+        The money raised went to the payout step and was split on the network:{" "}
         <strong>{amounts.money(state.record.currencyRaised)}</strong> raised →{" "}
-        <strong>{amounts.money(split.reserveShare)}</strong> held in escrow for
-        the market&apos;s price floor ({Number(state.reserveBps) / 100}% of the
+        <strong>{amounts.money(split.reserveShare)}</strong> set aside for the
+        market&apos;s price floor ({Number(state.reserveBps) / 100}% of the
         raise) + <strong>{amounts.money(split.treasuryShare)}</strong> to the
-        treasury. The escrow is a promise the treasury keeps, not a guarantee:
-        it is released to the recorded pool, and if no pool is recorded the
-        treasury can withdraw it once the executor&apos;s reserve lock (30 days
-        by default) has passed. Unsold launch tokens (
-        {amounts.tokens(state.record.unsoldTokens)}) went to the treasury; sold
+        project&apos;s money. The set-aside money is a promise the project
+        keeps, not a guarantee: it goes to the recorded market pool, and if no
+        pool is recorded the project can take it back once the hold on it (30
+        days by default) has passed. Unsold tokens (
+        {amounts.tokens(state.record.unsoldTokens)}) went to the project; sold
         tokens ({amounts.tokens(state.record.tokensSold)}) went to buyers.
       </p>
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-black/80 dark:text-white/80">
-        <dt>Reserve escrow (from the record)</dt>
+        <dt>Set aside for the price floor (from the record)</dt>
         <dd className="text-right" data-testid="fundflow-reserve">
           {amounts.money(state.record.reserveEscrow)}
         </dd>
-        <dt>Treasury share (from the record)</dt>
+        <dt>Project&apos;s share (from the record)</dt>
         <dd className="text-right" data-testid="fundflow-treasury-share">
           {amounts.money(state.record.treasuryShare)}
         </dd>
-        <dt>Executed</dt>
+        <dt>Split done</dt>
         <dd className="text-right">
           {state.record.executed
             ? "yes, the split has happened"
             : "not yet, the split is pending"}
         </dd>
-        <dt>Executor (source)</dt>
+        <dt>Payout step (contract)</dt>
         <dd className="text-right">
           <AddrLink chainId={chainId} address={state.executor} />
         </dd>
-        <dt>Treasury (source)</dt>
+        <dt>Project&apos;s money (contract)</dt>
         <dd className="text-right">
           <AddrLink chainId={chainId} address={state.treasury} />
         </dd>
       </dl>
       {state.record.tokenMasterPool !== `0x${"0".repeat(40)}` ? (
         <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-          TM pool master:{" "}
+          Market pool contract:{" "}
           <AddrLink chainId={chainId} address={state.record.tokenMasterPool} />
         </p>
       ) : null}
@@ -201,8 +215,8 @@ function ReceiptSection({
           Recorded movements
         </h4>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          No sweep / lock / summon / ragequit receipts are recorded for this
-          launch yet. The deploy publishes them at graduation.
+          No money movements are recorded for this project yet. They are
+          recorded when the sale ends.
         </p>
       </section>
     );
@@ -220,20 +234,20 @@ function ReceiptSection({
           >
             <span>
               {row.table === "sweep"
-                ? `sweep: raised ${payloadAmount(row.payload, "currencyRaised", amounts.money)}, treasury share ${payloadAmount(row.payload, "treasuryShare", amounts.money)}, unsold ${payloadAmount(row.payload, "unsoldTokens", amounts.tokens)}`
+                ? `Money raised ${payloadAmount(row.payload, "currencyRaised", amounts.money)}: project's share ${payloadAmount(row.payload, "treasuryShare", amounts.money)}, unsold tokens ${payloadAmount(row.payload, "unsoldTokens", amounts.tokens)}`
                 : row.table === "lock"
-                  ? `lock: reserve escrow ${payloadAmount(row.payload, "reserveEscrow", amounts.money)} (price-floor backing; the treasury can withdraw it after the reserve lock if no pool is recorded)`
+                  ? `Set aside: ${payloadAmount(row.payload, "reserveEscrow", amounts.money)} to back the price floor (the project can take it back after the hold if no pool is recorded)`
                   : row.table === "summon"
-                    ? "summon: the DAO was summoned for this launch"
-                    : "ragequit: an owner burned shares and claimed treasury"}
+                    ? "The project was set up for this sale"
+                    : "Exit: an owner gave up shares and took their part of the project's money"}
             </span>
             <TxLink chainId={chainId} tx={row.tx} />
           </li>
         ))}
       </ul>
       <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-        Source: the receipts this launch published for its deploy and exits;
-        each links to its transaction on the chain.
+        Source: the records this project saved when the sale ended and when
+        people left; each links to its record on the network.
       </p>
     </section>
   );
@@ -250,9 +264,9 @@ function PositionSection({
   positions: Awaited<ReturnType<typeof fetchFundFlowPositions>>;
 }) {
   const labels: Record<string, string> = {
-    treasury: "Treasury holds",
-    pool: "TM pool holds (price-floor backing)",
-    escrow: "Executor still holds (unreleased reserve)",
+    treasury: "The project holds",
+    pool: "The market pool holds (price-floor backing)",
+    escrow: "The payout step still holds (money not yet released)",
   };
   return (
     <section data-testid="fundflow-positions">
@@ -276,7 +290,7 @@ function PositionSection({
         ))}
       </ul>
       <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-        Live contract reads (balances of the linked addresses).
+        Read live from the network (balances of the linked addresses).
       </p>
     </section>
   );
@@ -328,33 +342,33 @@ function BudgetRow({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">
-          budget {budget.id}: ceiling{" "}
-          {budget.allocation ? amounts.money(budget.allocation) : "—"} /{" "}
-          {window}
+          budget {budget.id}: limit{" "}
+          {budget.allocation ? amounts.money(budget.allocation) : "—"}{" "}
+          {PER_WINDOW[window]}
           {budget.rollover ? " (rolls over)" : ""}
         </span>
         <span className="text-black/60 dark:text-white/60">
-          subject {truncatePubkey(budget.subject)}
+          for {truncatePubkey(budget.subject)}
         </span>
       </div>
       {budget.onchain ? (
         allowanceQuery.error ? (
           <p className="mt-1 text-red-700 dark:text-red-300">
-            Could not read the allowance:{" "}
+            Could not read the spending limit:{" "}
             {allowanceQuery.error instanceof Error
               ? allowanceQuery.error.message
               : "the request failed"}
           </p>
         ) : allowanceQuery.data ? (
           <p className="mt-1">
-            onchain: spent {amounts.money(allowanceQuery.data.spent)} of{" "}
-            {amounts.money(allowanceQuery.data.allowance)} this {window} (epoch{" "}
-            {allowanceQuery.data.epoch.toString()}), remaining{" "}
-            {amounts.money(allowanceQuery.data.remaining)}
+            On the network: spent {amounts.money(allowanceQuery.data.spent)} of{" "}
+            {amounts.money(allowanceQuery.data.allowance)} {THIS_WINDOW[window]}{" "}
+            (period {allowanceQuery.data.epoch.toString()}),{" "}
+            {amounts.money(allowanceQuery.data.remaining)} left
             {allowanceQuery.data.spender ? (
               <>
                 {" "}
-                · spender{" "}
+                · allowed to spend:{" "}
                 <AddrLink
                   chainId={chainId}
                   address={allowanceQuery.data.spender}
@@ -364,12 +378,13 @@ function BudgetRow({
           </p>
         ) : (
           <p className="mt-1 text-black/60 dark:text-white/60">
-            Reading the allowance…
+            Reading the spending limit…
           </p>
         )
       ) : (
         <p className="mt-1 text-black/60 dark:text-white/60">
-          No onchain allowance is bound to this budget (record-only ceiling).
+          The network does not enforce a spending limit for this budget; its
+          limit is a written record only.
         </p>
       )}
       {related.length > 0 ? (
@@ -380,20 +395,20 @@ function BudgetRow({
               key={spend.id}
             >
               <span>
-                spend {amounts.money(spend.amount)} by{" "}
+                spent {amounts.money(spend.amount)} by{" "}
                 {spend.agent ? truncatePubkey(spend.agent) : "—"}
               </span>
               <TxLink chainId={chainId} tx={spend.txHash} />
             </li>
           ))}
           <li className="text-black/60 dark:text-white/60">
-            recorded spend receipts total {amounts.money(recorded)} (advisory
-            mirror of the onchain ledger)
+            recorded payments total {amounts.money(recorded)} (a copy for
+            information; the network&apos;s own ledger is the source)
           </li>
         </ul>
       ) : (
         <p className="mt-1 text-black/60 dark:text-white/60">
-          No spend receipts recorded against this budget yet.
+          No payments recorded against this budget yet.
         </p>
       )}
     </li>
@@ -437,25 +452,25 @@ export function TreasuryFlowsPanel({
   return (
     <div className="flex flex-col gap-6" data-testid="treasury-flows-panel">
       <p className="text-sm text-black/60 dark:text-white/60">
-        What is happening: the raise split at graduation, the reserve seeds the
-        price floor, the treasury funds the project. Does it need you: only when
-        you hold shares and want out (see Exit below). What to do about it:
-        every movement below links the transaction or contract it came from.
+        When the sale ended, the money raised was split: part is set aside to
+        back the token&apos;s price floor, and the rest is the project&apos;s
+        money. You only need to act if you hold shares and want out (see Exit
+        below). Each item below links to its record on the network.
       </p>
       {graduationQuery.error ? (
         <p
           className="text-sm text-black/60 dark:text-white/60"
           data-testid="fundflow-unavailable"
         >
-          This launch is not on the GraduationExecutor rails (its funds
-          recipient is not a GraduationExecutor), so the split cannot be read:{" "}
+          This sale does not use the standard payout step, so how the money was
+          split cannot be shown:{" "}
           {graduationQuery.error instanceof Error
             ? graduationQuery.error.message
             : "the read failed"}
         </p>
       ) : graduationQuery.isFetching || !graduation ? (
         <p className="text-sm text-black/60 dark:text-white/60">
-          Reading the graduation split…
+          Reading how the money was split…
         </p>
       ) : (
         <>
@@ -491,25 +506,24 @@ export function TreasuryFlowsPanel({
       )}
       <section data-testid="fundflow-spend-ledger">
         <h4 className="text-sm font-semibold text-black dark:text-white">
-          What has been spent (budgets &amp; spend ledger)
+          What has been spent (budgets and payments)
         </h4>
         {orgMoney.error ? (
           <p className="mt-1 text-sm text-red-700 dark:text-red-300">
-            Could not read the budgets and spend ledger from the server:{" "}
+            Could not read the budgets and payments from the server:{" "}
             {orgMoney.error instanceof Error
               ? orgMoney.error.message
               : "the request failed"}
           </p>
         ) : orgMoney.isFetching ? (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            Reading budgets and spend receipts…
+            Reading budgets and payments…
           </p>
         ) : orgMoney.data && orgMoney.data.budgets.length > 0 ? (
           <>
             <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-              Source: the budgets and spend receipts published in this
-              community, checked against the onchain spending allowance. Current
-              period:{" "}
+              Source: the budgets and payments published in this community,
+              checked against the spending limit on the network. Current period:{" "}
               {budgetEpoch(
                 "month",
                 BigInt(Math.floor(Date.now() / 1000)),
@@ -531,8 +545,8 @@ export function TreasuryFlowsPanel({
           </>
         ) : (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            No budgets are published in this community yet, so the spend ledger
-            shows onchain data only. The budget picture appears once budgets are
+            No budgets are published in this community yet, so only what the
+            network records is shown. Budgets appear here once they are
             recorded.
           </p>
         )}

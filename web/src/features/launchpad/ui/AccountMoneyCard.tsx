@@ -165,7 +165,7 @@ export function AccountMoneyCard() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="font-medium" htmlFor={toId}>
-              Send to (an address)
+              Send to (account address)
             </label>
             <Input
               data-testid="account-money-to"

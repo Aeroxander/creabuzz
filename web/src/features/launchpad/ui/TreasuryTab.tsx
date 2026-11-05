@@ -149,7 +149,7 @@ export function TreasuryTab({
         <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
           {[
             [
-              "Raise if it clears at the floor",
+              "Raise if all tokens sell at the floor price",
               plan
                 ? formatMoney(plan.floorRaise, recordSaleCurrency(record))
                 : "—",
@@ -180,26 +180,28 @@ export function TreasuryTab({
           ))}
         </dl>
         <p className="mt-2 text-xs text-black/60 dark:text-white/60">
-          Liquidity is seeded from the clearing price at graduation; the
-          remainder is the treasury&apos;s. Allowances, streams and the
-          wind-down path are agreed by proposal, not configured here.
+          When the sale ends, part of the raise is set aside to start a market
+          for the token, at the price the sale settled on. The rest is the
+          project&apos;s money. Spending limits, payment streams and how to wind
+          the project down are agreed by proposal, not set here.
         </p>
       </Card>
       <Card className="p-4" data-testid="launch-treasury-balance">
         <h2 className="text-base font-semibold">Token balance</h2>
         {!record.token || !record.treasury ? (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            Link the token and treasury addresses to read a balance.
+            Add the token and treasury addresses to this project to see a
+            balance.
           </p>
         ) : (
           <>
             <p className="mt-1 text-sm text-black/60 dark:text-white/60">
               {balance.state === "idle"
-                ? "Read the treasury's balance of the launch token over RPC."
+                ? "Check how much of the project's token the project holds."
                 : balance.state === "loading"
                   ? "Reading…"
                   : balance.value === null
-                    ? "The chain could not be read, so the balance is unknown."
+                    ? "The network did not answer, so the balance is unknown."
                     : formatAtomic(balance.value, 18, { symbol: "tokens" })}
             </p>
             <Button
@@ -209,7 +211,7 @@ export function TreasuryTab({
               size="sm"
               variant="outline"
             >
-              Read balance
+              Check balance
             </Button>
           </>
         )}
@@ -218,8 +220,9 @@ export function TreasuryTab({
         <h2 className="text-base font-semibold">Funding streams</h2>
         {streams.length === 0 ? (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            No streams yet. SubDAOs receive revocable streams against
-            milestones. Continuation, top-up, or cancel follows a budget vote.
+            No payment streams yet. Sub-projects are paid in streams tied to
+            milestones, and a stream can be cancelled. Continuing, topping up or
+            cancelling a stream follows a budget vote.
           </p>
         ) : (
           <ul className="mt-2 flex flex-col gap-1 text-sm">
@@ -235,17 +238,16 @@ export function TreasuryTab({
       <Card className="p-4" data-testid="treasury-return">
         <h2 className="text-base font-semibold">Exit</h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          The credible threat of taking money back is what disciplines a
-          treasury. Anyone can suggest returning the money. A suggestion is a
-          public note for the holders to discuss: it does not move any money and
-          it is not a vote. A decision that does is put to the holders on the
-          Decisions tab.
+          Anyone can suggest returning the project&apos;s money to holders. A
+          suggestion is a public note for the holders to discuss: it does not
+          move any money and it is not a vote. A decision that does is put to
+          the holders on the Decisions tab.
         </p>
         <div className="mt-2 flex gap-2">
           <Input
             data-testid="return-title"
             onChange={(e) => setReturnTitle(e.target.value)}
-            placeholder="e.g. Return the remaining treasury pro-rata"
+            placeholder="e.g. Return the remaining money to holders, in proportion to their Shares"
             value={returnTitle}
           />
           <Button

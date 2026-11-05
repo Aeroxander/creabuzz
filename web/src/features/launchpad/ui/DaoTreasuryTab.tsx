@@ -68,9 +68,10 @@ export function DaoTreasuryTab({
       <Card className="p-4">
         <h2 className="text-base font-semibold">Treasury</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          The money this project raised sits in its DAO. Holders decide what it
-          is spent on, on the Decisions tab, and anyone holding Shares can leave
-          with their share of what is left.
+          The money the project holds together. What it raised is held by the
+          project itself. Holders decide on the Decisions tab what it is spent
+          on, and anyone holding Shares can leave with their share of what is
+          left.
         </p>
         <div className="mt-3 max-w-xs">
           <Figure

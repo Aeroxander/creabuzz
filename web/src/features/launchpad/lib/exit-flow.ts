@@ -52,9 +52,9 @@ export interface FlowReceipt {
  */
 export function flowOutcomeMessage(receipt: FlowReceipt): string {
   if (receipt.status === "reverted") {
-    return `the transaction failed onchain (tx ${receipt.txHash})`;
+    return `the step failed on the network (confirmation ID ${receipt.txHash})`;
   }
-  return `the outcome of transaction ${receipt.txHash} is still unknown. Check whether it landed before retrying`;
+  return `the outcome of the step with confirmation ID ${receipt.txHash} is still unknown. Check whether it went through before trying again`;
 }
 
 /** The full observable state of one exit/claim attempt. */

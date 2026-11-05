@@ -118,8 +118,8 @@ export function ContributorFundsTab({
           role="status"
         >
           {provenance === "reading"
-            ? "Checking this project's DAO…"
-            : "This project's DAO could not be checked against the contributor kit, so its money and the way to leave are not shown here."}
+            ? "Checking this project's setup…"
+            : "This project's setup could not be checked against the standard way projects are made, so its money and the way to leave are not shown here."}
         </p>
       </Card>
     );
@@ -168,13 +168,13 @@ export function ContributorFundsTab({
             Send money to this project
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Anyone can send {usdc ? "USDC or ETH" : "ETH"} to its DAO, on{" "}
-            {plainNetworkName(chainId)} only. Money sent on another network is
-            lost.
+            Anyone can send {usdc ? "USDC or ETH" : "ETH"} to the project&apos;s
+            address, on {plainNetworkName(chainId)} only. Money sent on another
+            network is lost.
           </p>
           <AddressRow
-            copyLabel="Copy the DAO's address"
-            label="The DAO's address"
+            copyLabel="Copy the project's address"
+            label="The project's address"
             value={dao}
           />
         </div>

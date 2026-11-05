@@ -95,7 +95,7 @@ export function makeWalletAuctionEffects(
     );
     if (actual !== chainId) {
       throw new Error(
-        `Your wallet is on chain ${actual}, but this launch is on chain ${chainId}. Switch networks in your wallet and try again.`,
+        `Your wallet is on network ${actual}, but this project is on network ${chainId}. Switch networks in your wallet, then try again.`,
       );
     }
   };
@@ -147,7 +147,7 @@ export function makeWalletAuctionEffects(
         }
         if (now() >= deadline) {
           throw new Error(
-            `Transaction ${hash} was sent but not confirmed within ${Math.round(timeoutMs / 1000)}s. Check your wallet or a block explorer; if it landed, retry and this step will detect it.`,
+            `Your payment (confirmation ID ${hash}) was sent but not confirmed within ${Math.round(timeoutMs / 1000)}s. Check your wallet. If it went through, try again and this step will notice.`,
           );
         }
         await sleep(pollMs);

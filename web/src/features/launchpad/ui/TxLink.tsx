@@ -54,7 +54,7 @@ export function TxLink({
     <span
       className="break-all text-black/60 dark:text-white/60"
       data-testid="tx-link"
-      title="This network has no public page for transactions, so only its id is shown."
+      title="Only the record's ID is shown. Keep it if you need to look the record up later."
     >
       {truncatePubkey(tx)}
     </span>

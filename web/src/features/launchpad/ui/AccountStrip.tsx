@@ -23,7 +23,7 @@ import { AccountMoneyNote } from "./AccountMoneyNote";
 import { AccountNameLink } from "./AccountNameLink";
 
 const NO_WALLET =
-  "To take part here you need a wallet in this browser. Add one, then reload this page.";
+  "To take part here you need a wallet in this browser: an app that holds your money and proves it is you. Add one, then reload this page.";
 
 /** Who is connected, with the connect button when nobody is. */
 export function WalletStrip({
@@ -163,7 +163,8 @@ function NoAccount({
       data-testid={`${testIdPrefix}-no-wallet`}
     >
       <p>
-        To take part, sign in with a passkey. You need no wallet
+        To take part, sign in with a passkey (your fingerprint, face or device
+        PIN). You need no wallet
         {fees ? `, and the fees are covered on ${fees}` : ""}.
       </p>
       <div className="flex flex-wrap items-center gap-2">

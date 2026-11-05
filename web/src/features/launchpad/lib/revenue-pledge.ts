@@ -148,5 +148,5 @@ export function pledgeSentence(pledge: RevenuePledge): string {
   const where = pledge.document
     ? `It is written into “${pledge.document.title}”.`
     : "It is not written into a signed document on record.";
-  return `The team pledges ${pledge.percent}% of the project's net receipts to the treasury, every ${pledge.every}, ${until}. ${where} The contracts do not enforce it.`;
+  return `The team pledges ${pledge.percent}% of the project's net receipts, to be paid into the project's money every ${pledge.every}, ${until}. ${where} The contracts do not enforce it.`;
 }

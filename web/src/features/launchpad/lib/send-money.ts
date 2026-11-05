@@ -45,13 +45,13 @@ export function sendMoneyPlan(input: {
   if (!ADDRESS_RE.test(to) || ZERO.test(to)) {
     return {
       problem:
-        "Paste the full address to send to: 0x and 40 letters or numbers.",
+        "Paste the full account address to send to. It starts with 0x, then 40 letters or numbers.",
     };
   }
   if (to.toLowerCase() === input.from.toLowerCase()) {
     return {
       problem:
-        "That is this account's own address. Paste the address you want the money to go to.",
+        "That is this account's own address. Paste the account address you want the money to go to.",
     };
   }
   let amount: bigint;
@@ -67,7 +67,7 @@ export function sendMoneyPlan(input: {
       problem: error instanceof Error ? error.message : "Check the amount.",
     };
   }
-  if (amount <= 0n) return { problem: "Send more than nothing." };
+  if (amount <= 0n) return { problem: "Enter an amount above zero." };
   if (amount > held.balance) {
     return { problem: `This account holds ${moneyText(held)} ${held.symbol}.` };
   }

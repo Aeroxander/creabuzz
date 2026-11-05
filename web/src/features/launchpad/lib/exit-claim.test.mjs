@@ -225,7 +225,7 @@ test("runExitFlow treats a mined revert as a failed step, never a success", asyn
   assert.equal(rec.state.steps.claim, "failed");
   assert.match(
     rec.state.errorMessage,
-    /Claim tokens failed: the transaction failed onchain \(tx 0xdead\)/,
+    /Claim tokens failed: the step failed on the network \(confirmation ID 0xdead\)/,
   );
 });
 
@@ -242,10 +242,10 @@ test("runExitFlow calls an unknown receipt outcome unknown, not an onchain failu
   assert.match(rec.state.errorMessage, /still unknown/);
   assert.match(
     rec.state.errorMessage,
-    /Check whether it landed before retrying/,
+    /Check whether it went through before trying again/,
   );
   // The tx may never have been broadcast; never claim an onchain failure here.
-  assert.doesNotMatch(rec.state.errorMessage, /failed onchain/);
+  assert.doesNotMatch(rec.state.errorMessage, /failed on the network/);
 });
 
 test("runExitFlow keeps completed steps and retry re-sends only the remainder", async () => {

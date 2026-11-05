@@ -529,7 +529,7 @@ test("a member who wants out is matched with two who want in, and the treasury k
   ).toContainText("no yearly limit");
   await expect(
     buyerFunding.getByTestId("funding-before-you-buy"),
-  ).toContainText("Leaving keeps 2% of what it pays in the treasury");
+  ).toContainText("Of what leaving pays, 2% stays with the project");
   await buyerFunding.getByTestId("funding-open-round").click();
   await expect(buyerFunding.getByTestId("rounds-round-status")).toContainText(
     "Taking offers and bids until",

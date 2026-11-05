@@ -411,7 +411,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   });
   await expect(founder.page.getByTestId("work-bond")).toContainText("25");
   await expect(founder.page.getByTestId("work-reviewers")).toContainText(
-    "bond not posted yet",
+    "bond not put down yet",
   );
   // Back to where the sale is run from.
   await founder.page.getByRole("tab", { name: /Manage/ }).click();
@@ -477,7 +477,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   );
   await founder.page.getByTestId("graduation-execute").click();
   await expect(founder.page.getByTestId("graduation-status")).toContainText(
-    "Graduation executed",
+    "Graduation done",
     { timeout: 90_000 },
   );
   say("the sale graduated");
