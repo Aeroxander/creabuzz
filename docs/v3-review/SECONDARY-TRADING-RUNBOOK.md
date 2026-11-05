@@ -13,7 +13,7 @@ so that a market was bound at birth. A DAO launched by the older kit has no
 market (`marketOf(dao)` is zero) and cannot get one: a market is created once per
 DAO, by the kit, and never again. This runbook does not apply to it.
 
-**Status.** Trading is off by default and stays off until two separate acts
+**Status.** Trading is off by default (a listing starts disabled) and stays off until two separate acts
 happen, both of which are described in §2. This document does not turn anything
 on; it describes how to do it deliberately and how to prove what state you are in.
 
@@ -28,17 +28,21 @@ for what the code does and what it does not, and the candidate design
 These are gates, not a checklist to skim. If one is not met, the answer is "not
 yet", and the per-project facts in gate 3 stay as they are at birth.
 
-### Gate 1 — the independent review sign-off exists
+### Gate 1 — the outside review sign-off exists
 
-Trading is off by default and stays off without this. The sign-off is the one
-described in §9 of the review packet: an outside reviewer either found no
-high-severity defect, or found defects that are fixed and re-tested, and stated a
-view on the seven open questions in §7 of that packet.
+This is a release gate owned by people. Nothing in the software checks for a
+sign-off. Trading is off by default only because a listing starts disabled and no
+hosted build names a market factory; whoever turns it on must first confirm this
+gate. The sign-off is the one described in §9 of the review packet: an outside
+reviewer either found no high-severity defect, or found defects that are fixed
+and re-tested, and stated a view on the seven open questions in §7 of that
+packet.
 
-The first independent review has happened and its three findings are fixed (§6
-below). That is not the same as the review being finished: the four gaps listed
-in §10 of the packet, repeated in §7 here, are still open. Read them before you
-decide, and do not describe the market to anyone as "audited".
+No independent human audit has happened. An internal agent review pass has
+happened and its three findings are fixed (§6 below). That is not an outside
+review and not the review being finished: the four gaps listed in §10 of the
+packet, repeated in §7 here, are still open. Read them before you decide, and do
+not describe the market to anyone as "audited".
 
 ### Gate 2 — the legal view on selling a claim on a treasury
 
@@ -614,8 +618,8 @@ closed.
   ledger was found conserved (`sharesIn` and `quoteIn` hold), but the policy's
   escrow-migration side is unreviewed.
 - **No real-chain reorg testing** for the market, and no formal verification of
-  the clearing algorithm. One independent review has read the market, the factory
-  and the policy hooks; that is not an audit of the whole kit.
+  the clearing algorithm. One internal agent review pass has read the market, the factory
+  and the policy hooks; that is not an outside audit, and not an audit of the whole kit.
 - **There is no upgrade path, by design.** That removes upgrade risk and also
   removes the ability to fix a defect: a replacement market is a new deployment
   and a DAO decision, with its own market address and its own history.

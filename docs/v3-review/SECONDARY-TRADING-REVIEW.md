@@ -6,7 +6,7 @@ did not build it: what the code does, what it deliberately refuses to do, what
 the tests actually pin, and what is still open. Every claim below names the file
 it comes from, so it can be checked rather than trusted.
 
-**Status: trading is off by default and nothing has been activated on any public
+**Status: trading starts disabled and nothing has been activated on any public
 network.** This repository has never deployed to mainnet, and the only
 deployments in evidence are local scratch chains started by the scripts named
 below. The review is a gate on turning trading on, not a description of
@@ -365,15 +365,18 @@ each one.
 
 The review is complete when an outside reviewer has either (a) found no
 high-severity defect, or (b) found defects that are fixed and re-tested, and has
-stated a view on the seven open questions in §7. Trading activation stays off
-until that sign-off exists, and turning it on remains two deliberate DAO acts
-per project (§4), not a platform switch.
+stated a view on the seven open questions in §7. That sign-off, and the legal
+view, are release gates owned by people: nothing in the software checks for a
+sign-off. Trading is off by default only because a listing starts disabled and
+no hosted build names a market factory; turning it on remains two deliberate DAO
+acts per project (§4), not a platform switch.
 
 ---
 
-## 10. The first independent review: findings and what changed
+## 10. First review (internal agent pass, not an outside audit): findings and what changed
 
-An outside reviewer read `SecondaryMarket.sol` and `SecondaryMarketFactory.sol`
+This was an agent review pass, not an independent human audit (§6 item 1 is the
+single statement of audit status). An agent review pass read `SecondaryMarket.sol` and `SecondaryMarketFactory.sol`
 in full, the Shares transfer path in `MolochPatched.sol`, and the market's hooks
 in `ActivationVoting.sol`, and reproduced three defects with forge tests. All
 three were real and are now fixed, each with a regression test that fails when

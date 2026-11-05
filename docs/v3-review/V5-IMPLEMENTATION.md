@@ -1562,7 +1562,7 @@ author, who decided them:
    clicked through the flow.
 2. **The secondary-trading review — the author sends the packet.** They have a
    reviewer arranged and will send `docs/v3-review/SECONDARY-TRADING-REVIEW.md`
-   themselves. No sign-off exists yet; trading stays off until one does.
+   themselves. No sign-off exists yet. Trading is off by default because a listing starts disabled and no hosted build names a market factory; the sign-off is a release gate owned by people, and nothing in the software checks for it.
 
 So neither is an open agent task any more, and neither is a completed human
 step. The distinction is worth keeping: the product's readiness for real money
@@ -1593,9 +1593,9 @@ Not run here, and why: `just ci` and `just check` include the desktop and mobile
 surfaces, which this work deliberately excludes; `web-sepolia-fork-e2e` needs a
 Sepolia RPC and this host has no DNS.
 
-### Three defects found by the independent review, and fixed
+### First review (internal agent pass, not an outside audit): three defects, fixed
 
-An outside reviewer read `SecondaryMarket.sol` and `SecondaryMarketFactory.sol`
+An agent review pass read `SecondaryMarket.sol` and `SecondaryMarketFactory.sol`
 in full and reproduced three defects with forge tests. All three were real. Each
 is fixed, and each has a regression test that fails when its fix is reverted —
 checked by reverting each fix in turn:

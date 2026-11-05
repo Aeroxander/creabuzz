@@ -95,7 +95,10 @@ N/A — no matching issue found.
 
 Agent-run evidence only. The author waived a personal walkthrough of the
 agreed-reward flow. Trading has **no outside security audit or legal view yet**
-and stays off by default until it does. A production build of the hosted image
+and the software does not check for either: trading is off by default because a
+listing starts disabled and no hosted build names a market factory, and the
+review and legal view are release gates owned by people. The market review above
+was an agent pass; the author should say here if a human reviewed it. A production build of the hosted image
 (social app only) was run locally and loads; the contributor build against Sepolia
 has not been run.
 
