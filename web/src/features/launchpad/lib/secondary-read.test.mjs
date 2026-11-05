@@ -190,6 +190,7 @@ test("the market for a vote's words: none only when the factory says the zero ad
     address: MARKET,
     quoteDecimals: 6,
     quoteSymbol: "USDC",
+    quoteToken: QUOTE,
   });
 });
 
@@ -233,6 +234,7 @@ test("a price token that will not say its units leaves a vote's prices in base u
       address: MARKET,
       quoteDecimals: undefined,
       quoteSymbol: undefined,
+      quoteToken: QUOTE,
     },
   );
 });
@@ -469,6 +471,32 @@ test("the off switch survives a price token that stopped answering", async () =>
     form(view, { enabled: "on", minText: "1", maxText: "2", levelsText: "4" }),
   );
   assert.ok("problem" in on, "prices still need the token's scale");
+});
+
+test("the listing form's vote names the price token and warns when it is not the sale currency", async () => {
+  const view = await readSecondaryView(fakeChain(), { ...INPUT, wallet: null });
+  assert.equal(view.facts.quoteToken, QUOTE);
+  const on = {
+    enabled: "on",
+    minText: "1",
+    maxText: "2",
+    levelsText: "4",
+    quoteToken: view.facts.quoteToken,
+  };
+  const other = listingFormDraft(
+    form(view, { ...on, saleCurrency: `0x${"aa".repeat(20)}` }),
+  );
+  assert.ok("draft" in other, JSON.stringify(other));
+  assert.match(other.draft.title, /not this project's sale currency/);
+  assert.ok(other.draft.lines[0].includes(QUOTE));
+  const same = listingFormDraft(
+    form(view, {
+      ...on,
+      saleCurrency: QUOTE.toUpperCase().replace("0X", "0x"),
+    }),
+  );
+  assert.ok("draft" in same, JSON.stringify(same));
+  assert.doesNotMatch(same.draft.title, /sale currency/);
 });
 
 // ---- older rounds: the next fixed block, one click at a time -----------------------------------------------------

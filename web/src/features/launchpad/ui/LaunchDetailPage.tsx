@@ -583,6 +583,7 @@ export function LaunchDetailPage({
             <TradingCard
               chainId={launch.record.chainId ?? null}
               dao={workDao}
+              saleCurrency={launch.record.currency ?? null}
             />
           </div>
         </>
@@ -597,6 +598,7 @@ export function LaunchDetailPage({
               <TradingCard
                 chainId={launch.record.chainId ?? null}
                 dao={workDao}
+                saleCurrency={launch.record.currency ?? null}
               />
             </div>
           ) : null}

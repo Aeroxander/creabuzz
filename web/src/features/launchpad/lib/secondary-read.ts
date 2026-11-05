@@ -288,6 +288,7 @@ export async function readMarketForWords(
     address: answer,
     quoteDecimals: units?.decimals,
     quoteSymbol: units?.symbol,
+    quoteToken,
   };
 }
 

@@ -21,6 +21,12 @@
 
 import { formatUnits } from "@creaton/core/launchpad/daoActions.ts";
 import {
+  quoteDiffersFromSale,
+  quoteIdentityLine,
+  quoteMismatchLine,
+  shortToken,
+} from "@creaton/core/launchpad/secondaryListing.ts";
+import {
   type EarlierRound,
   lotPriceAt,
   type Listing,
@@ -38,6 +44,41 @@ export interface QuoteUnits {
   quoteDecimals: number;
   /** The token's own symbol, as it answers `symbol()` (e.g. "USDC"). */
   quoteSymbol: string;
+}
+
+export {
+  quoteDiffersFromSale,
+  quoteIdentityLine,
+  shortToken,
+} from "@creaton/core/launchpad/secondaryListing.ts";
+
+/** Which token prices are in, as the card, the listing form and the vote say it. */
+export interface QuoteIdentity {
+  /** The token's own symbol, as it names itself. */
+  symbol: string;
+  /** The token's full address, kept whole so it can be copied and checked. */
+  address: string;
+}
+
+/** What to show about the price token: a line naming it, its address, and a warning when it is not the sale currency. */
+export function quoteIdentity(
+  quote: QuoteIdentity,
+  saleCurrency: string | null | undefined,
+): {
+  line: string;
+  short: string;
+  address: string;
+  differsFromSale: boolean;
+  warning: string | null;
+} {
+  const differsFromSale = quoteDiffersFromSale(quote.address, saleCurrency);
+  return {
+    line: quoteIdentityLine(quote.symbol, quote.address),
+    short: shortToken(quote.address),
+    address: quote.address,
+    differsFromSale,
+    warning: differsFromSale ? quoteMismatchLine() : null,
+  };
 }
 
 /**

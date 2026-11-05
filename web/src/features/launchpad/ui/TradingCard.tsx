@@ -62,6 +62,7 @@ import { useChainSend } from "../use-chain-send";
 import type { SecondaryMarketFacts } from "../lib/secondary-read";
 import { SECONDARY_QUERY, useSecondary } from "../use-secondary";
 import { FailureNote, GateNote, WalletStrip } from "./account-widgets";
+import { QuoteTokenNote } from "./QuoteTokenNote";
 import { TradingEarlier } from "./TradingEarlier";
 import { BidForm, type Place, SellForm } from "./TradingOrderForms";
 
@@ -76,10 +77,13 @@ type Send = (key: string, to: string, data: string) => Promise<boolean>;
 export function TradingCard({
   dao,
   chainId,
+  saleCurrency,
 }: {
   dao: string;
   /** The project's own network, as its record names it. */
   chainId: string | null;
+  /** The project's recorded sale currency, so a price token that is not it is said plainly. */
+  saleCurrency?: string | null;
 }) {
   const network = chainId === null ? null : Number(chainId);
   const sender = useChainSend(
@@ -211,6 +215,13 @@ export function TradingCard({
               ))}
             </ul>
           </MoreInfo>
+          {present?.listing.enabled && data.facts?.quoteKnown ? (
+            <QuoteTokenNote
+              address={data.facts.quoteToken}
+              saleCurrency={saleCurrency}
+              symbol={data.facts.quoteSymbol}
+            />
+          ) : null}
           {present?.listing.enabled && data.facts?.quoteKnown ? (
             <p className="mt-2 text-sm" data-testid="trading-listing">
               {listingDetailLine(

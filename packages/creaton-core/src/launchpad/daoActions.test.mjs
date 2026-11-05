@@ -798,6 +798,80 @@ test("a listing vote reads back as the same action, and one the contract would r
   );
 });
 
+const SALE_TOKEN = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+// Same first six and last four characters as SALE_TOKEN: only the full address tells them apart.
+const FAKE_TOKEN = `0xa0b8${"0".repeat(32)}eb48`;
+
+test("a listing vote names its price token, and warns when it is not the project's sale currency", () => {
+  const draft = secondaryListingDecision({
+    ...LISTING,
+    quoteToken: FAKE_TOKEN,
+    saleCurrency: SALE_TOKEN,
+  });
+  // The token's full address is in the words a voter reads: a short form can be forged.
+  assert.ok(draft.lines[0].includes(FAKE_TOKEN), draft.lines.join(" | "));
+  assert.match(draft.lines[0], /^Prices are in USDC, the token at /);
+  assert.ok(
+    draft.lines.some((l) =>
+      /priced in a token that is not this project's sale currency/.test(l),
+    ),
+    draft.lines.join(" | "),
+  );
+  assert.match(
+    draft.title,
+    /priced in a token that is not this project's sale currency/,
+  );
+
+  // The same token as the sale currency, in another letter case: named, not warned about.
+  const same = secondaryListingDecision({
+    ...LISTING,
+    quoteToken: SALE_TOKEN.toLowerCase(),
+    saleCurrency: SALE_TOKEN,
+  });
+  assert.ok(same.lines[0].includes(SALE_TOKEN.toLowerCase()));
+  assert.ok(
+    !/not this project's sale currency/.test(same.title + same.lines.join(" ")),
+  );
+
+  // Read back from the chain, a vote carries the same warning from the market's token and the record's currency.
+  const ctx = {
+    currency: SALE_TOKEN,
+    secondaryMarket: {
+      address: MARKET,
+      quoteDecimals: 6,
+      quoteSymbol: "USDC",
+      quoteToken: FAKE_TOKEN,
+    },
+  };
+  const back = describeAction(secondaryListingDecision(LISTING), ctx);
+  assert.equal(back.kind, "secondary-listing");
+  assert.match(back.title, /not this project's sale currency/);
+  assert.ok(back.lines[0].includes(FAKE_TOKEN));
+  const fine = describeAction(secondaryListingDecision(LISTING), {
+    ...ctx,
+    secondaryMarket: {
+      ...ctx.secondaryMarket,
+      quoteToken: SALE_TOKEN.toLowerCase(),
+    },
+  });
+  assert.ok(
+    !/not this project's sale currency/.test(fine.title + fine.lines.join(" ")),
+  );
+
+  // Turning the listing off prices nothing, so it names no token and warns of nothing.
+  const off = describeAction(
+    secondaryListingDecision({
+      ...LISTING,
+      enabled: false,
+      minPrice: 0n,
+      maxPrice: 0n,
+      levels: 0,
+    }),
+    ctx,
+  );
+  assert.ok(!/token|currency/.test(off.title + off.lines.join(" ")));
+});
+
 test("a listing is described only when it is aimed at the DAO's own market, and in that market's own quote units", () => {
   const OTHER = "0x00000000000000000000000000000000000000f6";
   const market18 = {

@@ -48,6 +48,11 @@ export interface FormContext {
   factory: string;
   /** What claims are paid and staked in. A contract; the Shares themselves when the project sells for nothing else. */
   currency: string;
+  /**
+   * The project's recorded sale currency, as its record names it (empty or absent when it has none), so the listing
+   * form can say when the market's price token is a different one. Not `currency`, which falls back to the Shares.
+   */
+  saleCurrency?: string | null;
   /** Decimals of the sale currency, or null when the project has none (then no form offers money). */
   currencyDecimals: number | null;
   currencySymbol: string;

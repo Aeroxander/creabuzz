@@ -621,6 +621,8 @@ export interface DescribeContext {
     address: string;
     quoteDecimals?: number;
     quoteSymbol?: string;
+    /** The price token's address, so the words name it and warn when it is not the project's sale currency (`currency`). */
+    quoteToken?: string;
   };
   /** The weekly rounds contract this app knows on the DAO's network (D131), so a vote naming it is told apart from one naming anything else. */
   weeklyRounds?: string;

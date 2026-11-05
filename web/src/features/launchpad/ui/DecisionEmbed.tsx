@@ -99,6 +99,8 @@ export function DecisionEmbed({ link }: { link: DecisionLink }) {
         dao,
         factory: context.data?.factory,
         secondaryMarket,
+        // So a listing vote can say its price token is not the project's sale currency, as the Decisions tab does.
+        currency: launch?.record.currency ?? undefined,
       })
     : null;
   const title =

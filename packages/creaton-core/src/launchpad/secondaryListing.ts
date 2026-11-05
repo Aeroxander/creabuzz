@@ -33,6 +33,37 @@ const MAX_LEVELS = 64;
 /** Shares carry 18 decimals everywhere in the kit, so a lot size is read with them. */
 const SHARES_DECIMALS = 18;
 
+/** The start and end of a token address: enough to recognise it, never enough to prove it (see {@link quoteDiffersFromSale}). */
+export function shortToken(address: string): string {
+  const lower = address.trim().toLowerCase();
+  return `${lower.slice(0, 6)}…${lower.slice(-4)}`;
+}
+
+/**
+ * True when the market prices in a token other than the project's recorded sale currency. Compared on the full
+ * address and without regard to letter case, never on the short form two different tokens can share. With no
+ * recorded sale currency (none, empty for the chain's own coin, the zero address, or anything that is not an
+ * address) there is nothing to compare against, so nothing is claimed.
+ */
+export function quoteDiffersFromSale(
+  quoteToken: string,
+  saleCurrency: string | null | undefined,
+): boolean {
+  const sale = (saleCurrency ?? "").trim().toLowerCase();
+  if (!ADDRESS_RE.test(sale) || /^0x0{40}$/.test(sale)) return false;
+  return quoteToken.trim().toLowerCase() !== sale;
+}
+
+/** The plain-words warning for a market priced in a token that is not the project's sale currency. */
+export function quoteMismatchLine(): string {
+  return "Trading here is priced in a token that is not this project's sale currency. Check the token address before you offer Shares or bid.";
+}
+
+/** Which token prices are in: its symbol and short address, so a token that only calls itself "USDC" is told apart. */
+export function quoteIdentityLine(symbol: string, address: string): string {
+  return `Prices are in ${symbol}, the token at ${shortToken(address)}.`;
+}
+
 /** A listing's terms: whether it exists, and the per-lot price grid it runs on. */
 interface SecondaryListingTerms {
   enabled: boolean;
@@ -55,6 +86,10 @@ export interface SecondaryListingInput extends SecondaryListingTerms {
   quoteDecimals?: number;
   /** The quote token's name, as the vote says it ("USDC"). */
   quoteSymbol?: string;
+  /** The market's price token address, so the vote says which token it is; the words name it in full. */
+  quoteToken?: string;
+  /** The project's recorded sale currency, so a price token that is not it is said plainly. */
+  saleCurrency?: string | null;
   /**
    * Shares in one lot (18 decimals), so the vote says what one price buys. Left out, the words say
    * "per lot" instead of a number nobody read.
@@ -149,6 +184,8 @@ function words(input: {
   terms: SecondaryListingTerms;
   quoteDecimals?: number;
   quoteSymbol?: string;
+  quoteToken?: string;
+  saleCurrency?: string | null;
   lotSize?: bigint;
 }): { title: string; lines: string[] } {
   const { terms } = input;
@@ -166,9 +203,21 @@ function words(input: {
     ? ` for ${formatUnits(input.lotSize, SHARES_DECIMALS)} Shares`
     : "";
   const step = (terms.maxPrice - terms.minPrice) / BigInt(terms.levels);
+  // The token is named in full: a voter is agreeing to this token, and a short form can be forged.
+  const token = input.quoteToken;
+  const differs =
+    token !== undefined && quoteDiffersFromSale(token, input.saleCurrency);
+  const identity =
+    token === undefined
+      ? []
+      : [
+          `Prices are in ${input.quoteSymbol ?? "base units of"}${input.quoteSymbol ? "," : ""} the token at ${token.trim().toLowerCase()}.`,
+          ...(differs ? [quoteMismatchLine()] : []),
+        ];
   return {
-    title: `Open a market${lot} between ${listingPrice(terms.minPrice, input.quoteDecimals)} and ${listingPrice(terms.maxPrice, input.quoteDecimals)}${symbol}, in ${terms.levels} price steps`,
+    title: `Open a market${lot} between ${listingPrice(terms.minPrice, input.quoteDecimals)} and ${listingPrice(terms.maxPrice, input.quoteDecimals)}${symbol}, in ${terms.levels} price steps${differs ? " (priced in a token that is not this project's sale currency)" : ""}`,
     lines: [
+      ...identity,
       `Each step is ${listingPrice(step, input.quoteDecimals)}${symbol}: the grid runs from the lowest price to the highest, and nothing sells outside it.`,
       "A round opens when anyone asks, at least a week after the last one, and keeps the terms it opened with: a later change never reaches a round already open.",
       "Buyers pay into the market, and sellers' Shares are held by it until the round settles or goes void; claims then pay each side what it is owed.",
@@ -220,6 +269,8 @@ export function secondaryListingDecision(
       terms,
       quoteDecimals: decimals,
       quoteSymbol: input.quoteSymbol,
+      quoteToken: input.quoteToken,
+      saleCurrency: input.saleCurrency,
       lotSize: input.lotSize,
     }),
   };
@@ -267,6 +318,8 @@ export function describeSecondaryListing(
         quoteDecimals: market.quoteDecimals,
         quoteSymbol:
           market.quoteDecimals === undefined ? undefined : market.quoteSymbol,
+        quoteToken: market.quoteToken,
+        saleCurrency: ctx.currency,
       }),
     };
   } catch {

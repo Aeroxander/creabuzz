@@ -28,6 +28,10 @@ export interface ListingFormInput {
   /** The market's own price token units, or null when it would not say them. */
   quote: { decimals: number; symbol: string } | null;
   lotSize: bigint | null;
+  /** The market's price token address, so the vote names it; left out when not known. */
+  quoteToken?: string | null;
+  /** The project's recorded sale currency, so the vote warns when the price token is not it. */
+  saleCurrency?: string | null;
   enabled: "on" | "off";
   minText: string;
   maxText: string;
@@ -99,6 +103,8 @@ export function listingFormDraft(input: ListingFormInput): ListingFormResult {
         levels: input.levelsText.trim() === "" ? 0 : Number(input.levelsText),
         quoteDecimals: quote.decimals,
         quoteSymbol: quote.symbol,
+        quoteToken: input.quoteToken ?? undefined,
+        saleCurrency: input.saleCurrency,
         lotSize: input.lotSize ?? undefined,
       }),
     };

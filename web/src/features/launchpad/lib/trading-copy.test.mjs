@@ -1343,3 +1343,94 @@ test("the card clears a failure note once its read or round has moved on, throug
   const send = read("../use-chain-send.ts");
   assert.match(send, /clearFailure/);
 });
+
+// ---- the price token's identity (B7) ---------------------------------------------------------------------------------
+//
+// A founder picks the market's price token at launch and the token names itself, so a worthless token can call itself
+// "USDC". The symbol alone proves nothing: the card, the listing form and the vote say which token it is, and say so
+// plainly when it is not the project's sale currency.
+
+const SALE_CURRENCY = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+// Same first six and last four characters as the sale currency, a different token: a short form cannot tell them apart.
+const LOOKALIKE = `0xa0b8${"0".repeat(32)}eb48`;
+
+test("the price token is named by a short address next to its symbol", () => {
+  assert.equal(copy.shortToken(SALE_CURRENCY), "0xa0b8…eb48");
+  assert.equal(
+    copy.quoteIdentityLine("USDC", SALE_CURRENCY),
+    "Prices are in USDC, the token at 0xa0b8…eb48.",
+  );
+});
+
+test("a price token that is the sale currency raises no warning, whatever the letter case of either address", () => {
+  const same = copy.quoteIdentity(
+    { symbol: "USDC", address: SALE_CURRENCY.toLowerCase() },
+    SALE_CURRENCY.toUpperCase().replace("0X", "0x"),
+  );
+  assert.equal(same.differsFromSale, false);
+  assert.equal(same.warning, null);
+  assert.equal(
+    copy.quoteDiffersFromSale(SALE_CURRENCY, SALE_CURRENCY.toLowerCase()),
+    false,
+  );
+});
+
+test("a price token that is not the sale currency says so plainly, even when its short address looks the same", () => {
+  assert.equal(copy.shortToken(LOOKALIKE), copy.shortToken(SALE_CURRENCY));
+  const other = copy.quoteIdentity(
+    { symbol: "USDC", address: LOOKALIKE },
+    SALE_CURRENCY,
+  );
+  assert.equal(other.differsFromSale, true);
+  assert.match(
+    other.warning,
+    /priced in a token that is not this project's sale currency/,
+  );
+  assert.equal(other.address, LOOKALIKE, "the full address is kept to copy");
+  assert.equal(copy.quoteDiffersFromSale(LOOKALIKE, SALE_CURRENCY), true);
+});
+
+test("with no recorded sale currency there is nothing to compare, and nothing is warned", () => {
+  for (const none of [
+    undefined,
+    null,
+    "",
+    "   ",
+    `0x${"0".repeat(40)}`,
+    "usdc",
+  ]) {
+    assert.equal(
+      copy.quoteDiffersFromSale(LOOKALIKE, none),
+      false,
+      String(none),
+    );
+  }
+});
+
+test("the identity and its warning are worded for people", () => {
+  const { warning } = copy.quoteIdentity(
+    { symbol: "USDC", address: LOOKALIKE },
+    SALE_CURRENCY,
+  );
+  assert.doesNotMatch(warning, /\b(kind|NIP|nsec|relay|ERC)\b/i);
+  assert.match(warning, /Check the token address before/);
+});
+
+test("the card, the listing form and the vote all show the price token and its warning through the one rule", () => {
+  const note = read("../ui/QuoteTokenNote.tsx");
+  assert.match(note, /quoteIdentity\(/);
+  assert.match(note, /navigator\.clipboard\.writeText\(/);
+  assert.match(note, /aria-label=/);
+  assert.match(note, /role="note"/);
+  const card = read("../ui/TradingCard.tsx");
+  assert.match(card, /<QuoteTokenNote/);
+  assert.match(card, /saleCurrency=/);
+  const form = read("../ui/TradingListingForm.tsx");
+  assert.match(form, /<QuoteTokenNote/);
+  assert.match(form, /saleCurrency/);
+  const draft = read("./listing-draft.ts");
+  assert.match(draft, /quoteToken/);
+  assert.match(draft, /saleCurrency/);
+  const page = read("../ui/LaunchDetailPage.tsx");
+  assert.match(page, /saleCurrency=\{launch\.record\.currency/);
+});

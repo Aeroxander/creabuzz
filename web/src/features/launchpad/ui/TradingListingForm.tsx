@@ -15,6 +15,7 @@ import { type DraftResult, DraftPanel, type FormProps } from "./decision-forms";
 import { listingFormDraft } from "../lib/listing-draft";
 import { LISTING_OFF_HINT, unreviewedLine } from "../lib/trading-copy";
 import { useSecondary } from "../use-secondary";
+import { QuoteTokenNote } from "./QuoteTokenNote";
 
 export function TradingListingForm({
   ctx,
@@ -72,6 +73,8 @@ export function TradingListingForm({
         quote:
           decimals !== null && symbol !== null ? { decimals, symbol } : null,
         lotSize,
+        quoteToken: view?.facts?.quoteKnown ? view.facts.quoteToken : null,
+        saleCurrency: ctx.saleCurrency,
         enabled,
         minText,
         maxText,
@@ -85,6 +88,9 @@ export function TradingListingForm({
       decimals,
       symbol,
       lotSize,
+      view?.facts?.quoteKnown,
+      view?.facts?.quoteToken,
+      ctx.saleCurrency,
       enabled,
       minText,
       maxText,
@@ -128,6 +134,13 @@ export function TradingListingForm({
                 ? `The market is open: prices from ${money(listing.minPrice)} to ${money(listing.maxPrice)}, in ${listing.levels} steps.`
                 : "The market is off: no round can open until a listing is published."}
       </p>
+      {present && view?.facts?.quoteKnown ? (
+        <QuoteTokenNote
+          address={view.facts.quoteToken}
+          saleCurrency={ctx.saleCurrency}
+          symbol={view.facts.quoteSymbol}
+        />
+      ) : null}
       {market !== null && view?.tokenUnreadable ? (
         <p className="text-sm text-muted-foreground" role="status">
           The market&apos;s price token isn&apos;t answering, so prices

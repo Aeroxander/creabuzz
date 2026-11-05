@@ -128,6 +128,7 @@ export function DecisionsTab({
             factory: context.data.factory,
             // A work budget needs a currency that exists; a project that sold for none uses its own Shares.
             currency: launch.record.currency ?? context.data.shares,
+            saleCurrency: launch.record.currency ?? null,
             currencyDecimals: currencyDecimals ?? null,
             currencySymbol:
               sale?.kind === "custom" ? "USDC" : (sale?.symbol ?? "units"),
