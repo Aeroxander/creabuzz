@@ -410,6 +410,10 @@ Tell users this plainly: **money is not pushed to them.** A user who never claim
 has not been paid, and it will look like a missing payment when it is an
 unclaimed one.
 
+The app's Trading card collects from the latest round and the last 8 earlier
+rounds; if a wallet is owed by a round older than that, the card says older
+rounds were not checked, and the claim needs the `cast` commands above.
+
 ### Keeping rounds moving without anyone watching
 
 A round closes and times out by the clock. Anyone can settle it between the close and the settle deadline; after the

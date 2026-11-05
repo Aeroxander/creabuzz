@@ -20,10 +20,10 @@ something already live.
 
 | Surface | File |
 |---|---|
-| The market itself (rounds, orders, clearing, claims) | `contracts/src/SecondaryMarket.sol` (648 lines) |
+| The market itself (rounds, orders, clearing, claims) | `contracts/src/SecondaryMarket.sol` (657 lines) |
 | Market creation, provenance and pinning | `contracts/src/SecondaryMarketFactory.sol` (201 lines) |
-| Voting maturity, founder sale schedule, escrow accounting | `contracts/src/ActivationVoting.sol` (831 lines) |
-| Shares transfer policy and the lock guard | `contracts/src/ContributorKitV2.sol`, `contracts/src/Shares.sol` |
+| Voting maturity, founder sale schedule, escrow accounting | `contracts/src/ActivationVoting.sol` (835 lines) |
+| Shares transfer policy and the lock guard | `contracts/src/ContributorKitV2.sol`, and the Shares token inside `contracts/src/majeur/MolochPatched.sol` |
 
 **Out of scope for this review**
 
@@ -48,9 +48,9 @@ The DAO is the only administrator, and its power is deliberately narrow.
 
 | Power | Function | Guard | What it can and cannot do |
 |---|---|---|---|
-| Decide whether a listing exists, and its price bounds | `configureListing(bool enabled, uint128 minPrice, uint128 maxPrice, uint32 levels)` | `msg.sender != dao → NotDao` (`SecondaryMarket.sol:222`) | Cannot touch a round already open. Disabling sets `listing = Terms(false,0,0,0)` and **stops new activity only — settlement and claims still run** (`test_disabling_stops_new_activity_never_settlement`) |
+| Decide whether a listing exists, and its price bounds | `configureListing(bool enabled, uint128 minPrice, uint128 maxPrice, uint32 levels)` | `msg.sender != dao → NotDao` (`SecondaryMarket.sol:223`) | Cannot touch a round already open. Disabling sets `listing = Terms(false,0,0,0)` and **stops new activity only — settlement and claims still run** (`test_disabling_stops_new_activity_never_settlement`) |
 | Open the next round | `openRound()` | anyone, at least `EVERY` after the last open | Uses the frozen listing terms; cannot choose terms |
-| Create the market for a DAO | `create(...)` on the factory | only the kit that created the factory (`NotAuthorizedKit`), one per DAO (`AlreadyListed`), and only after proving the DAO, its Shares, its policy and its quote token against pinned bytecode (`_prove`) | Cannot create a market for a counterfeit DAO or token (`test_a_counterfeit_dao_is_refused_at_the_bytecode_pin`, `test_a_counterfeit_token_and_policy_are_refused`) |
+| Create the market for a DAO | `create(...)` on the factory | only the kit that created the factory (`NotAuthorizedKit`), one per DAO (`AlreadyListed`), and only after proving the DAO, its Shares and its policy against pinned bytecode and predicted addresses, and checking that the quote token has code (`_prove`, `SecondaryMarketFactory.sol:152`) | Cannot create a market for a counterfeit DAO, Shares or policy (`test_a_counterfeit_dao_is_refused_at_the_bytecode_pin`, `test_a_counterfeit_token_and_policy_are_refused`). **The quote token is not pinned**: `_prove` only checks that code exists at its address (`SecondaryMarketFactory.sol:158`, `UnprovenQuote` otherwise), so any contract can be named as the quote. Which quote tokens a project may use is a needs-human policy decision, still open; until it is made, treat the quote token as unvetted input. |
 
 There is **no** admin function to move user funds, cancel someone's order, change
 a round's terms after it opens, or mint Shares. Settlement (`settle`) and claims
@@ -68,31 +68,46 @@ lock — and pinned by
 
 ### The one thing the market is trusted with
 
-The market holds the DAO's entire sale inventory at birth
-(`ActivationVoting.configureSecondary` sets `_setExcluded(marketAddr, true)` and
-the market's balance is deducted from voting supply exactly once). It is also the
-Shares' `transferExempt` address, so inventory can move in and out without the
-transfer policy refusing it. Both facts are load-bearing:
+The market starts empty. The kit mints the founder's grant to the founder,
+not to the market (`ContributorKitV2.sol:224-227`: `holders[0] = msg.sender`),
+and minting Shares straight to the market reverts `MintToMarket`
+(`ActivationVoting.sol:460`). There is no DAO-owned sale inventory: the DAO
+cannot offer Shares (`DaoCannotSell`, `SecondaryMarket.sol:271`) and Shares
+held by the DAO leave it only as reviewed awards (`awardsOnly`,
+`MolochPatched.sol:~1985`), so no path moves DAO-held Shares into the market.
+Holders put their own Shares in, one order at a time.
+
+At any moment the market therefore holds only **per-order escrow** (Shares from
+open sell orders and unclaimed fills, quote from open bids and unclaimed
+proceeds) plus any **unattributed donations**, which are nobody's credit and are
+never paid out. Its balance is excluded from voting supply
+(`ActivationVoting.configureSecondary` sets `_setExcluded(marketAddr, true)`, and
+the balance is deducted from the supply exactly once). It is also the Shares'
+`transferExempt` address, so escrow can move in and out without the transfer
+policy refusing it. The trust placed in the market is that escrow, not
+inventory, sits behind these facts:
 
 - `test_a_rogue_market_never_receives_locked_shares_or_takes_the_exemption`
-- `test_the_dao_and_the_market_cannot_sell_inventory` — the DAO cannot sell the
-  inventory it is holding for the sale through the market
+- `test_the_dao_and_the_market_cannot_sell_inventory` — the DAO cannot sell
+  through the market at all
 - `test_mint_straight_to_the_market_is_impossible`
 
 ---
 
 ## 3. The founder's sale schedule and transfer restrictions
 
-The founder does not get a special market. The founder gets a **vesting
-schedule on their own allocation**, enforced where the Shares are, and the
-market is one of the places it is enforced.
+The founder does not get a special market. The founder gets a **sale schedule
+on their own allocation** (sale eligibility, not vesting: the Shares are the
+founder's from the first block and exits are never locked), enforced where the
+Shares are, and the market is one of the places it is enforced.
 
 `ActivationVoting.configureSecondary(market, founder, initialGrant, start,
 cliff, duration)` is called **once, in the creation block** (`NotInCreationBlock`
 otherwise) and freezes:
 
-- `initialGrant` — the founder's allocation, minted to the market as sale
-  inventory;
+- `initialGrant` — the founder's allocation, which stays with the founder (it
+  is minted to the founder, not to the market) and is released for sale on the
+  schedule;
 - `start`, `cliff`, `duration` — the absolute schedule the grant unlocks on;
 - `founder` — the only address the schedule constrains.
 
@@ -142,15 +157,31 @@ listing, and the schedule releases units. Neither happens by default, and
 
 ---
 
-## 5. What the 734 contract tests actually pin
+## 5. What the contract tests actually pin
 
-`forge test --root contracts` runs 69 suites, 734 passing, 2 skipped. The ones a
-reviewer should read first, by theme:
+An earlier draft of this packet quoted 734 passing tests across 69 suites. That
+count predates the later hardening batches and has not been refreshed; run
+`forge test --offline --root contracts` and read the totals rather than trusting
+it. The ones a reviewer should read first, by theme:
 
 **Escrow and conservation**
 
-- `invariant_each_rounds_ledger_is_held_by_the_market`
-- `invariant_settled_rounds_fill_both_sides_exactly`
+- `invariant_each_rounds_ledgers_equal_what_its_orders_are_owed`
+- `invariant_market_balances_equal_ledgers_and_supply_is_conserved`
+- `invariant_measured_flows_close_each_round`
+- `invariant_settled_rounds_clear_and_fill_by_the_reference_rule`
+- `invariant_canary_the_handler_really_trades`
+
+*Strength of the invariant rows.* These run only through
+`SecondaryMarketHandler`, which places, cancels, settles, voids and claims
+through the market's production entrypoints under `fail-on-revert`, and they
+compare the market against an independent reading of the orders and against
+token balance deltas, not against the market's own counters. The canary fails
+the suite if the handler never gets an order accepted. An earlier version of
+this suite called the market directly as a random sender, every order reverted,
+and its properties compared 0 with 0; the names above are the rewritten suite,
+and `test_handler_drives_a_real_pro_rata_round_and_a_void_round` pins that the
+handler really reaches a pro-rata round and a void round.
 - `test_sell_escrows_exactly_lots_times_lot_size`
 - `test_bid_escrows_exactly_lots_times_the_limit_price`
 - `test_seller_cancel_returns_the_whole_escrow_in_the_same_transaction`
@@ -172,11 +203,22 @@ reviewer should read first, by theme:
 **Hostile counterparties**
 
 - `test_no_primary_mint_funding_or_claimandleave_entrypoint_exists`
-- `test_a_reentering_quote_cannot_rerun_any_order_state_change`
+- `test_reentry_into_sell_is_refused`, `..._bid_...`, `..._cancelSell_...`,
+  `..._cancelBid_...`, `..._settle_...`, `..._claimShares_...` and
+  `..._claimQuote_...` — one test per guarded entrypoint. A hostile quote
+  re-enters from inside a real `claimQuote` payout with well-formed calldata,
+  in a state where the nested call would otherwise succeed. Deleting
+  `nonReentrant` from an entrypoint fails its own case (the earlier single test
+  re-entered with one malformed word and passed with the guard removed).
 - `test_a_blocked_quote_strands_no_payout`
 - `test_unattributed_deposits_become_no_ones_credit_and_are_never_paid`
 - `test_forced_eth_dust_stays_irrelevant`
-- `test_claims_survive_a_cleared_or_replaced_exit_exchange`
+- `test_claims_survive_a_cleared_or_replaced_exit_exchange` — **weaker than its
+  name.** It only calls `clearExitExchange()` (nothing in the SecondaryMarket
+  suites ever installs an exchange first) and then runs the claims. It never names an exchange, never
+  installs one that refuses transfers, and never replaces one, so it does not
+  show that a hostile or replaced exchange cannot freeze escrow. Treat it as
+  evidence for the cleared case only; the named-exchange cases are open.
 - `test_a_rogue_market_never_receives_locked_shares_or_takes_the_exemption`
 - `test_two_markets_stay_isolated_and_never_pay_each_others_orders`
 - `test_active_side_caps_bound_each_round`
@@ -230,7 +272,19 @@ Stated plainly, because a reviewer should not spend time discovering these:
 4. **Gas for a round with the maximum number of orders is measured, and the worst shapes exceed a 2^24 per-transaction cap** (see F4); whether that changes `MAX_ACTIVE_SELLERS` is undecided.
 5. **No real-chain reorg testing.** Reorg behaviour is covered only by fake-node
    tests in the agreement finalizer, not for the market.
-6. **Upgradeability is absent by design** — the market is immutable and
+6. **Open gaps recorded here so nobody discovers them.** (a) Which quote tokens
+   a market may use is undecided: the factory checks only that the quote has
+   code (§2). (b) `test_claims_survive_a_cleared_or_replaced_exit_exchange`
+   covers only a cleared exit exchange, never a named or replaced one (§5).
+   (c) The Trading card reads the latest round and
+   the last 8 earlier rounds; a wallet owed money by a round older than that
+   must collect with the `cast` commands in the runbook, because claims never
+   expire. (d) The clearing rule fills the short side's crossing orders whole
+   and pro-rates **all** crossing orders on the long side, including orders
+   strictly better than the price; whether to keep that or add price priority
+   is a product decision, and no money is mis-paid either way (`LedgerShort`
+   holds).
+7. **Upgradeability is absent by design** — the market is immutable and
    `SecondaryMarketFactory` pins bytecode. That removes upgrade risk but also
    removes the ability to fix a defect; a replacement market is a new deployment
    and a DAO decision.
@@ -253,8 +307,8 @@ this packet cannot answer:
 3. `exclusionsFrozen` is set once at creation. Is there any post-creation path
    that changes the set of excluded holders (a burn to the market, a transfer
    to a locked address) in a way that shifts the quorum denominator?
-4. The market holds the entire sale inventory and is `transferExempt`. What
-   happens if the DAO votes to change `transferExempt` later — can inventory
+4. The market is `transferExempt` and holds every open order's escrow. What
+   happens if the DAO votes to change `transferExempt` later — can that escrow
    become stranded?
 
 **Legal / product**
@@ -276,18 +330,18 @@ public network.
 
 ```bash
 # The contracts, with the pinned invariants
-forge test --offline --root contracts        # 734 passed, 2 skipped
+forge test --offline --root contracts        # read the totals; the 734 quoted in §5 is stale
 
 # A real deployment, every value read back from node state
 ./scripts/v5-local-fixture.sh                # 8/8 receipts, listing disabled at birth
 
-# The market end to end, on a real chain
-bash scripts/mvp-gate.sh web-challenge-e2e
-bash scripts/mvp-gate.sh web-rounds-e2e
+# The market end to end, on a real local chain (needs anvil, node and a browser)
+bash scripts/web-trading-e2e.sh              # one round from the web app: listing, offer, bid, settle, collect, void round
+bash scripts/secondary-keeper-e2e.sh         # scripts/secondary-keeper.sh through a round's whole life
 
-# The founder schedule and transfer restrictions
-bash scripts/mvp-gate.sh web-dao-journey-e2e
-bash scripts/mvp-gate.sh web-dao-launch-e2e
+# The founder sale schedule and transfer restrictions are pinned by the Foundry
+# suites above (FounderSaleEligibility, ActivationVoting*, ContributorKitV2),
+# and the fixture reads saleCapacity(founder) back from node state.
 ```
 
 Addresses from the local fixture (regenerate; they are deterministic per
@@ -410,7 +464,7 @@ until the last second, so a bid can move the price and then be pulled. Both are
 | 1. Is the leftover tie-break exploitable by ordering transactions? | **Yes, it was** — that is F2, now fixed. Plain arrival order remains first-come-first-served. |
 | 2. Can the escrow accounting be driven to `LedgerShort`? | **No path found** in the market's own accounting: `sharesIn` and `quoteIn` stay conserved. The policy's `_migrateEscrow` side was not read closely — still open. |
 | 3. Can the exclusion set change after creation? | **No.** `_setExcluded` reverts once frozen and no other path was found. |
-| 4. Can `transferExempt` change and strand inventory? | **No** — it can only be set once. The real stranding route was the validator (F3), now fixed. |
+| 4. Can `transferExempt` change and strand escrow? | **No** — it can only be set once. The real stranding route was the validator (F3), now fixed. |
 | 5. Is a Share a security? | For counsel. Unanswered here. |
 | 6. Does the founder schedule create disclosure obligations? | For counsel. |
 | 7. Does "exit is always allowed" undercut the schedule? | **Yes, in fact**: a founder can exit with unvested Shares for a pro-rata share of the treasury once one exists. The schedule restricts transfer and sale, not exit. Whether that matters legally is for counsel; the product fact is now stated plainly. |
@@ -430,7 +484,7 @@ until the last second, so a bid can move the price and then be pulled. Both are
   inside a market action, and at snapshots that the quorum denominator equals the
   sum of eligible amounts. The shims stay for the policy's unit cases and say so.
   Not reachable and so not tested: a real-hook revert that wedges a round (the
-  market is the only caller of the hooks, the DAO cannot burn market inventory
+  market is the only caller of the hooks, the DAO cannot burn market escrow
   because burns are a holder's own exit, and the books are only moved by the
   market).
 - Fee-on-transfer quote tokens **fail closed** at bid (the exact-balance check

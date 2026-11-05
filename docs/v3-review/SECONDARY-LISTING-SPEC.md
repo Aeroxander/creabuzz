@@ -66,7 +66,7 @@ escrow handling cannot bypass the delay.
 | Event | Treatment (candidate) |
 |---|---|
 | secondary purchase | starts its own activation delay |
-| new award or founder bootstrap | starts its own delay from issuance |
+| new award, or the founder and creation-time holders | new award starts its own delay; founder and creation-time holders are fully mature from birth |
 | unsold escrow return | keeps its prior age when returned to its original holder |
 | sale claim or partial transfer | each acquired amount keeps or starts age explicitly |
 | cancellation | no eligibility created |

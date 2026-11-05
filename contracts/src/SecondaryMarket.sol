@@ -35,9 +35,10 @@ interface IMarketShareToken {
 /// this market's balance, only within `policy.saleCapacity`) at no less than a chosen grid level, and
 /// buyers bid whole lots at no more than a chosen level, escrowing exactly `lots * limitPrice`. Anyone
 /// settles within two days by the one deterministic result: the lowest grid level whose uniform price
-/// matches the most lots. Everyone strictly past the price fills whole; the oversubscribed side at the
-/// price shares the remainder pro rata in whole lots by ascending order id, so the buyers' filled lots
-/// add up exactly to the sellers'. Sellers' unsold escrow returns to the original seller in the settle
+/// matches the most lots. Every crossing order on the short side fills whole; all crossing orders on the
+/// long side (including any strictly better than the price) share the matched amount pro rata in whole
+/// lots, and leftover lots go to the lowest order ids, so the buyers' filled lots add up exactly to the
+/// sellers'. Sellers' unsold escrow returns to the original seller in the settle
 /// transaction itself (`policy.prepareEscrowReturn` then the transfer); buyers claim their Shares fresh
 /// (no inherited seller age) whenever; and every quote payout — proceeds and refunds alike — is an
 /// order's own recorded right, payable by `claimQuote` on demand, so a refusing or paused quote token
@@ -361,10 +362,11 @@ contract SecondaryMarket {
     // ---- settling -------------------------------------------------------------------------------------------------
 
     /// @notice Settle round `id` within `SETTLE_WINDOW` after bidding, by the one deterministic result:
-    /// the lowest grid level whose uniform price matches the most whole lots. Everyone strictly past the
-    /// price fills whole; the oversubscribed side at the price shares the remainder pro rata by
-    /// ascending order id, so the buyers' filled lots add up exactly to the sellers'. Sellers' unsold
-    /// escrow returns in this same transaction. Anyone may call it; nobody settling in time means the
+    /// the lowest grid level whose uniform price matches the most whole lots. Every crossing order on
+    /// the short side fills whole; all crossing orders on the long side (including any strictly better
+    /// than the price) share the matched amount pro rata, leftover lots going to the lowest order ids,
+    /// so the buyers' filled lots add up exactly to the sellers'. Sellers' unsold escrow returns in this
+    /// same transaction. Anyone may call it; nobody settling in time means the
     /// round is void instead and claims pay everything back.
     function settle(uint256 id) external nonReentrant {
         Round storage r = _round(id);
