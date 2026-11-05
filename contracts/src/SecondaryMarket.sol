@@ -357,7 +357,9 @@ contract SecondaryMarket {
         if (block.timestamp >= r.closesAt) revert BiddingOver(id);
         BuyOrder storage o = bids[id][msg.sender];
         uint128 lots = o.lots;
-        if (lots == 0) revert NoOrder();
+        // A cancelled bid keeps its lots as the refund right, so a repeat cancel must be refused here rather
+        // than subtract the same lots from the round's demand again.
+        if (lots == 0 || o.cancelled) revert NoOrder();
         r.wanted -= lots;
         o.cancelled = true;
         _removeFromList(id, msg.sender, true);

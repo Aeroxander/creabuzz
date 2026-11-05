@@ -252,7 +252,10 @@ contract ActivationVotingFuzzTest is Test {
 /// partial fills across several sellers, a buyer who is also a seller, or a claim on a void round.
 /// @dev Per step: the policy's escrow books never exceed what the market physically holds; no policy hook ever
 /// reverts inside a market action (`MarketInventoryShort`, `PreparedReturnMismatch`, `LedgerCorrupt`,
-/// `MarketOnly` would wedge a round to void); and, at registered snapshots, the quorum denominator equals the
+/// `MarketOnly` would wedge a round to void). That is enforced by an allowlist, not a denylist: a market action
+/// may only end in one of the market's own named refusals, so a Panic (an arithmetic underflow in a hook) or an
+/// empty revert fails the walk exactly like a wedge does. A holder's ragequit must always succeed, and ghost
+/// counters prove the walk reaches the hard shapes (see `Stats`). At registered snapshots the quorum denominator equals the
 /// sum of every holder's eligible amount. At the end every round is resolved and claimed and the market holds
 /// exactly the donations, with the same amount left in the donors' escrow credit.
 contract ActivationVotingRealMarketFuzz is SecondaryMarketFlowsFixture {
@@ -263,6 +266,24 @@ contract ActivationVotingRealMarketFuzz is SecondaryMarketFlowsFixture {
     uint256 private _pid;
     mapping(address => uint256) private _donated;
     uint256 private _donatedTotal;
+
+    /// @dev What one walk actually exercised. Read out of the walk in memory, because the fixed-script test
+    /// rewinds storage between seeds.
+    /// `filledLots`: lots sold across every round. `partialAcrossSellers`: rounds where two or more sellers
+    /// sold something and at least one sold less than it offered. `voidClaims`: claims that paid out of a round
+    /// nobody settled. `ragequitsWithEscrow`: exits by a holder who also had Shares in the market's escrow.
+    /// `donations`: unattributed transfers into the market.
+    struct Stats {
+        uint256 filledLots;
+        uint256 partialAcrossSellers;
+        uint256 voidClaims;
+        uint256 ragequitsWithEscrow;
+        uint256 donations;
+    }
+
+    uint256 private _voidClaims;
+    uint256 private _ragequitsWithEscrow;
+    uint256 private _donations;
 
     function _who(uint256 r) internal pure returns (address) {
         uint256 k = r % 6;
@@ -285,22 +306,40 @@ contract ActivationVotingRealMarketFuzz is SecondaryMarketFlowsFixture {
         all[6] = B3;
     }
 
-    /// @dev One market action as `caller`. A refusal is fine (a closed round, no order, no funds); a refusal
-    /// from the policy's own books is never fine, because it would wedge the round.
+    /// @dev The market's own named refusals: a closed or not-yet-open round, an order already placed, no
+    /// capacity, a bad size, nothing to claim, no order, a full list, a disabled listing, or a repeat. Anything
+    /// else (a policy or ledger error, a Panic, an empty revert, a token error) is a defect, never a refusal.
+    function _isMarketRefusal(bytes4 sel) internal pure returns (bool) {
+        return sel == SecondaryMarket.BiddingOver.selector || sel == SecondaryMarket.OneOrderPerSide.selector
+            || sel == SecondaryMarket.NoCapacity.selector || sel == SecondaryMarket.BadLots.selector
+            || sel == SecondaryMarket.NothingToClaim.selector || sel == SecondaryMarket.NoOrder.selector
+            || sel == SecondaryMarket.TooManySellers.selector || sel == SecondaryMarket.TooManyBuyers.selector
+            || sel == SecondaryMarket.ListingNotEnabled.selector || sel == SecondaryMarket.TooSoon.selector
+            || sel == SecondaryMarket.BiddingOpen.selector || sel == SecondaryMarket.SettleOver.selector
+            || sel == SecondaryMarket.AlreadySettled.selector;
+    }
+
+    /// @dev One market action as `caller`. A named market refusal is fine (a closed round, no order, no funds);
+    /// every other failure is a defect: the policy's own books refusing would wedge the round, and a Panic or an
+    /// empty revert is an arithmetic or ledger bug that only some sequences reach.
     function _act(address caller, bytes memory data) internal returns (bool ok) {
         vm.prank(caller);
         bytes memory ret;
         (ok, ret) = address(l.market).call(data);
-        if (!ok && ret.length >= 4) {
-            bytes4 sel = bytes4(ret);
-            assertTrue(
-                sel != ActivationVoting.MarketInventoryShort.selector
-                    && sel != ActivationVoting.PreparedReturnMismatch.selector
-                    && sel != ActivationVoting.LedgerCorrupt.selector && sel != ActivationVoting.MarketOnly.selector
-                    && sel != SecondaryMarket.LedgerShort.selector,
-                "a policy or ledger error wedged a market action"
-            );
-        }
+        if (ok) return true;
+        assertGe(ret.length, 4, "a market action reverted with empty data");
+        bytes4 sel = bytes4(ret);
+        assertTrue(sel != bytes4(0x4e487b71), "a market action panicked");
+        assertTrue(_isMarketRefusal(sel), "a market action failed with something other than a named market refusal");
+    }
+
+    /// @dev Both claims for `who` in round `id`, counting a payout out of a round nobody settled.
+    function _claimBoth(uint256 id, address who) internal {
+        (,,,,, uint64 deadline,,,, bool settled,) = l.market.rounds(id);
+        bool isVoid = !settled && vm.getBlockTimestamp() >= deadline;
+        bool a = _act(STANDIN, abi.encodeCall(SecondaryMarket.claimShares, (id, who)));
+        bool b = _act(STANDIN, abi.encodeCall(SecondaryMarket.claimQuote, (id, who)));
+        if (isVoid && (a || b)) ++_voidClaims;
     }
 
     function _books() internal view {
@@ -342,8 +381,7 @@ contract ActivationVotingRealMarketFuzz is SecondaryMarketFlowsFixture {
             }
             address[] memory all = _everyone();
             for (uint256 i; i < all.length; ++i) {
-                _act(STANDIN, abi.encodeCall(SecondaryMarket.claimShares, (id, all[i])));
-                _act(STANDIN, abi.encodeCall(SecondaryMarket.claimQuote, (id, all[i])));
+                _claimBoth(id, all[i]);
             }
         }
     }
@@ -354,22 +392,45 @@ contract ActivationVotingRealMarketFuzz is SecondaryMarketFlowsFixture {
         _walk(seed, ops);
     }
 
-    /// @dev The walk must really trade, or its invariants hold vacuously: across a few seeds of a fixed
-    /// open/sell/bid/settle/claim script at least one round fills lots, through the production market.
+    /// @dev The walk must really trade, or its invariants hold vacuously: across a few seeds of fixed scripts
+    /// (the market's own full cycle, then one that leaves a round unsettled so it goes void) the walk fills
+    /// lots through the production market, fills several sellers partially, pays claims out of a void round,
+    /// lets a holder with Shares in escrow ragequit, and takes donations. Each ghost counter must be non-zero
+    /// across the seeds, so a change that makes the walk skip one of these shapes fails here.
     function test_the_walk_really_trades() public {
-        uint8[14] memory ops = [0, 1, 1, 1, 3, 3, 3, 7, 8, 8, 9, 10, 0, 11];
-        uint256 best;
-        for (uint256 seed; seed < 12; ++seed) {
-            uint256 snap = vm.snapshotState();
-            uint256 filled = _walk(seed, ops);
-            if (filled > best) best = filled;
-            assertTrue(vm.revertToState(snap));
+        uint8[14][2] memory scripts = [
+            [0, 1, 1, 1, 3, 3, 3, 7, 8, 8, 9, 10, 0, 11],
+            [0, 1, 1, 1, 3, 3, 9, 9, 11, 10, 10, 8, 0, 9]
+        ];
+        Stats memory total;
+        for (uint256 k; k < scripts.length; ++k) {
+            for (uint256 seed; seed < 12; ++seed) {
+                uint256 snap = vm.snapshotState();
+                Stats memory st = _walk(seed, scripts[k]);
+                total.filledLots += st.filledLots;
+                total.partialAcrossSellers += st.partialAcrossSellers;
+                total.voidClaims += st.voidClaims;
+                total.ragequitsWithEscrow += st.ragequitsWithEscrow;
+                total.donations += st.donations;
+                assertTrue(vm.revertToState(snap));
+            }
         }
-        assertGt(best, 0, "some seed fills lots through the real market");
+        assertGt(total.filledLots, 0, "some seed fills lots through the real market");
+        assertGt(total.partialAcrossSellers, 0, "some seed fills several sellers, one of them partially");
+        assertGt(total.voidClaims, 0, "some seed pays a claim out of a void round");
+        assertGt(total.ragequitsWithEscrow, 0, "some seed ragequits a holder who has Shares in escrow");
+        assertGt(total.donations, 0, "some seed donates into the market");
     }
 
-    /// @dev Returns the lots sold across every round the walk ran.
-    function _walk(uint256 seed, uint8[14] memory ops) internal returns (uint256 filledLots) {
+    /// @dev The strict walk's first catch, pinned: this input has a bidder cancel twice, and the second
+    /// `cancelBid` used to panic on `wanted -= lots` instead of being refused as `NoOrder`.
+    function test_the_walk_input_that_cancelled_a_bid_twice_stays_green() public {
+        uint8[14] memory ops = [252, 0, 25, 3, 6, 1, 6, 51, 9, 154, 230, 162, 1, 0];
+        _walk(9049122748650351464038, ops);
+    }
+
+    /// @dev Returns what the walk exercised across every round it ran.
+    function _walk(uint256 seed, uint8[14] memory ops) internal returns (Stats memory st) {
         _mintQuote(S1, 1_000_000e6);
         _mintQuote(S2, 1_000_000e6);
         _mintQuote(S3, 1_000_000e6);
@@ -405,15 +466,18 @@ contract ActivationVotingRealMarketFuzz is SecondaryMarketFlowsFixture {
                 }
             } else if (op == 8) {
                 if (id != 0) {
-                    _act(STANDIN, abi.encodeCall(SecondaryMarket.claimShares, (id, a)));
-                    _act(STANDIN, abi.encodeCall(SecondaryMarket.claimQuote, (id, a)));
+                    _claimBoth(id, a);
                 }
             } else if (op == 9) {
                 uint256 bal = l.shares.balanceOf(a);
                 if (bal != 0) {
                     address[] memory tokens = new address[](1);
+                    bool escrowed = l.policy.escrowedBalance(a) != 0;
+                    // An exit of any size up to the balance must always work: a revert here (a Panic in the
+                    // sender-side hook, say) is a financial exit stuck, so it is not caught.
                     vm.prank(a);
-                    try l.dao.ragequit(tokens, 1 + (r >> 20) % bal, 0) {} catch {}
+                    l.dao.ragequit(tokens, 1 + (r >> 20) % bal, 0);
+                    if (escrowed) ++_ragequitsWithEscrow;
                 }
             } else if (op == 10) {
                 vm.warp(vm.getBlockTimestamp() + 1 days + (r >> 20) % 3 days);
@@ -424,6 +488,7 @@ contract ActivationVotingRealMarketFuzz is SecondaryMarketFlowsFixture {
                     l.shares.transfer(address(l.market), 1e18);
                     _donated[a] += 1e18;
                     _donatedTotal += 1e18;
+                    ++_donations;
                 }
             }
             vm.roll(vm.getBlockNumber() + 1);
@@ -445,10 +510,18 @@ contract ActivationVotingRealMarketFuzz is SecondaryMarketFlowsFixture {
         _denominator();
         for (uint256 id = 1; id <= l.market.roundCount(); ++id) {
             address[] memory sellers = l.market.roundSellers(id);
+            uint256 sellersThatSold;
+            bool someoneSoldLess;
             for (uint256 i; i < sellers.length; ++i) {
-                (,, uint128 filled,,,) = l.market.sells(id, sellers[i]);
-                filledLots += filled;
+                (uint128 offered,, uint128 filled,,,) = l.market.sells(id, sellers[i]);
+                st.filledLots += filled;
+                if (filled != 0) ++sellersThatSold;
+                if (filled != 0 && filled < offered) someoneSoldLess = true;
             }
+            if (sellersThatSold >= 2 && someoneSoldLess) ++st.partialAcrossSellers;
         }
+        st.voidClaims = _voidClaims;
+        st.ragequitsWithEscrow = _ragequitsWithEscrow;
+        st.donations = _donations;
     }
 }

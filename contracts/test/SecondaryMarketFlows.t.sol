@@ -222,6 +222,27 @@ contract SecondaryMarketFlows is SecondaryMarketFlowsFixture {
         l.market.claimQuote(id, B2);
     }
 
+    /// @dev A cancelled bid stays on the books as the order's refund right, so a second cancel finds
+    /// `lots != 0`. It must be refused as `NoOrder`, never reach `wanted -= lots` and panic on the underflow.
+    function test_a_second_cancelBid_is_refused_as_no_order_not_a_panic() public {
+        uint256 id = _openRoundWith(l);
+        vm.prank(B2);
+        l.market.bid(id, 5, 3);
+        vm.prank(B2);
+        l.market.cancelBid(id);
+        vm.prank(B2);
+        vm.expectRevert(SecondaryMarket.NoOrder.selector);
+        l.market.cancelBid(id);
+        // With another live bid in the round the same repeat is refused and the round's demand is untouched.
+        vm.prank(B3);
+        l.market.bid(id, 4, 3);
+        vm.prank(B2);
+        vm.expectRevert(SecondaryMarket.NoOrder.selector);
+        l.market.cancelBid(id);
+        (,,,,,,, uint256 wanted,,,) = l.market.rounds(id);
+        assertEq(wanted, 4, "only the live bid counts");
+    }
+
     function test_cancelled_orders_never_count_until_settled() public {
         uint256 id = _openRoundWith(l);
         vm.prank(S1);
