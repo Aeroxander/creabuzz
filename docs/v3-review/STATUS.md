@@ -1,7 +1,7 @@
 # Where Creaton stands
 
-Updated 2026-11-02 (v5 development scope; prior v4 validation remains historical). The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
-Each decision is a row in [DECISIONS.md](DECISIONS.md) (through D180). The hand tests for the pilot, in order, are in
+Updated 2026-11-02 (v5 development scope; prior v4 validation remains historical); the weekly-sales items in Scope, Known gaps and Waiting on you were updated 2026-11-05. The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
+Each decision is a row in [DECISIONS.md](DECISIONS.md) (through D181). The hand tests for the pilot, in order, are in
 [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md); every hand test ever written is in [TEST-STEPS.md](TEST-STEPS.md), a log in
 date order. What the 2026-10-31 pass hid or retired, and what waits on your call, is in
 [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md).
@@ -18,6 +18,17 @@ The branch `v4-governance-rework` is pushed to the fork (https://github.com/Aero
   `v5-governance-rework`; no v5 deployment or activation has occurred. Phase-by-phase evidence and the
   existing/new contract capability matrix belong in [V5-IMPLEMENTATION.md](V5-IMPLEMENTATION.md).
   Prior v4 test results below are not evidence for the unfinished v5 candidate.
+- **Weekly sales of existing Shares (the secondary listing) are a development candidate, built and checked locally, not
+  deployed, and off by default (D181).** Existing holders sell existing Shares to buyers in weekly rounds; there is no
+  minting, no primary raise and no fee in the candidate. The old `WeeklyRounds.sol` stays frozen and unrepaired (D179).
+  The candidate is `SecondaryMarket.sol` (664 lines), `SecondaryMarketFactory.sol` (201), `ActivationVoting.sol` (835) and
+  `ContributorKitV2.sol` (359), with the Trading card and its reader in `web/src/features/launchpad`, the keeper and the
+  local fixture. On 2026-11-05 the secondary, voting, kit, founder-schedule and related contract suites ran 26 suites,
+  270 tests, 0 failed (the whole suite, fork tests excluded: 874 passed, 0 failed, as reported by the orchestrating run);
+  the trading browser journeys passed 5 of 5 on a local chain. Zero fee, the 7 to 8 day vote delay and the 180-day founder
+  schedule are your proposals and were not changed. Read first: [LAWYER-BRIEF-WEEKLY-SALES.md](LAWYER-BRIEF-WEEKLY-SALES.md)
+  (for counsel and an outside auditor), then [SECONDARY-TRADING-REVIEW.md](SECONDARY-TRADING-REVIEW.md). Trading in
+  hosted and pilot builds stays off: the image names no market factory and a listing starts disabled.
 - **Pilot preparations continue separately from candidate development.** The contributor pilot retains its deployed
   manual/discretionary flow. The requested future direction is contribution-earned ownership followed by secondary
   trading; an additional primary fundraising path is not a new product commitment.
@@ -98,6 +109,13 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 
 ## Waiting on you
 
+0. **Weekly sales (D181), in this order:** read the brief's section 8 and decide the open items (price-token policy, a floor
+   for the founder schedule, whether the old rounds contract may be named as an exit exchange, order caps, the allocation
+   rule, wash-trade wording, quorum floors, listing notice, which kit pilots use, the pilot build's inert Trading card);
+   send [LAWYER-BRIEF-WEEKLY-SALES.md](LAWYER-BRIEF-WEEKLY-SALES.md) and the review packet to counsel and to the outside
+   reviewer; walk the changed trading flows yourself (`scripts/web-trading-e2e.sh` shows what the agents drove); say
+   whether to run the deferred low batches; and only then consider a release decision, which is never bundled with a
+   deployment.
 1. **Run the gate** on the build you host, as above (CI runs it on the fork's pull requests).
 2. **The rest of the calls in [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md)**: what to remove, merge or keep, one line each.
 3. **Broadcast to Sepolia:** `scripts/sepolia-deploy.sh --broadcast`, with your own key in `.env`.
@@ -116,6 +134,20 @@ takes, a turn-down, the 7-day window, the award vote, coming back a day later, a
 device. What to measure is in [PILOT-REPORT.md](PILOT-REPORT.md).
 
 ## Known gaps, not yet designed
+
+- **Weekly sales: not audited, not legally reviewed, not released, not deployed, not hand-tested (D181).** Every check
+  is an agent's, on a scratch chain. No outside party has read the code; no lawyer has read the copy or the brief; no
+  person has clicked through the changed flows; `check:file-sizes` could not run (no `origin/main` in this clone).
+  Sepolia Shares are test records. The low-severity fixes the review found are **deliberately left for a second run**
+  (you chose high and medium first): B15 the legacy launch entry point still callable on the V2 kit, a lot-size bound
+  that differs by one between kit and factory, and two wrong comments; B16 the card does not refresh when the next-round
+  time passes, disabled buttons do not say why, the header shows the listing's terms rather than the live round's, and the
+  pilot build still shows an inert "Trading" card; B17 further plain-words disclosures, time zones, tiny-lot precision and
+  plurals; B18 order-form accessibility details; B19 exit-exchange tests on the real kit; B20 a price-grid fuzz, a stand-alone
+  64-step cap test and a general ABI pin; B21 the keeper exits 0 when a send is refused and passes its key on the command
+  line; B22 e2e script hardening; B23 `agreement-finalizer.mjs` exit codes; B24 stale status and size figures in older
+  documents. Also open: the keeper test is not run by CI, a lost settle race is benign only on the estimate path, the
+  buyer-side "comes back" wording, and focus after collecting from an earlier round.
 
 - **A record reader independent of community membership**: a holder banned from a community must still be able to read
   the evidence needed to object, vote and leave ([BOARD-MODERATION-DESIGN-2026-10-22.md](BOARD-MODERATION-DESIGN-2026-10-22.md) §5).

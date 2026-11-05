@@ -1769,3 +1769,66 @@ DAO, so "create the decision in the app, vote, execute" is proven in the contrac
 
 Gates: copy tests 17/17, `pnpm -C web test` **2598 passed**, `pnpm check` exit 0, typecheck clean,
 `web-trading-e2e` passes, `secondary-keeper-e2e` passes, `scripts/test-mvp-gate.sh` passes.
+
+## Weekly-sales hardening: gate results (2026-11-05)
+
+This section records the second review round on the secondary weekly listing (D181): which commands ran, what they
+returned, and what could not run. Branch `v4-governance-rework`; nothing was pushed, deployed or enabled; no
+economic parameter changed. Toolchain: Foundry from the session's `foundry-bin` directory with `--offline`; Node
+22.23.4 and pnpm from `/opt/node22`; Hermit was not activated. `contracts/foundry.lock` was never modified or
+committed. Every figure is from an agent's run, not an outside party's.
+
+### Commands I ran while writing the documents (2026-11-05, HEAD `071dcf9`)
+
+| Command (from the repository root unless stated) | Result |
+|---|---|
+| `forge test --offline --match-path "test/{Secondary*,ActivationVoting*,ContributorKitV2*,FounderSaleEligibility*,HoldingAge*,ExitExchange*,WeeklyRounds*,PayoutsMarket*,TransferLock*}.t.sol"` (from `contracts/`) | **26 suites, 270 tests passed, 0 failed, 0 skipped**, exit 0. The invariant suite (6 tests) took 66 s. |
+| `node scripts/contracts-mutation-check.mjs --check` | every entry well formed, **260 checked** |
+| `node --test scripts/contracts-mutation-check.test.mjs` | 61 passed, 0 failed |
+| `node --test scripts/check-secondary-review-wording.test.mjs` (run together with the line above: 71 passed in all) | 10 passed, 0 failed |
+| `node --test src/launchpad/secondary.test.mjs src/launchpad/daoActions.test.mjs` (from `packages/creaton-core/`) | 53 passed, 0 failed |
+| `node --test` on `trading-copy`, `trading-orders`, `secondary-read`, `listing-draft` and `tradingCardContract` tests (from `web/`) | 133 passed, 0 failed |
+| `bash scripts/secondary-keeper-test.sh` | "all passed" (stubbed `cast`, `date`, `sleep`) |
+| a scratch checker that extracts every backticked `test_` / `testFuzz_` / `invariant_` name from the review packet and the brief and looks for `function <name>` in `contracts/test` | no name missing (two stale names in the packet were found and corrected first) |
+| `wc -l` on the files the brief and packet cite | `SecondaryMarket.sol` 664, `SecondaryMarketFactory.sol` 201, `ActivationVoting.sol` 835, `ContributorKitV2.sol` 359, `WeeklyRounds.sol` 625 (unchanged), `Payouts.sol` 270 |
+| `git status --short` after the runs | clean before the documents were written |
+
+### Results reported by the orchestrating run (not re-run by me)
+
+| What | Result |
+|---|---|
+| Full contract suite, fork tests excluded: `forge test --offline --no-match-path 'test/{LaunchpadFork,SepoliaLaunchFork}.t.sol'` | first gate pass: 80 suites, **846 passed**, 0 failed; final gate pass: 80 suites, **874 passed**, 0 failed, 0 skipped, exit 0 (log in the session scratchpad, `round2-full.log`). The baseline log (earlier tree, 69 suites) was 741 passed and 1 failed. |
+| Pre-existing failure in the baseline | `RagequitPreviewFfiTest` (a Node `ffi` script that could not resolve `@creaton/core`). It does not fail in either later run, because `web/node_modules` resolves in this environment. |
+| Web unit suite `pnpm test` | final: 2,714 tests, **2,711 pass, 0 fail**, 2 cancelled, 1 skipped. The 2 cancelled are subtests of `src/features/invite/accept-policy.test.mjs` ("Promise resolution is still pending but the event loop has already resolved"); the file was not changed by this work and the same two cancel on the unchanged baseline. |
+| Web static checks | `pnpm typecheck`, `biome check .` (warnings only), `check:px-text`, `check:copy`, `check:pubkey-truncation`, `check:kinds`, `check:templates` and `pnpm check:unused` (knip) all exit 0 in the final pass |
+| `scripts/web-trading-e2e.sh` (real local anvil, chain 31337, the real V5 fixture deployment, headless Chromium) | **5 of 5 passed**: a full round, a void round, a part-filled seller, a round where nothing crosses, keyboard and screen-reader use |
+| `scripts/web-pilot-e2e.sh` (contributor-only build) | **10 of 10 passed**. It asserts nothing about trading. |
+| `scripts/secondary-keeper-e2e.sh` (real local chain) | passed all 18 steps (reported by the keeper batch) |
+| `scripts/test-v5-local-fixture.sh` | 33 of 33 checks passed after the last edit (about 3.7 minutes, needs anvil, cast and forge) |
+| Mutation runs | each batch removed its own guard or fix and recorded the named test failing; entries 176 to 246 and 251 to 257 were run through the harness against the contracts (a few "ERROR" results in scratch clones were forge install failures and re-run in the main tree) |
+
+### Per-fix evidence
+
+| Commit | Change | Check that failed before and passes after |
+|---|---|---|
+| `9ce0656` | settle returns no Shares; `claimShares` returns the unsold remainder | `SecondaryMarket*` 111 passed; real-policy gas now 2.40M to 3.58M, under half of 2^24 (was 11.29M to 20.87M, `532a793`) |
+| `9b5ab7d` | unconfigured `ActivationVoting` tracks no pending | three new tests failed with arithmetic panic before, passed after |
+| `256ade0` | `Payouts` ignores market-held Shares | `PayoutsMarket` tests failed before; full suite 752 passed |
+| `a455a1c` | `cancelBid` refuses an already cancelled order | strict real-market fuzz found it; directed test fails when reverted |
+| `4ff3f56`, `cae1342`, `b6ab248`, `532a793`, `680eaec`, `9c2031d`, `8b2c09e`, `4d63a2a`, `071dcf9` | test rewrites and mutation entries | each reverted-guard mutant fails its named test; harness node test 53 to 61 passed |
+| `2b98a5e`, `3369b99`, `5d14d62`, `1c50b49`, `ab8be71`, `7989215`, `4333ac2`, `f6cbda9`, `f1d720c`, `d949b1a`, `3084b5d`, `2e307b2`, `cb64d74` | Trading card, reader and copy | unit tests failed before (counts in each batch report), browser journeys against a real chain, reverted-fix runs |
+| `e89fbd4`, `b05ecc7` | keeper and fixture scripts | `secondary-keeper-test.sh` 6 of 13 failed before, 13 of 13 after; `test-v5-local-fixture.sh` 11 failed before |
+| `3c5895e`, `8c394b8`, `fffd75d` | documents | `scripts/check-secondary-review-wording.test.mjs`: failed against the old documents, passes now |
+
+### What could not run, or is not proven, and why
+
+- **`check:file-sizes`** (web): needs a local `origin/main`, which this clone does not have (`fatal: Not a valid object name origin/main`). Creating the ref would need a fetch, which was not allowed. Batches ran it with `CHECK_FILE_SIZES_BASE=HEAD`; not a substitute. **Unverified.**
+- **`forge build --sizes` exits 1.** Only two *test* helper contracts in `test/ContributorKitV2.t.sol` exceed the 49,152-byte creation limit (`FakeV3Policy` 49,419; `KitDeployProbe` 60,728 in the final pass). Plain `forge build` and `forge test` exit 0. Candidate contracts, runtime / creation bytes at the final pass: `SecondaryMarket` 13,110 / 14,111; `SecondaryMarketFactory` 16,770 / 30,350; `ActivationVoting` 23,405 / 23,572 (1,171 bytes of runtime headroom, the tightest); `ContributorKitV2` 15,792 / 29,965; frozen `WeeklyRounds` 12,973 / 13,231. `TreasuryMandateFactory` creation code is 49,116 of 49,152 bytes (36 spare), the tightest creation budget; older sections of this document still quote 49,126.
+- **Playwright's default browser** (revision 1223) is not installed; 1243 is. The browser scripts ran with `PW_CHROMIUM_PATH` pointing at the 1243 build. The trading journey ran from a copy of `scripts/web-trading-e2e.sh` with the Hermit activation line removed, because activating Hermit was not allowed.
+- **Fork tests** (`LaunchpadFork`, `SepoliaLaunchFork`) were excluded as instructed. **`just ci`, `just check` and the desktop and mobile surfaces** were not run.
+- **`shellcheck`** is not installed; `bash -n` was clean on the touched scripts.
+- **`scripts/test-mvp-gate.sh`** has one failing check at baseline ("the chain the journey leaked is stopped") that fails identically with this work stashed; the likely cause (a `kill -0` on an unreaped process) was not confirmed. `scripts/ci-selection.test.mjs` and `ci-required-gates.test.mjs`: 28 pass, 1 fail, identical with and without this work.
+- **`forge fmt`** is not part of any gate; `forge fmt --check` reports differences in `SecondaryMarket.sol`, `ActivationVoting.sol`, `ContributorKitV2.sol` and several tests. Nothing was reformatted.
+- **Paging through older rounds** is covered by pure-function and source-contract tests, not mounted in a browser.
+- **Gas figures** are test-VM measurements with a cheat code that cools storage and two storage slot numbers the test reads; whether a target chain enforces the 2^24 cap is a property of that chain.
+- **No person** has tested the changed flows, no outside party has audited the code, and no lawyer has reviewed it. The deferred low-severity batches B15 to B24 are listed in `STATUS.md` and in the brief, section 6.

@@ -6,6 +6,12 @@ did not build it: what the code does, what it deliberately refuses to do, what
 the tests actually pin, and what is still open. Every claim below names the file
 it comes from, so it can be checked rather than trusted.
 
+**Revision of 2026-11-05** (branch `v4-governance-rework`, after the second round of internal
+agent review and fixes). Counts and line numbers below were re-measured on that day. The defects
+found and fixed since the first revision of this packet are in section 10, "Second round". Nothing in
+this packet is an outside audit. A brief for counsel on the same feature is
+[LAWYER-BRIEF-WEEKLY-SALES.md](LAWYER-BRIEF-WEEKLY-SALES.md).
+
 **Status: trading starts disabled and nothing has been activated on any public
 network.** This repository has never deployed to mainnet, and the only
 deployments in evidence are local scratch chains started by the scripts named
@@ -23,7 +29,10 @@ something already live.
 | The market itself (rounds, orders, clearing, claims) | `contracts/src/SecondaryMarket.sol` (664 lines) |
 | Market creation, provenance and pinning | `contracts/src/SecondaryMarketFactory.sol` (201 lines) |
 | Voting maturity, founder sale schedule, escrow accounting | `contracts/src/ActivationVoting.sol` (835 lines) |
-| Shares transfer policy and the lock guard | `contracts/src/ContributorKitV2.sol`, and the Shares token inside `contracts/src/majeur/MolochPatched.sol` |
+| Shares transfer policy and the lock guard | `contracts/src/ContributorKitV2.sol` (359 lines), and the Shares token inside `contracts/src/majeur/MolochPatched.sol` (3,090 lines; only the patched regions matter here) |
+| Payout accounting that must not count escrowed Shares (changed in this revision) | `contracts/src/Payouts.sol` (270 lines) |
+| Web card and reader that tell people what they can do | `web/src/features/launchpad/ui/TradingCard.tsx` (631), `TradingOrderForms.tsx` (376), `TradingEarlier.tsx` (253), `TradingListingForm.tsx` (212); `lib/trading-copy.ts` (991), `lib/secondary-read.ts` (426), `lib/trading-orders.ts` (112); `packages/creaton-core/src/launchpad/secondary.ts` (796) |
+| Operator scripts | `scripts/secondary-keeper.sh` (195), `scripts/web-trading-e2e.sh` (169), `scripts/v5-local-fixture.sh` (415) |
 
 **Out of scope for this review**
 
@@ -48,9 +57,9 @@ The DAO is the only administrator, and its power is deliberately narrow.
 
 | Power | Function | Guard | What it can and cannot do |
 |---|---|---|---|
-| Decide whether a listing exists, and its price bounds | `configureListing(bool enabled, uint128 minPrice, uint128 maxPrice, uint32 levels)` | `msg.sender != dao → NotDao` (`SecondaryMarket.sol:223`) | Cannot touch a round already open. Disabling sets `listing = Terms(false,0,0,0)` and **stops new activity only — settlement and claims still run** (`test_disabling_stops_new_activity_never_settlement`) |
+| Decide whether a listing exists, and its price bounds | `configureListing(bool enabled, uint128 minPrice, uint128 maxPrice, uint32 levels)` | `msg.sender != dao → NotDao` (`SecondaryMarket.sol:228`) | Cannot touch a round already open. Disabling sets `listing = Terms(false,0,0,0)` and **stops new activity only — settlement and claims still run** (`test_disabling_stops_new_activity_never_settlement`) |
 | Open the next round | `openRound()` | anyone, at least `EVERY` after the last open | Uses the frozen listing terms; cannot choose terms |
-| Create the market for a DAO | `create(...)` on the factory | only the kit that created the factory (`NotAuthorizedKit`), one per DAO (`AlreadyListed`), and only after proving the DAO, its Shares and its policy against pinned bytecode and predicted addresses, and checking that the quote token has code (`_prove`, `SecondaryMarketFactory.sol:152`) | Cannot create a market for a counterfeit DAO, Shares or policy (`test_a_counterfeit_dao_is_refused_at_the_bytecode_pin`, `test_a_counterfeit_token_and_policy_are_refused`). **The quote token is not pinned**: `_prove` only checks that code exists at its address (`SecondaryMarketFactory.sol:158`, `UnprovenQuote` otherwise), so any contract can be named as the quote. Which quote tokens a project may use is a needs-human policy decision, still open; until it is made, treat the quote token as unvetted input. |
+| Create the market for a DAO | `create(...)` on the factory | only the kit that created the factory (`NotAuthorizedKit`), one per DAO (`AlreadyListed`), and only after proving the DAO, its Shares and its policy against pinned bytecode and predicted addresses, and checking that the quote token has code (`_prove`, `SecondaryMarketFactory.sol:152`) | Cannot create a market for a counterfeit DAO, Shares or policy (`test_a_counterfeit_dao_is_refused_at_the_bytecode_pin`, `test_a_counterfeit_token_and_policy_are_refused`, and since the second round one single-fault test per guard: `test_guard_the_dao_must_name_the_token_it_is_listed_with` and its siblings in `SecondaryMarketProvenance`, plus `SecondaryMarketDaoPin`, whose counterfeit DAO has code). **The quote token is not pinned**: `_prove` only checks that code exists at its address (`SecondaryMarketFactory.sol:158`, `UnprovenQuote` otherwise), so any contract can be named as the quote. Which quote tokens a project may use is a needs-human policy decision, still open; until it is made, treat the quote token as unvetted input. |
 
 There is **no** admin function to move user funds, cancel someone's order, change
 a round's terms after it opens, or mint Shares. Settlement (`settle`) and claims
@@ -69,10 +78,10 @@ lock — and pinned by
 ### The one thing the market is trusted with
 
 The market starts empty. The kit mints the founder's grant to the founder,
-not to the market (`ContributorKitV2.sol:224-227`: `holders[0] = msg.sender`),
+not to the market (`ContributorKitV2.sol:226`: `holders[0] = msg.sender`),
 and minting Shares straight to the market reverts `MintToMarket`
 (`ActivationVoting.sol:460`). There is no DAO-owned sale inventory: the DAO
-cannot offer Shares (`DaoCannotSell`, `SecondaryMarket.sol:271`) and Shares
+cannot offer Shares (`DaoCannotSell`, `SecondaryMarket.sol:276`) and Shares
 held by the DAO leave it only as reviewed awards (`awardsOnly`,
 `MolochPatched.sol:~1985`), so no path moves DAO-held Shares into the market.
 Holders put their own Shares in, one order at a time.
@@ -170,10 +179,23 @@ project with other holders, a listing alone can produce trades.
 
 ## 5. What the contract tests actually pin
 
-An earlier draft of this packet quoted 734 passing tests across 69 suites. That
-count predates the later hardening batches and has not been refreshed; run
-`forge test --offline --root contracts` and read the totals rather than trusting
-it. The ones a reviewer should read first, by theme:
+Counts on 2026-11-05. The secondary, voting, kit, founder-schedule, holding-age,
+exit-exchange, weekly-rounds, payouts-market and transfer-lock suites, run by the writer of this
+revision with `forge test --offline` from `contracts/` and the path filter given in section 8:
+**26 suites, 270 tests passed, 0 failed.** The whole contract suite with the two fork test files
+excluded, as reported by the orchestrating run's final gate (not re-run for this revision):
+**80 suites, 874 tests passed, 0 failed.** The earlier figure of 734 tests in 69 suites is stale.
+Tests executed per suite in that run (the adversary, review and resolution suites each run twice, once against
+a simplified policy and once against the real policy launched through the real kit):
+`SecondaryMarketAdversary` 21 + `...AdversaryReal` 21, `SecondaryMarketProvenance` 27,
+`SecondaryMarketDaoPin` 4, `SecondaryMarketFlows` 8, `...FlowsClearing` 4, `...FlowsResolution` 12 +
+`...ResolutionReal` 12, `SecondaryMarketReview` 4 + `...ReviewReal` 4, `SecondaryMarketGuardPins` 4,
+`SecondaryMarketRealPolicy` 7, `SecondaryMarketRealGas` 2, `SecondaryMarketInvariant` 6,
+`SecondaryListingVote` 3, `ActivationVoting` 42, `ActivationVotingFuzz` 1 + `ActivationVotingRealMarketFuzz` 3,
+`ContributorKitV2` 16, `ContributorKitV2Guards` 21, `FounderSaleEligibility` 5, `HoldingAge` 13,
+`ExitExchange` 3, `PayoutsMarket` 3, `WeeklyRounds` 16 (the frozen contract), `TransferLock` 8. Mutation checks:
+`scripts/contracts-mutation-check.mjs` has 260 entries (all well formed under `--check`), and its
+own node test passes 61 of 61. The ones a reviewer should read first, by theme:
 
 **Escrow and conservation**
 
@@ -213,7 +235,12 @@ handler really reaches a pro-rata round and a void round.
 
 **Hostile counterparties**
 
-- `test_no_primary_mint_funding_or_claimandleave_entrypoint_exists`
+- `test_no_d179_primary_funding_open_or_claimandleave_entrypoint_exists` — calls each D179 entrypoint by its real
+  selector and requires an empty revert (the selector is absent, not merely guarded); the earlier test of the same
+  idea used selectors that were not `WeeklyRounds` functions and passed against a market with an added `open`.
+- `test_the_market_abi_matches_the_reviewed_allowlist` — the market's whole external surface (38 entries) is compared
+  with a checked-in list read from the compiled artifact, so any new function fails until a reviewer adds it.
+- `test_a_full_round_mints_no_shares`
 - `test_reentry_into_sell_is_refused`, `..._bid_...`, `..._cancelSell_...`,
   `..._cancelBid_...`, `..._settle_...`, `..._claimShares_...` and
   `..._claimQuote_...` — one test per guarded entrypoint. A hostile quote
@@ -222,14 +249,18 @@ handler really reaches a pro-rata round and a void round.
   `nonReentrant` from an entrypoint fails its own case (the earlier single test
   re-entered with one malformed word and passed with the guard removed).
 - `test_a_blocked_quote_strands_no_payout`
+- `test_a_quote_that_delivers_less_than_asked_is_refused` and `test_shares_that_do_not_arrive_in_full_are_refused`
+  (fee-on-transfer fails closed at intake)
 - `test_unattributed_deposits_become_no_ones_credit_and_are_never_paid`
 - `test_forced_eth_dust_stays_irrelevant`
-- `test_claims_survive_a_cleared_or_replaced_exit_exchange` — **weaker than its
-  name.** It only calls `clearExitExchange()` (nothing in the SecondaryMarket
-  suites ever installs an exchange first) and then runs the claims. It never names an exchange, never
-  installs one that refuses transfers, and never replaces one, so it does not
-  show that a hostile or replaced exchange cannot freeze escrow. Treat it as
-  evidence for the cleared case only; the named-exchange cases are open.
+- `test_claims_survive_a_cleared_exit_exchange`,
+  `test_claims_survive_an_installed_exit_exchange_that_reverts`,
+  `test_claims_survive_an_exit_exchange_replaced_after_the_notice` and
+  `test_void_round_claims_survive_a_replaced_exit_exchange`. The first clears the exchange slot. The other three
+  announce a real exchange that reverts on every call, wait the 30-day notice, activate it, and in the replaced
+  cases announce and activate a second one, then run cancel, settle and every claim. (The earlier single test of
+  this name only cleared a slot that was already empty and never named an exchange.) They run on the simplified
+  policy and, because the file is shared, on the real policy.
 - `test_a_rogue_market_never_receives_locked_shares_or_takes_the_exemption`
 - `test_two_markets_stay_isolated_and_never_pay_each_others_orders`
 - `test_active_side_caps_bound_each_round`
@@ -242,6 +273,13 @@ handler really reaches a pro-rata round and a void round.
 - `test_a_counterfeit_dao_is_refused_at_the_bytecode_pin`
 - `test_a_counterfeit_token_and_policy_are_refused`
 - `test_a_wrong_lot_size_is_refused`
+- one test per factory guard, each of which fails when only that guard is removed:
+  `test_guard_the_dao_must_name_the_token_it_is_listed_with`, `..._the_dao_must_name_the_policy_it_is_listed_with`,
+  `..._the_token_must_be_the_predicted_shares_clone`, `..._the_token_must_belong_to_the_dao`,
+  `..._the_policy_must_belong_to_the_dao`, `..._the_policy_must_name_the_predicted_market`,
+  `..._the_policy_must_come_from_the_pinned_mandate_factory`,
+  `test_a_counterfeit_dao_with_code_and_consistent_getters_is_refused`, `test_a_dao_of_another_summoner_is_refused`,
+  and the constructor cases (`test_constructor_refuses_*`).
 - `test_a_dao_whose_birth_exemption_points_wrong_cannot_list`
 
 **Voting maturity and the denominator**
@@ -276,17 +314,25 @@ Stated plainly, because a reviewer should not spend time discovering these:
 1. **No independent audit of this code has happened.** The tests are the
    author's.
 2. **No fuzzing of the voting-maturity arithmetic beyond `ActivationVotingFuzz.t.sol`'s
-   scope**, and no formal verification of the clearing algorithm.
+   scope** (which now includes `ActivationVotingRealMarketFuzz`, a strict walk through the
+   real market), **no fuzz over price-grid terms** (deferred item B20; the grid fuzz fixes
+   one set of terms), and no formal verification of the clearing algorithm.
 3. **The market has never run against a real quote token with fee-on-transfer,
    rebasing or blacklist behaviour.** `test_a_blocked_quote_strands_no_payout`
-   covers a blocking token; fee-on-transfer is not covered.
-4. **Gas for a round with the maximum number of orders is measured on the real policy, and the heaviest settle is about 21% of the 2^24 per-transaction cap** (see F4). It was over the cap before settle stopped returning unsold Shares; `MAX_ACTIVE_SELLERS` stays 32.
+   covers a blocking token. Fee-on-transfer is covered as a *refusal at intake*
+   (`test_a_quote_that_delivers_less_than_asked_is_refused`); a token that skims a
+   fee only on payout, a rebasing token, or a token that lies in `balanceOf` is not
+   covered.
+4. **Gas for a round with the maximum number of orders is measured on the real policy, and the heaviest settle is about 21% of the 2^24 per-transaction cap** (see F4). It was over the cap before settle stopped returning unsold Shares; `MAX_ACTIVE_SELLERS` stays 32. The per-seller collect that now carries the heavy part was measured at up to about 0.72M gas. The figures depend on a Foundry cheat code that cools storage and on two storage slot numbers the test reads, so they are test-VM measurements, not chain measurements, and whether a target chain enforces the cap is a property of that chain.
 5. **No real-chain reorg testing.** Reorg behaviour is covered only by fake-node
    tests in the agreement finalizer, not for the market.
 6. **Open gaps recorded here so nobody discovers them.** (a) Which quote tokens
    a market may use is undecided: the factory checks only that the quote has
-   code (§2). (b) `test_claims_survive_a_cleared_or_replaced_exit_exchange`
-   covers only a cleared exit exchange, never a named or replaced one (§5).
+   code (§2). (b) The exit-exchange independence tests now install and replace a real
+   exchange that refuses transfers, on both the simplified and the real policy (§5).
+   The kit-level test in `ContributorKitV2.t.sol` still only clears the slot;
+   extending it is deferred item B19. The frozen `WeeklyRounds` contract can still be named in that slot; see
+   (e).
    (c) The Trading card reads the latest round and
    the last 8 earlier rounds, and "Check older rounds" reads the next block of 8
    ids on each click down to round 1 (each read is bounded); the `cast` commands
@@ -294,7 +340,17 @@ Stated plainly, because a reviewer should not spend time discovering these:
    and pro-rates **all** crossing orders on the long side, including orders
    strictly better than the price; whether to keep that or add price priority
    is a product decision, and no money is mis-paid either way (`LedgerShort`
-   holds).
+   holds). (e) The old `WeeklyRounds` contract is frozen and unrepaired, but the V2
+   contracts do not stop a DAO naming it as its exit exchange after the 30-day notice;
+   today only the deploy scripts and build settings keep it away from a value-bearing
+   network. Whether to seal that slot is an open owner decision. (f) Low-severity
+   fixes deliberately deferred to a second run (B15 to B24: the legacy launch entry
+   point on the V2 kit, a one-off lot-size bound mismatch between kit and factory, a
+   card that does not refresh when the next-round time passes, buttons that do not say
+   why they are disabled, some disclosures and accessibility details on the order
+   forms, keeper exit status and key handling, some script hardening, and stale size
+   figures in older documents). (g) The pilot build still renders an inert "Trading"
+   card that says trading is not set up; no pilot test asserts what it offers.
 7. **Upgradeability is absent by design** — the market is immutable and
    `SecondaryMarketFactory` pins bytecode. That removes upgrade risk but also
    removes the ability to fix a defect; a replacement market is a new deployment
@@ -362,14 +418,24 @@ Everything below runs on a scratch chain with public dev keys; nothing touches a
 public network.
 
 ```bash
-# The contracts, with the pinned invariants
-forge test --offline --root contracts        # read the totals; the 734 quoted in §5 is stale
+# The contracts. From contracts/ (foundry-bin on PATH; never run forge install or update):
+forge test --offline --no-match-path 'test/{LaunchpadFork,SepoliaLaunchFork}.t.sol'   # whole suite; the orchestrating run reported 80 suites, 874 passed, 0 failed
+forge test --offline --match-path "test/{Secondary*,ActivationVoting*,ContributorKitV2*,FounderSaleEligibility*,HoldingAge*,ExitExchange*,WeeklyRounds*,PayoutsMarket*,TransferLock*}.t.sol"
+                                             # the secondary set: 26 suites, 270 passed, 0 failed (2026-11-05)
+
+# The guard-removal check and its tests (no chain needed for the two node commands)
+node scripts/contracts-mutation-check.mjs --check                       # 260 entries well formed
+node --test scripts/contracts-mutation-check.test.mjs scripts/check-secondary-review-wording.test.mjs   # 71 passed
+# A single entry removes one guard and requires a named test to fail; see the script header.
+
+# The keeper's retry and give-up logic against a stubbed node and clock
+bash scripts/secondary-keeper-test.sh        # "all passed"
 
 # A real deployment, every value read back from node state
 ./scripts/v5-local-fixture.sh                # 8/8 receipts, listing disabled at birth
 
 # The market end to end, on a real local chain (needs anvil, node and a browser)
-bash scripts/web-trading-e2e.sh              # one round from the web app: listing, offer, bid, settle, collect, void round
+bash scripts/web-trading-e2e.sh              # five browser journeys: a full round, a void round, a part-filled seller, a round where nothing crosses, keyboard and screen reader
 bash scripts/secondary-keeper-e2e.sh         # scripts/secondary-keeper.sh through a round's whole life
 
 # The founder sale schedule and transfer restrictions are pinned by the Foundry
@@ -508,7 +574,7 @@ squatting. All four are open product decisions.
 | Question | Answer |
 |---|---|
 | 1. Is the leftover tie-break exploitable by ordering transactions? | **Yes, it was** — that is F2, now fixed. Plain arrival order remains first-come-first-served. |
-| 2. Can the escrow accounting be driven to `LedgerShort`? | **No path found** in the market's own accounting: `sharesIn` and `quoteIn` stay conserved. The policy's `_migrateEscrow` side was not read closely — still open. |
+| 2. Can the escrow accounting be driven to `LedgerShort`? | **No path found** in the market's own accounting: `sharesIn` and `quoteIn` stay conserved. In the first round the policy's `_migrateEscrow` side was not read closely. In the second round it was read and exercised (§11), including through `ActivationVotingRealMarketFuzz`; no path to `LedgerShort` or `LedgerCorrupt` was found. Still agent review, not audit. |
 | 3. Can the exclusion set change after creation? | **No.** `_setExcluded` reverts once frozen and no other path was found. |
 | 4. Can `transferExempt` change and strand escrow? | **No** — it can only be set once. The real stranding route was the validator (F3), now fixed. |
 | 5. Is a Share a security? | For counsel. Unanswered here. |
@@ -534,9 +600,82 @@ squatting. All four are open product decisions.
   because burns are a holder's own exit, and the books are only moved by the
   market).
 - Fee-on-transfer quote tokens **fail closed** at bid (the exact-balance check
-  reverts) — safer than §6 previously implied.
+  reverts) — safer than §6 previously implied. Pinned in the second round by
+  `test_a_quote_that_delivers_less_than_asked_is_refused`.
 - A blacklist or negative rebase **on the market address itself** is not covered.
-- The `_migrateEscrow` path in the policy was not read closely.
+- The `_migrateEscrow` path in the policy was not read closely in the first round;
+  read and exercised in the second (§11).
 
-The first gap is closed; the other three are still open. The packet is a
-description of what exists, not a claim that the review is finished.
+The first and fourth gaps are closed; the second is closed for intake and open for
+payout; the third is open. The packet is a description of what exists, not a claim
+that the review is finished.
+
+---
+
+## 11. Second round (2026-11-05): defects found and fixed since the first revision
+
+A second internal agent pass looked at the market and factory, the voting policy and
+founder schedule, the accounting, the web card and keeper, and what the documents
+claimed. Findings were each checked by a second agent trying to refute them; those that
+held were fixed with a regression test and a one-at-a-time reversion of the fix. It is
+the same kind of review as §10: agents, not an outside audit. Commits are on branch
+`v4-governance-rework`. "Fails when reverted" means the batch removed only the fix and
+saw the named test fail.
+
+### Contract and policy changes
+
+| Finding | Severity | Fix | Regression tests (fail when the fix is reverted) |
+|---|---|---|---|
+| **Settle did not fit in one transaction at full size.** Against the real policy a 32 x 32 x 64 settle cost 11.29M to 20.87M gas, above the 16.78M (2^24) per-transaction cap some chains enforce. The round would go void; a griefer could cause it. | high | `9ce0656`: `settle` no longer returns unsold Shares; `claimShares` does, one seller per transaction. Now 2.40M to 3.58M. | `test_a_part_filled_seller_claims_the_unsold_remainder_after_settle_exactly_once`, `test_an_unclaimed_remainder_survives_the_settle_window_and_the_next_round`; ceilings in `SecondaryMarketRealGas` (measured in `532a793`) |
+| **An unconfigured `ActivationVoting` kept a half-built pending ledger.** A legacy launch through the V2 kit address left a fresh award holder unable to exit (arithmetic underflow) and inflated the pending supply. | medium | `9b5ab7d`: unconfigured behaves exactly like the legacy policy | `test_unconfigured_policy_ragequit_of_a_fresh_award_never_reverts`, `test_unconfigured_policy_award_then_ragequit_and_transfer_do_not_revert_or_track_pending`, `test_legacy_launch_over_the_variant_summoner_lets_an_award_holder_exit` |
+| **Payouts counted market-held Shares as units.** Payout shares owed to escrowed units were credited to the market address with no way out. | medium | `256ade0` (`Payouts.sol`) | `test_shares_in_round_escrow_neither_count_nor_strand_payouts`, `test_a_void_round_returns_escrow_to_counting_without_a_stranded_slice` (`PayoutsMarket.t.sol`) |
+| **A second `cancelBid` of the same order panicked (0x11) instead of refusing with `NoOrder`.** Found by the strict fuzz walk. No loss of funds was shown. | low | `a455a1c`: `cancelBid` rejects an already cancelled order | `test_a_second_cancelBid_is_refused_as_no_order_not_a_panic` |
+| **`agreementState` reported READY_TO_SETTLE for every open claim on a realistic clock.** Agreed-rewards code in the same branch, not the market. | medium | `d108614` (`TreasuryMandate.sol`) | `test_agreement_state_reads_the_review_chain_at_a_realistic_timestamp`, `test_agreement_state_reads_corrections_at_a_realistic_timestamp` |
+
+### Tests that did not test what they claimed
+
+| Finding | Fix | New or rewritten tests |
+|---|---|---|
+| Both market invariants were vacuous: the handlers were never targeted and every call reverted (0 compared with 0). | `4ff3f56` | `invariant_canary_the_handler_really_trades` and the four rewritten invariants; `test_handler_drives_a_real_pro_rata_round_and_a_void_round` |
+| The reentrancy test passed with every `nonReentrant` removed. | `cae1342` | `test_reentry_into_sell_is_refused`, `..._bid_...`, `..._cancelSell_...`, `..._cancelBid_...`, `..._settle_...`, `..._claimShares_...`, `..._claimQuote_...` |
+| The counterfeit-DAO regression used a code-less address; most factory guards shadowed each other. | `b6ab248` | `SecondaryMarketDaoPin` (3 tests) and the single-fault `test_guard_*` and `test_constructor_*` tests |
+| The exit-exchange tests never named an exchange. | `680eaec` | `test_claims_survive_an_installed_exit_exchange_that_reverts`, `..._replaced_after_the_notice`, `test_void_round_claims_survive_a_replaced_exit_exchange` |
+| The "no funding/claimAndLeave" probe pinned selectors that were not `WeeklyRounds` functions. | `680eaec` | `test_no_d179_primary_funding_open_or_claimandleave_entrypoint_exists`, `test_the_market_abi_matches_the_reviewed_allowlist` |
+| Every adversarial test ran only against the simplified policy. | `532a793` | `SecondaryMarketRealPolicy`, `...AdversaryReal`, `...ReviewReal`, `...FlowsResolutionReal`, `ActivationVotingRealMarketFuzz` |
+| The real-market fuzz swallowed panics and failed ragequits. | `a455a1c` | strict `_act` allowlist and ghost counters in `ActivationVotingRealMarketFuzz` |
+| Guards with no test or no mutation entry: bidding window, settle-once, zero levels, intake deltas, `LedgerShort`, kit read-backs, the factory's post-create exemption read. | `9c2031d`, `8b2c09e`, `4d63a2a`, `071dcf9` | `test_sell_at_close_is_refused_as_bidding_over` and its three siblings, `test_a_second_settle_is_refused_even_when_the_policy_would_let_it_run`, `test_a_listing_with_zero_levels_is_refused_as_invalid_terms`, `SecondaryMarketGuardPins` (4), `ContributorKitV2Guards` (21), `test_guard_the_shares_must_still_name_the_new_market_after_creation`, `test_configuring_after_the_creation_block_is_refused` |
+
+### App, keeper and document fixes
+
+Listed with commits in [LAWYER-BRIEF-WEEKLY-SALES.md](LAWYER-BRIEF-WEEKLY-SALES.md) section 5.4. Those that change a
+statement in this packet: the card now reads the last 8 earlier rounds and pages back through older ones
+(`2b98a5e`, `3369b99`); a part-filled seller's unsold remainder is a collect (`5d14d62`); a round that matched
+nothing prints no price (`1c50b49`); the quote token's address is shown and a mismatch with the sale currency
+warned (`cb64d74`); and this packet's account of DAO-held "sale inventory", of the review as "independent", and of
+the clearing rule was corrected (`3c5895e`, `8c394b8`, `fffd75d`).
+
+### Examined and judged sound (agent reading, not audit)
+
+The six D179 routes do not recur: a counterfeit DAO cannot obtain a market (the factory accepts only the kit and
+pins the DAO's runtime code); no terms contract or token argument exists; there is no balance-difference payout,
+and the only measured-before-after step is intake, with exact equality; locked Shares reach a buyer only through an
+enabled listing, weekly, within the window and within sale capacity; disabling the listing cannot reach settlement
+or claims; one price function is used for escrow, settle and payout; one wei of ETH is irrelevant. Quote and
+Shares conservation per round, claim idempotence, and the time boundaries (settle and void do not overlap or leave
+a gap) were reasoned through and are pinned by the invariants and flow tests above.
+
+### Findings refuted or not accepted
+
+Nine finding entries (eight topics; one was filed twice) did not survive a second agent's attempt to refute them, or were judged documented design: that the
+real-policy settle exceeds a gas cap (superseded by the measurement and fix above); that a permissionless
+`openRound` can be used to burn a week with stale terms (the terms are the DAO's own earlier ones, and the DAO can
+switch the listing off); that quorum has no floor (a documented trade-off, left as an owner decision); that
+trading is "off" only through an absent build variable (the hosted image cannot receive it; a code-level guard is
+optional); that connecting a wallet discards form values (no form exists before connection); a wording nit about
+the settle notice; that the web decoders are bound to the contract by an opt-in test (a nightly workflow runs it,
+though that workflow has never run on GitHub); and that the invariant suite may not reach pro-rata states (a
+directed test does).
+
+### Still open after this round
+
+See §6 item 6 and the deferred list there. The owner decisions are in the brief, section 8.
