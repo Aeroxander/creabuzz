@@ -437,7 +437,7 @@ itself, because settling is a transaction the visitor's wallet must approve.
 For the hours nobody is looking, run the keeper, which sends only what the contract lets anyone send:
 
 ```bash
-RPC_URL=<node> MARKET=<market address> KEEPER_PRIVATE_KEY=<gas-only key> KEEPER_OPEN=1 scripts/secondary-keeper.sh
+RPC_URL=<node> MARKET=<market address> KEEPER_KEYSTORE=<keystore file> KEEPER_PASSWORD_FILE=<password file> KEEPER_OPEN=1 scripts/secondary-keeper.sh
 ```
 
 - It settles a closed, unsettled round inside its window, and does nothing for a round still taking orders or one that
@@ -445,9 +445,16 @@ RPC_URL=<node> MARKET=<market address> KEEPER_PRIVATE_KEY=<gas-only key> KEEPER_
 - `KEEPER_OPEN=1` also opens the week's round when the listing is on and a week has passed since the last opening.
   Leave it unset to settle only; opening spends the operator's gas on a round that may get no orders.
 - The key pays network fees and nothing else. Use a fresh key with a few dollars of gas, never a key that owns Shares or
-  controls a DAO: `cast` takes it on its command line.
+  controls a DAO. Make the keystore once with `cast wallet import --interactive --keystore-dir <dir> keeper` and keep its
+  password in a file only the keeper's user can read; the keeper hands `cast` those two paths, so the key never shows in
+  the process list. The old `KEEPER_PRIVATE_KEY` still works but puts the key on `cast`'s command line (any user of the
+  machine can read it), and the keeper warns.
 - `--once` runs one pass (for cron); without it the keeper loops every `KEEPER_INTERVAL` seconds (default 300, at least
-  30). Run it at least every few hours: the settle window is two days.
+  30). Run it at least every few hours: the settle window is two days. With `--once` the exit status is the alert:
+  0 means nothing was wrong (a lost race, an already settled round or an early open is not wrong), 1 means a
+  transaction was refused for a real reason (no gas, a wrong key, a dead node) and the round may still need it, 2 means
+  the market could not be read or the setup is wrong. After a refused settle the keeper re-reads the round, and only a
+  round that is now settled counts as fine. In loop mode every refusal is an ERROR line, retried with a growing wait.
 - It cannot move anyone's money: it has no power over orders, prices or the listing, because the market has none.
   `scripts/secondary-keeper-e2e.sh` proves each of those claims on a real local chain.
 

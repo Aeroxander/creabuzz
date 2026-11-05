@@ -11,13 +11,13 @@
 #   4. KEEPER_OPEN=1                    -> opens round 1; a second pass does not open another inside the week;
 #   5. an offer and a bid, still bidding -> the keeper does not settle (the chain would refuse it);
 #   6. bidding closed                   -> the keeper settles it; a second pass sends nothing more;
-#      (an unfunded keeper that cannot send logs a loud ERROR with the reason and settles nothing);
+#      (an unfunded keeper that cannot send logs a loud ERROR with the reason, settles nothing and exits 1);
 #   7. both sides collect               -> the seller's unsold lot waits until its claim (settle moves no Shares), then
 #                                          the ledgers end at zero and the buyer holds the Shares;
 #   8. a week later, KEEPER_OPEN=1      -> opens round 2; left unsettled past its deadline the round is void and the
 #                                          keeper sends nothing (it never pays gas for a transaction that must fail).
 #
-# ⚠️  DEV ONLY. Anvil dev keys (public), a local chain, nothing else.
+# The keeper signs from a keystore, as an operator should. ⚠️  DEV ONLY. Anvil dev keys (public), a local chain.
 # Usage:  scripts/secondary-keeper-e2e.sh        (foundry on PATH or in ~/.foundry/bin)
 
 set -euo pipefail
@@ -105,7 +105,11 @@ settled_of() { call "$MARKET" "rounds(uint256)(uint128,uint128,uint32,uint64,uin
 nonce_of() { cast nonce "$KEEPER" --rpc-url "$RPC"; }
 warp() { cast rpc --rpc-url "$RPC" anvil_increaseTime "$(cast to-hex "$1")" >/dev/null; cast rpc --rpc-url "$RPC" anvil_mine 0x1 >/dev/null; }
 expect() { [[ "$2" == "$3" ]] || fail "$1: expected '$3', got '$2'"; step "ok: $1 ($2)"; }
-keeper() { RPC_URL="$RPC" MARKET="$MARKET" "$REPO_ROOT/scripts/secondary-keeper.sh" --once "$@"; }
+# The keeper signs from a keystore (its key never reaches a command line); these two are dev-only anvil keys.
+KS="$STATE/keystores"; mkdir -p "$KS"; printf 'dev-only' >"$KS/password"
+cast wallet import keeper --private-key "$KEEPER_PK" --keystore-dir "$KS" --unsafe-password dev-only >/dev/null
+cast wallet import broke --private-key "$BROKE_PK" --keystore-dir "$KS" --unsafe-password dev-only >/dev/null
+keeper() { RPC_URL="$RPC" MARKET="$MARKET" KEEPER_PASSWORD_FILE="$KS/password" "$REPO_ROOT/scripts/secondary-keeper.sh" --once "$@"; }
 
 # Setup: the buyer has quote to bid with, the chain is past the founder's schedule, the keeper has gas and nothing else.
 cast send "$QUOTE" "mint(address,uint256)" "$BIDDER" 1000000000000000000000 --private-key "$FOUNDER_PK" --rpc-url "$RPC" >/dev/null
@@ -123,7 +127,7 @@ publish_listing() {
 
 # 1. Listing off, no round: nothing to do.
 N0="$(nonce_of)"
-KEEPER_PRIVATE_KEY="$KEEPER_PK" KEEPER_OPEN=1 keeper >/dev/null
+KEEPER_KEYSTORE="$KS/keeper" KEEPER_OPEN=1 keeper >/dev/null
 expect "a market with its listing off gets no transaction" "$(nonce_of)" "$N0"
 
 publish_listing
@@ -133,13 +137,13 @@ OUT="$(KEEPER_DRY_RUN=1 KEEPER_OPEN=1 keeper)"
 expect "a dry run opens no round" "$(rounds_count)" "0"
 
 # 3. Settle-only keeper never opens (opening spends the operator's money, so it is opt-in).
-KEEPER_PRIVATE_KEY="$KEEPER_PK" keeper >/dev/null
+KEEPER_KEYSTORE="$KS/keeper" keeper >/dev/null
 expect "a settle-only keeper opens no round" "$(rounds_count)" "0"
 
 # 4. KEEPER_OPEN=1 opens round 1, and a second pass inside the week does not open another.
-KEEPER_PRIVATE_KEY="$KEEPER_PK" KEEPER_OPEN=1 keeper >/dev/null
+KEEPER_KEYSTORE="$KS/keeper" KEEPER_OPEN=1 keeper >/dev/null
 expect "the keeper opens the week's round" "$(rounds_count)" "1"
-KEEPER_PRIVATE_KEY="$KEEPER_PK" KEEPER_OPEN=1 keeper >/dev/null
+KEEPER_KEYSTORE="$KS/keeper" KEEPER_OPEN=1 keeper >/dev/null
 expect "a second pass inside the week opens no other" "$(rounds_count)" "1"
 
 # 5. An offer and a bid while bidding is open; the keeper must not try to settle.
@@ -148,7 +152,7 @@ cast send "$QUOTE" "approve(address,uint256)" "$MARKET" 1000000000000000000000 -
 cast send "$MARKET" "sell(uint256,uint128,uint16)" 1 3 0 --private-key "$FOUNDER_PK" --rpc-url "$RPC" >/dev/null
 cast send "$MARKET" "bid(uint256,uint128,uint16)" 1 2 64 --private-key "$BIDDER_PK" --rpc-url "$RPC" >/dev/null
 N1="$(nonce_of)"
-KEEPER_PRIVATE_KEY="$KEEPER_PK" keeper >/dev/null
+KEEPER_KEYSTORE="$KS/keeper" keeper >/dev/null
 expect "the keeper does not settle while bidding is open" "$(settled_of 1)" "false"
 expect "and sends no transaction for it" "$(nonce_of)" "$N1"
 
@@ -156,13 +160,15 @@ expect "and sends no transaction for it" "$(nonce_of)" "$N1"
 warp 259201 # three days and a second
 # A keeper that cannot pay for the transaction says so loudly, with the reason, and the round stays unsettled.
 cast rpc --rpc-url "$RPC" anvil_setBalance "$BROKE" 0x0 >/dev/null
-OUT="$(KEEPER_PRIVATE_KEY="$BROKE_PK" keeper)"
+RC=0
+OUT="$(KEEPER_KEYSTORE="$KS/broke" keeper 2>&1)" || RC=$?
 [[ "$OUT" == *"ERROR: settle(round 1)"* ]] || fail "an unfunded keeper did not log a loud error: $OUT"
+expect "an unfunded keeper exits non-zero for cron to alert on" "$RC" "1"
 expect "an unfunded keeper settles nothing" "$(settled_of 1)" "false"
-KEEPER_PRIVATE_KEY="$KEEPER_PK" keeper >/dev/null
+KEEPER_KEYSTORE="$KS/keeper" keeper >/dev/null
 expect "the keeper settles a closed round" "$(settled_of 1)" "true"
 N2="$(nonce_of)"
-KEEPER_PRIVATE_KEY="$KEEPER_PK" keeper >/dev/null
+KEEPER_KEYSTORE="$KS/keeper" keeper >/dev/null
 expect "a settled round gets no second transaction" "$(nonce_of)" "$N2"
 
 # 7. Both sides collect and the round's ledgers end at zero.
@@ -177,11 +183,11 @@ expect "the buyer holds the two lots" "$(call "$SHARES" "balanceOf(address)(uint
 
 # 8. A week later round 2 opens; nobody settles, it passes its deadline, and the keeper sends nothing for a void round.
 warp 604800
-KEEPER_PRIVATE_KEY="$KEEPER_PK" KEEPER_OPEN=1 keeper >/dev/null
+KEEPER_KEYSTORE="$KS/keeper" KEEPER_OPEN=1 keeper >/dev/null
 expect "a week after the last opening the keeper opens the next round" "$(rounds_count)" "2"
 warp 432001 # past the settle deadline (three days of bidding, two to settle) with nobody settling
 N3="$(nonce_of)"
-KEEPER_PRIVATE_KEY="$KEEPER_PK" keeper >/dev/null
+KEEPER_KEYSTORE="$KS/keeper" keeper >/dev/null
 expect "the keeper sends nothing for a void round" "$(nonce_of)" "$N3"
 expect "and the round stays unsettled" "$(settled_of 2)" "false"
 

@@ -1757,8 +1757,11 @@ cannot settle by itself (settling is a transaction the visitor's wallet must app
   only when told to, opens the week's round. `scripts/secondary-keeper-e2e.sh` runs it on a real local chain through a
   round's whole life: it sends nothing with the listing off, opens nothing unless `KEEPER_OPEN=1`, does not settle while
   bidding is open, settles once bidding closes, sends nothing for a settled or void round, and the ledgers end at zero.
-  It first failed for a real reason — `cast` does not read `ETH_PRIVATE_KEY`, so the keeper sent nothing — which is why the
-  key is `KEEPER_PRIVATE_KEY` and a refused send now prints its reason.
+  It first failed for a real reason — `cast` does not read `ETH_PRIVATE_KEY`, so the keeper sent nothing — and a refused
+  send now prints its reason. The keeper signs from a keystore (`KEEPER_KEYSTORE` plus `KEEPER_PASSWORD_FILE`), so no key is
+  on a command line; a raw `KEEPER_PRIVATE_KEY` still works with a warning. `--once` exits 1 when a send was refused for a
+  real reason (the round is re-read first, and a round that is now settled is fine) and 2 when the market is unreadable,
+  so cron can alert; the e2e checks an unfunded keeper exits 1 with the round still unsettled.
   Retries are bounded per action: a settle gives up after `KEEPER_MAX_ATTEMPTS` failed sends (its round is then void), but
   an `openRound` is keyed per week and never gives up, it is retried once an hour, so a refilled wallet just works. A settle
   that lost the race (already settled, window over) or an early `openRound` is logged as a note, not as a failure.

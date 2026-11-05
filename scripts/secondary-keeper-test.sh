@@ -9,7 +9,11 @@
 #   2. settle still gives up at KEEPER_MAX_ATTEMPTS, and says the round is then void;
 #   3. a settle that lost the race (AlreadySettled / SettleOver) and an early openRound (TooSoon) are a quiet skip,
 #      not an ERROR and not a failed attempt;
-#   4. any other estimate failure is still a loud ERROR.
+#   4. any other estimate failure is still a loud ERROR;
+#   5. `--once` (cron) exits 1 when a send was refused for a real reason, 2 when the market could not be read, 0 when
+#      nothing was wrong or the chain only said the action was not needed; a refused send is re-checked against the
+#      round, and a round that is now settled is not a failure;
+#   6. a keystore key never reaches a command line (`ps` would show it).
 # Usage:  scripts/secondary-keeper-test.sh        (foundry's `cast` on PATH or in ~/.foundry/bin, only for `cast sig`)
 
 set -euo pipefail
@@ -32,6 +36,7 @@ export STATE
 cat >"$BIN/cast" <<'STUB'
 #!/usr/bin/env bash
 cmd="$1"; shift
+printf '%s %s\n' "$cmd" "$*" >>"$STATE/argv.log"
 clock() { cat "$STATE/clock"; }
 case "$cmd" in
   sig) exec "$REAL_CAST" sig "$@" ;;
@@ -46,10 +51,14 @@ case "$cmd" in
     esac ;;
   estimate|send)
     sig="$2"; kind=settle; [[ "$sig" == "openRound()" ]] && kind=open
-    if [[ -e "$STATE/${cmd/estimate/est}_$kind" ]]; then cat "$STATE/${cmd/estimate/est}_$kind" >&2; exit 1; fi
+    if [[ -e "$STATE/${cmd/estimate/est}_$kind" ]]; then
+      # a send that fails but still lands the settle another way (someone else's), when the scenario asks for it
+      if [[ "$cmd" == "send" && -e "$STATE/settled_on_send" ]]; then sed -i '10s/.*/true/' "$STATE/round"; fi
+      cat "$STATE/${cmd/estimate/est}_$kind" >&2; exit 1
+    fi
     if [[ "$cmd" == "send" ]]; then
       echo "$kind" >>"$STATE/sent.log"
-      [[ "$kind" == "open" ]] && clock >"$STATE/lastOpenAt"
+      if [[ "$kind" == "open" ]]; then clock >"$STATE/lastOpenAt"; fi
     else
       echo 100000
     fi ;;
@@ -80,6 +89,15 @@ run() {
     MARKET=0x00000000000000000000000000000000000000aa KEEPER_PRIVATE_KEY=0x01 KEEPER_INTERVAL=30 \
     bash "$KEEPER" 2>&1 || true)"
 }
+# run_once [VAR=value ...]: one `--once` pass of the real keeper; its exit status in $RC, output in $OUT.
+run_once() {
+  echo 1000000 >"$STATE/clock"
+  rm -f "$STATE/sleeps" "$STATE/sent.log" "$STATE/argv.log"
+  RC=0
+  OUT="$(env FOUNDRY_BIN="$BIN" STATE="$STATE" RPC_URL=stub \
+    MARKET=0x00000000000000000000000000000000000000aa KEEPER_PRIVATE_KEY=0x01 KEEPER_INTERVAL=30 "$@" \
+    bash "$KEEPER" --once 2>&1)" || RC=$?
+}
 sent() { cat "$STATE/sent.log" 2>/dev/null || true; }
 errors() { printf '%s\n' "$OUT" | grep -c 'ERROR' || true; }
 fails=0
@@ -87,7 +105,7 @@ check() { # check <name> <condition exit status>
   if [[ "$2" == 0 ]]; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi
 }
 reset() {
-  rm -f "$STATE"/est_* "$STATE"/send_*
+  rm -f "$STATE"/est_* "$STATE"/send_* "$STATE/settled_on_send"
   echo 0 >"$STATE/roundCount"
   echo 0 >"$STATE/lastOpenAt"
   # rounds(): 11 words; closed (5th) at 1000000-10, settle deadline (6th) far ahead, not settled (10th)
@@ -142,5 +160,51 @@ reset
 revert "$ALREADY" >"$STATE/est_open"
 run 3 3600 KEEPER_OPEN=1 KEEPER_MAX_ATTEMPTS=24
 check "open: AlreadySettled is not a benign reason for openRound" "$([[ "$(errors)" -ge 1 ]] && echo 0 || echo 1)"
+
+echo "-- --once tells cron when it failed"
+reset
+echo 3 >"$STATE/roundCount"
+echo "Error: insufficient funds for gas" >"$STATE/est_settle"
+run_once KEEPER_MAX_ATTEMPTS=24
+check "once: a refused settle exits 1" "$([[ "$RC" == 1 ]] && echo 0 || echo 1)"
+check "once: and logs the reason" "$(printf '%s' "$OUT" | grep -q 'ERROR: settle(round 3).*insufficient funds' && echo 0 || echo 1)"
+reset
+echo 3 >"$STATE/roundCount"
+echo "Error: insufficient funds for gas" >"$STATE/send_settle"
+run_once KEEPER_MAX_ATTEMPTS=24
+check "once: a settle refused at send time exits 1" "$([[ "$RC" == 1 ]] && echo 0 || echo 1)"
+reset
+echo 3 >"$STATE/roundCount"
+echo "Error: nonce too low" >"$STATE/send_settle"
+touch "$STATE/settled_on_send"
+run_once KEEPER_MAX_ATTEMPTS=24
+check "once: a refused send of a round that is now settled exits 0" "$([[ "$RC" == 0 ]] && echo 0 || echo 1)"
+check "once: and is not an ERROR" "$([[ "$(errors)" == 0 ]] && echo 0 || echo 1)"
+reset
+echo 3 >"$STATE/roundCount"
+revert "$ALREADY" >"$STATE/est_settle"
+run_once KEEPER_MAX_ATTEMPTS=24
+check "once: AlreadySettled exits 0" "$([[ "$RC" == 0 ]] && echo 0 || echo 1)"
+reset
+echo garbage >"$STATE/roundCount"
+run_once
+check "once: an unreadable market exits 2" "$([[ "$RC" == 2 ]] && echo 0 || echo 1)"
+reset
+echo 3 >"$STATE/roundCount"
+run_once
+check "once: a healthy pass exits 0 and settles" "$([[ "$RC" == 0 && "$(sent)" == settle ]] && echo 0 || echo 1)"
+
+echo "-- the key stays off the command line"
+reset
+echo 3 >"$STATE/roundCount"
+echo secret >"$WORK/pw"; : >"$WORK/ks.json"
+run_once KEEPER_PRIVATE_KEY= KEEPER_KEYSTORE="$WORK/ks.json" KEEPER_PASSWORD_FILE="$WORK/pw"
+check "keystore: the keeper settles with a keystore and no raw key" "$([[ "$RC" == 0 && "$(sent)" == settle ]] && echo 0 || echo 1)"
+check "keystore: cast is given the keystore" "$(grep -q '^send .*--keystore' "$STATE/argv.log" && echo 0 || echo 1)"
+check "keystore: no private key on any command line" "$(grep -q 'private-key' "$STATE/argv.log" && echo 1 || echo 0)"
+run_once KEEPER_PRIVATE_KEY= KEEPER_KEYSTORE="$WORK/ks.json"
+check "keystore: a keystore without its password file is refused" "$([[ "$RC" == 2 ]] && printf '%s' "$OUT" | grep -q 'KEEPER_PASSWORD_FILE' && echo 0 || echo 1)"
+run_once
+check "raw key: still works, but warns that ps shows it" "$(printf '%s' "$OUT" | grep -q 'WARNING.*command line' && echo 0 || echo 1)"
 
 ((fails == 0)) && echo "secondary-keeper-test: all passed" || { echo "secondary-keeper-test: $fails failed"; exit 1; }

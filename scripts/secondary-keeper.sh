@@ -11,12 +11,20 @@
 # It never touches an order, a listing or a price, and cannot: the market has no operator. It never settles a void
 # round (the chain would refuse) and never opens a round the listing does not allow.
 #
-# Usage:   RPC_URL=... MARKET=0x... KEEPER_PRIVATE_KEY=0x... scripts/secondary-keeper.sh [--once]
+# Usage:   RPC_URL=... MARKET=0x... KEEPER_KEYSTORE=... KEEPER_PASSWORD_FILE=... scripts/secondary-keeper.sh [--once]
+# Exit:    with --once: 0 when nothing was wrong, 1 when a transaction was refused for a real reason and the round may
+#          still need it (a lost race, a round already settled or an early openRound is not a failure), 2 when the
+#          market could not be read or the setup is wrong. Wire cron's alerting to a non-zero exit.
 # Env:     RPC_URL          JSON-RPC endpoint (required)
 #          MARKET           the SecondaryMarket address (required)
-#          KEEPER_PRIVATE_KEY  the key that pays the network fee (required unless KEEPER_DRY_RUN=1). It holds only
-#                           gas money: use a throwaway key, never a key that owns Shares or a DAO. `cast` takes it on
-#                           its command line, so run this on a machine only you can read the process list of.
+#          KEEPER_KEYSTORE  path to the encrypted keystore (JSON) of the key that pays the network fee, with
+#          KEEPER_PASSWORD_FILE  the path of a file holding its password (both required unless KEEPER_DRY_RUN=1).
+#                           The key holds only gas money: use a throwaway key, never a key that owns Shares or a DAO.
+#                           Make the keystore once with `cast wallet import --interactive --keystore-dir <dir> keeper`
+#                           (the prompts keep the key off every command line). The keeper hands `cast` only the two
+#                           paths, so the key is never visible in `ps` or /proc.
+#          KEEPER_PRIVATE_KEY  the legacy way: a raw key. `cast` can only take it on its command line, where any user
+#                           of the machine can read it, so the keeper warns; prefer the keystore.
 #          KEEPER_OPEN      1 to also open each week's round (default 0: settle only)
 #          KEEPER_INTERVAL  seconds between passes when looping (default 300)
 #          KEEPER_DRY_RUN   1 to print what would be sent and send nothing
@@ -41,14 +49,27 @@ INTERVAL="${KEEPER_INTERVAL:-300}"
 [[ "$INTERVAL" =~ ^[0-9]+$ && "$INTERVAL" -ge 30 ]] || { echo "secondary-keeper: KEEPER_INTERVAL must be at least 30 seconds" >&2; exit 2; }
 MAX_ATTEMPTS="${KEEPER_MAX_ATTEMPTS:-24}"
 [[ "$MAX_ATTEMPTS" =~ ^[0-9]+$ && "$MAX_ATTEMPTS" -ge 1 ]] || { echo "secondary-keeper: KEEPER_MAX_ATTEMPTS must be a positive number" >&2; exit 2; }
-if [[ "$DRY" != "1" && -z "${KEEPER_PRIVATE_KEY:-}" ]]; then
-  echo "secondary-keeper: set KEEPER_PRIVATE_KEY (or KEEPER_DRY_RUN=1)" >&2
-  exit 2
-fi
+# The arguments that make `cast` sign: a keystore and its password file (paths only, no secret on the command line), or
+# the legacy raw key (which `ps` shows).
+SIGN_ARGS=()
 KEEPER_ADDRESS=""
 if [[ "$DRY" != "1" ]]; then
-  KEEPER_ADDRESS="$(cast wallet address --private-key "$KEEPER_PRIVATE_KEY" 2>/dev/null)" || {
-    echo "secondary-keeper: KEEPER_PRIVATE_KEY is not a valid key" >&2
+  if [[ -n "${KEEPER_KEYSTORE:-}" ]]; then
+    [[ -n "${KEEPER_PASSWORD_FILE:-}" && -r "$KEEPER_PASSWORD_FILE" ]] || {
+      echo "secondary-keeper: set KEEPER_PASSWORD_FILE to a readable file holding the keystore password" >&2
+      exit 2
+    }
+    [[ -r "$KEEPER_KEYSTORE" ]] || { echo "secondary-keeper: KEEPER_KEYSTORE is not a readable file" >&2; exit 2; }
+    SIGN_ARGS=(--keystore "$KEEPER_KEYSTORE" --password-file "$KEEPER_PASSWORD_FILE")
+  elif [[ -n "${KEEPER_PRIVATE_KEY:-}" ]]; then
+    echo "secondary-keeper: WARNING: KEEPER_PRIVATE_KEY is passed to cast on its command line, where every user of this machine can read it. Use KEEPER_KEYSTORE and KEEPER_PASSWORD_FILE instead." >&2
+    SIGN_ARGS=(--private-key "$KEEPER_PRIVATE_KEY")
+  else
+    echo "secondary-keeper: set KEEPER_KEYSTORE and KEEPER_PASSWORD_FILE (or KEEPER_DRY_RUN=1)" >&2
+    exit 2
+  fi
+  KEEPER_ADDRESS="$(cast wallet address "${SIGN_ARGS[@]}" 2>/dev/null)" || {
+    echo "secondary-keeper: the keeper key could not be read (wrong keystore, password or key)" >&2
     exit 2
   }
 fi
@@ -57,6 +78,9 @@ fi
 EVERY=604800
 # The per-transaction gas cap some chains enforce (2**24, EIP-7825). Settle is built to sit far below it.
 TX_GAS_CAP=16777216
+# Set when a send failed for a real reason during this pass; `--once` turns it into its exit status.
+SEND_FAILED=0
+
 # Bounded retry state, per action key (for example "settle_3" or "open_<the week's opening time>"), in plain variables
 # FAILS_<key> (failed sends so far) and NEXT_<key> (earliest next try, epoch seconds; -1 once given up) so it also runs
 # on bash 3.2. Each round and each week has its own key, so one stuck action never carries into the next.
@@ -81,6 +105,7 @@ reason() { printf '%s' "$1" | tail -1 | cut -c1-240; }
 # openRound is not, it keeps being tried once an hour (the failures keep being reported) until it goes out.
 failed() { # failed <key> <label> <why>
   local key="$1" label="$2" why="$3" n wait cur="FAILS_$1"
+  SEND_FAILED=1
   n=$(( ${!cur:-0} + 1 ))
   printf -v "FAILS_$key" '%s' "$n"
   if ((n >= MAX_ATTEMPTS)) && [[ "$key" == settle_* ]]; then
@@ -118,6 +143,16 @@ due() { # due <key>
   ((at <= $(date +%s)))
 }
 
+# True when round `id` is now settled on the chain: after a refused settle this tells "someone else got there first" from
+# "still unsettled, the window is closing". Anything unreadable counts as not settled (the failure stays reported).
+round_settled() { # round_settled <id>
+  local r
+  r="$(cast call "$MARKET" \
+    "rounds(uint256)(uint128,uint128,uint32,uint64,uint64,uint64,uint256,uint256,uint16,bool,bool)" "$1" \
+    --rpc-url "$RPC_URL" 2>/dev/null | nth 10)" || return 1
+  [[ "$r" == "true" ]]
+}
+
 send() { # send <key> <label> <signature> [args...]
   local key="$1" label="$2"
   shift 2
@@ -136,16 +171,24 @@ send() { # send <key> <label> <signature> [args...]
       say "note: skipped $label, the chain says it is not needed: $(reason "$gas")"
       return 0
     fi
+    if [[ "$key" == settle_* ]] && round_settled "${key#settle_}"; then
+      say "note: skipped $label, the round is already settled"
+      return 0
+    fi
     failed "$key" "$label (gas estimate)" "$(reason "$gas")"
     return 0
   fi
   if [[ "$gas" =~ ^[0-9]+$ ]] && ((gas >= TX_GAS_CAP)); then
     say "WARNING: $label needs about $gas gas, at or over the $TX_GAS_CAP per-transaction cap some chains enforce; it may not be minable there."
   fi
-  if err="$(cast send "$MARKET" "$@" --private-key "$KEEPER_PRIVATE_KEY" --rpc-url "$RPC_URL" 2>&1 >/dev/null)"; then
+  if err="$(cast send "$MARKET" "$@" "${SIGN_ARGS[@]}" --rpc-url "$RPC_URL" 2>&1 >/dev/null)"; then
     say "sent $label (estimated gas ${gas})"
     printf -v "FAILS_$key" '%s' 0
     printf -v "NEXT_$key" '%s' 0
+  elif benign "$key" "$err"; then
+    say "note: skipped $label, the chain says it is not needed: $(reason "$err")"
+  elif [[ "$key" == settle_* ]] && round_settled "${key#settle_}"; then
+    say "note: $label was refused, but the round is now settled"
   else
     failed "$key" "$label (send)" "$(reason "$err")"
   fi
@@ -155,7 +198,7 @@ pass() {
   local now count
   now="$(cast block latest --field timestamp --rpc-url "$RPC_URL")"
   count="$(cast call "$MARKET" "roundCount()(uint256)" --rpc-url "$RPC_URL" | nth 1)"
-  [[ "$now" =~ ^[0-9]+$ && "$count" =~ ^[0-9]+$ ]] || { say "could not read the market; trying again next pass"; return 0; }
+  [[ "$now" =~ ^[0-9]+$ && "$count" =~ ^[0-9]+$ ]] || { say "ERROR: could not read the market; trying again next pass"; return 2; }
 
   if ((count > 0)); then
     local round closes deadline settled
@@ -166,8 +209,8 @@ pass() {
     deadline="$(printf '%s\n' "$round" | nth 6)"
     settled="$(printf '%s\n' "$round" | nth 10)"
     if [[ ! "$closes" =~ ^[0-9]+$ || ! "$deadline" =~ ^[0-9]+$ || ! "$settled" =~ ^(true|false)$ ]]; then
-      say "round $count was not readable; trying again next pass"
-      return 0
+      say "ERROR: round $count was not readable; trying again next pass"
+      return 2
     fi
     if [[ "$settled" == "false" ]] && ((now >= closes && now < deadline)); then
       send "settle_$count" "settle(round $count)" "settle(uint256)" "$count"
@@ -178,15 +221,22 @@ pass() {
     local enabled last
     enabled="$(cast call "$MARKET" "listing()(bool,uint128,uint128,uint32)" --rpc-url "$RPC_URL" | nth 1)"
     last="$(cast call "$MARKET" "lastOpenAt()(uint256)" --rpc-url "$RPC_URL" | nth 1)"
-    if [[ "$enabled" == "true" && "$last" =~ ^[0-9]+$ ]] && ((last == 0 || now >= last + EVERY)); then
+    if [[ ! "$enabled" =~ ^(true|false)$ || ! "$last" =~ ^[0-9]+$ ]]; then
+      say "ERROR: the listing was not readable; trying again next pass"
+      return 2
+    fi
+    if [[ "$enabled" == "true" ]] && ((last == 0 || now >= last + EVERY)); then
       send "open_$((last + EVERY))" "openRound()" "openRound()"
     fi
   fi
 }
 
 if [[ "${1:-}" == "--once" ]]; then
-  pass
-  exit 0
+  # Not under `set -e` here so a failed read gets its own exit status (2) after the pass has logged why.
+  rc=0
+  pass || rc=$?
+  ((rc != 0)) && exit "$rc"
+  exit "$SEND_FAILED"
 fi
 say "watching $MARKET every ${INTERVAL}s (opening rounds: $([[ "$OPEN" == "1" ]] && echo yes || echo no))"
 while true; do
