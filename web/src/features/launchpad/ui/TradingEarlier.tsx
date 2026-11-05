@@ -154,7 +154,7 @@ export function TradingEarlier({
           data-testid="trading-earlier-all-checked"
           role="status"
         >
-          {earlierAllCheckedLine()}
+          {earlierAllCheckedLine(owed.length > 0)}
         </p>
       ) : null}
       {failed ? (

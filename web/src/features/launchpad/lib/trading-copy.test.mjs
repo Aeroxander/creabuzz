@@ -1093,17 +1093,34 @@ test("an earlier round says what became of it, and the look-back limit is said o
   assert.equal(checkOlderLabel(false), "Check older rounds");
   assert.equal(checkOlderLabel(true), "Checking…");
   assert.equal(
-    earlierAllCheckedLine(),
+    earlierAllCheckedLine(false),
     "Every round has been checked. Nothing older is waiting for you.",
   );
   assert.match(olderFailedLine(), /could not check/i);
   for (const line of [
     earlierLimitLine(8, 3n),
     olderFailedLine(),
-    earlierAllCheckedLine(),
+    earlierAllCheckedLine(false),
+    earlierAllCheckedLine(true),
   ]) {
     assert.doesNotMatch(line, /relay|nsec|rpc|revert|0x|cast/i);
   }
+});
+
+test("the all-checked line never says nothing is waiting while a Collect row is shown", () => {
+  // Every round checked AND an earlier round still owes the wallet: the line must not contradict the Collect row.
+  const owedLine = earlierAllCheckedLine(true);
+  assert.equal(owedLine, "Every round has been checked.");
+  assert.doesNotMatch(owedLine, /nothing|waiting/i);
+  // Nothing owed: the reassurance is allowed, and only then.
+  assert.match(
+    earlierAllCheckedLine(false),
+    /Nothing older is waiting for you/,
+  );
+  // The card picks the line from what is owed, through the production function.
+  const earlier = read("../ui/TradingEarlier.tsx");
+  assert.match(earlier, /earlierAllCheckedLine\(owed\.length > 0\)/);
+  assert.doesNotMatch(earlier, /earlierAllCheckedLine\(\)/);
 });
 
 test("a part-filled seller in a settled round is owed its unsold lots as Shares, and stops being owed once they are collected", () => {
@@ -1264,6 +1281,8 @@ test("the limits of weekly trading are said in plain words, each once", () => {
   assert.match(text, /vote .* about a week \(7 to 8 days\) after you collect/);
   assert.match(text, /only way to sell Shares here/);
   assert.match(text, /filled in part, or not at all/);
+  assert.match(text, /What isn't filled waits for you to collect it/);
+  assert.doesNotMatch(text, /comes? back to you/);
   assert.match(text, /not .* outside security or legal review/);
   assert.equal(limits.length, 5);
   assert.equal(new Set(limits).size, 5);
@@ -1272,6 +1291,26 @@ test("the limits of weekly trading are said in plain words, each once", () => {
     text,
     /pro rata|escrow|Payouts\.sol|kind \d|NIP|ActivationVoting/i,
   );
+});
+
+test("the vote delay wording comes from one constant, pinned to the voting contract", () => {
+  const src = readFileSync(
+    fileURLToPath(
+      new URL(
+        "../../../../../contracts/src/ActivationVoting.sol",
+        import.meta.url,
+      ),
+    ),
+    "utf8",
+  );
+  const epochs = /uint256 public constant MATURITY_EPOCHS = (\d+);/.exec(src);
+  const epoch = /uint64 public constant EPOCH = 1 days;/.exec(src);
+  assert.ok(epochs, "MATURITY_EPOCHS not found in ActivationVoting.sol");
+  assert.ok(epoch, "EPOCH is no longer one day in ActivationVoting.sol");
+  assert.equal(copy.VOTE_MATURITY_EPOCHS, Number(epochs[1]));
+  const n = copy.VOTE_MATURITY_EPOCHS;
+  assert.equal(copy.voteDelayDays(), `${n - 1} to ${n} days`);
+  assert.ok(tradingLimits().some((l) => l.includes(`(${n - 1} to ${n} days)`)));
 });
 
 test("the review notice is tied to one release switch, which is off", () => {
@@ -1290,11 +1329,13 @@ test("the offer and bid previews say what holding and filling mean at the moment
   );
   assert.match(sellLine, /don't vote and don't earn payouts/);
   assert.match(sellLine, /filled in part, or not at all/);
+  assert.match(sellLine, /What isn't filled waits for you to collect it/);
   assert.match(sellLine, /1\.048 USDC a lot at step 6/);
   const bidLine = bidPlanLine(round(), plan, USDC);
   assert.match(bidLine, /This bid holds 3\.144 USDC until the round settles/);
   assert.match(bidLine, /never more than yours, and get back the rest/);
   assert.match(bidLine, /filled in part, or not at all/);
+  assert.match(bidLine, /What isn't filled waits for you to collect it/);
   assert.match(bidLine, /about a week \(7 to 8 days\) after you collect them/);
 });
 
@@ -1304,6 +1345,9 @@ test("the card and the forms say these limits where the person acts", () => {
   assert.match(forms, /bidPlanLine\(/);
   const card = read("../ui/TradingCard.tsx");
   assert.match(card, /tradingLimits\(\)/);
+  // The how-it-works text must not promise that unsold Shares return by themselves.
+  assert.doesNotMatch(card, /Unsold Shares come\s+back to their seller/);
+  assert.match(card, /Unsold Shares wait\s+for their\s+seller to collect them/);
   const listing = read("../ui/TradingListingForm.tsx");
   assert.match(listing, /unreviewedLine\(\)/);
   assert.match(listing, /\{unreviewed\}/);

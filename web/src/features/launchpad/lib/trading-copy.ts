@@ -536,13 +536,24 @@ export function unreviewedLine(
 const HELD_LINE =
   "Shares held in a round don't vote and don't earn payouts. They count again once they are collected.";
 
+/**
+ * How many daily epochs a bought amount waits before it can vote: the voting contract's `MATURITY_EPOCHS`. The delay is
+ * the voting rule's, owned by the project owner and not this page's, so the wording below derives from this one number
+ * and a unit test compares it with `contracts/src/ActivationVoting.sol` so a change there fails a test, not the copy.
+ */
+export const VOTE_MATURITY_EPOCHS = 8;
+
+/** The vote delay as a range in days: a bought amount waits the epoch it arrived in, then whole days after it. */
+export function voteDelayDays(): string {
+  return `${VOTE_MATURITY_EPOCHS - 1} to ${VOTE_MATURITY_EPOCHS} days`;
+}
+
 /** When bought Shares can vote. The delay is the voting rule's, not this page's. */
-const VOTE_DELAY_LINE =
-  "Shares you buy can vote about a week (7 to 8 days) after you collect them.";
+const VOTE_DELAY_LINE = `Shares you buy can vote about a week (${voteDelayDays()}) after you collect them.`;
 
 /** An order is filled by the round's result, not by its owner. */
 const PART_FILL_LINE =
-  "An offer or a bid may be filled in part, or not at all. When more is wanted on one side than the other, that side shares what trades. What isn't filled comes back to you.";
+  "An offer or a bid may be filled in part, or not at all. When more is wanted on one side than the other, that side shares what trades. What isn't filled waits for you to collect it.";
 
 /**
  * The limits of weekly trading, in plain words: what the page owes anyone deciding to trade (the secondary listing
@@ -896,9 +907,14 @@ export function checkOlderLabel(checking: boolean): string {
   return checking ? "Checking…" : "Check older rounds";
 }
 
-/** Said once the oldest round is checked and the wallet was owed nothing more. */
-export function earlierAllCheckedLine(): string {
-  return "Every round has been checked. Nothing older is waiting for you.";
+/**
+ * Said once the oldest round is checked. The reassurance that nothing is waiting is only true when no earlier round
+ * owes the wallet (`owed`); otherwise it would contradict the Collect row shown beside it.
+ */
+export function earlierAllCheckedLine(owed: boolean): string {
+  return owed
+    ? "Every round has been checked."
+    : "Every round has been checked. Nothing older is waiting for you.";
 }
 
 /** Said when a block of older rounds could not be read, so it is not mistaken for rounds with nothing in them. */
