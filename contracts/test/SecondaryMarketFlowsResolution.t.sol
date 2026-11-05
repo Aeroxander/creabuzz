@@ -73,6 +73,122 @@ abstract contract SecondaryMarketFlowsResolutionCases is SecondaryMarketFlowsFix
         assertFalse(l.market.voided(next));
     }
 
+    // ---- the bidding window is closed at closesAt, for every order call ----------------------------------------
+
+    /// @dev Each case stands in a state where the call would otherwise succeed, then warps to exactly
+    /// `closesAt`, so only the bidding-window guard can be what refuses it.
+    function test_sell_at_close_is_refused_as_bidding_over() public {
+        uint256 id = _openRoundWith(l);
+        _toSettle(l, id);
+        vm.prank(S1);
+        vm.expectRevert(abi.encodeWithSelector(SecondaryMarket.BiddingOver.selector, uint256(id)));
+        l.market.sell(id, 5, 0);
+        assertEq(l.market.sharesIn(id), 0, "no late offer got in");
+    }
+
+    function test_bid_at_close_is_refused_as_bidding_over() public {
+        uint256 id = _openRoundWith(l);
+        vm.prank(S1);
+        l.market.sell(id, 10, 0);
+        _toSettle(l, id);
+        (uint256 levelBefore, uint256 matchedBefore,) = l.market.clearingOf(id);
+        vm.prank(B2);
+        vm.expectRevert(abi.encodeWithSelector(SecondaryMarket.BiddingOver.selector, uint256(id)));
+        l.market.bid(id, 5, 6);
+        (uint256 levelAfter, uint256 matchedAfter,) = l.market.clearingOf(id);
+        assertEq(levelAfter, levelBefore, "a late bid cannot move the clearing level");
+        assertEq(matchedAfter, matchedBefore, "a late bid cannot change what matches");
+        assertEq(l.market.quoteIn(id), 0);
+    }
+
+    function test_cancelSell_at_close_is_refused_as_bidding_over() public {
+        uint256 id = _openRoundWith(l);
+        vm.prank(S1);
+        l.market.sell(id, 10, 0);
+        _toSettle(l, id);
+        vm.prank(S1);
+        vm.expectRevert(abi.encodeWithSelector(SecondaryMarket.BiddingOver.selector, uint256(id)));
+        l.market.cancelSell(id);
+        (uint128 lots,,,,,) = l.market.sells(id, S1);
+        assertEq(lots, 10, "the offer stands: a late cancel cannot pull it out");
+        assertEq(l.market.sharesIn(id), 10e18);
+    }
+
+    function test_cancelBid_at_close_is_refused_as_bidding_over() public {
+        uint256 id = _openRoundWith(l);
+        vm.prank(S1);
+        l.market.sell(id, 10, 0);
+        vm.prank(B2);
+        l.market.bid(id, 5, 3);
+        _toSettle(l, id);
+        // Everyone can read the clearing now; cancelling for a free refund after seeing it must not work.
+        (uint256 levelBefore, uint256 matchedBefore,) = l.market.clearingOf(id);
+        vm.prank(B2);
+        vm.expectRevert(abi.encodeWithSelector(SecondaryMarket.BiddingOver.selector, uint256(id)));
+        l.market.cancelBid(id);
+        (uint256 levelAfter, uint256 matchedAfter,) = l.market.clearingOf(id);
+        assertEq(levelAfter, levelBefore);
+        assertEq(matchedAfter, matchedBefore, "the bid still counts in the clearing");
+        (,,,, bool cancelled,,) = l.market.bids(id, B2);
+        assertFalse(cancelled);
+    }
+
+    function test_orders_and_cancels_still_work_in_the_last_second_of_bidding() public {
+        uint256 id = _openRoundWith(l);
+        vm.prank(S1);
+        l.market.sell(id, 10, 0);
+        vm.prank(B2);
+        l.market.bid(id, 5, 3);
+        (,,,, uint64 closesAt,,,,,,) = l.market.rounds(id);
+        vm.warp(closesAt - 1);
+        vm.prank(B2);
+        l.market.cancelBid(id);
+        vm.prank(S1);
+        l.market.cancelSell(id);
+        vm.prank(S2);
+        l.market.sell(id, 3, 0);
+        vm.prank(B3);
+        l.market.bid(id, 3, 1);
+        assertEq(l.market.sharesIn(id), 3e18, "the last second is still bidding time");
+    }
+
+    // ---- a round settles exactly once ------------------------------------------------------------------------------
+
+    /// @dev The seller has donated Shares into the market, so the policy holds more escrow credit for them
+    /// than the round's own offer: a repeated settle would find enough credit to consume it a second time
+    /// and so could not be stopped by the policy's own hook. Only the round's settled flag refuses it.
+    function test_a_second_settle_is_refused_even_when_the_policy_would_let_it_run() public {
+        vm.prank(S1);
+        l.shares.transfer(address(l.market), 10e18);
+        uint256 id = _openRoundWith(l);
+        vm.prank(S1);
+        l.market.sell(id, 10, 0);
+        vm.prank(B2);
+        l.market.bid(id, 10, 1);
+        assertEq(l.policy.escrowedBalance(S1), 20e18, "the donation backs a second consumption");
+        _toSettle(l, id);
+        l.market.settle(id);
+        uint256 escrowAfterFirst = l.policy.escrowedBalance(S1);
+        assertEq(escrowAfterFirst, 10e18, "the first settle consumed the sold ten lots");
+        vm.expectRevert(abi.encodeWithSelector(SecondaryMarket.AlreadySettled.selector, uint256(id)));
+        l.market.settle(id);
+        assertEq(l.policy.escrowedBalance(S1), escrowAfterFirst, "no second consumption of the seller's escrow");
+        (,, uint128 filled,,,) = l.market.sells(id, S1);
+        assertEq(filled, 10);
+    }
+
+    // ---- the DAO's listing terms ---------------------------------------------------------------------------------
+
+    function test_a_listing_with_zero_levels_is_refused_as_invalid_terms() public {
+        _enableListing(l);
+        vm.prank(address(l.dao));
+        vm.expectRevert(SecondaryMarket.InvalidTerms.selector);
+        l.market.configureListing(true, MIN_PRICE, MAX_PRICE, 0);
+        (bool enabled,,, uint32 levels) = l.market.listing();
+        assertTrue(enabled, "the earlier terms stand");
+        assertEq(levels, LEVELS);
+    }
+
     // ---- disabling only stops new activity ----------------------------------------------------------------------
 
     function test_disabling_stops_new_activity_never_settlement() public {

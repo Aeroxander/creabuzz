@@ -1803,6 +1803,51 @@ const MUTATIONS = [
     "saleStart;",
     KIT_TESTS,
   ],
+  // ---- repeated and shared guards of the secondary market. The bidding-window check is written four times, so each
+  // site's guard carries the line that follows it (unique per function) and is broken on its own. Appended at the end so
+  // the indices the review notes cite do not move.
+  [
+    "Secondary market: an offer is accepted after bidding closed",
+    SM,
+    "if (block.timestamp >= r.closesAt) revert BiddingOver(id);\n        if (msg.sender == dao) revert DaoCannotSell();",
+    "if (msg.sender == dao) revert DaoCannotSell();",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a bid is accepted after bidding closed",
+    SM,
+    "if (block.timestamp >= r.closesAt) revert BiddingOver(id);\n        if (lots == 0 || lots > MAX_ORDER_LOTS) revert BadLots();",
+    "if (lots == 0 || lots > MAX_ORDER_LOTS) revert BadLots();",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: an offer is cancelled after bidding closed",
+    SM,
+    "if (block.timestamp >= r.closesAt) revert BiddingOver(id);\n        SellOrder storage o",
+    "SellOrder storage o",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a bid is cancelled after bidding closed (a free refund once the clearing is public)",
+    SM,
+    "if (block.timestamp >= r.closesAt) revert BiddingOver(id);\n        BuyOrder storage o",
+    "BuyOrder storage o",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a round is settled twice",
+    SM,
+    "if (r.settled) revert AlreadySettled(id);",
+    "// removed",
+    SM_TESTS,
+  ],
+  [
+    "Secondary market: a listing with zero levels",
+    SM,
+    "minPrice == 0 || maxPrice <= minPrice || levels == 0 ||",
+    "minPrice == 0 || maxPrice <= minPrice ||",
+    SM_TESTS,
+  ],
 ];
 
 const flags = process.argv.slice(2).filter((a) => a.startsWith("--"));

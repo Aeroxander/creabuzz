@@ -52,6 +52,8 @@ contract SecondaryMarketHandler is Test {
     uint256 public thirdPartyClaims;
     uint256 public voidClaimsPaid;
     uint256 public roundsDrained;
+    /// @dev Closed-round order calls (sell, bid, cancelSell, cancelBid) the market refused with `BiddingOver`.
+    uint256 public closedOrderRefusals;
     /// @dev Seller remainders of SETTLED rounds returned by a claim: the path settle no longer takes itself.
     uint256 public settledRemainderClaims;
 
@@ -147,6 +149,55 @@ contract SecondaryMarketHandler is Test {
         vm.prank(a);
         market.cancelBid(id);
         cancelsAccepted++;
+    }
+
+    /// @notice Close the newest round (warping to its close when still open) and try every order call on
+    /// it, each from an actor for whom it would otherwise be valid: a bidder or seller cancelling a standing
+    /// order, an actor with no order placing a new one. The market must refuse each with exactly
+    /// `BiddingOver`; any other outcome, including success, fails the run.
+    function afterClose(uint256 actorSeed, uint256 lotsSeed, uint256 stepSeed) external {
+        calls++;
+        uint256 id = market.roundCount();
+        (uint64 closesAt,,) = _times(id);
+        if (now_() < closesAt) vm.warp(closesAt);
+        uint16 step = uint16(stepSeed % (_levels() + 1));
+        uint128 lots = uint128(1 + lotsSeed % MAX_LOTS);
+        _expectBiddingOver(id, abi.encodeCall(market.sell, (id, lots, step)), _actorWithoutOrder(id, actorSeed, true));
+        _expectBiddingOver(id, abi.encodeCall(market.bid, (id, lots, step)), _actorWithoutOrder(id, actorSeed, false));
+        _expectBiddingOver(id, abi.encodeCall(market.cancelSell, (id)), _actorWithOrder(id, actorSeed, true));
+        _expectBiddingOver(id, abi.encodeCall(market.cancelBid, (id)), _actorWithOrder(id, actorSeed, false));
+    }
+
+    function _expectBiddingOver(uint256 id, bytes memory data, address caller) internal {
+        vm.prank(caller);
+        (bool ok, bytes memory ret) = address(market).call(data);
+        assertFalse(ok, "an order call on a closed round must revert");
+        assertEq(
+            ret, abi.encodeWithSelector(SecondaryMarket.BiddingOver.selector, id), "and revert with exactly BiddingOver"
+        );
+        closedOrderRefusals++;
+    }
+
+    /// @dev The first actor from the seeded start with no order on the given side of round `id`, else the seeded one.
+    function _actorWithoutOrder(uint256 id, uint256 seed, bool sellSide) internal view returns (address) {
+        for (uint256 i; i < ACTOR_COUNT; ++i) {
+            address a = actors[(seed % ACTOR_COUNT + i) % ACTOR_COUNT];
+            (uint128 had,,,,,) = market.sells(id, a);
+            (uint128 hadBid,,,,,,) = market.bids(id, a);
+            if ((sellSide ? had : hadBid) == 0) return a;
+        }
+        return actors[seed % ACTOR_COUNT];
+    }
+
+    /// @dev The first actor from the seeded start with a live order on the given side of round `id`, else the seeded one.
+    function _actorWithOrder(uint256 id, uint256 seed, bool sellSide) internal view returns (address) {
+        for (uint256 i; i < ACTOR_COUNT; ++i) {
+            address a = actors[(seed % ACTOR_COUNT + i) % ACTOR_COUNT];
+            (uint128 had,,,,,) = market.sells(id, a);
+            (uint128 hadBid,,,, bool cancelled,,) = market.bids(id, a);
+            if (sellSide ? had != 0 : (hadBid != 0 && !cancelled)) return a;
+        }
+        return actors[seed % ACTOR_COUNT];
     }
 
     // ---- time and rounds ------------------------------------------------------------------------------------------
@@ -358,7 +409,7 @@ contract SecondaryMarketInvariant is SecondaryMarketFixture {
         handler = new SecondaryMarketHandler(l.market, l.quote, l.shares, actors);
         targetContract(address(handler));
         // Orders are weighted (three entries each) so rounds fill up with orders before time moves on.
-        bytes4[] memory selectors = new bytes4[](17);
+        bytes4[] memory selectors = new bytes4[](18);
         selectors[0] = handler.sell.selector;
         selectors[1] = handler.bid.selector;
         selectors[2] = handler.cancelSell.selector;
@@ -376,6 +427,7 @@ contract SecondaryMarketInvariant is SecondaryMarketFixture {
         selectors[14] = handler.bid.selector;
         selectors[15] = handler.sell.selector;
         selectors[16] = handler.bid.selector;
+        selectors[17] = handler.afterClose.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         excludeContract(address(l.market));
         excludeContract(address(l.quote));
@@ -641,6 +693,10 @@ contract SecondaryMarketInvariant is SecondaryMarketFixture {
         // Round 2 goes void: orders, then nobody settles.
         handler.sell(5, 1, 3);
         handler.bid(6, 2, 8);
+        // Once closed, every order call on it is refused with exactly BiddingOver, for actors holding
+        // standing orders and for actors holding none.
+        handler.afterClose(5, 1, 3);
+        assertEq(handler.closedOrderRefusals(), 4, "sell, bid, cancelSell and cancelBid were each refused");
         handler.lapse();
         handler.drainRound(1, 8);
         assertEq(handler.roundsDrained(), 2, "the void round drained exactly");
