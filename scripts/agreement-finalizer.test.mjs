@@ -65,11 +65,12 @@ import path from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, "agreement-finalizer.mjs");
 const lib = await import(path.join(HERE, "agreement-finalizer-lib.mjs"));
+const CLI_URL = pathToFileURL(CLI).href;
 
 // ---------------------------------------------------------------------------
 // shared helpers
@@ -2542,4 +2543,98 @@ test("REAL-CHAIN: an agreed contribution settles end to end on the production ca
     "the confirmed record is never rewritten by a chain reset",
   );
   console.log("[real-chain] environment gate: fresh instance → exit 4; nonterminal job fenced, confirmed record kept");
+});
+
+// ---------------------------------------------------------------------------
+// EXIT CODES: each documented code, and every unclassified failure, is mapped
+// by the production CLI (spawned for real, no RPC needed). Classification is by
+// an explicit `exitCode` carried on the thrown error, never by class name.
+// ---------------------------------------------------------------------------
+
+function runExitCli(args) {
+  return spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
+}
+
+function seedJob(journalDir, state) {
+  const identity = lib.parseJobSpec(JOB_START);
+  const journal = lib.Journal.ensure(journalDir);
+  journal.saveJob({ format: lib.JOURNAL_FORMAT, identity, state, history: [], updatedAt: "2026-01-01T00:00:00.000Z" });
+  return identity;
+}
+
+test("exit codes: usage errors raised inside a command exit 1 (not 8)", () => {
+  const noJournal = runExitCli(["run", "--rpc", "http://127.0.0.1:1", "--job", JOB_START]);
+  assert.equal(noJournal.status, 1, `missing --journal: ${noJournal.stderr}`);
+  const noRpc = runExitCli(["run", "--journal", tempJournal("exit-norpc"), "--job", JOB_START]);
+  assert.equal(noRpc.status, 1, `missing --rpc: ${noRpc.stderr}`);
+  const noJob = runExitCli(["run", "--journal", tempJournal("exit-nojob"), "--rpc", "http://127.0.0.1:1"]);
+  assert.equal(noJob.status, 1, `missing --job: ${noJob.stderr}`);
+  const unknownJob = runExitCli(["retry", "--journal", tempJournal("exit-unknownjob"), "--job", JOB_START]);
+  assert.equal(unknownJob.status, 1, `retry of a job the journal never saw: ${unknownJob.stderr}`);
+});
+
+test("exit codes: retry re-queues and exits 2 (in flight), never 0", () => {
+  const journalDir = tempJournal("exit-retry");
+  const identity = seedJob(journalDir, "failed");
+  const r = runExitCli(["retry", "--journal", journalDir, "--job", JOB_START]);
+  assert.equal(r.status, 2, `retry leaves the job queued, which is not a success: ${r.stdout}${r.stderr}`);
+  assert.equal(new lib.Journal(journalDir).loadJob(identity).state, "queued");
+});
+
+test("exit codes: retry of an already confirmed job stays 0", () => {
+  const journalDir = tempJournal("exit-retry-confirmed");
+  seedJob(journalDir, "confirmed");
+  const r = runExitCli(["retry", "--journal", journalDir, "--job", JOB_START]);
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+});
+
+test("exit codes: a live journal lock exits 3, a dead holder's lock exits 3", () => {
+  const liveDir = tempJournal("exit-lock-live");
+  seedJob(liveDir, "failed");
+  fs.writeFileSync(path.join(liveDir, lib.JOURNAL_LOCK_NAME), JSON.stringify({ pid: process.pid, startedAt: "x" }));
+  assert.equal(runExitCli(["retry", "--journal", liveDir, "--job", JOB_START]).status, 3);
+
+  const dead = spawnSync(process.execPath, ["-e", "0"]);
+  assert.equal(dead.status, 0);
+  const staleDir = tempJournal("exit-lock-stale");
+  seedJob(staleDir, "failed");
+  // a pid that has exited: spawnSync reports it via dead.pid
+  fs.writeFileSync(path.join(staleDir, lib.JOURNAL_LOCK_NAME), JSON.stringify({ pid: dead.pid, startedAt: "x" }));
+  assert.equal(runExitCli(["retry", "--journal", staleDir, "--job", JOB_START]).status, 3);
+});
+
+test("exit codes: a malformed journal is an unclassified failure (9), not 'no job' (8)", () => {
+  const brokenJson = tempJournal("exit-badjson");
+  lib.Journal.ensure(brokenJson);
+  fs.writeFileSync(path.join(brokenJson, "job-broken.json"), "{ not json");
+  const r1 = runExitCli(["status", "--journal", brokenJson]);
+  assert.equal(r1.status, 9, `${r1.stdout}${r1.stderr}`);
+
+  const noIdentity = tempJournal("exit-noidentity");
+  lib.Journal.ensure(noIdentity);
+  fs.writeFileSync(path.join(noIdentity, "job-empty.json"), JSON.stringify({ format: lib.JOURNAL_FORMAT }));
+  const r2 = runExitCli(["status", "--journal", noIdentity]);
+  assert.equal(r2.status, 9, `${r2.stdout}${r2.stderr}`);
+});
+
+test("exit codes: classification uses the explicit exitCode field, not the class name", async () => {
+  const { mapFailureToExcode } = await import(CLI_URL);
+  assert.equal(mapFailureToExcode(new lib.UsageError("x")), 1);
+  assert.equal(mapFailureToExcode(new lib.LockBusy({ pid: 1, startedAt: "x" })), 3);
+  assert.equal(mapFailureToExcode(new lib.LockStale("x")), 3);
+  assert.equal(mapFailureToExcode(new lib.EnvironmentChanged("x")), 4);
+  assert.equal(mapFailureToExcode(new lib.BlockedJob("r", "d")), 7);
+  assert.equal(mapFailureToExcode(new lib.JournalJournalDirErrors("x")), 9);
+  assert.equal(mapFailureToExcode(new lib.TransientRpcError("x")), 9);
+  assert.equal(mapFailureToExcode(new Error("cast mktx failed")), 9);
+  assert.equal(mapFailureToExcode(undefined), 9);
+  // a look-alike class name must not be promoted to a documented code
+  class LockManagerBroke extends Error {}
+  class MyUsageErrorHelper extends Error {}
+  assert.equal(mapFailureToExcode(new LockManagerBroke("x")), 9);
+  assert.equal(mapFailureToExcode(new MyUsageErrorHelper("x")), 9);
+  // the exit code carried by the error wins, but only documented values count
+  assert.equal(mapFailureToExcode(Object.assign(new Error("x"), { exitCode: 5 })), 5);
+  assert.equal(mapFailureToExcode(Object.assign(new Error("x"), { exitCode: 0 })), 9);
+  assert.equal(mapFailureToExcode(Object.assign(new Error("x"), { exitCode: 42 })), 9);
 });

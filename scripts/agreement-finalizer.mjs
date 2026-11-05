@@ -8,7 +8,8 @@
  *
  *   0  every job ended `confirmed` (verified onchain at depth, effects exact)
  *   1  usage / argument error (nothing was written)
- *   2  jobs still in flight (queued / prepared / submitted — never a success)
+ *   2  jobs still in flight (queued / prepared / submitted — never a success;
+ *      also the exit of `retry`, which only re-queues the job)
  *   3  journal lock refused (another live worker, or a stale holder without
  *      the explicit --reclaim flag)
  *   4  environment changed (chain reset / different node vs. journal binding)
@@ -16,6 +17,9 @@
  *   6  at least one `failed` (manual --retry required; retry keeps records)
  *   7  at least one `blocked` (conditions not met — re-run when they are)
  *   8  the run list mentioned no job (nothing processed)
+ *   9  unclassified failure: an operational error that no code above covers
+ *      (malformed journal, disk full, signing tool failure, RPC trouble).
+ *      Something went wrong; do not read it as "nothing to do".
  *
  * Exit code 0 is the ONLY "success" — and it requires every job to have a
  * receipt at the configured depth whose expected chain effects (derived from
@@ -52,6 +56,7 @@
  *     --job chain=31337,dao=0xAaa…,mandate=0xBbb…,agreement=0x‌ccc…,action=start-window
  */
 import {
+  UsageError,
   parseJobSpec,
   runFinalizer,
   retryJob,
@@ -118,7 +123,7 @@ export function parseArgs(argv) {
       i += 1;
       const value = argv[i];
       if (value == null || value.startsWith("--")) {
-        throw new Error(`--${arg.replace(/^--/, "")} requires a value`);
+        throw new UsageError(`--${arg.replace(/^--/, "")} requires a value`);
       }
       return value;
     };
@@ -134,7 +139,7 @@ export function parseArgs(argv) {
       opts.fixtureKey = next();
     } else if (arg === "--confirm-depth") {
       const value = next();
-      if (!/^\d+$/.test(value)) throw new Error(`--confirm-depth expects an integer, got '${value}'`);
+      if (!/^\d+$/.test(value)) throw new UsageError(`--confirm-depth expects an integer, got '${value}'`);
       opts.confirmDepth = Number(value);
     } else if (arg === "--watch") {
       opts.watch = true;
@@ -145,15 +150,15 @@ export function parseArgs(argv) {
       }
     } else if (arg === "--watch-interval-ms") {
       const value = next();
-      if (!/^\d+$/.test(value)) throw new Error(`--watch-interval-ms expects an integer, got '${value}'`);
+      if (!/^\d+$/.test(value)) throw new UsageError(`--watch-interval-ms expects an integer, got '${value}'`);
       opts.watchIntervalMs = Number(value);
     } else if (arg === "--attempts") {
       const value = next();
-      if (!/^\d+$/.test(value)) throw new Error(`--attempts expects an integer, got '${value}'`);
+      if (!/^\d+$/.test(value)) throw new UsageError(`--attempts expects an integer, got '${value}'`);
       opts.maxAttempts = Number(value);
     } else if (arg === "--backoff-ms") {
       const value = next();
-      if (!/^\d+$/.test(value)) throw new Error(`--backoff-ms expects an integer, got '${value}'`);
+      if (!/^\d+$/.test(value)) throw new UsageError(`--backoff-ms expects an integer, got '${value}'`);
       opts.backoffBaseMs = Number(value);
     } else if (arg === "--reclaim") {
       opts.reclaim = true;
@@ -163,14 +168,14 @@ export function parseArgs(argv) {
       positional.push(arg);
     }
   }
-  if (positional.length > 1) throw new Error(`unexpected extra arguments: ${positional.join(" ")}`);
+  if (positional.length > 1) throw new UsageError(`unexpected extra arguments: ${positional.join(" ")}`);
   opts.command = positional[0];
   return opts;
 }
 
 function requireJournal(opts) {
   if (!opts.journalDir) {
-    throw new Error("--journal DIR is required for this command");
+    throw new UsageError("--journal DIR is required for this command");
   }
   return opts.journalDir;
 }
@@ -190,10 +195,10 @@ async function main(argv) {
   try {
     switch (options.command) {
       case "run": {
-        if (!options.journalDir) throw new Error("--journal DIR is required for run");
-        if (!options.rpcUrl) throw new Error("--rpc URL is required for run");
+        if (!options.journalDir) throw new UsageError("--journal DIR is required for run");
+        if (!options.rpcUrl) throw new UsageError("--rpc URL is required for run");
         const jobs = options.jobs;
-        if (jobs.length < 1) throw new Error("run needs exactly the operator's --job list (one or more --job flags)");
+        if (jobs.length < 1) throw new UsageError("run needs exactly the operator's --job list (one or more --job flags)");
         const result = await runFinalizer({ ...options, jobs });
         logLine(`[finalizer] run done; exit code ${result.exitCode}; jobs:`);
         for (const row of result.jobs) {
@@ -208,16 +213,18 @@ async function main(argv) {
       }
       case "retry": {
         const journal = requireJournal(options);
-        if (options.jobs.length !== 1) throw new Error("retry takes exactly one --job spec");
+        if (options.jobs.length !== 1) throw new UsageError("retry takes exactly one --job spec");
         const identity = options.jobs[0];
         const outcome = await retryJob(journal, identity, { onLog: logLine });
         logLine(`[finalizer] retry: ${describeJobIdentity(identity)} → ${outcome.state}`);
-        return 0;
+        // A re-queued job is in flight, not done: only an already confirmed
+        // job is a success.
+        return outcome.state === "confirmed" ? 0 : 2;
       }
       case "reconcile": {
         const journal = requireJournal(options);
-        if (!options.rpcUrl) throw new Error("--rpc URL is required for reconcile");
-        if (options.jobs.length !== 1) throw new Error("reconcile takes exactly one --job spec");
+        if (!options.rpcUrl) throw new UsageError("--rpc URL is required for reconcile");
+        if (options.jobs.length !== 1) throw new UsageError("reconcile takes exactly one --job spec");
         const identity = options.jobs[0];
         const outcome = await executeReconcile(journal, identity, {
           rpcUrl: options.rpcUrl,
@@ -233,10 +240,6 @@ async function main(argv) {
         return usage(`unknown command '${options.command}' (expected run | status | retry | reconcile)`);
     }
   } catch (err) {
-    if (err?.__exit) {
-      process.stderr.write(`escellRefused: ${err.message}\n`);
-      return err.__exit;
-    }
     if (typeof err?.message === "string") {
       process.stderr.write(`agreement-finalizer refused: ${err.message}\n`);
     } else {
@@ -246,21 +249,15 @@ async function main(argv) {
   }
 }
 
-function mapFailureToExcode(err) {
-  if (err && String(err?.constructor?.name).includes("UsageError")) {
-    return 1;
-  }
-  if (err && String(err?.constructor?.name).includes("Lock")) {
-    return 3;
-  }
-  if (err && String(err?.constructor?.name).includes("EnvironmentChanged")) {
-    return 4;
-  }
-  if (err && String(err?.constructor?.name).includes("BlockedJob")) {
-    return 7;
-  }
-  process.stderr.write(`unhandled error type: ${err?.constructor?.name}\n`);
-  return 8;
+/**
+ * Maps a thrown error to the documented exit code. The code comes from the
+ * error's own `exitCode` field (set where the error class is defined); any
+ * error without a documented code is an unclassified failure and exits 9.
+ */
+export function mapFailureToExcode(err) {
+  const code = err?.exitCode;
+  if (Number.isInteger(code) && code >= 1 && code <= 9) return code;
+  return 9;
 }
 
 // On executed main:

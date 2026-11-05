@@ -250,10 +250,17 @@ export const ERROR_SELECTOR_IDS = {
 // Errors
 // ---------------------------------------------------------------------------
 
+// Every error class below carries the CLI exit code it maps to as an explicit
+// `exitCode` field (documented in scripts/agreement-finalizer.mjs). The CLI
+// never guesses from class names; an error without a code exits 9.
+
 /** Argument/usage problem: the run refused before touching any job. */
-export class UsageError extends Error {}
+export class UsageError extends Error {
+  exitCode = 1;
+}
 /** Journal lock held by another live worker. */
 export class LockBusy extends Error {
+  exitCode = 3;
   constructor(holder) {
     super(`journal lock held by another worker (pid ${holder?.pid ?? "?"}, started ${holder?.startedAt ?? "?"})`);
     this.holder = holder;
@@ -261,14 +268,18 @@ export class LockBusy extends Error {
 }
 /** A dead holder's lock file: refuse, and offer the explicit `--reclaim`. */
 export class LockStale extends Error {
+  exitCode = 3;
   constructor(msg) {
     super(msg);
   }
 }
 /** Environment identity changed (chain reset / new instance / provenance drift). */
-export class EnvironmentChanged extends Error {}
+export class EnvironmentChanged extends Error {
+  exitCode = 4;
+}
 /** The job's checked conditions forbid the action right now (never a success). */
 export class BlockedJob extends Error {
+  exitCode = 7;
   constructor(reason, detail) {
     super(reason);
     this.reason = reason;
@@ -399,7 +410,10 @@ function bigintSafe(value) {
   return JSON.parse(JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? "0x" + v.toString(16) : v)));
 }
 
-export class JournalJournalDirErrors extends Error {}
+/** Unreadable or malformed journal content: an operational failure (exit 9). */
+export class JournalJournalDirErrors extends Error {
+  exitCode = 9;
+}
 class Journal {
   constructor(dir) {
     this.dir = path.resolve(dir);
@@ -632,6 +646,7 @@ export class RpcClient {
 }
 
 export class TransientRpcError extends Error {
+  exitCode = 9;
   constructor(msg) {
     super(msg);
     this.isTransient = true;
