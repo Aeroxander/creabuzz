@@ -238,7 +238,8 @@ export function TradingCard({
 /**
  * The latest round: where it stands, the wallet's own orders, and the steps the
  * round allows. Bidding takes orders; settling freezes the price; a settled or
- * void round pays out what each order is owed.
+ * void round pays out what each order is owed, including a seller's unsold lots:
+ * settling returns none, so the Collect button for Shares shows for them too.
  */
 function TradingRound({
   round,

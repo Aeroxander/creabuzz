@@ -23,7 +23,12 @@
 #   7. a wallet with no order in the round is offered no collect button, and the chain would refuse one.
 #   8. a second test: a round nobody settles goes void, the next week's round opens, and the card still offers each
 #      wallet what the void round owes it (the seller's Shares, the buyer's money) as 'Collect from an earlier round'.
+#   9. a third test: a seller whose offer part-sold sees both what sold and how many lots are left to take back, since
+#      settling hands no Shares back; the card offers 'Collect N Shares' beside the proceeds, the remainder is also
+#      collected from 'Collect from an earlier round' once a newer round opens, and a repeat would pay nothing.
+#      The seller who sold nothing (test 3) collects its Shares from the card too.
 # Every step is a button on the page and a transaction on the chain, and each is checked against the chain.
+# Trading is off by default: only this scratch anvil's DAO is made to publish a listing, by impersonation.
 #
 # ⚠️  DEV ONLY. Anvil dev keys (public), a local chain, nothing else.
 #

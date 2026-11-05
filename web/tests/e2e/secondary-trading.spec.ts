@@ -112,6 +112,7 @@ const SIG = {
   /** `allowance(owner, spender)`: what a token already lets the market take. */
   allowance: "0xdd62ed3e",
   claimQuote: "0x4e0add6a",
+  claimShares: "0xace1f5e1",
   configureListing: "0x1ecf4419",
   /** The quote token's own scale, whose read this journey refuses at the end. */
   decimals: "0x313ce567",
@@ -818,13 +819,43 @@ test("a settled round where the offer and the bid never cross says nothing trade
     `${QUOTE_SYMBOL} a lot`,
   );
   await expect(founder.getByTestId("trading-my-sell")).toContainText(
-    "Nothing sold: your Shares are back with you.",
+    "Nothing sold: your Shares are yours to take back.",
   );
   await expect(founder.getByTestId("trading-my-sell")).not.toContainText(
     "round's price",
   );
-  // The seller's unsold Shares went back in the settling transaction.
-  expect(await balanceOf(SHARES, FOUNDER_WALLET)).toBe(founderSharesBefore);
+  // Settling returns no Shares: the unsold lot is still in the market, and the seller takes it back with the card's
+  // own button.
+  expect(await balanceOf(SHARES, FOUNDER_WALLET)).toBe(
+    founderSharesBefore - WAD,
+  );
+  expect(await callWord(MARKET, `${SIG.sharesIn}${word(3n)}`)).toBe(WAD);
+  await expect(founder.getByTestId("trading-claim-shares")).toContainText(
+    "Collect 1 Shares",
+  );
+  await expect(founder.getByTestId("trading-claim-quote")).toHaveCount(0);
+  await founder.getByTestId("trading-claim-shares").click();
+  await expect
+    .poll(() => balanceOf(SHARES, FOUNDER_WALLET), { timeout: 90_000 })
+    .toBe(founderSharesBefore);
+  // Collected: the button is gone, the line says they are back, and the chain would pay nothing twice.
+  await expect(founder.getByTestId("trading-claim-shares")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  await expect(founder.getByTestId("trading-my-sell")).toContainText(
+    "Nothing sold: your Shares are back with you.",
+  );
+  expect(await callWord(MARKET, `${SIG.sharesIn}${word(3n)}`)).toBe(0n);
+  await expect(
+    rpc("eth_call", [
+      {
+        from: THIRD_WALLET,
+        to: MARKET,
+        data: `${SIG.claimShares}${word(3n)}${word(FOUNDER_WALLET)}`,
+      },
+      "latest",
+    ]),
+  ).rejects.toThrow();
 
   await bidder.reload();
   await expect(bidder.getByTestId("trading-round-status")).toHaveText(
@@ -844,6 +875,177 @@ test("a settled round where the offer and the bid never cross says nothing trade
     .poll(() => balanceOf(QUOTE, BIDDER_WALLET), { timeout: 90_000 })
     .toBe(bidderQuoteBefore);
   say("a round that matched nothing says so, and everyone has their own back");
+
+  await context.close();
+});
+
+test("a seller whose offer part-sold takes back the unsold lots, from the card and then from an earlier round", async ({
+  browser,
+}) => {
+  test.setTimeout(600_000);
+  const context = await browser.newContext();
+  const relay = createMockRelay();
+  relay.seed(launchRecord());
+  const say = (what: string) => console.log(`[trading] ${what}`);
+
+  // The journeys above left round 3 settled and collected. Run the whole file, not this test alone.
+  expect(await callWord(MARKET, SIG.roundCount)).toBe(3n);
+
+  // ── Round 4: the founder offers three lots, a second person bids for one ──────────────────────────────────
+  await passTime(5 * DAY);
+  const founder = await personPage(
+    context,
+    relay,
+    FOUNDER_WALLET,
+    FOUNDER_NSEC,
+  );
+  await openTrading(founder);
+  await expect(founder.getByTestId("trading-open")).toBeVisible({
+    timeout: 60_000,
+  });
+  await founder.getByTestId("trading-open").click();
+  await expect
+    .poll(() => callWord(MARKET, SIG.roundCount), { timeout: 90_000 })
+    .toBe(4n);
+  await expect(founder.getByTestId("trading-sell")).toBeVisible({
+    timeout: 60_000,
+  });
+  const founderSharesBefore = await balanceOf(SHARES, FOUNDER_WALLET);
+  await founder.getByTestId("trading-sell").click();
+  await founder.getByTestId("trading-sell-lots").fill("3");
+  await founder.getByTestId("trading-sell-price").fill(LOW_TEXT);
+  await founder.getByTestId("trading-sell-submit").click();
+  await expect(founder.getByTestId("trading-my-sell")).toContainText(
+    "You offer 3 lots at",
+    { timeout: 90_000 },
+  );
+  const bidder = await personPage(context, relay, BIDDER_WALLET, BIDDER_NSEC);
+  await openTrading(bidder);
+  await expect(bidder.getByTestId("trading-bid")).toBeVisible({
+    timeout: 60_000,
+  });
+  await bidder.getByTestId("trading-bid").click();
+  await bidder.getByTestId("trading-bid-lots").fill("1");
+  await bidder.getByTestId("trading-bid-price").fill(HIGH_TEXT);
+  await bidder.getByTestId("trading-bid-submit").click();
+  await expect(bidder.getByTestId("trading-my-bid")).toContainText(
+    "You bid for 1 lot at up to",
+    { timeout: 90_000 },
+  );
+  say("round 4 holds an offer of three lots and a bid for one");
+
+  // ── Settle: one lot trades, and settling hands no Shares back ───────────────────────────────────────────
+  await passTime(3 * DAY + 60);
+  await founder.reload();
+  await expect(founder.getByTestId("trading-settle")).toBeVisible({
+    timeout: 60_000,
+  });
+  await founder.getByTestId("trading-settle").click();
+  await expect(founder.getByTestId("trading-round-status")).toContainText(
+    "Settled: 1 lot traded at",
+    { timeout: 90_000 },
+  );
+  const sold = await callWords(
+    MARKET,
+    `${SIG.sells}${word(4n)}${word(FOUNDER_WALLET)}`,
+  );
+  expect(sold[0]).toBe(3n); // lots
+  expect(sold[2]).toBe(1n); // filled: the bid wanted one
+  expect(sold[4]).toBe(0n); // escrowReturned: settle returned nothing
+  // The market still holds the unsold two lots and the buyer's one: the seller's wallet is three Shares down.
+  expect(await balanceOf(SHARES, FOUNDER_WALLET)).toBe(
+    founderSharesBefore - 3n * WAD,
+  );
+  expect(await callWord(MARKET, `${SIG.sharesIn}${word(4n)}`)).toBe(3n * WAD);
+  // The seller sees both what sold and what is left to take back, and is offered both collects.
+  await expect(founder.getByTestId("trading-my-sell")).toContainText(
+    "Sold: 1 lot at the round's price. 2 lots to take back.",
+  );
+  await expect(founder.getByTestId("trading-claim-shares")).toContainText(
+    "Collect 2 Shares",
+  );
+  await expect(founder.getByTestId("trading-claim-quote")).toBeVisible();
+  say("the part-filled seller is offered the unsold lots as Shares to collect");
+
+  // ── Collect the proceeds from the card, then the round is no longer the latest ──────────────────────────
+  // One lot sold at the round's own clearing price: its lowest price plus the stored level times a step.
+  const record = await callWords(MARKET, `${SIG.rounds}${word(4n)}`);
+  const proceeds = record[0] + record[8] * record[1];
+  const founderQuoteBefore = await balanceOf(QUOTE, FOUNDER_WALLET);
+  await founder.getByTestId("trading-claim-quote").click();
+  await expect
+    .poll(() => balanceOf(QUOTE, FOUNDER_WALLET), { timeout: 90_000 })
+    .toBe(founderQuoteBefore + proceeds);
+  await expect(founder.getByTestId("trading-claim-quote")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  // The unsold lots are still the seller's to take back: collecting the money did not touch them.
+  await expect(founder.getByTestId("trading-claim-shares")).toContainText(
+    "Collect 2 Shares",
+  );
+  await passTime(5 * DAY);
+  await founder.reload();
+  await expect(founder.getByTestId("trading-open")).toBeVisible({
+    timeout: 60_000,
+  });
+  await founder.getByTestId("trading-open").click();
+  await expect
+    .poll(() => callWord(MARKET, SIG.roundCount), { timeout: 90_000 })
+    .toBe(5n);
+
+  // ── Round 5 is the latest; the settled round 4 still owes the seller, and a claim never expires ─────────
+  await expect(founder.getByTestId("trading-claim")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  await expect(founder.getByTestId("trading-earlier")).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(founder.getByTestId("trading-earlier-round")).toHaveCount(1);
+  await expect(
+    founder.getByTestId("trading-earlier-claim-shares"),
+  ).toContainText("Collect 2 Shares");
+  await expect(founder.getByTestId("trading-earlier-claim-quote")).toHaveCount(
+    0,
+  );
+  await founder.getByTestId("trading-earlier-claim-shares").click();
+  await expect
+    .poll(() => balanceOf(SHARES, FOUNDER_WALLET), { timeout: 90_000 })
+    .toBe(founderSharesBefore - WAD);
+  const returned = await callWords(
+    MARKET,
+    `${SIG.sells}${word(4n)}${word(FOUNDER_WALLET)}`,
+  );
+  expect(returned[4]).toBe(1n); // escrowReturned
+  // Collected: the row is gone, only the buyer's lot is left in the round, and a repeat would pay nothing.
+  await expect(founder.getByTestId("trading-earlier")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  expect(await callWord(MARKET, `${SIG.sharesIn}${word(4n)}`)).toBe(WAD);
+  await expect(
+    rpc("eth_call", [
+      {
+        from: THIRD_WALLET,
+        to: MARKET,
+        data: `${SIG.claimShares}${word(4n)}${word(FOUNDER_WALLET)}`,
+      },
+      "latest",
+    ]),
+  ).rejects.toThrow();
+  say("the part-filled seller took back the unsold lots from an earlier round");
+
+  // ── The buyer collects its lot and the round's ledgers end at zero ───────────────────────────────────────
+  await bidder.reload();
+  const bidderSharesBefore = await balanceOf(SHARES, BIDDER_WALLET);
+  await expect(bidder.getByTestId("trading-earlier-claim-shares")).toBeVisible({
+    timeout: 60_000,
+  });
+  await bidder.getByTestId("trading-earlier-claim-shares").click();
+  await expect
+    .poll(() => balanceOf(SHARES, BIDDER_WALLET), { timeout: 90_000 })
+    .toBe(bidderSharesBefore + WAD);
+  expect(await callWord(MARKET, `${SIG.sharesIn}${word(4n)}`)).toBe(0n);
+  expect(await balanceOf(SHARES, MARKET)).toBe(0n);
+  say("the buyer collected its lot and round 4 holds nothing");
 
   await context.close();
 });

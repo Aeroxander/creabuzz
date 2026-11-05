@@ -3,8 +3,9 @@
  *
  * A round is settled or void within five days, but anyone may open the next one a
  * week after the last, and nothing pays a round's orders out on its own: a
- * settled round still owes the buyer's Shares and refund and the seller's
- * proceeds, and a void round owes both sides everything. A claim never expires,
+ * settled round still owes the buyer's Shares and refund, the seller's
+ * proceeds and the seller's unsold lots (settling hands none back), and a void
+ * round owes both sides everything. A claim never expires,
  * so each such round keeps its own row here, collected with that round's own id,
  * after the card has moved on to the newest round (Review-Proven Rule 6: the
  * newest round must not hide the only way to collect an older one).

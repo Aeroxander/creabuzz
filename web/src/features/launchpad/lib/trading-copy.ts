@@ -28,6 +28,7 @@ import {
   type RoundView,
   SECONDARY_EVERY,
   type SecondaryMarketRead,
+  unsoldLots,
   type WalletView,
 } from "@creaton/core/launchpad/secondary.ts";
 
@@ -451,21 +452,44 @@ export function settleNoticeLine(
   return `Your order is waiting for the round to be settled. Anyone can settle it and it costs only a network fee. If nobody does by ${date(round.settleDeadline)}, the round is void and you take back what you put in.`;
 }
 
-/** What one side of a wallet's orders says, before and after the round's result. */
+/**
+ * What one side of a wallet's orders says, before and after the round's result. A seller's unsold lots are not
+ * handed back by settling: they are the seller's to take back (and the card says how many), until the collect
+ * button moves them and the line says they are back.
+ */
 export function sellOrderLine(
   round: Pick<RoundView, "phase" | "minPrice" | "step">,
-  sell: { lots: bigint; minStep: number; filled: bigint },
+  sell: {
+    lots: bigint;
+    minStep: number;
+    filled: bigint;
+    escrowReturned: boolean;
+  },
   quote: QuoteUnits,
 ): string {
   const at = money(lotPriceAt(round, sell.minStep), quote);
   const offer = `You offer ${lots(sell.lots)} at ${at} a lot or more.`;
   if (round.phase === "settled") {
-    return sell.filled === 0n
-      ? `${offer} Nothing sold: your Shares are back with you.`
-      : `${offer} Sold: ${lots(sell.filled)} at the round's price.`;
+    const left = sell.lots - sell.filled;
+    const sold =
+      sell.filled === 0n
+        ? "Nothing sold:"
+        : `Sold: ${lots(sell.filled)} at the round's price.`;
+    if (left <= 0n) return `${offer} ${sold}`;
+    if (sell.filled === 0n) {
+      return sell.escrowReturned
+        ? `${offer} ${sold} your Shares are back with you.`
+        : `${offer} ${sold} your Shares are yours to take back.`;
+    }
+    return sell.escrowReturned
+      ? `${offer} ${sold} The other ${left === 1n ? "lot is" : `${lots(left)} are`} back with you.`
+      : `${offer} ${sold} ${lots(left)} to take back.`;
   }
-  if (round.phase === "void")
-    return `${offer} The round went void, so they come back to you.`;
+  if (round.phase === "void") {
+    return sell.escrowReturned
+      ? `${offer} The round went void, so they are back with you.`
+      : `${offer} The round went void, so they are yours to take back.`;
+  }
   return offer;
 }
 
@@ -498,8 +522,9 @@ export interface ClaimDue {
 }
 
 /**
- * What this wallet can still collect from a round: its bought Shares, a void
- * round's own offer back, a seller's proceeds, a buyer's refund, a cancelled
+ * What this wallet can still collect from a round: its bought Shares, the
+ * unsold part of its offer ({@link unsoldLots}: all of it in a void round, the
+ * lots a settled round did not sell), a seller's proceeds, a buyer's refund, a cancelled
  * bid's escrow. Zeroes while bidding is open, except for a bid already taken
  * back (the contract pays that refund whenever it is asked for).
  */
@@ -513,10 +538,8 @@ export function claimDue(
   if (!over && bid?.cancelled !== true) return { shares: 0n, quote: 0n };
   let shares = 0n;
   let quote = 0n;
-  // A void round never settles, so its orders' escrow comes back by claim.
-  if (round.phase === "void" && sell && !sell.escrowReturned) {
-    shares += sell.lots * lotSize;
-  }
+  // Settling returns nothing: a void round's whole offer and a settled round's unsold lots both come back by claim.
+  shares += unsoldLots(round, sell) * lotSize;
   if (
     round.phase === "settled" &&
     bid &&

@@ -12,6 +12,9 @@
 # Demo mode (V5_DEMO=1, see scripts/v5-demo-world.sh) publishes launch records signed with the public anvil
 # founder key, so it only talks to a relay on this machine unless V5_DEMO_ALLOW_REMOTE_RELAY=1 says otherwise.
 # Self-test: scripts/test-v5-local-fixture.sh.
+#
+# Trading stays off. V5_FIXTURE_TRADE=1 additionally plays one part-filled round on this scratch chain and proves the
+# seller's unsold lots are returned by claimShares (once), not by settle.
 set -euo pipefail
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -250,6 +253,67 @@ gt0 "$THRESHOLD" || fail "the DAO's proposal threshold is zero at birth"
 echo
 echo "=== artifact creation sizes printed by the fixture (incl. constructor args) ==="
 grep -E 'creation bytes|EIP-3860 limit|runtime bytes|EIP-170 limit' "$RUN/script.log" || fail "no size report in the script log"
+
+# --- opt-in: a part-filled weekly sale, on this scratch chain only ----------------------------
+# Trading stays OFF in the fixture (asserted above, and in every hosted or pilot build). With V5_FIXTURE_TRADE=1 this
+# turns a listing on for the throwaway anvil this script started, plays one round, and proves with real transactions
+# that settling hands no Shares back (so the heaviest settle fits one transaction) and that the seller's unsold lots
+# wait in the market until `claimShares` returns them exactly once.
+if [[ "${V5_FIXTURE_TRADE:-}" == "1" ]]; then
+  echo
+  echo "=== a part-filled round on local anvil (V5_FIXTURE_TRADE=1): the remainder is collected, not pushed ==="
+  BUYER="$REVIEWER_A"
+  THIRD="$REVIEWER_B"
+  S() { cast send --rpc-url "$RPC" --unlocked "$@" >/dev/null || fail "transaction failed: cast send $*"; }
+  EQ() { python3 -c 'import sys; sys.exit(0 if int(sys.argv[1]) == int(sys.argv[2]) else 1)' "$1" "$2"; }
+  CALC() { python3 -c 'import sys; print(eval(sys.argv[1]))' "$1"; }
+  BAL() { C "$1" 'balanceOf(address)(uint256)' "$2" | num; }
+  LOT=1000000000000000000
+  # The founder's Shares sit in a 180-day schedule: warp past it so there is capacity to offer.
+  cast rpc --rpc-url "$RPC" anvil_increaseTime "$(cast to-hex 17280000)" >/dev/null
+  cast rpc --rpc-url "$RPC" anvil_mine 0x1 >/dev/null
+  gt0 "$(C "$POLICY" 'saleCapacity(address)(uint256)' "$FOUNDER" | num)" || fail "no sale capacity after the schedule"
+  S "$QUOTE" 'mint(address,uint256)' "$BUYER" 1000000000000000000000 --from "$FOUNDER"
+  # `configureListing` is onlyDAO: on a local chain the DAO speaks for itself once anvil impersonates it.
+  cast rpc --rpc-url "$RPC" anvil_setBalance "$DAO" 0x21e19e0c9bab2400000 >/dev/null
+  cast rpc --rpc-url "$RPC" anvil_impersonateAccount "$DAO" >/dev/null
+  S "$MARKET" 'configureListing(bool,uint128,uint128,uint32)' true 1000000000000000000 65000000000000000000 64 --from "$DAO"
+  cast rpc --rpc-url "$RPC" anvil_stopImpersonatingAccount "$DAO" >/dev/null
+  S "$MARKET" 'openRound()' --from "$FOUNDER"
+  RID=$(C "$MARKET" 'roundCount()(uint256)' | num)
+  [ "$RID" = "1" ] || fail "expected round 1, got $RID"
+  FOUNDER_BEFORE=$(BAL "$SHARES" "$FOUNDER")
+  BUYER_BEFORE=$(BAL "$SHARES" "$BUYER")
+  # Three lots offered at the lowest step, one lot bid at the highest: one lot trades, two stay unsold.
+  S "$SHARES" 'approve(address,uint256)' "$MARKET" "$(CALC "3 * $LOT")" --from "$FOUNDER"
+  S "$MARKET" 'sell(uint256,uint128,uint16)' "$RID" 3 0 --from "$FOUNDER"
+  S "$QUOTE" 'approve(address,uint256)' "$MARKET" 65000000000000000000 --from "$BUYER"
+  S "$MARKET" 'bid(uint256,uint128,uint16)' "$RID" 1 64 --from "$BUYER"
+  cast rpc --rpc-url "$RPC" anvil_increaseTime "$(cast to-hex 259260)" >/dev/null
+  cast rpc --rpc-url "$RPC" anvil_mine 0x1 >/dev/null
+  SETTLE_TX=$(cast send --rpc-url "$RPC" --unlocked --from "$THIRD" "$MARKET" 'settle(uint256)' "$RID" --json | jq -r '.transactionHash')
+  SETTLE_GAS=$(cast receipt --rpc-url "$RPC" "$SETTLE_TX" --json | jq -r '.gasUsed' | xargs printf '%d')
+  [ "$SETTLE_GAS" -lt 16777216 ] || fail "settle used $SETTLE_GAS gas, over the 2**24 per-transaction cap"
+  echo "  settle used $SETTLE_GAS gas"
+  SELL=$(C "$MARKET" 'sells(uint256,address)(uint128,uint16,uint128,uint64,bool,bool)' "$RID" "$FOUNDER" | strip | awk '{print $1}' | tr '\n' ' ')
+  [ "$(echo "$SELL" | awk '{print $3}')" = "1" ] || fail "the seller did not fill exactly one lot: $SELL"
+  [ "$(echo "$SELL" | awk '{print $5}')" = "false" ] || fail "settle already returned the remainder: $SELL"
+  EQ "$(BAL "$SHARES" "$FOUNDER")" "$(CALC "$FOUNDER_BEFORE - 3 * $LOT")" || fail "settle moved the seller's Shares"
+  EQ "$(C "$MARKET" 'sharesIn(uint256)(uint256)' "$RID" | num)" "$(CALC "3 * $LOT")" || fail "the market should still hold all three lots after settle"
+  # Anyone returns the seller's two unsold lots; the seller then holds one lot fewer than before (one sold).
+  S "$MARKET" 'claimShares(uint256,address)' "$RID" "$FOUNDER" --from "$THIRD"
+  EQ "$(BAL "$SHARES" "$FOUNDER")" "$(CALC "$FOUNDER_BEFORE - $LOT")" || fail "claimShares did not return the two unsold lots"
+  EQ "$(C "$MARKET" 'sharesIn(uint256)(uint256)' "$RID" | num)" "$LOT" || fail "only the buyer's lot should be left after the remainder is collected"
+  SELL=$(C "$MARKET" 'sells(uint256,address)(uint128,uint16,uint128,uint64,bool,bool)' "$RID" "$FOUNDER" | strip | awk '{print $1}' | tr '\n' ' ')
+  [ "$(echo "$SELL" | awk '{print $5}')" = "true" ] || fail "escrowReturned was not set after the remainder was collected: $SELL"
+  if C "$MARKET" 'claimShares(uint256,address)' "$RID" "$FOUNDER" --from "$THIRD" >/dev/null 2>&1; then
+    fail "a second claimShares for the same remainder was accepted"
+  fi
+  S "$MARKET" 'claimShares(uint256,address)' "$RID" "$BUYER" --from "$THIRD"
+  EQ "$(BAL "$SHARES" "$BUYER")" "$(CALC "$BUYER_BEFORE + $LOT")" || fail "the buyer did not receive its lot"
+  EQ "$(C "$MARKET" 'sharesIn(uint256)(uint256)' "$RID" | num)" 0 || fail "the round still holds Shares after both sides collected"
+  echo "  the part-filled seller collected its two unsold lots once, and the round's Shares ledger ended at zero"
+fi
 
 echo
 echo "=== cleanup ==="

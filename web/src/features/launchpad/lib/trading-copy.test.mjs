@@ -728,7 +728,7 @@ test("a wallet's own orders read as sentences, before and after the result", () 
       sell({ lots: 2n, minStep: 1, filled: 1n }),
       USDC,
     ),
-    "You offer 2 lots at 1.008 USDC a lot or more. Sold: 1 lot at the round's price.",
+    "You offer 2 lots at 1.008 USDC a lot or more. Sold: 1 lot at the round's price. 1 lot to take back.",
   );
   // An order that filled nothing, in a settled round, never claims a price it did not trade at.
   const none = sellOrderLine(
@@ -738,7 +738,7 @@ test("a wallet's own orders read as sentences, before and after the result", () 
   );
   assert.equal(
     none,
-    "You offer 2 lots at 1.04 USDC a lot or more. Nothing sold: your Shares are back with you.",
+    "You offer 2 lots at 1.04 USDC a lot or more. Nothing sold: your Shares are yours to take back.",
   );
   assert.doesNotMatch(none, /round's price/);
   const noneBid = bidOrderLine(
@@ -871,5 +871,151 @@ test("an earlier round says what became of it, and the look-back limit is said o
   assert.equal(
     earlierLimitLine(8, 3n),
     "This page checks your last 8 rounds. Anything an older round owes you is still yours, but it can't be collected from here.",
+  );
+});
+
+test("a part-filled seller in a settled round is owed its unsold lots as Shares, and stops being owed once they are collected", () => {
+  const settled = round({ phase: "settled", settled: true, price: 2 });
+  // 5 offered, 2 sold: 3 lots of Shares wait in the market besides the proceeds.
+  assert.deepEqual(
+    claimDue(settled, { sell: sell({ lots: 5n, filled: 2n }), bid: null }, LOT),
+    { shares: 3n * LOT, quote: 2n * 1_016_000n },
+  );
+  // Nothing sold: all of it waits, and there is no money.
+  assert.deepEqual(
+    claimDue(settled, { sell: sell({ lots: 5n }), bid: null }, LOT),
+    { shares: 5n * LOT, quote: 0n },
+  );
+  // Sold out whole: no Shares to take back.
+  assert.deepEqual(
+    claimDue(settled, { sell: sell({ lots: 5n, filled: 5n }), bid: null }, LOT),
+    { shares: 0n, quote: 5n * 1_016_000n },
+  );
+  // The remainder collected (escrowReturned) stops showing, while the proceeds still do.
+  assert.deepEqual(
+    claimDue(
+      settled,
+      { sell: sell({ lots: 5n, filled: 2n, escrowReturned: true }), bid: null },
+      LOT,
+    ),
+    { shares: 0n, quote: 2n * 1_016_000n },
+  );
+  // Both collected: nothing at all.
+  assert.deepEqual(
+    claimDue(
+      settled,
+      {
+        sell: sell({
+          lots: 5n,
+          filled: 2n,
+          escrowReturned: true,
+          proceedsPaid: true,
+        }),
+        bid: null,
+      },
+      LOT,
+    ),
+    { shares: 0n, quote: 0n },
+  );
+  // A wallet that sold and bought in one round is owed both kinds of Shares in one claim.
+  assert.deepEqual(
+    claimDue(
+      settled,
+      {
+        sell: sell({ lots: 5n, filled: 2n, proceedsPaid: true }),
+        bid: bid({ lots: 1n, maxStep: 2, filled: 1n, refundDone: true }),
+      },
+      LOT,
+    ),
+    { shares: 4n * LOT, quote: 0n },
+  );
+});
+
+test("a collected void offer stops being owed, and a round still open owes no remainder", () => {
+  assert.deepEqual(
+    claimDue(
+      round({ phase: "void" }),
+      { sell: sell({ lots: 3n, escrowReturned: true }), bid: null },
+      LOT,
+    ),
+    { shares: 0n, quote: 0n },
+  );
+  assert.deepEqual(
+    claimDue(
+      round({ phase: "settling" }),
+      { sell: sell({ lots: 3n }), bid: null },
+      LOT,
+    ),
+    { shares: 0n, quote: 0n },
+  );
+});
+
+test("a seller's line says what sold and what is left to take back, then that it is back", () => {
+  const settled = round({ phase: "settled" });
+  const part = sell({ lots: 5n, minStep: 1, filled: 2n });
+  assert.equal(
+    sellOrderLine(settled, part, USDC),
+    "You offer 5 lots at 1.008 USDC a lot or more. Sold: 2 lots at the round's price. 3 lots to take back.",
+  );
+  assert.equal(
+    sellOrderLine(settled, { ...part, escrowReturned: true }, USDC),
+    "You offer 5 lots at 1.008 USDC a lot or more. Sold: 2 lots at the round's price. The other 3 lots are back with you.",
+  );
+  assert.equal(
+    sellOrderLine(settled, { ...part, filled: 4n, escrowReturned: true }, USDC),
+    "You offer 5 lots at 1.008 USDC a lot or more. Sold: 4 lots at the round's price. The other lot is back with you.",
+  );
+  // Sold out whole says only what sold.
+  assert.equal(
+    sellOrderLine(settled, { ...part, filled: 5n }, USDC),
+    "You offer 5 lots at 1.008 USDC a lot or more. Sold: 5 lots at the round's price.",
+  );
+  assert.equal(
+    sellOrderLine(
+      settled,
+      sell({ lots: 2n, minStep: 5, escrowReturned: true }),
+      USDC,
+    ),
+    "You offer 2 lots at 1.04 USDC a lot or more. Nothing sold: your Shares are back with you.",
+  );
+  assert.equal(
+    sellOrderLine(round({ phase: "void" }), sell({ lots: 2n }), USDC),
+    "You offer 2 lots at 1 USDC a lot or more. The round went void, so they are yours to take back.",
+  );
+  assert.equal(
+    sellOrderLine(
+      round({ phase: "void" }),
+      sell({ lots: 2n, escrowReturned: true }),
+      USDC,
+    ),
+    "You offer 2 lots at 1 USDC a lot or more. The round went void, so they are back with you.",
+  );
+});
+
+test("an earlier settled round still owes a part-filled seller its remainder, until it is collected", () => {
+  const rounds = [
+    earlier(
+      3n,
+      "settled",
+      { sell: sell({ lots: 5n, filled: 2n, proceedsPaid: true }) },
+      { price: 2 },
+    ),
+    earlier(
+      2n,
+      "settled",
+      {
+        sell: sell({
+          lots: 5n,
+          filled: 2n,
+          proceedsPaid: true,
+          escrowReturned: true,
+        }),
+      },
+      { price: 2 },
+    ),
+  ];
+  assert.deepEqual(
+    earlierDues(rounds, LOT).map((o) => [o.earlier.id, o.due]),
+    [[3n, { shares: 3n * LOT, quote: 0n }]],
   );
 });

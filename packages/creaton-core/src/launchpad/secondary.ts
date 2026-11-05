@@ -363,6 +363,26 @@ export interface SellOrderView {
   proceedsPaid: boolean;
 }
 
+/**
+ * The lots of an offer the market still holds for its seller, to be handed back by `claimShares`: the whole
+ * offer once a round went void, and the lots a settled round did not sell. Settling never returns them (that
+ * keeps the heaviest settle inside one transaction), so a part-filled seller has Shares to collect after
+ * settle, and a seller who sold nothing has all of them. Zero while the round is open, for an offer sold out
+ * whole, once `escrowReturned` says they were collected, and for a wallet with no offer.
+ *
+ * This mirrors the contract's own rule in `claimShares`, so the page offers a collect button exactly when the
+ * chain would pay one.
+ */
+export function unsoldLots(
+  round: Pick<RoundView, "phase">,
+  sell: Pick<SellOrderView, "lots" | "filled" | "escrowReturned"> | null,
+): bigint {
+  if (sell === null || sell.escrowReturned) return 0n;
+  if (round.phase !== "settled" && round.phase !== "void") return 0n;
+  // A void round never filled anything, so `filled` is 0 there and the whole offer is unsold.
+  return sell.lots > sell.filled ? sell.lots - sell.filled : 0n;
+}
+
 /** One buyer's bid in one round, as `bids(uint256,address)` returns it. */
 export interface BidOrderView {
   lots: bigint;

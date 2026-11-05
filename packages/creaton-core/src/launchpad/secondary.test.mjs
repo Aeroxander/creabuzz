@@ -26,6 +26,7 @@ import {
   SECONDARY_LOOKBACK,
   SECONDARY_SETTLE_WINDOW,
   SECONDARY_SIGNATURES,
+  unsoldLots,
 } from "./secondary.ts";
 
 const FACTORY = `0x${"fa".repeat(20)}`;
@@ -775,4 +776,70 @@ test("an earlier settled round carries its matched lots too", async () => {
       [1n, 0n],
     ],
   );
+});
+
+// ---- the unsold remainder a seller collects by claimShares -----------------------------------------------------
+
+test("a part-filled seller in a settled round is owed its unsold lots, read through the production readers, until it collects them", async () => {
+  // Round 3 is the latest (the market read), rounds 2 and 1 are earlier ones (the earlier read): one seller, four
+  // shapes. `filled` is what settle wrote; `escrowReturned` is what claimShares wrote.
+  const orders = {
+    // Part-filled: 5 offered, 2 sold, 3 still in the market.
+    3: { s: { lots: 5n, filled: 2n } },
+    // The same offer after the seller collected the remainder.
+    2: { s: { lots: 5n, filled: 2n, escrowReturned: 1n } },
+    // Sold out whole: nothing was left to return, and the contract never sets the flag.
+    1: { s: { lots: 5n, filled: 5n } },
+  };
+  const chain = marketOfRounds(orders, [1, 2, 3], { 1: 5, 2: 2, 3: 2 });
+  const latest = await readSecondaryMarket(
+    {
+      call: (to, data) =>
+        sel("roundCount") === data.slice(0, 10)
+          ? Promise.resolve(words(3))
+          : sel("marketOf") === data.slice(0, 10)
+            ? Promise.resolve(words(BigInt(MARKET)))
+            : sel("listing") === data.slice(0, 10)
+              ? Promise.resolve(listing())
+              : chain.call(to, data),
+    },
+    { ...INPUT, now: LATER },
+  );
+  assert.equal(latest.kind, "present");
+  assert.equal(latest.round.phase, "settled");
+  assert.equal(unsoldLots(latest.round, latest.wallet.sell), 3n);
+
+  const earlier = await readEarlierRounds(chain, {
+    market: MARKET,
+    wallet: WALLET,
+    latest: 3n,
+    now: LATER,
+  });
+  const byId = Object.fromEntries(earlier.rounds.map((r) => [r.id, r]));
+  assert.equal(byId[2n].sell.escrowReturned, true);
+  assert.equal(unsoldLots(byId[2n].round, byId[2n].sell), 0n);
+  assert.equal(unsoldLots(byId[1n].round, byId[1n].sell), 0n);
+});
+
+test("a void round owes the whole offer back until it is collected, and a round still open owes nothing", async () => {
+  const chain = marketOfRounds({
+    2: { s: { lots: 4n } },
+    1: { s: { lots: 4n, escrowReturned: 1n } },
+  });
+  const read = await readEarlierRounds(chain, {
+    market: MARKET,
+    wallet: WALLET,
+    latest: 3n,
+    now: LATER,
+  });
+  const byId = Object.fromEntries(read.rounds.map((r) => [r.id, r]));
+  assert.equal(byId[2n].round.phase, "void");
+  assert.equal(unsoldLots(byId[2n].round, byId[2n].sell), 4n);
+  assert.equal(unsoldLots(byId[1n].round, byId[1n].sell), 0n);
+  // While bidding is open the offer is escrowed and cancelSell is the way out, not a claim.
+  const open = await readSecondaryMarket(fakeChain(), INPUT);
+  assert.equal(open.round.phase, "bidding");
+  assert.equal(unsoldLots(open.round, open.wallet.sell), 0n);
+  // No offer, no remainder.
+  assert.equal(unsoldLots(open.round, null), 0n);
 });
