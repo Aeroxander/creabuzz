@@ -174,7 +174,7 @@ describe("deriveDirectory — DAOs from summon receipts", () => {
     assert.equal(card.chainId, 11155111);
     assert.equal(card.addressUrl, `${SEPOLIA}/address/${DAO}`);
     assert.equal(card.txUrl, `${SEPOLIA}/tx/${TX}`);
-    assert.deepEqual(card.sources, ["DAO creation receipt"]);
+    assert.deepEqual(card.sources, ["Project setup record"]);
     assert.equal(counts.malformed, 0);
   });
 
@@ -232,7 +232,7 @@ describe("deriveDirectory — DAOs from kind:37018 deployments", () => {
       address: SUMMONER,
     });
     assert.deepEqual(card.sources, [
-      "DAO creation receipt",
+      "Project setup record",
       "summoner deployment record",
     ]);
   });
@@ -329,7 +329,7 @@ describe("deriveDirectory — counted, never dropped", () => {
     );
     assert.ok(counts.malformed >= 3, JSON.stringify(counts));
     const notice = directoryNotice(counts);
-    assert.match(notice, /could not be read: counted, not listed/);
+    assert.match(notice, /could not be read, so they are not listed/);
   });
 
   it("counts a deployment that names no project, without listing it", () => {
@@ -338,7 +338,10 @@ describe("deriveDirectory — counted, never dropped", () => {
     });
     assert.equal(daos.length, 0);
     assert.equal(counts.unlinked, 1);
-    assert.match(directoryNotice(counts), /name no project/);
+    assert.match(
+      directoryNotice(counts),
+      /setup record not linked to any project/,
+    );
   });
 
   it("still lists a summon receipt whose launch record is missing", () => {
@@ -347,7 +350,7 @@ describe("deriveDirectory — counted, never dropped", () => {
     assert.equal(counts.orphanReceipts, 1);
     assert.match(
       directoryNotice(counts),
-      /with no launch record on this server/,
+      /with no matching project on this server/,
     );
   });
 

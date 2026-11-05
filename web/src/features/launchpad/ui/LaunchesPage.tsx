@@ -405,8 +405,8 @@ export function LaunchesPage() {
           <span>
             <span className="block text-sm font-semibold">Try the sandbox</span>
             <span className="block text-xs text-black/60 dark:text-white/60">
-              Walk through a full raise, start to finish. No blockchain and no
-              real money.
+              Walk through a full raise, start to finish. It is only practice:
+              no real money is used.
             </span>
           </span>
           <ArrowRight className="h-4 w-4 shrink-0" />
@@ -453,7 +453,7 @@ export function LaunchesPage() {
                     : filter === "closing-soon"
                       ? "Nothing is closing soon."
                       : filter === "graduated"
-                        ? "No launches have graduated yet."
+                        ? "No sales have completed yet."
                         : "Nothing here yet. Follow a launch to see it in this list."}
           </p>
           {stanceFilter === null &&

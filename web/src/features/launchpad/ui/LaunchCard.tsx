@@ -171,9 +171,9 @@ export function LaunchCard({
             <span
               className="rounded-full bg-violet-500/15 px-1.5 py-0.5 text-2xs font-semibold text-violet-300"
               data-testid="launch-agent-badge"
-              title={`Run by agent ${record.agent.slice(0, 8)}…`}
+              title={`Run by an AI helper (${record.agent.slice(0, 8)}…)`}
             >
-              Agent-run
+              AI-run
             </span>
           ) : null}
         </p>
@@ -210,7 +210,7 @@ export function LaunchCard({
           {goal ? (
             <span
               className="rounded-xl bg-secondary/80 px-3 py-2 text-sm font-bold tabular-nums"
-              title="Raise needed to graduate"
+              title="Amount the raise must reach for the sale to complete"
             >
               Target {goal}
             </span>

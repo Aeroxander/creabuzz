@@ -159,19 +159,25 @@ export function buildJoinRequestTemplate(input: JoinRequestInput): {
 } {
   const projectId = input.projectId.trim();
   if (!PROJECT_ID_RE.test(projectId)) {
-    throw new JoinRequestValidationError("That is not a valid project id.");
+    throw new JoinRequestValidationError(
+      "That is not a valid project address.",
+    );
   }
   const role = input.role.trim();
   if (!ROLE_SLUG_RE.test(role)) {
     throw new JoinRequestValidationError(
-      `Role id "${role}" must be 1-12 characters of a-z, 0-9 and dashes.`,
+      `The role name "${role}" must be 1 to 12 characters: lowercase letters, numbers and dashes.`,
     );
   }
   if (!PUBKEY_RE.test(input.owner)) {
-    throw new JoinRequestValidationError("The project owner is not a pubkey.");
+    throw new JoinRequestValidationError(
+      "We could not find the project owner's account. Reload the page and try again.",
+    );
   }
   if (!PUBKEY_RE.test(input.requester)) {
-    throw new JoinRequestValidationError("Your identity is not a pubkey yet.");
+    throw new JoinRequestValidationError(
+      "Your account is not ready yet. Reload the page and try again.",
+    );
   }
   if (!Number.isInteger(input.pct) || input.pct < 1 || input.pct > 100) {
     throw new JoinRequestValidationError(
@@ -187,7 +193,7 @@ export function buildJoinRequestTemplate(input: JoinRequestInput): {
   const key = joinRequestKey(projectId, role, input.requester);
   if (key.length > 64) {
     throw new JoinRequestValidationError(
-      "This request's id is too long. Shorten the project id.",
+      "This request's ID is too long. Shorten the project's page address.",
     );
   }
 
@@ -221,7 +227,9 @@ export function buildDeclineTemplate(request: JoinRequest): {
   content: string;
 } {
   if (!PUBKEY_RE.test(request.owner)) {
-    throw new JoinRequestValidationError("The project owner is not a pubkey.");
+    throw new JoinRequestValidationError(
+      "We could not find the project owner's account. Reload the page and try again.",
+    );
   }
   return {
     kind: KIND_ORG_JOIN_REQUEST,

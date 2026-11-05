@@ -147,9 +147,9 @@ export function LaunchHero({
               <span
                 className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-semibold text-violet-300"
                 data-testid="launch-agent-badge-detail"
-                title={`Run by agent ${record.agent.slice(0, 8)}…`}
+                title={`Run by an AI helper (${record.agent.slice(0, 8)}…)`}
               >
-                Agent-run
+                AI-run
               </span>
             ) : null}
           </h1>

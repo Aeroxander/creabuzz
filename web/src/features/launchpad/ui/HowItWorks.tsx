@@ -56,11 +56,11 @@ export function HowItWorks({ children }: { children?: ReactNode }) {
         Anyone can do open work: you need no Shares to start. Each work area
         says what done looks like. Its reviewers check what you submit, and for
         a few days after they approve it anyone can object. When a reward was
-        agreed before you started, that exact quantity of Shares is already
-        reserved, and it settles on those terms once the wait is over. Work
-        nobody agreed a reward for goes to the project&apos;s holders, who vote
-        on whether to award Shares. Approval alone gives you none. Shares are
-        your votes in what the project does next.
+        agreed before you started, that exact number of Shares is already set
+        aside, and you receive it once the wait is over. Work nobody agreed a
+        reward for goes to the project&apos;s holders, who vote on whether to
+        award Shares. Approval alone gives you none. Shares are your votes in
+        what the project does next.
       </p>
     </div>
   );

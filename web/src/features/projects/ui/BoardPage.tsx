@@ -110,7 +110,7 @@ export function BoardPage() {
         </p>
       ) : error ? (
         <QueryError
-          description="The server did not answer the project query, so nothing can be listed."
+          description="The server did not answer, so no projects can be shown. Try again."
           error={error}
           kinds={PROJECT_EVENT_KINDS}
           message={errorMessage(error)}

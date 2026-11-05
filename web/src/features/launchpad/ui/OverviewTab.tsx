@@ -78,7 +78,7 @@ export function OverviewTab({
       remaining !== null
         ? formatMoney(remaining, cur)
         : live && goal
-          ? "Threshold met"
+          ? "Minimum reached"
           : "—",
     ],
     [
@@ -90,7 +90,7 @@ export function OverviewTab({
     [
       "Raise currency",
       cur.kind === "custom"
-        ? `${truncatePubkey(cur.value)} (ERC-20)`
+        ? `${truncatePubkey(cur.value)} (custom token)`
         : cur.symbol,
     ],
     [
@@ -100,7 +100,7 @@ export function OverviewTab({
         : "Not set on this record",
     ],
     [
-      "Claims open",
+      "Collection opens",
       record.claimBlock
         ? `Block ${record.claimBlock}${
             record.endBlock
@@ -152,7 +152,7 @@ export function OverviewTab({
             <p>
               {progress.data.reason === "no auction contract linked"
                 ? "This launch has no auction contract yet, so there are no live figures to show."
-                : "We couldn't read the blockchain, so live figures are hidden."}
+                : "We couldn't reach the network, so live figures are hidden."}
             </p>
             {progress.data.reason === "no auction contract linked" ? null : (
               // The old copy told the reader to set a reachable RPC endpoint,
@@ -160,7 +160,7 @@ export function OverviewTab({
               // no caller, so this state was a dead end.
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <label className="sr-only" htmlFor="launch-rpc-endpoint">
-                  Chain RPC endpoint
+                  Network connection address
                 </label>
                 <input
                   className="min-w-56 flex-1 rounded-md border border-black/15 bg-transparent px-2 py-1 text-xs dark:border-white/15"
@@ -182,7 +182,7 @@ export function OverviewTab({
                   size="sm"
                   variant="outline"
                 >
-                  Use this endpoint
+                  Use this address
                 </Button>
               </div>
             )}
@@ -319,7 +319,7 @@ export function OverviewTab({
             </dd>
           </div>
           <div className="flex justify-between gap-2 py-1.5">
-            <dt className="text-black/60 dark:text-white/60">Chain</dt>
+            <dt className="text-black/60 dark:text-white/60">Network</dt>
             <dd className="tabular-nums">{record.chainId ?? "Undeployed"}</dd>
           </div>
         </dl>
@@ -385,7 +385,7 @@ function ProvenCommitmentsCard({ launch }: { launch: TabLaunch }) {
   const commitments: Array<[string, string]> = [
     ["Auction contract", chainState.auction ?? "checking…"],
     ["Token contract", chainState.token ?? "checking…"],
-    ["Treasury contract", chainState.treasury ?? "checking…"],
+    ["Project money contract", chainState.treasury ?? "checking…"],
     [
       "Monthly budget",
       record.budget
@@ -393,16 +393,16 @@ function ProvenCommitmentsCard({ launch }: { launch: TabLaunch }) {
         : "not set",
     ],
     [
-      "Vesting package",
+      "Unlock schedule",
       record.vesting
-        ? `${record.vesting.tranches.length} tranches from ${record.vesting.tranches[0].multiple}x`
+        ? `${record.vesting.tranches.length} parts from ${record.vesting.tranches[0].multiple}x`
         : "not set",
     ],
     [
-      "Bound channels",
+      "Linked channels",
       record.channels.length > 0
-        ? `${record.channels.length} bound`
-        : "none bound",
+        ? `${record.channels.length} linked`
+        : "none linked",
     ],
     [
       "Chat rooms",
@@ -411,7 +411,7 @@ function ProvenCommitmentsCard({ launch }: { launch: TabLaunch }) {
         : "none yet",
     ],
     [
-      "Team keys",
+      "Team accounts",
       record.team.length > 0 ? `${record.team.length} listed` : "author only",
     ],
     [
@@ -421,7 +421,7 @@ function ProvenCommitmentsCard({ launch }: { launch: TabLaunch }) {
         : "none listed",
     ],
     [
-      "Parameter hash",
+      "Settings ID",
       record.paramsHash ? `${record.paramsHash.slice(0, 14)}…` : "not set",
     ],
   ];

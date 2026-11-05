@@ -496,7 +496,7 @@ export function PitchDialog({
                         error={errorFor("nodeId")}
                         hint="Suggested from the name. Choose carefully: this address stays with the project."
                         id="pitch-id"
-                        label="Project id"
+                        label="Page address"
                       >
                         <Input
                           aria-describedby="pitch-id-feedback"

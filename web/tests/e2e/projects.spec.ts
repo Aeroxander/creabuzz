@@ -504,10 +504,12 @@ test("pitch project validation reveals the address and keeps focus beside the er
   await expect(page.getByLabel("Project name", { exact: true })).toBeFocused();
   await fillProject(page);
   await page.getByText("Customize page address", { exact: true }).click();
-  await page.getByLabel("Project id", { exact: true }).fill("INVALID ADDRESS");
+  await page
+    .getByLabel("Page address", { exact: true })
+    .fill("INVALID ADDRESS");
   await page.getByText("Customize page address", { exact: true }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  const address = page.getByLabel("Project id", { exact: true });
+  const address = page.getByLabel("Page address", { exact: true });
   await expect(address).toBeVisible();
   await expect(address).toBeFocused();
   await expect(address).toHaveAttribute(
@@ -515,7 +517,7 @@ test("pitch project validation reveals the address and keeps focus beside the er
     "pitch-id-feedback",
   );
   await expect(page.getByTestId("pitch-id-error")).toContainText(
-    "Project id must",
+    "Page address must",
   );
   expect(
     relay.events.filter((event) => [37010, 37015].includes(event.kind)),

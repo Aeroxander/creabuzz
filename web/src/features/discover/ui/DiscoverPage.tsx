@@ -184,7 +184,7 @@ export function DiscoverPage() {
         }
         description={
           raises
-            ? "Everything on this server in one place: the DAOs that already hold money, the launches raising now, and the projects hiring for a role."
+            ? "Everything on this server in one place: projects that already hold shared money, raises open now, and projects looking for people."
             : "Projects on this server and the people they need."
         }
         title={
@@ -353,7 +353,7 @@ export function DiscoverPage() {
                 <section className="flex flex-col gap-3">
                   <SectionHeading
                     count={projects.length}
-                    description="Pitches with the roles they need open. Every chip is a seat you can ask for."
+                    description="Pitches with the roles they need. Each tag is a role you can ask to join."
                     title="Project board"
                   />
                   {projects.length === 0 ? (
@@ -382,12 +382,12 @@ export function DiscoverPage() {
                 <section className="flex flex-col gap-3">
                   <SectionHeading
                     count={daos.length}
-                    description="Projects with their own DAO and funds."
+                    description="A DAO is a project run by its holders' votes, with its money held in the open."
                     title="DAOs"
                   />
                   {daos.length === 0 ? (
                     <EmptyState
-                      message="No DAOs yet. A project's DAO shows up here once it is set up."
+                      message="No projects with shared funds yet. One shows up here once it is set up."
                       testId="discover-daos-empty"
                     >
                       {raises ? (

@@ -428,7 +428,7 @@ export function deriveDirectory(input: {
       hasPitch: Boolean(summary),
       openRoles: summary?.openRoles ?? [],
       updatedAt: receipt.createdAt,
-      sources: ["DAO creation receipt"],
+      sources: ["Project setup record"],
       launch: null,
     });
   }
@@ -553,17 +553,17 @@ export function directoryNotice(counts: DirectoryCounts): string | null {
   const parts: string[] = [];
   if (counts.malformed > 0) {
     parts.push(
-      `${counts.malformed} record${counts.malformed === 1 ? "" : "s"} could not be read: counted, not listed`,
+      `${counts.malformed} record${counts.malformed === 1 ? "" : "s"} could not be read, so ${counts.malformed === 1 ? "it is" : "they are"} not listed`,
     );
   }
   if (counts.unlinked > 0) {
     parts.push(
-      `${counts.unlinked} deployment${counts.unlinked === 1 ? "" : "s"} name no project`,
+      `${counts.unlinked} setup record${counts.unlinked === 1 ? "" : "s"} not linked to any project`,
     );
   }
   if (counts.orphanReceipts > 0) {
     parts.push(
-      `${counts.orphanReceipts} summon receipt${counts.orphanReceipts === 1 ? "" : "s"} with no launch record on this server`,
+      `${counts.orphanReceipts} project setup record${counts.orphanReceipts === 1 ? "" : "s"} with no matching project on this server`,
     );
   }
   if (parts.length === 0) return null;

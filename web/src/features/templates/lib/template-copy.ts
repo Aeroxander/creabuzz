@@ -25,7 +25,8 @@ const AUDIENCE: Record<string, string> = {
   "ai-media-studio":
     "For filmmakers, musicians and audio storytellers making things with AI.",
   "ai-app-studio": "For people building products powered by AI.",
-  "crypto-app-studio": "For contracts, protocols and onchain apps.",
+  "crypto-app-studio":
+    "For people building contracts and apps that run on a public network.",
   "vanilla-app-studio": "For any web or app startup, without the ceremony.",
 };
 

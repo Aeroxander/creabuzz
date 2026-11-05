@@ -288,7 +288,7 @@ export function useCreatePitch() {
           );
         } catch (error) {
           throw new PitchPublishError(
-            `The project's org node did not publish: ${messageOf(error)}`,
+            `Your project could not be created: ${messageOf(error)}`,
             input.pitch.nodeId,
             false,
           );
@@ -299,7 +299,7 @@ export function useCreatePitch() {
         await publishTemplate(pitchTemplate);
       } catch (error) {
         throw new PitchPublishError(
-          `The pitch did not publish: ${messageOf(error)}`,
+          `Your pitch did not send: ${messageOf(error)}`,
           input.pitch.nodeId,
           nodeExists,
         );

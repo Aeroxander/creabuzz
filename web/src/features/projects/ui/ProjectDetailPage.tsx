@@ -160,8 +160,8 @@ function TeamMap({
                 data-testid={`team-source-${member.source}`}
                 title={
                   member.source === "grant"
-                    ? "Recorded by an ownership grant the founder published"
-                    : "Declared by the founder's pitch, not yet a grant"
+                    ? "Recorded: the founder approved this role on the board"
+                    : "Declared in the founder's pitch, not yet approved on the board"
                 }
               >
                 {member.source === "grant" ? "recorded" : "declared"}
@@ -429,7 +429,7 @@ export function ProjectDetailPage({
     return (
       <div className="mx-auto w-full max-w-3xl px-4 py-8">
         <QueryError
-          description="The server did not answer the project query, so this page cannot show a team map."
+          description="The server did not answer, so this page cannot show the team. Try again."
           error={error}
           kinds={PROJECT_EVENT_KINDS}
           message={errorMessage(error)}
@@ -625,9 +625,9 @@ export function ProjectDetailPage({
             </span>
           </div>
           <p className="mt-1 text-xs text-black/50 dark:text-white/50">
-            Approving publishes one ownership grant. The % becomes a recorded,
-            revocable stake. Declining records the decision on the request's
-            thread. Nothing here is a contract.
+            Approving records this share on the board as a stake you can take
+            back. Declining records your answer on the request. Nothing here is
+            a contract.
           </p>
           {pendingRequests.length === 0 ? (
             <p className="mt-3 text-sm text-black/50 dark:text-white/50">

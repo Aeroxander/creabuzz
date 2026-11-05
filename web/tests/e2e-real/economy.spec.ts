@@ -428,7 +428,7 @@ test("a founder, a labor contributor and a capital contributor, at once", async 
   // that it starts with posting their bond.
   await capital.page.goto("/");
   await expect(capital.page.getByTestId("home-waiting")).toContainText(
-    "Post your bond",
+    "Put down your bond",
     { timeout: 60_000 },
   );
   await capital.page.getByTestId("home-waiting-open").first().click();

@@ -245,7 +245,7 @@ test("the directory lists DAOs, live launches, and open projects", async ({
   await expect(daoLink).toBeVisible();
   await expect(daoLink).toHaveAttribute("href", `${SEPOLIA}/address/${DAO}`);
   // Team size comes from the equity map (founder + the granted designer).
-  await expect(nebula).toContainText("2 seats · equity map");
+  await expect(nebula).toContainText("2 seats · from its pitch");
 
   // A deployment-only project is listed *and* labelled as a contract — it is
   // never dressed up as a treasury.

@@ -66,7 +66,7 @@ export function ProjectDeliveryOverview({
         ) : null}
         {dao ? (
           <Button size="sm" variant="outline" onClick={() => onOpen("work")}>
-            Work budgets & claims
+            Work budgets & submissions
           </Button>
         ) : null}
         <Button size="sm" variant="outline" onClick={() => onOpen("agents")}>
@@ -78,7 +78,7 @@ export function ProjectDeliveryOverview({
             variant="outline"
             onClick={() => onOpen("treasury")}
           >
-            Money & spending authority
+            Money & spending approval
           </Button>
         ) : null}
       </div>
@@ -86,7 +86,7 @@ export function ProjectDeliveryOverview({
         <p className="mt-2 text-xs text-muted-foreground">
           {lock.isError
             ? "The milestone state could not be read. Open the milestone view to retry."
-            : "Reading the next milestone from the chain…"}
+            : "Reading the next milestone from the network…"}
         </p>
       ) : null}
       <h3 className="mt-4 text-sm font-semibold">Team-recorded work</h3>
@@ -133,7 +133,7 @@ export function ProjectDeliveryOverview({
                   : ""}
                 {t.milestone ? ` · ${t.milestone}` : ""}
                 {t.delivery?.claim
-                  ? ` · Claim noted by ${nameOf(t.linkedBy ?? t.author)}. Not approved or paid yet.`
+                  ? ` · Submission noted by ${nameOf(t.linkedBy ?? t.author)}. Not approved or paid yet.`
                   : ""}
               </span>
             </span>

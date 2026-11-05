@@ -603,7 +603,7 @@ test("a review claim's expiry outranks a later vote and says what inaction risks
   assert.equal(items[0].key, "review-urgent");
   assert.equal(items[0].due, 10001);
   assert.match(items[0].ifIgnored, /anyone can close/);
-  assert.match(items[0].ifIgnored, /stake and reserved payment/);
+  assert.match(items[0].ifIgnored, /deposit and the payment set aside for it/);
   const expired = attentionItems({
     wallet: ME,
     decisions: undefined,

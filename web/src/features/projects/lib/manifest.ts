@@ -179,7 +179,7 @@ function validateRole(role: RoleDeclaration, field: "roles"): void {
   if (!ROLE_SLUG_RE.test(role.slug)) {
     throw new PitchValidationError(
       field,
-      `Role id "${role.slug}" must be 1-12 characters of a-z, 0-9 and dashes.`,
+      `The role name "${role.slug}" must be 1 to 12 characters: lowercase letters, numbers and dashes.`,
     );
   }
   const label = role.label.trim();
@@ -211,7 +211,7 @@ export function buildPitchTemplate(input: PitchInput): {
   if (!PROJECT_ID_RE.test(nodeId)) {
     throw new PitchValidationError(
       "nodeId",
-      "Project id must be 1-32 characters of a-z, 0-9 and dashes.",
+      "Page address must be 1 to 32 characters: lowercase letters, numbers and dashes.",
     );
   }
   const name = input.name.trim();

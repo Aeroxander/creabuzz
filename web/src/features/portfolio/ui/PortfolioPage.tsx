@@ -198,7 +198,7 @@ function WorkSection({
         </div>
         {nothingYet ? (
           <Muted>
-            Finish a task on your community's work board and claim it. Once a
+            Finish a task on your community's work board and submit it. Once a
             reviewer accepts it, it counts here.
           </Muted>
         ) : null}
@@ -292,7 +292,8 @@ function BackingSection() {
     body = (
       <Card className="flex flex-col items-start gap-2 p-4">
         <Muted testId="portfolio-backing-no-wallet">
-          Raises you back are kept in your wallet. Connect it to see them here.
+          Raises you back are kept in a wallet: an app that holds your money and
+          proves it is you. Connect yours to see them here.
         </Muted>
         {wallet.hasProvider ? (
           <Button
@@ -461,7 +462,8 @@ function HoldingsSection({
   if (holdings.owners.length === 0) {
     body = (
       <Muted testId="portfolio-holdings-no-wallet">
-        Shares are kept in your wallet. Connect it to see what you hold here.
+        Shares are kept in a wallet: an app that holds your money and proves it
+        is you. Connect yours to see what you hold here.
       </Muted>
     );
   } else if (holdings.error) {
@@ -493,7 +495,7 @@ function HoldingsSection({
           </ul>
         ) : failed.length === 0 ? (
           <Muted testId="portfolio-holdings-empty">
-            You don't hold Shares in any DAO from{" "}
+            You don't hold Shares in any project from{" "}
             {holdings.owners.length === 1 ? "this wallet" : "these wallets"}{" "}
             yet.
           </Muted>
@@ -515,7 +517,7 @@ function HoldingsSection({
         ) : null}
         {unchecked > 0 ? (
           <p className="text-xs text-black/50 dark:text-white/50">
-            Only the {MAX_RAISES_CHECKED} newest DAOs were checked.
+            Only the {MAX_RAISES_CHECKED} newest projects were checked.
           </p>
         ) : null}
       </>
@@ -685,8 +687,9 @@ function CourtSection() {
       <SectionHeader title="Judging" />
       <Card className="flex flex-col items-start gap-2 p-4">
         <p className="text-sm">
-          Stake CREATE to be drawn as a juror on disputes about work. Jurors who
-          vote with the final ruling are paid.
+          Put down a deposit of CREATE, the court's deposit token, to be picked
+          as a juror on disputes about work. Jurors who vote with the final
+          ruling are paid.
         </p>
         <Button asChild size="sm" variant="outline">
           <Link to="/court">Open the court</Link>

@@ -75,7 +75,7 @@ function AddressLine({
       )}
       <span className="text-2xs text-black/70 dark:text-white/70">
         {url
-          ? "link opens the block explorer"
+          ? "link opens its public page"
           : chainId === null
             ? "no public page for this network"
             : "no public page for this network"}
@@ -99,10 +99,10 @@ function ContributorDaoSource({
   return (
     <span className="shrink-0" data-testid="discover-dao-checked">
       {provenance === "kit"
-        ? "Set up by the contributor kit"
+        ? "Set up the standard way"
         : provenance === "reading"
           ? "Checking how it was set up…"
-          : "Not set up by the contributor kit"}
+          : "Not set up the standard way"}
     </span>
   );
 }
@@ -177,7 +177,7 @@ export function DiscoverDaoCard({
   }
   const address = card.dao ?? card.contract?.address ?? null;
   const addressLabel = card.dao
-    ? "DAO address"
+    ? "Project address"
     : card.contract
       ? `Contract · ${card.contract.role}`
       : "Address on the network";
@@ -211,7 +211,7 @@ export function DiscoverDaoCard({
           />
         ) : (
           <p className="text-xs text-black/60 dark:text-white/60">
-            No onchain address recorded on this server yet.
+            No network address recorded on this server yet.
           </p>
         )}
 
@@ -221,8 +221,10 @@ export function DiscoverDaoCard({
             {card.teamSize === null
               ? "Team not listed"
               : `${card.teamSize} ${card.teamSize === 1 ? "seat" : "seats"}`}
-            {card.teamSource === "equity-map" ? " · equity map" : ""}
-            {card.teamSource === "summon-receipt" ? " · minted at summon" : ""}
+            {card.teamSource === "equity-map" ? " · from its pitch" : ""}
+            {card.teamSource === "summon-receipt"
+              ? " · set when the project was made"
+              : ""}
           </span>
           {card.openRoles.map((role) => (
             <RoleChip filled={false} key={role.slug} role={role} />
@@ -237,7 +239,7 @@ export function DiscoverDaoCard({
             target="_blank"
             title={card.summonTx ?? card.deploymentTx ?? undefined}
           >
-            {card.summonTx ? "Summon" : "Deployment"} tx{" "}
+            {card.summonTx ? "Setup" : "Deployment"} confirmation{" "}
             {truncatePubkey(card.summonTx ?? card.deploymentTx ?? "")}
             <span className="sr-only"> (opens in a new tab)</span>
           </a>

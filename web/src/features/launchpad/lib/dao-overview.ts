@@ -285,12 +285,12 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
         key: `bond-${mandate.address}`,
         kind: "bond",
         text: mandate.isMilestonePanel
-          ? "You are one of the reviewers for the team's milestones. Post your bond before you judge one."
-          : "You are a reviewer on a work budget. Post your bond before you judge a submission.",
-        action: "Post your bond",
+          ? "You are one of the reviewers for the team's milestones. Put down your bond before you judge one. A bond is a deposit you lose if you act carelessly."
+          : "You are a reviewer on a work budget. Put down your bond before you judge a submission. A bond is a deposit you lose if you act carelessly.",
+        action: "Put down your bond",
         tab: "work",
         why: "You are a named reviewer.",
-        ifIgnored: "You cannot judge anything until your bond is posted.",
+        ifIgnored: "You cannot judge anything until you put down your bond.",
       });
     }
     for (const claim of mandate.claims) {
@@ -336,8 +336,8 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           ifIgnored:
             claim.record.expiresAt > 0 &&
             (work?.chainTime ?? 0) > claim.record.expiresAt
-              ? "Anyone can now close this unanswered submission and return its stake and reserved payment."
-              : "After its deadline, anyone can close an unanswered submission and return its stake and reserved payment.",
+              ? "Anyone can now close this unanswered submission and return its deposit and the payment set aside for it."
+              : "After its deadline, anyone can close an unanswered submission and return its deposit and the payment set aside for it.",
         });
       }
       const target = { id: claim.id, mandate: mandate.address };
@@ -386,7 +386,7 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
         items.push({
           key: `bind-${claim.id}`,
           kind: "bind",
-          text: `Your milestone claim “${label}” is filed but not yet submitted to the milestone panel.`,
+          text: `Your milestone submission “${label}” is saved but not yet sent to the milestone reviewers.`,
           action: "Finish submitting",
           tab: "milestones",
           why: "You filed it; only you can submit it.",
@@ -531,7 +531,7 @@ export function attentionItems(input: OverviewInput): AttentionItem[] {
           items.push({
             key: `award-${claim.id}`,
             kind: "award",
-            text: `The work of ${who(claim.record.contributor)} is done. The DAO can vote to award Shares for it.`,
+            text: `The work of ${who(claim.record.contributor)} is done. Shareholders can vote to award Shares for it.`,
             action: "Put it to a vote",
             tab: "decisions",
             why: "You hold Shares in this project.",

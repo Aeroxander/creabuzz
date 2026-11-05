@@ -528,13 +528,13 @@ export function DaoOverview({
       ) : (
         <div className="grid gap-3 sm:grid-cols-3">
           <Figure
-            label="In the treasury"
+            label="Project money"
             note={
               !launch.record.currency
                 ? "This project did not raise money"
                 : money === null
                   ? "Could not be read"
-                  : "What the DAO holds now. Money already set aside for work is not counted."
+                  : "What the project holds now. Money already set aside for work is not counted."
             }
             testId="dao-figure-treasury"
             value={
@@ -659,7 +659,7 @@ export function DaoOverview({
           <div className="min-w-0">
             <h3 className="text-sm font-semibold">Track record</h3>
             <p className="text-sm text-muted-foreground">
-              What this DAO has paid and to whom, and how much of its team's
+              What this project has paid and to whom, and how much of its team's
               tokens have unlocked so far. Anyone can check it.
             </p>
           </div>

@@ -757,7 +757,7 @@ test("an agent-run launch is badged and attested", async ({ page }) => {
   // C4: agents are first-class participants. A launch created with the
   // "as agent" toggle is authored by the browser agent key, carries the
   // self-describing `agent` tag and a NIP-OA `auth` attestation, and is
-  // badged "Agent-run" in the directory and detail.
+  // badged "AI-run" in the directory and detail.
   await page.getByRole("button", { name: "Set up a sale" }).first().click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
@@ -817,8 +817,8 @@ test("the trust page states each commitment and its real proof state", async ({
   await expect(card).toContainText("not set");
   // Record-borne commitments report what the record actually carries.
   await expect(card).toContainText("Monthly budget");
-  await expect(card).toContainText("Vesting package");
-  await expect(card).toContainText("5 tranches from 2x");
+  await expect(card).toContainText("Unlock schedule");
+  await expect(card).toContainText("5 parts from 2x");
   // The point of the card: a check that cannot be made never renders as a
   // pass. With no reachable RPC the auction row must be an honest failure
   // state — "unreadable" — never "deployed" or "verified". Any honest
