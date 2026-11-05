@@ -51,6 +51,7 @@ export function TradingEarlier({
   me,
   blocked,
   busy,
+  gateNoteId,
   onSend,
 }: {
   earlier: EarlierRoundsRead;
@@ -62,6 +63,8 @@ export function TradingEarlier({
   me: string | null;
   blocked: boolean;
   busy: string | null;
+  /** The note saying why the buttons are off (a wrong network), when there is one. */
+  gateNoteId?: string;
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
 }) {
   const headingId = useId();
@@ -114,6 +117,7 @@ export function TradingEarlier({
               busy={busy}
               due={due}
               facts={facts}
+              gateNoteId={gateNoteId}
               id={row.id}
               key={row.id.toString()}
               market={market}
@@ -175,6 +179,7 @@ function EarlierRow({
   me,
   blocked,
   busy,
+  gateNoteId,
   onSend,
 }: {
   id: bigint;
@@ -185,9 +190,11 @@ function EarlierRow({
   me: string;
   blocked: boolean;
   busy: string | null;
+  gateNoteId?: string;
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
 }) {
   const lineId = useId();
+  const describedBy = gateNoteId ? `${lineId} ${gateNoteId}` : lineId;
   const sharesKey = `trading-earlier-claim-shares-${id}`;
   const quoteKey = `trading-earlier-claim-quote-${id}`;
   return (
@@ -202,7 +209,7 @@ function EarlierRow({
       <div className="flex flex-wrap gap-2">
         {due.shares > 0n ? (
           <Button
-            aria-describedby={lineId}
+            aria-describedby={describedBy}
             data-testid="trading-earlier-claim-shares"
             disabled={blocked}
             onClick={() =>
@@ -218,7 +225,7 @@ function EarlierRow({
         ) : null}
         {due.quote > 0n ? (
           <Button
-            aria-describedby={lineId}
+            aria-describedby={describedBy}
             data-testid="trading-earlier-claim-quote"
             disabled={blocked}
             onClick={() =>

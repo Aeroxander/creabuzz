@@ -710,16 +710,31 @@ function wholeLots(text: string): { lots: bigint } | { problem: string } {
   return { lots: count };
 }
 
-/** A typed price as quote base units, or a thrown problem the form shows. */
+/**
+ * A typed price as quote base units, or a thrown problem the form shows. A single comma and no point is a decimal
+ * comma (the decimal keyboard shows one on many phones): "1,05" is 1.05. A comma that could be a thousands
+ * separator ("1,000") is refused instead of guessed, since reading one thousand as one is a 1000x mistake in
+ * someone's money.
+ */
 function priceOf(text: string, what: string, decimals: number): bigint {
   const trimmed = text.trim();
-  const parts = trimmed.split(".");
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(trimmed)) {
+    throw new Error(
+      `${what}: write it with a point and no commas, like 1050.25.`,
+    );
+  }
+  const typed = /^[^,.]*,[^,.]*$/.test(trimmed)
+    ? trimmed.replace(",", ".")
+    : trimmed;
+  const parts = typed.split(".");
   if (
     parts.length > 2 ||
     !/^\d+$/.test(parts[0] ?? "") ||
-    (parts[1] !== undefined && !/^\d+$/.test(parts[1])) ||
-    (parts[1]?.length ?? 0) > decimals
+    (parts[1] !== undefined && !/^\d+$/.test(parts[1]))
   ) {
+    throw new Error(`${what} must be a number like 1.05.`);
+  }
+  if ((parts[1]?.length ?? 0) > decimals) {
     throw new Error(
       `${what} must be a number with at most ${decimals} decimal places.`,
     );

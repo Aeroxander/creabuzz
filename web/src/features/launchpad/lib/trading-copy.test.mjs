@@ -504,6 +504,31 @@ test("the two order forms say what is wrong before anything is sent", () => {
   );
 });
 
+test("a price typed with a decimal comma means the same as with a point, and a malformed one is not called a decimal-places problem", () => {
+  const sell = (text) => sellPlan(round(), "2", text, SELL_USDC, funds());
+  const bid = (text) => bidPlan(round(), "2", text, USDC, funds());
+  // Many keyboards show a comma for inputMode decimal: "1,05" is 1.05, not a rejected number.
+  assert.deepEqual(bid("1,05"), bid("1.05"));
+  assert.deepEqual(bid("1,05"), { lots: 2n, level: 6 });
+  assert.deepEqual(sell("1,02"), sell("1.02"));
+  assert.equal("problem" in sell("1,02"), false);
+  // "1," and "1." and ".5" are not finished prices: the message says how to write one, not that there are too many decimals.
+  for (const text of ["1.", "1,", ".5", ",5", "1.2.3", "abc"]) {
+    for (const plan of [sell(text), bid(text)]) {
+      assert.match(plan.problem, /a number like 1\.05/, text);
+      assert.doesNotMatch(plan.problem, /decimal places/, text);
+    }
+  }
+  // Too many decimals still says so, with a comma too.
+  assert.match(bid("1,0000001").problem, /at most 6 decimal places/);
+  assert.match(bid("1.0000001").problem, /at most 6 decimal places/);
+  // "1,000" could be one thousand or one: guessing is a 1000x mistake in someone's money, so it is refused in words.
+  for (const text of ["1,000", "1,008", "1,000.50", "12,345,678"]) {
+    assert.match(bid(text).problem, /with a point and no commas/, text);
+    assert.match(sell(text).problem, /with a point and no commas/, text);
+  }
+});
+
 test("an oversized number of lots is refused in words, never planned (the contract's own cap)", () => {
   const huge = "99999999999999999999999999999";
   const cap = (1n << 96n).toString();

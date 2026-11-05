@@ -357,6 +357,8 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   );
   await nobody.getByTestId("trading-sell-lots").fill("1");
   await nobody.getByTestId("trading-sell-price").fill(LOW_TEXT);
+  // A problem is shown once the person has left the field (or tried to send), never on every keystroke.
+  await nobody.getByTestId("trading-sell-price").blur();
   await expect(nobody.getByTestId("trading-sell-plan-problem")).toContainText(
     "You hold no Shares in this project, so there is nothing to offer.",
   );
@@ -390,6 +392,7 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
     .getByTestId("trading-sell-lots")
     .fill((offerableNow + 1n).toString());
   await founder.getByTestId("trading-sell-price").fill(LOW_TEXT);
+  await founder.getByTestId("trading-sell-price").blur();
   await expect(founder.getByTestId("trading-sell-plan-problem")).toContainText(
     `You can offer up to ${offerableNow} lots now`,
   );
@@ -589,23 +592,25 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
       : route.continue(),
   );
   await third.reload();
-  await expect(third.getByTestId("trading-unreadable")).toContainText(
+  // The card stays on screen (a failed read does not replace it) and says which read it could not do.
+  await expect(third.getByTestId("trading-state")).toContainText(
     "The market's price token couldn't be read just now, so no price can be shown.",
     { timeout: 60_000 },
   );
-  // Nothing that would carry a price is shown: no listing terms, no round, no collect button.
+  // Nothing that would carry a price is shown, and no new offer or bid is taken without the token's units.
   await expect(third.getByTestId("trading-listing")).toHaveCount(0);
-  await expect(third.getByTestId("trading-round")).toHaveCount(0);
+  await expect(third.getByTestId("trading-sell")).toHaveCount(0);
+  await expect(third.getByTestId("trading-bid")).toHaveCount(0);
   await expect(third.getByTestId("trading-claim")).toHaveCount(0);
-  // The way back is on the card, and it works once the token answers again.
+  // The way back is to read again, and it works once the token answers again.
   await third.unroute(quoteDown);
-  await third
-    .getByTestId("trading-unreadable")
-    .getByRole("button", { name: "Try again" })
-    .click();
-  await expect(third.getByTestId("trading-round")).toBeVisible({
+  await third.reload();
+  await expect(third.getByTestId("trading-listing")).toBeVisible({
     timeout: 60_000,
   });
+  await expect(third.getByTestId("trading-state")).not.toContainText(
+    "price token couldn't be read",
+  );
   say(
     "a price token that could not be read printed no price, and trying again found it",
   );
@@ -1046,6 +1051,183 @@ test("a seller whose offer part-sold takes back the unsold lots, from the card a
   expect(await callWord(MARKET, `${SIG.sharesIn}${word(4n)}`)).toBe(0n);
   expect(await balanceOf(SHARES, MARKET)).toBe(0n);
   say("the buyer collected its lot and round 4 holds nothing");
+
+  await context.close();
+});
+
+/** A wallet that answers every chain question with chain 1: the page is on the local chain, so the send is gated. */
+async function onWrongNetwork(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const provider = (
+      window as unknown as {
+        ethereum: {
+          request: (a: {
+            method: string;
+            params?: unknown[];
+          }) => Promise<unknown>;
+        };
+      }
+    ).ethereum;
+    const real = provider.request.bind(provider);
+    provider.request = (args) =>
+      args.method === "eth_chainId" ? Promise.resolve("0x1") : real(args);
+  });
+}
+
+test("trading by keyboard and screen reader: focus follows the form, Enter sends, the result is announced, a wrong network says why", async ({
+  browser,
+}) => {
+  test.setTimeout(600_000);
+  const context = await browser.newContext();
+  const relay = createMockRelay();
+  relay.seed(launchRecord());
+  const say = (what: string) => console.log(`[trading] ${what}`);
+
+  // The journeys above left round 5 open for bids, with no order from the founder or the buyer in it.
+  expect(await callWord(MARKET, SIG.roundCount)).toBe(5n);
+
+  // ── The offer form, by keyboard alone ──────────────────────────────────────────────────────────────────
+  const founder = await personPage(
+    context,
+    relay,
+    FOUNDER_WALLET,
+    FOUNDER_NSEC,
+  );
+  await openTrading(founder);
+  const trigger = founder.getByTestId("trading-sell");
+  await expect(trigger).toBeVisible({ timeout: 60_000 });
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await trigger.focus();
+  await founder.keyboard.press("Enter");
+  // Opening the form puts the cursor in it (a screen reader hears the first field), and the trigger stays as the toggle.
+  await expect(founder.getByTestId("trading-sell-lots")).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  const controls = await trigger.getAttribute("aria-controls");
+  expect(controls).toBeTruthy();
+  await expect(founder.locator(`[id="${controls}"]`)).toBeVisible();
+  // The plan and problem text lives in one polite region that is in the page before it says anything.
+  const live = founder.getByTestId("trading-sell-plan-live");
+  await expect(live).toHaveAttribute("aria-live", "polite");
+  await expect(live).toHaveText("");
+
+  // Tab walks lots, price, then Cancel (the disabled send button is skipped); Enter on Cancel closes the form and
+  // hands focus back to the trigger.
+  await founder.keyboard.press("Tab");
+  await expect(founder.getByTestId("trading-sell-price")).toBeFocused();
+  await founder.keyboard.press("Tab");
+  await expect(founder.getByTestId("trading-sell-cancel")).toBeFocused();
+  await founder.keyboard.press("Enter");
+  await expect(founder.getByTestId("trading-sell-form")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  say(
+    "the offer form takes focus when opened and gives it back when cancelled",
+  );
+
+  // ── Typing: a comma is a decimal point; an unfinished price is not shouted at ──────────────────────────
+  await founder.keyboard.press("Enter");
+  await expect(founder.getByTestId("trading-sell-lots")).toBeFocused();
+  await founder.keyboard.type("1");
+  await founder.keyboard.press("Tab");
+  await founder.keyboard.type("1.");
+  // Mid-typing: nothing is announced or marked wrong yet.
+  await expect(founder.getByTestId("trading-sell-plan-problem")).toHaveCount(0);
+  await expect(founder.getByTestId("trading-sell-price")).not.toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  // Leaving the field says what is wrong, in a role-less polite region, and marks the field.
+  await founder.keyboard.press("Tab");
+  await expect(founder.getByTestId("trading-sell-plan-problem")).toContainText(
+    "a number like 1.05",
+  );
+  await expect(
+    founder.getByTestId("trading-sell-plan-problem"),
+  ).not.toHaveAttribute("role", "alert");
+  await expect(founder.getByTestId("trading-sell-price")).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  const statusId = await live.getAttribute("id");
+  expect(statusId).toBeTruthy();
+  const described = await founder
+    .getByTestId("trading-sell-price")
+    .getAttribute("aria-describedby");
+  expect(described ?? "").toContain(statusId ?? "never");
+  expect(described ?? "").toContain(
+    (await founder.getByTestId("trading-sell-room").getAttribute("id")) ??
+      "never",
+  );
+  // A decimal comma is accepted, and the valid plan is said in the same region.
+  await founder.getByTestId("trading-sell-price").fill("1,05");
+  await expect(founder.getByTestId("trading-sell-plan-problem")).toHaveCount(0);
+  await expect(live).toContainText("This holds 1 lot (1 Shares)");
+  await expect(founder.getByTestId("trading-sell-price")).not.toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+
+  // ── Enter in a field sends (a real form), and the result takes focus ───────────────────────────────────
+  await founder.getByTestId("trading-sell-price").focus();
+  await founder.keyboard.press("Enter");
+  const mine = founder.getByTestId("trading-my-sell");
+  await expect(mine).toContainText("You offer 1 lot at", { timeout: 90_000 });
+  await expect(mine).toBeFocused();
+  await expect(mine).toHaveAttribute("tabindex", "-1");
+  // The order lines sit in a polite region that was in the page before the order existed.
+  await expect(
+    founder.locator('[data-testid="trading-orders"][aria-live="polite"]'),
+  ).toHaveCount(1);
+  expect(await callWord(MARKET, `${SIG.sharesIn}${word(5n)}`)).toBe(WAD);
+  say(
+    "Enter sent the offer, a decimal comma was understood, and focus moved to the result",
+  );
+
+  // ── The bid form, by keyboard alone ────────────────────────────────────────────────────────────────────
+  const bidder = await personPage(context, relay, BIDDER_WALLET, BIDDER_NSEC);
+  await openTrading(bidder);
+  const bidTrigger = bidder.getByTestId("trading-bid");
+  await expect(bidTrigger).toBeVisible({ timeout: 60_000 });
+  await bidTrigger.focus();
+  await bidder.keyboard.press("Space");
+  await expect(bidder.getByTestId("trading-bid-lots")).toBeFocused();
+  await expect(bidTrigger).toHaveAttribute("aria-expanded", "true");
+  await bidder.keyboard.type("1");
+  await bidder.keyboard.press("Tab");
+  await bidder.keyboard.type(HIGH_TEXT);
+  await bidder.keyboard.press("Enter");
+  await expect(bidder.getByTestId("trading-my-bid")).toContainText(
+    "You bid for 1 lot at up to",
+    { timeout: 90_000 },
+  );
+  await expect(bidder.getByTestId("trading-my-bid")).toBeFocused();
+  say("the bid form takes focus, Enter sends it, and the result takes focus");
+
+  // ── A wrong network is said, and the disabled buttons point at the reason ──────────────────────────────
+  const away = await context.newPage();
+  await relay.install(away);
+  await installAnvilWallet(away, FOUNDER_WALLET, { rpcUrl: ANVIL_URL });
+  await onWrongNetwork(away);
+  await away.addInitScript(
+    ([key, rpcUrl]) => {
+      window.localStorage.setItem("buzz.identity.nsec", key);
+      window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
+    },
+    [FOUNDER_NSEC, ANVIL_URL],
+  );
+  await openTrading(away);
+  const gate = away.getByTestId("trading-gate");
+  await expect(gate).toContainText("Switch networks in your wallet", {
+    timeout: 60_000,
+  });
+  const gateId = await gate.getAttribute("id");
+  expect(gateId).toBeTruthy();
+  const cancel = away.getByTestId("trading-cancel-sell");
+  await expect(cancel).toBeDisabled();
+  expect((await cancel.getAttribute("aria-describedby")) ?? "").toContain(
+    gateId ?? "never",
+  );
+  say("a wallet on another network is told why every button is off");
 
   await context.close();
 });

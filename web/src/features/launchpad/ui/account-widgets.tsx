@@ -89,15 +89,19 @@ export { FailureNote } from "@/shared/ui/failure-note";
 export function GateNote({
   gate,
   testId,
+  id,
 }: {
   gate: { ok: true } | { ok: false; message: string };
   testId: string;
+  /** Lets the buttons this note explains name it in `aria-describedby`. */
+  id?: string;
 }) {
   if (gate.ok) return null;
   return (
     <p
       className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 [overflow-wrap:anywhere] dark:bg-amber-950 dark:text-amber-100"
       data-testid={testId}
+      id={id}
       role="status"
     >
       {gate.message}

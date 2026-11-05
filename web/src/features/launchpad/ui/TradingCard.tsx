@@ -16,13 +16,11 @@
  */
 
 import { CalendarClock } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
-import type { SenderCall } from "@/features/identity/lib/sponsoredSender";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Chip } from "@/shared/ui/chip";
-import { Input } from "@/shared/ui/input";
 import { MoreInfo } from "@/shared/ui/more-info";
 
 import {
@@ -38,24 +36,15 @@ import {
 } from "@creaton/core/launchpad/secondary.ts";
 
 import {
-  bidHolds,
   bidOrderLine,
-  bidPlan,
   cardMode,
   claimDue,
   collectQuoteLabel,
   factoryMissingLine,
   listingDetailLine,
-  lotPriceLine,
-  lots as lotsLabel,
-  money,
   nextRoundChip,
-  quoteHeldLine,
   roundLine,
-  sellHolds,
   sellOrderLine,
-  sellPlan,
-  sellRoomLine,
   settleNoticeLine,
   shareUnits,
   staleReadLine,
@@ -65,16 +54,15 @@ import {
   unreadableLine,
   type WalletFunds,
 } from "../lib/trading-copy";
-import { bidCalls, placeOrder, sellCalls } from "../lib/trading-orders";
+import { placeOrder } from "../lib/trading-orders";
 import { useChainSend } from "../use-chain-send";
 import type { SecondaryMarketFacts } from "../lib/secondary-read";
 import { SECONDARY_QUERY, useSecondary } from "../use-secondary";
-import { FailureNote, WalletStrip } from "./account-widgets";
+import { FailureNote, GateNote, WalletStrip } from "./account-widgets";
 import { TradingEarlier } from "./TradingEarlier";
+import { BidForm, type Place, SellForm } from "./TradingOrderForms";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;
-/** Put one order on the network as one step: every call built first, then sent together (`lib/trading-orders.ts`). */
-type Place = (key: string, build: () => SenderCall[]) => Promise<boolean>;
 
 /**
  * The DAO's secondary market on a project's Funds tab, where this build names
@@ -105,6 +93,11 @@ export function TradingCard({
     placeOrder(key, build, sender.sendBatch, sender.reportFailure);
   const read = data?.read ?? null;
   const blocked = sender.busy !== null || sender.gate !== null;
+  // Why every button is off when the wallet is on another network. With no account at all the account strip below
+  // already says what to do, so the note is only for a connected account that cannot act here.
+  const gateId = useId();
+  const gateNoteId =
+    sender.gate !== null && sender.wallet.address ? gateId : undefined;
   const present = read?.kind === "present" ? read : null;
   const round = present?.round ?? null;
   // What prices are written in: the market's own quote token, as it names itself. Null when it would not say.
@@ -194,8 +187,18 @@ export function TradingCard({
               )}
             </p>
           ) : null}
+          <GateNote
+            gate={
+              gateNoteId === undefined || sender.gate === null
+                ? { ok: true }
+                : { ok: false, message: sender.gate }
+            }
+            id={gateNoteId}
+            testId="trading-gate"
+          />
           {canOpen && present ? (
             <Button
+              aria-describedby={gateNoteId}
               className="mt-2"
               data-testid="trading-open"
               disabled={blocked}
@@ -224,6 +227,7 @@ export function TradingCard({
               busy={sender.busy}
               facts={data.facts}
               funds={data.funds}
+              gateNoteId={gateNoteId}
               listingEnabled={present.listing.enabled}
               market={present.market}
               tokenUnreadable={data.tokenUnreadable}
@@ -242,6 +246,7 @@ export function TradingCard({
               earlier={data.earlier}
               latest={data.roundId}
               facts={data.facts}
+              gateNoteId={gateNoteId}
               market={present.market}
               me={sender.wallet.address}
               onSend={sender.send}
@@ -278,6 +283,7 @@ function TradingRound({
   me,
   blocked,
   busy,
+  gateNoteId,
   onPlace,
   onSend,
 }: {
@@ -298,15 +304,56 @@ function TradingRound({
   me: string | null;
   blocked: boolean;
   busy: string | null;
+  /** The note saying why the buttons are off (a wrong network), when there is one. */
+  gateNoteId?: string;
   onPlace: Place;
   onSend: Send;
 }) {
   const [form, setForm] = useState<"sell" | "bid" | null>(null);
+  // Which order was just placed and has not yet been given the cursor: set when a form closes on success.
+  const [landed, setLanded] = useState<"sell" | "bid" | null>(null);
+  const formBase = useId();
+  const sellFormId = `${formBase}-sell`;
+  const bidFormId = `${formBase}-bid`;
+  const sellTrigger = useRef<HTMLButtonElement>(null);
+  const bidTrigger = useRef<HTMLButtonElement>(null);
+  const sellLine = useRef<HTMLParagraphElement>(null);
+  const bidLine = useRef<HTMLParagraphElement>(null);
   const bidding = round.phase === "bidding";
   const takingOrders = bidding && listingEnabled && !tokenUnreadable;
   const due = claimDue(round, wallet, facts.lotSize);
   const { sell, bid } = wallet;
   const settleNotice = settleNoticeLine(round, wallet);
+  // A closed form hands the cursor to the order it placed, once the page shows that order: the form and its send
+  // button are gone by then, and a screen reader would otherwise be left on nothing. If the cursor has moved on to
+  // something else meanwhile it stays there.
+  useEffect(() => {
+    const line =
+      landed === "sell" && sell
+        ? sellLine.current
+        : landed === "bid" && bid
+          ? bidLine.current
+          : null;
+    if (landed === null || line === null) return;
+    const active = document.activeElement;
+    if (
+      active === null ||
+      active === document.body ||
+      active === sellTrigger.current ||
+      active === bidTrigger.current
+    ) {
+      line.focus();
+    }
+    setLanded(null);
+  }, [landed, sell, bid]);
+  const closeForm = (to: "sell" | "bid") => {
+    setForm(null);
+    (to === "sell" ? sellTrigger : bidTrigger).current?.focus();
+  };
+  const placed = (kind: "sell" | "bid") => {
+    closeForm(kind);
+    setLanded(kind);
+  };
   return (
     <div
       className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3"
@@ -324,19 +371,38 @@ function TradingRound({
           {settleNotice}
         </p>
       ) : null}
-      {sell ? (
-        <p className="text-sm" data-testid="trading-my-sell">
-          {sellOrderLine(round, sell, facts)}
-        </p>
-      ) : null}
-      {bid ? (
-        <p className="text-sm" data-testid="trading-my-bid">
-          {bidOrderLine(round, bid, facts)}
-        </p>
-      ) : null}
+      {/* Always in the page, so a new order is announced when it appears; it takes no room while empty. */}
+      <div
+        aria-live="polite"
+        className={sell || bid ? "flex flex-col gap-2" : "sr-only"}
+        data-testid="trading-orders"
+        role="status"
+      >
+        {sell ? (
+          <p
+            className="text-sm outline-none"
+            data-testid="trading-my-sell"
+            ref={sellLine}
+            tabIndex={-1}
+          >
+            {sellOrderLine(round, sell, facts)}
+          </p>
+        ) : null}
+        {bid ? (
+          <p
+            className="text-sm outline-none"
+            data-testid="trading-my-bid"
+            ref={bidLine}
+            tabIndex={-1}
+          >
+            {bidOrderLine(round, bid, facts)}
+          </p>
+        ) : null}
+      </div>
       <div className="flex flex-wrap gap-2">
         {bidding && me && sell ? (
           <Button
+            aria-describedby={gateNoteId}
             data-testid="trading-cancel-sell"
             disabled={blocked}
             onClick={() =>
@@ -355,6 +421,7 @@ function TradingRound({
         ) : null}
         {bidding && me && bid && !bid.cancelled ? (
           <Button
+            aria-describedby={gateNoteId}
             data-testid="trading-cancel-bid"
             disabled={blocked}
             onClick={() =>
@@ -371,10 +438,13 @@ function TradingRound({
             Take my bid back
           </Button>
         ) : null}
-        {takingOrders && me && !sell && form !== "sell" ? (
+        {takingOrders && me && !sell ? (
           <Button
+            aria-controls={form === "sell" ? sellFormId : undefined}
+            aria-expanded={form === "sell"}
             data-testid="trading-sell"
-            onClick={() => setForm("sell")}
+            onClick={() => setForm(form === "sell" ? null : "sell")}
+            ref={sellTrigger}
             size="sm"
             type="button"
             variant="outline"
@@ -382,10 +452,13 @@ function TradingRound({
             Offer Shares
           </Button>
         ) : null}
-        {takingOrders && me && !bid && form !== "bid" ? (
+        {takingOrders && me && !bid ? (
           <Button
+            aria-controls={form === "bid" ? bidFormId : undefined}
+            aria-expanded={form === "bid"}
             data-testid="trading-bid"
-            onClick={() => setForm("bid")}
+            onClick={() => setForm(form === "bid" ? null : "bid")}
+            ref={bidTrigger}
             size="sm"
             type="button"
             variant="outline"
@@ -395,6 +468,7 @@ function TradingRound({
         ) : null}
         {round.phase === "settling" ? (
           <Button
+            aria-describedby={gateNoteId}
             data-testid="trading-settle"
             disabled={blocked}
             onClick={() =>
@@ -414,6 +488,7 @@ function TradingRound({
           <div className="flex flex-wrap gap-2" data-testid="trading-claim">
             {due.shares > 0n ? (
               <Button
+                aria-describedby={gateNoteId}
                 data-testid="trading-claim-shares"
                 disabled={blocked}
                 onClick={() =>
@@ -433,6 +508,7 @@ function TradingRound({
             ) : null}
             {due.quote > 0n ? (
               <Button
+                aria-describedby={gateNoteId}
                 data-testid="trading-claim-quote"
                 disabled={blocked}
                 onClick={() =>
@@ -457,11 +533,14 @@ function TradingRound({
         <SellForm
           blocked={blocked}
           busy={busy}
+          domId={sellFormId}
           facts={facts}
           funds={funds}
+          gateNoteId={gateNoteId}
           id={roundId}
           market={market}
-          onDone={() => setForm(null)}
+          onCancel={() => closeForm("sell")}
+          onDone={() => placed("sell")}
           onPlace={onPlace}
           round={round}
         />
@@ -470,271 +549,18 @@ function TradingRound({
         <BidForm
           blocked={blocked}
           busy={busy}
+          domId={bidFormId}
           facts={facts}
           funds={funds}
+          gateNoteId={gateNoteId}
           id={roundId}
           market={market}
-          onDone={() => setForm(null)}
+          onCancel={() => closeForm("bid")}
+          onDone={() => placed("bid")}
           onPlace={onPlace}
           round={round}
         />
       ) : null}
     </div>
   );
-}
-
-/**
- * The offer form: whole lots at a lowest price, held to what the wallet can
- * offer now. The Shares are approved to the market and the offer escrows exactly
- * those lots, as one step.
- */
-function SellForm({
-  round,
-  market,
-  facts,
-  funds,
-  id,
-  blocked,
-  busy,
-  onPlace,
-  onDone,
-}: {
-  round: RoundView;
-  market: string;
-  facts: SecondaryMarketFacts;
-  funds: WalletFunds;
-  id: bigint;
-  blocked: boolean;
-  busy: string | null;
-  onPlace: Place;
-  onDone: () => void;
-}) {
-  const formId = useId();
-  const [lotsInput, setLotsInput] = useState("");
-  const [priceText, setPriceText] = useState("");
-  const plan =
-    lotsInput.trim() && priceText.trim()
-      ? sellPlan(round, lotsInput, priceText, facts, funds)
-      : null;
-  const go = async () => {
-    if (!plan || "problem" in plan) return;
-    const placed = await onPlace("trading-sell", () =>
-      sellCalls({
-        market,
-        roundId: id,
-        lots: plan.lots,
-        level: plan.level,
-        facts,
-      }),
-    );
-    if (placed) onDone();
-  };
-  return (
-    <div className="mt-2 grid gap-2" data-testid="trading-sell-form">
-      <p
-        className="text-sm text-muted-foreground"
-        data-testid="trading-sell-room"
-      >
-        {sellRoomLine(funds, facts.lotSize)}
-      </p>
-      <div className="flex flex-wrap items-end gap-2">
-        <Field
-          id={`${formId}-lots`}
-          inputMode="numeric"
-          label="Lots to offer"
-          onChange={setLotsInput}
-          placeholder="2"
-          testId="trading-sell-lots"
-          value={lotsInput}
-        />
-        <Field
-          id={`${formId}-price`}
-          label={`Lowest price a lot (${facts.quoteSymbol})`}
-          onChange={setPriceText}
-          placeholder="1.02"
-          testId="trading-sell-price"
-          value={priceText}
-        />
-      </div>
-      <PlanLine
-        line={
-          plan && !("problem" in plan)
-            ? `This holds ${lotsLabel(plan.lots)} (${shareUnits(sellHolds(plan.lots, facts.lotSize))} Shares) until the round settles. ${lotPriceLine(round, plan.level, facts)}.`
-            : null
-        }
-        problem={plan && "problem" in plan ? plan.problem : null}
-        testId="trading-sell-plan"
-      />
-      <Button
-        className="justify-self-start"
-        data-testid="trading-sell-submit"
-        disabled={blocked || !plan || "problem" in plan}
-        onClick={() => void go()}
-        size="sm"
-        type="button"
-      >
-        {busy === "trading-sell" ? "Offering…" : "Offer them"}
-      </Button>
-    </div>
-  );
-}
-
-/**
- * The bid form: whole lots at a highest price, held to the money the wallet
- * holds. The money the bid holds is approved to the market (unless it already
- * is) and escrowed by the bid, as one step.
- */
-function BidForm({
-  round,
-  market,
-  facts,
-  funds,
-  id,
-  blocked,
-  busy,
-  onPlace,
-  onDone,
-}: {
-  round: RoundView;
-  market: string;
-  facts: SecondaryMarketFacts;
-  funds: WalletFunds;
-  id: bigint;
-  blocked: boolean;
-  busy: string | null;
-  onPlace: Place;
-  onDone: () => void;
-}) {
-  const formId = useId();
-  const [lotsInput, setLotsInput] = useState("");
-  const [priceText, setPriceText] = useState("");
-  const plan =
-    lotsInput.trim() && priceText.trim()
-      ? bidPlan(round, lotsInput, priceText, facts, funds)
-      : null;
-  const go = async () => {
-    if (!plan || "problem" in plan) return;
-    const placed = await onPlace("trading-bid", () =>
-      bidCalls({
-        market,
-        roundId: id,
-        round,
-        lots: plan.lots,
-        level: plan.level,
-        allowance: funds.quoteAllowance,
-        facts,
-      }),
-    );
-    if (placed) onDone();
-  };
-  return (
-    <div className="mt-2 grid gap-2" data-testid="trading-bid-form">
-      <p
-        className="text-sm text-muted-foreground"
-        data-testid="trading-bid-room"
-      >
-        {quoteHeldLine(funds, facts)}
-      </p>
-      <div className="flex flex-wrap items-end gap-2">
-        <Field
-          id={`${formId}-lots`}
-          inputMode="numeric"
-          label="Lots to buy"
-          onChange={setLotsInput}
-          placeholder="2"
-          testId="trading-bid-lots"
-          value={lotsInput}
-        />
-        <Field
-          id={`${formId}-price`}
-          label={`Highest price a lot (${facts.quoteSymbol})`}
-          onChange={setPriceText}
-          placeholder="1.05"
-          testId="trading-bid-price"
-          value={priceText}
-        />
-      </div>
-      <PlanLine
-        line={
-          plan && !("problem" in plan)
-            ? `This bid holds ${money(bidHolds(round, plan.lots, plan.level), facts)} until the round settles. You pay the round's price, never more than yours, and get back the rest. ${lotPriceLine(round, plan.level, facts)}.`
-            : null
-        }
-        problem={plan && "problem" in plan ? plan.problem : null}
-        testId="trading-bid-plan"
-      />
-      <Button
-        className="justify-self-start"
-        data-testid="trading-bid-submit"
-        disabled={blocked || !plan || "problem" in plan}
-        onClick={() => void go()}
-        size="sm"
-        type="button"
-      >
-        {busy === "trading-bid" ? "Bidding…" : "Place the bid"}
-      </Button>
-    </div>
-  );
-}
-
-function Field({
-  id,
-  label,
-  value,
-  onChange,
-  placeholder,
-  testId,
-  inputMode = "decimal",
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  testId: string;
-  inputMode?: "decimal" | "numeric";
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs font-medium" htmlFor={id}>
-        {label}
-      </label>
-      <Input
-        className="w-40"
-        data-testid={testId}
-        id={id}
-        inputMode={inputMode}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        value={value}
-      />
-    </div>
-  );
-}
-
-function PlanLine({
-  line,
-  problem,
-  testId,
-}: {
-  line: string | null;
-  problem: string | null;
-  testId: string;
-}) {
-  if (problem) {
-    return (
-      <p
-        className="text-sm text-red-700 dark:text-red-300"
-        data-testid={`${testId}-problem`}
-        role="alert"
-      >
-        {problem}
-      </p>
-    );
-  }
-  return line ? (
-    <p className="text-sm text-muted-foreground" data-testid={testId}>
-      {line}
-    </p>
-  ) : null;
 }
