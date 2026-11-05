@@ -76,6 +76,8 @@ function fakeChain({
   lag = 0,
   sendFails = null,
   squatted = false,
+  kitLag = 0,
+  kitError = null,
 } = {}) {
   const state = {
     made,
@@ -91,6 +93,9 @@ function fakeChain({
     nonce,
     // The made DAO was summoned by someone other than the kit (a pre-summon at the predicted address).
     squatted,
+    // How many more times the log index says "not made by the kit" for a kit-made DAO (an index a block behind).
+    kitLag,
+    kitError,
     kitChecks: [],
   };
   const fx = {
@@ -113,6 +118,11 @@ function fakeChain({
     },
     async madeByKit(kit, dao) {
       state.kitChecks.push({ kit, dao });
+      if (state.kitError) throw state.kitError;
+      if (state.kitLag > 0) {
+        state.kitLag -= 1;
+        return false;
+      }
       return !state.squatted;
     },
     async wait(ms) {
@@ -199,12 +209,48 @@ test("a DAO already at the predicted address that the kit did not make is refuse
   const out = await runContributorStart(job(), fx, t.dispatch);
   assert.equal(out.ok, false);
   assert.equal(out.step, "create");
-  assert.match(out.message, /not made by this project's kit/);
+  assert.match(out.message, /cannot confirm/);
   assert.match(out.message, /Nothing was sent/);
+  assert.match(out.message, /Try again/);
   assert.equal(state.sends.length, 0);
   assert.equal(state.published.length, 0);
   assert.equal(out.job.dao, null);
-  assert.deepEqual(state.kitChecks, [{ kit: KIT, dao: DAO }]);
+  // A lagging log index looks the same as a squat, so the kit is asked a bounded number of times before refusing.
+  assert.equal(state.kitChecks.length, DAO_CODE_TRIES);
+  assert.deepEqual(state.kitChecks[0], { kit: KIT, dao: DAO });
+  assert.deepEqual(
+    state.waits,
+    Array(DAO_CODE_TRIES - 1).fill(DAO_CODE_WAIT_MS),
+  );
+  // The saved job is intact, so Try again asks again and still never sends.
+  const saved = state.saved.at(-1);
+  assert.equal(saved.dao, null);
+  const again = await runContributorStart(saved, fx, () => {});
+  assert.equal(again.ok, false);
+  assert.equal(state.sends.length, 0);
+});
+
+test("a DAO the kit made whose log shows a moment late is used once the log catches up", async () => {
+  const { fx, state } = fakeChain({ made: true, kitLag: 2 });
+  const out = await runContributorStart(job(), fx, () => {});
+  assert.equal(out.ok, true);
+  assert.equal(out.job.dao, DAO);
+  assert.equal(state.kitChecks.length, 3);
+  assert.deepEqual(state.waits, [DAO_CODE_WAIT_MS, DAO_CODE_WAIT_MS]);
+  assert.equal(state.sends.length, 0);
+  assert.equal(state.published.length, 1);
+});
+
+test("a node error while asking who made the DAO fails the step, never retried into success", async () => {
+  const boom = new Error("rpc down");
+  const { fx, state } = fakeChain({ made: true, kitError: boom });
+  const out = await runContributorStart(job(), fx, () => {});
+  assert.equal(out.ok, false);
+  assert.equal(out.step, "create");
+  assert.match(out.message, /rpc down/);
+  assert.equal(state.kitChecks.length, 1);
+  assert.equal(state.sends.length, 0);
+  assert.equal(state.published.length, 0);
 });
 
 test("a DAO the kit made is still used, after asking the chain who made it", async () => {

@@ -146,6 +146,23 @@ async function daoShows(dao: string, fx: ContributorEffects): Promise<boolean> {
   return false;
 }
 
+/**
+ * Whether the kit made the DAO, asking a bounded number of times. The log index can trail the code on a node that is a
+ * block behind, so a clean "no" is asked again before it is believed. A node error is not a "no": it propagates.
+ */
+async function kitMadeIt(
+  kit: string,
+  dao: string,
+  fx: ContributorEffects,
+): Promise<boolean> {
+  const wait = fx.wait ?? pause;
+  for (let attempt = 0; attempt < DAO_CODE_TRIES; attempt += 1) {
+    if (await fx.madeByKit(kit, dao)) return true;
+    if (attempt + 1 < DAO_CODE_TRIES) await wait(DAO_CODE_WAIT_MS);
+  }
+  return false;
+}
+
 /** Which steps a job has already done, for a page that opens on a job from an earlier visit. */
 export function doneSteps(job: ContributorJob): Set<ContributorStep> {
   const done = new Set<ContributorStep>();
@@ -186,9 +203,9 @@ async function makeProject(
   // follows from public values, so someone else could have summoned a DAO of their own there first. Adopting that one
   // would publish a project whose DAO the founder does not control. Nothing is sent or published for it.
   if (await fx.codeAt(dao)) {
-    if (!(await fx.madeByKit(job.kit, dao)))
+    if (!(await kitMadeIt(job.kit, dao, fx)))
       throw new Error(
-        "a DAO already sits at the address this project would use, and it was not made by this project's kit (someone else made it first). Nothing was sent. Discard this attempt and start the project again: it then gets a new address.",
+        "this site cannot confirm that this project's kit made the DAO at the address this project would use. Nothing was sent. If you started this project a moment ago, press Try again in a minute. Otherwise discard it and start the project again: it then gets a new address.",
       );
   } else {
     const summoner = wordAddress(await fx.call(job.kit, CALL_SUMMONER));
