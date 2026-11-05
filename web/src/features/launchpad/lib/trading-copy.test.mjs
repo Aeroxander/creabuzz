@@ -982,7 +982,7 @@ test("the refresh note says when what is shown was read, in plain words", () => 
   const line = staleReadLine(Date.UTC(2026, 9, 14, 15, 7), "UTC");
   assert.equal(
     line,
-    "Could not refresh just now. What is shown was read at 3:07 PM.",
+    "Could not refresh just now. What is shown was read at 3:07 PM UTC.",
   );
   assert.doesNotMatch(line, /relay|nsec|rpc|revert|0x/i);
 });
@@ -1611,6 +1611,8 @@ test("the buttons that collect Shares use the same count words", () => {
   }
   const form = read("../ui/TradingListingForm.tsx");
   assert.doesNotMatch(form, /one lot of \$\{formatUnits/);
+  // And the count words really are the shared ones, not another hand-rolled formatter.
+  assert.match(form, /sharesPhrase\(lotSize\)/);
 });
 
 test("dates name their time zone", () => {
@@ -1618,6 +1620,7 @@ test("dates name their time zone", () => {
   assert.match(roundLine(round(), USDC), withZone);
   assert.match(roundLine(round({ phase: "settling" }), USDC), withZone);
   assert.match(nextRoundLine(OCT_14 + 7 * 86_400), withZone);
+  assert.match(staleReadLine(Date.UTC(2026, 9, 14, 15, 7), "UTC"), withZone);
 });
 
 test("one always-visible line says trading does not fund the project or promise anything", () => {

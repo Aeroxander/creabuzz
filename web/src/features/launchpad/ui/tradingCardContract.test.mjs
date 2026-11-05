@@ -104,10 +104,11 @@ test("the card renders nothing where the build offers no trading, and the projec
   assert.match(card, /roundLine\(round, facts, listingEnabled\)/);
 });
 
-test("the Try again buttons sit beside the status text, not inside the status element", () => {
+test("the Try again buttons sit beside the status text, not inside any status element", () => {
   const card = source("./TradingCard.tsx");
-  // A button inside a role=status paragraph is read as part of the announcement and is not a separate stop.
-  const inStatus = /<p\b[^>]*role="status"[^>]*>(?:(?!<\/p>)[\s\S])*<button\b/;
+  // A button inside a role=status element, of any tag, is read as part of the announcement and is not a separate stop.
+  const inStatus =
+    /<(\w+)\b[^>]*role="status"[^>]*>(?:(?!<\/\1>)[\s\S])*<button\b/;
   assert.doesNotMatch(card, inStatus);
   // The text is still a status, and each retry button is still there.
   assert.match(card, /data-testid="trading-unreadable"/);
@@ -115,21 +116,60 @@ test("the Try again buttons sit beside the status text, not inside the status el
   assert.equal(card.match(/Try again/g)?.length, 2);
 });
 
+/** What sits between the previous tag's closing `>` and the tag opening at `open`, once comments are removed. */
+const gapBefore = (card, open) => {
+  const before = card.slice(0, open).replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+  return before.slice(before.lastIndexOf(">") + 1);
+};
+
+/** The opening of the element that carries `testId`, and the text of its opening tag. */
+const elementWith = (card, testId) => {
+  const at = card.indexOf(`data-testid="${testId}"`);
+  assert.ok(at > 0, `${testId} is rendered`);
+  const open = Math.max(
+    card.lastIndexOf("<p", at),
+    card.lastIndexOf("<div", at),
+  );
+  return { open, tag: card.slice(open, card.indexOf(">", at)) };
+};
+
 test("the settle notice lives in a region that is always mounted, so its arrival is announced", () => {
   const card = source("./TradingCard.tsx");
-  const at = card.indexOf('data-testid="trading-settle-notice"');
-  assert.ok(at > 0, "the notice is rendered");
-  // Its element is the always-mounted one: no conditional render wraps the element that carries the test id.
-  const open = card.lastIndexOf("<p", at);
-  const before = card.slice(Math.max(0, open - 40), open);
-  assert.doesNotMatch(
-    before,
-    /\?\s*\(\s*$/,
+  const { open, tag } = elementWith(card, "trading-settle-notice");
+  // Always mounted: only blank space (and comments) sits between the previous tag and this one, so no `&&`, `||`,
+  // `??`, `? (` or `? <p` can be gating it.
+  assert.equal(
+    gapBefore(card, open).trim(),
+    "",
     "the notice is not mounted only with its text",
   );
-  const tag = card.slice(open, card.indexOf(">", at));
   assert.match(tag, /aria-live="polite"/);
   assert.match(tag, /role="status"/);
   // Empty, it takes no room.
   assert.match(card, /settleNotice \? "text-sm" : "sr-only"/);
+});
+
+test("the stale-read note lives in a region that is always mounted, so a failed refresh is announced", () => {
+  const card = source("./TradingCard.tsx");
+  const { open, tag } = elementWith(card, "trading-stale");
+  assert.match(tag, /^<p\b/);
+  assert.match(tag, /aria-live="polite"/);
+  assert.match(tag, /role="status"/);
+  // The note and the wrapper that holds it beside its button are both in the page whatever the query is doing.
+  assert.equal(
+    gapBefore(card, open).trim(),
+    "",
+    "the note is not mounted only with its text",
+  );
+  const wrapper = card.lastIndexOf("<div", open);
+  assert.equal(
+    gapBefore(card, wrapper).trim(),
+    "",
+    "the note's wrapper is not mounted only on a failure",
+  );
+  // Empty, it takes no room; the text and the button come only with the failure.
+  assert.match(tag, /query\.isError \? "[^"]*" : "sr-only"/);
+  const rest = card.slice(open, card.indexOf("</div>", open));
+  assert.match(rest, /\{query\.isError \? staleReadLine\(/);
+  assert.match(rest, /\{query\.isError \? \(\s*<>[\s\S]*?<button\b/);
 });

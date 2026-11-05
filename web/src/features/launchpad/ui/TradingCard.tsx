@@ -200,20 +200,29 @@ function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
               ? tokenUnreadableLine()
               : tradingStateLine(data.read, data.now, quote)}
           </p>
-          {query.isError ? (
-            <div className="mt-1 text-sm text-muted-foreground">
-              <p className="inline" data-testid="trading-stale" role="status">
-                {staleReadLine(query.dataUpdatedAt)}
-              </p>{" "}
-              <button
-                className="underline"
-                onClick={() => void query.refetch()}
-                type="button"
-              >
-                Try again
-              </button>
-            </div>
-          ) : null}
+          {/* Always in the page, so a failed refresh is announced when it happens; it takes no room while the reads are fine. The retry button stays outside the status. */}
+          <div className="text-sm text-muted-foreground">
+            <p
+              aria-live="polite"
+              className={query.isError ? "mt-1 inline-block" : "sr-only"}
+              data-testid="trading-stale"
+              role="status"
+            >
+              {query.isError ? staleReadLine(query.dataUpdatedAt) : ""}
+            </p>
+            {query.isError ? (
+              <>
+                {" "}
+                <button
+                  className="underline"
+                  onClick={() => void query.refetch()}
+                  type="button"
+                >
+                  Try again
+                </button>
+              </>
+            ) : null}
+          </div>
           <p className="mt-1 text-sm" data-testid="trading-not-funding">
             {NOT_FUNDING_LINE}
           </p>

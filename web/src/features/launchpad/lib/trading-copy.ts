@@ -799,6 +799,7 @@ export function staleReadLine(readAtMs: number, timeZone?: string): string {
     hour: "numeric",
     minute: "2-digit",
     timeZone,
+    timeZoneName: "short",
   });
   return `Could not refresh just now. What is shown was read at ${at}.`;
 }
