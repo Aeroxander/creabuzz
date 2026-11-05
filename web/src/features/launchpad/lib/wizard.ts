@@ -676,14 +676,14 @@ export function publishIssues(
       message: "The network ID must be a number, for example 11155111.",
     });
   }
+  const addressNames = { auction: "sale", treasury: "money" } as const;
   for (const field of ["auction", "treasury"] as const) {
     const value = form[field].trim();
     if (value !== "" && !isEvmAddress(value)) {
       filtered.push({
         field,
         severity: "error",
-        message:
-          "The sale and money addresses must be full addresses starting with 0x, or left empty.",
+        message: `The ${addressNames[field]} address must be a full address starting with 0x, or left empty.`,
       });
     }
   }

@@ -7,6 +7,8 @@
 
 import { useState } from "react";
 
+import { TechnicalDetails } from "@/shared/ui/technical-details";
+
 import { sha256Hex } from "../lib/file-hash";
 import type { IpDocumentDraft } from "../lib/ip-record";
 
@@ -66,7 +68,7 @@ export function IpDocumentField({
         />
       </label>
       <label className="flex flex-col gap-1 text-xs">
-        Link (https)
+        Link to the document
         <input
           className={INPUT}
           data-testid={`ip-doc-${slot}-url`}
@@ -87,7 +89,7 @@ export function IpDocumentField({
         />
       </label>
       <label className="flex flex-col gap-1 text-xs">
-        Fingerprint (SHA-256)
+        Fingerprint
         <input
           className={`${INPUT} font-mono`}
           data-testid={`ip-doc-${slot}-hash`}
@@ -97,6 +99,7 @@ export function IpDocumentField({
           value={value.sha256}
         />
       </label>
+      <TechnicalDetails detail="The fingerprint is a SHA-256 hash of the file, written as 64 letters and numbers (0 to 9, a to f). The link must start with https://." />
       {problem ? (
         <p className="text-xs text-destructive" role="alert">
           {problem}

@@ -78,7 +78,7 @@ export function LaunchPanelFields({
       <TextField
         hint="Optional. A bond is a deposit each reviewer puts down before judging. They lose it if the project finds they approved carelessly. Leave empty for none."
         inputMode="decimal"
-        label="Bond each reviewer must post"
+        label="Bond each reviewer must put down"
         onChange={(bond) => patch({ bond })}
         placeholder="0"
         testId="launch-panel-bond"

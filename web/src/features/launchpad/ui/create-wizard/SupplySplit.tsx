@@ -211,10 +211,10 @@ export function SupplySplit({
           data-testid="launch-lp-minimum"
         >
           {thin
-            ? `This seeds the pool with under ${minLiquidity}% of supply. It covers less than 20% of the floor raise, so day-one liquidity will be thin.`
-            : `A pool at ${allocation.liquidity}% of supply covers ${Math.round(
+            ? `You are setting aside under ${minLiquidity}% of the tokens so people can trade right after the sale. That is less than 20% of the raise at the floor price, so trading will be thin: holders may find it hard to sell at a fair price.`
+            : `You are setting aside ${allocation.liquidity}% of the tokens so people can trade right after the sale. That matches ${Math.round(
                 (allocation.liquidity / allocation.sale) * 20,
-              )}% of the floor raise at the floor price.`}
+              )}% of the raise at the floor price.`}
         </p>
       ) : null}
     </section>

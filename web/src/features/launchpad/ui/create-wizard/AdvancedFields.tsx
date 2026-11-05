@@ -154,7 +154,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
       <Field
         id="launch-id"
         label="Page address"
-        hint="The web address of the launch page: lowercase letters, numbers and dashes. It cannot be changed later. Leave empty to use the name."
+        hint="The web address of the launch page: lowercase letters, numbers, dashes and underscores. It cannot be changed later. Leave empty to use the name."
       >
         <Input
           id="launch-id"
@@ -364,7 +364,7 @@ export function AdvancedFields(fields: AdvancedFieldsState): ReactNode {
                 className="mt-2 block text-sm text-black/60 dark:text-white/60"
                 htmlFor="launch-cliff"
               >
-                Wait before any unlock (blocks)
+                Wait before the first unlock (blocks)
               </label>
               <Input
                 id="launch-cliff"

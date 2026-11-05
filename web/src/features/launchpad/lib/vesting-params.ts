@@ -34,7 +34,7 @@ export function validateVesting(
     issues.push({
       field: "vesting",
       severity: "error",
-      message: "The waiting period cannot be negative.",
+      message: "The wait before the first unlock cannot be negative.",
     });
   }
   const total = vesting.tranches.reduce((acc, t) => acc + t.percent, 0);

@@ -96,7 +96,7 @@ export function validateLaunchParams(
   } else if (input.supply > MAX_TOTAL_SUPPLY) {
     error(
       "supply",
-      "That is more tokens than a sale can handle (the limit is 2^100 smallest units). Lower the total supply.",
+      "That is more tokens than a sale can handle Lower the total supply.",
     );
   }
 
@@ -167,12 +167,15 @@ export function validateLaunchParams(
   let sumDelta = 0n;
   input.steps.forEach((step, index) => {
     if (step.blockDelta === 0n) {
-      error(`steps[${index}]`, "A release step must last at least one block.");
+      error(
+        `steps[${index}]`,
+        `Release step ${index + 1} must last at least one block (a block is a short slice of network time).`,
+      );
     }
     if (step.mps === 0n) {
       error(
         `steps[${index}]`,
-        "A release step must sell something in every block.",
+        `Release step ${index + 1} must sell something in every block.`,
       );
     }
     sumMps += step.mps * step.blockDelta;
@@ -181,7 +184,7 @@ export function validateLaunchParams(
   if (input.steps.length > 0 && sumMps !== MPS) {
     error(
       "steps",
-      `The release steps must add up to 100%: they add up to ${sumMps} of ${MPS} milli-bips.`,
+      `The release steps must add up to the whole sale (100%). Right now they add up to ${Number((sumMps * 10_000n) / MPS) / 100}%.`,
     );
   }
   if (

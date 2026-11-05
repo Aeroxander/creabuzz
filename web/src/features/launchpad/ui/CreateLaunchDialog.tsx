@@ -691,7 +691,7 @@ export function CreateLaunchDialog({
       ? "Working out the sale dates from the network…"
       : plan === null
         ? blockTime.head === null
-          ? "We could not reach the network, so the sale will be published without dates. If you know them, set the block numbers in Advanced."
+          ? "We could not reach the network, so the sale will be published without dates. If you know them, enter the sale window in Advanced."
           : "Pick an end date in the future to see the sale dates."
         : `${describeSaleBlocks(plan)}${
             rawBlocks !== null && rawBlocks !== "incomplete"

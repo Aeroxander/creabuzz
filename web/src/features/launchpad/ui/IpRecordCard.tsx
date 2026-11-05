@@ -50,6 +50,9 @@ const HOLDERS: { value: IpHolder; label: string; hint: string }[] = [
   },
 ];
 
+const FINGERPRINT_NOTE =
+  "A fingerprint is a short code made from a file. If the file changes, the code changes, so anyone can tell.";
+
 const shortFingerprint = (sha256: string) =>
   `${sha256.slice(0, 8)}…${sha256.slice(-6)}`;
 
@@ -75,9 +78,12 @@ function DocumentLine({ label, doc }: { label: string; doc: IpDocument }) {
 function Standing({
   record,
   raised,
+  explainFingerprint,
 }: {
   record: IpRecord | null;
   raised: boolean;
+  /** The editor already explains fingerprints, so the card says it once. */
+  explainFingerprint: boolean;
 }) {
   const standing = ipStanding(record, raised);
   const summary = ipSummary(standing, record);
@@ -134,6 +140,12 @@ function Standing({
             />
           ) : null}
         </ul>
+      ) : null}
+      {(record?.assignment || record?.operating || record?.contributorTerms) &&
+      explainFingerprint ? (
+        <p className="mt-2 text-xs text-black/60 dark:text-white/60">
+          {FINGERPRINT_NOTE}
+        </p>
       ) : null}
       <p className="mt-3 text-xs text-black/60 dark:text-white/60">
         This is the project's own statement. The documents are linked and pinned
@@ -256,8 +268,7 @@ function Editor({ launch, onDone }: { launch: Launch; onDone: () => void }) {
       ) : null}
 
       <p className="text-xs text-black/60 dark:text-white/60">
-        A fingerprint is a short code made from a file. If the file changes, the
-        code changes, so anyone can tell.
+        {FINGERPRINT_NOTE}
       </p>
       {draft.holder !== "open" ? (
         <IpDocumentField
@@ -346,7 +357,11 @@ export function IpRecordCard({ launch }: { launch: Launch }) {
         and designs.
       </p>
       <div className="mt-2">
-        <Standing raised={raised} record={launch.record.ipRecord} />
+        <Standing
+          explainFingerprint={!editing}
+          raised={raised}
+          record={launch.record.ipRecord}
+        />
       </div>
       {editing ? (
         <Editor launch={launch} onDone={() => setEditing(false)} />
