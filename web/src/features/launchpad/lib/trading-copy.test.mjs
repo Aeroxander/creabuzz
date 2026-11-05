@@ -1550,6 +1550,32 @@ test("a live round states the terms it trades on, never the DAO's newer listing"
   assert.equal(shownTerms(changed, null), changed);
 });
 
+test("each part of a listing that moves from the live round is stated, and a rounded-down step is not a change", () => {
+  const read = (over) =>
+    tradingStateLine(
+      market({ listing: { ...listing, ...over }, round: round() }),
+      OCT_17,
+      USDC,
+    );
+  // Only the top price moved: same lowest price and step count, but the step grows from 0.008 to 0.0625.
+  const maxOnly = read({ maxPrice: 1_500_000n });
+  assert.match(maxOnly, /this round trades from 1 USDC to 1\.064 USDC a lot/);
+  assert.match(maxOnly, /Next round: from 1 USDC to 1\.5 USDC a lot/);
+  // Only the step count moved: the step is still 0.008, so the lowest price and the step both match the round.
+  const levelsOnly = read({ levels: 4, maxPrice: 1_032_000n });
+  assert.match(levelsOnly, /this round trades from 1 USDC to 1\.064 USDC/);
+  assert.match(levelsOnly, /Next round: from 1 USDC to 1\.032 USDC/);
+  // A range that does not divide evenly rounds its step down to the round's own 0.008: nothing changed, though
+  // the listing's top price is not the round's.
+  const rounded = read({ maxPrice: 1_064_005n });
+  assert.match(rounded, /^Trading is on: from 1 USDC to 1\.064005 USDC a lot/);
+  assert.doesNotMatch(rounded, /this round trades|Next round:/);
+  // The lowest price alone also counts, with the top price following it so the step is unchanged.
+  const minOnly = read({ minPrice: 2n * USD, maxPrice: 2_064_000n });
+  assert.match(minOnly, /this round trades from 1 USDC to 1\.064 USDC/);
+  assert.match(minOnly, /Next round: from 2 USDC to 2\.064 USDC/);
+});
+
 test("a round still open under a listing the DAO switched off does not say orders are taken", () => {
   assert.match(roundLine(round(), USDC), /^Offers and bids close Oct 17/);
   assert.match(roundLine(round(), USDC, true), /^Offers and bids close Oct 17/);
