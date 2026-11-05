@@ -41,6 +41,15 @@ contract RevertingExchange {
     }
 }
 
+/// @dev A working exit exchange that behaves like a hostile one: it is allowed to pass the transfer lock as the
+/// caller of `transferFrom`, and it tries to use that to pull Shares out of any address. It never reverts, it
+/// reports whether the pull went through, so a test can assert the market's escrow is out of its reach.
+contract PullingExchange {
+    function pull(address token, address from, address to, uint256 amount) external returns (bool ok) {
+        (ok,) = token.call(abi.encodeCall(IERC20.transferFrom, (from, to, amount)));
+    }
+}
+
 /// @dev The cases are written once and run twice: against the stood-in mock policy
 /// (`SecondaryMarketAdversary`) and against the production composition, a real `ContributorKitV2`
 /// launch with the real `ActivationVoting` policy and its real escrow hooks
@@ -517,19 +526,39 @@ abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
 
     // ---- exit-exchange independence ------------------------------------------------------------------------------
 
-    function test_claims_survive_a_cleared_exit_exchange() public {
+    /// @dev A real exchange is live while orders are placed, then the DAO clears it mid-bidding. Before and after,
+    /// it cannot pull the market's escrow (the market gave it no allowance), and cancelSell, cancelBid, settle
+    /// and every claim still work on the market's birth exemption alone.
+    function test_claims_survive_a_live_exit_exchange_cleared_mid_round() public {
+        PullingExchange ex = new PullingExchange();
+        _installExitExchange(address(ex));
         uint256 id = _openRoundWith(l);
         vm.prank(S1);
         l.market.sell(id, 10, 0);
+        vm.prank(S2);
+        l.market.sell(id, 4, 0);
+        vm.prank(B1);
+        l.market.bid(id, 3, 1);
         vm.prank(B2);
         l.market.bid(id, 5, 1);
+        _assertExchangeCannotPull(ex);
+
         // The DAO turns the exchange slot completely off, as a vote can.
         vm.prank(address(l.dao));
         l.shares.clearExitExchange();
-        assertEq(l.shares.exitExchange(), address(0));
+        assertEq(l.shares.exitExchange(), address(0), "the live exchange was really cleared");
+        _assertExchangeCannotPull(ex);
+
+        // Both cancellations still work after the clear: the offer's Shares and the bid's refund right.
+        vm.prank(S2);
+        l.market.cancelSell(id);
+        assertEq(l.shares.balanceOf(S2), 30e18, "a cancelled offer comes straight home");
+        vm.prank(B1);
+        l.market.cancelBid(id);
         _toSettle(l, id);
-        // Claims, returns and refunds all still complete: the market's birth exemption carries them.
         l.market.settle(id);
+        vm.prank(STANDIN);
+        l.market.claimQuote(id, B1);
         vm.prank(STANDIN);
         l.market.claimQuote(id, S1);
         vm.prank(STANDIN);
@@ -539,6 +568,7 @@ abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
         // The seller's unsold half is a standing right of its order: settle left it in the vault, and a
         // claim returns it even though the exit exchange is gone. A repeat rightly refuses.
         assertEq(l.shares.balanceOf(S1), 30e18, "settle left the unsold five in the vault");
+        _assertExchangeCannotPull(ex);
         vm.prank(STANDIN);
         l.market.claimShares(id, S1);
         vm.prank(STANDIN);
@@ -546,12 +576,19 @@ abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
         l.market.claimShares(id, S1);
         assertEq(l.shares.balanceOf(B2), 5e18);
         assertEq(l.shares.balanceOf(S1), 35e18);
-        assertEq(
-            l.quote.balanceOf(B2),
-            1_000_000e6 - uint256(10_500) + uint256(2_500),
-            "escrow at its 2100 limit; five lots cost 1600 each"
-        );
+        assertEq(l.quote.balanceOf(B1), 1_000_000e6, "the cancelled bid got its whole escrow back");
         assertEq(l.shares.balanceOf(address(l.market)), 0);
+    }
+
+    /// @dev The exchange can pass the lock as the caller of `transferFrom`, but it still needs the owner's
+    /// allowance: the market never grants one, so neither the vault nor any escrowed Share is reachable.
+    function _assertExchangeCannotPull(PullingExchange ex) internal {
+        uint256 vault = l.shares.balanceOf(address(l.market));
+        assertEq(l.shares.allowance(address(l.market), address(ex)), 0, "the market grants no allowance");
+        assertFalse(ex.pull(address(l.shares), address(l.market), address(ex), 1), "the exchange pulled escrow");
+        assertFalse(ex.pull(address(l.shares), address(l.market), address(ex), vault), "the exchange drained escrow");
+        assertEq(l.shares.balanceOf(address(l.market)), vault, "the vault is untouched");
+        assertEq(l.shares.balanceOf(address(ex)), 0, "the exchange holds nothing");
     }
 
     /// @dev The DAO announces `exchange`, the notice passes, and anyone switches it on: the production path.
@@ -606,14 +643,18 @@ abstract contract SecondaryMarketAdversaryCases is SecondaryMarketFixture {
     /// @dev The exchange is replaced AFTER the round settled and the notice passed: the first exchange is live
     /// while orders are placed, a second is announced, goes live 30 days later, and only then are claims paid.
     function test_claims_survive_an_exit_exchange_replaced_after_the_notice() public {
-        _installExitExchange(address(new RevertingExchange()));
+        PullingExchange first = new PullingExchange();
+        _installExitExchange(address(first));
         uint256 id = _settledRound();
-        address second = address(new RevertingExchange());
+        _assertExchangeCannotPull(first);
+        PullingExchange second = new PullingExchange();
         vm.prank(address(l.dao));
-        l.shares.announceExitExchange(second);
+        l.shares.announceExitExchange(address(second));
         vm.warp(block.timestamp + l.shares.UNLOCK_NOTICE());
         l.shares.activateExitExchange();
-        assertEq(l.shares.exitExchange(), second, "the exchange was replaced under the settled round");
+        assertEq(l.shares.exitExchange(), address(second), "the exchange was replaced under the settled round");
+        _assertExchangeCannotPull(first);
+        _assertExchangeCannotPull(second);
         _claimEverything(id);
     }
 

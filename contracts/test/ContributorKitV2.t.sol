@@ -756,13 +756,20 @@ contract ContributorKitV2Test is ContributorKitV2Base {
         assertEq(tokens.balanceOf(DAVE), 0);
     }
 
-    /// @dev Clearing the matched-exit exchange does not strand anyone: the market returns a
-    /// seller's own escrow to them regardless of anything downstream.
-    function test_clearing_the_exit_exchange_still_returns_a_sellers_own_escrow() public {
+    /// @dev A real exit exchange is announced, waits out its 30 days and goes live; it cannot pull a seller's
+    /// escrow from the market (no allowance exists), and clearing it afterwards does not strand the seller:
+    /// the market returns the seller's own escrow regardless of anything downstream.
+    function test_clearing_a_live_exit_exchange_still_returns_a_sellers_own_escrow() public {
         (Moloch dao, TreasuryMandate budget, ActivationVoting variant, SecondaryMarket market) =
             _launchV2(_params("exchange"));
         Shares tokens = dao.shares();
         vm.warp(SALE_START + 8 days);
+        address exchange = address(0xE8C4A);
+        vm.prank(address(dao));
+        tokens.announceExitExchange(exchange);
+        vm.warp(block.timestamp + tokens.UNLOCK_NOTICE());
+        tokens.activateExitExchange();
+        assertEq(tokens.exitExchange(), exchange, "the exchange is live before the round");
         _award(dao, budget, keccak256("escrow-award"), DAVE, 40e18);
         _enableListing(dao, market);
         vm.prank(DAVE);
@@ -774,9 +781,16 @@ contract ContributorKitV2Test is ContributorKitV2Base {
         assertEq(tokens.balanceOf(DAVE), 38e18);
         assertEq(variant.escrowedBalance(DAVE), 2e18, "the market holds the escrow for the round");
 
+        // The exchange passes the lock as a transferFrom caller, but the market never approved it.
+        assertEq(tokens.allowance(address(market), exchange), 0, "the market grants no allowance");
+        vm.prank(exchange);
+        vm.expectRevert();
+        tokens.transferFrom(address(market), exchange, 1);
+        assertEq(tokens.balanceOf(address(market)), 2e18, "the escrow is out of the exchange's reach");
+
         vm.prank(address(dao));
         tokens.clearExitExchange();
-        assertEq(tokens.exitExchange(), address(0));
+        assertEq(tokens.exitExchange(), address(0), "the live exchange was really cleared");
         assertEq(tokens.transferExempt(), address(market), "the market endpoint is the birth fact, unattached");
 
         vm.prank(DAVE);
