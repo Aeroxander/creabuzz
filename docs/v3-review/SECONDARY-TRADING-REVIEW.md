@@ -8,8 +8,9 @@ it comes from, so it can be checked rather than trusted.
 
 **Revision of 2026-11-05** (branch `v4-governance-rework`, after the second round of internal
 agent review and fixes). Counts and line numbers below were re-measured on that day. The defects
-found and fixed since the first revision of this packet are in section 10, "Second round". Nothing in
-this packet is an outside audit. A brief for counsel on the same feature is
+found and fixed since the first revision of this packet are in section 11, "Second round". The same
+day the ten low-severity batches (B15 to B24) were run; section 11, "Low-severity run", lists them, and counts and line
+numbers were re-measured again after them. Nothing in this packet is an outside audit. A brief for counsel on the same feature is
 [LAWYER-BRIEF-WEEKLY-SALES.md](LAWYER-BRIEF-WEEKLY-SALES.md).
 
 **Status: trading starts disabled and nothing has been activated on any public
@@ -26,13 +27,13 @@ something already live.
 
 | Surface | File |
 |---|---|
-| The market itself (rounds, orders, clearing, claims) | `contracts/src/SecondaryMarket.sol` (664 lines) |
+| The market itself (rounds, orders, clearing, claims) | `contracts/src/SecondaryMarket.sol` (665 lines) |
 | Market creation, provenance and pinning | `contracts/src/SecondaryMarketFactory.sol` (201 lines) |
 | Voting maturity, founder sale schedule, escrow accounting | `contracts/src/ActivationVoting.sol` (835 lines) |
-| Shares transfer policy and the lock guard | `contracts/src/ContributorKitV2.sol` (359 lines), and the Shares token inside `contracts/src/majeur/MolochPatched.sol` (3,090 lines; only the patched regions matter here) |
+| Shares transfer policy and the lock guard | `contracts/src/ContributorKitV2.sol` (365 lines), and the Shares token inside `contracts/src/majeur/MolochPatched.sol` (3,090 lines; only the patched regions matter here) |
 | Payout accounting that must not count escrowed Shares (changed in this revision) | `contracts/src/Payouts.sol` (270 lines) |
-| Web card and reader that tell people what they can do | `web/src/features/launchpad/ui/TradingCard.tsx` (631), `TradingOrderForms.tsx` (376), `TradingEarlier.tsx` (253), `TradingListingForm.tsx` (212); `lib/trading-copy.ts` (991), `lib/secondary-read.ts` (426), `lib/trading-orders.ts` (112); `packages/creaton-core/src/launchpad/secondary.ts` (796) |
-| Operator scripts | `scripts/secondary-keeper.sh` (195), `scripts/web-trading-e2e.sh` (169), `scripts/v5-local-fixture.sh` (415) |
+| Web card and reader that tell people what they can do | `web/src/features/launchpad/ui/TradingCard.tsx` (656), `TradingOrderForms.tsx` (376), `TradingEarlier.tsx` (253), `TradingListingForm.tsx` (215); `lib/trading-copy.ts` (1070), `lib/secondary-read.ts` (426), `lib/trading-orders.ts` (112); `packages/creaton-core/src/launchpad/secondary.ts` (796) |
+| Operator scripts | `scripts/secondary-keeper.sh` (247), `scripts/web-trading-e2e.sh` (182), `scripts/v5-local-fixture.sh` (415) |
 
 **Out of scope for this review**
 
@@ -179,23 +180,25 @@ project with other holders, a listing alone can produce trades.
 
 ## 5. What the contract tests actually pin
 
-Counts on 2026-11-05. The secondary, voting, kit, founder-schedule, holding-age,
+Counts on 2026-11-05, after the low-severity batches. The secondary, voting, kit, founder-schedule, holding-age,
 exit-exchange, weekly-rounds, payouts-market and transfer-lock suites, run by the writer of this
 revision with `forge test --offline` from `contracts/` and the path filter given in section 8:
-**26 suites, 270 tests passed, 0 failed.** The whole contract suite with the two fork test files
-excluded, as reported by the orchestrating run's final gate (not re-run for this revision):
-**80 suites, 874 tests passed, 0 failed.** The earlier figure of 734 tests in 69 suites is stale.
-Tests executed per suite in that run (the adversary, review and resolution suites each run twice, once against
+**26 suites, 278 tests passed, 0 failed, 0 skipped** (the previous revision of this packet said 270; the difference is
+not attributed test by test). The whole contract suite with the two fork test files
+excluded, as reported by the final gate run (not re-run for this revision):
+**80 suites, 882 tests passed, 0 failed.** The earlier figures of 734 tests in 69 suites and of 874 in 80 are stale.
+Tests executed per suite in the writer's run (the adversary, review and resolution suites each run twice, once against
 a simplified policy and once against the real policy launched through the real kit):
-`SecondaryMarketAdversary` 21 + `...AdversaryReal` 21, `SecondaryMarketProvenance` 27,
+`SecondaryMarketAdversary` 22 + `...AdversaryReal` 22, `SecondaryMarketProvenance` 30,
 `SecondaryMarketDaoPin` 4, `SecondaryMarketFlows` 8, `...FlowsClearing` 4, `...FlowsResolution` 12 +
 `...ResolutionReal` 12, `SecondaryMarketReview` 4 + `...ReviewReal` 4, `SecondaryMarketGuardPins` 4,
 `SecondaryMarketRealPolicy` 7, `SecondaryMarketRealGas` 2, `SecondaryMarketInvariant` 6,
 `SecondaryListingVote` 3, `ActivationVoting` 42, `ActivationVotingFuzz` 1 + `ActivationVotingRealMarketFuzz` 3,
-`ContributorKitV2` 16, `ContributorKitV2Guards` 21, `FounderSaleEligibility` 5, `HoldingAge` 13,
-`ExitExchange` 3, `PayoutsMarket` 3, `WeeklyRounds` 16 (the frozen contract), `TransferLock` 8. Mutation checks:
-`scripts/contracts-mutation-check.mjs` has 260 entries (all well formed under `--check`), and its
-own node test passes 61 of 61. The ones a reviewer should read first, by theme:
+`ContributorKitV2` 17, `ContributorKitV2Guards` 23, `FounderSaleEligibility` 5, `HoldingAge` 13,
+`ExitExchange` 3, `PayoutsMarket` 3, `WeeklyRounds` 16 (the frozen contract), `TransferLock` 8 (these add to 278).
+Mutation checks: `scripts/contracts-mutation-check.mjs` has 261 entries (all well formed under `--check`; the entry
+added for the market's lot-size bound was not run live because the script refuses a dirty working tree), and its
+own node test passes 62 of 62. The ones a reviewer should read first, by theme:
 
 **Escrow and conservation**
 
@@ -253,10 +256,11 @@ handler really reaches a pro-rata round and a void round.
   (fee-on-transfer fails closed at intake)
 - `test_unattributed_deposits_become_no_ones_credit_and_are_never_paid`
 - `test_forced_eth_dust_stays_irrelevant`
-- `test_claims_survive_a_cleared_exit_exchange`,
+- `test_claims_survive_a_live_exit_exchange_cleared_mid_round`,
   `test_claims_survive_an_installed_exit_exchange_that_reverts`,
   `test_claims_survive_an_exit_exchange_replaced_after_the_notice` and
-  `test_void_round_claims_survive_a_replaced_exit_exchange`. The first clears the exchange slot. The other three
+  `test_void_round_claims_survive_a_replaced_exit_exchange`. The first installs a live exchange and then clears the
+  exchange slot in the middle of a round. The other three
   announce a real exchange that reverts on every call, wait the 30-day notice, activate it, and in the replaced
   cases announce and activate a second one, then run cancel, settle and every claim. (The earlier single test of
   this name only cleared a slot that was already empty and never named an exchange.) They run on the simplified
@@ -315,8 +319,10 @@ Stated plainly, because a reviewer should not spend time discovering these:
    author's.
 2. **No fuzzing of the voting-maturity arithmetic beyond `ActivationVotingFuzz.t.sol`'s
    scope** (which now includes `ActivationVotingRealMarketFuzz`, a strict walk through the
-   real market), **no fuzz over price-grid terms** (deferred item B20; the grid fuzz fixes
-   one set of terms), and no formal verification of the clearing algorithm.
+   real market), a fuzz over odd price floors and steps that checks the intake is paid out exactly but takes the
+   clearing level and matched volume from the market's own clearing function (independent reference checks of those two
+   are in the fixed-grid flow tests and the invariant suite, not in that fuzz), and no formal verification of the
+   clearing algorithm.
 3. **The market has never run against a real quote token with fee-on-transfer,
    rebasing or blacklist behaviour.** `test_a_blocked_quote_strands_no_payout`
    covers a blocking token. Fee-on-transfer is covered as a *refusal at intake*
@@ -330,8 +336,8 @@ Stated plainly, because a reviewer should not spend time discovering these:
    a market may use is undecided: the factory checks only that the quote has
    code (§2). (b) The exit-exchange independence tests now install and replace a real
    exchange that refuses transfers, on both the simplified and the real policy (§5).
-   The kit-level test in `ContributorKitV2.t.sol` still only clears the slot;
-   extending it is deferred item B19. The frozen `WeeklyRounds` contract can still be named in that slot; see
+   The kit-level tests in `ContributorKitV2.t.sol` and the adversary suite
+   now also clear a live exchange mid-round and replace it after the notice, against the real kit. The frozen `WeeklyRounds` contract can still be named in that slot; see
    (e).
    (c) The Trading card reads the latest round and
    the last 8 earlier rounds, and "Check older rounds" reads the next block of 8
@@ -343,14 +349,14 @@ Stated plainly, because a reviewer should not spend time discovering these:
    holds). (e) The old `WeeklyRounds` contract is frozen and unrepaired, but the V2
    contracts do not stop a DAO naming it as its exit exchange after the 30-day notice;
    today only the deploy scripts and build settings keep it away from a value-bearing
-   network. Whether to seal that slot is an open owner decision. (f) Low-severity
-   fixes deliberately deferred to a second run (B15 to B24: the legacy launch entry
-   point on the V2 kit, a one-off lot-size bound mismatch between kit and factory, a
-   card that does not refresh when the next-round time passes, buttons that do not say
-   why they are disabled, some disclosures and accessibility details on the order
-   forms, keeper exit status and key handling, some script hardening, and stale size
-   figures in older documents). (g) The pilot build still renders an inert "Trading"
-   card that says trading is not set up; no pilot test asserts what it offers.
+   network. Whether to seal that slot is an open owner decision, and no test yet pins
+   either outcome. (f) The low-severity batches (B15 to B24) were run after the first
+   version of this revision; see section 11. What they left: the V2 kit still accepts the
+   older launch call (a sealed project with no market), a wording sentence about a fee
+   was not added, and the follow-up fixes were not re-reviewed. (g) The Trading card
+   no longer renders in the contributor-only hosted build or in a build that names no market factory
+   (`d5a67fa`, with a pilot browser test); it still renders, saying trading is not set up, in a build that
+   names a factory only for another network.
 7. **Upgradeability is absent by design** — the market is immutable and
    `SecondaryMarketFactory` pins bytecode. That removes upgrade risk but also
    removes the ability to fix a defect; a replacement market is a new deployment
@@ -419,13 +425,13 @@ public network.
 
 ```bash
 # The contracts. From contracts/ (foundry-bin on PATH; never run forge install or update):
-forge test --offline --no-match-path 'test/{LaunchpadFork,SepoliaLaunchFork}.t.sol'   # whole suite; the orchestrating run reported 80 suites, 874 passed, 0 failed
+forge test --offline --no-match-path 'test/{LaunchpadFork,SepoliaLaunchFork}.t.sol'   # whole suite; the final gate run reported 80 suites, 882 passed, 0 failed
 forge test --offline --match-path "test/{Secondary*,ActivationVoting*,ContributorKitV2*,FounderSaleEligibility*,HoldingAge*,ExitExchange*,WeeklyRounds*,PayoutsMarket*,TransferLock*}.t.sol"
-                                             # the secondary set: 26 suites, 270 passed, 0 failed (2026-11-05)
+                                             # the secondary set: 26 suites, 278 passed, 0 failed (2026-11-05, after the low-severity batches)
 
 # The guard-removal check and its tests (no chain needed for the two node commands)
-node scripts/contracts-mutation-check.mjs --check                       # 260 entries well formed
-node --test scripts/contracts-mutation-check.test.mjs scripts/check-secondary-review-wording.test.mjs   # 71 passed
+node scripts/contracts-mutation-check.mjs --check                       # 261 entries well formed
+node --test scripts/contracts-mutation-check.test.mjs scripts/check-secondary-review-wording.test.mjs   # 72 passed (62 + 10)
 # A single entry removes one guard and requires a named test to fail; see the script header.
 
 # The keeper's retry and give-up logic against a stubbed node and clock
@@ -676,6 +682,35 @@ the settle notice; that the web decoders are bound to the contract by an opt-in 
 though that workflow has never run on GitHub); and that the invariant suite may not reach pro-rata states (a
 directed test does).
 
+### Low-severity run (B15 to B24), the same day
+
+The ten batches the owner left for a second run were run on branch `v4-governance-rework` (17 commits, none pushed).
+Fixed, each with a test that fails when the fix is reverted; "reported" means the batch said so and it was not re-run
+for this revision. Details are in [LAWYER-BRIEF-WEEKLY-SALES.md](LAWYER-BRIEF-WEEKLY-SALES.md) section 5.6.
+
+| Batch | Fix | Commits | Regression tests |
+|---|---|---|---|
+| B15 | One lot-size bound (the largest value that fits in 128 bits) in `SecondaryMarket` (constant `MAX_LOT_SIZE`), `ContributorKitV2` and the factory; kit comments corrected; the web start flow adopts a project at its predicted address only when the DAO factory's log names the kit, and asks a lagging node again before refusing | `bb5dbad`, `212afc2`, `6fbd706` | `test_a_lot_size_of_two_to_the_128_is_refused_by_the_kit_itself`, `test_the_largest_lot_size_launches`, `test_constructor_refuses_a_lot_size_of_two_to_the_128`, `test_constructor_accepts_the_largest_lot_size`, `test_a_lot_size_of_two_to_the_128_is_refused_by_the_factory`, `test_legacy_launch_over_the_variant_summoner_makes_a_sealed_marketless_dao`; web `contributor-flow.test.mjs`, `contributor-project.test.mjs` (the five `daoMadeByKit` tests) |
+| B16 | A live round shows its own terms; no card where trading is not offered | `d5a67fa` | `trading-copy.test.mjs`, `trading-offered.test.mjs`, `tradingCardContract.test.mjs`, `contributorOnlyGatesContract.test.mjs`, `pilot-build.spec.ts` |
+| B17 | Plain-words disclosures, time zones, Share counts and plurals | `a710d42` | six tests in `trading-copy.test.mjs`; listing-vote tests in `daoActions.test.mjs` |
+| B18 | Status text and announcements on the order forms | `e4a5a42`, `8e959f9` | `tradingCardContract.test.mjs` (status-element and always-present-region pins) |
+| B19 | Exit exchange cleared mid-round and replaced after the notice, with exchanges that pull Shares, on the real kit | `1556ef6` | `test_claims_survive_a_live_exit_exchange_cleared_mid_round` (both policies), `test_claims_survive_an_exit_exchange_replaced_after_the_notice`, `test_clearing_a_live_exit_exchange_still_returns_a_sellers_own_escrow` |
+| B20 | Fuzz over odd price floors and steps | `75ca683` | `testFuzz_settle_pays_out_the_intake_exactly_on_any_grid` (both policies) |
+| B21 | Keeper exit status and key handling | `dab2c8a`, `1862cf7` | `scripts/secondary-keeper-test.sh`, `scripts/secondary-keeper-e2e.sh` |
+| B22 | Own chain and checked port in the e2e scripts; port probe checks a real listener | `63d7967`, `77150fa` | `scripts/test-e2e-script-hygiene.sh`, `scripts/test-mvp-gate.sh` |
+| B23 | `agreement-finalizer.mjs` exit codes | `bd1fdfd` | six new tests in `scripts/agreement-finalizer.test.mjs` (40 of 40) |
+| B24 | Status documents and size figures | `5e22ddc` | counts re-measured |
+| Follow-ups | `tradingStateLine` "differs" clauses bound; a gate-run test fixed | `105dbb9`, `787f315` | `trading-copy.test.mjs`; `accept-policy.test.mjs` |
+
+A review of the first ten commits confirmed 11 points (2 medium test gaps: the production check that a DAO was made by
+the kit had no test, and the "differs from the live round" test moved the minimum and maximum price together; and 9
+low) and refuted one (that the new grid fuzz does not check matched volume or the seller's lowest price: the gap
+exists in that test and its sibling, but fixed-grid and invariant tests pin them independently, so it is optional
+hardening and was not applied). The confirmed points were fixed in `212afc2`, `1862cf7`, `8e959f9`, `105dbb9`, `6fbd706` and
+`77150fa`. **A delta review of those fixes was not run.**
+
 ### Still open after this round
 
-See §6 item 6 and the deferred list there. The owner decisions are in the brief, section 8.
+See §6 items 6 and 8. The owner decisions are in the brief, section 8. After the low-severity run the open
+engineering items are listed in the brief, section 6.2: the V2 kit still accepts the older launch call, the exit-exchange
+slot is not sealed, no sentence about a fee, the keeper test is not run by CI, and the follow-up fixes were not re-reviewed.

@@ -1840,7 +1840,7 @@ committed. Every figure is from an agent's run, not an outside party's.
 ### What could not run, or is not proven, and why
 
 - **`check:file-sizes`** (web): needs a local `origin/main`, which this clone does not have (`fatal: Not a valid object name origin/main`). Creating the ref would need a fetch, which was not allowed. Batches ran it with `CHECK_FILE_SIZES_BASE=HEAD`; not a substitute. **Unverified.**
-- **`forge build --sizes` exits 1.** Only two *test* helper contracts in `test/ContributorKitV2.t.sol` exceed the 49,152-byte creation limit (`FakeV3Policy` 49,419; `KitDeployProbe` 60,728 in the final pass). Plain `forge build` and `forge test` exit 0. Candidate contracts, runtime / creation bytes at the final pass: `SecondaryMarket` 13,110 / 14,111; `SecondaryMarketFactory` 16,770 / 30,350; `ActivationVoting` 23,405 / 23,572 (1,171 bytes of runtime headroom, the tightest); `ContributorKitV2` 15,792 / 29,965; frozen `WeeklyRounds` 12,973 / 13,231. `TreasuryMandateFactory` creation code is 49,116 of 49,152 bytes (36 spare), the tightest creation budget; older sections of this document still quote 49,126.
+- **`forge build --sizes` exits 1.** Only two *test* helper contracts in `test/ContributorKitV2.t.sol` exceed the 49,152-byte creation limit (`FakeV3Policy` 49,419; `KitDeployProbe` 60,728 at this pass, 60,408 after the low-severity run). Plain `forge build` and `forge test` exit 0. Candidate contracts, runtime / creation bytes at the final pass: `SecondaryMarket` 13,110 / 14,111; `SecondaryMarketFactory` 16,770 / 30,350; `ActivationVoting` 23,405 / 23,572 (1,171 bytes of runtime headroom, the tightest); `ContributorKitV2` 15,792 / 29,965 at this pass (15,467 / 29,640 after the low-severity run); frozen `WeeklyRounds` 12,973 / 13,231. `TreasuryMandateFactory` creation code is 49,116 of 49,152 bytes (36 spare), the tightest creation budget; older sections of this document still quote 49,126.
 - **Playwright's default browser** (revision 1223) is not installed; 1243 is. The browser scripts ran with `PW_CHROMIUM_PATH` pointing at the 1243 build. The trading journey ran from a copy of `scripts/web-trading-e2e.sh` with the Hermit activation line removed, because activating Hermit was not allowed.
 - **Fork tests** (`LaunchpadFork`, `SepoliaLaunchFork`) were excluded as instructed. **`just ci`, `just check` and the desktop and mobile surfaces** were not run.
 - **`shellcheck`** is not installed; `bash -n` was clean on the touched scripts.
@@ -1848,4 +1848,93 @@ committed. Every figure is from an agent's run, not an outside party's.
 - **`forge fmt`** is not part of any gate; `forge fmt --check` reports differences in `SecondaryMarket.sol`, `ActivationVoting.sol`, `ContributorKitV2.sol` and several tests. Nothing was reformatted.
 - **Paging through older rounds** is covered by pure-function and source-contract tests, not mounted in a browser.
 - **Gas figures** are test-VM measurements with a cheat code that cools storage and two storage slot numbers the test reads; whether a target chain enforces the 2^24 cap is a property of that chain.
-- **No person** has tested the changed flows, no outside party has audited the code, and no lawyer has reviewed it. The deferred low-severity batches B15 to B24 are listed in `STATUS.md` and in the brief, section 6.
+- **No person** has tested the changed flows, no outside party has audited the code, and no lawyer has reviewed it. The low-severity batches B15 to B24 that were deferred at this point were run afterwards; see "Low-severity run" below.
+
+## Low-severity run (B15 to B24) and its gates (2026-11-05)
+
+D182. The ten low-severity batches that D181 deferred were run on branch `v4-governance-rework`: 17 commits from
+`bb5dbad` to `77150fa` (`git log --oneline bbd9b75..HEAD`), none pushed, nothing deployed or enabled, no economic
+parameter changed, `contracts/foundry.lock` never modified or committed. Toolchain as above: Foundry from the session's
+`foundry-bin` directory with `--offline`, Node 22.23.4 and pnpm from `/opt/node22`, Hermit not activated. Every figure
+is an agent's run on a scratch chain. "Reported" means a batch or the gate run said so and it was not re-run when this
+section was written.
+
+### Commands I ran while writing the documents (HEAD `77150fa`)
+
+| Command (from the repository root unless stated) | Result |
+|---|---|
+| `forge test --offline --match-path "test/{Secondary*,ActivationVoting*,ContributorKitV2*,FounderSaleEligibility*,HoldingAge*,ExitExchange*,WeeklyRounds*,PayoutsMarket*,TransferLock*}.t.sol"` (from `contracts/`, `FOUNDRY_LINT_LINT_ON_BUILD=false`) | **26 suites, 278 tests passed, 0 failed, 0 skipped**, exit 0 (270 before the low-severity run, same command). Run twice, same result. |
+| `forge build --offline --sizes` (from `contracts/`) | exits 1: only the test helpers `FakeV3Policy` (initcode 49,419) and `KitDeployProbe` (60,408) exceed 49,152. Runtime / creation bytes: `SecondaryMarket` 13,112 / 14,116; `SecondaryMarketFactory` 16,775 / 30,355; `ActivationVoting` 23,405 / 23,572 (1,171 bytes of runtime headroom); `ContributorKitV2` 15,467 / 29,640; `DaoLaunchKit` 23,875 (701 spare); `TreasuryMandateFactory` creation 49,116 (36 spare); frozen `WeeklyRounds` 12,973 / 13,231 |
+| `node scripts/contracts-mutation-check.mjs --check` | every entry well formed, **261 checked** (260 before; the new one is the market's lot-size bound) |
+| `node --test scripts/contracts-mutation-check.test.mjs` | 62 passed, 0 failed |
+| `node --test scripts/check-secondary-review-wording.test.mjs` | 10 passed, 0 failed |
+| `bash scripts/secondary-keeper-test.sh` | "secondary-keeper-test: all passed" |
+| `node --test scripts/agreement-finalizer.test.mjs` | 40 passed, 0 failed (includes the real-chain journeys on a local anvil) |
+| `wc -l` on the cited files | `SecondaryMarket.sol` 665, `SecondaryMarketFactory.sol` 201, `ActivationVoting.sol` 835, `ContributorKitV2.sol` 365, `WeeklyRounds.sol` 625 (unchanged), `Payouts.sol` 270, `TradingCard.tsx` 656, `TradingListingForm.tsx` 215, `TradingEarlier.tsx` 253, `TradingOrderForms.tsx` 376, `trading-copy.ts` 1070, `trading-offered.ts` 20, `chain-config.ts` 498, `secondary-keeper.sh` 247, `web-trading-e2e.sh` 182, `v5-local-fixture.sh` 415 |
+| `git status --short` after the runs | clean; `contracts/foundry.lock` unmodified |
+
+### Final gate run (reported by the gate agent, after the last batch commit)
+
+| What | Result |
+|---|---|
+| `forge test --offline --no-match-path 'test/{LaunchpadFork,SepoliaLaunchFork}.t.sol'` (`FOUNDRY_LINT_LINT_ON_BUILD=false`, as CI sets it) | **80 suites, 882 passed, 0 failed, 0 skipped**, exit 0. The baseline log (earlier tree, 69 suites) was 741 passed and 1 failed: `RagequitPreviewFfiTest`, whose Node `ffi` script could not resolve `@creaton/core` while `web/node_modules` was missing; it passes now, an environment change and not a code fix. |
+| Contracts CI supporting checks | `check-foundry-lock.mjs` (lock matches the submodule links) pass; its unit test 3 of 3; `contracts-mutation-check.test.mjs` 62 of 62; graduation artifact drift test with `REQUIRE_CONTRACT_ARTIFACTS=1` 13 of 13, 0 skipped; claim-tx selector test with the same variable 9 of 9, 0 skipped |
+| `pnpm test` (web) | **2,741 tests, 2,740 passed, 0 failed, 1 skipped**. A first gate pass earlier in the run saw the two cancelled `accept-policy.test.mjs` subtests of the previous round; `787f315` fixed that test. |
+| Web static checks | `pnpm typecheck`, `biome check .` (exit 0; 4 warnings, 18 infos, no errors), `check:pubkey-truncation`, `check:px-text`, `check:copy`, `check:kinds`, `check:templates`, `check:unused` (knip) all pass |
+| `scripts/web-pilot-e2e.sh` (contributor-only build) | **11 of 11 passed**, including "a contributor project's Funds tab shows no Trading card: trading is off in the pilot build". First attempt failed on browser launch (Playwright pins revision 1223; 1243 is installed); rerun with `PW_CHROMIUM_PATH` pointing at the installed Chromium. |
+| `scripts/web-trading-e2e.sh` (throwaway local anvil on a free port, the real V5 fixture deployment, headless Chromium via `PW_CHROMIUM_PATH`) | **5 of 5 passed**: a full round, a void round that still pays out after the next round opens, a settled round where offer and bid never cross, a part-sold seller who takes back unsold lots, keyboard and screen-reader use with a wrong-network message. Run with a `BASH_ENV` shim that skips the script's one Hermit activation line (which ends in `|| true`), so nothing was downloaded. The script stopped its own anvil. |
+| Formatting | CI does not format-check Solidity (no `forge fmt` step in `_ci-contracts.yml` or the Justfile). For information only, `forge fmt --check src` differs in 9 of 32 files (`ActivationVoting`, `ContributorKitV2`, `DaoLaunchKit`, `GraduationExecutor`, `MilestoneLock`, `MilestoneLockFactory`, `RoyaltyDistributor`, `SecondaryMarket`, `majeur/MolochPatched`); nothing was reformatted. |
+
+### Per-batch evidence (reported by each batch)
+
+| Commit | Change | Tests and checks; mutation check |
+|---|---|---|
+| `bb5dbad` | one lot-size bound; kit comments; web refuses a pre-summoned DAO | Foundry offline across `SecondaryMarket*`, `ActivationVoting*`, `ContributorKit*`, `FounderSaleEligibility`, `SecondaryListingVote`, `HoldingAge`, `ExitExchange`, `WeeklyRounds`, `TransferLock`, `DaoLaunchKit`, `SummonDefaults`: 285 passed, 0 failed, 27 skipped; web start-flow node tests 70 passed; mutation-check node test 62 passed. Reverting only the two bound constants failed the kit and market boundary tests; disabling only the web `madeByKit` guard failed both new flow tests. |
+| `d5a67fa` | live round terms; card hidden where trading is not offered | web unit suite 2,721 of 2,724 passed (3 skipped at that time), launchpad files 111 passed, `tsc` clean, biome clean on touched files, `check:copy`, `check:px-text`, knip exit 0, pilot spec 11 of 11. Reverting the fix in three files failed 6 new tests; removing only the card guard failed the pilot browser test. |
+| `a710d42` | plain-words copy, Share counts, time zones | web node tests 2,727 passed; `creaton-core` node tests 963 passed; `tsc`, biome, `check:copy`, `check:px-text` clean. Reverting five wording pieces failed five tests; also run under `TZ=America/New_York`. |
+| `e4a5a42` | status text and settle notice | web `pnpm test` 2,729 passed; `tsc`, biome, `check:copy`, `check:px-text` clean. Reverting only `TradingCard.tsx` failed 2 of 8 contract tests. |
+| `1556ef6` | exit-exchange tests with a real exchange | 24 suites, 265 passed, 0 failed. Making the market's birth exemption conditional on no exchange failed all new and updated tests with `Locked`, on both policies and in the kit test. |
+| `75ca683` | grid-terms fuzz | 24 suites, 267 passed, 0 failed; `forge fmt --check` clean on touched tests. Rounding the seller's price down to a multiple of 100 failed the new fuzz on both policies and left the old fixed-grid fuzz green. |
+| `dab2c8a` | keeper exit status and key handling | `bash scripts/secondary-keeper-test.sh` all passed; `scripts/secondary-keeper-e2e.sh` on a real local anvil passed all steps, signing from keystores, unfunded keeper exits 1. Reverting the script failed 8 checks; three single mutations each failed their own checks. |
+| `63d7967` | trading and keeper journey hardening | `scripts/test-e2e-script-hygiene.sh` 24 checks passed; `scripts/test-mvp-gate.sh` all passed except one check that also fails on untouched code. Three groups of single reversions failed 7, the fixture and keeper, and 5 checks respectively. |
+| `bd1fdfd` | finalizer exit codes | 40 of 40 passed (34 existing plus 6 new). Restoring the old behaviour failed tests 2, 5 and 6; setting two `exitCode` fields to 9 failed tests 1, 4 and 6. |
+| `5e22ddc` | status documents, size figures, mention-list trace | `mvp-gate.sh --list`, `--pilot --list`, `--later --list`: 27, 10, 17; `forge build --sizes` and `v5-local-fixture.sh` on a local anvil passed; biome clean on the edited spec. The trace was **not** exercised: it needs the real relay stack, and a scratch Chrome run hung. |
+| `787f315` | invite accept-policy test | file 3 of 3; web `pnpm test` 2,731 of 2,732 passed, 0 failed. Removing the abort signal from `accept-policy.ts` made the timeout test fail after 5 s. |
+| `212afc2` | tests for the real `madeByKit` glue | web unit suite 2,736 of 2,737 passed; `contributor-project.test.mjs` 26 of 26. Seven mutants of `daoMadeByKit` each failed at least one of five new tests. |
+| `1862cf7` | keeper: `ListingNotEnabled`, `--once` exit branches, portable test | `bash scripts/secondary-keeper-test.sh` all passed. Eight single mutations (dropping a benign case, a re-check, or changing a return code) each failed their own checks. |
+| `8e959f9` | announced stale note, time zone, stronger source pins | launchpad node tests 76 of 76; web `pnpm test` 2,737 of 2,738 passed. Ten mutations of the card source and `staleReadLine` each failed a test. |
+| `105dbb9` | each clause of `tradingStateLine`'s "differs" test | `trading-copy.test.mjs` 68 of 68; web 2,738 of 2,739 passed. Deleting the levels clause, the step clause, or using the wrong comparison each failed only the new test. |
+| `6fbd706` | retry a lagging kit log | web `pnpm test` 2,740 of 2,741 passed; `typecheck`, biome, `check:copy` pass. Removing the retry loop failed the late-log and squat tests. |
+| `77150fa` | port probe like anvil binds it | the 13 new port-probe checks in a scratch harness with the real `local-anvil.sh` and a real anvil: 0 failures. Removing only `SO_REUSEADDR` failed the closing-state case; removing only the validation failed the five junk-port checks. |
+
+### What could not run, or is not proven, and why
+
+- **A delta review of the follow-up fixes was not run.** The review of the first ten batch commits found 11 points (2
+  medium, 9 low) and refuted one; its fixes are `212afc2`, `1862cf7`, `8e959f9`, `105dbb9`, `6fbd706` and `77150fa`.
+  They have their own tests and mutation checks and nothing else.
+- **`check:file-sizes`** (web) still cannot run: no local `origin/main` (`fatal: Not a valid object name origin/main`),
+  and a fetch was not allowed. Batches that tried got the same error with and without their changes.
+- **The new mutation entry** for the market's lot-size bound passes the script's node well-formedness test but was not
+  run live: the script refuses a dirty working tree. The batch reverted the two bound constants by hand instead.
+- **`forge build --sizes` still exits 1** because of the two test helpers named above. That was not compared against a
+  baseline `--sizes` run (none was logged); the helpers sit in `test/ContributorKitV2.t.sol` and are never deployed.
+- **Playwright's pinned browser** (revision 1223) is not installed; the browser scripts ran with `PW_CHROMIUM_PATH`. The
+  default-build browser specs, other than the trading spec, were not run in this run.
+- **Playwright specs edited by text only** (three pinned strings in `tests/e2e/secondary-trading.spec.ts`, `a710d42`)
+  were not run by that batch; the final gate's 5 of 5 ran them.
+- **`scripts/test-e2e-script-hygiene.sh` as a whole** was not re-run after `77150fa` (it deploys contracts through
+  `forge`); only the new port-probe section ran, in a scratch harness. **`scripts/test-mvp-gate.sh`** has one check
+  ("the chain the journey leaked is stopped") that fails identically on untouched code in this environment.
+- **Not mounted in a browser:** the card's new announcements and status regions are pinned by tests of the source, as
+  this repository does for the card, and were not heard in a screen reader. The mention-list trace (above) has not been
+  seen on a real failing run.
+- **Keeper:** the BSD `sed` change was not run on macOS and bash 3.2 was not available; `shellcheck` is not installed (`bash -n`
+  was clean on every touched script). The raw `KEEPER_PRIVATE_KEY` path remains, with a warning, because `cast` cannot
+  take a key off its command line.
+- **Not examined:** whether the Trading card belongs in the default build under D137 as against D180. Fork tests, `just
+  ci`, `just check` and the desktop and mobile surfaces were not run.
+- **`agreement-finalizer.mjs`:** exit code 8 is declared but unreachable from the command line, and `retryJob`'s `note`
+  field is an unawaited promise; the command line does not use it.
+- **The 27 skipped tests** in the `bb5dbad` batch's wider Foundry run were not investigated; the full-suite gate run
+  reports 0 skipped.
+- **No person** has tested the changed flows, no outside party has audited the code, and no lawyer has reviewed it.

@@ -1,6 +1,8 @@
 # Weekly sales of existing Shares: a brief for counsel and for an outside auditor
 
 Written 2026-11-05 on branch `v4-governance-rework`. Nothing described here is deployed or switched on anywhere.
+Updated later the same day, after the ten low-severity batches (B15 to B24) were run (section 5.6): line counts, test
+counts and the open lists in sections 5, 6 and 8 were re-measured or rewritten then.
 This brief is engineering material, not legal advice.
 
 **Who this is for.** A securities and technology lawyer who has not seen the code, and an outside smart-contract
@@ -286,49 +288,64 @@ named in section 5, not by a promise.
 
 | Piece | File | Lines (2026-11-05) |
 |---|---|---|
-| The market | `contracts/src/SecondaryMarket.sol` | 664 |
+| The market | `contracts/src/SecondaryMarket.sol` | 665 |
 | Market factory | `contracts/src/SecondaryMarketFactory.sol` | 201 |
 | Voting maturity, founder schedule, escrow accounting | `contracts/src/ActivationVoting.sol` | 835 |
-| V2 launch kit | `contracts/src/ContributorKitV2.sol` | 359 |
+| V2 launch kit | `contracts/src/ContributorKitV2.sol` | 365 |
 | Frozen old rounds contract (not repaired) | `contracts/src/WeeklyRounds.sol` | 625, unchanged |
-| Trading card and listing form | `web/src/features/launchpad/ui/TradingCard.tsx`, `TradingListingForm.tsx` plus `TradingEarlier.tsx`, `TradingOrderForms.tsx` | 631, 212, 253, 376 |
-| App data and wording | `use-secondary.ts` 129, `lib/secondary-read.ts` 426, `lib/trading-orders.ts` 112, `lib/trading-copy.ts` 991, `chain-config.ts` 474; shared reader `packages/creaton-core/src/launchpad/secondary.ts` 796 | |
-| Keeper and local scripts | `scripts/secondary-keeper.sh` 195, `web-trading-e2e.sh` 169, `v5-local-fixture.sh` 415 | |
+| Trading card and listing form | `web/src/features/launchpad/ui/TradingCard.tsx`, `TradingListingForm.tsx` plus `TradingEarlier.tsx`, `TradingOrderForms.tsx` | 656, 215, 253, 376 |
+| App data and wording | `use-secondary.ts` 129, `lib/secondary-read.ts` 426, `lib/trading-orders.ts` 112, `lib/trading-copy.ts` 1070, `lib/trading-offered.ts` 20, `chain-config.ts` 498; shared reader `packages/creaton-core/src/launchpad/secondary.ts` 796 | |
+| Keeper and local scripts | `scripts/secondary-keeper.sh` 247, `web-trading-e2e.sh` 182, `v5-local-fixture.sh` 415 | |
 
 ### 5.2 Tests, with counts
 
-Counts below are from commands run on 2026-11-05; the commands are in `V5-IMPLEMENTATION.md`, "Weekly-sales
-hardening: gate results".
+Counts below are from commands run on 2026-11-05, after the low-severity batches; the commands are in
+`V5-IMPLEMENTATION.md`, "Weekly-sales hardening: gate results" and "Low-severity run". "I ran" means the writer of this
+revision ran it again at the final commit; "reported" means a gate run or a batch reported it and it was not re-run for
+this revision.
 
-- **Contract tests I ran for the secondary suites** (`forge test --offline` over `Secondary*`, `ActivationVoting*`,
+- **Contract tests for the secondary suites** (`forge test --offline` over `Secondary*`, `ActivationVoting*`,
   `ContributorKitV2*`, `FounderSaleEligibility*`, `HoldingAge*`, `ExitExchange*`, `WeeklyRounds*`, `PayoutsMarket*`,
-  `TransferLock*`): **26 suites, 270 tests passed, 0 failed.** The market's own tests run twice, once against a
+  `TransferLock*`; I ran it): **26 suites, 278 tests passed, 0 failed, 0 skipped.** The previous revision of this brief
+  said 270; the increase is not attributed test by test here. The market's own tests run twice, once against a
   simplified stand-in for the voting policy and once against the real policy launched through the real kit.
-- **Full contract suite** (fork tests excluded), as reported by the orchestrating run's final gate: **80 suites, 874
-  tests passed, 0 failed.** I did not re-run the full suite.
+- **Full contract suite** (fork tests excluded), reported by the final gate run: **80 suites, 882 tests passed, 0
+  failed, 0 skipped** (the previous revision said 874). I did not re-run the full suite.
 - **Mutation checks**: a script that removes one guard at a time from the contracts and requires a named test to fail.
-  260 entries; the node test of the script passes 61 of 61 and `--check` reports every entry well formed (I ran both).
-  The batches also ran their new entries against the contracts through `forge` and report each caught. I did not
-  re-run all 260 mutants.
-- **App tests**: 133 passed in the trading files I re-ran (copy, order sending, reader, listing draft, card
-  wiring); 53 passed in the shared reader and decision tests; full web suite per the orchestrating run: 2,714 tests,
-  2,711 passed, 0 failed, 2 cancelled, 1 skipped. The 2 cancelled are in `src/features/invite/accept-policy.test.mjs`,
-  an unrelated file that this branch's secondary-trading work did not touch; they also cancel without this branch's
-  changes.
+  **261 entries**; its node test passes 62 of 62 and `--check` reports every entry well formed (I ran both). The one
+  entry added in the low-severity run (the market's lot-size bound) was checked only for form: the script refuses to
+  run on a dirty working tree, so it was not run live. The batch instead reverted the two bound constants by hand and
+  saw the kit and market boundary tests fail. Earlier entries were run by their batches; I did not re-run all 261
+  mutants.
+- **App tests**: the full web unit suite, reported by the final gate run: **2,741 tests, 2,740 passed, 0 failed, 1
+  skipped.** The two cancelled subtests that earlier revisions reported in `src/features/invite/accept-policy.test.mjs`
+  were a defect in that test (a stand-in server that never answers, with nothing keeping the test's event loop open);
+  it is fixed in `787f315` and no product code changed. The shared reader and decision package
+  (`packages/creaton-core`) passed 963 of 963 (reported by a batch, at `a710d42`).
 - **Browser tests against a real local chain**: `scripts/web-trading-e2e.sh`, 5 of 5 passed (a full round, a void
-  round, a part-filled seller, a round where nothing crosses, keyboard and screen-reader use), reported by the
-  orchestrating run; the pilot-build check `scripts/web-pilot-e2e.sh` passed 10 of 10.
+  round, a part-filled seller, a round where nothing crosses, keyboard and screen-reader use), reported by the final
+  gate run; the pilot-build check `scripts/web-pilot-e2e.sh` passed **11 of 11** (the new eleventh asserts the Funds tab
+  of a contributor project has no Trading element). Both needed `PW_CHROMIUM_PATH` here because the browser build
+  Playwright pins is not installed.
 - **Keeper**: `scripts/secondary-keeper-test.sh` (stubbed node and clock): all checks passed (I ran it);
-  `secondary-keeper-e2e.sh` on a real local chain passed (reported by the batch).
+  `scripts/secondary-keeper-e2e.sh` on a real local chain passed, including an unfunded keeper that exits 1 and signing
+  from a keystore (reported by the keeper batch).
+- **Script hygiene**: `scripts/test-e2e-script-hygiene.sh` (24 checks; runs the real scripts against a real local chain
+  with stand-in browser and dev server; wired into the `mvp-gate` workflow) passed in its batch; the 13 port-probe checks
+  added later passed in a scratch harness, and the whole script was not re-run after them. `scripts/test-mvp-gate.sh`
+  passes except one check ("the chain the journey leaked is stopped") that fails the same way on untouched code in
+  this environment. `node --test scripts/agreement-finalizer.test.mjs`: 40 of 40 (I ran it).
 - **Local deployment**: `scripts/v5-local-fixture.sh` deploys the whole set on a scratch chain, reads every value back,
-  and asserts the listing is disabled at birth. Its own self-test (`scripts/test-v5-local-fixture.sh`, 33 checks)
-  passed in the batch that wrote it.
-
+  and asserts the listing is disabled at birth; it passed on a local chain in the status-document batch. Its own
+  self-test (`scripts/test-v5-local-fixture.sh`, 33 checks) passed in the batch that wrote it and was not re-run.
 What the contract tests pin, by theme (names exist in `contracts/test`): escrow conservation under random order
 flows (`SecondaryMarketInvariant`, rewritten; see section 5.4); exact clearing and the leftover rule; one reentry test
 per entrypoint; a blocked quote token; unattributed deposits; stray ETH; exit-exchange independence, with a real
-exchange that refuses transfers installed and replaced; one test per factory provenance guard; the market's exact
-function list; the founder schedule; voting maturity; and the real-policy gas ceiling (section 5.4).
+exchange that refuses transfers installed and replaced, and one cleared in the middle of a round, on the simplified
+and the real policy; one test per factory provenance guard; the lot-size limit at its largest allowed value and one
+above it, in the kit, the factory and the market; a fuzz over odd price-grid terms (the intake is paid out exactly on
+any floor and step); the market's exact function list; the founder schedule; voting maturity; and the real-policy gas
+ceiling (section 5.4).
 
 ### 5.3 Defects found and fixed before this run (internal review pass)
 
@@ -413,6 +430,30 @@ listing off cannot strand collection; the lowest step settles; stray ETH is irre
 conclusions by the same family of agents that wrote the code. They are exactly what an outside auditor should
 challenge.
 
+### 5.6 Low-severity fixes (the second run, the same day)
+
+The owner chose high and medium severity first; the ten low-severity batches (B15 to B24) were run afterwards on the
+same branch, with the same method (a fix, a test that fails when the fix is reverted, a note of what could not run).
+A review of those commits then confirmed 11 points (2 medium test gaps and 9 low) and refuted one more; the confirmed
+points were fixed in follow-up commits. **The follow-up fixes were not reviewed again: no delta review was run.** No
+economic parameter changed and the run raised no new item for the owner (its needs-human list was empty). One contract
+constant changed (the first row). Commits are on branch `v4-governance-rework`.
+
+| Batch | In plain words | Commits |
+|---|---|---|
+| B15, kit and factory | One lot-size limit everywhere. The market and the V2 kit used to accept a lot size one above the largest the factory accepts, so such a launch passed the kit and then failed inside the factory with an unrelated error; all three now accept up to the largest number that fits in 128 bits and refuse one more (`SecondaryMarket.MAX_LOT_SIZE` changed from 2^128 to 2^128 - 1). Two kit comments were wrong and were corrected (the older launch is not "unchanged" on the V2 kit; a seller does approve the market), and the older kit's comment no longer claims a project's address cannot be taken first (anyone can make a DAO at a predicted address; the launch then fails and the founder retries with a new salt). A test launches through the older entry point on the V2 address and checks the project has no market, closed transfers, working award and exit. The web start flow now takes over a project found at its predicted address only if the DAO factory's log names the kit as its maker, and otherwise stops before sending or publishing anything; a node whose log trails its code is asked again (about eight seconds in all) before that refusal. | `bb5dbad`, `212afc2`, `6fbd706` |
+| B16, Trading card | A live round now shows the terms it opened with (the listing's current terms are shown as the next round's); a round still open under a listing the DAO switched off no longer says offers and bids are taken; the card renders nothing in the contributor-only hosted build and in any build that names no market factory (a build naming a factory only for another network still shows "not set up on this network"). The refresh when the next-round time passes and the note saying why a button is off were already fixed earlier; the note is covered in the trading browser spec. | `d5a67fa`, `8e959f9` |
+| B17, wording | Shares counts use correct singular and plural and enough precision for tiny lot sizes; times name their time zone; a standing line says trading does not fund the project, outside the collapsed blocks; buyer notes and the order plan lines were rewritten. Not added: any sentence about a fee (item 6 in section 8). | `a710d42`, `8e959f9` |
+| B18, accessibility | "Try again" buttons no longer sit inside status text; the settle notice and the failed-refresh note are always-present polite regions that are empty until there is something to say. | `e4a5a42`, `8e959f9` |
+| B19, exit exchange | Claims survive an exchange installed and then cleared in the middle of a round, and one replaced after the notice, using exchanges that try to pull Shares, on the simplified and the real policy; a kit-level test too. | `1556ef6` |
+| B20, grid fuzz | A fuzz over odd price floors and steps checks that the intake is paid out exactly. The 64-step cap pin and the exact function-list test already existed. | `75ca683` |
+| B21, keeper | The keeper exits 1 when a settle is refused (0 only if the round turns out to be settled); it signs from a keystore so no private key appears in the process list (the raw-key option remains and warns); a refused opening because the listing is off is benign; the exit paths of the one-shot mode are tested. | `dab2c8a`, `1862cf7` |
+| B22, scripts | The trading and keeper journeys start their own chain on a checked port, build the web app honestly, and no longer refuse a port that is only in its closing wait state; a mistyped port number is reported as one. | `63d7967`, `77150fa` |
+| B23, finalizer | `agreement-finalizer.mjs`: a retry exits 2 (never 0), usage errors exit 1, a locked journal 3, a malformed journal 9. | `bd1fdfd` |
+| B24, documents | Status documents, gate counts and size figures refreshed; the flaky mention-list spec prints a trace when it fails. | `5e22ddc` |
+| Review follow-ups | Every clause of the trading card's "differs from the live round" test is bound; the production check that a DAO was made by the kit has its own tests. | `105dbb9`, `212afc2` |
+| Gate fix | The invite accept-policy test no longer outlives its event loop. | `787f315` |
+
 ---
 
 ## 6. What is NOT done
@@ -431,38 +472,44 @@ challenge.
    test network are test records with no value. All evidence is from local scratch chains and unit tests.
 6. **Trading is off by default** (a listing starts disabled, the hosted build names no market factory). That is
    configuration, not a legal or technical barrier a determined operator could not remove.
+7. **No review of the latest fixes.** The ten low-severity commits were reviewed; the commits that fixed what that
+   review found (`212afc2`, `1862cf7`, `8e959f9`, `105dbb9`, `6fbd706`, `77150fa`) were not. A delta review was not run.
 
 ### 6.2 Open engineering items
 
-- **Low-severity fixes deliberately deferred to a second run** (the owner chose high and medium severity first):
-  - B15: the V2 kit still exposes the older launch entry point (which builds a project with no market and no way
-    to get one); the lot-size upper bound differs by one between the kit/market (`2^128` allowed) and the factory
-    (refuses it); a comment wrongly says a project's address cannot be pre-claimed; one kit comment misdescribes
-    approvals.
-  - B16: the trading card does not refresh when the next-round time passes unless reloaded; disabled buttons do not
-    say why; the header shows the listing's current terms rather than the live round's frozen ones; the hosted
-    pilot build still renders an inert "Trading" card saying "Trading isn't set up on this network".
-  - B17: more plain-words disclosures (a buyer note, a standing "does not fund the project" line), time zones on
-    dates, precision for tiny lot sizes, and singular/plural.
-  - B18: accessibility details on the order forms (focus return, field-linked errors, live regions).
-  - B19: exit-exchange independence tests that also use the real kit.
-  - B20: a fuzz over price-grid terms, a stand-alone test for the 64-step cap, and a general ABI pin test.
-  - B21: the keeper reports success when a send is refused, and passes its key on the command line.
-  - B22: e2e script hardening (build logs hidden, random port not verified, gate port table).
-  - B23: `agreement-finalizer.mjs` exit codes and error text.
-  - B24: status documents and size figures (several documents still quote older contract sizes).
-- **Five smaller items still open after two review rounds:** the keeper test is not run by CI; a lost settle race is
-  benign only on the estimate path; the buyer-side "comes back" wording in "How trading works" and the bid plan line; focus
-  after collecting from an earlier round lands on the current round's status line; one misplaced code comment in the
-  browser test.
+The low-severity batches (B15 to B24) that stood here as deferred were run and are described in section 5.6. What is
+still open after them:
+
+- **The V2 kit still exposes the older launch entry point.** It builds a project with no market and no way to get one
+  (sealed, by design, and now tested and documented in the kit's comments). Making the V2 kit refuse it needs the
+  pilot-kit decision (section 8, item 12), because the page encodes only the older launch call and a V2 kit named in
+  the page's kit list would stop working.
+- **The exit-exchange slot is not sealed**, so the two document lines that tie to it (the packet's section 6 and a
+  comment in the market) are unchanged, and there is no test pinning that the old rounds contract stays attachable or
+  is refused. Both wait for section 8, item 3.
+- **Card wording not done:** any sentence about a fee (item 6), and the wording of the round line near its close. Whether
+  the card belongs in the default (non-pilot) build under D137 as against D180 was not examined. Browser specs for the
+  default build were not run in the low-severity run (the trading spec and the pilot spec were, in the final gate).
+- **Card tests pin source structure, not a mounted page**, because the component cannot be mounted in a plain node test.
+  The new announcements were not traced in a real screen reader. The older-rounds paging is likewise tested as logic and
+  wiring.
+- **Keeper:** the keeper test is not run by CI (the new script-hygiene test is). The raw-key option remains because
+  `cast` cannot take a key off its command line; the claim sweep, reading the `EVERY` constant and a chain-id allow-list
+  were skipped as optional or refuted. The keeper test's BSD `sed` change could not be run on macOS and bash 3.2 was not
+  available.
+- **`agreement-finalizer.mjs`:** exit code 8 is declared but cannot be reached from the command line, and `retryJob`
+  returns a promise in a note field (the command line does not use it). Both left alone.
+- **Not confirmed fixed by this run's evidence:** focus after collecting from an earlier round lands on the current
+  round's status line; one misplaced code comment in the browser test.
 - **Unverified here:** the repository's file-size check could not run (it needs a local `origin/main` reference this
   clone does not have). `forge build --sizes` exits non-zero because two *test* helper contracts exceed the creation
-  size limit; no deployed contract does. Solidity formatting (`forge fmt`) is not enforced and the sources are not
-  formatted to it. Fork tests (Sepolia fork, mainnet fork) were excluded. The older-rounds paging was tested as logic
-  and wiring, not mounted in a browser. Measured gas depends on a Foundry cheat code and on two storage slot numbers
-  the test reads; the test fails loudly if a layout changes, but the figures are not chain measurements. The cap
-  itself is chain-dependent.
-- **Known design limits, stated rather than fixed:** a free cancellable order can occupy a seat (32 per side); an
+  size limit (`FakeV3Policy` 49,419 and `KitDeployProbe` 60,408 against 49,152); no deployed contract does. Solidity
+  formatting (`forge fmt`) is not enforced; at the final gate it differed in 9 of 32 source files and nothing was
+  reformatted. Fork tests (Sepolia fork, mainnet fork) were excluded, and the whole `just ci` and the desktop and mobile
+  surfaces were not run. The new mutation entry was not run live (above), and the trace added to the flaky mention-list
+  spec has not been seen on a real failing run. Measured gas depends on a Foundry cheat code and on two storage slot
+  numbers the test reads; the test fails loudly if a layout changes, but the figures are not chain measurements. The cap
+  itself is chain-dependent.- **Known design limits, stated rather than fixed:** a free cancellable order can occupy a seat (32 per side); an
   order's size can be overstated at no cost; a bid can move the price and be pulled in the last second; one person
   using two addresses can set a round's price and print it; Shares held in escrow cannot exit or vote while there
   (about five days at most for a sold or void order, and for unsold Shares until someone collects them, which has no deadline); the quote token is unvetted; a quote token that blacklists the market
@@ -567,7 +614,7 @@ Each is stated so it can be answered "yes, no, or only if X".
 ## 8. Open items the owner must decide
 
 These come from the review's "needs a human" list. None was changed by the agents. Each shows the options the review
-recorded.
+recorded. The low-severity run raised no new item; it touched items 3, 6, 12 and 14, which are annotated below.
 
 1. **Which tokens may be a market's price token.** Today any contract with code works, and the page prints whatever
    name the token gives itself (the page now also shows its short address and warns when it differs from the sale
@@ -577,7 +624,8 @@ recorded.
    construction; leave free and always display it.
 3. **Whether the old rounds contract may still be named as an exit exchange.** Options: seal the exit-exchange slot
    at birth for new-flow projects; leave it and document that the old contract must never be deployed on a value-bearing
-   network; either way add a test.
+   network; either way add a test. Still open: the low-severity run added exit-exchange tests but did not seal the slot
+   or pin either outcome.
 4. **Order caps and seat squatting.** Options: accept and state; minimum order size; refundable seat bond; let a
    larger order displace the smallest. Any of these is an economic rule.
 5. **Allocation rule and size inflation.** Options: keep proportional sharing and document; price priority with
@@ -585,7 +633,7 @@ recorded.
 6. **Wash trades and the "settled at" price.** Options: copy that says one person can set a round's price; reject an
    address that both offers and bids in a round (does not stop two addresses); show no price history; a non-zero fee
    or minimum order (a change to the owner's fee parameter). Also: whether to say "no fee" on screen (conflicts with
-   the contract comment that zero is not a production promise).
+   the contract comment that zero is not a production promise). The low-severity run added no sentence about a fee.
 7. **Quorum floors that exceed eligible supply.** A proposal opened in a dip of eligible voting supply can be
    unpassable until supply recovers. Options: cap the floors in the voting policy; strengthen the warning; accept.
 8. **Which Shares leave first when selling through the market.** The market sends a seller's oldest (most mature)
@@ -601,13 +649,17 @@ recorded.
     approving vote; keep and document.
 12. **Which launch kit pilots use.** The page's contributor flow still encodes the older launch call, and the local
     fixture's kit is the V2 kit. Options: keep the older entry point on V2 and fix wording; make V2 refuse it and add a
-    V2 launch call to the page; keep pilots on the older kit.
+    V2 launch call to the page; keep pilots on the older kit. After the low-severity run: the page refuses to adopt a project at its predicted
+    address unless the kit made it, and the older launch on the V2 address is tested and documented as making a
+    sealed project with no market; the V2 kit still accepts that call.
 13. **Command-line support for agreements and markets.** The command-line tool has no commands for agreements,
     listings or the market, so agents cannot use these flows. Options: build them before agents join the pilot, or
     record that agents stay on the web path.
 14. **Whether the pilot build may show an inert "Trading" card.** Today the hosted pilot build renders a card
     saying trading is not set up. Options: hide it where no market factory is named; hide it in the contributor-only
-    build; keep it and add a test that it offers no actions.
+    build; keep it and add a test that it offers no actions. Status: the first option was applied in `d5a67fa` (the card renders
+    nothing where no market factory is named and in the contributor-only build), with a pilot browser test; it stays
+    your call whether to keep that.
 15. **Settle capacity.** The settle fix (section 5) keeps 32 sellers per round. Remaining options if the owner wants
     more headroom: lower the cap, or make settle resumable.
 16. **Whether to silence or soften the price-token mismatch warning** for projects with no recorded token sale
