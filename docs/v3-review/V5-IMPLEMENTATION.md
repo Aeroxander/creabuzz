@@ -1754,6 +1754,10 @@ cannot settle by itself (settling is a transaction the visitor's wallet must app
   bidding is open, settles once bidding closes, sends nothing for a settled or void round, and the ledgers end at zero.
   It first failed for a real reason — `cast` does not read `ETH_PRIVATE_KEY`, so the keeper sent nothing — which is why the
   key is `KEEPER_PRIVATE_KEY` and a refused send now prints its reason.
+  Retries are bounded per action: a settle gives up after `KEEPER_MAX_ATTEMPTS` failed sends (its round is then void), but
+  an `openRound` is keyed per week and never gives up, it is retried once an hour, so a refilled wallet just works. A settle
+  that lost the race (already settled, window over) or an early `openRound` is logged as a note, not as a failure.
+  `scripts/secondary-keeper-test.sh` runs the real keeper against a stubbed node and clock to prove those paths.
 
 Contract timings were not changed (3-day bidding, 2-day settle window, weekly cadence).
 
