@@ -52,7 +52,7 @@ change.
 
 1. Ask existing members to agree again to changed terms at their next sign-in, and read back the accepted version.
 2. Direct notice of material changes and of any privacy-note change (message or banner).
-3. A companion check that the served Last updated date changed when the served text changed.
+3. Done: `./run.sh policy-stamp` and a start check that the served Last updated date changed when the served text changed.
 4. Age: make the compose files set `BUZZ_AGE_ATTESTATION_REQUIRED=true`; one source for the number 18.
 5. Moderation messages: make the reason required, add the rule or law relied on, say whether a tool was used, and say how to appeal.
 6. Download and delete requests from the app; export that includes reports a person made.

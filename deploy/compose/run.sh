@@ -237,6 +237,11 @@ case "${1:-help}" in
   backup|restore|verify-backup)
     ./backup.sh "$@"
     ;;
+  policy-stamp)
+    # Record the terms and privacy note as they are now, once their Last updated line is right (README.md, "First start").
+    require_env_file
+    load_policies stamp
+    ;;
   prune-backups)
     prune_backups "${2:-}"
     ;;
@@ -316,6 +321,9 @@ Commands:
                 meanwhile)
   verify-backup DIR
                 Check a backup's files against its manifest
+  policy-stamp  Record the terms and privacy note as they are, after updating
+                their Last updated line; start and upgrade refuse text that
+                changed without it
   prune-backups DAYS
                 Delete backups/<UTC time> folders older than DAYS days
   psql [options]

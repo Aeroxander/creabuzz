@@ -23,6 +23,10 @@ tls_on() {
   [[ "$value" == "true" ]]
 }
 
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi
+}
+
 COMPOSE_FILES=(-f compose.yml)
 if tls_on; then
   COMPOSE_FILES+=(-f compose.caddy.yml)
@@ -148,15 +152,92 @@ policy_placeholders() {
   ' "$1"
 }
 
+# A policy file's "Last updated" line: "Last updated: 5 March 2026", also written in bold or italics
+# ("**Last updated:** ..."). The first such line counts; the date is the text after the colon.
+POLICY_DATE_LINE='^[ \t*_]*last updated[ \t*_]*:'
+
+# The date on a policy file's Last updated line, or nothing when there is no such line or no date on it.
+policy_last_updated() {
+  awk -v pat="$POLICY_DATE_LINE" '
+    tolower($0) ~ pat {
+      line = $0
+      sub(/\r$/, "", line)
+      match(tolower(line), pat)
+      line = substr(line, RLENGTH + 1)
+      sub(/^[ \t*_]+/, "", line)
+      sub(/[ \t*_]+$/, "", line)
+      print line
+      exit
+    }' "$1"
+}
+
+# A hash of a policy file's text without its Last updated line, so that the date can change on its own.
+policy_text_hash() {
+  awk -v pat="$POLICY_DATE_LINE" '
+    !done && tolower($0) ~ pat { done = 1; next }
+    { print }' "$1" | sha256 | cut -d' ' -f1
+}
+
+# Where ./run.sh policy-stamp keeps what it recorded about a policy file: beside it, in .stamps/.
+policy_stamp_path() {
+  printf '%s/.stamps/%s.stamp' "$(dirname "$1")" "$(basename "$1")"
+}
+
+# The Last updated check (docs/policies/LAWYER-FEEDBACK-RESPONSE.md): the date on a served policy must change whenever
+# its text does. MODE check (the default) refuses a file that has no stamp, or whose text changed since its stamp;
+# MODE stamp records the file as it is now, but not text that changed under the same date, so the stamp cannot be used
+# to get past the check.
+check_policy_stamp() {
+  local file="$1" mode="${2:-check}" date stamp hash recorded_hash recorded_date
+  date="$(policy_last_updated "$file")"
+  if [[ -z "$date" ]]; then
+    echo "$file has no 'Last updated: <date>' line, or the line has no date. Put it near the top and run the command again." >&2
+    exit 1
+  fi
+  stamp="$(policy_stamp_path "$file")"
+  hash="$(policy_text_hash "$file")"
+  if [[ -f "$stamp" ]]; then
+    recorded_hash="$(sed -n 's/^hash=//p' "$stamp")"
+    recorded_date="$(sed -n 's/^last_updated=//p' "$stamp")"
+    if [[ "$hash" != "$recorded_hash" && "$date" == "$recorded_date" ]]; then
+      {
+        echo "$file has changed, but its Last updated line still says '$date'."
+        echo "Update the Last updated line to today's date, then run ./run.sh policy-stamp."
+      } >&2
+      exit 1
+    fi
+  fi
+  if [[ "$mode" == stamp ]]; then
+    mkdir -p "$(dirname "$stamp")"
+    printf 'hash=%s\nlast_updated=%s\n' "$hash" "$date" >"$stamp"
+    echo "Recorded $file, last updated $date."
+  elif [[ ! -f "$stamp" ]]; then
+    {
+      echo "$file has no stamp yet, so the Last updated check cannot tell whether its text changed."
+      echo "Once the lawyer-approved text is in place, run ./run.sh policy-stamp, then run the command again."
+    } >&2
+    exit 1
+  elif [[ "$hash" != "$recorded_hash" ]]; then
+    {
+      echo "$file has a new Last updated date ('$date') but no new stamp."
+      echo "Run ./run.sh policy-stamp, then run the command again."
+    } >&2
+    exit 1
+  fi
+}
+
 # The terms and privacy note for sign-up, read from the files .env names (BUZZ_TERMS_FILE, BUZZ_PRIVACY_FILE) into the
 # variables compose.creaton.yml passes to the server. A draft's [placeholders] left in a file stop the command, each
-# listed with its file and line: a published "[Operator name]" or "[email]" would tell people nothing.
+# listed with its file and line: a published "[Operator name]" or "[email]" would tell people nothing. A file whose text
+# changed without a new Last updated date (and a new stamp) stops it too. With MODE stamp (./run.sh policy-stamp) the
+# same checks run, then each file is recorded and nothing is exported.
 load_policies() {
-  local setting file variable blanks
+  local mode="${1:-check}" setting file variable blanks found=false
   for setting in BUZZ_TERMS_FILE:BUZZ_TERMS_OF_SERVICE_MARKDOWN BUZZ_PRIVACY_FILE:BUZZ_PRIVACY_POLICY_MARKDOWN; do
     file="$(env_value "${setting%%:*}")"
     variable="${setting#*:}"
     [[ -n "$file" ]] || continue
+    found=true
     if [[ ! -f "$file" ]]; then
       echo "${setting%%:*}=$file: no such file (paths are from deploy/compose)." >&2
       exit 1
@@ -170,6 +251,12 @@ load_policies() {
       } >&2
       exit 1
     fi
-    export "$variable=$(cat "$file")"
+    check_policy_stamp "$file" "$mode"
+    [[ "$mode" == stamp ]] || export "$variable=$(cat "$file")"
   done
+  if [[ "$mode" == stamp && "$found" == false ]]; then
+    echo "BUZZ_TERMS_FILE and BUZZ_PRIVACY_FILE are not set in deploy/compose/.env, so there is nothing to record." >&2
+    echo "Set them to the policy files (README.md, \"First start\", step 4), then run ./run.sh policy-stamp again." >&2
+    exit 1
+  fi
 }

@@ -74,8 +74,9 @@ BUZZ_V1_ENABLED=true
 BUZZ_TERMS_FILE=policies/terms.md
 BUZZ_PRIVACY_FILE=policies/privacy.md
 ENV
-printf '# Terms for the backup test\n\nLine two: "quotes", $dollars and a colon: kept.\n' >policies/terms.md
-printf '# Privacy for the backup test\n\nWe keep backups.\n' >policies/privacy.md
+printf '# Terms for the backup test\n\nLast updated: 1 March 2026\n\nLine two: "quotes", $dollars and a colon: kept.\n' >policies/terms.md
+printf '# Privacy for the backup test\n\nLast updated: 1 March 2026\n\nWe keep backups.\n' >policies/privacy.md
+./run.sh policy-stamp >/dev/null || fail "policy-stamp refused the test's policy files"
 data() { (cd "$ROOT/web" && node tests/deploy/backup-data.mjs "$@" "$BASE" "$OWNER_KEY" ${SAVED:+"$SAVED"}); }
 git_marker() {
   docker compose --env-file .env -f compose.yml -f compose.creaton.yml run --rm --no-deps -T --user 0 \
@@ -83,7 +84,7 @@ git_marker() {
 }
 
 step "a draft's [placeholder] stops the start"
-printf 'Run by [Operator name].\n' >policies/draft.md
+printf 'Last updated: 1 March 2026\nRun by [Operator name].\n' >policies/draft.md
 sed -i.bak 's|^BUZZ_TERMS_FILE=.*|BUZZ_TERMS_FILE=policies/draft.md|' .env
 if ./run.sh start >"$WORK/draft.log" 2>&1; then fail "started with a draft's placeholder in the terms"; fi
 grep -q "placeholders" "$WORK/draft.log" || fail "the refusal did not name the placeholders: $(cat "$WORK/draft.log")"

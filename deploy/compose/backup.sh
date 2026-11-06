@@ -2,7 +2,7 @@
 # Back up and restore this compose stack's data (README.md, "Backups"). Usually run through run.sh:
 #
 #   ./run.sh backup [DIR]        While the server runs: the database, then the media bucket, then the git data, then
-#                                the settings (.env and the policy files), with a manifest of checksums.
+#                                the settings (.env, the policy files and their stamps), with a manifest of checksums.
 #                                Default DIR: backups/<UTC time>. Copy DIR off this machine.
 #   ./run.sh restore DIR --yes   Replace this stack's database, media and git data with DIR's: stops the server,
 #                                restores, starts it again and waits until it is ready.
@@ -26,10 +26,6 @@ step() { printf '\033[36m[backup]\033[0m %s\n' "$*"; }
 die() {
   printf '\033[31m[backup] %s\033[0m\n' "$*" >&2
   exit 1
-}
-
-sha256() {
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi
 }
 
 # The relay image this stack runs, as compose resolves it.
@@ -81,6 +77,11 @@ backup() {
     if [[ -n "$file" && -f "$file" ]]; then
       mkdir -p "$dir/policies"
       cp "$file" "$dir/policies/"
+      # Its Last updated stamp (./run.sh policy-stamp) goes with it.
+      if [[ -f "$(policy_stamp_path "$file")" ]]; then
+        mkdir -p "$dir/policies/.stamps"
+        cp "$(policy_stamp_path "$file")" "$dir/policies/.stamps/"
+      fi
     fi
   done
 

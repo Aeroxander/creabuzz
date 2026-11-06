@@ -19,6 +19,7 @@ __pycache__/
 # name, address and email): deploy/compose/README.md
 deploy/compose/backups/
 deploy/compose/policies/*.md
+deploy/compose/policies/.stamps/
 
 # Editor / IDE
 .idea/

@@ -23,12 +23,17 @@ fail() {
   exit 1
 }
 
-# Runs `config` with the terms file set to the given text (the privacy file is always clean).
+# Runs `config` with the terms file set to the given text (the privacy file is always clean). Both files end with a
+# Last updated line and are stamped (./run.sh policy-stamp, which a file with a blank cannot get), so only the blank
+# decides the outcome (scripts/test-policy-stamp.sh tests the date and the stamp).
 run_with() {
-  printf '%s' "$1" >"${TEST_DIR}/compose/policies/terms.md"
-  printf 'Clean privacy note, see [the terms](terms.md).\n' >"${TEST_DIR}/compose/policies/privacy.md"
+  printf '%s\nLast updated: 1 March 2026\n' "$1" >"${TEST_DIR}/compose/policies/terms.md"
+  printf 'Clean privacy note, see [the terms](terms.md).\nLast updated: 1 March 2026\n' \
+    >"${TEST_DIR}/compose/policies/privacy.md"
   printf 'BUZZ_COMPOSE_CREATON=true\nBUZZ_TERMS_FILE=policies/terms.md\nBUZZ_PRIVACY_FILE=policies/privacy.md\n' \
     >"${TEST_DIR}/compose/.env"
+  rm -rf "${TEST_DIR}/compose/policies/.stamps"
+  (cd "${TEST_DIR}/compose" && ./run.sh policy-stamp) >/dev/null 2>&1 || true
   (cd "${TEST_DIR}/compose" && ./run.sh config) >"${TEST_DIR}/out" 2>&1
 }
 
@@ -64,6 +69,7 @@ grep -q "Fill in or remove" "${TEST_DIR}/out" || fail "the refusal does not say 
 
 # The warning when the files are not set names the setting(s) and what to do before inviting anyone.
 printf 'BUZZ_COMPOSE_CREATON=true\nBUZZ_PRIVACY_FILE=policies/privacy.md\n' >"${TEST_DIR}/compose/.env"
+(cd "${TEST_DIR}/compose" && ./run.sh policy-stamp) >/dev/null 2>&1 || fail "the privacy note could not be stamped"
 (cd "${TEST_DIR}/compose" && ./run.sh start) >"${TEST_DIR}/out" 2>&1 || true
 grep -q "BUZZ_TERMS_FILE" "${TEST_DIR}/out" || fail "the warning does not name the unset BUZZ_TERMS_FILE"
 grep -q "shows no terms\." "${TEST_DIR}/out" || fail "the warning does not say what sign-up lacks"

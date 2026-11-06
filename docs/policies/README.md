@@ -27,7 +27,7 @@ Before a public launch:
    on even if `.env` leaves it out. On any other way of running the server the box only appears when
    `BUZZ_AGE_ATTESTATION_REQUIRED=true` is set (see below). The two sentences in the drafts that describe the box still
    sit in brackets: the owner removes those brackets once the box shows on the live server.
-5. Change `Last updated` in both files whenever the text changes. Nothing checks this yet.
+5. Change `Last updated` in both files whenever the text changes. `./run.sh policy-stamp` records the text, and the compose stack refuses to start when the text changed under the same date (deploy/compose/README.md, "First start", step 4).
 
 A separate real-money terms document is required before the pilot pays anyone money or any Shares can be sold. The
 current terms say the service does not do either. Employment status, tax, consumer rules for sales and the

@@ -148,6 +148,9 @@ On the server, with the host name's DNS pointing at it and ports 80 and 443 open
    ../../docs/policies/PRIVACY-DRAFT.md policies/privacy.md`, fill in every `[placeholder]` (the privacy note's log
    and backup periods should match "Logs" and "Backups" below), and set `BUZZ_TERMS_FILE=policies/terms.md` and
    `BUZZ_PRIVACY_FILE=policies/privacy.md`. The filled-in files are git-ignored: they hold your name and address.
+   Once the lawyer-approved text is in and each file's `Last updated` line has its date, run `./run.sh policy-stamp`.
+   After that `start` and `upgrade` refuse a file whose text changed without a new `Last updated` date (change the
+   date, then run `policy-stamp` again); the stamps sit in `policies/.stamps/` and `./run.sh backup` keeps them.
 5. `./run.sh build`. It needs only `.env` to exist, so it runs before the owner key is in.
 6. Make the owner key with the image you just built:
 
