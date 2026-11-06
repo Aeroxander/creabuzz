@@ -14,10 +14,18 @@ project and on every project's Contributions tab (D85).
 | Piece | Where it comes from | Status |
 |---|---|---|
 | Sale factory, Permit2, Circle's USDC, Limit Break's validators, the TokenMaster router, the passkey-account factory | Already on Sepolia | Used as they are |
-| Our summoner (with its work budget factory and voting policy), the `DaoLaunchKit` with its two lock factories, the `ContributorKit`, and the optional features' contracts | `scripts/sepolia-deploy.sh --broadcast` | One deploy: 17 transactions, about 47.6 million gas |
+| Our summoner (with its work budget factory and voting policy), the `DaoLaunchKit` with its two lock factories, the `ContributorKit`, and the optional features' contracts | `scripts/sepolia-deploy.sh --broadcast` | One deploy: 17 transactions, about 47.6 million gas, measured before the old weekly rounds contract was dropped from it (one contract fewer now: measure again with a rehearsal) |
 | The server (relay) with Postgres and Redis | You host it | Needed: communities, boards, records live here |
 | The web app | The Creaton image (`deploy/compose`, built with the settings below), served by the relay | Needed |
 | LBAMM (the exchange) | Not deployed by anyone on Sepolia | **Not on the testnet.** See below |
+
+### The old weekly rounds contract is not deployed any more
+
+`scripts/sepolia-deploy.sh` no longer deploys the old `WeeklyRounds` contract, checks it or prints a setting for it, and the
+app no longer offers it (D185). A copy made by the 5 Nov 2026 deploy (`0xE684Bb57c31Faa4b8e854DAB9d141D06144899A2`, listed
+in `contracts/deployments/dao-launch-kit-11155111.json`, which is history and stays as it was) is an unused test deployment:
+leave it alone and point nothing at it. The contract's source stays in the repository, marked deprecated, with its audit
+record.
 
 ### The market is off on Sepolia, on purpose
 
@@ -110,7 +118,6 @@ together. The rows marked **Optional** are not in the image: they need a build o
 | `VITE_CONTRIBUTOR_KITS` | `{"11155111":"<contributor-kit from the manifest>"}` | Starting contributor projects. Without it Start says "Contributor projects cannot be started on Sepolia yet" |
 | `VITE_WORK_BOUNTIES` | `{"11155111":"<work-bounty from the manifest>"}` | **Optional.** "Put money behind this work area" on contributor projects (N1). Without it the Work tab shows no bounties |
 | `VITE_OPEN_BOUNTIES` | `{"11155111":"<open-bounty from the manifest>"}` | **Optional.** "Put money behind this" under a post (N2). Without it a post page shows no bounties |
-| `VITE_WEEKLY_ROUNDS` | `{"11155111":"<weekly-rounds from the manifest>"}` | **Optional, test networks only.** Weekly rounds between holders and new buyers on a project's Funds tab, once its DAO votes them in (D131, D132). Without it the Funds tab shows none |
 | `VITE_CREATE_TOKENS`, `VITE_CREATE_FAUCETS` | `{"11155111":"<create-token>"}`, `{"11155111":"<create-faucet>"}` | **Optional.** Test CREATE and the faucet that gives 1,000 a day (N6): offered as a reviewer bond, and staked in the court |
 | `VITE_COURTS` | `{"11155111":"<court from the manifest>"}` | **Optional.** The court (N7): a Court page reached from Portfolio, and appeals on bounties on posts. Needs `VITE_CREATE_TOKENS` |
 | `VITE_PAYOUTS_FACTORIES` | `{"11155111":"<payouts-factory from the manifest>"}` | **Optional, test networks only.** Contributor projects vote to pay holders a share of revenue (N10) |
@@ -148,7 +155,6 @@ Not for the first pilot, and not in the hosted image (a build of your own). The 
 VITE_DAO_LAUNCH_KITS={"11155111":"<launch-kit>"}
 VITE_WORK_BOUNTIES={"11155111":"<work-bounty>"}
 VITE_OPEN_BOUNTIES={"11155111":"<open-bounty>"}
-VITE_WEEKLY_ROUNDS={"11155111":"<weekly-rounds>"}
 VITE_CREATE_TOKENS={"11155111":"<create-token>"}
 VITE_CREATE_FAUCETS={"11155111":"<create-faucet>"}
 VITE_COURTS={"11155111":"<court>"}

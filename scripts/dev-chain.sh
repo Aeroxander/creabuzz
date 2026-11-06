@@ -28,12 +28,12 @@
 #      and the WorkAreaBounty (outside money behind a work area) + `deployments/work-bounty-<chainid>.json`
 #      and the OpenBounty (money behind a post) + `deployments/open-bounty-<chainid>.json`
 #      then the optional test-network features, each with its own manifest: test CREATE and its faucet, the court,
-#      the payouts factory, remix bonds and weekly rounds (the journeys use them)
+#      the payouts factory, and remix bonds (the journeys use them)
 #   5. funded dev accounts, printed as a table (keys are DEV ONLY, labeled)
 #
 # What it prints for the web app: first the settings for a build like the hosted pilot's (contributor projects only,
 # VITE_CONTRIBUTOR_ONLY=1, no sale, no optional feature). The optional features' settings (a raise, bounties,
-# weekly rounds, CREATE, the court, payouts, remix bonds) are printed only with DEV_CHAIN_ALL=1: they
+# CREATE, the court, payouts, remix bonds) are printed only with DEV_CHAIN_ALL=1: they
 # are deployed either way, and are for testing those features, not for the pilot (docs/v3-review/PILOT-RUNBOOK.md).
 #
 # ════════════════════════════════════════════════════════════════════════════
@@ -323,7 +323,7 @@ plan_lines() {
   echo "  6b. contributor kit  deploy ContributorKit (summoner)  [skipped: deployments/contributor-kit-$DEV_CHAIN_ID.json names a kit that still points at this summoner]"
   echo "  6c. work bounty  deploy WorkAreaBounty (currency + work budget factory)  [skipped: deployments/work-bounty-$DEV_CHAIN_ID.json names one that still points at both]"
   echo "  6d. open bounty  deploy OpenBounty (currency)  [skipped: deployments/open-bounty-$DEV_CHAIN_ID.json names one that still pays in it]"
-  echo "  6e. optional features  test CREATE + faucet, court, payouts factory, remix bonds, weekly rounds  [skipped: each one's manifest names a contract that still has code]"
+  echo "  6e. optional features  test CREATE + faucet, court, payouts factory, remix bonds  [skipped: each one's manifest names a contract that still has code]"
   echo "  7. fund         mint $CURRENCY_SYMBOL to founder/buyer1/buyer2  [idempotent: tops up only when a balance is short]"
   echo "  8. accounts     print the DEV-ONLY key table to stdout"
 }
@@ -1066,20 +1066,6 @@ write_one_role_manifest() {
   ' "$1" "$CHAIN_ID" "$2" "$3" "$4" || fail_step "$2" "deployed at $3 but could not write $1"
 }
 
-weekly_rounds_manifest_path() {
-  echo "$DEPLOYMENTS_DIR/weekly-rounds-${CHAIN_ID}.json"
-}
-
-weekly_rounds_address() {
-  manifest_role "$(weekly_rounds_manifest_path)" "weekly-rounds"
-}
-
-# Weekly rounds between holders and new buyers: its smallest price step is one cent of the currency a whole unit.
-deploy_weekly_rounds() {
-  deploy_currency_contract weekly-rounds WeeklyRounds "$(weekly_rounds_manifest_path)" \
-    "weekly rounds between holders and new buyers" "$((10 ** (CURRENCY_DECIMALS - 2)))"
-}
-
 create_manifest_path() {
   echo "$DEPLOYMENTS_DIR/create-${CHAIN_ID}.json"
 }
@@ -1243,7 +1229,6 @@ up() {
   deploy_open_bounty
   deploy_payouts_factory
   deploy_remix_bonds
-  deploy_weekly_rounds
   fund_accounts
 
   echo
@@ -1260,7 +1245,6 @@ up() {
     echo "  launch kit: $(kit_address) (dao-launch-kit-$CHAIN_ID.json)"
     echo "  work bounty: $(work_bounty_address) (work-bounty-$CHAIN_ID.json)"
     echo "  open bounty: $(open_bounty_address) (open-bounty-$CHAIN_ID.json)"
-    echo "  weekly rounds: $(weekly_rounds_address) (weekly-rounds-$CHAIN_ID.json)"
     echo "  create:     $(create_token_address), faucet $(create_faucet_address) (create-$CHAIN_ID.json)"
     echo "  court:      $(court_address) (court-$CHAIN_ID.json)"
     echo "  payouts:    $(payouts_factory_address) (payouts-factory-$CHAIN_ID.json)"
@@ -1275,7 +1259,6 @@ up() {
     echo "              VITE_DAO_LAUNCH_KITS='{\"$CHAIN_ID\":\"$(kit_address)\"}'  (lets the app launch a project into its own DAO here)"
     echo "              VITE_WORK_BOUNTIES='{\"$CHAIN_ID\":\"$(work_bounty_address)\"}'  (lets people put money behind a work area here)"
     echo "              VITE_OPEN_BOUNTIES='{\"$CHAIN_ID\":\"$(open_bounty_address)\"}'  (lets people put money behind a post here)"
-    echo "              VITE_WEEKLY_ROUNDS='{\"$CHAIN_ID\":\"$(weekly_rounds_address)\"}'  (weekly rounds between holders and new buyers, once their DAO votes them in)"
     echo "              VITE_CREATE_TOKENS='{\"$CHAIN_ID\":\"$(create_token_address)\"}' VITE_CREATE_FAUCETS='{\"$CHAIN_ID\":\"$(create_faucet_address)\"}'  (test CREATE: stakes and bonds)"
     echo "              VITE_COURTS='{\"$CHAIN_ID\":\"$(court_address)\"}'  (the court claimants appeal to)"
     echo "              VITE_PAYOUTS_FACTORIES='{\"$CHAIN_ID\":\"$(payouts_factory_address)\"}'  (DAOs vote to pay holders a share of revenue)"

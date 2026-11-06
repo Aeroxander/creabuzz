@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+/// @custom:deprecated DEPRECATED. This contract is no longer deployed, offered in the app or described in the launch
+/// documents. The weekly sale is now the secondary weekly listing (`SecondaryMarket` and its factory). The source stays,
+/// unchanged, with its tests and the audit record (docs/v3-review/WEEKLY-ROUNDS-AUDIT-2026-11-01.md, which lists the
+/// defects that let a caller take other people's money), until counsel confirms that deprecation on our side is enough.
+/// A copy was deployed on Sepolia on 5 Nov 2026 as a test-network extra and is unused. Do not deploy this contract again,
+/// and do not point anything at it. The funding-terms and exchange tests keep using it as a real live exchange.
+
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 

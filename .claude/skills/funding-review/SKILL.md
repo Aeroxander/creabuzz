@@ -111,7 +111,7 @@ against what passes 2 to 5 found. A true rule that the page omits or blurs is a 
 ### 7. Check with the chain where you can
 
 `scripts/simulate-raise.sh` covers the fundraising kit; funding terms and rounds have forge tests
-(`FundingTerms.t.sol`, `WeeklyRounds.t.sol`) and `scripts/web-rounds-e2e.sh`. For a scenario none of them runs, write it
+(`FundingTerms.t.sol`, `WeeklyRounds.t.sol`; the old rounds contract is deprecated and its web journey was removed, D185). For a scenario none of them runs, write it
 as a proposed simulation case or forge test (description, steps, the assertion) rather than trusting arithmetic alone.
 
 ## The report

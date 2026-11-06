@@ -87,7 +87,7 @@ fi
 step "deploying the summoner, the launch kit and the contributor kit"
 OUT="$BACKUP/forge.out"
 sepolia_deploy_kits "$RPC" "$KEY" "$OUT"
-grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|CreateToken|CreateFaucet|CreateCourt|PayoutsFactory|RemixBond|WeeklyRounds|Auction factory)" "$OUT" || tail -20 "$OUT"
+grep -E "^  (chain id|Summoner|Moloch implementation|Shares implementation|DaoLaunchKit|ContributorKit|WorkAreaBounty|OpenBounty|CreateToken|CreateFaucet|CreateCourt|PayoutsFactory|RemixBond|Auction factory)" "$OUT" || tail -20 "$OUT"
 
 KIT=$(sepolia_role launch-kit)
 SUMMONER=$(sepolia_role summoner)
@@ -99,7 +99,6 @@ CREATE_FAUCET=$(sepolia_role create-faucet)
 COURT=$(sepolia_role court)
 PAYOUTS_FACTORY=$(sepolia_role payouts-factory)
 REMIX_BONDS=$(sepolia_role remix-bonds)
-WEEKLY_ROUNDS=$(sepolia_role weekly-rounds)
 SHARES_IMPL=$(sepolia_role shares-implementation)
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 first() { awk '{print $1}' | head -1; }
@@ -138,9 +137,6 @@ FUNDING_TERMS="$(cast call "$(cast call "$SUMMONER" 'mandateFactory()(address)' 
 echo "  ✓ funding terms at $FUNDING_TERMS, made by the work budget factory: the only contract whose sales Shares and Loot create"
 [[ "$(lower "$(cast call "$REMIX_BONDS" 'court()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$COURT")" ]] || fail "remix bonds do not go to this court"
 echo "  ✓ remix bonds at $REMIX_BONDS go to the court"
-[[ "$(lower "$(cast call "$WEEKLY_ROUNDS" 'currency()(address)' --rpc-url "$RPC" | first)")" == "$(lower "$SEPOLIA_USDC")" ]] || fail "weekly rounds are not paid in Sepolia's USDC"
-[[ "$(cast call "$WEEKLY_ROUNDS" 'minStep()(uint256)' --rpc-url "$RPC" | first)" == "10000" ]] || fail "weekly rounds' smallest step is not one cent"
-echo "  ✓ weekly rounds at $WEEKLY_ROUNDS are paid in USDC, a cent a step at the least"
 
 # What it costs: the gas the deploy used, priced at what Sepolia charges now and at a busy day's 20 gwei. Test ETH has no
 # price, but the deployer needs this much of it from a faucet.
@@ -194,7 +190,6 @@ EOF
 VITE_DAO_LAUNCH_KITS='{"${C}":"${KIT}"}'
 VITE_WORK_BOUNTIES='{"${C}":"${WORK_BOUNTY}"}'
 VITE_OPEN_BOUNTIES='{"${C}":"${OPEN_BOUNTY}"}'
-VITE_WEEKLY_ROUNDS='{"${C}":"${WEEKLY_ROUNDS}"}'
 VITE_CREATE_TOKENS='{"${C}":"${CREATE_TOKEN}"}'
 VITE_CREATE_FAUCETS='{"${C}":"${CREATE_FAUCET}"}'
 VITE_COURTS='{"${C}":"${COURT}"}'

@@ -29,6 +29,9 @@ contract FundingTermsTest is VotingFixture {
     uint16 internal constant NO_CAP = type(uint16).max;
 
     MandateCurrency internal usd;
+    /// @dev WeeklyRounds is deprecated (D185) and no longer deployed, but it stays here on purpose: it is the one real
+    /// live exchange in the repository, so these tests show that funding terms and the exit exchange work with an
+    /// exchange the DAO did not write and that the funding of new sales does not depend on it.
     WeeklyRounds internal rounds;
     FundingTerms internal terms;
 

@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Shares, Summoner, newSummoner} from "../src/majeur/MolochPatched.sol";
 import {TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 
@@ -15,6 +14,12 @@ import {TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 /// the `OpenBounty` that holds money behind a post until someone's claim keeps a majority of it (N2). On a test network
 /// it also makes test $CREATE and its faucet (N6), and the court that bounties on posts appeal to (N7).
 ///
+/// The old WeeklyRounds contract is no longer deployed here and has no role in the manifest. It is deprecated (its source
+/// stays, marked so, with the audit record). D174 lifted the contract freeze for development; dropping it from this script
+/// is the owner's decision, recorded in D185. The weekly sale is the secondary listing (`SecondaryMarket`), which is
+/// made per project and is not part of this script. The committed Sepolia manifest still lists the copy deployed on
+/// 5 Nov 2026: that is history and is not rewritten.
+///
 /// Nothing else is deployed: the auction factory, Permit2 and the sale currency are the chain's own. The script refuses
 /// to run where the factory has no code, and it checks the Shares implementation it computes really exists before it
 /// deploys the kit that names it, so a wrong address cannot reach the chain.
@@ -22,8 +27,7 @@ import {TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 /// Run (a rehearsal on a fork first; `scripts/sepolia-deploy.sh` does both):
 ///   PRIVATE_KEY=0x… forge script script/DeployLaunchKit.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast
 /// Env: PRIVATE_KEY (the deployer, a testnet key), CCA_FACTORY (default: the canonical factory, the same address on every
-/// chain), BOUNTY_CURRENCY (what bounties and weekly rounds are paid in; default on Sepolia: Circle's USDC there,
-/// required elsewhere),
+/// chain), BOUNTY_CURRENCY (what bounties are paid in; default on Sepolia: Circle's USDC there, required elsewhere),
 /// LAUNCH_PROJECT (a label for the manifest).
 contract DeployLaunchKit is Script {
     /// @dev Uniswap's continuous clearing auction factory v2.1.0: one address on every EVM chain.
@@ -83,13 +87,6 @@ contract DeployLaunchKit is Script {
         // A remix's bond to its parent (N12), cased in the court: test networks only.
         address remixBonds =
             court == address(0) ? address(0) : vm.deployCode("RemixBond.sol:RemixBond", abi.encode(createToken, court));
-        // Weekly rounds between holders and new buyers: test networks only. Its smallest price step is one cent a unit.
-        address weeklyRounds = court == address(0)
-            ? address(0)
-            : vm.deployCode(
-                "WeeklyRounds.sol:WeeklyRounds",
-                abi.encode(bountyCurrency, 10 ** (uint256(IERC20Metadata(bountyCurrency).decimals()) - 2))
-            );
         vm.stopBroadcast();
         require(kit.code.length != 0, "DeployLaunchKit: the kit has no code");
         require(contributorKit.code.length != 0, "DeployLaunchKit: the contributor kit has no code");
@@ -110,7 +107,6 @@ contract DeployLaunchKit is Script {
             _role("court", "CreateCourt", court);
             _role("payouts-factory", "PayoutsFactory", payoutsFactory);
             _role("remix-bonds", "RemixBond", remixBonds);
-            _role("weekly-rounds", "WeeklyRounds", weeklyRounds);
         }
         _role("auction-factory", "Auction factory", ccaFactory);
         _writeManifest();

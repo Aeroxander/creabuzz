@@ -20,7 +20,7 @@ contract PlainExchange {
     }
 }
 
-/// @notice The exchange slot on locked Shares (weekly rounds use it, D131), against a real summoned DAO: only the
+/// @notice The exchange slot on locked Shares (the deprecated weekly rounds contract used it, D131; the independence tests keep it as a real example, see FundingTerms.t.sol), against a real summoned DAO: only the
 /// exchange the DAO named 30 days ahead passes the lock, and only with the holder's allowance; locked team Shares never
 /// move; a vote turns it off at once.
 contract ExitExchangeTest is VotingFixture {

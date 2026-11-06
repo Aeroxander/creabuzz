@@ -1,5 +1,11 @@
 # Weekly rounds (D131, 2026-10-27, test networks)
 
+> **Deprecated (D185, 2026-11-06).** This describes the old `WeeklyRounds` contract. It is no longer deployed by our
+> scripts, offered in the app or described in the launch documents, and the web card, its decision form and its journey
+> script were removed. The weekly sale is now the secondary listing (`SecondaryMarket`). The contract source, its tests
+> and the audit record (`WEEKLY-ROUNDS-AUDIT-2026-11-01.md`) stay until counsel confirms deprecation is enough. The text
+> below is history.
+
 A holder who wants out is matched with someone who wants in, once a week at one price, so the treasury keeps the money
 leaving would have taken. This is the first version, cut down after an outside review of the waitlist proposal; the
 shared plan is the doc "Waitlist and weekly rounds". The contract is `contracts/src/WeeklyRounds.sol`, its tests
@@ -79,7 +85,7 @@ opens each week's round. The card shows:
 - taking an offer or a bid back while bidding is open, or taking the Shares back and leaving at once;
 - **Settle the round** once bidding is over, then **Collect**, or **Collect, and leave with the Shares**.
 
-Checked by `scripts/web-rounds-e2e.sh` on a local chain and with `--sepolia-fork` on a fork of Sepolia with the Sepolia
+Checked (before it was removed) by `scripts/web-rounds-e2e.sh` on a local chain and with `--sepolia-fork` on a fork of Sepolia with the Sepolia
 deploy's contracts and Sepolia's USDC: the shared doc's example, from pages (the founder receives 62 USDC, the treasury 3
 and pays nobody out, each buyer 25 Shares). On the fork the founder's nine transactions used 7.2M gas in all (the largest,
 starting the project, 5.5M), the newcomer's six 1.3M, the second buyer's three 0.7M.
