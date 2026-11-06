@@ -170,3 +170,36 @@ test("a session sends a record refused ahead of a late login again once the logi
   );
   session.close();
 });
+
+test("nothing is sent while changed terms are not agreed to, and sending works again once they are", async () => {
+  const { publishEvent, openPublishSession } = await load();
+  const { setActionsBlocked, TermsNotAgreedError } = await import(
+    "./action-guard.ts"
+  );
+  setActionsBlocked(true);
+  try {
+    // One record: refused before any connection is made.
+    await assert.rejects(
+      publishEvent(RELAY, record, { signAuth: slowSigner(1) }),
+      TermsNotAgreedError,
+    );
+    assert.equal(FakeServerSocket.instances.length, 0);
+
+    // A run of records: the session opens, but its records are refused and none reaches the server.
+    const session = openPublishSession(RELAY, { signAuth: slowSigner(1) });
+    const ws = FakeServerSocket.instances[0];
+    ws.emit("open", {});
+    ws.message(["AUTH", "challenge-1"]);
+    await assert.rejects(session.publish(record), TermsNotAgreedError);
+    assert.equal(ws.sent.filter((f) => f[0] === "EVENT").length, 0);
+    session.close();
+  } finally {
+    setActionsBlocked(false);
+  }
+
+  const result = publishEvent(RELAY, record, { signAuth: slowSigner(1) });
+  const ws = FakeServerSocket.instances.at(-1);
+  ws.emit("open", {});
+  ws.message(["AUTH", "challenge-2"]);
+  assert.deepEqual(await result, { accepted: true, message: "" });
+});

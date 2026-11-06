@@ -8,6 +8,7 @@
 
 import { makeAuthEvent } from "nostr-tools/nip42";
 
+import { assertMayAct } from "./action-guard.ts";
 import { signForRelay } from "./relay-auth.ts";
 import type { SignedNostrEvent } from "./nostr-signer.ts";
 
@@ -44,6 +45,12 @@ export function publishEvent(
   event: SignedNostrEvent,
   options: PublishOptions = {},
 ): Promise<PublishResult> {
+  // Changed terms not yet agreed to: nothing goes out as the person (`action-guard.ts`).
+  try {
+    assertMayAct();
+  } catch (error) {
+    return Promise.reject(error);
+  }
   // Authenticate as the identity the app presents (see `relay-auth`): the relay
   // authorizes p-gated writes and per-identity rate limits against it.
   const signAuth = options.signAuth ?? signForRelay;
@@ -344,6 +351,7 @@ export function openPublishSession(
 
   return {
     publish: async (event) => {
+      assertMayAct();
       await ready;
       if (refusal !== null) return { accepted: false, message: refusal };
       if (closedWith !== null) throw closedWith;

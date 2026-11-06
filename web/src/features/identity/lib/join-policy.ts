@@ -5,7 +5,7 @@
  * `BUZZ_AGE_ATTESTATION_REQUIRED`), which answers `GET /api/join-policy` and serves each as a page. Sign-up asks the
  * person to agree (and to confirm their age when the server asks) before any account is made. When no server can be
  * reached, which is normal before a first community answers, sign-up is not blocked; the dialog says the terms could
- * not be loaded. The version agreed to is kept in this browser.
+ * not be loaded. The version agreed to is kept in this browser (`policy-acceptance.ts`).
  *
  * Alias-free: `join-policy.test.mjs` drives it under `node --test`.
  */
@@ -69,18 +69,4 @@ export function mayCreateAccount(
   if (state.status === "loading") return false;
   const needs = policyRequirements(state);
   return (!needs.agreement || ticked.agreement) && (!needs.age || ticked.age);
-}
-
-const ACCEPTED_KEY = "creaton.joinPolicy.accepted";
-
-/** Keep which version was agreed to, and when, in this browser. */
-export function rememberAcceptance(version: string, at = Date.now()): void {
-  try {
-    globalThis.localStorage?.setItem(
-      ACCEPTED_KEY,
-      JSON.stringify({ version, at }),
-    );
-  } catch {
-    // Storage refused: the agreement still happened, it just is not remembered here.
-  }
 }

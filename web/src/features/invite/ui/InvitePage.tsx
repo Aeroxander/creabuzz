@@ -26,7 +26,12 @@ import {
   passkeyUnlockProblem,
 } from "@/features/identity/lib/passkey-problem";
 import { RecoveryKeyDialog } from "@/features/identity/ui/RecoveryKeyDialog";
-import { inviteRelayWsUrl, setStoredRelayWsUrl } from "@/shared/lib/relay-url";
+import { rememberAcceptance } from "@/features/identity/lib/policy-acceptance";
+import {
+  communityHostName,
+  inviteRelayWsUrl,
+  setStoredRelayWsUrl,
+} from "@/shared/lib/relay-url";
 import { desktopJoinDeepLink } from "@/shared/lib/desktop-deep-link";
 import { Button } from "@/shared/ui/button";
 import { Fingerprint } from "lucide-react";
@@ -253,6 +258,8 @@ function InviteLanding({ code }: { code: string }) {
     await claimInviteInBrowser(code, relay, receipt);
     // From now on this browser is in the community the invite was for.
     setStoredRelayWsUrl(relay);
+    // The terms agreed to above count as agreed to here, so the first visit does not ask again.
+    if (policy) rememberAcceptance(policy.version, communityHostName());
     if (name) await saveNewProfile({ name });
   };
 

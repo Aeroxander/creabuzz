@@ -10,8 +10,10 @@ launch:
 
 - A fill-in or a choice: the operator fills it in (name, address, emails, periods, hosting) or counsel chooses (legal
   basis, controller, transfer safeguards, liability cap, governing law, copyright agent, EU dispute body).
-- A promise the software cannot keep yet, such as "you are asked to agree again at your next sign-in". Build the
-  feature, then remove the brackets. If it will not be built before launch, delete the sentence.
+- A promise the software cannot keep yet, such as telling people directly about a material change. Build the
+  feature, then remove the brackets. Asking signed-in people to agree again when the served text changes is built
+  (the app compares the served version with the one agreed to in the browser), so that sentence's brackets can go once
+  counsel settles what counts as material. If it will not be built before launch, delete the sentence.
 
 Before a public launch:
 

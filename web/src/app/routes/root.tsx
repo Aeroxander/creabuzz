@@ -4,6 +4,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 
+import { PolicyReacceptHost } from "@/features/identity/ui/PolicyReacceptHost";
 import { RecoveryOfferHost } from "@/features/identity/ui/RecoveryOfferHost";
 
 import { AppNav, hidesAppNav } from "../AppNav";
@@ -21,6 +22,8 @@ function RootLayout() {
   const showNav = !hidesAppNav(pathname);
   return (
     <div className="flex h-dvh flex-col">
+      {/* Asks a signed-in person to agree again when the server's terms change. */}
+      <PolicyReacceptHost />
       {/* One nav element: first on wide screens (top bar), last on phones (tab bar). */}
       {showNav ? (
         <div className="relative z-20 order-last flex md:order-first">
