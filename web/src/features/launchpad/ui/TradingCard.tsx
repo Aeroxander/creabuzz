@@ -70,6 +70,7 @@ import { FailureNote, GateNote, WalletStrip } from "./account-widgets";
 import { QuoteTokenNote } from "./QuoteTokenNote";
 import { PriceSetterNote } from "./PriceSetterNote";
 import { TradingEarlier } from "./TradingEarlier";
+import { TradingHistory } from "./TradingHistory";
 import { BidForm, type Place, SellForm } from "./TradingOrderForms";
 import { homeFocus, rescueFocus, useFocusRescue } from "./useFocusRescue";
 
@@ -334,6 +335,14 @@ function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
               market={present.market}
               me={sender.wallet.address}
               onSend={sender.send}
+            />
+          ) : null}
+          {/* Earlier rounds' prices need the price token's units, so a token that would not say them shows none. */}
+          {present && quote && data.roundId !== null && data.roundId > 1n ? (
+            <TradingHistory
+              latest={data.roundId}
+              market={present.market}
+              quote={quote}
             />
           ) : null}
         </>

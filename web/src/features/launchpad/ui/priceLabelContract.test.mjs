@@ -32,6 +32,7 @@ const PRICE_PRINTERS = [
   "clearingLine", // the older weekly rounds: "N Shares at P each changed hands"
   "lastTradeLine", // the older weekly rounds: "Last trade: ... at P each"
   "historyRow", // the older weekly rounds: the table of earlier rounds' prices
+  "earlierPriceRow", // the weekly listing: the Earlier rounds list under the Trading card
 ];
 
 /** The screens that call a printer, and what each must render beside the call. */
@@ -40,6 +41,14 @@ const SCREENS = {
     {
       printer: "roundLine(",
       gate: /roundShowsPrice\(round\)\s*\?\s*<PriceSetterNote/,
+    },
+  ],
+  // The list prints a price per traded round and the label sits once under the whole list, gated on the same rounds
+  // the rows are made from.
+  "features/launchpad/ui/TradingHistory.tsx": [
+    {
+      printer: "earlierPriceRow(",
+      gate: /earlierShowsPrice\(rounds\)\s*\?\s*<PriceSetterNote/,
     },
   ],
   "features/launchpad/ui/WeeklyRoundsCard.tsx": [
@@ -65,7 +74,7 @@ test("every screen that prints a weekly round's price is on the list, so a new o
   const found = [];
   for (const [file, text] of sources()) {
     // The modules that define the printers, and the label itself, are not screens.
-    if (/\/lib\/(trading|rounds)-copy\.ts$/.test(file)) continue;
+    if (/\/lib\/(trading|rounds)(-history)?-copy\.ts$/.test(file)) continue;
     if (callers(text).length > 0) found.push(file.split(path.sep).join("/"));
   }
   assert.deepEqual(found.sort(), Object.keys(SCREENS).sort());

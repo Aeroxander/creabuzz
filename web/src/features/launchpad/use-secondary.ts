@@ -6,6 +6,11 @@ import type { DescribeContext } from "@creaton/core/launchpad/daoActions.ts";
 import { getRpcEndpoint } from "./chain";
 import { secondaryMarketFactory } from "./chain-config";
 import {
+  historyBlockBefore,
+  historyQueryKey,
+  readHistoryBlock,
+} from "./lib/round-history";
+import {
   olderBlockBefore,
   pollSecondary,
   readMarketForWords,
@@ -124,6 +129,37 @@ export function useOlderRounds(input: {
           latest,
           before,
         }),
+    })),
+  });
+}
+
+/**
+ * The earlier rounds' prices, one fixed block of rounds per entry, newest first: block 0 is the rounds just below the
+ * latest and each next block the ones below that. `blocks` is how many the person has asked for; each ask is one more
+ * bounded read, never all of them at once. A block's key names the market and its own bound (`historyQueryKey`), so a
+ * late answer for another market or another latest round lands under its own key and is never shown for this one.
+ * The rounds below the latest are final, so a read is kept and not repeated when a step the wallet sends refreshes the
+ * card. Nothing here needs a wallet: the list is the market's own record.
+ */
+export function useRoundHistory(input: {
+  market: string;
+  latest: bigint;
+  blocks: number;
+}) {
+  const { market, latest } = input;
+  const befores: bigint[] = [];
+  for (let i = 0; i < input.blocks; i++) {
+    const before = historyBlockBefore(latest, i);
+    if (before === null) break;
+    befores.push(before);
+  }
+  return useQueries({
+    queries: befores.map((before) => ({
+      queryKey: historyQueryKey(market, before),
+      staleTime: Number.POSITIVE_INFINITY,
+      refetchOnWindowFocus: false,
+      queryFn: () =>
+        readHistoryBlock(endpointChain(getRpcEndpoint()), { market, before }),
     })),
   });
 }

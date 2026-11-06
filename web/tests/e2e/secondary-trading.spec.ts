@@ -83,6 +83,8 @@ const LEVELS = 64;
  * card writes prices in FQ — never at a guessed six-decimal scale.
  */
 const LOW_TEXT = (MIN_PRICE / WAD).toString();
+/** A second offer price, so two settled rounds in the Earlier rounds list can be told apart by price. */
+const LATER_TEXT = "5";
 const HIGH_TEXT = (MAX_PRICE / WAD).toString();
 /** What the fixture's quote token calls itself (`FixtureQuote.symbol`), so the prices read as that token's money. */
 const QUOTE_SYMBOL = "FQ";
@@ -336,7 +338,10 @@ const PRICE_LABEL =
  * inside the viewport (so a phone does not scroll sideways to read it).
  */
 async function expectPriceLabel(page: Page) {
-  const note = page.getByTestId("price-setter-note");
+  // The latest round's own label: the Earlier rounds list carries its own, checked by `expectHistory`.
+  const note = page
+    .getByTestId("trading-round")
+    .getByTestId("price-setter-note");
   await expect(note).toBeVisible();
   await expect(note).toHaveText(PRICE_LABEL);
   // Plain text: no tooltip title, no own accessible name, nothing to click away.
@@ -352,6 +357,53 @@ async function expectPriceLabel(page: Page) {
   expect(box.y - (status.y + status.height)).toBeLessThan(24);
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(width);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+}
+
+/**
+ * The Earlier rounds list: one row per round below the latest, newest first, each with the day it opened (and its
+ * time zone) and either the lots traded at their price or "No trade". The permanent label sits once right under the
+ * list when any row prints a price, is plain text inside the viewport, and is absent when none does.
+ */
+async function expectHistory(
+  page: Page,
+  expected: { id: number; outcome: string }[],
+) {
+  const list = page.getByTestId("trading-history");
+  await expect(
+    list.getByRole("heading", { name: "Earlier rounds" }),
+  ).toBeVisible({ timeout: 60_000 });
+  const rows = list.getByTestId("trading-history-row");
+  await expect(rows).toHaveCount(expected.length, { timeout: 60_000 });
+  for (const [i, row] of expected.entries()) {
+    const line = rows.nth(i);
+    await expect(line).toHaveAttribute("data-round-id", String(row.id));
+    await expect(line.locator("span").nth(0)).toHaveText(
+      /^Opened [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M \S+$/,
+    );
+    await expect(line.locator("span").nth(1)).toHaveText(row.outcome);
+  }
+  const note = list.getByTestId("price-setter-note");
+  if (expected.some((r) => r.outcome !== "No trade")) {
+    await expect(note).toHaveCount(1);
+    await expect(note).toHaveText(PRICE_LABEL);
+    await expect(note).not.toHaveAttribute("title", /.*/);
+    await expect(note).not.toHaveAttribute("aria-label", /.*/);
+    const last = await rows.nth(expected.length - 1).boundingBox();
+    const box = await note.boundingBox();
+    const width = page.viewportSize()?.width ?? 0;
+    if (!last || !box) throw new Error("the list and its label are on screen");
+    // Right under the whole list, and wholly inside the viewport.
+    expect(box.y).toBeGreaterThanOrEqual(last.y + last.height - 1);
+    expect(box.y - (last.y + last.height)).toBeLessThan(24);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+  } else {
+    await expect(note).toHaveCount(0);
+  }
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -581,7 +633,9 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
     "costs only a network fee",
   );
   // No round has settled, so no price is shown and no label either.
-  await expect(founder.getByTestId("price-setter-note")).toHaveCount(0);
+  await expect(
+    founder.getByTestId("trading-round").getByTestId("price-setter-note"),
+  ).toHaveCount(0);
   await expect(founder.getByTestId("trading-settle")).toBeVisible();
   // While bidding is open there is no offer or bid left to place, and the round is settled by the button, not by time.
   await expect(founder.getByTestId("trading-sell")).toHaveCount(0);
@@ -931,7 +985,13 @@ test("a settled round where the offer and the bid never cross says nothing trade
     `${QUOTE_SYMBOL} a lot`,
   );
   // No price, so no label that would sit beside one.
-  await expect(founder.getByTestId("price-setter-note")).toHaveCount(0);
+  await expectHistory(founder, [
+    { id: 2, outcome: "No trade" },
+    { id: 1, outcome: `2 lots traded at 1 ${QUOTE_SYMBOL} a lot` },
+  ]);
+  await expect(
+    founder.getByTestId("trading-round").getByTestId("price-setter-note"),
+  ).toHaveCount(0);
   await expect(founder.getByTestId("trading-my-sell")).toContainText(
     "Nothing sold: your Shares are yours to take back.",
   );
@@ -1027,7 +1087,7 @@ test("a seller whose offer part-sold takes back the unsold lots, from the card a
   const founderSharesBefore = await balanceOf(SHARES, FOUNDER_WALLET);
   await founder.getByTestId("trading-sell").click();
   await founder.getByTestId("trading-sell-lots").fill("3");
-  await founder.getByTestId("trading-sell-price").fill(LOW_TEXT);
+  await founder.getByTestId("trading-sell-price").fill(LATER_TEXT);
   await founder.getByTestId("trading-sell-submit").click();
   await expect(founder.getByTestId("trading-my-sell")).toContainText(
     "You offer 3 lots at",
@@ -1108,6 +1168,19 @@ test("a seller whose offer part-sold takes back the unsold lots, from the card a
     .toBe(5n);
 
   // ── Round 5 is the latest; the settled round 4 still owes the seller, and a claim never expires ─────────
+  // The Earlier rounds list: newest first, both traded rounds with their own lots and price, the rounds nothing
+  // traded in as "No trade", and the permanent label once under the list, on a phone as well.
+  expect(proceeds).toBe(5n * WAD); // round 4 settled at the offer's own price, read off the chain
+  const history = [
+    { id: 4, outcome: `1 lot traded at 5 ${QUOTE_SYMBOL} a lot` },
+    { id: 3, outcome: "No trade" },
+    { id: 2, outcome: "No trade" },
+    { id: 1, outcome: `2 lots traded at 1 ${QUOTE_SYMBOL} a lot` },
+  ];
+  await expectHistory(founder, history);
+  await founder.setViewportSize({ width: 375, height: 812 });
+  await expectHistory(founder, history);
+  await founder.setViewportSize({ width: 1280, height: 720 });
   await expect(founder.getByTestId("trading-claim")).toHaveCount(0, {
     timeout: 60_000,
   });
