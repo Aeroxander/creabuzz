@@ -57,7 +57,6 @@ import { NewHereCard } from "./NewHereCard";
 import { checkTiming } from "@creaton/core/launchpad/checkNote.ts";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { useCheckNotes } from "../use-check-notes";
-import { LeavingNowNote } from "./WeeklyRoundsCard";
 
 export type OverviewTarget =
   | "decisions"
@@ -560,7 +559,6 @@ export function DaoOverview({
           />
         </div>
       )}
-      <LeavingNowNote dao={dao} />
       {/* The team's own task board, from the community's workspace: a contributor project's work is on its Work tab. */}
       {contributor ? null : (
         <ProjectDeliveryOverview launch={launch} dao={dao} onOpen={onOpen} />

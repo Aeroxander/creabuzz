@@ -4,7 +4,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 /**
- * The AI helpers on the work-check, take-on and challenge forms, and the funding gate in the vote form. The mocked browser
+ * The AI helpers on the work-check, take-on and challenge forms. The mocked browser
  * suite cannot hold an AI answer back while someone types, or switch a build to contributor-only per test, so, as in
  * `contributorOnlyGatesContract.test.mjs`, the components' source is the seam for the wiring. The rules themselves are
  * pure and driven in core: `fenceAiRequest`, `parseWorkCheck` and `AI_DISCLOSURE` in `helperAi.test.mjs`.
@@ -12,17 +12,6 @@ import { fileURLToPath } from "node:url";
 
 const source = (name) =>
   readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8");
-
-test("selling new units is a raise: the vote form and the funding card need raises offered", () => {
-  assert.match(
-    source("./DecisionComposer.tsx"),
-    /if \(id === "funding" && !raisesOffered\(\)\) return false;/,
-  );
-  assert.match(
-    source("./FundingCard.tsx"),
-    /if \(!raisesOffered\(\)\) return null;/,
-  );
-});
 
 test("the newcomer interviewer drops a draft when the form changed or closed while it ran", () => {
   const interview = source("./TakeOnInterview.tsx");

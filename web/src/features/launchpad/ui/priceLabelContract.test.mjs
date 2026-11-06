@@ -29,9 +29,6 @@ function* sources(dir = WEB_SRC) {
 /** The functions that write a weekly round's price into a sentence or a table row. */
 const PRICE_PRINTERS = [
   "roundLine", // the weekly listing: "Settled: N lots traded at P a lot"
-  "clearingLine", // the older weekly rounds: "N Shares at P each changed hands"
-  "lastTradeLine", // the older weekly rounds: "Last trade: ... at P each"
-  "historyRow", // the older weekly rounds: the table of earlier rounds' prices
   "earlierPriceRow", // the weekly listing: the Earlier rounds list under the Trading card
 ];
 
@@ -51,20 +48,6 @@ const SCREENS = {
       gate: /earlierShowsPrice\(rounds\)\s*\?\s*<PriceSetterNote/,
     },
   ],
-  "features/launchpad/ui/WeeklyRoundsCard.tsx": [
-    {
-      printer: "lastTradeLine(",
-      gate: /historyShowsPrice\(history\)\s*\?\s*<PriceSetterNote/,
-    },
-    {
-      printer: "historyRow(",
-      gate: /historyShowsPrice\(history\)\s*\?\s*<PriceSetterNote/,
-    },
-    {
-      printer: "clearingLine(",
-      gate: /clearingShowsPrice\(round\)\s*\?\s*<PriceSetterNote/,
-    },
-  ],
 };
 
 const callers = (text) =>
@@ -74,7 +57,7 @@ test("every screen that prints a weekly round's price is on the list, so a new o
   const found = [];
   for (const [file, text] of sources()) {
     // The modules that define the printers, and the label itself, are not screens.
-    if (/\/lib\/(trading|rounds)(-history)?-copy\.ts$/.test(file)) continue;
+    if (/\/lib\/trading(-history)?-copy\.ts$/.test(file)) continue;
     if (callers(text).length > 0) found.push(file.split(path.sep).join("/"));
   }
   assert.deepEqual(found.sort(), Object.keys(SCREENS).sort());

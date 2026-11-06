@@ -624,8 +624,6 @@ export interface DescribeContext {
     /** The price token's address, so the words name it and warn when it is not the project's sale currency (`currency`). */
     quoteToken?: string;
   };
-  /** The weekly rounds contract this app knows on the DAO's network (D131), so a vote naming it is told apart from one naming anything else. */
-  weeklyRounds?: string;
   /** The funding-terms contract of the DAO's summoner (D133), so its votes are put in words. */
   fundingTerms?: string;
   /** The payout module factory this app knows on the DAO's network (N10). */

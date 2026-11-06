@@ -1755,82 +1755,23 @@ On a fresh dev chain (`scripts/dev-chain.sh`; the payouts factory now comes from
 
 ## 4by. Weekly rounds (D131, D132, 2026-10-27, test networks)
 
-The quickest way to see it whole is the journey, which leaves screenshots of the card if asked:
-
-```bash
-E2E_SHOTS=$PWD/test-results/rounds-shots scripts/web-rounds-e2e.sh
-```
-
-By hand, on a dev chain with `VITE_WEEKLY_ROUNDS` set (the dev chain prints it):
-
-1. Start a contributor project and send its DAO some test USDC. On Decisions, **New decision** → **Weekly rounds**: the
-   draft reads "Start weekly rounds in 30 days". Run it; the Funds tab says when they can be switched on.
-2. Thirty days later (move the chain's clock), **Switch on weekly rounds**, then **Open this week's round**: the card
-   shows the floor (what leaving pays a Share).
-3. **Offer Shares**: typing more than you hold says how many you can offer; a price says what you keep a Share after the
-   cut. From another wallet, **Bid for Shares**: a price below the floor is refused before anything is sent; a valid one
-   says what the bid holds. The card shows what would trade if bidding ended now.
-4. **Take my Shares back** or **Take them back and leave** while bidding is open.
-5. Three days later, **Settle the round**, then **Collect** from each wallet: sellers get the price less a fifth of the
-   gain above the floor, buyers get their Shares and the rest of their money back, the DAO gets the cut.
-6. If nobody settles within two days after bidding, the card says everyone takes back what they put in, and **Collect**
-   does that.
+**Retired in D185 (2026-11-06): nothing here to run.** The old weekly rounds card, its decision form and `scripts/web-rounds-e2e.sh` were removed when the contract was deprecated. The contract and its tests stay (`forge test --match-contract WeeklyRounds`) with the audit record.
 
 ## 4bz. Funding terms and funding rounds (D133, 2026-10-28, test networks)
 
-The journey covers it end to end, after the weekly round (`scripts/web-rounds-e2e.sh`, screenshots with `E2E_SHOTS`).
-By hand, on a contributor project with weekly rounds switched on and some USDC in its treasury:
-
-1. Funds tab: **Funding the project** says the project sells no new units.
-2. Decisions → **Sell new units for the project**: "What buyers get" defaults to Loot (no vote); type the most that can
-   be sold. The draft says it as a share of the units there are now, and that nothing sells for 30 days. Run it; the card
-   says when sales can start.
-3. Thirty days later, the same decision offers **Open a sale within the terms**: a quantity, a least price and the days
-   it stays open. A quantity above the terms' room is refused before anything is sent. Run it.
-4. **Open a funding round** on the card; bid from other wallets (the bid form says what it holds). The card still says
-   the sale is open while the round holds it.
-5. Three days later, **Settle the round**, then **Collect**: buyers get Loot, every payment is in the treasury, and the
-   card shows how much has sold of the most.
+**Retired in D185 (2026-11-06): nothing here to run.** Funding rounds were rounds of the old weekly rounds contract, which this app no longer offers or deploys. The contracts and their tests stay (`forge test --match-contract FundingTerms`).
 
 ## 4ca. Funding after the outside review (D134, 2026-10-28, test networks)
 
-On top of 4bz:
-
-1. The terms decision says "Set a funding limit of …" and names the weekly rounds contract that may sell. The Funding
-   card says "… sold of a current funding limit of …".
-2. While a sale is open, **Before you buy** lists: the limit can be raised; contributor awards have no yearly limit;
-   earned Shares can leave with money raised; no milestone locks; what Loot is.
-3. Send the DAO a little ETH (anvil `cast send <dao> --value 1ether` from a dev account): **Open a funding round** fails
-   until the ETH is gone. The same decision's **Stop sales while the treasury holds other tokens** adds tokens to check.
-4. Settle a funding round: the treasury is paid at once, before anyone collects.
-5. Let a funding round go void with no bids: **Give the unsold units back to the sale** appears; after it, the DAO can
-   stop or replace the sale.
-6. Bid in one round and don't collect; open the next: the earlier round stays under **Waiting for you to collect**.
+**Retired in D185 (2026-11-06): nothing here to run.** It was about the Funding card, which was removed with the old weekly rounds contract.
 
 ## 4cb. The exit fee (D135, 2026-10-28, test networks)
 
-On top of 4ca:
-
-1. Publish funding terms: the decision has **Exit fee (%)**, 2 by default; 6 is refused (at most 5%). The decision's
-   words say the fee stays in the treasury and is not charged during the 30 days' notice.
-2. The Funding card shows **Exit fee 2%**, and **Before you buy** says leaving keeps 2% in the treasury.
-3. During the notice, leave with some Shares from the Funds tab: the exit panel shows no fee and pays a whole share.
-4. After the notice the exit panel says the terms set an exit fee of 2%, and the amounts shown are after it. Leave:
-   you get exactly what it showed, and the treasury keeps the rest.
-5. Raise the funding limit: during the new notice, leaving is whole again.
-6. Lower the exit fee with the same decision (**Lower the exit fee**); asking for a higher one is refused.
+**Retired in D185 (2026-11-06): nothing here to run.** The Funding card and the funding decisions ran through the old weekly rounds contract and were removed with it. The exit fee itself is still shown on the exit panel (`RagequitPanel`) where funding terms exist.
 
 ## 4cc. After the review of D135 (D136, 2026-10-28, test networks)
 
-On top of 4cb:
-
-1. Send the DAO some of another token (any dev token: `cast send <token> "transfer(address,uint256)" <dao> 1000`).
-   With funding terms published, open **Does the treasury hold another token?** on the Funding card, paste the token and
-   press **Stop sales over it** as a holder: the token is listed as watched and **Open a funding round** fails. From a
-   wallet that holds no units it is refused.
-2. The funding decision's **Sell even while the treasury holds a token** for that token: once it runs, sales open again.
-3. Leave as the last holder with funding terms past their notice: the exit panel shows no fee and the treasury ends
-   empty.
+**Retired in D185 (2026-11-06): nothing here to run.** It was about the Funding card and the funding decisions, removed with the old weekly rounds contract.
 
 ## 4cd. Shorter milestone waits on a test network (D138, 2026-10-29)
 
@@ -1927,20 +1868,7 @@ On the hosted image (contributor-only), signed out, then as a member, on a lapto
 
 ## 4cl. Weekly rounds price history (D147, test networks)
 
-The journey checks it on a real chain (`scripts/web-rounds-e2e.sh`; `E2E_SHOTS=…` also saves `rounds-history.png`). By
-hand, on a dev chain with weekly rounds on (§4by):
-
-1. Open a round. On Funds the card says "No trades yet.", the round's chip reads "Floor at opening: …", and under it
-   "Leaving now pays about … a Share." (no fee before funding terms, or while they are under notice).
-2. **Offer Shares** with a price: the line says what you keep after the cut and what leaving pays now.
-3. Bid from another wallet, wait three days, settle. The card reads "Last trade: … Shares at … USDC each, round N
-   (date)", the date being when bidding closed; the list shows that round with its price and amount.
-4. A week after it opened, open the next round, place nothing, wait three days and settle it. The last trade still names
-   the first round and its date; the list shows the new round first as "Nothing traded", with no price.
-5. A round nobody settles within two days shows "Not settled, everything returned".
-6. With funding terms past their notice, the leaving line says "after the 2% exit fee" (or the fee the terms set), on
-   Funds and on the Overview.
-7. Funding rounds never appear in this list or the last trade.
+**Retired in D185 (2026-11-06): nothing here to run.** The old weekly rounds card was removed with the old contract (see `docs/v3-review/WEEKLY-ROUNDS-AUDIT-2026-11-01.md`). The weekly sale's own price history is under the Trading card (`web-trading-e2e`). The steps were about the old card.
 
 ## 4cm. A project's Discussion tab is its board (D156)
 

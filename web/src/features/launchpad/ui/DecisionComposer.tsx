@@ -47,14 +47,8 @@ import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { launchCoordinate } from "../models";
 import { useReasonShown } from "../use-review-reasons";
 import { ChallengeQuestions } from "./ChallengeQuestions";
-import {
-  localUsdcAddress,
-  payoutsFactory,
-  weeklyRounds,
-} from "../chain-config";
+import { localUsdcAddress, payoutsFactory } from "../chain-config";
 import { PayoutsForm } from "./PayoutsForm";
-import { FundingDecisionForm } from "./FundingDecisionForm";
-import { RoundsDecisionForm } from "./RoundsDecisionForm";
 import { TradingListingForm } from "./TradingListingForm";
 import { useSecondary } from "../use-secondary";
 import {
@@ -73,8 +67,6 @@ type Kind =
   | "slash"
   | "close"
   | "trading"
-  | "rounds"
-  | "funding"
   | "secondary-listing"
   | "payouts";
 
@@ -133,18 +125,6 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
     label: "Open trading",
     about:
       "Let people send Shares to each other, so they can be bought and sold. It can open only 30 days after a vote announces it.",
-  },
-  {
-    id: "rounds",
-    label: "Weekly rounds",
-    about:
-      "Once a week, match members who want out with people who want in, at one price never below what leaving pays, or turn that off. It can start only 30 days after the vote.",
-  },
-  {
-    id: "funding",
-    label: "Sell new shares for the project",
-    about:
-      "Publish funding terms (what buyers get, and the most the project can ever sell), or open a sale within them. Nothing sells until 30 days after terms are published.",
   },
   {
     id: "secondary-listing",
@@ -235,17 +215,6 @@ export function DecisionComposer({
   const offered = (id: Kind): boolean => {
     // Opening trading makes Shares something to buy and sell: a contributor-only build offers no sale of any kind.
     if (id === "trading" && !raisesOffered()) return false;
-    if (id === "rounds")
-      return weeklyRounds(ctx.chainId ?? null) !== null && contributor;
-    // Selling new units is a raise, so a contributor-only build does not offer it either. Sales happen in weekly rounds,
-    // and need the summoner's funding-terms contract.
-    if (id === "funding" && !raisesOffered()) return false;
-    if (id === "funding")
-      return (
-        weeklyRounds(ctx.chainId ?? null) !== null &&
-        contributor &&
-        ctx.fundingTerms?.kind === "present"
-      );
     // A listing is published by the DAO into its own market, so it is offered only where that market exists: this
     // build has to name its factory, and the factory must not say this DAO has none. While the read has not answered
     // (or could not) the form is still offered, and says what it could not read. The form prices in the market's own
@@ -686,24 +655,6 @@ export function DecisionComposer({
               ctx={ctx}
               gate={gate}
               key={`o${formKey}`}
-              onSubmit={submit}
-            />
-          ) : kind === "funding" ? (
-            <FundingDecisionForm
-              blocked={blocked}
-              busy={busy}
-              ctx={ctx}
-              gate={gate}
-              key={`f${formKey}`}
-              onSubmit={submit}
-            />
-          ) : kind === "rounds" ? (
-            <RoundsDecisionForm
-              blocked={blocked}
-              busy={busy}
-              ctx={ctx}
-              gate={gate}
-              key={`w${formKey}`}
               onSubmit={submit}
             />
           ) : kind === "secondary-listing" ? (

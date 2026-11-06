@@ -25,7 +25,7 @@ const MAX_U128 = (1n << 128n) - 1n;
 /** How long after terms are published, or widened, before anything under them sells. */
 export const FUNDING_NOTICE = 30 * DAY;
 /** The highest exit fee terms can set (D135), in basis points. */
-export const MAX_EXIT_FEE_BPS = 500;
+const MAX_EXIT_FEE_BPS = 500;
 
 export const FUNDING_SIGNATURES = {
   publish: "publish(bool,uint128,address,uint16)",
@@ -372,7 +372,7 @@ export type FundingPhase =
   | "selling";
 
 /** Units of the open tranche not yet sold: what an open funding round holds counts as still on sale. */
-export function unsoldOfTranche(view: FundingTermsView): bigint {
+function unsoldOfTranche(view: FundingTermsView): bigint {
   const t = view.tranche;
   if (!t) return 0n;
   return t.quantity - (t.taken - view.reserved);

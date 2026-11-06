@@ -1,5 +1,5 @@
 import { recordSaleCurrency } from "../chain";
-import { payoutsFactory, weeklyRounds } from "../chain-config";
+import { payoutsFactory } from "../chain-config";
 import type { DescribeContext } from "@creaton/core/launchpad/daoActions.ts";
 import { describeDecision } from "../lib/decision-describe";
 import type { Decision } from "@creaton/core/launchpad/decisions.ts";
@@ -66,7 +66,6 @@ export function decisionTitler(input: {
     bonds,
     projectToken,
     secondaryMarket,
-    weeklyRounds: weeklyRounds(launch.record.chainId ?? null) ?? undefined,
     payoutsFactory: payoutsFactory(launch.record.chainId ?? null) ?? undefined,
     label,
     currency: launch.record.currency ?? undefined,

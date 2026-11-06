@@ -109,8 +109,8 @@ PILOT=(
   web-restricted-holder-e2e
 )
 # Later: raises, milestone locks, the optional features and what the pilot server does not offer. None of these is
-# reachable in the hosted build or on the pilot server (D137): weekly rounds and money behind a post are test-network
-# features, a community of your own (self-serve) is off on the pilot server, and the Shares transfer-validator journey is
+# reachable in the hosted build or on the pilot server (D137): money behind a post is a test-network feature,
+# a community of your own (self-serve) is off on the pilot server, and the Shares transfer-validator journey is
 # the LBAMM evaluation's (its lock-guard steps still run here, nightly).
 LATER=(
   web-project-story-e2e
@@ -124,7 +124,6 @@ LATER=(
   web-dao-journey-e2e
   web-economy-e2e
   web-sepolia-fork-e2e
-  web-rounds-e2e
   web-trading-e2e
   secondary-keeper-e2e
   web-post-bounty-e2e

@@ -181,7 +181,7 @@ check "--list runs nothing" $(yes_if bash -c '[[ -z "$(ls -A "$0")" ]]' "$WORK/l
 
 echo "--- a journey script in no set, with no reason, is reported; one with a home is not"
 mkdir -p "$WORK/homes" "$WORK/homes-logs"
-for name in web-social-hosted-e2e web-rounds-e2e web-decisions-e2e brand-new-e2e; do
+for name in web-social-hosted-e2e web-trading-e2e web-decisions-e2e brand-new-e2e; do
   printf '#!/usr/bin/env bash\nexit 0\n' >"$WORK/homes/$name.sh"
   chmod +x "$WORK/homes/$name.sh"
 done
@@ -200,7 +200,7 @@ check "every journey script in scripts/ is in a set or has a reason${UNHOMED:+ (
 OUTSIDE_LIST="$(LOG_DIR="$WORK/list-logs" "$GATE" --outside)"
 check "--outside gives each journey left out a reason" \
   $(yes_if bash -c '[[ -n "$0" ]] && ! grep -qvE "^[a-z0-9-]+-e2e: .{20,}" <<<"$0"' "$OUTSIDE_LIST")
-for journey in web-rounds-e2e web-post-bounty-e2e web-self-serve-e2e shares-erc20c-e2e; do
+for journey in web-post-bounty-e2e web-self-serve-e2e shares-erc20c-e2e; do
   check "the later set runs $journey, which no gate ran before" $(yes_if grep -qx "$journey" <<<"$(LOG_DIR="$WORK/list-logs" "$GATE" --later --list)")
 done
 

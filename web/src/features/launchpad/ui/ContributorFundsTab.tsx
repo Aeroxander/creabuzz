@@ -29,8 +29,6 @@ import { usePeopleWithWallets } from "../use-people";
 import { useDaoHolders } from "../use-work";
 import { DelegationCard } from "./DelegationCard";
 import { Figure } from "./Figure";
-import { FundingCard } from "./FundingCard";
-import { WeeklyRoundsCard } from "./WeeklyRoundsCard";
 import { PayoutsCard } from "./PayoutsCard";
 import { RagequitPanel } from "./RagequitPanel";
 import { AddressRow } from "./account-widgets";
@@ -187,8 +185,6 @@ export function ContributorFundsTab({
           record={exitRecord}
         />
       ) : null}
-      <FundingCard dao={dao} />
-      <WeeklyRoundsCard dao={dao} />
       <PayoutsCard dao={dao} />
       {holdsShares ? (
         <DelegationCard

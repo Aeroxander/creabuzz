@@ -63,7 +63,6 @@ export default defineConfig({
         "**/contributor-project.spec.ts",
         "**/contributor-journey.spec.ts",
         "**/post-bounty-journey.spec.ts",
-        "**/rounds-journey.spec.ts",
         "**/secondary-trading.spec.ts",
         "**/social-cashtag.spec.ts",
         "**/funding-status.spec.ts",

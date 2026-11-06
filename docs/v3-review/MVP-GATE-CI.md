@@ -74,12 +74,12 @@ keeps reading evidence, voting and leaving with `buzz org ragequit`; [HOLDER-ACC
 and `web/tests/e2e-real/passkey-sign-in.spec.ts` (signing up with a passkey and signing in again after a reload, with
 Chrome's virtual authenticator).
 
-**Later set** (`--later`, 17; with the 10 pilot journeys that is 27): `web-project-story-e2e`, `work-check-query-e2e`,
+**Later set** (`--later`, 16; with the 10 pilot journeys that is 26): `web-project-story-e2e`, `work-check-query-e2e`,
 `v5-local-fixture`, `cli-milestone-e2e`, `web-record-e2e`, `web-milestone-e2e`, `web-dao-launch-e2e`,
-`web-challenge-e2e`, `web-dao-journey-e2e`, `web-economy-e2e`, `web-sepolia-fork-e2e`, `web-rounds-e2e`,
+`web-challenge-e2e`, `web-dao-journey-e2e`, `web-economy-e2e`, `web-sepolia-fork-e2e`,
 `web-trading-e2e`, `secondary-keeper-e2e`, `web-post-bounty-e2e`, `web-self-serve-e2e` and `shares-erc20c-e2e`. The
-four added on 2026-11-01 (`web-rounds-e2e`, `web-post-bounty-e2e`, `web-self-serve-e2e`,
-`shares-erc20c-e2e`) were in no set before, and the weekly-sales and fixture journeys were added later still; no
+three added on 2026-11-01 (`web-post-bounty-e2e`, `web-self-serve-e2e`, `shares-erc20c-e2e`) were in no set before
+(a fourth, `web-rounds-e2e`, was removed on 2026-11-06 with the old weekly rounds card, D185), and the weekly-sales and fixture journeys were added later still; no
 recorded nightly run has played them, so the first one may find them broken.
 
 **Outside both sets, each with a reason** (`scripts/mvp-gate.sh --outside` prints them):

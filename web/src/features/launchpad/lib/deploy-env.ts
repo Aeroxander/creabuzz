@@ -20,7 +20,6 @@ import {
   historyFromBlock,
   LOCAL_ANVIL_PRESET,
   mainnetEnabled,
-  weeklyRounds,
   networkLabel,
   openBounty,
   workBounty,
@@ -179,17 +178,6 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   if (bonds && !court) {
     problems.push(
       "VITE_REMIX_BONDS is named but VITE_COURTS is not: a bond's case would have nowhere to go.",
-    );
-  }
-  const rounds = weeklyRounds(chainId, env);
-  if (value(env, "VITE_WEEKLY_ROUNDS") && !rounds) {
-    problems.push(
-      `VITE_WEEKLY_ROUNDS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
-    );
-  }
-  if (rounds && !rpc) {
-    problems.push(
-      "VITE_WEEKLY_ROUNDS is named but VITE_CHAIN_RPC_URL is not: a hosted page has no chain node without it.",
     );
   }
   if (value(env, "VITE_WORK_BOUNTIES") && !bounty) {

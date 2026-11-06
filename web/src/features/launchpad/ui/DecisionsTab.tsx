@@ -4,7 +4,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { hashText } from "@creaton/core/launchpad/work.ts";
 
 import type { ChallengeIntent } from "../lib/challenge";
-import { payoutsFactory, weeklyRounds } from "../chain-config";
+import { payoutsFactory } from "../chain-config";
 import { recordSources } from "../lib/ways-to-help";
 import { useEvidencePackets } from "../use-evidence";
 import type { SponsorIntent } from "../lib/sponsor";
@@ -218,8 +218,6 @@ export function DecisionsTab({
                       context.data?.fundingTerms?.kind === "present"
                         ? context.data.fundingTerms.address
                         : undefined,
-                    weeklyRounds:
-                      weeklyRounds(launch.record.chainId ?? null) ?? undefined,
                     payoutsFactory:
                       payoutsFactory(launch.record.chainId ?? null) ??
                       undefined,

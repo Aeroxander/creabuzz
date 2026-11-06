@@ -4,7 +4,7 @@ import test from "node:test";
 
 /**
  * Outside feedback, batch 3: the launchpad screens other groups' fixes needed. Each screen names the real instrument
- * (Shares for the milestone lock, whatever a funding round sells for rounds), says only what is true on the network the
+ * (Shares for the milestone lock), says only what is true on the network the
  * build runs on, and describes what a person can do or check rather than how the contracts book it. The components are
  * the seam (node cannot render the .tsx), so the source is read with its comments taken out.
  */
@@ -81,39 +81,6 @@ test("the Work tab says above the suggestions when an open approval vote could n
     work.split("\n").length <= 1000,
     "WorkTab.tsx stays within 1000 lines",
   );
-});
-
-test("a list of token addresses may be split by semicolons too", () => {
-  const form = source("./FundingDecisionForm.tsx");
-  assert.match(form, /tokensText\s*\.split\(\/\[\\s,;\]\+\/\)/);
-});
-
-test("a funding round names what it sells: new Shares or new non-voting shares", () => {
-  const card = source("./WeeklyRoundsCard.tsx");
-  assert.match(card, /const unit = roundUnit\(round, shares\)/);
-  assert.match(card, /clearingLine\(round, unit\)/);
-  assert.match(card, /`Bid for new \$\{unit\}`/);
-  assert.match(card, /`new \$\{unit\}`/);
-  assert.doesNotMatch(card, /"Bid for new shares"/);
-  assert.doesNotMatch(card, /"new shares"/);
-  // The floor chip on a funding round uses the same word as the price column.
-  assert.match(card, /a \$\{unit\.replace\(\/s\$\/, ""\)\}`/);
-  assert.doesNotMatch(card, /holders \? "Share" : "share"/);
-});
-
-test("the rounds journey expects the non-voting-share words its Loot round now shows", () => {
-  const spec = readFileSync(
-    new URL("../../../../tests/e2e/rounds-journey.spec.ts", import.meta.url),
-    "utf8",
-  );
-  for (const line of [
-    "You bid for 30 new non-voting shares at up to 1.8 USDC.",
-    "If bidding ended now: 40 new non-voting shares at 1.65 USDC each.",
-    "40 new non-voting shares at 1.65 USDC each were sold for the project.",
-  ]) {
-    assert.ok(spec.includes(line), line);
-  }
-  assert.doesNotMatch(spec, /\d+ new shares at /);
 });
 
 test("the passkey fee line is not hard-wired to the test network", () => {

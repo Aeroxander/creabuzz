@@ -21,7 +21,6 @@ import {
   readFundingTerms,
   watchAssetsDecision,
 } from "./fundingTerms.ts";
-import { ROUND_SIGNATURES } from "./weeklyRounds.ts";
 
 const TERMS = `0x${"f7".repeat(20)}`;
 const DAO = `0x${"da".repeat(20)}`;
@@ -56,9 +55,6 @@ test("the funding calls are the contract's (cast goldens)", () => {
   assert.equal(sig(FUNDING_SIGNATURES.terms), "0xc8c819ac");
   assert.equal(sig(FUNDING_SIGNATURES.tranches), "0x3bb0170d");
   assert.equal(sig(FUNDING_SIGNATURES.fundingTerms), "0xb881228a");
-  assert.equal(sig(ROUND_SIGNATURES.openFunding), "0xa5b729cd");
-  assert.equal(sig(ROUND_SIGNATURES.lastFunding), "0x04b7a992");
-  assert.equal(sig(ROUND_SIGNATURES.finishFunding), "0x9ccaed27");
 });
 
 test("publishing terms names the seller, calls the limit current, and says the notice", () => {
