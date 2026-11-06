@@ -1,8 +1,14 @@
 # Weekly sales of existing Shares: a brief for counsel and for an outside auditor
 
-Written 2026-11-05 on branch `v4-governance-rework`. Nothing described here is deployed or switched on anywhere.
+Written 2026-11-05 on branch `v4-governance-rework`. The market described here (the V2 launch kit, the market factory
+and the market) is not deployed or switched on anywhere. One older contract that this brief names, the frozen
+`WeeklyRounds`, is deployed on the Sepolia test network (section 8, item 18).
 Updated later the same day, after the ten low-severity batches (B15 to B24) were run (section 5.6): line counts, test
 counts and the open lists in sections 5, 6 and 8 were re-measured or rewritten then.
+Updated 2026-11-06 after counsel's second round: section 7 now opens with the decision on where the market may be
+offered (7.0) and a record of counsel's preliminary views (7.1), and adds sections on the EU crypto-asset rules (7.2),
+money transmission (7.3) and the platform as a payer (7.4); section 8 adds items 17 to 20. No code, contract or
+parameter was changed. Sections 1 to 6 and the questions numbered 1 to 25 keep their numbers.
 This brief is engineering material, not legal advice.
 
 **Who this is for.** A securities and technology lawyer who has not seen the code, and an outside smart-contract
@@ -141,7 +147,8 @@ is now exempt from the validator.
 Not closed: the DAO can name an *exit exchange* for the Shares, a separate older feature, with 30 days' notice. The
 older, frozen `WeeklyRounds` contract could be named in that slot. It is the contract with the theft defects in
 `WEEKLY-ROUNDS-AUDIT-2026-11-01.md`. Today it is kept out by process and by build settings, not by the V2 contracts
-(open item in section 8).
+(open item in section 8). It is deployed on the Sepolia test network, and counsel's preliminary view is that naming it
+on a value-bearing network must be made impossible, not prevented by process (section 8, item 18).
 
 ### 1.7 What the app tells people
 
@@ -267,7 +274,7 @@ so nothing is left out.
 | 5 | **Summoner** (the DAO factory) | A contract; no key | Creates DAO clones. Each DAO can be initialised only by it. | The review passes reported no administrator role. `Summoner.summon` is public (anyone can create a DAO clone), which is why the market factory accepts only the kit. I did not read the Summoner line by line. | `MolochPatched.sol` |
 | 6 | **Market contract** | A contract; no key | Holds escrow. Is the only address exempt from the Shares transfer lock. Calls two hooks on the voting policy to keep voting weight right. | Has no owner, no upgrade, no function to send funds anywhere except to an order's owner. Its 38 external entries (functions, public variables and constants) are pinned to a reviewed list (`test_the_market_abi_matches_the_reviewed_allowlist`). | `SecondaryMarket.sol` |
 | 7 | **Voting policy** (`ActivationVoting` clone) | A contract; no key | Tracks which bought amounts may vote. One-time setup by the DAO in the creation block. Two hooks callable only by the project's market. | Cannot be reconfigured after the creation block. | `ActivationVoting.sol:269`, `:829` |
-| 8 | **Deployer key(s)** for the kit, factory, summoner | Whoever deploys | Choose which code is deployed. After deployment the V2 contracts keep no deployer role in the code read. | Not applicable on a local chain. For a public chain this is undecided: no script exists. The Sepolia script uses `DEPLOYER_PRIVATE_KEY`, "a testnet-only key", and deploys the older kits, not the V2 kit. | `scripts/sepolia-deploy.sh`, `DeployLaunchKit.s.sol` |
+| 8 | **Deployer key(s)** for the kit, factory, summoner | Whoever deploys | Choose which code is deployed. After deployment the V2 contracts keep no deployer role in the code read. | Not applicable on a local chain. For a public chain this is undecided: no script exists. The Sepolia script uses `DEPLOYER_PRIVATE_KEY`, "a testnet-only key", and deploys the older kits, not the V2 kit. It did deploy the frozen `WeeklyRounds` to Sepolia (section 8, item 18). | `scripts/sepolia-deploy.sh`, `DeployLaunchKit.s.sol` |
 | 9 | **Keeper key** (`KEEPER_PRIVATE_KEY`) | The keeper operator | Pays the network fee to call `settle` and, only if enabled, `openRound`. | Nothing else: it holds no approvals, no Shares, no quote. The calls are open to anyone. The script does not print the key; it does pass it on the command line to a local tool, so it is visible to other users of the same machine. | `scripts/secondary-keeper.sh` |
 | 10 | **Anyone** | Any address | Open a round (after a week), settle a closed round, trigger collection for any order. | Direct a payout anywhere but the order's owner. | `SecondaryMarket.sol` |
 | 11 | **Quote token issuer or admin** | Whoever controls the token the founder chose | If the token can freeze, blacklist or pause, payouts in it can be blocked for an address or for all. Settlement, cancellation and Shares collection still work; only the quote payout waits (`test_a_blocked_quote_strands_no_payout`). | Not applicable to Shares. | The token's own code (not in this repository) |
@@ -463,13 +470,16 @@ constant changed (the first row). Commits are on branch `v4-governance-rework`.
 1. **No independent security audit.** The tests are the author's. No outside party has read the code.
 2. **No jurisdiction-specific legal review.** No opinion exists on whether Shares are securities, whether the weekly
    sales are an exchange, brokerage or offering, or on any registration, exemption, disclosure, tax, sanctions or
-   know-your-customer duty. The product copy and the questions in section 7 are unreviewed.
+   know-your-customer duty. The product copy and the questions in section 7 are unreviewed. Counsel's second-round
+   comments (2026-11-06) are recorded in 7.1 as preliminary views; they are not an opinion.
 3. **No human release decision.** The product's documents define the release decision as a person's act that is never
    bundled with a deployment. It has not been made.
 4. **No human test of the changed behaviour.** The project's own checklist requires a person to try the changed flows.
    Agents drove them in a browser against a local chain; a person has not.
-5. **Nothing is deployed anywhere.** Not on a public network, not on a test network, not hosted. Shares on the Sepolia
-   test network are test records with no value. All evidence is from local scratch chains and unit tests.
+5. **The market is not deployed anywhere.** Not the V2 kit, the factory or the market, on any public or test network,
+   and not hosted. (Corrected 2026-11-06: an earlier revision said nothing at all was deployed. The older frozen
+   `WeeklyRounds` contract is on the Sepolia test network, section 8, item 18.) Shares on the Sepolia test network are
+   test records with no value. All evidence about the market is from local scratch chains and unit tests.
 6. **Trading is off by default** (a listing starts disabled, the hosted build names no market factory). That is
    configuration, not a legal or technical barrier a determined operator could not remove.
 7. **No review of the latest fixes.** The ten low-severity commits were reviewed; the commits that fixed what that
@@ -486,7 +496,7 @@ still open after them:
   the page's kit list would stop working.
 - **The exit-exchange slot is not sealed**, so the two document lines that tie to it (the packet's section 6 and a
   comment in the market) are unchanged, and there is no test pinning that the old rounds contract stays attachable or
-  is refused. Both wait for section 8, item 3.
+  is refused. Both wait for section 8, item 3, which item 18 now extends.
 - **Card wording not done:** any sentence about a fee (item 6), and the wording of the round line near its close. Whether
   the card belongs in the default (non-pilot) build under D137 as against D180 was not examined. Browser specs for the
   default build were not run in the low-severity run (the trading spec and the pilot spec were, in the final gate).
@@ -526,6 +536,58 @@ repository; the underlying DAO framework (a patched Moloch/Shares fork) whose pa
 ## 7. Questions for counsel
 
 Each is stated so it can be answered "yes, no, or only if X".
+
+**Order of work (a proposal, following counsel's second-round advice).** First the owner decides where the market
+may be offered (7.0, which is question 20). Then counsel answers questions 5 to 7 (issuer, intermediary, DevCo split),
+because every other answer depends on who the regulated person is, if anyone. Then the rest.
+
+### 7.0 Decision for the owner before counsel is engaged: where may the market be offered (question 20)
+
+**What exists today.** Nothing limits who can use the market. The contract has no allowlist, no identity check and no
+country check (section 1.3). A search of `web/src`, `deploy` and `docs/policies` for geofence, geoblock and country
+found no check in the web app; the only hits were two policy drafts. The card is off in the hosted build because the
+image names no market factory (section 5.6, B16), which is configuration, not a country limit.
+
+**The options** (the owner's choice; each changes which later questions are live):
+
+| Option | What it means | What it does to the questions |
+|---|---|---|
+| (a) Test network only | No real value anywhere. This is the pilot today. | Sections 7.2 to 7.4 stay dormant, but they must be answered before this option changes. |
+| (b) United States only, including Puerto Rico | Everyone else excluded, and the exclusion has to be built (page, and a decision on question 18). | Takes the EU questions (26 to 30) out of the first opinion; keeps questions 1 to 17 and 31 to 34 (US parts). |
+| (c) United States and United Kingdom | As (b) plus the UK. | Adds a UK review that this brief has not set out. |
+| (d) United States and named EU member states | As (b) plus the countries named. | Makes 7.2 live in full, and the EU part of 7.4. |
+| (e) Open to everyone except sanctioned places | The posture the contract has today. | Every question is live in every place. Nothing has been designed for it. |
+
+**Proposal (labelled as one, not advice).** Stay at (a) until counsel has answered questions 5 to 7. Then name one
+value-bearing target, and the smallest is (b): it keeps the MiCA question written down (7.2) without making it the
+first thing counsel must close. Whoever enforces the exclusion (question 20, second half) is a separate decision that
+this option list does not settle.
+
+### 7.1 Counsel's preliminary views (second round, 2026-11-06)
+
+**How to read this.** These are counsel's comments as relayed to the author in condensed form. They are counsel's
+preliminary views. They are not a formal opinion, they are not this brief's conclusions, and nothing in sections 1 to
+6 was changed to fit them. The brief does not turn any of them into final text. Counsel also asked that the instruction
+in the preamble, never to describe the internal review as an audit, stay as written; it is unchanged.
+
+- **Classification.** Counsel's preliminary view is that work-earned Shares are the strongest defence under the Howey
+  test, and bought Shares the weakest (money goes in, the buyer is exposed to the treasury, and there is a resale
+  venue). The two facts counsel thinks cut hardest toward a security are the resale market and the treasury exit right
+  tied to others' continued work. Counsel's preliminary view is that "no dividend, no fee, and the sale money goes to
+  the sellers" does not close the question.
+- **The market as an exchange.** Counsel's preliminary view is that non-custody and non-discretion narrow the exchange
+  analysis, but that definitions on both sides of the Atlantic do not obviously require an operator. Responsibility
+  would follow whoever hosts the page, runs the keeper, or deploys and curates the kit.
+- **Order.** Counsel asked that questions 5 to 7 be answered first, because every other answer depends on who the
+  regulated person is, if anyone.
+- **Gaps counsel named.** No EU crypto-asset question (now 7.2). No money-transmission question (now 7.3). Tax reporting
+  stopping at holders, with no question on the platform as a payer (now 7.4). Two go-live conditions (section 8,
+  items 18 and 19).
+- **Counsel's preliminary view on the order of work before any real money:** the securities opinion on this brief, with
+  the MiCA gap closed first; the exit-exchange slot sealed; and the platform-as-payer tax question answered. Before the
+  pilot itself, the points in counsel's list for the policy drafts apply; they are outside this brief.
+
+### Questions
 
 **Classification**
 
@@ -593,7 +655,8 @@ Each is stated so it can be answered "yes, no, or only if X".
     has no allowlist and any address can bid; anyone can also call the contract directly without the page.
 19. Do sanctions screening or know-your-customer checks apply to the operator who hosts the page, to the keeper
     operator, or to sellers and buyers? If so, at which point (sign-in, first order, each order)?
-20. Which countries or categories of person must be excluded, and who is responsible for enforcing it?
+20. Which countries or categories of person must be excluded, and who is responsible for enforcing it? (The owner
+    decides the target list first, with the options in 7.0; this question then asks what that list requires.)
 
 **Record keeping and disclosures**
 
@@ -609,12 +672,138 @@ Each is stated so it can be answered "yes, no, or only if X".
 25. The product copy and docs call the DAO's treasury exit "leaving" and the Shares "ownership". Is that terminology
     acceptable, or does it need to be changed across the product?
 
+### 7.2 EU crypto-asset and anti-money-laundering rules (MiCA and AMLR)
+
+Added after counsel's second round, which found this missing. Whether EU users are in scope is an owner decision (7.0,
+options (d) and (e)); this section sets out the facts counsel needs and asks the questions. This brief does not
+interpret either regulation.
+
+**Counsel's preliminary view (not an opinion).** If EU users are in scope, operating a venue that brings together
+multiple third-party buying and selling interests in crypto-assets is a crypto-asset service provider (CASP) service
+that needs authorization, and the no-operator-custody posture does not obviously exempt it.
+
+**The facts, with sources.**
+
+- *Who hosts the page.* The operator, on one rented server (`deploy/ovh/README.md`, `deploy/compose/README.md`). The
+  hosted image names no market factory, so it shows no trading (section 5.6, B16).
+- *Who runs the keeper.* Whoever chooses to run `scripts/secondary-keeper.sh`. It is optional, and the repository
+  names no one (section 4.1). Anyone can call `settle` and `openRound`.
+- *Who deploys.* Whoever holds a deployer key. No public-network deploy script for the V2 kit, factory or market exists
+  (section 4.1, 4.2 row 8). That entity is undecided.
+- *Who deploys and curates the kit.* The kit is a contract with no key (`ContributorKitV2.sol`). A founder launching a
+  project chooses the price token, lot size and sale schedule, and the project's DAO decides whether to publish a
+  listing (section 4.2, rows 1 and 2). Which kit addresses the page offers is a build setting of the operator
+  (`VITE_CONTRIBUTOR_KITS`, `deploy/compose/.env.creaton.example`). I did not check whether any project is selected or
+  promoted on the Discover pages (`web/src/features/discover`), which counsel's list of "curates" may reach.
+- *What the contract does.* It takes Shares and the price token into escrow, computes one price by arithmetic anyone
+  can run, lets anyone settle, and pays each order's owner only (sections 1.4, 1.5; 7.3 below). Shares cannot move
+  between holders except through it while transfers are locked (section 1.3), so it is the only place they are traded.
+- *What the contract does not do.* It takes no fee (`FEE_BPS = 0`, `SecondaryMarket.sol:80`), has no owner or
+  administrator, holds nothing for the operator, and has no allowlist, identity check, sanctions check or country check.
+  Nobody screens buyers or sellers at any point.
+- *The price token.* It is whatever token the founder names (section 3.3). It may be a stablecoin issued by a third
+  party. Whether that brings its own rules was not examined.
+- *What was not checked.* Any text of MiCA, of the AMLR or of the EU's transfer-of-funds rules, and whether the Shares
+  are a crypto-asset under MiCA or a financial instrument under the EU's markets rules.
+
+**Questions.**
+
+26. Are the Shares, as the code defines them, a crypto-asset within MiCA, or a financial instrument that takes them
+    outside it (and into the EU's trading-venue rules instead)? Does the answer differ between work-earned, founder
+    and bought Shares (question 2)?
+27. If MiCA applies and EU users are in scope: is the weekly market an operation of a trading platform for
+    crypto-assets, and who is the provider (the page host, the keeper operator, the deployer, the kit's author, or
+    no one)? Does non-custody or the absence of operator discretion change the answer for any of them?
+28. If a CASP service is involved, what does authorization require of this operator, and what is the smallest
+    arrangement that avoids needing it (for example, excluding the EU under option (b) or (c), and how that exclusion
+    must be done for it to count)?
+29. Does admitting the Shares to trading on the market bring any white-paper or admission duty, and on whom? Does the
+    founder's choice of price token bring any duty because of the token's own status?
+30. Do the EU's anti-money-laundering rules (AMLR) make anyone here an obliged entity, with customer checks, and from
+    what size or point (sign-in, first order, each order)? What does the operator owe if it is not an obliged entity but
+    hosts the page?
+
+### 7.3 Money transmission
+
+Counsel's preliminary view (not an opinion) is that, because the escrow moves price tokens peer to peer, is
+non-custodial and pays only an order's owner, the market is likely outside money transmission, but that the paymaster
+fee-sponsorship arrangement deserves one line of analysis.
+
+**The escrow facts, read from `contracts/src/SecondaryMarket.sol`.**
+
+- A bid moves exactly `lots x limit price` of the price token from the bidder into the market contract
+  (`bid`, line 302; `quote.safeTransferFrom(msg.sender, address(this), escrow)`, line 312). The amount received is
+  checked, so a token that skims a fee is refused (section 1.4).
+- `settle` makes no token transfer. It records fills (the function's own comment, around lines 372 to 380).
+- The only transfers out of the market are to an order's owner: `claimQuote(id, who)` pays `who` the proceeds of
+  that one order or the refund of that one bid (`quote.safeTransfer(who, amount)`, line 476); `claimShares` pays `who`
+  Shares (lines 414 to 440); `cancelSell` returns Shares to the caller (line 349). `claimQuote` and `claimShares` can
+  be called by anyone, and the money or Shares go to the order's owner, never the caller. Each amount is bounded by
+  that order's own escrow and the round's own ledger.
+- There is no function to send the price token to any other address, no fee, and no owner or administrator. The exact
+  external function list is pinned by `test_the_market_abi_matches_the_reviewed_allowlist` (section 4.2, row 6).
+- The operator is not in the flow. If the price token's issuer can freeze or block, a payout waits (section 4.2, row 11);
+  nothing the operator does can redirect it.
+
+**The paymaster, from the repository.** Passkey accounts send through a ZeroDev paymaster that pays the network fee
+(`web/src/features/identity/lib/sponsoredSender.ts`, header). On Sepolia the fee is paid under a gas policy on a ZeroDev
+project the operator holds, set to sponsor every operation with a spending limit (`docs/sepolia-testnet.md:122`); when
+that limit is spent the paymaster refuses and the app says so (`docs/error-reporting.md:50`). The paymaster pays the
+network fee only. The repository does not show it can move a user's price tokens or Shares (section 4.2, row 14), and
+custody terms of that provider were not reviewed. On Sepolia the fee is paid in test ETH, which has no value. Who would
+fund the policy on a value-bearing network is not decided anywhere in the repository. Whether sponsored operations would
+include market orders was not traced; the order forms take the same sender type
+(`web/src/features/launchpad/ui/TradingOrderForms.tsx:30`), and the pilot policy is described as sponsoring every
+operation. The keeper's own fee is paid by the keeper's key (section 4.2, row 9) and is not sponsored.
+
+**Questions.**
+
+31. Is a non-custodial market that escrows the price token in a contract and pays only an order's owner outside
+    money-transmission and similar licensing, in the United States (including Puerto Rico) and in each place chosen in
+    7.0? Does anything in section 4.2 (the factory, the kit, the keeper) change that?
+32. If the operator funds network fees for users' market orders through the paymaster, does that make the operator a
+    party to, or a facilitator of, each transfer, or a subsidiser of traders? Would it change the intermediary analysis
+    in questions 5 and 6, and should fee sponsorship be excluded from market orders?
+
+### 7.4 The platform as a payer (real-money terms worklist)
+
+Counsel's second round noted that tax reporting in this brief (question 10) stops at holders. When real money arrives
+the platform may itself be a payer with reporting duties of its own.
+
+**What is known.** The operator pays no one today. The terms draft says the service does not yet pay anyone money and
+that Shares cannot yet be sold or bought through it (`docs/policies/TERMS-DRAFT.md:56`); the policy response table says
+the same and requires separate real-money terms first (`docs/policies/LAWYER-FEEDBACK-RESPONSE.md`, point 12). In the
+pilot the only reward a project can award is Shares, which have no value on a test network
+(`docs/policies/TERMS-DRAFT.md:60`). The bounty contracts exist on Sepolia and are paid in Circle's test USDC
+(`contracts/script/DeployLaunchKit.s.sol:139`); the money in them is posted by others, and the operator does not hold
+or send it. The market takes no fee and the operator receives no sale money (section 2).
+
+**Questions to add to the real-money terms worklist.**
+
+33. In the United States, when contributors are paid in money or in Shares that have value, is the platform (the
+    operator, or a DevCo in question 7) a payer with information-reporting duties (for example the 1099 family of
+    forms), or only the project or the DAO? Does the answer change if the platform hosts the page but never touches
+    the money, or if a contract the platform deployed makes the payment?
+34. In the EU, does the crypto-asset reporting regime (DAC8) put a duty on the platform or on anyone else here, and from
+    what point (first user, first transfer, a threshold)? Does it matter whether the platform is a CASP at all (7.2)?
+35. Are Shares awarded for work, and Shares bought and sold, reportable by anyone other than the holder, and is
+    anything the app can show a holder (for example their history of orders and collections) needed to meet that duty?
+    Question 10 asks the holder-side version.
+
+### 7.5 The worklist these questions join
+
+The real-money terms worklist is the one in `docs/policies/LAWYER-FEEDBACK-RESPONSE.md` (point 12: employment, tax,
+consumer rules, age). Questions 33 to 35 are to be added to it by the owner (section 8, item 20). That file is outside
+this brief and was not edited.
+
 ---
 
 ## 8. Open items the owner must decide
 
 These come from the review's "needs a human" list. None was changed by the agents. Each shows the options the review
-recorded. The low-severity run raised no new item; it touched items 3, 6, 12 and 14, which are annotated below.
+recorded. The low-severity run raised no new item; it touched items 3, 6, 12 and 14, which are annotated below. Items
+17 to 20 were added on 2026-11-06 after counsel's second round; items 18 and 19 are counsel's two go-live conditions
+for any value-bearing network.
 
 1. **Which tokens may be a market's price token.** Today any contract with code works, and the page prints whatever
    name the token gives itself (the page now also shows its short address and warns when it differs from the sale
@@ -664,6 +853,102 @@ recorded. The low-severity run raised no new item; it touched items 3, 6, 12 and
     more headroom: lower the cap, or make settle resumable.
 16. **Whether to silence or soften the price-token mismatch warning** for projects with no recorded token sale
     currency (the warning is silent there).
+17. **Where the market may be offered (question 20), decided first.** The options and a proposal are in 7.0: (a) test
+    network only, (b) United States including Puerto Rico only, (c) United States and United Kingdom, (d) United States
+    and named EU member states, (e) everyone except sanctioned places. Proposal: stay at (a) until counsel has answered
+    questions 5 to 7, then name (b) as the first value-bearing target. This is the owner's decision; counsel's second
+    round asked that it be made before counsel is engaged, and the EU questions in 7.2 stay dormant or become live
+    according to it.
+18. **Go-live condition 1: make naming the frozen `WeeklyRounds` as an exit exchange impossible on a value-bearing
+    network (extends item 3).**
+    *Counsel's preliminary view:* the slot must be sealed, or the defective contract made undeployable on a value-bearing
+    network, so that naming a contract known to have theft defects is impossible, not prevented by process.
+    *Facts.*
+    - `WeeklyRounds` WAS deployed on the Sepolia test network, at `0xE684Bb57c31Faa4b8e854DAB9d141D06144899A2`, on 5
+      November 2026 (the manifest `contracts/deployments/dao-launch-kit-11155111.json`, role `weekly-rounds`, block
+      12072551, was committed that day in `7d915f2`). It is a test-network contract, its payment currency there is
+      Circle's test USDC (`DeployLaunchKit.s.sol:139`), and the value at risk on that network is nil. It cannot be
+      removed from the chain.
+    - How it was deployed: `scripts/sepolia-deploy.sh` runs `contracts/script/DeployLaunchKit.s.sol` and deploys
+      whatever that Forge script deploys (the wrapper's header says a pilot-only deploy set would change the frozen Forge script). In that script `weeklyRounds` is created only when `court != address(0)` (lines 87 to 93),
+      and `court` exists only when `createToken` does, which is only when `isTestNetwork(block.chainid)` is true, that
+      is Sepolia (11155111) or a local chain (31337) (lines 72 and 120 to 122). So the script already does not
+      deploy it on any other chain, but only as a side effect of that chain, with no explicit refusal and no test
+      pinning it (I found no test of `isTestNetwork`). The wrapper `sepolia-deploy.sh` also refuses to broadcast
+      unless the node is Sepolia (line 71), but running `forge script` directly skips the wrapper.
+    - The script does not stop anyone else from deploying `contracts/src/WeeklyRounds.sol` on any chain. What stops a
+      DAO from using it is nothing in the contracts: `announceExitExchange(address)` in `MolochPatched.sol` (line 1679)
+      accepts any non-zero address, and anyone can switch it on 30 days later (`activateExitExchange`, line 1688). Tests
+      for the slot are in `contracts/test/ExitExchange.t.sol`; none pins that the old contract is refused.
+    - Freeze: `scripts/sepolia-deploy.sh` (line 25) says a change to the Forge script is frozen with the contracts
+      (D137). `DECISIONS.md` D174 records that the owner lifted the contract freeze for development on 2026-11-01, and
+      D180 started v5 development. Neither says whether the lift covers a deployment script as against a contract, and
+      the script's comment has not been updated. So a chain-id guard in the script needs the owner to say so, and lift
+      the freeze for that file.
+    *Options.*
+    1. **Seal the exit-exchange slot at birth for new-flow projects** (a contract change: the V2 kit makes the slot
+       permanently unusable, so no DAO made that way can ever name any exchange). This is the only option that makes
+       naming impossible, for the old contract and for any copy of it. The market does not need the slot (it uses the
+       transfer exemption, section 1.3). Projects created before the change keep the slot they were made with. Needs
+       the freeze lifted for the contracts, a test that pins the refusal, a mutation entry, and the pilot-kit decision
+       in item 12.
+    2. **A chain-id guard in `DeployLaunchKit.s.sol`** (the smallest change): an explicit refusal to deploy
+       `WeeklyRounds` unless the chain is Sepolia or 31337, with a test. It makes this repository's script unable to put
+       it on mainnet. It does not stop another route to the same code, and it does not stop a DAO naming a copy.
+    3. **A chain-id guard in the `WeeklyRounds` constructor** (a change to a frozen, deliberately unrepaired file): the
+       repository's source then cannot be deployed on a value-bearing chain by any route. A modified copy still can.
+    4. **Leave it and document it** (the status quo). Counsel's preliminary view is that this is not enough.
+    *Recommendation (a proposal, the owner decides):* option 1 before any value-bearing network, with its test; option 2
+    now as the interim step, if the owner lifts the freeze for that script. Not options 3 or 4.
+19. **Go-live condition 2: the wash-trade price (question 14, extends item 6).** One person using two addresses can
+    set a round's price (section 6.2), and a screen that prints a self-dealt price is, in counsel's words as relayed, a
+    standing manipulation exhibit.
+    *Counsel's preliminary view:* resolve it conservatively: no price history, or a persistent label that one person
+    can set this price.
+    *Where the app shows a price or a price history, at commit `1deffc4`:*
+    - **The Trading card's round line** is the only place the V2 market prints a settled price: "Settled: N lots traded
+      at P a lot, after offers closed ..." (`roundLine` in `web/src/features/launchpad/lib/trading-copy.ts`, line 203,
+      shown at `TradingCard.tsx` line 450). A round where nothing crossed prints no price. No label about who can set
+      the price is beside it, and "How trading works" (collapsed by default) does not say it either (section 1.7).
+    - **The Trading card's earlier-rounds block** (`TradingEarlier.tsx`) prints the amounts a holder can collect and
+      not a round price (a search found no price text there). There is no price history, last price or chart in the
+      V2 market card.
+    - **The listing form and the order forms** (`TradingListingForm.tsx`, `TradingOrderForms.tsx`) show the price range
+      and the prices a person types. They are not trades.
+    - **The frozen weekly-rounds card** prints "Last trade" and a history table ("Price a Share") and the clearing table
+      (`WeeklyRoundsCard.tsx`, `RoundHistoryPanel` from line 225, table from line 252, clearing table around lines 354 to
+      377; `lastTradeLine` in `rounds-copy.ts`, around line 210). It is mounted from `ContributorFundsTab.tsx` (line 191),
+      `FundingCard.tsx` (its `RoundPanel`) and `DaoOverview.tsx` (`LeavingNowNote`) and shows only where a build names a weekly-rounds
+      contract (`VITE_WEEKLY_ROUNDS`, `docs/sepolia-testnet.md:113`), which the hosted image does not. It belongs to the
+      older contract of item 18, not to the V2 market.
+    - **`web/src/features/launchpad/lib/candles.ts`** draws candles from the bids people recorded for a primary sale
+      (its header says they are bid prices, not trades). It feeds `SalePriceCard.tsx` and `PostContent.tsx`, not the
+      market.
+    - **`MARKET_REVIEWED`** (`trading-copy.ts`, line 595) is not a price. It is the switch behind "This market has not
+      been independently reviewed. Do not trade with money you cannot lose." on the listing form (`unreviewedLine`).
+      It stays false, and it is flipped only at the release decision.
+    - At the time of writing the working tree also held uncommitted edits by another hand to `TradingCard.tsx`,
+      `WeeklyRoundsCard.tsx`, `trading-copy.ts` and `rounds-copy.ts`, and a new `PriceSetterNote.tsx` with a test. They
+      appear to add a standing line beside printed prices. They are not in the commit this brief describes, were not
+      reviewed here, and nothing in this item relies on them.
+    *Options.*
+    1. **No price history of any kind on the V2 market, and no printed price** (the round line says lots traded, not the
+       price). Smallest exposure. A buyer still sees what they pay in the amount they collect.
+    2. **No price history, and a persistent label wherever a settled price prints:** plain visible text, not collapsed,
+       not a tooltip, saying one person can set this price. Keeps the price a buyer needs.
+    3. **Keep the price as it is, and the collapsed explanation** (the status quo). Counsel's preliminary view is that
+       this is not conservative.
+    4. **Change the economics** (a non-zero fee or a minimum order, item 6). An owner parameter, not a screen fix, and it
+       does not close the case on its own.
+    *Recommendation (a proposal, the owner decides):* option 2, with the rule that no history, last-price line or chart
+    is ever added to the V2 market card, pinned by a test; choose option 1 instead if counsel prefers no printed price at
+    all. The label's exact words belong to counsel and to the plain-words guide (`PLAIN-WORDS.md`, section 4: do not weaken
+    a disclosure, add no hint of returns). The frozen weekly-rounds card stays off.
+20. **Add the platform-as-payer questions to the real-money terms worklist** (questions 33 to 35 in 7.4). The worklist is
+    in `docs/policies/LAWYER-FEEDBACK-RESPONSE.md` (point 12). Options: add them there now; or hold them until the
+    jurisdiction list (item 17) is chosen. Recommendation (a proposal): add them now, since counsel asked for them and
+    the pilot pays no one, so nothing changes today. The operator-side answer (does the platform pay anyone) is "no" in the
+    pilot.
 
 Items that are the owner's economic parameters (fee, maturity, founder schedule) are in section 3 and were not
 changed.
