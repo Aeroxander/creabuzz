@@ -8,6 +8,7 @@ These terms are an agreement between you and [operator name and legal form] ("we
 
 - Your account is a key. With a passkey that supports it, the key is made again each time you sign in. Otherwise it is kept in your browser's storage (or in a browser wallet, if this server offers one). The privacy note, in "Your key and your device", says how this works. We cannot see the key and cannot recover it. If you lose it and have not saved your recovery key, the account is gone.
 - You must be at least 18 years old. [Higher age where local law requires it: counsel to choose between 18 everywhere, or a higher age in named places.] When you create an account you confirm your age in a box. We do not check it. If we find that someone under 18 has an account, we may close it.
+- The web app is where this service launches. Its sign-up screens show these terms and the age box. [The mobile app has its own age text and no screen that shows or asks you to agree to these terms: owner to decide between building one before the mobile app is offered, offering the mobile app to read only, or not offering it.]
 - You are responsible for what is done with your key. Anyone who has your key can act as you, and we cannot tell the difference. The privacy note says how the key is stored and how to keep it safe.
 
 ## What you post is public and signed
@@ -15,6 +16,7 @@ These terms are an agreement between you and [operator name and legal form] ("we
 - Posts, replies, votes, boards you start, your profile and who you follow are public. Each is signed with your key, so anyone can check it came from you.
 - Other servers and apps that speak the same open protocol (Nostr) may copy what you post. When you delete something we stop showing it here, but we cannot remove copies other people or servers already have.
 - You keep the rights to what you post. You give us a non-exclusive, worldwide, free permission to store it, show it and send it to other people and servers so the service works. Work you submit to a project is covered by the section "Work for projects" below.
+- A post cannot be recalled once it is sent. It is shared with other servers and kept in our backups. If you delete it, we stop showing it on this server, but we cannot pull back copies held elsewhere, and a backup keeps it until the backup expires.
 
 ## Rules
 
@@ -96,9 +98,9 @@ Nothing in these terms takes away rights the law gives you as a consumer, or lim
 
 ## Changes and ending
 
-- We may change these terms. When we do, we post the change in General and the date above changes.
+- We may change these terms. When we do, the date above changes and we post the change in General.
+- Before a material change to these terms or to the privacy note takes effect, we post a notice about it in General. A change is material if it affects your rights or what we do with your data, as opposed to a correction or clearer wording. [Pinning that notice: the app lets a moderator pin a thread on a board, but has no way to pin a message in a room such as General; owner to decide between posting the notice as a pinned board thread as well, or building pinning for rooms.] [How many days before the change takes effect the notice is posted: owner to decide.]
 - When the terms or the privacy note change, the web app asks you to agree again the next time you open it signed in. Until you agree you can read, save your recovery key and sign out, but you cannot post or act. If you do not agree, you can stop using the service. The version you agreed to is kept in your browser, so a browser that has lost it, or a second device, asks again.
-- [Notice before a change takes effect, for example a message or banner: not built; the app only asks when you next open it after the change. Counsel to confirm whether that is enough for a material change.]
 - [The desktop app does not yet ask you to agree again, and its own sign-up screens ask for the terms on invite joins only: owner to build this, or to offer only the web app, before launch.]
 - You can stop using the service at any time.
 - [Governing law and courts: counsel to choose between the operator's home law and courts, the same with local consumer protections kept, or arbitration.]
