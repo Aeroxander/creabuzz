@@ -4,7 +4,9 @@
 #   ./run.sh backup [NAME]       While the server runs: the database, then the media bucket, then the git data, then
 #                                the settings (.env, the policy files and their stamps), with a manifest of checksums.
 #                                That folder is then packed into one file, encrypted to BUZZ_BACKUP_AGE_RECIPIENT (an
-#                                age public key in .env), and the plain folder is removed:
+#                                age public key in .env), and the plain folder is removed (also when the backup fails
+#                                or is stopped before the encrypted file exists; if it cannot be removed, the script
+#                                names it and exits non-zero):
 #                                  backups/<UTC time>.tar.age   the encrypted backup
 #                                  backups/<UTC time>.sha256    its sidecar: the hash of the .tar.age, and the hash of
 #                                                               the MANIFEST.sha256 packed inside it
@@ -43,8 +45,35 @@ die() {
 
 # Where a backup is opened (decrypted) for verify-backup or restore; removed however this script ends.
 TMP_DIR=""
+# The unfinished plain backup folder of an encrypted backup, and its half-written .partial file. The folder holds every
+# secret in .env and the whole database, so it is removed however this script ends before the encrypted file is in
+# place: an error, Ctrl-C or a TERM from cron. Empty once it is gone, and always empty for a deliberate plain backup.
+PLAIN_DIR=""
+PARTIAL_FILE=""
+PLAIN_REMOVE_FAILED=false
+
+# Removes a plain backup folder, as the operator first and, if that fails, as root in a container: the media bucket is
+# filled by a container that runs as root, and the operator cannot delete the root-owned folders inside it. Returns
+# non-zero, after saying which folder is left, only when both fail.
+remove_plain_dir() {
+  local dir="$1"
+  if rm -rf -- "$dir" 2>/dev/null && [[ ! -e "$dir" ]]; then
+    return 0
+  fi
+  if compose run --rm --no-deps -T --user 0 -v "$dir:/plain" --entrypoint /bin/sh relay -euc \
+    'find /plain -mindepth 1 -delete' >/dev/null 2>&1 && rm -rf -- "$dir" 2>/dev/null && [[ ! -e "$dir" ]]; then
+    return 0
+  fi
+  printf '\033[31m[backup] the plain backup folder %s could not be removed. It holds every secret in .env and the whole database: delete it now (sudo rm -rf %s).\033[0m\n' "$dir" "$dir" >&2
+  return 1
+}
+
 cleanup() {
   [[ -z "$TMP_DIR" ]] || rm -rf -- "$TMP_DIR"
+  [[ -z "$PARTIAL_FILE" ]] || rm -f -- "$PARTIAL_FILE"
+  if [[ -n "$PLAIN_DIR" && "$PLAIN_REMOVE_FAILED" != true && -e "$PLAIN_DIR" ]]; then
+    remove_plain_dir "$PLAIN_DIR" || true
+  fi
 }
 trap cleanup EXIT
 trap 'exit 1' INT TERM HUP
@@ -100,6 +129,8 @@ backup() {
   umask 077
   mkdir -p "$dir"
   dir="$(cd "$dir" && pwd)"
+  # From here until the encrypted file is in place, any way out of this script removes the plain folder (cleanup above).
+  [[ -z "$BACKUP_RECIPIENT" ]] || PLAIN_DIR="$dir"
 
   step "the database and the object store (started if they are not running)"
   compose up -d --wait postgres minio >/dev/null
@@ -177,7 +208,8 @@ ABOUT
 }
 
 # Packs the finished folder into DIR.tar.age, encrypted to the public key, and writes DIR.sha256 beside it. The plain
-# folder is removed only once the encrypted file is written, non-empty and an age file. The key to open it is not on
+# folder is removed once the encrypted file is written, non-empty and an age file; if encrypting fails it is removed too,
+# since a plain copy of every secret must not pile up under backups/ (nothing is left but the error). The key to open it is not on
 # this machine, so there is no trial decrypt here; the sidecar's hashes (the .tar.age's, and the MANIFEST.sha256 packed
 # inside it) are what verify-backup checks later, and verify-backup with the key opens it.
 encrypt_backup() {
@@ -188,20 +220,27 @@ encrypt_backup() {
   manifest_hash="$(sha256 "$dir/MANIFEST.sha256" | cut -d' ' -f1)"
 
   step "encrypting -> $name.tar.age"
+  PARTIAL_FILE="$out.partial"
   if ! tar -cf - -C "$parent" "$name" | age -r "$BACKUP_RECIPIENT" -o "$out.partial"; then
-    rm -f "$out.partial"
-    die "the backup could not be encrypted; the plain folder $dir is still here (it holds every secret: move or delete it once you have dealt with the error)"
+    die "the backup could not be encrypted; the unfinished plain folder is removed, so run the backup again"
   fi
   if [[ ! -s "$out.partial" || "$(head -c 21 "$out.partial")" != "age-encryption.org/v1" ]]; then
-    rm -f "$out.partial"
-    die "the encrypted file is empty or not an age file; the plain folder $dir is still here"
+    die "the encrypted file is empty or not an age file; the unfinished plain folder is removed, so run the backup again"
   fi
   mv "$out.partial" "$out"
+  PARTIAL_FILE=""
   {
     (cd "$parent" && sha256 "$name.tar.age")
     echo "manifest_sha256=$manifest_hash"
   } >"$dir.sha256"
-  rm -rf -- "$dir"
+  # The encrypted file is in place. If the folder cannot be removed (see remove_plain_dir) the script stops with an
+  # error that names it, so cron sees a failure and the operator is told which folder to delete.
+  if remove_plain_dir "$dir"; then
+    PLAIN_DIR=""
+  else
+    PLAIN_REMOVE_FAILED=true
+    exit 1
+  fi
 }
 
 # A plain backup folder against its manifest. LABEL names it in messages (a folder opened from a .tar.age is a temp folder).

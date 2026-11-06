@@ -16,7 +16,7 @@ These terms are an agreement between you and [operator name and legal form] ("we
 - Posts, replies, votes, boards you start, your profile and who you follow are public. Each is signed with your key, so anyone can check it came from you.
 - Other servers and apps that speak the same open protocol (Nostr) may copy what you post. When you delete something we stop showing it here, but we cannot remove copies other people or servers already have.
 - You keep the rights to what you post. You give us a non-exclusive, worldwide, free permission to store it, show it and send it to other people and servers so the service works. Work you submit to a project is covered by the section "Work for projects" below.
-- A post cannot be recalled once it is sent. It is shared with other servers and kept in our backups. If you delete it, we stop showing it on this server, but we cannot pull back copies held elsewhere, and a backup keeps it until the backup expires.
+- A post cannot be recalled once it is sent. It can be copied by other servers and apps, and it is kept in our backups. If you delete it, we stop showing it on this server, but we cannot pull back copies held elsewhere, and a backup keeps it until the backup expires.
 
 ## Rules
 

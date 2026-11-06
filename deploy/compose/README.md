@@ -195,7 +195,12 @@ AGE_IDENTITY_FILE=~/creaton-backup.key ./run.sh restore backups/<time>.tar.age -
 ```
 
 `backup` builds one folder, checks it against its manifest, packs it into `backups/<UTC time>.tar.age`, writes the
-sidecar `backups/<UTC time>.sha256`, and only then removes the folder. The folder holds `postgres.dump` (the whole
+sidecar `backups/<UTC time>.sha256`, and removes the folder. If the backup fails or is stopped (an error, Ctrl-C, a TERM
+from cron) before the encrypted file exists, it removes the unfinished folder too, because the folder holds every secret
+in `.env`. The media files come from a container that runs as root, so if the operator cannot delete the folder the
+script removes it through a root container; if that fails as well it prints the folder's name, tells you to delete it
+(`sudo rm -rf <folder>`) and exits with an error, so cron sees a failure. A power cut or `kill -9` cannot run that cleanup. After a failed night, look in `backups/` for a
+plain dated folder and delete it. The folder holds `postgres.dump` (the whole
 database), `media/` (the bucket's objects), `git.tar.gz` (the git data), `env` (this `.env`), `policies/` (the policy
 files, if set), `about.txt` (when, which image and revision, the database migration, how many events) and
 `MANIFEST.sha256`. The database is dumped first, so the media and git copies taken after it hold everything it refers

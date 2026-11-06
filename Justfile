@@ -462,7 +462,9 @@ ci: check test-unit desktop-test desktop-build desktop-tauri-check desktop-tauri
 test:
     ./scripts/run-tests.sh all
 
-# Run unit tests only (no infra needed)
+# Run unit tests only (no infra needed). The backup encryption test needs the `age` program
+# (sudo apt-get install -y age, or brew install age) and fails loudly without it; CI installs it.
+# Set ALLOW_SKIP_AGE=1 to skip only its age cases on a machine that cannot install it.
 test-unit:
     #!/usr/bin/env bash
     set -euo pipefail

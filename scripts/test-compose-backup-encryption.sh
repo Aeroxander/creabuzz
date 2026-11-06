@@ -12,6 +12,9 @@
 #   - verify-backup with AGE_IDENTITY_FILE opens it and checks the manifest; changes inside the archive fail
 #   - restore needs --yes and AGE_IDENTITY_FILE, uses the decrypted data, and leaves no temp folder, also on failure
 #   - plain-folder backups still verify and restore; prune-backups removes both forms
+#   - a backup that fails (a docker step) or is stopped (TERM) before the encrypted file exists leaves no plain folder
+#     and no .partial file; a folder the operator cannot delete (root-owned media files) is removed through a container,
+#     and when that fails too the script exits non-zero and names the folder
 #
 # Needs the `age` program (apt-get install -y age / brew install age). Without it the cases that need it are skipped,
 # loudly, and the script exits 1 unless ALLOW_SKIP_AGE=1.
@@ -47,6 +50,12 @@ sha() {
 cat >"${TEST_DIR}/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >>"${DOCKER_LOG}"
+# Test switches: fail any call whose arguments contain DOCKER_FAIL_ON; send TERM to the calling script on DOCKER_TERM_ON.
+if [[ -n "${DOCKER_FAIL_ON:-}" && "$*" == *"$DOCKER_FAIL_ON"* ]]; then exit 1; fi
+if [[ -n "${DOCKER_TERM_ON:-}" && "$*" == *"$DOCKER_TERM_ON"* ]]; then
+  kill -TERM "$PPID"
+  exit 0
+fi
 args=("$@")
 n=${#args[@]}
 for ((i = 0; i < n; i++)); do
@@ -61,6 +70,10 @@ for ((i = 0; i < n; i++)); do
       ;;
     -v)
       v="${args[i + 1]}"
+      if [[ "$v" == *:/plain ]]; then
+        # The root container that empties a plain folder the operator could not delete.
+        /bin/rm -rf "${v%:/plain}"/* "${v%:/plain}"/.[!.]* 2>/dev/null
+      fi
       if [[ "$v" == *:/backup ]]; then
         host="${v%:/backup}"
         if [[ "$host" == */media ]]; then
@@ -81,6 +94,21 @@ if [[ "$*" == *psql* ]]; then echo 7; fi
 exit 0
 STUB
 chmod +x "${TEST_DIR}/bin/docker"
+# A stand-in `rm` that cannot delete the folder named in RM_FAIL_DIR while it still has something in it (as when the
+# media bucket's root container left root-owned folders inside); everything else is the real rm.
+cat >"${TEST_DIR}/bin/rm" <<'STUB'
+#!/usr/bin/env bash
+if [[ -n "${RM_FAIL_DIR:-}" ]]; then
+  for a in "$@"; do
+    if [[ "$a" == "$RM_FAIL_DIR" && -d "$a" && -n "$(ls -A "$a")" ]]; then
+      echo "rm: cannot remove '$a/media/x': Permission denied" >&2
+      exit 1
+    fi
+  done
+fi
+exec /bin/rm "$@"
+STUB
+chmod +x "${TEST_DIR}/bin/rm"
 export PATH="${TEST_DIR}/bin:${PATH}"
 export DOCKER_LOG="${TEST_DIR}/docker.log"
 : >"$DOCKER_LOG"
@@ -222,6 +250,73 @@ got="$(cd "$B" && sha 20260101T030000Z.tar.age | cut -d' ' -f1)"
 grep -qE '^manifest_sha256=[0-9a-f]{64}$' "$SIDE" 2>/dev/null && pass "the sidecar holds the manifest's hash" || fail "the sidecar has no manifest_sha256 line"
 if [[ -n "$(find "$B" -perm -004 -type f 2>/dev/null | head -n 1)" ]]; then fail "a backup file is readable by everyone"; else pass "backup files are private to the operator"; fi
 [[ -z "$(temp_left)" ]] && pass "backup left no temp folder" || fail "backup left a temp folder: $(temp_left)"
+
+
+# ─── A backup that does not finish leaves no plain folder ──────────────────────────────────────────────────────────
+# The plain folder holds env (every secret) and the whole database. A nightly job that keeps failing must not pile it up.
+no_leftovers() { # description, store folder
+  if [[ -z "$(ls -A "$2")" ]]; then pass "$1: nothing is left in the backup folder"; else fail "$1: left behind: $(ls -A "$2" | tr '\n' ' ')"; fi
+}
+F="${TEST_DIR}/failstore"
+mkdir -p "$F"
+: >"$DOCKER_LOG"
+if DOCKER_FAIL_ON='--images' run backup "$F/20260102T030000Z"; then
+  fail "a backup whose docker step failed reported success"
+else
+  pass "a backup whose docker step failed (after the env copy) fails"
+fi
+grep -q -- '--images' "$DOCKER_LOG" && pass "the failure came after the settings were copied into the folder" || fail "the failing step was not reached, so the test proves nothing"
+no_leftovers "a failed backup" "$F"
+[[ -z "$(temp_left)" ]] && pass "a failed backup left no temp folder" || fail "a failed backup left a temp folder"
+
+: >"$DOCKER_LOG"
+if DOCKER_TERM_ON='cp postgres:' run backup "$F/20260103T030000Z"; then
+  fail "a backup that was sent TERM reported success"
+else
+  pass "a backup stopped by TERM (cron, Ctrl-C) ends with an error"
+fi
+grep -q 'cp postgres:' "$DOCKER_LOG" && pass "the signal came while the plain folder held the database dump" || fail "the signal step was not reached"
+no_leftovers "a stopped backup" "$F"
+
+# The encryption itself fails (age cannot write): the plain folder goes, and so does the half-written file.
+mkdir -p "${TEST_DIR}/failage"
+cat >"${TEST_DIR}/failage/age" <<AGESTUB
+#!/usr/bin/env bash
+if [[ "\$*" == *" -o "* ]]; then cat >/dev/null; echo partial >"\${@: -1}"; exit 1; fi
+exec "$(command -v age)" "\$@"
+AGESTUB
+chmod +x "${TEST_DIR}/failage/age"
+if (cd "$C" && PATH="${TEST_DIR}/failage:$PATH" ./run.sh backup "$F/20260104T030000Z") >"$OUT" 2>&1; then
+  fail "a backup whose encryption failed reported success"
+else
+  pass "a backup whose encryption failed ends with an error"
+  says 'could not be encrypted' && pass "and says so" || fail "the encryption failure is not named: $(head -c 300 "$OUT")"
+fi
+no_leftovers "a backup whose encryption failed" "$F"
+
+# The plain folder holds something the operator cannot delete: it is removed through a root container instead.
+: >"$DOCKER_LOG"
+if RM_FAIL_DIR="$F/20260105T030000Z" run backup "$F/20260105T030000Z"; then
+  pass "a plain folder the operator cannot delete is removed through a container, and the backup finishes"
+  grep -q ':/plain' "$DOCKER_LOG" && pass "the root container did the removal" || fail "the container removal was not used"
+  [[ ! -e "$F/20260105T030000Z" && -s "$F/20260105T030000Z.tar.age" && -s "$F/20260105T030000Z.sha256" ]] \
+    && pass "the plain folder is gone and the encrypted file and sidecar are there" || fail "after the container removal: $(ls -A "$F")"
+else
+  fail "the container removal did not save the backup: $(head -c 400 "$OUT")"
+fi
+rm -f "$F"/20260105T030000Z.*
+
+# ... and when that fails too the script exits non-zero and names the folder it could not remove.
+: >"$DOCKER_LOG"
+if RM_FAIL_DIR="$F/20260106T030000Z" DOCKER_FAIL_ON=':/plain' run backup "$F/20260106T030000Z"; then
+  fail "a backup that left its plain folder behind reported success"
+else
+  pass "a backup that cannot remove its plain folder exits with an error"
+  says "$F/20260106T030000Z could not be removed" && pass "and names the folder to delete" || fail "the message does not name the folder: $(head -c 400 "$OUT")"
+  says 'done:' && fail "it printed the done message" || pass "and does not print the done message"
+fi
+[[ -d "$F/20260106T030000Z" ]] && pass "the folder really is still there (the message is true)" || fail "the folder is gone, so the message was wrong"
+/bin/rm -rf "$F"
 
 # A backup with no name goes to backups/<UTC time>.tar.age.
 if run backup && ls "$C"/backups/[0-9]*T[0-9]*Z.tar.age >/dev/null 2>&1; then pass "a default backup is backups/<UTC time>.tar.age"; else fail "a default backup is not backups/<UTC time>.tar.age: $(head -c 300 "$OUT")"; fi

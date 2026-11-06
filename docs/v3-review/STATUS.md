@@ -125,7 +125,7 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 
 0. **Weekly sales (D181, D182), in this order:** read the brief's section 8 and decide the open items (price-token policy, a floor
    for the founder schedule, whether the old rounds contract may be named as an exit exchange, order caps, the allocation
-   rule, wash-trade wording, quorum floors, listing notice, which kit pilots use, the pilot build's Trading card, now hidden there, so say whether to keep that);
+   rule, wash-trade wording (a standing line saying one person can set a round's price is built under every printed weekly price, 4c132a0; its words are counsel's and not approved, and your choice between that line and printing no price is open), quorum floors, listing notice, which kit pilots use, the pilot build's Trading card, now hidden there, so say whether to keep that);
    send [LAWYER-BRIEF-WEEKLY-SALES.md](LAWYER-BRIEF-WEEKLY-SALES.md) and the review packet to counsel and to the outside
    reviewer; walk the changed trading flows yourself (`scripts/web-trading-e2e.sh` shows what the agents drove); decide whether the
    fixes from the low-severity run get a second look (a review of them has not been run); and only then consider a release decision, which is never bundled with a

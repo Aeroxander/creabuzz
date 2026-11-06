@@ -16,6 +16,9 @@ Three facts shape all of it:
 - **Backups hold everything until they are pruned** (`./run.sh prune-backups DAYS`, README "Backups"). Nothing below
   reaches into an existing backup. Backups are encrypted, which protects them from being read; it does not remove
   anything from them.
+  A backup that fails or is stopped part way removes its own unfinished plain folder (it holds every secret in `.env`),
+  and if it cannot, it says which folder to delete and exits with an error. After any backup that failed, check that
+  `backups/` holds only `.tar.age` and `.sha256` files (plus the log), and delete any plain dated folder you find.
 
 ## Taking down a post and its pictures
 
@@ -171,7 +174,7 @@ the day it arrived and `<type>` is one of `authority`, `preservation`, `copyrigh
 ```bash
 mkdir -p ~/takedowns && chmod 700 ~/takedowns
 CASE=~/takedowns/$(date -u +%F)-authority-<short name>      # e.g. 2027-03-04-authority-county-court
-mkdir -m 700 "$CASE" "$CASE/request" "$CASE/response" "$CASE/data"
+mkdir -m 700 "$CASE" "$CASE/request" "$CASE/response" "$CASE/data" "$CASE/backups"
 cp ../../docs/operator-takedown-log-template.md "$CASE/LOG.md"   # fill it in as you go
 ```
 
@@ -260,7 +263,9 @@ the request names no period: counsel to say.] Write each step in the log.
    write that date in the log. Copies kept off the machine need the same pause.
 4. **Hold the backups that matter.** Pruning only looks at items directly inside `backups/` (`prune_backups` in
    `run.sh`). Copy the backup files (the `.tar.age` and its `.sha256`) that cover the period into
-   `$CASE/backups/` with `cp -p`, which keeps their age. You cannot read inside a backup on the server (the key is
+   `$CASE/backups/` with `cp -p`, which keeps their age. (`CASE` is only set in the shell where you made the folder;
+   in a new shell set it again to the same path first, and run `mkdir -p -m 700 "$CASE/backups"` if the folder is
+   missing, or `cp` will fail.) You cannot read inside a backup on the server (the key is
    not there), so choose by the time in the file name. Hold the same files off the machine. A held backup also
    holds everyone else's data and the server's secrets; keep it as private as the key you decrypt it with.
 5. **Logs roll away.** Server logs are kept by size, not by days. If the order names logs or a time they would cover,

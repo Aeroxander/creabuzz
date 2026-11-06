@@ -7,6 +7,11 @@ just test-unit          # unit tests — no infrastructure needed
 just test               # unit + integration (starts Docker if needed)
 ```
 
+`just test-unit` also runs `scripts/test-compose-backup-encryption.sh`, which needs the `age` program
+(`sudo apt-get install -y age`, or `brew install age`). Without it the script exits 1 (CI installs it; the pre-push `rust-tests`
+lane runs it too, so install it locally). Only on a machine that cannot install it, `ALLOW_SKIP_AGE=1 just test-unit`
+skips just the age cases, loudly.
+
 `just test` runs unit tests plus integration tests against Postgres and Redis
 (started automatically if not already running). Neither task runs the E2E suites in
 `buzz-test-client` — those are marked `#[ignore]` and require a running relay:

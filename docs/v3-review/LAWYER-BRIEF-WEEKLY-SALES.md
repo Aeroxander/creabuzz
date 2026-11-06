@@ -905,32 +905,42 @@ for any value-bearing network.
     standing manipulation exhibit.
     *Counsel's preliminary view:* resolve it conservatively: no price history, or a persistent label that one person
     can set this price.
-    *Where the app shows a price or a price history, at commit `1deffc4`:*
+    *Where the app shows a price or a price history, at commit `4c132a0` (the label described below is built there):*
     - **The Trading card's round line** is the only place the V2 market prints a settled price: "Settled: N lots traded
-      at P a lot, after offers closed ..." (`roundLine` in `web/src/features/launchpad/lib/trading-copy.ts`, line 203,
-      shown at `TradingCard.tsx` line 450). A round where nothing crossed prints no price. No label about who can set
-      the price is beside it, and "How trading works" (collapsed by default) does not say it either (section 1.7).
+      at P a lot, after offers closed ..." (`roundLine` in `web/src/features/launchpad/lib/trading-copy.ts`, line 222,
+      shown at `TradingCard.tsx` line 452). A round where nothing crossed prints no price (`roundShowsPrice`, line 206).
+      **Built since: a standing label follows it** (`TradingCard.tsx` line 464, only when `roundShowsPrice` is true),
+      quoted below. "How trading works" (collapsed by default) still does not say it (section 1.7); the label does not
+      depend on it.
     - **The Trading card's earlier-rounds block** (`TradingEarlier.tsx`) prints the amounts a holder can collect and
       not a round price (a search found no price text there). There is no price history, last price or chart in the
       V2 market card.
     - **The listing form and the order forms** (`TradingListingForm.tsx`, `TradingOrderForms.tsx`) show the price range
       and the prices a person types. They are not trades.
     - **The frozen weekly-rounds card** prints "Last trade" and a history table ("Price a Share") and the clearing table
-      (`WeeklyRoundsCard.tsx`, `RoundHistoryPanel` from line 225, table from line 252, clearing table around lines 354 to
-      377; `lastTradeLine` in `rounds-copy.ts`, around line 210). It is mounted from `ContributorFundsTab.tsx` (line 191),
+      (`WeeklyRoundsCard.tsx`, `RoundHistoryPanel` from line 228, table at line 256, clearing line and table at lines 358
+      to 363; `lastTradeLine` in `rounds-copy.ts`, line 227). **Built since: the same label** sits under the last-trade
+      line (line 254, when `historyShowsPrice` is true) and under the clearing line (line 361, when `clearingShowsPrice`
+      is true). It is mounted from `ContributorFundsTab.tsx` (line 191),
       `FundingCard.tsx` (its `RoundPanel`) and `DaoOverview.tsx` (`LeavingNowNote`) and shows only where a build names a weekly-rounds
       contract (`VITE_WEEKLY_ROUNDS`, `docs/sepolia-testnet.md:113`), which the hosted image does not. It belongs to the
       older contract of item 18, not to the V2 market.
     - **`web/src/features/launchpad/lib/candles.ts`** draws candles from the bids people recorded for a primary sale
       (its header says they are bid prices, not trades). It feeds `SalePriceCard.tsx` and `PostContent.tsx`, not the
       market.
-    - **`MARKET_REVIEWED`** (`trading-copy.ts`, line 595) is not a price. It is the switch behind "This market has not
+    - **`MARKET_REVIEWED`** (`trading-copy.ts`, line 613) is not a price. It is the switch behind "This market has not
       been independently reviewed. Do not trade with money you cannot lose." on the listing form (`unreviewedLine`).
       It stays false, and it is flipped only at the release decision.
-    - At the time of writing the working tree also held uncommitted edits by another hand to `TradingCard.tsx`,
-      `WeeklyRoundsCard.tsx`, `trading-copy.ts` and `rounds-copy.ts`, and a new `PriceSetterNote.tsx` with a test. They
-      appear to add a standing line beside printed prices. They are not in the commit this brief describes, were not
-      reviewed here, and nothing in this item relies on them.
+    - **The label, as built (commit `4c132a0`; option 2 below).** One sentence, `priceSetterLine` in `trading-copy.ts`
+      (line 217), shown by one plain paragraph component, `PriceSetterNote.tsx`: "One person can set a round's price. An
+      account can sell and buy in the same round, and one person can hold more than one account." It is visible text, not
+      collapsed, not a tooltip and not dismissible, and it is shown only where a price is printed. It says what the
+      market allows (section 6.2) and nothing about what the price means or is worth. The test
+      `web/src/features/launchpad/ui/priceLabelContract.test.mjs` (4 tests, passing) lists every screen that calls a price
+      printer (`roundLine`, `clearingLine`, `lastTradeLine`, `historyRow`) and fails if a new one appears without the
+      label, if the label is hidden or turned into a tooltip, or if the sentence is repeated outside `trading-copy.ts`.
+      **The wording is the builder's draft: it is counsel's to approve or change and has not been approved.** Not
+      pinned by that test: that no history, last-price line or chart is ever added to the V2 market card.
     *Options.*
     1. **No price history of any kind on the V2 market, and no printed price** (the round line says lots traded, not the
        price). Smallest exposure. A buyer still sees what they pay in the amount they collect.
@@ -944,6 +954,10 @@ for any value-bearing network.
     is ever added to the V2 market card, pinned by a test; choose option 1 instead if counsel prefers no printed price at
     all. The label's exact words belong to counsel and to the plain-words guide (`PLAIN-WORDS.md`, section 4: do not weaken
     a disclosure, add no hint of returns). The frozen weekly-rounds card stays off.
+    *Status:* option 2 is **built** (commit `4c132a0`, above) so the Trading card and the older weekly-rounds card carry the label. **Still open:** the
+    owner's choice between option 1 (no printed price) and option 2 (the label), counsel's approval or rewording of the
+    sentence, and the test for "no price history on the V2 card". Until the owner chooses, the built label is the
+    interim step, not the decision.
 20. **Add the platform-as-payer questions to the real-money terms worklist** (questions 33 to 35 in 7.4). The worklist is
     in `docs/policies/LAWYER-FEEDBACK-RESPONSE.md` (point 12). Options: add them there now; or hold them until the
     jurisdiction list (item 17) is chosen. Recommendation (a proposal): add them now, since counsel asked for them and
