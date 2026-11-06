@@ -101,6 +101,9 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - The server turns on read state (`BUZZ_V1_ENABLED`, unread markers) and the app's page routes (`BUZZ_WEB_SPA=full`),
   and shows the terms and privacy note named by `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` at sign-up. `run.sh` refuses
   a policy file that still has a draft's `[placeholders]`.
+  It also shows the "I am 18 years of age or older" box at sign-up (`BUZZ_AGE_ATTESTATION_REQUIRED=true` in the Creaton
+  part of `.env`; `compose.creaton.yml` turns it on even when `.env` leaves it out). Set it to `false` only if counsel
+  says the box is not needed; `scripts/test-compose-age-box.sh` checks the default.
 - It also raises the per-person request limit (`BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC`, default 40;
   `BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN`, default 300): the web app's reads count against it, and one person may have
   two tabs open. Someone over it is told to wait a few seconds. `HOSTED=1 SOCIAL_FRAME_REPORT=1

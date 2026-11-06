@@ -23,6 +23,12 @@ export const SIGN_UP_EVENT = "creaton:sign-up";
 /** Asks the account menu to open its sign-in dialog (recovery key), as `SIGN_UP_EVENT` does for sign-up. */
 export const SIGN_IN_EVENT = "creaton:sign-in";
 
+/** The age the terms, the privacy note and the sign-up box all use. Change it here and nowhere else. */
+export const MINIMUM_AGE = 18;
+
+/** The sign-up box that confirms it (shown when the server asks for it). */
+export const AGE_CONFIRMATION = `I am ${MINIMUM_AGE} years of age or older.`;
+
 /**
  * Shown at sign-up when the server's terms could not be loaded. Sign-up still works, because no server answers before
  * a first community. It says plainly that nothing was agreed to, and what happens next.

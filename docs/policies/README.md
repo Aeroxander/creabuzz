@@ -22,8 +22,11 @@ Before a public launch:
 2. Check the drafts against how the server is really hosted and configured (logs, backups, error reports, the chain
    nodes, ZeroDev for passkey accounts, whether the AI service is on).
 3. Have a lawyer review them for the countries your users are in.
-4. Switch on the age box. The age is 18 everywhere (terms, sign-up box, privacy note). The box only appears when
-   `BUZZ_AGE_ATTESTATION_REQUIRED=true` is set (see below), and the compose files do not set it for you.
+4. Check the age box. The age is 18 everywhere (terms, sign-up box, privacy note). On a Creaton compose server the box
+   is on by default: the Creaton part of the env has `BUZZ_AGE_ATTESTATION_REQUIRED=true` and the compose file turns it
+   on even if `.env` leaves it out. On any other way of running the server the box only appears when
+   `BUZZ_AGE_ATTESTATION_REQUIRED=true` is set (see below). The two sentences in the drafts that describe the box still
+   sit in brackets: the owner removes those brackets once the box shows on the live server.
 5. Change `Last updated` in both files whenever the text changes. Nothing checks this yet.
 
 A separate real-money terms document is required before the pilot pays anyone money or any Shares can be sold. The
@@ -45,7 +48,9 @@ Use the compose deployment for any real launch.
 
 On the compose deployment (`deploy/compose`, Creaton), name the finished files in `.env` instead
 (`BUZZ_TERMS_FILE=policies/terms.md`, `BUZZ_PRIVACY_FILE=policies/privacy.md`): `run.sh` reads them and refuses to start
-while a file still has a `[bracket]` left. Add `BUZZ_AGE_ATTESTATION_REQUIRED=true` to the same `.env`.
+while a file still has a `[bracket]` left. The age box needs nothing more there: `.env.creaton.example` sets `BUZZ_AGE_ATTESTATION_REQUIRED=true`, and only
+`BUZZ_AGE_ATTESTATION_REQUIRED=false` in `.env` turns it off. The number 18 is written once in the web app
+(`web/src/features/identity/lib/account-copy.ts`) and once in the desktop app (`desktop/src/shared/constants/age.ts`).
 
 It then serves them at `/api/join-policy/terms` and `/api/join-policy/privacy`, and sign-up asks people to agree before
 an account is made (D83). When neither is set, sign-up shows no terms at all, so set them before inviting anyone. The

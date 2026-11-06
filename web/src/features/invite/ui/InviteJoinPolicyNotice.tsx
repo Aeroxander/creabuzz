@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { AGE_CONFIRMATION } from "@/features/identity/lib/account-copy";
+
 type InviteJoinPolicy = {
   terms_markdown?: string;
   privacy_markdown?: string;
@@ -103,11 +105,11 @@ export function InviteJoinPolicyNotice({
     >
       {policy.age_attestation_required ? (
         <PolicyCheckbox
-          accessibleLabel="I am 18 years of age or older."
+          accessibleLabel={AGE_CONFIRMATION}
           checked={ageConfirmed}
           onCheckedChange={onAgeConfirmedChange}
         >
-          I am 18 years of age or older.
+          {AGE_CONFIRMATION}
         </PolicyCheckbox>
       ) : null}
 

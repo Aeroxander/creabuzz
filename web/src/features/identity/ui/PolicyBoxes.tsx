@@ -1,6 +1,6 @@
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 
-import { TERMS_NOT_LOADED } from "../lib/account-copy";
+import { AGE_CONFIRMATION, TERMS_NOT_LOADED } from "../lib/account-copy";
 import { type PolicyState, policyRequirements } from "../lib/join-policy";
 
 /**
@@ -78,7 +78,7 @@ export function PolicyBoxes({
             onChange={(e) => onAgeOk(e.target.checked)}
             type="checkbox"
           />
-          <span>I am 18 years of age or older.</span>
+          <span>{AGE_CONFIRMATION}</span>
         </label>
       ) : null}
       {needs.agreement ? (

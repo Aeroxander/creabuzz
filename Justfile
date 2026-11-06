@@ -468,6 +468,7 @@ test-unit:
     set -euo pipefail
     ./scripts/test-ensure-local-relay-key.sh
     ./scripts/test-compose-build-settings.sh
+    ./scripts/test-compose-age-box.sh
     if command -v cargo-nextest &>/dev/null; then
         cargo nextest run -p buzz-core -p buzz-auth --lib
         cargo nextest run -p buzz-audit --lib
