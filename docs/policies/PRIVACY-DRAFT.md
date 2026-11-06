@@ -11,7 +11,7 @@ Last updated: [date]
 
 ## Age
 
-You must be 18 or older to use this service. People under 18 may not use it. We do not knowingly keep data about anyone under 18. [At sign-up you confirm your age in a box; we do not check it and we do not keep your answer. Owner: the box shows only when it is switched on, and the compose files do not do that yet; remove this bracket once it shows by default.] If we learn that someone under 18 has an account, we may close it and delete what we hold about them on our server (see "Your rights" for what stays). If you are a parent or guardian and think this has happened, write to [email].
+You must be 18 or older to use this service. People under 18 may not use it. We do not knowingly keep data about anyone under 18. At sign-up you confirm your age in a box; we do not check it and we do not keep your answer. If we learn that someone under 18 has an account, we may close it and delete what we hold about them on our server (see "Your rights" for what stays). If you are a parent or guardian and think this has happened, write to [email].
 
 ## What is public
 
@@ -26,7 +26,7 @@ This server and its backups run on [hosting provider and country].
 - **Private messages** (in the main menu): end-to-end encrypted with your key. We store them but cannot read what they say. The sender shown on a stored message is a throwaway key and its time is blurred. Our security record (below) can still show which signed-in account sent it, and when. [Whether a stored private message shows who it is addressed to: owner to confirm.]
 - **Community messages**, meaning everything inside a community, its private rooms and boards and its direct messages included: these are **not** end-to-end encrypted. They are protected on the way to us and stored on our server, where the people who run it can read them. We read them only to keep the service running, to handle a report, or when the law requires it. When someone reports a message, the community's moderators who handle the report see it.
 - [Disk encryption: owner to state after checking with the hosting provider whether the server's disks are encrypted, and say so here, or delete this line.]
-- Proof that you agreed to the terms, when you join by invite link: your public key, the version of the terms, and the time. Other sign-ups leave a note only in your own browser.
+- Proof that you agreed to the terms, when you join by invite link: your public key, the version of the terms, and the time. Other sign-ups, and agreeing again after a change, leave a note only in your own browser.
 - Technical logs. They record when a connection opens and closes, the public key of the account that signed in, errors, and each use of the AI helpers (who and how many bytes). The address a connection comes from is probably our own proxy's, not yours. Our web server software keeps no access log, but its error lines may include an IP address. Logs are kept by size, not by time: each service keeps its latest five files of 10 MB and writes over the oldest. [Visitor IP addresses in logs: owner to confirm on the live server whether they appear, and say so here.]
 - A security record, kept as a chain so that changes show: for each item stored, which account sent it, what kind it is, in which room and when. It also records sign-ins and failed sign-ins, people added or removed, and uploads. [How long the security record is kept: owner and counsel to set a period or criteria; nothing deletes it by age today.]
 - Short-lived counters: whether you are online (about three minutes) and how many messages you have sent in the last minute.
@@ -50,7 +50,7 @@ These are our reasons for using your data, and the legal basis for each.
 
 ## Your key and your device
 
-Your key, settings and drafts are stored in your browser, along with a note of the terms version you agreed to, your server address and unread marks. Clearing your browser data removes them; save your recovery key first.
+Your key, settings and drafts are stored in your browser, along with a note of the terms version you agreed to (or that none was shown), your server address and unread marks. Clearing your browser data removes them; save your recovery key first.
 
 - If you sign up with a passkey on a device that supports it, your key is made again each time you sign in and is not stored.
 - Otherwise the key stays in your browser's storage, with the lock for it stored beside it. In effect it is unprotected. This is how it works for a key you create or import, and for a passkey that only locks the app and cannot make the key. Anyone who can use your device or browser, or run harmful code in it, can take your account. If your device is compromised, your account is too.
@@ -114,4 +114,4 @@ We can delete what is on our server: your posts and profile, your room membershi
 
 ## Changes
 
-If this note changes, we post the change in General and the date above changes. [We also tell you directly in the app before a change takes effect.]
+If this note changes, we post the change in General and the date above changes. When the terms or this note change, the web app asks you to agree again the next time you open it signed in. [Notice before a change takes effect: not built; the app only asks when you next open it after the change.]

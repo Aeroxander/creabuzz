@@ -7,7 +7,7 @@ These terms are an agreement between you and [operator name and legal form] ("we
 ## Your account
 
 - Your account is a key. With a passkey that supports it, the key is made again each time you sign in. Otherwise it is kept in your browser's storage (or in a browser wallet, if this server offers one). The privacy note, in "Your key and your device", says how this works. We cannot see the key and cannot recover it. If you lose it and have not saved your recovery key, the account is gone.
-- You must be at least 18 years old. [Higher age where local law requires it: counsel to choose between 18 everywhere, or a higher age in named places.] [When you create an account you confirm your age in a box: owner to switch the box on, and remove this bracket once it shows by default.] If we find that someone under 18 has an account, we may close it.
+- You must be at least 18 years old. [Higher age where local law requires it: counsel to choose between 18 everywhere, or a higher age in named places.] When you create an account you confirm your age in a box. We do not check it. If we find that someone under 18 has an account, we may close it.
 - You are responsible for what is done with your key. Anyone who has your key can act as you, and we cannot tell the difference. The privacy note says how the key is stored and how to keep it safe.
 
 ## What you post is public and signed
@@ -96,8 +96,10 @@ Nothing in these terms takes away rights the law gives you as a consumer, or lim
 
 ## Changes and ending
 
-- We may change these terms. When we do, we post the change in General and the date above changes. [We also tell you directly in the app, before a material change, or any change to the privacy note, takes effect.]
-- [When these terms change in a material way, you are asked to agree to the new version the next time you sign in. If you do not agree, you can stop using the service.]
+- We may change these terms. When we do, we post the change in General and the date above changes.
+- When the terms or the privacy note change, the web app asks you to agree again the next time you open it signed in. Until you agree you can read, save your recovery key and sign out, but you cannot post or act. If you do not agree, you can stop using the service. The version you agreed to is kept in your browser, so a browser that has lost it, or a second device, asks again.
+- [Notice before a change takes effect, for example a message or banner: not built; the app only asks when you next open it after the change. Counsel to confirm whether that is enough for a material change.]
+- [The desktop app does not yet ask you to agree again, and its own sign-up screens ask for the terms on invite joins only: owner to build this, or to offer only the web app, before launch.]
 - You can stop using the service at any time.
 - [Governing law and courts: counsel to choose between the operator's home law and courts, the same with local consumer protections kept, or arbitration.]
 

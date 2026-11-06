@@ -10,23 +10,25 @@ launch:
 
 - A fill-in or a choice: the operator fills it in (name, address, emails, periods, hosting) or counsel chooses (legal
   basis, controller, transfer safeguards, liability cap, governing law, copyright agent, EU dispute body).
-- A promise the software cannot keep yet, such as telling people directly about a material change. Build the
-  feature, then remove the brackets. Asking signed-in people to agree again when the served text changes is built
-  (the app compares the served version with the one agreed to in the browser), so that sentence's brackets can go once
-  counsel settles what counts as material. If it will not be built before launch, delete the sentence.
+- A promise the software cannot keep yet, such as telling people before a change takes effect. Build the feature,
+  then remove the brackets, only once it exists and has been tested. If it will not be built before launch, delete the
+  sentence. Built and no longer in brackets: the web app asks signed-in people to agree again when the served text
+  changes (it compares the served version with the one agreed to in the browser), and the age box is on by default on
+  the compose stack.
 
 Before a public launch:
 
-1. Fill in every `[bracket]` in both files. Keep each bracket on one line: the start guard reads one line at a time and
-   does not see a bracket that runs over two lines.
+1. Fill in every `[bracket]` in both files. The compose start guard reads the whole file, so a bracket that runs over
+   two lines, a lone `[` or a lone `]` is caught too and listed by line; brackets inside code fences, code spans and
+   Markdown links are skipped. Keeping each bracket on one line is still the easiest to read.
 2. Check the drafts against how the server is really hosted and configured (logs, backups, error reports, the chain
    nodes, ZeroDev for passkey accounts, whether the AI service is on).
 3. Have a lawyer review them for the countries your users are in.
 4. Check the age box. The age is 18 everywhere (terms, sign-up box, privacy note). On a Creaton compose server the box
    is on by default: the Creaton part of the env has `BUZZ_AGE_ATTESTATION_REQUIRED=true` and the compose file turns it
    on even if `.env` leaves it out. On any other way of running the server the box only appears when
-   `BUZZ_AGE_ATTESTATION_REQUIRED=true` is set (see below). The two sentences in the drafts that describe the box still
-   sit in brackets: the owner removes those brackets once the box shows on the live server.
+   `BUZZ_AGE_ATTESTATION_REQUIRED=true` is set (see below). The sentences in the drafts that describe the box are no longer in brackets;
+   they are true only where the box shows, so check it on the live server.
 5. Change `Last updated` in both files whenever the text changes. `./run.sh policy-stamp` records the text, and the compose stack refuses to start when the text changed under the same date (deploy/compose/README.md, "First start", step 4).
 
 A separate real-money terms document is required before the pilot pays anyone money or any Shares can be sold. The
