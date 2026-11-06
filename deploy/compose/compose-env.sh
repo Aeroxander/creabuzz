@@ -102,11 +102,57 @@ MSG
   fi
 }
 
+# The blanks left in a draft: one line per blank, "LINE: text". A blank is a [bracket] that is not a Markdown link
+# (a "]" followed straight by "("): "[Operator name]", "[30] days", one that runs over two lines, an opening "[" never
+# closed, a closing "]" never opened. A link's text may hold brackets or run over lines. Code fences (``` or ~~~ lines)
+# and `code spans` are skipped, and "\[" is a literal bracket. POSIX awk only (it runs on macOS as it is).
+policy_placeholders() {
+  awk '
+    function report(line, text) {
+      gsub(/[ \t]+/, " ", text)
+      if (length(text) > 80) text = substr(text, 1, 77) "..."
+      print line ": " text
+    }
+    BEGIN { depth = 0; fence = "" }
+    {
+      row = $0
+      lead = row
+      sub(/^ */, "", lead)
+      mark = substr(lead, 1, 3)
+      if (fence != "") {
+        if (mark == fence) fence = ""
+        next
+      }
+      if (mark == "```" || mark == "~~~") { fence = mark; next }
+      code = 0
+      n = length(row)
+      for (i = 1; i <= n; i++) {
+        c = substr(row, i, 1)
+        if (c == "\\") { if (depth) buf = buf c substr(row, i + 1, 1); i++; continue }
+        if (c == "`") { code = !code; if (depth) buf = buf c; continue }
+        if (code) { if (depth) buf = buf c; continue }
+        if (c == "[") {
+          if (depth == 0) { start = NR; buf = "" }
+          depth++
+          buf = buf c
+        } else if (c == "]") {
+          if (depth == 0) { report(NR, substr(row, 1, i)); continue }
+          buf = buf c
+          depth--
+          if (depth == 0 && substr(row, i + 1, 1) != "(") report(start, buf)
+        } else if (depth) buf = buf c
+      }
+      if (depth) buf = buf " "
+    }
+    END { if (depth) report(start, buf) }
+  ' "$1"
+}
+
 # The terms and privacy note for sign-up, read from the files .env names (BUZZ_TERMS_FILE, BUZZ_PRIVACY_FILE) into the
-# variables compose.creaton.yml passes to the server. A draft's [placeholders] left in a file stop the command: a
-# published "[Operator name]" or "[email]" would tell people nothing.
+# variables compose.creaton.yml passes to the server. A draft's [placeholders] left in a file stop the command, each
+# listed with its file and line: a published "[Operator name]" or "[email]" would tell people nothing.
 load_policies() {
-  local setting file variable
+  local setting file variable blanks
   for setting in BUZZ_TERMS_FILE:BUZZ_TERMS_OF_SERVICE_MARKDOWN BUZZ_PRIVACY_FILE:BUZZ_PRIVACY_POLICY_MARKDOWN; do
     file="$(env_value "${setting%%:*}")"
     variable="${setting#*:}"
@@ -115,9 +161,13 @@ load_policies() {
       echo "${setting%%:*}=$file: no such file (paths are from deploy/compose)." >&2
       exit 1
     fi
-    # A bracketed word that is not a Markdown link: "[Operator name]", "[30] days", "[email]".
-    if grep -nE '\[[^]]+\]([^(]|$)' "$file" >&2; then
-      echo "$file still has a draft's [placeholders] (above); fill them in before serving it." >&2
+    blanks="$(policy_placeholders "$file")"
+    if [[ -n "$blanks" ]]; then
+      {
+        echo "$file still has a draft's [placeholders] or a stray bracket, at these lines:"
+        while IFS= read -r line; do echo "  $file:$line"; done <<<"$blanks"
+        echo "Fill in or remove each one (a link written [text](address) is fine), then run the command again."
+      } >&2
       exit 1
     fi
     export "$variable=$(cat "$file")"

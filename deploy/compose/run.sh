@@ -31,14 +31,18 @@ MSG
 # does not stop the command, but it must not go unnoticed on a server people are invited to.
 warn_missing_policies() {
   creaton_on || return 0
-  local setting missing=()
+  local setting what missing=() missing_what=""
   for setting in BUZZ_TERMS_FILE BUZZ_PRIVACY_FILE; do
-    [[ -n "$(env_value "$setting")" ]] || missing+=("$setting")
+    [[ -n "$(env_value "$setting")" ]] && continue
+    missing+=("$setting")
+    [[ "$setting" == BUZZ_TERMS_FILE ]] && what="terms" || what="privacy note"
+    missing_what="${missing_what:+$missing_what or }$what"
   done
   ((${#missing[@]})) || return 0
   printf '\033[1;31m%s\033[0m\n' \
-    "WARNING: ${missing[*]} not set in .env: sign-up will show no terms or privacy note." \
-    "Do not invite anyone until both are set (README.md, \"First start\")." >&2
+    "WARNING: ${missing[*]} not set in deploy/compose/.env, so sign-up shows no ${missing_what}." \
+    "Before you invite anyone: copy the draft from docs/policies/ into deploy/compose/policies/, fill in every [bracket]," \
+    "set ${missing[*]} to its path in .env, and run ./run.sh restart (README.md, \"First start\")." >&2
 }
 
 # Backups older than DAYS days, by the folder's age: the privacy note says how long backups are kept, and nothing else
