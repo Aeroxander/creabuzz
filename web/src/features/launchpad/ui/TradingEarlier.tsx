@@ -22,15 +22,17 @@ import {
 } from "@creaton/core/launchpad/secondary.ts";
 
 import {
-  checkOlderLabel,
-  earlierAllCheckedLine,
-  earlierDues,
-  earlierLimitLine,
-  earlierRoundLine,
   collectQuoteLabel,
-  olderFailedLine,
+  earlierDues,
+  earlierRoundLine,
   sharesPhrase,
 } from "../lib/trading-copy";
+import {
+  checkOlderLabel,
+  earlierAllCheckedLine,
+  earlierLimitLine,
+  olderFailedLine,
+} from "../lib/trading-older-copy";
 import {
   mergeOlderRounds,
   type SecondaryMarketFacts,

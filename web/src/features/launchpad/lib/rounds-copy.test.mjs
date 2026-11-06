@@ -210,3 +210,61 @@ test("a funding round names what it sells: new Shares or new non-voting shares, 
     "50 new Shares at 1.3 USDC each were sold for the project.",
   );
 });
+
+test("the old rounds' prices carry the one-person label wherever a trade price is printed", async () => {
+  const rounds = await import("./rounds-copy.ts");
+  const round = {
+    phase: "settled",
+    floor: USD,
+    step: USD / 100n,
+    funding: false,
+    clearing: { step: 30, volume: 50n * E18, sellersShare: false },
+  };
+  assert.equal(rounds.clearingShowsPrice?.(round), true);
+  assert.equal(
+    rounds.clearingShowsPrice?.({ ...round, phase: "bidding" }),
+    true,
+    "'If bidding ended now' prints a price too",
+  );
+  assert.equal(
+    rounds.clearingShowsPrice?.({
+      ...round,
+      clearing: { ...round.clearing, volume: 0n },
+    }),
+    false,
+  );
+  // A funding round sells new shares for the project: no holder sells there, so the sentence would not be true.
+  assert.equal(rounds.clearingShowsPrice?.({ ...round, funding: true }), false);
+  const trade = {
+    id: 6n,
+    closesAt: OCT_21,
+    outcome: "traded",
+    price: 3_100_000n,
+    volume: 40n * E18,
+  };
+  const quiet = { id: 5n, closesAt: OCT_21, outcome: "nothing" };
+  assert.equal(
+    rounds.historyShowsPrice?.({
+      lastTrade: trade,
+      rounds: [quiet],
+      complete: true,
+    }),
+    true,
+  );
+  assert.equal(
+    rounds.historyShowsPrice?.({
+      lastTrade: null,
+      rounds: [trade],
+      complete: true,
+    }),
+    true,
+  );
+  assert.equal(
+    rounds.historyShowsPrice?.({
+      lastTrade: null,
+      rounds: [quiet],
+      complete: true,
+    }),
+    false,
+  );
+});

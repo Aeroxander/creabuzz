@@ -199,6 +199,25 @@ export function shownTerms<
   return round !== null && roundIsLive(round) ? roundTerms(round) : listing;
 }
 
+/**
+ * Whether a round's line names a price: only a settled round that matched lots. Offers and bids can both be on the
+ * table and never cross, and the stored price is then the grid's lowest step: a price nobody traded at.
+ */
+export function roundShowsPrice(
+  round: Pick<RoundView, "phase" | "matched">,
+): boolean {
+  return round.phase === "settled" && round.matched > 0n;
+}
+
+/**
+ * The one sentence that sits beside every weekly sale price. A round settles at one price from everyone's orders, and
+ * the market does not stop one account from offering and bidding in the same round or one person from holding two
+ * accounts, so a price can be one person's own doing. It says nothing about what the price means or is worth.
+ */
+export function priceSetterLine(): string {
+  return "One person can set a round's price. An account can sell and buy in the same round, and one person can hold more than one account.";
+}
+
 /** Where the latest round stands, said plainly; a settled round names a price only when lots traded at it. */
 export function roundLine(
   round: Pick<
@@ -223,9 +242,8 @@ export function roundLine(
     case "settling":
       return `Bidding is over. Anyone can settle it until ${date(round.settleDeadline)}.`;
     case "settled":
-      // Only matched lots are a trade. Offers and bids can both be on the table and never cross, and the
-      // stored price is then the grid's lowest step: a price nobody traded at.
-      return round.matched > 0n
+      // Only matched lots are a trade (see `roundShowsPrice`).
+      return roundShowsPrice(round)
         ? `Settled: ${lots(round.matched)} traded at ${money(lotPriceAt(round, round.price), quote)} a lot, after offers closed ${day(round.closesAt)}. Everyone collects their own result.`
         : "Settled. Nothing crossed, so nothing traded.";
     case "void":
@@ -979,41 +997,6 @@ export function earlierRoundLine(
   return round.phase === "void"
     ? `The round that opened ${day(round.opensAt)} was never settled, so what you put into it is yours to take back.`
     : `The round that opened ${day(round.opensAt)} has settled, and you still have something to collect from it.`;
-}
-
-/**
- * Said when the card did not look at every earlier round. A claim never expires,
- * so what an older round owes is still the wallet's; the line names the ids not
- * yet looked at (they are always the oldest, 1 up to `unchecked`) and the card
- * offers {@link checkOlderLabel} to look at the next block.
- */
-export function earlierLimitLine(
-  checked: number,
-  unchecked: bigint,
-): string | null {
-  if (unchecked <= 0n) return null;
-  const left = unchecked === 1n ? "Round 1 is" : `Rounds 1 to ${unchecked} are`;
-  return `This page has checked your last ${checked} rounds. ${left} not checked yet. Anything an older round owes you is still yours.`;
-}
-
-/** The button that checks the next block of older rounds. */
-export function checkOlderLabel(checking: boolean): string {
-  return checking ? "Checking…" : "Check older rounds";
-}
-
-/**
- * Said once the oldest round is checked. The reassurance that nothing is waiting is only true when no earlier round
- * owes the wallet (`owed`); otherwise it would contradict the Collect row shown beside it.
- */
-export function earlierAllCheckedLine(owed: boolean): string {
-  return owed
-    ? "Every round has been checked."
-    : "Every round has been checked. Nothing older is waiting for you.";
-}
-
-/** Said when a block of older rounds could not be read, so it is not mistaken for rounds with nothing in them. */
-export function olderFailedLine(): string {
-  return "We could not check the older rounds just now. Try again.";
 }
 
 /** Whole lots, or why the text is not a number of lots. No more than one order can hold, as the contract caps it. */

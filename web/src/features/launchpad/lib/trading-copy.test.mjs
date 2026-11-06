@@ -11,10 +11,6 @@ import {
   claimDue,
   collectQuoteLabel,
   earlierDues,
-  earlierAllCheckedLine,
-  earlierLimitLine,
-  checkOlderLabel,
-  olderFailedLine,
   earlierRoundLine,
   factoryMissingLine,
   listingDetailLine,
@@ -47,6 +43,12 @@ import {
   unreadableLine,
 } from "./trading-copy.ts";
 import * as copy from "./trading-copy.ts";
+import {
+  checkOlderLabel,
+  earlierAllCheckedLine,
+  earlierLimitLine,
+  olderFailedLine,
+} from "./trading-older-copy.ts";
 
 // The disclosure and failure helpers, read off the module so one missing export fails its own test.
 const {
@@ -1704,4 +1706,50 @@ test("the offer and bid previews say what is paid and when Shares arrive", () =>
   const bidLine = bidPlanLine(round(), plan, USDC);
   assert.match(bidLine, /Nothing may fill/);
   assert.match(bidLine, /Bought Shares are collected in a separate step/);
+});
+
+test("one sentence says a round's price can be set by one person, and only what the contract allows", () => {
+  const line = copy.priceSetterLine?.();
+  assert.equal(typeof line, "string");
+  // The two facts, both true of SecondaryMarket.sol: sell() and bid() only refuse a second order on the same side,
+  // so one account can offer and bid in a round, and nothing links one person's accounts.
+  assert.match(line, /One person can set a round's price\./);
+  assert.match(line, /sell and buy in the same round/);
+  assert.match(line, /more than one account/);
+  // It is a warning, never a statement that the figure is worth anything.
+  assert.doesNotMatch(
+    line,
+    /fair|valu|worth|recommend|advice|market price|true price|reliable|wash|escrow|address/i,
+  );
+  // The words stay plain: no protocol names, and short sentences.
+  for (const sentence of line.split(/(?<=\.)\s+/)) {
+    assert.ok(sentence.split(/\s+/).length <= 25, sentence);
+  }
+});
+
+test("the label goes exactly where a round's price is printed: a settled round that matched lots", () => {
+  assert.equal(typeof copy.roundShowsPrice, "function");
+  const shows = (over) => copy.roundShowsPrice(round(over));
+  assert.equal(shows({ phase: "settled", settled: true, matched: 2n }), true);
+  // No price yet: bidding, waiting to settle, void, nothing opened, and a settled round where nothing crossed.
+  assert.equal(shows({ phase: "bidding" }), false);
+  assert.equal(shows({ phase: "settling" }), false);
+  assert.equal(shows({ phase: "void" }), false);
+  assert.equal(shows({ phase: "none" }), false);
+  assert.equal(shows({ phase: "settled", settled: true, matched: 0n }), false);
+  // It agrees with the sentence itself: a line names a price ("traded at") iff the label is due.
+  for (const over of [
+    { phase: "settled", settled: true, matched: 2n },
+    { phase: "settled", settled: true, matched: 0n },
+    { phase: "bidding" },
+    { phase: "settling" },
+    { phase: "void" },
+    { phase: "none" },
+  ]) {
+    assert.equal(
+      /traded at/.test(roundLine(round(over), USDC)),
+      copy.roundShowsPrice(round(over)),
+      `${over.phase} matched ${over.matched}`,
+    );
+  }
 });

@@ -119,6 +119,23 @@ export function clearingLine(
   return `If bidding ended now: ${what}.`;
 }
 
+/** Whether {@link clearingLine} names a price: a holders' round that would trade or did. A funding round sells new shares, with no holder selling. */
+export function clearingShowsPrice(
+  round: Pick<RoundView, "clearing" | "funding">,
+): boolean {
+  return !round.funding && round.clearing.volume > 0n;
+}
+
+/** Whether the price history names a price: a last trade, or a finished round that traded. */
+export function historyShowsPrice(
+  history: Pick<RoundHistory, "lastTrade" | "rounds">,
+): boolean {
+  return (
+    history.lastTrade !== null ||
+    history.rounds.some((past) => past.outcome === "traded")
+  );
+}
+
 /** A seller's form: the step their lowest price means, and what they keep per Share at it after the treasury's cut. */
 export function sellPlan(
   grid: RoundGrid,

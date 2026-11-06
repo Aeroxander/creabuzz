@@ -327,6 +327,38 @@ async function openTrading(page: Page): Promise<void> {
   });
 }
 
+/** The sentence that must sit beside every settled price (brief Q14: one person can set a round's price). */
+const PRICE_LABEL =
+  "One person can set a round's price. An account can sell and buy in the same round, and one person can hold more than one account.";
+
+/**
+ * The permanent label is visible as plain text right under the settled price, is not a tooltip or a control, and stays
+ * inside the viewport (so a phone does not scroll sideways to read it).
+ */
+async function expectPriceLabel(page: Page) {
+  const note = page.getByTestId("price-setter-note");
+  await expect(note).toBeVisible();
+  await expect(note).toHaveText(PRICE_LABEL);
+  // Plain text: no tooltip title, no own accessible name, nothing to click away.
+  await expect(note).not.toHaveAttribute("title", /.*/);
+  await expect(note).not.toHaveAttribute("aria-label", /.*/);
+  await expect(note.locator("button, a, input")).toHaveCount(0);
+  const status = await page.getByTestId("trading-round-status").boundingBox();
+  const box = await note.boundingBox();
+  const width = page.viewportSize()?.width ?? 0;
+  if (!status || !box) throw new Error("the price and its label are on screen");
+  // Right under the price line (no other block between them), and wholly inside the viewport.
+  expect(box.y).toBeGreaterThanOrEqual(status.y + status.height - 1);
+  expect(box.y - (status.y + status.height)).toBeLessThan(24);
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(width);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+}
+
 test("a round of secondary trading: offered, bid for, settled at one price, and collected by both sides", async ({
   browser,
 }) => {
@@ -548,6 +580,8 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   await expect(founder.getByTestId("trading-settle-notice")).toContainText(
     "costs only a network fee",
   );
+  // No round has settled, so no price is shown and no label either.
+  await expect(founder.getByTestId("price-setter-note")).toHaveCount(0);
   await expect(founder.getByTestId("trading-settle")).toBeVisible();
   // While bidding is open there is no offer or bid left to place, and the round is settled by the button, not by time.
   await expect(founder.getByTestId("trading-sell")).toHaveCount(0);
@@ -557,6 +591,7 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
     `Settled: 2 lots traded at 1 ${QUOTE_SYMBOL} a lot`,
     { timeout: 90_000 },
   );
+  await expectPriceLabel(founder);
   const round = await callWords(MARKET, `${SIG.rounds}${word(1n)}`);
   expect(round[9]).toBe(1n); // settled
   expect(round[8]).toBe(0n); // the price level: the lowest step
@@ -631,6 +666,11 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   await expect(third.getByTestId("trading-round-status")).toContainText(
     `Settled: 2 lots traded at 1 ${QUOTE_SYMBOL} a lot`,
   );
+  await expectPriceLabel(third);
+  // The same on a phone: 375px wide, the label is still there, in full, under the price.
+  await third.setViewportSize({ width: 375, height: 812 });
+  await expectPriceLabel(third);
+  await third.setViewportSize({ width: 1280, height: 720 });
   await expect(third.getByTestId("trading-claim")).toHaveCount(0);
   await expect(third.getByTestId("trading-claim-shares")).toHaveCount(0);
   await expect(third.getByTestId("trading-claim-quote")).toHaveCount(0);
@@ -890,6 +930,8 @@ test("a settled round where the offer and the bid never cross says nothing trade
   await expect(founder.getByTestId("trading-round-status")).not.toContainText(
     `${QUOTE_SYMBOL} a lot`,
   );
+  // No price, so no label that would sit beside one.
+  await expect(founder.getByTestId("price-setter-note")).toHaveCount(0);
   await expect(founder.getByTestId("trading-my-sell")).toContainText(
     "Nothing sold: your Shares are yours to take back.",
   );

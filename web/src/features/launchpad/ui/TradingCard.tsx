@@ -48,6 +48,7 @@ import {
   NOT_FUNDING_LINE,
   nextRoundChip,
   roundLine,
+  roundShowsPrice,
   sellOrderLine,
   settleNoticeLine,
   sharesPhrase,
@@ -67,6 +68,7 @@ import type { SecondaryMarketFacts } from "../lib/secondary-read";
 import { SECONDARY_QUERY, useSecondary } from "../use-secondary";
 import { FailureNote, GateNote, WalletStrip } from "./account-widgets";
 import { QuoteTokenNote } from "./QuoteTokenNote";
+import { PriceSetterNote } from "./PriceSetterNote";
 import { TradingEarlier } from "./TradingEarlier";
 import { BidForm, type Place, SellForm } from "./TradingOrderForms";
 import { homeFocus, rescueFocus, useFocusRescue } from "./useFocusRescue";
@@ -458,6 +460,8 @@ function TradingRound({
       >
         {settleNotice}
       </p>
+      {/* Only a settled round that matched lots prints a price, which is when the settle notice is empty. */}
+      {roundShowsPrice(round) ? <PriceSetterNote /> : null}
       {/* Always in the page, so a new order is announced when it appears; it takes no room while empty. */}
       <div
         aria-live="polite"

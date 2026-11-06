@@ -9,9 +9,11 @@ import { defaultChainPreset } from "../chain-config";
 import { encodeActivateExitExchange } from "../lib/exit-exchange";
 import {
   clearingLine,
+  clearingShowsPrice,
   roundUnit,
   floorAtOpeningText,
   historyRow,
+  historyShowsPrice,
   lastTradeLine,
   leavingLine,
   leavingPays,
@@ -40,6 +42,7 @@ import {
 } from "../use-weekly-rounds";
 import { FailureNote, WalletStrip } from "./account-widgets";
 import { RoundClaims } from "./RoundClaims";
+import { PriceSetterNote } from "./PriceSetterNote";
 import { BidForm, OfferForm } from "./RoundOrderForms";
 
 type Send = (key: string, to: string, data: string) => Promise<boolean>;
@@ -248,6 +251,7 @@ function RoundHistoryPanel({
       <p className="text-sm font-medium" data-testid="rounds-last-trade">
         {lastTradeLine(history)}
       </p>
+      {historyShowsPrice(history) ? <PriceSetterNote /> : null}
       {history.rounds.length > 0 ? (
         <table className="text-sm" data-testid="rounds-history-rows">
           <caption className="sr-only">Earlier rounds, newest first</caption>
@@ -354,6 +358,7 @@ export function RoundPanel({
       <p className="text-sm font-medium" data-testid="rounds-clearing">
         {clearingLine(round, unit)}
       </p>
+      {clearingShowsPrice(round) ? <PriceSetterNote /> : null}
       {round.rows.length > 0 ? (
         <table className="text-sm" data-testid="rounds-rows">
           <thead>
