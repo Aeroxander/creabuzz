@@ -1,5 +1,6 @@
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 
+import { TERMS_NOT_LOADED } from "../lib/account-copy";
 import { type PolicyState, policyRequirements } from "../lib/join-policy";
 
 /**
@@ -12,12 +13,15 @@ export function PolicyBoxes({
   ageOk,
   onAgreed,
   onAgeOk,
+  onRetry,
 }: {
   state: PolicyState;
   agreed: boolean;
   ageOk: boolean;
   onAgreed: (value: boolean) => void;
   onAgeOk: (value: boolean) => void;
+  /** Ask the server for its terms again; the "Try again" button shows only when this is given. */
+  onRetry?: () => void;
 }) {
   if (state.status === "loading") {
     return (
@@ -28,13 +32,22 @@ export function PolicyBoxes({
   }
   if (state.status === "unavailable") {
     return (
-      <p
+      <div
         className="mb-3 text-xs text-muted-foreground"
         data-testid="onboarding-policy-unavailable"
       >
-        This server's terms of use could not be loaded right now. You will be
-        asked to agree to them when it answers.
-      </p>
+        <p>{TERMS_NOT_LOADED}</p>
+        {onRetry ? (
+          <button
+            className="mt-1 font-medium text-foreground underline underline-offset-2"
+            data-testid="onboarding-policy-retry"
+            onClick={onRetry}
+            type="button"
+          >
+            Try again
+          </button>
+        ) : null}
+      </div>
     );
   }
   const needs = policyRequirements(state);

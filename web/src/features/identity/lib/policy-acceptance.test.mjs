@@ -6,6 +6,7 @@ import {
   ACCEPTED_KEY,
   acceptedVersion,
   reacceptCheck,
+  recordSignUpTerms,
   rememberAcceptance,
   resetAcceptanceState,
   subscribeAcceptance,
@@ -154,5 +155,76 @@ describe("the version agreed to, kept in this browser", () => {
     stop();
     rememberAcceptance("v2", "a.example", 2, memoryStore());
     assert.equal(calls, 1);
+  });
+});
+
+describe("what sign-up records about the terms", () => {
+  const store = () =>
+    memoryStore({
+      [ACCEPTED_KEY]: JSON.stringify({
+        version: "v2",
+        at: 1,
+        host: "a.example",
+      }),
+    });
+
+  it("keeps the agreed version when the terms were shown", () => {
+    const s = memoryStore();
+    recordSignUpTerms(ready(), "a.example", 7, s);
+    assert.equal(acceptedVersion("a.example", s), "v2");
+  });
+
+  it("records that no terms were agreed to when they could not be loaded, over an older agreement", () => {
+    for (const state of [{ status: "unavailable" }, { status: "none" }]) {
+      resetAcceptanceState();
+      const s = store();
+      assert.equal(acceptedVersion("a.example", s), "v2");
+      recordSignUpTerms(state, "a.example", 9, s);
+      assert.equal(acceptedVersion("a.example", s), null);
+      const record = JSON.parse(s.data.get(ACCEPTED_KEY));
+      assert.equal(record.agreed, false);
+      assert.equal(record.at, 9);
+    }
+  });
+
+  it("asks at the first chance: the next served version is a first agreement, not a change", () => {
+    const s = store();
+    recordSignUpTerms({ status: "unavailable" }, "a.example", 9, s);
+    assert.deepEqual(
+      reacceptCheck({
+        signedIn: true,
+        state: ready(),
+        accepted: acceptedVersion("a.example", s),
+      }),
+      { kind: "ask", changed: false },
+    );
+  });
+
+  it("still counts for this visit when the browser refuses to keep the record", () => {
+    const stale = {
+      getItem: () =>
+        JSON.stringify({ version: "v2", at: 1, host: "a.example" }),
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    recordSignUpTerms({ status: "unavailable" }, "a.example", 9, stale);
+    assert.equal(acceptedVersion("a.example", stale), null);
+  });
+
+  it("lets a later agreement count again", () => {
+    const s = store();
+    recordSignUpTerms({ status: "unavailable" }, "a.example", 9, s);
+    rememberAcceptance("v3", "a.example", 10, s);
+    assert.equal(acceptedVersion("a.example", s), "v3");
+  });
+
+  it("tells every open tab, as an agreement does", () => {
+    let told = 0;
+    subscribeAcceptance(() => {
+      told += 1;
+    });
+    recordSignUpTerms({ status: "unavailable" }, "a.example", 9, memoryStore());
+    assert.equal(told, 1);
   });
 });

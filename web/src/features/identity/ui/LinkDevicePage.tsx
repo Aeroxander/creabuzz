@@ -19,6 +19,7 @@ import {
   rotateIdentity,
 } from "@/shared/lib/identity";
 import { truncatePubkey } from "@/shared/lib/pubkey";
+import { communityHostName } from "@/shared/lib/relay-url";
 import {
   buildLinkDeviceRedirect,
   linkDeviceAccountSecretHex,
@@ -28,6 +29,7 @@ import {
   passkeyStoredPubkey,
   signInPasskeyIdentity,
 } from "../lib/passkey-identity";
+import { rememberNoAgreement } from "../lib/policy-acceptance";
 
 type Phase =
   | "invalid"
@@ -188,6 +190,8 @@ export function LinkDevicePage() {
                   className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white dark:bg-white dark:text-black"
                   onClick={() => {
                     rotateIdentity();
+                    // A new account has agreed to nothing: the home page asks before it can post or act.
+                    rememberNoAgreement(communityHostName());
                     window.location.assign("/");
                   }}
                 >

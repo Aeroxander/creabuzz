@@ -14,6 +14,9 @@
 import { useState } from "react";
 
 import { importIdentity, rotateIdentity } from "@/shared/lib/identity";
+import { communityHostName } from "@/shared/lib/relay-url";
+
+import { rememberNoAgreement } from "../lib/policy-acceptance";
 
 export function IdentityRecoveryBanner() {
   const [backup, setBackup] = useState("");
@@ -23,6 +26,8 @@ export function IdentityRecoveryBanner() {
   const runImport = () => {
     try {
       importIdentity(backup);
+      // No terms are shown here: the page asks the person to agree on the next load, before they can post or act.
+      rememberNoAgreement(communityHostName());
       window.location.reload();
     } catch {
       setImportError(
@@ -83,6 +88,8 @@ export function IdentityRecoveryBanner() {
               data-testid="identity-recovery-reset-confirm"
               onClick={() => {
                 rotateIdentity();
+                // A new account has agreed to nothing: the page asks on the next load, before it can post or act.
+                rememberNoAgreement(communityHostName());
                 window.location.reload();
               }}
             >

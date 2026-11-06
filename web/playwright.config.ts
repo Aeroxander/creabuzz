@@ -103,6 +103,7 @@ export default defineConfig({
         "**/home-timeline.spec.ts",
         "**/social-mvp.spec.ts",
         "**/terms-again.spec.ts",
+        "**/signup-terms-paths.spec.ts",
         "**/home-checklist.spec.ts",
         "**/projects.spec.ts",
         "**/repo-refs.spec.ts",

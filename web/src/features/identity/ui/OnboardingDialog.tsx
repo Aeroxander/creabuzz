@@ -24,8 +24,12 @@ import { CREATE_ACCOUNT } from "../lib/account-copy";
 import { offerRecoveryKey } from "../lib/recovery-offer";
 import { IdentityDialog } from "./IdentityDialog";
 import { InviteOnlySignUpNotice } from "./InviteOnlySignUpNotice";
-import { mayCreateAccount, policyRequirements } from "../lib/join-policy";
-import { rememberAcceptance } from "../lib/policy-acceptance";
+import {
+  type PolicyState,
+  mayCreateAccount,
+  policyRequirements,
+} from "../lib/join-policy";
+import { recordSignUpTerms } from "../lib/policy-acceptance";
 import { PolicyBoxes } from "./PolicyBoxes";
 import { useJoinPolicy } from "./use-join-policy";
 
@@ -66,15 +70,12 @@ export function OnboardingDialog({
   const [about, setAbout] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<FailureWords | null>(null);
-  const { state: policy } = useJoinPolicy();
+  const { state: policy, reload: reloadPolicy } = useJoinPolicy();
   const [agreed, setAgreed] = useState(false);
   const [ageOk, setAgeOk] = useState(false);
   const allowed = mayCreateAccount(policy, { agreement: agreed, age: ageOk });
-  /** Called once an account is made: keep which terms were agreed to. */
-  const accepted = () => {
-    if (policy.status === "ready")
-      rememberAcceptance(policy.policy.version, communityHostName());
-  };
+  /** Called once an account is made: keep which terms were agreed to, or that none were (they could not be loaded). */
+  const accepted = () => recordSignUpTerms(policy, communityHostName());
 
   const submit = async () => {
     if (name.trim().length === 0 || !allowed) return;
@@ -100,6 +101,7 @@ export function OnboardingDialog({
   const [handedOff, setHandedOff] = useState(false);
 
   const createWithPasskey = () => {
+    if (!allowed) return;
     void (async () => {
       setSaving(true);
       setError(null);
@@ -123,6 +125,7 @@ export function OnboardingDialog({
   };
 
   const createWithWallet = () => {
+    if (!allowed) return;
     void (async () => {
       setSaving(true);
       setError(null);
@@ -146,6 +149,8 @@ export function OnboardingDialog({
   if (signingIn) {
     return (
       <SignInView
+        policy={policy}
+        onRetryPolicy={reloadPolicy}
         backLabel={startOn === "signin" ? "Create an account" : "Back"}
         onBack={() => setSigningIn(false)}
         onCancel={startOn === "signin" ? (onCancel ?? onDone) : undefined}
@@ -222,6 +227,7 @@ export function OnboardingDialog({
             agreed={agreed}
             onAgeOk={setAgeOk}
             onAgreed={setAgreed}
+            onRetry={reloadPolicy}
             state={policy}
           />
         </div>
@@ -335,15 +341,24 @@ function SignInView({
   onBack,
   backLabel,
   onCancel,
+  policy,
+  onRetryPolicy,
 }: {
   onBack: () => void;
   backLabel: string;
   onCancel?: (() => void) | undefined;
+  policy: PolicyState;
+  onRetryPolicy: () => void;
 }) {
   const [key, setKey] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const keyRef = useRef<HTMLInputElement | null>(null);
+  // Restoring an account is a sign-up too: the same boxes, and the same record of what was agreed to.
+  const [agreed, setAgreed] = useState(false);
+  const [ageOk, setAgeOk] = useState(false);
+  const allowed = mayCreateAccount(policy, { agreement: agreed, age: ageOk });
   const signIn = () => {
+    if (!allowed) return;
     const hex = parseRecoveryKey(key);
     if (!hex) {
       setProblem(
@@ -355,6 +370,7 @@ function SignInView({
       // The key was typed in, so this account's key is already saved somewhere (D111: the flag names the account).
       const account = importIdentity(hex);
       localStorage.setItem("buzz.identity.backedUp", account);
+      recordSignUpTerms(policy, communityHostName());
       window.location.reload();
     } catch {
       setProblem(
@@ -406,6 +422,26 @@ function SignInView({
             data-testid="onboarding-signin-key"
           />
         </label>
+        <div className="mt-4">
+          <PolicyBoxes
+            ageOk={ageOk}
+            agreed={agreed}
+            onAgeOk={setAgeOk}
+            onAgreed={setAgreed}
+            onRetry={onRetryPolicy}
+            state={policy}
+          />
+        </div>
+        {key.trim().length > 0 && policy.status === "ready" && !allowed ? (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="onboarding-signin-tick-hint"
+          >
+            {policyRequirements(policy).age
+              ? "Tick the boxes above to sign in."
+              : "Tick the box to agree to the Terms of use, then sign in."}
+          </p>
+        ) : null}
         {problem ? (
           <p
             className="mt-2 text-xs text-red-600 dark:text-red-400"
@@ -434,7 +470,7 @@ function SignInView({
           ) : null}
           <button
             type="submit"
-            disabled={key.trim().length === 0}
+            disabled={key.trim().length === 0 || !allowed}
             className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
             data-testid="onboarding-signin-submit"
           >

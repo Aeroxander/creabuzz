@@ -26,7 +26,10 @@ import {
   passkeyUnlockProblem,
 } from "@/features/identity/lib/passkey-problem";
 import { RecoveryKeyDialog } from "@/features/identity/ui/RecoveryKeyDialog";
-import { rememberAcceptance } from "@/features/identity/lib/policy-acceptance";
+import {
+  rememberAcceptance,
+  rememberNoAgreement,
+} from "@/features/identity/lib/policy-acceptance";
 import {
   communityHostName,
   inviteRelayWsUrl,
@@ -210,6 +213,21 @@ function InviteLanding({ code }: { code: string }) {
     };
   }, [loadPolicy]);
 
+  /**
+   * Whether joining must wait: the terms are not loaded yet (or could not be), or a box they ask for is not ticked.
+   * The buttons are off while this is true, and every handler that makes or uses an account checks it again.
+   */
+  const disabled =
+    policy === undefined ||
+    opening ||
+    joiningBrowser ||
+    Boolean(policy?.age_attestation_required && !ageConfirmed) ||
+    Boolean(
+      policy &&
+        (policy.terms_markdown || policy.privacy_markdown) &&
+        !agreementConfirmed,
+    );
+
   const acceptPolicy = async (): Promise<string | undefined> => {
     if (!policy) return undefined;
     return acceptJoinPolicy({
@@ -230,6 +248,7 @@ function InviteLanding({ code }: { code: string }) {
   };
 
   const openInvite = async () => {
+    if (disabled) return;
     setJoinProblem(null);
     setOpening(true);
     try {
@@ -258,8 +277,10 @@ function InviteLanding({ code }: { code: string }) {
     await claimInviteInBrowser(code, relay, receipt);
     // From now on this browser is in the community the invite was for.
     setStoredRelayWsUrl(relay);
-    // The terms agreed to above count as agreed to here, so the first visit does not ask again.
+    // The terms agreed to above count as agreed to here, so the first visit does not ask again. A server with no terms
+    // gave nothing to agree to, and an older agreement in this browser must not stand in for it.
     if (policy) rememberAcceptance(policy.version, communityHostName());
+    else rememberNoAgreement(communityHostName());
     if (name) await saveNewProfile({ name });
   };
 
@@ -267,6 +288,7 @@ function InviteLanding({ code }: { code: string }) {
   const passkeyLocked = hasPasskeyIdentity() && !isPasskeyActive();
 
   const joinInBrowser = async () => {
+    if (disabled) return;
     setJoinProblem(null);
     if (passkeyLocked) {
       setJoinStep("passkey");
@@ -293,6 +315,7 @@ function InviteLanding({ code }: { code: string }) {
 
   /** For someone with no account yet: make one in this browser, then join with it. */
   const createAccountAndJoin = async () => {
+    if (disabled) return;
     setJoinProblem(null);
     try {
       getOrCreateIdentity();
@@ -310,6 +333,7 @@ function InviteLanding({ code }: { code: string }) {
    * recovery key that works everywhere is offered while the passkey is still unlocked.
    */
   const createPasskeyAndJoin = async () => {
+    if (disabled) return;
     setJoinProblem(null);
     setJoinStep("passkey");
     let account: string;
@@ -343,16 +367,6 @@ function InviteLanding({ code }: { code: string }) {
     hasNip07Provider() || hasStoredIdentity() || hasPasskeyIdentity();
   const busyLabel =
     joinStep === "passkey" ? "Waiting for your passkey…" : "Joining…";
-  const disabled =
-    policy === undefined ||
-    opening ||
-    joiningBrowser ||
-    Boolean(policy?.age_attestation_required && !ageConfirmed) ||
-    Boolean(
-      policy &&
-        (policy.terms_markdown || policy.privacy_markdown) &&
-        !agreementConfirmed,
-    );
   const hasPolicyRequirements = Boolean(
     policy &&
       (policy.age_attestation_required ||

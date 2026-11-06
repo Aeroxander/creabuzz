@@ -22,3 +22,10 @@ export const SIGN_UP_EVENT = "creaton:sign-up";
 
 /** Asks the account menu to open its sign-in dialog (recovery key), as `SIGN_UP_EVENT` does for sign-up. */
 export const SIGN_IN_EVENT = "creaton:sign-in";
+
+/**
+ * Shown at sign-up when the server's terms could not be loaded. Sign-up still works, because no server answers before
+ * a first community. It says plainly that nothing was agreed to, and what happens next.
+ */
+export const TERMS_NOT_LOADED =
+  "This server's terms could not be loaded, so you are not agreeing to any terms yet. You can still go on. The first time the server answers, you will be asked to agree, and until you do you cannot post or act.";

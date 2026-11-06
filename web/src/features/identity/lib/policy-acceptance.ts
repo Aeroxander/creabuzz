@@ -29,11 +29,14 @@ function browserStore(): Store | undefined {
 
 /** What this visit agreed to when the browser would not keep it (so a refusing browser is not asked in a loop). */
 let sessionAgreed: { version: string; host: string } | null = null;
+/** Set when this visit made an account without agreeing to any terms: an older record in the browser must not count. */
+let sessionUnagreed = false;
 const listeners = new Set<() => void>();
 
 /** Forget this visit's page-lifetime state (tests, and nothing else: a reload does this in the app). */
 export function resetAcceptanceState(): void {
   sessionAgreed = null;
+  sessionUnagreed = false;
   listeners.clear();
 }
 
@@ -56,6 +59,7 @@ export function rememberAcceptance(
   store: Store | undefined = browserStore(),
 ): boolean {
   sessionAgreed = { version, host };
+  sessionUnagreed = false;
   let kept = true;
   try {
     if (!store) throw new Error("no storage");
@@ -68,6 +72,48 @@ export function rememberAcceptance(
 }
 
 /**
+ * Keep the fact that an account was made without agreeing to any terms (they could not be loaded, or the server had
+ * none). It replaces an older agreement in this browser, which belonged to an earlier account, so the first time the
+ * server answers with terms the person is asked as a first agreement. Returns false when the browser would not keep
+ * it: the record still counts for this visit.
+ */
+export function rememberNoAgreement(
+  host: string,
+  at = Date.now(),
+  store: Store | undefined = browserStore(),
+): boolean {
+  sessionAgreed = null;
+  sessionUnagreed = true;
+  let kept = true;
+  try {
+    if (!store) throw new Error("no storage");
+    store.setItem(
+      ACCEPTED_KEY,
+      JSON.stringify({ version: null, agreed: false, at, host }),
+    );
+  } catch {
+    kept = false;
+  }
+  for (const listener of [...listeners]) listener();
+  return kept;
+}
+
+/**
+ * What sign-up records once an account exists: the version agreed to when the terms were shown, otherwise the fact
+ * that none were. Every way of making or restoring an account calls this, with the state the person saw.
+ */
+export function recordSignUpTerms(
+  state: PolicyState,
+  host: string,
+  at = Date.now(),
+  store: Store | undefined = browserStore(),
+): boolean {
+  return state.status === "ready"
+    ? rememberAcceptance(state.policy.version, host, at, store)
+    : rememberNoAgreement(host, at, store);
+}
+
+/**
  * The version of the terms agreed to for the server `host`, or null when none was. A record from before servers were
  * kept (no host) is taken for any server: its version only matches when the text is the same.
  */
@@ -75,6 +121,7 @@ export function acceptedVersion(
   host: string,
   store: Store | undefined = browserStore(),
 ): string | null {
+  if (sessionUnagreed) return null;
   try {
     const raw = store?.getItem(ACCEPTED_KEY);
     if (raw) {
