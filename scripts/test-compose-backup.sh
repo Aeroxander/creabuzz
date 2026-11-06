@@ -6,6 +6,9 @@
 #   -> restore refuses without --yes and under another server key -> every volume wiped, the data is gone
 #   -> restore -> the post, the image (as an image) and the git data are back, and the server takes new posts.
 #
+# The backup here is a plain folder (BUZZ_BACKUP_ALLOW_UNENCRYPTED=true): the encrypted form is covered, without Docker,
+# by scripts/test-compose-backup-encryption.sh.
+#
 # Needs Docker and the image: `cd deploy/compose && ./run.sh build`, or IMAGE=<name>. Env: IMAGE, PORT, KEEP=1 (leave
 # the stack and the scratch folder for a look).
 set -euo pipefail
@@ -73,6 +76,7 @@ BUZZ_HTTP_PORT=$PORT
 BUZZ_V1_ENABLED=true
 BUZZ_TERMS_FILE=policies/terms.md
 BUZZ_PRIVACY_FILE=policies/privacy.md
+BUZZ_BACKUP_ALLOW_UNENCRYPTED=true
 ENV
 printf '# Terms for the backup test\n\nLast updated: 1 March 2026\n\nLine two: "quotes", $dollars and a colon: kept.\n' >policies/terms.md
 printf '# Privacy for the backup test\n\nLast updated: 1 March 2026\n\nWe keep backups.\n' >policies/privacy.md

@@ -74,7 +74,7 @@ Remove it in the app first (step 1 above), so nobody else sees it. Then, in this
    If it was posted on purpose, ban the account too (**Moderate** → **Ban … from the community…**, or
    `./run.sh remove-member <public key>` to take them off the server).
 4. **Backups:** the ones taken before the purge still hold it, until `prune-backups` deletes them. Where the law or the
-   authority wants it gone sooner, delete those backup folders here and every copy off the machine, then take a new
+   authority wants it gone sooner, delete those backups (the `.tar.age` files and their `.sha256` sidecars) here and every copy off the machine, then take a new
    backup at once (`./run.sh backup`), so a restore point still exists.
 
 ## A person asks to see or delete their data

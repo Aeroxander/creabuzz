@@ -30,7 +30,7 @@ ssh ubuntu@<server>
 cd /srv/creaton/deploy/compose
 ```
 
-Then follow "First start" in [../compose/README.md](../compose/README.md#first-start), steps 1 to 9. The ones people
+Then follow "First start" in [../compose/README.md](../compose/README.md#first-start), steps 1 to 10. The ones people
 miss:
 
 - The build needs the ZeroDev project id, the chain node URL and the contract addresses in `.env` (the build lists
@@ -40,14 +40,19 @@ miss:
 
 ## 4. Backups
 
+Backups are encrypted to a public key, so the server can make them every night and holds nothing that opens them. The
+private key lives on your own computer (First start, step 9, makes it). The `age` program must be on the server:
+cloud-init installs it, and a server made before that runs `sudo apt-get install -y age`.
+
 Nightly, plus a copy that leaves the machine. On the server:
 
 ```cron
 0 3 * * * cd /srv/creaton/deploy/compose && ./run.sh backup >>backups/backup.log 2>&1 && ./run.sh prune-backups 14 >>backups/backup.log 2>&1
 ```
 
-Then copy `backups/` somewhere else every day (an OVH object-storage bucket, or `rsync` to another machine), and rehearse
-a restore on a second machine before inviting anyone: [../../docs/v3-review/RESTORE-REHEARSAL.md](../../docs/v3-review/RESTORE-REHEARSAL.md).
+Each night adds `backups/<UTC time>.tar.age` and its `.sha256` sidecar. Copy both somewhere else every day (an OVH
+object-storage bucket, or `rsync` to another machine), and rehearse a restore on a second machine, with the private key,
+before inviting anyone: [../../docs/v3-review/RESTORE-REHEARSAL.md](../../docs/v3-review/RESTORE-REHEARSAL.md).
 
 ## 5. Later
 

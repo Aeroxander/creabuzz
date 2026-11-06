@@ -469,6 +469,7 @@ test-unit:
     ./scripts/test-ensure-local-relay-key.sh
     ./scripts/test-compose-build-settings.sh
     ./scripts/test-compose-age-box.sh
+    ./scripts/test-compose-backup-encryption.sh
     ./scripts/test-policy-stamp.sh
     ./scripts/test-policy-guard.sh
     if command -v cargo-nextest &>/dev/null; then

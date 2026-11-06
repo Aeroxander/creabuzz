@@ -166,43 +166,78 @@ On the server, with the host name's DNS pointing at it and ports 80 and 443 open
    device: the browser keeps the account.
 8. Invite people one at a time: in the community's sidebar, **People** opens People and access. **Make invite link**
    with "One person", and send each person their own link. Nobody gets in without one.
-9. `./run.sh backup`, and practise a restore on another machine (below) before inviting anyone.
+9. Make the backup key, on your own computer, not on the server. Backups are encrypted to a public key, so the server
+   holds only the public half and a nightly backup needs no secret there:
+
+   ```bash
+   age-keygen -o creaton-backup.key   # brew install age (Mac); sudo apt-get install -y age (Ubuntu)
+   ```
+
+   It prints `Public key: age1...`. Put that line's key in `.env` as `BUZZ_BACKUP_AGE_RECIPIENT=age1...`. Keep
+   `creaton-backup.key` in your password manager and never copy it to the server: with it, whoever holds a backup can
+   read every secret and private message in it, and without it a backup cannot be opened by anyone. Keep a second copy
+   somewhere safe too (a lost key means lost backups). The server needs the `age` program: `sudo apt-get install -y age`
+   (cloud-init in `deploy/ovh/` installs it). `./run.sh backup` (and `upgrade`, which backs up first) refuses until the
+   key is set; `start` and `restart` do not need it.
+10. `./run.sh backup`, and practise a restore on another machine (below), with the private key, before inviting anyone.
 
 ## Backups
 
+Backups are encrypted at rest with [age](https://age-encryption.org), to a public key: `BUZZ_BACKUP_AGE_RECIPIENT` in
+`.env` (First start, step 9). The server holds only that public key, so a backup it made (or a copy of one that leaks)
+cannot be opened without the private key, which lives on your own computer.
+
 ```bash
-./run.sh backup                      # into backups/<UTC time>/ while the server runs
-./run.sh verify-backup backups/<dir> # checks every file against the backup's manifest
-./run.sh restore backups/<dir> --yes # stops the server, restores, starts it, waits until it is ready
+./run.sh backup                                  # backups/<UTC time>.tar.age and .sha256, while the server runs
+./run.sh verify-backup backups/<time>.tar.age    # checks the file against its sidecar hash; needs no key
+AGE_IDENTITY_FILE=~/creaton-backup.key ./run.sh verify-backup backups/<time>.tar.age   # also opens it, checks the manifest
+AGE_IDENTITY_FILE=~/creaton-backup.key ./run.sh restore backups/<time>.tar.age --yes   # stops the server, restores, starts it
 ```
 
-A backup is one folder: `postgres.dump` (the whole database), `media/` (the bucket's objects), `git.tar.gz` (the git
-data), `env` (this `.env`), `policies/` (the policy files, if set), `about.txt` (when, which image and revision, the
-database migration, how many events) and `MANIFEST.sha256`. The database is dumped first, so the media and git copies
-taken after it hold everything it refers to. Redis is not backed up (presence, rate windows and caches only); a restore
-empties it.
+`backup` builds one folder, checks it against its manifest, packs it into `backups/<UTC time>.tar.age`, writes the
+sidecar `backups/<UTC time>.sha256`, and only then removes the folder. The folder holds `postgres.dump` (the whole
+database), `media/` (the bucket's objects), `git.tar.gz` (the git data), `env` (this `.env`), `policies/` (the policy
+files, if set), `about.txt` (when, which image and revision, the database migration, how many events) and
+`MANIFEST.sha256`. The database is dumped first, so the media and git copies taken after it hold everything it refers
+to. Redis is not backed up (presence, rate windows and caches only); a restore empties it. The sidecar holds the
+`.tar.age`'s hash (so `verify-backup` can tell a damaged or changed copy without the key) and the hash of the
+`MANIFEST.sha256` packed inside (which `verify-backup` and `restore` check after decrypting). Nothing on the server can
+decrypt a backup, so there is no trial decrypt there: the check that a backup opens is `verify-backup` with the key,
+on your own computer, and the rehearsal below.
 
-- **Copy each backup off the machine**, and keep it where only the operator can read it: it holds every secret in
-  `.env` and every message that is not end-to-end encrypted. `backups/` is git-ignored, so a backup is never
-  committed by accident.
+- **The key.** Without `BUZZ_BACKUP_AGE_RECIPIENT` (or while it still says `CHANGE_ME`), `backup` and `upgrade` refuse and
+  say how to make it. `BUZZ_BACKUP_ALLOW_UNENCRYPTED=true` in `.env` or the shell makes a plain folder instead, for a
+  local test or rehearsal only; the command says the backup is not encrypted. Plain folders made earlier still verify and
+  restore (`verify-backup backups/<dir>`, `restore backups/<dir> --yes`). `restore` of a `.tar.age` decrypts into a
+  temporary folder under `$TMPDIR` (or `/tmp`; it needs room for the backup's size) and removes it when it ends, also
+  when it fails.
+- **Copy each backup off the machine**: both files, the `.tar.age` and its `.sha256`. Encrypted, a copy is safe to keep in
+  a bucket; the key must be kept elsewhere. Backups still hold every secret in `.env` and every message that is not
+  end-to-end encrypted, so only whoever has the private key can read them. `backups/` is git-ignored, so a backup is
+  never committed by accident.
 - **Schedule them, and delete old ones.** The privacy note says how long backups are kept; `./run.sh prune-backups
-  DAYS` deletes the `backups/<UTC time>` folders older than that. A cron line that does both, every night:
+  DAYS` deletes the `backups/<UTC time>` folders and `.tar.age` files (with their sidecars) older than that. A cron line
+  that does both, every night:
 
   ```cron
   0 3 * * * cd /srv/creaton/deploy/compose && ./run.sh backup >>backups/backup.log 2>&1 && ./run.sh prune-backups 14 >>backups/backup.log 2>&1
   ```
 
   Copies kept off the machine need the same: delete them on the same schedule.
-- **Restore on a new machine:** check out the same revision, `cp backups/<dir>/env .env` (and change what differs on
-  this machine), `./run.sh build`, then `./run.sh restore backups/<dir> --yes`. Restore refuses when `.env` has a
-  different `BUZZ_RELAY_PRIVATE_KEY` from the backup's: the server would come back as a different server.
+- **Restore on a new machine:** check out the same revision, unpack the backup in an empty folder with your key
+  (`age -d -i creaton-backup.key <file>.tar.age | tar -xf -`), `cp <folder>/env .env` (and change what differs on this
+  machine), `./run.sh build`, then `AGE_IDENTITY_FILE=<the key file> ./run.sh restore <file>.tar.age --yes`. Restore
+  refuses when `.env` has a different `BUZZ_RELAY_PRIVATE_KEY` from the backup's: the server would come back as a
+  different server.
 - **Practise a restore** before you rely on the backups, and after upgrades that change the database: a backup that has
   never been restored is a hope, not a backup. Use your real backup, copied off the machine, on a second machine, and
   check what came back (posts, pictures, policies, the server's identity, members, git data) before writing new data:
   the steps and checks are in
   [docs/v3-review/RESTORE-REHEARSAL.md](../../docs/v3-review/RESTORE-REHEARSAL.md).
   `scripts/test-compose-backup.sh` is separate, automated coverage: it builds a scratch stack of its own, backs it up
-  and restores it. It never reads your backup, so running it anywhere says nothing about your server's backups.
+  (as a plain folder) and restores it. It never reads your backup, so running it anywhere says nothing about your
+  server's backups. `scripts/test-compose-backup-encryption.sh` covers the encrypted form with a stand-in `docker`
+  (it needs the `age` program, not Docker).
 
 ## Logs
 

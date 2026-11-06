@@ -62,7 +62,10 @@ MSG
 require_env_settings() {
   require_env_file
   local left
-  left="$(grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=.*CHANGE_ME' .env | sed -E 's/^[[:space:]]*/  /; s/=.*//' || true)"
+  # BUZZ_BACKUP_AGE_RECIPIENT is the one setting allowed to stay CHANGE_ME here: only `backup` needs it, and it says so
+  # itself (backup.sh, require_backup_key), so a server can start before the owner has made the backup key.
+  left="$(grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=.*CHANGE_ME' .env | grep -vE '^[[:space:]]*BUZZ_BACKUP_AGE_RECIPIENT=' |
+    sed -E 's/^[[:space:]]*/  /; s/=.*//' || true)"
   if [[ -n "$left" ]]; then
     {
       echo "deploy/compose/.env still contains CHANGE_ME placeholders:"

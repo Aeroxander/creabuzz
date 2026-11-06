@@ -18,7 +18,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' >"${TEST_DIR}/bin/docker"
 chmod +x "${TEST_DIR}/bin/docker"
 export PATH="${TEST_DIR}/bin:${PATH}"
 cd "${TEST_DIR}/compose"
-printf 'BUZZ_COMPOSE_CREATON=true\nBUZZ_TERMS_FILE=policies/terms.md\nBUZZ_PRIVACY_FILE=policies/privacy.md\n' >.env
+printf 'BUZZ_COMPOSE_CREATON=true\nBUZZ_TERMS_FILE=policies/terms.md\nBUZZ_PRIVACY_FILE=policies/privacy.md\nBUZZ_BACKUP_ALLOW_UNENCRYPTED=true\n' >.env
 
 fail() {
   echo "FAIL: $1" >&2

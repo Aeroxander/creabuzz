@@ -1361,6 +1361,7 @@ By hand:
 ```bash
 cd deploy/compose && ./run.sh build && cd ../..   # needs about 15 GB of Docker disk the first time
 scripts/test-compose-backup.sh                     # a scratch stack on port 3417: backup, wipe, restore (about a minute)
+scripts/test-compose-backup-encryption.sh          # encrypted backups, verify, restore, prune; no Docker (needs the age program)
 pnpm --dir web test                                # deploy-env.test.mjs
 ```
 
@@ -1377,8 +1378,10 @@ By hand, before the first hosted start (`deploy/compose/README.md`, "First start
    you are signed in as the owner. The sign-up screen showed your terms; posting and unread markers work.
 3. **People** → People and access → **Make invite link** for "One person". Open it in a private window: it shows your
    terms, and the new account gets in. Without a link, a new account cannot.
-4. `./run.sh backup`, copy the folder to another machine, and practise `./run.sh restore <dir> --yes` there (README,
-   "Backups") before inviting anyone. `./run.sh prune-backups 14` removes only folders older than 14 days.
+4. Make the backup key on your own computer (`age-keygen -o creaton-backup.key`, README "First start", step 9) and put its
+   public key in `.env`; `./run.sh backup` refuses until you do. Then `./run.sh backup`, copy the `.tar.age` and its
+   `.sha256` to another machine, and practise `AGE_IDENTITY_FILE=<key> ./run.sh restore <file>.tar.age --yes` there
+   (README, "Backups") before inviting anyone. `./run.sh prune-backups 14` removes only backups older than 14 days.
 
 
 ## 4be. Every screen, photographed and read (D108, 2026-10-24)

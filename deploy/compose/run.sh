@@ -21,9 +21,11 @@ Back up these before upgrades and on a regular schedule:
 Keep Postgres + object/git state snapshots from the same maintenance window.
 
 ./run.sh backup takes the database, the media bucket, the git data and the
-settings (.env and the policy files) in one folder, in that order; copy that
-folder off this machine. The owner key and Caddy's certificates are not in it
-(Caddy gets new certificates by itself).
+settings (.env and the policy files) in that order, packs them into one file
+backups/<UTC time>.tar.age encrypted to the public key BUZZ_BACKUP_AGE_RECIPIENT
+(with a sidecar backups/<UTC time>.sha256); copy both off this machine. Only the
+private key, which must not be on this server, opens it. The owner key and
+Caddy's certificates are not in it (Caddy gets new certificates by itself).
 MSG
 }
 
@@ -45,8 +47,9 @@ warn_missing_policies() {
     "set ${missing[*]} to its path in .env, and run ./run.sh restart (README.md, \"First start\")." >&2
 }
 
-# Backups older than DAYS days, by the folder's age: the privacy note says how long backups are kept, and nothing else
-# deletes them. Only folders named the way `backup` names them (backups/<UTC time>) are touched.
+# Backups older than DAYS days, by the folder's or file's age: the privacy note says how long backups are kept, and nothing
+# else deletes them. Only what `backup` names (backups/<UTC time>, a plain folder, or backups/<UTC time>.tar.age with its
+# .sha256 sidecar) is touched.
 prune_backups() {
   local days="${1:-}"
   [[ "$days" =~ ^[0-9]+$ ]] || {
@@ -54,12 +57,20 @@ prune_backups() {
     exit 1
   }
   [[ -d backups ]] || return 0
-  local dir removed=0
-  while IFS= read -r dir; do
-    echo "removing $dir"
-    rm -rf -- "$dir"
+  local item removed=0
+  while IFS= read -r item; do
+    echo "removing $item"
+    rm -rf -- "$item"
+    if [[ "$item" == *.tar.age ]]; then
+      rm -f -- "${item%.tar.age}.sha256"
+    fi
     removed=$((removed + 1))
-  done < <(find backups -mindepth 1 -maxdepth 1 -type d -name '[0-9]*T[0-9]*Z' -mtime +"$days" | LC_ALL=C sort)
+  done < <(
+    {
+      find backups -mindepth 1 -maxdepth 1 -type d -name '[0-9]*T[0-9]*Z' -mtime +"$days"
+      find backups -mindepth 1 -maxdepth 1 -type f -name '[0-9]*T[0-9]*Z.tar.age' -mtime +"$days"
+    } | LC_ALL=C sort
+  )
   echo "$removed backup(s) older than $days days removed from backups/. Copies kept off this machine are not touched."
 }
 
@@ -314,18 +325,25 @@ Commands:
   status        Show compose service status
   config        Render merged compose config
   backup-hint   Print the production backup checklist
-  backup [DIR]  Back up the database, media, git data and settings while the
-                server runs (default backups/<UTC time>)
-  restore DIR --yes
+  backup [NAME] Back up the database, media, git data and settings while the
+                server runs, into backups/<UTC time>.tar.age (or NAME.tar.age),
+                encrypted to the public key BUZZ_BACKUP_AGE_RECIPIENT in .env; the
+                plain folder is removed. Refused without that key (README.md,
+                "First start", step 9)
+  restore FILE --yes
                 Replace this stack's data with a backup's (stops the server
-                meanwhile)
-  verify-backup DIR
-                Check a backup's files against its manifest
+                meanwhile). FILE is a .tar.age (needs AGE_IDENTITY_FILE=<the
+                private key file>) or an older plain backup folder
+  verify-backup FILE
+                A .tar.age: check its hash against its sidecar (no key needed);
+                with AGE_IDENTITY_FILE set, also open it and check every file
+                against its manifest. A plain folder: check it against its manifest
   policy-stamp  Record the terms and privacy note as they are, after updating
                 their Last updated line; start and upgrade refuse text that
                 changed without it
   prune-backups DAYS
-                Delete backups/<UTC time> folders older than DAYS days
+                Delete backups (folders and .tar.age files with their sidecars)
+                older than DAYS days
   psql [options]
                 Open the database (or run SQL piped in)
   remove-media HASH [--yes]
