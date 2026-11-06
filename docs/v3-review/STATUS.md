@@ -1,7 +1,7 @@
 # Where Creaton stands
 
 Updated 2026-11-02 (v5 development scope; prior v4 validation remains historical); the weekly-sales items in Scope, Known gaps and Waiting on you were updated 2026-11-05, and again the same day after the low-severity run. The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
-Each decision is a row in [DECISIONS.md](DECISIONS.md) (through D183). The hand tests for the pilot, in order, are in
+Each decision is a row in [DECISIONS.md](DECISIONS.md) (through D184). The hand tests for the pilot, in order, are in
 [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md); every hand test ever written is in [TEST-STEPS.md](TEST-STEPS.md), a log in
 date order. What the 2026-10-31 pass hid or retired, and what waits on your call, is in
 [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md).
@@ -135,7 +135,7 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 3. **Broadcast to Sepolia:** `scripts/sepolia-deploy.sh --broadcast`, with your own key in `.env`.
 4. **Host the server** with `deploy/compose` (the image, read state, terms at sign-up, backups): a machine, a domain, the
    filled-in `.env`, and one restore rehearsal ([RESTORE-REHEARSAL.md](RESTORE-REHEARSAL.md)).
-5. **The policy drafts** in `docs/policies/`, with a lawyer. Since the lawyer's review (D183) the web app asks members to agree again when the text changes, the age box is on by default in the compose stack and the start guard is stricter; the desktop app, advance notice and every owner or counsel bracket are still open (see the Code follow-ups in `docs/policies/LAWYER-FEEDBACK-RESPONSE.md`).
+5. **The policy drafts** in `docs/policies/`, with a lawyer. Since the lawyer's review (D183, D184) the web app asks members to agree again when the text changes, the age box is on by default in the compose stack, the start guard is stricter and backups are encrypted to a key kept off the server; the desktop and mobile apps (decide: offer no mobile build), the pin and days-ahead of a change notice and every owner or counsel bracket are still open (see "Counsel's second round" and the Code follow-ups in `docs/policies/LAWYER-FEEDBACK-RESPONSE.md`).
 6. **The social run, then the contributor run** ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md)), with the first project typed in
    from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) and a few boards with real first posts.
 7. **The card onramp** on the local branch `onramp-options`: waiting on provider keys, not merged.
