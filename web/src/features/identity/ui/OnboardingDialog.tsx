@@ -172,6 +172,8 @@ export function OnboardingDialog({
       cardClassName="max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-background p-6 shadow-2xl"
       initialFocus={nameRef}
       labelledBy="onboarding-title"
+      // Try again removes the button that has focus while the terms load again: focus goes back into the dialog.
+      refocusKey={policy.status}
       // Escape is "Not now", except while an account is being made.
       onEscape={saving ? undefined : (onCancel ?? onDone)}
       testId="onboarding-dialog"
@@ -383,6 +385,7 @@ function SignInView({
       cardClassName="w-full max-w-sm rounded-3xl bg-background p-6 shadow-2xl"
       initialFocus={keyRef}
       labelledBy="onboarding-signin-title"
+      refocusKey={policy.status}
       onEscape={onCancel ?? onBack}
       testId="onboarding-dialog"
     >

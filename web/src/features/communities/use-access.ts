@@ -10,6 +10,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
+import { assertMayAct } from "@/shared/lib/action-guard";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { queryEvents } from "@/shared/lib/nostr-client";
@@ -151,6 +152,7 @@ export async function mintInvite(
   secs: number,
   uses: number | null,
 ): Promise<MintedInvite> {
+  assertMayAct(); // changed terms not yet agreed to: nothing goes out as the person
   const invite = parseMintedInvite(
     await signedPost("/api/invites", inviteRequestBody(secs, uses)),
   );
@@ -177,6 +179,7 @@ export function useInvites(enabled: boolean) {
 
 /** End an invite now. People who joined with it stay. */
 export async function revokeInvite(id: string): Promise<void> {
+  assertMayAct();
   await signedPost("/api/invites/revoke", { id });
 }
 

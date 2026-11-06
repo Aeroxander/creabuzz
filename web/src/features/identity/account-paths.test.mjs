@@ -23,13 +23,16 @@ const CREATORS = [
 
 /**
  * Sign-up and sign-in screens: each call sits in a handler with the named check. `first` means the check must come
- * before the call (a gate); otherwise it may come after (a record made once the key is changed).
+ * before the call (a gate; only where a gate exists). `record` is what must follow each call within `AFTER_LINES` lines (the record of what was
+ * agreed to, or that nothing was), so a record kept for one call can never stand in for another's.
  */
+const AFTER_LINES = 6;
 const GATED = {
   "features/identity/ui/OnboardingDialog.tsx": {
     calls: 4,
     guard: /if \(.*!allowed/,
     first: true,
+    record: /\baccepted\(\)|\brecordSignUpTerms\(/,
     // The create view and the recovery-key sign-in view both show the boxes.
     boxes: 2,
   },
@@ -43,12 +46,12 @@ const GATED = {
   // boxes here, so each records that none were agreed to and the app asks at once on the next load.
   "features/identity/ui/IdentityRecoveryBanner.tsx": {
     calls: 2,
-    guard: /rememberNoAgreement\(/,
+    record: /\brememberNoAgreement\(/,
     boxes: 0,
   },
   "features/identity/ui/LinkDevicePage.tsx": {
     calls: 1,
-    guard: /rememberNoAgreement\(/,
+    record: /\brememberNoAgreement\(/,
     boxes: 0,
   },
 };
@@ -90,7 +93,7 @@ function code(text) {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
-/** Each call to a creator: its name, and the handler it sits in (up to the call, and the whole of it). */
+/** Each call to a creator: its name, and the handler it sits in (up to the call) and the lines right after it. */
 function callSites(text) {
   const src = code(text);
   const lines = src.split("\n");
@@ -107,19 +110,11 @@ function callSites(text) {
         )
       )
         start -= 1;
-      let end = index + 1;
-      while (
-        end < lines.length &&
-        !/^\s*(export\s+)?(async\s+)?function\s+\w+|^\s*const\s+\w+\s*=\s*(async\s*)?(\(|function)/.test(
-          lines[end],
-        )
-      )
-        end += 1;
       sites.push({
         name: match[1],
         line: index + 1,
         before: lines.slice(start, index + 1).join("\n"),
-        whole: lines.slice(start, end).join("\n"),
+        after: lines.slice(index, index + AFTER_LINES).join("\n"),
       });
     }
   });
@@ -167,17 +162,26 @@ describe("every account-making path waits for the terms", () => {
   });
 
   for (const [file, rule] of Object.entries(GATED)) {
-    it(`${file}: every call is inside a handler that checks the gate first`, () => {
+    it(`${file}: every call is gated before it, and recorded right after it`, () => {
       const text = all.get(file);
       assert.ok(text, `${file} exists`);
       const sites = callSites(text);
       assert.equal(sites.length, rule.calls, `${file} call sites changed`);
-      for (const site of sites) {
+      for (const site of sites.filter(() => rule.guard)) {
         assert.match(
-          rule.first ? site.before : site.whole,
+          site.before,
           rule.guard,
           `${file} line ${site.line}: ${site.name} is reachable without the terms check ${rule.guard}`,
         );
+      }
+      if (rule.record) {
+        for (const site of sites) {
+          assert.match(
+            site.after,
+            rule.record,
+            `${file} line ${site.line}: ${site.name} is not followed by ${rule.record} within ${AFTER_LINES} lines`,
+          );
+        }
       }
       assert.ok(
         (text.match(/<PolicyBoxes/g) ?? []).length >= rule.boxes,

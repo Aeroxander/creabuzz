@@ -3,7 +3,7 @@
  *
  * When the server's terms or privacy note have changed and the person has not yet agreed to the new text, they stay
  * signed in and can read, save their recovery key and sign out, but cannot post or act. The terms notice
- * (`PolicyReacceptHost`) switches this on and off; every send goes through `assertMayAct` first (`publish-event.ts`).
+ * (`PolicyReacceptHost`) switches this on and off; every send goes through `assertMayAct` first (`publish-event.ts` for the relay connection; `action-guard-senders.test.mjs` lists the direct requests).
  *
  * Page-lifetime state: switching community reloads the page, which clears it. It is only ever set from the live
  * policy check of the community being shown.

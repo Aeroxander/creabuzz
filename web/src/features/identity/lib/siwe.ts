@@ -11,6 +11,7 @@
  * so the binding rules stay unit-testable.
  */
 
+import { assertMayAct } from "@/shared/lib/action-guard";
 import { signAsUser, existingUserPubkey } from "@/shared/lib/identity";
 import { relayHttpBaseUrl, relayWsUrl } from "@/shared/lib/relay-url";
 import { queryEvents } from "@/shared/lib/nostr-client";
@@ -72,6 +73,7 @@ function writeWalletBinding(binding: WalletBinding | null): void {
  * different binding. On success the local record is cleared.
  */
 export async function revokeWalletBinding(): Promise<void> {
+  assertMayAct(); // changed terms not yet agreed to: nothing goes out as the person
   const binding = readWalletBinding();
   if (!binding)
     throw new Error("No wallet binding is recorded in this browser");
@@ -161,6 +163,7 @@ export async function signInWithWallet(
   address: string;
   pubkey: string;
 }> {
+  assertMayAct();
   const relay = relayWsUrl();
   const registrationUrl = `${relayHttpBaseUrl()}/auth/siwe/register`;
   const address = await getAccount();

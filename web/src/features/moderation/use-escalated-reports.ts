@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useBoundedPoll } from "@/shared/hooks/use-bounded-poll";
+import { assertMayAct } from "@/shared/lib/action-guard";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
@@ -55,6 +56,8 @@ async function adminFetch(
   method: "GET" | "POST",
   body?: Record<string, string>,
 ): Promise<unknown> {
+  // An action on a report is a change made as the person; reading the list is not.
+  if (method === "POST") assertMayAct();
   const payload = body === undefined ? undefined : JSON.stringify(body);
   const auth = await makeNip98AuthHeader(url, method, { body: payload });
   const response = await timedFetchStreamed(url, {

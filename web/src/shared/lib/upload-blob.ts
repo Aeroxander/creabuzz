@@ -5,6 +5,7 @@
  * expiration, server tag) and the mandatory X-SHA-256 header.
  */
 
+import { assertMayAct } from "@/shared/lib/action-guard";
 import { signAsUser } from "@/shared/lib/identity";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 import { uploadSizeError } from "@/shared/lib/upload-limits";
@@ -25,6 +26,8 @@ async function sha256Hex(data: ArrayBuffer): Promise<string> {
 }
 
 export async function uploadBlob(file: File): Promise<BlobDescriptor> {
+  // Changed terms not yet agreed to: nothing goes out as the person (`action-guard.ts`).
+  assertMayAct();
   // Refuse before reading the file: the body is buffered whole and hashed, so
   // an oversized upload would cost the tab that memory and a full read before
   // the relay rejected it anyway.

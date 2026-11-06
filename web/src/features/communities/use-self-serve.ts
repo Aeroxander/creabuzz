@@ -8,6 +8,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { assertMayAct } from "@/shared/lib/action-guard";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import {
   isServerTimeout,
@@ -103,6 +104,7 @@ export async function createCommunity(
   name: string,
   access: Access,
 ): Promise<CreatedCommunity> {
+  assertMayAct(); // changed terms not yet agreed to: nothing goes out as the person
   const origin = apiOrigin();
   if (!origin) {
     throw new CreateCommunityError(

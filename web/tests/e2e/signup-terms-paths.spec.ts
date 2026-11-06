@@ -161,3 +161,60 @@ test("making an account waits for the box and says so when the terms could not b
   );
   expect(record.agreed).toBe(false);
 });
+
+test("making an account with the box ticked records the version agreed to", async ({
+  page,
+}) => {
+  await start(page, () => ({ status: 200, json: TERMS }));
+  await page.goto("/");
+  await page.getByTestId("create-identity-cta").click();
+  await page.getByTestId("onboarding-name").fill("Nia Patel");
+  const create = page.getByTestId("onboarding-create");
+  await expect(create).toBeDisabled();
+  await page.getByTestId("onboarding-policy-agree").check();
+  await Promise.all([page.waitForNavigation(), create.click()]);
+
+  const record = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key) ?? "null"),
+    ACCEPTED_KEY,
+  );
+  expect(record.version).toBe("v1");
+  expect(record.agreed).not.toBe(false);
+});
+
+test("Try again keeps keyboard focus inside the sign-up dialog, on both screens", async ({
+  page,
+}) => {
+  let up = false;
+  await start(page, () =>
+    up
+      ? { status: 200, json: TERMS }
+      : { status: 503, json: { error: "down" } },
+  );
+  const insideDialog = () =>
+    page.evaluate(() =>
+      Boolean(
+        document
+          .querySelector('[role="dialog"]')
+          ?.contains(document.activeElement),
+      ),
+    );
+
+  // The recovery-key screen.
+  await openSignIn(page);
+  await page.getByTestId("onboarding-policy-retry").focus();
+  up = true;
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("onboarding-policy-agree")).toBeVisible();
+  expect(await insideDialog()).toBe(true);
+
+  // The create screen.
+  up = false;
+  await page.reload();
+  await page.getByTestId("create-identity-cta").click();
+  await page.getByTestId("onboarding-policy-retry").focus();
+  up = true;
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("onboarding-policy-agree")).toBeVisible();
+  expect(await insideDialog()).toBe(true);
+});

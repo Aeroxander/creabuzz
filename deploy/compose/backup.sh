@@ -34,7 +34,7 @@ relay_image() {
 }
 
 backup() {
-  require_env
+  require_env_settings
   local dir="${1:-backups/$(date -u +%Y%m%dT%H%M%SZ)}"
   [[ ! -e "$dir" ]] || die "$dir already exists; name a new folder"
   umask 077
@@ -117,14 +117,40 @@ verify() {
   step "$dir matches its manifest ($(wc -l <"$dir/MANIFEST.sha256" | tr -d ' ') files)"
 }
 
+# Copy the backup's policy files and stamps to where .env names them, for the ones this machine does not have.
+restore_policies() {
+  local dir="$1" setting file stamp
+  for setting in BUZZ_TERMS_FILE BUZZ_PRIVACY_FILE; do
+    file="$(env_value "$setting")"
+    [[ -n "$file" ]] || continue
+    if [[ ! -f "$file" && -f "$dir/policies/$(basename "$file")" ]]; then
+      mkdir -p "$(dirname "$file")"
+      cp "$dir/policies/$(basename "$file")" "$file"
+      step "policy file $file <- the backup (this machine had none)"
+    fi
+    stamp="$(policy_stamp_path "$file")"
+    if [[ ! -f "$stamp" && -f "$dir/policies/.stamps/$(basename "$stamp")" ]]; then
+      mkdir -p "$(dirname "$stamp")"
+      cp "$dir/policies/.stamps/$(basename "$stamp")" "$stamp"
+    fi
+  done
+}
+
 restore() {
   local dir="${1:?Usage: ./run.sh restore DIR --yes}"
   if [[ "${2:-}" != "--yes" ]]; then
     die "restore replaces this stack's database, media and git data with $dir's. Run it again with --yes."
   fi
-  require_env
+  require_env_settings
   verify "$dir"
   dir="$(cd "$dir" && pwd)"
+  # On a new machine the policy files and their stamps are not there yet: bring back what the backup holds, never over
+  # a file or stamp this machine has. Then the server starts with the same check as any start, before anything is
+  # replaced, so a policy file that cannot be served stops the restore while the data is still untouched.
+  restore_policies "$dir"
+  if creaton_on; then
+    load_policies
+  fi
 
   # The server's own key signs its records; restoring under another key would make it a different server to every
   # client. On a new machine, copy the backup's env to .env first (and set this machine's own values in it).
@@ -166,7 +192,7 @@ restore() {
   compose up -d --wait >/dev/null
   step "restored from $dir"
   if [[ -d "$dir/policies" ]]; then
-    echo "The backup also holds the policy files it was taken with ($dir/policies); they were not copied back."
+    echo "The backup also holds the policy files it was taken with ($dir/policies). Files this machine already had were kept."
   fi
 }
 

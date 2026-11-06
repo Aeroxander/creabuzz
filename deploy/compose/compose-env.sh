@@ -56,7 +56,10 @@ MSG
   fi
 }
 
-require_env() {
+# The settings every command needs, without the policy files: what backup and restore check, so that the terms and
+# privacy note (a legal text someone may be in the middle of editing) never stand in the way of keeping or recovering
+# the data.
+require_env_settings() {
   require_env_file
   local left
   left="$(grep -E '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=.*CHANGE_ME' .env | sed -E 's/^[[:space:]]*/  /; s/=.*//' || true)"
@@ -79,11 +82,17 @@ require_env() {
     } >&2
     exit 1
   fi
-  if creaton_on; then
-    load_policies
-  fi
   if tls_on; then
     require_private_relay_port
+  fi
+}
+
+# The settings, and the served policy files (placeholders and the Last updated stamp): what start, restart, upgrade and
+# the other commands that run the server check.
+require_env() {
+  require_env_settings
+  if creaton_on; then
+    load_policies
   fi
 }
 

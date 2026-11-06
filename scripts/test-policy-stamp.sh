@@ -97,4 +97,32 @@ ok backup "${TEST_DIR}/backup"
 [[ -f "${TEST_DIR}/backup/policies/.stamps/privacy.md.stamp" ]] || fail "the backup holds no stamp for the privacy note"
 grep -q "policies/.stamps/terms.md.stamp" "${TEST_DIR}/backup/MANIFEST.sha256" || fail "the stamp is not in the manifest"
 
+# A backup is never held up by the legal text: an edited, not yet stamped policy file still backs up (start, restart and
+# upgrade are the commands that refuse it).
+terms "6 March 2026" "Terms text, edited and not stamped yet."
+refused start "policies/terms.md" "policy-stamp"
+ok backup "${TEST_DIR}/backup-unstamped"
+[[ -f "${TEST_DIR}/backup-unstamped/policies/terms.md" ]] || fail "the backup of an unstamped edit holds no terms"
+ok policy-stamp
+
+# Restoring on a new machine, which has no policy files and no stamps yet, brings back what the backup holds and starts:
+# the stub docker takes no dump, so the folder is made by hand in the shape verify-backup checks.
+fake="${TEST_DIR}/backup-fake"
+mkdir -p "${fake}/media" "${fake}/policies/.stamps"
+touch "${fake}/postgres.dump" "${fake}/git.tar.gz" "${fake}/about.txt"
+cp .env "${fake}/env"
+cp policies/terms.md policies/privacy.md "${fake}/policies/"
+cp policies/.stamps/* "${fake}/policies/.stamps/"
+(cd "${fake}" && find . -type f ! -name MANIFEST.sha256 | LC_ALL=C sort | sed 's|^\./||' | xargs sha256sum >MANIFEST.sha256)
+rm -rf policies
+refused start "no such file"
+ok restore "${fake}" --yes
+[[ -f policies/terms.md && -f policies/.stamps/terms.md.stamp && -f policies/.stamps/privacy.md.stamp ]] ||
+  fail "restore did not bring back the policy files and their stamps"
+ok config
+# A stamp this machine already has is never replaced by the backup's.
+printf 'hash=other\nlast_updated=1 January 2020\n' >policies/.stamps/terms.md.stamp
+run restore "${fake}" --yes || true
+grep -q "hash=other" policies/.stamps/terms.md.stamp || fail "restore replaced a stamp this machine already had"
+
 echo "PASS: the Last updated check refuses a missing stamp and changed text under an unchanged date, and accepts the rest"
