@@ -1,7 +1,7 @@
 # Where Creaton stands
 
 Updated 2026-11-02 (v5 development scope; prior v4 validation remains historical); the weekly-sales items in Scope, Known gaps and Waiting on you were updated 2026-11-05, and again the same day after the low-severity run. The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
-Each decision is a row in [DECISIONS.md](DECISIONS.md) (through D184). The hand tests for the pilot, in order, are in
+Each decision is a row in [DECISIONS.md](DECISIONS.md) (through D185). The hand tests for the pilot, in order, are in
 [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md); every hand test ever written is in [TEST-STEPS.md](TEST-STEPS.md), a log in
 date order. What the 2026-10-31 pass hid or retired, and what waits on your call, is in
 [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md).
@@ -125,7 +125,7 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 
 0. **Weekly sales (D181, D182), in this order:** read the brief's section 8 and decide the open items (price-token policy, a floor
    for the founder schedule, whether the old rounds contract may be named as an exit exchange, order caps, the allocation
-   rule, wash-trade wording (a standing line saying one person can set a round's price is built under every printed weekly price, 4c132a0; its words are counsel's and not approved, and your choice between that line and printing no price is open), quorum floors, listing notice, which kit pilots use, the pilot build's Trading card, now hidden there, so say whether to keep that);
+   rule, wash-trade wording (you chose price history with a standing line saying one person can set a round's price, under the latest round and the earlier-rounds list, D185; its words are counsel's and not approved; the old WeeklyRounds contract is deprecated on our side, and sealing the exit-exchange slot is still open), quorum floors, listing notice, which kit pilots use, the pilot build's Trading card, now hidden there, so say whether to keep that);
    send [LAWYER-BRIEF-WEEKLY-SALES.md](LAWYER-BRIEF-WEEKLY-SALES.md) and the review packet to counsel and to the outside
    reviewer; walk the changed trading flows yourself (`scripts/web-trading-e2e.sh` shows what the agents drove); decide whether the
    fixes from the low-severity run get a second look (a review of them has not been run); and only then consider a release decision, which is never bundled with a

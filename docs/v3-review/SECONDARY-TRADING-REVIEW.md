@@ -348,8 +348,8 @@ Stated plainly, because a reviewer should not spend time discovering these:
    is a product decision, and no money is mis-paid either way (`LedgerShort`
    holds). (e) The old `WeeklyRounds` contract is frozen and unrepaired, but the V2
    contracts do not stop a DAO naming it as its exit exchange after the 30-day notice;
-   today only the deploy scripts and build settings keep it away from a value-bearing
-   network. Whether to seal that slot is an open owner decision, and no test yet pins
+   since D185 it is deprecated on our side (not deployed by our scripts, no card in the app),
+   which does not stop the slot from naming a copy deployed by someone else. Whether to seal that slot is an open owner decision, and no test yet pins
    either outcome. (f) The low-severity batches (B15 to B24) were run after the first
    version of this revision; see section 11. What they left: the V2 kit still accepts the
    older launch call (a sealed project with no market), a wording sentence about a fee

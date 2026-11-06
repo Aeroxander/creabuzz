@@ -2,13 +2,19 @@
 
 Written 2026-11-05 on branch `v4-governance-rework`. The market described here (the V2 launch kit, the market factory
 and the market) is not deployed or switched on anywhere. One older contract that this brief names, the frozen
-`WeeklyRounds`, is deployed on the Sepolia test network (section 8, item 18).
+`WeeklyRounds`, is deprecated on our side (D185): our scripts no longer deploy it and the app no longer offers it. One
+copy made on 5 November 2026 sits unused on the Sepolia test network (section 8, item 18).
 Updated later the same day, after the ten low-severity batches (B15 to B24) were run (section 5.6): line counts, test
 counts and the open lists in sections 5, 6 and 8 were re-measured or rewritten then.
 Updated 2026-11-06 after counsel's second round: section 7 now opens with the decision on where the market may be
 offered (7.0) and a record of counsel's preliminary views (7.1), and adds sections on the EU crypto-asset rules (7.2),
 money transmission (7.3) and the platform as a payer (7.4); section 8 adds items 17 to 20. No code, contract or
 parameter was changed. Sections 1 to 6 and the questions numbered 1 to 25 keep their numbers.
+Updated 2026-11-06, later (D185): the owner decided to show price history on the weekly sale, with the permanent label,
+and to deprecate the old `WeeklyRounds` contract on our side. The Trading card now has an "Earlier rounds" list
+(`9eecfcb`); the deploy script, the web app and the launch documents no longer carry `WeeklyRounds` (`4d90bb1`,
+`34353a7`). Items 18 and 19, section 1.7 and the places that cite them were rewritten, and the line numbers this brief
+cites were read again at that point. No economic parameter changed.
 This brief is engineering material, not legal advice.
 
 **Who this is for.** A securities and technology lawyer who has not seen the code, and an outside smart-contract
@@ -145,10 +151,12 @@ transfers, which would have frozen sellers' escrow. This was a real defect found
 is now exempt from the validator.
 
 Not closed: the DAO can name an *exit exchange* for the Shares, a separate older feature, with 30 days' notice. The
-older, frozen `WeeklyRounds` contract could be named in that slot. It is the contract with the theft defects in
-`WEEKLY-ROUNDS-AUDIT-2026-11-01.md`. Today it is kept out by process and by build settings, not by the V2 contracts
-(open item in section 8). It is deployed on the Sepolia test network, and counsel's preliminary view is that naming it
-on a value-bearing network must be made impossible, not prevented by process (section 8, item 18).
+older, frozen `WeeklyRounds` contract could be named in that slot, and so could a copy of it deployed by someone else.
+It is the contract with the theft defects in `WEEKLY-ROUNDS-AUDIT-2026-11-01.md`. The owner has deprecated it on our
+side (D185): our scripts no longer deploy it and the app no longer offers it. That does not stop the slot from naming a
+copy deployed by someone else; the V2 contracts still accept any non-zero address there. An unused copy is on the
+Sepolia test network, and counsel's preliminary view is that naming it on a value-bearing network must be made
+impossible, not prevented by process (section 8, item 18).
 
 ### 1.7 What the app tells people
 
@@ -159,6 +167,13 @@ The trading card sits on the project's Treasury tab. In plain words, it:
 - shows the round, its prices in the price token's own units and symbol (read from the token), the time orders close
   and the time settling ends, and the viewer's own orders and what they can collect. A round that settled with
   nothing crossed says "nothing traded" and prints no price.
+- lists the earlier rounds under the Trading card ("Earlier rounds", `TradingHistory.tsx`), newest first, 12 at a time
+  with a "Show older rounds" step. Each row has the opening date and time with the time zone, then "N lots traded at P
+  TOKEN a lot", or "No trade" for a round nobody settled or where nothing crossed. A failed read says "Could not load
+  earlier rounds. Try again." with a retry. The list shows only when the price token's units are known.
+- shows a standing label wherever a settled price is printed: "One person can set a round's price. An account can sell
+  and buy in the same round, and one person can hold more than one account." It sits under the latest round's line and
+  once under the earlier-rounds list (section 8, item 19). Counsel owns the wording and has not approved it.
 - shows the price token's short address next to its symbol, and warns when it is not the project's recorded sale
   currency, because a token can call itself anything.
 - before an offer or a bid is sent, says what it holds ("This holds N lots ... until the round settles"), that an
@@ -199,7 +214,8 @@ there is no fee sentence (deliberately, section 3). The text has not been review
 - **No approvals to an operator.** The only approvals are those a user gives the market itself for the exact
   amount of their own order. The market grants no approvals to anyone.
 - **No repair of the old rounds contract.** `contracts/src/WeeklyRounds.sol` has the defects in the D179 review. It is
-  frozen, unchanged, and not repaired. The new market is a separate contract and shares none of its code.
+  frozen, not repaired and, since D185, marked deprecated in a source comment; its code is unchanged. The new market is a
+  separate contract and shares none of its code.
 - **Not an exchange operated by the project.** There is no order book run by an operator, no matching done off-chain,
   and no custody. Matching is the contract's deterministic arithmetic, which anyone can run. Whether that matters
   legally is for counsel (section 7).
@@ -274,7 +290,7 @@ so nothing is left out.
 | 5 | **Summoner** (the DAO factory) | A contract; no key | Creates DAO clones. Each DAO can be initialised only by it. | The review passes reported no administrator role. `Summoner.summon` is public (anyone can create a DAO clone), which is why the market factory accepts only the kit. I did not read the Summoner line by line. | `MolochPatched.sol` |
 | 6 | **Market contract** | A contract; no key | Holds escrow. Is the only address exempt from the Shares transfer lock. Calls two hooks on the voting policy to keep voting weight right. | Has no owner, no upgrade, no function to send funds anywhere except to an order's owner. Its 38 external entries (functions, public variables and constants) are pinned to a reviewed list (`test_the_market_abi_matches_the_reviewed_allowlist`). | `SecondaryMarket.sol` |
 | 7 | **Voting policy** (`ActivationVoting` clone) | A contract; no key | Tracks which bought amounts may vote. One-time setup by the DAO in the creation block. Two hooks callable only by the project's market. | Cannot be reconfigured after the creation block. | `ActivationVoting.sol:269`, `:829` |
-| 8 | **Deployer key(s)** for the kit, factory, summoner | Whoever deploys | Choose which code is deployed. After deployment the V2 contracts keep no deployer role in the code read. | Not applicable on a local chain. For a public chain this is undecided: no script exists. The Sepolia script uses `DEPLOYER_PRIVATE_KEY`, "a testnet-only key", and deploys the older kits, not the V2 kit. It did deploy the frozen `WeeklyRounds` to Sepolia (section 8, item 18). | `scripts/sepolia-deploy.sh`, `DeployLaunchKit.s.sol` |
+| 8 | **Deployer key(s)** for the kit, factory, summoner | Whoever deploys | Choose which code is deployed. After deployment the V2 contracts keep no deployer role in the code read. | Not applicable on a local chain. For a public chain this is undecided: no script exists. The Sepolia script uses `DEPLOYER_PRIVATE_KEY`, "a testnet-only key", and deploys the older kits, not the V2 kit. It deployed the frozen `WeeklyRounds` to Sepolia on 5 November 2026 and no longer does (section 8, item 18). | `scripts/sepolia-deploy.sh`, `DeployLaunchKit.s.sol` |
 | 9 | **Keeper key** (`KEEPER_PRIVATE_KEY`) | The keeper operator | Pays the network fee to call `settle` and, only if enabled, `openRound`. | Nothing else: it holds no approvals, no Shares, no quote. The calls are open to anyone. The script does not print the key; it does pass it on the command line to a local tool, so it is visible to other users of the same machine. | `scripts/secondary-keeper.sh` |
 | 10 | **Anyone** | Any address | Open a round (after a week), settle a closed round, trigger collection for any order. | Direct a payout anywhere but the order's owner. | `SecondaryMarket.sol` |
 | 11 | **Quote token issuer or admin** | Whoever controls the token the founder chose | If the token can freeze, blacklist or pause, payouts in it can be blocked for an address or for all. Settlement, cancellation and Shares collection still work; only the quote payout waits (`test_a_blocked_quote_strands_no_payout`). | Not applicable to Shares. | The token's own code (not in this repository) |
@@ -299,9 +315,9 @@ named in section 5, not by a promise.
 | Market factory | `contracts/src/SecondaryMarketFactory.sol` | 201 |
 | Voting maturity, founder schedule, escrow accounting | `contracts/src/ActivationVoting.sol` | 835 |
 | V2 launch kit | `contracts/src/ContributorKitV2.sol` | 365 |
-| Frozen old rounds contract (not repaired) | `contracts/src/WeeklyRounds.sol` | 625, unchanged |
-| Trading card and listing form | `web/src/features/launchpad/ui/TradingCard.tsx`, `TradingListingForm.tsx` plus `TradingEarlier.tsx`, `TradingOrderForms.tsx` | 656, 215, 253, 376 |
-| App data and wording | `use-secondary.ts` 129, `lib/secondary-read.ts` 426, `lib/trading-orders.ts` 112, `lib/trading-copy.ts` 1070, `lib/trading-offered.ts` 20, `chain-config.ts` 498; shared reader `packages/creaton-core/src/launchpad/secondary.ts` 796 | |
+| Frozen old rounds contract (not repaired, deprecated) | `contracts/src/WeeklyRounds.sol` | 632 (a deprecation comment added; code unchanged) |
+| Trading card and listing form | `web/src/features/launchpad/ui/TradingCard.tsx`, `TradingListingForm.tsx` plus `TradingEarlier.tsx`, `TradingOrderForms.tsx`, `TradingHistory.tsx` | 671, 215, 255, 376, 129 |
+| App data and wording | `use-secondary.ts` 165, `lib/secondary-read.ts` 426, `lib/trading-orders.ts` 112, `lib/trading-copy.ts` 1053, `lib/trading-history-copy.ts` 71, `lib/round-history.ts` 168, `lib/trading-offered.ts` 20, `chain-config.ts` 488; shared reader `packages/creaton-core/src/launchpad/secondary.ts` 796 | |
 | Keeper and local scripts | `scripts/secondary-keeper.sh` 247, `web-trading-e2e.sh` 182, `v5-local-fixture.sh` 415 | |
 
 ### 5.2 Tests, with counts
@@ -478,7 +494,7 @@ constant changed (the first row). Commits are on branch `v4-governance-rework`.
    Agents drove them in a browser against a local chain; a person has not.
 5. **The market is not deployed anywhere.** Not the V2 kit, the factory or the market, on any public or test network,
    and not hosted. (Corrected 2026-11-06: an earlier revision said nothing at all was deployed. The older frozen
-   `WeeklyRounds` contract is on the Sepolia test network, section 8, item 18.) Shares on the Sepolia test network are
+   `WeeklyRounds` contract, deprecated since, has an unused copy on the Sepolia test network, section 8, item 18.) Shares on the Sepolia test network are
    test records with no value. All evidence about the market is from local scratch chains and unit tests.
 6. **Trading is off by default** (a listing starts disabled, the hosted build names no market factory). That is
    configuration, not a legal or technical barrier a determined operator could not remove.
@@ -775,7 +791,7 @@ that Shares cannot yet be sold or bought through it (`docs/policies/TERMS-DRAFT.
 the same and requires separate real-money terms first (`docs/policies/LAWYER-FEEDBACK-RESPONSE.md`, point 12). In the
 pilot the only reward a project can award is Shares, which have no value on a test network
 (`docs/policies/TERMS-DRAFT.md:60`). The bounty contracts exist on Sepolia and are paid in Circle's test USDC
-(`contracts/script/DeployLaunchKit.s.sol:139`); the money in them is posted by others, and the operator does not hold
+(`contracts/script/DeployLaunchKit.s.sol:135`); the money in them is posted by others, and the operator does not hold
 or send it. The market takes no fee and the operator receives no sale money (section 2).
 
 **Questions to add to the real-money terms worklist.**
@@ -814,13 +830,15 @@ for any value-bearing network.
 3. **Whether the old rounds contract may still be named as an exit exchange.** Options: seal the exit-exchange slot
    at birth for new-flow projects; leave it and document that the old contract must never be deployed on a value-bearing
    network; either way add a test. Still open: the low-severity run added exit-exchange tests but did not seal the slot
-   or pin either outcome.
+   or pin either outcome. Update 2026-11-06: the owner deprecated the old contract on our side (D185); that does not seal
+   the slot, which stays open for counsel (section 8, item 18).
 4. **Order caps and seat squatting.** Options: accept and state; minimum order size; refundable seat bond; let a
    larger order displace the smallest. Any of these is an economic rule.
 5. **Allocation rule and size inflation.** Options: keep proportional sharing and document; price priority with
    rationing at the margin; a cap on order size relative to the round; largest-remainder rule for leftovers.
 6. **Wash trades and the "settled at" price.** Options: copy that says one person can set a round's price; reject an
-   address that both offers and bids in a round (does not stop two addresses); show no price history; a non-zero fee
+   address that both offers and bids in a round (does not stop two addresses); show no price history (the owner chose to
+   show it, with the label: section 8, item 19); a non-zero fee
    or minimum order (a change to the owner's fee parameter). Also: whether to say "no fee" on screen (conflicts with
    the contract comment that zero is not a production promise). The low-severity run added no sentence about a fee.
 7. **Quorum floors that exceed eligible supply.** A proposal opened in a dip of eligible voting supply can be
@@ -859,105 +877,89 @@ for any value-bearing network.
     questions 5 to 7, then name (b) as the first value-bearing target. This is the owner's decision; counsel's second
     round asked that it be made before counsel is engaged, and the EU questions in 7.2 stay dormant or become live
     according to it.
-18. **Go-live condition 1: make naming the frozen `WeeklyRounds` as an exit exchange impossible on a value-bearing
-    network (extends item 3).**
+18. **Go-live condition 1: the frozen `WeeklyRounds` and the exit-exchange slot (extends item 3). The old contract is
+    deprecated on our side; sealing the slot is still open for counsel.**
     *Counsel's preliminary view:* the slot must be sealed, or the defective contract made undeployable on a value-bearing
     network, so that naming a contract known to have theft defects is impossible, not prevented by process.
-    *Facts.*
-    - `WeeklyRounds` WAS deployed on the Sepolia test network, at `0xE684Bb57c31Faa4b8e854DAB9d141D06144899A2`, on 5
-      November 2026 (the manifest `contracts/deployments/dao-launch-kit-11155111.json`, role `weekly-rounds`, block
-      12072551, was committed that day in `7d915f2`). It is a test-network contract, its payment currency there is
-      Circle's test USDC (`DeployLaunchKit.s.sol:139`), and the value at risk on that network is nil. It cannot be
-      removed from the chain.
-    - How it was deployed: `scripts/sepolia-deploy.sh` runs `contracts/script/DeployLaunchKit.s.sol` and deploys
-      whatever that Forge script deploys (the wrapper's header says a pilot-only deploy set would change the frozen Forge script). In that script `weeklyRounds` is created only when `court != address(0)` (lines 87 to 93),
-      and `court` exists only when `createToken` does, which is only when `isTestNetwork(block.chainid)` is true, that
-      is Sepolia (11155111) or a local chain (31337) (lines 72 and 120 to 122). So the script already does not
-      deploy it on any other chain, but only as a side effect of that chain, with no explicit refusal and no test
-      pinning it (I found no test of `isTestNetwork`). The wrapper `sepolia-deploy.sh` also refuses to broadcast
-      unless the node is Sepolia (line 71), but running `forge script` directly skips the wrapper.
-    - The script does not stop anyone else from deploying `contracts/src/WeeklyRounds.sol` on any chain. What stops a
-      DAO from using it is nothing in the contracts: `announceExitExchange(address)` in `MolochPatched.sol` (line 1679)
-      accepts any non-zero address, and anyone can switch it on 30 days later (`activateExitExchange`, line 1688). Tests
-      for the slot are in `contracts/test/ExitExchange.t.sol`; none pins that the old contract is refused.
-    - Freeze: `scripts/sepolia-deploy.sh` (line 25) says a change to the Forge script is frozen with the contracts
-      (D137). `DECISIONS.md` D174 records that the owner lifted the contract freeze for development on 2026-11-01, and
-      D180 started v5 development. Neither says whether the lift covers a deployment script as against a contract, and
-      the script's comment has not been updated. So a chain-id guard in the script needs the owner to say so, and lift
-      the freeze for that file.
-    *Options.*
+    *The owner's decision (2026-11-06, D185): deprecate the old contract on our side, until counsel confirms that is
+    enough.* What that means, in this repository:
+    - **Not deployed.** `DeployLaunchKit.s.sol` no longer deploys it and the manifest has no `weekly-rounds` role;
+      `scripts/dev-chain.sh` and `scripts/sepolia-deploy.sh` no longer deploy, check or print settings for it (`4d90bb1`).
+    - **No card.** The old weekly-rounds card on a project's Funds tab, its decision form, its settings (`VITE_WEEKLY_ROUNDS`)
+      and its journey test were removed from the web app and the core package (`34353a7`). The hosted image never had them.
+    - **Source kept, marked deprecated.** `contracts/src/WeeklyRounds.sol` has a deprecation comment at the top and no code
+      change. Its tests and the audit record `WEEKLY-ROUNDS-AUDIT-2026-11-01.md` stay until counsel confirms deprecation
+      is enough. The exit-exchange and funding-terms tests still use it as the one real live exchange.
+    - **The Sepolia copy is unused.** `0xE684Bb57c31Faa4b8e854DAB9d141D06144899A2` (block 12072551, manifest
+      `contracts/deployments/dao-launch-kit-11155111.json`, committed in `7d915f2`) stays on the chain, because a chain
+      cannot be edited, and stays listed in that manifest as history. Nothing points at it. It pays in Circle's test USDC
+      (`DeployLaunchKit.s.sol:135` names that token), so the value at risk on that network is nil.
+    - **What this does NOT do.** It does not make the exit-exchange slot unable to name a copy of the contract deployed
+      by someone else. `announceExitExchange(address)` (`contracts/src/majeur/MolochPatched.sol`, line 1679) still accepts
+      any non-zero address, and anyone can switch it on 30 days later (`activateExitExchange`, line 1688). No test pins
+      that the old contract is refused. Deprecation removes our own routes to it (script, app, documents). It is not a
+      barrier in the contracts, and counsel's view is that process is not enough.
+    - Freeze: the Forge script's header now says D174 lifted the contract freeze for development and that dropping the
+      contract from the script was the owner's decision (D185). A comment in `scripts/sepolia-deploy.sh` (lines 22 to 25)
+      still calls that Forge script frozen with the contracts (D137); it was not changed.
+    *Options for what is left* (counsel and the owner decide):
     1. **Seal the exit-exchange slot at birth for new-flow projects** (a contract change: the V2 kit makes the slot
        permanently unusable, so no DAO made that way can ever name any exchange). This is the only option that makes
        naming impossible, for the old contract and for any copy of it. The market does not need the slot (it uses the
-       transfer exemption, section 1.3). Projects created before the change keep the slot they were made with. Needs
-       the freeze lifted for the contracts, a test that pins the refusal, a mutation entry, and the pilot-kit decision
-       in item 12.
-    2. **A chain-id guard in `DeployLaunchKit.s.sol`** (the smallest change): an explicit refusal to deploy
-       `WeeklyRounds` unless the chain is Sepolia or 31337, with a test. It makes this repository's script unable to put
-       it on mainnet. It does not stop another route to the same code, and it does not stop a DAO naming a copy.
+       transfer exemption, section 1.3). Projects created before the change keep the slot they were made with. Needs a
+       test that pins the refusal, a mutation entry, and the pilot-kit decision in item 12. **This option stays open.**
+    2. **A chain-id guard in `DeployLaunchKit.s.sol`.** No longer needed: the script does not deploy the contract at all.
     3. **A chain-id guard in the `WeeklyRounds` constructor** (a change to a frozen, deliberately unrepaired file): the
        repository's source then cannot be deployed on a value-bearing chain by any route. A modified copy still can.
-    4. **Leave it and document it** (the status quo). Counsel's preliminary view is that this is not enough.
-    *Recommendation (a proposal, the owner decides):* option 1 before any value-bearing network, with its test; option 2
-    now as the interim step, if the owner lifts the freeze for that script. Not options 3 or 4.
-19. **Go-live condition 2: the wash-trade price (question 14, extends item 6).** One person using two addresses can
-    set a round's price (section 6.2), and a screen that prints a self-dealt price is, in counsel's words as relayed, a
-    standing manipulation exhibit.
+    4. **Deprecate and document it** (today's state). Counsel's preliminary view is that this is not enough by itself.
+    *Recommendation (a proposal, the owner decides):* option 1 before any value-bearing network, with its test. Deprecation
+    is the interim step, already taken. Not option 3 or 4 alone.
+19. **Go-live condition 2: the wash-trade price (question 14, extends item 6). The owner chose to show price history on
+    the weekly sale, with the permanent label. It is built.** One person using two addresses can set a round's price
+    (section 6.2), and a screen that prints a self-dealt price is, in counsel's words as relayed, a standing manipulation
+    exhibit.
     *Counsel's preliminary view:* resolve it conservatively: no price history, or a persistent label that one person
     can set this price.
-    *Where the app shows a price or a price history, at commit `4c132a0` (the label described below is built there):*
-    - **The Trading card's round line** is the only place the V2 market prints a settled price: "Settled: N lots traded
-      at P a lot, after offers closed ..." (`roundLine` in `web/src/features/launchpad/lib/trading-copy.ts`, line 222,
-      shown at `TradingCard.tsx` line 452). A round where nothing crossed prints no price (`roundShowsPrice`, line 206).
-      **Built since: a standing label follows it** (`TradingCard.tsx` line 464, only when `roundShowsPrice` is true),
-      quoted below. "How trading works" (collapsed by default) still does not say it (section 1.7); the label does not
-      depend on it.
-    - **The Trading card's earlier-rounds block** (`TradingEarlier.tsx`) prints the amounts a holder can collect and
-      not a round price (a search found no price text there). There is no price history, last price or chart in the
-      V2 market card.
-    - **The listing form and the order forms** (`TradingListingForm.tsx`, `TradingOrderForms.tsx`) show the price range
-      and the prices a person types. They are not trades.
-    - **The frozen weekly-rounds card** prints "Last trade" and a history table ("Price a Share") and the clearing table
-      (`WeeklyRoundsCard.tsx`, `RoundHistoryPanel` from line 228, table at line 256, clearing line and table at lines 358
-      to 363; `lastTradeLine` in `rounds-copy.ts`, line 227). **Built since: the same label** sits under the last-trade
-      line (line 254, when `historyShowsPrice` is true) and under the clearing line (line 361, when `clearingShowsPrice`
-      is true). It is mounted from `ContributorFundsTab.tsx` (line 191),
-      `FundingCard.tsx` (its `RoundPanel`) and `DaoOverview.tsx` (`LeavingNowNote`) and shows only where a build names a weekly-rounds
-      contract (`VITE_WEEKLY_ROUNDS`, `docs/sepolia-testnet.md:113`), which the hosted image does not. It belongs to the
-      older contract of item 18, not to the V2 market.
-    - **`web/src/features/launchpad/lib/candles.ts`** draws candles from the bids people recorded for a primary sale
-      (its header says they are bid prices, not trades). It feeds `SalePriceCard.tsx` and `PostContent.tsx`, not the
-      market.
-    - **`MARKET_REVIEWED`** (`trading-copy.ts`, line 613) is not a price. It is the switch behind "This market has not
-      been independently reviewed. Do not trade with money you cannot lose." on the listing form (`unreviewedLine`).
-      It stays false, and it is flipped only at the release decision.
-    - **The label, as built (commit `4c132a0`; option 2 below).** One sentence, `priceSetterLine` in `trading-copy.ts`
-      (line 217), shown by one plain paragraph component, `PriceSetterNote.tsx`: "One person can set a round's price. An
-      account can sell and buy in the same round, and one person can hold more than one account." It is visible text, not
-      collapsed, not a tooltip and not dismissible, and it is shown only where a price is printed. It says what the
-      market allows (section 6.2) and nothing about what the price means or is worth. The test
-      `web/src/features/launchpad/ui/priceLabelContract.test.mjs` (4 tests, passing) lists every screen that calls a price
-      printer (`roundLine`, `clearingLine`, `lastTradeLine`, `historyRow`) and fails if a new one appears without the
-      label, if the label is hidden or turned into a tooltip, or if the sentence is repeated outside `trading-copy.ts`.
-      **The wording is the builder's draft: it is counsel's to approve or change and has not been approved.** Not
-      pinned by that test: that no history, last-price line or chart is ever added to the V2 market card.
-    *Options.*
-    1. **No price history of any kind on the V2 market, and no printed price** (the round line says lots traded, not the
-       price). Smallest exposure. A buyer still sees what they pay in the amount they collect.
-    2. **No price history, and a persistent label wherever a settled price prints:** plain visible text, not collapsed,
-       not a tooltip, saying one person can set this price. Keeps the price a buyer needs.
-    3. **Keep the price as it is, and the collapsed explanation** (the status quo). Counsel's preliminary view is that
-       this is not conservative.
-    4. **Change the economics** (a non-zero fee or a minimum order, item 6). An owner parameter, not a screen fix, and it
-       does not close the case on its own.
-    *Recommendation (a proposal, the owner decides):* option 2, with the rule that no history, last-price line or chart
-    is ever added to the V2 market card, pinned by a test; choose option 1 instead if counsel prefers no printed price at
-    all. The label's exact words belong to counsel and to the plain-words guide (`PLAIN-WORDS.md`, section 4: do not weaken
-    a disclosure, add no hint of returns). The frozen weekly-rounds card stays off.
-    *Status:* option 2 is **built** (commit `4c132a0`, above) so the Trading card and the older weekly-rounds card carry the label. **Still open:** the
-    owner's choice between option 1 (no printed price) and option 2 (the label), counsel's approval or rewording of the
-    sentence, and the test for "no price history on the V2 card". Until the owner chooses, the built label is the
-    interim step, not the decision.
+    *The owner's decision (2026-11-06, D185):* show price history on the weekly sale, with the label below wherever a
+    price is printed (the label route counsel named, built first in `4c132a0`, extended to the history in `9eecfcb`).
+    *The label, exactly* (`priceSetterLine` in `web/src/features/launchpad/lib/trading-copy.ts`, line 217, shown by one
+    plain paragraph component, `PriceSetterNote.tsx`): "One person can set a round's price. An account can sell and buy
+    in the same round, and one person can hold more than one account." It is visible text, not collapsed, not a tooltip
+    and not dismissible, and it says what the market allows (section 6.2) and nothing about what a price means or is
+    worth. **Counsel owns the wording. Counsel has not approved it.** It is the builder's draft.
+    *Where it appears.* Two places, both on the Trading card on the project's Treasury tab:
+    1. Under the latest round's line "Settled: N lots traded at P a lot, after offers closed ..." (`roundLine`,
+       `trading-copy.ts` line 222, called at `TradingCard.tsx` line 461; the label at line 473, only when `roundShowsPrice`,
+       line 206, is true: a settled round that matched lots).
+    2. Once under the "Earlier rounds" list (`TradingHistory.tsx`: each row from `earlierPriceRow`, line 66; the label at
+       line 84, whenever any row prints a price).
+    The old weekly-rounds card, which also printed a last trade and a history table, is gone (item 18), so it carries no
+    label because it does not exist. "How trading works" (collapsed by default) still does not say it (section 1.7);
+    the label does not depend on it.
+    *The earlier-rounds list exists now.* It shows rounds before the latest, newest first, in blocks of 12 with a "Show
+    older rounds" step (`round-history.ts`, `trading-history-copy.ts`, `use-secondary.ts`). Each row has the opening date
+    with its time zone, then "N lots traded at P TOKEN a lot", or "No trade" for a round nobody settled or where nothing
+    crossed (no price is printed for those). A failed read says "Could not load earlier rounds. Try again." with a retry,
+    so a failure is never shown as an empty history. There is still no chart, candle line or last-price headline on the
+    V2 market card.
+    *Where no weekly price prints:* the listing form and the order forms (`TradingListingForm.tsx`,
+    `TradingOrderForms.tsx`) show the price range and the prices a person types, which are not trades;
+    `TradingEarlier.tsx` prints what a holder can collect, not a round price; `web/src/features/launchpad/lib/candles.ts`
+    draws candles from the bids people recorded for a primary sale (bid prices, not trades) and feeds `SalePriceCard.tsx`
+    and `PostContent.tsx`, not the market. `MARKET_REVIEWED` (`trading-copy.ts`, line 613) is not a price: it is the
+    switch behind "This market has not been independently reviewed. Do not trade with money you cannot lose." on the
+    listing form, and it stays false until the release decision.
+    *What enforces it.* `web/src/features/launchpad/ui/priceLabelContract.test.mjs` (4 tests, passing) lists the two
+    price printers (`roundLine`, `earlierPriceRow`) and the two screens that call them, and fails if a new screen calls
+    a printer without the label, if the label is hidden or turned into a tooltip, or if the sentence is repeated outside
+    `trading-copy.ts`. The builder reports that removing the label from the list failed two source tests. Not pinned: a
+    new price printer with a different name, or a chart, would not be caught by that test.
+    *Options as they stood:* (1) no price history and no printed price; (2) a persistent label wherever a settled price
+    prints, **chosen**; (3) keep the price and the collapsed explanation (counsel: not conservative); (4) change the
+    economics with a fee or minimum order (an owner parameter, not a screen fix; not done).
+    *Still open:* counsel's approval or rewording of the sentence; counsel's confirmation that showing history with this
+    label meets the condition; and, if counsel prefers, a return to option 1. Plain words follow `PLAIN-WORDS.md`
+    (section 4: do not weaken a disclosure, add no hint of returns).
 20. **Add the platform-as-payer questions to the real-money terms worklist** (questions 33 to 35 in 7.4). The worklist is
     in `docs/policies/LAWYER-FEEDBACK-RESPONSE.md` (point 12). Options: add them there now; or hold them until the
     jurisdiction list (item 17) is chosen. Recommendation (a proposal): add them now, since counsel asked for them and
