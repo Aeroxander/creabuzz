@@ -19,6 +19,7 @@ import type { BlobView } from "../git-client";
 import { useGitBlob, useGitHtmlDoc } from "../use-git-browse";
 import { useRepoContext } from "../use-repo-context";
 import { getMockBlob } from "../mock-repos";
+import { COPY_FAILED_TEXT } from "../lib/repo-page-state";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -73,7 +74,7 @@ function CopyTextButton({ content }: { content: string }) {
           toast.success("Copied to clipboard");
           setTimeout(() => setCopied(false), 2000);
         } catch {
-          toast.error("Failed to copy to clipboard");
+          toast.error(COPY_FAILED_TEXT);
         }
       }}
     >
@@ -158,12 +159,21 @@ const RUN_SANDBOX = "allow-scripts";
 
 function HtmlRunView({ doc }: { doc: string }) {
   return (
-    <iframe
-      title="Repository page (sandboxed)"
-      srcDoc={doc}
-      sandbox={RUN_SANDBOX}
-      className="h-[80vh] w-full rounded-lg border border-black/10 bg-white dark:border-white/10"
-    />
+    <div className="space-y-1.5">
+      <iframe
+        title="Repository page (sandboxed)"
+        srcDoc={doc}
+        sandbox={RUN_SANDBOX}
+        className="h-[80vh] w-full rounded-lg border border-black/10 bg-white dark:border-white/10"
+      />
+      <p
+        className="text-xs text-black/60 dark:text-white/60"
+        data-testid="repo-html-preview-note"
+      >
+        Preview only. This page's scripts do not run here, so buttons and
+        animations may not work. Text, styles and images show as they will.
+      </p>
+    </div>
   );
 }
 
@@ -204,8 +214,8 @@ function ViewerBody({
     case "binary":
       return (
         <div className="rounded-lg border border-black/10 bg-white/50 p-6 text-sm text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60">
-          Binary file — {formatBytes(view.sizeBytes)}. Use the Download button
-          above to save it.
+          This file can't be shown as text ({formatBytes(view.sizeBytes)}). Use
+          the Download button above to save it.
         </div>
       );
     case "too-large":
@@ -234,6 +244,7 @@ export function RepoBlobPage() {
     defaultRef,
     isLoading: ctxLoading,
     error: ctxError,
+    retry: retryContext,
   } = useRepoContext(repoId, { preview: showMockBlob });
 
   const browseOwner = showMockBlob ? "" : owner;
@@ -242,6 +253,7 @@ export function RepoBlobPage() {
     data: fetchedView,
     isLoading: isViewLoading,
     error,
+    retry: retryBlob,
   } = useGitBlob(browseOwner, repoName, defaultRef, filepath);
   const view = mockView ?? fetchedView;
   const isLoading = showMockBlob ? false : isViewLoading;
@@ -261,21 +273,23 @@ export function RepoBlobPage() {
 
   if (ctxError) {
     return (
-      <div className="flex-1 bg-[#F3F3F3] px-4 py-8 text-black dark:bg-[#171717] dark:text-white">
+      <div className="flex-1 bg-background px-4 py-8 text-black dark:text-white">
         <BackLink repoId={repoId} preview={showMockBlob} />
-        <p className="mt-4 text-sm text-destructive">
-          Failed to load repository: {ctxError.message}
-        </p>
+        <LoadFailure
+          title="Couldn't load this repository"
+          reason={ctxError.message}
+          onRetry={retryContext}
+        />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 bg-[#F3F3F3] px-4 py-8 text-black dark:bg-[#171717] dark:text-white">
+    <div className="flex-1 bg-background px-4 py-8 text-black dark:text-white">
       <BackLink repoId={repoId} preview={showMockBlob} />
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <FileText className="h-4 w-4 text-black/50 dark:text-white/50" />
+        <FileText className="h-4 w-4 text-black/60 dark:text-white/60" />
         <h1 className="min-w-0 truncate font-mono text-sm">{filepath}</h1>
         <div className="ml-auto flex items-center gap-2">
           {view &&
@@ -316,9 +330,11 @@ export function RepoBlobPage() {
         {ctxLoading || isLoading ? (
           <div className="h-32 animate-pulse rounded-lg bg-black/10 dark:bg-white/10" />
         ) : error ? (
-          <p className="text-sm text-destructive">
-            Failed to load file: {(error as Error).message}
-          </p>
+          <LoadFailure
+            title="Couldn't open this file"
+            reason={(error as Error).message}
+            onRetry={retryBlob}
+          />
         ) : view ? (
           <ViewerBody
             view={view}
@@ -327,6 +343,36 @@ export function RepoBlobPage() {
           />
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** A failed read: what happened, and a way to try again (the back link above is the other way out). */
+function LoadFailure({
+  title,
+  reason,
+  onRetry,
+}: {
+  title: string;
+  reason: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div role="alert" className="mt-4 text-sm text-destructive">
+      <p className="font-semibold">{title}</p>
+      <p className="mt-1 opacity-90">{reason}</p>
+      <p className="mt-1 opacity-90">
+        Check your connection and try again, or go back to the repository.
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="mt-2"
+        onClick={onRetry}
+      >
+        Try again
+      </Button>
     </div>
   );
 }

@@ -1,0 +1,35 @@
+{
+  "lib/continuous-clearing-auction": {
+    "rev": "6c9e559e63a7a141a4fe4bd5aa0f47fee1354b58"
+  },
+  "lib/creator-token-standards": {
+    "tag": {
+      "name": "v5.0.0",
+      "rev": "980a63b33591d568b6e04b45f37deba05a55f787"
+    }
+  },
+  "lib/creator-token-transfer-validator": {
+    "rev": "59adb8b36ab0256c7430b017b1c9f8b4841d6e1e"
+  },
+  "lib/forge-std": {
+    "tag": {
+      "name": "v1.16.2",
+      "rev": "bf647bd6046f2f7da30d0c2bf435e5c76a780c1b"
+    }
+  },
+  "lib/majeur": {
+    "rev": "7d7a36b5a25d31f7aa4d499b3a57ee98f4367fac"
+  },
+  "lib/openzeppelin-contracts": {
+    "rev": "08efabd8e0b1a42222219109ccd2690e5c54a958"
+  },
+  "lib/tm-tokenmaster": {
+    "rev": "1eb66e29259a9c8d73b62d39dcfcbc2850134d79"
+  },
+  "lib/zerodev-kernel": {
+    "rev": "f2a84a332ec5a722e7e95a0d64601905c3c87fe9"
+  },
+  "lib/zerodev-kernel-7579-plugins": {
+    "rev": "332deed6eeef3d6279cde50aa1d51eff53728bd4"
+  }
+}

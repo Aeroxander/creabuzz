@@ -180,6 +180,169 @@ fn decide_authority(
     }
 }
 
+// ── Boards (D93) ─────────────────────────────────────────────────────────────
+//
+// Board moderation reaches one board only. Who may do what there follows one
+// standing per person per board, highest first: the community's owner, the
+// community's admins, the board's owners, the board's admins, the board's
+// appointed moderators (term not yet ended), everyone else. The guard rails of
+// docs/v3-review/BOARD-MODERATION-DESIGN-2026-10-22.md §3 are decided below,
+// purely, so they are table-tested; `board_moderation.rs` does the reads.
+
+/// A person's standing on one board, lowest first (the derived order is the
+/// policy: a higher standing outranks a lower one).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BoardStanding {
+    /// No moderation standing on this board.
+    None,
+    /// Appointed moderator of this board, within their term.
+    Moderator,
+    /// The board's admin (channel role).
+    BoardAdmin,
+    /// The board's owner (channel role).
+    BoardOwner,
+    /// Community admin (`relay_members.role`).
+    CommunityAdmin,
+    /// Community owner (`relay_members.role`).
+    CommunityOwner,
+}
+
+impl BoardStanding {
+    /// The word the public log uses for it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "member",
+            Self::Moderator => "moderator",
+            Self::BoardAdmin => "board_admin",
+            Self::BoardOwner => "board_owner",
+            Self::CommunityAdmin => "community_admin",
+            Self::CommunityOwner => "community_owner",
+        }
+    }
+
+    /// The audit row's `actor_authority`: an appointed moderator's actions are
+    /// recorded as such, so they can be counted for the rate limit.
+    pub fn audit_authority(self) -> &'static str {
+        if self == Self::Moderator {
+            "board_moderator"
+        } else {
+            "community"
+        }
+    }
+}
+
+/// What a board command needs from the actor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoardCapability {
+    /// Lock, unlock, pin, unpin, mute, unmute, remove someone else's post.
+    Moderate,
+    /// Set the rules, appoint and dismiss moderators.
+    Manage,
+}
+
+/// Standing from the resolved roles. `moderator_until` counts only while it is
+/// in the future: a term that ended grants nothing. On a private board
+/// (`private_board`) it counts only for someone who is still a member of the
+/// board (`board_role` is some role): a moderator removed from a private board
+/// keeps no authority there. On an open board a moderator need not join.
+pub fn board_standing_from_roles(
+    community_role: Option<&str>,
+    board_role: Option<&str>,
+    moderator_until: Option<chrono::DateTime<chrono::Utc>>,
+    private_board: bool,
+    now: chrono::DateTime<chrono::Utc>,
+) -> BoardStanding {
+    match (community_role, board_role) {
+        (Some("owner"), _) => BoardStanding::CommunityOwner,
+        (Some("admin"), _) => BoardStanding::CommunityAdmin,
+        (_, Some("owner")) => BoardStanding::BoardOwner,
+        (_, Some("admin")) => BoardStanding::BoardAdmin,
+        (_, None) if private_board => BoardStanding::None,
+        _ if moderator_until.is_some_and(|until| until > now) => BoardStanding::Moderator,
+        _ => BoardStanding::None,
+    }
+}
+
+/// Whether `standing` holds `capability` on a board.
+pub fn board_capability_allowed(standing: BoardStanding, capability: BoardCapability) -> bool {
+    match capability {
+        BoardCapability::Moderate => standing >= BoardStanding::Moderator,
+        BoardCapability::Manage => standing >= BoardStanding::BoardAdmin,
+    }
+}
+
+/// Whether an actor may act against someone (mute them, lock or remove their
+/// post): only someone of lower standing. The community owner is the top of
+/// the hierarchy and has no guard rail, as in [`decide_authority`]. So a
+/// moderator cannot act against another moderator or anyone above, and an admin
+/// cannot act against a fellow admin or an owner.
+pub fn board_may_act_against(actor: BoardStanding, target: BoardStanding) -> bool {
+    actor == BoardStanding::CommunityOwner || actor > target
+}
+
+/// Whether an actor may undo (unlock, unpin, unmute) what someone of
+/// `placed_by` standing did: only someone of at least that standing, so a
+/// moderator cannot reverse an owner's or admin's decision. A placer who no
+/// longer has standing (a term that ended) leaves it to any moderator.
+pub fn board_may_undo(actor: BoardStanding, placed_by: BoardStanding) -> bool {
+    actor >= placed_by
+}
+
+/// Resolve `pubkey`'s standing on the board `channel_id`, under the tenant.
+pub async fn board_standing(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    pubkey: &[u8],
+    now: chrono::DateTime<chrono::Utc>,
+) -> anyhow::Result<BoardStanding> {
+    let community = tenant.community();
+    let community_role = state
+        .db
+        .get_relay_member(community, &hex::encode(pubkey))
+        .await?
+        .map(|m| m.role);
+    if matches!(community_role.as_deref(), Some("owner") | Some("admin")) {
+        return Ok(board_standing_from_roles(
+            community_role.as_deref(),
+            None,
+            None,
+            false,
+            now,
+        ));
+    }
+    let board_role = state
+        .db
+        .get_member_role(community, channel_id, pubkey)
+        .await?;
+    let moderator_until = if matches!(board_role.as_deref(), Some("owner") | Some("admin")) {
+        None
+    } else {
+        state
+            .db
+            .board_person(community, channel_id, pubkey)
+            .await?
+            .and_then(|person| person.moderator_until)
+    };
+    // Whether the board is private matters only to an appointment held without
+    // a place on the board, so it is read only then.
+    let private_board = board_role.is_none()
+        && moderator_until.is_some_and(|until| until > now)
+        && state
+            .db
+            .get_channel(community, channel_id)
+            .await?
+            .visibility
+            == "private";
+    Ok(board_standing_from_roles(
+        community_role.as_deref(),
+        board_role.as_deref(),
+        moderator_until,
+        private_board,
+        now,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,6 +492,141 @@ mod tests {
             assert!(
                 decide_authority(None, None, None, action).is_err(),
                 "user with no role must be denied {action:?}"
+            );
+        }
+    }
+
+    // ── Boards ───────────────────────────────────────────────────────────────
+
+    const STANDINGS: [BoardStanding; 6] = [
+        BoardStanding::None,
+        BoardStanding::Moderator,
+        BoardStanding::BoardAdmin,
+        BoardStanding::BoardOwner,
+        BoardStanding::CommunityAdmin,
+        BoardStanding::CommunityOwner,
+    ];
+
+    #[test]
+    fn board_standing_reads_the_highest_role_and_only_a_live_term() {
+        let now = chrono::Utc::now();
+        let later = now + chrono::Duration::days(1);
+        let earlier = now - chrono::Duration::seconds(1);
+        let standing = |community, board, until| {
+            board_standing_from_roles(community, board, until, false, now)
+        };
+        assert_eq!(
+            standing(Some("owner"), Some("member"), None),
+            BoardStanding::CommunityOwner
+        );
+        assert_eq!(
+            standing(Some("admin"), Some("owner"), None),
+            BoardStanding::CommunityAdmin
+        );
+        assert_eq!(
+            standing(Some("member"), Some("owner"), None),
+            BoardStanding::BoardOwner
+        );
+        assert_eq!(
+            standing(None, Some("admin"), Some(later)),
+            BoardStanding::BoardAdmin
+        );
+        assert_eq!(
+            standing(None, Some("member"), Some(later)),
+            BoardStanding::Moderator
+        );
+        assert_eq!(standing(None, None, Some(later)), BoardStanding::Moderator);
+        // A term that ended, or ends now, grants nothing.
+        assert_eq!(
+            standing(None, Some("member"), Some(earlier)),
+            BoardStanding::None
+        );
+        assert_eq!(standing(None, None, Some(now)), BoardStanding::None);
+        assert_eq!(standing(None, Some("guest"), None), BoardStanding::None);
+        assert_eq!(standing(None, Some("bot"), None), BoardStanding::None);
+        // On a private board an appointment counts only for someone still on it.
+        let private =
+            |community, board, until| board_standing_from_roles(community, board, until, true, now);
+        assert_eq!(private(None, None, Some(later)), BoardStanding::None);
+        assert_eq!(
+            private(None, Some("member"), Some(later)),
+            BoardStanding::Moderator
+        );
+        assert_eq!(
+            private(Some("admin"), None, None),
+            BoardStanding::CommunityAdmin
+        );
+        assert_eq!(
+            private(Some("owner"), None, None),
+            BoardStanding::CommunityOwner
+        );
+    }
+
+    #[test]
+    fn board_capabilities_follow_standing() {
+        for standing in STANDINGS {
+            assert_eq!(
+                board_capability_allowed(standing, BoardCapability::Moderate),
+                standing != BoardStanding::None,
+                "{standing:?} moderate"
+            );
+            assert_eq!(
+                board_capability_allowed(standing, BoardCapability::Manage),
+                standing >= BoardStanding::BoardAdmin,
+                "{standing:?} manage"
+            );
+        }
+    }
+
+    #[test]
+    fn board_guard_rails_stop_acting_against_equals_and_superiors() {
+        use BoardStanding::*;
+        // A moderator acts against members only: never another moderator, nor anyone above.
+        assert!(board_may_act_against(Moderator, None));
+        for target in [
+            Moderator,
+            BoardAdmin,
+            BoardOwner,
+            CommunityAdmin,
+            CommunityOwner,
+        ] {
+            assert!(
+                !board_may_act_against(Moderator, target),
+                "moderator vs {target:?}"
+            );
+        }
+        // Admins and owners do not act against their equals either.
+        assert!(!board_may_act_against(BoardAdmin, BoardAdmin));
+        assert!(!board_may_act_against(BoardOwner, BoardOwner));
+        assert!(!board_may_act_against(CommunityAdmin, CommunityAdmin));
+        assert!(!board_may_act_against(BoardOwner, CommunityAdmin));
+        assert!(board_may_act_against(BoardAdmin, Moderator));
+        assert!(board_may_act_against(CommunityAdmin, BoardOwner));
+        // The community owner has no guard rail.
+        for target in STANDINGS {
+            assert!(board_may_act_against(CommunityOwner, target));
+        }
+    }
+
+    #[test]
+    fn board_undo_needs_at_least_the_standing_that_placed_it() {
+        use BoardStanding::*;
+        assert!(board_may_undo(Moderator, Moderator));
+        assert!(board_may_undo(Moderator, None));
+        assert!(!board_may_undo(Moderator, BoardAdmin));
+        assert!(!board_may_undo(BoardAdmin, BoardOwner));
+        assert!(board_may_undo(CommunityAdmin, BoardOwner));
+        for placed_by in STANDINGS {
+            assert!(board_may_undo(CommunityOwner, placed_by));
+        }
+    }
+
+    #[test]
+    fn only_appointed_moderators_are_audited_as_board_moderators() {
+        for standing in STANDINGS {
+            assert_eq!(
+                standing.audit_authority() == "board_moderator",
+                standing == BoardStanding::Moderator
             );
         }
     }

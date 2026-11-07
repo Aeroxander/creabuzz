@@ -2,6 +2,7 @@ import * as React from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { joinPolicyDocumentUrl, type JoinPolicy } from "@/shared/api/invites";
+import { AGE_CONFIRMATION } from "@/shared/constants/age";
 import { Button } from "@/shared/ui/button";
 import { Checkbox } from "@/shared/ui/checkbox";
 
@@ -52,7 +53,7 @@ export function JoinPolicyNotice({
             className="cursor-pointer text-xs leading-5 text-muted-foreground"
             htmlFor={ageConfirmationId}
           >
-            I am 18 years of age or older.
+            {AGE_CONFIRMATION}
           </label>
         </div>
       ) : null}
@@ -71,7 +72,7 @@ export function JoinPolicyNotice({
             className="cursor-pointer text-xs leading-5 text-muted-foreground"
             htmlFor={agreementConfirmationId}
           >
-            I agree to the Buzz{" "}
+            I agree to the Creaton{" "}
             {policy.termsMarkdown ? (
               <Button
                 className="h-auto p-0 align-baseline text-xs no-underline hover:underline focus-visible:no-underline"

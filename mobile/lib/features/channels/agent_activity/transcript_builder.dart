@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:buzz/shared/brand.dart';
 
 import 'observer_models.dart';
 
@@ -234,7 +235,7 @@ _parsePromptText(String text) {
     userText: eventContent,
     userTitle: eventKind != null && eventKind.isNotEmpty
         ? _titleCase(eventKind)
-        : 'Buzz event',
+        : '$appName event',
   );
 }
 

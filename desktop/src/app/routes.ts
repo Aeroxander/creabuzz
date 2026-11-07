@@ -10,7 +10,11 @@ export const routes = rootRoute("root.tsx", [
   route("/workflows/$workflowId", "workflows.$workflowId.tsx"),
   route("/projects", "projects.tsx"),
   route("/projects/$projectId", "projects.$projectId.tsx"),
+  route("/launchpad", "launchpad.tsx"),
+  route("/launchpad/$launchId", "launchpad.$launchId.tsx"),
   route("/messages/new", "messages.new.tsx"),
+  route("/org", "org.tsx"),
+  route("/wiki", "wiki.tsx"),
   route("/channels/$channelId", "channels.$channelId.tsx"),
   route(
     "/channels/$channelId/posts/$postId",

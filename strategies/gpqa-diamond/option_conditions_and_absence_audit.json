@@ -1,0 +1,87 @@
+{
+  "v": 1,
+  "name": "Option conditions and absence audit",
+  "description": "GPQA-Diamond bank strategy from arXiv 2609.22682 Appendix A: members derive necessary conditions for each option and revisit eliminations that rely on the presumed absence of a signal or feature.",
+  "teamworkPrompt": "Systematically validate each answer option by defining its necessary conditions, evaluating evidence for those conditions, and critically reviewing the evidence. Pay special attention to claims of ’absence’ of features or signals, especially in the interpretation of experimental data.",
+  "roles": {
+    "agent-0": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-1": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-2": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent independently reviews the problem and proposes an initial hypothesis for the answer, including the key supporting evidence and any assumptions made. Share these initial thoughts."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "For each answer option (A, B, C, D), Agent 0 states what scientific conditions or observations *must* be true for that option to be correct. Agent 1 then provides scientific evidence from the problem or general relevant domain principles to support or refute these conditions. Agent 2 critiques the strength of the evidence and the validity of the conditions and the interpretation."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Based on the validation and critique, collectively eliminate options that are demonstrably false or lack sufficient evidence. Discuss any remaining ambiguities or conflicting evidence."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Before finalizing, explicitly check if any option was eliminated based on a perceived ’absence’ of a signal, property, or feature. Agent 2, specifically challenge any elimination based on the supposed ’absence’ of any specific experimental observation, signal, or feature, demanding rigorous structural and mechanistic justifications for its non-existence. If so, revisit that elimination with extreme scrutiny, requiring explicit scientific reasoning for why that absence is definitive and not merely an oversight or misinterpretation."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Synthesize the final answer from the remaining validated options, ensuring that the chosen option is fully supported by the available evidence and free of scientific contradictions."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.2",
+    "bank": "gpqa-diamond",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper leaves Roles unset (shown when set); kind:44020 requires a prompt per roster slot, so all three slots carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

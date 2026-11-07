@@ -1,0 +1,7 @@
+{
+  "01-empty-window": { "max_blocks": 0 },
+  "02-risk-only": { "max_blocks": 0 },
+  "02-sparse-update": { "max_blocks": 0 },
+  "03-multi-decision": { "min_blocks": 2 },
+  "03-multi-workstream": { "min_blocks": 2 }
+}

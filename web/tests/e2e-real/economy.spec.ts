@@ -1,0 +1,1108 @@
+import { expect, test, type Browser, type Page } from "@playwright/test";
+
+import { pointChainAt } from "../helpers/anvil-wallet";
+import {
+  createKeyWalletProvider,
+  installKeyWallet,
+  type KeyWallet,
+  newKeyWallet,
+  walletFromKey,
+} from "../helpers/key-wallet";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+import { decrypt as nip49Decrypt } from "nostr-tools/nip49";
+import {
+  finalizeEvent,
+  generateSecretKey,
+  getPublicKey,
+} from "nostr-tools/pure";
+import { wizardToPublish } from "../helpers/wizard";
+import { PORT, createCommunity, unique } from "./community-helpers";
+import { connectToHost } from "./host-socket";
+import { checksumAddress } from "../../src/features/identity/lib/wallet-proof";
+
+/**
+ * A small economy run by several people AT ONCE, in browsers of their own, on a REAL server and a REAL chain
+ * (`scripts/web-economy-e2e.sh` boots both).
+ *
+ * Every person starts from nothing: a brand-new Nostr account made in the app, and a brand-new private-key wallet that
+ * signs for itself (their own key, funded from a faucet), not a seeded identity or one of Anvil's well-known accounts.
+ * Then the story, in the order a project lives it:
+ *
+ *   - a founder makes a community, and a labor contributor and a capital contributor find it by its address;
+ *   - all three link their wallet to their account in their own profile, with both signatures, at once;
+ *   - the founder sets up a sale in the wizard and launches it into its own DAO with one button;
+ *   - the capital contributor bids through the bid dialog, the sale ends and graduates, the raise goes to the DAO's
+ *     treasury, the founder lets the backer into the backers room, and the backer claims the Shares their money bought;
+ *   - the DAO, whose people are the founder and the capital contributor, votes a work budget and a project; the panel is
+ *     the capital contributor alone (the founder holds locked team Shares, so the contract refuses them as a reviewer),
+ *     and the panel asks a bond;
+ *   - the labor contributor files a claim for money, the manager takes it on, the reviewer posts the bond and approves it,
+ *     and after the challenge window the labor contributor is paid from the treasury, with their deposit back.
+ *
+ * What is real: the server and its database, every signed request and WebSocket, the chain and its contracts, every
+ * transaction. What is not: the passkey (a passkey account needs a Kernel and a bundler on the chain, which a dev chain
+ * does not have; `scripts/web-passkey-wallet-e2e.sh` covers it against a stand-in chain) and the clock (the chain's time
+ * is moved forward, for everyone at once, where a person would wait).
+ */
+
+const ANVIL_URL = process.env.E2E_ANVIL_URL ?? "";
+const CURRENCY = process.env.E2E_CURRENCY ?? "";
+const KIT = process.env.E2E_LAUNCH_KIT ?? "";
+
+test.skip(
+  !ANVIL_URL || !CURRENCY || !KIT,
+  "set E2E_ANVIL_URL, E2E_CURRENCY and E2E_LAUNCH_KIT (scripts/web-economy-e2e.sh does)",
+);
+
+async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
+  const response = await fetch(ANVIL_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const body = (await response.json()) as { result?: unknown; error?: unknown };
+  if (body.error) throw new Error(JSON.stringify(body.error));
+  return body.result;
+}
+
+// Anvil's first public dev key pays the faucet: it is the chain's bank, nobody in the story.
+const FAUCET = walletFromKey(
+  "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+);
+const faucet = createKeyWalletProvider(FAUCET, { rpcUrl: ANVIL_URL });
+const word = (value: string | bigint) =>
+  (typeof value === "bigint" ? value.toString(16) : value.slice(2))
+    .toLowerCase()
+    .padStart(64, "0");
+
+/**
+ * How dollars reach a wallet: `mint` on the dev chain, whose currency has an open `mint`; `storage` on a fork of Sepolia,
+ * whose currency is Circle's real USDC and has none, so a balance is written straight into its storage (a mapping at
+ * slot 9, which `scripts/web-sepolia-fork-e2e.sh` checks by reading the balance back through the contract).
+ */
+const FUNDING = process.env.E2E_CURRENCY_FUNDING ?? "mint";
+
+/** Pay a new wallet: gas from the chain's faucet, and dollars (see `FUNDING`). */
+async function fund(address: string, dollars: bigint) {
+  await rpc("anvil_setBalance", [address, "0x56bc75e2d63100000"]); // 100 ETH
+  if (dollars > 0n && FUNDING === "storage") {
+    const slot = `0x${bytesToHex(keccak_256(hexToBytes(word(address) + word(9n))))}`;
+    await rpc("anvil_setStorageAt", [
+      CURRENCY,
+      slot,
+      `0x${word(dollars * 10n ** 6n)}`,
+    ]);
+  } else if (dollars > 0n) {
+    await faucet.request({
+      method: "eth_sendTransaction",
+      params: [
+        {
+          from: FAUCET.address,
+          to: CURRENCY,
+          data: `0x40c10f19${word(address)}${word(dollars * 10n ** 6n)}`,
+        },
+      ],
+    });
+  }
+}
+
+interface RelayEvent {
+  id: string;
+  pubkey: string;
+  kind: number;
+  created_at: number;
+  tags: string[][];
+  content: string;
+}
+
+/**
+ * Ask the real server for records, as any client could: a WebSocket of the test's own, signed in with a key of its own
+ * (the server asks every reader to prove a key), then one REQ.
+ *
+ * The community lives at `<name>.localhost:<port>`, which Chromium sends to loopback by itself and the operating system's
+ * resolver does not — so the socket dials loopback and says which community it is for in the `Host` header, which is
+ * exactly how the relay picks a community for any connection. The read is still this community's, and no other's.
+ */
+async function readRecords(
+  host: string,
+  filter: Record<string, unknown>,
+): Promise<RelayEvent[]> {
+  const readerKey = generateSecretKey();
+  const socket = await connectToHost(host).catch((error: Error) => {
+    throw new Error(`could not reach ${host}: ${error.message}`);
+  });
+  return new Promise((resolve, reject) => {
+    const found: RelayEvent[] = [];
+    const timer = setTimeout(() => {
+      socket.close();
+      reject(new Error(`no answer from ${host}`));
+    }, 15_000);
+    socket.onmessage = (text) => {
+      const frame = JSON.parse(text) as unknown[];
+      if (frame[0] === "AUTH") {
+        const proof = finalizeEvent(
+          {
+            kind: 22242,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: [
+              ["relay", `ws://${host}`],
+              ["challenge", String(frame[1])],
+            ],
+            content: "",
+          },
+          readerKey,
+        );
+        socket.send(JSON.stringify(["AUTH", proof]));
+      } else if (frame[0] === "OK") {
+        socket.send(JSON.stringify(["REQ", "q", filter]));
+      } else if (frame[0] === "EVENT") {
+        found.push(frame[2] as RelayEvent);
+      } else if (frame[0] === "EOSE" || frame[0] === "CLOSED") {
+        clearTimeout(timer);
+        socket.close();
+        if (frame[0] === "CLOSED")
+          reject(new Error(`the server refused the read: ${String(frame[2])}`));
+        else resolve(found);
+      }
+    };
+    socket.onerror = (error) => {
+      clearTimeout(timer);
+      socket.close();
+      reject(new Error(`could not reach ${host}: ${error.message}`));
+    };
+  });
+}
+
+async function head(): Promise<number> {
+  return Number.parseInt(String(await rpc("eth_blockNumber")), 16);
+}
+
+async function callWord(to: string, data: string): Promise<bigint> {
+  return BigInt(String(await rpc("eth_call", [{ to, data }, "latest"])));
+}
+const dollarsOf = (holder: string) =>
+  callWord(CURRENCY, `0x70a08231${word(holder)}`);
+
+/** Every browser `arrive` launches, closed after the test however it ends. */
+const launched: Browser[] = [];
+
+test.afterEach(async () => {
+  await Promise.all(launched.splice(0).map((own) => own.close()));
+});
+
+/** One person: a browser of their own, a brand-new wallet and, once they sign up, a brand-new Nostr account. */
+interface Person {
+  name: string;
+  page: Page;
+  wallet: KeyWallet;
+  /** Their Nostr public key, once they have an account. */
+  pubkey: string;
+}
+
+async function arrive(
+  browser: Browser,
+  name: string,
+  dollars: bigint,
+): Promise<Person> {
+  // One launched browser per person, which is what this file always said it
+  // wanted ("a browser of their own"). `browser.newContext()` puts everyone in a
+  // single browser, and this host's Chromium only runs `--single-process`, where
+  // the second context kills the whole browser (`browserContext.newPage: Target
+  // page, context or browser has been closed`). The options come from the
+  // project, so the same executable and sandbox flags apply, and Playwright
+  // closes it when the test finishes.
+  const own = await browser
+    .browserType()
+    .launch(test.info().project.use.launchOptions);
+  launched.push(own);
+  const context = await own.newContext({
+    viewport: { width: 1280, height: 900 },
+  });
+  // A step that cannot be taken says so after a minute, naming what it waited for, not after the whole test budget.
+  context.setDefaultTimeout(60_000);
+  const page = await context.newPage();
+  const wallet = newKeyWallet();
+  await fund(wallet.address, dollars);
+  await installKeyWallet(page, wallet, {
+    rpcUrl: ANVIL_URL,
+    display: checksumAddress(wallet.address),
+  });
+  await pointChainAt(page, ANVIL_URL);
+
+  // Sign up in the app, with nothing: no community to write to yet, no invite, no seeded key.
+  await page.goto("/c");
+  await page.getByTestId("create-identity-cta").first().click();
+  await page.getByTestId("onboarding-name").fill(name);
+  await page.getByTestId("onboarding-create").click();
+  await expect(page.getByTestId("user-chip")).toBeVisible({ timeout: 30_000 });
+  // The key is stored encrypted next to the password that wraps it; the test reads whose it is, and nothing else.
+  const [sealed, wrap] = await page.evaluate(() => [
+    window.localStorage.getItem("buzz.identity.nsec") ?? "",
+    window.localStorage.getItem("buzz.identity.wrap") ?? "",
+  ]);
+  const pubkey = getPublicKey(nip49Decrypt(sealed, wrap));
+  expect(pubkey, "the sign-up made a key").toMatch(/^[0-9a-f]{64}$/);
+  return { name, page, wallet, pubkey };
+}
+
+/** With `E2E_SHOTS=<dir>`, save the page as it looks now, so a person can read the product off real data. */
+async function shot(page: Page, name: string) {
+  const dir = process.env.E2E_SHOTS;
+  if (!dir) return;
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${dir}/economy-${name}.png`, fullPage: true });
+}
+
+const started = Date.now();
+function say(what: string) {
+  console.log(
+    `[${String(Math.round((Date.now() - started) / 1000)).padStart(3)}s] ${what}`,
+  );
+}
+
+async function mineTo(block: number): Promise<void> {
+  const missing = block - (await head());
+  if (missing > 0) await rpc("anvil_mine", [`0x${missing.toString(16)}`]);
+}
+
+const tag = (event: RelayEvent, name: string) =>
+  event.tags.find(([key]) => key === name)?.[1] ?? "";
+
+test("a founder, a labor contributor and a capital contributor, at once", async ({
+  browser,
+}) => {
+  test.setTimeout(Number(process.env.E2E_TIMEOUT_MS ?? 600_000));
+
+  // ── Everyone arrives at once: a browser, an account made in the app, a wallet nobody has held before ──
+  const [founder, labor, capital] = await Promise.all([
+    arrive(browser, "Frida Founder", 1_000_000n),
+    arrive(browser, "Lars Labor", 1_000n),
+    arrive(browser, "Cleo Capital", 5_000_000n),
+  ]);
+
+  say("everyone has arrived");
+
+  // ── The founder makes a community, and the others find it by its address ─────────────────────────
+  const name = unique();
+  const host = `${name}.localhost:${PORT}`;
+  await createCommunity(founder.page, name);
+  say("the founder made the community");
+  const join = async (person: Person) => {
+    await person.page.goto(`/c/${host}`);
+    say(`${person.name} is looking at the community`);
+    await person.page
+      .getByRole("button", { name: "Join this community" })
+      .click();
+    // Joining saves the community's address for this browser and reloads onto it, so the directory card goes away. Until
+    // that lands the page is still the card — and `user-chip` is already there from the account, so it proves nothing
+    // about the join; a check that fails or is still running leaves the card (with its problem) in place.
+    await expect(person.page.getByTestId("community-join-problem")).toHaveCount(
+      0,
+      { timeout: 30_000 },
+    );
+    await expect(person.page.getByTestId("user-chip")).toBeVisible({
+      timeout: 30_000,
+    });
+  };
+  await Promise.all([join(labor), join(capital)]);
+  say("the others have joined");
+
+  // ── Each person links their wallet to their account, in their own profile, with both signatures ─────
+  // (They do it at once, while the founder is still setting up: the people the DAO's forms offer by name are these.)
+  const linkWallet = async (person: Person) => {
+    await person.page.goto(`/u/${person.pubkey}`);
+    await person.page
+      .getByRole("button", { name: "Connect payment wallet", exact: true })
+      .click();
+    const dialog = person.page.getByRole("dialog", {
+      name: "Connect payment wallet",
+    });
+    await dialog.getByRole("checkbox").check();
+    await dialog.getByRole("button", { name: "Connect wallet" }).click();
+    await expect(person.page.getByTestId("payment-wallet-address")).toHaveText(
+      new RegExp(person.wallet.address, "i"),
+      { timeout: 60_000 },
+    );
+    say(`${person.name} linked their wallet`);
+  };
+  const linking = Promise.all([founder, labor, capital].map(linkWallet));
+  await linking;
+  // The server holds one verified record per person, each authored by the person's own Nostr key. Each page shows the
+  // address as soon as its own publish is away, so wait for all three to land rather than reading the instant they do.
+  await expect
+    .poll(
+      async () =>
+        (await readRecords(host, { kinds: [37017] }))
+          .map((record) => record.pubkey)
+          .sort(),
+      { timeout: 60_000 },
+    )
+    .toEqual([founder, labor, capital].map((person) => person.pubkey).sort());
+  say("all three wallets are linked");
+
+  // ── The founder sets up a sale in the wizard: the project's own Shares, a window a few blocks away ──
+  await founder.page.goto("/launchpad");
+  await founder.page
+    .getByRole("button", { name: "Set up a sale" })
+    .first()
+    .click();
+  const step = founder.page.getByTestId("wizard-step-token");
+  await step.getByRole("textbox", { name: "Name", exact: true }).fill("Nebula");
+  await step.getByLabel("Symbol").fill("NEB");
+  // Since D74 a sale sells out or refunds: 40 million Shares put 30 million on sale, at the default cent a Share a
+  // $300,000 sale, which the backer's $400,000 bid below buys outright.
+  await step.getByLabel(/supply/i).fill("40000000");
+  await wizardToPublish(founder.page);
+  await founder.page
+    .getByTestId("launch-advanced")
+    .locator("> summary")
+    .click();
+  const start = (await head()) + 150;
+  await founder.page.getByTestId("launch-start-block").fill(String(start));
+  await founder.page.getByTestId("launch-end-block").fill(String(start + 200));
+  await founder.page
+    .getByTestId("launch-claim-block")
+    .fill(String(start + 260));
+  await founder.page.getByRole("button", { name: /Publish launch/ }).click();
+  await expect(founder.page.getByText("Launch published.")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  say("the launch is published");
+  // The server holds the record, and it is a DAO launch on the open sale: pressing through the wizard did not trap it.
+  const [record] = await readRecords(host, { kinds: [37001] });
+  expect(JSON.parse(record.content).tokenPlan.mode).toBe("dao");
+  expect(tag(record, "admission")).toBe("community");
+
+  say("the record checked");
+  // ── The founder launches the DAO with one button; the others watch the launch page and see it go live ──
+  await founder.page.getByText("Nebula").first().click();
+  await founder.page.getByRole("tab", { name: /Manage/ }).click();
+  // The team's Shares are held behind milestones, so the launch names who judges them: an outsider, the backer, with
+  // a bond. Nobody can swap them for friendlier reviewers afterwards.
+  // (Holders judging the milestones is the default and has its own journey; this one runs the panel of named reviewers.)
+  await founder.page.getByTestId("launch-review-panel").check();
+  const launchPicker = founder.page.getByTestId("launch-panel-people");
+  await expect(
+    launchPicker.locator("option", { hasText: capital.name }),
+  ).toHaveCount(1, { timeout: 30_000 });
+  await launchPicker.selectOption(capital.wallet.address.toLowerCase());
+  await founder.page.getByTestId("launch-panel-bond").fill("25");
+  await founder.page
+    .getByTestId("launch-panel-terms")
+    .fill(
+      "Cleo Capital agreed to read the evidence and answer within 7 days. Unpaid, no stake in the project.",
+    );
+  await founder.page.getByTestId("launch-panel-agreed").check();
+  await founder.page.getByTestId("dao-launch-start").click();
+  await expect(founder.page.getByTestId("dao-launch-status")).toContainText(
+    "Your project is live",
+    { timeout: 120_000 },
+  );
+  await shot(founder.page, "1-live");
+
+  say("the DAO is live");
+  // The panel was part of the launch: it is listed on the Work tab as the milestone panel, with its bond.
+  await founder.page.reload();
+  await founder.page.getByRole("tab", { name: "Work" }).click();
+  await expect(founder.page.getByTestId("work-milestone-panel")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(founder.page.getByTestId("work-bond")).toContainText("25");
+  await expect(founder.page.getByTestId("work-reviewers")).toContainText(
+    "bond not put down yet",
+  );
+  // Back to where the sale is run from.
+  await founder.page.getByRole("tab", { name: /Manage/ }).click();
+  const [launched] = await readRecords(host, { kinds: [37001] });
+  const shares = tag(launched, "token");
+  const auction = tag(launched, "auction");
+  const dao = tag(launched, "treasury");
+  for (const address of [shares, auction, dao])
+    expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  // The launch started a real sale, so the saved record says it is live: nobody has to remember to flip the label.
+  expect(JSON.parse(launched.content).stage).toBe("live");
+
+  // The backer was named a reviewer at launch, holds no Shares and started nothing: Home still tells them they have work, and
+  // that it starts with posting their bond.
+  await capital.page.goto("/");
+  await expect(capital.page.getByTestId("home-waiting")).toContainText(
+    "Put down your bond",
+    { timeout: 60_000 },
+  );
+  await capital.page.getByTestId("home-waiting-open").first().click();
+  await expect(capital.page.getByTestId("work-tab")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // ── The capital contributor backs the launch from their own wallet, through the bid dialog ──────────
+  await mineTo(start + 2);
+  const raisedBefore = await dollarsOf(dao);
+  const walletBefore = await dollarsOf(capital.wallet.address);
+  await capital.page.goto("/launchpad");
+  await capital.page.getByText("Nebula").first().click();
+  await expect(
+    capital.page.getByRole("button", { name: "Place bid" }),
+  ).toBeVisible({ timeout: 30_000 });
+  await shot(capital.page, "1b-backer-sale-page");
+  await capital.page.getByRole("button", { name: "Place bid" }).click();
+  await capital.page.getByTestId("bid-budget").fill("400000");
+  await shot(capital.page, "1c-backer-bid-dialog");
+  // Next to the money, the backer is told what the lock covers and what it does not.
+  await expect(capital.page.getByTestId("bid-agreement-note")).toContainText(
+    "do not stop a vote from spending the project's money",
+  );
+  await expect(capital.page.getByTestId("bid-issues")).toHaveCount(0);
+  await capital.page.getByTestId("bid-send").click();
+  await expect
+    .poll(async () => (await readRecords(host, { kinds: [47002] })).length, {
+      timeout: 90_000,
+    })
+    .toBeGreaterThan(0);
+  say("the capital contributor has bid");
+  await expect
+    .poll(
+      async () => walletBefore - (await dollarsOf(capital.wallet.address)),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0n);
+
+  // ── The sale ends; anyone can graduate it, and the whole raise goes to the DAO's treasury ───────────
+  await mineTo(start + 200 + 2);
+  await founder.page.getByRole("button", { name: "Re-check" }).click();
+  await expect(founder.page.getByTestId("graduation-readiness")).toContainText(
+    "ended and raised enough",
+    { timeout: 30_000 },
+  );
+  await founder.page.getByTestId("graduation-execute").click();
+  await expect(founder.page.getByTestId("graduation-status")).toContainText(
+    "The sale is paid out",
+    { timeout: 90_000 },
+  );
+  say("the sale graduated");
+  const raised = (await dollarsOf(dao)) - raisedBefore;
+  expect(raised).toBeGreaterThanOrEqual(300_000n * 10n ** 6n);
+
+  // ── The founder lets the backer into the backers room, and the backer is named, not a key ────────────
+  const daoUrl = `/launchpad/${tag(launched, "d")}?author=${founder.pubkey}`;
+  await founder.page.goto(daoUrl);
+  await expect(founder.page.getByTestId("launch-chat-admit")).toContainText(
+    "Cleo Capital backed this launch and is waiting to join.",
+    { timeout: 30_000 },
+  );
+  await founder.page.getByTestId("launch-chat-admit-button").click();
+  await expect(founder.page.getByTestId("launch-chat-admit")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await capital.page.goto(daoUrl);
+  await expect(
+    capital.page.getByTestId("launch-chat-open-backers"),
+  ).toBeVisible({ timeout: 30_000 });
+  say("the backer is in the backers room");
+
+  // ── Time passes on the chain, and the capital contributor collects the Shares their money bought ──────
+  await mineTo(start + 260 + 2);
+  say("the chain is past the claim block");
+  await capital.page.goto(daoUrl);
+  say("the capital contributor is on the launch page");
+  await capital.page.getByRole("tab", { name: /My bids/ }).click();
+  say("the capital contributor opened My bids");
+  // A bid is settled in two steps: exit (which settles what was filled and refunds the rest), then claim.
+  const settle = async (button: string) => {
+    const offered = capital.page.getByTestId(button);
+    // If the step never appears, say what the panel said instead: waiting out the whole test budget tells nothing.
+    await offered.waitFor({ timeout: 60_000 }).catch(async () => {
+      const page = await capital.page
+        .locator("main")
+        .innerText()
+        .catch(() => "(no page)");
+      throw new Error(
+        `${button} was never offered. The page said:\n${page.slice(-2500)}`,
+      );
+    });
+    await offered.click();
+    await capital.page.getByTestId("mybids-run").click();
+    await expect(capital.page.getByTestId("mybids-done")).toBeVisible({
+      timeout: 90_000,
+    });
+    await capital.page.getByTestId("mybids-done").click();
+  };
+  await settle("mybids-exit");
+  say("the capital contributor exited the bid");
+  await settle("mybids-claim");
+  const cleoShares = await callWord(
+    shares,
+    `0x70a08231${word(capital.wallet.address)}`,
+  );
+  expect(cleoShares).toBeGreaterThan(0n);
+  say("the capital contributor holds Shares");
+  await shot(capital.page, "2-capital-shares");
+
+  // ── The DAO decides, as a DAO does: its people back a decision, time passes, it runs ─────────────────
+  const dollars = (n: number) => BigInt(n) * 10n ** 6n;
+  const open = async (person: Person, tab: string) => {
+    await person.page.goto(daoUrl);
+    await person.page.getByRole("tab", { name: tab }).click();
+  };
+  const pass = async (seconds: number) => {
+    await rpc("anvil_increaseTime", [seconds]);
+    await rpc("anvil_mine", ["0x1"]);
+  };
+  /** What both of them back together, in whole Shares, read from the chain: what each holds now (a reviewer's posted
+   *  bond, held by the panel, no longer counts). Read, not written down: how the sale fills decides the exact number. */
+  const togetherNow = async () => {
+    const held = async (address: string) =>
+      callWord(shares, `0x70a08231${word(address)}`);
+    const sum =
+      (await held(founder.wallet.address)) +
+      (await held(capital.wallet.address));
+    return `Backing ${(sum / 10n ** 18n).toLocaleString("en-US")}`;
+  };
+  /** Both the founder and the capital contributor hold Shares, so both back it; then the waits pass and it runs. */
+  const carryOut = async (approveAfter: number, waitFor: number) => {
+    const together = await togetherNow();
+    await Promise.all(
+      [founder, capital].map(async (person) => {
+        await open(person, "Decisions");
+        const card = person.page.getByTestId("decision-card").first();
+        await expect(card.getByTestId("decision-status")).toHaveText(
+          "Collecting support",
+          { timeout: 30_000 },
+        );
+        await card.getByTestId("decision-vote-for").click();
+        await expect(card.getByTestId("decision-support")).toContainText(
+          "Backing",
+          { timeout: 30_000 },
+        );
+      }),
+    );
+    await open(founder, "Decisions");
+    await expect(
+      founder.page
+        .getByTestId("decision-card")
+        .first()
+        .getByTestId("decision-support"),
+    ).toContainText(together, { timeout: 30_000 });
+    await pass(approveAfter);
+    await open(founder, "Decisions");
+    const approved = founder.page.getByTestId("decision-card").first();
+    await expect(approved.getByTestId("decision-status")).toHaveText(
+      "Approved",
+      { timeout: 30_000 },
+    );
+    await approved.getByTestId("decision-start-wait").click();
+    await expect(approved.getByTestId("decision-status")).toHaveText(
+      "Waiting to take effect",
+      { timeout: 30_000 },
+    );
+    await pass(waitFor);
+    await open(founder, "Decisions");
+    const ready = founder.page.getByTestId("decision-card").first();
+    await expect(ready.getByTestId("decision-status")).toHaveText(
+      "Ready to take effect",
+      { timeout: 30_000 },
+    );
+    await ready.getByTestId("decision-run").click();
+    await expect(ready.getByTestId("decision-status")).toHaveText("Done", {
+      timeout: 60_000,
+    });
+  };
+
+  // 1. A work budget that holds money. Its reviewers are picked by name: the people who linked a wallet.
+  const treasuryBefore = await dollarsOf(dao);
+  await open(founder, "Decisions");
+  await founder.page.getByTestId("decision-new").click();
+  await founder.page.getByTestId("decision-kind-budget").click();
+  await founder.page.getByTestId("budget-money").fill("20000");
+  await founder.page.getByTestId("budget-money-cap").fill("10000");
+  // The founder holds team Shares a milestone lock holds back, so the contract would refuse them on the panel: the
+  // outside backer is the reviewer, and the panel asks them for a real bond.
+  const reviewerPicker = founder.page.getByTestId("budget-reviewers-people");
+  await expect(
+    reviewerPicker.locator("option", { hasText: capital.name }),
+  ).toHaveCount(1, { timeout: 30_000 });
+  await reviewerPicker.selectOption(capital.wallet.address.toLowerCase());
+  await founder.page.getByTestId("budget-bond").fill("100");
+  // The project's own Shares are locked against transfers from birth (D77), so a bond in them could never be posted:
+  // the form does not offer them and says why (D103). The bond is in the payment currency, the recommended choice.
+  await expect(
+    founder.page.getByTestId("budget-bond-shares-locked"),
+  ).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(
+    founder.page
+      .getByTestId("budget-bond-token")
+      .locator("option[value='project']"),
+  ).toHaveCount(0);
+  await expect(founder.page.getByTestId("decision-draft")).toContainText(
+    "1 reviewer, 1 must agree on each submission",
+  );
+  await expect(founder.page.getByTestId("decision-draft")).toContainText(
+    "bond of 100",
+  );
+  await founder.page.getByTestId("decision-draft-submit").click();
+  await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  say("the founder put a work budget to a vote");
+  await carryOut(175_000, 90_000);
+  expect(await dollarsOf(dao)).toBe(treasuryBefore - dollars(20_000));
+  say("the DAO set aside 20,000 for work");
+  await open(founder, "Decisions");
+  await shot(founder.page, "3-decisions");
+
+  // 2. A project inside it that may hold money, managed by the founder.
+  await open(founder, "Decisions");
+  await founder.page.getByTestId("decision-new").click();
+  await founder.page.getByTestId("decision-kind-project").click();
+  await founder.page.getByTestId("project-name").fill("docs");
+  await founder.page
+    .getByTestId("project-manager-people")
+    .selectOption(founder.wallet.address.toLowerCase());
+  await founder.page.getByTestId("project-money").fill("10000");
+  await founder.page
+    .getByTestId("project-check")
+    .fill("docs merged and reviewed");
+  await founder.page.getByTestId("decision-draft-submit").click();
+  await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(90_000, 90_000);
+  say("the DAO approved the project");
+
+  // ── The labor contributor asks to be paid, with a deposit, from their own wallet ─────────────────────
+  const laborBefore = await dollarsOf(labor.wallet.address);
+  await open(labor, "Work");
+  await expect(labor.page.getByTestId("work-projects")).toContainText("docs", {
+    timeout: 30_000,
+  });
+  await labor.page.getByTestId("work-file-open").click();
+  await labor.page.getByTestId("work-claim-name").fill("write-docs");
+  await labor.page
+    .getByTestId("work-claim-evidence")
+    .fill("https://example.com/pr/1");
+  await labor.page
+    .getByTestId("work-claim-met")
+    .fill("Checked it against the work area's words");
+  await labor.page
+    .getByTestId("work-claim-check")
+    .fill("docs merged and reviewed");
+  await labor.page
+    .getByTestId("work-claim-pay-section")
+    .locator("summary")
+    .click();
+  await labor.page.getByTestId("work-claim-pay").fill("4000");
+  await labor.page.getByTestId("work-claim-deposit").fill("50");
+  await labor.page.getByTestId("work-claim-submit").click();
+  await expect(labor.page.getByTestId("work-claim-filed")).toBeVisible({
+    timeout: 90_000,
+  });
+  expect(laborBefore - (await dollarsOf(labor.wallet.address))).toBe(
+    dollars(50),
+  );
+  say("the labor contributor filed a claim for 4,000");
+
+  // ── The manager takes it on; the reviewer, the capital contributor, posts their bond and approves ────────
+  await open(founder, "Work");
+  await founder.page.getByTestId("work-bind").click();
+  await expect(founder.page.getByTestId("work-claim-next")).toContainText(
+    "0 of 1 approvals",
+    { timeout: 60_000 },
+  );
+  await open(capital, "Work");
+  // The reviewer is on two panels: the milestone panel the launch named (a 25 USDC bond) and this budget's (100 USDC).
+  const budgetCard = capital.page
+    .getByTestId("work-mandate")
+    .filter({ hasText: "Work budget" });
+  await expect(budgetCard.getByTestId("work-bond")).toContainText("100", {
+    timeout: 30_000,
+  });
+  await expect(budgetCard.getByTestId("work-bond")).toContainText("USDC");
+  // Nothing to judge with until the bond is in; posting it is an approval and then the bond, from their own wallet.
+  await expect(budgetCard.getByTestId("work-approve")).toHaveCount(0);
+  const capitalBefore = await dollarsOf(capital.wallet.address);
+  const sharesOf = async (who: string) =>
+    callWord(shares, `0x70a08231${word(who)}`);
+  const sharesBefore = await sharesOf(capital.wallet.address);
+  await budgetCard.getByTestId("work-post-bond").click();
+  await expect(budgetCard.getByTestId("work-bond-owed")).toHaveCount(0, {
+    timeout: 90_000,
+  });
+  // The bond left in dollars, from their own wallet; their Shares did not move.
+  expect(capitalBefore - (await dollarsOf(capital.wallet.address))).toBe(
+    dollars(100),
+  );
+  expect(await sharesOf(capital.wallet.address)).toBe(sharesBefore);
+  say("the reviewer posted their bond of 100 USDC");
+  await shot(capital.page, "5-reviewer-work");
+  await budgetCard.getByTestId("work-approve").click();
+  await expect(budgetCard.getByTestId("work-claim-next")).not.toContainText(
+    "0 of 1 approvals",
+    { timeout: 60_000 },
+  );
+  await open(founder, "Work");
+  await founder.page.getByTestId("work-settle").click();
+  // The chain's word for the end of review is `Approved`; the Work tab calls it "Review complete", so no one reads the
+  // reviewers' verdict as an award of money (D180's reporting rule).
+  await expect(founder.page.getByTestId("work-claim-status")).toContainText(
+    "Review complete",
+    { timeout: 60_000 },
+  );
+  say("the claim was approved");
+
+  // ── After the challenge window, the labor contributor takes the payment; the deposit comes back ─────────
+  await pass(700_000);
+  await open(labor, "Work");
+  await labor.page
+    .getByRole("button", { name: "Refresh", exact: true })
+    .click();
+  await labor.page.getByTestId("work-payout").click();
+  await expect(labor.page.getByTestId("work-claim-status")).toContainText(
+    "Paid",
+    { timeout: 60_000 },
+  );
+  expect((await dollarsOf(labor.wallet.address)) - laborBefore).toBe(
+    dollars(4_000),
+  );
+  say("the labor contributor was paid 4,000");
+  await shot(labor.page, "4-labor-work");
+
+  // ── A claim the DAO doubts is frozen by a vote, then unwound: nothing is paid, and the deposit comes back ──────
+  const laborBeforeSecond = await dollarsOf(labor.wallet.address);
+  await open(labor, "Work");
+  await expect(labor.page.getByTestId("work-projects")).toContainText("docs", {
+    timeout: 30_000,
+  });
+  await labor.page.getByTestId("work-file-open").click();
+  await labor.page.getByTestId("work-claim-name").fill("extra-docs");
+  await labor.page
+    .getByTestId("work-claim-evidence")
+    .fill("https://example.com/pr/2");
+  await labor.page
+    .getByTestId("work-claim-met")
+    .fill("Checked it against the work area's words");
+  await labor.page
+    .getByTestId("work-claim-check")
+    .fill("docs merged and reviewed");
+  await labor.page
+    .getByTestId("work-claim-pay-section")
+    .locator("summary")
+    .click();
+  await labor.page.getByTestId("work-claim-pay").fill("1000");
+  await labor.page.getByTestId("work-claim-deposit").fill("20");
+  await labor.page.getByTestId("work-claim-submit").click();
+  await expect(labor.page.getByTestId("work-claim-filed")).toBeVisible({
+    timeout: 90_000,
+  });
+  await open(founder, "Work");
+  const secondOnFounder = founder.page
+    .getByTestId("work-claim")
+    .filter({ hasText: "extra-docs" });
+  await secondOnFounder.getByTestId("work-bind").click();
+  await expect(secondOnFounder.getByTestId("work-claim-next")).toContainText(
+    "0 of 1 approvals",
+    { timeout: 60_000 },
+  );
+  await open(capital, "Work");
+  const secondOnReviewer = capital.page
+    .getByTestId("work-mandate")
+    .filter({ hasText: "Work budget" })
+    .getByTestId("work-claim")
+    .filter({ hasText: "extra-docs" });
+  await secondOnReviewer.getByTestId("work-approve").click();
+  await expect(
+    secondOnReviewer.getByTestId("work-claim-next"),
+  ).not.toContainText("0 of 1 approvals", { timeout: 60_000 });
+  await open(founder, "Work");
+  await secondOnFounder.getByTestId("work-settle").click();
+  await expect(secondOnFounder.getByTestId("work-claim-status")).toContainText(
+    "Review complete",
+    { timeout: 60_000 },
+  );
+  say("a second claim was approved, inside its challenge window");
+
+  // Doubting a claim starts on its own card: "Put a freeze to a vote" opens the form with that claim chosen.
+  await open(founder, "Work");
+  await founder.page
+    .getByTestId("work-claim")
+    .filter({ hasText: "extra-docs" })
+    .getByTestId("work-challenge")
+    .click();
+  await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
+    "Freeze the submission “Extra docs”",
+    { timeout: 30_000 },
+  );
+  await founder.page.getByTestId("decision-draft-submit").click();
+  await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(175_000, 90_000);
+  await open(labor, "Work");
+  const secondOnLabor = labor.page
+    .getByTestId("work-claim")
+    .filter({ hasText: "extra-docs" });
+  await expect(secondOnLabor.getByTestId("work-claim-status")).toContainText(
+    "Frozen",
+    { timeout: 60_000 },
+  );
+  // Nothing is payable for a frozen claim, even to its contributor.
+  await expect(secondOnLabor.getByTestId("work-payout")).toHaveCount(0);
+  say("the DAO froze the claim by a vote");
+
+  await open(founder, "Decisions");
+  await founder.page.getByTestId("decision-new").click();
+  await founder.page.getByTestId("decision-kind-unwind").click();
+  await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
+    "Reject the frozen submission “Extra docs”",
+    { timeout: 30_000 },
+  );
+  await founder.page.getByTestId("decision-draft-submit").click();
+  await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(175_000, 90_000);
+  await open(labor, "Work");
+  await expect(
+    labor.page
+      .getByTestId("work-claim")
+      .filter({ hasText: "extra-docs" })
+      .getByTestId("work-claim-status"),
+  ).toContainText("Recovered", { timeout: 60_000 });
+  // The deposit is back and nothing was paid: the contributor is where they were before the claim.
+  expect(await dollarsOf(labor.wallet.address)).toBe(laborBeforeSecond);
+  say("the DAO unwound it: the deposit is back and nothing was paid");
+
+  // ── The DAO takes part of the careless reviewer's bond, then closes the budget and gets its unused money back ─
+  // The reviewer, seeing the dispute coming, asks for the whole bond back. It stops counting at once but stays at risk
+  // until they take it, so the DAO must still be able to take part of it: asking back must not be a way out.
+  await open(capital, "Work");
+  const bondBudget = capital.page
+    .getByTestId("work-mandate")
+    .filter({ hasText: "Work budget" });
+  await bondBudget.getByTestId("work-unbond").click();
+  await expect(bondBudget.getByTestId("work-unbond-pending")).toContainText(
+    "100",
+    { timeout: 60_000 },
+  );
+  const daoDollarsBefore = await dollarsOf(dao);
+  await open(founder, "Decisions");
+  await founder.page.getByTestId("decision-new").click();
+  await founder.page.getByTestId("decision-kind-slash").click();
+  // Their active stake is zero now; the form still lists them, with what is waiting.
+  await expect(
+    founder.page.getByTestId("slash-reviewer").locator("option").first(),
+  ).toContainText("waiting to be taken back", { timeout: 30_000 });
+  await founder.page.getByTestId("slash-amount").fill("40");
+  await expect(founder.page.getByTestId("decision-draft-title")).toContainText(
+    "Take 40 ",
+    { timeout: 30_000 },
+  );
+  // No more than the reviewer holds can be taken.
+  await founder.page.getByTestId("slash-amount").fill("400");
+  await expect(
+    founder.page.getByTestId("decision-draft-problem"),
+  ).toContainText("holds only 100");
+  await founder.page.getByTestId("slash-amount").fill("40");
+  await founder.page.getByTestId("decision-draft-submit").click();
+  await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(175_000, 90_000);
+  expect((await dollarsOf(dao)) - daoDollarsBefore).toBe(dollars(40));
+  await open(capital, "Work");
+  await expect(
+    capital.page
+      .getByTestId("work-mandate")
+      .filter({ hasText: "Work budget" })
+      .getByTestId("work-unbond-pending"),
+  ).toContainText("60", { timeout: 60_000 });
+  say("the DAO took 40 USDC of the reviewer's bond");
+
+  const treasuryBeforeClose = await dollarsOf(dao);
+  await open(founder, "Decisions");
+  await founder.page.getByTestId("decision-new").click();
+  await founder.page.getByTestId("decision-kind-close").click();
+  await expect(founder.page.getByTestId("decision-draft-title")).toHaveText(
+    "Close the work budget",
+    { timeout: 30_000 },
+  );
+  await founder.page.getByTestId("decision-draft-submit").click();
+  await expect(founder.page.getByTestId("decision-opened")).toBeVisible({
+    timeout: 60_000,
+  });
+  await carryOut(175_000, 90_000);
+  // Of the 20,000 set aside, 4,000 was paid to the claim; the rest (the recovered claim's 1,000 included) comes back.
+  expect((await dollarsOf(dao)) - treasuryBeforeClose).toBe(dollars(16_000));
+  await open(founder, "Work");
+  await expect(
+    founder.page
+      .getByTestId("work-mandate")
+      .filter({ hasText: "Work budget" })
+      .first(),
+  ).toContainText("Closed", { timeout: 60_000 });
+  say("the DAO closed the budget and took back 16,000");
+
+  // ── What everyone is left holding, on the chain and on the server ───────────────────────────────────
+  expect(await dollarsOf(dao)).toBe(
+    // 20,000 went into the work budget, 4,000 of it to the claim, the rest came back; and the 40 the DAO took from the
+    // careless reviewer's bond (paid in dollars since D103).
+    treasuryBefore - dollars(4_000) + dollars(40),
+  );
+  expect(cleoShares).toBeGreaterThan(0n);
+  expect(await dollarsOf(capital.wallet.address)).toBeLessThanOrEqual(
+    dollars(5_000_000) - dollars(399_999),
+  );
+  // Each person has a profile in the community under their own name, and a verified link from their own key.
+  const everyone = [founder, labor, capital];
+  const profiles = await readRecords(host, {
+    kinds: [0],
+    authors: everyone.map((person) => person.pubkey),
+  });
+  expect(
+    profiles.map((event) => JSON.parse(event.content).name as string).sort(),
+  ).toEqual(everyone.map((person) => person.name).sort());
+  const bids = await readRecords(host, { kinds: [47002] });
+  expect(bids.map((event) => event.pubkey)).toEqual([capital.pubkey]);
+  // The DAO's front page tells the same story: all of it went through a reviewed budget, none paid out directly.
+  await open(founder, "Overview");
+  // It also shows where the team's milestones stand, the same as the Milestones tab does.
+  await expect(
+    founder.page.getByTestId("dao-milestones-summary"),
+  ).toContainText("0 of 3 reached", { timeout: 60_000 });
+  await expect(founder.page.getByTestId("dao-milestone-0")).toContainText(
+    "Not submitted",
+  );
+  await shot(founder.page, "6-overview");
+  await expect(founder.page.getByTestId("dao-spending-reviewed")).toContainText(
+    "4,000 USDC, of which 4,000 USDC has been paid for work the reviewers approved",
+    { timeout: 30_000 },
+  );
+  await expect(founder.page.getByTestId("dao-spending-direct")).toContainText(
+    "0 USDC",
+  );
+  await expect(founder.page.getByTestId("dao-spending-headline")).toContainText(
+    "went through reviewed work budgets",
+  );
+  for (const [tab, name] of [
+    ["Milestones", "7a-milestones"],
+    ["Work", "7-work"],
+    ["Track record", "8-record"],
+    ["Treasury", "9-treasury"],
+    ["Decisions", "10-decisions"],
+    ["Manage", "11-manage"],
+  ] as const) {
+    await open(founder, tab);
+    await shot(founder.page, name);
+  }
+  await founder.page.goto("/portfolio");
+  await shot(founder.page, "12-portfolio");
+
+  // ── A backer leaves: what the screen says they take back is what the chain pays them ──────────────────
+  // The DAO's own Shares (its reserve) are not counted when the treasury is split, and since D72 neither are the team's
+  // Shares the milestone lock still holds back: they cannot leave, so they take no share. The backer's share is their
+  // Shares over what is left, read from the chain here, not from the app.
+  const outstanding = await callWord(shares, "0x18160ddd");
+  const heldByDao = await sharesOf(dao);
+  const guard = await callWord(shares, "0x36bc529d"); // lockGuard()
+  const stillLocked =
+    guard === 0n
+      ? 0n
+      : await callWord(
+          `0x${guard.toString(16).padStart(40, "0")}`,
+          "0x56891412",
+        ); // totalLocked()
+  const toGiveUp = await sharesOf(capital.wallet.address);
+  const treasuryNow = await dollarsOf(dao);
+  const owed =
+    (treasuryNow * toGiveUp) / (outstanding - heldByDao - stillLocked);
+  expect(owed).toBeGreaterThan(0n);
+  const capitalBeforeExit = await dollarsOf(capital.wallet.address);
+  // First the sale's currency cannot be read: leaving must not even be offered, because an exit that leaves the
+  // currency off its list burns the Shares and gives up the treasury's money.
+  await capital.page.route(ANVIL_URL, async (route) => {
+    let body: { method?: string; params?: { to?: string; data?: string }[] } =
+      {};
+    try {
+      body = JSON.parse(route.request().postData() ?? "{}");
+    } catch {
+      // Not a JSON-RPC call: let it through.
+    }
+    const call = body.params?.[0];
+    if (
+      body.method === "eth_call" &&
+      call?.to?.toLowerCase() === auction.toLowerCase() &&
+      call?.data === "0xe5a6b10f"
+    ) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await open(capital, "Treasury");
+  await expect(
+    capital.page.getByTestId("ragequit-currency-failed"),
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(capital.page.getByTestId("ragequit-exit")).toHaveCount(0);
+  await expect(capital.page.getByTestId("ragequit-shares")).toHaveCount(0);
+  // The node answers again: one press of Try again and the exit is offered with the currency on its list.
+  await capital.page.unroute(ANVIL_URL);
+  await capital.page.getByTestId("ragequit-currency-retry").click();
+  // If the preview never appears, say what the panel said instead of just timing out.
+  await capital.page
+    .getByTestId("ragequit-shares")
+    .waitFor({ timeout: 60_000 })
+    .catch(async () => {
+      const panel = await capital.page
+        .getByTestId("ragequit-panel")
+        .innerText()
+        .catch(() => "(no panel)");
+      throw new Error(
+        `The exit preview never showed the backer's Shares. The panel said:\n${panel}`,
+      );
+    });
+  await expect(
+    capital.page.getByTestId("ragequit-claim-row").last(),
+  ).toContainText((owed / 10n ** 6n).toLocaleString("en-US"), {
+    timeout: 30_000,
+  });
+  await shot(capital.page, "13-leave-preview");
+  await capital.page.getByTestId("ragequit-exit").click();
+  await capital.page.getByTestId("ragequit-run").click();
+  await expect(capital.page.getByTestId("ragequit-done")).toBeVisible({
+    timeout: 90_000,
+  });
+  expect((await dollarsOf(capital.wallet.address)) - capitalBeforeExit).toBe(
+    owed,
+  );
+  expect(await sharesOf(capital.wallet.address)).toBe(0n);
+  say("the backer left with exactly the share the screen showed");
+  // A backer reads what the team said about how its reviewers will work, and sees the milestones as the team does.
+  await open(capital, "Milestones");
+  await expect(
+    capital.page.getByTestId("milestones-reviewer-terms"),
+  ).toContainText("answer within 7 days", { timeout: 30_000 });
+  // The milestones are read from the chain (a slow node takes a while), so give the read time before judging it.
+  await expect(capital.page.getByTestId("milestone-stage-0")).toHaveText(
+    "Not submitted",
+    { timeout: 90_000 },
+  );
+  // The same pages on a phone, with real data (only when screenshots are being saved).
+  if (process.env.E2E_SHOTS) {
+    await founder.page.setViewportSize({ width: 390, height: 844 });
+    for (const [tab, name] of [
+      ["Overview", "p1-overview"],
+      ["Decisions", "p2-decisions"],
+      ["Work", "p3-work"],
+      ["Treasury", "p4-treasury"],
+    ] as const) {
+      await open(founder, tab);
+      await shot(founder.page, `phone-${name}`);
+    }
+  }
+  say("the books agree");
+});

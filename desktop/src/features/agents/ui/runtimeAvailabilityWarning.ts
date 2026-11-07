@@ -23,7 +23,7 @@ export function runtimeAvailabilityWarning(
         `${runtime.label} CLI is installed but the ACP adapter is missing.`,
       );
     case "adapter_outdated":
-      return `${runtime.label} ACP adapter is outdated — reinstall to continue.`;
+      return `${runtime.label} ACP adapter is outdated. Reinstall to continue.`;
     default:
       return runtime.requiresExternalCli
         ? withHint(`${runtime.label} CLI is missing.`)

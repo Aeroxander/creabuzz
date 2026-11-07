@@ -1,5 +1,12 @@
 import * as React from "react";
-import { Bot, Plus, Sparkles, UserPlus } from "lucide-react";
+import {
+  AtSign,
+  Bot,
+  FolderPlus,
+  Plus,
+  Sparkles,
+  UserPlus,
+} from "lucide-react";
 
 import {
   getChannelIntroDescription,
@@ -9,6 +16,8 @@ import {
   isWelcomeChannel,
   isWelcomeExperienceChannel,
 } from "@/features/onboarding/welcome";
+import { useIsProjectHomeChannel } from "@/features/projects/lib/projectHomeChannel";
+import { ProjectChannelIcon } from "@/features/projects/ui/ProjectChannelIcon";
 import type { Channel } from "@/shared/api/types";
 import { HashSearch } from "@/shared/ui/icons";
 
@@ -29,18 +38,25 @@ type ChannelIntroAction = {
 export function useChannelIntro({
   activeChannel,
   onAddAgent,
+  onAddFiles,
   onBrowseChannels,
   onCreateChannel,
+  onMentionAgent,
   onOpenMembers,
   onWelcomeAddAgent,
 }: {
   activeChannel: Channel | null;
   onAddAgent?: (options?: { beforeSend?: () => void }) => void;
+  onAddFiles?: () => void;
   onBrowseChannels?: () => void;
   onCreateChannel?: () => void;
+  /** Composer "@" affordance; supplied only when the channel has agents. */
+  onMentionAgent?: () => void;
   onOpenMembers?: () => void;
   onWelcomeAddAgent?: () => void;
 }) {
+  const projectHome = useIsProjectHomeChannel(activeChannel?.id);
+
   return React.useMemo(() => {
     if (!activeChannel || activeChannel.channelType === "dm") {
       return null;
@@ -79,7 +95,7 @@ export function useChannelIntro({
         actions,
         channelKindLabel: isWelcomeChannel(activeChannel)
           ? "private welcome channel"
-          : getChannelIntroKind(activeChannel),
+          : getChannelIntroKind(activeChannel, projectHome),
         channelName: activeChannel.name,
         description: isWelcomeChannel(activeChannel)
           ? null
@@ -89,11 +105,31 @@ export function useChannelIntro({
     }
 
     if (!activeChannel.archivedAt && activeChannel.isMember) {
+      if (onMentionAgent) {
+        actions.push({
+          description: "Type @ to bring an agent in.",
+          icon: <AtSign aria-hidden className="h-5 w-5" />,
+          label: "Mention an agent",
+          onClick: onMentionAgent,
+          testId: "channel-intro-action-mention-agent",
+        });
+      }
+
+      if (onAddFiles) {
+        actions.push({
+          description: "Add a repo.",
+          icon: <FolderPlus aria-hidden className="h-5 w-5" />,
+          label: "Add files",
+          onClick: onAddFiles,
+          testId: "channel-intro-action-add-files",
+        });
+      }
+
       if (onAddAgent) {
         actions.push({
           description: "Add an agent here.",
-          icon: <Bot aria-hidden className="h-6 w-6" />,
-          label: "Create agent",
+          icon: <Bot aria-hidden className="h-5 w-5" />,
+          label: "Add agent",
           onClick: onAddAgent,
           testId: "channel-intro-action-create-agent",
         });
@@ -102,7 +138,7 @@ export function useChannelIntro({
       if (onOpenMembers) {
         actions.push({
           description: "Invite members.",
-          icon: <UserPlus aria-hidden className="h-6 w-6" />,
+          icon: <UserPlus aria-hidden className="h-5 w-5" />,
           label: "Add people",
           onClick: onOpenMembers,
           testId: "channel-intro-action-add-people",
@@ -112,16 +148,23 @@ export function useChannelIntro({
 
     return {
       actions,
-      channelKindLabel: getChannelIntroKind(activeChannel),
+      channelKindLabel: getChannelIntroKind(activeChannel, projectHome),
       channelName: activeChannel.name,
       description: getChannelIntroDescription(activeChannel),
+      hideBeginning: projectHome,
+      icon: projectHome ? (
+        <ProjectChannelIcon className="h-7 w-7" />
+      ) : undefined,
     };
   }, [
     activeChannel,
     onAddAgent,
+    onAddFiles,
     onBrowseChannels,
     onCreateChannel,
+    onMentionAgent,
     onOpenMembers,
     onWelcomeAddAgent,
+    projectHome,
   ]);
 }

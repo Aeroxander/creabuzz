@@ -1,0 +1,17 @@
+{
+  "name": "@creaton/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pure logic shared by the Creaton web and desktop apps: launchpad calldata and flows, org authority.",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test \"src/**/*.test.mjs\"",
+    "check": "biome check ."
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.2.0"
+  }
+}

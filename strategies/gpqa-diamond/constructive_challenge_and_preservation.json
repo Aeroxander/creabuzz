@@ -1,0 +1,77 @@
+{
+  "v": 1,
+  "name": "Constructive challenge and preservation",
+  "description": "GPQA-Diamond bank strategy from arXiv 2609.22682 Appendix A: a designated challenger proposes concrete repairs or alternatives, after which the team preserves, repairs, or rejects each well-supported claim before synthesis.",
+  "teamworkPrompt": "Engage in an adversarial debate, where challenges include proposed repairs or alternative interpretations. Critically evaluate all claims and collaboratively refine the solution, with a specific focus on preserving and validating robust individual solutions.",
+  "roles": {
+    "agent-0": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-1": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-2": "You are the primary challenger. Your role is to critically examine the claims of others, and when challenging, propose a plausible alternative interpretation, missing condition, factual error, or a specific repair to the reasoning, not just point out a flaw. Furthermore, if an individual agent presented a solution that is well-supported by evidence, you must proactively argue for its preservation, citing specific scientific principles and evidence. Your goal is to improve the scientific rigor of the solution through constructive adversarial engagement and ensure robust insights are not lost."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent independently proposes their best solution and the key scientific claims supporting it. Identify any areas of strong initial consensus or disagreement."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Agent 2 (Challenger): Identify the weakest or most critical claim in the initial consensus or a divergent solution. Formulate a specific challenge that includes a plausible alternative interpretation, a missing condition, a factual error, or a proposed ’repair’ to the reasoning. Crucially, if any agent’s initial solution is well-supported by evidence, Agent 2 must articulate why that solution *should* be preserved, citing specific evidence or scientific principles. Other agents (0, 1): Defend your original reasoning with evidence or acknowledge the validity of the challenge/preservation argument and propose a repair or accept the preservation."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Based on the challenges and responses, collectively decide whether the challenged reasoning survives, is repaired, or is abandoned. If a repair is accepted, clearly state the revised scientific claim or reasoning. If fundamental disagreements persist, especially regarding the preservation of a robust individual solution, identify the precise points of contention and their impact on the overall solution."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Synthesize all surviving and repaired scientific claims into a final, robust solution. Clearly state the solution and justify why it is the most scientifically sound choice given the debate, explicitly mentioning how any robust individual solutions were preserved or why they were ultimately discarded."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.2",
+    "bank": "gpqa-diamond",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper sets Roles only for Agent 2; kind:44020 requires a prompt per roster slot, so agent-0, agent-1 carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

@@ -1,0 +1,470 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { Button } from "@/shared/ui/button";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
+import { Input } from "@/shared/ui/input";
+import { Modal } from "./Modal";
+import {
+  resolveSender,
+  SenderPickerControls,
+  senderErrorMessage,
+  useSenderPicker,
+} from "./SenderPicker";
+import { UnauditedNotice } from "./UnauditedNotice";
+import {
+  clearingPrice,
+  decodeU256,
+  ethCall,
+  recordSaleCurrency,
+} from "../chain";
+import {
+  bidPlanWithDefaultHint,
+  buildBidCalls,
+  encodeErc20Allowance,
+  PERMIT2_ADDRESS,
+  validateBid,
+  type BidPlan,
+} from "../lib/bid-tx";
+import {
+  formatMoney,
+  formatQ96PerToken,
+  roundUpSignificant,
+  toAtomic,
+} from "../lib/amounts";
+import { floorPricePerToken } from "../lib/launch-params";
+import { priceFormat } from "@creaton/core/launchpad/sale-currency.ts";
+import { priceToAtomic, priceToQ96, unitsToPlain } from "../lib/sale-plans";
+import { TX_HASH_RE } from "../lib/milestone-receipt";
+import type { LaunchRecord } from "../models";
+
+import { OwnershipOnlyNote } from "./widgets";
+
+interface BidInput {
+  bucket: string;
+  budget: string;
+  maxPrice: string;
+  tx: string;
+  asAgent?: boolean;
+}
+
+/**
+ * Investor flow: bid onchain, then mirror the tx hash into the feed.
+ *
+ * The dialog composes the real CCA `submitBid` calldata (the exact bytes the
+ * contract accepts — `lib/bid-tx.ts`, bound by `BidCalldata.t.sol`), snaps the
+ * desired max price onto the auction's tick grid, and validates against the
+ * same reverts. The sender is a picker: the injected wallet (current) or the
+ * passkey-owned Kernel-0.3.3 account with ZeroDev gas sponsorship
+ * (`lib/sponsoredSender.ts`). Both consume the SAME composed calls — the
+ * sender swap never changes the calldata. After a send the hash is recorded;
+ * without any sender (or an indexer/agent that bid elsewhere) the manual hash
+ * entry stays available. The mirror (`Record bid`) is only
+ * enabled once a tx hash exists: the chain is the ledger, the mirror is the
+ * record, and a mirror with no tx would claim a bid that never landed.
+ */
+export function RecordBidDialog({
+  isPublishing,
+  launchName,
+  record,
+  rpcEndpoint,
+  onClose,
+  onPublish,
+}: {
+  isPublishing: boolean;
+  launchName: string;
+  record: LaunchRecord;
+  rpcEndpoint: string;
+  onClose: () => void;
+  onPublish: (input: BidInput) => Promise<void>;
+}) {
+  const [asAgent, setAsAgent] = useState(false);
+  /**
+   * The action that failed, kept so a successful passkey unlock can resume it
+   * (Rule 6: the recovery must lead back to the thing the reader was doing).
+   */
+  const resumeRef = useRef<(() => void) | null>(null);
+  const cur = recordSaleCurrency(record);
+  const [bucket, setBucket] = useState("bucket-0");
+  // Plain amounts in the sale's own currency (ETH or USDC). Converted to the
+  // auction's atomic units and Q96 price below; the mirror still records atomic.
+  const [budget, setBudget] = useState("");
+  // A sensible starting ceiling: twice the floor price. It is only a starting
+  // point — a bid below the clearing price is refused, and the founder-set
+  // floor is the one price we know for certain.
+  const [maxPrice, setMaxPrice] = useState(() => {
+    const floor = toAtomic(record.floorPrice);
+    if (floor === null || floor <= 0n) return "";
+    // Twice the floor, rounded up to two significant digits: the exact double
+    // carries the floor's tick-snapping residue (0.000007999999999999).
+    return unitsToPlain(
+      roundUpSignificant(floorPricePerToken(floor * 2n), 2),
+      cur.decimals,
+    );
+  });
+  const [tx, setTx] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [clearing, setClearing] = useState<bigint | null>(null);
+  const picker = useSenderPicker();
+
+  const auction = record.auction;
+  const floorPriceQ96 = toAtomic(record.floorPrice) ?? null;
+  const tickSpacingQ96 = toAtomic(record.tickSpacing) ?? null;
+
+  // Read the clearing price once per opening. A failed read is honest: the
+  // contract still enforces "above clearing" at bid time, so the user can
+  // proceed, but the dialog cannot pre-check that rule.
+  useEffect(() => {
+    let alive = true;
+    if (!auction) {
+      setClearing(null);
+      return;
+    }
+    clearingPrice(rpcEndpoint, auction).then((p) => {
+      if (alive) setClearing(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [auction, rpcEndpoint]);
+
+  const budgetAtomic = useMemo(
+    () => priceToAtomic(budget, cur.decimals),
+    [budget, cur.decimals],
+  );
+
+  const plan: BidPlan | null = useMemo(() => {
+    if (
+      floorPriceQ96 === null ||
+      tickSpacingQ96 === null ||
+      budgetAtomic === null
+    ) {
+      return null;
+    }
+    const desired = priceToQ96(maxPrice, cur.decimals);
+    if (desired === null) return null;
+    // Snap up to the grid: a price between ticks reverts onchain
+    // (TickPriceNotAtBoundary), and snapping up keeps the user's premium
+    // rather than silently undercutting it.
+    const snapped = desired - (desired % tickSpacingQ96);
+    const maxPriceQ96 =
+      snapped === desired ? snapped : snapped + tickSpacingQ96;
+    return bidPlanWithDefaultHint(
+      {
+        maxPriceQ96,
+        amount: budgetAtomic,
+        owner: "0x0000000000000000000000000000000000000000",
+        hookData: "0x",
+      },
+      floorPriceQ96,
+    );
+  }, [budgetAtomic, cur.decimals, floorPriceQ96, maxPrice, tickSpacingQ96]);
+
+  const issues = useMemo(() => {
+    if (!plan || tickSpacingQ96 === null || floorPriceQ96 === null) return [];
+    // The record does not carry the auction supply, so the ceiling check is
+    // skipped (supply null); everything else the contract enforces still
+    // holds. When the clearing price is unreadable, the "above clearing" rule
+    // is left to the contract rather than guessed.
+    return validateBid(
+      { ...plan, owner: "0x0000000000000000000000000000000000000000" },
+      {
+        tickSpacingQ96,
+        clearingPriceQ96: clearing ?? 0n,
+        supply: null,
+      },
+    ).filter(
+      (i) =>
+        !(
+          clearing === null &&
+          i.field === "maxPrice" &&
+          i.message.includes("clearing price")
+        ),
+    );
+  }, [clearing, floorPriceQ96, plan, tickSpacingQ96]);
+
+  const sendBid = async () => {
+    if (!auction || !plan) return;
+    resumeRef.current = () => void sendBid();
+    setError(null);
+    setSending(true);
+    try {
+      const sender = resolveSender(picker);
+      const senderAddress = await sender.getAddress();
+      // Owner is the sending account: tokens and refunds settle there. The
+      // budget is pulled from the CALLER onchain, so the composed calldata is
+      // sender-agnostic apart from this owner choice.
+      const ownerPlan = { ...plan, owner: senderAddress };
+      // A first-time bidder has never approved Permit2 on the token; without
+      // that leg the bid's payment pull reverts. Read the allowance so a
+      // returning bidder is not asked to approve again (a failed read composes
+      // the approve — see needsUnderlyingApproval).
+      let underlyingAllowance: bigint | null = null;
+      if (cur.kind !== "eth") {
+        try {
+          underlyingAllowance = decodeU256(
+            await ethCall(
+              rpcEndpoint,
+              cur.value,
+              encodeErc20Allowance(senderAddress, PERMIT2_ADDRESS),
+            ),
+          );
+        } catch {
+          underlyingAllowance = null;
+        }
+      }
+      const calls = buildBidCalls({
+        auction,
+        plan: ownerPlan,
+        // ETH is the native coin: no token, no Permit2, the bid carries its value.
+        currency: cur.kind === "eth" ? null : cur.value,
+        deadline: BigInt(Math.floor(Date.now() / 1000)) + 3600n,
+        underlyingAllowance,
+      });
+      const result = await sender.sendCalls(calls);
+      if (!TX_HASH_RE.test(result.txHash))
+        throw new Error(
+          "We did not get a valid confirmation ID back. Check whether the bid went through before you send it again.",
+        );
+      setTx(result.txHash);
+      // Sending the bid is the act; recording it is not a second decision. The
+      // manual button stays for a record that fails or a bid made elsewhere.
+      publishBid(result.txHash);
+    } catch (err) {
+      setError(senderErrorMessage(err, "The bid was not sent. Try again."));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  /** Publish the bid's record for `hash`: what lets the founder see who backed. */
+  const publishBid = (hash: string) => {
+    if (isPublishing) return;
+    setError(null);
+    // `tx` holds this hash by the time a locked passkey is unlocked.
+    resumeRef.current = submit;
+    void onPublish({
+      bucket: bucket.trim() || "bucket-0",
+      // The mirror records atomic units and the snapped Q96 price, as before.
+      budget: budgetAtomic?.toString() ?? budget.trim(),
+      maxPrice: plan?.maxPriceQ96.toString() ?? maxPrice.trim(),
+      tx: hash,
+      asAgent,
+    });
+  };
+
+  /** The manual path: a bid made elsewhere, or a record that failed the first time. */
+  const submit = () => {
+    if (isPublishing) return;
+    if (tx.trim() !== "" && !TX_HASH_RE.test(tx.trim())) {
+      setError(
+        "That confirmation ID is not valid. It is 0x followed by 64 letters and numbers.",
+      );
+      return;
+    }
+    if (tx.trim() === "") {
+      setError(
+        "Send the bid first, or paste the confirmation ID of a bid you made elsewhere.",
+      );
+      return;
+    }
+    publishBid(tx.trim());
+  };
+
+  const canMirror = tx.trim() !== "" && !isPublishing;
+  const canSend =
+    auction !== null && plan !== null && issues.length === 0 && !sending;
+
+  return (
+    <Modal label={`Back ${launchName}`} onClose={onClose}>
+      <h2 className="text-lg font-semibold text-black dark:text-white">
+        Back {launchName}
+      </h2>
+      <UnauditedNotice chainId={record.chainId} />
+      <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+        Your bid goes from your account straight to the sale, and is recorded on
+        this launch&apos;s page so the founder and others can see it.
+      </p>
+      {record.unlocks?.mode === "milestones" ? (
+        // Said next to the money: the lock is on the team's own tokens, not on what backers put in.
+        <p
+          className="mt-2 rounded-lg bg-black/5 p-2 text-xs text-black/70 dark:bg-white/5 dark:text-white/70"
+          data-testid="bid-agreement-note"
+        >
+          Before you bid: your money becomes part of the project&apos;s money,
+          which holders vote on, and the team votes too. The milestones lock the
+          team&apos;s own tokens until each milestone has been reached and
+          judged; they do not stop a vote from spending the project&apos;s
+          money. If the sale misses its minimum, every bid is refunded.
+        </p>
+      ) : null}
+      {!auction ? (
+        <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          This launch has no sale set up yet, so it cannot take bids. You can
+          fill in the details below, but nothing will be sent.
+        </p>
+      ) : null}
+      <SenderPickerControls state={picker} testIdPrefix="bid-" />
+      <div className="mt-3 flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="text-sm font-medium" htmlFor="bid-budget">
+              Your budget ({cur.symbol})
+            </label>
+            <Input
+              id="bid-budget"
+              data-testid="bid-budget"
+              className="mt-1"
+              inputMode="decimal"
+              onChange={(e) => setBudget(e.target.value)}
+              placeholder={cur.kind === "eth" ? "1" : "1000"}
+              value={budget}
+              type="text"
+            />
+            <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+              The most you will spend. You pay the clearing price (the going
+              price at each moment of the sale) for what you win; the rest is
+              refunded.
+            </p>
+          </div>
+          <div>
+            <label className="text-sm font-medium" htmlFor="bid-max-price">
+              Highest price per token ({cur.symbol})
+            </label>
+            <Input
+              id="bid-max-price"
+              data-testid="bid-max-price"
+              className="mt-1"
+              inputMode="decimal"
+              onChange={(e) => setMaxPrice(e.target.value)}
+              placeholder={cur.kind === "eth" ? "0.000004" : "0.02"}
+              value={maxPrice}
+              type="text"
+            />
+            <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+              You never pay more than this, and usually pay less.
+            </p>
+          </div>
+        </div>
+        <p
+          className="text-xs text-black/60 dark:text-white/60"
+          data-testid="bid-price-context"
+        >
+          Floor price{" "}
+          {floorPriceQ96 !== null
+            ? formatQ96PerToken(floorPriceQ96, priceFormat(cur))
+            : "unknown"}
+          {" (the lowest price the sale allows)"}
+          {clearing !== null
+            ? ` · current clearing price ${formatQ96PerToken(clearing, priceFormat(cur))} (your highest price must be above it)`
+            : " · the clearing price could not be read; the sale will still refuse your bid unless your price is above it"}
+          {plan && budgetAtomic !== null
+            ? ` · you are bidding ${formatMoney(budgetAtomic, cur)}`
+            : ""}
+          .
+        </p>
+        {issues.length > 0 ? (
+          <ul
+            data-testid="bid-issues"
+            className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
+          >
+            {issues.map((i) => (
+              <li key={i.message}>{i.message}</li>
+            ))}
+          </ul>
+        ) : null}
+        <SignRecovery
+          message={error}
+          onUnlocked={() => {
+            const resume = resumeRef.current;
+            resume?.();
+          }}
+          testId="bid-sign-recovery"
+        />
+      </div>
+      <details
+        className="mt-3 rounded-xl border border-black/15 px-3 py-2 dark:border-white/15"
+        data-testid="bid-advanced"
+      >
+        <summary className="cursor-pointer text-sm font-medium select-none text-black dark:text-white">
+          Advanced
+          <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
+            record a bid made elsewhere, bid group, who records it
+          </span>
+        </summary>
+        <div className="mt-2">
+          <label className="text-sm font-medium" htmlFor="bid-tx">
+            Bid made outside this page? Its confirmation ID
+          </label>
+          <div className="mt-1 flex gap-2">
+            <Input
+              id="bid-tx"
+              data-testid="bid-tx"
+              onChange={(e) => setTx(e.target.value)}
+              placeholder="0x…"
+              value={tx}
+            />
+            <Button
+              data-testid="bid-record"
+              disabled={!canMirror}
+              onClick={submit}
+              type="button"
+              variant="outline"
+            >
+              {isPublishing ? "Recording…" : "Record bid"}
+            </Button>
+          </div>
+          <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+            This only saves a note of the bid on this page. Sending a bid above
+            does that for you.
+          </p>
+        </div>
+        <div className="mt-2">
+          <label className="text-sm font-medium" htmlFor="bid-bucket">
+            Bid group
+          </label>
+          <Input
+            id="bid-bucket"
+            className="mt-1"
+            onChange={(e) => setBucket(e.target.value)}
+            placeholder="bucket-0"
+            value={bucket}
+          />
+          <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+            A label that groups related bids on the launch page. The default is
+            fine.
+          </p>
+        </div>
+        <label className="mt-2 flex items-start gap-2 text-sm text-black/60 dark:text-white/60">
+          <input
+            checked={asAgent}
+            data-testid="bid-as-agent"
+            onChange={(e) => setAsAgent(e.target.checked)}
+            type="checkbox"
+          />
+          Record this bid under your helper instead of you
+        </label>
+        <p
+          className="mt-1 text-xs text-black/60 dark:text-white/60"
+          data-testid="bid-as-agent-explainer"
+        >
+          The note of this bid will be recorded under the helper set up in this
+          browser instead of under you. Use it when your helper looks after the
+          bid afterwards.
+        </p>
+      </details>
+      {/* §7 "Launch page copy": said before the bid button, every time. */}
+      <OwnershipOnlyNote className="mt-4" />
+      <div className="mt-2 flex justify-end gap-2">
+        <Button
+          data-testid="bid-send"
+          disabled={!canSend}
+          onClick={() => void sendBid()}
+          type="button"
+        >
+          {sending ? "Sending…" : "Send bid"}
+        </Button>
+      </div>
+    </Modal>
+  );
+}

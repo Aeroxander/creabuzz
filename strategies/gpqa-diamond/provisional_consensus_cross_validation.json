@@ -1,0 +1,87 @@
+{
+  "v": 1,
+  "name": "Provisional consensus cross validation",
+  "description": "GPQA-Diamond bank strategy from arXiv 2609.22682 Appendix A: the team forms a provisional consensus, tests every strong contender against necessary conditions, and subjects the result to a final assumptions audit.",
+  "teamworkPrompt": "Combine independent problem-solving with rigorous and systematic cross-verification and backward validation. Begin with independent derivations and explicit assumption declarations, synthesize a preliminary consensus by identifying strongest arguments and discrepancies, and then test this consensus and all strong contenders against the problem’s conditions and all answer choices using backward reasoning and systematic checks. Conclude with a final audit of assumptions and alternative interpretations.",
+  "roles": {
+    "agent-0": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-1": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-2": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent independently state your answer and the full scientific reasoning, including all key assumptions, critical calculations, and principles used. Share your reasoning in detail to allow for thorough cross-verification."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Compare the independent answers and reasoning. Identify the strongest arguments and points of agreement or disagreement. Focus on any differences in assumptions or derivation steps. Propose a preliminary consensus answer based on the most robust reasoning observed among the independent solutions, explicitly noting any remaining discrepancies. If there are multiple robust and conflicting independent answers, identify them, preserving all evidence and rationale."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "For each of the preliminary consensus answer(s) (or if multiple, each strong contender), systematically cross-verify each other’s full reasoning chains, including all assumptions. Identify what would need to be true if that option were correct. Include checks for consistency in units, signs, mechanism, causal direction, limiting cases, and compatibility with the experimental setup. List all derived implications and necessary conditions. Agent 0 will lead this cross-verification, focusing on quantitative consistency and scientific principles."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Test the preliminary consensus answer(s) backward against the original question conditions and all derived implications. Systematically check each condition and implication. Reject or repair candidates only with a specific scientific reason supported by evidence. If a strong contender was not chosen as the preliminary consensus, validate it here as well. Finalize the best-supported answer based on this rigorous validation. Agent 1 will lead the final synthesis, ensuring all evidence is accounted for."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Before finalizing, Agent 2 will perform a final audit of the chosen answer, specifically challenging any implicit assumptions and checking for alternative interpretations that might have been overlooked. The team must address these challenges before providing the final answer."
+    }
+  ],
+  "finalWriter": "agent-1",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.2",
+    "bank": "gpqa-diamond",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper leaves Roles unset (shown when set); kind:44020 requires a prompt per roster slot, so all three slots carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-1 (the closing-phase lead the strategy text names)."
+    ]
+  }
+}

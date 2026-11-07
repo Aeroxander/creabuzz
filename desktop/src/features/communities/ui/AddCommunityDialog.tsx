@@ -55,12 +55,10 @@ export function AddCommunityDialog({
       relayUrl,
       inviteCode,
       policyReceipt,
-      token,
     }: {
       relayUrl: string;
       inviteCode?: string;
       policyReceipt?: string;
-      token?: string;
     }) => {
       const started = communityOnboarding.start({
         source: "add-community",
@@ -68,7 +66,6 @@ export function AddCommunityDialog({
         inviteCode,
         communityName: prefill?.name,
         policyReceipt,
-        token,
       });
       if (!started) {
         setJoinError(
@@ -149,7 +146,7 @@ export function AddCommunityDialog({
                     Create a new community
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                    Claim a Buzz address for your team.
+                    Claim an address for your team.
                   </span>
                 </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
@@ -185,9 +182,7 @@ export function AddCommunityDialog({
                 setJoinError(null);
                 setMode("choose");
               }}
-              onConnect={(relayUrl, token) =>
-                startConnection({ relayUrl, token })
-              }
+              onConnect={(relayUrl) => startConnection({ relayUrl })}
               onRedeem={(relayUrl, inviteCode, policyReceipt) =>
                 startConnection({ relayUrl, inviteCode, policyReceipt })
               }

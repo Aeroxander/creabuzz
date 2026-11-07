@@ -106,6 +106,19 @@ cargo clippy -p buzz-cli -- -D warnings
 
 ---
 
+### One-command org loop
+
+`scripts/loop-test.sh` walks the DAO OS loop against a real relay it boots on a throwaway port
+(template apply and re-apply, seat an agent, budget bites for an agent but not a human, owner
+approval, emergency stop, and — when `web/node_modules` exists — the priced LLM spend budget).
+It needs Postgres and Redis (`DATABASE_URL`, `REDIS_URL`), migrates a fresh database itself, and
+prints one line per check; it exits non-zero on any failure. The on-chain half is the forge
+suites (`scripts/dogfood-raise.sh` was removed in D150, see tag pre-deprecation-2026-10-31).
+
+```bash
+DATABASE_URL=postgres://buzz@127.0.0.1:5433/buzz REDIS_URL=redis://127.0.0.1:6379 scripts/loop-test.sh
+```
+
 ## 6. Live Testing — Command by Command
 
 Run each command, verify exit code 0 and check output. Most commands
@@ -216,8 +229,11 @@ echo 'Body with `backticks` and $vars stays literal.' \
 buzz messages get --channel "$CHANNEL_ID" | jq .
 buzz messages get --channel "$CHANNEL_ID" --limit 5 | jq .
 
-# messages thread
+# messages thread from the root, a reply, and a canonical link
 buzz messages thread --channel "$CHANNEL_ID" --event "$EVENT_ID" | jq .
+buzz messages thread --channel "$CHANNEL_ID" --event "$REPLY_ID" | jq .
+buzz messages thread \
+  --link "buzz://message?channel=$CHANNEL_ID&id=$REPLY_ID&thread=$EVENT_ID" | jq .
 
 # messages search
 buzz messages search --query "Hello" | jq .
@@ -425,7 +441,8 @@ buzz workflows delete --workflow "$WF_ID" | jq .
 ```bash
 buzz feed get | jq .
 buzz feed get --limit 5 | jq .
-# Expected: [{id,pubkey,kind,content,created_at,tags}] — sig-stripped, sorted newest-first
+# Expected: complete signed Nostr events with
+# {id,pubkey,kind,content,created_at,sig,tags}, sorted newest-first
 ```
 
 ### 6.11 Forum & Voting

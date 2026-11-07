@@ -1,9 +1,18 @@
+# Logs capped as in compose.yml (an anchor does not reach across files).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
 services:
   relay:
     ports: !reset []
 
   caddy:
-    image: caddy:2-alpine
+    logging: *logging
+    # Pinned: a new Caddy is an upgrade to try, not something a restart picks up.
+    image: caddy:2.11.7-alpine
     depends_on:
       relay:
         condition: service_healthy

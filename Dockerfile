@@ -67,6 +67,14 @@ COPY --from=planner /build/recipe.json recipe.json
 # scoping to -p buzz-relay misses transitive deps and re-builds them later.
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
+# Compile immutable artifact identity into the relay. Defaults preserve local
+# and third-party builds that do not run in provenance-aware CI.
+ARG BUZZ_SOURCE_SHA=unknown
+ARG BUZZ_BUILD_ID=local
+ARG BUZZ_BUILD_URL=unknown
+ENV BUZZ_SOURCE_SHA=${BUZZ_SOURCE_SHA} \
+    BUZZ_BUILD_ID=${BUZZ_BUILD_ID} \
+    BUZZ_BUILD_URL=${BUZZ_BUILD_URL}
 RUN cargo build --release --locked -p buzz-relay --bin buzz-relay \
                                    -p buzz-admin --bin buzz-admin \
                                    -p buzz-pair-relay --bin buzz-pair-relay
@@ -111,12 +119,74 @@ ENV COREPACK_INTEGRITY_KEYS=${NPM_REGISTRY:+0}
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches/ patches/
+# The web app's shared logic (@creaton/core) is a workspace package: install it
+# with the app (`buzz-web...` takes the app and its workspace dependencies).
+COPY packages/creaton-core/package.json packages/creaton-core/
 COPY web/package.json web/
 COPY admin-web/package.json admin-web/
-RUN pnpm install --frozen-lockfile --filter buzz-web --filter buzz-admin-web
+RUN pnpm install --frozen-lockfile --filter "buzz-web..." --filter buzz-admin-web
+COPY packages/creaton-core/ packages/creaton-core/
 COPY web/ web/
 COPY admin-web/ admin-web/
-RUN pnpm -C web build && pnpm -C admin-web build
+# The web app's network settings (docs/sepolia-testnet.md). They are read when
+# the app is built and are public in the page. Unset is off: with none of them
+# the image serves the social app, with Sepolia as its network and nothing on
+# chain. Only these may be passed: the image is contributor-only (it sets
+# VITE_CONTRIBUTOR_ONLY=1 itself), so the raise's launch kit is not a build
+# argument here, nor are the mainnet switch, a local chain's currency and the
+# exchange; and web/scripts/check-deploy-env.mjs refuses settings that do not
+# fit together.
+#
+# The trial block (VITE_SECONDARY_MARKET_FACTORY, VITE_TRADING_TRIAL and
+# VITE_TEST_QUOTE_TOKENS, with the optional features after them) is for a
+# Sepolia trial build only. All of it is empty by default and trading stays
+# off: the weekly sale shows only when a market factory is named AND
+# VITE_TRADING_TRIAL=1, and a build with one without the other is refused.
+# A build for real pilot people leaves the whole block out.
+ARG VITE_LAUNCHPAD_CHAIN_ID=
+ARG VITE_CHAIN_RPC_URL=
+ARG VITE_CONTRIBUTOR_KITS=
+ARG VITE_HISTORY_FROM_BLOCKS=
+ARG VITE_SECONDARY_MARKET_FACTORY=
+ARG VITE_TRADING_TRIAL=
+ARG VITE_TEST_QUOTE_TOKENS=
+ARG VITE_WORK_BOUNTIES=
+ARG VITE_OPEN_BOUNTIES=
+ARG VITE_CREATE_TOKENS=
+ARG VITE_CREATE_FAUCETS=
+ARG VITE_COURTS=
+ARG VITE_PAYOUTS_FACTORIES=
+ARG VITE_REMIX_BONDS=
+ARG VITE_ZERODEV_PROJECT_ID=
+ARG VITE_ZERODEV_CHAIN_ID=
+ARG VITE_ZERODEV_API_KEY=
+ARG VITE_BUNDLER_URL=
+ARG VITE_ERROR_REPORT_URL=
+ARG VITE_APP_RELEASE=
+ARG VITE_RELAY_URL=
+ARG VITE_COMMUNITY_API_ORIGIN=
+ARG BUZZ_SOURCE_SHA=unknown
+# An empty argument reaches the build as no setting at all, and the release
+# defaults to the source revision.
+RUN set -eu; \
+    for name in VITE_LAUNCHPAD_CHAIN_ID VITE_CHAIN_RPC_URL VITE_CONTRIBUTOR_KITS \
+                VITE_HISTORY_FROM_BLOCKS VITE_SECONDARY_MARKET_FACTORY VITE_TRADING_TRIAL \
+                VITE_TEST_QUOTE_TOKENS VITE_WORK_BOUNTIES VITE_OPEN_BOUNTIES \
+                VITE_CREATE_TOKENS VITE_CREATE_FAUCETS VITE_COURTS VITE_PAYOUTS_FACTORIES \
+                VITE_REMIX_BONDS VITE_ZERODEV_PROJECT_ID \
+                VITE_ZERODEV_CHAIN_ID VITE_ZERODEV_API_KEY VITE_BUNDLER_URL \
+                VITE_ERROR_REPORT_URL VITE_APP_RELEASE VITE_RELAY_URL VITE_COMMUNITY_API_ORIGIN; do \
+        eval "value=\${$name:-}"; \
+        if [ -z "$value" ]; then unset "$name"; fi; \
+    done; \
+    if [ -z "${VITE_APP_RELEASE:-}" ] && [ "$BUZZ_SOURCE_SHA" != "unknown" ]; then \
+        export VITE_APP_RELEASE="$BUZZ_SOURCE_SHA"; \
+    fi; \
+    # The image is contributor-only: it takes no raise kit, so it offers no way to start a sale either. Trading does not
+    # depend on this: it is switched on by its own two settings, empty above.
+    export VITE_CONTRIBUTOR_ONLY=1; \
+    node --experimental-strip-types web/scripts/check-deploy-env.mjs; \
+    pnpm -C web build && pnpm -C admin-web build
 
 # ─── Stage 5: shared runtime ────────────────────────────────────────────────
 FROM debian:${DEBIAN_VERSION}-slim AS runtime-base
@@ -124,11 +194,11 @@ FROM debian:${DEBIAN_VERSION}-slim AS runtime-base
 # OCI annotations: required for GHCR to auto-link the image to this repo and
 # inherit its visibility. org.opencontainers.image.source is the load-bearing
 # one — without it GHCR keeps the image private even when the repo is public.
-LABEL org.opencontainers.image.title="Buzz" \
-      org.opencontainers.image.description="WebSocket relay server for the Buzz communications platform" \
-      org.opencontainers.image.source="https://github.com/block/buzz" \
-      org.opencontainers.image.url="https://github.com/block/buzz" \
-      org.opencontainers.image.documentation="https://github.com/block/buzz#readme" \
+LABEL org.opencontainers.image.title="Creaton" \
+      org.opencontainers.image.description="Creaton server: the relay with the Creaton web app inside it" \
+      org.opencontainers.image.source="https://github.com/Aeroxander/creabuzz" \
+      org.opencontainers.image.url="https://github.com/Aeroxander/creabuzz" \
+      org.opencontainers.image.documentation="https://github.com/Aeroxander/creabuzz#readme" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 RUN apt-get update \

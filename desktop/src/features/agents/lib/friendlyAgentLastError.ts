@@ -37,13 +37,13 @@ export type FriendlyAgentLastError =
  * test asserts the user-facing string verbatim rather than a fuzzy pattern.
  */
 export const RELAY_MESH_DENIED_COPY =
-  "Community access denied this agent — check its community membership.";
+  "This agent was denied community access. Check its community membership.";
 
 export const MODEL_NOT_FOUND_COPY =
-  "The configured model is not available — open agent settings and select a different one from the dropdown.";
+  "The configured model isn't available. Open agent settings and pick a different model.";
 
 export const CLI_ACP_INTERNAL_ERROR_COPY =
-  "The agent's harness reported an internal error. For Codex agents this can mean the configured model isn't supported by your installed codex-acp — check the model in `~/.codex/config.toml` or upgrade the adapter (`brew upgrade codex-acp`).";
+  "The agent's harness reported an internal error. For Codex agents this can mean the configured model isn't supported by your installed codex-acp. Check the model in `~/.codex/config.toml` or upgrade the adapter (`brew upgrade codex-acp`).";
 
 const EMBEDDED_CODE_RE = /^Agent reported error \(code (-?\d+)\): /;
 /** Bare form of the standard JSON-RPC -32603 message (after stripping the ACP wrapper prefix). */

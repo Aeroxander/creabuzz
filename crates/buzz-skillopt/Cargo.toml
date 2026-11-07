@@ -1,0 +1,13 @@
+[package]
+name = "buzz-skillopt"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "SkillOpt (arXiv:2605.23904) port: train skill documents as the external state of a frozen agent — bounded edits, textual LR, rejected-edit buffer, slow/meta epoch updates, held-out gate"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

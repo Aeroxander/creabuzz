@@ -1,0 +1,649 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+import { failureWords } from "../../../shared/lib/readable-error.ts";
+import { SERVER_FAILED_TEXT } from "../../../shared/lib/refusal-text.ts";
+
+import {
+  activeModerators,
+  activeMutes,
+  appointDraft,
+  boardFailure,
+  boardRefusalText,
+  KIND_BOARD_MODERATION_LOG,
+  KIND_BOARD_STATE,
+  logSentence,
+  mayActAgainst,
+  mayUndo,
+  muteChoices,
+  muteDraft,
+  parseBoardState,
+  parseLog,
+  pendingLongerMutes,
+  pinnedFirst,
+  removedReplies,
+  rulesDraft,
+  STANDING,
+  standingOf,
+  threadDraft,
+  withLiveRecord,
+} from "./board-moderation.ts";
+
+const BOARD = "7b0e5a1c-4b1e-4f7e-9a51-2a7c0c1d9e01";
+const RELAY = "aa".repeat(32);
+const ALEX = "a1".repeat(32);
+const BEA = "b2".repeat(32);
+const POST = "c3".repeat(32);
+const POST2 = "d4".repeat(32);
+
+const record = (kind, tags, content = "", extra = {}) => ({
+  id: extra.id ?? `${kind}-${Math.random()}`,
+  pubkey: extra.pubkey ?? RELAY,
+  kind,
+  created_at: extra.at ?? 100,
+  tags,
+  content,
+});
+
+test("the kind numbers are the server's", () => {
+  const generated = readFileSync(
+    new URL(
+      "../../../../../packages/creaton-core/src/kinds.generated.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  for (const [name, value] of [
+    ["KIND_BOARD_LOCK_THREAD", 9045],
+    ["KIND_BOARD_MUTE", 9049],
+    ["KIND_BOARD_SET_RULES", 9051],
+    ["KIND_BOARD_REMOVE_MODERATOR", 9053],
+    ["KIND_BOARD_STATE", KIND_BOARD_STATE],
+    ["KIND_BOARD_MODERATION_LOG", KIND_BOARD_MODERATION_LOG],
+  ]) {
+    assert.match(generated, new RegExp(`export const ${name} = ${value};`));
+  }
+});
+
+test("commands carry the board, their target and a trimmed reason", () => {
+  const lock = threadDraft({
+    boardId: BOARD,
+    post: POST,
+    action: "lock",
+    reason: `  off topic${"!".repeat(400)}`,
+  });
+  assert.equal(lock.kind, 9045);
+  assert.deepEqual(lock.tags.slice(0, 2), [
+    ["h", BOARD],
+    ["e", POST],
+  ]);
+  assert.equal(lock.tags[2][0], "reason");
+  assert.equal(lock.tags[2][1].length, 280);
+  assert.equal(
+    threadDraft({ boardId: BOARD, post: POST, action: "unpin" }).tags.length,
+    2,
+  );
+
+  const mute = muteDraft({ boardId: BOARD, person: BEA, until: 1234.9 });
+  assert.equal(mute.kind, 9049);
+  assert.deepEqual(mute.tags, [
+    ["h", BOARD],
+    ["p", BEA],
+    ["expiration", "1234"],
+  ]);
+  assert.deepEqual(appointDraft({ boardId: BOARD, person: BEA }).tags, [
+    ["h", BOARD],
+    ["p", BEA],
+  ]);
+  assert.equal(
+    rulesDraft({ boardId: BOARD, rules: "  Be kind.  " }).content,
+    "Be kind.",
+  );
+  assert.throws(() => rulesDraft({ boardId: BOARD, rules: "x".repeat(4001) }));
+});
+
+test("the board state comes from the newest record the server signed for this board", () => {
+  const events = [
+    record(
+      KIND_BOARD_STATE,
+      [
+        ["d", BOARD],
+        ["pinned", POST, "1"],
+      ],
+      "old",
+      { at: 1 },
+    ),
+    record(
+      KIND_BOARD_STATE,
+      [
+        ["d", BOARD],
+        ["pinned", POST2, "9"],
+        ["pinned", POST, "8"],
+        ["locked", POST, "7"],
+        ["moderator", ALEX, "500"],
+        ["moderator", "not-hex", "500"],
+      ],
+      "Be kind.",
+      { at: 5 },
+    ),
+    // Someone else's record, and another board's, never count.
+    record(
+      KIND_BOARD_STATE,
+      [
+        ["d", BOARD],
+        ["locked", POST2, "1"],
+      ],
+      "fake",
+      { at: 9, pubkey: BEA },
+    ),
+    record(KIND_BOARD_STATE, [["d", "other"]], "elsewhere", { at: 10 }),
+  ];
+  const state = parseBoardState(events, BOARD, RELAY);
+  assert.equal(state.rules, "Be kind.");
+  assert.deepEqual(state.pinned, [POST2, POST]);
+  assert.deepEqual([...state.locked], [POST]);
+  assert.deepEqual([...state.moderators], [[ALEX, 500]]);
+  assert.deepEqual([...activeModerators(state, 499)], [ALEX]);
+  assert.deepEqual(
+    [...activeModerators(state, 500)],
+    [],
+    "a term that ended grants nothing",
+  );
+  assert.equal(parseBoardState([], BOARD).rules, "");
+});
+
+test("the log reads newest first, in plain words, and knows which mutes still hold", () => {
+  const events = [
+    record(
+      KIND_BOARD_MODERATION_LOG,
+      [
+        ["h", BOARD],
+        ["action", "mute"],
+        ["actor", ALEX],
+        ["role", "moderator"],
+        ["p", BEA],
+        ["until", "2000000000"],
+        ["status", "awaiting_second_moderator"],
+      ],
+      "spam",
+      { at: 10, id: "m1" },
+    ),
+    record(
+      KIND_BOARD_MODERATION_LOG,
+      [
+        ["h", BOARD],
+        ["action", "lock"],
+        ["actor", ALEX],
+        ["role", "board_owner"],
+        ["e", POST],
+      ],
+      "",
+      { at: 20, id: "l1" },
+    ),
+    record(
+      KIND_BOARD_MODERATION_LOG,
+      [
+        ["h", BOARD],
+        ["action", "remove"],
+        ["actor", ALEX],
+        ["role", "community_admin"],
+        ["e", POST2],
+        ["thread", POST],
+      ],
+      "",
+      { at: 30, id: "r1" },
+    ),
+    record(
+      KIND_BOARD_MODERATION_LOG,
+      [
+        ["h", BOARD],
+        ["action", "explode"],
+        ["actor", ALEX],
+      ],
+      "",
+      { at: 40 },
+    ),
+    record(
+      KIND_BOARD_MODERATION_LOG,
+      [
+        ["h", BOARD],
+        ["action", "lock"],
+        ["actor", ALEX],
+      ],
+      "",
+      { at: 50, pubkey: BEA },
+    ),
+  ];
+  const log = parseLog(events, BOARD, RELAY);
+  assert.deepEqual(
+    log.map((e) => e.id),
+    ["r1", "l1", "m1"],
+  );
+  const names = (pubkey) => (pubkey === ALEX ? "Alex" : "Bea");
+  assert.equal(
+    logSentence(log[0], names),
+    "Alex (community admin) removed a reply.",
+  );
+  assert.equal(
+    logSentence(log[1], names),
+    "Alex (board owner) locked a thread.",
+  );
+  assert.match(
+    logSentence(log[2], names),
+    /^Alex \(moderator\) muted Bea on this board until .+\. A longer mute waits for a second moderator\. Reason: spam\.$/,
+  );
+  assert.deepEqual([...activeMutes(log, 1000).keys()], [BEA]);
+  assert.deepEqual(
+    [...activeMutes(log, 2000000000).keys()],
+    [],
+    "an ended mute is not in force",
+  );
+  const lifted = parseLog(
+    [
+      ...events,
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "unmute"],
+          ["actor", ALEX],
+          ["p", BEA],
+        ],
+        "",
+        { at: 60, id: "u1" },
+      ),
+    ],
+    BOARD,
+    RELAY,
+  );
+  assert.deepEqual([...activeMutes(lifted, 1000).keys()], []);
+  assert.deepEqual(
+    removedReplies(log, POST).map((e) => e.id),
+    ["r1"],
+  );
+});
+
+test("standing and the guard rails mirror the server", () => {
+  const roles = {
+    communityRoles: new Map([[ALEX, "owner"]]),
+    boardRoles: new Map([[BEA, "admin"]]),
+    moderators: new Set([POST]),
+  };
+  assert.equal(standingOf(ALEX, roles), STANDING.communityOwner);
+  assert.equal(standingOf(BEA, roles), STANDING.boardAdmin);
+  assert.equal(standingOf(POST, roles), STANDING.moderator);
+  assert.equal(standingOf(POST2, roles), STANDING.none);
+  assert.equal(standingOf(null, roles), STANDING.none);
+  assert.equal(mayActAgainst(STANDING.moderator, STANDING.none), true);
+  assert.equal(mayActAgainst(STANDING.moderator, STANDING.moderator), false);
+  assert.equal(mayActAgainst(STANDING.boardAdmin, STANDING.boardAdmin), false);
+  assert.equal(
+    mayActAgainst(STANDING.communityOwner, STANDING.communityOwner),
+    true,
+  );
+  assert.deepEqual(
+    muteChoices(STANDING.moderator)
+      .filter((c) => c.needsSecond)
+      .map((c) => c.days),
+    [14, 30],
+  );
+  assert.equal(
+    muteChoices(STANDING.boardOwner).some((c) => c.needsSecond),
+    false,
+  );
+});
+
+test("pinned posts come first, in pin order, and the rest keep theirs", () => {
+  const posts = [{ id: "a" }, { id: POST }, { id: "b" }, { id: POST2 }];
+  assert.deepEqual(
+    pinnedFirst(posts, [POST2, POST]).map((p) => p.id),
+    [POST2, POST, "a", "b"],
+  );
+});
+
+test("board refusals read as sentences with dates", () => {
+  assert.match(
+    boardRefusalText(
+      "restricted: you are muted on this board until 1893456000",
+    ),
+    /^You are muted on this board until .*2030.*\. You can still read it, and post everywhere else\.$/,
+  );
+  assert.equal(
+    boardRefusalText("restricted: this thread is locked"),
+    "This thread is locked. Only the board's moderators, owners and admins can reply.",
+  );
+  assert.equal(
+    boardRefusalText("rate-limited: a moderator may take 20 actions an hour"),
+    "A moderator may take 20 actions an hour.",
+  );
+  assert.equal(
+    boardRefusalText("restricted: you cannot mute yourself"),
+    "You cannot mute yourself.",
+  );
+  // The server's internal failures have no words for people. They used to be passed through verbatim, so a moderator
+  // read "error: database error: down"; now they read as the server not managing it just now.
+  assert.equal(
+    boardRefusalText("error: database error: down"),
+    "The server couldn't do that just now. Try again.",
+  );
+  // The general request limit and an invite-only server say what to do, not the server's words.
+  assert.equal(
+    boardRefusalText("rate-limited: quota exceeded; retry in 4s"),
+    "You're doing that a bit fast. Try again in 4 seconds.",
+  );
+  assert.equal(
+    boardRefusalText("restricted: not a relay member"),
+    "This server is invite-only. Open the invite link you were sent.",
+  );
+});
+
+test("a moderation command that failed in transit is said plainly, not as the socket's words", () => {
+  // `useBoardModerationActions` throws `boardFailure(error)`; `BoardModeration` shows `failureWords(thrown).text`.
+  for (const raw of [
+    "WebSocket connection failed",
+    "Server publish timed out",
+  ]) {
+    const thrown = new Error(raw);
+    assert.equal(boardFailure(thrown), thrown);
+    assert.equal(failureWords(boardFailure(thrown)).text, SERVER_FAILED_TEXT);
+  }
+  // A refusal the server stated is said in words, with the server's own kept as the cause.
+  const refused = new Error("restricted: you cannot mute yourself");
+  const said = boardFailure(refused);
+  assert.equal(said.message, "You cannot mute yourself.");
+  assert.equal(said.cause, refused);
+  assert.equal(failureWords(said).text, "You cannot mute yourself.");
+  assert.equal(
+    failureWords(boardFailure(new Error("error: database error: down"))).text,
+    SERVER_FAILED_TEXT,
+  );
+  // Already in plain words (`publishAsUser` says a restriction so): kept.
+  const banned = new Error("You are banned from this community.");
+  assert.equal(boardFailure(banned), banned);
+  assert.equal(
+    failureWords(boardFailure(banned)).text,
+    "You are banned from this community.",
+  );
+});
+
+test("the state record says who placed each pin and lock", () => {
+  const state = parseBoardState(
+    [
+      record(
+        KIND_BOARD_STATE,
+        [
+          ["d", BOARD],
+          ["pinned", POST, "9", ALEX],
+          ["locked", POST2, "8", BEA],
+          ["locked", POST, "7"],
+        ],
+        "",
+      ),
+    ],
+    BOARD,
+  );
+  assert.equal(state.pinnedBy.get(POST), ALEX);
+  assert.equal(state.lockedBy.get(POST2), BEA);
+  assert.equal(state.lockedBy.has(POST), false, "an older record without it");
+  assert.equal(state.locked.has(POST), true);
+});
+
+test("an undo needs at least the standing of whoever did it", () => {
+  assert.equal(mayUndo(STANDING.moderator, STANDING.moderator), true);
+  assert.equal(mayUndo(STANDING.moderator, STANDING.boardOwner), false);
+  assert.equal(mayUndo(STANDING.communityAdmin, STANDING.boardOwner), true);
+  assert.equal(mayUndo(STANDING.boardAdmin, STANDING.none), true);
+});
+
+test("the log names the thread when the board has it", () => {
+  const log = parseLog(
+    [
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "lock"],
+          ["actor", ALEX],
+          ["e", POST],
+        ],
+        "",
+        { id: "a" },
+      ),
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "remove"],
+          ["actor", ALEX],
+          ["e", POST2],
+          ["thread", POST],
+        ],
+        "",
+        { id: "b" },
+      ),
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "pin"],
+          ["actor", ALEX],
+          ["e", POST2],
+        ],
+        "",
+        { id: "c" },
+      ),
+    ],
+    BOARD,
+  );
+  const names = () => "Alex";
+  const titles = (id) => (id === POST ? "Welcome" : null);
+  const sentences = new Map(
+    log.map((e) => [e.id, logSentence(e, names, titles)]),
+  );
+  assert.equal(sentences.get("a"), 'Alex locked the thread "Welcome".');
+  assert.equal(
+    sentences.get("b"),
+    'Alex removed a reply in the thread "Welcome".',
+  );
+  assert.equal(sentences.get("c"), "Alex pinned a thread.");
+});
+
+test("the reader's own mute and term read as yours", () => {
+  const [lifted, ended] = parseLog(
+    [
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "unmute"],
+          ["actor", ALEX],
+          ["p", BEA],
+        ],
+        "",
+        { id: "u", at: 20 },
+      ),
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "dismiss"],
+          ["actor", ALEX],
+          ["p", BEA],
+        ],
+        "",
+        { id: "d", at: 10 },
+      ),
+    ],
+    BOARD,
+  );
+  const me = (pubkey) => (pubkey === BEA ? "you" : "Alex");
+  assert.equal(logSentence(lifted, me), "Alex lifted your mute.");
+  assert.equal(logSentence(ended, me), "Alex ended your time as a moderator.");
+  const named = (pubkey) => (pubkey === BEA ? "Bea" : "Alex");
+  assert.equal(logSentence(lifted, named), "Alex lifted Bea's mute.");
+});
+
+test("a removal names whose words they were, when the entry says", () => {
+  const [post, reply] = parseLog(
+    [
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "remove"],
+          ["actor", ALEX],
+          ["e", POST],
+          ["p", BEA],
+        ],
+        "Spam",
+        { id: "p", at: 20 },
+      ),
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "remove"],
+          ["actor", ALEX],
+          ["e", POST2],
+          ["thread", POST],
+          ["p", BEA],
+        ],
+        "",
+        { id: "r", at: 10 },
+      ),
+    ],
+    BOARD,
+  );
+  const names = (pubkey) => (pubkey === ALEX ? "Alex" : "Bea");
+  const titles = (id) => (id === POST ? "Welcome" : null);
+  assert.equal(
+    logSentence(post, names, titles),
+    "Alex removed a post by Bea. Reason: Spam.",
+  );
+  assert.equal(
+    logSentence(reply, names, titles),
+    'Alex removed a reply by Bea in the thread "Welcome".',
+  );
+  // A removal never reads as a mute in force.
+  assert.equal(activeMutes([post, reply], 0).size, 0);
+});
+
+test("a longer mute waits a day for a second moderator, and only while it is the newest word on that person", () => {
+  const now = 2_000_000_000;
+  const asking = record(
+    KIND_BOARD_MODERATION_LOG,
+    [
+      ["h", BOARD],
+      ["action", "mute"],
+      ["actor", ALEX],
+      ["p", BEA],
+      ["until", String(now + 7 * 86_400)],
+      ["status", "awaiting_second_moderator"],
+      ["asked_until", String(now + 20 * 86_400)],
+    ],
+    "",
+    { id: "ask", at: now - 3600 },
+  );
+  const log = parseLog([asking], BOARD);
+  assert.equal(log[0].askedUntil, now + 20 * 86_400);
+  assert.deepEqual(
+    pendingLongerMutes(log, now).map((e) => e.id),
+    ["ask"],
+  );
+  assert.deepEqual(
+    pendingLongerMutes(log, now + 86_400).length,
+    0,
+    "a day later it lapses",
+  );
+  const lifted = parseLog(
+    [
+      asking,
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "unmute"],
+          ["actor", ALEX],
+          ["p", BEA],
+        ],
+        "",
+        { id: "u", at: now - 60 },
+      ),
+    ],
+    BOARD,
+  );
+  assert.deepEqual(
+    pendingLongerMutes(lifted, now),
+    [],
+    "lifted: nothing to confirm",
+  );
+});
+
+test("a log sentence keeps a name's own case, and capitalises only you", () => {
+  const [entry] = parseLog(
+    [
+      record(
+        KIND_BOARD_MODERATION_LOG,
+        [
+          ["h", BOARD],
+          ["action", "pin"],
+          ["actor", ALEX],
+        ],
+        "",
+      ),
+    ],
+    BOARD,
+  );
+  assert.equal(
+    logSentence(entry, () => "b2b2b2b2…b2b2"),
+    "b2b2b2b2…b2b2 pinned a thread.",
+  );
+  assert.equal(
+    logSentence(entry, () => "you"),
+    "You pinned a thread.",
+  );
+});
+
+test("records followed live keep only what is read: the newest state and the newest log entries", () => {
+  let live = new Map();
+  for (let i = 0; i < 30; i += 1) {
+    live = withLiveRecord(
+      live,
+      record(KIND_BOARD_STATE, [["d", BOARD]], "", {
+        id: `s${i}`,
+        at: 100 + i,
+      }),
+      BOARD,
+      5,
+    );
+    live = withLiveRecord(
+      live,
+      record(KIND_BOARD_MODERATION_LOG, [["h", BOARD]], "", {
+        id: `l${i}`,
+        at: 100 + i,
+      }),
+      BOARD,
+      5,
+    );
+  }
+  const ids = [...live.keys()].sort();
+  assert.deepEqual(ids, ["l25", "l26", "l27", "l28", "l29", "s29"]);
+  // An older state arriving late changes nothing; another board's state is not kept.
+  const late = withLiveRecord(
+    live,
+    record(KIND_BOARD_STATE, [["d", BOARD]], "", { id: "s-old", at: 50 }),
+    BOARD,
+    5,
+  );
+  assert.deepEqual([...late.keys()].sort(), ids);
+  const elsewhere = withLiveRecord(
+    live,
+    record(KIND_BOARD_STATE, [["d", "other"]], "", { id: "s-x", at: 999 }),
+    BOARD,
+    5,
+  );
+  assert.equal(elsewhere.has("s-x"), false);
+  // The same record twice is kept once.
+  assert.equal(withLiveRecord(live, live.get("l29"), BOARD, 5).size, live.size);
+});

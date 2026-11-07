@@ -5,15 +5,89 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/root";
+import { Route as startRouteImport } from "./routes/start";
+import { Route as socialRouteImport } from "./routes/social";
 import { Route as reposRouteImport } from "./routes/repos";
+import { Route as projectsRouteImport } from "./routes/projects";
+import { Route as portfolioRouteImport } from "./routes/portfolio";
+import { Route as linkDeviceRouteImport } from "./routes/link-device";
+import { Route as launchpadRouteImport } from "./routes/launchpad";
+import { Route as identityDemoRouteImport } from "./routes/identity-demo";
+import { Route as discoverRouteImport } from "./routes/discover";
+import { Route as courtRouteImport } from "./routes/court";
+import { Route as cRouteImport } from "./routes/c";
 import { Route as indexRouteImport } from "./routes/index";
+import { Route as uDotpubkeyRouteImport } from "./routes/u.$pubkey";
+import { Route as startDotcontributorRouteImport } from "./routes/start.contributor";
+import { Route as socialDotsearchRouteImport } from "./routes/social.search";
+import { Route as socialDotnotificationsRouteImport } from "./routes/social.notifications";
+import { Route as socialDotmessagesRouteImport } from "./routes/social.messages";
+import { Route as socialDotexploreRouteImport } from "./routes/social.explore";
+import { Route as socialDotbookmarksRouteImport } from "./routes/social.bookmarks";
 import { Route as reposDotrepoIdRouteImport } from "./routes/repos.$repoId";
+import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
+import { Route as launchpadDotlaunchIdRouteImport } from "./routes/launchpad.$launchId";
 import { Route as inviteDotcodeRouteImport } from "./routes/invite.$code";
+import { Route as cDothostRouteImport } from "./routes/c.$host";
+import { Route as bDotboardIdRouteImport } from "./routes/b.$boardId";
+import { Route as socialDottagDottagRouteImport } from "./routes/social.tag.$tag";
+import { Route as socialDotpostDotidRouteImport } from "./routes/social.post.$id";
+import { Route as socialDotmessagesDotpeerRouteImport } from "./routes/social.messages.$peer";
 import { Route as reposDotrepoIdDotblobDotsplatRouteImport } from "./routes/repos.$repoId.blob.$";
 
+const startRoute = startRouteImport.update({
+  id: "/start",
+  path: "/start",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const socialRoute = socialRouteImport.update({
+  id: "/social",
+  path: "/social",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const reposRoute = reposRouteImport.update({
   id: "/repos",
   path: "/repos",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const projectsRoute = projectsRouteImport.update({
+  id: "/projects",
+  path: "/projects",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const portfolioRoute = portfolioRouteImport.update({
+  id: "/portfolio",
+  path: "/portfolio",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const linkDeviceRoute = linkDeviceRouteImport.update({
+  id: "/link-device",
+  path: "/link-device",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const launchpadRoute = launchpadRouteImport.update({
+  id: "/launchpad",
+  path: "/launchpad",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const identityDemoRoute = identityDemoRouteImport.update({
+  id: "/identity-demo",
+  path: "/identity-demo",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const discoverRoute = discoverRouteImport.update({
+  id: "/discover",
+  path: "/discover",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const courtRoute = courtRouteImport.update({
+  id: "/court",
+  path: "/court",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const cRoute = cRouteImport.update({
+  id: "/c",
+  path: "/c",
   getParentRoute: () => rootRouteImport,
 } as any);
 const indexRoute = indexRouteImport.update({
@@ -21,9 +95,54 @@ const indexRoute = indexRouteImport.update({
   path: "/",
   getParentRoute: () => rootRouteImport,
 } as any);
+const uDotpubkeyRoute = uDotpubkeyRouteImport.update({
+  id: "/u/$pubkey",
+  path: "/u/$pubkey",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const startDotcontributorRoute = startDotcontributorRouteImport.update({
+  id: "/start/contributor",
+  path: "/start/contributor",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const socialDotsearchRoute = socialDotsearchRouteImport.update({
+  id: "/social/search",
+  path: "/social/search",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const socialDotnotificationsRoute = socialDotnotificationsRouteImport.update({
+  id: "/social/notifications",
+  path: "/social/notifications",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const socialDotmessagesRoute = socialDotmessagesRouteImport.update({
+  id: "/social/messages",
+  path: "/social/messages",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const socialDotexploreRoute = socialDotexploreRouteImport.update({
+  id: "/social/explore",
+  path: "/social/explore",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const socialDotbookmarksRoute = socialDotbookmarksRouteImport.update({
+  id: "/social/bookmarks",
+  path: "/social/bookmarks",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const reposDotrepoIdRoute = reposDotrepoIdRouteImport.update({
   id: "/repos/$repoId",
   path: "/repos/$repoId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const projectsDotprojectIdRoute = projectsDotprojectIdRouteImport.update({
+  id: "/projects/$projectId",
+  path: "/projects/$projectId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const launchpadDotlaunchIdRoute = launchpadDotlaunchIdRouteImport.update({
+  id: "/launchpad/$launchId",
+  path: "/launchpad/$launchId",
   getParentRoute: () => rootRouteImport,
 } as any);
 const inviteDotcodeRoute = inviteDotcodeRouteImport.update({
@@ -31,6 +150,32 @@ const inviteDotcodeRoute = inviteDotcodeRouteImport.update({
   path: "/invite/$code",
   getParentRoute: () => rootRouteImport,
 } as any);
+const cDothostRoute = cDothostRouteImport.update({
+  id: "/c/$host",
+  path: "/c/$host",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const bDotboardIdRoute = bDotboardIdRouteImport.update({
+  id: "/b/$boardId",
+  path: "/b/$boardId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const socialDottagDottagRoute = socialDottagDottagRouteImport.update({
+  id: "/social/tag/$tag",
+  path: "/social/tag/$tag",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const socialDotpostDotidRoute = socialDotpostDotidRouteImport.update({
+  id: "/social/post/$id",
+  path: "/social/post/$id",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const socialDotmessagesDotpeerRoute =
+  socialDotmessagesDotpeerRouteImport.update({
+    id: "/social/messages/$peer",
+    path: "/social/messages/$peer",
+    getParentRoute: () => rootRouteImport,
+  } as any);
 const reposDotrepoIdDotblobDotsplatRoute =
   reposDotrepoIdDotblobDotsplatRouteImport.update({
     id: "/repos/$repoId/blob/$",
@@ -40,65 +185,303 @@ const reposDotrepoIdDotblobDotsplatRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
+  "/c": typeof cRoute;
+  "/court": typeof courtRoute;
+  "/discover": typeof discoverRoute;
+  "/identity-demo": typeof identityDemoRoute;
+  "/launchpad": typeof launchpadRoute;
+  "/link-device": typeof linkDeviceRoute;
+  "/portfolio": typeof portfolioRoute;
+  "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
+  "/social": typeof socialRoute;
+  "/start": typeof startRoute;
+  "/b/$boardId": typeof bDotboardIdRoute;
+  "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/social/bookmarks": typeof socialDotbookmarksRoute;
+  "/social/explore": typeof socialDotexploreRoute;
+  "/social/messages": typeof socialDotmessagesRoute;
+  "/social/notifications": typeof socialDotnotificationsRoute;
+  "/social/search": typeof socialDotsearchRoute;
+  "/start/contributor": typeof startDotcontributorRoute;
+  "/u/$pubkey": typeof uDotpubkeyRoute;
+  "/social/messages/$peer": typeof socialDotmessagesDotpeerRoute;
+  "/social/post/$id": typeof socialDotpostDotidRoute;
+  "/social/tag/$tag": typeof socialDottagDottagRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
+  "/c": typeof cRoute;
+  "/court": typeof courtRoute;
+  "/discover": typeof discoverRoute;
+  "/identity-demo": typeof identityDemoRoute;
+  "/launchpad": typeof launchpadRoute;
+  "/link-device": typeof linkDeviceRoute;
+  "/portfolio": typeof portfolioRoute;
+  "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
+  "/social": typeof socialRoute;
+  "/start": typeof startRoute;
+  "/b/$boardId": typeof bDotboardIdRoute;
+  "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/social/bookmarks": typeof socialDotbookmarksRoute;
+  "/social/explore": typeof socialDotexploreRoute;
+  "/social/messages": typeof socialDotmessagesRoute;
+  "/social/notifications": typeof socialDotnotificationsRoute;
+  "/social/search": typeof socialDotsearchRoute;
+  "/start/contributor": typeof startDotcontributorRoute;
+  "/u/$pubkey": typeof uDotpubkeyRoute;
+  "/social/messages/$peer": typeof socialDotmessagesDotpeerRoute;
+  "/social/post/$id": typeof socialDotpostDotidRoute;
+  "/social/tag/$tag": typeof socialDottagDottagRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof indexRoute;
+  "/c": typeof cRoute;
+  "/court": typeof courtRoute;
+  "/discover": typeof discoverRoute;
+  "/identity-demo": typeof identityDemoRoute;
+  "/launchpad": typeof launchpadRoute;
+  "/link-device": typeof linkDeviceRoute;
+  "/portfolio": typeof portfolioRoute;
+  "/projects": typeof projectsRoute;
   "/repos": typeof reposRoute;
+  "/social": typeof socialRoute;
+  "/start": typeof startRoute;
+  "/b/$boardId": typeof bDotboardIdRoute;
+  "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
+  "/social/bookmarks": typeof socialDotbookmarksRoute;
+  "/social/explore": typeof socialDotexploreRoute;
+  "/social/messages": typeof socialDotmessagesRoute;
+  "/social/notifications": typeof socialDotnotificationsRoute;
+  "/social/search": typeof socialDotsearchRoute;
+  "/start/contributor": typeof startDotcontributorRoute;
+  "/u/$pubkey": typeof uDotpubkeyRoute;
+  "/social/messages/$peer": typeof socialDotmessagesDotpeerRoute;
+  "/social/post/$id": typeof socialDotpostDotidRoute;
+  "/social/tag/$tag": typeof socialDottagDottagRoute;
   "/repos/$repoId/blob/$": typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/c"
+    | "/court"
+    | "/discover"
+    | "/identity-demo"
+    | "/launchpad"
+    | "/link-device"
+    | "/portfolio"
+    | "/projects"
     | "/repos"
+    | "/social"
+    | "/start"
+    | "/b/$boardId"
+    | "/c/$host"
     | "/invite/$code"
+    | "/launchpad/$launchId"
+    | "/projects/$projectId"
     | "/repos/$repoId"
+    | "/social/bookmarks"
+    | "/social/explore"
+    | "/social/messages"
+    | "/social/notifications"
+    | "/social/search"
+    | "/start/contributor"
+    | "/u/$pubkey"
+    | "/social/messages/$peer"
+    | "/social/post/$id"
+    | "/social/tag/$tag"
     | "/repos/$repoId/blob/$";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/c"
+    | "/court"
+    | "/discover"
+    | "/identity-demo"
+    | "/launchpad"
+    | "/link-device"
+    | "/portfolio"
+    | "/projects"
     | "/repos"
+    | "/social"
+    | "/start"
+    | "/b/$boardId"
+    | "/c/$host"
     | "/invite/$code"
+    | "/launchpad/$launchId"
+    | "/projects/$projectId"
     | "/repos/$repoId"
+    | "/social/bookmarks"
+    | "/social/explore"
+    | "/social/messages"
+    | "/social/notifications"
+    | "/social/search"
+    | "/start/contributor"
+    | "/u/$pubkey"
+    | "/social/messages/$peer"
+    | "/social/post/$id"
+    | "/social/tag/$tag"
     | "/repos/$repoId/blob/$";
   id:
     | "__root__"
     | "/"
+    | "/c"
+    | "/court"
+    | "/discover"
+    | "/identity-demo"
+    | "/launchpad"
+    | "/link-device"
+    | "/portfolio"
+    | "/projects"
     | "/repos"
+    | "/social"
+    | "/start"
+    | "/b/$boardId"
+    | "/c/$host"
     | "/invite/$code"
+    | "/launchpad/$launchId"
+    | "/projects/$projectId"
     | "/repos/$repoId"
+    | "/social/bookmarks"
+    | "/social/explore"
+    | "/social/messages"
+    | "/social/notifications"
+    | "/social/search"
+    | "/start/contributor"
+    | "/u/$pubkey"
+    | "/social/messages/$peer"
+    | "/social/post/$id"
+    | "/social/tag/$tag"
     | "/repos/$repoId/blob/$";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
+  cRoute: typeof cRoute;
+  courtRoute: typeof courtRoute;
+  discoverRoute: typeof discoverRoute;
+  identityDemoRoute: typeof identityDemoRoute;
+  launchpadRoute: typeof launchpadRoute;
+  linkDeviceRoute: typeof linkDeviceRoute;
+  portfolioRoute: typeof portfolioRoute;
+  projectsRoute: typeof projectsRoute;
   reposRoute: typeof reposRoute;
+  socialRoute: typeof socialRoute;
+  startRoute: typeof startRoute;
+  bDotboardIdRoute: typeof bDotboardIdRoute;
+  cDothostRoute: typeof cDothostRoute;
   inviteDotcodeRoute: typeof inviteDotcodeRoute;
+  launchpadDotlaunchIdRoute: typeof launchpadDotlaunchIdRoute;
+  projectsDotprojectIdRoute: typeof projectsDotprojectIdRoute;
   reposDotrepoIdRoute: typeof reposDotrepoIdRoute;
+  socialDotbookmarksRoute: typeof socialDotbookmarksRoute;
+  socialDotexploreRoute: typeof socialDotexploreRoute;
+  socialDotmessagesRoute: typeof socialDotmessagesRoute;
+  socialDotnotificationsRoute: typeof socialDotnotificationsRoute;
+  socialDotsearchRoute: typeof socialDotsearchRoute;
+  startDotcontributorRoute: typeof startDotcontributorRoute;
+  uDotpubkeyRoute: typeof uDotpubkeyRoute;
+  socialDotmessagesDotpeerRoute: typeof socialDotmessagesDotpeerRoute;
+  socialDotpostDotidRoute: typeof socialDotpostDotidRoute;
+  socialDottagDottagRoute: typeof socialDottagDottagRoute;
   reposDotrepoIdDotblobDotsplatRoute: typeof reposDotrepoIdDotblobDotsplatRoute;
 }
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
+    "/start": {
+      id: "/start";
+      path: "/start";
+      fullPath: "/start";
+      preLoaderRoute: typeof startRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/social": {
+      id: "/social";
+      path: "/social";
+      fullPath: "/social";
+      preLoaderRoute: typeof socialRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/repos": {
       id: "/repos";
       path: "/repos";
       fullPath: "/repos";
       preLoaderRoute: typeof reposRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/projects": {
+      id: "/projects";
+      path: "/projects";
+      fullPath: "/projects";
+      preLoaderRoute: typeof projectsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/portfolio": {
+      id: "/portfolio";
+      path: "/portfolio";
+      fullPath: "/portfolio";
+      preLoaderRoute: typeof portfolioRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/link-device": {
+      id: "/link-device";
+      path: "/link-device";
+      fullPath: "/link-device";
+      preLoaderRoute: typeof linkDeviceRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/launchpad": {
+      id: "/launchpad";
+      path: "/launchpad";
+      fullPath: "/launchpad";
+      preLoaderRoute: typeof launchpadRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/identity-demo": {
+      id: "/identity-demo";
+      path: "/identity-demo";
+      fullPath: "/identity-demo";
+      preLoaderRoute: typeof identityDemoRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/discover": {
+      id: "/discover";
+      path: "/discover";
+      fullPath: "/discover";
+      preLoaderRoute: typeof discoverRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/court": {
+      id: "/court";
+      path: "/court";
+      fullPath: "/court";
+      preLoaderRoute: typeof courtRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/c": {
+      id: "/c";
+      path: "/c";
+      fullPath: "/c";
+      preLoaderRoute: typeof cRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/": {
@@ -108,6 +491,55 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof indexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/u/$pubkey": {
+      id: "/u/$pubkey";
+      path: "/u/$pubkey";
+      fullPath: "/u/$pubkey";
+      preLoaderRoute: typeof uDotpubkeyRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/start/contributor": {
+      id: "/start/contributor";
+      path: "/start/contributor";
+      fullPath: "/start/contributor";
+      preLoaderRoute: typeof startDotcontributorRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/social/search": {
+      id: "/social/search";
+      path: "/social/search";
+      fullPath: "/social/search";
+      preLoaderRoute: typeof socialDotsearchRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/social/notifications": {
+      id: "/social/notifications";
+      path: "/social/notifications";
+      fullPath: "/social/notifications";
+      preLoaderRoute: typeof socialDotnotificationsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/social/messages": {
+      id: "/social/messages";
+      path: "/social/messages";
+      fullPath: "/social/messages";
+      preLoaderRoute: typeof socialDotmessagesRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/social/explore": {
+      id: "/social/explore";
+      path: "/social/explore";
+      fullPath: "/social/explore";
+      preLoaderRoute: typeof socialDotexploreRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/social/bookmarks": {
+      id: "/social/bookmarks";
+      path: "/social/bookmarks";
+      fullPath: "/social/bookmarks";
+      preLoaderRoute: typeof socialDotbookmarksRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/repos/$repoId": {
       id: "/repos/$repoId";
       path: "/repos/$repoId";
@@ -115,11 +547,60 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof reposDotrepoIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/projects/$projectId": {
+      id: "/projects/$projectId";
+      path: "/projects/$projectId";
+      fullPath: "/projects/$projectId";
+      preLoaderRoute: typeof projectsDotprojectIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/launchpad/$launchId": {
+      id: "/launchpad/$launchId";
+      path: "/launchpad/$launchId";
+      fullPath: "/launchpad/$launchId";
+      preLoaderRoute: typeof launchpadDotlaunchIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/invite/$code": {
       id: "/invite/$code";
       path: "/invite/$code";
       fullPath: "/invite/$code";
       preLoaderRoute: typeof inviteDotcodeRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/c/$host": {
+      id: "/c/$host";
+      path: "/c/$host";
+      fullPath: "/c/$host";
+      preLoaderRoute: typeof cDothostRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/b/$boardId": {
+      id: "/b/$boardId";
+      path: "/b/$boardId";
+      fullPath: "/b/$boardId";
+      preLoaderRoute: typeof bDotboardIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/social/tag/$tag": {
+      id: "/social/tag/$tag";
+      path: "/social/tag/$tag";
+      fullPath: "/social/tag/$tag";
+      preLoaderRoute: typeof socialDottagDottagRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/social/post/$id": {
+      id: "/social/post/$id";
+      path: "/social/post/$id";
+      fullPath: "/social/post/$id";
+      preLoaderRoute: typeof socialDotpostDotidRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/social/messages/$peer": {
+      id: "/social/messages/$peer";
+      path: "/social/messages/$peer";
+      fullPath: "/social/messages/$peer";
+      preLoaderRoute: typeof socialDotmessagesDotpeerRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/repos/$repoId/blob/$": {
@@ -134,9 +615,33 @@ declare module "@tanstack/react-router" {
 
 const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
+  cRoute: cRoute,
+  courtRoute: courtRoute,
+  discoverRoute: discoverRoute,
+  identityDemoRoute: identityDemoRoute,
+  launchpadRoute: launchpadRoute,
+  linkDeviceRoute: linkDeviceRoute,
+  portfolioRoute: portfolioRoute,
+  projectsRoute: projectsRoute,
   reposRoute: reposRoute,
+  socialRoute: socialRoute,
+  startRoute: startRoute,
+  bDotboardIdRoute: bDotboardIdRoute,
+  cDothostRoute: cDothostRoute,
   inviteDotcodeRoute: inviteDotcodeRoute,
+  launchpadDotlaunchIdRoute: launchpadDotlaunchIdRoute,
+  projectsDotprojectIdRoute: projectsDotprojectIdRoute,
   reposDotrepoIdRoute: reposDotrepoIdRoute,
+  socialDotbookmarksRoute: socialDotbookmarksRoute,
+  socialDotexploreRoute: socialDotexploreRoute,
+  socialDotmessagesRoute: socialDotmessagesRoute,
+  socialDotnotificationsRoute: socialDotnotificationsRoute,
+  socialDotsearchRoute: socialDotsearchRoute,
+  startDotcontributorRoute: startDotcontributorRoute,
+  uDotpubkeyRoute: uDotpubkeyRoute,
+  socialDotmessagesDotpeerRoute: socialDotmessagesDotpeerRoute,
+  socialDotpostDotidRoute: socialDotpostDotidRoute,
+  socialDottagDottagRoute: socialDottagDottagRoute,
   reposDotrepoIdDotblobDotsplatRoute: reposDotrepoIdDotblobDotsplatRoute,
 };
 export const routeTree = rootRouteImport

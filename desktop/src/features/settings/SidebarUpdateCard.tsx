@@ -99,7 +99,7 @@ export function SidebarUpdateCard({ onDismiss }: SidebarUpdateCardProps) {
       <SidebarCompactActionCard
         actionAriaLabel="Download update from GitHub"
         actionTestId="sidebar-update-download-github"
-        description={`v${status.version} available — download from GitHub. Switch to AppImage for automatic updates.`}
+        description={`v${status.version} available. Download from GitHub. Switch to AppImage for automatic updates.`}
         dismissLabel="Dismiss update notification"
         icon={<ExternalLink aria-hidden="true" className="h-5 w-5" />}
         iconKey="manual"

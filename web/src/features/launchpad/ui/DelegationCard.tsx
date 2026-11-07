@@ -1,0 +1,236 @@
+import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+
+import { Button } from "@/shared/ui/button";
+import { Card } from "@/shared/ui/card";
+import { decodeU256, ethCall, getRpcEndpoint } from "../chain";
+import { delegateReceiptParts } from "../lib/milestone-receipt";
+import { usePublishMirror } from "../use-launches";
+import { KIND_LAUNCH_RECEIPT } from "@/shared/constants/kinds";
+import { encodeDelegate, encodeDelegatesView } from "../lib/vote-tx";
+import {
+  senderErrorMessage,
+  SenderPickerControls,
+  useSenderPicker,
+} from "./SenderPicker";
+import { HashPicker } from "./HashPicker";
+import { useConnectedWallet } from "../use-connected-wallet";
+import { usePickedSend } from "../use-picked-send";
+import { useWalletLabels } from "../use-wallet-labels";
+
+const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
+// shares() on the DAO — the votes live on its Shares token (cast sig).
+const SELECTOR_SHARES = "0x03314efa";
+
+export interface DelegateOption {
+  /** EVM address (delegate targets are addresses, not npubs). */
+  value: string;
+  label: string;
+}
+
+/**
+ * The delegation surface (agentic-governance D3/A2): voting power follows a
+ * delegate until re-delegated — REVOCABLE BY DESIGN ("back to myself" is
+ * always an option; majeur's `delegates()` defaults to self). Agent seats
+ * are first-class delegates when the org's equity map names their wallets.
+ * Delegation is the owner's control of their own votes, so it is
+ * deliberately NOT budget-gated (the S3 gate supervises agent ACTIONS).
+ */
+export function DelegationCard({
+  dao,
+  members,
+  author,
+  launchId,
+  chainId,
+  followActingAccount = false,
+}: {
+  /** The bound DAO; null = not wired (record-only, D8). */
+  dao: string | null;
+  /** Known delegate candidates (the equity map's holders ∪ self). */
+  members: readonly DelegateOption[];
+  /** The launch record's author + id (the 47005 mirror's `a` binding). */
+  author: string;
+  launchId: string;
+  /** The project's network: delegation is sent there only, and counts once it landed (D144). */
+  chainId: number;
+  /** On a contributor project, send as the account the rest of the page acts as (D139). */
+  followActingAccount?: boolean;
+}) {
+  const picker = useSenderPicker({ followActingAccount });
+  const sendCalls = usePickedSend(picker, chainId, followActingAccount);
+  const mirror = usePublishMirror();
+  const { address: walletAccount } = useConnectedWallet();
+  const [delegatee, setDelegatee] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastTx, setLastTx] = useState<string | null>(null);
+
+  const holder =
+    picker.kind === "passkey" ? picker.passkeyAccount : walletAccount;
+
+  // shares() -> delegates(holder): who casts this holder's votes today
+  // (the Shares token; self by default).
+  const current = useQuery({
+    queryKey: ["delegates", getRpcEndpoint(), dao, holder],
+    queryFn: async () => {
+      const sharesWord = await ethCall(
+        getRpcEndpoint(),
+        dao as string,
+        SELECTOR_SHARES,
+      );
+      const shares = `0x${sharesWord.slice(-40)}`;
+      const word = await ethCall(
+        getRpcEndpoint(),
+        shares,
+        encodeDelegatesView(holder as string),
+      );
+      return {
+        shares,
+        delegate: `0x${decodeU256(word).toString(16).padStart(40, "0")}`,
+      };
+    },
+    enabled: Boolean(dao && holder),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const delegateKeys = useMemo(
+    () => (current.data ? [current.data.delegate] : []),
+    [current.data],
+  );
+  const nameOf = useWalletLabels(delegateKeys);
+  const delegate = current.data?.delegate ?? null;
+  const self =
+    delegate !== null &&
+    holder !== null &&
+    delegate.toLowerCase() === holder.toLowerCase();
+  // Nobody named: a delegate this server knows no name for is said as "someone else", with the address on hover only.
+  const delegateName = delegate ? nameOf(delegate) : "";
+
+  const options: DelegateOption[] = [
+    ...(holder
+      ? [{ value: holder, label: "Back to me (take my votes back)" }]
+      : []),
+    ...members.filter(
+      (m) => m.value.toLowerCase() !== (holder ?? "").toLowerCase(),
+    ),
+  ];
+
+  const send = async () => {
+    const shares = current.data?.shares;
+    if (!shares) return;
+    setError(null);
+    setPending(true);
+    try {
+      // Resolves only once the delegation landed and succeeded, on the project's network.
+      const txHash = await sendCalls([
+        { to: shares, data: encodeDelegate(delegatee), value: "0x0" },
+      ]);
+      if (!TX_HASH_RE.test(txHash)) {
+        throw new Error(
+          "The request was sent but no confirmation ID came back. Check your votes above, then try again.",
+        );
+      }
+      setLastTx(txHash);
+      void current.refetch();
+      // D4: the assignment is a governance action — mirror it (47005,
+      // table `delegate`). A mirror failure is reported; the tx already
+      // landed and is NEVER re-sent.
+      try {
+        await mirror.mutateAsync({
+          kind: KIND_LAUNCH_RECEIPT,
+          author,
+          launchId,
+          ...delegateReceiptParts({ delegate: delegatee, tx: txHash }),
+        });
+      } catch {
+        setError(
+          `Your votes were handed over (confirmation ${txHash.slice(0, 10)}…), but we could not save that to the project's record. They still count.`,
+        );
+      }
+    } catch (err) {
+      setError(
+        senderErrorMessage(err, "Your votes were not handed over. Try again."),
+      );
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Card className="p-4" data-testid="delegation-card">
+      <h2 className="text-base font-semibold">Hand over your votes</h2>
+      <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+        Hand your votes to someone you trust. They vote with your Shares, and
+        your Shares stay yours: you can take the votes back at any time.
+      </p>
+      {current.data ? (
+        <p
+          className="mt-1 text-xs text-black/60 dark:text-white/60"
+          data-testid="delegation-current"
+        >
+          {self ? (
+            "Your votes: your own."
+          ) : delegateName.startsWith("0x") ? (
+            <>
+              Your votes: handed to{" "}
+              <span title={delegate ?? undefined}>someone else</span>.
+            </>
+          ) : (
+            `Your votes: handed to ${delegateName}.`
+          )}
+          {lastTx ? " Changed just now." : ""}
+        </p>
+      ) : null}
+      {!dao ? (
+        <p
+          className="mt-2 text-xs text-black/60 dark:text-white/60"
+          role="status"
+        >
+          You can hand over your votes once this project is set up for voting.
+        </p>
+      ) : (
+        <div className="mt-2">
+          <SenderPickerControls
+            legend="Act as"
+            state={picker}
+            testIdPrefix="delegate-"
+          />
+          <div className="mt-1">
+            <HashPicker
+              id="delegate-target"
+              label="Hand votes to"
+              onValueChange={setDelegatee}
+              options={options}
+              placeholder="Pick someone, or paste their account address"
+              testId="delegate-target"
+              value={delegatee}
+            />
+          </div>
+          <div className="mt-1 flex flex-wrap gap-2">
+            <Button
+              data-testid="delegate-send"
+              disabled={pending || delegatee === "" || !current.data}
+              onClick={() => void send()}
+              size="sm"
+              type="button"
+            >
+              Hand over votes
+            </Button>
+          </div>
+          {error ? (
+            <p
+              className="mt-1 text-xs text-red-700 dark:text-red-400"
+              role="alert"
+            >
+              {error}
+            </p>
+          ) : null}
+          <p className="mt-1 text-xs text-muted-foreground">
+            Who holds your votes is public, and you can always take them back.
+          </p>
+        </div>
+      )}
+    </Card>
+  );
+}
