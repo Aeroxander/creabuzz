@@ -25,8 +25,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/creaton-backup-enc.XXXXXX")"
 trap 'rm -rf "${TEST_DIR}"' EXIT
 
-C="${TEST_DIR}/compose"
+# The copy of the compose folder sits two levels under TEST_DIR, as it does in the checkout, so that run.sh finds the web
+# app's settings check (web/scripts/check-deploy-env.mjs) at ../../web, which `upgrade` runs before it backs up.
+C="${TEST_DIR}/deploy/compose"
 mkdir -p "$C" "${TEST_DIR}/bin" "${TEST_DIR}/tmp" "${TEST_DIR}/keys"
+ln -s "${REPO_ROOT}/web" "${TEST_DIR}/web"
 cp "${REPO_ROOT}/deploy/compose/run.sh" "${REPO_ROOT}/deploy/compose/backup.sh" "${REPO_ROOT}/deploy/compose/compose-env.sh" "$C/"
 export TMPDIR="${TEST_DIR}/tmp"
 unset AGE_IDENTITY_FILE BUZZ_BACKUP_AGE_RECIPIENT BUZZ_BACKUP_ALLOW_UNENCRYPTED

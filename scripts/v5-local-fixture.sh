@@ -344,11 +344,12 @@ if [[ "${V5_DEMO:-}" == "1" ]]; then
   # flag for it, so the founder re-signs their own record with that field added.
   FOUNDER_PK="$FOUNDER_PK" FOUNDER_PUB="$FOUNDER_PUB" RELAY="$RELAY" \
     node "$ROOT/scripts/v5-demo-token-plan.mjs" || fail "could not set the DAO token plan on the record"
-  # The factory, so the app can find this DAO's market with `marketOf(dao)`. Trading is still off:
+  # The factory, so the app can find this DAO's market with `marketOf(dao)`, and the trial switch (the app offers trading
+  # only with both). Trading is still off:
   # the market exists from launch and sells nothing until a listing is published.
   # `exec` makes vite itself the background process, so VITE_PID is vite and not the subshell around it.
   ( cd "$ROOT/web" && VITE_LAUNCHPAD_CHAIN_ID=31337 \
-      VITE_SECONDARY_MARKET_FACTORY="{\"31337\":\"$MARKET_FACTORY\"}" \
+      VITE_SECONDARY_MARKET_FACTORY="{\"31337\":\"$MARKET_FACTORY\"}" VITE_TRADING_TRIAL=1 \
       exec node_modules/.bin/vite --host 127.0.0.1 --port "$WEB_PORT" --strictPort \
       >"$RUN/vite.log" 2>&1 ) &
   VITE_PID=$!

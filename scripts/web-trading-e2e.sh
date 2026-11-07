@@ -163,12 +163,12 @@ cd "$REPO_ROOT/web"
 # worth searching for, and a fresh anvil gives the same address to the same deployer, so the record is the check: SKIP_BUILD=1
 # reuses web/dist only for this chain and factory, and any other build (another script's, an older run's) has no such record.
 BUILD_MARKER="$REPO_ROOT/web/dist/.web-trading-e2e-build"
-BUILD_RECORD="chain=${CHAIN_ID} secondaryMarketFactory=${MARKET_FACTORY}"
+BUILD_RECORD="chain=${CHAIN_ID} secondaryMarketFactory=${MARKET_FACTORY} tradingTrial=1"
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   step "building the web app"
   # env -i keeps any VITE_ setting from the caller's shell out of the build: it has only what is named here.
   env -i PATH="$PATH" HOME="$HOME" VITE_LAUNCHPAD_CHAIN_ID="$CHAIN_ID" \
-    VITE_SECONDARY_MARKET_FACTORY="{\"${CHAIN_ID}\":\"${MARKET_FACTORY}\"}" \
+    VITE_SECONDARY_MARKET_FACTORY="{\"${CHAIN_ID}\":\"${MARKET_FACTORY}\"}" VITE_TRADING_TRIAL=1 \
     node_modules/.bin/vite build >"$STATE/web-build.log" 2>&1 \
     || { tail -20 "$STATE/web-build.log"; fail "web build failed"; }
   printf '%s\n' "$BUILD_RECORD" >"$BUILD_MARKER"

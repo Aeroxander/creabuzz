@@ -98,6 +98,7 @@ for name in VITE_CONTRIBUTOR_ONLY VITE_LOCAL_USDC VITE_RELAY_URL; do
 done
 check "the build is told the chain" $(yes_if grep -qx "VITE_LAUNCHPAD_CHAIN_ID=31337" "$VITE_ENV")
 check "the build is told the market factory" $(yes_if grep -q '^VITE_SECONDARY_MARKET_FACTORY={"31337":"0x[0-9a-fA-F]\{40\}"}$' "$VITE_ENV")
+check "the build is told the trading trial switch" $(yes_if grep -qx "VITE_TRADING_TRIAL=1" "$VITE_ENV")
 
 echo "--- a build that works is recorded, and SKIP_BUILD=1 reuses it only when the record matches"
 echo ok >"$VITE_MODE"
