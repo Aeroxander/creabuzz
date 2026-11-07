@@ -1,7 +1,9 @@
 # Creaton on the single-node bundle (see README.md, "Creaton"). Added by run.sh when BUZZ_COMPOSE_CREATON=true.
 #
 # The relay image is built from this checkout, with the Creaton web app inside it and the app's network settings
-# from .env (they are read when the app is built, and are public in the page). The upstream image would serve Buzz,
+# from .env (they are read when the app is built, and are public in the page). Every one is empty unless .env sets it;
+# the weekly-sale trial block (VITE_SECONDARY_MARKET_FACTORY, VITE_TRADING_TRIAL and what goes with them) switches
+# trading on only when both of its first two are set. The upstream image would serve Buzz,
 # without the Creaton app or its database migrations. The server also turns on what the app relies on: unread markers,
 # the app's own page routes, and the terms and privacy note shown at sign-up (run.sh reads them from their files), and the age box.
 services:
@@ -17,6 +19,16 @@ services:
         VITE_CHAIN_RPC_URL: ${VITE_CHAIN_RPC_URL:-}
         VITE_CONTRIBUTOR_KITS: ${VITE_CONTRIBUTOR_KITS:-}
         VITE_HISTORY_FROM_BLOCKS: ${VITE_HISTORY_FROM_BLOCKS:-}
+        VITE_SECONDARY_MARKET_FACTORY: ${VITE_SECONDARY_MARKET_FACTORY:-}
+        VITE_TRADING_TRIAL: ${VITE_TRADING_TRIAL:-}
+        VITE_TEST_QUOTE_TOKENS: ${VITE_TEST_QUOTE_TOKENS:-}
+        VITE_WORK_BOUNTIES: ${VITE_WORK_BOUNTIES:-}
+        VITE_OPEN_BOUNTIES: ${VITE_OPEN_BOUNTIES:-}
+        VITE_CREATE_TOKENS: ${VITE_CREATE_TOKENS:-}
+        VITE_CREATE_FAUCETS: ${VITE_CREATE_FAUCETS:-}
+        VITE_COURTS: ${VITE_COURTS:-}
+        VITE_PAYOUTS_FACTORIES: ${VITE_PAYOUTS_FACTORIES:-}
+        VITE_REMIX_BONDS: ${VITE_REMIX_BONDS:-}
         VITE_ZERODEV_PROJECT_ID: ${VITE_ZERODEV_PROJECT_ID:-}
         VITE_ZERODEV_CHAIN_ID: ${VITE_ZERODEV_CHAIN_ID:-}
         VITE_ZERODEV_API_KEY: ${VITE_ZERODEV_API_KEY:-}

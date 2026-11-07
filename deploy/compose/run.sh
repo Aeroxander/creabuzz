@@ -120,6 +120,51 @@ require_page_settings() {
   exit 1
 }
 
+# The web app settings the image takes (the build arguments of ../../Dockerfile and compose.creaton.yml): the same list, so
+# the check below sees what the build will see and nothing else.
+WEB_SETTINGS=(
+  VITE_LAUNCHPAD_CHAIN_ID VITE_CHAIN_RPC_URL VITE_CONTRIBUTOR_KITS VITE_HISTORY_FROM_BLOCKS
+  VITE_SECONDARY_MARKET_FACTORY VITE_TRADING_TRIAL VITE_TEST_QUOTE_TOKENS
+  VITE_WORK_BOUNTIES VITE_OPEN_BOUNTIES VITE_CREATE_TOKENS VITE_CREATE_FAUCETS
+  VITE_COURTS VITE_PAYOUTS_FACTORIES VITE_REMIX_BONDS
+  VITE_ZERODEV_PROJECT_ID VITE_ZERODEV_CHAIN_ID VITE_ZERODEV_API_KEY VITE_BUNDLER_URL
+  VITE_ERROR_REPORT_URL VITE_APP_RELEASE VITE_RELAY_URL VITE_COMMUNITY_API_ORIGIN
+)
+
+# The settings check the image runs first (web/scripts/check-deploy-env.mjs), run here on the same settings before the
+# long build: a half-set trial block (a market factory without VITE_TRADING_TRIAL, or the reverse), a kit without a chain
+# node, a malformed address. It prints what the build will offer, and stops on what does not fit together. With no
+# Node.js 22.6 or newer on this machine it says so and goes on, since the image's own build runs the same check and stops
+# there; with the checkout's script missing there is nothing to build from, so it stops.
+check_web_settings() {
+  local script="../../web/scripts/check-deploy-env.mjs" name value status=0 args=() answer
+  [[ -f "$script" ]] || {
+    echo "$script is missing: ./run.sh build needs the whole checkout (the image is built from it)." >&2
+    exit 1
+  }
+  if ! command -v node >/dev/null 2>&1 || ! node --experimental-strip-types -e 0 >/dev/null 2>&1; then
+    echo "Node.js 22.6 or newer is not on this machine, so the web app's settings are not checked here; the image's build checks them again and stops there."
+    return 0
+  fi
+  for name in "${WEB_SETTINGS[@]}"; do
+    value="$(build_setting "$name")"
+    [[ -n "$value" ]] && args+=("$name=$value")
+  done
+  # Only the settings above, and the contributor-only switch the image sets itself: nothing else of this shell reaches it.
+  answer="$(env -i PATH="$PATH" HOME="${HOME:-/}" ${args[@]+"${args[@]}"} VITE_CONTRIBUTOR_ONLY=1 \
+    node --experimental-strip-types --no-warnings "$script" 2>&1)" || status=$?
+  if ((status != 0)); then
+    {
+      echo "$answer"
+      echo
+      echo "The web app's settings in deploy/compose/.env do not fit together (docs/sepolia-testnet.md, section 3)."
+      echo "Fix them, then run ./run.sh build again."
+    } >&2
+    exit 1
+  fi
+  echo "$answer"
+}
+
 # A web app setting as the build sees it: from the shell, else from .env (compose reads the shell first), without the
 # quotes around it.
 build_setting() {
@@ -228,6 +273,7 @@ case "${1:-help}" in
   build)
     require_env_file
     require_page_settings
+    check_web_settings
     check_chain_node
     BUZZ_SOURCE_SHA="$(git -C ../.. rev-parse --short HEAD 2>/dev/null || echo unknown)" compose build relay
     ;;
@@ -235,6 +281,8 @@ case "${1:-help}" in
     require_env
     warn_missing_policies
     if creaton_on; then
+      # The settings first, so a half-set one stops it before the backup and the long build.
+      check_web_settings
       # A backup first: an upgrade can run database migrations that an older image cannot undo.
       ./backup.sh backup
       compose pull --ignore-buildable
@@ -316,8 +364,9 @@ Commands:
                 rebuild: after changing a VITE_ setting, run build first)
   pull          Pull configured images
   build         Build the Creaton relay image from this checkout (Creaton
-                only). With contributor projects on, it first checks that
-                VITE_CHAIN_RPC_URL is on the right network and reads the
+                only). It first runs the web app's settings check (a half-set
+                trading block is refused). With contributor projects on, it
+                also checks that VITE_CHAIN_RPC_URL is on the right network and reads the
                 contributor kit's history
   upgrade       Pull and restart, then print backup reminders (Creaton: back
                 up, then pull, build and restart)

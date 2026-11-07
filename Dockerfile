@@ -131,14 +131,32 @@ COPY admin-web/ admin-web/
 # The web app's network settings (docs/sepolia-testnet.md). They are read when
 # the app is built and are public in the page. Unset is off: with none of them
 # the image serves the social app, with Sepolia as its network and nothing on
-# chain. Only these may be passed: the first release offers contributor
-# projects only, so the raise's launch kit is not a build argument here, nor
-# are the mainnet switch, a local chain's currency and the exchange; and
-# web/scripts/check-deploy-env.mjs refuses settings that do not fit together.
+# chain. Only these may be passed: the image is contributor-only (it sets
+# VITE_CONTRIBUTOR_ONLY=1 itself), so the raise's launch kit is not a build
+# argument here, nor are the mainnet switch, a local chain's currency and the
+# exchange; and web/scripts/check-deploy-env.mjs refuses settings that do not
+# fit together.
+#
+# The trial block (VITE_SECONDARY_MARKET_FACTORY, VITE_TRADING_TRIAL and
+# VITE_TEST_QUOTE_TOKENS, with the optional features after them) is for a
+# Sepolia trial build only. All of it is empty by default and trading stays
+# off: the weekly sale shows only when a market factory is named AND
+# VITE_TRADING_TRIAL=1, and a build with one without the other is refused.
+# A build for real pilot people leaves the whole block out.
 ARG VITE_LAUNCHPAD_CHAIN_ID=
 ARG VITE_CHAIN_RPC_URL=
 ARG VITE_CONTRIBUTOR_KITS=
 ARG VITE_HISTORY_FROM_BLOCKS=
+ARG VITE_SECONDARY_MARKET_FACTORY=
+ARG VITE_TRADING_TRIAL=
+ARG VITE_TEST_QUOTE_TOKENS=
+ARG VITE_WORK_BOUNTIES=
+ARG VITE_OPEN_BOUNTIES=
+ARG VITE_CREATE_TOKENS=
+ARG VITE_CREATE_FAUCETS=
+ARG VITE_COURTS=
+ARG VITE_PAYOUTS_FACTORIES=
+ARG VITE_REMIX_BONDS=
 ARG VITE_ZERODEV_PROJECT_ID=
 ARG VITE_ZERODEV_CHAIN_ID=
 ARG VITE_ZERODEV_API_KEY=
@@ -152,7 +170,10 @@ ARG BUZZ_SOURCE_SHA=unknown
 # defaults to the source revision.
 RUN set -eu; \
     for name in VITE_LAUNCHPAD_CHAIN_ID VITE_CHAIN_RPC_URL VITE_CONTRIBUTOR_KITS \
-                VITE_HISTORY_FROM_BLOCKS VITE_ZERODEV_PROJECT_ID \
+                VITE_HISTORY_FROM_BLOCKS VITE_SECONDARY_MARKET_FACTORY VITE_TRADING_TRIAL \
+                VITE_TEST_QUOTE_TOKENS VITE_WORK_BOUNTIES VITE_OPEN_BOUNTIES \
+                VITE_CREATE_TOKENS VITE_CREATE_FAUCETS VITE_COURTS VITE_PAYOUTS_FACTORIES \
+                VITE_REMIX_BONDS VITE_ZERODEV_PROJECT_ID \
                 VITE_ZERODEV_CHAIN_ID VITE_ZERODEV_API_KEY VITE_BUNDLER_URL \
                 VITE_ERROR_REPORT_URL VITE_APP_RELEASE VITE_RELAY_URL VITE_COMMUNITY_API_ORIGIN; do \
         eval "value=\${$name:-}"; \
@@ -161,7 +182,8 @@ RUN set -eu; \
     if [ -z "${VITE_APP_RELEASE:-}" ] && [ "$BUZZ_SOURCE_SHA" != "unknown" ]; then \
         export VITE_APP_RELEASE="$BUZZ_SOURCE_SHA"; \
     fi; \
-    # The image is contributor-only: it takes no raise kit, so it offers no way to start a sale either.
+    # The image is contributor-only: it takes no raise kit, so it offers no way to start a sale either. Trading does not
+    # depend on this: it is switched on by its own two settings, empty above.
     export VITE_CONTRIBUTOR_ONLY=1; \
     node --experimental-strip-types web/scripts/check-deploy-env.mjs; \
     pnpm -C web build && pnpm -C admin-web build
