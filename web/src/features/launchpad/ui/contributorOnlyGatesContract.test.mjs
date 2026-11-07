@@ -23,6 +23,18 @@ test("the decision form never offers to open trading without raises", () => {
   );
 });
 
+test("the weekly-market listing vote follows the trading switch, not raises", () => {
+  const composer = source("./DecisionComposer.tsx");
+  const start = composer.indexOf('if (id === "secondary-listing")');
+  assert.ok(start >= 0, "the listing entry is found");
+  const entry = composer.slice(
+    start,
+    composer.indexOf("// Payouts count", start),
+  );
+  assert.match(entry, /tradingOffered\(\)/);
+  assert.doesNotMatch(entry, /raisesOffered/);
+});
+
 test("the launch page offers no sale button and opens no bid without raises", () => {
   const page = source("./LaunchDetailPage.tsx");
   assert.match(
@@ -99,15 +111,27 @@ test("the contributor project's DAO card on Discover shows no address", () => {
   assert.match(body, /Open project/);
 });
 
-test("the Trading card renders nothing in a contributor-only build or one that names no market factory", () => {
+test("the Trading card renders nothing unless the build names a market factory and sets the trial switch", () => {
   const card = source("./TradingCard.tsx");
   assert.match(card, /if \(!tradingOffered\(\)\) return null;/);
   const offered = source("../lib/trading-offered.ts");
-  assert.match(offered, /raisesOffered\(env\) && secondaryMarketNamed\(env\)/);
-  // The Dockerfile names no factory for the hosted image, so the card is absent there even without the second check.
+  assert.match(
+    offered,
+    /return tradingTrialOn\(env\) && secondaryMarketNamed\(env\);/,
+  );
+  // Trading no longer depends on raises (the contributor-only image has none), only on the two explicit settings.
+  assert.doesNotMatch(offered, /raisesOffered\(/);
+});
+
+test("the default build and the pilot image show no trading: neither names a factory or the trial switch", () => {
+  // The Dockerfile defaults and compose pass nothing for the market factory or the switch unless an operator sets
+  // them, and the build check refuses either alone. The default is empty, so the card is absent.
   const docker = readFileSync(
     fileURLToPath(new URL("../../../../../Dockerfile", import.meta.url)),
     "utf8",
   );
-  assert.doesNotMatch(docker, /VITE_SECONDARY_MARKET_FACTORY/);
+  assert.doesNotMatch(docker, /^ARG VITE_TRADING_TRIAL=.+$/m);
+  assert.doesNotMatch(docker, /^ARG VITE_SECONDARY_MARKET_FACTORY=.+$/m);
+  assert.doesNotMatch(docker, /^ARG VITE_TEST_QUOTE_TOKENS=.+$/m);
+  assert.doesNotMatch(docker, /export VITE_TRADING_TRIAL/);
 });

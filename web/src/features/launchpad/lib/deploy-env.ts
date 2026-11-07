@@ -3,7 +3,8 @@
  * so what this approves is what the page will do. `web/scripts/check-deploy-env.mjs` runs it before the image builds the
  * app (`Dockerfile`), and refuses a build that would offer mainnet before the audit, point a hosted page at a local
  * chain, start contributor projects the page could not read the history of or send steps for (no paid gas in the
- * contributor-only image), or carry a CHANGE_ME placeholder into the page. It also says, in a few lines, what the
+ * contributor-only image), switch trading on by halves (a market factory without the trial switch, or the reverse), or
+ * carry a CHANGE_ME placeholder into the page. It also says, in a few lines, what the
  * build will offer, since every one of these settings ends up public in the page.
  */
 
@@ -22,6 +23,8 @@ import {
   mainnetEnabled,
   networkLabel,
   openBounty,
+  secondaryMarketFactory,
+  testQuoteToken,
   workBounty,
 } from "../chain-config.ts";
 
@@ -190,6 +193,48 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       `VITE_DAO_LAUNCH_KITS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
     );
   }
+  // Trading is off unless a market factory is named AND the trial switch is 1 (`lib/trading-offered.ts`): either alone
+  // would show a "not set up" card on every project or have no market to read, so a half setting stops the build.
+  const marketFactory = secondaryMarketFactory(chainId, env);
+  const factoryNamed = value(env, "VITE_SECONDARY_MARKET_FACTORY") !== null;
+  const tradingSwitch = value(env, "VITE_TRADING_TRIAL");
+  if (factoryNamed && !marketFactory) {
+    problems.push(
+      `VITE_SECONDARY_MARKET_FACTORY names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+    );
+  }
+  if (tradingSwitch !== null && tradingSwitch !== "1") {
+    problems.push(
+      "VITE_TRADING_TRIAL must be 1 to switch trading on; leave it empty for no trading.",
+    );
+  }
+  if (factoryNamed && tradingSwitch === null) {
+    problems.push(
+      "VITE_SECONDARY_MARKET_FACTORY is named but VITE_TRADING_TRIAL is not set to 1: a build shows trading only with both, so it would not show it.",
+    );
+  }
+  if (tradingSwitch === "1" && !factoryNamed) {
+    problems.push(
+      "VITE_TRADING_TRIAL is set but VITE_SECONDARY_MARKET_FACTORY is not: there would be no market to read.",
+    );
+  }
+  if (factoryNamed && !rpc) {
+    problems.push(
+      "VITE_SECONDARY_MARKET_FACTORY is named but VITE_CHAIN_RPC_URL is not: a hosted page has no chain node without it.",
+    );
+  }
+  if (factoryNamed && !contributor) {
+    problems.push(
+      "VITE_SECONDARY_MARKET_FACTORY is named but VITE_CONTRIBUTOR_KITS is not: trading is for projects the kit makes.",
+    );
+  }
+  // The free test token is only read where a market's price token is compared with it, so naming it alone is harmless.
+  const testToken = testQuoteToken(chainId, env);
+  if (value(env, "VITE_TEST_QUOTE_TOKENS") && !testToken) {
+    problems.push(
+      `VITE_TEST_QUOTE_TOKENS names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+    );
+  }
   const from = historyFromBlock(chainId, env);
   if (contributor || raise) {
     if (!rpc) {
@@ -219,6 +264,10 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
     `Payouts to holders: ${payouts ? `on where a DAO votes for them (${payouts})` : "off"}`,
   );
   summary.push(`Remix bonds: ${bonds ? `on (${bonds})` : "off"}`);
+  summary.push(
+    `Trading: ${marketFactory && tradingSwitch === "1" ? "on" : "off"}`,
+  );
+  summary.push(`Free test token: ${testToken ? `on (${testToken})` : "off"}`);
 
   const project = value(env, "VITE_ZERODEV_PROJECT_ID");
   const zerodevChain = value(env, "VITE_ZERODEV_CHAIN_ID");

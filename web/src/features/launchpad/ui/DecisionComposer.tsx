@@ -1,6 +1,7 @@
 import { type ChallengeIntent, challengePickKey } from "../lib/challenge";
 import type { SponsorIntent } from "../lib/sponsor";
 import { raisesOffered } from "../lib/raises-offered";
+import { tradingOffered } from "../lib/trading-offered";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 
@@ -221,7 +222,7 @@ export function DecisionComposer({
     // token, so the launch record's currency is no condition: it could never take away the way to stop trading.
     if (id === "secondary-listing")
       return (
-        raisesOffered() &&
+        tradingOffered() &&
         secondary.factory !== null &&
         ctx.sharesToken !== "" &&
         secondary.query.data?.read.kind !== "absent"

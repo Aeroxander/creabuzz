@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { checkDeployEnv } from "./deploy-env.ts";
 
@@ -327,4 +328,139 @@ test("the paid-gas line says what the build really asks of people", () => {
     line(SEPOLIA),
     "Passkey accounts with paid gas: off (people bring a wallet and test gas)",
   );
+});
+
+const MARKET_FACTORY = `0x${"3a".repeat(20)}`;
+const TRIAL = {
+  ...SEPOLIA,
+  VITE_SECONDARY_MARKET_FACTORY: JSON.stringify({ 11155111: MARKET_FACTORY }),
+  VITE_TRADING_TRIAL: "1",
+};
+
+test("trading is off by default and says so; the build passes without any trading setting", () => {
+  for (const env of [{}, SEPOLIA, { VITE_CONTRIBUTOR_ONLY: "1" }]) {
+    const { problems, summary } = checkDeployEnv(env);
+    assert.deepEqual(problems, []);
+    assert.ok(summary.includes("Trading: off"), summary.join("\n"));
+    assert.ok(!summary.includes("Trading: on"));
+  }
+});
+
+test("a named market factory with the trial switch, a node and the contributor kit passes and says 'Trading: on'", () => {
+  const { problems, summary } = checkDeployEnv(TRIAL);
+  assert.deepEqual(problems, []);
+  assert.ok(summary.includes("Trading: on"), summary.join("\n"));
+});
+
+test("a market factory without the trial switch is refused, so a half-copied setting cannot show a 'not set up' card", () => {
+  const { problems } = checkDeployEnv({ ...TRIAL, VITE_TRADING_TRIAL: "" });
+  assert.ok(
+    problems.some((p) =>
+      p.startsWith(
+        "VITE_SECONDARY_MARKET_FACTORY is named but VITE_TRADING_TRIAL",
+      ),
+    ),
+    problems.join("\n"),
+  );
+  // Only the exact value 1 turns it on.
+  const yes = checkDeployEnv({ ...TRIAL, VITE_TRADING_TRIAL: "yes" });
+  assert.ok(
+    yes.problems.some((p) => p.startsWith("VITE_TRADING_TRIAL must be 1")),
+  );
+});
+
+test("the trial switch without a market factory is refused", () => {
+  const { problems } = checkDeployEnv({ ...SEPOLIA, VITE_TRADING_TRIAL: "1" });
+  assert.ok(
+    problems.some((p) =>
+      p.startsWith(
+        "VITE_TRADING_TRIAL is set but VITE_SECONDARY_MARKET_FACTORY",
+      ),
+    ),
+    problems.join("\n"),
+  );
+});
+
+test("a market factory needs a chain node and a contributor kit", () => {
+  const noNode = checkDeployEnv({ ...TRIAL, VITE_CHAIN_RPC_URL: "" });
+  assert.ok(
+    noNode.problems.some((p) =>
+      p.startsWith(
+        "VITE_SECONDARY_MARKET_FACTORY is named but VITE_CHAIN_RPC_URL",
+      ),
+    ),
+    noNode.problems.join("\n"),
+  );
+  const noKit = checkDeployEnv({ ...TRIAL, VITE_CONTRIBUTOR_KITS: "" });
+  assert.ok(
+    noKit.problems.some((p) =>
+      p.startsWith(
+        "VITE_SECONDARY_MARKET_FACTORY is named but VITE_CONTRIBUTOR_KITS",
+      ),
+    ),
+    noKit.problems.join("\n"),
+  );
+});
+
+test("a market factory for another network than the build's is refused", () => {
+  const { problems } = checkDeployEnv({
+    ...TRIAL,
+    VITE_SECONDARY_MARKET_FACTORY: JSON.stringify({ 31337: MARKET_FACTORY }),
+  });
+  assert.ok(
+    problems.some((p) =>
+      p.startsWith("VITE_SECONDARY_MARKET_FACTORY names no valid address"),
+    ),
+    problems.join("\n"),
+  );
+});
+
+test("the free test token is off by default, tolerated with an address, refused with a bad one", () => {
+  const TOKEN = `0x${"7e".repeat(20)}`;
+  assert.ok(checkDeployEnv(TRIAL).summary.includes("Free test token: off"));
+  const on = checkDeployEnv({
+    ...TRIAL,
+    VITE_TEST_QUOTE_TOKENS: JSON.stringify({ 11155111: TOKEN }),
+  });
+  assert.deepEqual(on.problems, []);
+  assert.ok(
+    on.summary.includes(`Free test token: on (${TOKEN})`),
+    on.summary.join("\n"),
+  );
+  const elsewhere = checkDeployEnv({
+    ...TRIAL,
+    VITE_TEST_QUOTE_TOKENS: JSON.stringify({ 31337: TOKEN }),
+  });
+  assert.ok(
+    elsewhere.problems.some((p) =>
+      p.startsWith("VITE_TEST_QUOTE_TOKENS names no valid address"),
+    ),
+  );
+  // It is only ever used on a trading card: named without trading, it is harmless and builds.
+  const alone = checkDeployEnv({
+    ...SEPOLIA,
+    VITE_TEST_QUOTE_TOKENS: JSON.stringify({ 11155111: TOKEN }),
+  });
+  assert.deepEqual(alone.problems, []);
+});
+
+test("the build check script reads the trading settings from the environment it is given", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const run = (env) =>
+    spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        fileURLToPath(
+          new URL("../../../../scripts/check-deploy-env.mjs", import.meta.url),
+        ),
+      ],
+      { env: { PATH: process.env.PATH, ...env }, encoding: "utf8" },
+    );
+  const ok = run(TRIAL);
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.match(ok.stdout, /Trading: on/);
+  const bad = run({ ...TRIAL, VITE_TRADING_TRIAL: "" });
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /VITE_TRADING_TRIAL/);
 });

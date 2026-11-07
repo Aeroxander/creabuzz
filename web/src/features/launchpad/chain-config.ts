@@ -139,6 +139,17 @@ export interface ChainEnv {
   /** The SecondaryMarketFactory this build knows on a chain: `marketOf(dao)` names a DAO's market. */
   VITE_SECONDARY_MARKET_FACTORY?: string;
   /**
+   * "1" switches trading on in a build that also names a market factory (`lib/trading-offered.ts`). Empty by default:
+   * the hosted pilot image never sets it.
+   */
+  VITE_TRADING_TRIAL?: string;
+  /**
+   * The free-mint test token per chain, as JSON: `{"11155111":"0x…"}`. Test networks only. A market whose price token is
+   * this one shows a "Get test tokens" action on its Trading card, and a project started on the weekly-sale kit takes it
+   * as its price token. A chain with no entry has none.
+   */
+  VITE_TEST_QUOTE_TOKENS?: string;
+  /**
    * Which score-root publishers each community has accepted, as JSON keyed by
    * relay host: `{"localhost:3000":{"publishers":["<hex>"],"programs":["…"]}}`.
    * A community with no entry accepts none; its score roots are shown labelled
@@ -276,8 +287,19 @@ export function secondaryMarketFactory(
 }
 
 /**
+ * The free-mint test token on `chainId`, or null when the build does not name one. Never guessed: a card that offered
+ * to mint a token other than the market's own would mislead, so callers compare it with the market's price token.
+ */
+export function testQuoteToken(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_TEST_QUOTE_TOKENS, chainId);
+}
+
+/**
  * Whether this build names a secondary-market factory on any network at all. A build that names none (the hosted
- * pilot image sets none) has no trading to show anywhere; one that names a factory for another network than a
+ * pilot image sets none, and `lib/trading-offered.ts` also wants the trial switch) has no trading to show anywhere; one that names a factory for another network than a
  * project's still has a card to say trading is not set up on that one.
  */
 export function secondaryMarketNamed(
