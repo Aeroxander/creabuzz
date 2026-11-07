@@ -219,7 +219,10 @@ once the floor rises by about 2.04%, small beside the inflows and unlocks above,
 whoever leaves last (with 2%, a 1% holder leaving last takes 2.98× their share). **We would use 0% as the baseline** and
 ask any fee to show it helps under adversarial scenarios.
 
-**Weekly rounds** ([WEEKLY-ROUNDS.md](WEEKLY-ROUNDS.md)): one a week per project; 3 days of bidding, up to 2 days for
+**Weekly rounds** ([WEEKLY-ROUNDS.md](WEEKLY-ROUNDS.md)). *Deprecated (D185, 2026-11-06): the old `WeeklyRounds` contract is
+no longer deployed by our scripts or offered in the app. The weekly sale is now the secondary market
+(`SecondaryMarket`); the defects that led to this are in [WEEKLY-ROUNDS-AUDIT-2026-11-01.md](WEEKLY-ROUNDS-AUDIT-2026-11-01.md).
+The description below is the old design.* One a week per project; 3 days of bidding, up to 2 days for
 anyone to settle, void otherwise. One price, chosen to trade the most; the longer side at it shares in proportion.
 Prices sit on a grid from the floor at opening: 1,023 steps above it, each 1% of the floor or one cent, whichever is
 larger. Holders' rounds price against the treasury's cash only, while leaving pays a share of every asset.
@@ -266,8 +269,8 @@ Answer any you have a view on.
    someone whose exit value is far below their purchase price; what would you add?
 6. The treasury's fifth of a seller's gain in a round: we will compare it against nothing. What service would earn it,
    given sales between members charge nothing?
-7. Weekly rounds or continuous trading: we keep weekly rounds until recurring independent demand appears. What would
-   you watch to decide?
+7. Weekly rounds or continuous trading: we keep a weekly sale (now the secondary market, since the old weekly rounds
+   contract is deprecated, D185) until recurring independent demand appears. What would you watch to decide?
 8. Should projects have fewer units (a million rather than a billion) so prices read sensibly, alongside a better grid?
 9. Should every raise of the funding limit waive the exit fee, and should other votes that dilute waive it too?
 10. Fees left in the treasury go to whoever leaves last. Keep, cap, or drop with the fee?
@@ -289,7 +292,7 @@ Answer any you have a view on.
 | Our incentive pre-check and its scripts | [FUNDING-REVIEW-2026-10-31.md](FUNDING-REVIEW-2026-10-31.md) | [funding-review-2026-10-31/](funding-review-2026-10-31/) |
 | The journey and funding terms | [FUNDING-TERMS.md](FUNDING-TERMS.md) | `contracts/src/FundingTerms.sol` |
 | Fundraising kit rules and worked examples | [TOKENOMICS-PROPOSAL.md](TOKENOMICS-PROPOSAL.md) (§0a has later corrections) | `DaoLaunchKit.sol`, `MilestoneChallenge.sol` |
-| Weekly rounds | [WEEKLY-ROUNDS.md](WEEKLY-ROUNDS.md) | `WeeklyRounds.sol` |
+| Weekly rounds (deprecated, D185: not deployed, not in the app; the weekly sale is now the secondary market; audit record: [WEEKLY-ROUNDS-AUDIT-2026-11-01.md](WEEKLY-ROUNDS-AUDIT-2026-11-01.md)) | [WEEKLY-ROUNDS.md](WEEKLY-ROUNDS.md) | `WeeklyRounds.sol` (frozen), `SecondaryMarket.sol` |
 | Sales between members | DECISIONS.md D117 | `MatchedExit.sol` |
 | Payouts | [PAYOUTS.md](PAYOUTS.md) | `Payouts.sol` |
 | Pledges to the next milestone (not built) | [PLEDGES-STATES.md](PLEDGES-STATES.md) | — |

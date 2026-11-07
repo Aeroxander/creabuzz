@@ -1,5 +1,11 @@
 # A project's journey, and funding terms (D133, 2026-10-28)
 
+> **Deprecated in part (D185, 2026-11-06).** The weekly funding rounds below ran on the old `WeeklyRounds` contract. It is
+> no longer deployed by our scripts, offered in the app or described in the launch documents; the funding card and the
+> decision form that went with it were removed from the app. The weekly sale is now the secondary listing
+> (`SecondaryMarket`). The contract source and its audit record (`WEEKLY-ROUNDS-AUDIT-2026-11-01.md`) stay until counsel
+> confirms deprecation is enough. The text below is history.
+
 Status: **built for test networks, contributor projects first** (contracts, the app, and a journey on a local chain and a
 Sepolia fork). It decides how a project that started with contributors only can take investors' money, and what new units
 may ever be created and why. It follows an outside review of the weekly-rounds plan
@@ -139,13 +145,10 @@ the outside review found and three on the exit fee), the exit-screen fuzz test (
 fee), twenty-seven mutation entries, and from pages by `scripts/web-rounds-e2e.sh` on a local chain and a Sepolia fork:
 the journey ends with a buyer leaving through the exit screen, paid exactly their share less 2%.
 
-In the app: a **Sell new units for the project** decision (publish terms with an exit fee; then open a sale, stop it,
-raise or lower the funding limit, lower the exit fee, or name tokens to watch) and a **Funding the project** card on contributor projects' Funds tab: the terms,
-how much has sold of the current limit, the exit fee, the sale open now with a **Before you buy** list (the limit can be
-raised; contributor awards have no yearly limit; earned Shares can leave with money raised; no milestone locks; what Loot
-is and that it can't yet be sold in a round; the exit fee), its funding rounds, a button to give back a void round's tranche, and every earlier
-round where you still have something to collect (the holders' card lists those too). Fundraising-kit projects are not
-offered it yet.
+In the app: this was a **Sell new units for the project** decision and a **Funding the project** card on contributor
+projects' Funds tab. Both were removed (D185; see [WEEKLY-ROUNDS.md](WEEKLY-ROUNDS.md) and [TEST-STEPS.md](TEST-STEPS.md)),
+and the app no longer offers a way to publish funding terms or open a funding round. What the card showed (terms, the
+exit fee, the sale open now and its **Before you buy** list) is kept here as history.
 
 Not yet: Loot holders selling in holders' rounds, which trade Shares. Their way out today is leaving. Loot can now move
 through the exchange, which is the step that makes Loot rounds possible.

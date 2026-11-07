@@ -15,6 +15,13 @@ and to deprecate the old `WeeklyRounds` contract on our side. The Trading card n
 (`9eecfcb`); the deploy script, the web app and the launch documents no longer carry `WeeklyRounds` (`4d90bb1`,
 `34353a7`). Items 18 and 19, section 1.7 and the places that cite them were rewritten, and the line numbers this brief
 cites were read again at that point. No economic parameter changed.
+Updated 2026-11-07 (trial build): a trial build of the web app can switch trading on for testers on the Sepolia test
+network, with a free test token worth nothing (settings `VITE_SECONDARY_MARKET_FACTORY` and `VITE_TRADING_TRIAL`, both
+empty by default; deploy script `scripts/sepolia-deploy-v5.sh`, not yet run for real). The hosted pilot image still sets
+neither. The owner is to rebuild the hosted server without the trial settings before any pilot person is invited
+(`docs/sepolia-testnet.md`, "Trading"; `docs/v3-review/SEPOLIA-TRADING-TRIAL.md`). Counsel was not told of this trial
+before. The statements below that the hosted build names no market factory describe the pilot image, not the trial
+build. Line numbers cited for `TradingCard.tsx`, `TradingHistory.tsx` and the table of file sizes were read again.
 This brief is engineering material, not legal advice.
 
 **Who this is for.** A securities and technology lawyer who has not seen the code, and an outside smart-contract
@@ -272,7 +279,7 @@ key below. That is itself a question for counsel (section 7, questions 5 to 7 an
 | Part | What it is | Who runs it, as the repository describes it |
 |---|---|---|
 | **The contracts** | The V2 launch kit, the market factory, the per-project market, the voting policy, the Shares token and the DAO. | Deployed by whoever holds a deployer key. No deploy script for the V2 kit, factory or market exists for a public network: `sepolia-deploy.sh` and `DeployLaunchKit.s.sol` do not deploy them. Only `V5LocalFixture.s.sol` does, and it refuses to run unless the chain id is 31337 (a local test chain). |
-| **The web app** | The page with the trading card. | Built and hosted by the operator. The build decides which chain and which market factory the page talks to. The hosted image does not name any market factory, so the card shows no trading there. |
+| **The web app** | The page with the trading card. | Built and hosted by the operator. The build decides which chain and which market factory the page talks to. The hosted pilot image does not name any market factory, so the card shows no trading there. A trial build (test token, off by default, for testers on Sepolia) can name one; see the 2026-11-07 note at the top. |
 | **The relay (server)** | The community server for posts, boards and notifications. It holds no chain funds. | The operator, on one rented server (the repository's setup notes describe a single OVHcloud machine). |
 | **The keeper (optional)** | A small script that calls `settle` on closed rounds, and optionally `openRound`, so rounds are not missed. | Whoever runs it. It is not required: anyone can call both. |
 
@@ -290,7 +297,7 @@ so nothing is left out.
 | 5 | **Summoner** (the DAO factory) | A contract; no key | Creates DAO clones. Each DAO can be initialised only by it. | The review passes reported no administrator role. `Summoner.summon` is public (anyone can create a DAO clone), which is why the market factory accepts only the kit. I did not read the Summoner line by line. | `MolochPatched.sol` |
 | 6 | **Market contract** | A contract; no key | Holds escrow. Is the only address exempt from the Shares transfer lock. Calls two hooks on the voting policy to keep voting weight right. | Has no owner, no upgrade, no function to send funds anywhere except to an order's owner. Its 38 external entries (functions, public variables and constants) are pinned to a reviewed list (`test_the_market_abi_matches_the_reviewed_allowlist`). | `SecondaryMarket.sol` |
 | 7 | **Voting policy** (`ActivationVoting` clone) | A contract; no key | Tracks which bought amounts may vote. One-time setup by the DAO in the creation block. Two hooks callable only by the project's market. | Cannot be reconfigured after the creation block. | `ActivationVoting.sol:269`, `:829` |
-| 8 | **Deployer key(s)** for the kit, factory, summoner | Whoever deploys | Choose which code is deployed. After deployment the V2 contracts keep no deployer role in the code read. | Not applicable on a local chain. For a public chain this is undecided: no script exists. The Sepolia script uses `DEPLOYER_PRIVATE_KEY`, "a testnet-only key", and deploys the older kits, not the V2 kit. It deployed the frozen `WeeklyRounds` to Sepolia on 5 November 2026 and no longer does (section 8, item 18). | `scripts/sepolia-deploy.sh`, `DeployLaunchKit.s.sol` |
+| 8 | **Deployer key(s)** for the kit, factory, summoner | Whoever deploys | Choose which code is deployed. After deployment the V2 contracts keep no deployer role in the code read. | Not applicable on a local chain. For a value-bearing public chain this is undecided: no script is meant for one. For the Sepolia test network, `scripts/sepolia-deploy-v5.sh` (with `DeployV5Sepolia.s.sol`) deploys the V2 kit, the market factory and a free test token, signing with `DEPLOYER_PRIVATE_KEY`, "a testnet-only key". It has been rehearsed only on a local fork and has not been broadcast: no manifest for it is committed. The older `scripts/sepolia-deploy.sh` deploys the older kits, not the V2 kit; it deployed the frozen `WeeklyRounds` to Sepolia on 5 November 2026 and no longer does (section 8, item 18). | `scripts/sepolia-deploy-v5.sh`, `DeployV5Sepolia.s.sol`, `scripts/sepolia-deploy.sh`, `DeployLaunchKit.s.sol` |
 | 9 | **Keeper key** (`KEEPER_PRIVATE_KEY`) | The keeper operator | Pays the network fee to call `settle` and, only if enabled, `openRound`. | Nothing else: it holds no approvals, no Shares, no quote. The calls are open to anyone. The script does not print the key; it does pass it on the command line to a local tool, so it is visible to other users of the same machine. | `scripts/secondary-keeper.sh` |
 | 10 | **Anyone** | Any address | Open a round (after a week), settle a closed round, trigger collection for any order. | Direct a payout anywhere but the order's owner. | `SecondaryMarket.sol` |
 | 11 | **Quote token issuer or admin** | Whoever controls the token the founder chose | If the token can freeze, blacklist or pause, payouts in it can be blocked for an address or for all. Settlement, cancellation and Shares collection still work; only the quote payout waits (`test_a_blocked_quote_strands_no_payout`). | Not applicable to Shares. | The token's own code (not in this repository) |
@@ -316,7 +323,7 @@ named in section 5, not by a promise.
 | Voting maturity, founder schedule, escrow accounting | `contracts/src/ActivationVoting.sol` | 835 |
 | V2 launch kit | `contracts/src/ContributorKitV2.sol` | 365 |
 | Frozen old rounds contract (not repaired, deprecated) | `contracts/src/WeeklyRounds.sol` | 632 (a deprecation comment added; code unchanged) |
-| Trading card and listing form | `web/src/features/launchpad/ui/TradingCard.tsx`, `TradingListingForm.tsx` plus `TradingEarlier.tsx`, `TradingOrderForms.tsx`, `TradingHistory.tsx` | 671, 215, 255, 376, 129 |
+| Trading card and listing form | `web/src/features/launchpad/ui/TradingCard.tsx`, `TradingListingForm.tsx` plus `TradingEarlier.tsx`, `TradingOrderForms.tsx`, `TradingHistory.tsx` | 684, 215, 255, 376, 142 |
 | App data and wording | `use-secondary.ts` 165, `lib/secondary-read.ts` 426, `lib/trading-orders.ts` 112, `lib/trading-copy.ts` 1053, `lib/trading-history-copy.ts` 71, `lib/round-history.ts` 168, `lib/trading-offered.ts` 20, `chain-config.ts` 488; shared reader `packages/creaton-core/src/launchpad/secondary.ts` 796 | |
 | Keeper and local scripts | `scripts/secondary-keeper.sh` 247, `web-trading-e2e.sh` 182, `v5-local-fixture.sh` 415 | |
 
@@ -496,7 +503,8 @@ constant changed (the first row). Commits are on branch `v4-governance-rework`.
    and not hosted. (Corrected 2026-11-06: an earlier revision said nothing at all was deployed. The older frozen
    `WeeklyRounds` contract, deprecated since, has an unused copy on the Sepolia test network, section 8, item 18.) Shares on the Sepolia test network are
    test records with no value. All evidence about the market is from local scratch chains and unit tests.
-6. **Trading is off by default** (a listing starts disabled, the hosted build names no market factory). That is
+6. **Trading is off by default** (a listing starts disabled, the hosted pilot image names no market factory; a trial build
+   can name one and switch trading on for testers, see the 2026-11-07 note at the top). That is
    configuration, not a legal or technical barrier a determined operator could not remove.
 7. **No review of the latest fixes.** The ten low-severity commits were reviewed; the commits that fixed what that
    review found (`212afc2`, `1862cf7`, `8e959f9`, `105dbb9`, `6fbd706`, `77150fa`) were not. A delta review was not run.
@@ -561,8 +569,9 @@ because every other answer depends on who the regulated person is, if anyone. Th
 
 **What exists today.** Nothing limits who can use the market. The contract has no allowlist, no identity check and no
 country check (section 1.3). A search of `web/src`, `deploy` and `docs/policies` for geofence, geoblock and country
-found no check in the web app; the only hits were two policy drafts. The card is off in the hosted build because the
-image names no market factory (section 5.6, B16), which is configuration, not a country limit.
+found no check in the web app; the only hits were two policy drafts. The card is off in the hosted pilot build because the
+image names no market factory (section 5.6, B16); a trial build can switch it on for testers (note at the top). Either way
+that is configuration, not a country limit.
 
 **The options** (the owner's choice; each changes which later questions are live):
 
@@ -701,7 +710,7 @@ that needs authorization, and the no-operator-custody posture does not obviously
 **The facts, with sources.**
 
 - *Who hosts the page.* The operator, on one rented server (`deploy/ovh/README.md`, `deploy/compose/README.md`). The
-  hosted image names no market factory, so it shows no trading (section 5.6, B16).
+  hosted pilot image names no market factory, so it shows no trading (section 5.6, B16); the trial build (note at the top) can.
 - *Who runs the keeper.* Whoever chooses to run `scripts/secondary-keeper.sh`. It is optional, and the repository
   names no one (section 4.1). Anyone can call `settle` and `openRound`.
 - *Who deploys.* Whoever holds a deployer key. No public-network deploy script for the V2 kit, factory or market exists
@@ -929,10 +938,10 @@ for any value-bearing network.
     worth. **Counsel owns the wording. Counsel has not approved it.** It is the builder's draft.
     *Where it appears.* Two places, both on the Trading card on the project's Treasury tab:
     1. Under the latest round's line "Settled: N lots traded at P a lot, after offers closed ..." (`roundLine`,
-       `trading-copy.ts` line 222, called at `TradingCard.tsx` line 461; the label at line 473, only when `roundShowsPrice`,
+       `trading-copy.ts` line 222, called at `TradingCard.tsx` line 474; the label at line 486, only when `roundShowsPrice`,
        line 206, is true: a settled round that matched lots).
-    2. Once under the "Earlier rounds" list (`TradingHistory.tsx`: each row from `earlierPriceRow`, line 66; the label at
-       line 84, whenever any row prints a price).
+    2. Once under the "Earlier rounds" list (`TradingHistory.tsx`: each row from `earlierPriceRow`, line 72; the label at
+       line 90, whenever any row prints a price).
     The old weekly-rounds card, which also printed a last trade and a history table, is gone (item 18), so it carries no
     label because it does not exist. "How trading works" (collapsed by default) still does not say it (section 1.7);
     the label does not depend on it.

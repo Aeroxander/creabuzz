@@ -76,3 +76,32 @@ test("the list is reset for another market, and its reads are keyed by market", 
   const list = source("./TradingHistory.tsx");
   assert.match(list, /asked\.market === market \? asked\.blocks : 1/);
 });
+
+test("keyboard focus is not lost when the older-rounds button or the retry goes away", () => {
+  const list = source("./TradingHistory.tsx");
+  const rescue = source("./useFocusRescue.ts");
+  // The rescue knows a home for this list, and the list's heading is it.
+  assert.match(rescue, /type FocusHome = [^;]*"history"/);
+  assert.match(
+    list,
+    /import \{ homeFocus, rescueFocus \} from "\.\/useFocusRescue"/,
+  );
+  assert.match(
+    list,
+    /<h3[^>]*\btabIndex=\{-1\}[^>]*\{\.\.\.homeFocus\("history"\)\}/,
+  );
+  // Both controls that unmount (the retry on click, the older button after the last block) opt in.
+  assert.match(
+    list,
+    /data-testid="trading-history-retry"[\s\S]*?\{\.\.\.rescueFocus\("history"\)\}/,
+  );
+  assert.match(
+    list,
+    /data-testid="trading-history-older"[\s\S]*?\{\.\.\.rescueFocus\("history"\)\}/,
+  );
+  // While a block loads the older button stays on the page and keeps the cursor: aria-disabled, never `disabled`.
+  assert.match(list, /aria-disabled=\{loading\}/);
+  assert.doesNotMatch(list, /(?<![-\w])disabled=\{/);
+  // A press while loading asks for nothing more.
+  assert.match(list, /if \(loading\) return;/);
+});

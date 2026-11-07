@@ -1,7 +1,7 @@
 /**
  * Keeps the cursor on the page when a one-shot button goes away.
  *
- * Collect, Settle, Take back, Open the round and Check older rounds each vanish once their step has landed and the card
+ * Collect, Settle, Take back, Open the round, Check older rounds, Show older rounds and Try again each vanish once their step has landed and the card
  * has refreshed. A removed control that held the cursor drops it on the page body, so a keyboard or screen-reader user
  * starts again from the top. A control opts in with `rescueFocus(...)`; when one that held the cursor leaves the page,
  * the cursor goes to a stable, readable line that reports the result (marked with `homeFocus(...)`, `tabIndex={-1}`).
@@ -15,8 +15,11 @@ import { type RefObject, useEffect } from "react";
 const RESCUE = "data-focus-rescue";
 const HOME = "data-focus-home";
 
-/** Where the cursor lands: a line about one round's orders, the older-rounds note, or (last) the card's own heading. */
-type FocusHome = "round" | "older" | "card";
+/**
+ * Where the cursor lands: a line about one round's orders, the older-rounds note, the earlier-rounds list's heading, or
+ * (last) the card's own heading.
+ */
+type FocusHome = "round" | "older" | "history" | "card";
 
 /** Spread onto a one-shot button: if it leaves the page holding the cursor, the cursor goes to `home`. */
 export function rescueFocus(home: FocusHome): Record<string, string> {

@@ -25,6 +25,7 @@ import {
 } from "../lib/trading-history-copy";
 import { useRoundHistory } from "../use-secondary";
 import { PriceSetterNote } from "./PriceSetterNote";
+import { homeFocus, rescueFocus } from "./useFocusRescue";
 
 /**
  * The list under the card, or nothing while the market has only one round (there is no earlier one to list). `latest`
@@ -57,7 +58,12 @@ export function TradingHistory({
       className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3"
       data-testid="trading-history"
     >
-      <h3 className="text-sm font-semibold" id={headingId}>
+      <h3
+        className="text-sm font-semibold outline-none"
+        id={headingId}
+        tabIndex={-1}
+        {...homeFocus("history")}
+      >
         {earlierRoundsHeading()}
       </h3>
       {rounds.length > 0 ? (
@@ -103,6 +109,7 @@ export function TradingHistory({
           <button
             className="underline"
             data-testid="trading-history-retry"
+            {...rescueFocus("history")}
             onClick={() => void next?.refetch()}
             type="button"
           >
@@ -112,10 +119,16 @@ export function TradingHistory({
       ) : null}
       {more || (loading && loaded > 0) ? (
         <div>
+          {/* aria-disabled, not disabled: a disabled button drops the cursor while the block loads. */}
           <Button
+            aria-disabled={loading}
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
             data-testid="trading-history-older"
-            disabled={loading}
-            onClick={() => setAsked({ market, blocks: loaded + 1 })}
+            {...rescueFocus("history")}
+            onClick={() => {
+              if (loading) return;
+              setAsked({ market, blocks: loaded + 1 });
+            }}
             size="sm"
             type="button"
             variant="outline"
