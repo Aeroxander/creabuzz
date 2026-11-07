@@ -282,6 +282,20 @@ export async function ethCall(
 }
 
 /**
+ * What the node says a call from `from` would use, asked live. A node that refuses the call (it would revert) rejects with
+ * its own words; a node that does not answer within `timeoutMs` rejects too, so the caller never waits without end.
+ */
+export async function ethEstimateGas(
+  endpoint: string,
+  call: { from: string; to: string; data: string },
+  timeoutMs = 20_000,
+): Promise<bigint> {
+  const result = await rpc(endpoint, "eth_estimateGas", [call], timeoutMs);
+  if (typeof result !== "string") throw new Error("bad eth_estimateGas return");
+  return decodeQuantity(result);
+}
+
+/**
  * An address's nonce, counting transactions not yet mined: for a contract, how many contracts it has made, which is
  * where its next one goes.
  */

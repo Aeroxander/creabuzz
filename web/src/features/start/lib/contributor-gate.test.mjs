@@ -33,6 +33,32 @@ test("everything in place: Start is offered", () => {
   assert.deepEqual(contributorGate(ready), { ok: true });
 });
 
+test("a kit this build cannot start a project on stops Start with the reason, before anything is sent", () => {
+  const reason =
+    "Starting a project here needs trading switched on for this site, and it is not.";
+  const gate = contributorGate({
+    ...ready,
+    network: {
+      ...ready.network,
+      data: { ...ready.network.data, kitProblem: reason },
+    },
+  });
+  assert.deepEqual(gate, { ok: false, reason: "unavailable", message: reason });
+  // No problem, or none stated, is no stop.
+  for (const kitProblem of [null, undefined]) {
+    assert.deepEqual(
+      contributorGate({
+        ...ready,
+        network: {
+          ...ready.network,
+          data: { ...ready.network.data, kitProblem },
+        },
+      }),
+      { ok: true },
+    );
+  }
+});
+
 test("a locked passkey stops Start before anything is sent, even with an account that could make the DAO", () => {
   const gate = contributorGate({
     ...ready,

@@ -13,6 +13,7 @@ import {
   daoLaunchKit,
   ethCall,
   ethChainId,
+  ethEstimateGas,
   ethGetLogs,
   getRpcEndpoint,
   isContractDeployed,
@@ -70,6 +71,7 @@ import {
   daoMadeByKit,
   wordAddress,
 } from "./lib/contributor-project";
+import { readKitSale } from "./lib/weekly-sale";
 
 export type { ContributorGate } from "./lib/contributor-gate";
 
@@ -111,7 +113,8 @@ export function useContributorStart() {
       const kit = contributorKit(chainId);
       const launchKit = daoLaunchKit(chainId);
       const currency = usdcAddress(chainId, localUsdcAddress());
-      const [expectedSummoner, decimals] = await Promise.all([
+      // Which launch this kit takes is read from the kit itself (`lib/weekly-sale.ts`); a node error fails the read.
+      const [expectedSummoner, decimals, sale] = await Promise.all([
         launchKit
           ? ethCall(endpoint, launchKit, CALL_SUMMONER).then(wordAddress)
           : null,
@@ -120,8 +123,19 @@ export function useContributorStart() {
               Number(BigInt(hex.slice(0, 66))),
             )
           : null,
+        kit
+          ? readKitSale((to, data) => ethCall(endpoint, to, data), kit, chainId)
+          : { weekly: null, problem: null },
       ]);
-      return { chainId, kit, expectedSummoner, currency, decimals };
+      return {
+        chainId,
+        kit,
+        expectedSummoner,
+        currency,
+        decimals,
+        weekly: sale.weekly,
+        kitProblem: sale.problem,
+      };
     },
     staleTime: 60_000,
     retry: 1,
@@ -209,6 +223,9 @@ export function useContributorStart() {
               kit,
               dao,
             ),
+          // Asked live before the weekly-sale launch is sent: the node's own estimate, with its own timeout.
+          estimateGas: (from, to, data) =>
+            ethEstimateGas(endpoint, { from, to, data }),
           // The pending count: a budget another project is making in a block not yet mined is counted too.
           nonceOf: (address) => ethPendingNonce(endpoint, address),
           send: async (to, data) => {
@@ -266,7 +283,7 @@ export function useContributorStart() {
   const start = useCallback(
     (draft: ContributorDraft, fromBoard?: string) => {
       if (!gate.ok || !network.data || !me || !wallet.address) return;
-      const { chainId, kit, expectedSummoner, currency } = network.data;
+      const { chainId, kit, expectedSummoner, currency, weekly } = network.data;
       const terms = contributorTerms(draft, wallet.address);
       // Never a removed project's id: the DAO's address follows from it (the gate waits until both lists are read).
       const launchId = freshLaunchId({
@@ -288,6 +305,7 @@ export function useContributorStart() {
         expectedSummoner,
         founder: wallet.address.toLowerCase(),
         currency: currency as string,
+        ...(weekly ? { weekly: { quote: weekly.quote } } : {}),
         draft,
         dao: null,
         shares: null,

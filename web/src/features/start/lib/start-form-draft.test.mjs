@@ -109,3 +109,17 @@ test("signing in on the page brings that account's form back, never over typing"
     null,
   );
 });
+
+test("the weekly-sale fields are kept with the form, and a malformed one is not trusted", () => {
+  const storage = memory();
+  const key = formDraftKey({
+    server: "ws://x",
+    account: "aa",
+    fromBoard: null,
+  });
+  const sale = { ...typed, saleLot: "50", saleCliffDays: "7", saleDays: "90" };
+  assert.equal(saveFormDraft(key, sale, BLANK, storage), true);
+  assert.deepEqual(loadFormDraft(key, storage), sale);
+  storage.setItem(key, JSON.stringify({ ...sale, saleDays: 90 }));
+  assert.equal(loadFormDraft(key, storage), null);
+});

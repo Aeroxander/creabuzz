@@ -25,6 +25,7 @@ import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
 import {
   type AbiType,
+  type AbiValue,
   encodeFunctionData,
 } from "@creaton/core/launchpad/evmAbi.ts";
 import { hashText, idWord } from "@creaton/core/launchpad/work.ts";
@@ -102,6 +103,14 @@ export interface ContributorDraft {
   reviewerTies?: string;
   /** The first projects, one to eight. */
   projects: ProjectDraft[];
+  /**
+   * The weekly sale, for a project started on the weekly-sale kit (`weekly-sale.ts`): how many Shares one lot holds, the
+   * days before the founder's first sale, and the days over which the founder's Shares then unlock. Empty means the
+   * defaults; a project on the plain kit carries none.
+   */
+  saleLot?: string;
+  saleCliffDays?: string;
+  saleDays?: string;
   /** The project this one is built on, as "author:id" of its record, or empty (N11). Optional: older drafts lack it. */
   builtOn?: string;
   /** Whether others may build on this project (N11). */
@@ -625,11 +634,14 @@ export function createAddress(sender: string, nonce: bigint): string {
 
 // ---- the kit's calls ----------------------------------------------------------------------------
 
-/** `ContributorKit.launch(Params)`, with the struct spelled out as the ABI sees it. */
-export const KIT_LAUNCH_SIGNATURE =
-  "launch((string,string,uint256,bytes32,address,uint128,uint128,uint64,address[],uint256,address,(bytes32,address,uint128,uint64,bytes32)[]))";
+/** `ContributorKit.Params`, spelled out as the ABI sees it: the legacy launch's one argument, and the first member of the weekly-sale launch's. */
+export const KIT_PARAMS_SIGNATURE =
+  "(string,string,uint256,bytes32,address,uint128,uint128,uint64,address[],uint256,address,(bytes32,address,uint128,uint64,bytes32)[])";
 
-const KIT_PARAMS: AbiType = {
+/** `ContributorKit.launch(Params)`, with the struct spelled out as the ABI sees it. */
+export const KIT_LAUNCH_SIGNATURE = `launch(${KIT_PARAMS_SIGNATURE})`;
+
+export const KIT_PARAMS: AbiType = {
   tuple: [
     "string",
     "string",
@@ -661,8 +673,8 @@ export interface KitLaunch {
   now: number;
 }
 
-/** The one transaction that makes the whole project: DAO, budget, first projects, transfer lock. No sale. */
-export function encodeKitLaunch(launch: KitLaunch): string {
+/** The `ContributorKit.Params` value for a launch, checked: the first member of either kit's launch call. */
+export function kitParamsValue(launch: KitLaunch): AbiValue[] {
   for (const [value, what] of [
     [launch.founder, "founder"],
     [launch.currency, "currency"],
@@ -674,31 +686,34 @@ export function encodeKitLaunch(launch: KitLaunch): string {
     throw new Error("invalid project salt");
   const { terms } = launch;
   const expires = BigInt(launch.now + BUDGET_DAYS * 86_400);
+  return [
+    terms.name,
+    terms.symbol,
+    terms.founderWhole * SHARE_UNIT,
+    launch.salt,
+    launch.currency,
+    terms.budgetWhole * SHARE_UNIT,
+    terms.capWhole * SHARE_UNIT,
+    expires,
+    terms.reviewers,
+    BigInt(terms.quorum),
+    launch.predictedBudget,
+    terms.projects.map((project) => [
+      idWord(project.name),
+      launch.founder,
+      project.sharesWhole * SHARE_UNIT,
+      expires,
+      hashText(project.check),
+    ]),
+  ];
+}
+
+/** The one transaction that makes the whole project: DAO, budget, first projects, transfer lock. No sale. */
+export function encodeKitLaunch(launch: KitLaunch): string {
   return encodeFunctionData(
     KIT_LAUNCH_SIGNATURE,
     [KIT_PARAMS],
-    [
-      [
-        terms.name,
-        terms.symbol,
-        terms.founderWhole * SHARE_UNIT,
-        launch.salt,
-        launch.currency,
-        terms.budgetWhole * SHARE_UNIT,
-        terms.capWhole * SHARE_UNIT,
-        expires,
-        terms.reviewers,
-        BigInt(terms.quorum),
-        launch.predictedBudget,
-        terms.projects.map((project) => [
-          idWord(project.name),
-          launch.founder,
-          project.sharesWhole * SHARE_UNIT,
-          expires,
-          hashText(project.check),
-        ]),
-      ],
-    ],
+    [kitParamsValue(launch)],
   );
 }
 

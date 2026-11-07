@@ -32,6 +32,44 @@ export const TOPIC_CONTRIBUTOR_LAUNCHED = `0x${bytesToHex(
   ),
 )}`;
 
+/**
+ * `ContributorProjectLaunchedV2(address indexed founder, address indexed dao, address indexed market, address budget,
+ * address policy, address quote, uint256 lotSize)`, emitted by the weekly-sale kit for a project it makes with its market.
+ * The founder and the DAO are indexed in the same places as in the plain kit's event.
+ */
+export const TOPIC_CONTRIBUTOR_LAUNCHED_V2 = `0x${bytesToHex(
+  keccak_256(
+    utf8ToBytes(
+      "ContributorProjectLaunchedV2(address,address,address,address,address,address,uint256)",
+    ),
+  ),
+)}`;
+
+/**
+ * Every launch event a named kit may have emitted for a project. The weekly-sale kit emits the second for its own launch
+ * and the first when its plain launch is called, so a project counts as made by the kit on either.
+ */
+export const KIT_LAUNCH_TOPICS: readonly string[] = [
+  TOPIC_CONTRIBUTOR_LAUNCHED,
+  TOPIC_CONTRIBUTOR_LAUNCHED_V2,
+];
+
+/**
+ * The kit's launch logs for `dao` (its word, `addressTopic`), whichever event the kit emitted: one read per event, in
+ * order, bounded by the list above. `read` takes the log topics (event, founder, dao); a read that fails fails the whole
+ * answer, so a node error is never taken for "the kit did not make it".
+ */
+export async function kitLaunchLogs<T>(
+  read: (topics: (string | null)[]) => Promise<readonly T[]>,
+  daoTopic: string,
+): Promise<T[]> {
+  const found: T[] = [];
+  for (const event of KIT_LAUNCH_TOPICS) {
+    found.push(...(await read([event, null, daoTopic])));
+  }
+  return found;
+}
+
 /** How the project's start was checked: by the kit's event, only by its record, or not yet. */
 export type Provenance = "kit" | "record" | "reading";
 

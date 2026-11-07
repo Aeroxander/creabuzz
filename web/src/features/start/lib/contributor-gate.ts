@@ -38,6 +38,8 @@ export interface ContributorGateInput {
       kit: string | null;
       currency: string | null;
       decimals: number | null;
+      /** Why the kit this network names cannot be used from this build (`lib/weekly-sale.ts`); null or absent when it can. */
+      kitProblem?: string | null;
     } | null;
   };
   /** True when the network is a main network and this build does not offer one. */
@@ -75,7 +77,7 @@ export function contributorGate(input: ContributorGateInput): ContributorGate {
       message:
         "The network could not be reached. Check the network setting and try again.",
     };
-  const { chainId, kit, currency, decimals } = network.data;
+  const { chainId, kit, currency, decimals, kitProblem } = network.data;
   if (input.mainnetRefused)
     return {
       ok: false,
@@ -89,6 +91,8 @@ export function contributorGate(input: ContributorGateInput): ContributorGate {
       reason: "unavailable",
       message: `Contributor projects cannot be started on ${label(chainId)} yet: this app cannot make them there.`,
     };
+  if (kitProblem)
+    return { ok: false, reason: "unavailable", message: kitProblem };
   if (!currency || decimals === null)
     return {
       ok: false,

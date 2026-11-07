@@ -60,6 +60,8 @@ import { useStartFromPitch } from "../use-start-from-pitch";
 import { FirstProjectsField } from "./FirstProjectsField";
 import { RemixFields } from "./RemixFields";
 import { ReviewersPicked } from "./ReviewersPicked";
+import { WeeklySaleFields } from "./WeeklySaleFields";
+import { weeklySaleIssue } from "../lib/weekly-sale";
 
 const EMPTY: ContributorDraft = {
   name: "",
@@ -312,8 +314,15 @@ export function ContributorStartPage() {
       .filter((person) => person.pubkey === start.me)
       .map((person) => person.address),
   ];
-  const issue = contributorIssue(draft, founderAddresses);
   const preview = sharePreview(draft);
+  // On the weekly-sale kit the sale fields are part of the form: their problem comes after the rest.
+  const weekly = start.network?.weekly ?? null;
+  const saleIssue = weekly
+    ? weeklySaleIssue(draft, preview?.founderWhole)
+    : null;
+  const issue =
+    contributorIssue(draft, founderAddresses) ??
+    (saleIssue ? { ...saleIssue, index: null, part: null } : null);
   const warning = preview ? founderShareWarning(preview) : null;
   // A problem is said under the field it is about, once the founder has tried to start.
   const errorFor = (field: keyof ContributorDraft) =>
@@ -663,6 +672,15 @@ export function ContributorStartPage() {
             }
             projects={draft.projects}
           />
+          {weekly ? (
+            <WeeklySaleFields
+              draft={draft}
+              errorFor={errorFor}
+              onChange={(patch) =>
+                setDraft((current) => ({ ...current, ...patch }))
+              }
+            />
+          ) : null}
           {remixesOffered() ? (
             <RemixFields
               draft={draft}

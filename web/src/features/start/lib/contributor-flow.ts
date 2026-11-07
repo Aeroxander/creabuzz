@@ -36,6 +36,12 @@ import {
   encodePredictDao,
   wordAddress,
 } from "./contributor-project.ts";
+import {
+  assertLaunchFits,
+  encodeKitLaunchV2,
+  encodePredictLaunch,
+  weeklySaleTerms,
+} from "./weekly-sale.ts";
 
 export type ContributorStep = "create" | "record";
 
@@ -81,6 +87,11 @@ export interface ContributorJob {
   founder: string;
   /** The currency claims name for deposits (the network's USDC). */
   currency: string;
+  /**
+   * Set when the kit is the weekly-sale kit (`weekly-sale.ts`): the price token its market is made for. The sale's lot
+   * and schedule are the draft's. Absent for the plain kit, whose launch has none of it.
+   */
+  weekly?: { quote: string };
   draft: ContributorDraft;
   dao: string | null;
   shares: string | null;
@@ -100,6 +111,11 @@ export interface ContributorEffects {
   madeByKit(kit: string, dao: string): Promise<boolean>;
   /** How many contracts an address has made (its nonce). */
   nonceOf(address: string): Promise<bigint>;
+  /**
+   * What the node says `data` sent from `from` to `to` would use, asked live. Used only for the weekly-sale launch, which
+   * is large enough to be asked about first; a node that refuses or does not answer rejects.
+   */
+  estimateGas(from: string, to: string, data: string): Promise<bigint>;
   /** Send one transaction from the founder's wallet and wait for its receipt. */
   send(
     to: string,
@@ -193,10 +209,26 @@ async function makeProject(
   fx: ContributorEffects,
 ): Promise<ContributorJob> {
   const terms = contributorTerms(job.draft, job.founder, { resumed: true });
+  // The weekly-sale kit's DAO is predicted with its market (`predictLaunch`, the DAO first in its answer), from the sale
+  // fields the draft holds; a draft whose sale fields no longer make sense stops here, before anything is read or sent.
+  const weekly = job.weekly
+    ? {
+        quote: job.weekly.quote,
+        sale: weeklySaleTerms(job.draft, terms.founderWhole),
+      }
+    : null;
   const dao = wordAddress(
     await fx.call(
       job.kit,
-      encodePredictDao(job.founder, terms.founderWhole, job.salt),
+      weekly
+        ? encodePredictLaunch(
+            job.founder,
+            terms.founderWhole,
+            job.salt,
+            weekly.quote,
+            weekly.sale.lotSize,
+          )
+        : encodePredictDao(job.founder, terms.founderWhole, job.salt),
     ),
   );
   let createTx = job.createTx;
@@ -215,17 +247,22 @@ async function makeProject(
         "This network makes a different kind of project from the one this app reads. Nothing was sent.",
       );
     const factory = wordAddress(await fx.call(job.kit, CALL_BUDGET_FACTORY));
-    const sent = await fx.send(
-      job.kit,
-      encodeKitLaunch({
-        terms,
-        salt: job.salt,
-        founder: job.founder,
-        currency: job.currency,
-        predictedBudget: createAddress(factory, await fx.nonceOf(factory)),
-        now: await fx.now(),
-      }),
-    );
+    const launch = {
+      terms,
+      salt: job.salt,
+      founder: job.founder,
+      currency: job.currency,
+      predictedBudget: createAddress(factory, await fx.nonceOf(factory)),
+      now: await fx.now(),
+    };
+    const data = weekly
+      ? encodeKitLaunchV2({ ...launch, ...weekly })
+      : encodeKitLaunch(launch);
+    // The weekly launch is large (about 10.8 million against a limit of 16.8 million): the node is asked what it needs
+    // first, live, and a refusal, a launch over the limit or no answer ends here in plain words with nothing sent.
+    if (weekly)
+      await assertLaunchFits(() => fx.estimateGas(job.founder, job.kit, data));
+    const sent = await fx.send(job.kit, data);
     createTx = sent.txHash;
     if (sent.status !== "success")
       throw new Error(
@@ -323,6 +360,13 @@ export function assertJobCommunity(
 
 export const JOB_STORAGE_PREFIX = "creaton.contributor-start.";
 
+/** A stored job's weekly-sale part is absent, or names a price token: anything else would send the wrong launch. */
+function weeklyJobOk(weekly: unknown): boolean {
+  if (weekly === undefined) return true;
+  const quote = (weekly as { quote?: unknown } | null)?.quote;
+  return typeof quote === "string" && /^0x[0-9a-fA-F]{40}$/.test(quote);
+}
+
 /** A stored job, or null when there is none or it is not one this app wrote. A job from before D84 (one first project)
  * is converted, so a start cut short by an update can still be finished. */
 export function parseJob(raw: string | null): ContributorJob | null {
@@ -341,6 +385,7 @@ export function parseJob(raw: string | null): ContributorJob | null {
       typeof value.kit !== "string" ||
       typeof value.founder !== "string" ||
       (value.relay !== undefined && typeof value.relay !== "string") ||
+      !weeklyJobOk(value.weekly) ||
       typeof value.draft !== "object" ||
       value.draft === null
     )

@@ -3,7 +3,10 @@ import test from "node:test";
 
 import {
   contributorStatus,
+  KIT_LAUNCH_TOPICS,
+  kitLaunchLogs,
   TOPIC_CONTRIBUTOR_LAUNCHED,
+  TOPIC_CONTRIBUTOR_LAUNCHED_V2,
 } from "./contributor-status.ts";
 
 test("the kit's launch event is the one the contract emits", () => {
@@ -11,6 +14,40 @@ test("the kit's launch event is the one the contract emits", () => {
   assert.equal(
     TOPIC_CONTRIBUTOR_LAUNCHED,
     "0x7f4eb55556e4a4d7639e36b6ec8b0e6d4ab4fcfff92dd9c201bed8e870716583",
+  );
+});
+
+test("the weekly-sale kit's launch event is the one the contract emits", () => {
+  // cast keccak 'ContributorProjectLaunchedV2(address,address,address,address,address,address,uint256)'
+  assert.equal(
+    TOPIC_CONTRIBUTOR_LAUNCHED_V2,
+    "0xe8f7ba7a252744bf8c12c25ded39950b2eec426345772885e105d09f1de3cab6",
+  );
+  assert.deepEqual(KIT_LAUNCH_TOPICS, [
+    TOPIC_CONTRIBUTOR_LAUNCHED,
+    TOPIC_CONTRIBUTOR_LAUNCHED_V2,
+  ]);
+});
+
+test("a project counts as made by the kit on either launch event, with the DAO in the third topic", async () => {
+  const dao = `0x${"0".repeat(24)}${"d1".repeat(20)}`;
+  const asked = [];
+  const only = (event) => async (topics) => {
+    asked.push(topics);
+    return topics[0] === event ? [{ topics: [event, "founder", dao] }] : [];
+  };
+  for (const event of KIT_LAUNCH_TOPICS) {
+    const logs = await kitLaunchLogs(only(event), dao);
+    assert.equal(logs.length, 1, event);
+  }
+  assert.deepEqual(await kitLaunchLogs(async () => [], dao), []);
+  assert.ok(asked.every((topics) => topics[1] === null && topics[2] === dao));
+  // A node error is not an empty answer.
+  await assert.rejects(
+    kitLaunchLogs(async () => {
+      throw new Error("node down");
+    }, dao),
+    /node down/,
   );
 });
 

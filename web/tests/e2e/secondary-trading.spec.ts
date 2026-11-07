@@ -435,6 +435,8 @@ test("a round of secondary trading: offered, bid for, settled at one price, and 
   await expect(founder.getByTestId("trading-open")).toHaveCount(0);
   await expect(founder.getByTestId("trading-sell")).toHaveCount(0);
   await expect(founder.getByTestId("trading-bid")).toHaveCount(0);
+  // This build names no free test token, so a market priced in anything else offers no way to get one.
+  await expect(founder.getByTestId("trading-get-test-tokens")).toHaveCount(0);
   // The chain agrees: the market is there, and its listing carries no terms.
   const born = await callWords(MARKET, SIG.listing);
   expect(born[0]).toBe(0n);

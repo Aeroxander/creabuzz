@@ -8,7 +8,7 @@ import {
   defaultChainPreset,
   remixBonds,
 } from "./chain-config";
-import { TOPIC_CONTRIBUTOR_LAUNCHED } from "./lib/contributor-status";
+import { kitLaunchLogs } from "./lib/contributor-status";
 import { readRemixBond } from "@creaton/core/launchpad/remixBond.ts";
 import {
   addressTopic,
@@ -55,10 +55,10 @@ export function useRemixBond(
       const chain = endpointChain(getRpcEndpoint());
       const launched =
         kit && dao
-          ? await chain.logs({
-              address: kit,
-              topics: [TOPIC_CONTRIBUTOR_LAUNCHED, null, addressTopic(dao)],
-            })
+          ? await kitLaunchLogs(
+              (topics) => chain.logs({ address: kit, topics }),
+              addressTopic(dao),
+            )
           : [];
       const topic = (launched[0] as { topics?: string[] } | undefined)
         ?.topics?.[1];

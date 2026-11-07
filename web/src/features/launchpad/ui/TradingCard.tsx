@@ -68,6 +68,7 @@ import type { SecondaryMarketFacts } from "../lib/secondary-read";
 import { SECONDARY_QUERY, useSecondary } from "../use-secondary";
 import { FailureNote, GateNote, WalletStrip } from "./account-widgets";
 import { QuoteTokenNote } from "./QuoteTokenNote";
+import { TestTokenMint } from "./TestTokenMint";
 import { PriceSetterNote } from "./PriceSetterNote";
 import { TradingEarlier } from "./TradingEarlier";
 import { TradingHistory } from "./TradingHistory";
@@ -260,6 +261,18 @@ function TradingCardBody({ dao, chainId, saleCurrency }: TradingCardProps) {
               address={data.facts.quoteToken}
               saleCurrency={saleCurrency}
               symbol={data.facts.quoteSymbol}
+            />
+          ) : null}
+          {/* Only where the market's price token is the free test token this build names: any other shows nothing. */}
+          {present && quote ? (
+            <TestTokenMint
+              blocked={blocked}
+              busy={sender.busy}
+              chainId={chainId}
+              gateNoteId={gateNoteId}
+              me={sender.wallet.address}
+              onSend={sender.send}
+              quote={quote}
             />
           ) : null}
           {present?.listing.enabled && data.facts?.quoteKnown ? (

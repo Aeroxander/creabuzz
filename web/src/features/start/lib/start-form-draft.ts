@@ -59,7 +59,14 @@ export function loadFormDraft(
       !projects.every(isProject)
     )
       return null;
-    for (const field of ["reviewerTies", "builtOn", "remixAsks"] as const)
+    for (const field of [
+      "reviewerTies",
+      "builtOn",
+      "remixAsks",
+      "saleLot",
+      "saleCliffDays",
+      "saleDays",
+    ] as const)
       if (value[field] !== undefined && typeof value[field] !== "string")
         return null;
     if (
