@@ -21,7 +21,14 @@ import {
   type StepFlowAction,
   type StepFlowState,
 } from "@creaton/core/launchpad/step-flow.ts";
+import {
+  type ChainEnv,
+  contributorKit,
+  testQuoteToken,
+  viteEnv,
+} from "../../launchpad/chain-config.ts";
 import { actingErrorDetails } from "../../launchpad/lib/acting-account.ts";
+import { tradingOffered } from "../../launchpad/lib/trading-offered.ts";
 import type { CreateLaunchInput } from "../../launchpad/use-launches.ts";
 import {
   CALL_BUDGET_FACTORY,
@@ -129,6 +136,25 @@ export interface ContributorEffects {
   publish(input: CreateLaunchInput): Promise<void>;
   /** Keep the job (local storage on the page). */
   save(job: ContributorJob): void;
+  /** The build's settings, for the check that a stored weekly job is still offered; the page leaves it out. */
+  env?: ChainEnv;
+}
+
+const WEEKLY_NOT_OFFERED_MESSAGE =
+  "This site no longer offers trading with the project maker and trade token this half-finished project was set up with, so nothing was sent. Discard it and start the project again.";
+
+/**
+ * Whether this build still offers the weekly-sale launch a stored job asked for: trading is on, the kit is the one the
+ * build names, and the price token is the build's test token. A job outlives a rebuild of the site (same address, same
+ * browser storage), so it is asked again before anything is sent.
+ */
+function weeklyStillOffered(job: ContributorJob, env: ChainEnv | undefined) {
+  if (!job.weekly) return true;
+  return (
+    tradingOffered(env) &&
+    contributorKit(job.chainId, env) === job.kit.toLowerCase() &&
+    testQuoteToken(job.chainId, env) === job.weekly.quote.toLowerCase()
+  );
 }
 
 export type ContributorOutcome =
@@ -241,6 +267,9 @@ async function makeProject(
         "We could not confirm that this project was made at the address we expect. Nothing was sent. If you started this project a moment ago, press Try again in a minute. Otherwise discard it and start the project again: it then gets a new address.",
       );
   } else {
+    // Only before a send: a project already made must still reach its record, whatever this build offers now.
+    if (!weeklyStillOffered(job, fx.env ?? viteEnv()))
+      throw new Error(WEEKLY_NOT_OFFERED_MESSAGE);
     const summoner = wordAddress(await fx.call(job.kit, CALL_SUMMONER));
     if (job.expectedSummoner && summoner !== job.expectedSummoner.toLowerCase())
       throw new Error(

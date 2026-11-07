@@ -275,6 +275,27 @@ test("a launch that fits is let through; one over the per-step limit, refused by
   }
 });
 
+test("a node that refuses the launch for its size gets the too-big words, not 'try again'", async () => {
+  for (const text of [
+    "gas required exceeds allowance (16777216)",
+    "intrinsic gas too high: gas limit too high",
+    "transaction gas cap exceeded",
+  ]) {
+    let error;
+    try {
+      await assertLaunchFits(async () => {
+        throw new Error(text);
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    assert.ok(error instanceof ActingStepError, text);
+    assert.match(error.message, /more than the network allows in one step/);
+    assert.doesNotMatch(error.message, /Try again/);
+    assert.equal(error.technical, text);
+  }
+});
+
 test("estimating is bounded: a node that never answers ends in the plain message, not a hang", async () => {
   const never = () => new Promise(() => {});
   let error;

@@ -287,12 +287,16 @@ export async function assertLaunchFits(
     ]);
   } catch (error) {
     const text = error instanceof Error ? error.message : String(error);
-    throw new ActingStepError(
-      /revert|invalid|not applied|setup/i.test(text)
-        ? WOULD_REFUSE_MESSAGE
-        : NO_ESTIMATE_MESSAGE,
-      text,
-    );
+    // A node that turns a launch down for its size says "exceeds allowance" or "gas limit too high" rather than
+    // "revert": that is permanent, so it gets the too-big words, not "try again". A real revert stays a refusal.
+    const reply = /revert/i.test(text)
+      ? WOULD_REFUSE_MESSAGE
+      : /exceeds|allowance|gas limit|\bcap\b/i.test(text)
+        ? TOO_BIG_MESSAGE
+        : /invalid|not applied|setup/i.test(text)
+          ? WOULD_REFUSE_MESSAGE
+          : NO_ESTIMATE_MESSAGE;
+    throw new ActingStepError(reply, text);
   } finally {
     clearTimeout(timer);
   }

@@ -67,11 +67,24 @@ function job(overrides = {}) {
   };
 }
 
+// The build the weekly jobs run in: trading switched on, naming this kit, market factory and test token.
+const TRIAL_ENV = {
+  VITE_TRADING_TRIAL: "1",
+  VITE_SECONDARY_MARKET_FACTORY: JSON.stringify({ 11155111: a("ab") }),
+  VITE_CONTRIBUTOR_KITS: JSON.stringify({ 11155111: KIT }),
+  VITE_TEST_QUOTE_TOKENS: JSON.stringify({ 11155111: QUOTE }),
+};
+
 const LOT = weeklySaleTerms({}, 100_000n).lotSize;
 
-function fakeChain({ estimate = async () => 10_800_000n, made = false } = {}) {
+function fakeChain({
+  estimate = async () => 10_800_000n,
+  made = false,
+  env = TRIAL_ENV,
+} = {}) {
   const state = { sends: [], estimates: [], events: [], published: [], made };
   const fx = {
+    env,
     async call(to, data) {
       if (
         to === KIT &&
@@ -213,4 +226,38 @@ test("a stored weekly job keeps its price token across a reload", () => {
     null,
   );
   assert.equal(parseJob(JSON.stringify(job({ weekly: "yes" }))), null);
+});
+
+test("a stored weekly job is not sent when this build no longer offers trading, that kit or that token", async () => {
+  const builds = {
+    "trading off (the pilot rebuild)": {},
+    "trial switch only": { ...TRIAL_ENV, VITE_SECONDARY_MARKET_FACTORY: "" },
+    "another kit": {
+      ...TRIAL_ENV,
+      VITE_CONTRIBUTOR_KITS: JSON.stringify({ 11155111: a("c2") }),
+    },
+    "another test token": {
+      ...TRIAL_ENV,
+      VITE_TEST_QUOTE_TOKENS: JSON.stringify({ 11155111: a("78") }),
+    },
+    "no test token": { ...TRIAL_ENV, VITE_TEST_QUOTE_TOKENS: "" },
+  };
+  for (const [name, env] of Object.entries(builds)) {
+    const { fx, state } = fakeChain({ env });
+    const out = await runContributorStart(job(), fx, () => {});
+    assert.equal(out.ok, false, name);
+    assert.equal(out.step, "create", name);
+    assert.match(out.message, /no longer offers trading/, name);
+    assert.match(out.message, /Discard it/, name);
+    assert.deepEqual(state.events, [], name);
+    assert.equal(state.sends.length, 0, name);
+  }
+});
+
+test("a weekly project already made still reaches its record on a build that stopped offering trading", async () => {
+  const { fx, state } = fakeChain({ made: true, env: {} });
+  const out = await runContributorStart(job(), fx, () => {});
+  assert.equal(out.ok, true, out.message);
+  assert.deepEqual(state.events, []);
+  assert.equal(state.published.length, 1);
 });

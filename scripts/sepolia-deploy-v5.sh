@@ -15,7 +15,9 @@
 #                                             came out, and leave the repo as it was. Nothing public changes.
 #   scripts/sepolia-deploy-v5.sh --broadcast  DEPLOY for real, to the Sepolia named by SEPOLIA_RPC_URL, signing with
 #                                             DEPLOYER_PRIVATE_KEY (a key used for nothing else, holding only test ETH).
-#                                             Writes contracts/deployments/v5-sepolia-11155111.json (not ignored): commit it.
+#                                             Writes contracts/deployments/v5-sepolia-11155111.json (not ignored): commit it. The
+#                                             manifest stays only if the deploy passed its on-chain checks; otherwise it is removed.
+#                                             (A forge script run by hand writes the file even without --broadcast: delete it.)
 #
 # Env (set them in .env or the shell, never on a command line, never in a file you commit):
 #   SEPOLIA_RPC_URL          your node (the rehearsal falls back to a public one; a real deploy refuses to)
@@ -61,6 +63,8 @@ V5_DEPLOY_BROADCASTS="$REPO_ROOT/contracts/broadcast/DeployV5Sepolia.s.sol"
 V5_LAUNCH_BROADCASTS="$REPO_ROOT/contracts/broadcast/LaunchV5TrialProject.s.sol"
 BACKUP="$(mktemp -d)"
 ANVIL_PID=""
+FORGE_STARTED=0   # set just before the real deploy's forge script runs
+MANIFEST_OK=0     # set once the chain has been checked against the manifest
 FORK_URL="${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}"
 # Bounded reads and waits: a stuck node must end the script, not hang it.
 export ETH_RPC_TIMEOUT="${ETH_RPC_TIMEOUT:-60}"
@@ -75,6 +79,14 @@ cleanup() {
     rm -rf "$V5_DEPLOY_BROADCASTS" "$V5_LAUNCH_BROADCASTS"
     if [[ -d "$BACKUP/deploy-broadcasts" ]]; then mkdir -p "$(dirname "$V5_DEPLOY_BROADCASTS")" && cp -a "$BACKUP/deploy-broadcasts" "$V5_DEPLOY_BROADCASTS"; fi
     if [[ -d "$BACKUP/launch-broadcasts" ]]; then mkdir -p "$(dirname "$V5_LAUNCH_BROADCASTS")" && cp -a "$BACKUP/launch-broadcasts" "$V5_LAUNCH_BROADCASTS"; fi
+  fi
+  # The script writes the manifest while it simulates, before any transaction is sent. A real deploy that did not get through
+  # its on-chain checks must not leave it behind for a rerun to trip over or for a commit to pick up by mistake. The addresses
+  # of anything that did go out stay in the forge broadcast record.
+  if [[ "$MODE" == "broadcast" && "$FORGE_STARTED" == "1" && "$MANIFEST_OK" != "1" && -f "$V5_MANIFEST" ]]; then
+    rm -f "$V5_MANIFEST"
+    printf '\033[31m[sepolia-v5] removed %s: the deploy did not finish its checks, so that file is not to be trusted or committed. Anything already sent is listed in %s/%s/run-latest.json\033[0m\n' \
+      "$V5_MANIFEST" "$V5_DEPLOY_BROADCASTS" "$SEPOLIA_CHAIN_ID" >&2
   fi
   rm -rf "$BACKUP"
 }
@@ -97,6 +109,21 @@ v5_role() { role_of "$V5_MANIFEST" "$1"; }
 old_role() { role_of "$SEPOLIA_MANIFEST" "$1"; }
 call() { cast call "$1" "$2" "${@:3}" --rpc-url "$RPC" | first; }
 same() { [[ "$(lower "$1")" == "$(lower "$2")" ]]; }
+# The address of the private key held in the shell variable named $1. `cast wallet address` takes a key only as an argument,
+# which would put it in ps and process accounting. Node reads the key from its environment, never its arguments, and derives
+# the public key; only that public value (not the key) goes to cast, to hash it into the address.
+address_of_env_key() {
+  local pub
+  pub=$(KEY_HEX="${!1:-}" node -e '
+    const crypto = require("crypto");
+    const hex = (process.env.KEY_HEX ?? "").replace(/^0x/, "");
+    if (!/^[0-9a-fA-F]{64}$/.test(hex)) process.exit(1);
+    const ecdh = crypto.createECDH("secp256k1");
+    ecdh.setPrivateKey(Buffer.from(hex, "hex"));
+    console.log(ecdh.getPublicKey("hex", "uncompressed").slice(2));
+  ') || return 1
+  cast to-check-sum-address "0x$(cast keccak "0x$pub" | cut -c27-66)"
+}
 has_code() { [[ "$(cast codesize "$1" --rpc-url "$RPC")" != "0" ]]; }
 
 # "<gas used> <transactions> <largest gas limit> <largest gas used>" from a forge broadcast record.
@@ -119,7 +146,7 @@ if [[ "$MODE" == "broadcast" ]]; then
   KEY="$DEPLOYER_PRIVATE_KEY"
   [[ "$(cast chain-id --rpc-url "$RPC")" == "$SEPOLIA_CHAIN_ID" ]] || fail "that node is not Sepolia (chain id $SEPOLIA_CHAIN_ID)"
   [[ ! -f "$V5_MANIFEST" ]] || fail "$V5_MANIFEST already exists: this set is already deployed. Move it aside on purpose if you mean to deploy another"
-  DEPLOYER=$(cast wallet address --private-key "$KEY")
+  DEPLOYER=$(address_of_env_key DEPLOYER_PRIVATE_KEY) || fail "DEPLOYER_PRIVATE_KEY is not a 64-digit hex key"
   BALANCE=$(cast balance "$DEPLOYER" --rpc-url "$RPC")
   step "deploying to Sepolia from $DEPLOYER (balance $(cast from-wei "$BALANCE") ETH)"
   [[ "$BALANCE" != "0" ]] || fail "the deployer has no test ETH: fund $DEPLOYER from a Sepolia faucet"
@@ -130,7 +157,7 @@ else
   sepolia_fork_up "$FORK_URL" "$PORT" "$BACKUP/anvil.log"
   RPC="$FORK_RPC"
   ANVIL_PID="$FORK_PID"
-  DEPLOYER=$(cast wallet address --private-key "$KEY")
+  DEPLOYER=$(address_of_env_key KEY) || fail "could not derive the rehearsal deployer's address"
 fi
 
 has_code "$SEPOLIA_USDC" || fail "no USDC at $SEPOLIA_USDC on this chain"
@@ -140,6 +167,7 @@ step "building"
 
 step "deploying the mandate factory, voting policy, summoner, market factory, kit V2, work bounty and test token"
 OUT="$BACKUP/deploy.out"
+FORGE_STARTED=1
 # The key reaches forge through the environment only: never an argument, never a file.
 (cd contracts && PRIVATE_KEY="$KEY" forge script script/DeployV5Sepolia.s.sol --rpc-url "$RPC" --broadcast ${SEPOLIA_FORGE_ARGS:-} >"$OUT" 2>&1) \
   || { tail -40 "$OUT"; fail "forge script failed"; }
@@ -196,6 +224,7 @@ for pair in "open bounty:$OLD_OPEN_BOUNTY" "test CREATE:$OLD_CREATE_TOKEN" "CREA
   has_code "${pair#*:}" || fail "the 5 Nov ${pair%%:*} at ${pair#*:} has no code on this chain"
 done
 echo "  ✓ the 5 Nov open bounty, test CREATE, faucet, court and remix bonds are all still on the chain"
+MANIFEST_OK=1
 
 # What it cost. The old per-transaction cap is a rule of the live network that a local fork does not enforce, so the
 # rehearsal compares the deploy's gas limits against it; the real run reports the largest transaction and never fails after

@@ -29,18 +29,19 @@ to any project that carries real value.
 | Engineer | The server is built with the trial block in `deploy/compose/.env` (`./run.sh build`, `./run.sh restart`); `./run.sh build` printed `Trading: on` | [deploy/compose/.env.creaton.example](../../deploy/compose/.env.creaton.example) |
 | Owner | ZeroDev gas policy: **sponsor every call, with a spending limit** | [docs/sepolia-testnet.md](../sepolia-testnet.md), "Trading", step 5 |
 | Owner | The keeper's key, funded, and its timer on for the project's market | [deploy/ovh/keeper/README.md](../../deploy/ovh/keeper/README.md) |
-| Owner | Three browser profiles or devices: founder, buyer, spare reviewer, each with its own invite link | step 1 below |
+| Owner | Four browser profiles or devices: founder, buyer and two more people for the reviewers, each with its own invite link | step 1 below |
 
 ## Who you need
 
 - **Two active accounts.** The **founder** is the seller: the founder holds all the Shares at birth, and the project itself
   cannot sell. The **buyer** is a second account.
-- **Two passive accounts.** The Start form asks for reviewers who are not the founder. They sign nothing in this trial, so
-  the buyer can be one and one more person who joined can be the other.
+- **Three reviewer accounts, none of them the founder.** The Start form needs at least three reviewer addresses, and two
+  of them must agree. They sign nothing in this trial, so the buyer can be one and two more people who joined can be the
+  others.
 - **One owner can play all of them**: one browser profile (or device) per account. Each profile needs its own invite link
   from an admin, then **Set up passkey sign-in** in the profile menu. One passkey is one account. A browser wallet works
   instead, but it pays its own test gas.
-- A third profile helps at step 11. One person may sell and buy in the same round.
+- A spare profile helps at step 11. One person may sell and buy in the same round.
 
 ## The timeline (real timers; none of it can be sped up)
 
@@ -84,7 +85,9 @@ Start, then **Start the project**. Under "Weekly sale of Shares":
 - **Days over which your Shares unlock**: 180. Your Shares unlock evenly, so on day 3 you can offer about 1.7% of your
   starting Shares (100,000 x 3 / 180 = 1,666 Shares, 16 lots of 100); the card shows "You can offer up to N lots now".
 
-Name reviewers (none of them the founder). The form asks the node what the launch needs; it is about 10.8 million gas
+Name three reviewers (none of them the founder; two of them must agree). Fill **How you know each reviewer** too, at
+least 10 characters (for example "friends of mine, no tie to the work"); the form refuses without it. The form asks the
+node what the launch needs; it is about 10.8 million gas
 against a limit of 16.8 million. If the live node refuses, the form says so in words and sends nothing; then use the
 fallback in [docs/sepolia-testnet.md](../sepolia-testnet.md) ("Trading", step 3), which starts the project from a wallet
 (it does not publish the project's page record, so use the form when you can).
