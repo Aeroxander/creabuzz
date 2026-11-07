@@ -1910,3 +1910,26 @@ hand, against a local server and the web app, with two people (an owner and a me
 8. On a project's Discussion tab, as its founder, **Edit board** offers no choice of who can read it, only "A project's
    board stays open to everyone in the community".
 9. Phone width: the edit dialog and a room's header (with **Edit room**) fit without sideways scrolling.
+
+## 4co. The weekly sale on Sepolia, with the real timers (the trial)
+
+For the person who runs the Sepolia server. This is a trial of the weekly sale of Shares with a free test token, on the
+same server as the pilot, with trading switched on only by two explicit build settings (`VITE_SECONDARY_MARKET_FACTORY` and
+`VITE_TRADING_TRIAL=1`; both empty by default). The full eleven-step script, with what to check after each click, the
+timeline (6 days to a first settled round) and how to switch trading off again before the pilot, is
+[SEPOLIA-TRADING-TRIAL.md](SEPOLIA-TRADING-TRIAL.md). The deploy, build settings and gas-sponsor setting are in
+`docs/sepolia-testnet.md` ("Trading"); the settlement keeper is `deploy/ovh/keeper/README.md`.
+
+Checks that run without the server:
+
+```bash
+scripts/test-compose-build-settings.sh        # a whole trial block builds; a half one is refused; the default build has no trading
+deploy/ovh/keeper/test.sh                     # the keeper's install files and units, and a stubbed dry run
+scripts/secondary-keeper-test.sh              # the keeper script's retry and exit-code paths against a stub node
+scripts/secondary-keeper-e2e.sh               # the keeper on a real local chain
+scripts/sepolia-deploy-v5.sh                  # rehearsal of the Sepolia deploy on a fork (needs SEPOLIA_RPC_URL for your own node)
+```
+
+Working looks like: each prints its `PASS` line (the rehearsal ends with "rehearsal passed"). By hand, on the server: the
+Trading card on a project's Funds tab says "Trading is off: the project has no open listing." before the listing vote, and
+the build output says `Trading: on` with the trial block and `Trading: off` without it.

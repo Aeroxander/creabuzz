@@ -18,6 +18,30 @@ publish a listing, which is the one deliberate act and is described in §2. The 
 separate clock that limits only the founder's own sales. This document does not turn anything on; it
 describes how to do it deliberately and how to prove what state you are in.
 
+**The Sepolia trial.** A rehearsal of this whole runbook runs on the Sepolia test network, on the same server as the pilot
+(`creaton.io`), with a free-mint test token anyone can make more of, so no one's money or claim is on the line. Its script
+is [SEPOLIA-TRADING-TRIAL.md](SEPOLIA-TRADING-TRIAL.md); the build and deploy steps are in `docs/sepolia-testnet.md`
+("Trading"). The facts that differ from a real listing:
+
+- **Contracts.** A new set beside the 5 Nov one (`scripts/sepolia-deploy-v5.sh`, manifest
+  `contracts/deployments/v5-sepolia-11155111.json`): new work budget factory, voting policy, summoner, market factory,
+  `ContributorKitV2`, a new work bounty and payouts factory, and the test token. The 5 Nov kit's projects can never get a
+  market.
+- **Switches.** The hosted image shows trading only when its build names the market factory **and** sets
+  `VITE_TRADING_TRIAL=1` (both empty by default; a half-set pair stops the build). The trial build stays contributor-only.
+  Before real pilot people are invited the image is rebuilt without them.
+- **Quote token.** `tTEST` ("Creaton test token (free, worth nothing)"), 18 decimals, open mint of up to 10,000 a call. A
+  round's price in it proves nothing. The quote token is fixed per market forever, so a trial market stays priced in it.
+- **Clock.** The timers in §2 and §4 are the real ones and cannot be shortened or warped on Sepolia: 2 days of review, 1 day
+  of wait, 3 days of bidding, 2 days to settle, rounds at least 7 days apart. Start the test project a week before the
+  testers come.
+- **Keeper.** `deploy/ovh/keeper/` runs one settle-only timer per market on the server (`KEEPER_OPEN=0`), with a throwaway
+  key kept as a keystore; opening each week's round stays a person's act.
+- **Gas.** The ZeroDev policy sponsors everything with a spending limit, because every project's DAO, market and Shares are
+  new addresses.
+- **The gates.** Gates 1 and 2 below guard a listing that carries real value. The trial neither meets nor waives them; they
+  still have to be met before any real-money listing.
+
 Related reading: the review packet ([SECONDARY-TRADING-REVIEW.md](SECONDARY-TRADING-REVIEW.md))
 for what the code does and what it does not, and the candidate design
 ([SECONDARY-LISTING-SPEC.md](SECONDARY-LISTING-SPEC.md)) for the product intent.
@@ -449,6 +473,8 @@ RPC_URL=<node> MARKET=<market address> KEEPER_KEYSTORE=<keystore file> KEEPER_PA
   password in a file only the keeper's user can read; the keeper hands `cast` those two paths, so the key never shows in
   the process list. The old `KEEPER_PRIVATE_KEY` still works but puts the key on `cast`'s command line (any user of the
   machine can read it), and the keeper warns.
+- On the Sepolia server the keeper is a systemd timer, one per market, settle only, with the key as a keystore:
+  `deploy/ovh/keeper/README.md`.
 - `--once` runs one pass (for cron); without it the keeper loops every `KEEPER_INTERVAL` seconds (default 300, at least
   30). Run it at least every few hours: the settle window is two days. With `--once` the exit status is the alert:
   0 means nothing was wrong (a lost race, an already settled round or an early open is not wrong), 1 means a

@@ -123,6 +123,33 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - Taking down a post and its pictures, illegal content, and a person's request to see or delete their data:
   [docs/operator-takedown-and-data-requests.md](../../docs/operator-takedown-and-data-requests.md).
 
+### The weekly-sale trial block
+
+Trading is off in this image unless `.env` sets both `VITE_SECONDARY_MARKET_FACTORY` and `VITE_TRADING_TRIAL=1`; the block
+in `.env.creaton.example` (and everything after it: `VITE_TEST_QUOTE_TOKENS`, the work and open bounties, test CREATE and
+its faucet, the court, payouts and remix bonds) is for a Sepolia trial build only, and a build for real pilot people leaves
+all of it out. `./run.sh build` and `./run.sh upgrade` run the web app's settings check (`web/scripts/check-deploy-env.mjs`,
+with Node.js 22.6 or newer on the machine; without it they say so and the image's own build runs the check) and refuse a
+half-set block before Docker starts. The image stays contributor-only. `docs/sepolia-testnet.md` ("Trading") has the steps.
+
+### AI helpers (optional, no rebuild)
+
+The AI work check, the check-note draft and the newcomer interviewer call the server's own `/llm/chat/completions`, which
+forwards to an OpenAI-compatible provider you choose and keeps the key on the server. Without the first line below the
+buttons stay hidden. Put these in the server's part of `.env` (not the `VITE_` part), then `./run.sh restart`:
+
+```
+BUZZ_LLM_PROXY_URL=https://<your provider>/v1/chat/completions
+BUZZ_LLM_API_KEY=<the provider's key>
+BUZZ_LLM_MODEL=<the model name to use>
+```
+
+Set `BUZZ_LLM_MODEL`: the hosted web build sends no model name, so this one is used. Each call costs the owner money: set a
+spending cap at the provider. Optional limits (`BUZZ_LLM_RATE_PER_MIN`, default 20; `BUZZ_LLM_MAX_CALLS_PER_DAY`, 500;
+`BUZZ_LLM_MAX_TOKENS`, 4096) and the price lines for budgets that carry a cost limit are described in the repository's root
+`.env.example`. The key sits in `.env` in plain text and is inside the encrypted backup: keep `.env` mode 0600 and treat the
+key as one you can replace.
+
 ### First start
 
 On the server, with the host name's DNS pointing at it and ports 80 and 443 open:
