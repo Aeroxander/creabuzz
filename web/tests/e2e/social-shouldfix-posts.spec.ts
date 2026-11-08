@@ -131,6 +131,10 @@ test("a board post on Home can be reported to its board's moderators and bookmar
     "aria-pressed",
     "true",
   );
+  // The button answers at once; the page is left only after the server holds the saved list.
+  await expect
+    .poll(() => relay.events.filter((e) => e.kind === 10003).length)
+    .toBe(1);
   await page.goto("/social/bookmarks");
   await expect(
     page
