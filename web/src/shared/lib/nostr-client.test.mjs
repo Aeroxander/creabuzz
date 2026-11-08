@@ -81,9 +81,15 @@ async function setup({ lockedPasskey = false, withNsec = true } = {}) {
   signer.setUserSigningBlockedReason(
     lockedPasskey ? () => signer.SIGNING_BLOCKED_MESSAGE : null,
   );
-  const { queryEvents } = await import("./nostr-client.ts");
+  const { queryEvents, queryEventsMulti } = await import("./nostr-client.ts");
   const { relayFailureOutcome } = await import("./relay-failure.ts");
-  return { queryEvents, relayFailureOutcome, signer, storage };
+  return {
+    queryEvents,
+    queryEventsMulti,
+    relayFailureOutcome,
+    signer,
+    storage,
+  };
 }
 
 /** Drive open -> AUTH challenge -> AUTH accepted -> REQ sent. */
@@ -234,4 +240,104 @@ test("a challenge the relay never accepts before closing is auth-required", asyn
     assert.equal(relayFailureOutcome(error), "auth-required");
     return true;
   });
+});
+
+const noteEvent = (n, tags = [], created_at = n) => ({
+  id: String(n).repeat(64).slice(0, 64),
+  pubkey: "b".repeat(64),
+  kind: 1,
+  created_at,
+  tags,
+  content: "",
+  sig: "c".repeat(128),
+});
+
+test("several filters share one socket, one sign-in and one REQ, and each gets its own events", async () => {
+  const { queryEventsMulti } = await setup();
+  const byId = { ids: [noteEvent(1).id], kinds: [1], limit: 1 };
+  const byTag = { kinds: [1], "#e": [noteEvent(1).id], limit: 2 };
+  const promise = queryEventsMulti(RELAY, [byId, byTag]);
+  assert.equal(FakeWebSocket.instances.length, 1);
+  const ws = FakeWebSocket.instances[0];
+  const req = await authenticate(ws);
+
+  assert.deepEqual(req.slice(2), [byId, byTag], "both filters, one REQ");
+
+  const target = noteEvent(1);
+  const replyA = noteEvent(2, [["e", target.id]], 10);
+  const replyB = noteEvent(3, [["e", target.id]], 20);
+  const replyC = noteEvent(4, [["e", target.id]], 30);
+  // The relay sends what each filter holds, an event two filters hold once per filter.
+  for (const event of [target, replyA, replyB, replyC, replyC]) {
+    ws.message(["EVENT", req[1], event]);
+  }
+  ws.message(["EOSE", req[1]]);
+
+  const [first, second] = await promise;
+  assert.deepEqual(
+    first.map((e) => e.id),
+    [target.id],
+    "the lookup by id holds the note and no reply",
+  );
+  assert.deepEqual(
+    second.map((e) => e.id),
+    [replyC.id, replyB.id],
+    "the tag read holds the newest two replies, each once",
+  );
+  assert.equal(FakeWebSocket.instances.length, 1, "no second socket");
+  assert.equal(ws.sentOfType("REQ").length, 1);
+});
+
+test("a refused multi-filter read fails whole, with the relay's wording and the same classification", async () => {
+  const { queryEventsMulti, relayFailureOutcome } = await setup();
+  const filters = [
+    { kinds: [1], limit: 1 },
+    { kinds: [1], "#e": ["a".repeat(64)], limit: 5 },
+  ];
+
+  const refused = queryEventsMulti(RELAY, filters);
+  const ws = FakeWebSocket.instances[0];
+  const req = await authenticate(ws);
+  ws.message(["CLOSED", req[1], "auth-required: not authenticated"]);
+  ws.message(["CLOSED", req[1], "auth-required: not authenticated"]);
+  await assert.rejects(refused, (error) => {
+    assert.equal(relayFailureOutcome(error), "auth-required");
+    assert.match(error.message, /auth-required: not authenticated/);
+    return true;
+  });
+
+  const stated = queryEventsMulti(RELAY, filters);
+  const ws2 = FakeWebSocket.instances[1];
+  ws2.emit("open", {});
+  ws2.message(["NOTICE", "restricted: unknown event kind"]);
+  ws2.emit("close", {});
+  await assert.rejects(stated, (error) => {
+    assert.equal(relayFailureOutcome(error), "answered");
+    assert.match(error.message, /restricted: unknown event kind/);
+    return true;
+  });
+
+  const silent = queryEventsMulti(RELAY, filters, { timeoutMs: 40 });
+  await assert.rejects(silent, (error) => {
+    assert.equal(relayFailureOutcome(error), "unanswered");
+    return true;
+  });
+});
+
+test("a multi-filter read is bounded and never opens a socket it cannot use", async () => {
+  const { queryEventsMulti } = await setup();
+  const filter = { kinds: [1], limit: 1 };
+  await assert.rejects(queryEventsMulti(RELAY, []), RangeError);
+  await assert.rejects(
+    queryEventsMulti(
+      RELAY,
+      Array.from({ length: 11 }, () => filter),
+    ),
+    RangeError,
+  );
+  await assert.rejects(
+    queryEventsMulti(RELAY, [filter, { kinds: [1], search: "x" }]),
+    RangeError,
+  );
+  assert.equal(FakeWebSocket.instances.length, 0);
 });

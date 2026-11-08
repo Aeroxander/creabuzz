@@ -45,6 +45,8 @@ export default defineConfig({
         // DM threads only under Messages; the server's room notes as sentences.
         "**/room-notes.spec.ts",
         "**/social-safety.spec.ts",
+        // A post's page reads its thread on two sockets at most, however deep the reply.
+        "**/social-thread-load.spec.ts",
         // The social audit's should-fix items (D143), one spec per area.
         "**/social-shouldfix-*.spec.ts",
         // The contributor-project audit's fixes (D144), one spec per area.

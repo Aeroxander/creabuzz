@@ -207,6 +207,8 @@ export function createMockRelay({
   const liveSubscriptionReqs: number[] = [];
   /** Every kind the page has asked for, once per request, so a test can wait until a read has been served. */
   const requestedKinds: number[] = [];
+  /** The filters of every REQ the page sent, in order: how many reads, and how many filters each carried. */
+  const reqsReceived: Filter[][] = [];
   /**
    * Subscriptions refused before the handshake and then re-issued on the same
    * socket once it authenticated — the client recovering from the race, which
@@ -384,8 +386,14 @@ export function createMockRelay({
         }
         if (type === "REQ") {
           const [, subId] = parsed as [string, string, Filter];
-          const filter = parsed[2] as Filter;
-          requestedKinds.push(...(filter.kinds ?? []));
+          // NIP-01: a REQ may carry several filters (one socket for a page's independent reads). The gates below judge
+          // the first and the `some` checks cover the rest; the replay is the union, each event once.
+          const filters = (parsed.slice(2) as Filter[]).filter(
+            (f) => f && typeof f === "object",
+          );
+          const filter = filters[0] ?? {};
+          for (const f of filters) requestedKinds.push(...(f.kinds ?? []));
+          reqsReceived.push(filters);
           /** Newest first, capped, the way a relay replays a filter. */
           const replay = (candidate: Filter) =>
             events
@@ -412,8 +420,10 @@ export function createMockRelay({
             );
             return;
           }
-          const asksRevoked = (filter["#h"] as string[] | undefined)?.some(
-            (id) => revokedChannels.has(id),
+          const asksRevoked = filters.some((f) =>
+            (f["#h"] as string[] | undefined)?.some((id) =>
+              revokedChannels.has(id),
+            ),
           );
           if (asksRevoked) {
             ws.send(
@@ -425,7 +435,10 @@ export function createMockRelay({
             );
             return;
           }
-          if (enforcePGate && pGateRefuses(filter, authedPubkey)) {
+          if (
+            enforcePGate &&
+            filters.some((f) => pGateRefuses(f, authedPubkey))
+          ) {
             ws.send(
               JSON.stringify([
                 "CLOSED",
@@ -436,8 +449,13 @@ export function createMockRelay({
             return;
           }
           subscriptions.get(socket)?.set(subId, filter);
-          for (const event of replay(filter)) {
-            ws.send(JSON.stringify(["EVENT", subId, event]));
+          const sentIds = new Set<string>();
+          for (const f of filters) {
+            for (const event of replay(f)) {
+              if (sentIds.has(event.id)) continue;
+              sentIds.add(event.id);
+              ws.send(JSON.stringify(["EVENT", subId, event]));
+            }
           }
           ws.send(JSON.stringify(["EOSE", subId]));
         }
@@ -507,6 +525,7 @@ export function createMockRelay({
     events,
     /** Sockets the page has opened, across reconnects. */
     connectionsOpened: () => connectionsOpened,
+    reqsReceived: () => reqsReceived.map((filters) => [...filters]),
     /** Live-pump subscriptions re-issued after their socket authenticated. */
     liveAuthRetries: () => authRetries.live,
     /** One-shot query subscriptions re-issued after their socket authenticated. */

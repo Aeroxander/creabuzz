@@ -12,6 +12,7 @@ import {
   isAuthRequiredMessage,
   relayAnswered,
 } from "./relay-failure.ts";
+import { eventMatchesFilter } from "./filter-match.ts";
 import {
   isSigningBlockedError,
   type SignedNostrEvent,
@@ -32,6 +33,9 @@ export interface NostrFilter {
 export type NostrEvent = SignedNostrEvent;
 
 const QUERY_TIMEOUT_MS = 10_000;
+
+/** What the server accepts in one REQ (NIP-11 `max_filters`); more is refused, so ask for more with a second REQ. */
+const MAX_FILTERS_PER_REQ = 10;
 
 export interface QueryOptions {
   /**
@@ -57,9 +61,49 @@ export function queryEvents(
   filter: NostrFilter,
   options: QueryOptions = {},
 ): Promise<NostrEvent[]> {
+  return runQuery(wsUrl, [filter], options);
+}
+
+/**
+ * Several filters in ONE REQ on ONE socket (NIP-01 allows it), so a page that needs a few independent reads pays for
+ * one connection, one handshake and one authentication instead of one each. Resolves one list per filter, in the order
+ * asked: an event is listed under every filter it satisfies, newest first and cut to that filter's `limit` (the
+ * server's own per-filter rule). Failures are exactly `queryEvents`': the REQ is one subscription, so a refusal of
+ * any filter refuses the whole read with the server's wording, never a partial answer.
+ */
+export async function queryEventsMulti(
+  wsUrl: string,
+  filters: readonly NostrFilter[],
+  options: QueryOptions = {},
+): Promise<NostrEvent[][]> {
+  if (filters.length === 0 || filters.length > MAX_FILTERS_PER_REQ) {
+    throw new RangeError(
+      `A read takes 1 to ${MAX_FILTERS_PER_REQ} filters, not ${filters.length}.`,
+    );
+  }
+  if (filters.some((filter) => filter.search !== undefined)) {
+    // A search is answered by the server's index; its hits cannot be sorted back to a filter here.
+    throw new RangeError("A search cannot share a read with other filters.");
+  }
+  const events = await runQuery(wsUrl, filters, options);
+  return filters.map((filter) => {
+    const mine = events
+      .filter((event) => eventMatchesFilter(filter, event))
+      .sort((a, b) => b.created_at - a.created_at || (a.id < b.id ? -1 : 1));
+    return filter.limit === undefined ? mine : mine.slice(0, filter.limit);
+  });
+}
+
+function runQuery(
+  wsUrl: string,
+  filters: readonly NostrFilter[],
+  options: QueryOptions,
+): Promise<NostrEvent[]> {
   const timeoutMs = options.timeoutMs ?? QUERY_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
     const events: NostrEvent[] = [];
+    /** With several filters one event can come once per filter that holds it: keep the first. */
+    const seenIds = new Set<string>();
     /** Everything the relay said without being asked — see `finalizeRelayQuery`. */
     const notices: string[] = [];
     const subId = `q-${Date.now().toString(36)}`;
@@ -173,7 +217,7 @@ export function queryEvents(
       if (force) reqSent = false;
       if (!reqSent) {
         reqSent = true;
-        ws.send(JSON.stringify(["REQ", subId, filter]));
+        ws.send(JSON.stringify(["REQ", subId, ...filters]));
       }
     };
 
@@ -255,7 +299,12 @@ export function queryEvents(
       }
 
       if (type === "EVENT" && data[1] === subId && data[2]) {
-        events.push(data[2] as NostrEvent);
+        const event = data[2] as NostrEvent;
+        if (filters.length > 1) {
+          if (seenIds.has(event.id)) return;
+          seenIds.add(event.id);
+        }
+        events.push(event);
       } else if (type === "EOSE" && data[1] === subId) {
         if (!settled) {
           settled = true;
