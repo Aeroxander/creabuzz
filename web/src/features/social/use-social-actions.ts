@@ -1,10 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import {
-  KIND_BOOKMARK_LIST,
-  KIND_MUTE_LIST,
-  KIND_PROFILE,
-} from "@/shared/constants/kinds";
+import { KIND_MUTE_LIST, KIND_PROFILE } from "@/shared/constants/kinds";
 import {
   existingUserPubkey,
   nip44DecryptAsUser,
@@ -14,11 +10,9 @@ import {
 import {
   type EventTemplate,
   replacementTimestamp,
-  type SignedEventLike,
 } from "../feed/lib/feed-events";
 import { latestList } from "../feed/lib/lists";
 import { publishFeedEvent } from "../feed/use-feed";
-import { bookmarkedIds, parsePrivateTags, withBookmark } from "./lib/lists";
 import {
   type MuteState,
   mutedInState,
@@ -120,77 +114,6 @@ export function useToggleMute() {
           nip44EncryptAsUser(me, plaintext),
         ),
       );
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: socialKeys.lists });
-    },
-  });
-}
-
-/* ── Bookmarks (private: NIP-44 in the list's content) ──────────────────── */
-
-interface BookmarkState {
-  list: SignedEventLike | null;
-  privateTags: string[][];
-  readable: boolean;
-}
-
-async function readBookmarkState(me: string): Promise<BookmarkState> {
-  const list = latestList(
-    await readEvents({ kinds: [KIND_BOOKMARK_LIST], authors: [me], limit: 5 }),
-    KIND_BOOKMARK_LIST,
-    me,
-  );
-  if (!list?.content) return { list, privateTags: [], readable: true };
-  try {
-    return {
-      list,
-      privateTags: parsePrivateTags(await nip44DecryptAsUser(me, list.content)),
-      readable: true,
-    };
-  } catch {
-    // Written by another client in a form we cannot read: show the public
-    // entries, but never overwrite it.
-    return { list, privateTags: [], readable: false };
-  }
-}
-
-/** Ids of the notes you saved. */
-export function useBookmarkIds() {
-  const me = existingUserPubkey();
-  return useQuery({
-    queryKey: [...socialKeys.lists, "bookmarks", me],
-    enabled: Boolean(me),
-    staleTime: 60_000,
-    queryFn: async () => {
-      const state = await readBookmarkState(me as string);
-      return bookmarkedIds(state.list, state.privateTags);
-    },
-  });
-}
-
-export function useToggleBookmark() {
-  const queryClient = useQueryClient();
-  const me = existingUserPubkey();
-  return useMutation({
-    mutationFn: async ({ id, saved }: { id: string; saved: boolean }) => {
-      if (!me) throw new Error("Sign in to save posts.");
-      const state = await readBookmarkState(me);
-      if (!state.readable) {
-        throw new Error(
-          "Your saved posts were written by another app in a form this one can't read, so nothing was changed.",
-        );
-      }
-      const next = withBookmark(state.list, state.privateTags, id, saved);
-      const content = next.privateTags.length
-        ? await nip44EncryptAsUser(me, JSON.stringify(next.privateTags))
-        : "";
-      return publishFeedEvent({
-        kind: next.kind,
-        tags: next.tags,
-        content,
-        created_at: next.created_at,
-      });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: socialKeys.lists });

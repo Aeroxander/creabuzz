@@ -127,7 +127,7 @@ export function useVoteTallies(): {
  * by server and person, so nothing written for one community or account is read back for another; switching
  * communities reloads the page, which starts this afresh.
  */
-const listWriter = createListWriter({
+export const listWriter = createListWriter({
   readLatest: async (write: ListWrite) =>
     latestList(
       await queryEvents(relayWsUrl(), {
@@ -145,7 +145,7 @@ const listWriter = createListWriter({
     ),
 });
 
-const listScope = (me: string) => `${relayWsUrl()}|${me}`;
+export const listScope = (me: string) => `${relayWsUrl()}|${me}`;
 
 /** The viewer's own follow (kind 3) and bookmark (kind 10003) lists. */
 export function useMyLists() {

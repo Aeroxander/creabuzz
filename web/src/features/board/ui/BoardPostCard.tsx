@@ -21,7 +21,7 @@ import {
 } from "@/features/social/lib/person-name";
 import { ReportDialog } from "@/features/moderation/ui/ReportDialog";
 import { VoteControl } from "@/features/social/ui/VoteControl";
-import { useToggleBookmark } from "@/features/social/use-social-actions";
+import { useBookmark } from "@/features/social/use-bookmarks";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
 import { relativeTime, shortRelativeTime } from "@/shared/lib/relative-time";
@@ -60,7 +60,7 @@ export function BoardPostCard({
 }) {
   const navigate = useNavigate();
   const me = existingUserPubkey();
-  const bookmark = useToggleBookmark();
+  const bookmark = useBookmark(post.id, bookmarked);
   const [reporting, setReporting] = useState(false);
   const actions = useBoardActions(post.boardId, add);
   const locked = useBoardStateRecord(post.boardId).locked.has(post.id);
@@ -221,29 +221,20 @@ export function BoardPostCard({
               />
             )}
             <button
-              aria-label={bookmarked ? "Remove bookmark" : "Bookmark"}
-              aria-pressed={bookmarked}
-              className={`relative z-10 grid h-8 w-8 place-items-center rounded-full hover:bg-sky-500/10 hover:text-sky-600 disabled:cursor-default ${
-                bookmarked ? "text-sky-600" : "text-black/60 dark:text-white/60"
+              aria-label="Bookmark"
+              aria-pressed={bookmark.saved}
+              className={`relative z-10 grid h-8 w-8 place-items-center rounded-full hover:bg-sky-500/10 hover:text-sky-600 ${
+                bookmark.saved
+                  ? "text-sky-600"
+                  : "text-black/60 dark:text-white/60"
               }`}
               data-testid="social-board-bookmark"
-              disabled={me === null || bookmark.isPending}
-              onClick={() =>
-                bookmark.mutate(
-                  { id: post.id, saved: !bookmarked },
-                  {
-                    onError: (error) =>
-                      toast.error("Couldn't save the bookmark", {
-                        description: failureWords(error).text,
-                      }),
-                  },
-                )
-              }
+              onClick={bookmark.toggle}
               type="button"
             >
               <Bookmark
                 aria-hidden
-                className={`h-[1.15rem] w-[1.15rem] ${bookmarked ? "fill-current" : ""}`}
+                className={`h-[1.15rem] w-[1.15rem] ${bookmark.saved ? "fill-current" : ""}`}
               />
             </button>
             <button

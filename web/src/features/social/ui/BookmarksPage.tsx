@@ -10,7 +10,7 @@ import { QueryError } from "@/shared/ui/query-error";
 import type { TimelineItem } from "../lib/mixed-timeline";
 import { firstError, listView, partialError } from "../lib/read-view";
 import { activityAt } from "../lib/timeline";
-import { useBookmarkIds } from "../use-social-actions";
+import { useBookmarkIds } from "../use-bookmarks";
 import { useNotesById } from "../use-social-data";
 import { PostList } from "./PostList";
 import { PageBar, SocialShell } from "./SocialShell";

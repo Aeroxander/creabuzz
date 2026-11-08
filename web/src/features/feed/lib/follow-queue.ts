@@ -23,8 +23,13 @@ export interface ListWrite {
   target: string;
   /** The state the change asks for, shown while it waits. */
   follow: boolean;
-  /** The list after this one change, from the newest list (null when there is none yet). */
-  apply: (latest: SignedEventLike | null) => EventTemplate;
+  /**
+   * The list after this one change, from the newest list (null when there is none yet). It may be async (a list with a
+   * private part is opened and sealed with the person's key); if it throws, nothing is written.
+   */
+  apply: (
+    latest: SignedEventLike | null,
+  ) => EventTemplate | Promise<EventTemplate>;
   /** Runs with the written list before the change stops showing as pending, so the button never flickers back. */
   onWritten?: (written: SignedEventLike) => void;
 }
@@ -95,7 +100,7 @@ export function createListWriter(deps: ListWriterDeps): ListWriter {
 
   async function run(write: ListWrite): Promise<SignedEventLike> {
     const base = newest(write.scope, write.kind, await deps.readLatest(write));
-    const template = write.apply(base);
+    const template = await write.apply(base);
     const signed = await deps.publish({
       ...template,
       created_at: Math.max(

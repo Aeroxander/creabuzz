@@ -33,7 +33,8 @@ import type { Engagement } from "../lib/engagement";
 import { avatarName, bylineHandle, bylineName } from "../lib/person-name";
 import { buildRepost, buildUndo } from "../lib/post-events";
 import type { Row } from "../lib/timeline";
-import { useSocialPublish, useToggleBookmark } from "../use-social-actions";
+import { useBookmark } from "../use-bookmarks";
+import { useSocialPublish } from "../use-social-actions";
 import { PostContent } from "./PostContent";
 import { PostMoneyChip } from "./PostMoneyChip";
 import { PostVotes } from "./PostVotes";
@@ -141,7 +142,7 @@ export function PostCard({
   const me = existingUserPubkey();
   const navigate = useNavigate();
   const publish = useSocialPublish();
-  const bookmark = useToggleBookmark();
+  const bookmark = useBookmark(note.id, bookmarked);
   const [menuOpen, setMenuOpen] = useState(false);
   const [quoting, setQuoting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -404,27 +405,15 @@ export function PostCard({
               target={note}
             />
             <ActionButton
-              active={bookmarked}
-              disabled={!me}
-              label={bookmarked ? "Remove bookmark" : "Bookmark"}
-              onClick={() =>
-                bookmark.mutate(
-                  { id: note.id, saved: !bookmarked },
-                  {
-                    onError: fail(
-                      bookmarked
-                        ? "Your bookmark was not removed. Try again."
-                        : "Your bookmark was not saved. Try again.",
-                    ),
-                  },
-                )
-              }
+              active={bookmark.saved}
+              label="Bookmark"
+              onClick={bookmark.toggle}
               testId="social-bookmark"
               tone="bookmark"
             >
               <Bookmark
                 aria-hidden
-                className={cn(bookmarked && "fill-current")}
+                className={cn(bookmark.saved && "fill-current")}
               />
             </ActionButton>
             <ActionButton

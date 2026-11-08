@@ -14,7 +14,8 @@ import {
 import type { Row } from "../lib/timeline";
 import { useLaunchUpdates } from "../use-launch-updates";
 import { engagementOf, useEngagementMap, usePeople } from "../use-people";
-import { useBookmarkIds, useMutedPeople } from "../use-social-actions";
+import { useBookmarkIds } from "../use-bookmarks";
+import { useMutedPeople } from "../use-social-actions";
 import { PostCard } from "./PostCard";
 import { PostComposer } from "./PostComposer";
 import { useLaunchName } from "./PostList";
