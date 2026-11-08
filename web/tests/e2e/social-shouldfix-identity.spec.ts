@@ -10,7 +10,7 @@ import { createMockRelay } from "./mock-relay";
  * - Signed out, the top bar offers Sign in beside Sign up, and it opens straight on the recovery-key sign-in.
  * - An invite link that cannot be an invite says so when it opens, before any account is made for it.
  * - `/u/<anything that is not a person>` says the profile can't be found; `/u/me` is the signed-in account.
- * - Edit profile shows one name, closes from its own button and from the backdrop; Home's name step opens it.
+ * - Edit profile shows one name, closes from its own button and from the backdrop.
  * - An account with no passkey is told why its payment wallet can't be a passkey account, and can set one up there.
  * - Pages scroll inside the frame, so the phone's tab bar stays put.
  */
@@ -148,19 +148,6 @@ test("signed in, /u/me is your own profile, and Edit profile shows one name and 
   await expect(dialog).toBeVisible();
   await page.mouse.click(5, 5);
   await expect(dialog).toBeHidden();
-});
-
-test("Home's first step opens the profile editor in place", async ({
-  page,
-}) => {
-  await signIn(page);
-  await start(page);
-  await page.goto("/");
-  const step = page.getByTestId("home-step-name");
-  await expect(step).toContainText("The picture is optional.");
-  await expect(step).not.toContainText("account menu");
-  await page.getByTestId("home-step-name-go").click();
-  await expect(page.getByTestId("social-edit-profile")).toBeVisible();
 });
 
 test("an account with no passkey is told why, and can set up passkey sign-in from the wallet dialog", async ({

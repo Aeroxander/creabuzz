@@ -1,14 +1,13 @@
 /**
- * Things a person has done in this browser that Home's "Get started" list
- * can tick off honestly: finishing a project from a template, for one.
+ * Things a person has done in this browser that the Start page can tick off
+ * honestly: finishing a project from a template, for one.
  *
- * Kept in this browser's storage, so a box is ticked only for what happened
- * here; a new device simply asks again, and the list can be dismissed. Alias
- * free; `first-steps.test.mjs` drives it under `node --test`.
+ * Kept in this browser's storage, so a step is ticked only for what happened
+ * here; a new device simply asks again. Alias free; `first-steps.test.mjs` drives it under `node --test`.
  */
 
 /** The step names. A new one is added here, then recorded where it happens. */
-export type FirstStep = "project" | "looked-at-project";
+export type FirstStep = "project";
 
 const KEY = "creaton.first-steps";
 
@@ -37,7 +36,7 @@ export function hasFirstStep(storage: StepStorage, step: FirstStep): boolean {
   return read(storage).has(step);
 }
 
-/** Remember a step. Storage that refuses is ignored: the list just asks again. */
+/** Remember a step. Storage that refuses is ignored: the page just asks again. */
 export function markFirstStep(storage: StepStorage, step: FirstStep): void {
   try {
     const steps = read(storage);

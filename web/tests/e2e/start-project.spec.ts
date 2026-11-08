@@ -146,7 +146,7 @@ test("a team is picked, set up step by step, and its first channel opens", async
     timeout: 60_000,
   });
 
-  // Home's "Get started" list can now tick "Start a project".
+  // The Start page can now tick "Set up a place to work".
   expect(await firstSteps(page)).toEqual(["project"]);
 
   // What was written, read back from the server.

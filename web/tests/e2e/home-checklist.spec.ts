@@ -4,8 +4,8 @@ import { getPublicKey } from "nostr-tools/pure";
 import { createMockRelay } from "./mock-relay";
 
 /**
- * Home's "Get started" list for someone who has just signed up. It asks different things of someone who came to help on
- * projects and someone starting one. Every box is ticked only for something that really happened.
+ * Home's top block. Signed in, there is no "Get started" list at all, however new the account is; signed out, the
+ * welcome still says what the product is for. The one door for starting something (the Start page) is covered below.
  */
 
 const OWNER_NSEC = "55".repeat(32);
@@ -49,54 +49,18 @@ async function openHome(
   await page.goto("/");
 }
 
-test("a new account starts as a helper: asked to look at a project and follow one, never about money", async ({
+test("a signed-in person never sees a Get started block on Home, however new the account", async ({
   page,
 }) => {
   await openHome(page);
-  const list = page.getByTestId("home-getting-started");
-  await expect(list).toBeVisible({ timeout: 20_000 });
-  // The name is real (the profile above), the rest has not happened.
-  await expect(list).toContainText("1 of 3 done");
-  await expect(list.getByText("Look at a project")).toBeVisible();
-  await expect(list.getByText("Follow a project or a person")).toBeVisible();
-  // This release has no sales: nothing asks anyone to back, bid or put money in.
-  await expect(list).not.toContainText(/back a project|bid|sale|money/i);
-  await expect(list.getByRole("link", { name: "Go" }).first()).toHaveAttribute(
-    "href",
-    "/discover",
-  );
-});
-
-test("someone starting a project is sent to start it with the work it needs, and the choice is remembered", async ({
-  page,
-}) => {
-  await openHome(page);
-  const list = page.getByTestId("home-getting-started");
-  await expect(list).toBeVisible({ timeout: 20_000 });
-  await list.getByTestId("home-role-founder").click();
-  await expect(list).toContainText("1 of 2 done");
-  await expect(list.getByText("Start your project")).toBeVisible();
-  await expect(list.getByRole("link", { name: "Go" })).toHaveAttribute(
-    "href",
-    "/start/contributor",
-  );
-  await expect(list).not.toContainText(/funding|tokens|AI helper/i);
-  await page.reload();
-  await expect(page.getByTestId("home-role-founder")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-    { timeout: 20_000 },
-  );
-});
-
-test("looking at a project in this browser ticks that box", async ({
-  page,
-}) => {
-  await openHome(page, {
-    "creaton.first-steps": JSON.stringify(["looked-at-project"]),
-  });
-  const list = page.getByTestId("home-getting-started");
-  await expect(list).toContainText("2 of 3 done", { timeout: 20_000 });
+  // Home has rendered for them: its top area and the composer are there.
+  await expect(page.getByTestId("home-top")).toBeAttached({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  // Give anything that would load and then appear time to do so.
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByTestId("home-getting-started")).toHaveCount(0);
+  await expect(page.getByText("Get started")).toHaveCount(0);
+  await expect(page.getByTestId("home-welcome")).toHaveCount(0);
 });
 
 test.describe("the one door for starting something", () => {
@@ -171,12 +135,6 @@ test.describe("the one door for starting something", () => {
     });
     await expect(page.getByTestId("start-step-raise")).toContainText("Next");
     await expect(page.getByTestId("start-next")).toHaveCount(1);
-  });
-
-  test("Home's checklist links to it", async ({ page }) => {
-    await openHome(page);
-    await page.getByTestId("home-start-link").click();
-    await expect(page).toHaveURL(/\/start$/);
   });
 });
 

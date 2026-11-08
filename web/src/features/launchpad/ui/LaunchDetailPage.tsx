@@ -1,4 +1,3 @@
-import { markFirstStep } from "@/shared/lib/first-steps";
 import type { SponsorIntent } from "../lib/sponsor";
 import type { ChallengeIntent } from "../lib/challenge";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -129,11 +128,6 @@ export function LaunchDetailPage({
       markSupportersSeen(supporterCoord, seenCount);
     }
   }, [isFounder, supporterCoord, seenCount]);
-  // Home's checklist asks a backer to look at a project: opening one counts, in this browser.
-  const lookedAt = Boolean(launch) && !sandbox;
-  useEffect(() => {
-    if (lookedAt) markFirstStep(localStorage, "looked-at-project");
-  }, [lookedAt]);
   const mirror = usePublishMirror();
   const remove = useDeleteLaunch();
   const [tab, setLocalTab] = useState<Tab>(

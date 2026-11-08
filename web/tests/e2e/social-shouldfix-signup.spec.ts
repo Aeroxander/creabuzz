@@ -11,8 +11,7 @@ import { createMockRelay } from "./mock-relay";
  *   itself, and someone with no account can make a passkey account there, then save its recovery key.
  * - The invite page says when the server's terms could not be loaded (with Try again), loads them again when they
  *   changed, and says other refusals in words.
- * - The account menu's Edit profile can upload a picture, and the Get started list ticks the name step only for a
- *   name the person chose.
+ * - The account menu's Edit profile can upload a picture.
  */
 
 const PORT = process.env.E2E_PORT ?? "4173";
@@ -466,19 +465,6 @@ test("Edit profile in the account menu uploads a picture, shows it, and saves it
         picture: pictureUrl,
       }),
     ]);
-});
-
-test("Get started does not tick the name step for a profile that has no name", async ({
-  page,
-}) => {
-  await openAsOwner(page, { about: "I paint." });
-  await page.goto("/");
-  const list = page.getByTestId("home-getting-started");
-  await expect(list).toBeVisible({ timeout: 20_000 });
-  await expect(list).toContainText("0 of 3 done");
-  await expect(list.getByTestId("home-step-name")).toContainText(
-    "Add your name and a picture",
-  );
 });
 
 test("Edit profile on the profile page offers the same picture upload, and keeps a link as the fallback", async ({
