@@ -245,8 +245,10 @@ test("Start offers a contributor project, says it has no token sale, and shows w
     "The project can still receive money into its funds.",
   );
   await expect(intro).toContainText(
-    "At first you may hold every Share that votes.",
+    "You start holding the Shares, and at first may hold every one.",
   );
+  // The header defines Shares; the card does not say it again.
+  await expect(intro).not.toContainText("which are votes in the project");
   await expect(intro).toContainText("Approval alone gives no Shares.");
   await expect(intro).toContainText(
     "Opening transfers takes two project votes, at least 30 days apart.",

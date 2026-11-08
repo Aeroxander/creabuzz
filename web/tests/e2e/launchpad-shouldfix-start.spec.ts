@@ -343,7 +343,7 @@ test("the Start page says who the reviewers are, when all must agree, and one pr
   await expect(picked.first()).toHaveAttribute("data-linked", "no");
   await expect(picked.first()).toContainText("Not linked to anyone here");
   await expect(page.getByTestId("contributor-quorum-said")).toHaveText(
-    "Both must agree: two approvals approve it, two turn-downs turn it down. If they split, nothing is decided.",
+    "Both must agree: two approvals approve it, two turn-downs turn it down.",
   );
   // With two, more than half is both: only another reviewer helps, so no shortcut is offered.
   await expect(page.getByTestId("contributor-quorum-all")).toContainText(
@@ -355,7 +355,7 @@ test("the Start page says who the reviewers are, when all must agree, and one pr
     .fill(`0x${"71".repeat(20)}\n0x${"72".repeat(20)}\n0x${"73".repeat(20)}`);
   await page.getByTestId("contributor-quorum").fill("3");
   await expect(page.getByTestId("contributor-quorum-said")).toHaveText(
-    "All 3 must agree: 3 approvals approve it, 3 turn-downs turn it down. If they split, nothing is decided.",
+    "All 3 must agree: 3 approvals approve it, 3 turn-downs turn it down.",
   );
   await page.getByTestId("contributor-quorum-majority").click();
   await expect(page.getByTestId("contributor-quorum")).toHaveValue("");

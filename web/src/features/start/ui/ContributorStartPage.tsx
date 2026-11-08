@@ -80,12 +80,7 @@ function FromBoard({ start }: { start: PitchStart }) {
     <Card className="p-5" data-testid="contributor-from-board">
       <h2 className="text-base font-bold">From the Projects board</h2>
       <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
-        <li>
-          Each role is a first work area that can award up to its stake. The
-          person in it submits work, reviewers check it, and Shareholders then
-          vote separately on each award: approval does not guarantee Shares.
-          Nothing is handed out up front.
-        </li>
+        <li>Each role is a first work area that can award up to its stake.</li>
         <li>
           1,000,000 Shares stand for the whole project once every role's work is
           awarded.
@@ -127,10 +122,7 @@ function WhatItIs({
         {raises ? "Starts without a token sale" : "How Shares work"}
       </h2>
       <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
-        <li>
-          You start with Shares, which are votes in the project. At first you
-          may hold every Share that votes.
-        </li>
+        <li>You start holding the Shares, and at first may hold every one.</li>
         <li>
           New Shares come only from awards: someone submits work, the reviewers
           you name check it, then the project votes on an award. Approval alone
@@ -415,11 +407,8 @@ export function ContributorStartPage() {
                 Your project is ready for contributions
               </h3>
               <p className="text-sm">
-                Its first work budget and work areas are ready, and people can
-                submit work now. You accept each submission into a work area,
-                the reviewers you named check it, and Shareholders then vote on
-                each award. Share the Work page so people can see what needs
-                doing.
+                The project is made and people can submit work now. Share the
+                Work page so people can see what needs doing.
               </p>
               {fromIdea ? (
                 <p className="text-sm" data-testid="contributor-from-idea-done">
@@ -539,7 +528,7 @@ export function ContributorStartPage() {
           />
           <TextField
             error={errorFor("pitch")}
-            hint="One sentence: what it is and who it is for."
+            hint="One sentence, and who it is for."
             label="What it is"
             onChange={set("pitch")}
             testId="contributor-pitch"
@@ -584,7 +573,7 @@ export function ContributorStartPage() {
           />
           <TextField
             error={errorFor("projectCap")}
-            hint="The most any one work area (say, the docs) may award."
+            hint="For example, the docs. Each work area below starts at this size."
             inputMode="numeric"
             label="Most for one work area"
             onChange={set("projectCap")}
@@ -610,7 +599,7 @@ export function ContributorStartPage() {
               />
             }
             error={errorFor("reviewers")}
-            hint="The people who check submitted work: name at least three, from the list. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
+            hint="The people who check submitted work: name at least three. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
             label="Reviewers"
             onChange={(value) => {
               // Whatever the note said about the last pick no longer holds once the list is edited by hand.
@@ -641,7 +630,7 @@ export function ContributorStartPage() {
           />
           <TextField
             error={errorFor("quorum")}
-            hint="Leave empty for more than half of them. At least two must agree."
+            hint="Leave empty for more than half of them."
             inputMode="numeric"
             label="How many reviewers must agree"
             onChange={set("quorum")}

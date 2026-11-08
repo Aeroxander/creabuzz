@@ -25,10 +25,10 @@ export function WeeklySaleFields({
     <fieldset className="flex flex-col gap-3" data-testid="contributor-weekly">
       <legend className="text-sm font-semibold">Weekly sale of Shares</legend>
       <p className="text-xs text-muted-foreground">
-        Once the project votes to open its market, holders can offer Shares and
-        buyers can bid for them each week. Buyers pay with a free test token
-        that is worth nothing, so a price here proves nothing. Your own Shares
-        can be offered only as they unlock; this limits you, not other holders.
+        Holders can offer Shares and buyers can bid for them each week, once
+        transfers are open. Buyers pay with a free test token that is worth
+        nothing, so a price here proves nothing. Your own Shares can be offered
+        only as they unlock; this limits you, not other holders.
       </p>
       <TextField
         error={errorFor("saleLot")}
@@ -50,7 +50,7 @@ export function WeeklySaleFields({
       />
       <TextField
         error={errorFor("saleDays")}
-        hint="After that wait, your starting Shares unlock evenly over this many days."
+        hint="Counted from the end of the wait above."
         inputMode="numeric"
         label="Days over which your Shares unlock"
         onChange={patch("saleDays")}

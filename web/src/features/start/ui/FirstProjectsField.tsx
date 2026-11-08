@@ -61,9 +61,8 @@ export function FirstProjectsField({
         {several ? "First work areas" : "First work area"}
       </legend>
       <p className="-mt-1 text-xs text-muted-foreground">
-        What people can work on from the first day. You manage each one: you
-        accept each submission for review, the reviewers judge it, and
-        Shareholders vote on the award.
+        What people can work on from the first day. You accept each submission
+        into a work area.
       </p>
       {projects.map((project, index) => (
         <div
@@ -77,11 +76,7 @@ export function FirstProjectsField({
             <div className="min-w-0 flex-1">
               <TextField
                 error={errorAt(index, "name")}
-                hint={
-                  index === 0
-                    ? "A word or two, for example: Bug reports."
-                    : undefined
-                }
+                hint={index === 0 ? "A word or two." : undefined}
                 label={several ? `Work area ${index + 1}` : "Name"}
                 onChange={update(index, "name")}
                 placeholder="Bug reports"

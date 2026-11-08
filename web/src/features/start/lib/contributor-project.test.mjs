@@ -429,14 +429,14 @@ test("how reviewers decide is said as ClaimStake.settle decides: with one needed
   for (const count of [2, 3, 5]) {
     assert.doesNotMatch(quorumSentence(count, 1), /even if/);
   }
-  // Every reviewer needed: a split decides nothing.
+  // Every reviewer needed: both and all-N wording; the split consequence is the amber warning's to say.
   assert.equal(
     quorumSentence(2, 2),
-    "Both must agree: two approvals approve it, two turn-downs turn it down. If they split, nothing is decided.",
+    "Both must agree: two approvals approve it, two turn-downs turn it down.",
   );
   assert.equal(
     quorumSentence(3, 3),
-    "All 3 must agree: 3 approvals approve it, 3 turn-downs turn it down. If they split, nothing is decided.",
+    "All 3 must agree: 3 approvals approve it, 3 turn-downs turn it down.",
   );
   assert.equal(
     quorumSentence(3, 2),

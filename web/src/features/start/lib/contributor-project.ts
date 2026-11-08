@@ -231,8 +231,8 @@ export function quorumSentence(count: number, mustAgree: number): string {
   }
   if (mustAgree === count) {
     return count === 2
-      ? "Both must agree: two approvals approve it, two turn-downs turn it down. If they split, nothing is decided."
-      : `All ${count} must agree: ${count} approvals approve it, ${count} turn-downs turn it down. If they split, nothing is decided.`;
+      ? "Both must agree: two approvals approve it, two turn-downs turn it down."
+      : `All ${count} must agree: ${count} approvals approve it, ${count} turn-downs turn it down.`;
   }
   return `${mustAgree} of these ${count} decide: ${mustAgree} approvals approve it, ${mustAgree} turn-downs turn it down.`;
 }
