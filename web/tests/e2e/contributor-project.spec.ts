@@ -245,13 +245,23 @@ test("Start offers a contributor project, says it has no token sale, and shows w
     "The project can still receive money into its funds.",
   );
   await expect(intro).toContainText(
-    "You start holding the Shares, and at first may hold every one.",
+    "You start with Shares of your own, and at first may hold all of them.",
   );
-  // The header defines Shares; the card does not say it again.
-  await expect(intro).not.toContainText("which are votes in the project");
+  // The header defines Shares, in this build as in the one with no raises; the card and the form do not say it again.
+  await expect(
+    page
+      .getByRole("heading", { level: 1 })
+      .locator("xpath=following-sibling::p"),
+  ).toHaveText(
+    "Set up a project where reviewed work can earn Shares, which are votes in the project.",
+  );
+  await expect(intro).not.toContainText(/are votes|voting tokens/i);
+  await expect(
+    page.getByText(/votes in the project|voting tokens/i),
+  ).toHaveCount(1);
   await expect(intro).toContainText("Approval alone gives no Shares.");
   await expect(intro).toContainText(
-    "Opening transfers takes two project votes, at least 30 days apart.",
+    "Shares can't be sold at first. Selling opens only after two project votes, at least 30 days apart.",
   );
   // The first project is part of the form: work can start the day the project exists.
   await expect(page.getByTestId("contributor-project-name")).toBeVisible();

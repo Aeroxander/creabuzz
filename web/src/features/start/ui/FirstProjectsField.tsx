@@ -6,6 +6,7 @@ import {
 } from "@/features/launchpad/ui/decision-fields";
 import { Button } from "@/shared/ui/button";
 
+import { WORK_AREAS_HINT } from "../lib/contributor-start-copy";
 import {
   MAX_FIRST_PROJECTS,
   type ProjectDraft,
@@ -60,10 +61,7 @@ export function FirstProjectsField({
       <legend className="mb-1 text-sm font-semibold">
         {several ? "First work areas" : "First work area"}
       </legend>
-      <p className="-mt-1 text-xs text-muted-foreground">
-        What people can work on from the first day. You accept each submission
-        into a work area.
-      </p>
+      <p className="-mt-1 text-xs text-muted-foreground">{WORK_AREAS_HINT}</p>
       {projects.map((project, index) => (
         <div
           className={`flex flex-col gap-2 rounded-lg border p-3 ${problemIndex === index ? "border-destructive" : ""}`}

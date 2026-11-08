@@ -2,7 +2,7 @@
  * Start a contributor project: a DAO with no token sale, whose new Shares come only from awards for reviewed work.
  *
  * Before it asks for anything the page says what the setup is (no sale, the founder's starting Shares, review and award
- * as separate steps, transfers locked) and who holds what at the start and if the whole first budget were awarded;
+ * as separate steps, selling locked) and who holds what at the start and if the whole first budget were awarded;
  * then it makes the project in one transaction and publishes it (`use-contributor-start.ts`). People can submit work
  * the moment it exists. A run cut short by a reload or a refusal is offered again from where it stopped.
  */
@@ -34,6 +34,15 @@ import {
   CONTRIBUTOR_STEPS,
 } from "../lib/contributor-flow";
 import { LOCKED_GATE_MESSAGE } from "../lib/contributor-gate";
+import {
+  DONE_TEXT,
+  PITCH_HINT,
+  QUORUM_HINT,
+  REVIEWERS_HINT,
+  WHAT_IT_IS_POINTS,
+  startHeaderDescription,
+  whatItIsTitle,
+} from "../lib/contributor-start-copy";
 import {
   CONTRIBUTOR_DEFAULTS,
   type ContributorDraft,
@@ -118,21 +127,11 @@ function WhatItIs({
 }) {
   return (
     <Card className="p-5" data-testid="contributor-no-raise">
-      <h2 className="text-base font-bold">
-        {raises ? "Starts without a token sale" : "How Shares work"}
-      </h2>
+      <h2 className="text-base font-bold">{whatItIsTitle(raises)}</h2>
       <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
-        <li>You start holding the Shares, and at first may hold every one.</li>
-        <li>
-          New Shares come only from awards: someone submits work, the reviewers
-          you name check it, then the project votes on an award. Approval alone
-          gives no Shares.
-        </li>
-        <li>
-          Shares can&apos;t be sold at first. Opening transfers takes two
-          project votes, at least 30 days apart.
-        </li>
-        <li>The project can still receive money into its funds.</li>
+        {WHAT_IT_IS_POINTS.map((point) => (
+          <li key={point}>{point}</li>
+        ))}
       </ul>
       {testNotice ? (
         <p
@@ -343,11 +342,7 @@ export function ContributorStartPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
       <PageHeader
-        description={
-          raises
-            ? "Set up a project where reviewed work can earn Shares, the project's voting tokens."
-            : "Set up a project where reviewed work earns Shares, which are votes in the project."
-        }
+        description={startHeaderDescription(raises)}
         title="Start a contributor project"
       />
       <WhatItIs
@@ -406,10 +401,7 @@ export function ContributorStartPage() {
               <h3 className="text-base font-bold">
                 Your project is ready for contributions
               </h3>
-              <p className="text-sm">
-                The project is made and people can submit work now. Share the
-                Work page so people can see what needs doing.
-              </p>
+              <p className="text-sm">{DONE_TEXT}</p>
               {fromIdea ? (
                 <p className="text-sm" data-testid="contributor-from-idea-done">
                   Your idea {fromIdea.name} is still listed on its own.{" "}
@@ -528,7 +520,7 @@ export function ContributorStartPage() {
           />
           <TextField
             error={errorFor("pitch")}
-            hint="One sentence, and who it is for."
+            hint={PITCH_HINT}
             label="What it is"
             onChange={set("pitch")}
             testId="contributor-pitch"
@@ -599,7 +591,7 @@ export function ContributorStartPage() {
               />
             }
             error={errorFor("reviewers")}
-            hint="The people who check submitted work: name at least three. Pick people other than the ones who will do the work. Reviewing does not itself give them Shares or votes."
+            hint={REVIEWERS_HINT}
             label="Reviewers"
             onChange={(value) => {
               // Whatever the note said about the last pick no longer holds once the list is edited by hand.
@@ -630,7 +622,7 @@ export function ContributorStartPage() {
           />
           <TextField
             error={errorFor("quorum")}
-            hint="Leave empty for more than half of them."
+            hint={QUORUM_HINT}
             inputMode="numeric"
             label="How many reviewers must agree"
             onChange={set("quorum")}

@@ -354,6 +354,28 @@ test("Start offers building with contributors, and no raise", async ({
   );
 });
 
+test("Start's contributor page defines Shares once, in the header, with the pilot build's words", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  await relay.install(page);
+  await signIn(page);
+  await page.goto("/start/contributor");
+  const intro = page.getByTestId("contributor-no-raise");
+  await expect(intro).toContainText("How Shares work", { timeout: 20_000 });
+  await expect(
+    page
+      .getByRole("heading", { level: 1 })
+      .locator("xpath=following-sibling::p"),
+  ).toHaveText(
+    "Set up a project where reviewed work earns Shares, which are votes in the project.",
+  );
+  await expect(intro).not.toContainText(/are votes|voting tokens/i);
+  await expect(
+    page.getByText(/votes in the project|voting tokens/i),
+  ).toHaveCount(1);
+});
+
 test("Home's navigation says Your work, and only to someone with an account", async ({
   page,
 }) => {

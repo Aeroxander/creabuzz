@@ -1,6 +1,11 @@
 import { TextField } from "@/features/launchpad/ui/decision-fields";
 
 import type { ContributorDraft } from "../lib/contributor-project";
+import {
+  SALE_CLIFF_HINT,
+  SALE_DAYS_HINT,
+  SALE_INTRO,
+} from "../lib/contributor-start-copy";
 import { SALE_DEFAULTS, type SaleField } from "../lib/weekly-sale";
 
 /**
@@ -24,12 +29,7 @@ export function WeeklySaleFields({
   return (
     <fieldset className="flex flex-col gap-3" data-testid="contributor-weekly">
       <legend className="text-sm font-semibold">Weekly sale of Shares</legend>
-      <p className="text-xs text-muted-foreground">
-        Holders can offer Shares and buyers can bid for them each week, once
-        transfers are open. Buyers pay with a free test token that is worth
-        nothing, so a price here proves nothing. Your own Shares can be offered
-        only as they unlock; this limits you, not other holders.
-      </p>
+      <p className="text-xs text-muted-foreground">{SALE_INTRO}</p>
       <TextField
         error={errorFor("saleLot")}
         hint="People offer and bid in whole lots. Use a smaller lot to sell less at a time."
@@ -41,7 +41,7 @@ export function WeeklySaleFields({
       />
       <TextField
         error={errorFor("saleCliffDays")}
-        hint="0 means your Shares start to unlock at once."
+        hint={SALE_CLIFF_HINT}
         inputMode="numeric"
         label="Days before you can sell any of your Shares"
         onChange={patch("saleCliffDays")}
@@ -50,7 +50,7 @@ export function WeeklySaleFields({
       />
       <TextField
         error={errorFor("saleDays")}
-        hint="Counted from the end of the wait above."
+        hint={SALE_DAYS_HINT}
         inputMode="numeric"
         label="Days over which your Shares unlock"
         onChange={patch("saleDays")}
