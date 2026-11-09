@@ -4,6 +4,10 @@
  * server", last. Their posts are in the Everyone timeline (and Following, for people you follow); this is where you find
  * a board, see what it is for and how busy it is, and open it. A joined board shows what is unread in it, as the
  * workspace's sidebar does, when the server keeps read state (D101); otherwise no marker at all, never a false "all read".
+ *
+ * The list is read a bounded stretch of the server's channels at a time (`use-board-list.ts`). When older channels
+ * have not been looked through, the page says so and offers "Show more boards"; a failed read further back keeps the
+ * boards already listed and offers to try again.
  */
 
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -136,7 +140,8 @@ export function BoardDirectory() {
         <p className="text-sm text-muted-foreground" role="status">
           Loading boards…
         </p>
-      ) : boards.length === 0 ? (
+      ) : boards.length === 0 && !feed.hasMoreBoards ? (
+        // Only once every channel record has been looked through: part of the list is never "no boards".
         <p
           className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
           data-testid="board-directory-empty"
@@ -292,6 +297,44 @@ export function BoardDirectory() {
           })}
         </div>
       )}
+      {!feed.error && !feed.boardsLoading && feed.hasMoreBoards ? (
+        // The boards are read a bounded stretch of the server's channels at a time; the rest only when asked for.
+        <div
+          className="flex flex-col items-start gap-2"
+          data-testid="board-directory-more"
+        >
+          {feed.moreBoardsError ? (
+            <p
+              className="text-xs text-destructive"
+              data-testid="board-directory-more-problem"
+              role="alert"
+            >
+              {boards.length > 0
+                ? "Couldn't load more boards. The ones above are still listed."
+                : "Couldn't load more boards."}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {boards.length > 0
+                ? "This server has older boards that may not be listed yet."
+                : "No boards found among this server's newest rooms yet. There may be older ones."}
+            </p>
+          )}
+          <Button
+            aria-busy={feed.loadingMoreBoards || undefined}
+            data-testid="board-directory-more-button"
+            onClick={feed.loadMoreBoards}
+            size="sm"
+            variant="outline"
+          >
+            {feed.loadingMoreBoards
+              ? "Loading more boards…"
+              : feed.moreBoardsError
+                ? "Try again"
+                : "Show more boards"}
+          </Button>
+        </div>
+      ) : null}
       {unread.paused ? (
         <p
           className="text-xs text-muted-foreground"

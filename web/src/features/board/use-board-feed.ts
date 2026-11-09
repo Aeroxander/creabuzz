@@ -11,7 +11,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 
-import { useChannels } from "@/features/channels/use-channels";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { type NostrFilter, queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -23,6 +22,7 @@ import {
 } from "./lib/board-events";
 import { buildFeed, type FeedPost } from "./lib/board-feed";
 import type { BoardEvent } from "./lib/board-model";
+import { useBoardList } from "./use-board-list";
 
 /** Posts per page. */
 const FEED_PAGE_SIZE = 100;
@@ -97,6 +97,16 @@ export interface BoardFeed {
   boardsLoading: boolean;
   /** A failed first read or refresh (or list of boards): the page shows it in place of the list. */
   error: unknown;
+  /**
+   * `boards` is not every board yet: older channel records have not been looked through. An empty `boards` then means
+   * "none found so far", never "this server has none".
+   */
+  hasMoreBoards: boolean;
+  loadingMoreBoards: boolean;
+  /** A failed read of older boards, said under the list with a retry; the boards read stay. Null otherwise. */
+  moreBoardsError: unknown;
+  /** Look through the next older channel records for boards (or try the read that failed again). */
+  loadMoreBoards: () => void;
   /** A failed older page, said at the bottom of the list with a retry; what loaded stays. Null otherwise. */
   olderError: unknown;
   /** Read everything again from the newest, taking in any new posts. */
@@ -121,7 +131,7 @@ export function useBoardFeed({
   authors?: readonly string[] | null;
   enabled?: boolean;
 } = {}): BoardFeed {
-  const channels = useChannels();
+  const list = useBoardList();
   const scopeKey = scope === null ? "all" : [...scope].sort().join(",");
   // Rebuilt from the key, so a new array with the same boards does not start the read again.
   const named = useMemo(
@@ -163,8 +173,7 @@ export function useBoardFeed({
       string,
       { name: string; description: string; visibility: "public" | "private" }
     >();
-    for (const channel of channels.channels) {
-      if (channel.type !== "forum") continue;
+    for (const channel of list.boards) {
       map.set(channel.id, {
         name: channel.name,
         description: channel.description,
@@ -172,7 +181,7 @@ export function useBoardFeed({
       });
     }
     return map;
-  }, [channels.channels]);
+  }, [list.boards]);
 
   const me = existingUserPubkey();
   const loaded = query.data?.pages;
@@ -190,14 +199,18 @@ export function useBoardFeed({
   return {
     posts,
     boards,
-    isLoading: (!empty && enabled && query.isLoading) || channels.isLoading,
-    boardsLoading: channels.isLoading,
+    isLoading: (!empty && enabled && query.isLoading) || list.isLoading,
+    boardsLoading: list.isLoading,
     // An older page that failed is not the whole feed failing (TanStack keeps the pages read before it).
-    error: (query.isFetchNextPageError ? null : query.error) ?? channels.error,
+    error: (query.isFetchNextPageError ? null : query.error) ?? list.error,
+    hasMoreBoards: list.hasMore,
+    loadingMoreBoards: list.loadingMore,
+    moreBoardsError: list.moreError,
+    loadMoreBoards: list.loadMore,
     olderError: query.isFetchNextPageError ? query.error : null,
     refetch: () => {
       void query.refetch();
-      void channels.refetch();
+      list.refetch();
     },
     add,
     hasOlder: query.hasNextPage,

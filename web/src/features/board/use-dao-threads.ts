@@ -3,6 +3,9 @@
  * decisions, found with one read per board (the server filters by topic) and
  * grouped by decision.
  *
+ * The boards are the ones on the first page of the server's channel list and the project's own, read by id: a
+ * project's board older than that page is still where its decisions are discussed.
+ *
  * A board the reader cannot open (a private one) is skipped, as it should be;
  * but if every board they can open fails to read, that is an error, never an
  * empty list that looks like "nobody has discussed anything".
@@ -12,15 +15,18 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { type Channel, useChannels } from "@/features/channels/use-channels";
+import type { Launch } from "@/features/launchpad/models";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import { KIND_FORUM_POST } from "./lib/board-events";
+import { discussionBoards } from "./lib/named-boards";
 import { PROPOSAL_TOPIC } from "./lib/proposal-link";
 import {
   groupProposalThreads,
   type ProposalThread,
 } from "./lib/proposal-threads";
+import { useBoardsNamedBy } from "./use-project-boards";
 
 const READ_LIMIT = 200;
 
@@ -34,11 +40,17 @@ export interface DaoThreads {
   refetch: () => void;
 }
 
-export function useDaoThreads(chainId: number | null, dao: string): DaoThreads {
-  const { channels, isLoading: channelsLoading } = useChannels();
+/** `record` is the project the DAO belongs to (null while it is not known): its own boards are read by their ids. */
+export function useDaoThreads(
+  chainId: number | null,
+  dao: string,
+  record: Launch["record"] | null,
+): DaoThreads {
+  const listed = useChannels();
+  const own = useBoardsNamedBy(record);
   const boards = useMemo(
-    () => channels.filter((channel) => channel.type === "forum"),
-    [channels],
+    () => discussionBoards(listed.channels, own.boards),
+    [listed.channels, own.boards],
   );
   const query = useQuery({
     queryKey: [
@@ -85,8 +97,16 @@ export function useDaoThreads(chainId: number | null, dao: string): DaoThreads {
     boards,
     threads: query.data ?? new Map(),
     isLoading:
-      channelsLoading || (query.isLoading && query.fetchStatus !== "idle"),
-    error: query.error,
-    refetch: () => void query.refetch(),
+      listed.isLoading ||
+      own.loading ||
+      (query.isLoading && query.fetchStatus !== "idle"),
+    // A list of boards that could not be read is a failure too: without it the boards are a guess, and "no open
+    // board" or "nobody has discussed this" would be said from part of the answer.
+    error: query.error ?? own.error ?? listed.error,
+    refetch: () => {
+      if (listed.error != null) void listed.refetch();
+      if (own.error != null) own.retry();
+      void query.refetch();
+    },
   };
 }

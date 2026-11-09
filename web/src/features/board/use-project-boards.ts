@@ -9,7 +9,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 
-import { useChannels } from "@/features/channels/use-channels";
+import type { Channel } from "@/features/channels/use-channels";
 import { recordToInput } from "@/features/launchpad/lib/record-input";
 import {
   fetchLaunches,
@@ -48,6 +48,8 @@ const KIND_BOARD_MEMBERS = 39002;
 const boardOwnersQueryKey = ["board-owners"];
 /** Under "channels", so whatever reads the channel list again reads these again too. */
 const namedBoardsQueryKey = ["channels", "named"];
+
+const NO_BOARDS: readonly Channel[] = [];
 
 const readServer: ReadRecords<NostrEvent> = (filter) =>
   queryEvents(relayWsUrl(), filter);
@@ -175,6 +177,25 @@ export function useProjectBoardsOf(launch: Launch) {
   };
 }
 
+/**
+ * The boards a project's record names, each read by its id, whoever runs them: where a decision of the project can be
+ * talked about. Null (no project known yet) reads nothing. `boards` is empty while they load and when the read fails;
+ * `loading` and `error` say which.
+ */
+export function useBoardsNamedBy(record: Launch["record"] | null) {
+  const projects = useMemo(
+    () => (record ? [boardProject(record)] : []),
+    [record],
+  );
+  const { query, boards } = useNamedBoards(projects);
+  return {
+    boards: boards ?? NO_BOARDS,
+    loading: query.isLoading,
+    error: query.error,
+    retry: () => void query.refetch(),
+  };
+}
+
 /** The browser's storage, or one that keeps nothing when it is refused (a private window). */
 function memoStore(): StarterMemoStore {
   try {
@@ -201,16 +222,6 @@ async function boardExists(id: string): Promise<boolean> {
 function useNameBoards() {
   const save = useCreateLaunch();
   const client = useQueryClient();
-  const { channels } = useChannels();
-  const forums = useMemo(
-    () =>
-      new Set(
-        channels
-          .filter((channel) => channel.type === "forum")
-          .map((channel) => channel.id.toLowerCase()),
-      ),
-    [channels],
-  );
   return useCallback(
     async (launch: Launch, ids: readonly string[]): Promise<number> => {
       const dropped = await nameBoardsInRecord(
@@ -233,17 +244,22 @@ function useNameBoards() {
               );
             return latest.record;
           },
+          boardsAmong: async (named) =>
+            new Set(
+              (await readNamedBoards(readServer, named)).map((board) =>
+                board.id.toLowerCase(),
+              ),
+            ),
           save: async (record, channels) => {
             await save.mutateAsync(recordToInput(record, { channels }));
           },
         },
         ids,
-        forums,
       );
       void client.invalidateQueries({ queryKey: boardOwnersQueryKey });
       return dropped;
     },
-    [client, save, forums],
+    [client, save],
   );
 }
 

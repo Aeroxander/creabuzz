@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { channelsFromRecords } from "../../channels/lib/channel-records.ts";
 import {
+  discussionBoards,
   KIND_CHANNEL_METADATA,
   knownBoards,
   NAMED_READ_CHUNK,
@@ -119,6 +121,49 @@ describe("reading the boards a project's record names", () => {
     assert.deepEqual(await readNamedBoards(world.read, []), []);
     assert.deepEqual(await readRecordsNaming(world.read, 39002, []), []);
     assert.equal(world.asked.length, 0);
+  });
+});
+
+describe("the boards a project's decision can be talked about on", () => {
+  it("include the project's open board when it is older than the first page of the channel list", async () => {
+    // 250 newer channels, one of them a server board: the newest 200 records are the page the list of channels shows.
+    const records = [
+      record(id(1), "supporters", "forum", 100),
+      record(id(2), "film-making", "forum", 950),
+      ...Array.from({ length: 250 }, (_, i) =>
+        record(id(1000 + i), `room-${i}`, "stream", 900),
+      ),
+    ];
+    const firstPage = channelsFromRecords(
+      [...records].sort((a, b) => b.created_at - a.created_at).slice(0, 200),
+    );
+    assert.ok(
+      !firstPage.some((channel) => channel.id === id(1)),
+      "the project's board is not on the first page",
+    );
+    const own = await readNamedBoards(server(records).read, [id(1)]);
+    const boards = discussionBoards(firstPage, own);
+    assert.deepEqual(
+      boards.map((board) => board.name),
+      ["film-making", "supporters"],
+    );
+    assert.ok(boards.every((board) => board.visibility === "public"));
+  });
+
+  it("list a board once when it is on the page and named by the project, and never a chat room", () => {
+    const page = channelsFromRecords([
+      record(id(1), "supporters", "forum", 100),
+      record(id(2), "general", "stream", 100),
+    ]);
+    const own = channelsFromRecords([
+      record(id(1).toUpperCase(), "supporters-renamed", "forum", 200),
+      record(id(2), "general", "stream", 100),
+    ]);
+    assert.deepEqual(
+      discussionBoards(page, own).map((board) => board.name),
+      ["supporters-renamed"],
+    );
+    assert.deepEqual(discussionBoards([], []), []);
   });
 });
 

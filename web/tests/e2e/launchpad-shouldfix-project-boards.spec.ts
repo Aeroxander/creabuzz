@@ -710,6 +710,104 @@ test("when the projects cannot be read, Home's Boards tab keeps the boards, says
   await expect(problem).toHaveCount(0);
 });
 
+/** `count` chat rooms made after every board in these specs, one a second, so the server's pages cut cleanly. */
+function seedNewerRooms(relay: Relay, count: number) {
+  for (let n = 0; n < count; n++) {
+    relay.seed({
+      ...channel(id(20_000 + n), `room-${n}`, "stream"),
+      created_at: 10_000 + n,
+    });
+  }
+}
+/** A read of the channel list further back than its newest page (not a read of channels by id). */
+const olderChannelsRead = (
+  f: { kinds?: number[]; [tag: string]: unknown } | undefined,
+) =>
+  Boolean(f?.kinds?.includes(39000)) &&
+  typeof f?.until === "number" &&
+  !Array.isArray(f?.["#d"]);
+
+test("Home's Boards tab lists a board older than 200 newer channel records", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  relay.seed(channel(LOOSE_BOARD, "old-talk", "forum"));
+  // The newest 200 channel records are all chat rooms: the first page of the channel list holds no board.
+  seedNewerRooms(relay, 230);
+  await openAs(page, relay, "/?tab=boards");
+
+  await expect(page.getByTestId("board-directory-name")).toHaveText([
+    "old-talk",
+  ]);
+  await expect(page.getByTestId("board-directory-empty")).toHaveCount(0);
+  // Every channel record was looked through, so there is nothing more to offer.
+  await expect(page.getByTestId("board-directory-more")).toHaveCount(0);
+});
+
+test("Home's Boards tab looks through a bounded number of channel records, then offers the older boards", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  relay.seed(channel(LOOSE_BOARD, "old-talk", "forum"));
+  seedNewerRooms(relay, 1100);
+  await openAs(page, relay, "/?tab=boards");
+
+  const more = page.getByTestId("board-directory-more");
+  await expect(more).toContainText("There may be older ones.");
+  // Not "there are no boards here": only part of the server's channels was read.
+  await expect(page.getByTestId("board-directory-empty")).toHaveCount(0);
+  await expect(page.getByTestId("board-directory-name")).toHaveCount(0);
+  const listReads = () =>
+    relay.reqsReceived().flat().filter(olderChannelsRead).length;
+  // Five reads of 200 in the first stretch: four of them further back than the newest page, and no more unasked.
+  expect(listReads()).toBe(4);
+
+  await more.getByRole("button", { name: "Show more boards" }).click();
+  await expect(page.getByTestId("board-directory-name")).toHaveText([
+    "old-talk",
+  ]);
+  await expect(more).toHaveCount(0);
+});
+
+test("when older boards cannot be read, Home's Boards tab keeps the ones listed and can try again from the keyboard", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  relay.seed(channel(LOOSE_BOARD, "old-talk", "forum"));
+  seedNewerRooms(relay, 1100);
+  relay.seed({
+    ...channel(NEBULA_BOARD, "new-talk", "forum"),
+    created_at: 50_000,
+  });
+  await openAs(page, relay, "/?tab=boards");
+
+  const names = page.getByTestId("board-directory-name");
+  const more = page.getByTestId("board-directory-more");
+  await expect(names).toHaveText(["new-talk"]);
+  await expect(more).toContainText("older boards that may not be listed yet");
+
+  relay.setClosingSockets(olderChannelsRead);
+  const button = more.getByRole("button");
+  await button.focus();
+  await page.keyboard.press("Enter");
+  const problem = page.getByTestId("board-directory-more-problem");
+  await expect(problem).toBeVisible({ timeout: 15_000 });
+  await expect(problem).toHaveAttribute("role", "alert");
+  await expect(problem).toHaveText(
+    "Couldn't load more boards. The ones above are still listed.",
+  );
+  // What was listed stays, and the page does not pass the failure off as the end of the list.
+  await expect(names).toHaveText(["new-talk"]);
+  await expect(page.getByTestId("board-directory-error")).toHaveCount(0);
+  await expect(button).toHaveText("Try again");
+
+  relay.setClosingSockets(false);
+  await expect(button).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(names).toHaveText(["new-talk", "old-talk"]);
+  await expect(more).toHaveCount(0);
+});
+
 /** Names are cut to fit, never pushed past the window (the page can hide a sideways overflow, a box cannot). */
 async function expectInsideWindow(locator: Locator, what: string) {
   const box = await locator.boundingBox();

@@ -80,6 +80,25 @@ export async function readNamedBoards(
 }
 
 /**
+ * The boards a decision of a project can be talked about on: the boards among the channels the server listed (its
+ * first page, which is where the server's own boards are found) and the project's own, read by id, which may be older
+ * than that page. One per board, by name.
+ */
+export function discussionBoards(
+  listed: readonly Channel[],
+  named: readonly Channel[],
+): Channel[] {
+  const byId = new Map<string, Channel>();
+  for (const channel of [...listed, ...named]) {
+    if (channel.type !== "forum" || channel.direct) continue;
+    const key = channel.id.toLowerCase();
+    const known = byId.get(key);
+    if (!known || channel.createdAt > known.createdAt) byId.set(key, channel);
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
  * The boards a project is known to have: null while they are still being read or when the read failed. An empty list
  * only ever means the read succeeded and found none, which is what offering to make a project's first boards has to
  * rest on.

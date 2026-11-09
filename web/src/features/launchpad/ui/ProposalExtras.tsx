@@ -124,7 +124,11 @@ export function ProposalExtras({
     authors,
   );
   // The first thread started about a decision is its main discussion; this says whether the one open is it.
-  const threads = useDaoThreads(launch && ref ? ref.chainId : null, dao ?? "");
+  const threads = useDaoThreads(
+    launch && ref ? ref.chainId : null,
+    dao ?? "",
+    launch?.record ?? null,
+  );
   const mainThread = ref
     ? [...(threads.threads.get(ref.id) ?? [])].sort(
         (a, b) => a.createdAt - b.createdAt || (a.postId < b.postId ? -1 : 1),

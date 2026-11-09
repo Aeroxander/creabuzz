@@ -187,7 +187,7 @@ test("scrolling lists stop at a failed older page and offer Try again", () => {
   const boardFeed = read("src/features/board/use-board-feed.ts");
   assert.match(
     boardFeed,
-    /error: \(query\.isFetchNextPageError \? null : query\.error\) \?\? channels\.error/,
+    /error: \(query\.isFetchNextPageError \? null : query\.error\) \?\? list\.error/,
   );
   assert.match(
     boardFeed,

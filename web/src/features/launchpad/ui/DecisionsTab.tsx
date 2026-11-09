@@ -70,7 +70,11 @@ export function DecisionsTab({
   // The talk about each decision lives on the community's boards.
   const chainId = Number(launch.record.chainId);
   const usableChain = Number.isSafeInteger(chainId) && chainId > 0;
-  const discussion = useDaoThreads(usableChain ? chainId : null, dao);
+  const discussion = useDaoThreads(
+    usableChain ? chainId : null,
+    dao,
+    launch.record,
+  );
   // A work area's words, for the hash its vote names: from the project's record and the updates posted with its votes.
   const evidence = useEvidencePackets(launch);
   const checkWords = useMemo(() => {
