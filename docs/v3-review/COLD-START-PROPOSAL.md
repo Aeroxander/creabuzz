@@ -381,6 +381,45 @@ piece was awarded; kept-promise rate; founder taps per piece; awards by lead; re
 14. **Renames:** Discover to Projects and Your work to Your projects now; "lead" and "help request" with the new screens; "earn" after counsel? Yes.
 15. **Give counsel section 9 before slice 2 ships.** Yes.
 
+## 13. Task rewards: what you decided on 2026-11-09, and what it needs
+
+You told me how you want pay for work to feel. Three choices, then what each one needs.
+
+1. **Hand-set Shares per task, with recommended values.** The recommendation falls as the project grows: it is a share of all
+   Shares in existence per task size (Small, Medium, Large), shown as a default the person posting the task can change. The
+   percentages are guesses to test; this document sets no real number.
+2. **A quick-release window for small tasks**, to cut waiting where it can be cut.
+3. **Bounties first, vesting later.** New people earn by finishing tasks. People who have finished several can be offered a
+   seat with a vesting grant, which holders vote on (D186 point 7).
+
+**What each needs, honestly**
+
+- **(1) is web only.** A price list per work area, with the recommendation worked out from the Shares in existence at that
+  moment. It needs no contract change. The task still ends in the existing award vote.
+- **(2) is the one that collides with section 7.** Today Shares land after review plus a 7-day objection period, and then a
+  holder vote. I rejected shortening that period (C5) because the constant sits in an audited contract. The on-chain way to pay
+  exact, pre-agreed terms with no vote is the agreed-reward path (C4), which I kept out of the first runs. So a shorter
+  window for small tasks needs C4 or C5 and an audit. **For the second pilot run I propose the honest middle:** show the
+  countdown ("Shares arrive on 16 Nov if nobody objects"), pre-fill the award vote at accept time so the holder only
+  confirms, and make the three steps (done, checked, awarded) one tap each. The pilot treasury holds no money, so waiting
+  costs time, not safety. Decide C4 after the pilot, with the audit quote.
+- **Late tasks stay soft:** the due date is a hint; a late helper writes why and asks for more time; the lead grants it; after
+  24 extra hours the task reopens for others with no penalty, or the lead recommends a partial award. This is a web rule on top
+  of the help-request records in section 5.
+- **A cooling-off on cashing out new awards** (ragequit waits, say, 30 days, but the Shares vote at once) only matters once a
+  treasury holds money, and today awards arrive with no lock. It needs a contract change and an audit. Decide before any
+  project holds real money, not for the pilot.
+- **(3) vesting** is the later rung: a grant that unlocks monthly while the person keeps working and stops when they stop.
+  Counsel reads it first (it resembles pay for ongoing service). Not in the second pilot run.
+
+**Decisions added**
+
+16. **Record the three choices above as the product direction?** Yes (taken by you in conversation on 2026-11-09).
+17. **For the second pilot run, use the countdown plus the prefilled award vote instead of a shorter window; ask for an audit
+    quote on C4 and C5 after the pilot?** Yes.
+18. **Defer the cooling-off on cash-outs and the vesting seats until counsel has read section 9 and before any project holds
+    real money?** Yes.
+
 ## 12. Unverified facts
 
 1. Server work for the vouch, pool, request, offer and accept records is unsized. Kind numbers 37021 to 37025 looked free to
