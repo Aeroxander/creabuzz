@@ -420,6 +420,48 @@ You told me how you want pay for work to feel. Three choices, then what each one
 18. **Defer the cooling-off on cash-outs and the vesting seats until counsel has read section 9 and before any project holds
     real money?** Yes.
 
+## 14. Corrections after an independent double check (2026-11-09)
+
+Three reviewers who had not seen this document's reasoning checked it against the code, the two Sepolia deployments and the
+plan itself. Where this section and an earlier one disagree, this section is right.
+
+**Facts that were wrong**
+
+1. **The agreed-reward path is already on Sepolia.** Sections 5, 7 (C4) and 13 and decisions 7 and 17 say it is not deployed
+   and that paying exact agreed terms without a vote needs a contract change. Both are false. Both work budget factories on
+   Sepolia (5 Nov and 7 Nov sets) contain it (checked in their on-chain code), the source note "not deployed" at
+   `TreasuryMandate.sol:87` is stale, and the web Work tab shows the lane whenever the chain reports it, with no build switch
+   found. So on a pilot project today the work-area manager can propose agreed terms, the helper accepts, the panel approves,
+   and after the 7 days anyone can settle with no holder vote. "The founder still votes every award" describes the app's
+   usual path, not a rule of the chain. What this changes: quick, exact pay per task needs a **product and audit decision**,
+   not a deploy; and keeping it off would need a web gate that does not exist. It is unaudited either way.
+2. **The 3 reviewers, 2 agreeing, founder-off-the-panel and 90-day rules bind only the first work budget.** A later budget is
+   an ordinary vote and the shared form accepts 1 to 32 reviewers, any quorum, any end date, with no founder exclusion. A
+   founder who is the only voter can vote in a second budget of any size with one reviewer of their choosing in about 3.5
+   days. Section 4's "real controls", decision 3 and rung 3 overstate the protection. It is a first-budget default.
+3. **The 7 days start when the review is finished and released,** not when the reviewers reach agreement. An unbound
+   submission stays open 30 days. Votes handed over to someone do not count toward the 1% needed to open a vote.
+4. **A cooling-off on cashing out can never be added to existing projects,** only to projects made by a new kit (the
+   "no guard" choice is final). Shares in contributor projects cannot be transferred but can vote and leave at once.
+5. Small cites: `DiscoverPage.tsx:306` reads "No projects yet. Start one and it shows up here."; "earn" is at
+   `contributor-start-copy.ts:13-15`; the tabs are at `launch-tabs.ts:31-41`; `ContributorKit.sol:208-224` and `:113-117`
+   (the 1% threshold). Record kinds 37021 to 37025 are free. Linking a name at passkey sign-up is an added step.
+
+**Where the plan itself was weak (the second opinion)**
+
+- **The reviewer pool moves the cold start, it does not solve it.** On an invite-only server the pool is whoever the operator
+  invited. It is an operated service: say so, name the reviewers, promise a response time, and write when it ends.
+- **Slice order.** The vouch should not ship before a stranger can see anything. Better: the invite door and a seeded example
+  project with real requests; then request, offer, accept; then notifications (there is none outside the app today); then
+  the vouch.
+- **Too much for a pilot of 5 to 25 people.** Leads, the second hop, ladder rungs, standing rules and Thanks rounds wait until
+  one question passes: can an invited stranger get from the link to accepted work with no hand-holding?
+- **Two weeks of silence before a first reward is too long.** Show a visible acknowledgement when work is accepted.
+- **Decisions 1 to 15 of this document are not taken.** D186 lifted the freeze only for the vouch, the picker line and the
+  shorter Start. These are the owner's to take in person.
+- **Ask for the audit quote and counsel's read now,** not after the pilot. The pilot runbook describes two reviewers while
+  the code enforces three; reconcile them before the second run.
+
 ## 12. Unverified facts
 
 1. Server work for the vouch, pool, request, offer and accept records is unsized. Kind numbers 37021 to 37025 looked free to
