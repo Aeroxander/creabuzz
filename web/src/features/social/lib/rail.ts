@@ -11,6 +11,11 @@ import { effectiveStage, type Launch } from "../../launchpad/models.ts";
 export const RAIL_LIMITS = {
   projects: 4,
   posts: 3,
+  /**
+   * How many trending posts the rail reads by id to find `posts` to show: a few spare, for the authors the reader
+   * muted. Not Explore's full thirty, so the rail on every social page asks the server for a handful, not a page.
+   */
+  postsRead: 9,
   hashtags: 5,
   people: 3,
 } as const;
@@ -60,4 +65,23 @@ export function railBlurb(content: string, max = 110): string {
   const cut = words.slice(0, max);
   const space = cut.lastIndexOf(" ");
   return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/** The trending post ids the rail reads: the top few, never the whole trending list. */
+export function railPostIds(ids: readonly string[] | undefined): string[] {
+  return (ids ?? []).slice(0, RAIL_LIMITS.postsRead);
+}
+
+/**
+ * The trending posts the rail shows: those not written by someone the reader muted, in the order read, up to the limit.
+ * `muted` holds lower-case public keys (the mute list's own form).
+ */
+export function railPosts<Row extends { event: { pubkey: string } }>(
+  rows: readonly Row[],
+  muted: ReadonlySet<string>,
+  limit: number = RAIL_LIMITS.posts,
+): Row[] {
+  return rows
+    .filter((row) => !muted.has(row.event.pubkey.toLowerCase()))
+    .slice(0, limit);
 }

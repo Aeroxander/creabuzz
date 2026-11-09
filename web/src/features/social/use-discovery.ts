@@ -39,7 +39,7 @@ import {
 } from "./lib/trending";
 import { usePriorityNotifications } from "./use-launch-updates";
 import { readEvents } from "./read";
-import { useMutedSet } from "./use-social-actions";
+import { useMutedPeople, useMutedSet } from "./use-social-actions";
 import { socialKeys, useFollowing } from "./use-social-data";
 
 /** How far back trending looks: communities are small, so three days. */
@@ -178,19 +178,26 @@ export function useTrending() {
   });
 }
 
-/** Accounts many others follow that you don't yet. */
+/**
+ * Accounts many others follow that you don't yet, never someone you muted. Waits for the mute list to be read (a
+ * failed read counts as read, as everywhere else), so a muted person is never suggested and then taken away.
+ */
 export function useSuggestedUsers(limit = 5) {
   const me = existingUserPubkey();
   const following = useFollowing(me).data;
+  const mutedRead = useMutedPeople();
+  const muted = mutedRead.data;
   return useQuery({
     queryKey: [
       ...socialKeys.all,
       "suggested",
       me,
       following?.length ?? -1,
+      // Who is muted, not how many: muting one person and unmuting another must not reuse the old list.
+      muted ? [...muted].sort().join(",") : "",
       limit,
     ],
-    enabled: me === null || following !== undefined,
+    enabled: (me === null || following !== undefined) && !mutedRead.isLoading,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const lists = await readEvents({
@@ -199,7 +206,7 @@ export function useSuggestedUsers(limit = 5) {
       });
       return mostFollowed(
         lists,
-        new Set([...(following ?? []), ...(me ? [me] : [])]),
+        new Set([...(following ?? []), ...(me ? [me] : []), ...(muted ?? [])]),
         limit,
       );
     },

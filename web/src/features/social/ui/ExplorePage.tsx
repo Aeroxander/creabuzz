@@ -13,6 +13,7 @@ import { QueryError } from "@/shared/ui/query-error";
 import { firstError, listView, partialError } from "../lib/read-view";
 import { useSuggestedUsers, useTrending } from "../use-discovery";
 import { usePeople } from "../use-people";
+import { useMutedPeople } from "../use-social-actions";
 import { useFollowing, useNotesById } from "../use-social-data";
 import { HashtagRow } from "./HashtagRow";
 import { PersonRow } from "./PersonRow";
@@ -114,11 +115,13 @@ function People() {
   const people = usePeople((suggested.data ?? []).map((s) => s.pubkey));
   // Suggestions wait for who you follow: if that read failed they never come, which is a failure, not "no suggestions".
   const following = useFollowing(existingUserPubkey());
+  // Suggestions leave out people you muted, so they wait for the mute list too.
+  const mutedRead = useMutedPeople();
   const error = firstError(suggested.error, following.error);
   const view = listView({
     count: suggested.data?.length ?? 0,
     error,
-    loading: suggested.isLoading || following.isLoading,
+    loading: suggested.isLoading || following.isLoading || mutedRead.isLoading,
   });
   const retry = () => {
     if (following.error) void following.refetch();

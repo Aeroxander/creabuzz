@@ -7,10 +7,17 @@ import { useLaunches } from "@/features/launchpad/use-launches";
 import { resolveUserName } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
 
-import { RAIL_LIMITS, railBlurb, railProjects } from "../lib/rail";
+import {
+  RAIL_LIMITS,
+  railBlurb,
+  railPostIds,
+  railPosts,
+  railProjects,
+} from "../lib/rail";
 import { firstError, listView } from "../lib/read-view";
 import { useSuggestedUsers, useTrending } from "../use-discovery";
 import { usePeople } from "../use-people";
+import { useMutedPeople } from "../use-social-actions";
 import { useFollowing, useNotesById } from "../use-social-data";
 import { HashtagRow } from "./HashtagRow";
 import { PersonRow } from "./PersonRow";
@@ -48,6 +55,8 @@ export function SearchBox({ initial = "" }: { initial?: string }) {
   );
 }
 
+const NOBODY: ReadonlySet<string> = new Set();
+
 const LINK_CLASS = "font-semibold text-sky-700 underline dark:text-sky-400";
 
 /** One block of the rail: a heading, a short list and a "See all" link to the full page. */
@@ -55,15 +64,19 @@ function RailBlock({
   id,
   title,
   seeAll,
+  busy = false,
   children,
 }: {
   id: string;
   title: string;
   seeAll: ReactNode;
+  /** True while the block's reads have not answered. */
+  busy?: boolean;
   children: ReactNode;
 }) {
   return (
     <section
+      aria-busy={busy || undefined}
       aria-labelledby={id}
       className="glass overflow-hidden rounded-2xl border"
       data-testid={`social-rail-block-${id}`}
@@ -80,7 +93,11 @@ function RailBlock({
   );
 }
 
-/** A line in a block that has no list to show: still reading, nothing yet, or the read failed (with a retry). */
+/**
+ * A line in a block that has no list to show: still reading, nothing yet, or the read failed (with a retry). A failed
+ * read is an alert, so a screen reader says it at once. "Still reading" and "nothing yet" are plain text: four blocks
+ * loading together must not announce four times (the block says it is busy instead, see `RailBlock`).
+ */
 function RailNote({
   children,
   onRetry,
@@ -94,7 +111,7 @@ function RailNote({
     <p
       className="px-4 pb-3 text-sm text-black/60 dark:text-white/60"
       data-testid={testId}
-      role="status"
+      role={onRetry ? "alert" : undefined}
     >
       {children}
       {onRetry ? (
@@ -162,6 +179,7 @@ function ProjectsBlock() {
           to="/discover"
         />
       }
+      busy={view === "loading"}
       title="Projects"
     >
       {view === "loading" ? (
@@ -190,6 +208,8 @@ function ProjectsBlock() {
               <Link
                 className="block px-4 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
                 params={{ launchId: record.id }}
+                // The author too, as every other project link sends it: two authors can share an id.
+                search={{ author: record.author }}
                 to="/launchpad/$launchId"
               >
                 <span className="block truncate text-sm font-bold text-black dark:text-white">
@@ -211,9 +231,14 @@ function ProjectsBlock() {
 
 function TrendingPostsBlock() {
   const trending = useTrending();
-  // The same read the Explore page makes, so its cache serves the page after "See all".
-  const notes = useNotesById(trending.data?.ids ?? []);
-  const rows = (notes.data ?? []).slice(0, RAIL_LIMITS.posts);
+  // Only the top few ids (Explore reads all thirty): the rail is on every social page and shows three posts.
+  const notes = useNotesById(railPostIds(trending.data?.ids));
+  // A muted person's post stays out of the rail, as out of the timeline; wait for the mute list so it never flashes.
+  const mutedRead = useMutedPeople();
+  const rows = useMemo(
+    () => railPosts(notes.data ?? [], mutedRead.data ?? NOBODY),
+    [notes.data, mutedRead.data],
+  );
   const people = usePeople(rows.map((row) => row.event.pubkey));
   const error = firstError(trending.error, notes.error);
   const view = listView({
@@ -221,6 +246,7 @@ function TrendingPostsBlock() {
     error,
     loading:
       trending.isLoading ||
+      mutedRead.isLoading ||
       Boolean(trending.data?.ids.length && notes.isLoading),
   });
   const retry = () => {
@@ -238,6 +264,7 @@ function TrendingPostsBlock() {
           to="/social/explore"
         />
       }
+      busy={view === "loading"}
       title="Trending posts"
     >
       {view === "loading" ? (
@@ -293,6 +320,7 @@ function HashtagsBlock() {
           to="/social/explore"
         />
       }
+      busy={view === "loading"}
       title="Hashtags"
     >
       {view === "loading" ? (
@@ -327,11 +355,13 @@ function PeopleBlock() {
   const people = usePeople(list.map((s) => s.pubkey));
   // Suggestions wait for who you follow: if that read failed they never come, which is a failure, not "no suggestions".
   const following = useFollowing(existingUserPubkey());
+  // The suggestions leave out people you muted, so they wait for the mute list too.
+  const mutedRead = useMutedPeople();
   const error = firstError(suggested.error, following.error);
   const view = listView({
     count: list.length,
     error,
-    loading: suggested.isLoading || following.isLoading,
+    loading: suggested.isLoading || following.isLoading || mutedRead.isLoading,
   });
   const retry = () => {
     if (following.error) void following.refetch();
@@ -348,6 +378,7 @@ function PeopleBlock() {
           to="/social/explore"
         />
       }
+      busy={view === "loading"}
       title="People to follow"
     >
       {view === "loading" ? (

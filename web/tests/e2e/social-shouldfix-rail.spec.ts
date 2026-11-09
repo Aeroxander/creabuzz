@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { getPublicKey } from "nostr-tools/pure";
 
 import { createMockRelay } from "./mock-relay";
 
@@ -10,6 +11,9 @@ import { createMockRelay } from "./mock-relay";
  */
 
 const NSEC = "79".repeat(32);
+const ME = getPublicKey(
+  Uint8Array.from(NSEC.match(/.{2}/g) ?? [], (b) => Number.parseInt(b, 16)),
+);
 const ALICE = "e".repeat(64);
 const BOB = "b0".repeat(32);
 const CAROL = "c0".repeat(32);
@@ -176,6 +180,11 @@ test("Home's rail lists the newest projects, trending posts, hashtags and people
     /Alpha project/,
   ]);
   await expect(projects.first()).toHaveAttribute("href", /\/launchpad\/delta/);
+  // The author goes with the id, as in every other project link: two authors can share an id.
+  await expect(projects.first()).toHaveAttribute(
+    "href",
+    new RegExp(`author=${ALICE}`),
+  );
 
   await expect(rail(page).getByTestId("social-rail-posts")).toContainText(
     "Alice Archer",
@@ -392,6 +401,9 @@ test("projects the server would not answer for are a failure with a retry, not a
   await expect(
     rail(page).getByTestId("social-rail-projects-empty"),
   ).toHaveCount(0);
+  // A failed read is said as an alert; a block still reading is plain text, so four loading blocks do not announce.
+  await expect(error).toHaveAttribute("role", "alert");
+  await expect(rail(page).getByRole("status")).toHaveCount(0);
 
   relay.setClosingSockets(false);
   await error.getByRole("button", { name: /try again/i }).click();
@@ -425,3 +437,84 @@ for (const width of [390, 900]) {
     expect(gap).toBeGreaterThanOrEqual(-1);
   });
 }
+
+test("a muted person is left out of the rail's trending posts and people to follow", async ({
+  page,
+}) => {
+  const relay = seeded();
+  // Bob is the author of a second liked post and also the other person worth following; the reader muted him.
+  const bobs = note("post-by-bob".padEnd(64, "0"), BOB, "Bob's hot take", []);
+  relay.seed(bobs);
+  relay.seed(like("like-3".padEnd(64, "0"), CAROL, bobs.id));
+  relay.seed(like("like-4".padEnd(64, "0"), DAN, bobs.id));
+  relay.seed(like("like-5".padEnd(64, "0"), ALICE, bobs.id));
+  relay.seed(profile(BOB, "Bob Baker"));
+  relay.seed(follows("follow-a".padEnd(64, "0"), ALICE, [BOB]));
+  relay.seed(follows("follow-d".padEnd(64, "0"), DAN, [BOB]));
+  relay.seed(follows("follow-c2".padEnd(64, "0"), CAROL, [BOB]));
+  await setUp(page, relay);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  // Before the mute: Bob shows in both blocks (so the test can fail).
+  await page.goto("/");
+  await expect(rail(page).getByTestId("social-rail-posts")).toContainText(
+    "Bob Baker",
+    { timeout: 20_000 },
+  );
+  await expect(rail(page).getByTestId("social-rail-people")).toContainText(
+    "Bob Baker",
+  );
+
+  relay.seed({
+    id: "mute-list".padEnd(64, "0"),
+    pubkey: ME,
+    created_at: NOW - 60,
+    kind: 10000,
+    tags: [["p", BOB]],
+    content: "",
+    sig: "sig",
+  });
+  await page.goto("/");
+  await expect(rail(page).getByTestId("social-rail-posts")).toContainText(
+    "Alice Archer",
+    { timeout: 20_000 },
+  );
+  await expect(rail(page).getByTestId("social-rail-people")).toContainText(
+    "Dan Drummer",
+  );
+  await expect(rail(page).getByText("Bob Baker")).toHaveCount(0);
+  await expect(rail(page).getByText("Bob's hot take")).toHaveCount(0);
+});
+
+test("the rail reads a handful of trending posts by id, not the whole trending list", async ({
+  page,
+}) => {
+  const relay = seeded();
+  for (let n = 0; n < 14; n++) {
+    const extra = note(
+      `extra-${n}`.padEnd(64, "0"),
+      ALICE,
+      `Extra post ${n}`,
+      [],
+    );
+    relay.seed(extra);
+    relay.seed(like(`like-x${n}`.padEnd(64, "0"), BOB, extra.id));
+  }
+  await setUp(page, relay);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // A page that is not Home: the rail is on every social page.
+  await page.goto("/social/notifications");
+  await expect(
+    rail(page).getByRole("heading", { name: "Trending posts", exact: true }),
+  ).toBeVisible({ timeout: 20_000 });
+  await expect(rail(page).getByTestId("social-rail-posts")).toBeVisible();
+  const longest = Math.max(
+    0,
+    ...relay
+      .reqsReceived()
+      .flat()
+      .map((f) => (Array.isArray(f.ids) ? (f.ids as string[]).length : 0)),
+  );
+  expect(longest).toBeGreaterThan(0);
+  expect(longest).toBeLessThanOrEqual(9);
+});

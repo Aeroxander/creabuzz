@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { RAIL_LIMITS, railBlurb, railProjects } from "./rail.ts";
+import {
+  RAIL_LIMITS,
+  railBlurb,
+  railPostIds,
+  railPosts,
+  railProjects,
+} from "./rail.ts";
 
 function launch(id, createdAt, over = {}) {
   return {
@@ -99,4 +105,33 @@ test("a long blurb is cut at a word and ends with an ellipsis", () => {
 
 test("a post with only a link has no blurb", () => {
   assert.equal(railBlurb("https://example.com/x"), "");
+});
+
+const post = (id, pubkey) => ({ event: { id, pubkey } });
+
+test("the rail reads only a handful of trending posts, not the whole list", () => {
+  const thirty = Array.from({ length: 30 }, (_, n) => `id${n}`);
+  const read = railPostIds(thirty);
+  assert.equal(read.length, RAIL_LIMITS.postsRead);
+  assert.ok(RAIL_LIMITS.postsRead < thirty.length);
+  assert.deepEqual(read, thirty.slice(0, RAIL_LIMITS.postsRead));
+  assert.deepEqual(railPostIds(undefined), []);
+});
+
+test("a muted person's trending post is left out and the next one takes its place", () => {
+  const rows = ["m", "a", "b", "c", "d"].map((who, n) =>
+    post(`p${n}`, who.repeat(64).slice(0, 64)),
+  );
+  const muted = new Set(["m".repeat(64)]);
+  const shown = railPosts(rows, muted);
+  assert.deepEqual(
+    shown.map((row) => row.event.id),
+    ["p1", "p2", "p3"],
+  );
+  assert.equal(railPosts(rows, new Set()).length, RAIL_LIMITS.posts);
+});
+
+test("a mute matches a key whatever its letter case", () => {
+  const rows = [post("p0", "ABCDEF".padEnd(64, "0"))];
+  assert.deepEqual(railPosts(rows, new Set(["abcdef".padEnd(64, "0")])), []);
 });
