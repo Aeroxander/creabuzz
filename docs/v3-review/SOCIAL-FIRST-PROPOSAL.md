@@ -1,6 +1,6 @@
 # A social-first, peer-allocated, role-based model (proposal)
 
-Status: **proposal for owner decision.** Nothing here is built, decided or deployed. Date: 2026-11-08 (revised the same
+Status: **the eleven decisions in section 7 were taken on 2026-11-09 as D186 (decision 9 changed, see there); nothing here is built or deployed.** It began as a proposal for owner decision. Date: 2026-11-08 (revised the same
 day, after the Hats, Coordinape and DAO research arrived; see the last section). Branch `v4-governance-rework`. The build freeze (D137) stands until you say otherwise; this document asks you to say so for one
 small, no-money piece (decision 1).
 
