@@ -235,7 +235,7 @@ export function SocialShell({
           </button>
         </nav>
 
-        <div className="glass min-h-full min-w-0 border-x">
+        <div className="glass min-w-0 border-x xl:min-h-full">
           {/* On a phone Home is already in the app's own tab bar, so the strip carries the rest. */}
           {mobileEntries.length > 0 ? (
             <nav

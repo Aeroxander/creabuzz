@@ -62,6 +62,15 @@ async function open(
     }),
   );
   await relay.install(page);
+  // A server with no terms set: a signed-in person is not asked to agree again, and no "could not check" notice
+  // slides in over the top of the page (it would cover what these specs look at).
+  await page.route("**/api/join-policy", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({}),
+    }),
+  );
   if (access) {
     // Registered after the mock's own answer, so it is the one used.
     await page.route("**/info", (route) =>
@@ -134,7 +143,9 @@ test("a new post waits behind the bar, and Show puts it on top without moving th
     "2 new posts shown at the top.",
   );
   // Focus goes with the posts it offered.
-  await expect(page.getByRole("region", { name: "Posts" })).toBeFocused();
+  await expect(
+    page.getByRole("region", { name: "Posts", exact: true }),
+  ).toBeFocused();
 });
 
 test("a muted person's new post is not counted", async ({ page }) => {

@@ -128,6 +128,14 @@ async function setUp(page: Page, relay: Relay) {
     }),
   );
   await relay.install(page);
+  // No terms set on this server, so no "could not check the terms" notice covers the page.
+  await page.route("**/api/join-policy", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({}),
+    }),
+  );
   await page.addInitScript((nsec) => {
     window.localStorage.setItem("buzz.identity.nsec", nsec);
     window.localStorage.setItem("buzz.identity.backedUp", "1");
@@ -394,3 +402,26 @@ test("projects the server would not answer for are a failure with a retry, not a
     },
   );
 });
+
+for (const width of [390, 900]) {
+  test(`on a short page at ${width}px the rail starts below the page, never over it`, async ({
+    page,
+  }) => {
+    // A person with nothing posted is a page far shorter than the screen: the rail used to be laid over its lower half.
+    await setUp(page, seeded());
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`/u/${DAN}`);
+    await expect(
+      rail(page).getByRole("heading", { name: "Projects", exact: true }),
+    ).toBeVisible({ timeout: 20_000 });
+    const gap = await page.evaluate(() => {
+      const side = document.querySelector('[data-testid="social-rail"]');
+      const timeline = side?.previousElementSibling?.getBoundingClientRect();
+      return side && timeline
+        ? side.getBoundingClientRect().top - timeline.bottom
+        : null;
+    });
+    expect(gap).not.toBeNull();
+    expect(gap).toBeGreaterThanOrEqual(-1);
+  });
+}
