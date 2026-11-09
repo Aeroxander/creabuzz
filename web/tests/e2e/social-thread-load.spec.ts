@@ -83,9 +83,25 @@ test("a deep reply's page reads its thread on two sockets, not one per note abov
   const holds = (filters: { ids?: unknown }[], id: string) =>
     filters.some((f) => Array.isArray(f.ids) && f.ids.includes(id));
   const aboveIds = chain.map((e) => e.id);
-  // Every read that named the focused post or one above it: the thread's own (other parts of the page read other things).
+  // The thread's own reads: one that names a single one of these posts by id (the note, or a link of the climb) or asks
+  // for the notes that reply to one of them (kind 1 only). Other parts of the page read other things, among them a batch
+  // of trending posts by id (the home rail) and the reactions and reposts under posts (kinds 7, 6 and 1): neither is the
+  // thread's.
+  const mine = [focus.id, ...aboveIds];
   const threadReads = reqs.filter((filters) =>
-    [focus.id, ...aboveIds].some((id) => holds(filters, id)),
+    filters.some((f) => {
+      const ids = (f as { ids?: unknown }).ids;
+      const replies = (f as { "#e"?: unknown })["#e"];
+      if (JSON.stringify((f as { kinds?: unknown }).kinds) !== "[1]") {
+        return false;
+      }
+      return (
+        (Array.isArray(ids) &&
+          ids.length <= 2 &&
+          mine.some((id) => ids.includes(id))) ||
+        (Array.isArray(replies) && mine.some((id) => replies.includes(id)))
+      );
+    }),
   );
   console.log(
     `thread load: ${relay.connectionsOpened()} sockets opened in all, ${reqs.length} REQs, ${threadReads.length} thread reads on ${threadReads.length} sockets`,
@@ -96,7 +112,7 @@ test("a deep reply's page reads its thread on two sockets, not one per note abov
     "each thread read carries its filters in one REQ",
   ).toBe(true);
   expect(
-    reqs.some(
+    threadReads.some(
       (filters) =>
         filters.length === 1 && aboveIds.some((id) => holds(filters, id)),
     ),
