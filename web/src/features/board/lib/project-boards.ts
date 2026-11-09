@@ -11,6 +11,7 @@
  */
 
 import { MAX_BOUND_CHANNELS } from "../../launchpad/lib/launch-chat.ts";
+import { parseMembers } from "./members.ts";
 
 /** The parts of a project's record this module reads. */
 export interface TiedRecord {
@@ -28,7 +29,7 @@ export interface TiedRecord {
 }
 
 /** A project, for pointing at it and for the channels it names. */
-interface ProjectRef {
+export interface ProjectRef {
   /** Author and id together: the project's own key (ids are only unique per author). */
   key: string;
   id: string;
@@ -60,6 +61,101 @@ export function boardProject(record: TiedRecord): BoardProject {
     ownBoard: record.chat.board ? record.chat.board.toLowerCase() : null,
     channelIds: [...new Set(ids)],
   };
+}
+
+/**
+ * Who runs each board, from the membership records (kind 39002) the server returned: the people whose role is `owner`.
+ * Only the newest record for a board counts. Board ids are lower case, as in `BoardProject`.
+ */
+export function boardOwners(
+  records: readonly { created_at: number; tags: string[][] }[],
+): Map<string, ReadonlySet<string>> {
+  const newest = new Map<string, { created_at: number; tags: string[][] }>();
+  for (const record of records) {
+    const d = record.tags.find((tag) => tag[0] === "d")?.[1];
+    if (!d) continue;
+    const key = d.toLowerCase();
+    const seen = newest.get(key);
+    if (!seen || record.created_at > seen.created_at) newest.set(key, record);
+  }
+  return new Map(
+    [...newest].map(([id, record]) => [
+      id,
+      new Set(
+        parseMembers(record.tags)
+          .filter((member) => member.role === "owner")
+          .map((member) => member.pubkey.toLowerCase()),
+      ),
+    ]),
+  );
+}
+
+/**
+ * The project with only the boards its founder runs. A record is the founder's own word, so a board it names counts as
+ * the project's only when the server says the founder owns that board. Anyone can type another person's board id (or a
+ * plain server board's) into their own record; without this check it would be listed under their project and, as the
+ * record's "own board", would win it away from the project that made it. A board with no owner read (nothing known
+ * about it) is not counted.
+ */
+export function boardsTheFounderRuns(
+  project: BoardProject,
+  owners: ReadonlyMap<string, ReadonlySet<string>>,
+): BoardProject {
+  const founder = project.author.toLowerCase();
+  const channelIds = project.channelIds.filter((id) =>
+    owners.get(id)?.has(founder),
+  );
+  return {
+    ...project,
+    ownBoard:
+      project.ownBoard !== null && channelIds.includes(project.ownBoard)
+        ? project.ownBoard
+        : null,
+    channelIds,
+  };
+}
+
+/**
+ * How to tell projects apart in a list: the words to put after a project's name. A name shared by two projects is followed by who made it, and by the project's
+ * address too when the same person made both; a name that is alone stays as it is. `nameOf` gives a founder's name.
+ * Keyed by project key.
+ */
+export function projectQualifiers(
+  projects: readonly ProjectRef[],
+  nameOf: (pubkey: string) => string,
+): Map<string, string | null> {
+  const nameKey = (project: ProjectRef) => project.name.trim().toLowerCase();
+  /** Projects by what they read like so far. */
+  const alike = (read: (project: ProjectRef) => string) => {
+    const groups = new Map<string, ProjectRef[]>();
+    for (const project of projects) {
+      const key = `${nameKey(project)}\n${read(project)}`;
+      groups.set(key, [...(groups.get(key) ?? []), project]);
+    }
+    return (project: ProjectRef) =>
+      groups.get(`${nameKey(project)}\n${read(project)}`) ?? [];
+  };
+  const sameName = alike(() => "");
+  const sameMaker = alike((project) => nameOf(project.author));
+  const sameAddress = alike(
+    (project) => `${nameOf(project.author)}\n${project.id}`,
+  );
+  return new Map(
+    projects.map((project): [string, string | null] => {
+      if (sameName(project).length < 2) return [project.key, null];
+      const by = `by ${nameOf(project.author)}`;
+      if (sameMaker(project).length < 2) return [project.key, by];
+      const at = `${by} (${project.id})`;
+      const twins = sameAddress(project);
+      if (twins.length < 2) return [project.key, at];
+      // The same name, maker and address (two people who share a name): their order is all that tells them apart.
+      const order = [...twins].sort((x, y) => (x.key < y.key ? -1 : 1));
+      return [
+        project.key,
+        `${at}, ${order.indexOf(project) + 1} of ${order.length}`,
+      ];
+    }),
+  );
 }
 
 /** One group of boards on Home: a project's, or the server's own (`project` null). */

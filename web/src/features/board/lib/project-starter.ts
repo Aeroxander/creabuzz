@@ -3,9 +3,11 @@
  * project's record naming the boards that were made.
  *
  * The record is what makes a board the project's, so a board made but not yet named would sit on the server with no
- * project. Each id is remembered (in this browser) before its board is made and forgotten only once the record names
- * it, so a try that fails between the two is picked up by the next one instead of leaving a second board behind. A
- * board that fails stops the run; the boards made before it are still named, and asking again makes only what is missing.
+ * project. Each board's id, and whether its first post is sent, is remembered (in this browser) before the work is done
+ * and forgotten only once the record names the board, so a try that fails midway is picked up by the next one instead
+ * of leaving a second board behind or a board with no first post. A board counts as made only once it has its first
+ * post. A board that fails stops the run; the boards made before it are still named, and asking again finishes only
+ * what is missing.
  *
  * Pure over its dependencies (the sender, the store, the id maker): `project-starter.test.mjs` drives it under
  * `node --test` with a fake server.
@@ -32,21 +34,29 @@ export function starterMemoKey(scope: StarterScope): string {
   return `creaton.projectBoards:${relay}:${scope.founder.toLowerCase()}:${scope.projectId}`;
 }
 
-/** Board name to the id made for it and not yet named by the record. */
-function readMemo(
-  store: StarterMemoStore,
-  scope: StarterScope,
-): Record<string, string> {
+/** What is remembered of one board: the id it is made under, and whether its first post was accepted. */
+interface MemoEntry {
+  id: string;
+  seeded: boolean;
+}
+
+/** Board name to what was done for it and not yet named by the record. */
+type Memo = Record<string, MemoEntry>;
+
+function readMemo(store: StarterMemoStore, scope: StarterScope): Memo {
   try {
     const raw = store.getItem(starterMemoKey(scope));
     const parsed: unknown = raw ? JSON.parse(raw) : {};
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
       return {};
-    return Object.fromEntries(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string",
-      ),
-    );
+    const memo: Memo = {};
+    for (const [name, value] of Object.entries(parsed)) {
+      if (value === null || typeof value !== "object") continue;
+      const { id, seeded } = value as Partial<MemoEntry>;
+      if (typeof id === "string" && id !== "")
+        memo[name] = { id, seeded: seeded === true };
+    }
+    return memo;
   } catch {
     return {};
   }
@@ -55,7 +65,7 @@ function readMemo(
 function writeMemo(
   store: StarterMemoStore,
   scope: StarterScope,
-  memo: Record<string, string>,
+  memo: Memo,
 ): void {
   try {
     if (Object.keys(memo).length === 0) store.removeItem(starterMemoKey(scope));
@@ -67,8 +77,8 @@ function writeMemo(
 
 export interface StarterRun {
   scope: StarterScope;
-  /** Names of the boards the project already has. */
-  existingNames: readonly string[];
+  /** The boards the project already has. */
+  existing: readonly { name: string; description: string }[];
   store: StarterMemoStore;
   newId: () => string;
   /** Whether the server already has a board with this id. A failure to answer is thrown. */
@@ -88,20 +98,23 @@ export interface StarterRun {
 export async function createProjectStarterBoards(
   run: StarterRun,
 ): Promise<string[]> {
-  const missing = missingStarterBoards(run.existingNames);
+  const missing = missingStarterBoards(run.existing);
   if (missing.length === 0) return [];
   const memo = readMemo(run.store, run.scope);
   const made: Array<{ name: string; id: string }> = [];
   let failure: unknown = null;
   for (const board of missing) {
     try {
-      const id = memo[board.name] ?? run.newId();
-      memo[board.name] = id;
+      const entry = memo[board.name] ?? { id: run.newId(), seeded: false };
+      memo[board.name] = entry;
       writeMemo(run.store, run.scope, memo);
-      const alreadyMade = await run.exists(id);
-      if (!alreadyMade) await run.create(board, id);
-      made.push({ name: board.name, id });
-      if (!alreadyMade) await run.seed(board, id);
+      if (!(await run.exists(entry.id))) await run.create(board, entry.id);
+      if (!entry.seeded) {
+        await run.seed(board, entry.id);
+        entry.seeded = true;
+        writeMemo(run.store, run.scope, memo);
+      }
+      made.push({ name: board.name, id: entry.id });
     } catch (error) {
       failure = error;
       break;

@@ -44,11 +44,8 @@ export function ProjectBoardsTab({
   const failed = error != null;
   const mine = useMyBoards();
   const unread = useUnreadRooms();
-  const missing = missingStarterBoards(boards.map((board) => board.name));
-  const starter = useProjectStarterBoards(
-    launch,
-    boards.map((board) => board.name),
-  );
+  const missing = missingStarterBoards(boards);
+  const starter = useProjectStarterBoards(launch, boards);
   const working = starter.state.phase === "working";
 
   const addBoards = async () => {

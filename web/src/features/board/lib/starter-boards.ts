@@ -61,12 +61,22 @@ export const STARTER_BOARDS: readonly StarterBoard[] = [
   },
 ];
 
-/** The starter boards a project lacks, by name. */
+/**
+ * The starter boards a project lacks. A project has one when it names a board with that name and that purpose, which is
+ * how a starter board is made. Another board that only shares the name (a founder's own "supporters" board, or one
+ * somebody else made) does not stand in for it.
+ */
 export function missingStarterBoards(
-  existingNames: readonly string[],
+  existing: readonly { name: string; description: string }[],
 ): StarterBoard[] {
-  const have = new Set(existingNames.map((name) => name.toLowerCase()));
-  return STARTER_BOARDS.filter((board) => !have.has(board.name));
+  const have = new Set(
+    existing.map(
+      (board) => `${board.name.toLowerCase()}\n${board.description.trim()}`,
+    ),
+  );
+  return STARTER_BOARDS.filter(
+    (board) => !have.has(`${board.name}\n${board.purpose}`),
+  );
 }
 
 /** The two records that make one board: its creation and its first post. */

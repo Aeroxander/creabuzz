@@ -14,12 +14,13 @@ import { toast } from "sonner";
 import { unreadMarker } from "@/features/channels/lib/read-state";
 import { useUnreadRooms } from "@/features/channels/use-unread-rooms";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
 import { QueryError } from "@/shared/ui/query-error";
 
-import { groupBoardsByProject } from "../lib/project-boards";
+import { groupBoardsByProject, projectQualifiers } from "../lib/project-boards";
 import { useBoardFeed } from "../use-board-feed";
 import { useMyBoards } from "../use-my-boards";
 import { useBoardProjects } from "../use-project-boards";
@@ -73,6 +74,18 @@ export function BoardDirectory() {
     () => groupBoardsByProject(boards, projects.projects),
     [boards, projects.projects],
   );
+  // Two projects can share a name; the heading then says who made each.
+  const nameOf = useUserNames(
+    groups.flatMap((group) => (group.project ? [group.project.author] : [])),
+  );
+  const qualifiers = useMemo(
+    () =>
+      projectQualifiers(
+        groups.flatMap((group) => (group.project ? [group.project] : [])),
+        nameOf,
+      ),
+    [groups, nameOf],
+  );
 
   return (
     <div className="flex flex-col gap-3 p-3" data-testid="board-directory">
@@ -117,7 +130,7 @@ export function BoardDirectory() {
           testId="board-directory-error"
           title="Couldn't load the boards"
         />
-      ) : feed.boardsLoading ? (
+      ) : feed.boardsLoading || projects.isLoading ? (
         // The boards are listed as soon as they are known; their activity fills in when the posts arrive.
         <p className="text-sm text-muted-foreground" role="status">
           Loading boards…
@@ -134,6 +147,9 @@ export function BoardDirectory() {
           {groups.map((group) => {
             const key = group.project?.key ?? "server";
             const heading = group.project?.name ?? "This server";
+            const qualifier = group.project
+              ? (qualifiers.get(group.project.key) ?? null)
+              : null;
             // Without a project to tell apart from, one group needs no heading.
             const named = groups.length > 1 || group.project !== null;
             return (
@@ -162,6 +178,15 @@ export function BoardDirectory() {
                     ) : (
                       heading
                     )}
+                    {qualifier ? (
+                      <span
+                        className="font-normal text-muted-foreground"
+                        data-testid="board-directory-project-qualifier"
+                      >
+                        {" "}
+                        {qualifier}
+                      </span>
+                    ) : null}
                   </h2>
                 ) : null}
                 <ul className="flex flex-col gap-2">

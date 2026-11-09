@@ -95,10 +95,7 @@ export function DecisionDiscussion({
     : defaultBoard(boards);
   const isFounder = useIsFounder(launch);
   const own = useProjectBoardsOf(launch);
-  const starter = useProjectStarterBoards(
-    launch,
-    own.boards.map((board) => board.name),
-  );
+  const starter = useProjectStarterBoards(launch, own.boards);
   // The first thread started is the decision's main discussion; the rest are alongside it.
   const oldestFirst = [...threads].sort(
     (a, b) => a.createdAt - b.createdAt || (a.postId < b.postId ? -1 : 1),

@@ -5,11 +5,14 @@ import { buildCreateChannelEvent } from "../../channels/lib/channel-create-event
 import { boundChannelIds } from "../../launchpad/lib/launch-chat.ts";
 import { parseLaunchRecord } from "../../launchpad/models.ts";
 import {
+  boardOwners,
   boardProject,
   boardsOfProject,
+  boardsTheFounderRuns,
   droppedLinksNotice,
   groupBoardsByProject,
   projectKey,
+  projectQualifiers,
   tieBoards,
 } from "./project-boards.ts";
 
@@ -280,5 +283,134 @@ describe("droppedLinksNotice", () => {
       droppedLinksNotice("Nebula", 3),
       /so 3 you linked earlier are no longer linked\.$/,
     );
+  });
+});
+
+const ownerRecord = (boardId, owner, at = 100) => ({
+  created_at: at,
+  tags: [
+    ["d", boardId],
+    ["p", owner, "", "owner"],
+    ["p", "d".repeat(64), "", "member"],
+  ],
+});
+
+describe("boardOwners", () => {
+  it("lists only the owners of each board, from its newest record", () => {
+    const owners = boardOwners([
+      ownerRecord(id(1), A, 100),
+      ownerRecord(id(1), B, 200),
+      ownerRecord(id(2).toUpperCase(), A),
+    ]);
+    assert.deepEqual([...owners.get(id(1))], [B]);
+    assert.deepEqual([...owners.get(id(2).toLowerCase())], [A]);
+  });
+});
+
+describe("boards the founder runs", () => {
+  it("leaves out a board the record names but its founder does not run", () => {
+    const project = boardProject(
+      record({ channels: [id(1), id(2)], chat: { ...noChat, board: id(3) } }),
+    );
+    const owners = boardOwners([
+      ownerRecord(id(1), A),
+      ownerRecord(id(2), B),
+      ownerRecord(id(3), B),
+    ]);
+    const mine = boardsTheFounderRuns(project, owners);
+    assert.deepEqual(mine.channelIds, [id(1)]);
+    assert.equal(mine.ownBoard, null, "an own board the founder does not run");
+  });
+
+  it("counts a board with no owner read for nobody", () => {
+    const project = boardProject(record({ channels: [id(1)] }));
+    assert.deepEqual(boardsTheFounderRuns(project, new Map()).channelIds, []);
+  });
+
+  it("matches the founder's key whatever its letter case", () => {
+    const project = boardProject(
+      record({ author: A.toUpperCase(), channels: [id(1)] }),
+    );
+    const mine = boardsTheFounderRuns(
+      project,
+      boardOwners([ownerRecord(id(1), A)]),
+    );
+    assert.deepEqual(mine.channelIds, [id(1)]);
+  });
+
+  it("does not let another project's record pull a board out from under the one that made it", () => {
+    const owners = boardOwners([ownerRecord(id(5), A)]);
+    // B claims A's board as its own board, which would win the tie-break if it counted.
+    const made = boardsTheFounderRuns(
+      boardProject(
+        record({ id: "p1", author: A, name: "Maker", channels: [id(5)] }),
+      ),
+      owners,
+    );
+    const claimer = boardsTheFounderRuns(
+      boardProject(
+        record({
+          id: "p2",
+          author: B,
+          name: "Claimer",
+          chat: { ...noChat, board: id(5) },
+        }),
+      ),
+      owners,
+    );
+    const groups = groupBoardsByProject([{ id: id(5) }], [claimer, made]);
+    assert.equal(groups[0].project.name, "Maker");
+  });
+
+  it("does not put a plain server board under a project that only names it", () => {
+    const claimer = boardsTheFounderRuns(
+      boardProject(record({ channels: [id(6)] })),
+      boardOwners([ownerRecord(id(6), B)]),
+    );
+    const groups = groupBoardsByProject([{ id: id(6) }], [claimer]);
+    assert.equal(groups[0].project, null);
+  });
+});
+
+describe("projectQualifiers", () => {
+  const names = { [A]: "Ada", [B]: "Bo" };
+  const nameOf = (key) => names[key];
+  const ref = (over) => {
+    const r = boardProject(record(over));
+    return { key: r.key, id: r.id, author: r.author, name: r.name };
+  };
+
+  it("adds nothing to a name that is alone", () => {
+    const q = projectQualifiers(
+      [ref({ name: "Nebula" }), ref({ id: "orbit", name: "Orbit" })],
+      nameOf,
+    );
+    assert.deepEqual([...q.values()], [null, null]);
+  });
+
+  it("says who made each of two projects that share a name, whatever the letter case", () => {
+    const one = ref({ id: "n1", author: A, name: "Nebula" });
+    const two = ref({ id: "n2", author: B, name: " nebula " });
+    const q = projectQualifiers([one, two], nameOf);
+    assert.equal(q.get(one.key), "by Ada");
+    assert.equal(q.get(two.key), "by Bo");
+  });
+
+  it("adds the project's address when one person made both", () => {
+    const one = ref({ id: "n1", author: A, name: "Nebula" });
+    const two = ref({ id: "n2", author: A, name: "Nebula" });
+    const q = projectQualifiers([one, two], nameOf);
+    assert.equal(q.get(one.key), "by Ada (n1)");
+    assert.equal(q.get(two.key), "by Ada (n2)");
+  });
+
+  it("still tells two projects apart when their makers share a name and address", () => {
+    const same = () => "Someone";
+    const one = ref({ id: "n1", author: A, name: "Nebula" });
+    const two = ref({ id: "n1", author: B, name: "Nebula" });
+    const q = projectQualifiers([one, two], same);
+    assert.equal(q.get(one.key), "by Someone (n1), 1 of 2");
+    assert.equal(q.get(two.key), "by Someone (n1), 2 of 2");
+    assert.notEqual(q.get(one.key), q.get(two.key));
   });
 });

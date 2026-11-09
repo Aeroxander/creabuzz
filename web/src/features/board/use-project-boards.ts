@@ -6,12 +6,13 @@
  * name boards in it. Reading is for everyone.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 
 import { useChannels } from "@/features/channels/use-channels";
 import { recordToInput } from "@/features/launchpad/lib/record-input";
 import {
+  fetchLaunches,
   launchesQueryKey,
   useCreateLaunch,
   useLaunches,
@@ -23,11 +24,13 @@ import { openUserPublisher } from "@/shared/lib/publish-as-user";
 import { failureWords } from "@/shared/lib/readable-error";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
+import { nameBoardsInRecord } from "./lib/name-boards";
 import {
   type BoardProject,
+  boardOwners,
   boardProject,
   boardsOfProject,
-  tieBoards,
+  boardsTheFounderRuns,
 } from "./lib/project-boards";
 import {
   createProjectStarterBoards,
@@ -37,21 +40,93 @@ import { starterDrafts } from "./lib/starter-boards";
 
 const KIND_CHANNEL_METADATA = 39000;
 
-/** Every project on this server, with the channels its record names. Empty while they load or when they cannot be read. */
+const KIND_BOARD_MEMBERS = 39002;
+/** The server refuses a read that names more boards than this. */
+const OWNER_READ_CHUNK = 100;
+const boardOwnersQueryKey = ["board-owners"];
+
+/**
+ * Who runs each of these boards, read from the server's membership records. Asked in pieces the server accepts. A
+ * failed piece fails the whole read, so a board is never counted or left out on a guess.
+ */
+function useBoardOwners(boardIds: readonly string[]) {
+  const sorted = useMemo(() => [...new Set(boardIds)].sort(), [boardIds]);
+  return useQuery({
+    queryKey: [...boardOwnersQueryKey, sorted],
+    enabled: sorted.length > 0,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const url = relayWsUrl();
+      const pieces: string[][] = [];
+      for (let i = 0; i < sorted.length; i += OWNER_READ_CHUNK)
+        pieces.push(sorted.slice(i, i + OWNER_READ_CHUNK));
+      const records = await Promise.all(
+        pieces.map((piece) =>
+          queryEvents(url, {
+            kinds: [KIND_BOARD_MEMBERS],
+            "#d": piece,
+            limit: piece.length * 2,
+          }),
+        ),
+      );
+      return boardOwners(records.flat());
+    },
+  });
+}
+
+/** The ids of the boards among a set of channels the records name: rooms are never looked up. */
+function useNamedBoardIds(projects: readonly BoardProject[]): {
+  ids: string[];
+  loading: boolean;
+  error: unknown;
+  refetch: () => void;
+} {
+  const { channels, isLoading, error, refetch } = useChannels();
+  const ids = useMemo(() => {
+    const forums = new Set(
+      channels
+        .filter((channel) => channel.type === "forum")
+        .map((channel) => channel.id.toLowerCase()),
+    );
+    return [
+      ...new Set(
+        projects.flatMap((project) =>
+          project.channelIds.filter((id) => forums.has(id)),
+        ),
+      ),
+    ];
+  }, [channels, projects]);
+  return { ids, loading: isLoading, error, refetch: () => void refetch() };
+}
+
+/**
+ * Every project on this server, with the boards its founder runs. A board a record names that its founder does not run
+ * is left out (see `boardsTheFounderRuns`). Empty while they load or when they cannot be read.
+ */
 export function useBoardProjects(): {
   projects: BoardProject[];
   isLoading: boolean;
   failed: boolean;
 } {
   const launches = useLaunches();
-  const projects = useMemo(
+  const named = useMemo(
     () => (launches.data ?? []).map((launch) => boardProject(launch.record)),
     [launches.data],
   );
+  const wanted = useNamedBoardIds(named);
+  const owners = useBoardOwners(wanted.ids);
+  const projects = useMemo(
+    () =>
+      owners.data
+        ? named.map((project) => boardsTheFounderRuns(project, owners.data))
+        : [],
+    [named, owners.data],
+  );
   return {
     projects,
-    isLoading: launches.isLoading,
-    failed: launches.isError,
+    isLoading: launches.isLoading || wanted.loading || owners.isLoading,
+    failed: launches.isError || owners.isError,
   };
 }
 
@@ -68,23 +143,30 @@ export function useMyProjects(): Launch[] {
   );
 }
 
-/** One project's boards, as the server lists them. */
+/** One project's boards, as the server lists them: the ones its record names that its founder runs. */
 export function useProjectBoardsOf(launch: Launch) {
   const { channels, isLoading, error, refetch } = useChannels();
-  const project = useMemo(() => boardProject(launch.record), [launch.record]);
+  const named = useMemo(() => boardProject(launch.record), [launch.record]);
+  const wanted = useNamedBoardIds(useMemo(() => [named], [named]));
+  const owners = useBoardOwners(wanted.ids);
   const boards = useMemo(
     () =>
-      boardsOfProject(
-        project,
-        channels.filter((channel) => channel.type === "forum"),
-      ),
-    [project, channels],
+      owners.data
+        ? boardsOfProject(
+            boardsTheFounderRuns(named, owners.data),
+            channels.filter((channel) => channel.type === "forum"),
+          )
+        : [],
+    [named, owners.data, channels],
   );
   return {
     boards,
-    loading: isLoading,
-    error,
-    retry: () => void refetch(),
+    loading: isLoading || owners.isLoading,
+    error: error ?? owners.error,
+    retry: () => {
+      void refetch();
+      void owners.refetch();
+    },
   };
 }
 
@@ -107,11 +189,13 @@ async function boardExists(id: string): Promise<boolean> {
 }
 
 /**
- * Name boards in a project's record: `save` is the record's save, `boardIds` the boards the project already names.
- * Resolves with how many channels the founder had picked that no longer fit.
+ * Name boards in a project's record: `save` is the record's save. The record is read again first, so a project edited
+ * since the page loaded it is not put back to how the page last saw it. Resolves with how many channels the founder had
+ * picked that no longer fit.
  */
 function useNameBoards() {
   const save = useCreateLaunch();
+  const client = useQueryClient();
   const { channels } = useChannels();
   const forums = useMemo(
     () =>
@@ -124,15 +208,37 @@ function useNameBoards() {
   );
   return useCallback(
     async (launch: Launch, ids: readonly string[]): Promise<number> => {
-      const { channels: named, dropped } = tieBoards(
-        launch.record,
-        ids.map((id) => id.toLowerCase()),
+      const dropped = await nameBoardsInRecord(
+        {
+          readLatest: async () => {
+            const launches = await client.fetchQuery({
+              queryKey: launchesQueryKey,
+              queryFn: fetchLaunches,
+              staleTime: 0,
+            });
+            const latest = launches.find(
+              (entry) =>
+                entry.record.id === launch.record.id &&
+                entry.record.author.toLowerCase() ===
+                  launch.record.author.toLowerCase(),
+            );
+            if (!latest)
+              throw new Error(
+                "Couldn't find this project's saved record. Reload the page and try again.",
+              );
+            return latest.record;
+          },
+          save: async (record, channels) => {
+            await save.mutateAsync(recordToInput(record, { channels }));
+          },
+        },
+        ids,
         forums,
       );
-      await save.mutateAsync(recordToInput(launch.record, { channels: named }));
+      void client.invalidateQueries({ queryKey: boardOwnersQueryKey });
       return dropped;
     },
-    [save, forums],
+    [client, save, forums],
   );
 }
 
@@ -147,13 +253,13 @@ export type StarterState =
   | { phase: "error"; message: string };
 
 /**
- * Make the project's supporters and founders boards inside it. `boardNames` are the project's boards by name; only the
- * missing ones are made. `create` resolves with how many of the founder's other picked channels no longer fit in the
+ * Make the project's supporters and founders boards inside it. `boards` are the project's boards; only the missing
+ * ones are made. `create` resolves with how many of the founder's other picked channels no longer fit in the
  * record (0 when all did), or null when it stopped on a problem, which `state` then says.
  */
 export function useProjectStarterBoards(
   launch: Launch,
-  boardNames: readonly string[],
+  boards: readonly { name: string; description: string }[],
 ) {
   const client = useQueryClient();
   const name = useNameBoards();
@@ -170,7 +276,7 @@ export function useProjectStarterBoards(
           founder: launch.record.author,
           projectId: launch.record.id,
         },
-        existingNames: boardNames,
+        existing: boards,
         store: memoStore(),
         newId: () => crypto.randomUUID(),
         exists: boardExists,
@@ -202,9 +308,10 @@ export function useProjectStarterBoards(
     } finally {
       publisher.close();
       await client.invalidateQueries({ queryKey: ["channels"] });
+      await client.invalidateQueries({ queryKey: boardOwnersQueryKey });
       await client.invalidateQueries({ queryKey: launchesQueryKey });
     }
-  }, [launch, boardNames, client, name]);
+  }, [launch, boards, client, name]);
 
   return { state, create };
 }

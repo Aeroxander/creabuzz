@@ -2,7 +2,8 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { expectNoSidewaysScroll, PHONE } from "../helpers/layout";
-import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
+import { createOwningRelay, ownerRecord } from "./board-owners";
+import { COMMUNITY_HOST } from "./mock-relay";
 
 /**
  * Boards belong to a project (owner decision): a project's page lists its own boards, the supporters and founders
@@ -10,7 +11,7 @@ import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
  * project's name, with the server's own last.
  *
  * The tie is the project's record: it names the boards it owns (`buzz-channel` tags and its own board), which the server
- * keeps and every client reads. A board no record names is a server board and keeps working. The server is a mock that
+ * keeps and every client reads, and the board must be one its founder runs (the server's membership record says who). A board no record names is a server board and keeps working. The server is a mock that
  * keeps what it is sent, so what is checked is what the page writes (read back from the server) and what it shows.
  */
 
@@ -69,7 +70,7 @@ function project(options: {
   };
 }
 
-type Relay = ReturnType<typeof createMockRelay>;
+type Relay = ReturnType<typeof createOwningRelay>;
 
 async function openAs(page: Page, relay: Relay, url: string, key = NSEC) {
   await relay.install(page);
@@ -94,12 +95,15 @@ const named = (record: { tags: string[][] }) =>
 test("a project's page lists its own boards and nobody else's", async ({
   page,
 }) => {
-  const relay = createMockRelay({ deriveChannels: true });
+  const relay = createOwningRelay();
   relay.seed(channel(GENERAL, "general", "stream"));
   relay.seed(channel(NEBULA_BOARD, "nebula-talk", "forum"));
   relay.seed(channel(NEBULA_SECOND, "nebula-ideas", "forum"));
   relay.seed(channel(ORBIT_BOARD, "orbit-talk", "forum"));
   relay.seed(channel(LOOSE_BOARD, "film-making", "forum"));
+  relay.seed(ownerRecord(NEBULA_BOARD, ME));
+  relay.seed(ownerRecord(NEBULA_SECOND, ME));
+  relay.seed(ownerRecord(ORBIT_BOARD, OTHER));
   relay.seed(
     project({
       id: "nebula",
@@ -135,7 +139,7 @@ test("a project's page lists its own boards and nobody else's", async ({
 test("a founder's project without boards offers the supporters and founders pair, made inside the project", async ({
   page,
 }) => {
-  const relay = createMockRelay({ deriveChannels: true });
+  const relay = createOwningRelay();
   relay.seed(channel(GENERAL, "general", "stream"));
   relay.seed(channel(LOOSE_BOARD, "film-making", "forum"));
   relay.seed(project({ id: "nebula", name: "Nebula" }));
@@ -183,8 +187,7 @@ test("if the second board is refused the first stays in the project, the problem
   page,
 }) => {
   let refuseFounders = true;
-  const relay = createMockRelay({
-    deriveChannels: true,
+  const relay = createOwningRelay({
     refuse: (e) =>
       refuseFounders &&
       e.kind === 9007 &&
@@ -222,7 +225,7 @@ test("if the second board is refused the first stays in the project, the problem
 test("someone who did not publish the project sees its boards but is not offered to make any", async ({
   page,
 }) => {
-  const relay = createMockRelay({ deriveChannels: true });
+  const relay = createOwningRelay();
   relay.seed(channel(GENERAL, "general", "stream"));
   relay.seed(project({ id: "nebula", name: "Nebula", author: OTHER }));
   await openAs(page, relay, `/launchpad/nebula?author=${OTHER}&tab=boards`);
@@ -236,7 +239,7 @@ test("someone who did not publish the project sees its boards but is not offered
 test("the workspace sidebar no longer offers a loose supporters and founders pair", async ({
   page,
 }) => {
-  const relay = createMockRelay({ deriveChannels: true });
+  const relay = createOwningRelay();
   relay.seed(channel(GENERAL, "general", "stream"));
   await openAs(page, relay, `/c/${COMMUNITY_HOST}`);
   await page.getByTestId("content-pane").waitFor();
@@ -250,7 +253,7 @@ test("the workspace sidebar no longer offers a loose supporters and founders pai
 test("a board started from the sidebar can be put under one of your projects, or left as a server board", async ({
   page,
 }) => {
-  const relay = createMockRelay({ deriveChannels: true });
+  const relay = createOwningRelay();
   relay.seed(channel(GENERAL, "general", "stream"));
   relay.seed(project({ id: "nebula", name: "Nebula" }));
   await openAs(page, relay, `/c/${COMMUNITY_HOST}`);
@@ -282,11 +285,13 @@ test("a board started from the sidebar can be put under one of your projects, or
 test("Home's Boards tab groups boards under their project, with the server's own last", async ({
   page,
 }) => {
-  const relay = createMockRelay({ deriveChannels: true });
+  const relay = createOwningRelay();
   relay.seed(channel(LOOSE_BOARD, "alpha-films", "forum"));
   relay.seed(channel(NEBULA_BOARD, "beta-nebula", "forum"));
   relay.seed(channel(ORBIT_BOARD, "gamma-orbit", "forum"));
   relay.seed(channel(GENERAL, "general", "stream"));
+  relay.seed(ownerRecord(NEBULA_BOARD, ME));
+  relay.seed(ownerRecord(ORBIT_BOARD, OTHER));
   relay.seed(
     project({ id: "nebula", name: "Nebula", channels: [NEBULA_BOARD] }),
   );
@@ -327,7 +332,7 @@ test("Home's Boards tab groups boards under their project, with the server's own
 test("with no project naming a board, Boards lists them under the server without a heading to tell apart", async ({
   page,
 }) => {
-  const relay = createMockRelay({ deriveChannels: true });
+  const relay = createOwningRelay();
   relay.seed(channel(LOOSE_BOARD, "alpha-films", "forum"));
   await openAs(page, relay, "/?tab=boards");
   await expect(page.getByTestId("board-directory-group-server")).toBeVisible();
@@ -337,6 +342,186 @@ test("with no project naming a board, Boards lists them under the server without
   await expect(
     page.getByTestId(`board-directory-${LOOSE_BOARD}`),
   ).toBeVisible();
+});
+
+test("a project cannot list a board its founder does not run: not another project's, not a plain server board", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  relay.seed(channel(GENERAL, "general", "stream"));
+  relay.seed(channel(NEBULA_BOARD, "nebula-talk", "forum"));
+  relay.seed(channel(ORBIT_BOARD, "orbit-talk", "forum"));
+  relay.seed(channel(LOOSE_BOARD, "film-making", "forum"));
+  relay.seed(ownerRecord(NEBULA_BOARD, ME));
+  relay.seed(ownerRecord(ORBIT_BOARD, OTHER));
+  relay.seed(ownerRecord(LOOSE_BOARD, "d".repeat(64)));
+  relay.seed(
+    project({ id: "nebula", name: "Nebula", channels: [NEBULA_BOARD] }),
+  );
+  // Orbit's founder made the board and named it. Nebula's founder names it as the project's own board too, and
+  // names the server's board, which Nebula's founder did not make either.
+  relay.seed(
+    project({
+      id: "orbit",
+      name: "Orbit",
+      author: OTHER,
+      channels: [ORBIT_BOARD],
+    }),
+  );
+  relay.seed(
+    project({
+      id: "grab",
+      name: "Grab",
+      board: ORBIT_BOARD,
+      channels: [LOOSE_BOARD],
+      at: 200,
+    }),
+  );
+
+  // The page for the project that claims them lists neither.
+  await openAs(page, relay, `/launchpad/grab?author=${ME}&tab=boards`);
+  await expect(page.getByTestId("project-boards-empty")).toBeVisible();
+  await expect(page.getByTestId("project-boards")).not.toContainText(
+    "orbit-talk",
+  );
+  await expect(page.getByTestId("project-boards")).not.toContainText(
+    "film-making",
+  );
+
+  // On Home, each board stays with the one that made it; the server's board stays the server's.
+  await page.goto("/?tab=boards");
+  const groups = page.locator('[data-testid^="board-directory-group-"]');
+  await expect(groups.getByRole("heading")).toHaveText([
+    "Nebula",
+    "Orbit",
+    "This server",
+  ]);
+  await expect(
+    page
+      .getByTestId("board-directory-group-server")
+      .getByTestId("board-directory-name"),
+  ).toHaveText(["film-making"]);
+});
+
+test("a board that only shares a starter board's name does not stand in for it", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  relay.seed(channel(GENERAL, "general", "stream"));
+  // The founder's own board, which happens to be called supporters, with a purpose of its own.
+  relay.seed(channel(NEBULA_BOARD, "supporters", "forum"));
+  relay.seed(ownerRecord(NEBULA_BOARD, ME));
+  relay.seed(
+    project({ id: "nebula", name: "Nebula", channels: [NEBULA_BOARD] }),
+  );
+  await openAs(page, relay, `/launchpad/nebula?author=${ME}&tab=boards`);
+
+  await expect(page.getByTestId("project-boards-add")).toHaveText(
+    "Add supporters and founders boards",
+  );
+  await page.getByTestId("project-boards-add").click();
+  await expect(
+    page.getByTestId("project-boards-list").getByTestId("project-board-name"),
+  ).toHaveText(["supporters", "supporters", "founders"]);
+  await expect(page.getByTestId("project-boards-add")).toHaveCount(0);
+});
+
+test("if a board's first post is refused, the board is not named yet and trying again sends the post", async ({
+  page,
+}) => {
+  let refusePosts = true;
+  const relay = createOwningRelay({
+    refuse: (e) =>
+      refusePosts && e.kind === 45001
+        ? "rate-limited: quota exceeded; retry in 20s"
+        : null,
+  });
+  relay.seed(channel(GENERAL, "general", "stream"));
+  relay.seed(project({ id: "nebula", name: "Nebula" }));
+  await openAs(page, relay, `/launchpad/nebula?author=${ME}&tab=boards`);
+
+  await page.getByTestId("project-boards-add").click();
+  await expect(page.getByTestId("project-boards-problem")).toBeVisible();
+  // The board has no first post, so the project's record does not name it and the offer is still there.
+  expect(named(newestRecord(relay, "nebula") ?? { tags: [] })).toEqual([]);
+  expect(created(relay)).toHaveLength(1);
+  await expect(page.getByTestId("project-boards-add")).toBeVisible();
+
+  refusePosts = false;
+  await page
+    .getByTestId("project-boards-problem")
+    .getByRole("button", { name: "Try again" })
+    .click();
+  await expect(
+    page.getByTestId("project-boards-list").getByTestId("project-board-name"),
+  ).toHaveText(["supporters", "founders"]);
+  expect(created(relay)).toHaveLength(2);
+  const posts = relay.events.filter((e) => e.kind === 45001);
+  expect(posts).toHaveLength(2);
+  expect(new Set(posts.map((p) => p.tags[0][1])).size).toBe(2);
+  expect(named(newestRecord(relay, "nebula"))).toHaveLength(2);
+});
+
+test("adding boards keeps what the project's record was changed to since the page loaded", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  relay.seed(channel(GENERAL, "general", "stream"));
+  relay.seed(project({ id: "nebula", name: "Nebula" }));
+  await openAs(page, relay, `/launchpad/nebula?author=${ME}&tab=boards`);
+  await expect(page.getByTestId("project-boards-add")).toBeVisible();
+
+  // Edited elsewhere after this page read it: a new pitch and a room linked.
+  const edited = project({
+    id: "nebula",
+    name: "Nebula",
+    channels: [GENERAL],
+    at: 5_000,
+  });
+  edited.content = JSON.stringify({
+    pitch: "Edited somewhere else.",
+    stage: "draft",
+  });
+  relay.seed(edited);
+
+  await page.getByTestId("project-boards-add").click();
+  await expect(
+    page.getByTestId("project-boards-list").getByTestId("project-board-name"),
+  ).toHaveText(["supporters", "founders"]);
+  const record = newestRecord(relay, "nebula");
+  expect(JSON.parse(record.content).pitch).toBe("Edited somewhere else.");
+  expect(named(record)).toContain(GENERAL);
+  expect(named(record)).toHaveLength(3);
+});
+
+test("two projects with the same name are told apart on Home's Boards tab", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  relay.seed(channel(NEBULA_BOARD, "first-talk", "forum"));
+  relay.seed(channel(ORBIT_BOARD, "second-talk", "forum"));
+  relay.seed(ownerRecord(NEBULA_BOARD, ME));
+  relay.seed(ownerRecord(ORBIT_BOARD, OTHER));
+  relay.seed(
+    project({ id: "nebula", name: "Nebula", channels: [NEBULA_BOARD] }),
+  );
+  relay.seed(
+    project({
+      id: "nebula",
+      name: "Nebula",
+      author: OTHER,
+      channels: [ORBIT_BOARD],
+    }),
+  );
+  await openAs(page, relay, "/?tab=boards");
+
+  const headings = page.locator('[data-testid^="board-directory-group-"] h2');
+  await expect(headings).toHaveCount(2);
+  const qualifiers = page.getByTestId("board-directory-project-qualifier");
+  await expect(qualifiers).toHaveCount(2);
+  await expect(qualifiers.first()).toContainText("by ");
+  const texts = await headings.allTextContents();
+  expect(new Set(texts).size, "no two headings read the same").toBe(2);
 });
 
 /** Names are cut to fit, never pushed past the window (the page can hide a sideways overflow, a box cannot). */
@@ -358,9 +543,10 @@ test.describe("on a phone", () => {
       "The Very Long Named Project That Keeps Going And Going";
     const longBoard =
       "supporters-of-the-very-long-named-project-that-keeps-going";
-    const relay = createMockRelay({ deriveChannels: true });
+    const relay = createOwningRelay();
     relay.seed(channel(GENERAL, "general", "stream"));
     relay.seed(channel(NEBULA_BOARD, longBoard, "forum"));
+    relay.seed(ownerRecord(NEBULA_BOARD, ME));
     relay.seed(
       project({ id: "nebula", name: longProject, channels: [NEBULA_BOARD] }),
     );

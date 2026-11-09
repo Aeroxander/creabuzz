@@ -41,15 +41,32 @@ describe("starter boards", () => {
     assert.deepEqual(seed.tags, [["h", "board-1"]]);
   });
 
-  it("are made only where missing, by name", () => {
+  it("are made only where missing, by name and purpose", () => {
+    const [supporters, founders] = STARTER_BOARDS;
+    const have = (board) => ({ name: board.name, description: board.purpose });
     assert.deepEqual(
       missingStarterBoards([]).map((b) => b.name),
       ["supporters", "founders"],
     );
     assert.deepEqual(
-      missingStarterBoards(["Supporters"]).map((b) => b.name),
+      missingStarterBoards([
+        { name: "Supporters", description: ` ${supporters.purpose} ` },
+      ]).map((b) => b.name),
       ["founders"],
     );
-    assert.deepEqual(missingStarterBoards(["supporters", "founders"]), []);
+    assert.deepEqual(
+      missingStarterBoards([have(supporters), have(founders)]),
+      [],
+    );
+  });
+
+  it("are still offered when the project only names other boards that share their names", () => {
+    assert.deepEqual(
+      missingStarterBoards([
+        { name: "supporters", description: "" },
+        { name: "founders", description: "Our own plans." },
+      ]).map((b) => b.name),
+      ["supporters", "founders"],
+    );
   });
 });
