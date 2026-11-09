@@ -59,6 +59,7 @@ import { WorkTab } from "./WorkTab";
 import { ContributionsTab } from "./ContributionsTab";
 import { MilestonesTab } from "./MilestonesTab";
 import { OverviewTab } from "./OverviewTab";
+import { ProjectBoardsTab } from "./ProjectBoardsTab";
 import { SalePriceCard } from "./SalePriceCard";
 import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 import { projectProgress } from "@/features/feed/lib/project-progress";
@@ -335,6 +336,8 @@ export function LaunchDetailPage({
       : []),
     // A simulated launch has no public discussion to join.
     ...(sandbox ? [] : [{ id: "discussion" as const, label: "Discussion" }]),
+    // A simulated project has no boards on the server to list.
+    ...(sandbox ? [] : [{ id: "boards" as const, label: "Boards" }]),
     {
       id: "updates",
       // Counted as the tab lists them: the team's own reports (submitted work is shown with the work, not here).
@@ -560,6 +563,9 @@ export function LaunchDetailPage({
             )}
           />
         </>
+      ) : null}
+      {shown === "boards" && !sandbox ? (
+        <ProjectBoardsTab isFounder={isFounder} launch={launch} />
       ) : null}
       {shown === "updates" ? <ProjectProgressFeed project={launch} /> : null}
       {shown === "agents" ? <ProjectAgents launch={launch} /> : null}

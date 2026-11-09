@@ -17,7 +17,10 @@ import { postDraft } from "@/features/board/lib/board-events";
 import type { ProposalRef } from "@/features/board/lib/proposal-link";
 import type { ProposalThread } from "@/features/board/lib/proposal-threads";
 import { PostComposer } from "@/features/board/ui/PostComposer";
-import { useStarterBoards } from "@/features/board/use-starter-boards";
+import {
+  useProjectBoardsOf,
+  useProjectStarterBoards,
+} from "@/features/board/use-project-boards";
 import type { Channel } from "@/features/channels/use-channels";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
@@ -25,6 +28,9 @@ import { publishAsUser } from "@/shared/lib/publish-as-user";
 import { communityHostName } from "@/shared/lib/relay-url";
 import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
+
+import type { Launch } from "../models";
+import { useIsFounder } from "../use-launches";
 
 /** The board a new discussion starts on: the supporters board when there is one. */
 function defaultBoard(boards: readonly Channel[]): Channel | null {
@@ -58,6 +64,7 @@ function ThreadLink({
 }
 
 export function DecisionDiscussion({
+  launch,
   decision,
   headline,
   boards,
@@ -67,6 +74,8 @@ export function DecisionDiscussion({
   onRetry,
   onStarted,
 }: {
+  /** The project the decision belongs to: boards added from here are made inside it. */
+  launch: Launch;
   decision: ProposalRef;
   /** What the decision would do, in a few words, to start a title from. */
   headline: string;
@@ -84,7 +93,12 @@ export function DecisionDiscussion({
   const target = boardId
     ? (open.find((board) => board.id === boardId) ?? defaultBoard(boards))
     : defaultBoard(boards);
-  const starter = useStarterBoards(boards.map((board) => board.name));
+  const isFounder = useIsFounder(launch);
+  const own = useProjectBoardsOf(launch);
+  const starter = useProjectStarterBoards(
+    launch,
+    own.boards.map((board) => board.name),
+  );
   // The first thread started is the decision's main discussion; the rest are alongside it.
   const oldestFirst = [...threads].sort(
     (a, b) => a.createdAt - b.createdAt || (a.postId < b.postId ? -1 : 1),
@@ -217,30 +231,39 @@ export function DecisionDiscussion({
             className="mt-2 text-xs text-muted-foreground"
             data-testid="discussion-no-boards"
           >
-            <p>This community has no open board to discuss it on yet.</p>
-            <Button
-              className="mt-1"
-              data-testid="discussion-add-boards"
-              disabled={starter.state.phase === "working"}
-              onClick={() => {
-                if (existingUserPubkey() === null) {
-                  toast.error(needAccountTo("add boards"));
-                  return;
-                }
-                void starter.create().then(onStarted);
-              }}
-              size="sm"
-              variant="outline"
-            >
-              {starter.state.phase === "working"
-                ? "Setting up…"
-                : "Add supporters and founders boards"}
-            </Button>
-            {starter.state.phase === "error" ? (
-              <p className="mt-1 text-destructive" role="alert">
-                {starter.state.message}
+            {isFounder ? (
+              <>
+                <p>There is no open board to discuss it on yet.</p>
+                <Button
+                  className="mt-1"
+                  data-testid="discussion-add-boards"
+                  disabled={starter.state.phase === "working"}
+                  onClick={() => {
+                    if (existingUserPubkey() === null) {
+                      toast.error(needAccountTo("add boards"));
+                      return;
+                    }
+                    void starter.create().then(onStarted);
+                  }}
+                  size="sm"
+                  variant="outline"
+                >
+                  {starter.state.phase === "working"
+                    ? "Setting up…"
+                    : "Add supporters and founders boards"}
+                </Button>
+                {starter.state.phase === "error" ? (
+                  <p className="mt-1 text-destructive" role="alert">
+                    {starter.state.message}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p>
+                There is no open board to discuss it on yet. The project's
+                founder can add boards from its Boards tab.
               </p>
-            ) : null}
+            )}
           </div>
         )
       ) : null}

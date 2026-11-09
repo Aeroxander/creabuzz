@@ -13,6 +13,7 @@ export type LaunchTab =
   | "overview"
   | "milestones"
   | "discussion"
+  | "boards"
   | "updates"
   | "proposals"
   | "treasury"
@@ -26,13 +27,14 @@ export type LaunchTab =
 
 export type PageKind = "idea" | "contributor" | "raise";
 
-/** The tabs a contributor project shows: its work, its votes, who earned what, the talk around it, its funds and settings. */
+/** The tabs a contributor project shows: its work, its votes, who earned what, the talk around it, its boards, its funds and settings. */
 const CONTRIBUTOR_TABS: ReadonlySet<LaunchTab> = new Set([
   "overview",
   "contributions",
   "decisions",
   "work",
   "discussion",
+  "boards",
   "updates",
   "treasury",
   "manage",
@@ -43,6 +45,7 @@ const IDEA_TABS: ReadonlySet<LaunchTab> = new Set([
   "overview",
   "agents",
   "discussion",
+  "boards",
   "updates",
   "manage",
 ]);
@@ -51,6 +54,7 @@ const IDEA_TABS: ReadonlySet<LaunchTab> = new Set([
 const IDEA_TABS_WITHOUT_RAISES: ReadonlySet<LaunchTab> = new Set([
   "overview",
   "discussion",
+  "boards",
   "updates",
   "manage",
 ]);

@@ -916,95 +916,7 @@ test("when the server will not let someone add people, its reason is shown", asy
   await expect(page.getByTestId("board-members").locator("li")).toHaveCount(2);
 });
 
-test("a community with no boards can add the supporters and founders boards in one click", async ({
-  page,
-}) => {
-  const relay = createMockRelay({ deriveChannels: true });
-  relay.seed(meta(CHAT, "general", "stream"));
-  await relay.install(page);
-  await page.addInitScript((nsec) => {
-    window.localStorage.setItem("buzz.identity.nsec", nsec);
-  }, OWNER_NSEC);
-  await page.goto(`/c/${COMMUNITY_HOST}`);
-  await page.getByTestId("content-pane").waitFor();
-
-  await page.getByTestId("starter-boards").click();
-  await expect(page.getByTestId("board-nav-supporters")).toBeVisible();
-  await expect(page.getByTestId("board-nav-founders")).toBeVisible();
-  // Made, so the offer is gone.
-  await expect(page.getByTestId("starter-boards")).toHaveCount(0);
-
-  const created = relay.events.filter((e) => e.kind === 9007);
-  const field = (e: { tags: string[][] }, name: string) =>
-    e.tags.find((t) => t[0] === name)?.[1];
-  expect(
-    created.map((e) => [
-      field(e, "name"),
-      field(e, "visibility"),
-      field(e, "channel_type"),
-    ]),
-  ).toEqual([
-    ["supporters", "open", "forum"],
-    ["founders", "private", "forum"],
-  ]);
-  // Each board's first post goes to the board that was just made.
-  const posts = relay.events.filter((e) => e.kind === 45001);
-  expect(posts.map((p) => p.tags[0][1])).toEqual(
-    created.map((e) => field(e, "h")),
-  );
-  expect(posts[1].content.startsWith("# The founders' board")).toBe(true);
-
-  await page.getByTestId("board-nav-founders").click();
-  await expect(page.getByTestId("board-posts")).toContainText(
-    "The founders' board",
-  );
-});
-
-test("if the second starter board is refused, the first stays, the problem is said, and trying again makes only what is missing", async ({
-  page,
-}) => {
-  let refuseFounders = true;
-  const relay = createMockRelay({
-    deriveChannels: true,
-    refuse: (e) =>
-      refuseFounders &&
-      e.kind === 9007 &&
-      e.tags.some((t) => t[0] === "name" && t[1] === "founders")
-        ? "rate-limited: quota exceeded; retry in 20s"
-        : null,
-  });
-  relay.seed(meta(CHAT, "general", "stream"));
-  await relay.install(page);
-  await page.addInitScript((nsec) => {
-    window.localStorage.setItem("buzz.identity.nsec", nsec);
-  }, OWNER_NSEC);
-  await page.goto(`/c/${COMMUNITY_HOST}`);
-  await page.getByTestId("content-pane").waitFor();
-
-  await page.getByTestId("starter-boards").click();
-  await expect(page.getByTestId("starter-boards-problem")).toContainText(
-    "You're doing that a bit fast. Try again in 20 seconds.",
-  );
-  await expect(page.getByTestId("board-nav-supporters")).toBeVisible();
-  await expect(page.getByTestId("board-nav-founders")).toHaveCount(0);
-
-  refuseFounders = false;
-  await page
-    .getByTestId("starter-boards-problem")
-    .getByRole("button", { name: "Try again" })
-    .click();
-  await expect(page.getByTestId("board-nav-founders")).toBeVisible();
-  await expect(page.getByTestId("starter-boards-problem")).toHaveCount(0);
-  const named = (name: string) =>
-    relay.events.filter(
-      (e) =>
-        e.kind === 9007 && e.tags.some((t) => t[0] === "name" && t[1] === name),
-    ).length;
-  expect([named("supporters"), named("founders")]).toEqual([1, 1]);
-  expect(relay.events.filter((e) => e.kind === 45001)).toHaveLength(2);
-});
-
-test("someone without an account is told to make one before boards are added", async ({
+test("someone without an account is asked to make one before writing in a room", async ({
   page,
 }) => {
   const relay = createMockRelay({ deriveChannels: true });
@@ -1023,10 +935,8 @@ test("someone without an account is told to make one before boards are added", a
       window.localStorage.getItem("buzz.identity.nsec"),
     ),
   ).toBeNull();
-  await page.getByTestId("starter-boards").click();
-  await expect(
-    page.getByText("Create your account to add boards."),
-  ).toBeVisible();
+  // No one is signed in, so there is nothing to start a board with.
+  await expect(page.getByTestId("new-board")).toHaveCount(0);
   expect(relay.events.filter((e) => e.kind === 9007)).toEqual([]);
   // Writing in the room asks for an account too, and opens sign-up.
   const prompt = page.getByTestId("room-composer-sign-up");

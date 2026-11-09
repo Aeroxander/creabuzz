@@ -63,3 +63,17 @@ test("an idea's overview leaves out the community work board where raises are no
   assert.equal(ideaShowsTeamSurfaces(false), false);
   assert.equal(ideaShowsTeamSurfaces(true), true);
 });
+
+test("every kind of project page keeps a Boards tab, in every build", () => {
+  for (const kind of ["idea", "contributor"]) {
+    for (const raises of [true, false]) {
+      assert.equal(
+        allowedTabs(kind, raises)?.has("boards"),
+        true,
+        `${kind} raises=${raises}`,
+      );
+    }
+  }
+  // A raise shows every tab the page has, Boards among them.
+  assert.equal(allowedTabs("raise", true), null);
+});

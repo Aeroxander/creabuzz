@@ -12,6 +12,11 @@ import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { TechnicalDetails } from "@/shared/ui/technical-details";
+import { toast } from "sonner";
+
+import { droppedLinksNotice } from "../lib/project-boards";
+import { useMyProjects, useTieBoards } from "../use-project-boards";
+import { ProjectChoice } from "./ProjectChoice";
 
 export function StartBoardForm({
   onCancel,
@@ -25,6 +30,14 @@ export function StartBoardForm({
   const [name, setName] = useState("");
   const [about, setAbout] = useState("");
   const [problem, setProblem] = useState<FailureWords | null>(null);
+  const myProjects = useMyProjects();
+  const tie = useTieBoards();
+  const [projectId, setProjectId] = useState("");
+  // A board made but not yet added to its project: asking again adds it, and does not make another.
+  const [madeId, setMadeId] = useState<string | null>(null);
+  const project = myProjects.find((launch) => launch.record.id === projectId);
+  const [tying, setTying] = useState(false);
+  const busy = create.isPending || tying;
 
   const submit = async () => {
     if (name.trim().replace(/^#+/, "") === "") {
@@ -32,20 +45,44 @@ export function StartBoardForm({
       return;
     }
     setProblem(null);
+    setTying(true);
+    let made = madeId;
     try {
-      const result = await create.mutateAsync({
-        name: name.trim(),
-        topic: about.trim() || undefined,
-        visibility: "open",
-        channelType: "forum",
-        members: [],
-      });
-      void queryClient.invalidateQueries({ queryKey: ["my-boards"] });
-      onStarted(result.channelId);
+      if (made === null) {
+        const result = await create.mutateAsync({
+          name: name.trim(),
+          topic: about.trim() || undefined,
+          visibility: "open",
+          channelType: "forum",
+          members: [],
+        });
+        made = result.channelId;
+        setMadeId(made);
+        void queryClient.invalidateQueries({ queryKey: ["my-boards"] });
+      }
+      if (project) {
+        const dropped = await tie(project, [made]);
+        const notice = droppedLinksNotice(project.record.name, dropped);
+        if (notice) toast.message(notice);
+      }
+      onStarted(made);
     } catch (error) {
       // The server's reason in plain words (`you can start 5 boards a day`); its internal failures and a dropped
       // connection as what did not happen, with its own words under Technical details.
-      setProblem(failureWords(error, "The board wasn't started. Try again."));
+      const words = failureWords(
+        error,
+        made === null ? "The board wasn't started. Try again." : "Try again.",
+      );
+      setProblem(
+        made === null
+          ? words
+          : {
+              ...words,
+              text: `The board was started, but it wasn't added to ${project?.record.name ?? "the project"}. ${words.text}`,
+            },
+      );
+    } finally {
+      setTying(false);
     }
   };
 
@@ -85,6 +122,13 @@ export function StartBoardForm({
         placeholder="What it is for (optional)"
         value={about}
       />
+      <ProjectChoice
+        disabled={madeId !== null}
+        id="start-board-project"
+        onChange={setProjectId}
+        projects={myProjects}
+        value={projectId}
+      />
       <p className="text-xs text-muted-foreground">
         Anyone here can read it and post on it. You run it, so you can remove
         posts that don't belong.
@@ -107,14 +151,18 @@ export function StartBoardForm({
       <div className="flex gap-2">
         <Button
           data-testid="start-board-submit"
-          disabled={create.isPending}
+          disabled={busy}
           size="sm"
           type="submit"
         >
-          {create.isPending ? "Starting…" : "Start the board"}
+          {busy
+            ? "Starting…"
+            : madeId !== null
+              ? "Add it to the project"
+              : "Start the board"}
         </Button>
         <Button
-          disabled={create.isPending}
+          disabled={busy}
           onClick={onCancel}
           size="sm"
           type="button"

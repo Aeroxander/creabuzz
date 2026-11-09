@@ -418,7 +418,7 @@ test("Boards lists every board to join or start; joining writes a join request",
   const music = page.getByTestId(`board-directory-${MUSIC}`);
   await expect(film.getByTestId("board-join-state")).toHaveText("Owner");
   await expect(
-    page.getByTestId("board-directory-list").locator("> li"),
+    page.getByTestId("board-directory-list").locator("li"),
   ).toHaveCount(2);
   await music.getByTestId("board-join").click();
   await expect(music.getByTestId("board-join")).toContainText("Joined");

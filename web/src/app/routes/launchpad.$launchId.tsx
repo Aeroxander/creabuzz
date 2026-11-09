@@ -26,6 +26,7 @@ interface LaunchSearch {
     | "agents"
     | "updates"
     | "discussion"
+    | "boards"
     | "treasury"
     | "mybids"
     | "manage"
@@ -65,6 +66,7 @@ export const Route = createFileRoute("/launchpad/$launchId")({
         "agents",
         "updates",
         "discussion",
+        "boards",
         "treasury",
         "mybids",
         "manage",

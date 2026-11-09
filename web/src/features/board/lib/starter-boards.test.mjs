@@ -4,7 +4,6 @@ import { describe, it } from "node:test";
 import { splitPost } from "./post-text.ts";
 import {
   missingStarterBoards,
-  offerStarterBoards,
   STARTER_BOARDS,
   starterDrafts,
 } from "./starter-boards.ts";
@@ -42,9 +41,7 @@ describe("starter boards", () => {
     assert.deepEqual(seed.tags, [["h", "board-1"]]);
   });
 
-  it("are offered only to a community with no boards, and only the missing ones are made", () => {
-    assert.equal(offerStarterBoards(0), true);
-    assert.equal(offerStarterBoards(1), false);
+  it("are made only where missing, by name", () => {
     assert.deepEqual(
       missingStarterBoards([]).map((b) => b.name),
       ["supporters", "founders"],

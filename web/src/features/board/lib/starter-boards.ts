@@ -1,8 +1,9 @@
 /**
  * The two boards most projects start with: an open one for supporters and a
  * private one for the people making the thing. A project made from a template
- * gets them from the template; this is the same pair for a community that was
- * not, offered once and only while it has no boards at all.
+ * gets them from the template; this is the same pair for a project that was
+ * not, made inside the project (`project-starter.ts`) and never loose on the
+ * server.
  *
  * Alias-free; `starter-boards.test.mjs` drives it under `node --test`.
  */
@@ -60,17 +61,12 @@ export const STARTER_BOARDS: readonly StarterBoard[] = [
   },
 ];
 
-/** The starter boards a community lacks, by name. */
+/** The starter boards a project lacks, by name. */
 export function missingStarterBoards(
   existingNames: readonly string[],
 ): StarterBoard[] {
   const have = new Set(existingNames.map((name) => name.toLowerCase()));
   return STARTER_BOARDS.filter((board) => !have.has(board.name));
-}
-
-/** Offered only to a community with no boards at all, so it never nags one that chose none. */
-export function offerStarterBoards(boardCount: number): boolean {
-  return boardCount === 0;
 }
 
 /** The two records that make one board: its creation and its first post. */

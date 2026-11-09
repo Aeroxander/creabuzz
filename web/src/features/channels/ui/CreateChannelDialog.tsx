@@ -7,7 +7,14 @@
  */
 
 import * as React from "react";
+import { toast } from "sonner";
 
+import { droppedLinksNotice } from "@/features/board/lib/project-boards";
+import { ProjectChoice } from "@/features/board/ui/ProjectChoice";
+import {
+  useMyProjects,
+  useTieBoards,
+} from "@/features/board/use-project-boards";
 import { useAgentRoster } from "@/features/fleet/use-agent-roster";
 import { notContributorOnlyBuild } from "@/app/lib/build-gates";
 import { Button } from "@/shared/ui/button";
@@ -98,9 +105,21 @@ export function CreateChannelDialog({
   const visibilityTouchedRef = React.useRef(false);
   const topicTouchedRef = React.useRef(false);
 
+  // A board can be made inside one of the person's projects; only they can add boards to it.
+  const myProjects = useMyProjects();
+  const tie = useTieBoards();
+  const [projectId, setProjectId] = React.useState("");
+  const [tying, setTying] = React.useState(false);
+  // A board made but not yet added to its project: submitting again adds it, and does not make another.
+  const [awaitingProject, setAwaitingProject] = React.useState(false);
+  const project =
+    channelType === "forum"
+      ? myProjects.find((launch) => launch.record.id === projectId)
+      : undefined;
+
   const createMutation = useCreateChannel();
   const attachMutation = useAttachChannelMembers();
-  const isCreating = createMutation.isPending;
+  const isCreating = createMutation.isPending || tying;
 
   // Reset the form every time the dialog opens (desktop's `active` behavior).
   React.useEffect(() => {
@@ -115,6 +134,8 @@ export function CreateChannelDialog({
     setFormError(null);
     setPendingMembers(null);
     setCreatedChannelId(null);
+    setProjectId("");
+    setAwaitingProject(false);
     setUnresolvedSeats([]);
     visibilityTouchedRef.current = false;
     topicTouchedRef.current = false;
@@ -193,11 +214,40 @@ export function CreateChannelDialog({
     });
   };
 
+  /** Add the board that was just made to the chosen project; true when that worked (or no project was chosen). */
+  async function addToProject(boardId: string): Promise<boolean> {
+    if (!project) return true;
+    setTying(true);
+    try {
+      const dropped = await tie(project, [boardId]);
+      setAwaitingProject(false);
+      const notice = droppedLinksNotice(project.record.name, dropped);
+      if (notice) toast.message(notice);
+      return true;
+    } catch (error) {
+      const words = failureWords(error, "Try again.");
+      setAwaitingProject(true);
+      setFormError({
+        ...words,
+        text: `The board was made, but it wasn't added to ${project.record.name}. ${words.text}`,
+      });
+      return false;
+    } finally {
+      setTying(false);
+    }
+  }
+
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = name.trim();
     if (!trimmed || isCreating) return;
     setFormError(null);
+    if (awaitingProject && createdChannelId) {
+      void addToProject(createdChannelId).then((added) => {
+        if (added && (pendingMembers?.length ?? 0) === 0) onOpenChange(false);
+      });
+      return;
+    }
     createMutation.mutate(
       {
         name: trimmed,
@@ -207,10 +257,11 @@ export function CreateChannelDialog({
         members,
       },
       {
-        onSuccess: (result) => {
+        onSuccess: async (result) => {
           setCreatedChannelId(result.channelId);
           setPendingMembers(result.attachFailures);
-          if (result.attachFailures.length === 0) {
+          const added = await addToProject(result.channelId);
+          if (added && result.attachFailures.length === 0) {
             onOpenChange(false);
           }
         },
@@ -335,6 +386,16 @@ export function CreateChannelDialog({
               </select>
             </div>
           </div>
+
+          {channelType === "forum" ? (
+            <ProjectChoice
+              disabled={awaitingProject}
+              id="channel-project"
+              onChange={setProjectId}
+              projects={myProjects}
+              value={projectId}
+            />
+          ) : null}
 
           <div className="space-y-1.5">
             <label className="text-sm font-medium" htmlFor="channel-template">
@@ -523,9 +584,11 @@ export function CreateChannelDialog({
           >
             {isCreating
               ? "Creating…"
-              : channelType === "forum"
-                ? "Create board"
-                : "Create room"}
+              : awaitingProject
+                ? "Add it to the project"
+                : channelType === "forum"
+                  ? "Create board"
+                  : "Create room"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

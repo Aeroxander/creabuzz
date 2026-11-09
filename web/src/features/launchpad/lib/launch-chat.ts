@@ -16,7 +16,7 @@ import type { LaunchBid, LaunchChat } from "../models";
 export type RoomKey = "team" | "supporters" | "backers";
 
 /** The most `buzz-channel` tags the server takes on a launch record. */
-const MAX_BOUND_CHANNELS = 8;
+export const MAX_BOUND_CHANNELS = 8;
 
 /**
  * Every channel a launch record binds, once each: the launch's own rooms and board first, so they always fit under the

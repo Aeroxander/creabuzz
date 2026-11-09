@@ -248,6 +248,7 @@ export function DecisionsTab({
                     return (
                       <DecisionDiscussion
                         boards={discussion.boards}
+                        launch={launch}
                         decision={ref}
                         failed={discussion.error != null}
                         headline={headline}

@@ -1,8 +1,9 @@
 /**
- * Home's Boards tab: every board on this server to browse, join and start, the way a list of communities reads.
- * Their posts are in the Everyone timeline (and Following, for people you follow); this is where you find a board,
- * see what it is for and how busy it is, and open it. A joined board shows what is unread in it, as the workspace's
- * sidebar does, when the server keeps read state (D101); otherwise no marker at all, never a false "all read".
+ * Home's Boards tab: every board on this server to browse, join and start, under the project each belongs to. A board
+ * a project's record names is listed under that project's name (which opens the project); the rest are under "This
+ * server", last. Their posts are in the Everyone timeline (and Following, for people you follow); this is where you find
+ * a board, see what it is for and how busy it is, and open it. A joined board shows what is unread in it, as the
+ * workspace's sidebar does, when the server keeps read state (D101); otherwise no marker at all, never a false "all read".
  */
 
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -18,10 +19,13 @@ import { shortRelativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
 import { QueryError } from "@/shared/ui/query-error";
 
+import { groupBoardsByProject } from "../lib/project-boards";
 import { useBoardFeed } from "../use-board-feed";
 import { useMyBoards } from "../use-my-boards";
+import { useBoardProjects } from "../use-project-boards";
 import { JoinBoardButton } from "./JoinBoardButton";
 import { StartBoardForm } from "./StartBoardForm";
+import { UnreadChip } from "./UnreadChip";
 
 const WEEK = 7 * 24 * 3600;
 
@@ -29,6 +33,7 @@ export function BoardDirectory() {
   const feed = useBoardFeed();
   const mine = useMyBoards();
   const unread = useUnreadRooms();
+  const projects = useBoardProjects();
   const navigate = useNavigate();
   const [starting, setStarting] = useState(false);
 
@@ -62,13 +67,20 @@ export function BoardDirectory() {
         ),
     [feed.boards, mine.joined, activity],
   );
+  // Under each project that names them. A project that cannot be read leaves every board under the server, listed all
+  // the same: the grouping is a way to find a board, not part of the board.
+  const groups = useMemo(
+    () => groupBoardsByProject(boards, projects.projects),
+    [boards, projects.projects],
+  );
 
   return (
     <div className="flex flex-col gap-3 p-3" data-testid="board-directory">
       <div className="flex items-center gap-2">
         <p className="min-w-0 flex-1 text-sm text-muted-foreground">
-          Boards are communities for one topic. Their posts show up in Everyone;
-          join the ones you care about.
+          A board is where people post a topic and reply under it. Each project
+          has its own, and the rest belong to this server. Posts show up in
+          Everyone; join the boards you care about.
         </p>
         {starting ? null : (
           <Button
@@ -118,84 +130,125 @@ export function BoardDirectory() {
           There are no boards here yet. Start the first one.
         </p>
       ) : (
-        <ul className="flex flex-col gap-2" data-testid="board-directory-list">
-          {boards.map((board) => {
-            const marker = board.joined
-              ? unreadMarker(unread.rows.get(board.id))
-              : null;
+        <div className="flex flex-col gap-4" data-testid="board-directory-list">
+          {groups.map((group) => {
+            const key = group.project?.key ?? "server";
+            const heading = group.project?.name ?? "This server";
+            // Without a project to tell apart from, one group needs no heading.
+            const named = groups.length > 1 || group.project !== null;
             return (
-              <li
-                className="flex items-center gap-3 rounded-xl border bg-card p-3"
-                data-joined={board.joined || undefined}
-                data-testid={`board-directory-${board.id}`}
-                key={board.id}
+              <section
+                aria-label={named ? undefined : "Boards"}
+                aria-labelledby={named ? `board-group-${key}` : undefined}
+                className="flex flex-col gap-2"
+                data-testid={`board-directory-group-${key}`}
+                key={key}
               >
-                <span
-                  aria-hidden
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-primary/15 text-base font-bold uppercase text-primary-ink"
-                >
-                  {board.name.replace(/[^a-z0-9]/gi, "").slice(0, 1) || "#"}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Link
-                      className="block truncate text-base font-semibold hover:underline"
-                      data-testid="board-directory-name"
-                      params={{ boardId: board.id }}
-                      to="/b/$boardId"
-                    >
-                      {board.name}
-                      {marker ? (
-                        <span className="sr-only">{`, ${marker.words}`}</span>
-                      ) : null}
-                    </Link>
-                    {marker ? (
-                      <span
-                        aria-hidden
-                        className={`shrink-0 rounded-full px-1.5 text-2xs font-semibold ${
-                          marker.attention
-                            ? "bg-destructive text-destructive-foreground"
-                            : "bg-black/10 text-black dark:bg-white/15 dark:text-white"
-                        }`}
-                        data-testid={`board-directory-${board.id}-unread`}
+                {named ? (
+                  <h2
+                    className="min-w-0 truncate text-sm font-semibold"
+                    id={`board-group-${key}`}
+                  >
+                    {group.project ? (
+                      <Link
+                        className="hover:underline"
+                        data-testid="board-directory-project-link"
+                        params={{ launchId: group.project.id }}
+                        search={{ author: group.project.author }}
+                        to="/launchpad/$launchId"
                       >
-                        {marker.label ?? "•"}
-                      </span>
-                    ) : null}
-                  </div>
-                  {board.description ? (
-                    <p className="line-clamp-2 text-sm text-muted-foreground">
-                      {board.description}
-                    </p>
-                  ) : null}
-                  <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <MessageSquare aria-hidden className="h-3.5 w-3.5" />
-                      {board.week === 1
-                        ? "1 post this week"
-                        : `${board.week} posts this week`}
-                    </span>
-                    {board.latest > 0 ? (
-                      <span>Active {shortRelativeTime(board.latest)}</span>
-                    ) : null}
-                    {board.joined ? (
-                      <span className="inline-flex items-center gap-1 text-primary-ink">
-                        <Users aria-hidden className="h-3.5 w-3.5" /> Joined
-                      </span>
-                    ) : null}
-                  </p>
-                </div>
-                {board.visibility === "public" ? (
-                  <JoinBoardButton boardId={board.id} boardName={board.name} />
-                ) : (
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    Invite only
-                  </span>
-                )}
-              </li>
+                        {heading}
+                      </Link>
+                    ) : (
+                      heading
+                    )}
+                  </h2>
+                ) : null}
+                <ul className="flex flex-col gap-2">
+                  {group.boards.map((board) => {
+                    const marker = board.joined
+                      ? unreadMarker(unread.rows.get(board.id))
+                      : null;
+                    return (
+                      <li
+                        className="flex items-center gap-3 rounded-xl border bg-card p-3"
+                        data-joined={board.joined || undefined}
+                        data-testid={`board-directory-${board.id}`}
+                        key={board.id}
+                      >
+                        <span
+                          aria-hidden
+                          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-primary/15 text-base font-bold uppercase text-primary-ink"
+                        >
+                          {board.name.replace(/[^a-z0-9]/gi, "").slice(0, 1) ||
+                            "#"}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Link
+                              className="block truncate text-base font-semibold hover:underline"
+                              data-testid="board-directory-name"
+                              params={{ boardId: board.id }}
+                              to="/b/$boardId"
+                            >
+                              {board.name}
+                              {marker ? (
+                                <span className="sr-only">{`, ${marker.words}`}</span>
+                              ) : null}
+                            </Link>
+                            {marker ? (
+                              <UnreadChip
+                                marker={marker}
+                                testId={`board-directory-${board.id}-unread`}
+                              />
+                            ) : null}
+                          </div>
+                          {board.description ? (
+                            <p className="line-clamp-2 text-sm text-muted-foreground">
+                              {board.description}
+                            </p>
+                          ) : null}
+                          <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+                            <span className="inline-flex items-center gap-1">
+                              <MessageSquare
+                                aria-hidden
+                                className="h-3.5 w-3.5"
+                              />
+                              {board.week === 1
+                                ? "1 post this week"
+                                : `${board.week} posts this week`}
+                            </span>
+                            {board.latest > 0 ? (
+                              <span>
+                                Active {shortRelativeTime(board.latest)}
+                              </span>
+                            ) : null}
+                            {board.joined ? (
+                              <span className="inline-flex items-center gap-1 text-primary-ink">
+                                <Users aria-hidden className="h-3.5 w-3.5" />{" "}
+                                Joined
+                              </span>
+                            ) : null}
+                          </p>
+                        </div>
+                        {board.visibility === "public" ? (
+                          <JoinBoardButton
+                            boardId={board.id}
+                            boardName={board.name}
+                          />
+                        ) : (
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            Invite only
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
             );
           })}
-        </ul>
+        </div>
       )}
       {unread.paused ? (
         <p
