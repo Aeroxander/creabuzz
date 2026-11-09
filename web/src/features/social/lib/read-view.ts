@@ -27,6 +27,15 @@ export function firstError(...errors: unknown[]): unknown {
   return errors.find((error) => Boolean(error)) ?? null;
 }
 
+/**
+ * A read that failed with nothing read before it, so what it would have said is not known. A list that leaves people
+ * out by such a read (the reader's mute list) must not show people at all: it shows the failure and its retry. False
+ * while the read is still loading, when an earlier answer is still held, and when the read never runs (signed out).
+ */
+export function readUnknown(read: { data: unknown; error: unknown }): boolean {
+  return read.data === undefined && Boolean(read.error);
+}
+
 export type MoreState = "idle" | "loading" | "failed" | "end";
 
 /**

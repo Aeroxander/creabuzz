@@ -39,6 +39,7 @@ import {
 } from "./lib/trending";
 import { usePriorityNotifications } from "./use-launch-updates";
 import { readEvents } from "./read";
+import { readUnknown } from "./lib/read-view";
 import { useMutedPeople, useMutedSet } from "./use-social-actions";
 import { socialKeys, useFollowing } from "./use-social-data";
 
@@ -179,14 +180,16 @@ export function useTrending() {
 }
 
 /**
- * Accounts many others follow that you don't yet, never someone you muted. Waits for the mute list to be read (a
- * failed read counts as read, as everywhere else), so a muted person is never suggested and then taken away.
+ * Accounts many others follow that you don't yet, never someone you muted. Waits for the mute list to be read, so a
+ * muted person is never suggested and then taken away. If that read failed and the list is unknown, nobody is
+ * suggested: the caller shows the failure (`readUnknown`) and retries the mute list, which starts this read.
  */
 export function useSuggestedUsers(limit = 5) {
   const me = existingUserPubkey();
   const following = useFollowing(me).data;
   const mutedRead = useMutedPeople();
   const muted = mutedRead.data;
+  const mutesUnknown = readUnknown(mutedRead);
   return useQuery({
     queryKey: [
       ...socialKeys.all,
@@ -194,10 +197,14 @@ export function useSuggestedUsers(limit = 5) {
       me,
       following?.length ?? -1,
       // Who is muted, not how many: muting one person and unmuting another must not reuse the old list.
-      muted ? [...muted].sort().join(",") : "",
+      // An unknown list has a key of its own, so it never reuses suggestions made with a known one.
+      mutesUnknown ? "unknown" : muted ? [...muted].sort().join(",") : "",
       limit,
     ],
-    enabled: (me === null || following !== undefined) && !mutedRead.isLoading,
+    enabled:
+      (me === null || following !== undefined) &&
+      !mutedRead.isLoading &&
+      !mutesUnknown,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const lists = await readEvents({

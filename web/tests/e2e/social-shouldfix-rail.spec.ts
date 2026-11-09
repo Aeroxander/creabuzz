@@ -486,6 +486,87 @@ test("a muted person is left out of the rail's trending posts and people to foll
   await expect(rail(page).getByText("Bob's hot take")).toHaveCount(0);
 });
 
+test("when the mute list can't be read, the rail and Explore show no people, only a failure with a retry", async ({
+  page,
+}) => {
+  const relay = seeded();
+  // Bob wrote the most liked post and is the most followed; the reader muted him, but the mute list will not load.
+  const bobs = note("post-by-bob".padEnd(64, "0"), BOB, "Bob's hot take", []);
+  relay.seed(bobs);
+  relay.seed(like("like-3".padEnd(64, "0"), CAROL, bobs.id));
+  relay.seed(like("like-4".padEnd(64, "0"), DAN, bobs.id));
+  relay.seed(like("like-5".padEnd(64, "0"), ALICE, bobs.id));
+  relay.seed(profile(BOB, "Bob Baker"));
+  relay.seed(follows("follow-a".padEnd(64, "0"), ALICE, [BOB]));
+  relay.seed(follows("follow-d".padEnd(64, "0"), DAN, [BOB]));
+  relay.seed(follows("follow-c2".padEnd(64, "0"), CAROL, [BOB]));
+  relay.seed({
+    id: "mute-list".padEnd(64, "0"),
+    pubkey: ME,
+    created_at: NOW - 60,
+    kind: 10000,
+    tags: [["p", BOB]],
+    content: "",
+    sig: "sig",
+  });
+  relay.setClosingSockets((filter) => asks(filter, 10000));
+  await setUp(page, relay);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+
+  // Who is muted is unknown, so neither block shows anyone: each says the read failed, as an alert with a retry.
+  const postsError = rail(page).getByTestId("social-rail-posts-error");
+  const peopleError = rail(page).getByTestId("social-rail-people-error");
+  await expect(postsError).toBeVisible({ timeout: 30_000 });
+  await expect(peopleError).toBeVisible();
+  await expect(postsError).toHaveAttribute("role", "alert");
+  await expect(peopleError).toHaveAttribute("role", "alert");
+  await expect(rail(page).getByTestId("social-rail-posts")).toHaveCount(0);
+  await expect(rail(page).getByTestId("social-rail-people")).toHaveCount(0);
+  await expect(rail(page).getByText("Bob Baker")).toHaveCount(0);
+  await expect(rail(page).getByText("Bob's hot take")).toHaveCount(0);
+  // The blocks that name nobody are not held back.
+  await expect(rail(page).getByTestId("social-rail-projects")).toBeVisible();
+  await expect(rail(page).getByTestId("social-rail-trending")).toBeVisible();
+
+  // Explore's People tab follows the same rule: a failure, never a list that may hold a muted person.
+  await page.goto("/social/explore?tab=people");
+  await expect(page.getByTestId("social-people-error")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("social-people-list")).toHaveCount(0);
+  await expect(page.getByText("Bob Baker")).toHaveCount(0);
+
+  // The retry reads the mute list again; once it answers, the lists come back without the muted person.
+  relay.setClosingSockets(false);
+  await page
+    .getByTestId("social-people-error")
+    .getByRole("button", { name: /try again/i })
+    .click();
+  await expect(page.getByTestId("social-people-list")).toContainText(
+    "Dan Drummer",
+    { timeout: 20_000 },
+  );
+  await expect(page.getByTestId("social-people-list")).not.toContainText(
+    "Bob Baker",
+  );
+
+  relay.setClosingSockets((filter) => asks(filter, 10000));
+  await page.goto("/");
+  await expect(postsError).toBeVisible({ timeout: 30_000 });
+  relay.setClosingSockets(false);
+  await postsError.getByRole("button", { name: /try again/i }).click();
+  await expect(rail(page).getByTestId("social-rail-posts")).toContainText(
+    "Alice Archer",
+    { timeout: 20_000 },
+  );
+  await expect(rail(page).getByTestId("social-rail-people")).toContainText(
+    "Dan Drummer",
+  );
+  await expect(rail(page).getByText("Bob Baker")).toHaveCount(0);
+  await expect(rail(page).getByText("Bob's hot take")).toHaveCount(0);
+});
+
 test("the rail reads a handful of trending posts by id, not the whole trending list", async ({
   page,
 }) => {

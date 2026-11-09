@@ -2,6 +2,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 
 import {
   KIND_CONTACT_LIST,
+  KIND_MUTE_LIST,
   KIND_REACTION,
   KIND_REPOST,
   KIND_TEXT_NOTE,
@@ -10,7 +11,12 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { QueryError } from "@/shared/ui/query-error";
 
-import { firstError, listView, partialError } from "../lib/read-view";
+import {
+  firstError,
+  listView,
+  partialError,
+  readUnknown,
+} from "../lib/read-view";
 import { useSuggestedUsers, useTrending } from "../use-discovery";
 import { usePeople } from "../use-people";
 import { useMutedPeople } from "../use-social-actions";
@@ -112,34 +118,43 @@ function TrendingPosts() {
 
 function People() {
   const suggested = useSuggestedUsers(20);
-  const people = usePeople((suggested.data ?? []).map((s) => s.pubkey));
+  // Suggestions leave out people you muted, so they wait for the mute list too. If it could not be read, nobody is
+  // suggested (a muted person could be among them): the tab shows the failure and its retry.
+  const mutedRead = useMutedPeople();
+  const mutesUnknown = readUnknown(mutedRead);
+  const list = mutesUnknown ? [] : (suggested.data ?? []);
+  const people = usePeople(list.map((s) => s.pubkey));
   // Suggestions wait for who you follow: if that read failed they never come, which is a failure, not "no suggestions".
   const following = useFollowing(existingUserPubkey());
-  // Suggestions leave out people you muted, so they wait for the mute list too.
-  const mutedRead = useMutedPeople();
-  const error = firstError(suggested.error, following.error);
+  const error = firstError(
+    suggested.error,
+    following.error,
+    mutesUnknown && mutedRead.error,
+  );
   const view = listView({
-    count: suggested.data?.length ?? 0,
+    count: list.length,
     error,
     loading: suggested.isLoading || following.isLoading || mutedRead.isLoading,
   });
   const retry = () => {
     if (following.error) void following.refetch();
-    void suggested.refetch();
+    // Reading the mute list again starts the suggestions; asking for them now would be asking with no mutes.
+    if (mutesUnknown) void mutedRead.refetch();
+    else void suggested.refetch();
   };
   if (view === "loading") return <TimelineSkeleton />;
   if (view === "error") {
     return (
       <ExploreError
         error={error}
-        kinds={[KIND_CONTACT_LIST]}
+        kinds={[KIND_CONTACT_LIST, KIND_MUTE_LIST]}
         onRetry={retry}
         testId="social-people-error"
         title="Couldn't load suggestions"
       />
     );
   }
-  if (!suggested.data?.length) {
+  if (list.length === 0) {
     return (
       <EmptyState title="No suggestions yet">
         Follow a few people and check back.
@@ -158,7 +173,7 @@ function People() {
         className="divide-y divide-black/10 dark:divide-white/10"
         data-testid="social-people-list"
       >
-        {suggested.data.map((s) => (
+        {list.map((s) => (
           <PersonRow
             detail={`${s.followers} ${s.followers === 1 ? "follower" : "followers"}`}
             key={s.pubkey}

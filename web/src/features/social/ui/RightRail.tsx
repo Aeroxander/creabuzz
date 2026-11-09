@@ -14,7 +14,7 @@ import {
   railPosts,
   railProjects,
 } from "../lib/rail";
-import { firstError, listView } from "../lib/read-view";
+import { firstError, listView, readUnknown } from "../lib/read-view";
 import { useSuggestedUsers, useTrending } from "../use-discovery";
 import { usePeople } from "../use-people";
 import { useMutedPeople } from "../use-social-actions";
@@ -234,13 +234,20 @@ function TrendingPostsBlock() {
   // Only the top few ids (Explore reads all thirty): the rail is on every social page and shows three posts.
   const notes = useNotesById(railPostIds(trending.data?.ids));
   // A muted person's post stays out of the rail, as out of the timeline; wait for the mute list so it never flashes.
+  // If the mute list could not be read, who to leave out is unknown: show no posts, only the failure and its retry.
   const mutedRead = useMutedPeople();
+  const mutesUnknown = readUnknown(mutedRead);
   const rows = useMemo(
-    () => railPosts(notes.data ?? [], mutedRead.data ?? NOBODY),
-    [notes.data, mutedRead.data],
+    () =>
+      mutesUnknown ? [] : railPosts(notes.data ?? [], mutedRead.data ?? NOBODY),
+    [notes.data, mutedRead.data, mutesUnknown],
   );
   const people = usePeople(rows.map((row) => row.event.pubkey));
-  const error = firstError(trending.error, notes.error);
+  const error = firstError(
+    trending.error,
+    notes.error,
+    mutesUnknown && mutedRead.error,
+  );
   const view = listView({
     count: rows.length,
     error,
@@ -250,6 +257,7 @@ function TrendingPostsBlock() {
       Boolean(trending.data?.ids.length && notes.isLoading),
   });
   const retry = () => {
+    if (mutedRead.error) void mutedRead.refetch();
     void trending.refetch();
     if (notes.error) void notes.refetch();
   };
@@ -351,13 +359,19 @@ function HashtagsBlock() {
 
 function PeopleBlock() {
   const suggested = useSuggestedUsers(RAIL_LIMITS.people);
-  const list = suggested.data ?? [];
+  // The suggestions leave out people you muted, so they wait for the mute list too. If it could not be read, nobody is
+  // suggested (a muted person could be among them): the block shows the failure and its retry.
+  const mutedRead = useMutedPeople();
+  const mutesUnknown = readUnknown(mutedRead);
+  const list = mutesUnknown ? [] : (suggested.data ?? []);
   const people = usePeople(list.map((s) => s.pubkey));
   // Suggestions wait for who you follow: if that read failed they never come, which is a failure, not "no suggestions".
   const following = useFollowing(existingUserPubkey());
-  // The suggestions leave out people you muted, so they wait for the mute list too.
-  const mutedRead = useMutedPeople();
-  const error = firstError(suggested.error, following.error);
+  const error = firstError(
+    suggested.error,
+    following.error,
+    mutesUnknown && mutedRead.error,
+  );
   const view = listView({
     count: list.length,
     error,
@@ -365,7 +379,9 @@ function PeopleBlock() {
   });
   const retry = () => {
     if (following.error) void following.refetch();
-    void suggested.refetch();
+    // Reading the mute list again starts the suggestions; asking for them now would be asking with no mutes.
+    if (mutesUnknown) void mutedRead.refetch();
+    else void suggested.refetch();
   };
   return (
     <RailBlock

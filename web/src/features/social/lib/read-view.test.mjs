@@ -9,6 +9,7 @@ import {
   moreState,
   olderPageError,
   partialError,
+  readUnknown,
 } from "./read-view.ts";
 
 const FAILED = new Error("socket closed");
@@ -200,4 +201,15 @@ test("scrolling lists stop at a failed older page and offer Try again", () => {
   ]) {
     assert.match(read(path), /loadMoreError=\{/, path);
   }
+});
+
+test("a mute list that failed to read is unknown, not empty", () => {
+  const failed = new Error("closed");
+  // Failed with nothing read before: nobody may be shown from a list that leaves muted people out.
+  assert.equal(readUnknown({ data: undefined, error: failed }), true);
+  // Still loading, signed out (the read never runs), or read and empty: not a failure.
+  assert.equal(readUnknown({ data: undefined, error: null }), false);
+  assert.equal(readUnknown({ data: new Set(), error: null }), false);
+  // A refresh failed but the earlier answer is still held: that answer is used.
+  assert.equal(readUnknown({ data: new Set(["a"]), error: failed }), false);
 });
