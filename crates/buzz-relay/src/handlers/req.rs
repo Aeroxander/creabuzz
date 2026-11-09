@@ -476,7 +476,7 @@ pub async fn handle_req(
                     // CLOSED, never EOSE: with several filters the ones read so
                     // far are only part of the answer, and an EOSE would let the
                     // client take the missing filters' events for "none exist".
-                    return Some(db_read_closed_reason(&e));
+                    return Some(db_read_closed_reason(&e).to_string());
                 }
             };
 
@@ -1555,13 +1555,19 @@ async fn close_timed_out_subscription(
 /// Clients match it to skip retrying the same expensive query.
 pub(crate) const QUERY_TIMED_OUT_CLOSED: &str = "error: query timed out";
 
-/// CLOSED reason for a failed one-shot DB read (COUNT): a statement cancel gets
-/// the stable timeout reason; anything else keeps the raw error.
-pub(crate) fn db_read_closed_reason(e: &buzz_db::DbError) -> String {
+/// Stable CLOSED reason for a read that failed for any reason other than its
+/// statement deadline. Fixed text: the error itself can carry driver, pool or
+/// connection detail, which belongs in the server log and not on the wire.
+pub(crate) const DB_READ_FAILED_CLOSED: &str = "error: database error";
+
+/// CLOSED reason for a failed database read (REQ history, COUNT): a statement
+/// cancel gets the stable timeout reason, anything else the stable failure
+/// reason. Never the error's own text — callers log that server-side.
+pub(crate) fn db_read_closed_reason(e: &buzz_db::DbError) -> &'static str {
     if e.is_statement_cancelled() {
-        QUERY_TIMED_OUT_CLOSED.to_string()
+        QUERY_TIMED_OUT_CLOSED
     } else {
-        format!("error: {e}")
+        DB_READ_FAILED_CLOSED
     }
 }
 
@@ -2009,14 +2015,77 @@ mod tests {
         )
         .await;
 
-        let frames = closed_frames(&mut send_rx);
-        assert_eq!(frames.len(), 1, "exactly one terminal frame: {frames:?}");
-        assert!(
-            frames[0].starts_with(r#"["CLOSED","thread","error:"#),
-            "a failed read must close the subscription, got {frames:?}"
+        // The whole frame is asserted, so the reason is the fixed one and
+        // nothing of the pool or driver error follows it.
+        assert_eq!(
+            closed_frames(&mut send_rx),
+            vec![format!(r#"["CLOSED","thread","{DB_READ_FAILED_CLOSED}"]"#)],
+            "a failed read must close the subscription with the fixed reason"
         );
         assert!(conn.subscriptions.lock().await.is_empty());
         assert!(!registered(&state, &conn, "thread"));
+    }
+
+    /// The CLOSED reason for a failed read is one of two fixed strings. The
+    /// error's own text (driver, pool, connection detail) never reaches a
+    /// client; a statement cancel keeps the reason clients already match on.
+    #[test]
+    fn db_read_closed_reason_never_carries_error_detail() {
+        let detail = "password authentication failed for user relay at db-7.internal:5432";
+        for error in [
+            buzz_db::DbError::Sqlx(sqlx::Error::Configuration(detail.into())),
+            buzz_db::DbError::Sqlx(sqlx::Error::PoolTimedOut),
+            buzz_db::DbError::InvalidData(detail.to_string()),
+        ] {
+            assert!(error.to_string().len() > "database error".len());
+            assert_eq!(db_read_closed_reason(&error), "error: database error");
+        }
+        assert_eq!(QUERY_TIMED_OUT_CLOSED, "error: query timed out");
+    }
+
+    /// COUNT shares the helper: a count whose read fails answers the same fixed
+    /// CLOSED reason as a REQ, and no COUNT result.
+    ///
+    /// Drives the production `handle_count` against an unreachable database,
+    /// with channel access pre-cached so the failure lands in the count query.
+    #[tokio::test]
+    async fn failed_count_read_closes_with_fixed_reason() {
+        let state =
+            crate::state::tests::test_state_with_database_url("postgres://127.0.0.1:1/none").await;
+        let (conn, mut send_rx) = lifecycle_conn();
+        let keys = nostr::Keys::generate();
+        *conn.auth_state.lock().expect("auth state") =
+            AuthState::Authenticated(buzz_auth::AuthContext {
+                pubkey: keys.public_key(),
+                scopes: vec![],
+                channel_ids: None,
+                auth_method: buzz_auth::AuthMethod::Nip42,
+                agent_owner_pubkey: None,
+            });
+        let channel = uuid::Uuid::new_v4();
+        state.accessible_channels_cache.insert(
+            (
+                conn.tenant.community(),
+                keys.public_key().to_bytes().to_vec(),
+            ),
+            vec![channel],
+        );
+        let filter = Filter::new()
+            .kind(nostr::Kind::TextNote)
+            .custom_tag(SingleLetterTag::lowercase(Alphabet::H), channel.to_string());
+
+        crate::handlers::count::handle_count(
+            "count".to_string(),
+            vec![filter],
+            Arc::new(conn),
+            Arc::clone(&state),
+        )
+        .await;
+
+        assert_eq!(
+            closed_frames(&mut send_rx),
+            vec![format!(r#"["CLOSED","count","{DB_READ_FAILED_CLOSED}"]"#)],
+        );
     }
 
     /// A superseded REQ's late timeout must not tear down, or send a terminal
