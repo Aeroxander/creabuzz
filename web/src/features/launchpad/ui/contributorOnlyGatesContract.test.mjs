@@ -53,7 +53,12 @@ test("the raise sandbox leads elsewhere without raises", () => {
 test("every launch listing leaves raises out without them", () => {
   for (const [file, pattern] of [
     ["./LaunchesPage.tsx", /listedHere\(launch\.record, raises\)/],
-    ["../../social/ui/RightRail.tsx", /listedHere\(l\.record, raises\)/],
+    // The social rail's project list: the rule lives in lib/rail.ts, the block passes the setting in.
+    ["../../social/lib/rail.ts", /listedHere\(launch\.record, raises\)/],
+    [
+      "../../social/ui/RightRail.tsx",
+      /railProjects\(launches\.data \?\? \[\], raises\)/,
+    ],
     [
       "../../discover/ui/CategoryBrowse.tsx",
       /listedHere\(launch\.record, raises\)/,

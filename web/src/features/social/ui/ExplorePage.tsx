@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 
 import {
   KIND_CONTACT_LIST,
@@ -25,8 +25,8 @@ import { TabStrip, tabPanelProps } from "./TabStrip";
 type Tab = "posts" | "people" | "hashtags";
 
 const TABS: readonly { id: Tab; label: string }[] = [
-  { id: "posts", label: "Trending" },
-  { id: "people", label: "People" },
+  { id: "posts", label: "Trending posts" },
+  { id: "people", label: "People to follow" },
   { id: "hashtags", label: "Hashtags" },
 ];
 
@@ -210,9 +210,19 @@ function Hashtags() {
   );
 }
 
-/** Discovery: what's trending, people worth following, and hashtags in use. */
+/**
+ * The full lists behind the rail's "See all" links: trending posts, people worth following and hashtags in use. The tab
+ * is kept in the address, so each link opens its own list and Back returns to it.
+ */
 export function ExplorePage() {
-  const [tab, setTab] = useState<Tab>("posts");
+  const tab: Tab = useSearch({ from: "/social/explore" }).tab ?? "posts";
+  const navigate = useNavigate();
+  const setTab = (next: Tab) =>
+    void navigate({
+      to: "/social/explore",
+      search: next === "posts" ? {} : { tab: next },
+      replace: true,
+    });
   return (
     <SocialShell>
       <PageBar title="Explore">

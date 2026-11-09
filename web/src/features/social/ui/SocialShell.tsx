@@ -170,8 +170,9 @@ function pathMatches(pathname: string, prefix: string): boolean {
 
 /**
  * The social section's own frame, inside the app shell: a section nav, the
- * timeline column and a right rail of search, trends and people to follow.
- * On phones the section nav becomes a strip along the top of the page.
+ * timeline column and a rail of projects, trends and people to follow.
+ * On phones the section nav becomes a strip along the top of the page, and
+ * the rail moves below the timeline.
  */
 export function SocialShell({
   children,
@@ -258,9 +259,11 @@ export function SocialShell({
         </div>
 
         {rail ? (
+          // One landmark in every layout, last in reading order: on wide screens it is the third column; below that it
+          // sits under the timeline (in its column on a tablet, full width on a phone), so no block is lost.
           <aside
             aria-label="Discover"
-            className="sticky top-0 hidden w-80 max-w-full shrink-0 self-start justify-self-start px-4 py-3 xl:block"
+            className="w-full max-w-full px-4 py-3 md:col-start-2 md:row-start-2 xl:sticky xl:top-0 xl:col-start-3 xl:row-start-1 xl:max-h-[calc(100dvh-4rem)] xl:w-80 xl:self-start xl:justify-self-start xl:overflow-y-auto"
             data-testid="social-rail"
           >
             <RightRail />

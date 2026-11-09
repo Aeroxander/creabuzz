@@ -2,15 +2,16 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
-import { launchCoord, LaunchVoteCard } from "@/features/feed/ui/LaunchVoteCard";
-import { EMPTY_TALLY, sortByMode } from "@/features/feed/lib/ranking";
-import { useFeedNotes, useVoteTallies } from "@/features/feed/use-feed";
-import { listedHere } from "@/features/launchpad/lib/contributor-only";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { useLaunches } from "@/features/launchpad/use-launches";
+import { resolveUserName } from "@/features/profiles/use-profiles";
+import { existingUserPubkey } from "@/shared/lib/identity";
 
+import { RAIL_LIMITS, railBlurb, railProjects } from "../lib/rail";
+import { firstError, listView } from "../lib/read-view";
 import { useSuggestedUsers, useTrending } from "../use-discovery";
 import { usePeople } from "../use-people";
+import { useFollowing, useNotesById } from "../use-social-data";
 import { HashtagRow } from "./HashtagRow";
 import { PersonRow } from "./PersonRow";
 
@@ -47,136 +48,344 @@ export function SearchBox({ initial = "" }: { initial?: string }) {
   );
 }
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="glass overflow-hidden rounded-2xl border">
-      <h2 className="px-4 pb-1 pt-3 text-lg font-bold text-black dark:text-white">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
+const LINK_CLASS = "font-semibold text-sky-700 underline dark:text-sky-400";
 
-/** The launches drawing the most weighted support right now, with how much is being said about each. */
-function TrendingLaunchesCard() {
-  const launches = useLaunches();
-  const notes = useFeedNotes();
-  const { tallies } = useVoteTallies();
-  const raises = raisesOffered();
-  const trending = useMemo(
-    () =>
-      sortByMode(
-        (launches.data ?? []).filter(
-          (l) =>
-            l.record.stage !== "draft" &&
-            l.record.stage !== "failed" &&
-            // A contributor-only build never lists a raise, even one another build published here.
-            listedHere(l.record, raises),
-        ),
-        "hot",
-        (l) => tallies.get(launchCoord(l.record))?.score ?? 0,
-        (l) => l.record.createdAt,
-      ).slice(0, 4),
-    [launches.data, tallies, raises],
-  );
-  const postsPerLaunch = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const note of notes.data ?? []) {
-      for (const coord of note.launches) {
-        counts.set(coord, (counts.get(coord) ?? 0) + 1);
-      }
-    }
-    return counts;
-  }, [notes.data]);
-  if (trending.length === 0) return null;
+/** One block of the rail: a heading, a short list and a "See all" link to the full page. */
+function RailBlock({
+  id,
+  title,
+  seeAll,
+  children,
+}: {
+  id: string;
+  title: string;
+  seeAll: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section
-      aria-labelledby="trending-launches-title"
+      aria-labelledby={id}
       className="glass overflow-hidden rounded-2xl border"
+      data-testid={`social-rail-block-${id}`}
     >
       <h2
         className="px-4 pb-1 pt-3 text-lg font-bold text-black dark:text-white"
-        id="trending-launches-title"
+        id={id}
       >
-        Trending projects
+        {title}
       </h2>
-      <ul
-        className="flex flex-col gap-2 p-3 pt-1"
-        data-testid="trending-launches"
-      >
-        {trending.map((launch) => {
-          const coord = launchCoord(launch.record);
-          return (
-            <li key={coord}>
-              <LaunchVoteCard
-                comments={postsPerLaunch.get(coord) ?? 0}
-                record={launch.record}
-                tally={tallies.get(coord) ?? EMPTY_TALLY}
-              />
-            </li>
-          );
-        })}
-      </ul>
+      {children}
+      {seeAll}
     </section>
   );
 }
 
-function TrendingCard() {
-  const hashtags = useTrending().data?.hashtags.slice(0, 5) ?? [];
-  if (hashtags.length === 0) return null;
+/** A line in a block that has no list to show: still reading, nothing yet, or the read failed (with a retry). */
+function RailNote({
+  children,
+  onRetry,
+  testId,
+}: {
+  children: ReactNode;
+  onRetry?: () => void;
+  testId: string;
+}) {
   return (
-    <Card title="Trending">
-      <ul data-testid="social-rail-trending">
-        {hashtags.map(({ tag, count }) => (
-          <li key={tag}>
-            <HashtagRow compact count={count} tag={tag} />
-          </li>
-        ))}
-      </ul>
-      <Link
-        className="block px-4 py-3 text-sm text-sky-700 hover:bg-black/5 dark:text-sky-400 dark:hover:bg-white/10"
-        to="/social/explore"
-      >
-        Show more
-      </Link>
-    </Card>
+    <p
+      className="px-4 pb-3 text-sm text-black/60 dark:text-white/60"
+      data-testid={testId}
+      role="status"
+    >
+      {children}
+      {onRetry ? (
+        <>
+          {" "}
+          <button className={LINK_CLASS} onClick={onRetry} type="button">
+            Try again
+          </button>
+        </>
+      ) : null}
+    </p>
   );
 }
 
-function WhoToFollowCard() {
-  const suggested = useSuggestedUsers(3).data ?? [];
-  const people = usePeople(suggested.map((s) => s.pubkey));
-  if (suggested.length === 0) return null;
+/** The Explore tabs a link names; the first one, trending posts, is the page's address with no tab. */
+type ExploreTab = "people" | "hashtags";
+
+/**
+ * A block's link to its full page. The name starts with the visible words ("See all"), and says which list, so the
+ * four links in the rail are told apart by a screen reader and matched by voice control.
+ */
+function SeeAll({
+  label,
+  testId,
+  ...target
+}: {
+  label: string;
+  testId: string;
+} & (
+  | { to: "/discover" }
+  | { to: "/social/explore"; search: { tab?: ExploreTab } }
+)) {
   return (
-    <Card title="Who to follow">
-      <div data-testid="social-rail-people">
-        {suggested.map((s) => (
-          <PersonRow
-            key={s.pubkey}
-            profile={people[s.pubkey]}
-            pubkey={s.pubkey}
-          />
-        ))}
-      </div>
-      <Link
-        className="block px-4 py-3 text-sm text-sky-700 hover:bg-black/5 dark:text-sky-400 dark:hover:bg-white/10"
-        search={undefined}
-        to="/social/explore"
-      >
-        Show more
-      </Link>
-    </Card>
+    <Link
+      aria-label={`See all ${label}`}
+      className="block px-4 py-3 text-sm text-sky-700 hover:bg-black/5 dark:text-sky-400 dark:hover:bg-white/10"
+      data-testid={testId}
+      {...target}
+    >
+      See all
+    </Link>
   );
 }
 
-/** The right rail: trending launches and hashtags, and people worth following. Search is in the top bar, which is always on screen when this is. */
+/** The newest projects people can open, from the launches Home already reads. */
+function ProjectsBlock() {
+  const launches = useLaunches();
+  const raises = raisesOffered();
+  const shown = useMemo(
+    () => railProjects(launches.data ?? [], raises),
+    [launches.data, raises],
+  );
+  const view = listView({
+    count: shown.length,
+    error: launches.error,
+    loading: launches.isLoading,
+  });
+  return (
+    <RailBlock
+      id="rail-projects"
+      seeAll={
+        <SeeAll
+          label="projects"
+          testId="social-rail-projects-all"
+          to="/discover"
+        />
+      }
+      title="Projects"
+    >
+      {view === "loading" ? (
+        <RailNote testId="social-rail-projects-loading">
+          Loading projects…
+        </RailNote>
+      ) : view === "error" ? (
+        <RailNote
+          onRetry={() => void launches.refetch()}
+          testId="social-rail-projects-error"
+        >
+          Couldn't load projects.
+        </RailNote>
+      ) : view === "empty" ? (
+        <RailNote testId="social-rail-projects-empty">
+          No projects on this server yet.{" "}
+          <Link className={LINK_CLASS} to="/start">
+            Start one
+          </Link>
+          .
+        </RailNote>
+      ) : (
+        <ul data-testid="social-rail-projects">
+          {shown.map(({ record }) => (
+            <li key={`${record.author}:${record.id}`}>
+              <Link
+                className="block px-4 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                params={{ launchId: record.id }}
+                to="/launchpad/$launchId"
+              >
+                <span className="block truncate text-sm font-bold text-black dark:text-white">
+                  {record.name}
+                </span>
+                {record.pitch ? (
+                  <span className="line-clamp-2 text-xs text-black/60 dark:text-white/60">
+                    {record.pitch}
+                  </span>
+                ) : null}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </RailBlock>
+  );
+}
+
+function TrendingPostsBlock() {
+  const trending = useTrending();
+  // The same read the Explore page makes, so its cache serves the page after "See all".
+  const notes = useNotesById(trending.data?.ids ?? []);
+  const rows = (notes.data ?? []).slice(0, RAIL_LIMITS.posts);
+  const people = usePeople(rows.map((row) => row.event.pubkey));
+  const error = firstError(trending.error, notes.error);
+  const view = listView({
+    count: rows.length,
+    error,
+    loading:
+      trending.isLoading ||
+      Boolean(trending.data?.ids.length && notes.isLoading),
+  });
+  const retry = () => {
+    void trending.refetch();
+    if (notes.error) void notes.refetch();
+  };
+  return (
+    <RailBlock
+      id="rail-posts"
+      seeAll={
+        <SeeAll
+          label="trending posts"
+          search={{}}
+          testId="social-rail-posts-all"
+          to="/social/explore"
+        />
+      }
+      title="Trending posts"
+    >
+      {view === "loading" ? (
+        <RailNote testId="social-rail-posts-loading">Loading…</RailNote>
+      ) : view === "error" ? (
+        <RailNote onRetry={retry} testId="social-rail-posts-error">
+          Couldn't load what's trending.
+        </RailNote>
+      ) : view === "empty" ? (
+        <RailNote testId="social-rail-posts-empty">
+          Nothing is trending yet.
+        </RailNote>
+      ) : (
+        <ul data-testid="social-rail-posts">
+          {rows.map(({ event }) => (
+            <li key={event.id}>
+              <Link
+                className="block px-4 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                params={{ id: event.id }}
+                to="/social/post/$id"
+              >
+                <span className="block truncate text-sm font-bold text-black dark:text-white">
+                  {resolveUserName(people[event.pubkey], event.pubkey)}
+                </span>
+                <span className="line-clamp-2 text-xs text-black/60 dark:text-white/60">
+                  {railBlurb(event.content) || "A post with a link or picture"}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </RailBlock>
+  );
+}
+
+function HashtagsBlock() {
+  const trending = useTrending();
+  const hashtags = trending.data?.hashtags.slice(0, RAIL_LIMITS.hashtags) ?? [];
+  const view = listView({
+    count: hashtags.length,
+    error: trending.error,
+    loading: trending.isLoading,
+  });
+  return (
+    <RailBlock
+      id="rail-hashtags"
+      seeAll={
+        <SeeAll
+          label="hashtags"
+          search={{ tab: "hashtags" }}
+          testId="social-rail-hashtags-all"
+          to="/social/explore"
+        />
+      }
+      title="Hashtags"
+    >
+      {view === "loading" ? (
+        <RailNote testId="social-rail-hashtags-loading">Loading…</RailNote>
+      ) : view === "error" ? (
+        <RailNote
+          onRetry={() => void trending.refetch()}
+          testId="social-rail-hashtags-error"
+        >
+          Couldn't load hashtags.
+        </RailNote>
+      ) : view === "empty" ? (
+        <RailNote testId="social-rail-hashtags-empty">
+          No hashtags yet.
+        </RailNote>
+      ) : (
+        <ul data-testid="social-rail-trending">
+          {hashtags.map(({ tag, count }) => (
+            <li key={tag}>
+              <HashtagRow compact count={count} tag={tag} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </RailBlock>
+  );
+}
+
+function PeopleBlock() {
+  const suggested = useSuggestedUsers(RAIL_LIMITS.people);
+  const list = suggested.data ?? [];
+  const people = usePeople(list.map((s) => s.pubkey));
+  // Suggestions wait for who you follow: if that read failed they never come, which is a failure, not "no suggestions".
+  const following = useFollowing(existingUserPubkey());
+  const error = firstError(suggested.error, following.error);
+  const view = listView({
+    count: list.length,
+    error,
+    loading: suggested.isLoading || following.isLoading,
+  });
+  const retry = () => {
+    if (following.error) void following.refetch();
+    void suggested.refetch();
+  };
+  return (
+    <RailBlock
+      id="rail-people"
+      seeAll={
+        <SeeAll
+          label="people to follow"
+          search={{ tab: "people" }}
+          testId="social-rail-people-all"
+          to="/social/explore"
+        />
+      }
+      title="People to follow"
+    >
+      {view === "loading" ? (
+        <RailNote testId="social-rail-people-loading">Loading…</RailNote>
+      ) : view === "error" ? (
+        <RailNote onRetry={retry} testId="social-rail-people-error">
+          Couldn't load suggestions.
+        </RailNote>
+      ) : view === "empty" ? (
+        <RailNote testId="social-rail-people-empty">
+          No suggestions yet. Follow a few people and check back.
+        </RailNote>
+      ) : (
+        <div data-testid="social-rail-people">
+          {list.map((s) => (
+            <PersonRow
+              key={s.pubkey}
+              profile={people[s.pubkey]}
+              pubkey={s.pubkey}
+            />
+          ))}
+        </div>
+      )}
+    </RailBlock>
+  );
+}
+
+/**
+ * The rail beside the timeline (below it on narrower screens): the newest projects, what is trending, hashtags and
+ * people worth following. Each is a short list that ends in a "See all" to its full page.
+ */
 export function RightRail() {
   return (
     <div className="flex flex-col gap-4">
-      <TrendingLaunchesCard />
-      <TrendingCard />
-      <WhoToFollowCard />
+      <ProjectsBlock />
+      <TrendingPostsBlock />
+      <HashtagsBlock />
+      <PeopleBlock />
     </div>
   );
 }

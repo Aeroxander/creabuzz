@@ -59,7 +59,9 @@ test("Explore says its lists could not be read, with a retry, on every tab", asy
     }),
   ).toBeVisible();
 
-  await page.getByRole("tab", { name: "People" }).click();
+  await page
+    .getByRole("tab", { name: "People to follow", exact: true })
+    .click();
   await expect(page.getByTestId("social-people-error")).toBeVisible({
     timeout: 20_000,
   });
@@ -110,7 +112,9 @@ test("signed in, Explore's People says suggestions could not be read when who yo
   await refuseEveryRead(page);
   await signIn(page);
   await page.goto("/social/explore");
-  await page.getByRole("tab", { name: "People" }).click();
+  await page
+    .getByRole("tab", { name: "People to follow", exact: true })
+    .click();
   await expect(page.getByTestId("social-people-error")).toBeVisible({
     timeout: 20_000,
   });

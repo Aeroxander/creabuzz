@@ -171,7 +171,10 @@ test("timeline tabs name the content they show, and arrow keys move between them
   const relay = createMockRelay();
   await setUp(page, relay);
   await page.goto("/social/explore");
-  const trending = page.getByRole("tab", { name: "Trending" });
+  const trending = page.getByRole("tab", {
+    name: "Trending posts",
+    exact: true,
+  });
   await expect(trending).toHaveAttribute("aria-selected", "true");
   const panelId = await trending.getAttribute("aria-controls");
   expect(panelId).toBe("explore-tabs-panel");
@@ -184,7 +187,10 @@ test("timeline tabs name the content they show, and arrow keys move between them
 
   await trending.focus();
   await page.keyboard.press("ArrowRight");
-  const people = page.getByRole("tab", { name: "People" });
+  const people = page.getByRole("tab", {
+    name: "People to follow",
+    exact: true,
+  });
   await expect(people).toBeFocused();
   await expect(people).toHaveAttribute("aria-selected", "true");
   await expect(panel).toHaveAttribute(

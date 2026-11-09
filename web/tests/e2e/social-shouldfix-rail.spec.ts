@@ -1,0 +1,396 @@
+import { expect, type Page, test } from "@playwright/test";
+
+import { createMockRelay } from "./mock-relay";
+
+/**
+ * The right rail on Home: the newest projects, trending posts, hashtags and people to follow, each a short list that
+ * ends in a "See all" to its full page. The rail is one complementary landmark, below the feed on narrower screens
+ * (never dropped), and the old Explore address still opens. The list rules are pinned in
+ * `src/features/social/lib/rail.test.mjs`; this runs them on the real page.
+ */
+
+const NSEC = "79".repeat(32);
+const ALICE = "e".repeat(64);
+const BOB = "b0".repeat(32);
+const CAROL = "c0".repeat(32);
+const DAN = "d0".repeat(32);
+const NOW = Math.floor(Date.now() / 1000);
+const HOUR = 3600;
+
+type Relay = ReturnType<typeof createMockRelay>;
+type Filter = Record<string, unknown> | undefined;
+const asks = (filter: Filter, kind: number) =>
+  Array.isArray(filter?.kinds) && (filter.kinds as number[]).includes(kind);
+
+function launch(id: string, name: string, at: number, stage = "live") {
+  return {
+    id: `launch-${id}`,
+    pubkey: ALICE,
+    created_at: at,
+    kind: 37001,
+    tags: [
+      ["d", id],
+      ["name", name],
+      ["t", "dao-launchpad"],
+      ["chain", "11155111"],
+    ],
+    content: JSON.stringify({
+      pitch: `${name} pitch.`,
+      stage,
+      currency: "USDC",
+      budget: "1000000",
+      requiredRaised: "6000000",
+    }),
+    sig: "sig",
+  };
+}
+
+function note(id: string, author: string, content: string, tags: string[][]) {
+  return {
+    id,
+    pubkey: author,
+    created_at: NOW - HOUR,
+    kind: 1,
+    tags,
+    content,
+    sig: "sig",
+  };
+}
+
+function like(id: string, by: string, target: string) {
+  return {
+    id,
+    pubkey: by,
+    created_at: NOW - 600,
+    kind: 7,
+    tags: [["e", target]],
+    content: "+",
+    sig: "sig",
+  };
+}
+
+function profile(pubkey: string, name: string) {
+  return {
+    id: `profile-${name}`,
+    pubkey,
+    created_at: NOW - 5 * HOUR,
+    kind: 0,
+    tags: [],
+    content: JSON.stringify({ name }),
+    sig: "sig",
+  };
+}
+
+function follows(id: string, by: string, people: string[]) {
+  return {
+    id,
+    pubkey: by,
+    created_at: NOW - 4 * HOUR,
+    kind: 3,
+    tags: people.map((p) => ["p", p]),
+    content: "",
+    sig: "sig",
+  };
+}
+
+/** Five open projects (the oldest must not show), a draft, a failed one; one liked post; people to follow. */
+function seeded(): Relay {
+  const relay = createMockRelay();
+  relay.seed(launch("oldest", "Oldest project", NOW - 90 * HOUR));
+  relay.seed(launch("alpha", "Alpha project", NOW - 40 * HOUR));
+  relay.seed(launch("beta", "Beta project", NOW - 30 * HOUR));
+  relay.seed(launch("gamma", "Gamma project", NOW - 20 * HOUR));
+  relay.seed(launch("delta", "Delta project", NOW - 10 * HOUR));
+  relay.seed(launch("secret", "Secret draft", NOW - 5 * HOUR, "draft"));
+  relay.seed(launch("dead", "Dead project", NOW - 4 * HOUR, "failed"));
+  const post = note(
+    "post-trending".padEnd(64, "0"),
+    ALICE,
+    "Shipping the rail today #creaton",
+    [["t", "creaton"]],
+  );
+  relay.seed(post);
+  relay.seed(like("like-1".padEnd(64, "0"), BOB, post.id));
+  relay.seed(like("like-2".padEnd(64, "0"), CAROL, post.id));
+  relay.seed(profile(ALICE, "Alice Archer"));
+  relay.seed(profile(DAN, "Dan Drummer"));
+  relay.seed(follows("follow-b".padEnd(64, "0"), BOB, [DAN]));
+  relay.seed(follows("follow-c".padEnd(64, "0"), CAROL, [DAN]));
+  return relay;
+}
+
+async function setUp(page: Page, relay: Relay) {
+  await page.route("http://127.0.0.1:8545/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }),
+    }),
+  );
+  await relay.install(page);
+  await page.addInitScript((nsec) => {
+    window.localStorage.setItem("buzz.identity.nsec", nsec);
+    window.localStorage.setItem("buzz.identity.backedUp", "1");
+  }, NSEC);
+}
+
+const rail = (page: Page) =>
+  page.getByRole("complementary", { name: "Discover" });
+
+test("Home's rail lists the newest projects, trending posts, hashtags and people to follow", async ({
+  page,
+}) => {
+  await setUp(page, seeded());
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+
+  // One landmark, a heading per block.
+  await expect(rail(page)).toHaveCount(1);
+  for (const name of [
+    "Projects",
+    "Trending posts",
+    "Hashtags",
+    "People to follow",
+  ]) {
+    await expect(
+      rail(page).getByRole("heading", { level: 2, name, exact: true }),
+    ).toBeVisible({ timeout: 20_000 });
+  }
+
+  // Projects: the four newest open ones, newest first. Not the oldest, not a draft, not a failed one.
+  const projects = rail(page)
+    .getByTestId("social-rail-projects")
+    .getByRole("link");
+  await expect(projects).toHaveText([
+    /Delta project/,
+    /Gamma project/,
+    /Beta project/,
+    /Alpha project/,
+  ]);
+  await expect(projects.first()).toHaveAttribute("href", /\/launchpad\/delta/);
+
+  await expect(rail(page).getByTestId("social-rail-posts")).toContainText(
+    "Alice Archer",
+  );
+  await expect(rail(page).getByTestId("social-rail-posts")).toContainText(
+    "Shipping the rail today",
+  );
+  await expect(rail(page).getByTestId("social-rail-trending")).toContainText(
+    "#creaton",
+  );
+  await expect(rail(page).getByTestId("social-rail-people")).toContainText(
+    "Dan Drummer",
+  );
+
+  // The rail comes after the feed in reading and Tab order, and every link in it is named.
+  const feedBeforeRail = await page.evaluate(() => {
+    const aside = document.querySelector('[data-testid="social-rail"]');
+    const tabs = document.querySelector('[role="tablist"]');
+    return Boolean(
+      aside &&
+        tabs &&
+        tabs.compareDocumentPosition(aside) & Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+  expect(feedBeforeRail).toBe(true);
+  const unnamed = await rail(page)
+    .getByRole("link")
+    .evaluateAll(
+      (links) =>
+        links.filter(
+          (link) =>
+            !(link.textContent ?? "").trim() &&
+            !link.getAttribute("aria-label"),
+        ).length,
+    );
+  expect(unnamed).toBe(0);
+  await rail(page).getByTestId("social-rail-projects-all").focus();
+  await expect(
+    rail(page).getByTestId("social-rail-projects-all"),
+  ).toBeFocused();
+});
+
+test("each See all opens its full page, and the old Explore address still works", async ({
+  page,
+}) => {
+  await setUp(page, seeded());
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+
+  await rail(page).getByRole("link", { name: "See all projects" }).click();
+  await expect(page).toHaveURL(/\/discover$/);
+  await expect(page.getByTestId("discover-launch-list")).toBeVisible({
+    timeout: 20_000,
+  });
+
+  const tab = (name: string) => page.getByRole("tab", { name, exact: true });
+  await page.goto("/");
+  await rail(page)
+    .getByRole("link", { name: "See all people to follow" })
+    .click();
+  await expect(page).toHaveURL(/\/social\/explore\?tab=people$/);
+  await expect(tab("People to follow")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByTestId("social-people-list")).toContainText(
+    "Dan Drummer",
+    {
+      timeout: 20_000,
+    },
+  );
+
+  await page.goto("/");
+  await rail(page).getByRole("link", { name: "See all hashtags" }).click();
+  await expect(page).toHaveURL(/\/social\/explore\?tab=hashtags$/);
+  await expect(tab("Hashtags")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("social-hashtag-list")).toContainText(
+    "#creaton",
+    {
+      timeout: 20_000,
+    },
+  );
+
+  await page.goto("/");
+  await rail(page)
+    .getByRole("link", { name: "See all trending posts" })
+    .click();
+  await expect(page).toHaveURL(/\/social\/explore$/);
+  await expect(tab("Trending posts")).toHaveAttribute("aria-selected", "true");
+
+  // The old address and an unknown tab both open Explore on its first tab, never a 404.
+  for (const old of ["/social/explore", "/social/explore?tab=nonsense"]) {
+    await page.goto(old);
+    await expect(tab("Trending posts")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Explore" }),
+    ).toBeVisible();
+  }
+
+  // Picking a tab keeps it in the address, so a reload opens the same list.
+  await tab("Trending posts").focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page).toHaveURL(/tab=people/);
+  await page.reload();
+  await expect(tab("People to follow")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("on a phone the rail sits below the feed with every block reachable and no sideways scroll", async ({
+  page,
+}) => {
+  await setUp(page, seeded());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  await expect(rail(page)).toHaveCount(1);
+  for (const name of [
+    "Projects",
+    "Trending posts",
+    "Hashtags",
+    "People to follow",
+  ]) {
+    const heading = rail(page).getByRole("heading", {
+      level: 2,
+      name,
+      exact: true,
+    });
+    await heading.scrollIntoViewIfNeeded();
+    await expect(heading).toBeInViewport();
+    const box = await heading.boundingBox();
+    expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
+  }
+  await expect(rail(page).getByTestId("social-rail-people")).toContainText(
+    "Dan Drummer",
+  );
+  const overflow = await page.evaluate(() => {
+    const doc = document.documentElement;
+    const shell = document.querySelector('[data-testid="social-shell"]');
+    return {
+      page: doc.scrollWidth - window.innerWidth,
+      shell: shell ? shell.scrollWidth - shell.clientWidth : 0,
+    };
+  });
+  expect(overflow.page).toBeLessThanOrEqual(0);
+  expect(overflow.shell).toBeLessThanOrEqual(0);
+
+  // A link in a block works from there.
+  await rail(page).getByRole("link", { name: "See all projects" }).click();
+  await expect(page).toHaveURL(/\/discover$/);
+});
+
+test("a tablet keeps the rail under the feed, not beside it", async ({
+  page,
+}) => {
+  await setUp(page, seeded());
+  await page.setViewportSize({ width: 900, height: 900 });
+  await page.goto("/");
+  const aside = page.getByTestId("social-rail");
+  await expect(
+    aside.getByRole("heading", { name: "Projects", exact: true }),
+  ).toBeVisible({
+    timeout: 20_000,
+  });
+  const layout = await page.evaluate(() => {
+    const rect = (selector: string) =>
+      document.querySelector(selector)?.getBoundingClientRect();
+    const feed = rect('[role="tablist"]');
+    const side = rect('[data-testid="social-rail"]');
+    return {
+      feedBottom: feed?.bottom ?? 0,
+      sideTop: side?.top ?? 0,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+  expect(layout.sideTop).toBeGreaterThan(layout.feedBottom);
+  expect(layout.overflow).toBeLessThanOrEqual(0);
+});
+
+test("a server with no projects says so and points to Start, not a blank box", async ({
+  page,
+}) => {
+  await setUp(page, createMockRelay());
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const empty = rail(page).getByTestId("social-rail-projects-empty");
+  await expect(empty).toContainText("No projects on this server yet", {
+    timeout: 20_000,
+  });
+  await expect(empty.getByRole("link", { name: "Start one" })).toHaveAttribute(
+    "href",
+    "/start",
+  );
+  await expect(rail(page).getByTestId("social-rail-posts-empty")).toBeVisible();
+  await expect(
+    rail(page).getByTestId("social-rail-hashtags-empty"),
+  ).toBeVisible();
+});
+
+test("projects the server would not answer for are a failure with a retry, not an empty list", async ({
+  page,
+}) => {
+  const relay = seeded();
+  relay.setClosingSockets((filter) => asks(filter, 37001));
+  await setUp(page, relay);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const error = rail(page).getByTestId("social-rail-projects-error");
+  await expect(error).toBeVisible({ timeout: 30_000 });
+  await expect(
+    rail(page).getByTestId("social-rail-projects-empty"),
+  ).toHaveCount(0);
+
+  relay.setClosingSockets(false);
+  await error.getByRole("button", { name: /try again/i }).click();
+  await expect(rail(page).getByTestId("social-rail-projects")).toContainText(
+    "Delta project",
+    {
+      timeout: 20_000,
+    },
+  );
+});
