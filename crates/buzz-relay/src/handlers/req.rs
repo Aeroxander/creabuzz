@@ -390,8 +390,9 @@ pub async fn handle_req(
     // Registration above is one uncancellable unit; the history read below is
     // read-only delivery and races gate cancellation, so expiry drops it and
     // releases the permit without sending another EVENT or EOSE. It returns
-    // whether a statement timeout ended it: retirement then runs after the
-    // race, because a dropped retirement would leak its unreleased topics.
+    // the CLOSED reason when a failed read ended it (a statement timeout or any
+    // other database error): retirement then runs after the race, because a
+    // dropped retirement would leak its unreleased topics.
     let history = async {
         #[cfg(test)]
         crate::nip_fi_test_hooks::before_req_history(conn.tenant.community()).await;
@@ -472,11 +473,10 @@ pub async fn handle_req(
                 Ok(evs) => evs,
                 Err(e) => {
                     warn!(conn_id = %conn_id, sub_id = %sub_id, "Historical query failed: {e}");
-                    if e.is_statement_cancelled() {
-                        return true;
-                    }
-                    conn.send(RelayMessage::eose(&sub_id));
-                    return false;
+                    // CLOSED, never EOSE: with several filters the ones read so
+                    // far are only part of the answer, and an EOSE would let the
+                    // client take the missing filters' events for "none exist".
+                    return Some(db_read_closed_reason(&e));
                 }
             };
 
@@ -553,7 +553,7 @@ pub async fn handle_req(
 
                 let msg = RelayMessage::event(&sub_id, &stored.event);
                 if !conn.send(msg) {
-                    return false;
+                    return None;
                 }
                 total_sent += 1;
                 if total_sent.is_multiple_of(100) {
@@ -570,13 +570,15 @@ pub async fn handle_req(
             count = total_sent,
             "EOSE sent after historical delivery"
         );
-        false
+        None
     };
     let outcome = unless_cancelled(&conn, history).await;
     drop(_req_permit);
     match outcome {
-        Some(false) => {}
-        Some(true) => close_timed_out_subscription(&sub_id, owner, &conn, &state).await,
+        Some(None) => {}
+        Some(Some(reason)) => {
+            super::close::close_if_owner(&sub_id, owner, Some(&reason), &conn, &state).await;
+        }
         None => {
             super::close::close_if_owner(&sub_id, owner, None, &conn, &state).await;
         }
@@ -1953,6 +1955,68 @@ mod tests {
             closed_frames(&mut send_rx),
             vec![format!(r#"["CLOSED","thread","{QUERY_TIMED_OUT_CLOSED}"]"#)]
         );
+    }
+
+    /// A history read that fails (not a statement timeout) in any filter of a
+    /// multi-filter REQ must end the subscription with CLOSED. An EOSE there
+    /// would tell the client the filters not yet read had no events, so a failed
+    /// replies filter would show a thread with no replies.
+    ///
+    /// Drives the production `handle_req` against an unreachable database, with
+    /// channel access pre-cached so the failure lands in the history read.
+    /// Mutation evidence: restore `conn.send(RelayMessage::eose(&sub_id))` on
+    /// the failed-read arm of the history phase and this receives an EOSE frame
+    /// instead of CLOSED.
+    #[tokio::test]
+    async fn failed_historical_read_closes_instead_of_eose() {
+        let state =
+            crate::state::tests::test_state_with_database_url("postgres://127.0.0.1:1/none").await;
+        let (conn, mut send_rx) = lifecycle_conn();
+        let keys = nostr::Keys::generate();
+        *conn.auth_state.lock().expect("auth state") =
+            AuthState::Authenticated(buzz_auth::AuthContext {
+                pubkey: keys.public_key(),
+                scopes: vec![],
+                channel_ids: None,
+                auth_method: buzz_auth::AuthMethod::Nip42,
+                agent_owner_pubkey: None,
+            });
+        let channels = [uuid::Uuid::new_v4(), uuid::Uuid::new_v4()];
+        state.accessible_channels_cache.insert(
+            (
+                conn.tenant.community(),
+                keys.public_key().to_bytes().to_vec(),
+            ),
+            channels.to_vec(),
+        );
+        let filters: Vec<Filter> = channels
+            .iter()
+            .map(|channel| {
+                Filter::new()
+                    .kind(nostr::Kind::TextNote)
+                    .custom_tag(SingleLetterTag::lowercase(Alphabet::H), channel.to_string())
+                    .limit(1)
+            })
+            .collect();
+        let conn = Arc::new(conn);
+
+        handle_req(
+            "thread".to_string(),
+            filters,
+            vec![],
+            Arc::clone(&conn),
+            Arc::clone(&state),
+        )
+        .await;
+
+        let frames = closed_frames(&mut send_rx);
+        assert_eq!(frames.len(), 1, "exactly one terminal frame: {frames:?}");
+        assert!(
+            frames[0].starts_with(r#"["CLOSED","thread","error:"#),
+            "a failed read must close the subscription, got {frames:?}"
+        );
+        assert!(conn.subscriptions.lock().await.is_empty());
+        assert!(!registered(&state, &conn, "thread"));
     }
 
     /// A superseded REQ's late timeout must not tear down, or send a terminal

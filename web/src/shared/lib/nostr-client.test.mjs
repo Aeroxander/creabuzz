@@ -324,6 +324,28 @@ test("a refused multi-filter read fails whole, with the relay's wording and the 
   });
 });
 
+test("a multi-filter read the relay closes after the first filter's events fails whole, never as a partial answer", async () => {
+  // The relay closes (not EOSE) a REQ whose later filter failed to read; the first filter's events already arrived,
+  // and resolving them with an empty second list would show a thread with no replies.
+  const { queryEventsMulti, relayFailureOutcome } = await setup();
+  const target = noteEvent(1);
+  const promise = queryEventsMulti(RELAY, [
+    { ids: [target.id], kinds: [1], limit: 1 },
+    { kinds: [1], "#e": [target.id], limit: 500 },
+  ]);
+  const ws = FakeWebSocket.instances[0];
+  const req = await authenticate(ws);
+
+  ws.message(["EVENT", req[1], target]);
+  ws.message(["CLOSED", req[1], "error: database error"]);
+
+  await assert.rejects(promise, (error) => {
+    assert.equal(relayFailureOutcome(error), "answered");
+    assert.match(error.message, /error: database error/);
+    return true;
+  });
+});
+
 test("a multi-filter read is bounded and never opens a socket it cannot use", async () => {
   const { queryEventsMulti } = await setup();
   const filter = { kinds: [1], limit: 1 };
