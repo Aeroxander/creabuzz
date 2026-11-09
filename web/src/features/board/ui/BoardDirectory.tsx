@@ -68,8 +68,9 @@ export function BoardDirectory() {
         ),
     [feed.boards, mine.joined, activity],
   );
-  // Under each project that names them. A project that cannot be read leaves every board under the server, listed all
-  // the same: the grouping is a way to find a board, not part of the board.
+  // Under each project that names them. The boards are listed as soon as they are known and move under their projects
+  // when those are read: the grouping is a way to find a board, not part of the board. If it cannot be read the boards
+  // stay listed, and the page says the grouping is missing (below) instead of passing them off as the server's own.
   const groups = useMemo(
     () => groupBoardsByProject(boards, projects.projects),
     [boards, projects.projects],
@@ -130,7 +131,7 @@ export function BoardDirectory() {
           testId="board-directory-error"
           title="Couldn't load the boards"
         />
-      ) : feed.boardsLoading || projects.isLoading ? (
+      ) : feed.boardsLoading ? (
         // The boards are listed as soon as they are known; their activity fills in when the posts arrive.
         <p className="text-sm text-muted-foreground" role="status">
           Loading boards…
@@ -144,6 +145,22 @@ export function BoardDirectory() {
         </p>
       ) : (
         <div className="flex flex-col gap-4" data-testid="board-directory-list">
+          {projects.failed ? (
+            <p
+              className="text-xs text-destructive"
+              data-testid="board-directory-grouping-problem"
+              role="alert"
+            >
+              Couldn't group boards by project.{" "}
+              <button
+                className="underline"
+                onClick={projects.retry}
+                type="button"
+              >
+                Try again
+              </button>
+            </p>
+          ) : null}
           {groups.map((group) => {
             const key = group.project?.key ?? "server";
             const heading = group.project?.name ?? "This server";

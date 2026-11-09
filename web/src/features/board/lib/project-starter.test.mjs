@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  BOARDS_NOT_KNOWN,
   createProjectStarterBoards,
   starterMemoKey,
 } from "./project-starter.ts";
@@ -100,6 +101,19 @@ describe("a project's supporters and founders boards", () => {
     const ids = await w.run(memoryStore(), [have("supporters")]);
     assert.deepEqual([...w.made.values()], ["founders"]);
     assert.deepEqual(ids, ["board-1"]);
+  });
+
+  it("make nothing, and say why, when the project's boards are not known (still loading, or the read failed)", async () => {
+    const store = memoryStore();
+    const w = world();
+    await assert.rejects(w.run(store, null), {
+      message: BOARDS_NOT_KNOWN,
+    });
+    assert.equal(w.made.size, 0, "no board is made from a list nobody read");
+    assert.deepEqual(w.posts, []);
+    assert.deepEqual(w.tied, []);
+    assert.equal(store.map.size, 0, "and nothing is remembered as begun");
+    assert.match(BOARDS_NOT_KNOWN, /Try again\.$/);
   });
 
   it("make nothing when the project has both", async () => {

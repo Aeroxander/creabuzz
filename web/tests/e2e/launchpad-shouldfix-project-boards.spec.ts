@@ -524,6 +524,192 @@ test("two projects with the same name are told apart on Home's Boards tab", asyn
   expect(new Set(texts).size, "no two headings read the same").toBe(2);
 });
 
+/** Newer channel records than any board in these specs: enough of them to fill the first page of the channel list. */
+function seedFullFirstPage(relay: Relay, at: number) {
+  for (let n = 0; n < 230; n++) {
+    relay.seed({
+      ...channel(id(5000 + n), `room-${n}`, n % 2 ? "stream" : "forum"),
+      created_at: at,
+    });
+  }
+}
+
+test("a project's boards older than the first page of the channel list are still its boards, and are not offered again", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  relay.seed(channel(GENERAL, "general", "stream"));
+  relay.seed(project({ id: "nebula", name: "Nebula" }));
+  await openAs(page, relay, `/launchpad/nebula?author=${ME}&tab=boards`);
+  await page.getByTestId("project-boards-add").click();
+  const names = page
+    .getByTestId("project-boards-list")
+    .getByTestId("project-board-name");
+  await expect(names).toHaveText(["supporters", "founders"]);
+  expect(created(relay)).toHaveLength(2);
+
+  // The server fills up: 230 channels made after the project's boards, so the newest 200 hold neither of them.
+  seedFullFirstPage(relay, Math.floor(Date.now() / 1000) + 10_000);
+  await page.reload();
+  await expect(names).toHaveText(["supporters", "founders"]);
+  await expect(page.getByTestId("project-boards-empty")).toHaveCount(0);
+  await expect(page.getByTestId("project-boards-add")).toHaveCount(0);
+  // Asked for by id, not hoped for in a page of the list.
+  const boardIds = created(relay).map((e) => field(e, "h"));
+  expect(
+    relay
+      .reqsReceived()
+      .flat()
+      .some(
+        (f) =>
+          f.kinds?.includes(39000) &&
+          boardIds.every((b) => (f["#d"] as string[] | undefined)?.includes(b)),
+      ),
+  ).toBe(true);
+  expect(created(relay), "no second pair was made").toHaveLength(2);
+});
+
+/** The read of the boards a record names: channel records asked for by id. */
+const namedBoardsRead = (f: { kinds?: number[]; [tag: string]: unknown }) =>
+  Boolean(f.kinds?.includes(39000)) && Array.isArray(f["#d"]);
+/** The read of who runs them. */
+const ownersRead = (f: { kinds?: number[] } | undefined) =>
+  Boolean(f?.kinds?.includes(39002));
+
+test("when a project's boards cannot be read, the page says so and offers no boards to make until they are read", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  relay.seed(channel(GENERAL, "general", "stream"));
+  relay.seed(channel(NEBULA_BOARD, "nebula-talk", "forum"));
+  relay.seed(ownerRecord(NEBULA_BOARD, ME));
+  relay.seed(
+    project({ id: "nebula", name: "Nebula", channels: [NEBULA_BOARD] }),
+  );
+  relay.setClosingSockets((f) => f !== undefined && namedBoardsRead(f));
+  await openAs(page, relay, `/launchpad/nebula?author=${ME}&tab=boards`);
+
+  await expect(page.getByTestId("project-boards-error")).toBeVisible({
+    timeout: 15_000,
+  });
+  // Not "no boards yet", and nothing to press that would make boards the project may already have.
+  await expect(page.getByTestId("project-boards-empty")).toHaveCount(0);
+  await expect(page.getByTestId("project-boards-add")).toHaveCount(0);
+
+  relay.setClosingSockets(false);
+  await page
+    .getByTestId("project-boards-error")
+    .getByRole("button", { name: /again/i })
+    .click();
+  await expect(
+    page.getByTestId("project-boards-list").getByTestId("project-board-name"),
+  ).toHaveText(["nebula-talk"]);
+  await expect(page.getByTestId("project-boards-add")).toBeVisible();
+  expect(created(relay)).toHaveLength(0);
+});
+
+test("while a project's boards are still being read, the page offers no boards to make", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  relay.seed(channel(GENERAL, "general", "stream"));
+  relay.seed(channel(NEBULA_BOARD, "nebula-talk", "forum"));
+  relay.seed(ownerRecord(NEBULA_BOARD, ME));
+  relay.seed(
+    project({ id: "nebula", name: "Nebula", channels: [NEBULA_BOARD] }),
+  );
+  relay.holdReads(namedBoardsRead);
+  await openAs(page, relay, `/launchpad/nebula?author=${ME}&tab=boards`);
+
+  await expect(page.getByTestId("project-boards")).toContainText(
+    "Loading boards…",
+  );
+  await expect
+    .poll(() => relay.reqsReceived().flat().some(namedBoardsRead))
+    .toBe(true);
+  await expect(page.getByTestId("project-boards-empty")).toHaveCount(0);
+  await expect(page.getByTestId("project-boards-add")).toHaveCount(0);
+
+  relay.releaseReads();
+  await expect(
+    page.getByTestId("project-boards-list").getByTestId("project-board-name"),
+  ).toHaveText(["nebula-talk"]);
+});
+
+/** Home's Boards tab, with one board of a project and one of the server's. */
+function seedHomeBoards(relay: Relay) {
+  relay.seed(channel(LOOSE_BOARD, "alpha-films", "forum"));
+  relay.seed(channel(NEBULA_BOARD, "beta-nebula", "forum"));
+  relay.seed(ownerRecord(NEBULA_BOARD, ME));
+  relay.seed(
+    project({ id: "nebula", name: "Nebula", channels: [NEBULA_BOARD] }),
+  );
+}
+
+test("Home's Boards tab lists the boards while their projects are still being read, then groups them", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  seedHomeBoards(relay);
+  relay.holdReads(ownersRead);
+  await openAs(page, relay, "/?tab=boards");
+
+  // Both boards are there well before the stalled read would give up, under no heading that claims whose they are.
+  const names = page.getByTestId("board-directory-name");
+  await expect(names).toHaveText(["alpha-films", "beta-nebula"], {
+    timeout: 5_000,
+  });
+  await expect
+    .poll(() => relay.reqsReceived().flat().some(ownersRead))
+    .toBe(true);
+  const groups = page.locator('[data-testid^="board-directory-group-"]');
+  await expect(groups.getByRole("heading")).toHaveCount(0);
+  await expect(
+    page.getByTestId("board-directory-grouping-problem"),
+  ).toHaveCount(0);
+
+  relay.releaseReads();
+  await expect(groups.getByRole("heading")).toHaveText([
+    "Nebula",
+    "This server",
+  ]);
+  await expect(groups.nth(0).getByTestId("board-directory-name")).toHaveText([
+    "beta-nebula",
+  ]);
+});
+
+test("when the projects cannot be read, Home's Boards tab keeps the boards, says the grouping is missing and can try again from the keyboard", async ({
+  page,
+}) => {
+  const relay = createOwningRelay();
+  seedHomeBoards(relay);
+  relay.setClosingSockets(ownersRead);
+  await openAs(page, relay, "/?tab=boards");
+
+  const problem = page.getByTestId("board-directory-grouping-problem");
+  await expect(problem).toBeVisible({ timeout: 15_000 });
+  await expect(problem).toHaveAttribute("role", "alert");
+  await expect(problem).toContainText("Couldn't group boards by project.");
+  // The boards stay, and none is passed off as the server's own.
+  await expect(page.getByTestId("board-directory-name")).toHaveText([
+    "alpha-films",
+    "beta-nebula",
+  ]);
+  await expect(page.getByText("This server", { exact: true })).toHaveCount(0);
+
+  relay.setClosingSockets(false);
+  const again = problem.getByRole("button", { name: "Try again" });
+  await again.focus();
+  await expect(again).toBeFocused();
+  await page.keyboard.press("Enter");
+  const groups = page.locator('[data-testid^="board-directory-group-"]');
+  await expect(groups.getByRole("heading")).toHaveText([
+    "Nebula",
+    "This server",
+  ]);
+  await expect(problem).toHaveCount(0);
+});
+
 /** Names are cut to fit, never pushed past the window (the page can hide a sideways overflow, a box cannot). */
 async function expectInsideWindow(locator: Locator, what: string) {
   const box = await locator.boundingBox();

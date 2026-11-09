@@ -218,6 +218,9 @@ export function createMockRelay({
    */
   const authRetries = { live: 0, query: 0 };
   const subscriptions = new WeakMap<Socket, Map<string, Filter>>();
+  /** Set by `holdReads`: reads whose filter matches are kept unanswered, in `heldReads`, until `releaseReads`. */
+  let heldFilter: ((filter: Filter) => boolean) | null = null;
+  const heldReads: Array<() => void> = [];
   /** Set by `ban`: the reason every login is refused with from then on, as the real server refuses a banned key. */
   let bannedReason: string | null = null;
   /** Rooms and boards the reader was removed from (`revoke`): subscriptions to them are refused. */
@@ -448,16 +451,24 @@ export function createMockRelay({
             );
             return;
           }
-          subscriptions.get(socket)?.set(subId, filter);
-          const sentIds = new Set<string>();
-          for (const f of filters) {
-            for (const event of replay(f)) {
-              if (sentIds.has(event.id)) continue;
-              sentIds.add(event.id);
-              ws.send(JSON.stringify(["EVENT", subId, event]));
+          const answer = () => {
+            subscriptions.get(socket)?.set(subId, filter);
+            const sentIds = new Set<string>();
+            for (const f of filters) {
+              for (const event of replay(f)) {
+                if (sentIds.has(event.id)) continue;
+                sentIds.add(event.id);
+                ws.send(JSON.stringify(["EVENT", subId, event]));
+              }
             }
+            ws.send(JSON.stringify(["EOSE", subId]));
+          };
+          if (heldFilter !== null && filters.some(heldFilter)) {
+            // A server that has the request and is slow to answer it: nothing comes back until `releaseReads`.
+            heldReads.push(answer);
+            return;
           }
-          ws.send(JSON.stringify(["EOSE", subId]));
+          answer();
         }
       });
     });
@@ -545,6 +556,24 @@ export function createMockRelay({
       value: boolean | ((filter: Filter | undefined) => boolean),
     ) => {
       closingSockets = value;
+    },
+    /**
+     * Leave matching reads unanswered, as a server that is slow to answer does (the socket stays open and nothing
+     * comes back): what a page shows while one of its reads has stalled.
+     */
+    holdReads: (matching: (filter: Filter) => boolean) => {
+      heldFilter = matching;
+    },
+    /** Stop holding reads, and answer the held ones from what the server has now. */
+    releaseReads: () => {
+      heldFilter = null;
+      for (const answer of heldReads.splice(0)) {
+        try {
+          answer();
+        } catch {
+          // The page gave up on that read and closed its socket.
+        }
+      }
     },
     /** Timestamps of those opens, to read the reconnect rhythm. */
     openedAt: () => [...openedAt],

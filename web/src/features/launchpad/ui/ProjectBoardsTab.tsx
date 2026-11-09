@@ -8,6 +8,7 @@ import { Link } from "@tanstack/react-router";
 import { Lock, Newspaper } from "lucide-react";
 import { toast } from "sonner";
 
+import { knownBoards } from "@/features/board/lib/named-boards";
 import { droppedLinksNotice } from "@/features/board/lib/project-boards";
 import { missingStarterBoards } from "@/features/board/lib/starter-boards";
 import { UnreadChip } from "@/features/board/ui/UnreadChip";
@@ -45,7 +46,9 @@ export function ProjectBoardsTab({
   const mine = useMyBoards();
   const unread = useUnreadRooms();
   const missing = missingStarterBoards(boards);
-  const starter = useProjectStarterBoards(launch, boards);
+  // Null until the project's boards have been read: nothing is offered, or made, from a list that is not known.
+  const known = knownBoards({ boards, loading, error });
+  const starter = useProjectStarterBoards(launch, known);
   const working = starter.state.phase === "working";
 
   const addBoards = async () => {
@@ -59,7 +62,7 @@ export function ProjectBoardsTab({
   };
 
   const offer =
-    isFounder && missing.length > 0 ? (
+    isFounder && known !== null && missing.length > 0 ? (
       <div className="mt-3" data-testid="project-boards-offer">
         <Button
           data-testid="project-boards-add"
@@ -166,7 +169,7 @@ export function ProjectBoardsTab({
             </ul>
           )}
 
-          {failed || loading ? null : offer}
+          {offer}
           {starter.state.phase === "error" ? (
             <p
               className="mt-2 text-xs text-destructive"

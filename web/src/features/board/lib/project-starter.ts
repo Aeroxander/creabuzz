@@ -77,8 +77,11 @@ function writeMemo(
 
 export interface StarterRun {
   scope: StarterScope;
-  /** The boards the project already has. */
-  existing: readonly { name: string; description: string }[];
+  /**
+   * The boards the project already has, or null when that is not known (still being read, or the read failed). Nothing
+   * is made from null: an unknown list is not an empty one, and treating it as empty makes the boards a second time.
+   */
+  existing: readonly { name: string; description: string }[] | null;
   store: StarterMemoStore;
   newId: () => string;
   /** Whether the server already has a board with this id. A failure to answer is thrown. */
@@ -91,13 +94,19 @@ export interface StarterRun {
   tie: (ids: string[]) => Promise<void>;
 }
 
+/** What a founder is told when the project's boards could not be read, so none are made on a guess. */
+export const BOARDS_NOT_KNOWN =
+  "Couldn't check which boards this project already has. Try again.";
+
 /**
  * Make the boards the project lacks and name them in its record. Resolves with the ids named. Rejects with the first
- * failure, after naming the boards made before it.
+ * failure, after naming the boards made before it; rejects before making anything when the project's boards are not
+ * known.
  */
 export async function createProjectStarterBoards(
   run: StarterRun,
 ): Promise<string[]> {
+  if (run.existing === null) throw new Error(BOARDS_NOT_KNOWN);
   const missing = missingStarterBoards(run.existing);
   if (missing.length === 0) return [];
   const memo = readMemo(run.store, run.scope);

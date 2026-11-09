@@ -14,6 +14,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { postDraft } from "@/features/board/lib/board-events";
+import { knownBoards } from "@/features/board/lib/named-boards";
 import type { ProposalRef } from "@/features/board/lib/proposal-link";
 import type { ProposalThread } from "@/features/board/lib/proposal-threads";
 import { PostComposer } from "@/features/board/ui/PostComposer";
@@ -95,7 +96,10 @@ export function DecisionDiscussion({
     : defaultBoard(boards);
   const isFounder = useIsFounder(launch);
   const own = useProjectBoardsOf(launch);
-  const starter = useProjectStarterBoards(launch, own.boards);
+  // Null until the project's own boards have been read: making boards from a list that is still loading, or that
+  // failed to load, would make the ones it already has a second time.
+  const ownBoards = knownBoards(own);
+  const starter = useProjectStarterBoards(launch, ownBoards);
   // The first thread started is the decision's main discussion; the rest are alongside it.
   const oldestFirst = [...threads].sort(
     (a, b) => a.createdAt - b.createdAt || (a.postId < b.postId ? -1 : 1),
@@ -231,24 +235,47 @@ export function DecisionDiscussion({
             {isFounder ? (
               <>
                 <p>There is no open board to discuss it on yet.</p>
-                <Button
-                  className="mt-1"
-                  data-testid="discussion-add-boards"
-                  disabled={starter.state.phase === "working"}
-                  onClick={() => {
-                    if (existingUserPubkey() === null) {
-                      toast.error(needAccountTo("add boards"));
-                      return;
-                    }
-                    void starter.create().then(onStarted);
-                  }}
-                  size="sm"
-                  variant="outline"
-                >
-                  {starter.state.phase === "working"
-                    ? "Setting up…"
-                    : "Add supporters and founders boards"}
-                </Button>
+                {ownBoards === null ? (
+                  own.error != null ? (
+                    <p
+                      className="mt-1 text-destructive"
+                      data-testid="discussion-boards-problem"
+                      role="alert"
+                    >
+                      Couldn't check this project's boards.{" "}
+                      <button
+                        className="underline"
+                        onClick={own.retry}
+                        type="button"
+                      >
+                        Try again
+                      </button>
+                    </p>
+                  ) : (
+                    <p className="mt-1" role="status">
+                      Checking this project's boards…
+                    </p>
+                  )
+                ) : (
+                  <Button
+                    className="mt-1"
+                    data-testid="discussion-add-boards"
+                    disabled={starter.state.phase === "working"}
+                    onClick={() => {
+                      if (existingUserPubkey() === null) {
+                        toast.error(needAccountTo("add boards"));
+                        return;
+                      }
+                      void starter.create().then(onStarted);
+                    }}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {starter.state.phase === "working"
+                      ? "Setting up…"
+                      : "Add supporters and founders boards"}
+                  </Button>
+                )}
                 {starter.state.phase === "error" ? (
                   <p className="mt-1 text-destructive" role="alert">
                     {starter.state.message}
