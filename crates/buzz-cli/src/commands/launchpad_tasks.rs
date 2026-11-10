@@ -1,6 +1,6 @@
 //! `buzz launchpad tasks …`: a helper's side of tasks with a finish line.
 //!
-//! A project asks for help in an update; someone offers; the team accepts the offer and it becomes a task with
+//! A project asks for help in an update; someone offers; the team makes a task for them, and they say yes to it, with
 //! "Done means" written down; the helper hands work in; someone else on the team checks it. Every step is one signed
 //! update record (kind 47003) that names the project (`a`), carries `l` = `creaton-task` and says which step it is in
 //! `task-part`. The web app writes and reads the same records (`web/src/features/launchpad/lib/tasks.ts`).
@@ -9,7 +9,8 @@
 //!
 //! * `list`: a project's open help requests and its tasks, with each task's state worked out from who signed what;
 //! * `offer`: "I can help" on an update that asks for help;
-//! * `accept`: say yes to a task that was given to this account;
+//! * `accept`: say yes to a task that names this account. A task is this account's only once it signs a step for that
+//!   task: an offer to help is never agreement, since any project could name any offer ever made;
 //! * `submit`: hand work in, as words and links;
 //! * `more-time`: ask for more time, with a reason.
 //!
@@ -54,7 +55,7 @@ pub enum TasksCmd {
         #[arg(long)]
         author: Option<String>,
     },
-    /// Offer to help on an update that asks for help (public; not an agreement)
+    /// Offer to help on an update that asks for help (public; not an agreement, and not a yes to any task)
     Offer {
         /// Project id (slug)
         id: String,
@@ -68,7 +69,8 @@ pub enum TasksCmd {
         #[arg(long)]
         note: Option<String>,
     },
-    /// Say yes to a task that was given to you
+    /// Say yes to a task that names you. A task is yours only once you say yes, including one the team made from an
+    /// offer of yours: an offer to help is not agreement to a task.
     Accept {
         /// Project id (slug)
         id: String,
@@ -269,10 +271,14 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
     let coordinate = first_tag(event, "a")?;
     let id = event.id.to_hex();
     let note = note_of(event);
-    let agent = event
-        .tags
-        .iter()
-        .any(|tag| matches!(tag.as_slice(), [n, ..] if matches!(n.as_str(), "agent" | "auth")));
+    // An agent's record says so: an `agent` tag naming its own signer, or an owner's `auth` proof. An `agent` tag
+    // naming anyone else says nothing about this record.
+    let signer = event.pubkey.to_hex();
+    let agent = event.tags.iter().any(|tag| match tag.as_slice() {
+        [n, who, ..] if n.as_str() == "agent" => *who == signer,
+        [n, ..] => n.as_str() == "auth",
+        _ => false,
+    });
     let mut record = TaskRecord {
         id: id.clone(),
         part: part.clone(),
@@ -366,12 +372,13 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
 /// Every task of one project as JSON, from its task records, by the same rules as the web app's `projectTasks`:
 /// a step counts only when the right party signed it, nothing is ordered by the time a record carries, a
 /// confirmation counts only from a team member who is not the helper (nor an agent, nor whoever runs the helper),
-/// and a helper is on a task only once they offered, accepted or handed work in.
+/// and a helper is on a task only once they signed a step for that very task (a yes, work handed in, an ask for
+/// more time). An offer to help is never agreement. A task nobody has agreed to is listed only for the project's
+/// team and for the person it names; the record itself is public all the same.
 fn project_tasks(
     records: &[TaskRecord],
     coordinate: &str,
     team: &HashSet<String>,
-    offers: &HashMap<String, String>,
     today: &str,
     me: &str,
 ) -> Vec<Value> {
@@ -403,7 +410,8 @@ fn project_tasks(
                 .copied()
                 .filter(|s| s.author == helper && s.part == part)
                 .collect();
-            found.sort_by(|a, b| a.at.cmp(&b.at).then_with(|| a.id.cmp(&b.id)));
+            // By id: the dates are the helper's own to write, and decide nothing.
+            found.sort_by(|a, b| a.id.cmp(&b.id));
             found
         };
         // The team's word on the helper's work comes from someone else on the team.
@@ -437,26 +445,39 @@ fn project_tasks(
             }
         }
         let mut sent_back: BTreeMap<&str, Vec<&TaskRecord>> = BTreeMap::new();
+        // The team sent back work that is no longer on the server: it still counts as sent back.
+        let mut orphan_send_backs: Vec<&TaskRecord> = Vec::new();
         for step in from_team("send-back") {
-            if let Some(id) = step.evidence_id.as_deref().filter(|id| ids.contains(id)) {
-                sent_back.entry(id).or_default().push(step);
+            match step.evidence_id.as_deref().filter(|id| ids.contains(id)) {
+                Some(id) => sent_back.entry(id).or_default().push(step),
+                None => orphan_send_backs.push(step),
             }
+        }
+        for list in confirmed.values_mut() {
+            list.sort_unstable();
         }
         let accepted = evidence.iter().find(|e| {
             confirmed.contains_key(e.id.as_str()) && !sent_back.contains_key(e.id.as_str())
         });
-        let waiting = evidence.iter().rev().find(|e| {
-            !confirmed.contains_key(e.id.as_str()) && !sent_back.contains_key(e.id.as_str())
-        });
+        // Every piece nobody on the team has answered waits for a check.
+        let waiting: Vec<&str> = evidence
+            .iter()
+            .filter(|e| {
+                !confirmed.contains_key(e.id.as_str()) && !sent_back.contains_key(e.id.as_str())
+            })
+            .map(|e| e.id.as_str())
+            .collect();
 
         let asks = from_helper("more-time");
         let mut due = task.due.clone();
         let mut granted: HashMap<&str, &str> = HashMap::new();
+        let mut grant_without_ask = false;
         for step in from_team("grant") {
             let (Some(ask), Some(date)) = (step.ask_id.as_deref(), step.due.as_deref()) else {
                 continue;
             };
             if !asks.iter().any(|a| a.id == ask) {
+                grant_without_ask = true;
                 continue;
             }
             if granted.get(ask).is_none_or(|have| date > *have) {
@@ -469,22 +490,23 @@ fn project_tasks(
 
         let gave_up = from_helper("give-up").first().copied();
         let cancelled = from_team("cancel").first().copied();
+        // Agreement is a record the helper signed for THIS task. An offer to help is never one: any project could
+        // name any offer a person ever made.
         let agreed = if task.author == helper {
             Some("self")
-        } else if task
-            .offer_id
-            .as_ref()
-            .and_then(|id| offers.get(id))
-            .is_some_and(|who| who == helper)
-        {
-            Some("offer")
         } else if !from_helper("accept").is_empty() {
             Some("accept")
         } else if !evidence.is_empty() {
             Some("work")
+        } else if !asks.is_empty() {
+            Some("step")
         } else {
             None
         };
+        // Until the helper agrees, a task is the team's proposal to one person: listed for the team and for them.
+        if agreed.is_none() && helper != me && !team.contains(me) {
+            continue;
+        }
         let state = if accepted.is_some() {
             "confirmed"
         } else if gave_up.is_some() {
@@ -493,9 +515,9 @@ fn project_tasks(
             "cancelled"
         } else if agreed.is_none() {
             "offered"
-        } else if waiting.is_some() {
+        } else if !waiting.is_empty() {
             "submitted"
-        } else if !evidence.is_empty() {
+        } else if !evidence.is_empty() || !orphan_send_backs.is_empty() {
             "sent-back"
         } else {
             "in-progress"
@@ -527,6 +549,14 @@ fn project_tasks(
             "mine": is_mine,
             "next": next,
             "confirmed_without_evidence": accepted.is_none() && confirmed_without_evidence,
+            "waiting": waiting,
+            "sent_back_work_removed": orphan_send_backs.iter().map(|s| json!({
+                "by": s.author,
+                "reason": s.note,
+            })).collect::<Vec<_>>(),
+            // The team recorded steps that only follow a helper's step, and no step the helper signed is there.
+            "step_removed": agreed.is_none()
+                && (!orphan_send_backs.is_empty() || confirmed_without_evidence || grant_without_ask),
             "evidence": evidence.iter().map(|e| json!({
                 "id": e.id,
                 "created_at": e.at,
@@ -753,39 +783,64 @@ async fn read_by_ids(client: &BuzzClient, ids: &[String]) -> Result<Vec<Event>, 
     Ok(out)
 }
 
+/// How many helpers' steps are read for one project.
+const HELPERS_READ: usize = 200;
+
 /// The project's task records, and whether they were read to the end.
+///
+/// Read by who signed them, never only by what they name: first the team's own task records, then the steps of the
+/// helpers those tasks name. Anyone can sign a record that carries the project's tag and the task label, so a read
+/// by tag alone could be filled with a stranger's junk until it never reached its end.
 async fn read_task_records(
     client: &BuzzClient,
-    coordinate: &str,
+    project: &Project,
 ) -> Result<(Vec<TaskRecord>, bool), CliError> {
-    let filter = json!({ "kinds": [KIND_LAUNCH_UPDATE], "#a": [coordinate], "#l": [TASK_LABEL] });
+    let mut complete = project.team.len() <= TEAM_TOLD;
+    let team: Vec<&String> = project.team.iter().take(TEAM_TOLD).collect();
+    let read = |authors: Vec<&String>| {
+        json!({
+            "kinds": [KIND_LAUNCH_UPDATE],
+            "authors": authors,
+            "#a": [project.coordinate],
+            "#l": [TASK_LABEL],
+        })
+    };
     let events = parse_events(
         client
-            .query_pages_bounded(filter, TASK_READ_BOUND + 1)
+            .query_pages_bounded(read(team.clone()), TASK_READ_BOUND + 1)
             .await?,
     )?;
-    let complete = events.len() <= TASK_READ_BOUND as usize;
-    Ok((
-        events.iter().filter_map(parse_task_record).collect(),
-        complete,
-    ))
-}
-
-/// Who signed each offer the tasks name, for the offers still on the server.
-async fn read_offers(
-    client: &BuzzClient,
-    records: &[TaskRecord],
-) -> Result<HashMap<String, String>, CliError> {
-    let mut ids: Vec<String> = records.iter().filter_map(|r| r.offer_id.clone()).collect();
-    ids.sort();
-    ids.dedup();
-    ids.truncate(1_000);
-    Ok(read_by_ids(client, &ids)
-        .await?
-        .into_iter()
-        .filter(|e| first_tag(e, "help-offer").is_some())
-        .map(|e| (e.id.to_hex(), e.pubkey.to_hex()))
-        .collect())
+    complete &= events.len() <= TASK_READ_BOUND as usize;
+    // What comes back is checked again: only what a team member signed.
+    let mut records: Vec<TaskRecord> = events
+        .iter()
+        .filter(|e| team.iter().any(|m| **m == e.pubkey.to_hex()))
+        .filter_map(parse_task_record)
+        .collect();
+    let mut helpers: Vec<String> = records
+        .iter()
+        .filter(|r| r.part == "task" && !project.team.contains(&r.helper))
+        .map(|r| r.helper.clone())
+        .collect();
+    helpers.sort();
+    helpers.dedup();
+    complete &= helpers.len() <= HELPERS_READ;
+    helpers.truncate(HELPERS_READ);
+    for chunk in helpers.chunks(50) {
+        let events = parse_events(
+            client
+                .query_pages_bounded(read(chunk.iter().collect()), TASK_READ_BOUND + 1)
+                .await?,
+        )?;
+        complete &= events.len() <= TASK_READ_BOUND as usize;
+        records.extend(
+            events
+                .iter()
+                .filter(|e| chunk.contains(&e.pubkey.to_hex()))
+                .filter_map(parse_task_record),
+        );
+    }
+    Ok((records, complete))
 }
 
 fn today() -> String {
@@ -797,8 +852,7 @@ async fn cmd_list(client: &BuzzClient, id: &str, author: Option<&str>) -> Result
     let owner = author.map_or_else(|| me.clone(), str::to_string);
     let project = read_project(client, id, &owner).await?;
     let team = project.team_set();
-    let (records, tasks_complete) = read_task_records(client, &project.coordinate).await?;
-    let offers = read_offers(client, &records).await?;
+    let (records, tasks_complete) = read_task_records(client, &project).await?;
 
     // Help requests are the team's own updates: read by author, so nobody else's records can crowd them out.
     let authors: Vec<&String> = project.team.iter().take(TEAM_TOLD).collect();
@@ -840,10 +894,11 @@ async fn cmd_list(client: &BuzzClient, id: &str, author: Option<&str>) -> Result
                 "team": project.team,
             },
             "help_requests": open_help_requests(&updates, &signals, &team, &me),
-            "tasks": project_tasks(&records, &project.coordinate, &team, &offers, &today(), &me),
+            "tasks": project_tasks(&records, &project.coordinate, &team, &today(), &me),
             // False: more records than were read, so a request, a task or a step may be missing.
             "complete": { "help_requests": help_complete, "tasks": tasks_complete },
             "rewards": "Rewards are decided separately, by the project's own rules.",
+            "note": "A task is its helper's only once they say yes. One nobody has said yes to is listed only for the project's team and the person it names; the record itself is public. A project's team can change: steps count by who is on the team now.",
         })
     );
     Ok(())
@@ -936,18 +991,16 @@ async fn my_task(
     me: &str,
 ) -> Result<(Value, Vec<TaskRecord>), CliError> {
     require_hex64(task, "--task")?;
-    let (records, complete) = read_task_records(client, &project.coordinate).await?;
+    let (records, complete) = read_task_records(client, project).await?;
     if !complete {
         return Err(CliError::Other(
             "this project has more task records than could be read, so the task's state is not known".into(),
         ));
     }
-    let offers = read_offers(client, &records).await?;
     let view = project_tasks(
         &records,
         &project.coordinate,
         &project.team_set(),
-        &offers,
         &today(),
         me,
     )
@@ -1041,12 +1094,14 @@ async fn cmd_submit(
         }
         _ => return Err(CliError::Usage("that task is closed".into())),
     }
-    // The same work handed in twice is one piece of work: a retry after a lost answer sends nothing new.
+    // The same work handed in twice is one piece of work: a retry after a lost answer sends nothing new. The note
+    // is compared as it is stored (cut to its limit), or a long note would never match itself.
+    let kept_note: String = note.chars().take(MAX_NOTE).collect();
     let same = records.iter().any(|r| {
         r.part == "evidence"
             && r.task_id == task
             && r.author == me
-            && r.note == note
+            && r.note == kept_note
             && r.links == clean
     });
     if same {
@@ -1244,21 +1299,19 @@ mod tests {
             )
         }
 
-        fn view(&self, events: &[&Event], offers: &HashMap<String, String>) -> Vec<Value> {
+        fn view(&self, events: &[&Event]) -> Vec<Value> {
+            self.view_as(events, &self.helper.public_key().to_hex())
+        }
+
+        /// The listing as the account `me` gets it.
+        fn view_as(&self, events: &[&Event], me: &str) -> Vec<Value> {
             let records: Vec<TaskRecord> =
                 events.iter().filter_map(|e| parse_task_record(e)).collect();
-            project_tasks(
-                &records,
-                COORD,
-                &self.team(),
-                offers,
-                TODAY,
-                &self.helper.public_key().to_hex(),
-            )
+            project_tasks(&records, COORD, &self.team(), TODAY, me)
         }
 
         fn state(&self, events: &[&Event]) -> String {
-            let tasks = self.view(events, &HashMap::new());
+            let tasks = self.view(events);
             assert_eq!(tasks.len(), 1, "one task expected");
             tasks[0]["state"].as_str().expect("state").to_string()
         }
@@ -1421,17 +1474,22 @@ mod tests {
         let mut reversed = all;
         reversed.reverse();
         assert_eq!(w.state(&reversed), "confirmed");
-        let view = w.view(&all, &HashMap::new());
+        let view = w.view(&all);
         assert_eq!(view[0]["done_means"], "A recording of it working.");
         assert_eq!(view[0]["due"], "2026-12-01");
         assert_eq!(view[0]["mine"], true);
         assert_eq!(view[0]["next"], "none");
+        // Pieces are listed by id, never by the dates their signer wrote: each is found by its id.
+        let piece = |id: &str| {
+            view[0]["evidence"]
+                .as_array()
+                .and_then(|list| list.iter().find(|p| p["id"] == id))
+                .cloned()
+                .expect("piece")
+        };
+        assert_eq!(piece(&first_id)["sent_back"][0]["reason"], "No recording.");
         assert_eq!(
-            view[0]["evidence"][0]["sent_back"][0]["reason"],
-            "No recording."
-        );
-        assert_eq!(
-            view[0]["evidence"][1]["confirmed_by"][0],
+            piece(&second_id)["confirmed_by"][0],
             founder.public_key().to_hex()
         );
     }
@@ -1513,7 +1571,7 @@ mod tests {
             &[("task-evidence", ghost_id.as_str())],
             "",
         );
-        let view = w.view(&[&task, &work, &ghost], &HashMap::new());
+        let view = w.view(&[&task, &work, &ghost]);
         assert_eq!(view[0]["state"], "submitted");
         assert_eq!(view[0]["confirmed_without_evidence"], true);
         let ok = w.step(&mate, &task, "confirm", &ev, "");
@@ -1546,7 +1604,7 @@ mod tests {
         let work_id = work.id.to_hex();
         let ev = [("task-evidence", work_id.as_str())];
         let by_owner = w.step(&mate, &task, "confirm", &ev, "");
-        let view = w.view(&[&task, &work, &by_owner], &HashMap::new());
+        let view = w.view(&[&task, &work, &by_owner]);
         assert_eq!(view[0]["state"], "submitted");
         assert_eq!(view[0]["helper_is_agent"], true);
         let by_founder = w.step(&founder, &task, "confirm", &ev, "");
@@ -1567,7 +1625,7 @@ mod tests {
         );
         // A "task" by someone who is not on the team is not a task of the project.
         let fake = w.task(&stranger, &[]);
-        assert!(w.view(&[&fake], &HashMap::new()).is_empty());
+        assert!(w.view(&[&fake]).is_empty());
         let task = w.task(&founder, &[("task-due", "2026-11-01")]);
         let yes = w.step(&helper, &task, "accept", &[], "");
         // Only the helper's own yes counts.
@@ -1589,7 +1647,7 @@ mod tests {
             &[("task-ask", ask_id.as_str()), ("task-due", "2026-12-01")],
             "",
         );
-        let view = w.view(&[&task, &yes, &ask, &self_grant], &HashMap::new());
+        let view = w.view(&[&task, &yes, &ask, &self_grant]);
         assert_eq!(view[0]["late"], true);
         assert_eq!(view[0]["due"], "2026-11-01");
         assert!(view[0]["more_time"][0]["granted_until"].is_null());
@@ -1600,7 +1658,7 @@ mod tests {
             &[("task-ask", ask_id.as_str()), ("task-due", "2026-11-20")],
             "",
         );
-        let view = w.view(&[&task, &yes, &ask, &grant], &HashMap::new());
+        let view = w.view(&[&task, &yes, &ask, &grant]);
         assert_eq!(view[0]["late"], false);
         assert_eq!(view[0]["due"], "2026-11-20");
         assert_eq!(view[0]["next"], "submit");
@@ -1618,24 +1676,79 @@ mod tests {
         assert_eq!(w.state(&[&task, &yes, &work, &cancel]), "cancelled");
         assert_eq!(w.state(&[&task, &yes, &work, &cancel, &ok]), "confirmed");
         // Duplicates of one record count once.
-        let view = w.view(&[&task, &task, &work, &work, &ok, &ok], &HashMap::new());
+        let view = w.view(&[&task, &task, &work, &work, &ok, &ok]);
         assert_eq!(view.len(), 1);
         assert_eq!(view[0]["evidence"].as_array().map(Vec::len), Some(1));
     }
 
     #[test]
-    fn a_task_from_an_offer_is_agreed_only_while_the_helpers_offer_stands() {
+    fn an_offer_is_never_agreement_to_a_task() {
         let mut w = World::new();
-        let founder = w.founder.clone();
+        let (founder, mate, helper) = (w.founder.clone(), w.mate.clone(), w.helper.clone());
+        // Any project can name any offer a person ever made, and date the task in the past.
         let offer = "7".repeat(64);
-        let task = w.task(&founder, &[("task-offer", offer.as_str())]);
-        let helper = w.helper.public_key().to_hex();
-        let stands = HashMap::from([(offer.clone(), helper)]);
-        assert_eq!(w.view(&[&task], &stands)[0]["state"], "in-progress");
-        assert_eq!(w.view(&[&task], &stands)[0]["agreed"], "offer");
-        assert_eq!(w.view(&[&task], &HashMap::new())[0]["state"], "offered");
-        let someone_else = HashMap::from([(offer, w.stranger.public_key().to_hex())]);
-        assert_eq!(w.view(&[&task], &someone_else)[0]["next"], "accept");
+        let task = w.task(
+            &founder,
+            &[("task-offer", offer.as_str()), ("task-due", "2020-01-01")],
+        );
+        let view = w.view(&[&task]);
+        assert_eq!(view[0]["state"], "offered");
+        assert!(view[0]["agreed"].is_null());
+        assert_eq!(view[0]["late"], false);
+        assert_eq!(view[0]["next"], "accept");
+        // The team's steps cannot put the helper on it either; they are called out.
+        let ghost = "e".repeat(64);
+        let back = w.step(
+            &mate,
+            &task,
+            "send-back",
+            &[("task-evidence", ghost.as_str())],
+            "Late and bad.",
+        );
+        let view = w.view(&[&task, &back]);
+        assert_eq!(view[0]["state"], "offered");
+        assert_eq!(view[0]["step_removed"], true);
+        // Until the helper says yes, only the team and the helper are listed the task.
+        let stranger = w.stranger.public_key().to_hex();
+        assert!(w.view_as(&[&task], &stranger).is_empty());
+        assert_eq!(w.view_as(&[&task], &mate.public_key().to_hex()).len(), 1);
+        let yes = w.step(&helper, &task, "accept", &[], "");
+        assert_eq!(w.view_as(&[&task, &yes], &stranger).len(), 1);
+        // With the helper's own yes there, a send-back of work that is gone still stands.
+        let view = w.view(&[&task, &yes, &back]);
+        assert_eq!(view[0]["state"], "sent-back");
+        assert_eq!(
+            view[0]["sent_back_work_removed"][0]["reason"],
+            "Late and bad."
+        );
+        assert_eq!(view[0]["step_removed"], false);
+        // An ask for more time is the helper's own signature on the task too.
+        let ask = w.step(&helper, &task, "more-time", &[], "Ill.");
+        assert_eq!(w.view(&[&task, &ask])[0]["agreed"], "step");
+    }
+
+    #[test]
+    fn every_unanswered_piece_waits_and_an_agent_tag_must_name_its_signer() {
+        let mut w = World::new();
+        let (founder, mate) = (w.founder.clone(), w.mate.clone());
+        let task = w.task(&founder, &[]);
+        let a = w.hand_in(&task, "a");
+        let b = w.hand_in(&task, "b");
+        let view = w.view(&[&task, &a, &b]);
+        let mut both = vec![a.id.to_hex(), b.id.to_hex()];
+        both.sort();
+        assert_eq!(view[0]["waiting"], json!(both));
+        // An `agent` tag naming someone else says nothing about this record: the confirmation is a person's.
+        let a_id = a.id.to_hex();
+        let other = founder.public_key().to_hex();
+        let ok = w.step(
+            &mate,
+            &task,
+            "confirm",
+            &[("task-evidence", a_id.as_str()), ("agent", other.as_str())],
+            "",
+        );
+        assert_eq!(w.state(&[&task, &a, &b, &ok]), "confirmed");
     }
 
     #[test]

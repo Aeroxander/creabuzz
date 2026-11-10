@@ -516,7 +516,7 @@ buzz launchpad tasks list "$LAUNCH" --author "$FOUNDER_HEX" | jq .
 # → {project, help_requests:[{update_id,text,size,offers,offered_by_me}], tasks:[{task_id,state,late,helper,
 #    what,done_means,size,due,mine,next,evidence,more_time}], complete:{help_requests,tasks}, rewards}
 
-# offer on a request (public; not an agreement)
+# offer on a request (public; not an agreement, and not a yes to any task made from it)
 UPDATE_ID=$(buzz launchpad tasks list "$LAUNCH" --author "$FOUNDER_HEX" | jq -r '.help_requests[0].update_id')
 buzz launchpad tasks offer "$LAUNCH" --author "$FOUNDER_HEX" --update "$UPDATE_ID" --note "I can test this tonight." | jq .
 # again → exit 5 (conflict): this account already offered
@@ -524,7 +524,8 @@ buzz launchpad tasks offer "$LAUNCH" --author "$FOUNDER_HEX" --update "$UPDATE_I
 # (founder, in the web app: Accept and make a task, with "Done means")
 TASK_ID=$(buzz launchpad tasks list "$LAUNCH" --author "$FOUNDER_HEX" | jq -r '.tasks[] | select(.mine) | .task_id')
 
-# accept: only for a task given directly (state "offered"); a task made from your offer is already yours
+# accept: every task waits for your own yes (state "offered"), one made from your offer included:
+# an offer to help is not agreement to a task. Until you say yes it is listed only for the team and for you.
 buzz launchpad tasks accept "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" | jq .
 # on a task you already agreed to → exit 5
 
@@ -546,6 +547,10 @@ buzz launchpad tasks confirm "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID"
 
 After `submit`, the task reads `state: "submitted"`, `next: "wait-for-check"`. Once a team member who is not the
 helper confirms it in the web app it reads `state: "confirmed"`, and the helper's profile lists it under Record.
+
+`list` reads by who signed the records (the team's, then the named helpers'), so records a stranger signs with the
+project's tags cannot make `complete.tasks` false. A task nobody has said yes to is left out of `list` unless the
+account is the helper it names or on the project's team; the record itself is public all the same.
 
 ---
 
