@@ -7,6 +7,7 @@ import {
   SIGN_UP_EVENT,
 } from "@/features/identity/lib/account-copy";
 import { useLaunches } from "@/features/launchpad/use-launches";
+import { notListedYet } from "@/features/launchpad/lib/listing";
 import { PaymentWalletCard } from "@/features/identity/ui/PaymentWalletCard";
 import { AccountMoneyCard } from "@/features/launchpad/ui/AccountMoneyCard";
 import {
@@ -257,11 +258,18 @@ function Likes({ pubkey }: { pubkey: string }) {
 
 function Launches({ pubkey }: { pubkey: string }) {
   const launches = useLaunches();
+  const viewer = existingUserPubkey();
   const weights = useVoteWeights();
   const { tallies } = useVoteTallies();
   const founded = useMemo(
-    () => (launches.data ?? []).filter((l) => l.record.author === pubkey),
-    [launches.data, pubkey],
+    () =>
+      (launches.data ?? []).filter(
+        (l) =>
+          l.record.author === pubkey &&
+          // A project its founder marked "Not listed yet" is on no list, their profile included; they still see it.
+          (pubkey === viewer || !notListedYet(l.record)),
+      ),
+    [launches.data, pubkey, viewer],
   );
   const weight = weights.data?.(pubkey);
   return (

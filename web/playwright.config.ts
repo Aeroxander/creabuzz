@@ -126,6 +126,8 @@ export default defineConfig({
         "**/project-tasks.spec.ts",
         // The moment between making a task and reading it back, on a server that is slow to answer.
         "**/project-tasks-slow-read.spec.ts",
+        // Which projects are listed (one rule for every list), and a founder's "Not listed yet".
+        "**/project-listing.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],
@@ -169,7 +171,8 @@ export default defineConfig({
       // The pilot build (VITE_CONTRIBUTOR_ONLY=1) against a stubbed server, from a build folder and port of its own: run it
       // with scripts/web-pilot-e2e.sh. Anywhere else it skips itself, since the default build offers what it checks is gone.
       name: "pilot",
-      testMatch: ["**/pilot-build.spec.ts"],
+      // The listing spec holds in both builds, so it runs here too.
+      testMatch: ["**/pilot-build.spec.ts", "**/project-listing.spec.ts"],
       use: {
         ...devices["Desktop Chrome"],
         ...(process.env.PW_CHROMIUM_PATH

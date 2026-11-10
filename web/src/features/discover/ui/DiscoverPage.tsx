@@ -285,14 +285,14 @@ export function DiscoverPage() {
                     count={launches.length}
                     description={
                       raises
-                        ? "Raises open for backing, with their stage, target and progress as the sale itself reports them."
+                        ? "Projects on this server. A raise shows its stage, target and progress as the sale itself reports them."
                         : filter === "ideas"
                           ? "Ideas people shared before starting a project."
                           : "Projects looking for people to help, and ideas shared before one starts."
                     }
                     title={
                       raises
-                        ? "Live launches"
+                        ? "Projects"
                         : filter === "ideas"
                           ? "Ideas"
                           : "Projects"
@@ -322,13 +322,13 @@ export function DiscoverPage() {
                     </EmptyState>
                   ) : launches.length === 0 ? (
                     <EmptyState
-                      message="No live launches right now. Publish one and it shows up here with its stage, target, and a way to back it."
+                      message="No projects listed right now. Start one and it shows up here."
                       testId="discover-launches-empty"
                     >
                       <Button asChild size="sm">
-                        <Link to="/launchpad">
-                          <Plus className="mr-1 h-4 w-4" aria-hidden /> New
-                          launch
+                        <Link to="/start">
+                          <Plus className="mr-1 h-4 w-4" aria-hidden /> Start a
+                          project
                         </Link>
                       </Button>
                     </EmptyState>

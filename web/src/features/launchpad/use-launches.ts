@@ -521,6 +521,8 @@ export interface CreateLaunchInput {
   /** A topic; published as a lowercase `t` tag, which Discover browses by. */
   category?: string;
   stage: LaunchStage;
+  /** "unlisted" keeps the project out of every list of projects (`lib/listing.ts`); left out, it is listed. */
+  listing?: "unlisted";
   /**
    * The project's funding stance and who it wants to hear from
    * (`lib/funding.ts`, plan §2). Optional: a record written before this
@@ -573,6 +575,11 @@ export interface CreateLaunchInput {
   builtOn?: BuiltOn;
   /** Whether others may build on this project, and on what terms (N11). */
   remixTerms?: RemixTerms;
+  /**
+   * When the record this one replaces was signed, if it was just read from the server (`useChangeOwnRecord`): the new
+   * one is signed later than it. Left out, the copy in the list of projects is used.
+   */
+  supersedes?: number;
 }
 
 export function useCreateLaunch() {
@@ -604,6 +611,7 @@ export function useCreateLaunch() {
         pitch: input.pitch,
         stage: input.stage,
       };
+      if (input.listing === "unlisted") content.listing = "unlisted";
       if (input.funding) content.funding = fundingContent(input.funding);
       if (input.longPitch) content.longPitch = input.longPitch;
       if (input.ipList && input.ipList.length > 0)
@@ -671,7 +679,7 @@ export function useCreateLaunch() {
         content,
         createdAt: supersedingTime(
           Math.floor(Date.now() / 1000),
-          current?.record.createdAt,
+          Math.max(input.supersedes ?? 0, current?.record.createdAt ?? 0),
         ),
       });
     },

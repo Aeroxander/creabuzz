@@ -43,6 +43,7 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     ipList: ["https://example.com/sandbox"],
     hooks: [],
     reviewerTerms: null,
+    listing: null,
     updateCadence: "weekly with KPIs",
     // A simulated open raise: the declaration and the sandbox's own sale agree.
     funding: {

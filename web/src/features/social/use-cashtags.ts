@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
-import { listedHere } from "../launchpad/lib/contributor-only";
+import { listedProject } from "../launchpad/lib/listing";
+import { effectiveStage } from "../launchpad/models";
 import { raisesOffered } from "../launchpad/lib/raises-offered";
 import { useLaunches } from "../launchpad/use-launches";
 import { tickerOwners } from "./lib/cashtag";
@@ -24,7 +25,9 @@ export function useCashtagOwners() {
   return useMemo(() => {
     const raises = raisesOffered();
     const listed = (data ?? [])
-      .filter((launch) => listedHere(launch.record, raises))
+      .filter((launch) =>
+        listedProject(launch.record, effectiveStage(launch), raises),
+      )
       .map((launch) =>
         raises
           ? launch

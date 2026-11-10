@@ -22,7 +22,11 @@ test("sign-up offers no wallet without raises", () => {
 test("a cashtag resolves only to a launch this build lists, and shows no price without raises", () => {
   const hook = source("../../social/use-cashtags.ts");
   assert.match(hook, /const raises = raisesOffered\(\);/);
-  assert.match(hook, /listedHere\(launch\.record, raises\)/);
+  // The one listing rule (`listing.ts`), which leaves raises out without them (`listedHere`).
+  assert.match(
+    hook,
+    /listedProject\(launch\.record, effectiveStage\(launch\), raises\)/,
+  );
   assert.match(
     hook,
     /raises\s*\?\s*launch\s*:\s*\{\s*\.\.\.launch,\s*bids: \[\],\s*record: \{ \.\.\.launch\.record, floorPrice: null \}/,

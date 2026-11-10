@@ -105,6 +105,8 @@ export interface LaunchRecord {
    */
   reviewerTerms: string | null;
   stage: LaunchStage;
+  /** "unlisted" when the founder chose "Not listed yet" (`lib/listing.ts`); null when the project is listed. */
+  listing: "unlisted" | null;
   /**
    * The project's own word about raising, separate from `stage`: a stance a
    * founder declares (`content.funding`, plan §2) with who they want to hear
@@ -456,6 +458,7 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     // Read from anyone's record, so bounded: the founder's own form stops at 1,000 characters.
     reviewerTerms: str(body.reviewerTerms)?.slice(0, 2_000) ?? null,
     stage: isLaunchStage(body.stage) ? body.stage : "draft",
+    listing: body.listing === "unlisted" ? "unlisted" : null,
     funding: parseFunding(body.funding),
     currency: str(body.currency),
     floorPrice: str(body.floorPrice),

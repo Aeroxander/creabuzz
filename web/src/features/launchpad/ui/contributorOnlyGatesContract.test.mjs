@@ -54,14 +54,19 @@ test("every launch listing leaves raises out without them", () => {
   for (const [file, pattern] of [
     ["./LaunchesPage.tsx", /listedHere\(launch\.record, raises\)/],
     // The social rail's project list: the rule lives in lib/rail.ts, the block passes the setting in.
-    ["../../social/lib/rail.ts", /listedHere\(launch\.record, raises\)/],
+    [
+      "../../social/lib/rail.ts",
+      /listedProject\(launch\.record, stage, raises\)/,
+    ],
+    // The one listing rule those two go through ends in the same check.
+    ["../lib/listing.ts", /return listedHere\(record, raises\);/],
     [
       "../../social/ui/RightRail.tsx",
       /railProjects\(launches\.data \?\? \[\], raises\)/,
     ],
     [
       "../../discover/ui/CategoryBrowse.tsx",
-      /listedHere\(launch\.record, raises\)/,
+      /listedProject\(launch\.record, effectiveStage\(launch\), raises\)/,
     ],
     ["../../discover/use-discover.ts", /raises: raisesOffered\(\)/],
     [

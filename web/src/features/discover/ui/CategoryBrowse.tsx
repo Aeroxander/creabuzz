@@ -10,9 +10,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { listedHere } from "@/features/launchpad/lib/contributor-only";
+import { listedProject } from "@/features/launchpad/lib/listing";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
-import { buildLaunches, parseLaunchRecord } from "@/features/launchpad/models";
+import {
+  buildLaunches,
+  effectiveStage,
+  parseLaunchRecord,
+} from "@/features/launchpad/models";
 import { KIND_LAUNCH_RECORD } from "@/shared/constants/kinds";
 import { cn } from "@/shared/lib/cn";
 import { queryEvents } from "@/shared/lib/nostr-client";
@@ -41,7 +45,7 @@ export function CategoryBrowse() {
         }),
         (event) => {
           const record = parseLaunchRecord(event);
-          return record !== null && listedHere(record, raises);
+          return record !== null && listedProject(record, record.stage, raises);
         },
       ),
     staleTime: 60_000,
@@ -68,7 +72,7 @@ export function CategoryBrowse() {
   const launches = useMemo(
     () =>
       buildLaunches(page.data ? [...page.data] : []).filter((launch) =>
-        listedHere(launch.record, raises),
+        listedProject(launch.record, effectiveStage(launch), raises),
       ),
     [page.data, raises],
   );

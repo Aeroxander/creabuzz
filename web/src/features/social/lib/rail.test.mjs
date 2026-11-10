@@ -44,7 +44,7 @@ test("the input list is left in its own order", () => {
   assert.deepEqual(ids(all), ["old", "new"]);
 });
 
-test("a draft and a failed project are not offered", () => {
+test("a sale still being set up and a failed project are not offered", () => {
   const all = [
     launch("draft", 50, { stage: "draft" }),
     launch("failed", 40, { stage: "failed" }),
@@ -68,9 +68,23 @@ test("a contributor-only build leaves out a raise but keeps an idea", () => {
     floorPrice: null,
     stage: "draft",
   });
-  // An idea is a draft with no sale terms; where raises are offered a draft is not listed, as in Discover.
-  assert.deepEqual(ids(railProjects([raise, idea], true)), ["raise"]);
+  // A project with no sale terms (the short form makes one) is listed in every build, as in Discover.
+  assert.deepEqual(ids(railProjects([raise, idea], true)), ["raise", "idea"]);
   assert.deepEqual(ids(railProjects([raise, idea], false)), ["idea"]);
+});
+
+test("a project its founder marked not listed yet is not offered, nor is its request for help", () => {
+  const bare = {
+    auction: null,
+    token: null,
+    requiredRaised: null,
+    floorPrice: null,
+    stage: "draft",
+  };
+  const shown = launch("shown", 20, bare);
+  const hidden = launch("hidden", 30, { ...bare, listing: "unlisted" });
+  for (const raises of [true, false])
+    assert.deepEqual(ids(railProjects([shown, hidden], raises)), ["shown"]);
 });
 
 test("a project whose sale failed or that graduated is read from its receipts", () => {

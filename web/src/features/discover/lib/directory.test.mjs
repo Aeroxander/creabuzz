@@ -239,7 +239,7 @@ describe("deriveDirectory — DAOs from kind:37018 deployments", () => {
 });
 
 describe("deriveDirectory — launches", () => {
-  it("lists live launches and leaves drafts to the launchpad", () => {
+  it("lists live launches and leaves a sale still being set up to the launchpad", () => {
     const { launches } = deriveDirectory({
       events: [
         launchRecord({ slug: "nebula", stage: "live" }),
@@ -252,7 +252,7 @@ describe("deriveDirectory — launches", () => {
     );
   });
 
-  it("without raises, lists ideas (drafts with no sale terms) for the Ideas chip, and still no other draft", () => {
+  it("lists a project with no sale terms in every build, and never a sale still being set up", () => {
     const idea = launchRecord({
       slug: "garden-idea",
       stage: "draft",
@@ -264,7 +264,21 @@ describe("deriveDirectory — launches", () => {
         (launch) => launch.record.id,
       );
     assert.deepEqual(listed(false), ["garden-idea"]);
-    assert.deepEqual(listed(true), []);
+    assert.deepEqual(listed(true), ["garden-idea"]);
+  });
+
+  it("leaves out a project its founder marked not listed yet, in every build", () => {
+    const hidden = launchRecord({
+      slug: "quiet",
+      stage: "draft",
+      requiredRaised: undefined,
+      listing: "unlisted",
+    });
+    for (const raises of [true, false])
+      assert.deepEqual(
+        deriveDirectory({ events: [hidden], raises }).launches,
+        [],
+      );
   });
 
   it("drops a tombstoned launch", () => {

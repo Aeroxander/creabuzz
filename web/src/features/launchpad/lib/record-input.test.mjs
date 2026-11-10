@@ -176,6 +176,7 @@ test("every field a launch can be created with is carried by a save", () => {
   // Not a property of the record: how the save is signed.
   // A record that holds every optional part, so none is skipped for being empty.
   const full = record({
+    listing: "unlisted",
     funding: { stance: "rolling", seeking: [], opensAt: null, note: null },
     vesting: { tranches: [{ multiple: 2, fraction: 1 }] },
     unlocks: { kind: "none" },
@@ -193,7 +194,9 @@ test("every field a launch can be created with is carried by a save", () => {
   });
   const carried = Object.keys(recordToInput(full));
   const missing = fields.filter(
-    (field) => field !== "asAgent" && !carried.includes(field),
+    (field) =>
+      // `supersedes` is not a property of the record either: when the one it replaces was signed.
+      field !== "asAgent" && field !== "supersedes" && !carried.includes(field),
   );
   assert.deepEqual(missing, []);
 });

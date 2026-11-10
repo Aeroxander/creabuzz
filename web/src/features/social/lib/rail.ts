@@ -3,12 +3,11 @@
  * its full page. Pure, so `rail.test.mjs` drives it under `node --test` without a server.
  */
 
-import { listedHere } from "../../launchpad/lib/contributor-only.ts";
 import {
   helpCandidates,
   type OpenHelpRequest,
 } from "../../launchpad/lib/help-request.ts";
-import { isIdea } from "../../launchpad/lib/idea.ts";
+import { listedProject } from "../../launchpad/lib/listing.ts";
 import { effectiveStage, type Launch } from "../../launchpad/models.ts";
 
 /** How many rows each rail block shows before its "See all". */
@@ -29,9 +28,9 @@ export const RAIL_LIMITS = {
 } as const;
 
 /**
- * The newest projects people can open: what Discover lists (same records, same rules), minus the ones that are over.
- * A draft is not public yet, except an idea in a contributor-only build, which Discover lists on purpose; a failed
- * project is over; a contributor-only build leaves out a raise another build published to the same server.
+ * The newest projects people can open: what Discover lists (same records, same rule: `listing.ts`), minus the ones
+ * that are over. A project started with the short form is listed from the start; one its founder marked "Not listed
+ * yet" is not; a failed project is over; a contributor-only build leaves out a raise another build published.
  */
 export function railProjects(
   launches: readonly Launch[],
@@ -51,11 +50,7 @@ export function railProjects(
 /** Whether Discover lists a project: public, not over, and offered by this build. */
 function listed(launch: Launch, raises: boolean): boolean {
   const stage = effectiveStage(launch);
-  return (
-    stage !== "failed" &&
-    (stage !== "draft" || (!raises && isIdea(launch.record))) &&
-    listedHere(launch.record, raises)
-  );
+  return stage !== "failed" && listedProject(launch.record, stage, raises);
 }
 
 /**

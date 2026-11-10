@@ -2,7 +2,13 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Link as LinkIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLaunches } from "@/features/launchpad/use-launches";
-import type { Launch, LaunchUpdate } from "@/features/launchpad/models";
+import {
+  effectiveStage,
+  type Launch,
+  type LaunchUpdate,
+} from "@/features/launchpad/models";
+import { listedProject } from "@/features/launchpad/lib/listing";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { isIdea } from "@/features/launchpad/lib/idea";
 import { UpdateBody } from "@/features/launchpad/ui/UpdateBody";
@@ -91,13 +97,22 @@ function ProgressList({
   const [message, setMessage] = useState<string | null>(null);
   // Freeze the previous visit for this mounted project; updates read during this visit do not erase its digest.
   const [baseline] = useState(() => seen);
+  // Home lists updates only from projects that are listed (`listing.ts`), and from the reader's own.
+  const listed = useMemo(() => {
+    const raises = raisesOffered();
+    return (launches.data ?? []).filter(
+      (l) =>
+        l.record.author === me ||
+        listedProject(l.record, effectiveStage(l), raises),
+    );
+  }, [launches.data, me]);
   const all = useMemo(
     () =>
       projectProgress(
-        project ? [project] : (launches.data ?? []),
+        project ? [project] : listed,
         posts ?? (notes.data ?? []).map((n) => n.event),
       ),
-    [project, launches.data, notes.data, posts],
+    [project, listed, notes.data, posts],
   );
   // The update record behind a row, when it is one (a post marked as an update has none): its parts and help request.
   const sources = useMemo(() => {

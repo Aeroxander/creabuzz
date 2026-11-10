@@ -56,6 +56,7 @@ import { StartIdeaDialog } from "./StartIdeaDialog";
 import { isContributorProject } from "../lib/funding";
 import { isIdea } from "../lib/idea";
 import { listedHere } from "../lib/contributor-only";
+import { notListedYet } from "../lib/listing";
 import { raisesOffered } from "../lib/raises-offered";
 import { useSupporters } from "../use-supporters";
 import { ProgressBar } from "./widgets";
@@ -150,8 +151,11 @@ export function LaunchesPage() {
   const { tallies } = useVoteTallies();
   const pubkey = existingUserPubkey();
 
-  const launches = (data ?? []).filter((launch) =>
-    listedHere(launch.record, raises),
+  // A project its founder marked "Not listed yet" is in nobody's list but their own.
+  const launches = (data ?? []).filter(
+    (launch) =>
+      listedHere(launch.record, raises) &&
+      (launch.record.author === pubkey || !notListedYet(launch.record)),
   );
   const blockHeight = useChainBlockHeight();
   const fundingOf = (launch: Launch): ResolvedFunding =>

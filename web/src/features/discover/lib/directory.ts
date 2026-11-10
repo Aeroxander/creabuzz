@@ -35,7 +35,7 @@ import {
   KIND_ORG_NODE,
   KIND_ORG_PITCH,
 } from "../../../shared/constants/kinds.ts";
-import { listedHere } from "../../launchpad/lib/contributor-only.ts";
+import { listedProject } from "../../launchpad/lib/listing.ts";
 import { daoOfLaunch } from "../../launchpad/lib/dao-of-launch.ts";
 import { isIdea } from "../../launchpad/lib/idea.ts";
 import {
@@ -371,18 +371,13 @@ export function deriveDirectory(input: {
   }
 
   const allLaunches = buildLaunches(events, tombstones);
-  // A draft is a founder's unfinished record — it is not a live launch, and
-  // listing one here would answer "what is happening" with a maybe. An idea is
-  // a draft on purpose, though: without raises Discover has an Ideas chip, so
-  // ideas are listed there. "Raising now" then leads the section (plan §2),
-  // with the newest-record order `buildLaunches` produced still holding inside
-  // each group.
+  // What is listed is one rule for every list of projects (`listing.ts`): a project started with the short form is
+  // public and listed in every build; one its founder marked "Not listed yet" and a sale still being set up are not.
+  // "Raising now" then leads the section (plan §2), with the newest-record order `buildLaunches` produced still
+  // holding inside each group.
   const launches = raisingFirst(
-    allLaunches.filter(
-      (launch) =>
-        (effectiveStage(launch) !== "draft" ||
-          (!raises && isIdea(launch.record))) &&
-        listedHere(launch.record, raises),
+    allLaunches.filter((launch) =>
+      listedProject(launch.record, effectiveStage(launch), raises),
     ),
     (launch) => effectiveFunding(launch, input.chainHead ?? null),
   );

@@ -13,6 +13,7 @@ import { SaleProgressCard } from "./SaleProgressCard";
 import { isSetupStage } from "../lib/sale-steps";
 import { raisesOffered } from "../lib/raises-offered";
 import { LaunchChatCard } from "./LaunchChatCard";
+import { ListingNote } from "./ListingNote";
 import { LaunchHero } from "./LaunchHero";
 import { LaunchChoice } from "./LaunchChoice";
 import { LaunchMissing } from "./LaunchMissing";
@@ -514,6 +515,7 @@ export function LaunchDetailPage({
               </Button>
             </p>
           ) : null}
+          <ListingNote isFounder={isFounder} launch={launch} stage={stage} />
           {/* What the project is for comes first: its goal, and how everyone will know. */}
           <ProjectGoalCard isFounder={isFounder} launch={launch} />
         </>
