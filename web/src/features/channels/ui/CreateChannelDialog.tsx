@@ -354,7 +354,7 @@ export function CreateChannelDialog({
                 className="text-sm font-medium"
                 htmlFor="channel-visibility"
               >
-                Who can find it
+                Who can read it
               </label>
               <select
                 id="channel-visibility"

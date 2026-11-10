@@ -97,7 +97,7 @@ export function Composer({
     } catch (error) {
       console.error("[composer]", error);
       toast.error(
-        isEditing ? "Couldn't edit message" : "Couldn't send message",
+        isEditing ? "Couldn't edit the message" : "Couldn't send the message",
         {
           description: failureWords(error).text,
         },
@@ -185,7 +185,7 @@ export function Composer({
       );
     } catch (error) {
       console.error("[attach]", error);
-      toast.error("Couldn't upload file", {
+      toast.error("Couldn't upload the file", {
         description: uploadFailureWords(
           error,
           "The file didn't upload. Try again.",
@@ -229,7 +229,7 @@ export function Composer({
             onClick={onCancelReply}
             className="text-black/60 underline dark:text-white/60"
           >
-            cancel
+            Cancel
           </button>
         </div>
       )}
@@ -241,7 +241,7 @@ export function Composer({
             onClick={onCancelEdit}
             className="text-black/60 underline dark:text-white/60"
           >
-            cancel
+            Cancel
           </button>
         </div>
       )}
@@ -277,7 +277,7 @@ export function Composer({
                 <span className="truncate">{candidateName(c)}</span>
                 {c.agent ? (
                   <span className="ml-auto text-2xs text-black/60 dark:text-white/60">
-                    agent
+                    AI helper
                   </span>
                 ) : null}
               </button>
@@ -353,7 +353,7 @@ export function Composer({
           />
           {identityError && (
             <span className="ml-1 text-xs text-black/60 dark:text-white/60">
-              sign in to post
+              Sign in to post
             </span>
           )}
           <span className="ml-auto" />

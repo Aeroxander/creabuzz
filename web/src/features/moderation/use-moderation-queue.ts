@@ -75,7 +75,9 @@ async function fetchReports(
     throw new Error("access denied");
   }
   if (!response.ok) {
-    throw new Error(`The server refused the queue (${response.status}).`);
+    throw new Error(
+      `The server did not send the reports (${response.status}).`,
+    );
   }
   return parseModerationReports(await response.json());
 }
@@ -233,7 +235,7 @@ export function useModerationQueue(roomPath: string): ModerationQueueState {
       setError(
         fetchError instanceof Error && fetchError.message === "access denied"
           ? "Only community moderators can review reports."
-          : "Couldn’t load the report queue. Check your connection, then refresh.",
+          : "Couldn’t load the reports. Check your connection, then refresh.",
       );
     } finally {
       if (generation === generationRef.current) setLoading(false);

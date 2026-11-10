@@ -5,9 +5,9 @@ import { InviteRequestError, inviteProblem } from "./invite-errors.ts";
 
 test("an invite that cannot be used says why, with nothing technical to show", () => {
   for (const [code, words] of [
-    ["invite_exhausted", /reached its use limit/],
+    ["invite_exhausted", /has been used up/],
     ["invite_expired", /has expired/],
-    ["invite_invalid", /is invalid/],
+    ["invite_invalid", /doesn't work/],
   ]) {
     const problem = inviteProblem(new InviteRequestError(code, 403));
     assert.match(problem.text, words);

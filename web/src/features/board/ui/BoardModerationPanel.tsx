@@ -349,7 +349,7 @@ export function BoardModerationPanel({
             className="mt-2 text-xs text-muted-foreground"
             data-testid="board-log-empty"
           >
-            Nothing yet.
+            No actions yet.
           </p>
         ) : (
           <ol className="mt-2 flex flex-col gap-1.5" data-testid="board-log">

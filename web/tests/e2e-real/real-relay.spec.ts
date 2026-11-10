@@ -428,7 +428,7 @@ test("an invite minted by an owner enrolls a durable identity, once", async ({
   await latecomerPage
     .getByRole("button", { name: "Join this community" })
     .click();
-  await expect(latecomerPage.getByText(/reached its use limit/i)).toBeVisible({
+  await expect(latecomerPage.getByText(/has been used up/i)).toBeVisible({
     timeout: 30_000,
   });
 

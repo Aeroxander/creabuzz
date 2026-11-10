@@ -433,7 +433,7 @@ export function BoardList({
               ? "No decisions are being discussed yet."
               : mutedHidden
                 ? "Nothing here but posts from people you muted."
-                : "No posts yet. Start the first discussion."}
+                : "No posts yet. Write the first one."}
           </p>
         ) : (
           <ul className="flex flex-col gap-3" data-testid="board-posts">

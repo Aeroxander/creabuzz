@@ -65,7 +65,7 @@ export async function publishTemplate(
   const result = await publishEvent(relayWsUrl(), signed);
   if (!result.accepted) {
     throw new Error(
-      result.message ?? "The server did not accept this write. Try again.",
+      result.message ?? "The server did not accept that. Try again.",
     );
   }
 }
@@ -93,7 +93,9 @@ async function attachMembersSequentially(
         pubkey: member.pubkey,
         name: member.name,
         message:
-          error instanceof Error ? error.message : "Failed to add member.",
+          error instanceof Error
+            ? error.message
+            : "Couldn't add them. Try again.",
       });
     }
   }

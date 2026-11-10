@@ -343,11 +343,11 @@ export function ModerationQueuePanel() {
         <div className="flex items-center gap-1.5">
           <ShieldCheck className="h-3.5 w-3.5 text-black/60 dark:text-white/60" />
           <h2 className="text-sm font-semibold text-black dark:text-white">
-            Moderation queue
+            Reports
           </h2>
           {pollPaused ? (
             <span className="text-2xs text-black/60 dark:text-white/60">
-              Auto-refresh paused
+              Stopped checking for new reports
             </span>
           ) : null}
         </div>
@@ -390,7 +390,7 @@ export function ModerationQueuePanel() {
             data-testid="moderation-error"
             role="alert"
           >
-            {error} Try refreshing.
+            {error}
           </p>
         ) : null}
         {!moderator && !accessLoading && access === "denied" ? (

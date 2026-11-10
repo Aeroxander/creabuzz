@@ -38,7 +38,7 @@ async function fetchCommunityDirectory({
     throw new Error(
       friendlyRelayError(
         String(
-          `Community directory unavailable (server responded ${response.status})`,
+          `The list of communities is unavailable (server responded ${response.status})`,
         ),
       ),
     );

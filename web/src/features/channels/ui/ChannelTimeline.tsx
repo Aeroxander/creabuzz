@@ -236,11 +236,11 @@ function MessageRow({
           ],
           content: emoji,
         },
-        "Server rejected the reaction",
+        "The server did not accept your reaction. Try again.",
       );
     } catch (error) {
       console.error("[react]", error);
-      toast.error("Couldn't add reaction", {
+      toast.error("Couldn't add your reaction", {
         description: failureWords(error).text,
       });
     }
@@ -631,11 +631,11 @@ export function ChannelTimeline({
           ],
           content: "",
         },
-        "Server rejected the deletion",
+        "The server did not delete the message. Try again.",
       );
     } catch (error) {
       console.error("[delete]", error);
-      toast.error("Couldn't delete message", {
+      toast.error("Couldn't delete the message", {
         description: failureWords(error).text,
       });
     }
@@ -645,7 +645,7 @@ export function ChannelTimeline({
     try {
       await moderation.remove(eventId);
     } catch (error) {
-      toast.error("Couldn't remove message", {
+      toast.error("Couldn't remove the message", {
         description: failureWords(error).text,
       });
     }
@@ -870,7 +870,7 @@ export function ChannelTimeline({
           </div>
         ) : roots.length === 0 && messages.error ? (
           <QueryError
-            description={`The server did not answer when asked for the messages in #${channel.name}, so we can't tell whether the room is empty.`}
+            description={`The server did not answer, so the messages in #${channel.name} can't be shown.`}
             error={messages.error}
             message={errorMessage(messages.error)}
             onRetry={messages.refetch}

@@ -138,12 +138,12 @@ export function CategoryBrowse() {
           className="mt-3 text-sm text-black/60 dark:text-white/60"
           role="status"
         >
-          Reading this category…
+          Loading this topic…
         </p>
       ) : page.isError ? (
         <div className="mt-3">
           <p className="text-sm text-black/60 dark:text-white/60">
-            The server did not answer this category's page.
+            The server did not answer, so this topic can't be shown.
           </p>
           <Button
             className="mt-2"

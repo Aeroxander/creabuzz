@@ -167,7 +167,7 @@ function AddCommunityForm() {
     if (parsed.host === current) {
       reset({
         step: "problem",
-        problem: "This browser is already on that server.",
+        problem: "You are already on that server.",
       });
       return;
     }
@@ -350,8 +350,8 @@ export function CommunityDirectoryPage() {
 
       {isError ? (
         <QueryError
-          title="Couldn't load the community directory"
-          description="You can still open your connected community. Try again to browse other communities."
+          title="Couldn't load the list of communities"
+          description="You can still open your community above. Try again to see the others."
           error={error}
           onRetry={() => void refetch()}
           testId="community-directory-error"
@@ -364,8 +364,8 @@ export function CommunityDirectoryPage() {
         </div>
       ) : data?.available === false ? (
         <p className="text-sm text-black/60 dark:text-white/60">
-          This server doesn't publish a public community directory. Open your
-          connected community above to reach its chats.
+          This server doesn't list its communities. Open your community above to
+          reach its rooms.
         </p>
       ) : otherCommunities?.length === 0 ? (
         <p className="text-sm text-black/60 dark:text-white/60">

@@ -104,10 +104,9 @@ test("an unpublished directory keeps the connected community reachable", async (
   });
   await page.goto("/c");
   await expect(
-    page.getByText(
-      "This server doesn't publish a public community directory.",
-      { exact: false },
-    ),
+    page.getByText("This server doesn't list its communities.", {
+      exact: false,
+    }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", {
@@ -297,9 +296,9 @@ test("invite requires age and legal consent before opening Creaton", async ({
   await page.goto("/invite/v2.demo-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
 
   // The first release is the web app alone: no desktop download is offered (VITE_DESKTOP_APP is off).
-  await expect(page.getByRole("link", { name: "Download it now" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("link", { name: "Download the app" }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Accept invite in Creaton" }),
   ).toHaveCount(0);
@@ -467,7 +466,7 @@ test("invite asks Safari users to choose their Mac download", async ({
   });
 
   await page.goto("/invite/v2.demo-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-  const download = page.getByRole("link", { name: "Download it now" });
+  const download = page.getByRole("link", { name: "Download the app" });
   await expect(download).toHaveAttribute("aria-haspopup", "dialog");
   await download.click();
 
@@ -603,7 +602,7 @@ test("invite download links to the appropriate platform destination", async ({
 
     await page.goto("/invite/v2.demo-codeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     await expect(
-      page.getByRole("link", { name: "Download it now" }),
+      page.getByRole("link", { name: "Download the app" }),
       device.name,
     ).toHaveAttribute("href", device.expectedUrl);
     await expect(
@@ -614,7 +613,7 @@ test("invite download links to the appropriate platform destination", async ({
       route.fulfill({ contentType: "text/html", body: "Store destination" }),
     );
     const destination = context.waitForEvent("page");
-    await page.getByRole("link", { name: "Download it now" }).click();
+    await page.getByRole("link", { name: "Download the app" }).click();
     await expect(await destination).toHaveURL(device.expectedUrl);
     await context.close();
   }

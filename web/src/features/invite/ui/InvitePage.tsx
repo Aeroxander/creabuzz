@@ -632,7 +632,7 @@ function InviteLanding({ code }: { code: string }) {
                 setShowMacChoice(true);
               }}
             >
-              Download it now
+              Download the app
             </a>
             <span aria-hidden="true" className="mx-1.5 text-black/30">
               ·

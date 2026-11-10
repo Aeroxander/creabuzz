@@ -43,16 +43,14 @@ export function inviteProblem(error: unknown): InviteProblem {
       : "";
 
   if (message.includes("invite_exhausted")) {
-    return plain(
-      "This invite has reached its use limit. Ask for a new invite.",
-    );
+    return plain("This invite has been used up. Ask for a new invite.");
   }
   if (message.includes("invite_expired")) {
     return plain("This invite has expired. Ask for a new invite.");
   }
   if (message.includes("invite_invalid")) {
     return plain(
-      "This invite is invalid. Check the link or ask for a new invite.",
+      "This invite link doesn't work. Check the link, or ask for a new invite.",
     );
   }
   // Agreeing to the terms gave a version the server no longer has (`join_policy_not_accepted`, a 400), or the

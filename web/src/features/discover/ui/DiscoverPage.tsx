@@ -220,7 +220,7 @@ export function DiscoverPage() {
         ))}
         <span className="ml-auto text-xs text-black/60 dark:text-white/60">
           {isLoading
-            ? "Reading the server…"
+            ? "Loading…"
             : raises
               ? `${countOf(daos.length, "DAO")} · ${countOf(launches.length, "launch", "launches")} · ${countOf(projects.length, "project")}`
               : `${countOf(allLaunches.filter((l) => !isIdea(l.record)).length, "project")} · ${countOf(allLaunches.filter((l) => isIdea(l.record)).length, "idea")}`}
@@ -235,7 +235,7 @@ export function DiscoverPage() {
         </p>
       ) : error ? (
         <QueryError
-          description="The server didn't answer the directory request. We're not showing an empty list, because that would wrongly suggest there's nothing here."
+          description="The server didn't answer, so we can't show what is here."
           error={error}
           kinds={DISCOVER_EVENT_KINDS}
           message={errorMessage(error)}
@@ -249,7 +249,7 @@ export function DiscoverPage() {
           )}
           relayUrl={relayWsUrl()}
           testId="discover-load-error"
-          title="Couldn't read this server"
+          title="Couldn't load this page"
         />
       ) : snapshot ? (
         <>
@@ -265,7 +265,7 @@ export function DiscoverPage() {
           {nothingHere ? (
             raises ? (
               <EmptyState
-                message="No projects on this server yet. Start one. Add a pitch and the roles you need, and it appears here for everyone reading this page."
+                message="No projects on this server yet. Start one: add a pitch and the roles you need, and it shows up here."
                 onPitch={() => setPitchOpen(true)}
                 testId="discover-empty"
               />

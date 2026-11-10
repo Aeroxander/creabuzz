@@ -317,7 +317,7 @@ export function BoardDirectory() {
             <p className="text-xs text-muted-foreground">
               {boards.length > 0
                 ? "This server has older boards that may not be listed yet."
-                : "No boards found among this server's newest rooms yet. There may be older ones."}
+                : "No boards found yet. There may be older ones."}
             </p>
           )}
           <Button

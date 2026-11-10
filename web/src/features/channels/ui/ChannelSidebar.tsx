@@ -78,7 +78,7 @@ function ChannelButton({
           title={
             board
               ? "Private board. Only people who were added can read it."
-              : "Private room. A member with admin rights has to add you."
+              : "Private room. One of its admins has to add you."
           }
         >
           private

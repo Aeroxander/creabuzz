@@ -194,7 +194,7 @@ export function EscalatedReportsPanel({ origin }: { origin: string }) {
         <p className={MUTED}>Loading escalated reports…</p>
       ) : rows.length === 0 ? (
         <p className={MUTED} data-testid="escalated-empty">
-          Nothing waiting on you.
+          No reports are waiting for you.
         </p>
       ) : (
         <ul className="space-y-2">

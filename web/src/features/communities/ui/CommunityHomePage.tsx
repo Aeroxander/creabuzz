@@ -283,7 +283,7 @@ export function CommunityHomePage() {
           // An archived community fails its reads by design; saying so turns a
           // mysterious error into an explanation. The error itself stays under Technical details.
           entry?.archived
-            ? "This community is archived, so its channels are no longer available."
+            ? "This community is archived, so its rooms are no longer available."
             : undefined
         }
         message={errorMessage(channels.error)}
@@ -359,7 +359,7 @@ export function CommunityHomePage() {
 
           <p className="mt-5 text-sm leading-relaxed text-black/70 dark:text-white/70">
             {entry?.description ||
-              "Browse this community in your browser. Join to see channels, messages, repositories, and agents."}
+              "Look around this community here. Join to see its rooms, messages, repositories and AI helpers."}
           </p>
 
           <div className="mt-6 flex flex-wrap gap-2">
