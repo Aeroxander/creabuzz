@@ -126,10 +126,19 @@ function partSections(parts: UpdateParts): string[] {
  * The update record's content and extra tags for a draft. The body reads on its own in any app that shows updates;
  * the tags carry the same parts for this one.
  */
-export function updateEvent(draft: UpdateDraft): {
+export function updateEvent(
+  draft: UpdateDraft,
+  /**
+   * `promises: false` for an update a team member posts: promises and the answers to them are the founder's alone
+   * (the server refuses them from anyone else), so the lines of "What's next" are plans and no answer is attached.
+   */
+  options: { promises?: boolean } = {},
+): {
   content: { title: string; body: string };
   tags: string[][];
 } {
+  const withPromises = options.promises !== false;
+  const marks = withPromises ? (draft.marks ?? []) : [];
   const done = clip(draft.done, UPDATE_LIMITS.part);
   const next = clip(draft.next, UPDATE_LIMITS.part);
   const free = clip(draft.body, UPDATE_LIMITS.part * 2);
@@ -142,13 +151,13 @@ export function updateEvent(draft: UpdateDraft): {
     help: helpText ? { text: helpText, size, time: helpTime } : null,
   };
 
-  const answered = marksSection(draft.marks ?? []);
+  const answered = marksSection(marks);
 
   const tags: string[][] = [];
   if (done) tags.push([TAG_PART, "done", done]);
   if (next) tags.push([TAG_PART, "next", next]);
   // Each line of "What's next" is also its own tag: a promise the next update answers.
-  tags.push(...promiseTags(next), ...markTags(draft.marks ?? []));
+  if (withPromises) tags.push(...promiseTags(next), ...markTags(marks));
   if (helpText) {
     tags.push([TAG_HELP, helpText], [TAG_HELP_SIZE, size]);
     if (helpTime) tags.push([TAG_HELP_TIME, helpTime]);

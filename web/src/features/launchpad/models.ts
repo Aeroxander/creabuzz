@@ -28,6 +28,13 @@ import {
 import { isGoalRecordTags } from "./lib/goals.ts";
 import { isTaskRecordTags } from "./lib/tasks.ts";
 import {
+  type FormerMember,
+  isTeamAnswerTags,
+  parseFormerTeam,
+  parseTeam,
+  type TeamMember,
+} from "./lib/team.ts";
+import {
   parseMarks,
   parsePromises,
   type PromiseMark,
@@ -143,7 +150,10 @@ export interface LaunchRecord {
    */
   chat: LaunchChat;
   projects: string[];
-  team: Array<{ pubkey: string; role: string }>;
+  /** Who the founder added to the team (`lib/team.ts`): the server counts each as team from that moment. */
+  team: TeamMember[];
+  /** Who the founder's record says left the team, and when. */
+  formerTeam: FormerMember[];
   /**
    * Agent pubkey when the launch is agent-authored (`agent` tag, NIP-OA
    * provenance optional). Agents are first-class participants; the badge is
@@ -478,9 +488,8 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     // Linked projects; a built-on link (a launch record's coordinate) is read as `builtOn` instead.
     projects: tagValues(event, "a").filter((a) => !isBuiltOnCoordinate(a)),
     agent: tagValue(event, "agent"),
-    team: event.tags
-      .filter((t) => t[0] === "team" && t.length >= 3)
-      .map((t) => ({ pubkey: t[1], role: t[2] })),
+    team: parseTeam(event.tags, event.pubkey),
+    formerTeam: parseFormerTeam(event.tags),
     chainId: tagValue(event, "chain"),
     auction: tagValue(event, "auction"),
     token: tagValue(event, "token"),
@@ -857,6 +866,8 @@ export function buildLaunches(
       if (isGoalRecordTags(event.tags)) continue;
       // A task record is a step on a task (made, handed in, checked): read with the project's tasks, never as news.
       if (isTaskRecordTags(event.tags)) continue;
+      // Someone's yes or no to joining the team answers an invitation: read with the project's team, never as news.
+      if (isTeamAnswerTags(event.tags)) continue;
       const update = parseLaunchUpdate(event);
       if (update) updates.push(update);
     } else if (event.kind === KIND_LAUNCH_PROPOSAL) {

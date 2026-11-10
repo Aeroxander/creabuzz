@@ -36,6 +36,7 @@ import { type IpRecord, ipRecordContent } from "./lib/ip-record";
 import { type BuiltOn, builtOnCoordinate, type RemixTerms } from "./lib/remix";
 import { type RevenuePledge, revenuePledgeContent } from "./lib/revenue-pledge";
 import { supersedingTime } from "./lib/record-time";
+import { type FormerMember, type TeamMember, teamTags } from "./lib/team";
 import {
   joinProjectPages,
   LAUNCH_QUERY_LIMIT,
@@ -677,6 +678,9 @@ export interface CreateLaunchInput {
   stage: LaunchStage;
   /** "unlisted" keeps the project out of every list of projects (`lib/listing.ts`); left out, it is listed. */
   listing?: "unlisted";
+  /** The team the founder added, and who left it (`lib/team.ts`): tags on the record, which the server reads. */
+  team?: readonly TeamMember[];
+  formerTeam?: readonly FormerMember[];
   /**
    * The project's funding stance and who it wants to hear from
    * (`lib/funding.ts`, plan §2). Optional: a record written before this
@@ -758,6 +762,7 @@ export function useCreateLaunch() {
       if (input.verifierSet) tags.push(["verifier-set", input.verifierSet]);
       for (const channel of boundChannelIds(input))
         tags.push(["buzz-channel", channel]);
+      tags.push(...teamTags(input.team ?? [], input.formerTeam ?? []));
       // The parent's record, so a parent finds the projects built on it with one query (N11).
       if (input.builtOn)
         tags.push(["a", builtOnCoordinate(input.builtOn), "", "built-on"]);

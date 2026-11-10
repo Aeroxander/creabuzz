@@ -44,6 +44,7 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     hooks: [],
     reviewerTerms: null,
     listing: null,
+    formerTeam: [],
     updateCadence: "weekly with KPIs",
     // A simulated open raise: the declaration and the sandbox's own sale agree.
     funding: {
@@ -81,8 +82,8 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     projects: [],
     agent: null,
     team: [
-      { pubkey: "ab".repeat(32), role: "founder" },
-      { pubkey: "cd".repeat(32), role: "engineer" },
+      { pubkey: "ab".repeat(32), role: "founder", invite: "" },
+      { pubkey: "cd".repeat(32), role: "engineer", invite: "" },
     ],
     chainId: "11155111",
     auction: null,

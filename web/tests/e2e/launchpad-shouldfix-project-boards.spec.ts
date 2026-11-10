@@ -322,7 +322,10 @@ test("Home's Boards tab groups boards under their project, with the server's own
   await expect(groups.nth(2).getByTestId("board-directory-name")).toHaveText([
     "alpha-films",
   ]);
-  await expect(page.getByText("Ghost")).toHaveCount(0);
+  // (Home's side panel lists the project by name, as it lists every project: the boards list is what must not.)
+  await expect(
+    page.getByTestId("board-directory").getByText("Ghost"),
+  ).toHaveCount(0);
   // The old line about a list of communities is gone.
   await expect(page.getByTestId("board-directory")).not.toContainText(
     "communities",

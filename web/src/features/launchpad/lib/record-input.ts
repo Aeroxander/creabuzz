@@ -62,6 +62,10 @@ export function recordToInput(
       ? { daoAtGraduation: record.daoAtGraduation }
       : {}),
     ...(record.listing ? { listing: record.listing } : {}),
+    // The team is tags on this record, and the server reads them to decide who may post for the project: a save
+    // that dropped them would take everyone off the team without a word.
+    team: record.team,
+    formerTeam: record.formerTeam,
     ...(record.funding ? { funding: record.funding } : {}),
     ...(record.tokenPlan ? { tokenPlan: record.tokenPlan } : {}),
     ...(record.vesting ? { vesting: record.vesting } : {}),

@@ -161,13 +161,17 @@ export function projectRecordRefusal(
   if (!founderOnly && !teamOnly && !has("help-offer") && !part) return null;
   const coordinate = tagOf(event, "a") ?? "";
   const [kind, founder, ...rest] = coordinate.split(":");
-  const project = events.find(
-    (e) =>
-      e.kind === 37001 &&
-      kind === "37001" &&
-      e.pubkey === founder &&
-      tagOf(e, "d") === rest.join(":"),
-  );
+  // The record as it stands now: the real server keeps only the newest version of a project record, and this store
+  // keeps them all, so the newest is picked (a team member added since the first version counts, as it does there).
+  const project = events
+    .filter(
+      (e) =>
+        e.kind === 37001 &&
+        kind === "37001" &&
+        e.pubkey === founder &&
+        tagOf(e, "d") === rest.join(":"),
+    )
+    .sort((x, y) => y.created_at - x.created_at)[0];
   if (!project)
     return "invalid: this record names a project that is not on this server";
   const team = new Set([

@@ -380,6 +380,14 @@ export function isTaskRecordEvent(event: Pick<RelayEvent, "tags">): boolean {
   return event.tags.some((tag) => tag[0] === "task-part");
 }
 
+/**
+ * Whether an update record is a team answer: it carries a `team-answer` tag (someone's yes or no to joining the
+ * project's team; the web app's `lib/team.ts`). It answers an invitation, and is never listed or counted as an update.
+ */
+export function isTeamAnswerEvent(event: Pick<RelayEvent, "tags">): boolean {
+  return event.tags.some((tag) => tag[0] === "team-answer");
+}
+
 export function parseLaunchUpdateEvent(event: RelayEvent): LaunchUpdate | null {
   if (event.kind !== KIND_LAUNCH_UPDATE) return null;
   const launchId = launchIdFromCoordinate(tagValue(event.tags, "a"));
@@ -508,6 +516,8 @@ export function buildLaunchesFromEvents(
         if (isGoalRecordEvent(event)) break;
         // A task record is a step on a task, not news.
         if (isTaskRecordEvent(event)) break;
+        // Someone's yes or no to joining the team answers an invitation, not news.
+        if (isTeamAnswerEvent(event)) break;
         const update = parseLaunchUpdateEvent(event);
         if (update) updates.push(update);
         break;

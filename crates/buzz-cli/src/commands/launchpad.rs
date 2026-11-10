@@ -64,6 +64,16 @@ fn is_goal_record(event: &Event) -> bool {
         .any(|tag| matches!(tag.as_slice(), [n, ..] if n.as_str() == "goal"))
 }
 
+/// Whether an update record is a team answer: it carries a `team-answer` tag
+/// (someone's yes or no to joining the project's team, written by the web
+/// app). It answers an invitation and is never counted as an update.
+fn is_team_answer(event: &Event) -> bool {
+    event
+        .tags
+        .iter()
+        .any(|tag| matches!(tag.as_slice(), [n, ..] if n.as_str() == "team-answer"))
+}
+
 fn launch_coordinate(author_hex: &str, id: &str) -> String {
     format!("{KIND_LAUNCH_RECORD}:{author_hex}:{id}")
 }
@@ -214,6 +224,8 @@ async fn cmd_show(client: &BuzzClient, id: &str, author: Option<&str>) -> Result
             KIND_LAUNCH_BID => bids += 1,
             // A goal record shares the update kind; it is the project's goal, not news.
             KIND_LAUNCH_UPDATE if is_goal_record(event) => {}
+            // A yes or no to joining the team answers an invitation; it is not news either.
+            KIND_LAUNCH_UPDATE if is_team_answer(event) => {}
             // A task record is a step on a task, and an offer or "Help found" answers an update: neither is news.
             KIND_LAUNCH_UPDATE
                 if super::launchpad_tasks::is_task_record(event)
@@ -1370,6 +1382,38 @@ mod tests {
         // A tag that merely starts with the word is not the goal tag.
         let near = update(vec![Tag::parse(["goal-text", "x"]).expect("tag")]);
         assert!(!is_goal_record(&near));
+    }
+
+    #[test]
+    fn a_team_answer_is_not_counted_as_an_update() {
+        let keys = nostr::Keys::generate();
+        let update = |tags: Vec<Tag>| {
+            EventBuilder::new(
+                Kind::Custom(KIND_LAUNCH_UPDATE as u16),
+                r#"{"title":"Joined the team","body":""}"#,
+            )
+            .tags(tags)
+            .sign_with_keys(&keys)
+            .expect("signed")
+        };
+        let answer = update(vec![
+            Tag::parse(["a", "37001:abc:orbit"]).expect("tag"),
+            Tag::parse(["l", "creaton-team"]).expect("tag"),
+            Tag::parse(["team-answer", "yes"]).expect("tag"),
+            Tag::parse(["team-invite", "inv1"]).expect("tag"),
+        ]);
+        let weekly = update(vec![
+            Tag::parse(["a", "37001:abc:orbit"]).expect("tag"),
+            Tag::parse(["update-kind", "weekly"]).expect("tag"),
+        ]);
+        assert!(is_team_answer(&answer));
+        assert!(!is_team_answer(&weekly));
+        // The label alone, or the invitation's name alone, does not make a record an answer.
+        let near = update(vec![
+            Tag::parse(["l", "creaton-team"]).expect("tag"),
+            Tag::parse(["team-invite", "inv1"]).expect("tag"),
+        ]);
+        assert!(!is_team_answer(&near));
     }
 
     #[test]

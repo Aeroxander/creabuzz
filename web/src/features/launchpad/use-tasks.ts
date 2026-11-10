@@ -26,6 +26,7 @@ import {
   readPaged,
 } from "./lib/evidence-query";
 import { isGoalRecordTags } from "./lib/goals";
+import { isTeamAnswerTags } from "./lib/team";
 import { agentClaim, verifiedAgent } from "./lib/agent-label";
 import { isHelpSignalTags, teamOf } from "./lib/help-request";
 import {
@@ -657,7 +658,8 @@ export function useTrackRecord(person: string, enabled = true) {
         if (
           isHelpSignalTags(event.tags) ||
           isGoalRecordTags(event.tags) ||
-          isTaskRecordTags(event.tags)
+          isTaskRecordTags(event.tags) ||
+          isTeamAnswerTags(event.tags)
         )
           return [];
         const update = parseLaunchUpdate(event);

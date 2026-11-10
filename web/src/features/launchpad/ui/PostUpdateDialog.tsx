@@ -41,7 +41,13 @@ export function PostUpdateDialog({
   onPublish,
   due,
   onRetryDue,
+  asFounder = true,
 }: {
+  /**
+   * False for a team member who is not the founder: the update makes no promises and answers none (those are the
+   * founder's alone), and the dialog says so.
+   */
+  asFounder?: boolean;
   /**
    * The promises still to answer, newest first. Null when they could not be read: the dialog says so and the update
    * can still be posted.
@@ -114,7 +120,13 @@ export function PostUpdateDialog({
             value={title}
           />
         </div>
-        {due === null ? (
+        {!asFounder ? (
+          <p className="text-sm" data-testid="update-as-team" role="status">
+            You are posting as a member of this project's team. Your update
+            shows with the project's news under your name. It makes no promises
+            and answers none: those are the founder's.
+          </p>
+        ) : due === null ? (
           <p className="text-sm" data-testid="update-due-unknown" role="status">
             Couldn't read what you said last time, so this update can't answer
             it.{" "}
@@ -254,7 +266,9 @@ export function PostUpdateDialog({
                 className="text-xs text-muted-foreground"
                 id="update-next-hint"
               >
-                One per line. Each line is a promise your next update answers.
+                {asFounder
+                  ? "One per line. Each line is a promise your next update answers."
+                  : "One per line. These are plans, not promises on the record: only the founder's updates make promises."}
               </p>
               <textarea
                 aria-describedby="update-next-hint"

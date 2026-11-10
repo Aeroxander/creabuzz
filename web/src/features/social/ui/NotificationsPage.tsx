@@ -45,7 +45,9 @@ import { launchCoordinate } from "../../feed/lib/feed-events";
 import { useLaunches } from "../../launchpad/use-launches";
 import { useHelpNotices } from "../../launchpad/use-help-requests";
 import { useTaskNotices } from "../../launchpad/use-tasks";
+import { useMyTeams } from "../../launchpad/use-team";
 import { TaskNoticesSection } from "../../launchpad/ui/TaskNoticesSection";
+import { TeamInvitationsSection } from "../../launchpad/ui/TeamInvitationsSection";
 import type { HelpNotice } from "../../launchpad/lib/help-request";
 import { useMutedSet } from "../use-social-actions";
 import { useNotificationBadge, useNotifications } from "../use-discovery";
@@ -406,7 +408,8 @@ export function NotificationsPage() {
   const hasLaunchUpdates =
     usePriorityNotifications().length +
       useHelpNotices(mutedPeople).length +
-      useTaskNotices(mutedPeople).notices.length >
+      useTaskNotices(mutedPeople).notices.length +
+      (useMyTeams().data?.invitations.length ?? 0) >
     0;
   const { seenAt, markSeen } = useNotificationBadge();
   const [tab, setTab] = useState<Tab>("all");
@@ -475,6 +478,7 @@ export function NotificationsPage() {
         {me && tab === "all" ? (
           <HelpNoticesSection visitSeenAt={visitSeenAt.current ?? 0} />
         ) : null}
+        {me && tab === "all" ? <TeamInvitationsSection /> : null}
         {me && tab === "all" ? (
           <TaskNoticesSection
             muted={mutedPeople}

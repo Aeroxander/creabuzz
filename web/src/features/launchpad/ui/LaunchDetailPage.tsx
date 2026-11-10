@@ -14,6 +14,8 @@ import { isSetupStage } from "../lib/sale-steps";
 import { raisesOffered } from "../lib/raises-offered";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { ListingNote } from "./ListingNote";
+import { PostUpdateDialog } from "./PostUpdateDialog";
+import { ProjectTeamCard, TeamPostUpdate } from "./ProjectTeamCard";
 import { LaunchHero } from "./LaunchHero";
 import { LaunchChoice } from "./LaunchChoice";
 import { LaunchMissing } from "./LaunchMissing";
@@ -310,7 +312,8 @@ export function LaunchDetailPage({
   };
 
   const postUpdate = async (draft: UpdateDraft) => {
-    const { content, tags } = updateEvent(draft);
+    // A team member's update makes no promises: the server takes those from the founder alone.
+    const { content, tags } = updateEvent(draft, { promises: isFounder });
     setUpdateFailed(false);
     try {
       await mirror.mutateAsync({
@@ -459,7 +462,12 @@ export function LaunchDetailPage({
               <Button onClick={() => setUpdateOpen(true)} variant="outline">
                 Post update
               </Button>
-            ) : null}
+            ) : sandbox ? null : (
+              <TeamPostUpdate
+                launch={launch}
+                onOpen={() => setUpdateOpen(true)}
+              />
+            )}
           </>
         }
         followDisabled={!follows.ready || follows.pending}
@@ -536,6 +544,7 @@ export function LaunchDetailPage({
         <>
           <ProjectOpenHelp launch={launch} workTab={hasWorkTab} />
           <ProjectTasksCard launch={launch} />
+          <ProjectTeamCard isFounder={isFounder} launch={launch} />
           <ProjectRecordCard isFounder={isFounder} launch={launch} />
         </>
       )}
@@ -795,6 +804,17 @@ export function LaunchDetailPage({
           onClose={() => setUpdateOpen(false)}
           onPublish={postUpdate}
           project={launch.record}
+        />
+      ) : updateOpen ? (
+        <PostUpdateDialog
+          asFounder={false}
+          due={[]}
+          failed={updateFailed}
+          failedWhy={updateWhy}
+          isPublishing={mirror.isPending}
+          onClose={() => setUpdateOpen(false)}
+          onPublish={postUpdate}
+          onRetryDue={() => undefined}
         />
       ) : null}
     </div>

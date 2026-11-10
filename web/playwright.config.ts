@@ -130,6 +130,8 @@ export default defineConfig({
         "**/project-listing.spec.ts",
         // The list of every project is read a page at a time, apart from news; a failed page keeps what was read.
         "**/project-list-paging.spec.ts",
+        // The Team section: add a person, their yes or no, a team member's update and check, and removal on the record.
+        "**/project-team.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

@@ -6,6 +6,7 @@ import {
   isGoalRecordEvent,
   isHelpSignalEvent,
   isTaskRecordEvent,
+  isTeamAnswerEvent,
   launchCoordinate,
   parseLaunchBidEvent,
   parseLaunchProposalEvent,
@@ -420,6 +421,37 @@ test("a task record is a step on a task, not news: it is not listed or counted a
     confirm,
     weekly,
   ]);
+  assert.deepEqual(
+    launch.updates.map((u) => u.title),
+    ["Week two"],
+  );
+});
+
+test("a team answer is someone's yes or no to an invitation, not news: it is not listed or counted as an update", () => {
+  const coordinate = launchCoordinate(FOUNDER, "nebula");
+  const mirror = (id, title, tags) => ({
+    id,
+    kind: 47003,
+    pubkey: FOUNDER,
+    created_at: 200,
+    content: JSON.stringify({ title, body: "" }),
+    tags: [["a", coordinate], ...tags],
+    sig: "sig",
+  });
+  const answer = mirror("answer-1", "Joined the team", [
+    ["l", "creaton-team"],
+    ["team-answer", "yes"],
+    ["team-invite", "inv1"],
+  ]);
+  const weekly = mirror("update-1", "Week two", [["update-kind", "weekly"]]);
+  assert.equal(isTeamAnswerEvent(answer), true);
+  assert.equal(isTeamAnswerEvent(weekly), false);
+  // The label alone does not make a record an answer.
+  assert.equal(
+    isTeamAnswerEvent(mirror("update-2", "Labelled", [["l", "creaton-team"]])),
+    false,
+  );
+  const [launch] = buildLaunchesFromEvents([recordEvent(), answer, weekly]);
   assert.deepEqual(
     launch.updates.map((u) => u.title),
     ["Week two"],

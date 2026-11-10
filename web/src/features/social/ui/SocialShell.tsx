@@ -206,7 +206,9 @@ export function SocialShell({
     >
       {/* Three columns with equal outer tracks, so the timeline sits in the exact
           middle of the screen whether or not the nav and the rail are shown. */}
-      <div className="mx-auto grid w-full max-w-[96rem] items-start md:grid-cols-[minmax(0,1fr)_minmax(0,38rem)_minmax(0,1fr)]">
+      {/* On a phone the one column is told it may shrink: left to size itself, a long name that is cut with an
+          ellipsis (a project in the side panel) would set the column's width and push the page sideways. */}
+      <div className="mx-auto grid w-full max-w-[96rem] grid-cols-[minmax(0,1fr)] items-start md:grid-cols-[minmax(0,1fr)_minmax(0,38rem)_minmax(0,1fr)]">
         <nav
           aria-label="Social"
           className="sticky top-0 hidden w-14 shrink-0 flex-col items-center gap-1 self-start justify-self-end px-1 py-3 md:flex xl:w-56 xl:items-stretch xl:px-3"
@@ -263,7 +265,7 @@ export function SocialShell({
           // sits under the timeline (in its column on a tablet, full width on a phone), so no block is lost.
           <aside
             aria-label="Discover"
-            className="w-full max-w-full px-4 py-3 md:col-start-2 md:row-start-2 xl:sticky xl:top-0 xl:col-start-3 xl:row-start-1 xl:max-h-[calc(100dvh-4rem)] xl:w-80 xl:self-start xl:justify-self-start xl:overflow-y-auto"
+            className="w-full min-w-0 max-w-full px-4 py-3 md:col-start-2 md:row-start-2 xl:sticky xl:top-0 xl:col-start-3 xl:row-start-1 xl:max-h-[calc(100dvh-4rem)] xl:w-80 xl:self-start xl:justify-self-start xl:overflow-y-auto"
             data-testid="social-rail"
           >
             <RightRail />
