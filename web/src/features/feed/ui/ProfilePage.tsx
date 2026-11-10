@@ -62,8 +62,9 @@ import { useVoteTallies, useVoteWeights } from "../use-feed";
 import { FollowButton } from "./FollowButton";
 import { launchCoord, LaunchVoteCard } from "./LaunchVoteCard";
 import { ForecastRecordLine } from "@/features/launchpad/ui/ForecastRecordLine";
+import { PersonTrackRecord } from "@/features/launchpad/ui/PersonTrackRecord";
 
-type Tab = "posts" | "replies" | "media" | "likes" | "launches";
+type Tab = "posts" | "replies" | "media" | "likes" | "launches" | "record";
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: "posts", label: "Posts" },
@@ -71,6 +72,8 @@ const TABS: readonly { id: Tab; label: string }[] = [
   { id: "media", label: "Media" },
   { id: "likes", label: "Upvoted" },
   { id: "launches", label: "Projects" },
+  // Their track record: work accepted, and for a founder updates and promises (`PersonTrackRecord`).
+  { id: "record", label: "Record" },
 ];
 
 /** A stable banner colour for people who have not set a header image. */
@@ -543,6 +546,8 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
           <AuthorPosts pubkey={pubkey} tab={tab} />
         ) : tab === "likes" ? (
           <Likes pubkey={pubkey} />
+        ) : tab === "record" ? (
+          <PersonTrackRecord isSelf={isSelf} pubkey={pubkey} />
         ) : (
           <Launches pubkey={pubkey} />
         )}
