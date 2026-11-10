@@ -34,6 +34,10 @@ pub mod identity_archive;
 pub mod imeta;
 /// Transport-neutral event ingestion pipeline.
 pub mod ingest;
+/// Who may sign a project's update records (kind 47003): founder, team, a task's helper.
+pub mod launch_update_authority;
+#[cfg(test)]
+mod launch_update_authority_postgres_tests;
 /// Community moderation authorization seam (capability helper).
 pub mod moderation_authz;
 /// Community moderation command handler (kinds 9040–9044).

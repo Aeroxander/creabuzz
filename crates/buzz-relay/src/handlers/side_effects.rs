@@ -358,7 +358,41 @@ pub async fn handle_side_effects(
     }
 }
 
+/// What a NIP-09 deletion may not say about its target's kind.
+///
+/// - A deletion aimed at another deletion has no effect (NIP-09), so it is
+///   refused: accepting it used to hide the earlier deletion from anyone
+///   counting what an author removed.
+/// - When the deletion carries `k` tags, one of them must name the target's
+///   kind. A deletion that says "I remove a kind 1 note" while naming an
+///   update record would otherwise be counted by readers as the wrong thing.
+///
+/// A deletion without a `k` tag is accepted as before.
+pub(crate) fn check_deletion_target_kind(deletion: &Event, target_kind: u32) -> Result<(), String> {
+    if target_kind == buzz_core::kind::KIND_DELETION {
+        return Err("a deletion cannot be deleted; deleting one has no effect".to_string());
+    }
+    let mut named: Vec<&str> = Vec::new();
+    for tag in deletion.tags.iter() {
+        let fields = tag.as_slice();
+        if fields.first().map(|s| s.as_str()) == Some("k") {
+            named.push(fields.get(1).map(|s| s.as_str()).unwrap_or(""));
+        }
+    }
+    let target = target_kind.to_string();
+    if !named.is_empty() && !named.contains(&target.as_str()) {
+        return Err(format!(
+            "deletion `k` tag names kind {} but the target is kind {target}",
+            named.join(", ")
+        ));
+    }
+    Ok(())
+}
+
 /// Validate a standard NIP-09 deletion event before it is stored.
+///
+/// A deletion of a deletion, and a deletion whose `k` tag does not match its
+/// target's kind, are refused (see [`check_deletion_target_kind`]).
 ///
 /// Buzz accepts standard deletions for self-authored events, plus the owning
 /// human deleting their agent's events (mirrors `validate_edit_ownership`).
@@ -413,6 +447,9 @@ pub async fn validate_standard_deletion_event(
         }
         let target_pubkey_bytes =
             hex::decode(parts[1]).map_err(|_| anyhow::anyhow!("invalid pubkey in a-tag"))?;
+        if let Ok(target_kind) = parts[0].parse::<u32>() {
+            check_deletion_target_kind(event, target_kind).map_err(|e| anyhow::anyhow!(e))?;
+        }
         // Wiki pages (44001/44002) are `d`-tag addressed across ALL authors, so
         // the a-tag's pubkey names only one revision's author. Trusting it the
         // way the strict rule does would let any non-author name her own pubkey
@@ -513,6 +550,9 @@ pub async fn validate_standard_deletion_event(
             .get_event_by_id_including_deleted_for_event_write(tenant.community(), &target_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("target event not found"))?;
+
+        check_deletion_target_kind(event, u32::from(target_event.event.kind.as_u16()))
+            .map_err(|e| anyhow::anyhow!(e))?;
 
         if matches!(target_event.event.kind.as_u16(), 45010 | 45011) {
             anyhow::bail!(
@@ -2911,6 +2951,15 @@ async fn handle_standard_deletion_event(
             Some(target) => target,
             None => continue,
         };
+        if u32::from(target_event.event.kind.as_u16()) == buzz_core::kind::KIND_DELETION {
+            // NIP-09: a deletion of a deletion has no effect. Validation refuses
+            // one; this keeps the earlier deletion standing on any other path.
+            tracing::debug!(
+                target_id = %hex::encode(&target_id),
+                "NIP-09 deletion ignored: target is itself a deletion"
+            );
+            continue;
+        }
         if u32::from(target_event.event.kind.as_u16()) == super::push_lease::KIND_PUSH_LEASE {
             tracing::debug!(
                 target_id = %hex::encode(&target_id),
@@ -4389,6 +4438,59 @@ pub async fn publish_nipia_unarchived(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn deletion(tags: &[&[&str]]) -> Event {
+        let tags: Vec<nostr::Tag> = tags
+            .iter()
+            .map(|fields| nostr::Tag::parse(fields.to_vec()).expect("tag"))
+            .collect();
+        nostr::EventBuilder::new(nostr::Kind::EventDeletion, "")
+            .tags(tags)
+            .sign_with_keys(&nostr::Keys::generate())
+            .expect("sign")
+    }
+
+    #[test]
+    fn a_deletion_cannot_target_a_deletion() {
+        let target = "a".repeat(64);
+        // With no `k`, with the honest `k`, and with a `k` that lies about the target.
+        for tags in [
+            vec![vec!["e", target.as_str()]],
+            vec![vec!["e", target.as_str()], vec!["k", "5"]],
+            vec![vec!["e", target.as_str()], vec!["k", "47003"]],
+        ] {
+            let tags: Vec<&[&str]> = tags.iter().map(|t| t.as_slice()).collect();
+            let err = check_deletion_target_kind(&deletion(&tags), 5).unwrap_err();
+            assert!(err.contains("cannot be deleted"), "{err}");
+        }
+    }
+
+    #[test]
+    fn a_deletions_k_tag_must_name_the_targets_kind() {
+        let target = "a".repeat(64);
+        let e: &[&str] = &["e", target.as_str()];
+        // No `k` tag: accepted as before, whatever the target is.
+        assert_eq!(check_deletion_target_kind(&deletion(&[e]), 47003), Ok(()));
+        assert_eq!(check_deletion_target_kind(&deletion(&[e]), 1), Ok(()));
+        // The honest `k`.
+        assert_eq!(
+            check_deletion_target_kind(&deletion(&[e, &["k", "47003"]]), 47003),
+            Ok(())
+        );
+        // One of several names the target.
+        assert_eq!(
+            check_deletion_target_kind(&deletion(&[e, &["k", "1"], &["k", "47003"]]), 47003),
+            Ok(())
+        );
+        // A `k` that names another kind, an empty one, and one that only looks alike.
+        for k in ["1", "", "047003", "47003 "] {
+            let err = check_deletion_target_kind(&deletion(&[e, &["k", k]]), 47003).unwrap_err();
+            assert!(
+                err.contains("`k` tag") && err.contains("47003"),
+                "k={k:?}: {err}"
+            );
+        }
+    }
 
     #[test]
     fn nip43_progress_logs_every_interval_inside_the_startup_sweep_only() {

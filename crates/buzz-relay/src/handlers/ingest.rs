@@ -612,7 +612,8 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         KIND_PROJECT => Ok(Scope::ReposWrite),
         // NIP-LP: launchpad records and mirrors are ordinary member writes —
         // same model as forum posts. Real authorization (money, membership)
-        // lives onchain; the relay only validates envelopes.
+        // lives onchain; the relay validates envelopes, and for update records
+        // (47003) who signed them (`launch_update_authority`).
         KIND_LAUNCH_RECORD
         | KIND_SCORE_ROOT
         | KIND_LAUNCH_BID
@@ -5106,6 +5107,10 @@ async fn ingest_event_inner(
     if kind_u32 == KIND_LAUNCH_UPDATE {
         validate_launch_mirror_envelope(&event, "launch update event")
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+        // Goals, promises, team updates and task steps count only from the
+        // right signer; checked here, once, against the project as it stands.
+        super::launch_update_authority::enforce_launch_update_authority(state, tenant, &event)
+            .await?;
     }
 
     if kind_u32 == KIND_LAUNCH_PROPOSAL {
