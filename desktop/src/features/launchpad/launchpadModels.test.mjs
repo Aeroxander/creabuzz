@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildLaunchesFromEvents,
+  isGoalRecordEvent,
   isHelpSignalEvent,
   launchCoordinate,
   parseLaunchBidEvent,
@@ -330,6 +331,47 @@ test("offers to help, replies to them and Help found are not listed or counted a
     found,
   ]);
   // The update that asked for help is still an update; what answers it is not.
+  assert.deepEqual(
+    launch.updates.map((u) => u.title),
+    ["Week two"],
+  );
+});
+
+test("a goal record is the project's goal, not news: it is not listed or counted as an update", () => {
+  const coordinate = launchCoordinate(FOUNDER, "nebula");
+  const mirror = (id, title, tags) => ({
+    id,
+    kind: 47003,
+    pubkey: FOUNDER,
+    created_at: 200,
+    content: JSON.stringify({ title, body: "words" }),
+    tags: [["a", coordinate], ...tags],
+    sig: "sig",
+  });
+  const goal = mirror("goal-1", "Goal", [
+    ["goal", "g1"],
+    ["goal-level", "primary"],
+    ["goal-text", "A first version ten people use"],
+    ["goal-state", "open"],
+  ]);
+  const missed = mirror("goal-2", "Goal missed", [
+    ["goal", "g1"],
+    ["goal-state", "missed"],
+  ]);
+  const weekly = mirror("update-1", "Week two", [
+    ["update-part", "next", "Invite ten people"],
+    ["promise", "0", "Invite ten people"],
+  ]);
+  assert.equal(isGoalRecordEvent(goal), true);
+  assert.equal(isGoalRecordEvent(missed), true);
+  // An update that makes promises is still an update.
+  assert.equal(isGoalRecordEvent(weekly), false);
+  const [launch] = buildLaunchesFromEvents([
+    recordEvent(),
+    goal,
+    missed,
+    weekly,
+  ]);
   assert.deepEqual(
     launch.updates.map((u) => u.title),
     ["Week two"],

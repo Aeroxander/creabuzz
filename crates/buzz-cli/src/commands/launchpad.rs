@@ -54,6 +54,16 @@ fn tag_value(event: &Event, name: &str) -> Option<String> {
     })
 }
 
+/// Whether an update record is a goal record: it carries a `goal` tag (the
+/// goal's id). The web app stores a project's goals as update records so no
+/// relay change was needed; they are never counted as updates.
+fn is_goal_record(event: &Event) -> bool {
+    event
+        .tags
+        .iter()
+        .any(|tag| matches!(tag.as_slice(), [n, ..] if n.as_str() == "goal"))
+}
+
 fn launch_coordinate(author_hex: &str, id: &str) -> String {
     format!("{KIND_LAUNCH_RECORD}:{author_hex}:{id}")
 }
@@ -202,6 +212,8 @@ async fn cmd_show(client: &BuzzClient, id: &str, author: Option<&str>) -> Result
     for event in &mirrors {
         match event.kind.as_u16() as u32 {
             KIND_LAUNCH_BID => bids += 1,
+            // A goal record shares the update kind; it is the project's goal, not news.
+            KIND_LAUNCH_UPDATE if is_goal_record(event) => {}
             KIND_LAUNCH_UPDATE => updates += 1,
             KIND_LAUNCH_PROPOSAL => proposals += 1,
             KIND_LAUNCH_RECEIPT => receipts.push(serde_json::json!({
@@ -1325,6 +1337,34 @@ mod tests {
         tags.iter()
             .map(|t| t.as_slice().iter().map(|s| s.to_string()).collect())
             .collect()
+    }
+
+    #[test]
+    fn a_goal_record_is_not_counted_as_an_update() {
+        let keys = nostr::Keys::generate();
+        let update = |tags: Vec<Tag>| {
+            EventBuilder::new(
+                Kind::Custom(KIND_LAUNCH_UPDATE as u16),
+                r#"{"title":"t","body":"b"}"#,
+            )
+            .tags(tags)
+            .sign_with_keys(&keys)
+            .expect("signed")
+        };
+        let goal = update(vec![
+            Tag::parse(["a", "37001:abc:orbit"]).expect("tag"),
+            Tag::parse(["goal", "g1"]).expect("tag"),
+            Tag::parse(["goal-state", "open"]).expect("tag"),
+        ]);
+        let weekly = update(vec![
+            Tag::parse(["a", "37001:abc:orbit"]).expect("tag"),
+            Tag::parse(["update-part", "done", "Shipped"]).expect("tag"),
+        ]);
+        assert!(is_goal_record(&goal));
+        assert!(!is_goal_record(&weekly));
+        // A tag that merely starts with the word is not the goal tag.
+        let near = update(vec![Tag::parse(["goal-text", "x"]).expect("tag")]);
+        assert!(!is_goal_record(&near));
     }
 
     #[test]

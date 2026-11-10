@@ -362,6 +362,15 @@ export function isHelpSignalEvent(event: Pick<RelayEvent, "tags">): boolean {
   return event.tags.some((tag) => HELP_SIGNAL_TAGS.has(tag[0]));
 }
 
+/**
+ * Whether an update record is a goal record: it carries a `goal` tag (the goal's id). The web app keeps a project's
+ * goals as update records so no server change was needed; they are the project's goal, not news, and are never listed
+ * or counted as updates.
+ */
+export function isGoalRecordEvent(event: Pick<RelayEvent, "tags">): boolean {
+  return event.tags.some((tag) => tag[0] === "goal");
+}
+
 export function parseLaunchUpdateEvent(event: RelayEvent): LaunchUpdate | null {
   if (event.kind !== KIND_LAUNCH_UPDATE) return null;
   const launchId = launchIdFromCoordinate(tagValue(event.tags, "a"));
@@ -486,6 +495,8 @@ export function buildLaunchesFromEvents(
       case KIND_LAUNCH_UPDATE: {
         // An offer to help, a reply to one or "Help found" answers an update; it is not one.
         if (isHelpSignalEvent(event)) break;
+        // A goal record is the project's goal, not news.
+        if (isGoalRecordEvent(event)) break;
         const update = parseLaunchUpdateEvent(event);
         if (update) updates.push(update);
         break;
