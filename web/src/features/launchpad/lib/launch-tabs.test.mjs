@@ -7,6 +7,7 @@ import {
   ideaShowsTeamSurfaces,
   tabAlias,
   tabShown,
+  updatesUse,
 } from "./launch-tabs.ts";
 
 test("an idea in a build without raises has no helpers tab, and keeps the rest", () => {
@@ -107,4 +108,24 @@ test("the founder always has every tab: an empty one is where they set it up", (
   const uses = { updates: "no", boards: "no", agents: "no" };
   for (const tab of ["updates", "boards", "agents", "manage"])
     assert.equal(tabShown(tab, { isFounder: true, uses }), true, tab);
+});
+
+test("the Updates tab follows the project's own read: hidden while reading, kept when the read failed or was cut", () => {
+  // Not read yet: not shown for the moment (it appears when the answer comes).
+  assert.equal(
+    updatesUse({ count: null, failed: false, complete: false }),
+    "no",
+  );
+  // The read failed: not known, so the tab stays.
+  assert.equal(
+    updatesUse({ count: null, failed: true, complete: false }),
+    "unknown",
+  );
+  assert.equal(updatesUse({ count: 2, failed: false, complete: false }), "yes");
+  assert.equal(updatesUse({ count: 0, failed: false, complete: true }), "no");
+  // None found in a read that was cut short is not "none".
+  assert.equal(
+    updatesUse({ count: 0, failed: false, complete: false }),
+    "unknown",
+  );
 });

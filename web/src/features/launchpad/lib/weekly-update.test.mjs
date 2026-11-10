@@ -6,6 +6,7 @@ import {
   founderNudge,
   freshnessLine,
   inARowLine,
+  isWeeklyUpdateTags,
   nudgeDismissed,
   partsFromTags,
   updateEvent,
@@ -67,7 +68,10 @@ test("a free-form update writes no part tags and keeps its body whole", () => {
   const event = updateEvent(
     draft({ done: "", next: "", body: "  We moved studios.\n\nMore soon.  " }),
   );
-  assert.deepEqual(event.tags, []);
+  // No prompts answered: only the mark that says it is a weekly update all the same.
+  assert.deepEqual(event.tags, [["update-kind", "weekly"]]);
+  assert.equal(isWeeklyUpdateTags(event.tags), true);
+  assert.equal(isWeeklyUpdateTags([["a", "x"]]), false);
   assert.equal(event.content.body, "We moved studios.\n\nMore soon.");
   assert.equal(partsFromTags(event.tags), null);
   assert.deepEqual(updateLayout(event.content.body, null), {

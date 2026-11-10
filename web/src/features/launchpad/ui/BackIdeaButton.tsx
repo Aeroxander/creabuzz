@@ -40,7 +40,6 @@ export function BackIdeaButton({
   };
   return (
     <Button
-      aria-pressed={followed}
       data-testid="launch-back-idea"
       disabled={disabled}
       onClick={onClick}

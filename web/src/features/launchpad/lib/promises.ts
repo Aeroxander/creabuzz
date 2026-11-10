@@ -8,8 +8,9 @@
  *   promise-mark   the promise answered, the answer, a short note    ["promise-mark", "<update id>:0", "done", ""]
  *
  * A promise's id is the id of the update that made it and its number, so an answer can only ever name one promise.
- * Only the founder's updates count, on both sides. The first answer stands: a later update cannot turn "not done"
- * into "done". There is no record that takes a miss away; only deleting the update that holds it does.
+ * Only the founder's updates count, on both sides. An answer cannot be changed: if the founder answers the same promise
+ * again and differently, it shows as answered more than once and the worse answer is the one counted. No record takes
+ * a miss away. Deleting the update that holds it does, and the page says how many records the founder has deleted.
  *
  * A promise the next update did not answer is not hidden. It shows as "not answered", and the next update asks again.
  *
@@ -168,6 +169,12 @@ export interface RecordUpdate {
   id: string;
   author: string;
   createdAt: number;
+  /**
+   * Whether it is a weekly update (it carries the prompts, a promise, an answer, or the dialog's own mark). Only these
+   * are "the next update": a review note or any other record the founder signs is not, and must not turn a promise
+   * into "not answered".
+   */
+  weekly?: boolean;
   promises?: readonly UpdatePromise[];
   marks?: readonly PromiseMark[];
 }
@@ -189,19 +196,42 @@ const STATE_OF_MARK: Record<MarkState, PromiseState> = {
   changed: "changed",
 };
 
+/** When the founder's answers to one promise disagree, the worse one is the one counted. */
+const WORSE_FIRST: readonly MarkState[] = ["not-done", "changed", "done"];
+
+/** One answer the founder gave to a promise. */
+interface PromiseAnswer {
+  state: MarkState;
+  note: string;
+  /** When the update that holds it says it was posted. */
+  at: number;
+}
+
 export interface PromiseEntry {
   id: string;
   text: string;
   promisedAt: number;
   state: PromiseState;
-  /** When it was answered, or null. */
+  /** When it was answered (the newest answer, when there are several), or null. */
   answeredAt: number | null;
   note: string;
+  /** Every answer the founder gave, oldest first. More than one that disagree is `conflict`. */
+  answers: PromiseAnswer[];
+  /** The founder answered more than once and the answers disagree: the worse one is counted, and all are shown. */
+  conflict: boolean;
 }
+
+const byPosted = (a: RecordUpdate, b: RecordUpdate) =>
+  a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1);
 
 /**
  * Every promise the founder's updates made, with how each stands, newest first (by when it was answered, or made when
- * it has not been). `updates` are the project's team updates; anyone else's are ignored.
+ * it has not been). `updates` are the project's update records; anyone else's are ignored.
+ *
+ * An answer names its promise by the id of the update that made it, which nobody can know before that update exists:
+ * so an answer always came after its promise, whatever dates the two carry. The dates an author writes are theirs to
+ * choose, so they decide nothing here. Answers that disagree are not ranked by date: the promise shows as answered
+ * more than once, with the worse answer counted.
  */
 export function promiseRecord(
   updates: readonly RecordUpdate[],
@@ -209,52 +239,91 @@ export function promiseRecord(
 ): PromiseEntry[] {
   const mine = updates
     .filter((update) => update.author === founder)
-    .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
-  const made = new Map<string, { at: number; updateId: string }>();
+    .sort(byPosted);
+  const made = new Map<string, string>();
   for (const update of mine)
     for (const promise of update.promises ?? [])
-      made.set(`${update.id}:${promise.index}`, {
-        at: update.createdAt,
-        updateId: update.id,
-      });
-  // Oldest update first, so the first answer to a promise is the one kept.
-  const answers = new Map<string, { mark: PromiseMark; at: number }>();
+      made.set(`${update.id}:${promise.index}`, update.id);
+  const answers = new Map<string, PromiseAnswer[]>();
   for (const update of mine)
     for (const mark of update.marks ?? []) {
-      const promise = made.get(mark.promiseId);
-      // An answer comes after its promise, in another update.
-      if (
-        !promise ||
-        promise.updateId === update.id ||
-        update.createdAt < promise.at ||
-        answers.has(mark.promiseId)
-      )
+      // An update cannot answer its own promises.
+      if (!made.has(mark.promiseId) || made.get(mark.promiseId) === update.id)
         continue;
-      answers.set(mark.promiseId, { mark, at: update.createdAt });
+      const list = answers.get(mark.promiseId) ?? [];
+      list.push({ state: mark.state, note: mark.note, at: update.createdAt });
+      answers.set(mark.promiseId, list);
     }
-  const newest = mine[mine.length - 1];
+  const weekly = mine.filter((update) => update.weekly);
+  const newest = weekly[weekly.length - 1];
   const entries: PromiseEntry[] = [];
   for (const update of mine)
     for (const promise of update.promises ?? []) {
       const id = `${update.id}:${promise.index}`;
-      const answer = answers.get(id);
+      const given = answers.get(id) ?? [];
+      const counted = WORSE_FIRST.find((state) =>
+        given.some((answer) => answer.state === state),
+      );
+      const conflict = new Set(given.map((answer) => answer.state)).size > 1;
       entries.push({
         id,
         text: promise.text,
         promisedAt: update.createdAt,
-        state: answer
-          ? STATE_OF_MARK[answer.mark.state]
+        state: counted
+          ? STATE_OF_MARK[counted]
           : newest && newest.id !== update.id
             ? "unanswered"
             : "waiting",
-        answeredAt: answer?.at ?? null,
-        note: answer?.mark.note ?? "",
+        answeredAt:
+          given.length > 0
+            ? Math.max(...given.map((answer) => answer.at))
+            : null,
+        note: given.find((answer) => answer.state === counted)?.note ?? "",
+        answers: given,
+        conflict,
       });
     }
   return entries.sort(
     (a, b) =>
       (b.answeredAt ?? b.promisedAt) - (a.answeredAt ?? a.promisedAt) ||
       (a.id < b.id ? -1 : 1),
+  );
+}
+
+/** An answer whose promise is not among the records read. */
+export interface OrphanAnswer {
+  promiseId: string;
+  state: MarkState;
+  note: string;
+  at: number;
+}
+
+/**
+ * The founder's answers to promises that are not there: the update that made the promise was removed. Shown beside
+ * the record so a removal leaves a trace. Only meaningful when the founder's records were read to the end; on a cut
+ * read the promise may simply be older than what was read, and the caller must not show these.
+ */
+export function orphanAnswers(
+  updates: readonly RecordUpdate[],
+  founder: string,
+): OrphanAnswer[] {
+  const mine = updates.filter((update) => update.author === founder);
+  const made = new Set<string>();
+  for (const update of mine)
+    for (const promise of update.promises ?? [])
+      made.add(`${update.id}:${promise.index}`);
+  const out: OrphanAnswer[] = [];
+  for (const update of mine)
+    for (const mark of update.marks ?? [])
+      if (!made.has(mark.promiseId))
+        out.push({
+          promiseId: mark.promiseId,
+          state: mark.state,
+          note: mark.note,
+          at: update.createdAt,
+        });
+  return out.sort(
+    (a, b) => b.at - a.at || (a.promiseId < b.promiseId ? -1 : 1),
   );
 }
 

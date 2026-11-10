@@ -85,6 +85,13 @@ export interface ContributorJob {
   launchId: string;
   /** The project's salt: with the founder's wallet, it fixes the DAO's address. */
   salt: string;
+  /**
+   * This try's own random part of the salt, made when the try began and kept only here. Two tries at the same project
+   * (the first one discarded, or begun in another browser) therefore never predict the same address, so a second try
+   * with other reviewers or work areas cannot land on, and publish over, the first try's DAO. Absent on a job kept
+   * before tries had one: its salt follows from the project's id alone.
+   */
+  attempt?: string;
   chainId: number;
   /** The contributor kit. */
   kit: string;
@@ -139,6 +146,10 @@ export interface ContributorEffects {
   /** The build's settings, for the check that a stored weekly job is still offered; the page leaves it out. */
   env?: ChainEnv;
 }
+
+/** Said when a project already exists at a try's address and the try cannot be shown to have made it. */
+export const EARLIER_TRY_MESSAGE =
+  "A project was already made at this address in an earlier try, and we can't tell whether it was set up with what you entered here. Nothing was sent. Discard this and start the project again: the new try gets a new address.";
 
 const WEEKLY_NOT_OFFERED_MESSAGE =
   "This site no longer offers trading with the project maker and trade token this half-finished project was set up with, so nothing was sent. Discard it and start the project again.";
@@ -262,6 +273,12 @@ async function makeProject(
   // follows from public values, so someone else could have summoned a DAO of their own there first. Adopting that one
   // would publish a project whose DAO the founder does not control. Nothing is sent or published for it.
   if (await fx.codeAt(dao)) {
+    // A try with its own salt and no send on record: the only send that could have made this is this try's own, whose
+    // answer was lost, with this try's own words. A try from before salts were per try is different: its address
+    // follows from the project's id, so the DAO there may be an earlier, discarded try's, set up with other reviewers
+    // and work areas. That one is never adopted: the words in this form would be published over a DAO they do not
+    // describe.
+    if (!job.attempt && !job.createTx) throw new Error(EARLIER_TRY_MESSAGE);
     if (!(await kitMadeIt(job.kit, dao, fx)))
       throw new Error(
         "We could not confirm that this project was made at the address we expect. Nothing was sent. If you started this project a moment ago, press Try again in a minute. Otherwise discard it and start the project again: it then gets a new address.",

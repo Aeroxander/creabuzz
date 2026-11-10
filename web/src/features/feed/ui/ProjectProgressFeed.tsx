@@ -11,6 +11,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { projectProgress, progressArtifacts } from "../lib/project-progress";
+import type { SignedEventLike } from "../lib/feed-events";
 import { followedLaunches } from "../lib/lists";
 import { useFeedNotes, useMyLists, useVoteTallies } from "../use-feed";
 import { progressScope, useProgressSeen } from "../use-progress-seen";
@@ -22,9 +23,15 @@ import { Chip } from "@/shared/ui/chip";
 export function ProjectProgressFeed({
   project,
   compact = false,
+  posts,
 }: {
   project?: Launch;
   compact?: boolean;
+  /**
+   * The posts marked as this project's updates, read for the project on its own. When given they are used in place of
+   * the home feed's posts, which are a cut of everyone's and may not hold this project's.
+   */
+  posts?: readonly SignedEventLike[];
 }) {
   const me = existingUserPubkey();
   const relay = relayWsUrl();
@@ -33,7 +40,9 @@ export function ProjectProgressFeed({
     me,
     project ? `${project.record.author}:${project.record.id}` : "home",
   );
-  return <ProgressList key={key} project={project} compact={compact} />;
+  return (
+    <ProgressList compact={compact} key={key} posts={posts} project={project} />
+  );
 }
 
 /** Whether the project's page has a Work tab: it runs its work through a DAO, which an idea does not have yet. */
@@ -61,9 +70,11 @@ function SourceBody({ source }: { source: Source | null }) {
 function ProgressList({
   project,
   compact,
+  posts,
 }: {
   project?: Launch;
   compact: boolean;
+  posts?: readonly SignedEventLike[];
 }) {
   const launches = useLaunches();
   const notes = useFeedNotes();
@@ -84,9 +95,9 @@ function ProgressList({
     () =>
       projectProgress(
         project ? [project] : (launches.data ?? []),
-        (notes.data ?? []).map((n) => n.event),
+        posts ?? (notes.data ?? []).map((n) => n.event),
       ),
-    [project, launches.data, notes.data],
+    [project, launches.data, notes.data, posts],
   );
   // The update record behind a row, when it is one (a post marked as an update has none): its parts and help request.
   const sources = useMemo(() => {

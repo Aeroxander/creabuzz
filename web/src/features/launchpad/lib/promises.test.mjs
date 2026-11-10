@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   duePromises,
+  orphanAnswers,
   marksSection,
   markTags,
   parseMarks,
@@ -14,7 +15,12 @@ import {
   promiseTotalsLine,
   recordFacts,
 } from "./promises.ts";
-import { updateEvent, updateLayout, partsFromTags } from "./weekly-update.ts";
+import {
+  isWeeklyUpdateTags,
+  partsFromTags,
+  updateEvent,
+  updateLayout,
+} from "./weekly-update.ts";
 
 const FOUNDER = "f".repeat(64);
 const OTHER = "e".repeat(64);
@@ -36,6 +42,7 @@ function update(n, at, draft, author = FOUNDER) {
     id: idOf(n),
     author,
     createdAt: at,
+    weekly: isWeeklyUpdateTags(tags),
     promises: parsePromises(tags),
     marks: parseMarks(tags),
   };
@@ -167,18 +174,91 @@ test("a promise the next update did not answer shows as not answered, and is ask
   assert.equal(promiseTotalsLine(promiseTotals([])), null);
 });
 
-test("the first answer stands: a later update cannot turn a miss into done", () => {
-  const record = promiseRecord(
+test("answers that disagree are not ranked by date: the promise shows both, and the worse one is counted", () => {
+  // Whichever of the two is dated first, the outcome is the same: dates are the author's to choose.
+  for (const [missAt, doneAt] of [
+    [200, 300],
+    [300, 200],
+  ]) {
+    const record = promiseRecord(
+      [
+        update(1, 100, { next: "Ship sign-up" }),
+        update(2, missAt, { marks: [mark(1, 0, "not-done", "late")] }),
+        update(3, doneAt, { marks: [mark(1, 0, "done")] }),
+      ],
+      FOUNDER,
+    );
+    const entry = record.find((e) => e.text === "Ship sign-up");
+    assert.equal(entry.state, "missed");
+    assert.equal(entry.note, "late");
+    assert.equal(entry.conflict, true);
+    assert.deepEqual(entry.answers.map((a) => a.state).sort(), [
+      "done",
+      "not-done",
+    ]);
+    assert.deepEqual(promiseTotals(record), {
+      kept: 0,
+      missed: 1,
+      changed: 0,
+      unanswered: 0,
+    });
+  }
+  // The same answer given twice is one answer, not a disagreement.
+  const twice = promiseRecord(
     [
       update(1, 100, { next: "Ship sign-up" }),
-      update(2, 200, { marks: [mark(1, 0, "not-done", "late")] }),
+      update(2, 200, { marks: [mark(1, 0, "done")] }),
       update(3, 300, { marks: [mark(1, 0, "done")] }),
     ],
     FOUNDER,
   );
-  assert.deepEqual(
-    [record[0].state, record[0].answeredAt, record[0].note],
-    ["missed", 200, "late"],
+  assert.equal(twice[0].state, "kept");
+  assert.equal(twice[0].conflict, false);
+  // Changed against done: changed is the worse of the two.
+  const mixed = promiseRecord(
+    [
+      update(1, 100, { next: "Ship sign-up" }),
+      update(2, 200, { marks: [mark(1, 0, "done")] }),
+      update(3, 300, { marks: [mark(1, 0, "changed")] }),
+    ],
+    FOUNDER,
+  );
+  assert.equal(mixed[0].state, "changed");
+});
+
+test("an answer dated before its promise still answers it: its id proves it came after", () => {
+  const record = promiseRecord(
+    [
+      update(1, 100, { next: "Ship sign-up" }),
+      update(2, 50, { marks: [mark(1, 0, "not-done", "late")] }),
+    ],
+    FOUNDER,
+  );
+  assert.equal(record.find((e) => e.text === "Ship sign-up").state, "missed");
+});
+
+test("only a weekly update is the next update: a review note does not turn a promise into not answered", () => {
+  const promised = update(1, 100, { next: "Ship sign-up" });
+  // A record of the same kind the founder signs for another reason: no prompts, promises or answers.
+  const note = {
+    id: idOf(2),
+    author: FOUNDER,
+    createdAt: 200,
+    weekly: isWeeklyUpdateTags([
+      ["a", "x"],
+      ["review-note", "y"],
+    ]),
+  };
+  assert.equal(note.weekly, false);
+  assert.equal(promiseRecord([promised, note], FOUNDER)[0].state, "waiting");
+  // A weekly update written freely still counts: the dialog marks it.
+  const free = update(3, 300, { body: "A quiet week." });
+  assert.equal(free.weekly, true);
+  assert.equal(
+    promiseRecord([promised, note, free], FOUNDER).find(
+      (e) => e.text === "Ship sign-up",
+    ).state,
+    "unanswered",
   );
 });
 
@@ -197,24 +277,31 @@ test("only the founder's updates promise and answer", () => {
   );
 });
 
-test("an update cannot answer its own promises, or one made after it", () => {
+test("an update cannot answer its own promises", () => {
   const own = update(1, 100, { next: "Ship sign-up" });
   own.marks = [{ promiseId: `${idOf(1)}:0`, state: "done", note: "" }];
   assert.equal(promiseRecord([own], FOUNDER)[0].state, "waiting");
-  const early = update(2, 50, { marks: [mark(1, 0, "done")] });
-  assert.equal(
-    promiseRecord([update(1, 100, { next: "Ship sign-up" }), early], FOUNDER)[0]
-      .state,
-    "waiting",
-  );
 });
 
-test("deleting the update that answered puts the promise back to not answered; deleting the promise's update removes it", () => {
+test("deleting the update that answered puts the promise back to not answered; an answer left without its promise is flagged", () => {
   const first = update(1, 100, { next: "Ship sign-up" });
-  const second = update(2, 200, { marks: [mark(1, 0, "not-done")] });
+  const second = update(2, 200, { marks: [mark(1, 0, "not-done", "late")] });
   const third = update(3, 300, { done: "More." });
   assert.equal(promiseRecord([first, third], FOUNDER)[0].state, "unanswered");
+  assert.deepEqual(orphanAnswers([first, second, third], FOUNDER), []);
+  // The promise's own update is gone: the promise is no longer listed, and its answer says something was removed.
   assert.deepEqual(promiseRecord([second, third], FOUNDER), []);
+  assert.deepEqual(orphanAnswers([second, third], FOUNDER), [
+    { promiseId: `${idOf(1)}:0`, state: "not-done", note: "late", at: 200 },
+  ]);
+  // Someone else's answer is nobody's orphan.
+  assert.deepEqual(
+    orphanAnswers(
+      [update(4, 400, { marks: [mark(9, 0, "done")] }, OTHER)],
+      FOUNDER,
+    ),
+    [],
+  );
 });
 
 test("a cut read states no totals and never says no goal was set", () => {

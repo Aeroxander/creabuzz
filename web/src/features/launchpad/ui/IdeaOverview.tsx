@@ -22,9 +22,11 @@ export function IdeaOverview({ record }: { record: LaunchRecord }) {
       <Card className="p-4">
         <h2 className="text-sm font-bold">A project in the open</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {raises
-            ? "There is no token and no money involved yet. Follow it to get its updates and join the supporters chat."
-            : "Follow it to get its updates and join the supporters chat."}
+          {raises ? "There is no token and no money involved yet. " : null}
+          {/* A chat is only promised where the project has one. */}
+          {record.chat.supporters
+            ? "Follow it to get its updates and join the supporters chat."
+            : "Follow it to get its updates."}
           {raises
             ? " If the founder opens a sale, you will be able to back it for real, and backers get their own room."
             : null}

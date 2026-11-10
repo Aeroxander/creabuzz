@@ -8,6 +8,7 @@ import {
   DAO_CODE_TRIES,
   DAO_CODE_WAIT_MS,
   doneSteps,
+  EARLIER_TRY_MESSAGE,
   parseJob,
   runContributorStart,
   stateForJob,
@@ -21,6 +22,7 @@ import {
   createAddress,
   encodePredictDao,
   KIT_LAUNCH_SIGNATURE,
+  newAttempt,
 } from "./contributor-project.ts";
 import { selectorOf } from "@creaton/core/launchpad/evmAbi.ts";
 
@@ -42,6 +44,8 @@ function job(overrides = {}) {
     author: AUTHOR,
     launchId: "docs-commons",
     salt: SALT,
+    // This try's own part of the salt, as every new try has.
+    attempt: "ab".repeat(16),
     chainId: 31337,
     kit: KIT,
     expectedSummoner: SUMMONER,
@@ -194,12 +198,59 @@ test("one transaction makes the project, then it is published", async () => {
   assert.deepEqual([...doneSteps(out.job)], ["create", "record"]);
 });
 
-test("a project this wallet already made is used, never made twice", async () => {
+test("a project this try already made is used, never made twice", async () => {
+  // The try has its own salt and no send on record: only its own send, whose answer was lost, could be at its address.
   const { fx, state } = fakeChain({ made: true });
   const out = await runContributorStart(job(), fx, () => {});
   assert.equal(out.ok, true);
   assert.equal(state.sends.length, 0);
   assert.equal(out.job.dao, DAO);
+  // A try whose send is on record carries on the same way, with or without a salt of its own.
+  const again = fakeChain({ made: true });
+  const resumed = await runContributorStart(
+    job({ attempt: undefined, createTx: `0x${"1".repeat(64)}` }),
+    again.fx,
+    () => {},
+  );
+  assert.equal(resumed.ok, true);
+  assert.equal(again.state.sends.length, 0);
+});
+
+test("a DAO already at the address of a try with no salt of its own and no send on record is not adopted", async () => {
+  // Its address follows from the project's id alone, so the DAO there may be an earlier, discarded try's, set up with
+  // other reviewers and work areas. The kit made it, and it is still refused: nothing is sent, nothing published.
+  const { fx, state } = fakeChain({ made: true });
+  const t = tracker();
+  const out = await runContributorStart(
+    job({ attempt: undefined }),
+    fx,
+    t.dispatch,
+  );
+  assert.equal(out.ok, false);
+  assert.equal(out.step, "create");
+  assert.equal(out.message, EARLIER_TRY_MESSAGE);
+  assert.match(
+    out.message,
+    /Nothing was sent\. Discard this and start the project again: the new try gets a new address\./,
+  );
+  assert.equal(state.sends.length, 0);
+  assert.equal(state.published.length, 0);
+  assert.equal(out.job.dao, null);
+});
+
+test("two tries at the same project never share a salt, so the second cannot land on the first one's DAO", () => {
+  const first = contributorSalt(AUTHOR, "docs-commons", newAttempt());
+  const second = contributorSalt(AUTHOR, "docs-commons", newAttempt());
+  assert.notEqual(first, second);
+  assert.notEqual(first, contributorSalt(AUTHOR, "docs-commons"));
+  // One try keeps one salt: a reload carries on at the same address.
+  assert.equal(
+    contributorSalt(AUTHOR, "docs-commons", "aa"),
+    contributorSalt(AUTHOR, "docs-commons", "aa"),
+  );
+  assert.match(newAttempt(), /^[0-9a-f]{32}$/);
+  // The older salt, for a job stored before tries had their own part, is unchanged.
+  assert.equal(contributorSalt(AUTHOR, "docs-commons"), SALT);
 });
 
 test("a DAO already at the predicted address that the kit did not make is refused, never adopted or published", async () => {

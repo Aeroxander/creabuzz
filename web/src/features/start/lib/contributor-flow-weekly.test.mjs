@@ -42,6 +42,8 @@ function job(overrides = {}) {
     author: AUTHOR,
     launchId: "docs-commons",
     salt: SALT,
+    // This try's own part of the salt, as every new try has.
+    attempt: "ab".repeat(16),
     chainId: 11155111,
     kit: KIT,
     expectedSummoner: SUMMONER,

@@ -20,8 +20,10 @@ import { IDEA_PITCH_MAX, ideaToInput } from "@/features/launchpad/lib/idea";
 import { helpQueryKey } from "@/features/launchpad/use-help-requests";
 import { EMPTY_CHAT } from "@/features/launchpad/use-launch-chat";
 import {
+  fetchOwnRecord,
+  launchesQueryKey,
   useCreateLaunch,
-  useLaunches,
+  useOwnLaunchIds,
   useRemovedLaunchIds,
 } from "@/features/launchpad/use-launches";
 import { publishGoal } from "@/features/launchpad/use-project-record";
@@ -41,7 +43,8 @@ import {
   saveMadeProject,
   type QuickStartDraft,
   quickStartGoal,
-  quickStartIssue,
+  quickStartProblem,
+  readableSoon,
   saveQuickStart,
 } from "../lib/quick-start";
 
@@ -59,12 +62,23 @@ export function QuickStartForm() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const create = useCreateLaunch();
-  const launches = useLaunches();
+  // The person's own project ids, read by author to the end. The list of every project is cut at its newest records,
+  // so an older project of theirs may not be in it, and a new one with its id would replace it.
+  const ownIds = useOwnLaunchIds(me);
   const removed = useRemovedLaunchIds(me);
   const [draft, setDraft] = useState<QuickStartDraft>(() =>
     loadQuickStart(sessionStorage),
   );
-  const [issue, setIssue] = useState<string | null>(null);
+  const [issue, setIssue] =
+    useState<ReturnType<typeof quickStartProblem>>(null);
+  // Both saved, but the server has not shown the project back yet: said, with the link, instead of opening a page
+  // that would say it was not found.
+  const [notShownYet, setNotShownYet] = useState(false);
+  const fields = useRef<
+    Partial<
+      Record<keyof QuickStartDraft, HTMLInputElement | HTMLTextAreaElement>
+    >
+  >({});
   const [failure, setFailure] = useState<FailureWords | null>(null);
   const [busy, setBusy] = useState(false);
   // The project this visit already made, when its goal is still to be saved: a retry sends the goal, never a second
@@ -76,7 +90,6 @@ export function QuickStartForm() {
     saveMadeProject(sessionStorage, next);
     setMadeState(next);
   };
-  const goalId = useRef(newGoalId());
 
   useEffect(() => {
     saveQuickStart(sessionStorage, draft);
@@ -88,14 +101,18 @@ export function QuickStartForm() {
   };
 
   // A new project's id must not be one this person used before, so both lists are read first.
-  const listsFailed = me !== null && (launches.isError || removed.isError);
-  const listsRead = me === null || (launches.isSuccess && removed.isSuccess);
+  const listsFailed = me !== null && (ownIds.isError || removed.isError);
+  const listsRead = me === null || (ownIds.isSuccess && removed.isSuccess);
 
   const submit = async () => {
     if (busy) return;
-    const problem = quickStartIssue(draft);
+    const problem = quickStartProblem(draft);
     setIssue(problem);
-    if (problem) return;
+    if (problem) {
+      // The keyboard goes to the answer that is missing, which names the problem as its description.
+      fields.current[problem.field]?.focus();
+      return;
+    }
     // Signed out: the account dialog. What was typed is kept for when they come back.
     if (me === null) {
       window.dispatchEvent(new Event(SIGN_UP_EVENT));
@@ -107,13 +124,22 @@ export function QuickStartForm() {
     let project = made;
     try {
       if (!project) {
-        const id = freshLaunchId({
+        const taken = [...(ownIds.data ?? [])];
+        let id = freshLaunchId({
           name: draft.name,
-          mine: (launches.data ?? [])
-            .filter((launch) => launch.record.author === me)
-            .map((launch) => launch.record.id),
+          mine: taken,
           removed: removed.data ?? [],
         });
+        // Asked once more, by id, just before publishing: a project made a moment ago elsewhere is not replaced. If
+        // this read fails, nothing is made.
+        if (await fetchOwnRecord(me, id)) {
+          taken.push(id);
+          id = freshLaunchId({
+            name: draft.name,
+            mine: taken,
+            removed: removed.data ?? [],
+          });
+        }
         const event = await create.mutateAsync(
           ideaToInput({
             id,
@@ -122,7 +148,7 @@ export function QuickStartForm() {
             chat: EMPTY_CHAT,
           }),
         );
-        project = { id, author: event.pubkey };
+        project = { id, author: event.pubkey, goalId: newGoalId() };
         setMade(project);
       }
     } catch (cause) {
@@ -136,15 +162,7 @@ export function QuickStartForm() {
       return;
     }
     try {
-      await publishGoal(project, quickStartGoal(draft, goalId.current));
-      void queryClient.invalidateQueries({ queryKey: helpQueryKey });
-      saveQuickStart(sessionStorage, null);
-      saveMadeProject(sessionStorage, null);
-      void navigate({
-        to: "/launchpad/$launchId",
-        params: { launchId: project.id },
-        search: { author: project.author, action: undefined },
-      });
+      await publishGoal(project, quickStartGoal(draft, project.goalId));
     } catch (cause) {
       setFailure(
         failed(
@@ -152,11 +170,31 @@ export function QuickStartForm() {
           cause,
         ),
       );
-    } finally {
       setBusy(false);
+      return;
     }
+    // Both are saved. The page is opened once the server shows the project back, so it never opens on "not found".
+    saveQuickStart(sessionStorage, null);
+    const { id, author } = project;
+    const shown = await readableSoon(
+      async () => (await fetchOwnRecord(author, id)) !== null,
+    );
+    void queryClient.invalidateQueries({ queryKey: helpQueryKey });
+    await queryClient
+      .invalidateQueries({ queryKey: launchesQueryKey })
+      .catch(() => undefined);
+    setBusy(false);
+    if (!shown) {
+      setNotShownYet(true);
+      return;
+    }
+    saveMadeProject(sessionStorage, null);
+    void navigate({
+      to: "/launchpad/$launchId",
+      params: { launchId: id },
+      search: { author, action: undefined },
+    });
   };
-
   return (
     <form
       aria-labelledby="quick-start-heading"
@@ -184,6 +222,11 @@ export function QuickStartForm() {
         <Input
           className="mt-1 bg-background"
           data-testid="quick-name"
+          aria-describedby={issue?.field === "name" ? "quick-issue" : undefined}
+          aria-invalid={issue?.field === "name" || undefined}
+          ref={(el) => {
+            if (el) fields.current.name = el;
+          }}
           disabled={made !== null}
           id="quick-name"
           maxLength={60}
@@ -199,6 +242,13 @@ export function QuickStartForm() {
         <Input
           className="mt-1 bg-background"
           data-testid="quick-pitch"
+          aria-describedby={
+            issue?.field === "pitch" ? "quick-issue" : undefined
+          }
+          aria-invalid={issue?.field === "pitch" || undefined}
+          ref={(el) => {
+            if (el) fields.current.pitch = el;
+          }}
           disabled={made !== null}
           id="quick-pitch"
           maxLength={IDEA_PITCH_MAX}
@@ -214,6 +264,11 @@ export function QuickStartForm() {
         <textarea
           className={`${AREA_CLASS} bg-background`}
           data-testid="quick-goal"
+          aria-describedby={issue?.field === "goal" ? "quick-issue" : undefined}
+          aria-invalid={issue?.field === "goal" || undefined}
+          ref={(el) => {
+            if (el) fields.current.goal = el;
+          }}
           id="quick-goal"
           maxLength={GOAL_LIMITS.text}
           onChange={(event) => set("goal")(event.target.value)}
@@ -229,6 +284,11 @@ export function QuickStartForm() {
         <textarea
           className={`${AREA_CLASS} bg-background`}
           data-testid="quick-how"
+          aria-describedby={issue?.field === "how" ? "quick-issue" : undefined}
+          aria-invalid={issue?.field === "how" || undefined}
+          ref={(el) => {
+            if (el) fields.current.how = el;
+          }}
           id="quick-how"
           maxLength={GOAL_LIMITS.how}
           onChange={(event) => set("how")(event.target.value)}
@@ -241,13 +301,20 @@ export function QuickStartForm() {
         <p
           className="text-sm text-red-700 dark:text-red-300"
           data-testid="quick-issue"
+          id="quick-issue"
           role="alert"
         >
-          {issue}
+          {issue.message}
         </p>
       ) : null}
       {failure && !busy ? (
         <FailureNote failure={failure} testId="quick-failed" />
+      ) : null}
+      {notShownYet && made && !busy ? (
+        <p className="text-sm" data-testid="quick-not-shown" role="status">
+          Your project and its goal are saved. The server has not shown the
+          project back yet, which can take a moment.
+        </p>
       ) : null}
       {made && !busy ? (
         <p className="text-sm" data-testid="quick-made">
@@ -259,14 +326,14 @@ export function QuickStartForm() {
           >
             Open your project
           </Link>{" "}
-          to set its goal there instead.{" "}
+          {notShownYet ? "in a moment." : "to set its goal there instead."}{" "}
           <Button
             className="h-auto p-0"
             onClick={() => {
               setMade(null);
               setFailure(null);
+              setNotShownYet(false);
               setDraft(EMPTY_QUICK_START);
-              goalId.current = newGoalId();
             }}
             size="sm"
             type="button"
@@ -282,7 +349,7 @@ export function QuickStartForm() {
           yet.{" "}
           <Button
             onClick={() => {
-              void launches.refetch();
+              void ownIds.refetch();
               void removed.refetch();
             }}
             size="sm"
@@ -306,11 +373,9 @@ export function QuickStartForm() {
         >
           {busy
             ? "Starting…"
-            : made
+            : made || failure
               ? "Try again"
-              : failure
-                ? "Try again"
-                : "Start the project"}
+              : "Start the project"}
         </Button>
         {me === null ? (
           <span className="text-xs text-muted-foreground">

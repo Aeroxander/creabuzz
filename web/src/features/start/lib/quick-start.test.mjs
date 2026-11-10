@@ -9,6 +9,8 @@ import {
   loadQuickStart,
   quickStartGoal,
   quickStartIssue,
+  quickStartProblem,
+  readableSoon,
   saveMadeProject,
   saveQuickStart,
 } from "./quick-start.ts";
@@ -87,14 +89,55 @@ test("a project made whose goal is still to be saved is remembered for its found
     removeItem: (k) => void map.delete(k),
   };
   assert.equal(loadMadeProject(store, "me"), null);
-  saveMadeProject(store, { id: "nebula", author: "me" });
-  assert.deepEqual(loadMadeProject(store, "me"), {
-    id: "nebula",
-    author: "me",
-  });
+  const made = { id: "nebula", author: "me", goalId: "g1" };
+  saveMadeProject(store, made);
+  // The goal's id comes back with it: a retry after a reload sends the same goal, not a second main goal.
+  assert.deepEqual(loadMadeProject(store, "me"), made);
+  // One kept before the goal's id was stored with it is not carried on: its goal id is not known.
+  map.set(
+    "creaton.start.quick.made",
+    JSON.stringify({ id: "x", author: "me" }),
+  );
+  assert.equal(loadMadeProject(store, "me"), null);
+  saveMadeProject(store, made);
   // Another account in the same browser does not carry on someone else's project.
   assert.equal(loadMadeProject(store, "someone-else"), null);
   assert.equal(loadMadeProject(store, null), null);
   saveMadeProject(store, null);
   assert.equal(loadMadeProject(store, "me"), null);
+});
+
+test("each problem names the answer it is about, so the form can point at it", () => {
+  assert.equal(quickStartProblem(draft({ name: "" })).field, "name");
+  assert.equal(quickStartProblem(draft({ pitch: "Short" })).field, "pitch");
+  assert.equal(quickStartProblem(draft({ goal: "" })).field, "goal");
+  assert.equal(quickStartProblem(draft({ how: "" })).field, "how");
+  assert.equal(quickStartProblem(draft()), null);
+});
+
+test("a new project is waited for a bounded number of times, and a read that fails is not yet", async () => {
+  const pauses = [];
+  const sleep = async (ms) => void pauses.push(ms);
+  let calls = 0;
+  const third = async () => {
+    calls += 1;
+    if (calls === 1) throw new Error("offline");
+    return calls === 3;
+  };
+  assert.equal(
+    await readableSoon(third, { tries: 5, waitMs: 10, sleep }),
+    true,
+  );
+  assert.equal(calls, 3);
+  assert.deepEqual(pauses, [10, 10]);
+  // Never readable: it stops after the last try, without one more pause.
+  let never = 0;
+  const no = async () => {
+    never += 1;
+    return false;
+  };
+  pauses.length = 0;
+  assert.equal(await readableSoon(no, { tries: 4, waitMs: 10, sleep }), false);
+  assert.equal(never, 4);
+  assert.equal(pauses.length, 3);
 });

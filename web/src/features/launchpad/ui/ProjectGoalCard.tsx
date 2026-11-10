@@ -2,8 +2,9 @@
  * A project's goal, right under its name: the goal in the founder's words, how everyone will know it was reached, the
  * shorter goals under it, and what became of earlier ones.
  *
- * The founder sets and updates goals here. A goal is never removed: marking it missed or changed, or rewording it,
- * adds to its history, which anyone can open.
+ * The founder sets and updates goals here. Marking a goal missed or changed, or rewording it, adds to its history,
+ * which anyone can open; nothing here edits or removes a goal. (A founder can still delete their own records on the
+ * server; the card below says how many they have deleted.)
  *
  * It is read from the project's own records (`useProjectRecord`). A read that failed says so with a way to read again;
  * a read that was cut short never says "no goal".
@@ -55,8 +56,10 @@ function GoalHistory({ goal }: { goal: GoalView }) {
         {goal.history.length === 2 ? "change" : "changes"})
       </summary>
       <ol className="mt-1 flex flex-col gap-1 border-l border-border pl-3">
-        {goal.history.map((entry) => (
-          <li className="break-words" key={`${entry.at}-${entry.step}`}>
+        {goal.history.map((entry, index) => (
+          // Steps are only ever added at the end, so a step's place in the list is its own.
+          // biome-ignore lint/suspicious/noArrayIndexKey: an append-only list; two steps can share a second and a name
+          <li className="break-words" key={index}>
             <span className="font-medium">
               {goalStepWord(entry.step)} on {day(entry.at)}
             </span>
@@ -138,8 +141,18 @@ export function ProjectGoalCard({
     save.mutate(goal, { onSuccess: () => setTarget(null) });
 
   if (!record) {
-    // Not read yet: nothing is said. Not readable: said, with a way to read again.
-    if (!failed) return null;
+    // Not read yet: the card holds its place and says so. Not readable: said, with a way to read again.
+    if (!failed)
+      return (
+        <section
+          aria-busy="true"
+          aria-label="Goal"
+          className="glass rounded-2xl border p-4"
+          data-testid="project-goal"
+        >
+          <p className="text-sm text-muted-foreground">Reading the goal…</p>
+        </section>
+      );
     return (
       <section
         aria-label="Goal"
@@ -315,8 +328,8 @@ export function ProjectGoalCard({
           className="mt-2 text-xs text-muted-foreground"
           data-testid="goals-cut"
         >
-          This project has more records than could be read here, so older goals
-          may be missing.
+          This project has more records than could be read here. Older goals,
+          and older steps in the history of the goals shown, may be missing.
         </p>
       ) : null}
       {dialog}

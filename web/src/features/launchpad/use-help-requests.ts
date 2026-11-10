@@ -20,7 +20,12 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { type NostrEvent, queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
-import { readEvidenceEvents } from "./lib/evidence-query";
+import { readAuthorUpdates, readEvidenceEvents } from "./lib/evidence-query";
+import {
+  REMOVED_READ_LIMIT,
+  type RemovedRecords,
+  removedRecords,
+} from "./lib/removed-records";
 import {
   type GoalVersion,
   isGoalRecordTags,
@@ -70,8 +75,18 @@ export interface ProjectUpdatesRead {
   updates: LaunchUpdate[];
   /** Offers, replies and "Help found" marks on this project. */
   signals: HelpSignal[];
-  /** The project's goal records, anyone's: the reader keeps only the founder's (`lib/goals.ts`). */
-  goals: GoalVersion[];
+  /**
+   * The founder's own records about this project, read by author: its goals and the updates that make and answer
+   * promises. Read apart from everyone else's records, so nobody can post enough of their own to cut this read short.
+   */
+  founder: {
+    updates: LaunchUpdate[];
+    goals: GoalVersion[];
+    /** The founder's records were read to the end. */
+    complete: boolean;
+    /** The update records the founder has deleted (`lib/removed-records.ts`). */
+    removed: RemovedRecords;
+  };
   /** The records were read to the end. False when the project has more than the bound. */
   complete: boolean;
   /** Posts about this project marked as updates (the other form an update takes). */
@@ -92,8 +107,17 @@ export function useProjectUpdates(project: Project) {
     staleTime: 15_000,
     refetchOnWindowFocus: false,
     queryFn: async (): Promise<ProjectUpdatesRead> => {
-      const [records, posts] = await Promise.all([
+      const [records, own, deletions, posts] = await Promise.all([
         readEvidenceEvents((filter) => queryEvents(relay, filter), coordinate),
+        readAuthorUpdates(
+          (filter) => queryEvents(relay, filter),
+          project.author,
+        ),
+        queryEvents(relay, {
+          kinds: [5],
+          authors: [project.author],
+          limit: REMOVED_READ_LIMIT,
+        }),
         queryEvents(relay, {
           kinds: [KIND_TEXT_NOTE],
           "#a": [coordinate],
@@ -101,6 +125,12 @@ export function useProjectUpdates(project: Project) {
           limit: MARKED_POSTS_LIMIT,
         }),
       ]);
+      // The founder signs records about all their projects: only this project's, and only theirs, are kept.
+      const mine = own.events.filter(
+        (event) =>
+          event.pubkey === project.author &&
+          event.tags.some((tag) => tag[0] === "a" && tag[1] === coordinate),
+      );
       return {
         updates: records.events
           .flatMap((event) => {
@@ -111,10 +141,22 @@ export function useProjectUpdates(project: Project) {
           })
           .sort((a, b) => b.createdAt - a.createdAt),
         signals: signalsOf(records.events),
-        goals: records.events.flatMap((event) => {
-          const goal = parseGoalVersion(event);
-          return goal ? [goal] : [];
-        }),
+        founder: {
+          updates: mine
+            .flatMap((event) => {
+              if (isHelpSignalTags(event.tags)) return [];
+              if (isGoalRecordTags(event.tags)) return [];
+              const update = parseLaunchUpdate(event);
+              return update ? [update] : [];
+            })
+            .sort((a, b) => b.createdAt - a.createdAt),
+          goals: mine.flatMap((event) => {
+            const goal = parseGoalVersion(event);
+            return goal ? [goal] : [];
+          }),
+          complete: own.complete,
+          removed: removedRecords(deletions, project.author),
+        },
         complete: records.complete,
         posts,
         postsCut: posts.length >= MARKED_POSTS_LIMIT,

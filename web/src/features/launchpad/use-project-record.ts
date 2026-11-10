@@ -1,8 +1,8 @@
 /**
  * A project's goals and its promise record, worked out from that project's own update records.
  *
- * It is the same bounded, paged read the update card and the help cards use (`useProjectUpdates`), so the page reads
- * the project once. When that read was cut at its bound the result says so (`facts`): the page then shows what was
+ * It comes with the read the update card and the help cards use (`useProjectUpdates`), which reads the founder's own
+ * records by author, apart from everyone else's. When that read was cut at its bound the result says so (`facts`): the page then shows what was
  * read and does not state totals, or that no goal was set. A failed read is `failed`, never an empty record.
  *
  * No state is kept outside React and the query cache: nothing here outlives a change of community.
@@ -19,7 +19,14 @@ import {
   type ProjectGoals,
   projectGoals,
 } from "./lib/goals";
-import { type PromiseEntry, promiseRecord, recordFacts } from "./lib/promises";
+import {
+  type OrphanAnswer,
+  orphanAnswers,
+  type PromiseEntry,
+  promiseRecord,
+  recordFacts,
+} from "./lib/promises";
+import type { RemovedRecords } from "./lib/removed-records";
 import { launchCoordinate, type Launch } from "./models";
 import { helpQueryKey, useProjectUpdates } from "./use-help-requests";
 import { publishMirror } from "./use-launches";
@@ -30,6 +37,10 @@ export interface ProjectRecord {
   goals: ProjectGoals;
   /** Every promise read, newest first. */
   promises: PromiseEntry[];
+  /** The founder's answers to promises that are no longer there (the update that made them was removed). */
+  orphans: OrphanAnswer[];
+  /** The update records the founder has deleted. */
+  removed: RemovedRecords;
   /** What may be stated as fact, given how much was read. */
   facts: ReturnType<typeof recordFacts>;
 }
@@ -47,16 +58,14 @@ export function useProjectRecord(project: Project): {
   const founder = project.author;
   const record = useMemo((): ProjectRecord | null => {
     if (!data) return null;
+    const { updates, goals, complete, removed } = data.founder;
     return {
-      goals: projectGoals(data.goals, founder),
-      // The founder's own news: not submitted work, a work area's words or a check note, which are other records.
-      promises: promiseRecord(
-        data.updates.filter(
-          (update) => !update.claim && !update.workArea && !update.checkNote,
-        ),
-        founder,
-      ),
-      facts: recordFacts({ complete: data.complete }),
+      goals: projectGoals(goals, founder),
+      promises: promiseRecord(updates, founder),
+      // On a cut read a promise may only be older than what was read, so nothing is called removed.
+      orphans: complete ? orphanAnswers(updates, founder) : [],
+      removed,
+      facts: recordFacts({ complete }),
     };
   }, [data, founder]);
   return {

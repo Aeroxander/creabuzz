@@ -1,10 +1,14 @@
 /**
- * A project's record: what it promised in its updates and what came of each promise, and the goals it reached, missed
- * or changed. Newest first, with plain totals.
+ * A project's promises and goals: what it promised in its updates and what came of each promise, and the goals it
+ * reached, missed or changed. Newest first, with plain totals. (Not the "Track record" tab, which is about work.)
  *
- * Misses stay. There is no score here and nothing is compared with another project. When the project's records could
- * not all be read, what was read is shown and the totals are left unsaid, with a way to read again; when they could not
- * be read at all, the card says so. It never shows an empty record for a read that did not finish.
+ * There is no score here and nothing is compared with another project. When the founder's records could not all be
+ * read, what was read is shown and the totals are left unsaid, with a way to read again; when they could not be read
+ * at all, the card says so. It never shows an empty list for a read that did not finish.
+ *
+ * A founder can delete their own update records, and the server then stops serving them: this page cannot prevent
+ * that. So it does not claim nothing was removed. It says how many update records the founder has deleted, and shows
+ * answers left behind by a promise that is gone.
  */
 
 import { useMemo, useState } from "react";
@@ -20,11 +24,13 @@ import {
   goalTotalsLine,
 } from "../lib/goals";
 import {
+  MARK_LABEL,
   PROMISE_STATE_LABEL,
   type PromiseState,
   promiseTotals,
   promiseTotalsLine,
 } from "../lib/promises";
+import { removedLine } from "../lib/removed-records";
 import type { Launch } from "../models";
 import { useProjectRecord } from "../use-project-record";
 
@@ -84,7 +90,19 @@ export function ProjectRecordCard({
               ? "For the next update"
               : "A later update did not say"
             : `Promised ${day(entry.promisedAt)}`,
-          ...(entry.note ? [entry.note] : []),
+          // Answers that disagree are all shown; the worse one is the one counted.
+          ...(entry.conflict
+            ? [
+                `Answered more than once: ${entry.answers
+                  .map(
+                    (answer) =>
+                      `${MARK_LABEL[answer.state]} on ${day(answer.at)}${answer.note ? ` (${answer.note})` : ""}`,
+                  )
+                  .join(", ")}. The worse answer is counted`,
+              ]
+            : entry.note
+              ? [entry.note]
+              : []),
         ].join(". "),
       })),
       ...goalRecordEntries(goals).map((entry) => ({
@@ -101,24 +119,47 @@ export function ProjectRecordCard({
           ...(entry.reason ? [`Why: ${entry.reason}`] : []),
         ].join(". "),
       })),
+      ...record.orphans.map((orphan) => ({
+        key: `orphan-${orphan.promiseId}-${orphan.at}`,
+        at: orphan.at,
+        tone: "warning" as const,
+        label: "Promise removed",
+        text: `Answered "${MARK_LABEL[orphan.state]}"${orphan.note ? ` (${orphan.note})` : ""}`,
+        detail:
+          "The update that made this promise was removed, so what was promised can't be shown",
+      })),
     ].sort((a, b) => b.at - a.at || (a.key < b.key ? -1 : 1));
     return {
       lines,
+      removed: removedLine(record.removed, day),
       promises: promiseTotalsLine(promiseTotals(record.promises)),
       goals: goalTotalsLine(goalTotals(goals)),
     };
   }, [record]);
 
   if (!record || !view) {
-    if (!failed) return null;
+    // Not read yet: the card holds its place and says so. Not readable: said, with a way to read again.
+    if (!failed)
+      return (
+        <section
+          aria-busy="true"
+          aria-label="Promises and goals"
+          className="glass rounded-2xl border p-4"
+          data-testid="project-record"
+        >
+          <p className="text-sm text-muted-foreground">
+            Reading promises and goals…
+          </p>
+        </section>
+      );
     return (
       <section
-        aria-label="Record"
+        aria-label="Promises and goals"
         className="glass rounded-2xl border p-4"
         data-testid="project-record"
       >
         <p className="text-sm" data-testid="record-read-failed" role="alert">
-          Couldn't read this project's record.{" "}
+          Couldn't read this project's promises and goals.{" "}
           <Button onClick={retry} size="sm" type="button" variant="outline">
             Try again
           </Button>
@@ -134,7 +175,7 @@ export function ProjectRecordCard({
       data-testid="project-record"
     >
       <h2 className="text-sm font-bold" id="project-record-heading">
-        Record
+        Promises and goals
       </h2>
       <p className="text-xs text-muted-foreground">
         What this project said it would do, and what came of it.
@@ -154,12 +195,21 @@ export function ProjectRecordCard({
       ) : (
         <p className="mt-2 text-sm" data-testid="record-totals-unknown">
           This project has more records than could be read here, so its totals
-          can't be worked out. The newest part of its record is below.{" "}
+          can't be worked out. The newest of them are below.{" "}
           <Button onClick={retry} size="sm" type="button" variant="outline">
             Try again
           </Button>
         </p>
       )}
+      {view.removed ? (
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          data-testid="record-removed"
+        >
+          {view.removed} A removed record is not counted here. This counts all
+          of the founder's projects, and reopening a help request counts too.
+        </p>
+      ) : null}
       {stale ? (
         <p className="mt-2 text-sm" role="status">
           Couldn't check for newer records.{" "}
@@ -175,8 +225,8 @@ export function ProjectRecordCard({
             data-testid="record-empty"
           >
             {isFounder
-              ? "Nothing on the record yet. Each line you write under What's next in an update becomes a promise, and your next update says what came of it."
-              : "Nothing on the record yet. It fills in as the project posts updates."}
+              ? "No promises yet. Each line you write under What's next in an update becomes a promise, and your next update says what came of it."
+              : "No promises yet. They show here as the project posts updates."}
           </p>
         ) : null
       ) : (
@@ -210,7 +260,7 @@ export function ProjectRecordCard({
           type="button"
           variant="outline"
         >
-          Show more of the record
+          Show more
         </Button>
       ) : null}
     </section>

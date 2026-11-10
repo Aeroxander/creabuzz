@@ -5,7 +5,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { isIdea } from "@/features/launchpad/lib/idea";
-import { keptFromIdea } from "./lib/from-idea";
+import { carryOnIssue, recordCarryingOver } from "./lib/from-idea";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { onPasskeySessionChange } from "@/features/identity/lib/passkey-identity";
@@ -34,7 +34,8 @@ import {
 import { useActingAccount } from "@/features/launchpad/use-acting-account";
 import {
   useCreateLaunch,
-  useLaunches,
+  fetchOwnRecord,
+  useOwnLaunchIds,
   useRemovedLaunchIds,
 } from "@/features/launchpad/use-launches";
 import {
@@ -69,6 +70,7 @@ import {
   CALL_SUMMONER,
   type ContributorDraft,
   contributorSalt,
+  newAttempt,
   contributorTerms,
   daoMadeByKit,
   wordAddress,
@@ -98,11 +100,12 @@ function storeJob(key: string, job: ContributorJob | null) {
 export function useContributorStart() {
   const me = existingUserPubkey();
   const wallet = useActingAccount();
-  const launches = useLaunches();
   const removed = useRemovedLaunchIds(me);
-  // Read when the record is published, which may be long after the run began.
-  const launchesRef = useRef(launches.data);
-  launchesRef.current = launches.data;
+  // The founder's own project ids, read by author to the end: the list of every project is cut at its newest records,
+  // so an older project of theirs may be missing from it, and a new one must not take its id.
+  const ownIds = useOwnLaunchIds(me);
+  // Why the last press of Start made nothing (a project that could not carry on, or a read that failed).
+  const [startError, setStartError] = useState<string | null>(null);
   const create = useCreateLaunch().mutateAsync;
   // A passkey unlocked anywhere (here, the profile menu, the unlock overlay) changes what this page can do.
   const [, setSession] = useState(0);
@@ -159,9 +162,9 @@ export function useContributorStart() {
   const [failureDetails, setFailureDetails] = useState<string | null>(null);
 
   const projects: "reading" | "failed" | "read" =
-    launches.isError || removed.isError
+    ownIds.isError || removed.isError
       ? "failed"
-      : launches.isSuccess && removed.isSuccess
+      : ownIds.isSuccess && removed.isSuccess
         ? "read"
         : "reading";
   const gate = useMemo<ContributorGate>(
@@ -196,9 +199,9 @@ export function useContributorStart() {
 
   /** Read the founder's projects again, after a failed read or an unlock. */
   const rereadProjects = useCallback(() => {
-    void launches.refetch();
+    void ownIds.refetch();
     void removed.refetch();
-  }, [launches.refetch, removed.refetch]);
+  }, [ownIds.refetch, removed.refetch]);
 
   const run = useCallback(
     (start: ContributorJob) => {
@@ -252,23 +255,20 @@ export function useContributorStart() {
           // not stop the start, and the team opens it later from the Discussion tab.
           publish: async (input) => {
             assertJobCommunity(boardScope, relayWsUrl());
-            // A project that carries on the founder's own project without Shares keeps that one's cover, topic,
-            // story and rooms: the record is published again over the same id.
-            const before = (launchesRef.current ?? []).find(
-              (launch) =>
-                launch.record.author === start.author &&
-                launch.record.id === input.id,
+            // The record is published over whatever the founder has under this id, so it starts from that record as
+            // the server has it now: its cover, topic, story and rooms are kept. Read here, directly, never from a
+            // remembered list (which may be old, cut short, or not read yet). A try that already published once reads
+            // its own record back, so trying again keeps the board it made. If it cannot be read, nothing is
+            // published: publishing blind would wipe those parts.
+            const record = await recordCarryingOver(input, () =>
+              fetchOwnRecord(start.author, input.id),
             );
-            const kept =
-              before && isIdea(before.record)
-                ? keptFromIdea(before.record)
-                : {};
             await publishWithProjectBoard({
               scope: boardScope,
               launchName: input.name,
-              chat: input.chat ?? kept.chat ?? EMPTY_CHAT,
+              chat: record.chat ?? EMPTY_CHAT,
               save: async (chat) => {
-                await create({ ...kept, ...input, chat });
+                await create({ ...record, chat });
               },
             });
           },
@@ -298,34 +298,63 @@ export function useContributorStart() {
    * founder's own project without Shares: the launch keeps that id, so the project carries on as one.
    */
   const start = useCallback(
-    (draft: ContributorDraft, fromBoard?: string, fromIdea?: string) => {
+    async (
+      draft: ContributorDraft,
+      fromBoard?: string,
+      fromIdea?: { id: string; name: string },
+    ) => {
       if (!gate.ok || !network.data || !me || !wallet.address) return;
+      if (!ownIds.data || !removed.data) return;
+      setStartError(null);
       const { chainId, kit, expectedSummoner, currency, weekly } = network.data;
       const terms = contributorTerms(draft, wallet.address);
-      // Never a removed project's id: the DAO's address follows from it (the gate waits until both lists are read).
+      if (fromIdea) {
+        // Asked of the server now, by id: not of a list that may not hold the project.
+        let own: Awaited<ReturnType<typeof fetchOwnRecord>>;
+        try {
+          own = await fetchOwnRecord(me, fromIdea.id);
+        } catch {
+          setStartError(
+            `Couldn't read ${fromIdea.name} from the server, so Shares can't be set up for it yet. Nothing was made. Try again.`,
+          );
+          return;
+        }
+        const issue = carryOnIssue({
+          name: fromIdea.name,
+          own: own ? { isIdea: isIdea(own) } : null,
+          everRemoved: removed.data.includes(fromIdea.id),
+        });
+        if (issue) {
+          setStartError(issue);
+          return;
+        }
+      }
+      // Never an id the founder has or ever removed. The one kept on purpose is the project being carried on.
       const launchId = freshLaunchId({
         name: terms.name,
         fromBoard,
-        // Only the founder's own project that has no Shares yet is carried on under its id.
-        fromIdea: (launches.data ?? []).some(
-          (launch) =>
-            launch.record.author === me &&
-            launch.record.id === fromIdea &&
-            isIdea(launch.record),
-        )
-          ? fromIdea
-          : undefined,
-        mine: (launches.data ?? [])
-          .filter((launch) => launch.record.author === me)
-          .map((launch) => launch.record.id),
-        removed: removed.data ?? [],
+        fromIdea: fromIdea?.id,
+        mine: fromIdea
+          ? [...new Set([...ownIds.data, fromIdea.id])]
+          : ownIds.data,
+        removed: removed.data,
       });
+      // A project asked to carry on keeps its id, or nothing is made: it never becomes a second project.
+      if (fromIdea && launchId !== fromIdea.id) {
+        setStartError(
+          `Shares can't be set up for ${fromIdea.name} under its own id. Nothing was made. Try again.`,
+        );
+        return;
+      }
+      // Each try has its own part of the salt, so no two tries at one project share a DAO address.
+      const attempt = newAttempt();
       run({
         version: 3,
         author: me,
         relay: relayWsUrl(),
         launchId,
-        salt: contributorSalt(me, launchId),
+        salt: contributorSalt(me, launchId, attempt),
+        attempt,
         chainId,
         kit: kit as string,
         expectedSummoner,
@@ -339,15 +368,7 @@ export function useContributorStart() {
         recorded: false,
       });
     },
-    [
-      gate.ok,
-      network.data,
-      me,
-      wallet.address,
-      launches.data,
-      removed.data,
-      run,
-    ],
+    [gate.ok, network.data, me, wallet.address, ownIds.data, removed.data, run],
   );
 
   /** Carry on with a job from this visit or an earlier one. */
@@ -387,6 +408,8 @@ export function useContributorStart() {
     resume,
     clear,
     failureDetails,
+    /** Why the last press of Start made nothing, in plain words, or null. */
+    startError,
     rereadProjects,
     /** This browser's passkey identity is locked: nothing can be published under the founder's name until it is unlocked. */
     locked: me !== null && signingBlocked !== null,

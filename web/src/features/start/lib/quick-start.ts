@@ -14,7 +14,7 @@
  */
 
 import { ideaIssue } from "../../launchpad/lib/idea.ts";
-import { goalIssue, type GoalInput } from "../../launchpad/lib/goals.ts";
+import { type GoalInput, goalProblem } from "../../launchpad/lib/goals.ts";
 
 export interface QuickStartDraft {
   name: string;
@@ -45,15 +45,65 @@ export function quickStartGoal(
   };
 }
 
-/** Why the project cannot be started yet, or null when it can. The first thing missing, in the form's order. */
-export function quickStartIssue(draft: QuickStartDraft): string | null {
+/** Why the project cannot be started yet and which answer it is about, or null when it can: the first in the form's order. */
+export function quickStartProblem(
+  draft: QuickStartDraft,
+): { field: keyof QuickStartDraft; message: string } | null {
   const project = ideaIssue({ name: draft.name, pitch: draft.pitch });
-  if (project)
-    // The shared check speaks of an idea; here it is a project.
-    return project === "Give your idea a name."
-      ? "Give your project a name."
-      : project;
-  return goalIssue(quickStartGoal(draft, "g"));
+  if (project) {
+    // The shared check speaks of an idea; here it is a project. It checks the name first, then the sentence.
+    const aboutName = ideaIssue({
+      name: draft.name,
+      pitch: "long enough to pass",
+    });
+    return aboutName
+      ? {
+          field: "name",
+          message:
+            aboutName === "Give your idea a name."
+              ? "Give your project a name."
+              : aboutName,
+        }
+      : { field: "pitch", message: project };
+  }
+  const goal = goalProblem(quickStartGoal(draft, "g"));
+  return goal
+    ? { field: goal.field === "how" ? "how" : "goal", message: goal.message }
+    : null;
+}
+
+/** {@link quickStartProblem}'s words alone. */
+export function quickStartIssue(draft: QuickStartDraft): string | null {
+  return quickStartProblem(draft)?.message ?? null;
+}
+
+/**
+ * Whether something just published can be read back, asked a few times with a pause between. A server may take a
+ * moment to show a new record; the page that opens next should find it there. Bounded: after the last try it answers
+ * false and the caller says so, instead of waiting for ever. A read that fails counts as "not yet".
+ */
+export async function readableSoon(
+  read: () => Promise<boolean>,
+  options: {
+    tries?: number;
+    waitMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<boolean> {
+  const tries = options.tries ?? 5;
+  const waitMs = options.waitMs ?? 600;
+  const sleep =
+    options.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    try {
+      if (await read()) return true;
+    } catch {
+      // Not readable yet.
+    }
+    if (attempt < tries - 1) await sleep(waitMs);
+  }
+  return false;
 }
 
 const KEY = "creaton.start.quick";
@@ -100,10 +150,15 @@ export function saveQuickStart(
 
 const MADE_KEY = "creaton.start.quick.made";
 
-/** The project this visit made whose goal is still to be saved. */
+/** The project this visit made whose goal is still to be saved, and the id that goal will have. */
 export interface MadeProject {
   id: string;
   author: string;
+  /**
+   * The goal's id, fixed when the project was made. A retry, even after a reload, sends the same goal again; with a
+   * new id each time, a send whose answer was lost would leave the project with two main goals.
+   */
+  goalId: string;
 }
 
 /**
@@ -117,9 +172,13 @@ export function loadMadeProject(
   try {
     const value: unknown = JSON.parse(store?.getItem(MADE_KEY) ?? "null");
     if (!value || typeof value !== "object" || me === null) return null;
-    const { id, author } = value as Record<string, unknown>;
-    return typeof id === "string" && id !== "" && author === me
-      ? { id, author: me }
+    const { id, author, goalId } = value as Record<string, unknown>;
+    return typeof id === "string" &&
+      id !== "" &&
+      author === me &&
+      typeof goalId === "string" &&
+      goalId !== ""
+      ? { id, author: me, goalId }
       : null;
   } catch {
     return null;

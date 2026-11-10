@@ -29,7 +29,9 @@ const AREA_CLASS =
  *
  * Each line of "What's next" is a promise for the next update. So the dialog first lists the promises earlier updates
  * made that have no answer yet, and asks for each: done, not done or changed, with an optional short note. Answering
- * is not forced: a promise left without an answer shows on the record as not answered, and is asked about again.
+ * is not forced ("Not answering yet" is the choice each starts on, and the way to take a tapped answer back before
+ * publishing): a promise left without an answer shows as not answered, and is asked about again. Once published an
+ * answer stays, and the dialog says so.
  */
 export function PostUpdateDialog({
   isPublishing,
@@ -132,7 +134,9 @@ export function PostUpdateDialog({
               What you said last time
             </h3>
             <p className="text-xs text-muted-foreground">
-              Say what came of each. It goes on the project's record.
+              Say what came of each. Everyone can read your answers, and an
+              answer can't be changed after you publish. If you are not sure
+              yet, leave it for a later update.
             </p>
             <div className="mt-2 flex flex-col gap-3">
               {due.map((promise) => {
@@ -147,6 +151,22 @@ export function PostUpdateDialog({
                       {promise.text}
                     </legend>
                     <div className="mt-1 flex flex-wrap gap-3">
+                      {/* The way back: a tapped answer can be taken off again before publishing. */}
+                      <label className="flex items-center gap-1.5 text-sm">
+                        <input
+                          checked={!mark}
+                          name={`promise-${promise.id}`}
+                          onChange={() =>
+                            setMarks((was) => {
+                              const { [promise.id]: _, ...rest } = was;
+                              return rest;
+                            })
+                          }
+                          type="radio"
+                          value=""
+                        />
+                        Not answering yet
+                      </label>
                       {MARK_STATES.map((state) => (
                         <label
                           className="flex items-center gap-1.5 text-sm"

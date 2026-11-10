@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { launchCoord } from "@/features/feed/ui/LaunchVoteCard";
 import { PostComposer } from "@/features/social/ui/PostComposer";
 import { useLaunchNotes } from "@/features/feed/use-feed";
+import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
@@ -149,9 +150,9 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
         ) : null}
         <Step done={false} title="Set up Shares for people who help">
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Shares are votes in the project. You choose who reviews work, and
-            the project awards Shares for work the reviewers accept. It stays
-            the same project, with its goal, updates and record.
+            Set up the work and who reviews it. People who help get Shares,
+            which are votes in the project, when the project votes to award
+            them. It stays the same project, with its goal and updates.
           </p>
           <Button
             asChild
@@ -162,7 +163,8 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
           >
             <Link
               onClick={() =>
-                handOffIdea(sessionStorage, {
+                handOffIdea(localStorage, {
+                  server: relayWsUrl(),
                   id: record.id,
                   author: record.author,
                   name: record.name,

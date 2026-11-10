@@ -120,6 +120,10 @@ function seedUpdate(
         : []),
       ...promises.map((text, i) => ["promise", String(i), text]),
       ...marks,
+      // As the dialog writes it when an update answers no prompt.
+      ...(promises.length + marks.length === 0
+        ? [["update-kind", "weekly"]]
+        : []),
     ],
     at,
   );
@@ -315,7 +319,7 @@ test("an update's next steps are promises; the next update answers each, and eve
   // Nothing promised yet: the record says how it fills.
   const record = page.getByTestId("project-record");
   await expect(record.getByTestId("record-empty")).toContainText(
-    "Nothing on the record yet.",
+    "No promises yet.",
   );
 
   // First update: three next steps, one per line.
@@ -856,9 +860,12 @@ test("when the project's records can't be read, the goal and the record say so w
   await page.goto(PROJECT);
   const record = page.getByTestId("project-record");
   const failed = record.getByTestId("record-read-failed");
-  await expect(failed).toContainText("Couldn't read this project's record.", {
-    timeout: 60_000,
-  });
+  await expect(failed).toContainText(
+    "Couldn't read this project's promises and goals.",
+    {
+      timeout: 60_000,
+    },
+  );
   await expect(failed).toHaveAttribute("role", "alert");
   // Never "nothing on the record", never "no goal": the miss is not hidden behind a failed read.
   await expect(record.getByTestId("record-empty")).toHaveCount(0);
@@ -886,17 +893,15 @@ test("when a read was cut short, the newest part of the record shows and no tota
   // Set long ago, behind more records than a read can walk past.
   seedGoal(relay, now() - 90 * DAY, { text: "An old goal" });
   seedUpdate(relay, now() - 80 * DAY, "An old week", ["An old promise"]);
-  // A full page of records in one second cannot be paged past by time, so the read stops there and says so.
+  // A full page of the founder's own records in one second cannot be paged past by time, so the read of the founder's
+  // records stops there and says so.
   for (let i = 0; i < 500; i += 1)
     relay.seed(
       event(
         47003,
-        VISITOR,
-        { title: "Offer to help", body: "" },
-        [
-          ["a", COORD],
-          ["help-offer", "f".repeat(64)],
-        ],
+        FOUNDER,
+        { title: "Note", body: "" },
+        [["a", COORD]],
         now() - 20 * DAY,
       ),
     );
@@ -926,6 +931,372 @@ test("when a read was cut short, the newest part of the record shows and no tota
     "its goal can't be shown",
   );
   await expect(page.getByTestId("goal-missing")).toHaveCount(0);
+});
+
+test("other people's records about a project cannot hide its goal or its totals, however many they post", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay, now() - 3600);
+  seedGoal(relay, now() - 90 * DAY, { text: "An old goal" });
+  const first = seedUpdate(relay, now() - 80 * DAY, "Week one", [
+    "Ship sign-up",
+  ]);
+  seedUpdate(
+    relay,
+    now() - 70 * DAY,
+    "Week two",
+    [],
+    [["promise-mark", `${first.id}:0`, "not-done", "late"]],
+  );
+  // A stranger posts a page of records naming the project, all newer and all in one second: the read of everyone's
+  // records cannot get past them. The founder's own records are read by author, so they are all still read.
+  for (let i = 0; i < 500; i += 1)
+    relay.seed(
+      event(
+        47003,
+        VISITOR,
+        { title: "Offer to help", body: "" },
+        [
+          ["a", COORD],
+          ["help-offer", "f".repeat(64)],
+        ],
+        now() - 20 * DAY,
+      ),
+    );
+  await install(page, relay, VISITOR_KEY);
+  await page.goto(PROJECT);
+  await expect(page.getByTestId("goal-text")).toHaveText("An old goal", {
+    timeout: 30_000,
+  });
+  const record = page.getByTestId("project-record");
+  await expect(record.getByTestId("record-promise-totals")).toHaveText(
+    "0 kept, 1 missed, 0 changed",
+  );
+  await expect(record.getByTestId("record-totals-unknown")).toHaveCount(0);
+  await expect(page.getByTestId("goal-unknown")).toHaveCount(0);
+});
+
+test("an older project that has dropped out of the list of every project still opens by its link", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  // Sixty days old, with more than a list's worth of newer launchpad records from other projects on the server.
+  seedProject(relay);
+  seedGoal(relay, now() - 50 * DAY, { text: "A first version ten people use" });
+  const elsewhere = `37001:${VISITOR}:other`;
+  for (let i = 0; i < 520; i += 1)
+    relay.seed(
+      event(
+        47003,
+        VISITOR,
+        { title: "Elsewhere", body: "" },
+        [["a", elsewhere]],
+        now() - 3600 - i,
+      ),
+    );
+  await install(page, relay, VISITOR_KEY);
+  await page.goto(PROJECT);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Nebula");
+  await expect(page.getByTestId("goal-text")).toHaveText(
+    "A first version ten people use",
+  );
+  // A link to a project the server does not have still says so.
+  await page.goto(`/launchpad/no-such-project?author=${FOUNDER}`);
+  await expect(page.getByText("This project wasn't found.")).toBeVisible();
+});
+
+test("a new project never takes the id of an older one of the founder's that the list no longer holds", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  // The founder's own older project "nebula", pushed out of the list of every project by newer records.
+  seedProject(relay);
+  const elsewhere = `37001:${VISITOR}:other`;
+  for (let i = 0; i < 520; i += 1)
+    relay.seed(
+      event(
+        47003,
+        VISITOR,
+        { title: "Elsewhere", body: "" },
+        [["a", elsewhere]],
+        now() - 3600 - i,
+      ),
+    );
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto("/start");
+  const form = page.getByTestId("quick-start");
+  await form.getByLabel("Project name").fill("Nebula");
+  await form
+    .getByLabel("What is it, in one sentence?")
+    .fill("A second project with the same name.");
+  await form.getByLabel("The goal").fill("Something else entirely");
+  await form.getByLabel("How we'll know").fill("It is plain to see");
+  await form.getByRole("button", { name: "Start the project" }).click();
+  // A new id of its own: the older project's record is still there, unchanged.
+  await expect(page).toHaveURL(/\/launchpad\/nebula-[0-9a-z]{4}\?/);
+  const mine = records(relay, 37001);
+  expect(mine).toHaveLength(2);
+  expect(mine.map((e) => e.tags.find((t) => t[0] === "d")?.[1]).sort()[0]).toBe(
+    "nebula",
+  );
+  expect(
+    JSON.parse(
+      mine.find((e) => e.tags.some((t) => t[0] === "d" && t[1] === "nebula"))
+        ?.content ?? "{}",
+    ).pitch,
+  ).toBe("A map of the night sky for everyone.");
+});
+
+test("when the founder's own projects can't be read, nothing is started", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  let failing = true;
+  // Only the read of the founder's own project records is dropped.
+  relay.setClosingSockets(
+    (filter) =>
+      failing &&
+      Array.isArray(filter?.kinds) &&
+      (filter.kinds as number[]).includes(37001) &&
+      Array.isArray(filter?.authors) &&
+      !Array.isArray(filter?.["#d"]),
+  );
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto("/start");
+  const form = page.getByTestId("quick-start");
+  const failed = form.getByTestId("quick-lists-failed");
+  await expect(failed).toContainText("Couldn't check your earlier projects", {
+    timeout: 60_000,
+  });
+  await expect(
+    form.getByRole("button", { name: "Start the project" }),
+  ).toBeDisabled();
+  expect(records(relay, 37001)).toHaveLength(0);
+  failing = false;
+  await failed.getByRole("button", { name: "Try again" }).click();
+  await expect(
+    form.getByRole("button", { name: "Start the project" }),
+  ).toBeEnabled({ timeout: 30_000 });
+});
+
+test("a record the founder removed leaves a trace: the count of removals, and an answer left without its promise", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  seedProject(relay);
+  const first = seedUpdate(relay, now() - 14 * DAY, "Week one", [
+    "Ship sign-up",
+  ]);
+  seedUpdate(
+    relay,
+    now() - 7 * DAY,
+    "Week two",
+    [],
+    [["promise-mark", `${first.id}:0`, "not-done", "late"]],
+  );
+  await install(page, relay, VISITOR_KEY);
+  await page.goto(PROJECT);
+  const record = page.getByTestId("project-record");
+  await expect(record.getByTestId("record-promise-totals")).toHaveText(
+    "0 kept, 1 missed, 0 changed",
+  );
+  await expect(record.getByTestId("record-removed")).toHaveCount(0);
+
+  // The founder deletes the update that made the promise: the server stops serving it.
+  const at = now() - DAY;
+  relay.events.splice(
+    relay.events.findIndex((e) => e.id === first.id),
+    1,
+  );
+  relay.seed(
+    event(
+      5,
+      FOUNDER,
+      "",
+      [
+        ["e", first.id],
+        ["k", "47003"],
+      ],
+      at,
+    ),
+  );
+  await page.reload();
+  // The miss is no longer counted, and the page does not pretend nothing happened.
+  await expect(record.getByTestId("record-removed")).toContainText(
+    `The founder has removed 1 update record, the last on ${new Date(at * 1000).toLocaleDateString()}.`,
+  );
+  const line = record.getByTestId("record-line");
+  await expect(line).toContainText("Promise removed");
+  await expect(line).toContainText('Answered "Not done" (late)');
+  await expect(record.getByTestId("record-promise-totals")).toHaveCount(0);
+});
+
+test("answers that disagree are both shown and the worse one is counted; a note that is not an update changes nothing", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  const first = seedUpdate(relay, now() - 21 * DAY, "Week one", [
+    "Ship sign-up",
+    "Write the guide",
+  ]);
+  seedUpdate(
+    relay,
+    now() - 14 * DAY,
+    "Week two",
+    [],
+    [["promise-mark", `${first.id}:0`, "not-done", "late"]],
+  );
+  // Dated EARLIER than the miss, saying done: a date the signer picks does not decide which answer counts.
+  seedUpdate(
+    relay,
+    now() - 15 * DAY,
+    "Week two, again",
+    [],
+    [["promise-mark", `${first.id}:0`, "done", ""]],
+  );
+  const later = seedUpdate(relay, now() - 7 * DAY, "Week three", [
+    "Invite ten people",
+  ]);
+  // A record of the same kind the founder signs for another reason (a review note): not an update.
+  relay.seed(
+    event(
+      47003,
+      FOUNDER,
+      { title: "Turned down", body: "Not this time." },
+      [["a", COORD]],
+      now() - DAY,
+    ),
+  );
+  await install(page, relay, VISITOR_KEY);
+  await page.goto(PROJECT);
+  const record = page.getByTestId("project-record");
+  const lines = record.getByTestId("record-line");
+  const disputed = lines.filter({ hasText: "Ship sign-up" });
+  await expect(disputed).toContainText("Missed");
+  await expect(disputed).toContainText("Answered more than once");
+  await expect(disputed).toContainText("Not done on");
+  await expect(disputed).toContainText("Done on");
+  await expect(disputed).toContainText("The worse answer is counted");
+  // "Write the guide" was passed over by a later weekly update; "Invite ten people" is still for the next one, and the
+  // review note after it did not turn it into "not answered".
+  await expect(record.getByTestId("record-promise-totals")).toHaveText(
+    "0 kept, 1 missed, 0 changed, 1 not answered",
+  );
+  await expect(lines.filter({ hasText: "Invite ten people" })).toContainText(
+    "For the next update",
+  );
+  expect(later.id).toBeTruthy();
+});
+
+test("an answer can be taken back before publishing, and the dialog says it cannot be changed after", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  const first = seedUpdate(relay, now() - 7 * DAY, "Week one", [
+    "Ship sign-up",
+  ]);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  await page.getByRole("button", { name: "Post update" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Post update" });
+  await expect(dialog.getByTestId("update-due")).toContainText(
+    "an answer can't be changed after you publish",
+  );
+  const group = dialog.getByRole("group", { name: "Ship sign-up" });
+  // It starts on no answer; a tapped answer can be put back.
+  await expect(
+    group.getByRole("radio", { name: "Not answering yet" }),
+  ).toBeChecked();
+  await group.getByRole("radio", { name: "Not done" }).check();
+  await group.getByRole("radio", { name: "Not answering yet" }).check();
+  await expect(dialog.getByLabel("Short note for: Ship sign-up")).toHaveCount(
+    0,
+  );
+  await dialog.getByLabel("Title").fill("Week two");
+  await dialog.getByLabel("What happened this week").fill("Still on it.");
+  await dialog.getByRole("button", { name: "Publish update" }).click();
+  await expect(dialog).toHaveCount(0);
+  // Nothing was answered: no answer tag was written, and the promise now reads as not answered.
+  expect(tagged(relay, "promise-mark")).toHaveLength(0);
+  await expect(
+    page.getByTestId("project-record").getByTestId("record-line"),
+  ).toContainText("Not answered");
+  expect(first.id).toBeTruthy();
+});
+
+test("the card never links to an Updates tab that is not there: posts marked as updates count, and the tab lists them", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  // Two updates in the other form an update takes: the founder's own posts, marked as this project's updates.
+  for (const [i, words] of [
+    "First marked post",
+    "Second marked post",
+  ].entries())
+    relay.seed(
+      event(
+        1,
+        FOUNDER,
+        words,
+        [
+          ["a", COORD],
+          ["l", "launch-update", "creaton.launch"],
+        ],
+        now() - (2 - i) * DAY,
+      ),
+    );
+  await install(page, relay, VISITOR_KEY);
+  await page.goto(PROJECT);
+  const card = page.getByTestId("project-update-card");
+  await expect(card.getByTestId("latest-update")).toContainText(
+    "Second marked post",
+  );
+  const tab = page.getByRole("tab", { name: "Updates (2)" });
+  await expect(tab).toBeVisible();
+  await card.getByRole("button", { name: "See all updates" }).click();
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("First marked post")).toBeVisible();
+  await expect(page.getByText("Second marked post")).toBeVisible();
+  // And by its link.
+  await page.goto(`${PROJECT}&tab=updates`);
+  await expect(page.getByRole("tab", { name: "Updates (2)" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("a problem with an answer is said beside it, and the keyboard goes to that answer", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto("/start");
+  const form = page.getByTestId("quick-start");
+  await form.getByLabel("Project name").fill("Comet");
+  await form
+    .getByLabel("What is it, in one sentence?")
+    .fill("A tiny telescope anyone can build.");
+  await form.getByRole("button", { name: "Start the project" }).click();
+  const goalField = form.getByLabel("The goal");
+  await expect(goalField).toBeFocused();
+  await expect(goalField).toHaveAttribute("aria-invalid", "true");
+  await expect(goalField).toHaveAccessibleDescription("Say what the goal is.");
+
+  await page.goto(PROJECT);
+  await page.getByRole("button", { name: "Set your goal" }).click();
+  const dialog = page.getByRole("dialog", { name: "Set your goal" });
+  await dialog.getByLabel("The goal").fill("Reach a hundred readers");
+  await dialog.getByRole("button", { name: "Save goal" }).click();
+  const how = dialog.getByLabel("How we'll know");
+  await expect(how).toBeFocused();
+  await expect(how).toHaveAccessibleDescription(
+    "Say how we'll know it was reached.",
+  );
 });
 
 test("at 390px Start, the project page and its dialogs fit with no sideways scroll", async ({

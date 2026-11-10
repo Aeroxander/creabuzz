@@ -497,8 +497,6 @@ test("the launch page's follow star is saved, not forgotten on navigation", asyn
     .toEqual([["a", COORD]]);
   await page.getByTestId("app-nav-home").click();
   await page.goBack();
-  await expect(page.getByTestId("launch-follow")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  // The button says how things stand in its own words (one signal, not a pressed state as well).
+  await expect(page.getByTestId("launch-follow")).toHaveText("Following");
 });

@@ -46,6 +46,24 @@ const TAG_PART = "update-part";
 const TAG_HELP = "help-needed";
 const TAG_HELP_SIZE = "help-size";
 const TAG_HELP_TIME = "help-time";
+/** Marks an update written freely (no prompts, promises or answers) as a weekly update all the same. */
+const TAG_KIND = "update-kind";
+
+/**
+ * Whether an update record is a weekly update: it answers a prompt, makes or answers a promise, or carries the
+ * dialog's own mark. Other records of the same kind (a review note, submitted work, a goal) are not.
+ */
+export function isWeeklyUpdateTags(
+  tags: readonly (readonly string[])[],
+): boolean {
+  return tags.some(
+    (tag) =>
+      tag[0] === TAG_PART ||
+      tag[0] === "promise" ||
+      tag[0] === "promise-mark" ||
+      (tag[0] === TAG_KIND && tag[1] === "weekly"),
+  );
+}
 
 /** What the founder asked for: the words, a size they picked and, when they gave one, a rough time. */
 export interface HelpAsk {
@@ -135,6 +153,8 @@ export function updateEvent(draft: UpdateDraft): {
     tags.push([TAG_HELP, helpText], [TAG_HELP_SIZE, size]);
     if (helpTime) tags.push([TAG_HELP_TIME, helpTime]);
   }
+  // Written freely: nothing above says it is a weekly update, so it says so itself.
+  if (!isWeeklyUpdateTags(tags)) tags.push([TAG_KIND, "weekly"]);
   return {
     content: {
       title: clip(draft.title, UPDATE_LIMITS.title),

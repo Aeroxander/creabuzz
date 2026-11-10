@@ -30,21 +30,53 @@ export function evidenceQueryFilter(launchCoordinate: string): NostrFilter {
 export const EVIDENCE_MAX_PAGES = 10;
 
 /**
+ * The filter for one author's update records, whatever project they are about. Naming the author is what the server
+ * narrows by before it applies its limit, so nobody else's records can crowd these out of a page; the caller keeps the
+ * ones about its project.
+ */
+export function authorUpdatesFilter(author: string): NostrFilter {
+  return {
+    kinds: [KIND_LAUNCH_UPDATE],
+    authors: [author],
+    limit: EVIDENCE_QUERY_LIMIT,
+  };
+}
+
+/**
  * Read all of a launch's updates a page at a time, newest first, each page starting where the last stopped. `complete`
  * is true only when the history was read to its end. It is false when the page bound was reached, or when a page could
  * not be walked past (a whole page of updates in one second cannot be paged by time): the caller must then say the
  * evidence it found may not be all there is.
  */
-export async function readEvidenceEvents<
+export function readEvidenceEvents<
   E extends { id: string; created_at: number },
 >(
   fetchPage: (filter: NostrFilter) => Promise<readonly E[]>,
   launchCoordinate: string,
 ): Promise<{ events: E[]; complete: boolean }> {
+  return readPaged(fetchPage, () => evidenceQueryFilter(launchCoordinate));
+}
+
+/**
+ * Read every update record one author signed, a page at a time, the same way. Used for a project's goals and its
+ * founder's promises: read by author, their completeness cannot be taken away by other people's records about the
+ * project, however many those are.
+ */
+export function readAuthorUpdates<E extends { id: string; created_at: number }>(
+  fetchPage: (filter: NostrFilter) => Promise<readonly E[]>,
+  author: string,
+): Promise<{ events: E[]; complete: boolean }> {
+  return readPaged(fetchPage, () => authorUpdatesFilter(author));
+}
+
+async function readPaged<E extends { id: string; created_at: number }>(
+  fetchPage: (filter: NostrFilter) => Promise<readonly E[]>,
+  makeFilter: () => NostrFilter,
+): Promise<{ events: E[]; complete: boolean }> {
   const seen = new Map<string, E>();
   let until: number | undefined;
   for (let page = 0; page < EVIDENCE_MAX_PAGES; page += 1) {
-    const filter = evidenceQueryFilter(launchCoordinate);
+    const filter = makeFilter();
     if (until !== undefined) filter.until = until;
     const events = await fetchPage(filter);
     let fresh = 0;

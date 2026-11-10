@@ -1,12 +1,12 @@
 /**
  * The founder sets a goal, or says how one stands: open, reached, missed or changed.
  *
- * Saving publishes the goal as it now stands. What it was before is kept as its history; nothing here removes a goal.
- * Marking it missed or changed, or changing its words, asks for one line of why. A save that fails keeps what was
- * written and offers to try again.
+ * Saving publishes the goal as it now stands. What it was before stays as its history. Marking it missed or changed,
+ * or changing its words, asks for one line of why. A problem with an answer is said beside it, and the keyboard goes
+ * to that answer. A save that fails keeps what was written and offers to try again.
  */
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 
@@ -18,8 +18,9 @@ import {
   type GoalInput,
   type GoalLevel,
   type GoalState,
+  type GoalField,
   type GoalView,
-  goalIssue,
+  goalProblem,
   newGoalId,
 } from "../lib/goals";
 import { Modal } from "./Modal";
@@ -57,7 +58,8 @@ export function GoalDialog({
   const [how, setHow] = useState(existing?.how ?? "");
   const [state, setState] = useState<GoalState>(existing?.state ?? "open");
   const [reason, setReason] = useState("");
-  const [issue, setIssue] = useState<string | null>(null);
+  const [issue, setIssue] = useState<ReturnType<typeof goalProblem>>(null);
+  const fields = useRef<Partial<Record<GoalField, HTMLTextAreaElement>>>({});
   // One id for the whole visit to the dialog: a retried save is the same goal, not a second one.
   const [id] = useState(() => existing?.id ?? newGoalId());
   const headingId = useId();
@@ -82,9 +84,14 @@ export function GoalDialog({
       reason: needsReason ? reason : "",
       ...(target.kind === "new-shorter" ? { under: target.under } : {}),
     };
-    const problem = goalIssue(goal, existing);
+    const problem = goalProblem(goal, existing);
     setIssue(problem);
-    if (!problem) onSave(goal);
+    if (problem) {
+      // The keyboard goes to the answer the problem is about, which names it as its description.
+      fields.current[problem.field]?.focus();
+      return;
+    }
+    onSave(goal);
   };
 
   return (
@@ -94,8 +101,8 @@ export function GoalDialog({
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         {existing
-          ? "Everyone can see how a goal stands and what it was before. Nothing is removed."
-          : "Everyone can see it. You can change it later, and what it was stays on the record."}
+          ? "Everyone can see how a goal stands and what it was before."
+          : "Everyone can see it. You can change it later, and people can see what it was before."}
       </p>
       <div className="mt-3 flex flex-col gap-3">
         {target.kind === "new-shorter" ? (
@@ -127,6 +134,13 @@ export function GoalDialog({
           <textarea
             className={AREA_CLASS}
             id="goal-text"
+            aria-describedby={
+              issue?.field === "text" ? "goal-issue" : undefined
+            }
+            aria-invalid={issue?.field === "text" || undefined}
+            ref={(el) => {
+              if (el) fields.current.text = el;
+            }}
             maxLength={GOAL_LIMITS.text}
             onChange={(e) => setText(e.target.value)}
             placeholder="A first version that ten people use."
@@ -141,6 +155,11 @@ export function GoalDialog({
           <textarea
             className={AREA_CLASS}
             id="goal-how"
+            aria-describedby={issue?.field === "how" ? "goal-issue" : undefined}
+            aria-invalid={issue?.field === "how" || undefined}
+            ref={(el) => {
+              if (el) fields.current.how = el;
+            }}
             maxLength={GOAL_LIMITS.how}
             onChange={(e) => setHow(e.target.value)}
             placeholder="Ten people sign in during the same week."
@@ -176,7 +195,15 @@ export function GoalDialog({
               {state === "missed" ? "Why was it missed?" : "Why did it change?"}
             </label>
             <textarea
-              aria-describedby="goal-reason-hint"
+              aria-describedby={
+                issue?.field === "reason"
+                  ? "goal-reason-hint goal-issue"
+                  : "goal-reason-hint"
+              }
+              aria-invalid={issue?.field === "reason" || undefined}
+              ref={(el) => {
+                if (el) fields.current.reason = el;
+              }}
               className={AREA_CLASS}
               id="goal-reason"
               maxLength={GOAL_LIMITS.reason}
@@ -185,7 +212,7 @@ export function GoalDialog({
               value={reason}
             />
             <p className="text-xs text-muted-foreground" id="goal-reason-hint">
-              One line. It shows on the project's record.
+              One line. Everyone can read it on the project's page.
             </p>
           </div>
         ) : null}
@@ -193,9 +220,10 @@ export function GoalDialog({
           <p
             className="text-sm text-red-700 dark:text-red-300"
             data-testid="goal-issue"
+            id="goal-issue"
             role="alert"
           >
-            {issue}
+            {issue.message}
           </p>
         ) : null}
         {failed && !isSaving ? (

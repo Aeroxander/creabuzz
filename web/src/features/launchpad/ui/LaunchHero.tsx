@@ -181,7 +181,6 @@ export function LaunchHero({
           <div className="flex flex-wrap justify-end gap-2">
             {showFollow ? (
               <Button
-                aria-pressed={followed}
                 data-testid="launch-follow"
                 disabled={followDisabled}
                 onClick={onToggleFollow}

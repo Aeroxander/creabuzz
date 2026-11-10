@@ -222,13 +222,16 @@ export function ContributorStartPage() {
   // Picking someone already among the reviewers changes nothing: said, instead of doing nothing.
   const [pickNote, setPickNote] = useState<string | null>(null);
 
-  // The founder's own idea, handed over by its page: its name and sentence fill the form once (never over a board team).
-  const [fromIdea] = useState<IdeaHandoff | null>(() =>
-    search.project ? null : peekIdea(sessionStorage, start.me),
+  // The founder's own project, handed over by its page to have Shares set up for it. It is kept in this browser until
+  // the project is made (or the founder asks for a separate one), so a reload or a closed tab still carries on the same
+  // project instead of quietly making a second one. Never over a board team.
+  const [fromIdea, setFromIdea] = useState<IdeaHandoff | null>(() =>
+    search.project ? null : peekIdea(localStorage, start.me, relayWsUrl()),
   );
+  // A form brought back from an earlier visit already holds what the founder made of it: it is not filled over.
+  const openedWithForm = useRef(restored !== null);
   useEffect(() => {
-    clearIdea(sessionStorage);
-    if (!fromIdea) return;
+    if (!fromIdea || openedWithForm.current) return;
     setDraft((current) => ({
       ...current,
       name: fromIdea.name,
@@ -236,6 +239,10 @@ export function ContributorStartPage() {
       symbol: contributorSymbol(fromIdea.name),
     }));
   }, [fromIdea]);
+  const separateProject = () => {
+    clearIdea(localStorage);
+    setFromIdea(null);
+  };
 
   // A team from the Projects board fills the form once, when it has been read; the founder can still change anything.
   // A form brought back from an earlier visit is not filled over: it already holds what the founder made of it.
@@ -259,6 +266,10 @@ export function ContributorStartPage() {
   }, [seeded, fromBoard.start]);
 
   const done = job !== null && flow.phase === "done";
+  // The project is made: the hand-off has done its work, and a later visit to this form starts a new project.
+  useEffect(() => {
+    if (done) clearIdea(localStorage);
+  }, [done]);
   // Kept as it is typed, until the project is made; then it is not needed (the run kept its own copy).
   useEffect(() => {
     if (!formKey || formKey !== loadedKey || job !== null) return;
@@ -495,16 +506,34 @@ export function ContributorStartPage() {
               ? "This browser is not keeping what you type here, so reloading or closing this tab would lose it."
               : null}
           </p>
+          {fromIdea ? (
+            <div
+              className="flex flex-wrap items-center gap-2 rounded-lg bg-secondary/60 px-3 py-2 text-sm"
+              data-testid="contributor-carry-on"
+            >
+              <span className="min-w-0 flex-1">
+                You are setting up Shares for{" "}
+                <span className="font-semibold">{fromIdea.name}</span>. It stays
+                the same project: its page, goal, updates and followers carry
+                on.
+              </span>
+              <Button
+                data-testid="contributor-separate"
+                onClick={separateProject}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Start a separate project
+              </Button>
+            </div>
+          ) : null}
           {restored ? (
             <div
               className="flex flex-wrap items-center gap-2 rounded-lg bg-secondary/60 px-3 py-2 text-sm"
               data-testid="contributor-form-restored"
             >
-              <span>
-                {fromIdea
-                  ? "Your idea's name and sentence are filled in; the rest is what you typed here before."
-                  : "What you typed here before is filled in again."}
-              </span>
+              <span>What you typed here before is filled in again.</span>
               <Button
                 data-testid="contributor-form-start-over"
                 onClick={startOver}
@@ -746,6 +775,15 @@ export function ContributorStartPage() {
               ) : null}
             </div>
           )}
+          {start.startError ? (
+            <p
+              className="text-sm text-red-700 dark:text-red-300"
+              data-testid="contributor-start-error"
+              role="alert"
+            >
+              {start.startError}
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-3">
             <Button
               data-testid="contributor-submit"
@@ -756,7 +794,13 @@ export function ContributorStartPage() {
                   showProblem();
                   return;
                 }
-                start.start(draft, search.project, fromIdea?.id);
+                void start.start(
+                  draft,
+                  search.project,
+                  fromIdea
+                    ? { id: fromIdea.id, name: fromIdea.name }
+                    : undefined,
+                );
               }}
               type="button"
             >

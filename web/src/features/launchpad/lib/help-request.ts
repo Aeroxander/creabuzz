@@ -19,7 +19,12 @@
  * Pure and alias-free: `help-request.test.mjs` drives it under `node --test`.
  */
 
-import { type AgentMark, agentMark } from "./agent-label.ts";
+import {
+  type AgentClaim,
+  type AgentMark,
+  agentClaim,
+  verifiedAgent,
+} from "./agent-label.ts";
 import type { HelpAsk } from "./weekly-update.ts";
 
 const TAG_OFFER = "help-offer";
@@ -46,8 +51,11 @@ export interface HelpSignal {
   author: string;
   at: number;
   note: string;
-  /** Set when the record was signed by an agent: who runs it, when the record proves that (`agent-label.ts`). */
-  agent: AgentMark | null;
+  /**
+   * Set when the record says an agent signed it (`agent-label.ts`). Not checked here: every record read passes through
+   * this, so the owner's proof is checked only for the offers a card shows.
+   */
+  agent: AgentClaim | null;
 }
 
 /** The kind every help record is: an update record. */
@@ -91,7 +99,7 @@ export function parseHelpSignal(event: EventLike): HelpSignal | null {
     author: event.pubkey,
     at: event.created_at,
     note,
-    agent: agentMark(event, KIND_UPDATE),
+    agent: agentClaim(event),
   };
 }
 
@@ -250,14 +258,17 @@ export function helpRequest(input: {
     list.push({ id: s.id, author: s.author, at: s.at, note: s.note });
     replies.set(s.target, list);
   }
-  const all: Offer[] = [...byAuthor.values()]
+  const all: Array<Offer & { claim: AgentClaim | null }> = [
+    ...byAuthor.values(),
+  ]
     .sort((a, b) => b.at - a.at || (a.id < b.id ? -1 : 1))
     .map((s) => ({
       id: s.id,
       author: s.author,
       at: s.at,
       note: s.note,
-      agent: s.agent,
+      agent: null as AgentMark | null,
+      claim: s.agent,
       replies: (replies.get(s.id) ?? [])
         .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1))
         .slice(-REPLIES_SHOWN),
@@ -270,12 +281,27 @@ export function helpRequest(input: {
     foundAt,
     foundBy: [...foundBy],
     myFoundIds,
-    offers: all.slice(0, OFFERS_SHOWN),
+    // The owner's proof is checked for the offers listed and no others: at most one signature each.
+    offers: all.slice(0, OFFERS_SHOWN).map(({ claim, ...offer }) => ({
+      ...offer,
+      agent: claim ? shownAgent(claim) : null,
+    })),
     offerCount: all.length,
-    mine: viewer ? (all.find((o) => o.author === viewer) ?? null) : null,
+    mine: viewer
+      ? (all
+          .map(({ claim: _, ...offer }) => offer)
+          .find((o) => o.author === viewer) ?? null)
+      : null,
     myOfferIds,
     viewerOnTeam: viewer !== null && team.has(viewer),
   };
+}
+
+/** An agent's offer as the card labels it: with its owner when proven, and unlabelled when it never said "agent". */
+function shownAgent(claim: AgentClaim): AgentMark | null {
+  const mark = verifiedAgent(claim, KIND_UPDATE);
+  // A record carrying only a proof that does not hold never called itself an agent: it gets no label.
+  return mark.owner || claim.says ? mark : null;
 }
 
 const DAY = 24 * 60 * 60;

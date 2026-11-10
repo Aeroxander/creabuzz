@@ -3,8 +3,10 @@
  * form, and the project made carries on under the same id, so its page, goal, updates, record and followers stay with
  * it. (Before this, the project made was a second record, and the founder was asked to take the first one down.)
  *
- * The idea's page hands these words over in this browser's session storage (one entry), so the start form's
- * link stays the same plain `/start/contributor`. The form clears it once read. Nothing is written to the network here.
+ * The project's page hands these words over in this browser's storage (one entry, for the server and account it was
+ * made on), so the start form's link stays the same plain `/start/contributor`. It is kept until the project is made
+ * or the founder says they want a separate project: a reload, or a tab closed half way, must not turn "set up Shares
+ * for this project" into "make a second project". Nothing is written to the network here.
  *
  * Pure and alias-free: `from-idea.test.mjs` drives it under `node --test`.
  */
@@ -20,6 +22,8 @@ export interface IdeaHandoff {
   author: string;
   name: string;
   pitch: string;
+  /** The server the project is on. A hand-off is only ever read back on the same server. */
+  server?: string;
 }
 
 /** The slice of storage this reads and writes (session storage in the app, a map in tests). */
@@ -42,6 +46,7 @@ export function handOffIdea(
         author: idea.author,
         name: idea.name.slice(0, NAME_MAX),
         pitch: idea.pitch.slice(0, PITCH_MAX),
+        ...(idea.server ? { server: idea.server } : {}),
       }),
     );
   } catch {
@@ -51,11 +56,13 @@ export function handOffIdea(
 
 /**
  * The idea handed over for this founder, or null. Only the idea's own author gets it: someone else's idea never fills
- * this person's form. Reading leaves the entry in place (a render may run twice); the page clears it once it has it.
+ * this person's form. Reading leaves the entry in place; the page clears it once the project is made.
  */
 export function peekIdea(
   store: HandoffStore | null | undefined,
   me: string | null,
+  /** The server the form is on. When given, a hand-off made on another server is not this form's. */
+  server?: string,
 ): IdeaHandoff | null {
   let raw: string | null = null;
   try {
@@ -68,6 +75,8 @@ export function peekIdea(
     const value: unknown = JSON.parse(raw);
     if (typeof value !== "object" || value === null) return null;
     const { id, author, name, pitch } = value as Record<string, unknown>;
+    const from = (value as Record<string, unknown>).server;
+    if (server !== undefined && from !== server) return null;
     if (
       typeof id !== "string" ||
       typeof author !== "string" ||
@@ -82,6 +91,7 @@ export function peekIdea(
       author,
       name: name.slice(0, NAME_MAX),
       pitch: pitch.slice(0, PITCH_MAX),
+      ...(typeof from === "string" ? { server: from } : {}),
     };
   } catch {
     return null;
@@ -127,4 +137,57 @@ export function keptFromIdea(record: {
     ...(record.longPitch ? { longPitch: record.longPitch } : {}),
     chat: { ...record.chat },
   };
+}
+
+/**
+ * Why Shares cannot be set up for the project handed over, or null when they can. `own` is what a direct read of the
+ * founder's own record answered: the record's facts, or null when the server has no such record. When this says no,
+ * nothing is made: a project asked to carry on never quietly becomes a second project under another id.
+ */
+export function carryOnIssue(input: {
+  name: string;
+  own: { isIdea: boolean } | null;
+  /** The project's id was once removed from the list by this founder. */
+  everRemoved: boolean;
+}): string | null {
+  const { name } = input;
+  const separate =
+    'To make another project instead, press "Start a separate project".';
+  if (input.own === null)
+    return `${name} is no longer on this server, so Shares can't be set up for it. Nothing was made. ${separate}`;
+  if (!input.own.isIdea)
+    return `${name} already has Shares or a sale set up. Nothing was made. ${separate}`;
+  if (input.everRemoved)
+    return `${name} has the same id as a project you removed earlier, so Shares can't be set up under it. Nothing was made. ${separate}`;
+  return null;
+}
+
+/** Said when the record step could not read what the founder already has under the project's id. */
+export const RECORD_UNREAD_MESSAGE =
+  "Couldn't read your project's page from the server, so it was not published: publishing without it could drop its cover and rooms. Your project itself is made. Try again.";
+
+/**
+ * The record to publish for a project, starting from the founder's own record with that id as the server has it now.
+ *
+ * `readOwn` asks the server directly, when the record is about to be published: not a remembered list, which may be
+ * old, cut short or not read yet. Whatever own record is there is carried over (its cover, topic, story and rooms),
+ * whether it is the project without Shares being carried on or this same project published a moment ago by a try
+ * whose answer was lost. When the read fails nothing is returned and the step fails with a way to try again:
+ * publishing blind would wipe those parts for good.
+ */
+export async function recordCarryingOver<
+  I extends { chat?: KeptFromIdea["chat"] },
+>(
+  input: I,
+  readOwn: () => Promise<Parameters<typeof keptFromIdea>[0] | null>,
+): Promise<I & KeptFromIdea> {
+  let own: Awaited<ReturnType<typeof readOwn>>;
+  try {
+    own = await readOwn();
+  } catch {
+    throw new Error(RECORD_UNREAD_MESSAGE);
+  }
+  const kept = own ? keptFromIdea(own) : {};
+  const chat = input.chat ?? kept.chat;
+  return { ...kept, ...input, ...(chat ? { chat } : {}) };
 }

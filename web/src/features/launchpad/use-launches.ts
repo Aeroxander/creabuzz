@@ -18,6 +18,7 @@ import {
   type KIND_LAUNCH_PROPOSAL,
   type KIND_LAUNCH_RECEIPT,
   KIND_LAUNCH_RECORD,
+  LAUNCHPAD_EVENT_KINDS,
   KIND_ORG_BUDGET,
   KIND_ORG_NODE,
   KIND_SCORE_ROOT as LAUNCHPAD_SCORE_ROOT_KIND,
@@ -29,7 +30,12 @@ import { type IpRecord, ipRecordContent } from "./lib/ip-record";
 import { type BuiltOn, builtOnCoordinate, type RemixTerms } from "./lib/remix";
 import { type RevenuePledge, revenuePledgeContent } from "./lib/revenue-pledge";
 import { supersedingTime } from "./lib/record-time";
-import { launchQueryFilter } from "./lib/launch-query";
+import { LAUNCH_QUERY_LIMIT, launchQueryFilter } from "./lib/launch-query";
+import {
+  newestOwnRecord,
+  readOwnLaunchIds,
+  recordByIdFilter,
+} from "./lib/own-records";
 import {
   acceptedPublisherPolicy,
   collectScoreRoots,
@@ -59,7 +65,9 @@ import {
   launchRemovals,
   type Launch,
   type LaunchChat,
+  type LaunchRecord,
   type LaunchStage,
+  parseLaunchRecord,
   type ScoreRoot,
 } from "./models";
 
@@ -287,12 +295,87 @@ export function useTrustSignals() {
   });
 }
 
+/**
+ * One project read on its own, by id (and author, when known), with what is recorded against it. The list of every
+ * project is cut at its newest records, so an older project is not in it while it is still on the server: its page
+ * reads it this way instead of saying it was not found. Null when the server has no such project.
+ */
+export async function fetchLaunchById(
+  launchId: string,
+  author: string | undefined,
+): Promise<Launch | null> {
+  const relay = relayWsUrl();
+  const records = (
+    await queryEvents(relay, { ...recordByIdFilter(launchId, author) })
+  ).filter(
+    (event) =>
+      event.kind === KIND_LAUNCH_RECORD &&
+      event.tags.some((tag) => tag[0] === "d" && tag[1] === launchId) &&
+      (author === undefined || event.pubkey === author),
+  );
+  if (records.length === 0) return null;
+  const coords = [
+    ...new Set(records.map((e) => launchCoordinate(e.pubkey, launchId))),
+  ];
+  const mirrors = await queryEvents(relay, {
+    kinds: LAUNCHPAD_EVENT_KINDS.filter((kind) => kind !== KIND_LAUNCH_RECORD),
+    "#a": coords,
+    limit: LAUNCH_QUERY_LIMIT,
+  });
+  const tombstones = await fetchTombstones(
+    coords,
+    mirrors.map((e) => e.id),
+  );
+  return (
+    buildLaunches(
+      [...records, ...mirrors],
+      tombstones.coordinates,
+      tombstones.deletedIds,
+    ).find((launch) => launch.record.id === launchId) ?? null
+  );
+}
+
+/**
+ * `author`'s own project record with this id as the server has it now, or null when it has none. Read directly, not
+ * from the list of every project: what is published over a record starts from this.
+ */
+export async function fetchOwnRecord(
+  author: string,
+  launchId: string,
+): Promise<LaunchRecord | null> {
+  const events = await queryEvents(relayWsUrl(), {
+    ...recordByIdFilter(launchId, author),
+  });
+  const newest = newestOwnRecord(events, author, launchId);
+  return newest ? parseLaunchRecord(newest) : null;
+}
+
+/**
+ * The id of every project record `author` has on the server, read page by page to the end (`readOwnLaunchIds`). A new
+ * project's id is checked against these, never against the list of every project: an older project missing from that
+ * list would otherwise be replaced by a new one with the same name.
+ */
+export function useOwnLaunchIds(author: string | null) {
+  const relay = relayWsUrl();
+  return useQuery({
+    queryKey: [...launchesQueryKey, "own-ids", relay, author],
+    queryFn: () =>
+      readOwnLaunchIds(author as string, (filter) =>
+        queryEvents(relay, { ...filter }),
+      ),
+    enabled: author !== null,
+    staleTime: 30_000,
+    // A project made in another tab or on another device is seen when this one comes back into view.
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useLaunch(
   launchId: string | undefined,
   author: string | undefined,
 ) {
   const query = useLaunches();
-  const launch = useMemo(
+  const listed = useMemo(
     () =>
       launchId === undefined
         ? undefined
@@ -303,7 +386,33 @@ export function useLaunch(
           ),
     [query.data, launchId, author],
   );
-  return { ...query, launch };
+  // Not in the list (which is cut at its newest records), or the list could not be read: the project itself is read.
+  const relay = relayWsUrl();
+  const direct = useQuery({
+    queryKey: [...launchesQueryKey, "one", relay, launchId, author ?? null],
+    queryFn: () => fetchLaunchById(launchId as string, author),
+    enabled: launchId !== undefined && !listed && !query.isLoading,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const launch = listed ?? direct.data ?? undefined;
+  const { refetch: refetchList } = query;
+  const { refetch: refetchOne } = direct;
+  return {
+    ...query,
+    launch,
+    isLoading:
+      query.isLoading ||
+      (!listed && launchId !== undefined && direct.isLoading),
+    // A project that was read is shown, whatever else failed; "not found" is said only when its own read answered.
+    error: launch
+      ? null
+      : (direct.error ?? (direct.data === null ? null : query.error)),
+    refetch: () => {
+      void refetchOne();
+      return refetchList();
+    },
+  };
 }
 
 export function useIsFounder(launch: Launch | undefined): boolean {

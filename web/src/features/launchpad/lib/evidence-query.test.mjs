@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   EVIDENCE_MAX_PAGES,
   EVIDENCE_QUERY_LIMIT,
+  authorUpdatesFilter,
   evidenceQueryFilter,
+  readAuthorUpdates,
   readEvidenceEvents,
 } from "./evidence-query.ts";
 import { KIND_LAUNCH_UPDATE } from "../../../shared/constants/kinds.ts";
@@ -78,4 +80,39 @@ test("a page of updates all in one second cannot be walked past and is reported 
   const { complete } = await readEvidenceEvents(relay.fetchPage, "c");
   assert.equal(complete, false);
   assert.ok(relay.asked.length <= 2);
+});
+
+test("a founder's own records are asked for by author, so nobody else's can crowd them out of a page", async () => {
+  const filter = authorUpdatesFilter("f".repeat(64));
+  assert.deepEqual(filter, {
+    kinds: [KIND_LAUNCH_UPDATE],
+    authors: ["f".repeat(64)],
+    limit: EVIDENCE_QUERY_LIMIT,
+  });
+  // No tag filter: the server narrows by author and kind before its limit, and by tags only after it.
+  assert.equal(
+    Object.keys(filter).some((key) => key.startsWith("#")),
+    false,
+  );
+
+  // A server where a stranger has posted a full page of newer records: the founder's are all still read, to the end.
+  const FOUNDER = "f".repeat(64);
+  const events = [
+    { id: "goal", pubkey: FOUNDER, created_at: 10 },
+    { id: "update", pubkey: FOUNDER, created_at: 20 },
+  ];
+  for (let i = 0; i < EVIDENCE_QUERY_LIMIT; i += 1)
+    events.push({ id: `junk${i}`, pubkey: "e".repeat(64), created_at: 1000 });
+  const asked = [];
+  const fetchPage = async (f) => {
+    asked.push(f);
+    return events
+      .filter((e) => f.authors.includes(e.pubkey))
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, f.limit);
+  };
+  const read = await readAuthorUpdates(fetchPage, FOUNDER);
+  assert.equal(read.complete, true);
+  assert.deepEqual(read.events.map((e) => e.id).sort(), ["goal", "update"]);
+  assert.deepEqual(asked[0].authors, [FOUNDER]);
 });

@@ -524,8 +524,11 @@ test("an update the server refuses stays in the dialog with what was written, an
     title: "We moved studios",
     body: "Boxes everywhere.",
   });
-  // A free-form update carries no part tags.
-  expect(updates(relay)[0].tags).toEqual([["a", COORD]]);
+  // A free-form update carries no part tags, only the mark that it is a weekly update all the same.
+  expect(updates(relay)[0].tags).toEqual([
+    ["a", COORD],
+    ["update-kind", "weekly"],
+  ]);
   await expect(page.getByTestId("latest-update")).toContainText(
     "Boxes everywhere.",
   );

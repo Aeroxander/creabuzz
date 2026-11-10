@@ -132,3 +132,17 @@ export function tabShown(
   if (input.isFounder || !SHOWN_WHEN_USED.has(tab)) return true;
   return (input.uses[tab] ?? "unknown") !== "no";
 }
+
+/** Whether the project has updates to list, from how many were found and whether the reads reached their end. */
+export function updatesUse(input: {
+  /** Null while the read has not answered. */
+  count: number | null;
+  failed: boolean;
+  /** Both reads (the records and the marked posts) reached their end. */
+  complete: boolean;
+}): TabUse {
+  if (input.count === null) return input.failed ? "unknown" : "no";
+  if (input.count > 0) return "yes";
+  // None found in a read that was cut short is not "none".
+  return input.complete ? "no" : "unknown";
+}

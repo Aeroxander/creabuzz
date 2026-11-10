@@ -140,32 +140,54 @@ export interface GoalInput {
   under?: string;
 }
 
+/** The field a goal's problem is about, so the form can point at it. */
+export type GoalField = "text" | "how" | "reason";
+
 /**
- * Why a goal cannot be saved yet, or null when it can. `previous` is the goal as it stands, when there is one: marking
- * it missed or changed, or rewording it, needs a one-line reason.
+ * Why a goal cannot be saved yet and which field it is about, or null when it can. `previous` is the goal as it
+ * stands, when there is one: marking it missed or changed, or rewording it, needs a one-line reason.
  */
+export function goalProblem(
+  input: GoalInput,
+  previous: Pick<GoalVersion, "text" | "how"> | null = null,
+): { field: GoalField; message: string } | null {
+  const text = input.text.trim();
+  if (text.length < 3)
+    return { field: "text", message: "Say what the goal is." };
+  if (text.length > GOAL_LIMITS.text)
+    return {
+      field: "text",
+      message: `Keep the goal under ${GOAL_LIMITS.text} characters.`,
+    };
+  const how = input.how.trim();
+  if (how.length < 3)
+    return { field: "how", message: "Say how we'll know it was reached." };
+  if (how.length > GOAL_LIMITS.how)
+    return {
+      field: "how",
+      message: `Keep "How we'll know" under ${GOAL_LIMITS.how} characters.`,
+    };
+  const reason = input.reason.trim();
+  if (reason.length > GOAL_LIMITS.reason)
+    return {
+      field: "reason",
+      message: `Keep the reason under ${GOAL_LIMITS.reason} characters.`,
+    };
+  if (input.state === "missed" && reason === "")
+    return { field: "reason", message: "Say in one line why it was missed." };
+  const reworded =
+    previous !== null && (previous.text !== text || previous.how !== how);
+  if ((input.state === "changed" || reworded) && reason === "")
+    return { field: "reason", message: "Say in one line why it changed." };
+  return null;
+}
+
+/** {@link goalProblem}'s words alone. */
 export function goalIssue(
   input: GoalInput,
   previous: Pick<GoalVersion, "text" | "how"> | null = null,
 ): string | null {
-  const text = input.text.trim();
-  if (text.length < 3) return "Say what the goal is.";
-  if (text.length > GOAL_LIMITS.text)
-    return `Keep the goal under ${GOAL_LIMITS.text} characters.`;
-  const how = input.how.trim();
-  if (how.length < 3) return "Say how we'll know it was reached.";
-  if (how.length > GOAL_LIMITS.how)
-    return `Keep "How we'll know" under ${GOAL_LIMITS.how} characters.`;
-  const reason = input.reason.trim();
-  if (reason.length > GOAL_LIMITS.reason)
-    return `Keep the reason under ${GOAL_LIMITS.reason} characters.`;
-  if (input.state === "missed" && reason === "")
-    return "Say in one line why it was missed.";
-  const reworded =
-    previous !== null && (previous.text !== text || previous.how !== how);
-  if ((input.state === "changed" || reworded) && reason === "")
-    return "Say in one line why it changed.";
-  return null;
+  return goalProblem(input, previous)?.message ?? null;
 }
 
 const STATE_TITLE: Record<GoalState, string> = {

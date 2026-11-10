@@ -20,7 +20,11 @@ import {
 } from "./lib/revenue-pledge.ts";
 import { parseUnlockPlan, type UnlockPlan } from "./lib/unlock-plans.ts";
 import { isHelpSignalTags } from "./lib/help-request.ts";
-import { partsFromTags, type UpdateParts } from "./lib/weekly-update.ts";
+import {
+  isWeeklyUpdateTags,
+  partsFromTags,
+  type UpdateParts,
+} from "./lib/weekly-update.ts";
 import { isGoalRecordTags } from "./lib/goals.ts";
 import {
   parseMarks,
@@ -252,6 +256,8 @@ export interface LaunchUpdate {
   /** What this update promised for the next one, and its answers to earlier promises (`lib/promises.ts`). */
   promises?: UpdatePromise[];
   marks?: PromiseMark[];
+  /** Set when this is a weekly update, not another record of the same kind (`isWeeklyUpdateTags`). */
+  weekly?: true;
   /**
    * Set when this update is the evidence a contributor submitted for a work claim: the claim it is for, the work budget
    * that holds it, and the exact words of the acceptance check. Reviewers read it, and it counts only when it hashes to
@@ -643,6 +649,7 @@ export function parseLaunchUpdate(event: NostrEvent): LaunchUpdate | null {
     ...(parts ? { parts, help: parts.help } : {}),
     ...(promises.length > 0 ? { promises } : {}),
     ...(marks.length > 0 ? { marks } : {}),
+    ...(isWeeklyUpdateTags(event.tags) ? { weekly: true as const } : {}),
     claim: parseUpdateClaim(body.claim),
     workArea: parseUpdateClaim(body.workArea),
     ...(isCheckNote(body.check) ? { checkNote: true as const } : {}),

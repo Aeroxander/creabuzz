@@ -592,17 +592,32 @@ export function formatBps(bps: number): string {
 // ---- the salt the DAO's address follows from ---------------------------------------------------
 
 /**
- * The 32-byte salt for one project: the founder's public key and the project's id, under a fixed label. The kit scopes
- * it to the sending wallet too, so the same project from the same wallet always maps to the same DAO address. It is
- * derivable from public values, not a secret: it keeps two founders apart, it does not stop someone summoning a DAO at
- * the address first (the flow then refuses that DAO and the founder starts again with a fresh project id).
+ * The 32-byte salt for one try at a project: the founder's public key, the project's id and the try's own random part
+ * (`attempt`), under a fixed label. The kit scopes it to the sending wallet too. One try always maps to one DAO
+ * address, so a reload carries on with the same one; another try at the same project, even under the same id, maps
+ * to another address, so it can never land on the first try's DAO. A project that carries on under its own id (setting
+ * up Shares for it) depends on this: the id is the same every time, the address is not. Without `attempt` the salt is
+ * the older one that followed from the id alone, kept so a job stored before tries had one still finds its address.
  */
-export function contributorSalt(author: string, launchId: string): string {
+export function contributorSalt(
+  author: string,
+  launchId: string,
+  attempt?: string,
+): string {
   return `0x${bytesToHex(
     keccak_256(
-      utf8ToBytes(`creaton:contributor-project:37001:${author}:${launchId}`),
+      utf8ToBytes(
+        `creaton:contributor-project:37001:${author}:${launchId}${attempt ? `:${attempt}` : ""}`,
+      ),
     ),
   )}`;
+}
+
+/** A try's own random part of the salt: 128 bits, hex. */
+export function newAttempt(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return bytesToHex(bytes);
 }
 
 // ---- the work budget's address --------------------------------------------------------------------

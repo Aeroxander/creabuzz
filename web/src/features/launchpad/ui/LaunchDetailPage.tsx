@@ -58,7 +58,11 @@ import { ProjectGoalCard } from "./ProjectGoalCard";
 import { ProjectOpenHelp } from "./ProjectOpenHelp";
 import { ProjectRecordCard } from "./ProjectRecordCard";
 import { helpQueryKey } from "../use-help-requests";
-import { TabUsesProbe, UpdateDialogWithPromises } from "./ProjectFrontParts";
+import {
+  ProjectUpdatesTab,
+  TabUsesProbe,
+  UpdateDialogWithPromises,
+} from "./ProjectFrontParts";
 import { SIGN_UP_EVENT } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { type UpdateDraft, updateEvent } from "../lib/weekly-update";
@@ -167,8 +171,17 @@ export function LaunchDetailPage({
     }
   }, [tab]);
   const follows = useLaunchFollows();
-  // Which of the tabs shown only once used this project uses. Empty until read: an unread answer hides nothing.
-  const [tabUses, setTabUses] = useState<Partial<Record<Tab, TabUse>>>({});
+  // Which of the tabs shown only once used this project uses, and how many updates it has. Until that is read they are
+  // taken as not used, so a tab appears when the answer comes instead of showing and then going; a read that fails
+  // answers "unknown", which shows the tab. A pretend project reads nothing, so nothing of it is held back.
+  const [tabState, setTabState] = useState<{
+    uses: Partial<Record<Tab, TabUse>>;
+    updates: number | null;
+  }>(() => ({
+    uses: sandbox ? {} : { updates: "no", boards: "no", agents: "no" },
+    updates: null,
+  }));
+  const tabUses = tabState.uses;
   const navigate = useNavigate({ from: "/launchpad/$launchId" });
   const setTab = useCallback(
     (next: Tab) => {
@@ -369,8 +382,12 @@ export function LaunchDetailPage({
     ...(sandbox ? [] : [{ id: "boards" as const, label: "Boards" }]),
     {
       id: "updates",
-      // Counted as the tab lists them: the team's own reports (submitted work is shown with the work, not here).
-      label: `Updates (${projectProgress([launch], []).length})`,
+      // Counted as the tab lists them, from this project's own records; no number while those are not read.
+      label:
+        (sandbox ? projectProgress([launch], []).length : tabState.updates) ===
+        null
+          ? "Updates"
+          : `Updates (${sandbox ? projectProgress([launch], []).length : tabState.updates})`,
     },
     { id: "manage", label: "Manage", founderOnly: true },
   ];
@@ -454,8 +471,7 @@ export function LaunchDetailPage({
           ) : null
         }
         note={
-          // A project with no Shares and no sale has nothing to buy, so the buyer's note has nothing to stand beside.
-          contributor || idea ? null : (
+          contributor ? null : (
             /* §7 "Launch page copy": what a buyer acquires, said before the
                bid button — ownership only, never a yield. */
             <OwnershipOnlyNote className="max-w-60 text-right" />
@@ -470,7 +486,7 @@ export function LaunchDetailPage({
 
       {sandbox ? null : (
         <>
-          <TabUsesProbe launch={launch} onUses={setTabUses} />
+          <TabUsesProbe launch={launch} onUses={setTabState} />
           {/* What the project is for comes first: its goal, and how everyone will know. */}
           <ProjectGoalCard isFounder={isFounder} launch={launch} />
         </>
@@ -628,7 +644,13 @@ export function LaunchDetailPage({
       {shown === "boards" && !sandbox ? (
         <ProjectBoardsTab isFounder={isFounder} launch={launch} />
       ) : null}
-      {shown === "updates" ? <ProjectProgressFeed project={launch} /> : null}
+      {shown === "updates" ? (
+        sandbox ? (
+          <ProjectProgressFeed project={launch} />
+        ) : (
+          <ProjectUpdatesTab launch={launch} />
+        )
+      ) : null}
       {shown === "agents" ? <ProjectAgents launch={launch} /> : null}
       {shown === "mybids" && launch.record.auction ? (
         <MyBidsPanel

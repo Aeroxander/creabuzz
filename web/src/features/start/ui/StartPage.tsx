@@ -190,7 +190,7 @@ export function StartPage() {
             <p className="text-sm text-muted-foreground">
               {raises
                 ? "Start without a token sale. Set up work, choose reviewers, and award Shares, the project's voting tokens, through project votes. A page shows who was awarded how much and for what."
-                : "Set up work and choose reviewers. Shares are votes in the project. The project votes to award them for work the reviewers accept. A page shows who was awarded how much and for what."}
+                : "Set up work and choose reviewers. People who do the work get Shares, which are votes in the project, when the project votes to award them. A page shows who was awarded how much and for what."}
             </p>
             <div>
               <Button
