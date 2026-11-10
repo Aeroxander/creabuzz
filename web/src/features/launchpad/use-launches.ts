@@ -1,5 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
 
 import { getAgentPubkey } from "@/shared/lib/agent-identity";
 import { signAsUser, existingUserPubkey } from "@/shared/lib/identity";
@@ -30,7 +36,15 @@ import { type IpRecord, ipRecordContent } from "./lib/ip-record";
 import { type BuiltOn, builtOnCoordinate, type RemixTerms } from "./lib/remix";
 import { type RevenuePledge, revenuePledgeContent } from "./lib/revenue-pledge";
 import { supersedingTime } from "./lib/record-time";
-import { LAUNCH_QUERY_LIMIT, launchQueryFilter } from "./lib/launch-query";
+import {
+  joinProjectPages,
+  LAUNCH_QUERY_LIMIT,
+  launchReportsFilter,
+  launchUpdatesFilter,
+  nextProjectPage,
+  projectListCut,
+  projectPageFilter,
+} from "./lib/launch-query";
 import {
   ownRecordOrThrow,
   pickById,
@@ -123,28 +137,111 @@ async function fetchTombstones(
   return out;
 }
 
-export async function fetchLaunches(): Promise<Launch[]> {
-  const events = await queryEvents(relayWsUrl(), launchQueryFilter());
+const NO_TOMBSTONES = {
+  coordinates: new Map<string, number>(),
+  deletedIds: new Set<string>(),
+  cut: false,
+};
+
+/** One page of project records, with the removals of the projects in it. */
+export interface ProjectPage {
+  events: NostrEvent[];
+  /** Coordinate and time of the latest removal, for each project in this page its author took off the list. */
+  removals: [string, number][];
+  /** The read of those removals came back full: a removed project may still be in the page. */
+  removalsCut: boolean;
+}
+
+/** One page of project records (kind 37001 alone), newest first from `until`, and which of them were removed. */
+export async function fetchProjectPage(
+  until: number | null,
+): Promise<ProjectPage> {
+  const events = await queryEvents(
+    relayWsUrl(),
+    projectPageFilter(until ?? undefined),
+  );
   const coords = events
-    .filter((e) => e.kind === KIND_LAUNCH_RECORD)
     .map((e) => {
       const d = e.tags.find((t) => t[0] === "d")?.[1];
       return d ? launchCoordinate(e.pubkey, d) : null;
     })
     .filter((c): c is string => c !== null);
-  const mirrorIds = events
-    .filter((e) => e.kind !== KIND_LAUNCH_RECORD)
-    .map((e) => e.id);
   const tombstones =
-    coords.length + mirrorIds.length > 0
-      ? await fetchTombstones(coords, mirrorIds)
-      : {
-          coordinates: new Map<string, number>(),
-          deletedIds: new Set<string>(),
-          cut: false,
-        };
-  return buildLaunches(events, tombstones.coordinates, tombstones.deletedIds);
+    coords.length > 0 ? await fetchTombstones(coords) : NO_TOMBSTONES;
+  return {
+    events,
+    removals: [...tombstones.coordinates],
+    removalsCut: tombstones.cut,
+  };
 }
+
+/** What is recorded against the projects: their news, and what their sales and DAOs reported. */
+interface LaunchMirrors {
+  events: NostrEvent[];
+  deletedIds: string[];
+  /** A read came back full: older news or reports were not read, so a list may show a project without them. */
+  cut: boolean;
+}
+
+/** The newest news and reports of every project, each in a bounded read of its own, apart from the projects. */
+export async function fetchLaunchMirrors(): Promise<LaunchMirrors> {
+  const [updates, reports] = await Promise.all([
+    queryEvents(relayWsUrl(), launchUpdatesFilter()),
+    queryEvents(relayWsUrl(), launchReportsFilter()),
+  ]);
+  const events = [...updates, ...reports];
+  const tombstones =
+    events.length > 0
+      ? await fetchTombstones(
+          [],
+          events.map((e) => e.id),
+        )
+      : NO_TOMBSTONES;
+  return {
+    events,
+    deletedIds: [...tombstones.deletedIds],
+    cut:
+      updates.length >= LAUNCH_QUERY_LIMIT ||
+      reports.length >= LAUNCH_QUERY_LIMIT ||
+      tombstones.cut,
+  };
+}
+
+/**
+ * The projects in the pages read so far, with what is recorded against them. Kept for the last pair of inputs only:
+ * every screen that lists projects asks with the same two cached reads, and would otherwise each build the list again.
+ * Keyed by the reads themselves, so another server's reads never answer with this one's projects.
+ */
+let composed: {
+  pages: readonly ProjectPage[];
+  mirrors: LaunchMirrors;
+  launches: Launch[];
+} | null = null;
+
+function composeLaunches(
+  pages: readonly ProjectPage[],
+  mirrors: LaunchMirrors,
+): Launch[] {
+  if (composed && composed.pages === pages && composed.mirrors === mirrors)
+    return composed.launches;
+  const removals = new Map<string, number>();
+  for (const page of pages)
+    for (const [coordinate, at] of page.removals)
+      removals.set(coordinate, Math.max(removals.get(coordinate) ?? 0, at));
+  const launches = buildLaunches(
+    [...joinProjectPages(pages), ...mirrors.events],
+    removals,
+    new Set(mirrors.deletedIds),
+  );
+  composed = { pages, mirrors, launches };
+  return launches;
+}
+
+const projectPagesKey = (relay: string) => [
+  ...launchesQueryKey,
+  "records",
+  relay,
+];
 
 /**
  * The ids of `author`'s launch records that were ever taken off the list. `useLaunches` drops them, so a new project
@@ -168,13 +265,70 @@ export function useRemovedLaunchIds(author: string | null) {
   });
 }
 
+/**
+ * Every project on the server, a page at a time.
+ *
+ * The first page is read at once; `loadMore` reads the next ("Show more projects") while `hasMore`. A later page that
+ * fails keeps every project already read: `moreError` holds the failure and `loadMore` is the retry. `data`, `error`
+ * and the `is…` flags describe the list as a whole, as they did when it was one read, so a screen that only looks a
+ * project up needs no change.
+ */
 export function useLaunches() {
-  return useQuery({
-    queryKey: launchesQueryKey,
-    queryFn: fetchLaunches,
+  const relay = relayWsUrl();
+  const records = useInfiniteQuery({
+    queryKey: projectPagesKey(relay),
+    queryFn: ({ pageParam }) => fetchProjectPage(pageParam),
+    initialPageParam: null as number | null,
+    getNextPageParam: (_last, pages) => nextProjectPage(pages),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
+  const mirrors = useQuery({
+    queryKey: [...launchesQueryKey, "mirrors", relay],
+    queryFn: fetchLaunchMirrors,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const pages = records.data?.pages;
+  const data = useMemo(
+    () =>
+      pages && mirrors.data ? composeLaunches(pages, mirrors.data) : undefined,
+    [pages, mirrors.data],
+  );
+  // A later page that failed is its own failure (`moreError`): the projects already read are still the list.
+  const error =
+    (records.isFetchNextPageError ? null : records.error) ?? mirrors.error;
+  const { refetch: refetchRecords, fetchNextPage } = records;
+  const { refetch: refetchMirrors } = mirrors;
+  const refetch = useCallback(
+    () => Promise.all([refetchRecords(), refetchMirrors()]),
+    [refetchRecords, refetchMirrors],
+  );
+  const loadMore = useCallback(() => void fetchNextPage(), [fetchNextPage]);
+  return {
+    data,
+    error,
+    isError: error !== null,
+    isSuccess: data !== undefined && error === null,
+    isLoading: records.isLoading || mirrors.isLoading,
+    isPending: records.isPending || mirrors.isPending,
+    isFetching: records.isFetching || mirrors.isFetching,
+    refetch,
+    /** There are older projects to read. */
+    hasMore: records.hasNextPage,
+    loadMore,
+    loadingMore: records.isFetchingNextPage,
+    moreError: records.isFetchNextPageError ? records.error : null,
+    /**
+     * The server may hold projects this list cannot reach (the page bound, or removals that could not all be read), so
+     * "that is every project" must not be said.
+     */
+    cut: pages
+      ? projectListCut(pages) || pages.some((page) => page.removalsCut)
+      : false,
+    /** Older news or reports were not read: a project in the list may be shown without some of them. */
+    newsCut: mirrors.data?.cut ?? false,
+  };
 }
 
 const scoreRootsQueryKey = ["launchpad", "score-roots"];
@@ -667,19 +821,28 @@ export function useCreateLaunch() {
       // saves in the same second (a link, then a click) would tie, and the
       // relay may keep the older one, silently dropping the later save.
       const me = existingUserPubkey();
-      const current = queryClient
-        .getQueryData<Launch[]>(launchesQueryKey)
-        ?.find(
-          (launch) =>
-            launch.record.id === input.id && launch.record.author === me,
-        );
+      const listedAt = Math.max(
+        0,
+        ...(
+          queryClient.getQueryData<InfiniteData<ProjectPage>>(
+            projectPagesKey(relayWsUrl()),
+          )?.pages ?? []
+        )
+          .flatMap((page) => page.events)
+          .filter(
+            (event) =>
+              event.pubkey === me &&
+              event.tags.some((tag) => tag[0] === "d" && tag[1] === input.id),
+          )
+          .map((event) => event.created_at),
+      );
       return publishMirror({
         kind: KIND_LAUNCH_RECORD,
         tags,
         content,
         createdAt: supersedingTime(
           Math.floor(Date.now() / 1000),
-          Math.max(input.supersedes ?? 0, current?.record.createdAt ?? 0),
+          Math.max(input.supersedes ?? 0, listedAt),
         ),
       });
     },

@@ -128,6 +128,8 @@ export default defineConfig({
         "**/project-tasks-slow-read.spec.ts",
         // Which projects are listed (one rule for every list), and a founder's "Not listed yet".
         "**/project-listing.spec.ts",
+        // The list of every project is read a page at a time, apart from news; a failed page keeps what was read.
+        "**/project-list-paging.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

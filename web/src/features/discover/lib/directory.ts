@@ -246,6 +246,26 @@ export function launchesForFilter<
   return [...launches];
 }
 
+/**
+ * The projects Discover lists, in its order. What is listed is one rule for every list of projects (`listing.ts`): a
+ * project started with the short form is public and listed in every build; one its founder marked "Not listed yet"
+ * and a sale still being set up are not. "Raising now" leads (plan §2), with the newest-record order the launches came
+ * in still holding inside each group. The page lists from the paged read of project records with this; the snapshot
+ * below uses it for the same answer from its own records.
+ */
+export function listedLaunches(
+  launches: readonly Launch[],
+  raises: boolean,
+  chainHead: number | bigint | null,
+): Launch[] {
+  return raisingFirst(
+    launches.filter((launch) =>
+      listedProject(launch.record, effectiveStage(launch), raises),
+    ),
+    (launch) => effectiveFunding(launch, chainHead),
+  );
+}
+
 /** The `summon` receipt payload — validated field by field (org-money.ts). */
 interface SummonPayload {
   dao: string | null;
@@ -371,16 +391,7 @@ export function deriveDirectory(input: {
   }
 
   const allLaunches = buildLaunches(events, tombstones);
-  // What is listed is one rule for every list of projects (`listing.ts`): a project started with the short form is
-  // public and listed in every build; one its founder marked "Not listed yet" and a sale still being set up are not.
-  // "Raising now" then leads the section (plan §2), with the newest-record order `buildLaunches` produced still
-  // holding inside each group.
-  const launches = raisingFirst(
-    allLaunches.filter((launch) =>
-      listedProject(launch.record, effectiveStage(launch), raises),
-    ),
-    (launch) => effectiveFunding(launch, input.chainHead ?? null),
-  );
+  const launches = listedLaunches(allLaunches, raises, input.chainHead ?? null);
   const launchName = new Map<string, string>();
   for (const launch of allLaunches) {
     launchName.set(

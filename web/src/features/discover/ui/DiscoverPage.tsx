@@ -14,14 +14,17 @@
  * renders `QueryError` instead of three empty grids that would read as
  * "nothing exists".
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Lightbulb, Plus, Search } from "lucide-react";
 
+import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { isIdea } from "@/features/launchpad/lib/idea";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import { MoreProjects } from "@/features/launchpad/ui/MoreProjects";
 import { StartIdeaDialog } from "@/features/launchpad/ui/StartIdeaDialog";
+import { useLaunches } from "@/features/launchpad/use-launches";
 import { PitchDialog } from "@/features/projects/ui/PitchDialog";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { useUserNames } from "@/features/profiles/use-profiles";
@@ -36,6 +39,7 @@ import {
   directoryNotice,
   discoverFilters,
   launchesForFilter,
+  listedLaunches,
   visibleSections,
   DISCOVER_EVENT_KINDS,
   type DiscoverFilter,
@@ -91,10 +95,13 @@ function EmptyState({
 function SectionHeading({
   title,
   count,
+  more = false,
   description,
 }: {
   title: string;
   count: number;
+  /** There are more than `count`: the list is read a page at a time and has not reached its end. */
+  more?: boolean;
   description: string;
 }) {
   return (
@@ -102,7 +109,7 @@ function SectionHeading({
       <h2 className="text-base font-semibold text-black dark:text-white">
         {title}
         <span className="ml-2 text-xs font-normal text-black/60 dark:text-white/60">
-          {count} listed
+          {more ? `${count} shown so far` : `${count} listed`}
         </span>
       </h2>
       <p className="text-xs text-black/60 dark:text-white/60">{description}</p>
@@ -111,7 +118,18 @@ function SectionHeading({
 }
 
 export function DiscoverPage() {
-  const { data, isLoading, error, refetch } = useDiscover();
+  const directory = useDiscover();
+  // The projects come from the paged read of project records, apart from the rest of the directory: one bounded
+  // snapshot of every kind would lose projects on a busy server.
+  const paged = useLaunches();
+  const chainHead = useChainBlockHeight();
+  const data = directory.data;
+  const isLoading = directory.isLoading || paged.isLoading;
+  const error = directory.error ?? paged.error;
+  const refetch = () => {
+    void directory.refetch();
+    void paged.refetch();
+  };
   // A contributor-only build (the hosted pilot) lists no raise, offers no backing and no pitch board: its projects are
   // contributor projects, and starting one is the only way in.
   const raises = raisesOffered();
@@ -129,9 +147,12 @@ export function DiscoverPage() {
   }, [startIdea, navigate]);
 
   const sections = visibleSections(filter, raises);
-  const snapshot = data;
+  const snapshot = paged.data ? data : undefined;
   const daos = snapshot?.daos ?? [];
-  const allLaunches = snapshot?.launches ?? [];
+  const allLaunches = useMemo(
+    () => listedLaunches(paged.data ?? [], raises, chainHead),
+    [paged.data, raises, chainHead],
+  );
   const launches = launchesForFilter(allLaunches, filter, raises);
   const projects = snapshot?.projects ?? [];
   const founders = [
@@ -145,6 +166,9 @@ export function DiscoverPage() {
     // A contributor-only build shows no DAOs section, so its DAOs cannot fill the page there.
     (daos.length === 0 || !raises) &&
     allLaunches.length === 0 &&
+    // Older projects not read yet may be listed ones: then the page is not empty, it has more to show.
+    !paged.hasMore &&
+    !paged.moreError &&
     // The pitch board is not shown where raises are not offered, so its pitches cannot fill the page there.
     (projects.length === 0 || !raises);
 
@@ -283,6 +307,7 @@ export function DiscoverPage() {
                 <section className="flex flex-col gap-3">
                   <SectionHeading
                     count={launches.length}
+                    more={paged.hasMore || paged.cut}
                     description={
                       raises
                         ? "Projects on this server. A raise shows its stage, target and progress as the sale itself reports them."
@@ -298,7 +323,12 @@ export function DiscoverPage() {
                           : "Projects"
                     }
                   />
-                  {launches.length === 0 && !raises ? (
+                  {launches.length === 0 &&
+                  (paged.hasMore || paged.moreError) ? (
+                    <p className="text-sm text-black/60 dark:text-white/60">
+                      None among the newest projects read so far.
+                    </p>
+                  ) : launches.length === 0 && !raises ? (
                     <EmptyState
                       message={
                         filter === "ideas"
@@ -346,6 +376,7 @@ export function DiscoverPage() {
                       ))}
                     </ul>
                   )}
+                  <MoreProjects launches={paged} />
                 </section>
               ) : null}
 

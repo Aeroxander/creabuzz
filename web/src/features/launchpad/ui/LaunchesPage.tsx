@@ -57,6 +57,7 @@ import { isContributorProject } from "../lib/funding";
 import { isIdea } from "../lib/idea";
 import { listedHere } from "../lib/contributor-only";
 import { notListedYet } from "../lib/listing";
+import { MoreProjects } from "./MoreProjects";
 import { raisesOffered } from "../lib/raises-offered";
 import { useSupporters } from "../use-supporters";
 import { ProgressBar } from "./widgets";
@@ -124,7 +125,8 @@ function FundingChip({
 }
 
 export function LaunchesPage() {
-  const { data, isLoading, error, refetch } = useLaunches();
+  const paged = useLaunches();
+  const { data, isLoading, error, refetch } = paged;
   const create = useCreateLaunch();
   // The contributor-only hosted image cannot launch a sale, so it offers none: no Set up a sale, no Markets, no raise
   // sandbox, no sale tabs or funding chips, and `?start=sale` opens nothing. It lists contributor projects and ideas only;
@@ -544,6 +546,7 @@ export function LaunchesPage() {
           })}
         </ul>
       )}
+      {isLoading || error ? null : <MoreProjects launches={paged} />}
 
       {ideaOpen ? <StartIdeaDialog onClose={() => setIdeaOpen(false)} /> : null}
       {createOpen && raises ? (
