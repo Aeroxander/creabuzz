@@ -28,6 +28,7 @@ import { relativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
 import { Chip } from "@/shared/ui/chip";
 
+import { agentLabel } from "../lib/agent-label";
 import {
   HELP_NOTE_MAX,
   helpRequest,
@@ -224,7 +225,13 @@ export function HelpRequestCard({
   /** Something that happened to what the person was doing, said once in the card. */
   const [notice, setNotice] = useState<string | null>(null);
   const people = view
-    ? [...view.offers.map((o) => o.author), ...view.foundBy, ...team]
+    ? [
+        ...view.offers.map((o) => o.author),
+        // Whoever runs an agent that offered, to name them beside it.
+        ...view.offers.flatMap((o) => (o.agent?.owner ? [o.agent.owner] : [])),
+        ...view.foundBy,
+        ...team,
+      ]
     : [];
   const names = useUserNames(people);
   const headingId = useId();
@@ -399,6 +406,15 @@ export function HelpRequestCard({
                       name={names(offer.author)}
                       pubkey={offer.author}
                     />{" "}
+                    {offer.agent ? (
+                      <>
+                        <Chip data-testid="help-offer-agent" tone="info">
+                          {agentLabel(
+                            offer.agent.owner ? names(offer.agent.owner) : null,
+                          )}
+                        </Chip>{" "}
+                      </>
+                    ) : null}
                     <span className="text-xs text-muted-foreground">
                       offered to help {relativeTime(offer.at)}
                     </span>

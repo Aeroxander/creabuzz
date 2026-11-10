@@ -70,6 +70,7 @@ test("an offer names the update and its author, and reads back as an offer", () 
     author: ANN,
     at: 100,
     note: "I have an old phone.",
+    agent: null,
   });
 });
 

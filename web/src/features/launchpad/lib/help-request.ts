@@ -19,6 +19,7 @@
  * Pure and alias-free: `help-request.test.mjs` drives it under `node --test`.
  */
 
+import { type AgentMark, agentMark } from "./agent-label.ts";
 import type { HelpAsk } from "./weekly-update.ts";
 
 const TAG_OFFER = "help-offer";
@@ -45,7 +46,12 @@ export interface HelpSignal {
   author: string;
   at: number;
   note: string;
+  /** Set when the record was signed by an agent: who runs it, when the record proves that (`agent-label.ts`). */
+  agent: AgentMark | null;
 }
+
+/** The kind every help record is: an update record. */
+const KIND_UPDATE = 47003;
 
 interface EventLike {
   id: string;
@@ -85,6 +91,7 @@ export function parseHelpSignal(event: EventLike): HelpSignal | null {
     author: event.pubkey,
     at: event.created_at,
     note,
+    agent: agentMark(event, KIND_UPDATE),
   };
 }
 
@@ -164,6 +171,8 @@ export interface Offer {
   author: string;
   at: number;
   note: string;
+  /** Set when an agent made the offer. */
+  agent: AgentMark | null;
   /** The team's replies, oldest first. */
   replies: OfferReply[];
 }
@@ -248,6 +257,7 @@ export function helpRequest(input: {
       author: s.author,
       at: s.at,
       note: s.note,
+      agent: s.agent,
       replies: (replies.get(s.id) ?? [])
         .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1))
         .slice(-REPLIES_SHOWN),
