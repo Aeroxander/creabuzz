@@ -122,6 +122,8 @@ export default defineConfig({
         "**/weekly-update-help.spec.ts",
         // The goal, the promises updates make and answer, the record, and starting a project alone.
         "**/project-goal-record.spec.ts",
+        // Tasks with a finish line: made from an offer, handed in, sent back, confirmed by someone else; the profile.
+        "**/project-tasks.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

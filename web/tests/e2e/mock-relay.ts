@@ -181,6 +181,11 @@ export interface MockRelayOptions {
    * because the chat specs read the deleted message back.
    */
   applyDeletions?: boolean;
+  /**
+   * Take a write and then hang up without answering it, the way a connection that drops at the wrong moment does:
+   * the record is stored, and the client never hears so. Return true for the writes to lose the answer of.
+   */
+  loseAnswer?: (event: StoredEvent) => boolean;
 }
 
 export function createMockRelay({
@@ -191,6 +196,7 @@ export function createMockRelay({
   enforcePGate = false,
   deriveChannels = false,
   applyDeletions = false,
+  loseAnswer,
 }: MockRelayOptions = {}) {
   const events: StoredEvent[] = [];
   const sockets = new Set<Socket>();
@@ -335,7 +341,23 @@ export function createMockRelay({
               ws.send(JSON.stringify(["OK", event.id, false, reason]));
               return;
             }
+            // A record the server already holds is acknowledged and not stored twice, as the real server does.
+            if (events.some((stored) => stored.id === event.id)) {
+              ws.send(
+                JSON.stringify([
+                  "OK",
+                  event.id,
+                  true,
+                  "duplicate: already have this event",
+                ]),
+              );
+              return;
+            }
             events.push(event);
+            if (loseAnswer?.(event)) {
+              ws.close();
+              return;
+            }
             if (applyDeletions && event.kind === 5) {
               const doomed = new Set(
                 event.tags.filter((t) => t[0] === "e").map((t) => t[1]),
