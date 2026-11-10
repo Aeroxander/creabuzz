@@ -35,6 +35,7 @@ import {
   isGoalRecordTags,
   parseGoalVersion,
 } from "./lib/goals";
+import { isTaskRecordTags } from "./lib/tasks";
 import {
   foundEvent,
   type HelpNotice,
@@ -140,6 +141,7 @@ export function useProjectUpdates(project: Project) {
           .flatMap((event) => {
             if (isHelpSignalTags(event.tags)) return [];
             if (isGoalRecordTags(event.tags)) return [];
+            if (isTaskRecordTags(event.tags)) return [];
             const update = parseLaunchUpdate(event);
             return update ? [update] : [];
           })
@@ -150,6 +152,7 @@ export function useProjectUpdates(project: Project) {
             .flatMap((event) => {
               if (isHelpSignalTags(event.tags)) return [];
               if (isGoalRecordTags(event.tags)) return [];
+              if (isTaskRecordTags(event.tags)) return [];
               const update = parseLaunchUpdate(event);
               return update ? [update] : [];
             })

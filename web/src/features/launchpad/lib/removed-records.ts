@@ -118,3 +118,21 @@ export function removedLine(
       : "";
   return `The founder has removed ${least}${records(count, "update record")}${also}. The last removal was on ${day(lastAt)}.`;
 }
+
+/**
+ * The same, for a named team member who is not the founder: "Max has removed 2 update records, the last on …", or
+ * that their removals could not all be read. Null when they removed nothing and that is known.
+ */
+export function memberRemovedLine(
+  name: string,
+  removed: RemovedRecords,
+  day: (at: number) => string,
+): string | null {
+  const { count, unnamed, lastAt, complete } = removed;
+  const total = count + unnamed;
+  if (total === 0 || lastAt === null)
+    return complete
+      ? null
+      : `Whether ${name} has removed records could not be checked: they have more removals than could be read here.`;
+  return `${name} has removed ${complete ? "" : "at least "}${records(total, "record")}, the last on ${day(lastAt)}.`;
+}

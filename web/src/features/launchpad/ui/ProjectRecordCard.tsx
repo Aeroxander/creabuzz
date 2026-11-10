@@ -13,6 +13,8 @@
 
 import { useMemo, useState } from "react";
 
+import { useUserNames } from "@/features/profiles/use-profiles";
+
 import { Button } from "@/shared/ui/button";
 import { Chip, type ChipTone } from "@/shared/ui/chip";
 
@@ -30,9 +32,18 @@ import {
   promiseTotals,
   promiseTotalsLine,
 } from "../lib/promises";
-import { removedLine } from "../lib/removed-records";
+import { memberRemovedLine, removedLine } from "../lib/removed-records";
+import {
+  acceptedTasks,
+  orderTime,
+  type TaskFile,
+  type TaskView,
+} from "../lib/tasks";
+import { acceptedLine } from "../lib/track-record";
 import type { Launch } from "../models";
 import { useProjectRecord } from "../use-project-record";
+import { useProjectTasks, useTeamRemovals } from "../use-tasks";
+import { EvidenceLinks } from "./TaskParts";
 
 /** How many lines of the record show at first, and how many more each press adds. */
 const PAGE = 10;
@@ -60,6 +71,63 @@ interface Line {
   text: string;
   /** A second line: when it was promised, what it was before, why. */
   detail: string;
+  /** Accepted work: the links and files that were handed in. */
+  links?: readonly string[];
+  files?: readonly TaskFile[];
+  /** What a test finds the line by, when it is not a promise or a goal. */
+  testId?: string;
+}
+
+/** A project's finished and closed tasks as lines of its record. */
+function taskLines(
+  tasks: readonly TaskView[],
+  names: (pubkey: string) => string,
+  now: number,
+): Line[] {
+  const lines: Line[] = acceptedTasks(tasks, now).flatMap((task) =>
+    task.accepted
+      ? [
+          {
+            key: `task-${task.id}`,
+            at: orderTime(task.accepted.confirmedAt, now),
+            tone: "success" as const,
+            label: "Work accepted",
+            text: task.what,
+            detail: `Done by ${names(task.helper)}, checked by ${names(task.accepted.by)}. Done meant: ${task.done}`,
+            links: task.accepted.links,
+            files: task.accepted.files,
+            testId: "record-work-accepted",
+          },
+        ]
+      : [],
+  );
+  for (const task of tasks) {
+    if (task.state === "given-up" && task.gaveUp)
+      lines.push({
+        key: `task-${task.id}`,
+        at: orderTime(task.gaveUp.at, now),
+        tone: "warning",
+        // Someone who never said yes turned the task down; they did not give up work they had taken on.
+        label: task.agreed === null ? "Task turned down" : "Task given up",
+        text: task.what,
+        detail:
+          task.agreed === null
+            ? ""
+            : `${names(task.helper)} gave it up${task.gaveUp.note ? `: ${task.gaveUp.note}` : ""}`,
+        testId: "record-task-closed",
+      });
+    if (task.state === "cancelled" && task.cancelled)
+      lines.push({
+        key: `task-${task.id}`,
+        at: orderTime(task.cancelled.at, now),
+        tone: "neutral",
+        label: "Task cancelled",
+        text: task.what,
+        detail: `Cancelled by ${names(task.cancelled.by)}: ${task.cancelled.note}`,
+        testId: "record-task-closed",
+      });
+  }
+  return lines;
 }
 
 const day = (at: number) => new Date(at * 1000).toLocaleDateString();
@@ -73,6 +141,27 @@ export function ProjectRecordCard({
 }) {
   const { record, failed, stale, retry } = useProjectRecord(launch.record);
   const [shown, setShown] = useState(PAGE);
+  // The project's tasks are their own read: when it fails or is cut, the promises and goals still show.
+  const work = useProjectTasks(launch.record);
+  const closed = useMemo(
+    () =>
+      (work.tasks ?? []).filter(
+        (task) =>
+          task.state === "confirmed" ||
+          task.state === "given-up" ||
+          task.state === "cancelled",
+      ),
+    [work.tasks],
+  );
+  const teamRemovals = useTeamRemovals(launch.record);
+  const names = useUserNames([
+    ...(teamRemovals?.members.map((member) => member.pubkey) ?? []),
+    ...closed.flatMap((task) => [
+      task.helper,
+      ...(task.accepted ? [task.accepted.by] : []),
+      ...(task.cancelled ? [task.cancelled.by] : []),
+    ]),
+  ]);
 
   const view = useMemo(() => {
     if (!record) return null;
@@ -128,14 +217,18 @@ export function ProjectRecordCard({
         detail:
           "The update that made this promise was removed, so what was promised can't be shown",
       })),
+      ...taskLines(closed, names, Math.floor(Date.now() / 1000)),
     ].sort((a, b) => b.at - a.at || (a.key < b.key ? -1 : 1));
     return {
       lines,
+      work: work.tasks
+        ? acceptedLine(closed.filter((t) => t.state === "confirmed").length)
+        : null,
       removed: removedLine(record.removed, day),
       promises: promiseTotalsLine(promiseTotals(record.promises)),
       goals: goalTotalsLine(goalTotals(goals)),
     };
-  }, [record]);
+  }, [record, closed, names, work.tasks]);
 
   if (!record || !view) {
     // Not read yet: the card holds its place and says so. Not readable: said, with a way to read again.
@@ -178,8 +271,38 @@ export function ProjectRecordCard({
         Promises and goals
       </h2>
       <p className="text-xs text-muted-foreground">
-        What this project said it would do, and what came of it.
+        What this project said it would do, what came of it, and the work it
+        accepted.
       </p>
+      {work.failed ? (
+        <p
+          className="mt-2 text-sm"
+          data-testid="record-work-failed"
+          role="alert"
+        >
+          Couldn't read this project's finished tasks.{" "}
+          <Button
+            onClick={work.retry}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Try again
+          </Button>
+        </p>
+      ) : work.tasks && !work.complete ? (
+        <p className="mt-2 text-sm" data-testid="record-work-cut" role="status">
+          This project has more task records than could be read here, so how
+          much work it accepted can't be worked out. What was read is below.
+        </p>
+      ) : view.work && closed.some((t) => t.state === "confirmed") ? (
+        <p
+          className="mt-2 text-sm font-semibold"
+          data-testid="record-work-totals"
+        >
+          {view.work}
+        </p>
+      ) : null}
       {record.facts.totals ? (
         view.promises || view.goals ? (
           <p className="mt-2 text-sm font-semibold" data-testid="record-totals">
@@ -212,6 +335,27 @@ export function ProjectRecordCard({
             : null}
         </p>
       ) : null}
+      {teamRemovals &&
+      teamRemovals.members.length + teamRemovals.unchecked > 0 ? (
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          data-testid="record-team-removed"
+        >
+          {teamRemovals.members
+            .flatMap(
+              (member) =>
+                memberRemovedLine(names(member.pubkey), member.removed, day) ??
+                [],
+            )
+            .join(" ")}
+          {teamRemovals.unchecked > 0
+            ? ` Removals by ${teamRemovals.unchecked} more of the team were not checked.`
+            : null}{" "}
+          Anyone on the team can remove a record they signed (a task, a
+          send-back, a confirmation), and it is then not shown or counted here.
+          The count covers everything they removed on this server.
+        </p>
+      ) : null}
       {stale ? (
         <p className="mt-2 text-sm" role="status">
           Couldn't check for newer records.{" "}
@@ -236,7 +380,7 @@ export function ProjectRecordCard({
           {view.lines.slice(0, shown).map((line) => (
             <li
               className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5"
-              data-testid="record-line"
+              data-testid={line.testId ?? "record-line"}
               key={line.key}
             >
               <Chip tone={line.tone}>{line.label}</Chip>
@@ -247,6 +391,14 @@ export function ProjectRecordCard({
               {line.detail ? (
                 <span className="w-full break-words text-xs text-muted-foreground">
                   {line.detail}
+                </span>
+              ) : null}
+              {line.links || line.files ? (
+                <span className="w-full">
+                  <EvidenceLinks
+                    files={line.files ?? []}
+                    links={line.links ?? []}
+                  />
                 </span>
               ) : null}
             </li>

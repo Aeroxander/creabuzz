@@ -39,6 +39,7 @@ import {
 } from "../lib/help-request";
 import { HELP_SIZE_LABEL } from "../lib/weekly-update";
 import type { Launch, LaunchUpdate } from "../models";
+import { MyOfferTask, OfferTask } from "./OfferTask";
 import {
   OfferWithdrawnError,
   useHelpActions,
@@ -425,6 +426,13 @@ export function HelpRequestCard({
                     </p>
                   ) : null}
                   <Replies names={names} offer={offer} />
+                  <OfferTask
+                    ask={ask}
+                    helperName={names(offer.author)}
+                    launch={launch}
+                    offer={offer}
+                    updateId={update.id}
+                  />
                   {replyingTo === offer.id ? (
                     <NoteBox
                       busy={actions.reply.isPending}
@@ -541,6 +549,7 @@ export function HelpRequestCard({
             </p>
           ) : null}
           <Replies names={names} offer={mine} />
+          <MyOfferTask launch={launch} offerId={mine.id} />
           <Button
             className="mt-2"
             disabled={actions.withdraw.isPending}

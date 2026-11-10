@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   deletionsFilter,
+  memberRemovedLine,
   removedLine,
   removedRecords,
 } from "./removed-records.ts";
@@ -121,4 +122,28 @@ test("a read that did not reach the end says at least, and with nothing found sa
     "Whether the founder has removed update records could not be checked: they have more removals than could be read here.",
   );
   assert.equal(removedLine(removedRecords([], FOUNDER, true), day), null);
+});
+
+test("a team member's removals are said by name, and a cut read is never 'none'", () => {
+  const some = removedRecords(
+    [del(OTHER, 50, ["a"]), del(OTHER, 90, ["b"], "")],
+    OTHER,
+    true,
+  );
+  assert.equal(
+    memberRemovedLine("Max", some, day),
+    "Max has removed 2 records, the last on day 90.",
+  );
+  assert.equal(
+    memberRemovedLine("Max", removedRecords([], OTHER, true), day),
+    null,
+  );
+  assert.match(
+    memberRemovedLine("Max", removedRecords([], OTHER, false), day),
+    /could not be checked/,
+  );
+  assert.match(
+    memberRemovedLine("Max", { ...some, complete: false }, day),
+    /at least 2 records/,
+  );
 });

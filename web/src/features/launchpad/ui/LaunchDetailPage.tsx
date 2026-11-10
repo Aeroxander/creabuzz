@@ -59,6 +59,7 @@ import { ProjectUpdateCard } from "./ProjectUpdateCard";
 import { ProjectGoalCard } from "./ProjectGoalCard";
 import { ProjectOpenHelp } from "./ProjectOpenHelp";
 import { ProjectRecordCard } from "./ProjectRecordCard";
+import { ProjectTasksCard } from "./ProjectTasksCard";
 import { helpQueryKey } from "../use-help-requests";
 import {
   ProjectUpdatesTab,
@@ -528,6 +529,7 @@ export function LaunchDetailPage({
       {sandbox ? null : (
         <>
           <ProjectOpenHelp launch={launch} workTab={hasWorkTab} />
+          <ProjectTasksCard launch={launch} />
           <ProjectRecordCard isFounder={isFounder} launch={launch} />
         </>
       )}

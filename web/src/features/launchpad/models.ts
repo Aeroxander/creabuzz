@@ -26,6 +26,7 @@ import {
   type UpdateParts,
 } from "./lib/weekly-update.ts";
 import { isGoalRecordTags } from "./lib/goals.ts";
+import { isTaskRecordTags } from "./lib/tasks.ts";
 import {
   parseMarks,
   parsePromises,
@@ -851,6 +852,8 @@ export function buildLaunches(
       if (isHelpSignalTags(event.tags)) continue;
       // A goal record is the project's goal, not news: it is read with the project's own records.
       if (isGoalRecordTags(event.tags)) continue;
+      // A task record is a step on a task (made, handed in, checked): read with the project's tasks, never as news.
+      if (isTaskRecordTags(event.tags)) continue;
       const update = parseLaunchUpdate(event);
       if (update) updates.push(update);
     } else if (event.kind === KIND_LAUNCH_PROPOSAL) {
