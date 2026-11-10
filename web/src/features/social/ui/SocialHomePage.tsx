@@ -204,7 +204,7 @@ export function SocialHomePage() {
           (following.data?.length ?? 0) === 0 ? (
           <EmptyState
             testId="social-following-empty"
-            title="Your timeline is quiet"
+            title="You don't follow anyone yet"
           >
             Follow people and their posts show up here.{" "}
             <Link
@@ -237,7 +237,7 @@ export function SocialHomePage() {
               onRetry={timeline.refetch}
               relayUrl={relayWsUrl()}
               testId="social-feed-error"
-              title="Couldn't load the feed"
+              title="Couldn't load posts"
             />
           </div>
         ) : timeline.isLoading ||

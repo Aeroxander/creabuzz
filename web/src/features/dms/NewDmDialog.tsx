@@ -50,7 +50,7 @@ export function NewDmDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button
         type="button"
-        aria-label="Close new message dialog"
+        aria-label="Close new chat dialog"
         className={`absolute inset-0 cursor-default bg-black/40 ${MODAL_BACKDROP_BLUR_CLASS}`}
         onClick={onClose}
       />
@@ -95,7 +95,7 @@ export function NewDmDialog({
             data-testid="new-dm-pending"
             role="status"
           >
-            Starting the conversation…
+            Starting the chat…
           </p>
         ) : error != null ? (
           <FailureNote

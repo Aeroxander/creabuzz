@@ -120,7 +120,7 @@ export function SearchResults({
     return withBar(
       <div className="flex min-h-0 flex-1 items-center justify-center p-4">
         <QueryError
-          description="The server did not answer the search."
+          description="The server did not answer, so there are no results to show."
           error={error}
           message={error.message}
           onRetry={() => void refetch()}

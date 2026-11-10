@@ -151,10 +151,7 @@ export function MessagesPage() {
               />
             </div>
           ) : shown.length === 0 ? (
-            <EmptyState
-              testId="social-messages-empty"
-              title="Your inbox is empty"
-            >
+            <EmptyState testId="social-messages-empty" title="No messages yet">
               Only you and the person you write to can read your messages. Start
               one with the pencil above.
             </EmptyState>

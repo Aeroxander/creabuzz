@@ -25,7 +25,7 @@ export function ThreadPage() {
   return (
     <SocialShell>
       <PageBar
-        back={<BackLink label="Back to the feed" to="/social" />}
+        back={<BackLink label="Back to Home" to="/social" />}
         title="Post"
       />
       {thread.isError ? (

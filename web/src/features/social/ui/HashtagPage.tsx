@@ -37,7 +37,7 @@ export function HashtagPage() {
   return (
     <SocialShell>
       <PageBar
-        back={<BackLink label="Back to the feed" to="/social" />}
+        back={<BackLink label="Back to Home" to="/social" />}
         title={`#${lower}`}
       />
       {firstPageError(timeline) ? (
@@ -55,7 +55,7 @@ export function HashtagPage() {
       ) : timeline.isLoading ? (
         <TimelineSkeleton />
       ) : rows.length === 0 ? (
-        <EmptyState title={`Nothing for #${lower} yet`}>
+        <EmptyState title={`No posts with #${lower} yet`}>
           Post with this hashtag and it appears here.
         </EmptyState>
       ) : (

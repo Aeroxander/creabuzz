@@ -55,7 +55,7 @@ export function ConversationPage() {
     return (
       <SocialShell rail={false}>
         <PageBar title="Message" />
-        <EmptyState title="Unknown recipient">
+        <EmptyState title="We can't find this person">
           Check the link and try again.
         </EmptyState>
       </SocialShell>

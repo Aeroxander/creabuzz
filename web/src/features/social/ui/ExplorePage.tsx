@@ -54,7 +54,7 @@ function ExploreError({
   return (
     <div className="p-4">
       <QueryError
-        description="The server did not answer, so this list can't be shown. It is not known to be empty."
+        description="The server did not answer, so this list can't be shown. It may not be empty."
         error={error}
         kinds={kinds}
         onRetry={onRetry}

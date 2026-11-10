@@ -82,14 +82,14 @@ export function DmView() {
       onError: (failure) => {
         // A refusal with plain words already says what to do next (wait, or open the invite link); anything else is
         // said plainly, the server's own words kept under Technical details.
-        const fallback = "Couldn't start the conversation. Try again.";
+        const fallback = "Couldn't start the chat. Try again.";
         const words = failureWords(failure, fallback);
         setOpenError(
           words.text === fallback
             ? words
             : {
                 ...words,
-                text: `Couldn't start the conversation. ${words.text}`,
+                text: `Couldn't start the chat. ${words.text}`,
               },
         );
       },
@@ -218,7 +218,7 @@ export function DmView() {
             <QueryError
               error={error}
               title="Couldn't load conversations"
-              description="The server didn't answer, so we can't tell whether you have any conversations."
+              description="The server didn't answer, so your conversations can't be shown."
               message={errorMessage(error)}
               onRetry={() => void refetch()}
               testId="dm-list-error"
@@ -283,7 +283,7 @@ export function DmView() {
             {rows.length === 0
               ? "Nothing here yet."
               : startsChats
-                ? "Select a conversation to start reading."
+                ? "Pick a chat to read it."
                 : "Select a notice to read it."}
           </div>
         )}

@@ -59,7 +59,7 @@ export function BookmarksPage() {
     <SocialShell>
       <PageBar title="Bookmarks" />
       {!me ? (
-        <EmptyState title="Sign in to save posts">
+        <EmptyState title="Sign in to bookmark posts">
           Bookmarks are private to you.
         </EmptyState>
       ) : view === "loading" ? (
@@ -67,7 +67,7 @@ export function BookmarksPage() {
       ) : view === "error" ? (
         <div className="p-4">
           <QueryError
-            description="The server did not answer, so your saved posts can't be shown. Nothing was lost."
+            description="The server did not answer, so your bookmarks can't be shown. Nothing was lost."
             error={error}
             kinds={
               boardPosts.error
@@ -94,8 +94,8 @@ export function BookmarksPage() {
               onRetry={retry}
               testId="social-bookmarks-partial-error"
             >
-              Some of your saved posts couldn't be loaded, so this list may not
-              be complete. Nothing was lost.
+              Some of your bookmarks couldn't be loaded, so this list may not be
+              complete. Nothing was lost.
             </PartialFailure>
           ) : null}
           <PostList

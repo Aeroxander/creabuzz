@@ -18,7 +18,7 @@ export type SealPrivate = (plaintext: string) => Promise<string>;
 
 /** Said when the list was written in a form this app cannot open: it is shown, never overwritten. */
 export const UNREADABLE_BOOKMARKS =
-  "Your saved posts were written by another app in a form this one can't read, so nothing was changed.";
+  "Your bookmarks were saved by another app in a form this one can't read, so nothing was changed.";
 
 /** The private entries of `list`, or null when its content cannot be opened. */
 async function privateTagsOf(

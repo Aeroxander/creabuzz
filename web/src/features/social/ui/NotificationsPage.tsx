@@ -512,9 +512,9 @@ export function NotificationsPage() {
           hasLaunchUpdates ? null : groups.length === 0 ? (
           <EmptyState
             testId="social-notifications-empty"
-            title={tab === "all" ? "Nothing yet" : "No mentions yet"}
+            title={tab === "all" ? "No notifications yet" : "No mentions yet"}
           >
-            When someone interacts with you, you'll see it here.
+            Replies, votes, follows and mentions show up here.
           </EmptyState>
         ) : (
           groups.map((group) =>

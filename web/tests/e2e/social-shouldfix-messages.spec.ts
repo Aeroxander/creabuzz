@@ -225,9 +225,7 @@ test("on a phone the community panel shows the list, then one conversation with 
   // The list has the screen, not a narrow column beside an empty pane.
   const box = await list.boundingBox();
   expect(box?.width ?? 0).toBeGreaterThan(340);
-  await expect(
-    page.getByText("Select a conversation to start reading."),
-  ).toBeHidden();
+  await expect(page.getByText("Pick a chat to read it.")).toBeHidden();
 
   await row.click();
   await expect(page.getByText("Just between us")).toBeVisible({
@@ -288,9 +286,7 @@ test("a conversation in the community is started by finding the person by name, 
     "Alice Archer",
     { timeout: 20_000 },
   );
-  await expect(
-    page.getByText("Select a conversation to start reading."),
-  ).toBeHidden();
+  await expect(page.getByText("Pick a chat to read it.")).toBeHidden();
 });
 
 test("a conversation the server could not start says so plainly, with the server's words under Technical details", async ({
@@ -313,7 +309,7 @@ test("a conversation the server could not start says so plainly, with the server
     .click({ timeout: 20_000 });
 
   await expect(page.getByTestId("new-dm-error")).toHaveText(
-    "Couldn't start the conversation. Try again.",
+    "Couldn't start the chat. Try again.",
     { timeout: 15_000 },
   );
   // Not in the main copy: only inside the closed disclosure.

@@ -85,7 +85,7 @@ export async function nextMuteList(
 ): Promise<EventTemplate> {
   if (!state.readable) {
     throw new Error(
-      "Your mute list was written by another app in a form this one can't read, so nothing was changed. Change who you mute in that app instead.",
+      "Your mute list was saved by another app in a form this one can't read, so nothing was changed. Change who you mute in that app instead.",
     );
   }
   const target = pubkey.toLowerCase();

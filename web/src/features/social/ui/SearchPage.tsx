@@ -47,7 +47,7 @@ function PostResults({ q }: { q: string }) {
     return (
       <div className="p-4">
         <QueryError
-          description="The server did not answer, so these results are not known to be empty."
+          description="The server did not answer, so there may be results we can't show."
           error={error}
           kinds={
             board.error ? [KIND_TEXT_NOTE, KIND_FORUM_POST] : [KIND_TEXT_NOTE]
@@ -118,7 +118,7 @@ function PeopleResults({ q }: { q: string }) {
     return (
       <div className="p-4">
         <QueryError
-          description="The server did not answer, so these results are not known to be empty."
+          description="The server did not answer, so there may be results we can't show."
           error={found.error}
           kinds={[KIND_PROFILE]}
           onRetry={() => void found.refetch()}
