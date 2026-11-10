@@ -287,7 +287,7 @@ By hand (server started as in 4i, with `BUZZ_REQUIRE_RELAY_MEMBERSHIP=false`): p
 side, **Anyone with the address** (already chosen) and **Only people I invite**; press the second, then create. Open **People** (it was under **Org** before D110): **People and access** shows you as the only person. Press **Make invite link** (1 week, one person) and copy it.
 In a second browser (a different profile, so it is a different person) open `http://<name>.localhost:3000/c/<name>.localhost:3000`: it says **This
 community is invite-only**. Open the invite link there and press **Join in browser**: the community opens, and your **Org** page now
-lists two people. Use the same link in a third browser: it says the invite has reached its use limit. Back as the owner pick
+lists two people. Use the same link in a third browser: it says the invite has been used up. Back as the owner pick
 **Anyone with the address** and confirm: the third browser, reloaded, gets in. Pick **Only people I invite** again: the warning says people who
 are not on the list are signed out right away; confirm, reload the third browser: invite-only again, while the second browser (invited) is
 still in. The Communities page (with `BUZZ_PUBLIC_COMMUNITY_DIRECTORY=1`) never lists the community while it is private, and lists it once it is open.
@@ -1196,7 +1196,7 @@ pnpm --dir web exec playwright test --project=smoke tests/e2e/access-refused.spe
 By hand, on a local server with two accounts, the first a community admin (`buzz-admin add-member --role admin`, with
 `RELAY_URL` set to the server's address). The second opens a board and leaves it open throughout.
 
-1. **Timeout.** The admin reports the second account's profile and, in the community's Moderation queue, presses
+1. **Timeout.** The admin reports the second account's profile and, in the community's Moderation page, under Reports, presses
    **Time out** → 1 hour. The second account tries to post: "You are timed out in this community until (date and
    time). You can still read; you can post again then." No unix numbers, no `restricted:`.
 2. **Ban.** The admin presses **Ban** on one of their posts, 1 day. Without reloading, the second account's board says
