@@ -136,6 +136,8 @@ export default defineConfig({
         "**/home-record-feed.spec.ts",
         // "Your projects": what you started, help and follow, with the record and what needs you in each.
         "**/your-projects.spec.ts",
+        // Home's next step: one line, one action, from facts read off signed records.
+        "**/home-next-step.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],
