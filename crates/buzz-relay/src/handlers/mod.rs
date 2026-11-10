@@ -1,6 +1,10 @@
 /// NIP-42 authentication handler.
 pub mod admin_action_worker;
 pub mod admin_outbox_worker;
+/// Agent accounts say so on their profile, with the signature of who runs them.
+pub mod agent_label;
+#[cfg(test)]
+mod agent_label_postgres_tests;
 pub mod auth;
 #[cfg(test)]
 mod board_limit_postgres_tests;

@@ -20,12 +20,31 @@
 //! | `task-part` = task, send-back, grant, cancel      | the founder or a team member         |
 //! | `task-part` = confirm                             | founder or team, never the helper    |
 //! | `task-part` = accept, evidence, more-time, give-up| the helper the task names            |
-//! | none of the above                                 | anyone, as before (no lookup)        |
+//! | none of the above, body names on-chain work       | anyone, as before (no lookup)        |
+//! | none of the above (a plain update, anything else) | the founder or a team member         |
 //!
 //! The founder is the author of the project record; the team is the founder
 //! plus every `["team", <pubkey>, <role>]` tag on it (the same field the web
 //! app reads). A record that carries tags from several families must satisfy
 //! every one of them.
+//!
+//! A record with none of the tags above is the team's unless it is one of the
+//! records people outside the team write about work that lives on the chain:
+//! submitted evidence, a reviewer's reason, an agreement's words, a proposed
+//! work area, the answers given before a vote. Those say so in their JSON body
+//! (see [`OPEN_WORK_KEYS`]) and are checked by their readers against the chain,
+//! not against the team. Everything else that names a project (an old-style
+//! plain update, a team answer, a check note, a tag this module has never
+//! heard of) is stored only from the founder or the team.
+//!
+//! # Agent accounts
+//!
+//! An account the server has on record as an agent (someone runs it, and both
+//! keys signed to say so: see `agent_label`) has limited powers here, even when
+//! it is on the team or is the founder: it may not confirm a task's work, grant
+//! more time, or sign goals, promises and promise marks. Those need a person.
+//! Everything else it may do exactly as any other account in its place. An
+//! account with no such record is not affected.
 //!
 //! Authority follows the signing key. An agent is on a team only when its own
 //! key is listed there; the relay's agent-owner link (`is_agent_owner`) lets a
@@ -54,6 +73,9 @@ pub(crate) const NOT_HELPER: &str = "restricted: only the helper this task names
 /// Said when the helper (or whoever runs or is run by the helper) confirms the task's work.
 pub(crate) const OWN_WORK: &str =
     "restricted: a task's work must be confirmed by someone other than its helper";
+/// Said when an agent account signs something that needs a person.
+pub(crate) const AGENT_LIMIT: &str =
+    "restricted: an agent account cannot check work, grant more time, or sign goals and promises; a person on the team must";
 /// Said when the `a` tag names a project record the server does not hold.
 pub(crate) const NO_PROJECT: &str =
     "invalid: this record names a project that is not on this server";
@@ -101,6 +123,11 @@ impl TaskPart {
         })
     }
 
+    /// Whether the step needs a person: an agent account never signs it.
+    fn needs_a_person(self) -> bool {
+        matches!(self, Self::Confirm | Self::Grant)
+    }
+
     /// Whether the step is the helper's to sign (the rest are the team's).
     fn is_helpers(self) -> bool {
         matches!(
@@ -121,6 +148,44 @@ pub(crate) struct Requirement {
     pub(crate) step: Option<(TaskPart, Option<[u8; 32]>)>,
 }
 
+impl Requirement {
+    /// Whether the record is one an agent account never signs: a goal, a
+    /// promise or a promise mark, a confirmation, or a grant of more time.
+    pub(crate) fn needs_a_person(&self) -> bool {
+        self.founder || self.step.is_some_and(|(part, _)| part.needs_a_person())
+    }
+}
+
+/// The keys in a record's JSON body that mark it as a record about work that
+/// lives on the chain, which people outside the team write: submitted evidence
+/// (`claim`), a reviewer's reason (`review`), an agreement's words and a
+/// request for corrections (`agreement`, `agreementCorrections`), a proposed
+/// work area (`workArea`) and the answers given before a vote (`challenge`).
+pub(crate) const OPEN_WORK_KEYS: [&str; 6] = [
+    "claim",
+    "review",
+    "agreement",
+    "agreementCorrections",
+    "workArea",
+    "challenge",
+];
+
+/// Whether a record with none of the known tags is a record about on-chain
+/// work: its body is a JSON object that carries one of [`OPEN_WORK_KEYS`] as an
+/// object. A plain update (`title`, `body`, `links`) is not.
+fn is_open_work_record(event: &Event) -> bool {
+    serde_json::from_str::<serde_json::Value>(event.content.as_str())
+        .ok()
+        .and_then(|body| {
+            body.as_object().map(|body| {
+                OPEN_WORK_KEYS
+                    .iter()
+                    .any(|key| body.get(*key).is_some_and(serde_json::Value::is_object))
+            })
+        })
+        .unwrap_or(false)
+}
+
 fn id_bytes(value: &str) -> Option<[u8; 32]> {
     if value.len() != 64
         || !value
@@ -134,8 +199,10 @@ fn id_bytes(value: &str) -> Option<[u8; 32]> {
 
 /// Read what a kind 47003 record's tags require.
 ///
-/// `Ok(None)` means the record belongs to none of the families this module
-/// knows, and is stored as before. `Err` is a record that claims a family but
+/// `Ok(None)` means the record carries none of the tags this module knows and
+/// its body marks it as a record about on-chain work: it is stored from anyone,
+/// as before. A record with none of those tags and no such body is the team's.
+/// `Err` is a record that claims a family but
 /// cannot be read as one (two steps at once, a step that names no task): no
 /// reader would show it, so it is refused.
 pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
@@ -206,7 +273,11 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
     };
 
     if !(founder || team || known || step.is_some()) {
-        return Ok(None);
+        if is_open_work_record(event) {
+            return Ok(None);
+        }
+        // Nothing says what this is: only the project's own people may put it on the project's record.
+        team = true;
     }
     Ok(Some(Requirement {
         founder,
@@ -291,7 +362,36 @@ pub(crate) fn task_facts(task: &Event) -> Option<TaskFacts> {
 /// `task` is the stored task a step names (`None` when the server does not
 /// hold a task record under that id). `linked_to_helper` says the signer runs
 /// the task's helper, or is run by it, in the relay's agent-owner records.
+/// `signer_is_agent` says the server has the signer on record as an agent
+/// account; it matters only for records that need a person.
+///
+/// Who may sign is decided first, exactly as for any account; the agent limit
+/// is applied after, so an account with no agent record gets the same answer
+/// it always did.
 pub(crate) fn decide(
+    requirement: &Requirement,
+    signer: &str,
+    coordinate: &str,
+    team: &ProjectTeam,
+    task: Option<&TaskFacts>,
+    linked_to_helper: bool,
+    signer_is_agent: bool,
+) -> Result<(), &'static str> {
+    decide_by_place(
+        requirement,
+        signer,
+        coordinate,
+        team,
+        task,
+        linked_to_helper,
+    )?;
+    if signer_is_agent && requirement.needs_a_person() {
+        return Err(AGENT_LIMIT);
+    }
+    Ok(())
+}
+
+fn decide_by_place(
     requirement: &Requirement,
     signer: &str,
     coordinate: &str,
@@ -423,6 +523,18 @@ pub(crate) async fn enforce_launch_update_authority(
         }
     }
 
+    // Only a record that needs a person asks whether its signer is an agent.
+    let signer_is_agent = if requirement.needs_a_person() {
+        state
+            .db
+            .get_agent_channel_policy(community, &event.pubkey.to_bytes())
+            .await
+            .map_err(|e| internal("checking whether the signer is an agent account", e))?
+            .is_some_and(|(_, owner)| owner.is_some())
+    } else {
+        false
+    };
+
     decide(
         &requirement,
         &signer,
@@ -430,6 +542,7 @@ pub(crate) async fn enforce_launch_update_authority(
         &team,
         task.as_ref(),
         linked_to_helper,
+        signer_is_agent,
     )
     .map_err(|reason| {
         if reason.starts_with("restricted:") {
@@ -524,7 +637,7 @@ mod tests {
 
         /// The verdict on `event`, with `task` as the stored task it names.
         fn verdict(&self, event: &Event, task: Option<&Event>) -> Result<(), &'static str> {
-            self.verdict_linked(event, task, false)
+            self.verdict_as(event, task, false, false)
         }
 
         fn verdict_linked(
@@ -532,6 +645,21 @@ mod tests {
             event: &Event,
             task: Option<&Event>,
             linked: bool,
+        ) -> Result<(), &'static str> {
+            self.verdict_as(event, task, linked, false)
+        }
+
+        /// The verdict when the server has the signer on record as an agent account.
+        fn verdict_agent(&self, event: &Event, task: Option<&Event>) -> Result<(), &'static str> {
+            self.verdict_as(event, task, false, true)
+        }
+
+        fn verdict_as(
+            &self,
+            event: &Event,
+            task: Option<&Event>,
+            linked: bool,
+            agent: bool,
         ) -> Result<(), &'static str> {
             let requirement = classify(event).expect("readable").expect("a known family");
             let facts = task.and_then(task_facts);
@@ -542,6 +670,7 @@ mod tests {
                 &self.team(),
                 facts.as_ref(),
                 linked,
+                agent,
             )
         }
     }
@@ -560,23 +689,129 @@ mod tests {
 
     const ID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
+    /// A record with these tags after the `a` tag and this JSON body.
+    fn with_body(w: &World, who: &Keys, tags: &[&[&str]], body: &str) -> Event {
+        let coordinate = w.coordinate();
+        let a: [&str; 2] = ["a", &coordinate];
+        let mut all: Vec<&[&str]> = vec![&a];
+        all.extend_from_slice(tags);
+        let tags: Vec<Tag> = all
+            .iter()
+            .map(|fields| Tag::parse(fields.to_vec()).expect("tag"))
+            .collect();
+        EventBuilder::new(Kind::Custom(KIND_LAUNCH_UPDATE as u16), body)
+            .tags(tags)
+            .allow_self_tagging()
+            .sign_with_keys(who)
+            .expect("sign")
+    }
+
     #[test]
-    fn records_of_no_known_family_need_nobody() {
+    fn a_record_that_says_nothing_about_itself_is_the_teams() {
         let w = World::new();
-        // A plain update, submitted work, a review note: only the `a` tag, or tags this module does not know.
-        assert_eq!(classify(&w.record(&w.stranger, &[])), Ok(None));
-        let other = w.record(
-            &w.stranger,
-            &[
-                &["claim", "c1"],
-                &["goal-text", "not the goal tag"],
-                &["e", ID],
-            ],
-        );
-        assert_eq!(classify(&other), Ok(None));
+        // A plain update (only the `a` tag), tags this module does not know, a team answer: the team's.
+        let unknown: &[&[&str]] = &[
+            &["claim", "c1"],
+            &["goal-text", "not the goal tag"],
+            &["e", ID],
+        ];
         // `task` and `task-helper` alone say nothing: the step is what makes a task record.
-        let loose = w.record(&w.stranger, &[&["task", ID], &["task-helper", ID]]);
-        assert_eq!(classify(&loose), Ok(None));
+        let loose: &[&[&str]] = &[&["task", ID], &["task-helper", ID]];
+        let answer: &[&[&str]] = &[&["l", "creaton-team"], &["team-answer", "yes"]];
+        for tags in [&[][..], unknown, loose, answer] {
+            for member in [&w.founder, &w.mate] {
+                assert_eq!(w.verdict(&w.record(member, tags), None), Ok(()), "{tags:?}");
+            }
+            for other in [&w.former, &w.stranger, &w.helper] {
+                assert_eq!(
+                    w.verdict(&w.record(other, tags), None),
+                    Err(NOT_TEAM),
+                    "{tags:?}"
+                );
+            }
+        }
+        // A body that is plain words, not JSON, or names on-chain work badly is still a plain update.
+        for body in [
+            r#"{"title":"News","body":"We shipped"}"#,
+            "not json",
+            r#"["claim"]"#,
+            r#"{"claim":"0xabc"}"#,
+            r#"{"claim":null,"review":true}"#,
+            r#"{"check":{"v":1}}"#,
+        ] {
+            let plain = with_body(&w, &w.stranger, &[], body);
+            assert_eq!(w.verdict(&plain, None), Err(NOT_TEAM), "{body}");
+        }
+    }
+
+    #[test]
+    fn records_about_on_chain_work_are_still_anyones() {
+        let w = World::new();
+        for key in OPEN_WORK_KEYS {
+            let body =
+                format!(r#"{{"title":"Evidence","body":"See the link","{key}":{{"id":"0x01"}}}}"#);
+            assert_eq!(
+                classify(&with_body(&w, &w.stranger, &[], &body)),
+                Ok(None),
+                "{key}"
+            );
+            // The body opens nothing once the record carries a known tag: a goal is the founder's whatever it says.
+            let dressed = with_body(&w, &w.stranger, &[&["goal", "g1"]], &body);
+            assert_eq!(w.verdict(&dressed, None), Err(NOT_FOUNDER), "{key}");
+        }
+    }
+
+    #[test]
+    fn an_agent_account_never_signs_what_needs_a_person() {
+        let w = World::new();
+        let task = w.task(&w.founder);
+        // Goals, promises and promise marks: refused even from the founder's own key.
+        for tags in [
+            vec![vec!["goal", "g1"]],
+            vec![
+                vec!["update-part", "next", "Ship"],
+                vec!["promise", "p1", "Ship"],
+            ],
+            vec![vec!["promise-mark", "p1", "kept"]],
+        ] {
+            let tags: Vec<&[&str]> = tags.iter().map(|t| t.as_slice()).collect();
+            let record = w.record(&w.founder, &tags);
+            assert_eq!(w.verdict(&record, None), Ok(()));
+            assert_eq!(w.verdict_agent(&record, None), Err(AGENT_LIMIT), "{tags:?}");
+        }
+        // Checking work and granting more time: refused even from a team member.
+        for part in ["confirm", "grant"] {
+            let step = w.step(&w.mate, part, &task);
+            assert_eq!(w.verdict(&step, Some(&task)), Ok(()));
+            assert_eq!(
+                w.verdict_agent(&step, Some(&task)),
+                Err(AGENT_LIMIT),
+                "{part}"
+            );
+        }
+        // Everything else an agent may do exactly as any account in its place.
+        for part in ["accept", "evidence", "more-time", "give-up"] {
+            let step = w.step(&w.helper, part, &task);
+            assert_eq!(w.verdict_agent(&step, Some(&task)), Ok(()), "{part}");
+        }
+        for part in ["send-back", "cancel"] {
+            let step = w.step(&w.mate, part, &task);
+            assert_eq!(w.verdict_agent(&step, Some(&task)), Ok(()), "{part}");
+        }
+        let offer = w.record(&w.stranger, &[&["e", ID], &["help-offer", ID]]);
+        assert_eq!(w.verdict_agent(&offer, None), Ok(()));
+        let update = w.record(&w.mate, &[&["update-part", "done", "Shipped"]]);
+        assert_eq!(w.verdict_agent(&update, None), Ok(()));
+        assert_eq!(w.verdict_agent(&w.task(&w.mate), None), Ok(()));
+        // An agent out of place is told what anyone out of place is told.
+        assert_eq!(
+            w.verdict_agent(&w.record(&w.stranger, &[&["goal", "g1"]]), None),
+            Err(NOT_FOUNDER)
+        );
+        assert_eq!(
+            w.verdict_agent(&w.step(&w.stranger, "confirm", &task), Some(&task)),
+            Err(NOT_TEAM)
+        );
     }
 
     #[test]

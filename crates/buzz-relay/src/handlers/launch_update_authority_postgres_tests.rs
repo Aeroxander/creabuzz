@@ -19,11 +19,15 @@ use crate::state::AppState;
 /// Signed `ahead` seconds from now: a project record replaces the one before
 /// it only when it is newer, and two signed in the same second would tie.
 fn signed_at(keys: &Keys, kind: u32, tags: &[&[&str]], ahead: u64) -> Event {
+    signed_body(keys, kind, tags, ahead, "{}")
+}
+
+fn signed_body(keys: &Keys, kind: u32, tags: &[&[&str]], ahead: u64, body: &str) -> Event {
     let tags: Vec<Tag> = tags
         .iter()
         .map(|fields| Tag::parse(fields.to_vec()).expect("tag"))
         .collect();
-    EventBuilder::new(Kind::Custom(kind as u16), "{}")
+    EventBuilder::new(Kind::Custom(kind as u16), body)
         .tags(tags)
         .allow_self_tagging()
         .custom_created_at(Timestamp::from(Timestamp::now().as_secs() + ahead))
@@ -56,6 +60,12 @@ fn record(who: &Keys, coordinate: &str, tags: &[&[&str]]) -> Event {
     let mut all: Vec<&[&str]> = vec![&a];
     all.extend_from_slice(tags);
     signed_at(who, KIND_LAUNCH_UPDATE, &all, 0)
+}
+
+/// An update record with no tag but the project's and this JSON body: an old-style plain update, or a record about
+/// on-chain work.
+fn bare(who: &Keys, coordinate: &str, body: &str) -> Event {
+    signed_body(who, KIND_LAUNCH_UPDATE, &[&["a", coordinate]], 0, body)
 }
 
 /// A task for `helper`. `what` also keeps two tasks signed in the same second from being one event.
@@ -258,14 +268,58 @@ async fn goals_updates_and_offers_are_stored_only_from_the_right_signer() {
     )
     .await;
 
-    // Records of no known family are stored from anyone, as before: submitted work, a review note.
+    // A record that says nothing about itself is the team's: an old-style plain update, a tag nobody knows.
+    let plain = r#"{"title":"News","body":"We shipped"}"#;
+    let forged = bare(&p.stranger, &coord, plain);
+    refuse(
+        &state,
+        &tenant,
+        forged.clone(),
+        NOT_TEAM,
+        "a stranger's plain update",
+    )
+    .await;
+    assert!(
+        !stored(&state, &tenant, &forged).await,
+        "a refused plain update is not stored"
+    );
+    refuse(
+        &state,
+        &tenant,
+        record(&p.helper, &coord, &[&["team-answer", "yes"]]),
+        NOT_TEAM,
+        "a stranger's yes to a team nobody asked them onto",
+    )
+    .await;
+    for member in [&p.founder, &p.mate] {
+        accept(
+            &state,
+            &tenant,
+            bare(member, &coord, plain),
+            "the team's plain update",
+        )
+        .await;
+    }
     accept(
         &state,
         &tenant,
-        record(&p.stranger, &coord, &[]),
-        "a record with only the `a` tag",
+        record(&p.mate, &coord, &[&["team-answer", "yes"]]),
+        "a named member's answer",
     )
     .await;
+    // Records about on-chain work are stored from anyone, as before: submitted work, a reviewer's reason.
+    for body in [
+        r#"{"title":"Evidence: map","body":"Here","claim":{"id":"0x01","mandate":"0x02","check":"A map"}}"#,
+        r#"{"title":"Turned down: map","body":"Blurry","review":{"id":"0x01","verdict":"object"}}"#,
+    ] {
+        accept(
+            &state,
+            &tenant,
+            bare(&p.stranger, &coord, body),
+            "a stranger's record about on-chain work",
+        )
+        .await;
+    }
     // A family record that cannot be read as one is refused whoever signs it.
     refuse(
         &state,
@@ -365,12 +419,25 @@ async fn a_family_record_needs_its_project_on_the_server() {
         "a goal for another id",
     )
     .await;
-    // Unchanged: a record of no known family is not looked up at all.
-    accept(
+    // A plain record is the team's, so it needs a project to have a team.
+    refuse(
         &state,
         &tenant,
         record(&p.stranger, &nowhere, &[]),
+        NO_PROJECT,
         "a plain record for a project that is not there",
+    )
+    .await;
+    // Unchanged: a record about on-chain work is not looked up at all.
+    accept(
+        &state,
+        &tenant,
+        bare(
+            &p.stranger,
+            &nowhere,
+            r#"{"title":"Evidence","body":"Here","claim":{"id":"0x01"}}"#,
+        ),
+        "evidence for a project that is not there",
     )
     .await;
 }
@@ -457,7 +524,7 @@ async fn task_steps_are_stored_only_from_the_team_or_the_named_helper() {
     )
     .await;
     // A record that is there but is not a task.
-    let plain = record(&p.helper, &coord, &[]);
+    let plain = record(&p.mate, &coord, &[]);
     accept(&state, &tenant, plain.clone(), "a plain record").await;
     refuse(
         &state,

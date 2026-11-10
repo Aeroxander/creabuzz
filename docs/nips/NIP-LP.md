@@ -157,6 +157,17 @@ Updates feed and MAY cross-post the title into a bound channel as a regular
 message (one user action = one atomic persist: the update event and the
 channel message are published together or not at all).
 
+Who may sign one is checked by the relay when it is written
+(`crates/buzz-relay/src/handlers/launch_update_authority.rs`): goals and
+promises are the founder's; updates and answers to offers are the founder's or
+a team member's; an offer to help is anyone's; a task's steps are the team's
+or the named helper's. A `47003` that carries none of those tags is stored
+only from the founder or the team, unless its JSON body marks it as a record
+about on-chain work that people outside the team write (`claim`, `review`,
+`agreement`, `agreementCorrections`, `workArea` or `challenge` as an object).
+An account on record as an agent (below) may not sign a confirmation, a grant
+of more time, a goal, a promise or a promise mark.
+
 ## `47004`: proposal records
 
 `a` = launch coordinate. Content JSON
@@ -320,6 +331,16 @@ Agents are first-class launchpad participants, not impersonators:
   an owner identity exists; the CLI respects `BUZZ_AUTH_TAG` on every launchpad
   write. Clients MUST NOT treat an `auth` tag as an identity override
   (NIP-OA).
+- The same two tags on the account's own profile (kind `0`) are its
+  account-level label: "this account is an agent, and this person runs it". It
+  takes both keys (the profile is signed by the agent, the `auth` tag by the
+  operator). The relay refuses an `agent` tag that names any key but the
+  signer, an `agent` tag without an operator's signature that covers the
+  profile, more than one `auth` tag, and an `auth` signature that does not
+  hold; a profile that passes puts the account on record as run by that
+  operator, once and for good (`crates/buzz-relay/src/handlers/agent_label.rs`).
+  CLI: `buzz agents confirm`, `buzz agents label`, `buzz agents show`. See
+  `docs/agents/JOINING.md`.
 - Web: the create dialog and bid dialog offer a "as agent" toggle; the
   directory and detail badge the launch.
 - CLI: `buzz launchpad compose-bid --as-agent` marks the unsigned envelope

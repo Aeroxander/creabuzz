@@ -5378,6 +5378,12 @@ async fn ingest_event_inner(
         ));
     }
 
+    // An agent account's label rides on its profile: checked here, once, and
+    // a confirmed one is put on record before the profile is stored.
+    if kind_u32 == KIND_PROFILE {
+        super::agent_label::enforce_agent_label(state, tenant, &event).await?;
+    }
+
     if kind_u32 == KIND_EMOJI_SET || kind_u32 == KIND_EMOJI_LIST {
         validate_custom_emoji_tags(&event)?;
     }
