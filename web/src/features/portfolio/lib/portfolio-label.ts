@@ -1,16 +1,16 @@
 /**
- * What the Portfolio page is called, and who sees it in the main navigation.
+ * What the page at `/portfolio` is called, and who sees it in the main navigation.
  *
- * A build that offers raises calls it Portfolio (what you backed and what you built) and shows it to everyone. A
- * contributor-only build (`raisesOffered()` false) has nothing to back: it is the person's own work and Shares, so it is
- * called "Your work" and only someone with an account sees it.
+ * It is "Your projects" in every build: the projects a person started, helps and follows, and how each is keeping its
+ * promises. A build that offers raises shows it to everyone (it also holds what they backed); a contributor-only build
+ * (`raisesOffered()` false) shows it only to someone with an account, since everything on it is theirs.
  *
  * Alias-free: `portfolio-label.test.mjs` drives it under `node --test`.
  */
 
 /** The page's name, in the navigation and as its title. */
-export function portfolioLabel(raises: boolean): string {
-  return raises ? "Portfolio" : "Your work";
+export function portfolioLabel(): string {
+  return "Your projects";
 }
 
 /** Whether the main navigation links to the page. */

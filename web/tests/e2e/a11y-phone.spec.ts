@@ -21,7 +21,7 @@ const PAGES: [string, string][] = [
   ["Discover", "/discover"],
   ["Launchpad", "/launchpad"],
   ["Project board", "/projects"],
-  ["Portfolio", "/portfolio"],
+  ["Your projects", "/portfolio"],
   ["Messages", "/social/messages"],
   ["Explore", "/social/explore"],
   ["Communities", "/c"],

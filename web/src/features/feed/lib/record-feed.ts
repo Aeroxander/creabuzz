@@ -74,14 +74,14 @@ export interface UpdateItem extends ItemBase {
   promises: string[];
 }
 
-export interface GoalItem extends ItemBase {
+interface GoalItem extends ItemBase {
   kind: "goal";
   state: Exclude<GoalState, "open">;
   text: string;
   reason: string;
 }
 
-export interface WorkItem extends ItemBase {
+interface WorkItem extends ItemBase {
   kind: "work";
   taskId: string;
   what: string;

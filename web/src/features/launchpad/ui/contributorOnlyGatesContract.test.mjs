@@ -69,9 +69,10 @@ test("every launch listing leaves raises out without them", () => {
       /listedProject\(launch\.record, effectiveStage\(launch\), raises\)/,
     ],
     ["../../discover/use-discover.ts", /raises: raisesOffered\(\)/],
+    // "Projects you follow" (the page that was Portfolio) is read by coordinate, so the rule is applied to what is read.
     [
-      "../../portfolio/ui/PortfolioPage.tsx",
-      /listedHere\(launch\.record, raises\)/,
+      "../use-my-projects.ts",
+      /!seen\.has\(coordinate\) && listedHere\(record, raises\)/,
     ],
   ]) {
     assert.match(source(file), pattern, file);

@@ -306,6 +306,6 @@ test("on a phone, Portfolio is one of the four destinations", async ({
   await page.getByTestId("app-nav-portfolio").click();
   await expect(page).toHaveURL(/\/portfolio$/);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Portfolio" }),
+    page.getByRole("heading", { level: 1, name: "Your projects" }),
   ).toBeVisible();
 });

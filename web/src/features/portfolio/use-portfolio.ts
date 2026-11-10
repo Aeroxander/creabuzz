@@ -11,13 +11,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { orgGraphFromEvents } from "@/features/feed/lib/trust-weight";
-import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { isAuthorityHolder } from "@creaton/core/org/orgAuthority.ts";
 import { getRpcEndpoint } from "@/features/launchpad/chain";
 import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { findOwnedBidIds, readBidView } from "@/features/launchpad/lib/my-bids";
 import { SANDBOX_ID } from "@/features/launchpad/lib/sandbox";
-import { launchCoordinate, type Launch } from "@/features/launchpad/models";
+import type { Launch } from "@/features/launchpad/models";
 import { useSenderPicker } from "@/features/launchpad/ui/SenderPicker";
 import { useConnectedWallet } from "@/features/launchpad/use-connected-wallet";
 import { useLaunches } from "@/features/launchpad/use-launches";
@@ -217,26 +216,6 @@ export function useWorkStanding() {
     },
     staleTime: 120_000,
   });
-}
-
-/** The launches you follow, newest first. */
-export function useFollowedLaunches() {
-  const launches = useLaunches();
-  const follows = useLaunchFollows();
-  const followed = useMemo(
-    () =>
-      (launches.data ?? [])
-        .filter((l) =>
-          follows.followed.has(launchCoordinate(l.record.author, l.record.id)),
-        )
-        .sort((a, b) => b.record.createdAt - a.record.createdAt),
-    [launches.data, follows.followed],
-  );
-  return {
-    followed,
-    loading: launches.isLoading || !follows.ready,
-    error: launches.error,
-  };
 }
 
 /** A holding, with the launch (and so the name) of the DAO it is in. */

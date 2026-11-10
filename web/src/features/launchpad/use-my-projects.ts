@@ -71,7 +71,7 @@ const OWN_READ = 200;
 const FOLLOWED_READ = 50;
 const OFFERED_PROJECTS = 20;
 /** How many projects' states Home's next step reads: each costs a few reads. */
-export const NEXT_STEP_PROJECTS = 3;
+const NEXT_STEP_PROJECTS = 3;
 
 type Read = (
   filter: Parameters<typeof queryEvents>[1],
@@ -137,7 +137,7 @@ async function readRecords(
 }
 
 /** How one project stands for `viewer`, from a few bounded reads by who signed (see the file's note). */
-export async function readProjectState(
+async function readProjectState(
   relay: string,
   record: LaunchRecord,
   viewer: string | null,
@@ -282,7 +282,7 @@ export function useProjectState(record: LaunchRecord) {
   return useQuery(stateQuery(relayWsUrl(), record, me));
 }
 
-export interface MyTasksOnProject {
+interface MyTasksOnProject {
   coordinate: string;
   /** The project, when its record could be read. */
   record: LaunchRecord | null;
@@ -293,7 +293,7 @@ export interface MyTasksOnProject {
  * The signed-in person's own tasks, by project: the ones they took on (found from the steps they signed) and the ones
  * given to them that wait for their yes (found from the task records that name them).
  */
-export function useMyTasks() {
+function useMyTasks() {
   const me = existingUserPubkey();
   const relay = relayWsUrl();
   return useQuery({

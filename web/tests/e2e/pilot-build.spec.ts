@@ -9,7 +9,7 @@ import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
  * a stubbed server. Run by `scripts/web-pilot-e2e.sh`, which makes that build in a folder of its own and serves it on
  * :4186 (E2E_DIST / E2E_PORT), so it never touches the shared suite's build on :4173. The default build's specs prove the
  * raise screens work; this one proves a pilot member never meets them, and meets what replaced them: Discover's projects
- * and ideas, Start's contributor project, "Your work", the community Tasks board as plain to-dos, and setup with no AI
+ * and ideas, Start's contributor project, "Your projects", the community Tasks board as plain to-dos, and setup with no AI
  * helpers. The rules themselves are unit-tested with the same settings (`src/app/lib/pilot-gates.test.mjs`).
  */
 
@@ -377,7 +377,7 @@ test("Start's contributor page defines Shares once, in the header, with the pilo
   ).toHaveCount(1);
 });
 
-test("Home's navigation says Your work, and only to someone with an account", async ({
+test("Home's navigation says Your projects, and only to someone with an account", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -390,9 +390,12 @@ test("Home's navigation says Your work, and only to someone with an account", as
 
   await signIn(page);
   await page.goto("/");
-  await expect(page.getByTestId("app-nav-portfolio")).toHaveText(/Your work/, {
-    timeout: 20_000,
-  });
+  await expect(page.getByTestId("app-nav-portfolio")).toHaveText(
+    /Your projects/,
+    {
+      timeout: 20_000,
+    },
+  );
 });
 
 test("a contributor project's Funds tab shows no Trading card: trading is off in the pilot build", async ({

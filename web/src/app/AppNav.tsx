@@ -89,9 +89,9 @@ const NAV_ITEMS: readonly NavItem[] = [
   },
   {
     to: "/portfolio",
-    label: "Portfolio",
+    label: "Your projects",
     icon: Briefcase,
-    // The court is reached from Portfolio's Judging section.
+    // The court is reached from this page's Judging section.
     matches: (p) => p.startsWith("/portfolio") || p.startsWith("/court"),
   },
 ];
@@ -105,8 +105,8 @@ const START_TAB: NavItem = {
 };
 
 /**
- * The sections this build and this person see. A contributor-only build calls Portfolio "Your work" and shows it only
- * to someone with an account (`portfolio-label.ts`).
+ * The sections this build and this person see. A contributor-only build shows "Your projects" only to someone with an
+ * account (`portfolio-label.ts`).
  */
 function navItems(community: {
   host: string | null;
@@ -127,7 +127,7 @@ function navItems(community: {
     }
     if (item.to !== "/portfolio") return [item];
     if (!portfolioInNav(raises, existingUserPubkey() !== null)) return [];
-    return [{ ...item, label: portfolioLabel(raises) }];
+    return [{ ...item, label: portfolioLabel() }];
   });
 }
 

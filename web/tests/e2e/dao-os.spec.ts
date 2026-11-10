@@ -195,7 +195,7 @@ test("Home connects project reports, reading history, discussion and the four ma
   await progress.getByRole("button", { name: "Copy update link" }).click();
   await expect(progress).toContainText("Could not copy the link");
   const nav = page.getByTestId("app-nav");
-  for (const name of ["Home", "Discover", "Communities", "Portfolio"])
+  for (const name of ["Home", "Discover", "Communities", "Your projects"])
     await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
   await progress
     .getByRole("link", { name: "Nebula OS", exact: true })

@@ -24,11 +24,11 @@ import {
 import { daysSince, founderNudge, type HelpAsk } from "./weekly-update.ts";
 
 /** A task is "due soon" from this many days before its date. */
-export const DUE_SOON_DAYS = 3;
+const DUE_SOON_DAYS = 3;
 const DAY = 86_400;
 
 /** An update of the team's, as far as this needs it. */
-export interface StateUpdate extends RecordUpdate {
+interface StateUpdate extends RecordUpdate {
   help?: HelpAsk | null;
 }
 
@@ -57,7 +57,7 @@ export interface ProjectStateInput {
   now: number;
 }
 
-export interface OffersWaiting {
+interface OffersWaiting {
   updateId: string;
   /** Offers on this request nobody on the team replied to or made a task from. */
   count: number;

@@ -1,5 +1,9 @@
 /**
- * Portfolio — what you backed, what you built, and your share of each.
+ * "Your projects" (the page at `/portfolio`). First the record: the projects you started, help and follow, each with
+ * its last update, how its promises stand, its open requests for help and what needs you now (`YourProjects`). No
+ * price, amount or return is on that part. What you backed and the Shares you hold stay below it, as they were.
+ *
+ * Below the record:
  *
  * Two kinds of stake, side by side: money you put into raises (read from the
  * chain, per wallet you bid from) and work a reviewer accepted (read from the
@@ -29,7 +33,6 @@ import {
   defaultChainPreset,
 } from "@/features/launchpad/chain-config";
 import { formatAtomic, formatMoney } from "@/features/launchpad/lib/amounts";
-import { listedHere } from "@/features/launchpad/lib/contributor-only";
 import { isContributorProject } from "@/features/launchpad/lib/funding";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
@@ -59,12 +62,12 @@ import {
   MAX_BIDS_PER_OWNER,
   MAX_RAISES_CHECKED,
   useBacking,
-  useFollowedLaunches,
   useHoldings,
   useWorkStanding,
 } from "../use-portfolio";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
 import { portfolioLabel } from "../lib/portfolio-label";
+import { YourProjects } from "./YourProjects";
 
 /** AppToken supply is minted with 18 decimals. */
 const TOKEN_DECIMALS = 18;
@@ -543,90 +546,6 @@ function HoldingsSection({
   );
 }
 
-function FollowingSection({ raises }: { raises: boolean }) {
-  const followedAll = useFollowedLaunches();
-  const { loading, error } = followedAll;
-  // A contributor-only build never lists a raise, even one followed elsewhere.
-  const followed = followedAll.followed.filter((launch) =>
-    listedHere(launch.record, raises),
-  );
-  const noun = raises ? "launches" : "projects";
-  let body: ReactNode;
-  if (loading) {
-    body = <Muted>Loading the {noun} you follow…</Muted>;
-  } else if (error) {
-    body = (
-      <p
-        className="text-sm text-red-700 dark:text-red-300"
-        data-testid="portfolio-following-error"
-        role="alert"
-      >
-        Couldn't load {noun} right now.
-      </p>
-    );
-  } else if (followed.length === 0) {
-    body = (
-      <Muted testId="portfolio-following-empty">
-        {raises ? (
-          <>
-            Follow a launch to keep an eye on it here.{" "}
-            <Link className="underline" to="/launchpad">
-              Browse launches
-            </Link>
-          </>
-        ) : (
-          <>
-            Follow a project to keep an eye on it here.{" "}
-            <Link className="underline" to="/discover">
-              Browse projects
-            </Link>
-          </>
-        )}
-      </Muted>
-    );
-  } else {
-    body = (
-      <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        {followed.map((launch) => (
-          <li key={launch.record.eventId}>
-            <Card
-              className="flex flex-col gap-2 p-4"
-              data-testid="portfolio-followed"
-            >
-              <div className="flex items-start gap-2">
-                <LaunchLink launch={launch} />
-                <StageBadge
-                  record={launch.record}
-                  stage={effectiveStage(launch)}
-                />
-              </div>
-              {launch.record.pitch ? (
-                <p className="line-clamp-2 text-sm text-black/70 dark:text-white/70">
-                  {launch.record.pitch}
-                </p>
-              ) : null}
-              {launch.record.auction ? (
-                <ProgressBar record={launch.record} />
-              ) : null}
-            </Card>
-          </li>
-        ))}
-      </ul>
-    );
-  }
-  return (
-    <Section
-      description={
-        raises ? "Launches you're keeping an eye on." : "Projects you follow."
-      }
-      id="portfolio-following"
-      title="Following"
-    >
-      {body}
-    </Section>
-  );
-}
-
 /**
  * Raises are shown where this server lists a sale, or this build offers one; a contributor-only server has neither, and a
  * contributor-only build shows none even when another build published a sale to the same server.
@@ -652,16 +571,17 @@ export function PortfolioPage() {
       <PageHeader
         description={
           raises
-            ? "What you've backed, what you've built, and your share of each."
-            : "The Shares you hold, and what is waiting on you."
+            ? "The projects you started, help and follow, and how each is keeping its promises. Below: what you backed and what you hold."
+            : "The projects you started, help and follow, and how each is keeping its promises. Below: the Shares you hold."
         }
         title={
           <span className="flex items-center gap-2">
-            <Briefcase aria-hidden className="h-5 w-5" />{" "}
-            {portfolioLabel(raisesOffered())}
+            <Briefcase aria-hidden className="h-5 w-5" /> {portfolioLabel()}
           </span>
         }
       />
+      {/* The record comes first: the projects you started, help and follow. No price, amount or return is on it. */}
+      <YourProjects />
       {raises ? (
         <>
           <WorkSection holdsShares={holdsShares} />
@@ -678,7 +598,6 @@ export function PortfolioPage() {
         </>
       )}
       <CourtSection />
-      <FollowingSection raises={raisesOffered()} />
     </div>
   );
 }

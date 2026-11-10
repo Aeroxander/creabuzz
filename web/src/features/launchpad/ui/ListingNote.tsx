@@ -98,7 +98,7 @@ export function ListingNote({
           </Button>
           <span className="text-xs text-muted-foreground">
             {unlisted
-              ? "Listing it shows it in Discover, on Home and in search."
+              ? "Listing it shows it in Discover and on Home."
               : "Choose this to keep working without being in any list. The page still opens from its link."}
           </span>
         </div>
