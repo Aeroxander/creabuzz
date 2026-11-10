@@ -225,6 +225,55 @@ async function teamMemberPostsAnUpdate() {
   ).toBeVisible();
 }
 
+/**
+ * The same records, read the way Home and "Your projects" read them, from the real server: by who signed them, with
+ * the filters those pages send. The helper's feed is their own (they have tasks on the project); the founder's page
+ * lists the project with its promises totalled, and Home's next step reads without a failure.
+ */
+async function theRecordIsReadOnHomeAndOnYourProjects() {
+  await helperPage.goto("/?tab=updates");
+  const feed = helperPage.getByTestId("record-feed");
+  await expect(feed.getByTestId("record-feed-scope")).toHaveAttribute(
+    "data-mode",
+    "yours",
+  );
+  const cards = feed.getByTestId("record-card");
+  // Newest first: the team member's update just posted leads.
+  await expect(cards.first()).toContainText(`From the team ${RUN}`);
+  // Work the team accepted is on it, worked out from the tasks' own records: the two pieces confirmed above (the
+  // web helper's and the command-line helper's), as the project's own record counts them.
+  const accepted = cards.filter({ hasText: "Work accepted" });
+  await expect(accepted).toHaveCount(2);
+  await expect(accepted.filter({ hasText: helper.name })).toHaveCount(1);
+  await expect(accepted.filter({ hasText: cliHelper.name })).toHaveCount(1);
+  await expect(feed.getByTestId("record-feed-failed")).toHaveCount(0);
+  await expect(feed).not.toContainText(/\$|earn/i);
+
+  await founderPage.goto("/portfolio");
+  const mine = founderPage
+    .getByTestId("your-projects-started")
+    .getByTestId("your-project")
+    .filter({ hasText: PROJECT_NAME });
+  await expect(mine.getByTestId("your-project-update")).toHaveText(
+    "Updated today",
+  );
+  // Three promises were made and answered in test 3: the totals are stated, so the founder's updates were all read.
+  await expect(mine.getByTestId("your-project-promises")).toContainText(
+    /\d+ kept, \d+ missed, \d+ changed/,
+  );
+  await expect(mine.getByTestId("your-project-help")).not.toContainText(
+    "Not known",
+  );
+  await expect(mine.getByTestId("your-project-failed")).toHaveCount(0);
+
+  // Home's next step reads the same facts: whatever it finds, it does not fail.
+  await founderPage.goto("/");
+  await expect(founderPage.getByTestId("home-top")).toBeVisible();
+  await expect(founderPage.getByTestId("home-yours")).toBeVisible();
+  await expect(founderPage.getByTestId("home-next-step-failed")).toHaveCount(0);
+  await shot(founderPage, "09-home-next-step");
+}
+
 test("1. three people arrive: one signs up, one signs in with a saved key, one is already signed in", async ({
   browser,
 }) => {
@@ -1266,4 +1315,5 @@ test("8. boards made inside the project, Home's Boards tab, a private bookmark, 
 
   // Last, so the founder's own update stays the project's newest for the steps above.
   await teamMemberPostsAnUpdate();
+  await theRecordIsReadOnHomeAndOnYourProjects();
 });
