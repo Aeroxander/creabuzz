@@ -34,7 +34,7 @@ export function explainStepFailure(step: PlanStep, error: unknown): string {
       return `Only this community's owner or an admin can set up the team. Ask one of them to finish setup.${kept}`;
     }
     if (step.kind === "channel") {
-      return `You can't create channels here yet. Ask this community's owner to add you.${kept}`;
+      return `You can't create rooms here yet. Ask this community's owner to add you.${kept}`;
     }
     return `You don't have permission to do that here. Ask this community's owner.${kept}`;
   }

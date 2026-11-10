@@ -127,7 +127,7 @@ export function systemNoteText(note: SystemNote, names: NoteNames): string {
     case "channel_created":
       return `${actor} created this room`;
     case "dm_created":
-      return `${actor} started this conversation`;
+      return `${actor} started this chat`;
     case "member_joined":
       if (
         note.actor === undefined ||

@@ -87,13 +87,13 @@ export function CategoryBrowse() {
   return (
     <section
       aria-label={
-        raises ? "Browse launches by category" : "Browse projects by topic"
+        raises ? "Browse launches by topic" : "Browse projects by topic"
       }
       className="mt-4"
       data-testid="category-browse"
     >
       <div
-        aria-label={raises ? "Launch categories" : "Topics"}
+        aria-label={raises ? "Launch topics" : "Topics"}
         className="flex flex-wrap items-center gap-2"
         role="tablist"
       >

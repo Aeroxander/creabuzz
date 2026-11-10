@@ -625,7 +625,7 @@ pnpm --dir web exec playwright test --project=smoke board.spec.ts   # 34 tests, 
 By hand, on a board with posts and replies by two other people:
 
 1. **Report.** Open a post. Someone else's post and each of their replies show **Report**; your own show none. Choose a
-   reason, send. The report reaches the moderators' queue (and nowhere else). Signed out, **Report** asks you to make an
+   reason, send. The report reaches the moderators' Reports list (and nowhere else). Signed out, **Report** asks you to make an
    account and sends nothing.
 2. **Remove (a board's owner or admin only).** Plain members see no **Remove**. An owner or admin sees it on other people's
    posts and replies, never on their own (they have **Delete**). It asks before it removes, says it is for everyone on the
@@ -639,7 +639,7 @@ By hand, on a board with posts and replies by two other people:
 4. **Ban (the community's owner or admin only).** The button appears beside Remove for them, and not for anyone else.
 
 Not done yet: a visible marker where something was removed and the sanitized room action log (A5), room restrictions
-(dropped for the pilot), and removal by a community owner or admin from the board itself (they use the moderation queue).
+(dropped for the pilot), and removal by a community owner or admin from the board itself (they use Reports on the Moderation page).
 
 ## 4ae. One Home, two starting points, a Testnet tag (D61, 2026-10-19)
 
@@ -683,7 +683,7 @@ By hand, with two accounts in one community (one an owner or admin, one a member
 3. **Roster.** Make the member an admin from the owner's account; they now see Remove. Withdraw it: they see none again.
 4. **Phone.** On a phone-sized window, the actions under a message (Copy, Link, Reply, Report, Remove, Ban, Delete) are always
    visible and wrap; nothing is cut off at the right edge.
-5. **Report a person.** Open someone's profile: a flag button next to Mute. Choose a reason, send. The owner's moderation queue
+5. **Report a person.** Open someone's profile: a flag button next to Mute. Choose a reason, send. The owner's Reports list
    shows it with the reason and the note. Your own profile has neither Mute nor Report.
 6. **Mute from a conversation.** Open a private conversation: Mute and Report are in the title bar. Mute, go back to Messages:
    the conversation is gone, with a line saying how many are hidden. Unmute from their profile and it returns.
@@ -1312,7 +1312,7 @@ scripts/web-social-e2e.sh   # needs Postgres and Redis; uses its own database an
 
 Runs `web/tests/e2e-real/social.spec.ts` (22 cases: posting, following, votes, replies, reposts, quotes, bookmarks,
 search, notifications, profiles, mute, direct messages, launch updates, deleting) and `board-moderation.spec.ts` (an
-appointed moderator removes a reported post from the board's queue; the author is told; a mute hides her next post).
+appointed moderator removes a reported post from the board's reports; the author is told; a mute hides her next post).
 `SKIP_BUILD=1 WEB_DIST=<dir>` reuses a build; `SPECS=...` runs a subset.
 
 ## 4bb. Quick start and the reviewer's bond (D102, D103, 2026-10-23)
@@ -1821,7 +1821,7 @@ On the hosted server (or `deploy/compose` locally), with three accounts: A (the 
    private window opening the picture's own address is refused (that is right: pictures are for members).
 2. C posts on Home. B reports it. A opens the post's menu, chooses Remove post, gives a reason: the post is gone for B
    after a reload, and C's Notifications on Home say a moderator removed it, with the reason, counted in the badge. Do
-   it once more from the moderation queue's Delete.
+   it once more with Delete under Reports.
 3. B follows two people from Explore within a second. After a reload both show under Following, and both were told.
 4. Click around fast in two tabs (Home, a board, Notifications, a profile) for a minute: nothing says "Couldn't load",
    and if a limit is ever hit it says to try again in a few seconds and then carries on.
@@ -1837,7 +1837,7 @@ On the hosted (invite-only) server, with accounts A (owner), B and C, B on a pho
 3. With Home open on A, B posts: within about a minute "1 new post. Show" appears; Show puts it on top. Reload and
    choose New: "New since your last visit" marks where A left off.
 4. A reposts B's post, B deletes it: after a reload the repost is gone; a quote of it says the post was removed.
-5. C reports B's Home post; A's moderation queue shows the words, B's name and a link, and Ban names B.
+5. C reports B's Home post; A's Reports list shows the words, B's name and a link, and Ban names B.
 6. In the community, "Notices and messages" starts a conversation by typing a name, and works on B's phone.
 7. Signed out, open the server's address: it says the server is invite-only and to open the invite link.
 

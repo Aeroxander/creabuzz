@@ -416,7 +416,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
               <code className="rounded bg-black/5 px-1 py-0.5 font-mono dark:bg-white/10">
                 @{tab.persona.name}
               </code>{" "}
-              in a channel to get an answer.
+              in a room to get an answer.
             </>
           ) : (
             <>
@@ -425,7 +425,7 @@ export function FleetView({ channels }: { channels: Channel[] }) {
               <code className="rounded bg-black/5 px-1 py-0.5 font-mono dark:bg-white/10">
                 @buzz-tab
               </code>{" "}
-              in a channel to get a response.
+              in a room to get a response.
             </>
           )}
         </p>

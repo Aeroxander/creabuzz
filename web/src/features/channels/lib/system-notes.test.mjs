@@ -105,7 +105,7 @@ test("the other notes the server writes have their own sentence", () => {
   );
   assert.equal(
     say({ actor: BOARD, type: "dm_created", participants: [BOARD, ME] }),
-    "Board Tester started this conversation",
+    "Board Tester started this chat",
   );
   assert.equal(
     say({ actor: BOARD, type: "message_deleted", target_event_id: "e1" }),

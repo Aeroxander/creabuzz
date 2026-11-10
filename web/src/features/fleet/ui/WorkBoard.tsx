@@ -455,7 +455,7 @@ export function WorkBoard({
           className="w-28 rounded-md border border-black/10 bg-white px-2 py-1.5 text-sm outline-none dark:border-white/10 dark:bg-white/5"
           aria-label="Channel"
         >
-          <option value="">No channel</option>
+          <option value="">No room</option>
           {channels.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}

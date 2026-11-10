@@ -430,7 +430,7 @@ export function RepoDetailPage() {
             >
               <a href={`/channels/${repo.channelId}`}>
                 <MessageSquare className="h-4 w-4" />
-                View channel
+                View room
               </a>
             </Button>
           </div>

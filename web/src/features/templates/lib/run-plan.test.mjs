@@ -114,7 +114,7 @@ test("a refusal stops the run, keeps what went through, and applying again write
   assert.equal(failedAt, 13);
   assert.match(
     first.results[failedAt].message,
-    /Only this community's owner or an admin|can't create channels|permission/,
+    /Only this community's owner or an admin|can't create rooms|permission/,
   );
   assert.match(
     first.results[failedAt].message,

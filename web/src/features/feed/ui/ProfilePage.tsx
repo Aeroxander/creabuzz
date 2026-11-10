@@ -302,7 +302,7 @@ export function ProfileMissing({ signedOut }: { signedOut: boolean }) {
       <PageBar
         back={
           <Link
-            aria-label="Back to the feed"
+            aria-label="Back to Home"
             className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
             to="/"
           >
@@ -374,7 +374,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
       <PageBar
         back={
           <Link
-            aria-label="Back to the feed"
+            aria-label="Back to Home"
             className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
             to="/social"
           >

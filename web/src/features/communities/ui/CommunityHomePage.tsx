@@ -57,7 +57,8 @@ function CommunityLoadState({
       <div className="w-full max-w-md rounded-xl border border-black/10 bg-white p-6 dark:border-white/10 dark:bg-white/5">
         <QueryError
           description={
-            description ?? `${host} did not answer the channel query.`
+            description ??
+            `${host} did not answer, so its rooms can't be shown.`
           }
           error={error}
           message={message}

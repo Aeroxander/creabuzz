@@ -217,15 +217,23 @@ export function DmView() {
           <div className="p-4">
             <QueryError
               error={error}
-              title="Couldn't load conversations"
-              description="The server didn't answer, so your conversations can't be shown."
+              title={
+                startsChats ? "Couldn't load chats" : "Couldn't load notices"
+              }
+              description={
+                startsChats
+                  ? "The server didn't answer, so your chats can't be shown."
+                  : "The server didn't answer, so your notices can't be shown."
+              }
               message={errorMessage(error)}
               onRetry={() => void refetch()}
               testId="dm-list-error"
             />
           </div>
         ) : isLoading ? (
-          <ViewLoadingFallback label="Loading conversations…" />
+          <ViewLoadingFallback
+            label={startsChats ? "Loading chats…" : "Loading notices…"}
+          />
         ) : selected ? (
           <>
             <div className="flex items-center border-b border-black/10 px-2 py-1 md:hidden dark:border-white/10">
@@ -240,7 +248,7 @@ export function DmView() {
                 type="button"
               >
                 <ArrowLeft aria-hidden className="h-4 w-4" />
-                All conversations
+                {startsChats ? "All chats" : "All notices"}
               </button>
             </div>
             <ChannelTimeline

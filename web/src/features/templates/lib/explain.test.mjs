@@ -14,7 +14,7 @@ test("a refusal says what to do next, and that what went through is kept", () =>
   assert.match(org, /Whatever already went through is kept/);
   assert.match(
     explainStepFailure(step("channel"), new Error("restricted: nope")),
-    /can't create channels/,
+    /can't create rooms/,
   );
   assert.match(
     explainStepFailure(step("persona"), new Error("restricted: nope")),

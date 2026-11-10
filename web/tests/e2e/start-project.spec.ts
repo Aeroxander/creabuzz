@@ -127,7 +127,7 @@ test("a team is picked, set up step by step, and its first channel opens", async
   await expect(preview).toHaveJSProperty("open", false);
   await expect(preview.getByText("#writers-room")).toBeHidden();
   await page.getByTestId("template-preview-toggle").click();
-  await expect(preview).toContainText("Channels that already exist here");
+  await expect(preview).toContainText("Rooms that already exist here");
   await expectAccessible(
     page,
     "the community setup picker with its details open",

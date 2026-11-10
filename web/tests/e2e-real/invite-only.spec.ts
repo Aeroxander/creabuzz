@@ -101,7 +101,7 @@ test("a private community turns strangers away, an invite lets one person in, an
   const second = await newPerson(browser);
   await second.goto(inviteUrl);
   await second.getByRole("button", { name: "Join this community" }).click();
-  await expect(second.getByRole("alert")).toContainText("use limit", {
+  await expect(second.getByRole("alert")).toContainText("used up", {
     timeout: 30_000,
   });
   await second.goto(`http://${host}/c/${host}`);

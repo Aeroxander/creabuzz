@@ -195,7 +195,7 @@ export function DiscoverPage() {
       />
 
       <div
-        aria-label="Filter the directory"
+        aria-label="Filter what is shown"
         className="flex flex-wrap items-center gap-x-6 gap-y-2"
         role="tablist"
       >
@@ -231,7 +231,7 @@ export function DiscoverPage() {
 
       {isLoading ? (
         <p className="py-8 text-center text-sm text-black/60 dark:text-white/60">
-          Loading the directory…
+          Loading…
         </p>
       ) : error ? (
         <QueryError
@@ -265,7 +265,7 @@ export function DiscoverPage() {
           {nothingHere ? (
             raises ? (
               <EmptyState
-                message="No projects on this server yet. Start one: add a pitch and the roles you need, and it shows up here."
+                message="No projects on this server yet. Start one: add a pitch and the roles you need, and it shows up here for everyone."
                 onPitch={() => setPitchOpen(true)}
                 testId="discover-empty"
               />

@@ -120,12 +120,12 @@ function Preview({ summary }: { summary: TemplateSummary }) {
       </summary>
       <p className="mt-2 text-muted-foreground">{summary.description}</p>
       <p className="mt-1 text-xs text-muted-foreground">
-        Channels that already exist here are reused.
+        Rooms that already exist here are reused.
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div>
           <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Channels and boards
+            Rooms and boards
           </h3>
           <div>
             <ul className="mt-1 space-y-1">
@@ -272,7 +272,7 @@ export function StartProject({
         <h2 className="text-lg font-semibold">Your community is set up</h2>
         <p className="mt-1 text-sm text-muted-foreground" role="status">
           {state.entry.template.name} is set up. There is a welcome message in #
-          {first?.name ?? "the first channel"}.
+          {first?.name ?? "the first room"}.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           {firstId ? (

@@ -88,7 +88,7 @@ function ProjectBoard({ launch }: { launch: Launch }) {
           "The project board is open.",
           dropped > 0
             ? {
-                description: `To make room for it, the project no longer lists ${dropped === 1 ? "one of the channels" : `${dropped} of the channels`} you picked.`,
+                description: `To make room for it, the project no longer lists ${dropped === 1 ? "one of the rooms" : `${dropped} of the rooms`} you picked.`,
               }
             : undefined,
         ),

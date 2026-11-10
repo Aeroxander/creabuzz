@@ -194,7 +194,7 @@ test("a sentence the app wrote for people is kept as it is, with nothing more to
     "Try again.",
   );
   assert.deepEqual(
-    failureWords(new Error("The server did not accept this write. Try again.")),
-    { text: "The server did not accept this write. Try again.", detail: null },
+    failureWords(new Error("The server did not accept that. Try again.")),
+    { text: "The server did not accept that. Try again.", detail: null },
   );
 });
