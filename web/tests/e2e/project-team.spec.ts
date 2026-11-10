@@ -85,6 +85,11 @@ function seedFoundersOwnWork(relay: Relay) {
 
 const teamTagsOf = (relay: Relay) =>
   newest(relay, 37001, FOUNDER)?.tags.filter((t) => t[0] === "team") ?? [];
+/** The invitation the founder's record names for the member: what their answer must name. */
+const inviteOf = (relay: Relay) =>
+  newest(relay, 37001, FOUNDER)?.tags.find(
+    (t) => t[0] === "team-invite" && t[1] === MEMBER,
+  )?.[2];
 const answers = (relay: Relay, pubkey: string) =>
   relay.events.filter(
     (e) =>
@@ -153,9 +158,9 @@ test("the founder adds a person, they say yes, post an update and confirm work; 
   await expect(invited).toContainText("Max Mate");
   await expect.poll(() => teamTagsOf(relay).length).toBe(1);
   const saved = newest(relay, 37001, FOUNDER);
-  const [, who, role, invite] = teamTagsOf(relay)[0];
-  expect(who).toBe(MEMBER);
-  expect(role).toBe("member");
+  // The team tag has exactly the three parts the server requires; the invitation's name sits beside it.
+  expect(teamTagsOf(relay)[0]).toEqual(["team", MEMBER, "member"]);
+  const invite = inviteOf(relay) ?? "";
   expect(invite).toMatch(/^[a-z0-9]{12}$/);
   expect(saved?.tags).toContainEqual(["p", MEMBER]);
   expect(saved?.tags).toContainEqual(["name", "Nebula"]);
@@ -278,7 +283,8 @@ test("an add whose answer is lost says so, and pressing again invites nobody twi
   await expect
     .poll(() => teamTagsOf(relay).length, { timeout: 30_000 })
     .toBe(1);
-  const firstInvite = teamTagsOf(relay)[0][3];
+  const firstInvite = inviteOf(relay);
+  expect(firstInvite).toMatch(/^[a-z0-9]{12}$/);
   // The record is read again after the send, so the person shows as added and the founder is not told to add again
   // for nothing; if they do press again, the record already names the person and nothing is sent.
   await expect(team.getByTestId("team-invited-member")).toContainText(
@@ -295,7 +301,7 @@ test("an add whose answer is lost says so, and pressing again invites nobody twi
   await expect(page.getByTestId("team-add-confirm")).toBeDisabled();
   expect(relay.events.filter((e) => e.kind === 37001).length).toBe(before);
   expect(teamTagsOf(relay)).toHaveLength(1);
-  expect(teamTagsOf(relay)[0][3]).toBe(firstInvite);
+  expect(inviteOf(relay)).toBe(firstInvite);
 });
 
 test("a no is shown to everyone, and the person is not listed as team", async ({
@@ -303,7 +309,8 @@ test("a no is shown to everyone, and the person is not listed as team", async ({
 }) => {
   const relay = createMockRelay({ applyDeletions: true });
   seedWorld(relay, [
-    ["team", MEMBER, "member", "inv1"],
+    ["team", MEMBER, "member"],
+    ["team-invite", MEMBER, "inv1"],
     ["p", MEMBER],
   ]);
   await install(page, relay, MEMBER_KEY);
@@ -344,7 +351,8 @@ test("a change the server refuses is said, and the team is shown as it is", asyn
 test("another save of the project record keeps the team", async ({ page }) => {
   const relay = createMockRelay({ applyDeletions: true });
   seedWorld(relay, [
-    ["team", MEMBER, "member", "inv1"],
+    ["team", MEMBER, "member"],
+    ["team-invite", MEMBER, "inv1"],
     ["p", MEMBER],
     ["team-left", STRANGER, "1700000000"],
   ]);
@@ -355,7 +363,8 @@ test("another save of the project record keeps the team", async ({ page }) => {
     .poll(() => newest(relay, 37001, FOUNDER)?.body.listing)
     .toBe("unlisted");
   const saved = newest(relay, 37001, FOUNDER);
-  expect(saved?.tags).toContainEqual(["team", MEMBER, "member", "inv1"]);
+  expect(saved?.tags).toContainEqual(["team", MEMBER, "member"]);
+  expect(saved?.tags).toContainEqual(["team-invite", MEMBER, "inv1"]);
   expect(saved?.tags).toContainEqual(["p", MEMBER]);
   expect(saved?.tags).toContainEqual(["team-left", STRANGER, "1700000000"]);
 });
@@ -366,7 +375,8 @@ test("at 390px the Team section and its dialog fit with no sideways scroll", asy
   await page.setViewportSize({ width: 390, height: 844 });
   const relay = createMockRelay({ applyDeletions: true });
   seedWorld(relay, [
-    ["team", MEMBER, "member", "inv1"],
+    ["team", MEMBER, "member"],
+    ["team-invite", MEMBER, "inv1"],
     ["p", MEMBER],
   ]);
   await install(page, relay, FOUNDER_KEY);

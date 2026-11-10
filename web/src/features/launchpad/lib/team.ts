@@ -3,9 +3,11 @@
  *
  * Three kinds of signed record, each trusted only from the party entitled to sign it:
  *
- * - the founder's own project record names the team: one `["team", <account>, <role>, <invitation>]` tag per person
- *   (with a `["p", <account>]` beside it, so the person can find the projects that name them). The server counts
- *   everyone with a team tag as team from the moment the record is saved; that is said wherever someone is added;
+ * - the founder's own project record names the team: one `["team", <account>, <role>]` tag per person, exactly as
+ *   the server requires it (three parts, no more), with `["team-invite", <account>, <invitation>]` and
+ *   `["p", <account>]` beside it: the invitation the person's answer names, and the tag they find the projects that
+ *   name them by. The server counts everyone with a team tag as team from the moment the record is saved; that is
+ *   said wherever someone is added;
  * - the person's own answer: an update record (kind 47003) naming the project, with `team-answer` = yes or no and the
  *   invitation it answers. Only an answer signed by the person named counts, and only for the invitation it names:
  *   someone removed and added again is asked again. A "no" for an invitation is final, whatever else was signed for
@@ -54,6 +56,14 @@ export interface FormerMember {
 
 /** The team a project record's tags name, each account once (the first entry wins), never the founder. */
 export function parseTeam(tags: Tags, founder: string): TeamMember[] {
+  const invites = new Map<string, string>();
+  for (const tag of tags)
+    if (
+      tag[0] === TAG_INVITE &&
+      typeof tag[2] === "string" &&
+      !invites.has(tag[1])
+    )
+      invites.set(tag[1], tag[2]);
   const seen = new Set<string>([founder]);
   const out: TeamMember[] = [];
   for (const tag of tags) {
@@ -61,7 +71,7 @@ export function parseTeam(tags: Tags, founder: string): TeamMember[] {
     const pubkey = tag[1];
     if (!PUBKEY.test(pubkey) || seen.has(pubkey)) continue;
     seen.add(pubkey);
-    out.push({ pubkey, role: tag[2], invite: tag[3] ?? "" });
+    out.push({ pubkey, role: tag[2], invite: invites.get(pubkey) ?? "" });
   }
   return out;
 }
@@ -84,7 +94,11 @@ export function teamTags(
   former: readonly FormerMember[],
 ): string[][] {
   return [
-    ...team.map((m) => ["team", m.pubkey, m.role, m.invite]),
+    // Three parts exactly: the server refuses a team tag of any other shape.
+    ...team.map((m) => ["team", m.pubkey, m.role]),
+    ...team.flatMap((m) =>
+      m.invite ? [[TAG_INVITE, m.pubkey, m.invite]] : [],
+    ),
     // So each person can find the projects that name them.
     ...team.map((m) => ["p", m.pubkey]),
     ...former.flatMap((m) =>

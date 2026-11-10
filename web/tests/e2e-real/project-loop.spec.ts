@@ -99,6 +99,132 @@ async function setTeam(team: Account[]) {
   expect(answer.accepted).toBe(true);
 }
 
+/**
+ * The founder adds the second member from the project page's Team section, and that person says yes in a browser of
+ * their own. Read back from the server: the founder's record names them (with a `p` tag they are found by), their own
+ * signed answer names the invitation, and everyone then sees them as team.
+ */
+async function addMateThroughTheTeamSection() {
+  await founderPage.goto(projectPath);
+  const team = founderPage.getByTestId("project-team");
+  await team.getByTestId("team-add").click();
+  await expect(founderPage.getByTestId("team-add-warning")).toContainText(
+    "They can act for this project as soon as you add them.",
+  );
+  await founderPage.getByTestId("team-add-search").fill(mate.pubkey);
+  await founderPage.getByTestId("person-search-result").first().click();
+  await expect(founderPage.getByTestId("team-add-picked")).toContainText(
+    `Add ${mate.name} to the team?`,
+  );
+  await founderPage.getByTestId("team-add-confirm").click();
+  // Shown at once, before the server has shown the record back.
+  await expect(team.getByTestId("team-invited-member")).toContainText(
+    mate.name,
+  );
+  const teamTag = async () => {
+    const [current] = await readAs(stranger, {
+      kinds: [37001],
+      authors: [founder.pubkey],
+      "#d": [SLUG],
+    });
+    return {
+      tag: current?.tags.find((t) => t[0] === "team" && t[1] === mate.pubkey),
+      record: current,
+    };
+  };
+  await expect.poll(async () => (await teamTag()).tag?.[2]).toBe("member");
+  const { tag, record: saved } = await teamTag();
+  // Exactly the three parts the server requires of a team tag; the invitation's name sits in a tag beside it.
+  expect(tag).toEqual(["team", mate.pubkey, "member"]);
+  const invite =
+    saved.tags.find(
+      (t) => t[0] === "team-invite" && t[1] === mate.pubkey,
+    )?.[2] ?? "";
+  expect(invite).toMatch(/^[a-z0-9]{12}$/);
+  expect(saved.tags).toContainEqual(["p", mate.pubkey]);
+  // The rest of the record survived the save.
+  expect(tagOf(saved, "name")).toBe(PROJECT_NAME);
+  // The server finds the project by the person it names: this is the read their invitation comes from.
+  const naming = await readAs(mate, {
+    kinds: [37001],
+    "#p": [mate.pubkey],
+    limit: 100,
+  });
+  expect(naming.map((e) => tagOf(e, "d"))).toContain(SLUG);
+
+  // Before they answer, everyone reads that they have not said yes.
+  await helperPage.goto(projectPath);
+  await expect(
+    helperPage.getByTestId("project-team").getByTestId("team-invited-member"),
+  ).toContainText("Has not said yes yet");
+
+  // They find the invitation in Notifications and say yes on the project's page.
+  await matePage.goto("/social/notifications");
+  await expect(matePage.getByTestId("social-team-invitation")).toContainText(
+    PROJECT_NAME,
+  );
+  await matePage.goto(projectPath);
+  const mateTeam = matePage.getByTestId("project-team");
+  await expect(mateTeam.getByTestId("team-invitation")).toContainText(
+    "added you to this project's team",
+  );
+  await mateTeam.getByTestId("team-join").click();
+  await expect(mateTeam.getByTestId("team-answered")).toHaveText(
+    "You joined the team.",
+  );
+  await expect
+    .poll(async () => (await projectRecords("team-answer")).length)
+    .toBe(1);
+  const [yes] = await projectRecords("team-answer");
+  expect(yes.pubkey).toBe(mate.pubkey);
+  expect(tagOf(yes, "team-answer")).toBe("yes");
+  expect(tagOf(yes, "team-invite")).toBe(invite);
+  // The answers are read by project and label together, as the page reads them.
+  const labelled = await readAs(stranger, {
+    kinds: [47003],
+    authors: [mate.pubkey],
+    "#a": [coord],
+    "#l": ["creaton-team"],
+    limit: 200,
+  });
+  expect(labelled.map((e) => e.id)).toEqual([yes.id]);
+
+  // Read back by someone else: they are team now.
+  await helperPage.reload();
+  await expect(
+    helperPage.getByTestId("project-team").getByTestId("team-member"),
+  ).toContainText(mate.name);
+}
+
+/**
+ * A team member who said yes posts an update from the web. The server takes it (it checks the signer against the
+ * project record), it carries no promise (those are the founder's alone), and everyone reads it with the project's news.
+ */
+async function teamMemberPostsAnUpdate() {
+  await matePage.goto(projectPath);
+  await matePage.getByTestId("team-post-update").click();
+  await expect(matePage.getByTestId("update-as-team")).toBeVisible();
+  await matePage.getByLabel("Title").fill(`From the team ${RUN}`);
+  await matePage
+    .getByLabel("What happened this week")
+    .fill("Checked the sign-up flow.");
+  await matePage.getByLabel("What's next").fill("Write the install guide");
+  await matePage.getByRole("button", { name: "Publish update" }).click();
+  const fromMate = async () =>
+    (await projectRecords("update-part")).filter(
+      (e) => e.pubkey === mate.pubkey,
+    );
+  await expect.poll(async () => (await fromMate()).length).toBe(1);
+  const [posted] = await fromMate();
+  expect(posted.tags.some((t) => t[0] === "promise")).toBe(false);
+  expect(posted.tags.some((t) => t[0] === "promise-mark")).toBe(false);
+  // Everyone reads it with the project's news, under the member's name.
+  await helperPage.goto(`${projectPath}&tab=updates`);
+  await expect(
+    helperPage.getByText(`From the team ${RUN}`).first(),
+  ).toBeVisible();
+}
+
 test("1. three people arrive: one signs up, one signs in with a saved key, one is already signed in", async ({
   browser,
 }) => {
@@ -215,6 +341,24 @@ test("2. Quick Start: four answers make the project and its goal, and a reload k
     project: { coordinate: coord, name: PROJECT_NAME },
     tasks: [],
   });
+
+  // A project started with the short form is public and listed: someone else finds it in Discover and in Home's side
+  // panel, with nothing more done to it. Its founder reads on its page that it is listed.
+  await helperPage.goto("/discover");
+  await expect(
+    helperPage
+      .getByTestId("discover-launch-list")
+      .getByText(PROJECT_NAME, { exact: true }),
+  ).toBeVisible();
+  await helperPage.goto("/");
+  await expect(
+    helperPage
+      .getByTestId("social-rail-projects")
+      .getByText(PROJECT_NAME, { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId("project-listing-state")).toContainText(
+    "Listed.",
+  );
   await shot(page, "02-project");
 });
 
@@ -492,9 +636,7 @@ test("4. help: an offer from the web and one from the command line, a reply, Hel
 
 test("5. tasks: an offer becomes a task with Done means; handed in, sent back, handed in again, confirmed by someone else; the profile shows it", async () => {
   test.setTimeout(240_000);
-  // There is no screen that adds someone to a project's team yet (see the report): the founder's key signs the
-  // project record with the second member on it, which is what such a screen would send.
-  await setTeam([mate]);
+  await addMateThroughTheTeamSection();
 
   // The founder accepts the helper's offer and writes what finished looks like.
   await founderPage.goto(projectPath);
@@ -1107,13 +1249,13 @@ test("8. boards made inside the project, Home's Boards tab, a private bookmark, 
     `connections that read the thread: ${threadReads.join(" | ")}`,
   ).toBeLessThanOrEqual(2);
 
-  // Home's side panel, from real data. This is the default build, where a project that has not opened a sale is a
-  // draft and is not listed (only the contributor-only build lists ideas), so the Projects block says there are none;
-  // the post is there under Trending posts.
+  // Home's side panel, from real data: the projects started with the short form are listed (the newest few), and the
+  // post is there under Trending posts.
   await helperPage.goto("/");
+  await expect(helperPage.getByTestId("social-rail-projects")).toBeVisible();
   await expect(
-    helperPage.getByTestId("social-rail-block-rail-projects"),
-  ).toContainText(/No projects on this server yet|Nebula/);
+    helperPage.getByTestId("social-rail-projects-empty"),
+  ).toHaveCount(0);
   await expect(helperPage.getByTestId("social-rail-posts")).toContainText(
     "Where should we meet?",
   );
@@ -1121,4 +1263,7 @@ test("8. boards made inside the project, Home's Boards tab, a private bookmark, 
     await helperPage.locator('[data-testid^="social-rail-block-"]').count(),
   ).toBeGreaterThanOrEqual(3);
   await shot(helperPage, "08-home");
+
+  // Last, so the founder's own update stays the project's newest for the steps above.
+  await teamMemberPostsAnUpdate();
 });

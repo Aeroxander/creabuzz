@@ -46,7 +46,9 @@ test("team tags round-trip, with a p tag per person and the date someone left", 
   const former = [{ pubkey: BO, until: 1_700_000_000 }];
   const tags = teamTags(team, former);
   assert.deepEqual(tags, [
-    ["team", ANN, "member", "inv1"],
+    // Exactly three parts: the server refuses a team tag of any other shape.
+    ["team", ANN, "member"],
+    ["team-invite", ANN, "inv1"],
     ["p", ANN],
     ["team-left", BO, "1700000000"],
   ]);
@@ -57,7 +59,7 @@ test("team tags round-trip, with a p tag per person and the date someone left", 
 test("a team tag is read as the server reads it: three parts are enough, the founder and repeats are left out", () => {
   const tags = [
     ["team", ANN, "member"],
-    ["team", ANN, "lead", "later"],
+    ["team", ANN, "lead"],
     ["team", FOUNDER, "member"],
     ["team", "not-a-key", "member"],
     ["team", BO],

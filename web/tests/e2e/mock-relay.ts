@@ -208,6 +208,21 @@ export function projectRecordRefusal(
 }
 
 /**
+ * The shape the real server requires of a project record's team (`validate_launch_record_envelope` in
+ * `buzz-relay/src/handlers/ingest.rs`): each `team` tag is exactly `["team", <64-hex account>, <role>]`, and there are
+ * at most 64 of them. A fourth part, or an account that is not 64 hex characters, refuses the whole record.
+ */
+export function launchRecordRefusal(event: StoredEvent): string | null {
+  if (event.kind !== 37001) return null;
+  const team = event.tags.filter((tag) => tag[0] === "team");
+  if (team.some((tag) => tag.length !== 3 || !/^[0-9a-fA-F]{64}$/.test(tag[1])))
+    return "invalid: launch record event `team` tag must be [`team`, <64-hex-pubkey>, <role>]";
+  if (team.length > 64)
+    return `invalid: launch record event must have at most 32 \`team\` tags (got ${team.length})`;
+  return null;
+}
+
+/**
  * What the real server refuses in a removal (kind 5): it must name exactly one record (`handlers/ingest.rs`), never
  * another removal, and a `k` tag must name the kind of the record it removes (`handlers/side_effects.rs`).
  */
@@ -442,7 +457,8 @@ export function createMockRelay({
             const reason =
               refuse?.(event) ??
               (enforceRecordRules
-                ? (projectRecordRefusal(event, events) ??
+                ? (launchRecordRefusal(event) ??
+                  projectRecordRefusal(event, events) ??
                   deletionRefusal(event, events))
                 : null);
             if (reason) {
