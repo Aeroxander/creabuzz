@@ -134,7 +134,7 @@ export function useNotificationBadge() {
   const muted = useMutedSet();
   const help = useHelpNotices(muted);
   // Task steps that need you or answer you: counted the same way.
-  const tasks = useTaskNotices(muted);
+  const tasks = useTaskNotices(muted).notices;
   const seenKey = [...socialKeys.all, "notifications-seen", me];
   const seen = useQuery({
     queryKey: seenKey,

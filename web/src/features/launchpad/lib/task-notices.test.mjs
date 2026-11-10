@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { noticeVerb, taskNotices } from "./task-notices.ts";
+import { nextFirstSeen, noticeVerb, taskNotices } from "./task-notices.ts";
 import { parseTaskRecord, taskEvent, taskStepEvent } from "./tasks.ts";
 
 const FOUNDER = "f".repeat(64);
@@ -77,7 +77,8 @@ test("the helper is told about a task, a send-back, a confirmation, more time an
   ]);
   assert.equal(
     noticeVerb(got.find((x) => x.id === t.id)),
-    "accepted your offer and made it a task:",
+    // A task that names an offer is still only a task to say yes or no to: the offer was not agreement.
+    "gave you a task to say yes or no to:",
   );
   assert.equal(
     noticeVerb(got.find((x) => x.id === direct.id)),
@@ -141,7 +142,7 @@ test("a step signed by the wrong party is not a notice", () => {
   );
 });
 
-test("muted people are left out before the cut, your own steps are not notices, and a future date is not on top for ever", () => {
+test("muted people are left out before the cut, and your own steps are not notices", () => {
   const t = task();
   const mine = step(HELPER, t, "accept");
   assert.equal(notices(HELPER, [t, mine]).length, 1);
@@ -149,15 +150,46 @@ test("muted people are left out before the cut, your own steps are not notices, 
     notices(HELPER, [t], [], { muted: new Set([FOUNDER]) }).length,
     0,
   );
+  const ok = step(MATE, t, "confirm", { evidenceId: "3".repeat(64) });
+  assert.equal(notices(HELPER, [t, ok, t, ok]).length, 2);
+  assert.equal(notices(HELPER, [t, ok], [], { limit: 1 }).length, 1);
+});
+
+test("a notice is never dated later than when it was first seen, so a future date cannot turn it unread again", () => {
+  const t = task();
   const future = step(
     MATE,
     t,
     "confirm",
     { evidenceId: "3".repeat(64) },
-    NOW + 999_999,
+    NOW + 1_000,
   );
-  const got = notices(HELPER, [t, future]);
-  assert.equal(got.find((x) => x.part === "confirm").at, NOW);
-  assert.equal(notices(HELPER, [t, future, t, future]).length, 2);
-  assert.equal(notices(HELPER, [t, future], [], { limit: 1 }).length, 1);
+  const at = (now, firstSeen) =>
+    notices(HELPER, [t, future], [], { now, firstSeen }).find(
+      (x) => x.part === "confirm",
+    ).at;
+  // First sight: dated now, and that moment is what is kept.
+  assert.equal(at(NOW), NOW);
+  const kept = nextFirstSeen(new Map(), [future.id], NOW);
+  assert.deepEqual([...kept], [[future.id, NOW]]);
+  // The person reads it (seen up to NOW). Later, when the record's own date has come round, it is still dated NOW.
+  assert.equal(at(NOW + 5_000, kept), NOW);
+  // Without the kept time it would have moved to the record's date: after "seen", that is unread again.
+  assert.equal(at(NOW + 5_000), NOW + 1_000);
+  // A record dated in the past keeps its own date.
+  const past = step(MATE, t, "cancel", { note: "x" }, NOW - 500);
+  assert.equal(
+    notices(HELPER, [t, past], [], {
+      firstSeen: new Map([[past.id, NOW]]),
+    }).find((x) => x.part === "cancel").at,
+    NOW - 500,
+  );
+  // Nothing new to remember: nothing is written. The store stays bounded.
+  assert.equal(nextFirstSeen(kept, [future.id], NOW + 9), null);
+  const many = nextFirstSeen(
+    new Map(),
+    Array.from({ length: 500 }, (_, i) => `id${i}`),
+    NOW,
+  );
+  assert.equal(many.size, 400);
 });

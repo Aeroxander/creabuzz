@@ -1,7 +1,7 @@
 /**
  * What to tell someone about tasks: each step that needs them, or answers something they did.
  *
- * To the helper: a task was made from their offer, or given to them to say yes to; their work was sent back or
+ * To the helper: a task was given to them to say yes or no to (an offer they made is never a yes); their work was sent back or
  * confirmed; more time was given; the task was cancelled. To the team: the helper said yes, handed work in, asked for
  * more time, or gave up.
  *
@@ -23,8 +23,6 @@ interface NoticeProject {
 export interface TaskNotice {
   id: string;
   part: TaskPart;
-  /** A task made from the viewer's own offer (so it needs no yes from them). */
-  fromOffer: boolean;
   actor: string;
   at: number;
   note: string;
@@ -51,9 +49,15 @@ export function taskNotices(input: {
   viewer: string;
   muted?: ReadonlySet<string>;
   now: number;
+  /**
+   * When this browser first saw each record, by id. A record's own date is its signer's to write, so a notice is
+   * never dated later than when it was first seen: one dated in the future cannot sit on top, and cannot turn
+   * unread again once that date comes round.
+   */
+  firstSeen?: ReadonlyMap<string, number>;
   limit?: number;
 }): TaskNotice[] {
-  const { naming, viewer, muted, now, limit = 20 } = input;
+  const { naming, viewer, muted, now, firstSeen, limit = 100 } = input;
   const projects = new Map(
     input.projects.map((p) => [`37001:${p.author}:${p.id}`, p]),
   );
@@ -91,10 +95,8 @@ export function taskNotices(input: {
     out.push({
       id: step.id,
       part: step.part,
-      fromOffer: step.part === "task" && step.offerId !== null,
       actor: step.author,
-      // Never later than now: a record dated in the future must not sit on top, or pass for unread for ever.
-      at: Math.min(step.at, now),
+      at: Math.min(step.at, firstSeen?.get(step.id) ?? now),
       note: step.note,
       project,
       taskId: task.id,
@@ -106,15 +108,11 @@ export function taskNotices(input: {
     .slice(0, limit);
 }
 
-/** "… accepted your offer and made it a task: …" — the words between the person's name and the task. */
-export function noticeVerb(
-  notice: Pick<TaskNotice, "part" | "fromOffer">,
-): string {
+/** "… gave you a task to say yes or no to: …": the words between the person's name and the task. */
+export function noticeVerb(notice: Pick<TaskNotice, "part">): string {
   switch (notice.part) {
     case "task":
-      return notice.fromOffer
-        ? "accepted your offer and made it a task:"
-        : "gave you a task to say yes or no to:";
+      return "gave you a task to say yes or no to:";
     case "accept":
       return "said yes to the task:";
     case "evidence":
@@ -128,8 +126,29 @@ export function noticeVerb(
     case "grant":
       return "gave you more time on:";
     case "give-up":
-      return "gave up the task:";
+      return "said no to, or gave up, the task:";
     case "cancel":
       return "cancelled the task:";
   }
+}
+
+/** How many first-seen times are kept. */
+const FIRST_SEEN_KEPT = 400;
+
+/**
+ * The first-seen times to keep after showing `notices`: what was kept before, plus `now` for each one not seen
+ * before, cut to the newest {@link FIRST_SEEN_KEPT}. Null when nothing changed.
+ */
+export function nextFirstSeen(
+  kept: ReadonlyMap<string, number>,
+  ids: readonly string[],
+  now: number,
+): Map<string, number> | null {
+  const fresh = ids.filter((id) => !kept.has(id));
+  if (fresh.length === 0) return null;
+  const all = new Map(kept);
+  for (const id of fresh) all.set(id, now);
+  return new Map(
+    [...all].sort((a, b) => b[1] - a[1]).slice(0, FIRST_SEEN_KEPT),
+  );
 }

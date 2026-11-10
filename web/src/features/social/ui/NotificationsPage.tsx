@@ -406,7 +406,7 @@ export function NotificationsPage() {
   const hasLaunchUpdates =
     usePriorityNotifications().length +
       useHelpNotices(mutedPeople).length +
-      useTaskNotices(mutedPeople).length >
+      useTaskNotices(mutedPeople).notices.length >
     0;
   const { seenAt, markSeen } = useNotificationBadge();
   const [tab, setTab] = useState<Tab>("all");

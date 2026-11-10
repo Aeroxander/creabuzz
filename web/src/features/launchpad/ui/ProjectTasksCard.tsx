@@ -8,7 +8,7 @@
  * again; one that was cut short says a task or a step may be missing. An empty list is shown only for a finished read.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { PersonSearch } from "@/features/social/ui/PersonSearch";
@@ -16,7 +16,8 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 
 import { teamOf } from "../lib/help-request";
-import { openTasks } from "../lib/tasks";
+import { mayViewTask, openTasks } from "../lib/tasks";
+import { withReason } from "../lib/removals";
 import type { Launch } from "../models";
 import { useProjectTasks, useTaskActions } from "../use-tasks";
 import { TaskForm } from "./TaskForm";
@@ -40,11 +41,16 @@ function DirectTask({
   const { make } = useTaskActions(launch.record);
   const [helper, setHelper] = useState<string | null>(null);
   const names = useUserNames(helper ? [helper] : []);
+  // The form opens because the person asked for it: the keyboard starts on its first control.
+  const who = useRef<HTMLInputElement | null>(null);
+  useEffect(() => who.current?.focus(), []);
   return (
     <TaskForm
       blocked={helper ? null : "Pick who the task is for."}
       busy={make.isPending}
-      failed={make.isError ? "The task was not made." : null}
+      failed={
+        make.isError ? withReason("The task was not made.", make.error) : null
+      }
       onCancel={onCancel}
       onSend={(draft) => {
         if (!helper) return;
@@ -53,8 +59,8 @@ function DirectTask({
           {
             onSuccess: (sent) =>
               onDone(
-                sent.adopted && sent.changed
-                  ? "An earlier try had already gone through, so that task was saved as it was then. If you meant a different task, make it again."
+                sent.adopted
+                  ? "An earlier try had already gone through, so nothing new was sent. The task is below."
                   : helper === me
                     ? "Task made. Someone else on the team checks it when you hand it in."
                     : `Task made. It is ${names(helper)}'s once they say yes.`,
@@ -88,12 +94,17 @@ function DirectTask({
             <p className="text-sm font-medium" id="direct-task-who-label">
               Who is it for
             </p>
-            <p className="text-xs text-muted-foreground">
-              They are named on the task only once they say yes.
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="direct-task-public"
+            >
+              This page shows the task and their name only once they say yes.
+              The task itself is a public record that names them.
             </p>
             <div className="mt-1">
               <PersonSearch
                 inputId="direct-task-person"
+                inputRef={who}
                 inputTestId="direct-task-person"
                 label="Who is the task for"
                 me={me}
@@ -122,11 +133,26 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
   const team = useMemo(() => teamOf(record), [record]);
   const read = useProjectTasks(record);
   const { tasks } = read;
-  const open = useMemo(() => (tasks ? openTasks(tasks) : []), [tasks]);
+  // A task its helper has not said yes to is shown to the team and to that person only.
+  const open = useMemo(
+    () =>
+      tasks
+        ? openTasks(tasks).filter((task) => mayViewTask(task, team, me))
+        : [],
+    [tasks, team, me],
+  );
   const [shown, setShown] = useState(PAGE);
   const [giving, setGiving] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
   const section = useRef<HTMLElement | null>(null);
+  // Cancel gives the keyboard back to the button that opened the form.
+  const giveButton = useRef<HTMLButtonElement | null>(null);
+  const [backToGive, setBackToGive] = useState(false);
+  useEffect(() => {
+    if (!backToGive || giving) return;
+    giveButton.current?.focus();
+    setBackToGive(false);
+  }, [backToGive, giving]);
   const names = useUserNames(
     open.flatMap((task) => [
       task.helper,
@@ -183,7 +209,8 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
       </h2>
       <p className="text-xs text-muted-foreground">
         Work with a finish line: “Done means” is written before anyone starts,
-        and someone other than the person who did the work checks it.
+        and someone other than the person who did the work checks it. A
+        project's team can change: steps count by who is on the team now.
       </p>
       {said ? (
         <p className="mt-2 text-sm" data-testid="tasks-said" role="status">
@@ -204,6 +231,15 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
           </Button>
         </p>
       )}
+      {read.othersCut ? (
+        <p
+          className="mt-2 text-xs text-muted-foreground"
+          data-testid="tasks-others-cut"
+        >
+          Answers from people who are not on the team could not all be read.
+          They are never counted.
+        </p>
+      ) : null}
       {read.stale ? (
         <p className="mt-2 text-sm" role="status">
           Couldn't check for newer tasks.{" "}
@@ -258,7 +294,10 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
           <DirectTask
             launch={launch}
             me={me}
-            onCancel={() => setGiving(false)}
+            onCancel={() => {
+              setGiving(false);
+              setBackToGive(true);
+            }}
             onDone={(text) => {
               setGiving(false);
               say(text);
@@ -268,6 +307,7 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
           <Button
             className="mt-3"
             data-testid="give-task"
+            ref={giveButton}
             onClick={() => {
               setSaid(null);
               setGiving(true);

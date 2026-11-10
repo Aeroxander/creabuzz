@@ -2,14 +2,19 @@
  * One task on a project's page: what it is, what "done" means, who it is with, how it stands and when it is due, the
  * work handed in so far, and the steps the person looking may take.
  *
- * The helper can say yes, hand work in, ask for more time, or give up. Someone else on the team can confirm the work,
- * send it back with a reason, give more time, or cancel. The person who did the work is never offered "Confirm": when
- * they are also on the team the row says someone else has to, and when there is nobody else it says that too.
+ * The helper can say yes or no, hand work in, ask for more time, or give up. Someone else on the team can confirm a
+ * piece of work, send it back with a reason, give more time, or cancel. The person who did the work is never offered
+ * "Confirm": when they are also on the team the row says someone else has to, and when there is nobody else it says
+ * that too.
  *
- * A task given to someone who has not said yes names them only to the team and to that person.
+ * A check is of one piece of work: the box shows that piece, and if more work arrives while it is open it closes
+ * and says so, so nobody confirms what they did not read.
+ *
+ * A task the helper has not said yes to is shown only to the team and to that person (the card leaves it out for
+ * everyone else). The record itself is public; the form that makes a task says so.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Chip, type ChipTone } from "@/shared/ui/chip";
@@ -20,12 +25,19 @@ import {
   dueLine,
   REWARDS_LINE,
   TASK_STATE_LABEL,
+  type TaskEvidence,
   type TaskState,
   type TaskView,
 } from "../lib/tasks";
+import { withReason } from "../lib/removals";
 import { HELP_SIZE_LABEL } from "../lib/weekly-update";
 import type { Launch } from "../models";
-import { EvidenceGoneError, type TaskSent, useTaskActions } from "../use-tasks";
+import {
+  EvidenceChangedError,
+  EvidenceGoneError,
+  type TaskSent,
+  useTaskActions,
+} from "../use-tasks";
 import {
   dateWords,
   EvidencePiece,
@@ -49,13 +61,91 @@ type Box =
   | "hand-in"
   | "more-time"
   | "give-up"
-  | "send-back"
-  | "confirm"
+  | "decline"
   | "cancel"
-  | { grant: string };
+  | { grant: string }
+  /** A check of one piece of work, and every piece that was on the page when the box opened. */
+  | { check: "confirm" | "send-back"; piece: string; known: string[] };
+
+const CHANGED =
+  "More work was handed in on this task while you were reading, so nothing was sent. Read what is there now, then answer it.";
 
 const ADOPTED =
-  "An earlier try had already gone through, so it was saved as it was then.";
+  "An earlier try had already gone through, so nothing new was sent.";
+
+/** A small labelled group with a question and two answers: confirm, and say no to a task. */
+function AskBox({
+  testId,
+  title,
+  children,
+  yes,
+  no,
+  busy,
+  busyWords,
+  onYes,
+  onNo,
+  failed,
+}: {
+  testId: string;
+  title: string;
+  children: React.ReactNode;
+  yes: string;
+  no: string;
+  busy: boolean;
+  busyWords: string;
+  onYes: () => void;
+  onNo: () => void;
+  failed: { words: string; testId: string } | null;
+}) {
+  const id = useId();
+  const first = useRef<HTMLButtonElement | null>(null);
+  // The box opens because the person asked for it: the keyboard starts on its first control.
+  useEffect(() => first.current?.focus(), []);
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a fieldset would restyle the box; a labelled group says the same
+    <div
+      aria-labelledby={`${id}-title`}
+      className="mt-2 rounded-lg border border-border bg-background/70 p-2"
+      data-testid={testId}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || busy) return;
+        e.stopPropagation();
+        onNo();
+      }}
+      role="group"
+    >
+      <p className="text-sm font-semibold" id={`${id}-title`}>
+        {title}
+      </p>
+      {children}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button
+          disabled={busy}
+          onClick={onYes}
+          ref={first}
+          size="sm"
+          type="button"
+        >
+          {busy ? busyWords : yes}
+        </Button>
+        <Button
+          disabled={busy}
+          onClick={onNo}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {no}
+        </Button>
+      </div>
+      {failed ? (
+        <SendFailed onRetry={onYes} testId={failed.testId}>
+          {failed.words}
+        </SendFailed>
+      ) : null}
+    </div>
+  );
+}
 
 export function TaskRow({
   launch,
@@ -76,30 +166,84 @@ export function TaskRow({
   const actions = useTaskActions(launch.record);
   const [box, setBox] = useState<Box | null>(null);
   const row = useRef<HTMLLIElement | null>(null);
+  /** The control that opened the box: where the keyboard goes back to when the box closes. */
+  const [returnTo, setReturnTo] = useState<string | null>(null);
 
   const isHelper = viewer === task.helper;
   const onTeam = viewer !== null && team.has(viewer);
   /** The team's side of a task is someone on the team who is not doing it. */
   const checks = onTeam && !isHelper;
   const rule = confirmRule(task, team, viewer);
-  const open = (next: Box) => {
+  const open = (next: Box, opener: string) => {
     for (const action of Object.values(actions)) action.reset();
+    setReturnTo(null);
     setBox(next);
+    opened.current = opener;
   };
+  const opened = useRef<string | null>(null);
   const close = () => {
     setBox(null);
-    row.current?.focus();
+    setReturnTo(opened.current);
   };
+  // After a box closes: back to the button that opened it, or to the row when that button is gone.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: looked for again once the box is gone from the page
+  useEffect(() => {
+    if (returnTo === null || box !== null) return;
+    const target = row.current?.querySelector<HTMLElement>(
+      `[data-task-focus="${returnTo}"]`,
+    );
+    (target ?? row.current)?.focus();
+    setReturnTo(null);
+  }, [returnTo, box]);
   const done = (said: string) => (sent: TaskSent) => {
     setBox(null);
-    onSaid(sent.adopted && sent.changed ? `${said} ${ADOPTED}` : said);
+    onSaid(sent.adopted ? `${said} ${ADOPTED}` : said);
   };
 
+  // A check is of the piece that was read. If more work is waiting now than when the box opened, the box closes.
+  const waitingIds = task.waiting.map((piece) => piece.id).join(",");
+  const check =
+    typeof box === "object" && box !== null && "check" in box ? box : null;
+  const checkStale =
+    check !== null &&
+    !actions.confirm.isPending &&
+    !actions.sendBack.isPending &&
+    (!task.waiting.some((piece) => piece.id === check.piece) ||
+      task.evidence.some((piece) => !check.known.includes(piece.id)));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the waiting pieces change under an open box
+  useEffect(() => {
+    if (!checkStale) return;
+    setBox(null);
+    onSaid(CHANGED);
+  }, [checkStale, waitingIds]);
+
   const due = dueLine(task, dateWords);
-  const named = task.state !== "offered" || isHelper || onTeam;
   const pendingAsk = task.moreTime.find((ask) => !ask.granted) ?? null;
   const canWork = task.state === "in-progress" || task.state === "sent-back";
   const reference = { id: task.id, helper: task.helper, madeBy: task.madeBy };
+  const several = task.waiting.length > 1;
+  const pieceName = (piece: TaskEvidence) =>
+    several ? ` (piece ${task.evidence.indexOf(piece) + 1})` : "";
+
+  /** A check that could not be sent because the work is not as it was read: said in the card, and the box closes. */
+  const notAsRead = (gone: string) => (error: unknown) => {
+    if (error instanceof EvidenceGoneError) onSaid(gone);
+    else if (error instanceof EvidenceChangedError) onSaid(CHANGED);
+    else return;
+    setBox(null);
+  };
+  const expected = (error: unknown) =>
+    error instanceof EvidenceGoneError || error instanceof EvidenceChangedError;
+  const confirm = (piece: TaskEvidence, seen: readonly string[]) =>
+    actions.confirm.mutate(
+      { task: reference, evidenceId: piece.id, seen },
+      {
+        onSuccess: done("You confirmed this work."),
+        onError: notAsRead(
+          "That work was removed before you confirmed it, so nothing was confirmed.",
+        ),
+      },
+    );
 
   return (
     <li
@@ -134,25 +278,19 @@ export function TaskRow({
         className="mt-1 break-words text-xs text-muted-foreground"
         data-testid="task-who"
       >
-        {named ? (
+        {task.agreed === null ? "Given to" : "With"}{" "}
+        <PersonLink name={names(task.helper)} pubkey={task.helper} />
+        {task.agreed === null ? ", who has not said yes" : ""}
+        {task.helperAgent ? (
           <>
-            With <PersonLink name={names(task.helper)} pubkey={task.helper} />
-            {task.helperAgent ? (
-              <>
-                {" "}
-                <Chip data-testid="task-helper-agent" tone="info">
-                  {agentLabel(
-                    task.helperAgent.owner
-                      ? names(task.helperAgent.owner)
-                      : null,
-                  )}
-                </Chip>
-              </>
-            ) : null}
+            {" "}
+            <Chip data-testid="task-helper-agent" tone="info">
+              {agentLabel(
+                task.helperAgent.owner ? names(task.helperAgent.owner) : null,
+              )}
+            </Chip>
           </>
-        ) : (
-          "Offered to someone who has not said yes yet"
-        )}
+        ) : null}
         {" · "}made by {names(task.madeBy)}
         {due ? (
           <>
@@ -161,6 +299,16 @@ export function TaskRow({
           </>
         ) : null}
       </p>
+      {task.agreed === null && onTeam && !isHelper ? (
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          data-testid="task-not-agreed"
+        >
+          Only the team and {names(task.helper)} see this task on this page
+          until they say yes. The task itself is a public record that names
+          them.
+        </p>
+      ) : null}
 
       {task.evidence.length > 0 ? (
         <div className="mt-2 space-y-2">
@@ -168,7 +316,7 @@ export function TaskRow({
             <EvidencePiece
               heading={
                 task.evidence.length > 1
-                  ? `Work handed in (${i + 1} of ${task.evidence.length})`
+                  ? `Work handed in (piece ${i + 1} of ${task.evidence.length})`
                   : "Work handed in"
               }
               key={piece.id}
@@ -177,6 +325,26 @@ export function TaskRow({
             />
           ))}
         </div>
+      ) : null}
+      {task.orphanSendBacks.map((back) => (
+        <p
+          className="mt-2 break-words text-sm"
+          data-testid="task-orphan-send-back"
+          key={back.id}
+        >
+          <span className="text-xs text-muted-foreground">
+            Sent back by {names(back.by)}. The work it was about has since been
+            removed:
+          </span>{" "}
+          {back.note}
+        </p>
+      ))}
+      {task.stepRemoved ? (
+        <p className="mt-2 text-sm" data-testid="task-step-removed">
+          The team recorded steps on this task, but no step signed by{" "}
+          {names(task.helper)} is on the server. A step was removed, or the
+          team's steps answer nothing.
+        </p>
       ) : null}
       {task.confirmedWithoutEvidence ? (
         <p className="mt-2 text-sm" data-testid="task-evidence-missing">
@@ -208,7 +376,10 @@ export function TaskRow({
               {names(ask.granted.by)} gave until {dateWords(ask.granted.due)}.
             </span>
           ) : checks && canWork ? (
-            typeof box === "object" && box?.grant === ask.id ? (
+            typeof box === "object" &&
+            box !== null &&
+            "grant" in box &&
+            box.grant === ask.id ? (
               <StepBox
                 busy={actions.grant.isPending}
                 date={{
@@ -219,7 +390,12 @@ export function TaskRow({
                   required: "Pick the new date.",
                 }}
                 failed={
-                  actions.grant.isError ? "More time was not given." : null
+                  actions.grant.isError
+                    ? withReason(
+                        "More time was not given.",
+                        actions.grant.error,
+                      )
+                    : null
                 }
                 note={{ label: "A few words (optional)" }}
                 onCancel={close}
@@ -237,7 +413,8 @@ export function TaskRow({
             ) : (
               <Button
                 className="ml-2"
-                onClick={() => open({ grant: ask.id })}
+                data-task-focus={`grant-${ask.id}`}
+                onClick={() => open({ grant: ask.id }, `grant-${ask.id}`)}
                 size="sm"
                 type="button"
                 variant="outline"
@@ -251,71 +428,88 @@ export function TaskRow({
 
       {/* The helper's steps. */}
       {isHelper && task.state === "offered" ? (
-        <div className="mt-2" data-testid="task-answer">
-          <p className="text-sm">
-            {names(task.madeBy)} gave you this task. It is yours only if you say
-            yes.
-          </p>
-          <p
-            className="mt-1 text-xs text-muted-foreground"
-            data-testid="task-rewards-line"
+        box === "decline" ? (
+          <AskBox
+            busy={actions.giveUp.isPending}
+            busyWords="Saving…"
+            failed={
+              actions.giveUp.isError
+                ? {
+                    words: withReason(
+                      "Your no was not saved.",
+                      actions.giveUp.error,
+                    ),
+                    testId: "task-decline-failed",
+                  }
+                : null
+            }
+            no="Keep it open"
+            onNo={close}
+            onYes={() =>
+              actions.giveUp.mutate(
+                { task: reference, note: "" },
+                { onSuccess: done("You said no to this task.") },
+              )
+            }
+            testId="task-decline-box"
+            title="Say no to this task?"
+            yes="Yes, say no"
           >
-            {REWARDS_LINE}
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button
-              disabled={actions.accept.isPending}
-              onClick={() =>
-                actions.accept.mutate(reference, {
-                  onSuccess: done("You said yes. The task is yours."),
-                })
-              }
-              size="sm"
-              type="button"
+            <p className="mt-1 text-sm">
+              The task closes for you. You never took it on, so saying no leaves
+              no mark on your record.
+            </p>
+          </AskBox>
+        ) : (
+          <div className="mt-2" data-testid="task-answer">
+            <p className="text-sm">
+              {names(task.madeBy)} gave you this task. It is yours only if you
+              say yes, and saying no leaves no mark on your record.
+            </p>
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              data-testid="task-rewards-line"
             >
-              {actions.accept.isPending ? "Saving…" : "Yes, I'll do it"}
-            </Button>
-            <Button
-              disabled={actions.giveUp.isPending}
-              onClick={() =>
-                actions.giveUp.mutate(
-                  { task: reference, note: "" },
-                  { onSuccess: done("You said no to this task.") },
-                )
-              }
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {actions.giveUp.isPending ? "Saving…" : "No, not for me"}
-            </Button>
+              {REWARDS_LINE}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                disabled={actions.accept.isPending}
+                onClick={() =>
+                  actions.accept.mutate(reference, {
+                    onSuccess: done("You said yes. The task is yours."),
+                  })
+                }
+                size="sm"
+                type="button"
+              >
+                {actions.accept.isPending ? "Saving…" : "Yes, I'll do it"}
+              </Button>
+              <Button
+                data-task-focus="decline"
+                disabled={actions.accept.isPending}
+                onClick={() => open("decline", "decline")}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                No, not for me
+              </Button>
+            </div>
+            {actions.accept.isError ? (
+              <SendFailed
+                onRetry={() =>
+                  actions.accept.mutate(reference, {
+                    onSuccess: done("You said yes. The task is yours."),
+                  })
+                }
+                testId="task-accept-failed"
+              >
+                {withReason("Your yes was not saved.", actions.accept.error)}
+              </SendFailed>
+            ) : null}
           </div>
-          {actions.accept.isError ? (
-            <SendFailed
-              onRetry={() =>
-                actions.accept.mutate(reference, {
-                  onSuccess: done("You said yes. The task is yours."),
-                })
-              }
-              testId="task-accept-failed"
-            >
-              Your yes was not saved.
-            </SendFailed>
-          ) : null}
-          {actions.giveUp.isError ? (
-            <SendFailed
-              onRetry={() =>
-                actions.giveUp.mutate(
-                  { task: reference, note: "" },
-                  { onSuccess: done("You said no to this task.") },
-                )
-              }
-              testId="task-decline-failed"
-            >
-              Your no was not saved.
-            </SendFailed>
-          ) : null}
-        </div>
+        )
       ) : null}
       {isHelper && !onTeam && task.state === "submitted" ? (
         <p className="mt-2 text-sm" data-testid="task-waiting-check">
@@ -329,7 +523,12 @@ export function TaskRow({
             busy={actions.evidence.isPending}
             evidence
             failed={
-              actions.evidence.isError ? "Your work was not handed in." : null
+              actions.evidence.isError
+                ? withReason(
+                    "Your work was not handed in.",
+                    actions.evidence.error,
+                  )
+                : null
             }
             hint="What you hand in is public: anyone can read it."
             note={{
@@ -359,7 +558,11 @@ export function TaskRow({
           <StepBox
             busy={actions.moreTime.isPending}
             date={{ label: "Until (optional)", min: todayDate() }}
-            failed={actions.moreTime.isError ? "Your ask was not sent." : null}
+            failed={
+              actions.moreTime.isError
+                ? withReason("Your ask was not sent.", actions.moreTime.error)
+                : null
+            }
             note={{
               label: "Why you need more time",
               required: "Say why, so the team can decide.",
@@ -379,8 +582,12 @@ export function TaskRow({
         ) : box === "give-up" ? (
           <StepBox
             busy={actions.giveUp.isPending}
-            failed={actions.giveUp.isError ? "This was not saved." : null}
-            hint="Giving up closes the task for you. It stays on the project's record and on yours."
+            failed={
+              actions.giveUp.isError
+                ? withReason("This was not saved.", actions.giveUp.error)
+                : null
+            }
+            hint="Giving up closes the task for you. It stays on the project's record and on yours, whatever happens after."
             note={{ label: "A few words (optional)" }}
             onCancel={close}
             onSend={(draft) =>
@@ -394,14 +601,20 @@ export function TaskRow({
             testId="task-give-up-box"
             title="Give up the task"
           />
-        ) : (
+        ) : box === null ? (
           <div className="mt-2 flex flex-wrap gap-2">
-            <Button onClick={() => open("hand-in")} size="sm" type="button">
+            <Button
+              data-task-focus="hand-in"
+              onClick={() => open("hand-in", "hand-in")}
+              size="sm"
+              type="button"
+            >
               {task.evidence.length > 0 ? "Hand in again" : "Hand in work"}
             </Button>
             {canWork && !pendingAsk ? (
               <Button
-                onClick={() => open("more-time")}
+                data-task-focus="more-time"
+                onClick={() => open("more-time", "more-time")}
                 size="sm"
                 type="button"
                 variant="outline"
@@ -410,7 +623,8 @@ export function TaskRow({
               </Button>
             ) : null}
             <Button
-              onClick={() => open("give-up")}
+              data-task-focus="give-up"
+              onClick={() => open("give-up", "give-up")}
               size="sm"
               type="button"
               variant="outline"
@@ -418,131 +632,140 @@ export function TaskRow({
               Give up
             </Button>
           </div>
-        )
+        ) : null
       ) : null}
 
-      {/* Checking: only someone on the team who did not do the work. */}
-      {task.state === "submitted" && task.waiting && onTeam ? (
+      {/* Checking: only someone on the team who did not do the work, and one piece at a time. */}
+      {task.state === "submitted" && task.waiting.length > 0 && onTeam ? (
         rule.may ? (
-          box === "confirm" ? (
-            <div
-              className="mt-2 rounded-lg border border-border bg-background/70 p-2"
-              data-testid="task-confirm-box"
-            >
-              <p className="text-sm">
-                Confirm that this work meets “Done means”? It then shows as work
-                accepted on the project's record and on {names(task.helper)}'s.
-              </p>
-              <p
-                className="mt-1 text-xs text-muted-foreground"
-                data-testid="task-rewards-line"
-              >
-                {REWARDS_LINE}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button
-                  disabled={actions.confirm.isPending}
-                  onClick={() => {
-                    const evidenceId = task.waiting?.id;
-                    if (!evidenceId) return;
-                    actions.confirm.mutate(
-                      { task: reference, evidenceId },
+          check ? (
+            (() => {
+              const piece = task.waiting.find((p) => p.id === check.piece);
+              if (!piece) return null;
+              return check.check === "confirm" ? (
+                <AskBox
+                  busy={actions.confirm.isPending}
+                  busyWords="Saving…"
+                  failed={
+                    actions.confirm.isError && !expected(actions.confirm.error)
+                      ? {
+                          words: withReason(
+                            "The work was not confirmed.",
+                            actions.confirm.error,
+                          ),
+                          testId: "task-confirm-failed",
+                        }
+                      : null
+                  }
+                  no="Not yet"
+                  onNo={close}
+                  onYes={() => confirm(piece, check.known)}
+                  testId="task-confirm-box"
+                  title={`Confirm this work${pieceName(piece)}?`}
+                  yes="Yes, confirm"
+                >
+                  <p className="mt-1 text-sm">
+                    You are confirming this piece, and only this piece, against
+                    “Done means”. It then shows as work accepted on the
+                    project's record and on {names(task.helper)}'s.
+                  </p>
+                  <div className="mt-2" data-testid="task-confirm-piece">
+                    <EvidencePiece
+                      heading="The work you are confirming"
+                      names={names}
+                      piece={piece}
+                    />
+                  </div>
+                  <p
+                    className="mt-1 text-xs text-muted-foreground"
+                    data-testid="task-rewards-line"
+                  >
+                    {REWARDS_LINE}
+                  </p>
+                </AskBox>
+              ) : (
+                <StepBox
+                  busy={actions.sendBack.isPending}
+                  failed={
+                    actions.sendBack.isError &&
+                    !expected(actions.sendBack.error)
+                      ? withReason(
+                          "The work was not sent back.",
+                          actions.sendBack.error,
+                        )
+                      : null
+                  }
+                  hint="Your reason is public: anyone can read it."
+                  note={{
+                    label: "What is missing",
+                    placeholder:
+                      "What still has to happen for this to be done.",
+                    required:
+                      "Say what is missing, so the work can be finished.",
+                  }}
+                  onCancel={close}
+                  onSend={(draft) =>
+                    actions.sendBack.mutate(
                       {
-                        onSuccess: done("You confirmed this work."),
-                        onError: (error) => {
-                          if (!(error instanceof EvidenceGoneError)) return;
-                          setBox(null);
-                          onSaid(
-                            "That work was removed before you confirmed it, so nothing was confirmed.",
-                          );
-                        },
+                        task: reference,
+                        evidenceId: piece.id,
+                        seen: check.known,
+                        note: draft.note,
                       },
-                    );
-                  }}
-                  size="sm"
-                  type="button"
-                >
-                  {actions.confirm.isPending ? "Saving…" : "Yes, confirm"}
-                </Button>
-                <Button
-                  disabled={actions.confirm.isPending}
-                  onClick={close}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Not yet
-                </Button>
-              </div>
-              {actions.confirm.isError &&
-              !(actions.confirm.error instanceof EvidenceGoneError) ? (
-                <SendFailed
-                  onRetry={() => {
-                    const evidenceId = task.waiting?.id;
-                    if (evidenceId)
-                      actions.confirm.mutate(
-                        { task: reference, evidenceId },
-                        { onSuccess: done("You confirmed this work.") },
-                      );
-                  }}
-                  testId="task-confirm-failed"
-                >
-                  The work was not confirmed.
-                </SendFailed>
-              ) : null}
-            </div>
-          ) : box === "send-back" ? (
-            <StepBox
-              busy={actions.sendBack.isPending}
-              failed={
-                actions.sendBack.isError &&
-                !(actions.sendBack.error instanceof EvidenceGoneError)
-                  ? "The work was not sent back."
-                  : null
-              }
-              hint="Your reason is public: anyone can read it."
-              note={{
-                label: "What is missing",
-                placeholder: "What still has to happen for this to be done.",
-                required: "Say what is missing, so the work can be finished.",
-              }}
-              onCancel={close}
-              onSend={(draft) => {
-                const evidenceId = task.waiting?.id;
-                if (!evidenceId) return;
-                actions.sendBack.mutate(
-                  { task: reference, evidenceId, note: draft.note },
-                  {
-                    onSuccess: done("You sent this work back."),
-                    onError: (error) => {
-                      if (!(error instanceof EvidenceGoneError)) return;
-                      setBox(null);
-                      onSaid(
-                        "That work was removed before you answered it, so nothing was sent.",
-                      );
-                    },
-                  },
-                );
-              }}
-              send="Send back"
-              sending="Sending…"
-              testId="task-send-back-box"
-              title="Send the work back"
-            />
+                      {
+                        onSuccess: done("You sent this work back."),
+                        onError: notAsRead(
+                          "That work was removed before you answered it, so nothing was sent.",
+                        ),
+                      },
+                    )
+                  }
+                  send="Send back"
+                  sending="Sending…"
+                  testId="task-send-back-box"
+                  title={`Send the work back${pieceName(piece)}`}
+                />
+              );
+            })()
           ) : box === null ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button onClick={() => open("confirm")} size="sm" type="button">
-                Confirm it's done
-              </Button>
-              <Button
-                onClick={() => open("send-back")}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Send back
-              </Button>
-            </div>
+            <ul className="mt-2 flex flex-col gap-2" data-testid="task-checks">
+              {task.waiting.map((piece) => {
+                const known = task.evidence.map((p) => p.id);
+                return (
+                  <li className="flex flex-wrap gap-2" key={piece.id}>
+                    <Button
+                      aria-label={`Confirm it's done${pieceName(piece)}`}
+                      data-task-focus={`confirm-${piece.id}`}
+                      onClick={() =>
+                        open(
+                          { check: "confirm", piece: piece.id, known },
+                          `confirm-${piece.id}`,
+                        )
+                      }
+                      size="sm"
+                      type="button"
+                    >
+                      Confirm it's done{pieceName(piece)}
+                    </Button>
+                    <Button
+                      aria-label={`Send back${pieceName(piece)}`}
+                      data-task-focus={`send-back-${piece.id}`}
+                      onClick={() =>
+                        open(
+                          { check: "send-back", piece: piece.id, known },
+                          `send-back-${piece.id}`,
+                        )
+                      }
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Send back{pieceName(piece)}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
           ) : null
         ) : (
           <p className="mt-2 text-sm" data-testid="task-cannot-confirm">
@@ -559,7 +782,11 @@ export function TaskRow({
       {checks && box === "cancel" ? (
         <StepBox
           busy={actions.cancel.isPending}
-          failed={actions.cancel.isError ? "The task was not cancelled." : null}
+          failed={
+            actions.cancel.isError
+              ? withReason("The task was not cancelled.", actions.cancel.error)
+              : null
+          }
           hint="Your reason is public, and the cancelled task stays on the project's record."
           note={{
             label: "Why the task is cancelled",
@@ -581,7 +808,8 @@ export function TaskRow({
         <div className="mt-2">
           <Button
             aria-label={`Cancel the task: ${task.what}`}
-            onClick={() => open("cancel")}
+            data-task-focus="cancel"
+            onClick={() => open("cancel", "cancel")}
             size="sm"
             type="button"
             variant="outline"

@@ -44,8 +44,8 @@ export interface RemovedRecords {
   /** How many update records the founder deleted (deletions that say they remove an update record). */
   count: number;
   /**
-   * How many more records the founder deleted without saying what kind they were. The server accepts such a deletion,
-   * so each may have been an update record.
+   * How many more records the founder deleted while saying nothing about their kind, or naming another kind. What a
+   * deletion says it removes is not checked by anyone, so each may have been an update record.
    */
   unnamed: number;
   /** When the newest of those deletions (of either sort) was made, or null when there is none. */
@@ -56,7 +56,8 @@ export interface RemovedRecords {
 
 /**
  * The founder's deletions of update records among `events` (their own deletions, as read), and whether that read
- * reached the end. A deletion naming a project record (an `a` tag only) or saying it removes another kind is neither.
+ * reached the end. Every deletion that names records by id counts, whatever kind it says it removes; one naming only a
+ * project record (an `a` tag) is the project's removal, counted elsewhere.
  */
 export function removedRecords(
   events: readonly DeletionEvent[],
@@ -75,12 +76,10 @@ export function removedRecords(
     const kinds = event.tags
       .filter((tag) => tag[0] === "k")
       .map((tag) => tag[1]);
-    const into = kinds.includes(String(KIND_LAUNCH_UPDATE))
-      ? removed
-      : kinds.length === 0
-        ? unnamed
-        : null;
-    if (!into) continue;
+    // What a removal says it removes is its signer's word, and nothing checks it: one that names another kind (or
+    // none, or another removal) may still have taken an update record away. So every removal is counted; the ones
+    // that do not say "update record" are counted apart.
+    const into = kinds.includes(String(KIND_LAUNCH_UPDATE)) ? removed : unnamed;
     for (const id of ids) into.add(id);
     if (lastAt === null || event.created_at > lastAt) lastAt = event.created_at;
   }
@@ -111,10 +110,10 @@ export function removedLine(
       : "Whether the founder has removed update records could not be checked: they have more removals than could be read here.";
   const least = complete ? "" : "at least ";
   if (count === 0)
-    return `The founder has removed ${least}${records(unnamed, "record")} without saying what kind they were, the last on ${day(lastAt)}. Some may have been updates.`;
+    return `The founder has removed ${least}${records(unnamed, "record")} that were not marked as updates, the last on ${day(lastAt)}. A removal can say any kind, so some may have been updates.`;
   const also =
     unnamed > 0
-      ? `, and ${records(unnamed, "other record")} without saying what kind they were`
+      ? `, and ${records(unnamed, "other record")} not marked as updates (a removal can say any kind)`
       : "";
   return `The founder has removed ${least}${records(count, "update record")}${also}. The last removal was on ${day(lastAt)}.`;
 }

@@ -37,6 +37,7 @@ import {
   offerCountLine,
   offeredLine,
 } from "../lib/help-request";
+import { removalFailedLine, withReason } from "../lib/removals";
 import { HELP_SIZE_LABEL } from "../lib/weekly-update";
 import type { Launch, LaunchUpdate } from "../models";
 import { MyOfferTask, OfferTask } from "./OfferTask";
@@ -438,7 +439,10 @@ export function HelpRequestCard({
                       busy={actions.reply.isPending}
                       failed={
                         actions.reply.isError
-                          ? "Your reply was not sent."
+                          ? withReason(
+                              "Your reply was not sent.",
+                              actions.reply.error,
+                            )
                           : null
                       }
                       hint="Your reply is public: anyone can read it."
@@ -500,7 +504,10 @@ export function HelpRequestCard({
               </span>
               {actions.found.isError ? (
                 <SendFailed onRetry={markFound} testId="help-found-failed">
-                  The request was not closed.
+                  {withReason(
+                    "The request was not closed.",
+                    actions.found.error,
+                  )}
                 </SendFailed>
               ) : null}
             </div>
@@ -527,7 +534,10 @@ export function HelpRequestCard({
               ) : null}
               {actions.reopen.isError ? (
                 <SendFailed onRetry={reopen} testId="help-reopen-failed">
-                  The request was not reopened.
+                  {removalFailedLine(
+                    actions.reopen.error,
+                    "The request was not reopened.",
+                  )}
                 </SendFailed>
               ) : null}
             </div>
@@ -549,7 +559,9 @@ export function HelpRequestCard({
             </p>
           ) : null}
           <Replies names={names} offer={mine} />
-          <MyOfferTask launch={launch} offerId={mine.id} />
+          {me ? (
+            <MyOfferTask launch={launch} me={me} offerId={mine.id} />
+          ) : null}
           <Button
             className="mt-2"
             disabled={actions.withdraw.isPending}
@@ -562,7 +574,10 @@ export function HelpRequestCard({
           </Button>
           {actions.withdraw.isError ? (
             <SendFailed onRetry={withdraw} testId="help-withdraw-failed">
-              Your offer was not withdrawn.
+              {removalFailedLine(
+                actions.withdraw.error,
+                "Your offer was not withdrawn.",
+              )}
             </SendFailed>
           ) : null}
         </div>
@@ -573,7 +588,11 @@ export function HelpRequestCard({
       ) : offering ? (
         <NoteBox
           busy={actions.offer.isPending}
-          failed={actions.offer.isError ? "Your offer was not sent." : null}
+          failed={
+            actions.offer.isError
+              ? withReason("Your offer was not sent.", actions.offer.error)
+              : null
+          }
           hint="Your offer and your note are public: anyone can read them."
           label="Add a short note (optional)"
           onCancel={() => {

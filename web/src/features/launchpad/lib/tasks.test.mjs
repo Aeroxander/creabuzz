@@ -11,6 +11,7 @@ import {
   confirmRule,
   dueLine,
   isTaskRecordTags,
+  mayViewTask,
   openTasks,
   parseTaskRecord,
   projectTasks,
@@ -195,37 +196,102 @@ test("evidence keeps web links and file fingerprints, and drops anything else", 
   assert.deepEqual(parseTaskRecord(forged).links, ["https://example.org/a"]);
 });
 
-test("a task from an offer is in progress; one given directly waits for the helper's yes", () => {
-  const offerId = "2".repeat(64);
-  const fromOffer = make(FOUNDER, { offerId });
-  assert.equal(
-    one([fromOffer], { offers: new Map([[offerId, HELPER]]) }).state,
-    "in-progress",
-  );
-  assert.equal(
-    one([fromOffer], { offers: new Map([[offerId, HELPER]]) }).agreed,
-    "offer",
-  );
-  // The offer was taken back, or was someone else's: the helper has not agreed.
-  assert.equal(one([fromOffer], { offers: new Map() }).state, "offered");
-  assert.equal(
-    one([fromOffer], { offers: new Map([[offerId, STRANGER]]) }).state,
-    "offered",
-  );
+test("an offer is never agreement: a task is the helper's only after they sign a step for that very task", () => {
+  // Any project can name any offer a person ever made. Naming one puts nobody on a task.
+  const fromOffer = make(FOUNDER, { offerId: "2".repeat(64) });
+  const named = one([fromOffer]);
+  assert.equal(named.state, "offered");
+  assert.equal(named.agreed, null);
+  assert.equal(named.late, false);
+  assert.equal(named.offerId, "2".repeat(64));
+  // Past its date and still nobody's: it is not late, and the public is not shown it.
+  const overdue = one([
+    make(FOUNDER, { offerId: "2".repeat(64), due: "2020-01-01" }),
+  ]);
+  assert.equal(overdue.state, "offered");
+  assert.equal(overdue.late, false);
+  assert.equal(mayViewTask(overdue, TEAM, null), false);
+  assert.equal(mayViewTask(overdue, TEAM, STRANGER), false);
+  assert.equal(mayViewTask(overdue, TEAM, HELPER), true);
+  assert.equal(mayViewTask(overdue, TEAM, MATE), true);
 
   const direct = make();
   assert.equal(one([direct]).state, "offered");
-  assert.equal(one([direct]).agreed, null);
   // Only the helper's own yes counts.
   assert.equal(
     one([direct, step(STRANGER, direct, "accept")]).state,
     "offered",
   );
   assert.equal(one([direct, step(FOUNDER, direct, "accept")]).state, "offered");
+  const agreed = one([direct, step(HELPER, direct, "accept")]);
+  assert.equal(agreed.state, "in-progress");
+  assert.equal(agreed.agreed, "accept");
+  assert.equal(mayViewTask(agreed, TEAM, null), true);
+  // Work handed in, or an ask for more time, is the helper's own signature on the task too.
+  assert.equal(one([direct, hand(direct)]).agreed, "work");
   assert.equal(
-    one([direct, step(HELPER, direct, "accept")]).state,
-    "in-progress",
+    one([direct, step(HELPER, direct, "more-time", { note: "Ill." })]).agreed,
+    "step",
   );
+  // Saying no to a task never taken on is a decline, not a give-up of agreed work.
+  const declined = one([direct, step(HELPER, direct, "give-up")]);
+  assert.equal(declined.agreed, null);
+  assert.equal(mayViewTask(declined, TEAM, null), false);
+});
+
+test("steps the team recorded with no step of the helper's are called out, and never put the helper on the task", () => {
+  const task = make();
+  const back = step(MATE, task, "send-back", {
+    evidenceId: "e".repeat(64),
+    note: "No recording.",
+  });
+  const got = one([task, back]);
+  assert.equal(got.agreed, null);
+  assert.equal(got.state, "offered");
+  assert.equal(got.stepRemoved, true);
+  assert.equal(got.orphanSendBacks.length, 1);
+  assert.equal(one([task]).stepRemoved, false);
+  // With the helper's own yes still there, the send-back of removed work still stands as a send-back.
+  const yes = step(HELPER, task, "accept");
+  const kept = one([task, yes, back]);
+  assert.equal(kept.state, "sent-back");
+  assert.equal(kept.stepRemoved, false);
+  assert.equal(kept.orphanSendBacks[0].note, "No recording.");
+});
+
+test("an answer from someone who is not on the team now is shown as that and decides nothing", () => {
+  const task = make();
+  const work = hand(task);
+  const former = step(STRANGER, task, "send-back", {
+    evidenceId: work.id,
+    note: "I was on the team then.",
+  });
+  const got = one([task, work, former]);
+  assert.equal(got.state, "submitted");
+  assert.deepEqual(
+    got.evidence[0].outside.map((o) => [o.by, o.part, o.note]),
+    [[STRANGER, "send-back", "I was on the team then."]],
+  );
+  assert.equal(got.evidence[0].sentBack.length, 0);
+  // However many strangers answer, a piece shows a few.
+  const many = Array.from({ length: 9 }, () =>
+    step(STRANGER, task, "confirm", { evidenceId: work.id }),
+  );
+  assert.equal(one([task, work, ...many]).evidence[0].outside.length, 3);
+  assert.equal(one([task, work, ...many]).state, "submitted");
+});
+
+test("a task made by someone who is not on the team is kept only where asked for, and marked", () => {
+  const task = make(STRANGER);
+  assert.equal(view([task]).length, 0);
+  const kept = view(
+    [task, step(HELPER, task, "accept"), step(HELPER, task, "give-up")],
+    { outsideTasks: true },
+  );
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].madeByTeam, false);
+  assert.equal(kept[0].gaveUp !== null, true);
+  assert.equal(view([make()], { outsideTasks: true })[0].madeByTeam, true);
 });
 
 test("only the project's team can make its tasks", () => {
@@ -248,7 +314,10 @@ test("the full loop: handed in, sent back, handed in again, confirmed", () => {
   const yes = step(HELPER, task, "accept");
   const first = hand(task, { note: "First try." }, NOW - 5 * DAY);
   assert.equal(one([task, yes, first]).state, "submitted");
-  assert.equal(one([task, yes, first]).waiting.id, first.id);
+  assert.deepEqual(
+    one([task, yes, first]).waiting.map((p) => p.id),
+    [first.id],
+  );
 
   const back = step(MATE, task, "send-back", {
     evidenceId: first.id,
@@ -256,13 +325,21 @@ test("the full loop: handed in, sent back, handed in again, confirmed", () => {
   });
   const sentBack = one([task, yes, first, back]);
   assert.equal(sentBack.state, "sent-back");
-  assert.equal(sentBack.waiting, null);
+  assert.deepEqual(sentBack.waiting, []);
   assert.equal(sentBack.evidence[0].sentBack[0].note, "No recording.");
 
   const second = hand(task, { note: "With the recording." }, NOW - 2 * DAY);
   const again = one([task, yes, first, back, second]);
   assert.equal(again.state, "submitted");
-  assert.equal(again.waiting.id, second.id);
+  assert.deepEqual(
+    again.waiting.map((p) => p.id),
+    [second.id],
+  );
+  // Answered pieces first, then the ones waiting: never by the dates the helper wrote.
+  assert.deepEqual(
+    again.evidence.map((p) => p.id),
+    [first.id, second.id],
+  );
 
   const ok = step(MATE, task, "confirm", { evidenceId: second.id }, NOW - DAY);
   const done = one([task, yes, first, back, second, ok]);
@@ -689,4 +766,50 @@ test("dates, links and a draft's problems", () => {
   assert.equal(taskProblem({ ...ok, what: "" }).field, "what");
   assert.equal(taskProblem({ ...ok, due: "2026-11-09" }).field, "due");
   assert.equal(taskProblem({ ...ok, due: "2026-11-10" }), null);
+});
+
+test("a give-up or a cancel stays on the task when work is confirmed after it", () => {
+  const task = make();
+  const yes = step(HELPER, task, "accept");
+  const quit = step(HELPER, task, "give-up", { note: "No time." });
+  const cancel = step(FOUNDER, task, "cancel", { note: "Changed plans." });
+  const work = hand(task);
+  const ok = step(MATE, task, "confirm", { evidenceId: work.id });
+  const got = one([task, yes, quit, cancel, work, ok]);
+  assert.equal(got.state, "confirmed");
+  assert.equal(got.gaveUp.note, "No time.");
+  assert.equal(got.cancelled.note, "Changed plans.");
+});
+
+test("several pieces can wait at once; which is 'first' never follows a date their signer wrote", () => {
+  const task = make();
+  // The helper dates one piece far ahead and one long ago: neither date picks what is checked.
+  const a = hand(task, { note: "a" }, NOW + 500 * DAY);
+  const b = hand(task, { note: "b" }, 5);
+  const forward = one([task, a, b]);
+  const backward = one([task, b, a]);
+  assert.deepEqual(
+    forward.waiting.map((p) => p.id),
+    [a.id, b.id].sort(),
+  );
+  assert.deepEqual(
+    backward.waiting.map((p) => p.id),
+    forward.waiting.map((p) => p.id),
+  );
+  // Two team members confirm the same piece, the later-dated one first by id: the id decides who is named.
+  const first = step(
+    MATE,
+    task,
+    "confirm",
+    { evidenceId: a.id },
+    NOW + 9 * DAY,
+  );
+  const second = step(FOUNDER, task, "confirm", { evidenceId: a.id }, 1);
+  const done = one([task, a, b, second, first]);
+  assert.equal(done.accepted.by, MATE);
+  assert.deepEqual(
+    done.accepted.confirmed.map((c) => c.by),
+    [MATE, FOUNDER],
+  );
+  assert.deepEqual(done.waiting, []);
 });

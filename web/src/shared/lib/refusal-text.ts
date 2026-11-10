@@ -119,7 +119,66 @@ const RESTRICTIONS: [RegExp, (match: RegExpExecArray) => string][] = [
   // added, is refused with `not a channel member` (`handlers/req.rs`, `handlers/ingest.rs`).
   [/^restricted: channel access revoked$/, () => ACCESS_REMOVED_TEXT],
   [/^restricted: not a channel member$/, () => NO_ACCESS_TEXT],
+  // Who may sign a project's records (`handlers/launch_update_authority.rs`): checked against the project's own
+  // record when the record is written.
+  [
+    /^restricted: only this project's founder can post this$/,
+    () =>
+      "Only this project's founder can post goals and promises. Ask the founder to post it.",
+  ],
+  [
+    /^restricted: only this project's team can post this$/,
+    () =>
+      "Only this project's team can post this. If you should be on the team, ask the founder to add you to the project, then try again.",
+  ],
+  [
+    /^restricted: a task's work must be confirmed by someone other than its helper$/,
+    () =>
+      "The person who did the work can't confirm it, and neither can whoever runs them. Ask someone else on the project's team to check it.",
+  ],
+  [
+    /^restricted: only the helper this task names can post this$/,
+    () =>
+      "Only the person this task names can do this. If the task should be yours, ask the project's team to make one for you.",
+  ],
+  [
+    /^invalid: this record names a project that is not on this server$/,
+    () =>
+      "This project is not on this server, so nothing can be posted to it. Check you are in the right community, then try again.",
+  ],
+  [
+    /^invalid: this step names a task that is not on this server$/,
+    () =>
+      "This task is no longer on this server (it may have been removed), so the step was not saved. Reload the page to see what is there now.",
+  ],
+  [
+    /^invalid: this step names a task from another project$/,
+    () =>
+      "This task belongs to another project, so the step was not saved. Open the task from its own project's page.",
+  ],
+  // Removals (`handlers/ingest.rs`, `handlers/side_effects.rs`): one record at a time, and never a removal itself.
+  [
+    /^invalid: deletion events must reference exactly one target\b.*$/s,
+    () =>
+      "The server removes one record at a time, and this asked for several at once. Nothing was removed. Try again.",
+  ],
+  [
+    /^(?:invalid: |error: )?a deletion cannot be deleted\b.*$/s,
+    () =>
+      "A removal can't be removed: once a record is removed, that stays on the record. Nothing was changed.",
+  ],
 ];
+
+/** The restriction a failed send was refused with, in plain words with what to do next, or null when it was not one. */
+export function restrictionOf(error: unknown): string | null {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+  return message ? restrictionText(message) : null;
+}
 
 /** A restriction on the reader in plain words, or null when `message` is not one. */
 export function restrictionText(message: string): string | null {

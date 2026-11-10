@@ -49,11 +49,14 @@ test("the founder's deleted update records are counted, each once, with when the
   );
 });
 
-test("someone else's deletions, and deletions that say they remove another kind, are not counted", () => {
+test("someone else's deletions are not counted; one that claims another kind, or removes a removal, still is", () => {
   const removed = removedRecords(
     [
       del(OTHER, 10, ["a"]),
+      // A false label: it says it removes a post. Nothing checks that, so it counts, apart.
       del(FOUNDER, 20, ["b"], "1"),
+      // A removal of a removal counts too.
+      del(FOUNDER, 25, ["c"], "5"),
       { kind: 5, pubkey: FOUNDER, created_at: 30, tags: [["a", "37001:x:y"]] },
       {
         kind: 1,
@@ -70,11 +73,14 @@ test("someone else's deletions, and deletions that say they remove another kind,
   );
   assert.deepEqual(removed, {
     count: 0,
-    unnamed: 0,
-    lastAt: null,
+    unnamed: 2,
+    lastAt: 25,
     complete: true,
   });
-  assert.equal(removedLine(removed, day), null);
+  assert.match(
+    removedLine(removed, day),
+    /removed 2 records that were not marked as updates/,
+  );
 });
 
 test("a deletion that does not say what kind it removes may have removed an update: it is counted apart and said", () => {
@@ -86,7 +92,7 @@ test("a deletion that does not say what kind it removes may have removed an upda
   assert.deepEqual(only, { count: 0, unnamed: 2, lastAt: 25, complete: true });
   assert.equal(
     removedLine(only, day),
-    "The founder has removed 2 records without saying what kind they were, the last on day 25. Some may have been updates.",
+    "The founder has removed 2 records that were not marked as updates, the last on day 25. A removal can say any kind, so some may have been updates.",
   );
   const both = removedRecords(
     [del(FOUNDER, 25, ["c"], null), del(FOUNDER, 10, ["a"])],
@@ -95,7 +101,7 @@ test("a deletion that does not say what kind it removes may have removed an upda
   );
   assert.equal(
     removedLine(both, day),
-    "The founder has removed 1 update record, and 1 other record without saying what kind they were. The last removal was on day 25.",
+    "The founder has removed 1 update record, and 1 other record not marked as updates (a removal can say any kind). The last removal was on day 25.",
   );
   // Named both ways: an update record, once.
   assert.deepEqual(
@@ -115,10 +121,7 @@ test("a read that did not reach the end says at least, and with nothing found sa
   );
   // Never "none": five hundred unrelated deletions may be hiding one.
   assert.equal(
-    removedLine(
-      removedRecords([del(FOUNDER, 5, ["a"], "1")], FOUNDER, false),
-      day,
-    ),
+    removedLine(removedRecords([del(OTHER, 5, ["a"])], FOUNDER, false), day),
     "Whether the founder has removed update records could not be checked: they have more removals than could be read here.",
   );
   assert.equal(removedLine(removedRecords([], FOUNDER, true), day), null);

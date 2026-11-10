@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { KEPT_FOR_MS, sendOnce, templatePrint } from "./send-once.ts";
+import { KEPT_FOR_MS, keptKey, sendOnce, templatePrint } from "./send-once.ts";
 
 const ME = "a".repeat(64);
 const TEMPLATE = { kind: 47003, tags: [["task-part", "task"]], content: "{}" };
@@ -76,23 +76,36 @@ test("a send whose answer was lost is carried on by the retry, not made again", 
   assert.equal(w.server.size, 1);
   const again = await send(w);
   assert.equal(again.adopted, true);
-  assert.equal(again.changed, false);
   assert.equal(w.server.size, 1);
   assert.equal(w.signs, 1);
   assert.equal(w.kept.size, 0);
 });
 
-test("the retry after a lost answer adopts the first record even when the words were changed since", async () => {
+test("different words are a different send: they are never swallowed by, or thrown away for, what was kept", async () => {
   const w = world();
   w.next = "lost";
   await assert.rejects(send(w));
-  const again = await send(w, {
-    template: { ...TEMPLATE, content: '{"other":1}' },
-  });
-  assert.equal(again.adopted, true);
-  assert.equal(again.changed, true);
-  assert.equal(again.event.content, "{}");
-  assert.equal(w.server.size, 1);
+  // A second task (or a changed draft) under the same action: it is signed and sent as itself.
+  const other = { ...TEMPLATE, content: '{"other":1}' };
+  const second = await send(w, { template: other });
+  assert.equal(second.adopted, false);
+  assert.equal(second.event.content, '{"other":1}');
+  assert.equal(w.server.size, 2);
+  assert.notEqual(keptKey("make", other), keptKey("make", TEMPLATE));
+  assert.notEqual(templatePrint(other), templatePrint(TEMPLATE));
+  // The first words are still carried on when they are tried again.
+  const first = await send(w);
+  assert.equal(first.adopted, true);
+  assert.equal(first.event.content, "{}");
+  assert.equal(w.server.size, 2);
+});
+
+test("the same work handed in again after it went through is a new record", async () => {
+  const w = world();
+  await send(w);
+  const again = await send(w);
+  assert.equal(again.adopted, false);
+  assert.equal(w.server.size, 2);
 });
 
 test("a send that never arrived sends the very same record again", async () => {
@@ -104,18 +117,6 @@ test("a send that never arrived sends the very same record again", async () => {
   assert.equal(again.adopted, false);
   assert.equal(w.signs, 1);
   assert.deepEqual([...w.server.keys()], ["0".repeat(63) + "1"]);
-});
-
-test("changed words after a send that never arrived are signed afresh", async () => {
-  const w = world();
-  w.next = "down";
-  await assert.rejects(send(w));
-  const changed = { ...TEMPLATE, content: '{"other":1}' };
-  const again = await send(w, { template: changed });
-  assert.equal(w.signs, 2);
-  assert.equal(again.event.content, '{"other":1}');
-  assert.equal(w.server.size, 1);
-  assert.notEqual(templatePrint(changed), templatePrint(TEMPLATE));
 });
 
 test("nothing is sent while the server cannot be asked about the kept record", async () => {
@@ -165,31 +166,33 @@ test("a record kept by another account, or one that cannot be read, is never sen
   assert.equal(other.event.id, "9".repeat(64));
 
   const broken = world();
-  broken.kept.set("make:offer-1", "{not json");
+  const key = keptKey("make:offer-1", TEMPLATE);
+  broken.kept.set(key, "{not json");
   assert.equal((await send(broken)).adopted, false);
-  broken.kept.set(
-    "make:offer-1",
-    JSON.stringify({ print: "x", event: { id: "nope" } }),
-  );
+  broken.kept.set(key, JSON.stringify({ print: "x", event: { id: "nope" } }));
   assert.equal((await send(broken)).adopted, false);
 });
 
-test("a record kept long ago is a try given up: it is dropped, not adopted in place of a new send", async () => {
-  const w = world();
-  w.next = "lost";
-  await assert.rejects(send(w, { now: () => 1_000 }));
-  assert.equal(w.server.size, 1);
-  // Within the hour it is the same try.
+test("a record kept long ago is asked about before it is dropped: adopted if it arrived, signed afresh if not", async () => {
+  // It arrived, and the answer was lost; the retry comes a day later. The server is asked, and the record stands.
+  const landed = world();
+  landed.next = "lost";
+  await assert.rejects(send(landed, { now: () => 1_000 }));
+  const late = await send(landed, { now: () => 1_000 + 24 * KEPT_FOR_MS });
+  assert.equal(late.adopted, true);
+  assert.equal(landed.server.size, 1);
+
+  // It never arrived. Within the hour the same record goes again; after it, the words are signed afresh.
   const soon = world();
-  soon.next = "lost";
+  soon.next = "down";
   await assert.rejects(send(soon, { now: () => 1_000 }));
-  assert.equal(
-    (await send(soon, { now: () => 1_000 + KEPT_FOR_MS })).adopted,
-    true,
-  );
-  // Later it is a new send, with a record of its own.
-  const later = await send(w, { now: () => 1_001 + KEPT_FOR_MS });
-  assert.equal(later.adopted, false);
-  assert.equal(w.server.size, 2);
-  assert.equal(w.kept.size, 0);
+  await send(soon, { now: () => 1_000 + KEPT_FOR_MS });
+  assert.equal(soon.signs, 1);
+  const old = world();
+  old.next = "down";
+  await assert.rejects(send(old, { now: () => 1_000 }));
+  await send(old, { now: () => 1_001 + KEPT_FOR_MS });
+  assert.equal(old.signs, 2);
+  assert.equal(old.server.size, 1);
+  assert.equal(old.kept.size, 0);
 });

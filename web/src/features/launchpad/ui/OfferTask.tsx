@@ -1,7 +1,7 @@
 /**
  * Under one offer to help, for the team: "Accept and make a task". The request's words become the task, the team
- * writes what "done" means, and the person who offered is told. Once a task stands for the offer, the button gives
- * way to a line saying so.
+ * writes what "done" means, and the person who offered is asked to say yes: an offer to help is not yet agreement to
+ * this task. Once a task stands for the offer, the button gives way to a line saying so.
  *
  * And for the person who offered: a line saying their offer became a task.
  *
@@ -17,17 +17,24 @@ import { Button } from "@/shared/ui/button";
 import type { Offer } from "../lib/help-request";
 import { isOpenTask } from "../lib/tasks";
 import type { HelpAsk } from "../lib/weekly-update";
+import { withReason } from "../lib/removals";
 import type { Launch } from "../models";
 import { useProjectTasks, useTaskActions } from "../use-tasks";
 import { TaskForm } from "./TaskForm";
 
-/** The task that stands for an offer: an open or finished one, never one that was cancelled or given up. */
-function useOfferTask(launch: Launch, offerId: string) {
+/**
+ * The task that stands for an offer: an open or finished one for the person who made the offer, never one that was
+ * cancelled or given up. Naming an offer links the two on this page and nothing more: the task is that person's only
+ * once they say yes to it.
+ */
+function useOfferTask(launch: Launch, offerId: string, offerAuthor: string) {
   const read = useProjectTasks(launch.record);
   const task =
     read.tasks?.find(
       (t) =>
-        t.offerId === offerId && (isOpenTask(t) || t.state === "confirmed"),
+        t.offerId === offerId &&
+        t.helper === offerAuthor &&
+        (isOpenTask(t) || t.state === "confirmed"),
     ) ?? null;
   return { read, task };
 }
@@ -59,7 +66,7 @@ export function OfferTask({
   offer: Offer;
   helperName: string;
 }) {
-  const { read, task } = useOfferTask(launch, offer.id);
+  const { read, task } = useOfferTask(launch, offer.id, offer.author);
   const { make } = useTaskActions(launch.record);
   const [open, setOpen] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
@@ -67,7 +74,10 @@ export function OfferTask({
   if (task)
     return (
       <p className="mt-1 text-sm" data-testid="offer-task-made" role="status">
-        {said ?? "This offer is now a task."}{" "}
+        {said ??
+          (task.agreed === null
+            ? `A task was made from this offer. ${helperName} has not said yes yet.`
+            : "This offer is now a task.")}{" "}
         {task.state === "confirmed" ? (
           "The work was accepted."
         ) : (
@@ -104,7 +114,9 @@ export function OfferTask({
   return (
     <TaskForm
       busy={make.isPending}
-      failed={make.isError ? "The task was not made." : null}
+      failed={
+        make.isError ? withReason("The task was not made.", make.error) : null
+      }
       fixed={{ what: ask.text, size: ask.size }}
       onCancel={() => setOpen(false)}
       onSend={(draft) =>
@@ -122,9 +134,9 @@ export function OfferTask({
             onSuccess: (sent) => {
               setOpen(false);
               setSaid(
-                sent.adopted && sent.changed
-                  ? "An earlier try had already gone through, so the task was saved as it was then."
-                  : `Task made. ${helperName} is told.`,
+                sent.adopted
+                  ? "An earlier try had already gone through, so nothing new was sent."
+                  : `Task made. It is ${helperName}'s once they say yes.`,
               );
             },
           },
@@ -140,15 +152,19 @@ export function OfferTask({
 export function MyOfferTask({
   launch,
   offerId,
+  me,
 }: {
   launch: Launch;
   offerId: string;
+  me: string;
 }) {
-  const { task } = useOfferTask(launch, offerId);
+  const { task } = useOfferTask(launch, offerId, me);
   if (!task) return null;
   return (
     <p className="mt-1 text-sm" data-testid="my-offer-task">
-      The team accepted your offer and made it a task.{" "}
+      {task.agreed === null
+        ? "The team made a task from your offer. It is yours only if you say yes."
+        : "The team made a task from your offer, and you said yes."}{" "}
       {task.state === "confirmed" ? (
         "Your work was accepted."
       ) : (

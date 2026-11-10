@@ -2,9 +2,9 @@
  * Reading and sending tasks (`lib/tasks.ts`): a project's tasks, each step a person can take on one, the notices
  * those steps make, and a person's track record.
  *
- * Task records carry their own label, so they are read on their own: a project's by its `a` tag, a person's by `p`
- * and by author. Every read is paged up to a bound and says when it did not reach the end; nothing cut short is
- * shown as the whole story.
+ * Task records are read by who signed them (`lib/task-reads.ts`): a project's from its team and the helpers its tasks
+ * name, a person's from the steps they signed. A read by tag alone could be filled with a stranger's junk. Every
+ * read is paged up to a bound and says when it did not reach the end; nothing cut short is shown as the whole story.
  *
  * A step is signed once and kept in the browser's storage before it is sent (`lib/send-once.ts`), so a send whose
  * answer was lost is carried on, not made twice. No state is kept outside React, the query cache and that storage,
@@ -12,12 +12,9 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
-import {
-  KIND_LAUNCH_RECORD,
-  KIND_LAUNCH_UPDATE,
-} from "@/shared/constants/kinds";
+import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
 import { type NostrEvent, queryEvents } from "@/shared/lib/nostr-client";
 import { publishEvent } from "@/shared/lib/publish-event";
@@ -29,14 +26,20 @@ import {
   readPaged,
 } from "./lib/evidence-query";
 import { isGoalRecordTags } from "./lib/goals";
-import { isHelpSignalTags, parseHelpSignal, teamOf } from "./lib/help-request";
+import { agentClaim, verifiedAgent } from "./lib/agent-label";
+import { isHelpSignalTags, teamOf } from "./lib/help-request";
 import {
   deletionsFilter,
   type RemovedRecords,
   removedRecords,
 } from "./lib/removed-records";
 import { sendOnce, type SendStore } from "./lib/send-once";
-import { type TaskNotice, taskNotices } from "./lib/task-notices";
+import {
+  nextFirstSeen,
+  type TaskNotice,
+  taskNotices,
+} from "./lib/task-notices";
+import { readPersonTasks, readProjectTasks } from "./lib/task-reads";
 import {
   isTaskRecordTags,
   parseTaskRecord,
@@ -72,12 +75,8 @@ const tasksQueryKey = ["launchpad", "tasks"] as const;
 
 /** How many records are asked for by id in one read. */
 const BY_ID_CHUNK = 200;
-/** How many task records naming the viewer Notifications reads. */
-const NOTICE_READ_LIMIT = 200;
 /** How many team members one step names, so each is told: the task's maker first, then the founder and the rest. */
 const TEAM_TOLD = 12;
-/** How many projects a track record reads the team of. */
-const TRACK_PROJECTS = 40;
 
 const read = (filter: Parameters<typeof queryEvents>[1]) =>
   queryEvents(relayWsUrl(), filter);
@@ -106,38 +105,23 @@ async function readByIds(ids: readonly string[]): Promise<NostrEvent[]> {
   return out;
 }
 
-/** Who signed each offer the tasks name, for the offers still on the server. */
-async function readOffers(
-  records: readonly TaskRecord[],
-): Promise<Array<[string, string]>> {
-  const ids = [
-    ...new Set(records.flatMap((record) => record.offerId ?? [])),
-  ].slice(0, BY_ID_CHUNK * 5);
-  if (ids.length === 0) return [];
-  const wanted = new Set(ids);
-  return (await readByIds(ids)).flatMap((event): Array<[string, string]> => {
-    // What comes back is checked again: only an offer, and only one that was asked for.
-    if (!wanted.has(event.id)) return [];
-    return parseHelpSignal(event)?.kind === "offer"
-      ? [[event.id, event.pubkey]]
-      : [];
-  });
-}
-
 interface ProjectTasksRead {
   records: TaskRecord[];
-  offers: Array<[string, string]>;
-  /** The project's task records were read to the end. */
+  /** Everything that is counted (the team's and the helpers' records) was read to the end. */
   complete: boolean;
+  /** Answers from people who are not on the team could not all be read. They are never counted. */
+  othersCut: boolean;
 }
 
 /**
- * One project's tasks, read for that project alone. `tasks` is null until the read answers; `complete` is false when
- * the project has more task records than could be read, and the page then says a task or a step may be missing.
+ * One project's tasks, read for that project alone and by who signed them (`lib/task-reads.ts`). `tasks` is null
+ * until the read answers; `complete` is false when there is more than could be read, and the page then says a task
+ * or a step may be missing.
  */
 export function useProjectTasks(project: Project): {
   tasks: TaskView[] | null;
   complete: boolean;
+  othersCut: boolean;
   failed: boolean;
   stale: boolean;
   fetching: boolean;
@@ -145,22 +129,17 @@ export function useProjectTasks(project: Project): {
 } {
   const coordinate = launchCoordinate(project.author, project.id);
   const relay = relayWsUrl();
+  const team = useMemo(() => [...teamOf(project)], [project]);
   const query = useQuery({
-    queryKey: [...tasksQueryKey, "project", relay, coordinate],
+    queryKey: [...tasksQueryKey, "project", relay, coordinate, team],
     staleTime: 15_000,
     refetchOnWindowFocus: false,
     queryFn: async (): Promise<ProjectTasksRead> => {
-      const page = await readPaged(read, () => ({
-        kinds: [KIND_LAUNCH_UPDATE],
-        "#a": [coordinate],
-        "#l": [TASK_LABEL],
-        limit: EVIDENCE_QUERY_LIMIT,
-      }));
-      const records = taskRecordsOf(page.events);
+      const got = await readProjectTasks(read, { coordinate, team });
       return {
-        records,
-        offers: await readOffers(records),
-        complete: page.complete,
+        records: taskRecordsOf(got.events),
+        complete: got.complete,
+        othersCut: got.othersCut,
       };
     },
   });
@@ -170,14 +149,14 @@ export function useProjectTasks(project: Project): {
     return projectTasks({
       records: data.records,
       coordinate,
-      team: teamOf(project),
-      offers: new Map(data.offers),
+      team: new Set(team),
       now: Math.floor(Date.now() / 1000),
     });
-  }, [data, coordinate, project]);
+  }, [data, coordinate, team]);
   return {
     tasks,
     complete: data?.complete ?? false,
+    othersCut: data?.othersCut ?? false,
     failed: query.isError && !data,
     stale: query.isError && Boolean(data),
     fetching: query.isFetching,
@@ -256,11 +235,17 @@ export class EvidenceGoneError extends Error {
   }
 }
 
+/** Thrown when more work was handed in on a task than the person answering has been shown. */
+export class EvidenceChangedError extends Error {
+  constructor() {
+    super("evidence changed");
+    this.name = "EvidenceChangedError";
+  }
+}
+
 export interface TaskSent {
-  /** An earlier try had already gone through, so nothing new was sent. */
+  /** An earlier try with these same words had already gone through, so nothing new was sent. */
   adopted: boolean;
-  /** That earlier try was made with different words than these. */
-  changed: boolean;
 }
 
 async function sendTaskRecord(
@@ -272,7 +257,7 @@ async function sendTaskRecord(
   if (!me) throw new Error("Sign in first.");
   const relay = relayWsUrl();
   const coordinate = launchCoordinate(project.author, project.id);
-  const { adopted, changed } = await sendOnce({
+  const { adopted } = await sendOnce({
     key: `${coordinate}:${key}`,
     signer: me,
     template: {
@@ -286,7 +271,7 @@ async function sendTaskRecord(
     exists: async (id) =>
       (await readByIds([id])).some((found) => found.id === id),
   });
-  return { adopted, changed };
+  return { adopted };
 }
 
 type TaskRef = Pick<TaskView, "id" | "helper" | "madeBy">;
@@ -321,10 +306,34 @@ export function useTaskActions(project: Project) {
       }),
     );
   };
-  /** Asks the server whether a piece of work is still there before the team answers it. */
-  const stillThere = async (evidenceId: string) => {
-    if (!(await readByIds([evidenceId])).some((e) => e.id === evidenceId))
+  /**
+   * Before the team answers a piece of work, the server is asked what the helper has handed in on the task now. The
+   * piece must still be there, and nothing may have been handed in that the person answering has not been shown
+   * (`seen`): an answer is to the work that was read, never to work that arrived meanwhile.
+   */
+  const stillAsRead = async (input: {
+    task: TaskRef;
+    evidenceId: string;
+    seen: readonly string[];
+  }) => {
+    const now = taskRecordsOf(
+      await read({
+        kinds: [KIND_LAUNCH_UPDATE],
+        authors: [input.task.helper],
+        "#e": [input.task.id],
+        "#l": [TASK_LABEL],
+        limit: EVIDENCE_QUERY_LIMIT,
+      }),
+    ).filter(
+      (r) =>
+        r.part === "evidence" &&
+        r.taskId === input.task.id &&
+        r.author === input.task.helper,
+    );
+    if (!now.some((r) => r.id === input.evidenceId))
       throw new EvidenceGoneError();
+    if (now.some((r) => !input.seen.includes(r.id)))
+      throw new EvidenceChangedError();
   };
 
   const make = useMutation({
@@ -373,9 +382,11 @@ export function useTaskActions(project: Project) {
     mutationFn: async (input: {
       task: TaskRef;
       evidenceId: string;
+      /** Every piece of work that was on the page when the answer was written. */
+      seen: readonly string[];
       note: string;
     }) => {
-      await stillThere(input.evidenceId);
+      await stillAsRead(input);
       return step(
         input.task,
         `send-back:${input.evidenceId}`,
@@ -386,8 +397,13 @@ export function useTaskActions(project: Project) {
     ...options,
   });
   const confirm = useMutation({
-    mutationFn: async (input: { task: TaskRef; evidenceId: string }) => {
-      await stillThere(input.evidenceId);
+    mutationFn: async (input: {
+      task: TaskRef;
+      evidenceId: string;
+      /** Every piece of work that was on the page when the box was opened. */
+      seen: readonly string[];
+    }) => {
+      await stillAsRead(input);
       return step(
         input.task,
         `confirm:${input.evidenceId}`,
@@ -452,11 +468,38 @@ export function useTaskActions(project: Project) {
 
 const NO_NOTICES: TaskNotice[] = [];
 
+/** Where this browser keeps when it first saw each task notice: per server and account. */
+const seenKey = (relay: string, me: string) =>
+  `creaton.task-notices.seen.v1:${relay}:${me}`;
+
+function readFirstSeen(key: string): Map<string, number> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
+    if (Array.isArray(raw))
+      return new Map(
+        raw.filter(
+          (entry): entry is [string, number] =>
+            Array.isArray(entry) &&
+            typeof entry[0] === "string" &&
+            typeof entry[1] === "number",
+        ),
+      );
+  } catch {
+    // Unreadable: as if nothing was seen before.
+  }
+  return new Map();
+}
+
 /**
- * Task steps that need the viewer or answer them, newest first: the task records that name the viewer, read on their
- * own, with the tasks they are about. People in `muted` are left out before the list is cut.
+ * Task steps that need the viewer or answer them, newest first: the task records that name the viewer, read a page
+ * at a time, with the tasks they are about. People in `muted` are left out before the list is cut. `cut` says the
+ * records naming the viewer could not all be read (anyone can sign a record that names someone), so older notices
+ * may be missing.
  */
-export function useTaskNotices(muted?: ReadonlySet<string>): TaskNotice[] {
+export function useTaskNotices(muted?: ReadonlySet<string>): {
+  notices: TaskNotice[];
+  cut: boolean;
+} {
   const me = existingUserPubkey();
   const relay = relayWsUrl();
   const launches = useLaunches().data;
@@ -467,14 +510,13 @@ export function useTaskNotices(muted?: ReadonlySet<string>): TaskNotice[] {
     // The server does not push records by who they name, so polling is how these arrive.
     refetchInterval: 60_000,
     queryFn: async () => {
-      const naming = taskRecordsOf(
-        await read({
-          kinds: [KIND_LAUNCH_UPDATE],
-          "#p": [me as string],
-          "#l": [TASK_LABEL],
-          limit: NOTICE_READ_LIMIT,
-        }),
-      );
+      const page = await readPaged(read, () => ({
+        kinds: [KIND_LAUNCH_UPDATE],
+        "#p": [me as string],
+        "#l": [TASK_LABEL],
+        limit: EVIDENCE_QUERY_LIMIT,
+      }));
+      const naming = taskRecordsOf(page.events);
       const have = new Set(
         naming.filter((r) => r.part === "task").map((r) => r.id),
       );
@@ -482,42 +524,77 @@ export function useTaskNotices(muted?: ReadonlySet<string>): TaskNotice[] {
         ...new Set(
           naming.filter((r) => !have.has(r.taskId)).map((r) => r.taskId),
         ),
-      ].slice(0, BY_ID_CHUNK);
+      ];
       return {
         naming,
         tasks:
-          missing.length > 0 ? taskRecordsOf(await readByIds(missing)) : [],
+          missing.length > 0
+            ? taskRecordsOf(await readByIds(missing.slice(0, BY_ID_CHUNK)))
+            : [],
+        cut: !page.complete || missing.length > BY_ID_CHUNK,
       };
     },
   }).data;
-  return useMemo(
+  const storeKey = me ? seenKey(relay, me) : null;
+  const notices = useMemo(
     () =>
-      me && launches && data
+      me && launches && data && storeKey
         ? taskNotices({
-            ...data,
+            naming: data.naming,
+            tasks: data.tasks,
             projects: launches.map((launch) => launch.record),
             viewer: me,
             muted,
             now: Math.floor(Date.now() / 1000),
+            firstSeen: readFirstSeen(storeKey),
           })
         : NO_NOTICES,
-    [me, launches, data, muted],
+    [me, launches, data, muted, storeKey],
   );
+  // Remember when each was first seen, so a record's own date can never date its notice later than that.
+  useEffect(() => {
+    if (!storeKey || notices.length === 0) return;
+    const next = nextFirstSeen(
+      readFirstSeen(storeKey),
+      notices.map((notice) => notice.id),
+      Math.floor(Date.now() / 1000),
+    );
+    if (!next) return;
+    try {
+      localStorage.setItem(storeKey, JSON.stringify([...next]));
+    } catch {
+      // Storage full or blocked: the notices still show, dated by now.
+    }
+  }, [storeKey, notices]);
+  return { notices, cut: data?.cut ?? false };
 }
+
+/** How many of a person's own proofs of who runs them are checked, and how many owners' removals are read. */
+const OWNER_PROOFS_CHECKED = 3;
+const OWNERS_READ = 2;
 
 export interface TrackRecord {
   helper: HelperRecord;
   founder: FounderRecord;
   removed: RemovedRecords;
-  /** The task records that name the person, and the person's own records, were each read to the end. */
-  complete: boolean;
+  /** For an agent account: the removals of each person proven to run it. They can remove the agent's records. */
+  ownersRemoved: Array<{ pubkey: string; removed: RemovedRecords }>;
+  /** Everything the helper's numbers rest on was read to the end. */
+  helperComplete: boolean;
+  /** The person's tasks name more projects than are read here. */
+  tooManyProjects: boolean;
+  /** The person's own update records were read to the end (what the founder's numbers rest on). */
+  founderComplete: boolean;
+  /** Answers by people who are not on the teams could not all be read. They are never counted. */
+  othersCut: boolean;
   /** Project names, by coordinate, for the projects that were read. */
   projects: Record<string, { id: string; author: string; name: string }>;
 }
 
 /**
- * One person's track record: read by who they are named by (`p`) and by what they signed, a page at a time, with the
- * record of each project their tasks name (for its team). `complete` false means the numbers must not be stated.
+ * One person's track record. The helper's side starts from the task steps they signed (`lib/task-reads.ts`); the
+ * founder's side from their own update records. When a side's read did not reach its end, its numbers must not be
+ * stated.
  */
 export function useTrackRecord(person: string, enabled = true) {
   const relay = relayWsUrl();
@@ -527,64 +604,55 @@ export function useTrackRecord(person: string, enabled = true) {
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     queryFn: async (): Promise<TrackRecord> => {
-      const [naming, own, deletions] = await Promise.all([
-        readPaged(read, () => ({
-          kinds: [KIND_LAUNCH_UPDATE],
-          "#p": [person],
-          "#l": [TASK_LABEL],
-          limit: EVIDENCE_QUERY_LIMIT,
-        })),
+      const [tasks, own, deletions] = await Promise.all([
+        readPersonTasks(read, person, (event) => {
+          const record = parseLaunchRecord(event);
+          return record
+            ? {
+                coordinate: launchCoordinate(record.author, record.id),
+                team: [...teamOf(record)],
+              }
+            : null;
+        }),
         readAuthorUpdates(read, person),
         readPaged(read, () => deletionsFilter(person)),
       ]);
-      const mine = own.events.filter((event) => event.pubkey === person);
-      const records = taskRecordsOf([...naming.events, ...mine]);
-      // The projects the person's tasks name: each one's own record says who is on its team.
-      const coordinates = [
-        ...new Set(
-          records
-            .filter((r) => r.part === "task" && r.helper === person)
-            .map((r) => r.coordinate),
-        ),
-      ]
-        .sort()
-        .slice(0, TRACK_PROJECTS);
-      const wanted = coordinates.flatMap((coordinate) => {
-        const [kind, author, ...rest] = coordinate.split(":");
-        const id = rest.join(":");
-        return kind === String(KIND_LAUNCH_RECORD) && author && id
-          ? [{ coordinate, author, id }]
-          : [];
-      });
       const teams = new Map<string, Set<string>>();
       const projects: TrackRecord["projects"] = {};
-      if (wanted.length > 0) {
-        const found = await read({
-          kinds: [KIND_LAUNCH_RECORD],
-          authors: [...new Set(wanted.map((w) => w.author))],
-          "#d": [...new Set(wanted.map((w) => w.id))],
-          limit: EVIDENCE_QUERY_LIMIT,
-        });
-        const newest = new Map<string, Project>();
-        for (const event of found) {
-          const record = parseLaunchRecord(event);
-          if (!record) continue;
-          const coordinate = launchCoordinate(record.author, record.id);
-          const prev = newest.get(coordinate);
-          if (!prev || record.createdAt > prev.createdAt)
-            newest.set(coordinate, record);
-        }
-        for (const { coordinate } of wanted) {
-          const record = newest.get(coordinate);
-          if (!record) continue;
-          teams.set(coordinate, teamOf(record));
-          projects[coordinate] = {
-            id: record.id,
-            author: record.author,
-            name: record.name,
-          };
-        }
+      for (const event of tasks.projects) {
+        const record = parseLaunchRecord(event);
+        if (!record) continue;
+        const coordinate = launchCoordinate(record.author, record.id);
+        teams.set(coordinate, teamOf(record));
+        projects[coordinate] = {
+          id: record.id,
+          author: record.author,
+          name: record.name,
+        };
       }
+      // Whoever is proven to run this account can remove its records: their removals are read too.
+      const owners = new Set<string>();
+      const checked = new Set<string>();
+      for (const event of tasks.events) {
+        if (event.pubkey !== person || owners.size >= OWNERS_READ) continue;
+        const claim = agentClaim(event);
+        const sig = claim?.auth?.sig;
+        if (!claim || !sig || checked.has(sig)) continue;
+        if (checked.size >= OWNER_PROOFS_CHECKED) break;
+        checked.add(sig);
+        const owner = verifiedAgent(claim, KIND_LAUNCH_UPDATE).owner;
+        if (owner) owners.add(owner);
+      }
+      const ownersRemoved = await Promise.all(
+        [...owners].map(async (pubkey) => {
+          const page = await readPaged(read, () => deletionsFilter(pubkey));
+          return {
+            pubkey,
+            removed: removedRecords(page.events, pubkey, page.complete),
+          };
+        }),
+      );
+      const mine = own.events.filter((event) => event.pubkey === person);
       const updates = mine.flatMap((event) => {
         if (
           isHelpSignalTags(event.tags) ||
@@ -595,17 +663,29 @@ export function useTrackRecord(person: string, enabled = true) {
         const update = parseLaunchUpdate(event);
         return update ? [update] : [];
       });
+      const removed = removedRecords(
+        deletions.events,
+        person,
+        deletions.complete,
+      );
+      const some = (r: RemovedRecords) =>
+        r.count + r.unnamed > 0 || !r.complete;
       return {
         helper: helperRecord({
           person,
-          records,
+          records: taskRecordsOf(tasks.events),
           teams,
-          offers: new Map(await readOffers(records)),
           now: Math.floor(Date.now() / 1000),
+          mayHaveRemoved:
+            some(removed) || ownersRemoved.some((o) => some(o.removed)),
         }),
         founder: founderRecord(person, updates),
-        removed: removedRecords(deletions.events, person, deletions.complete),
-        complete: naming.complete && own.complete,
+        removed,
+        ownersRemoved,
+        helperComplete: tasks.complete,
+        tooManyProjects: tasks.tooManyProjects,
+        founderComplete: own.complete,
+        othersCut: tasks.othersCut,
         projects,
       };
     },

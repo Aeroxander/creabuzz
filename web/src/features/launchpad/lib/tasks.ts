@@ -27,8 +27,11 @@
  * - the person who did the work can never confirm it, and neither can an agent or the person who runs the helper;
  * - answers that disagree (one team member confirmed what another sent back) are both shown, and the work is not
  *   counted as accepted;
- * - nobody is on a task they did not agree to: a task counts as agreed only when the helper offered, accepted or
- *   handed work in.
+ * - nobody is on a task they did not agree to: a task counts as agreed only when the helper signed a step for that
+ *   very task (a yes, work handed in, an ask for more time). An offer to help is never agreement: any project could
+ *   name any offer a person ever made;
+ * - who is on the team is read from the project's record as it is now, and a team can change. A step by someone
+ *   who is not on the team now is shown as that and decides nothing.
  *
  * Nothing here carries an amount of Shares or money.
  *
@@ -410,15 +413,23 @@ interface Answer {
   note: string;
 }
 
+/** A send-back or a confirmation signed by someone who is not on the project's team now: shown, never counted. */
+interface OutsideAnswer extends Answer {
+  part: "send-back" | "confirm";
+}
+
 /** One piece of work handed in, with what the team said about it. */
 export interface TaskEvidence {
   id: string;
+  /** When its signer says it was handed in. Shown, never used to decide anything. */
   at: number;
   note: string;
   links: string[];
   files: TaskFile[];
   sentBack: Answer[];
   confirmed: Answer[];
+  /** Answers from people who are not on the team now (they may have been). At most {@link OUTSIDE_SHOWN}. */
+  outside: OutsideAnswer[];
 }
 
 interface MoreTimeAsk {
@@ -434,9 +445,11 @@ interface MoreTimeAsk {
 export interface TaskView {
   id: string;
   coordinate: string;
-  /** The team member who made the task. */
+  /** Who made the task. */
   madeBy: string;
   madeAt: number;
+  /** Whoever made it is on the project's team now. False only where such tasks are asked for (a person's record). */
+  madeByTeam: boolean;
   helper: string;
   what: string;
   done: string;
@@ -444,24 +457,35 @@ export interface TaskView {
   /** The date it is due now: the latest of the first date and any the team gave since. Null when none was set. */
   due: string | null;
   updateId: string | null;
+  /** The offer the task says it came from. It links the two on the page; it is never the helper's agreement. */
   offerId: string | null;
   state: TaskState;
   /** Open, past its date, and the helper's move. */
   late: boolean;
-  /** How the helper agreed, or null while they have not. */
-  agreed: "self" | "offer" | "accept" | "work" | null;
-  /** Everything handed in, oldest first by the helper's own dates. */
+  /**
+   * How the helper agreed, by a record they signed for THIS task, or null while they have not: they made it
+   * themselves, said yes, handed work in, or asked for more time. An offer to help is not agreement to a task.
+   */
+  agreed: "self" | "accept" | "work" | "step" | null;
+  /** Everything handed in: answered pieces first, then the ones waiting; by id within each, never by date. */
   evidence: TaskEvidence[];
   /** The piece that was accepted, when the task is confirmed. */
   accepted: (TaskEvidence & { by: string; confirmedAt: number }) | null;
-  /** The piece waiting for a check, when there is one. */
-  waiting: TaskEvidence | null;
+  /** The pieces nobody on the team has answered. Each is checked on its own. */
+  waiting: TaskEvidence[];
+  /** The team sent back work that is no longer on the server. They still count as sent back. */
+  orphanSendBacks: Answer[];
   /** A confirmation names evidence that is not on the server (removed, or not read). */
   confirmedWithoutEvidence: boolean;
   /** One team member confirmed a piece that another sent back: both stand, and the work is not counted. */
   disagreement: boolean;
   /** A confirmation was signed by someone who may not confirm (the helper, an agent, or whoever runs the helper). */
   ignoredConfirmation: boolean;
+  /**
+   * The team recorded steps that only follow a helper's step (a send-back, a confirmation, more time given), and no
+   * step signed by the helper is there: one was removed, or the team's steps answer nothing.
+   */
+  stepRemoved: boolean;
   moreTime: MoreTimeAsk[];
   gaveUp: Answer | null;
   cancelled: Answer | null;
@@ -469,8 +493,10 @@ export interface TaskView {
   helperAgent: AgentMark | null;
 }
 
-const byTime = <T extends { at: number; id: string }>(a: T, b: T) =>
-  a.at - b.at || (a.id < b.id ? -1 : 1);
+/** How many answers from people outside the team one piece of work shows. */
+const OUTSIDE_SHOWN = 3;
+
+const byId = <T extends { id: string }>(a: T, b: T) => (a.id < b.id ? -1 : 1);
 
 const answer = (record: TaskRecord): Answer => ({
   id: record.id,
@@ -489,18 +515,21 @@ const PROOFS_CHECKED = 3;
 
 /**
  * Every task of one project, from its task records. `records` may hold anything: other projects' records, steps by
- * the wrong people, duplicates. `offers` says who signed each offer a task names (and is still on the server).
+ * the wrong people, duplicates.
+ *
+ * With `outsideTasks`, tasks made by someone who is not on the team now are kept too (`madeByTeam` false): a
+ * person's own record needs them, because what that person signed (a yes, a give-up) stays theirs whoever is on the
+ * team today. A project's page never asks for them.
  */
 export function projectTasks(input: {
   records: readonly TaskRecord[];
   coordinate: string;
   team: ReadonlySet<string>;
-  /** Offer id to its author, for the offers that are on the server. */
-  offers?: ReadonlyMap<string, string>;
   /** Now, in seconds. */
   now: number;
+  outsideTasks?: boolean;
 }): TaskView[] {
-  const { coordinate, team, offers, now } = input;
+  const { coordinate, team, now } = input;
   const seen = new Set<string>();
   const records = input.records.filter((record) => {
     if (record.coordinate !== coordinate || seen.has(record.id)) return false;
@@ -517,9 +546,10 @@ export function projectTasks(input: {
   const today = dayOf(now);
   const out: TaskView[] = [];
   for (const task of records) {
-    // Only the project's team can make one of its tasks.
     if (task.part !== "task" || !task.helper || !task.size) continue;
-    if (!team.has(task.author)) continue;
+    // Only the project's team can make one of its tasks.
+    const madeByTeam = team.has(task.author);
+    if (!madeByTeam && !input.outsideTasks) continue;
     const helper = task.helper;
     const mine = steps.get(task.id) ?? [];
     const fromHelper = mine.filter((step) => step.author === helper);
@@ -546,50 +576,67 @@ export function projectTasks(input: {
       }
     }
 
-    const evidence: TaskEvidence[] = fromHelper
-      .filter((step) => step.part === "evidence")
-      .sort(byTime)
-      .map((step) => ({
-        id: step.id,
-        at: step.at,
-        note: step.note,
-        links: step.links,
-        files: step.files,
-        sentBack: [],
-        confirmed: [],
-      }));
-    const pieces = new Map(evidence.map((piece) => [piece.id, piece]));
+    const pieces = new Map<string, TaskEvidence>();
+    for (const step of fromHelper)
+      if (step.part === "evidence")
+        pieces.set(step.id, {
+          id: step.id,
+          at: step.at,
+          note: step.note,
+          links: step.links,
+          files: step.files,
+          sentBack: [],
+          confirmed: [],
+          outside: [],
+        });
     let confirmedWithoutEvidence = false;
     let ignoredConfirmation = false;
+    const orphanSendBacks: Answer[] = [];
     for (const step of mine) {
-      if (step.part !== "confirm") continue;
-      // Nobody grades their own work: not the helper, not whoever runs the helper, and not an agent.
-      const may =
-        team.has(step.author) &&
-        step.author !== helper &&
-        !owners.has(step.author) &&
-        step.agent === null;
-      if (!may) {
-        if (step.author === helper || team.has(step.author))
-          ignoredConfirmation = true;
+      if (step.part !== "confirm" && step.part !== "send-back") continue;
+      const piece = step.evidenceId ? pieces.get(step.evidenceId) : undefined;
+      const onTeam = team.has(step.author);
+      if (!onTeam && step.author !== helper) {
+        // Not on the team now. They may have been: it is shown as that, and decides nothing.
+        if (piece && piece.outside.length < OUTSIDE_SHOWN)
+          piece.outside.push({ ...answer(step), part: step.part });
         continue;
       }
-      const piece = step.evidenceId ? pieces.get(step.evidenceId) : undefined;
+      if (step.part === "send-back") {
+        if (step.author === helper) continue;
+        if (piece) piece.sentBack.push(answer(step));
+        // The work it answers is gone. The team's word still stands: it was sent back.
+        else orphanSendBacks.push(answer(step));
+        continue;
+      }
+      // Nobody grades their own work: not the helper, not whoever runs the helper, and not an agent.
+      if (
+        step.author === helper ||
+        owners.has(step.author) ||
+        step.agent !== null
+      ) {
+        ignoredConfirmation = true;
+        continue;
+      }
       if (piece) piece.confirmed.push(answer(step));
       else confirmedWithoutEvidence = true;
     }
-    for (const step of fromTeam) {
-      if (step.part !== "send-back" || !step.evidenceId) continue;
-      pieces.get(step.evidenceId)?.sentBack.push(answer(step));
+    for (const piece of pieces.values()) {
+      piece.confirmed.sort(byId);
+      piece.sentBack.sort(byId);
+      piece.outside.sort(byId);
     }
-    for (const piece of evidence) {
-      piece.confirmed.sort(byTime);
-      piece.sentBack.sort(byTime);
-    }
+    orphanSendBacks.sort(byId);
+    const answered = (piece: TaskEvidence) =>
+      piece.confirmed.length + piece.sentBack.length > 0;
+    // Answered pieces first, then the ones waiting. Within each by id: the dates are the helper's own to write.
+    const evidence = [...pieces.values()].sort(
+      (a, b) => Number(answered(b)) - Number(answered(a)) || byId(a, b),
+    );
 
     const asks: MoreTimeAsk[] = fromHelper
       .filter((step) => step.part === "more-time")
-      .sort(byTime)
+      .sort(byId)
       .map((step) => ({
         id: step.id,
         at: step.at,
@@ -598,10 +645,14 @@ export function projectTasks(input: {
         granted: null,
       }));
     let due = task.due;
+    let grantWithoutAsk = false;
     for (const step of fromTeam) {
       if (step.part !== "grant" || !step.due) continue;
       const ask = asks.find((a) => a.id === step.askId);
-      if (!ask) continue;
+      if (!ask) {
+        grantWithoutAsk = true;
+        continue;
+      }
       // Several answers to one ask: the later date stands.
       if (!ask.granted || step.due > ask.granted.due)
         ask.granted = {
@@ -615,20 +666,21 @@ export function projectTasks(input: {
 
     const gaveUpStep = fromHelper
       .filter((step) => step.part === "give-up")
-      .sort(byTime)[0];
+      .sort(byId)[0];
     const cancelStep = fromTeam
       .filter((step) => step.part === "cancel")
-      .sort(byTime)[0];
+      .sort(byId)[0];
 
+    // Agreement is a record the helper signed for this task. An offer to help on some update is not one.
     const agreed: TaskView["agreed"] =
       task.author === helper
         ? "self"
-        : task.offerId && offers?.get(task.offerId) === helper
-          ? "offer"
-          : fromHelper.some((step) => step.part === "accept")
-            ? "accept"
-            : evidence.length > 0
-              ? "work"
+        : fromHelper.some((step) => step.part === "accept")
+          ? "accept"
+          : evidence.length > 0
+            ? "work"
+            : asks.length > 0
+              ? "step"
               : null;
 
     const good = evidence.find(
@@ -637,14 +689,7 @@ export function projectTasks(input: {
     const disagreement = evidence.some(
       (piece) => piece.confirmed.length > 0 && piece.sentBack.length > 0,
     );
-    // Newest of the pieces nobody has answered: what the team is asked to look at.
-    const waiting =
-      [...evidence]
-        .reverse()
-        .find(
-          (piece) =>
-            piece.confirmed.length === 0 && piece.sentBack.length === 0,
-        ) ?? null;
+    const waiting = evidence.filter((piece) => !answered(piece));
 
     const state: TaskState = good
       ? "confirmed"
@@ -654,9 +699,9 @@ export function projectTasks(input: {
           ? "cancelled"
           : agreed === null
             ? "offered"
-            : waiting
+            : waiting.length > 0
               ? "submitted"
-              : evidence.length > 0
+              : evidence.length + orphanSendBacks.length > 0
                 ? "sent-back"
                 : "in-progress";
 
@@ -665,6 +710,7 @@ export function projectTasks(input: {
       coordinate,
       madeBy: task.author,
       madeAt: task.at,
+      madeByTeam,
       helper,
       what: task.what,
       done: task.done,
@@ -686,10 +732,16 @@ export function projectTasks(input: {
             confirmedAt: good.confirmed[0].at,
           }
         : null,
-      waiting: good ? null : waiting,
+      waiting: good ? [] : waiting,
+      orphanSendBacks,
       confirmedWithoutEvidence: !good && confirmedWithoutEvidence,
       disagreement: !good && disagreement,
       ignoredConfirmation: !good && ignoredConfirmation,
+      stepRemoved:
+        agreed === null &&
+        (orphanSendBacks.length > 0 ||
+          confirmedWithoutEvidence ||
+          grantWithoutAsk),
       moreTime: asks,
       gaveUp: gaveUpStep ? answer(gaveUpStep) : null,
       cancelled: cancelStep ? answer(cancelStep) : null,
@@ -697,6 +749,20 @@ export function projectTasks(input: {
     });
   }
   return out;
+}
+
+/**
+ * Whether `viewer` is shown a task. Until the helper has agreed, a task is the team's proposal to one person: the
+ * page shows it to the team and to that person only. (The record itself is public and names them; the page says so
+ * where the task is made.)
+ */
+export function mayViewTask(
+  task: Pick<TaskView, "agreed" | "helper">,
+  team: ReadonlySet<string>,
+  viewer: string | null,
+): boolean {
+  if (task.agreed !== null) return true;
+  return viewer !== null && (viewer === task.helper || team.has(viewer));
 }
 
 const OPEN_STATES: readonly TaskState[] = [

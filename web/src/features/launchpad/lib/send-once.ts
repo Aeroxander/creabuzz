@@ -1,20 +1,26 @@
 /**
  * Sending one signed record so that a lost answer never makes a second one.
  *
- * A record is signed once and kept (with what it was signed from) before it is sent. If the server's answer is lost,
- * the next try for the same thing first asks the server whether the kept record arrived:
+ * A record is signed once and kept before it is sent, under a name made from what is being done AND the exact words
+ * it was signed from. If the server's answer is lost, the next try with the same words finds it and first asks the
+ * server whether it arrived:
  * - it did: that record is the result, and nothing new is signed (`adopted`);
- * - it did not, and the person changed nothing: the very same record is sent again, so even if the first copy turns up
- *   late the server holds one record, not two;
- * - it did not, and the words changed: the kept record is dropped and the new words are signed.
+ * - it did not, and the try is recent: the very same record is sent again, so even if the first copy turns up late
+ *   the server holds one record, not two;
+ * - it did not, and the try is more than an hour old: it is dropped and the words are signed afresh.
  *
- * A kept record counts for an hour. After that it is a try long given up, and the next send starts afresh.
+ * Different words are a different thing to send. They never find, adopt or replace what was kept for other words: a
+ * second task, or a second piece of work, is never swallowed by an earlier one, and a changed draft is never thrown
+ * away in favour of what was typed before.
  *
  * What is kept is given by the caller (the browser's storage, keyed by server and account), so nothing here lives in
  * a module or a component and a reload or a change of community loses nothing.
  *
  * Pure and alias-free: `send-once.test.mjs` drives it under `node --test`.
  */
+
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
 
 export interface SendTemplate {
   kind: number;
@@ -80,21 +86,27 @@ function readKept<E extends Signed>(
   return null;
 }
 
-/** How long a kept record counts as "the try just made": after this a retry starts afresh. */
+/** How long a kept record that never arrived is sent again as it is. After this the words are signed afresh. */
 export const KEPT_FOR_MS = 60 * 60 * 1000;
 
 export interface SendOnceResult<E> {
   event: E;
-  /** An earlier try had already arrived, so its record stands and nothing new was sent. */
+  /** An earlier try with these same words had already arrived, so its record stands and nothing new was sent. */
   adopted: boolean;
-  /** That earlier record was signed from different words than the ones given now. */
-  changed: boolean;
+}
+
+/** The name a record is kept under: what is being done, and a fingerprint of the words. */
+export function keptKey(action: string, template: SendTemplate): string {
+  const print = bytesToHex(
+    sha256(new TextEncoder().encode(templatePrint(template))),
+  ).slice(0, 24);
+  return `${action}:${print}`;
 }
 
 /**
- * Send the record `template` describes, once. `key` names the thing being done (one task from one offer, one
- * confirmation of one piece of evidence), so a retry finds what the earlier try kept. `signer` is the account that
- * signs: a record kept by another account is never sent or adopted.
+ * Send the record `template` describes, once. `key` names the thing being done (make a task from one offer, confirm
+ * one piece of evidence). `signer` is the account that signs: a record kept by another account is never sent or
+ * adopted.
  */
 export async function sendOnce<E extends Signed>(input: {
   key: string;
@@ -108,25 +120,21 @@ export async function sendOnce<E extends Signed>(input: {
   exists: (id: string) => Promise<boolean>;
   now?: () => number;
 }): Promise<SendOnceResult<E>> {
-  const { key, signer, template, store, sign, publish, exists } = input;
+  const { signer, template, store, sign, publish, exists } = input;
   const print = templatePrint(template);
+  const key = keptKey(input.key, template);
+  const clock = input.now ?? Date.now;
   let event: E | null = null;
   const kept = readKept<E>(store, key);
-  const clock = input.now ?? Date.now;
-  // An old kept record is a try long given up: it is dropped, so it can never stand in for a new one.
-  if (kept && clock() - kept.at > KEPT_FOR_MS) store.remove(key);
-  else if (kept && kept.event.pubkey === signer) {
-    // The earlier try may have arrived although its answer did not. If the server cannot be asked, nothing is sent:
-    // sending blind is how a second record gets made.
+  if (kept && kept.event.pubkey === signer && kept.print === print) {
+    // The earlier try may have arrived although its answer did not. However old it is, the server is asked before
+    // anything else: if it cannot be asked, nothing is sent, because sending blind is how a second record is made.
     if (await exists(kept.event.id)) {
       store.remove(key);
-      return {
-        event: kept.event,
-        adopted: true,
-        changed: kept.print !== print,
-      };
+      return { event: kept.event, adopted: true };
     }
-    if (kept.print === print) event = kept.event;
+    // It never arrived. A recent one goes again as it is; an old one is a try long given up.
+    if (clock() - kept.at <= KEPT_FOR_MS) event = kept.event;
   }
   if (!event) {
     event = await sign(template);
@@ -140,5 +148,5 @@ export async function sendOnce<E extends Signed>(input: {
     throw new Error(result.message ?? "The server did not take the record.");
   }
   store.remove(key);
-  return { event, adopted: false, changed: false };
+  return { event, adopted: false };
 }

@@ -32,6 +32,7 @@ import {
   promiseTotals,
   promiseTotalsLine,
 } from "../lib/promises";
+import { teamOf } from "../lib/help-request";
 import { memberRemovedLine, removedLine } from "../lib/removed-records";
 import {
   acceptedTasks,
@@ -39,7 +40,7 @@ import {
   type TaskFile,
   type TaskView,
 } from "../lib/tasks";
-import { acceptedLine } from "../lib/track-record";
+import { projectAcceptedLine } from "../lib/track-record";
 import type { Launch } from "../models";
 import { useProjectRecord } from "../use-project-record";
 import { useProjectTasks, useTeamRemovals } from "../use-tasks";
@@ -78,11 +79,17 @@ interface Line {
   testId?: string;
 }
 
-/** A project's finished and closed tasks as lines of its record. */
+/**
+ * A project's finished and closed tasks as lines of its record. A give-up or a cancel stays on the record whatever
+ * came after, so one task can have more than one line. A task its helper never said yes to leaves no line: it says
+ * nothing about them.
+ */
 function taskLines(
   tasks: readonly TaskView[],
   names: (pubkey: string) => string,
+  team: ReadonlySet<string>,
   now: number,
+  complete: boolean,
 ): Line[] {
   const lines: Line[] = acceptedTasks(tasks, now).flatMap((task) =>
     task.accepted
@@ -91,9 +98,16 @@ function taskLines(
             key: `task-${task.id}`,
             at: orderTime(task.accepted.confirmedAt, now),
             tone: "success" as const,
-            label: "Work accepted",
+            // A cut read may have missed a send-back of the same piece: it is not called accepted outright.
+            label: complete
+              ? "Work accepted"
+              : "Work accepted, as far as was read",
             text: task.what,
-            detail: `Done by ${names(task.helper)}, checked by ${names(task.accepted.by)}. Done meant: ${task.done}`,
+            detail: [
+              `Done by ${names(task.helper)}${team.has(task.helper) ? ", who is on this project's team" : ""}`,
+              `Checked by ${task.accepted.confirmed.map((c) => names(c.by)).join(", ")}`,
+              `Done meant: ${task.done}`,
+            ].join(". "),
             links: task.accepted.links,
             files: task.accepted.files,
             testId: "record-work-accepted",
@@ -102,28 +116,25 @@ function taskLines(
       : [],
   );
   for (const task of tasks) {
-    if (task.state === "given-up" && task.gaveUp)
+    if (task.agreed === null) continue;
+    if (task.gaveUp)
       lines.push({
-        key: `task-${task.id}`,
+        key: `task-${task.id}-gave-up`,
         at: orderTime(task.gaveUp.at, now),
         tone: "warning",
-        // Someone who never said yes turned the task down; they did not give up work they had taken on.
-        label: task.agreed === null ? "Task turned down" : "Task given up",
+        label: "Task given up",
         text: task.what,
-        detail:
-          task.agreed === null
-            ? ""
-            : `${names(task.helper)} gave it up${task.gaveUp.note ? `: ${task.gaveUp.note}` : ""}`,
+        detail: `${names(task.helper)} gave it up${task.gaveUp.note ? `: ${task.gaveUp.note.replace(/\.$/, "")}` : ""}${task.state === "confirmed" ? ". Work on it was confirmed all the same" : ""}`,
         testId: "record-task-closed",
       });
-    if (task.state === "cancelled" && task.cancelled)
+    if (task.cancelled)
       lines.push({
-        key: `task-${task.id}`,
+        key: `task-${task.id}-cancelled`,
         at: orderTime(task.cancelled.at, now),
         tone: "neutral",
         label: "Task cancelled",
         text: task.what,
-        detail: `Cancelled by ${names(task.cancelled.by)}: ${task.cancelled.note}`,
+        detail: `Cancelled by ${names(task.cancelled.by)}: ${task.cancelled.note.replace(/\.$/, "")}${task.state === "confirmed" ? ". Work on it was confirmed all the same" : ""}`,
         testId: "record-task-closed",
       });
   }
@@ -147,9 +158,11 @@ export function ProjectRecordCard({
     () =>
       (work.tasks ?? []).filter(
         (task) =>
-          task.state === "confirmed" ||
-          task.state === "given-up" ||
-          task.state === "cancelled",
+          // A task nobody said yes to is not part of the record.
+          task.agreed !== null &&
+          (task.state === "confirmed" ||
+            task.gaveUp !== null ||
+            task.cancelled !== null),
       ),
     [work.tasks],
   );
@@ -158,7 +171,7 @@ export function ProjectRecordCard({
     ...(teamRemovals?.members.map((member) => member.pubkey) ?? []),
     ...closed.flatMap((task) => [
       task.helper,
-      ...(task.accepted ? [task.accepted.by] : []),
+      ...(task.accepted?.confirmed.map((c) => c.by) ?? []),
       ...(task.cancelled ? [task.cancelled.by] : []),
     ]),
   ]);
@@ -217,18 +230,26 @@ export function ProjectRecordCard({
         detail:
           "The update that made this promise was removed, so what was promised can't be shown",
       })),
-      ...taskLines(closed, names, Math.floor(Date.now() / 1000)),
+      ...taskLines(
+        closed,
+        names,
+        teamOf(launch.record),
+        Math.floor(Date.now() / 1000),
+        work.complete,
+      ),
     ].sort((a, b) => b.at - a.at || (a.key < b.key ? -1 : 1));
     return {
       lines,
       work: work.tasks
-        ? acceptedLine(closed.filter((t) => t.state === "confirmed").length)
+        ? projectAcceptedLine(
+            closed.filter((t) => t.state === "confirmed").length,
+          )
         : null,
       removed: removedLine(record.removed, day),
       promises: promiseTotalsLine(promiseTotals(record.promises)),
       goals: goalTotalsLine(goalTotals(goals)),
     };
-  }, [record, closed, names, work.tasks]);
+  }, [record, closed, names, work.tasks, work.complete, launch.record]);
 
   if (!record || !view) {
     // Not read yet: the card holds its place and says so. Not readable: said, with a way to read again.
@@ -266,13 +287,16 @@ export function ProjectRecordCard({
       aria-labelledby="project-record-heading"
       className="glass rounded-2xl border p-4"
       data-testid="project-record"
+      // Set once the project's tasks were read (or could not be): what the card says about work is settled.
+      data-work-read={work.tasks || work.failed ? "true" : undefined}
     >
       <h2 className="text-sm font-bold" id="project-record-heading">
         Promises and goals
       </h2>
       <p className="text-xs text-muted-foreground">
         What this project said it would do, what came of it, and the work it
-        accepted.
+        accepted. Work counts when someone on the team now, other than the
+        person who did it, confirmed it; a project's team can change.
       </p>
       {work.failed ? (
         <p

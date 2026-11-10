@@ -12,6 +12,12 @@ import { uploadBlob } from "@/shared/lib/upload-blob";
 import { Button } from "@/shared/ui/button";
 
 import {
+  checkFile,
+  type FileCheck,
+  fileCheckLine,
+  linkHost,
+} from "../lib/file-check";
+import {
   readLinks,
   TASK_LIMITS,
   type TaskEvidence,
@@ -64,7 +70,82 @@ export function PersonLink({ pubkey, name }: { pubkey: string; name: string }) {
   );
 }
 
-/** The links and files of one piece of handed-in work. A link is shown as written, so people see where it goes. */
+/** One handed-in file: its name (the helper's word), where it is, its stated fingerprint, and a way to check it. */
+function FileRow({ file }: { file: TaskFile }) {
+  const [checking, setChecking] = useState(false);
+  const [check, setCheck] = useState<FileCheck | null>(null);
+  const host = file.url ? linkHost(file.url) : null;
+  const run = async () => {
+    setChecking(true);
+    setCheck(null);
+    const result = await checkFile(file.url, file.hash, {
+      fetch: (url) =>
+        fetch(url, { credentials: "omit", referrerPolicy: "no-referrer" }),
+      digest: (bytes) =>
+        crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>),
+    });
+    setCheck(result);
+    setChecking(false);
+  };
+  return (
+    <li className="break-all" data-testid="task-file">
+      <span className="text-xs text-muted-foreground">
+        File, named by the helper:
+      </span>{" "}
+      {file.url ? (
+        <a
+          className="text-foreground underline"
+          href={file.url}
+          rel="noopener noreferrer nofollow"
+          target="_blank"
+        >
+          {file.name || "File"}
+        </a>
+      ) : (
+        <span>{file.name || "File"}</span>
+      )}
+      {host ? (
+        <span className="text-xs text-muted-foreground"> (at {host})</span>
+      ) : null}
+      <span className="block text-xs text-muted-foreground">
+        Fingerprint stated by the helper, not checked here:{" "}
+        <code>{file.hash}</code>
+      </span>
+      {file.url ? (
+        <Button
+          aria-label={`Check this file: ${file.name || "file"}`}
+          className="mt-1"
+          disabled={checking}
+          onClick={() => void run()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {checking ? "Checking…" : "Check this file"}
+        </Button>
+      ) : (
+        <span className="block text-xs text-muted-foreground">
+          No address was given, so it cannot be checked here.
+        </span>
+      )}
+      {check ? (
+        <span
+          className="mt-1 block text-sm"
+          data-result={check.result}
+          data-testid="task-file-check"
+          role="status"
+        >
+          {fileCheckLine(check)}
+        </span>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * The links and files of one piece of handed-in work. A link is shown as written with the site it goes to beside
+ * it, so people see where it leads before they follow it.
+ */
 export function EvidenceLinks({
   links,
   files,
@@ -74,7 +155,7 @@ export function EvidenceLinks({
 }) {
   if (links.length + files.length === 0) return null;
   return (
-    <ul className="mt-1 space-y-0.5 text-sm" data-testid="task-evidence-links">
+    <ul className="mt-1 space-y-1 text-sm" data-testid="task-evidence-links">
       {links.map((link) => (
         <li className="break-all" key={link}>
           <a
@@ -85,26 +166,17 @@ export function EvidenceLinks({
           >
             {link}
           </a>
+          <span
+            className="text-xs text-muted-foreground"
+            data-testid="task-link-host"
+          >
+            {" "}
+            (goes to {linkHost(link) ?? "an address that could not be read"})
+          </span>
         </li>
       ))}
       {files.map((file) => (
-        <li className="break-all" key={file.hash}>
-          {file.url ? (
-            <a
-              className="text-foreground underline"
-              href={file.url}
-              rel="noopener noreferrer nofollow"
-              target="_blank"
-            >
-              {file.name || "File"}
-            </a>
-          ) : (
-            <span>{file.name || "File"}</span>
-          )}{" "}
-          <span className="text-xs text-muted-foreground">
-            (fingerprint <code>{file.hash}</code>)
-          </span>
-        </li>
+        <FileRow file={file} key={file.hash} />
       ))}
     </ul>
   );
@@ -123,10 +195,11 @@ export function EvidencePiece({
   return (
     <div
       className="rounded-lg border border-border bg-background/70 p-2"
+      data-evidence={piece.id}
       data-testid="task-evidence"
     >
       <p className="text-xs text-muted-foreground">
-        {heading} · {day(piece.at)}
+        {heading} · dated {day(piece.at)} by the helper
       </p>
       {piece.note ? (
         <p className="mt-1 whitespace-pre-wrap break-words text-sm">
@@ -141,7 +214,7 @@ export function EvidencePiece({
           key={back.id}
         >
           <span className="text-xs text-muted-foreground">
-            Sent back by {names(back.by)} on {day(back.at)}:
+            Sent back by {names(back.by)}:
           </span>{" "}
           {back.note}
         </p>
@@ -153,6 +226,17 @@ export function EvidencePiece({
           The answers disagree, so it is not counted as accepted.
         </p>
       ) : null}
+      {piece.outside.map((other) => (
+        <p
+          className="mt-1 break-words text-xs text-muted-foreground"
+          data-testid="task-outside-answer"
+          key={other.id}
+        >
+          {other.part === "confirm" ? "Confirmed" : "Sent back"} by{" "}
+          {names(other.by)}, who is not on this project's team now. It is not
+          counted.{other.note ? ` They wrote: ${other.note}` : ""}
+        </p>
+      ))}
     </div>
   );
 }
@@ -208,26 +292,51 @@ export function StepBox({
   const [files, setFiles] = useState<TaskFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblemText] = useState<string | null>(null);
+  /** Which field the problem is about, so it is marked and the reason is read with it. */
+  const [badField, setBadField] = useState<"note" | "date" | "links" | null>(
+    null,
+  );
+  const setProblem = (
+    text: string | null,
+    field: "note" | "date" | "links" | null = null,
+  ) => {
+    setProblemText(text);
+    setBadField(field);
+    // The keyboard goes to the field that needs fixing.
+    if (field)
+      document
+        .getElementById(`${id}-${field}`)
+        ?.focus({ preventScroll: false });
+  };
+  const errorId = `${id}-problem`;
+  const describedBy = (field: "note" | "date" | "links", ...more: string[]) =>
+    [...more, ...(badField === field ? [errorId] : [])].join(" ") || undefined;
 
   const submit = () => {
     if (busy || uploading) return;
     const { links, bad } = readLinks(linkText);
-    if (note.required && words.trim() === "") return setProblem(note.required);
+    if (note.required && words.trim() === "")
+      return setProblem(note.required, "note");
     if (date) {
-      if (when === "" && date.required) return setProblem(date.required);
+      if (when === "" && date.required)
+        return setProblem(date.required, "date");
       if (when !== "" && (!validDate(when) || when < date.min))
-        return setProblem("Pick a date that has not passed.");
+        return setProblem("Pick a date that has not passed.", "date");
     }
     if (evidence) {
       if (bad.length > 0)
         return setProblem(
           `This is not a web link: ${bad[0]}. A link starts with https://`,
+          "links",
         );
       if (links.length > TASK_LIMITS.links)
-        return setProblem(`Add at most ${TASK_LIMITS.links} links.`);
+        return setProblem(`Add at most ${TASK_LIMITS.links} links.`, "links");
       if (words.trim() === "" && links.length === 0 && files.length === 0)
-        return setProblem("Add what you did: a few words, a link, or a file.");
+        return setProblem(
+          "Add what you did: a few words, a link, or a file.",
+          "note",
+        );
     }
     setProblem(null);
     onSend({ note: words, date: when, links, files });
@@ -261,6 +370,8 @@ export function StepBox({
       aria-label={title}
       className="mt-2 rounded-lg border border-border bg-background/70 p-2"
       data-testid={testId}
+      // The reasons are said here, beside the field they are about, not in the browser's own bubble.
+      noValidate
       onKeyDown={(e) => {
         // Escape puts the box away, as Cancel does. Not while a send is on its way: its result needs somewhere to land.
         if (e.key !== "Escape" || busy) return;
@@ -282,7 +393,9 @@ export function StepBox({
         {note.label}
       </label>
       <textarea
-        aria-describedby={hint ? `${id}-hint` : undefined}
+        aria-describedby={describedBy("note", ...(hint ? [`${id}-hint`] : []))}
+        aria-invalid={badField === "note" || undefined}
+        aria-required={note.required ? "true" : undefined}
         // biome-ignore lint/a11y/noAutofocus: the box opens because the person asked for it; typing starts in it
         autoFocus
         className={FIELD_CLASS}
@@ -302,6 +415,8 @@ export function StepBox({
             Links (optional, one per line)
           </label>
           <textarea
+            aria-describedby={describedBy("links")}
+            aria-invalid={badField === "links" || undefined}
             className={FIELD_CLASS}
             id={`${id}-links`}
             onChange={(e) => setLinkText(e.target.value)}
@@ -375,10 +490,13 @@ export function StepBox({
             {date.label}
           </label>
           <input
+            aria-describedby={describedBy("date")}
+            aria-invalid={badField === "date" || undefined}
             className={FIELD_CLASS}
             id={`${id}-date`}
             min={date.min}
             onChange={(e) => setWhen(e.target.value)}
+            required={Boolean(date.required)}
             type="date"
             value={when}
           />
@@ -388,6 +506,7 @@ export function StepBox({
         <p
           className="mt-1 text-sm text-red-700 dark:text-red-300"
           data-testid={`${testId}-problem`}
+          id={errorId}
           role="alert"
         >
           {problem}

@@ -54,12 +54,27 @@ export function TaskForm({
   const [size, setSize] = useState<HelpSize>(fixed?.size ?? "small");
   const [due, setDue] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
+  /** Which field the problem is about: it is marked, the reason is read with it, and the keyboard goes there. */
+  const [badField, setBadField] = useState<"what" | "done" | "due" | null>(
+    null,
+  );
+  const errorId = `${id}-problem`;
+  const tied = (field: "what" | "done" | "due", ...more: string[]) =>
+    [...more, ...(badField === field ? [errorId] : [])].join(" ") || undefined;
 
   const submit = () => {
     if (busy) return;
-    if (blocked) return setProblem(blocked);
+    if (blocked) {
+      setBadField(null);
+      return setProblem(blocked);
+    }
     const found = taskProblem({ what, done, due, today: todayDate() });
-    if (found) return setProblem(found.message);
+    if (found) {
+      setBadField(found.field);
+      document.getElementById(`${id}-${found.field}`)?.focus();
+      return setProblem(found.message);
+    }
+    setBadField(null);
     setProblem(null);
     onSend({ what, done, size, due: due || null });
   };
@@ -94,6 +109,9 @@ export function TaskForm({
             What is the task
           </label>
           <textarea
+            aria-describedby={tied("what")}
+            aria-invalid={badField === "what" || undefined}
+            aria-required="true"
             className={FIELD_CLASS}
             id={`${id}-what`}
             maxLength={TASK_LIMITS.what}
@@ -127,7 +145,8 @@ export function TaskForm({
         once the task is made.
       </p>
       <textarea
-        aria-describedby={`${id}-done-hint`}
+        aria-describedby={tied("done", `${id}-done-hint`)}
+        aria-invalid={badField === "done" || undefined}
         aria-required="true"
         // biome-ignore lint/a11y/noAutofocus: the form opens because the person asked for it; when the words are fixed, this is the first thing to write
         autoFocus={Boolean(fixed)}
@@ -143,6 +162,8 @@ export function TaskForm({
         Due date (optional)
       </label>
       <input
+        aria-describedby={tied("due")}
+        aria-invalid={badField === "due" || undefined}
         className={FIELD_CLASS}
         id={`${id}-due`}
         min={todayDate()}
@@ -154,12 +175,14 @@ export function TaskForm({
         className="mt-2 text-xs text-muted-foreground"
         data-testid="task-rewards-line"
       >
-        {REWARDS_LINE} The task is public: anyone can read it.
+        {REWARDS_LINE} The task is a public record that names the person it is
+        for, and it is theirs only once they say yes.
       </p>
       {problem ? (
         <p
           className="mt-1 text-sm text-red-700 dark:text-red-300"
           data-testid={`${testId}-problem`}
+          id={errorId}
           role="alert"
         >
           {problem}
