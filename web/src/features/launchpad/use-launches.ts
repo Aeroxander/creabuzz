@@ -35,6 +35,7 @@ import { fundingContent, type FundingStatus } from "./lib/funding";
 import { type IpRecord, ipRecordContent } from "./lib/ip-record";
 import { type BuiltOn, builtOnCoordinate, type RemixTerms } from "./lib/remix";
 import { type RevenuePledge, revenuePledgeContent } from "./lib/revenue-pledge";
+import { carriedTags } from "./lib/record-input";
 import { supersedingTime } from "./lib/record-time";
 import { type FormerMember, type TeamMember, teamTags } from "./lib/team";
 import {
@@ -678,6 +679,13 @@ export interface CreateLaunchInput {
   stage: LaunchStage;
   /** "unlisted" keeps the project out of every list of projects (`lib/listing.ts`); left out, it is listed. */
   listing?: "unlisted";
+  /**
+   * Tags the record carries that no form here owns, carried through every save so none is erased: the agent the
+   * record says wrote it, the projects it links to (`a` tags other than the one it is built on), and the bid gates.
+   */
+  agent?: string;
+  projects?: readonly string[];
+  hooks?: readonly { address: string; bucket: string }[];
   /** The team the founder added, and who left it (`lib/team.ts`): tags on the record, which the server reads. */
   team?: readonly TeamMember[];
   formerTeam?: readonly FormerMember[];
@@ -763,6 +771,7 @@ export function useCreateLaunch() {
       for (const channel of boundChannelIds(input))
         tags.push(["buzz-channel", channel]);
       tags.push(...teamTags(input.team ?? [], input.formerTeam ?? []));
+      tags.push(...carriedTags(input));
       // The parent's record, so a parent finds the projects built on it with one query (N11).
       if (input.builtOn)
         tags.push(["a", builtOnCoordinate(input.builtOn), "", "built-on"]);

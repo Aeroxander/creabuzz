@@ -89,10 +89,14 @@ export function useLaunchFollows() {
     );
   };
 
+  const { refetch } = lists;
   return {
     followed,
     toggle,
     ready: !me || lists.isSuccess,
+    /** Who the person follows could not be read: `followed` is then not the whole list, and nothing waits on it. */
+    failed: Boolean(me) && lists.isError && !lists.data,
+    retry: () => void refetch(),
     pending: publish.isPending,
   };
 }

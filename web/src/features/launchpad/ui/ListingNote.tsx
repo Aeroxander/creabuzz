@@ -8,13 +8,15 @@ import { isIdea } from "../lib/idea";
 import { NOT_LISTED_LINE, notListedYet } from "../lib/listing";
 import type { Launch, LaunchStage } from "../models";
 import { useChangeOwnRecord } from "../use-own-record";
+import { LOST_CHANGE_WORDS, useRecordAgreement } from "../use-record-agreement";
 
 /**
  * Whether the project is listed, said on its page. Everyone who opens a project that is not listed reads that it is
  * not; its founder also gets the one button that changes it, and reads what being listed means before pressing it.
  *
- * What was chosen is shown at once (`chosen`), because the server can take seconds to show the record back; a failed
- * save puts the old words back with the reason and a retry.
+ * What was chosen is shown at once, because the server can take seconds to show the record back, and only until the
+ * record read back agrees: a failed save, or a save another change replaced, puts the record's own words back with
+ * the reason and what to do.
  */
 export function ListingNote({
   launch,
@@ -29,10 +31,16 @@ export function ListingNote({
   const change = useChangeOwnRecord();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<FailureWords | null>(null);
-  // What the founder chose here, until the record read back agrees with it.
-  const [chosen, setChosen] = useState<boolean | null>(null);
   const recorded = notListedYet(launch.record);
-  const unlisted = chosen ?? recorded;
+  // What the founder chose here is shown at once, and only until the record read back says the same. If a newer
+  // record arrives without it (another save replaced it), the page goes back to what the record says, and says why.
+  const chosen = useRecordAgreement(
+    launch.record.createdAt,
+    (key) => recorded === (key === "unlisted"),
+    (_key, why) => setFailure({ text: LOST_CHANGE_WORDS[why], detail: null }),
+  );
+  const ahead = chosen.waiting[0];
+  const unlisted = ahead === undefined ? recorded : ahead === "unlisted";
   // A sale still being set up is in no list whatever its founder chose; that is said to them, with no button.
   if (stage === "draft" && !isIdea(launch.record))
     return isFounder ? (
@@ -45,17 +53,20 @@ export function ListingNote({
 
   const set = async (next: boolean) => {
     if (busy) return;
+    const key = next ? "unlisted" : "listed";
     setBusy(true);
     setFailure(null);
-    setChosen(next);
+    chosen.drop(next ? "listed" : "unlisted");
+    chosen.begin(key);
     try {
-      await change(launch.record.id, (own) =>
+      const done = await change(launch.record.id, (own) =>
         notListedYet(own) === next
           ? null
           : { listing: next ? "unlisted" : undefined },
       );
+      chosen.saved(key, done.signedAt);
     } catch (cause) {
-      setChosen(null);
+      chosen.drop(key);
       setFailure(
         failureWords(
           cause,

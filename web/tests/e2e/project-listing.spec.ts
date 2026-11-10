@@ -162,3 +162,41 @@ test("a listing change the server refuses is said, and the page goes back to wha
   );
   await expect(page.getByTestId("project-listing-failed")).toHaveCount(0);
 });
+
+test("the projects built on a project leave out one that is not listed", async ({
+  page,
+}) => {
+  test.skip(
+    process.env.E2E_PILOT_BUILD === "1",
+    "the contributor-only build shows no built-on card",
+  );
+  const relay = createMockRelay({ applyDeletions: true });
+  relay.seed(
+    projectRecord(FOUNDER, "parent", "Parent Works", now() - 5 * DAY, {
+      content: {
+        stage: "live",
+        requiredRaised: "1000000",
+        floorPrice: "1",
+        currency: "USDC",
+      },
+    }),
+  );
+  const builtOn = {
+    content: { builtOn: { author: FOUNDER, id: "parent" } },
+    tags: [["a", `37001:${FOUNDER}:parent`, "", "built-on"]],
+  };
+  relay.seed(
+    projectRecord(OTHER, "shown", "Shown Remix", now() - DAY, builtOn),
+  );
+  relay.seed(
+    projectRecord(OTHER, "hidden", "Hidden Remix", now() - DAY, {
+      ...builtOn,
+      content: { ...builtOn.content, listing: "unlisted" },
+    }),
+  );
+  await install(page, relay, null);
+  await page.goto(projectPath(FOUNDER, "parent"));
+  const children = page.getByTestId("remix-card").getByTestId("remix-children");
+  await expect(children).toContainText("Shown Remix");
+  await expect(children).not.toContainText("Hidden Remix");
+});

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { recordToInput } from "./record-input.ts";
+import { carriedTags, recordToInput } from "./record-input.ts";
 import { STANDARD_ALLOCATION } from "./allocation.ts";
 
 /**
@@ -176,6 +176,9 @@ test("every field a launch can be created with is carried by a save", () => {
   // Not a property of the record: how the save is signed.
   // A record that holds every optional part, so none is skipped for being empty.
   const full = record({
+    agent: "c".repeat(64),
+    projects: [`37015:${"d".repeat(64)}:pitch`],
+    hooks: [{ address: `0x${"7".repeat(40)}`, bucket: "public" }],
     listing: "unlisted",
     funding: { stance: "rolling", seeking: [], opensAt: null, note: null },
     vesting: { tranches: [{ multiple: 2, fraction: 1 }] },
@@ -199,4 +202,31 @@ test("every field a launch can be created with is carried by a save", () => {
       field !== "asAgent" && field !== "supersedes" && !carried.includes(field),
   );
   assert.deepEqual(missing, []);
+});
+
+test("the tags no form owns are written again by a save: the agent, the linked projects and the bid gates", () => {
+  const agent = "c".repeat(64);
+  const linked = `37015:${"d".repeat(64)}:pitch`;
+  const hook = { address: `0x${"7".repeat(40)}`, bucket: "public" };
+  const input = recordToInput(
+    record({ agent, projects: [linked], hooks: [hook] }),
+  );
+  assert.deepEqual(carriedTags(input), [
+    ["agent", agent],
+    ["a", linked],
+    ["hook", hook.address, hook.bucket],
+  ]);
+  // Published as the agent, its own signing writes the agent tag: it is not written twice.
+  assert.deepEqual(carriedTags({ ...input, asAgent: true }), [
+    ["a", linked],
+    ["hook", hook.address, hook.bucket],
+  ]);
+  // A record with none of them grows none.
+  assert.deepEqual(carriedTags(recordToInput(record())), []);
+  // The save itself writes them.
+  const source = readFileSync(
+    new URL("../use-launches.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /tags\.push\(\.\.\.carriedTags\(input\)\);/);
 });

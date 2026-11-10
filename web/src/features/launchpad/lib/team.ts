@@ -12,10 +12,14 @@
  *   invitation it answers. Only an answer signed by the person named counts, and only for the invitation it names:
  *   someone removed and added again is asked again. A "no" for an invitation is final, whatever else was signed for
  *   it, so no order of records decides anything here;
- * - the founder's record also says who left and when: `["team-left", <account>, <when>]`, written by this app in the
- *   same save that removes them. A person's own "yes" is not taken as proof they were ever on a team: anyone can sign
- *   one for any project, and once the founder's record no longer names the invitation there is nothing to check it
- *   against. So this disclosure rests on the founder's record alone (the server keeps only its newest version).
+ * - the founder's record also says who left and when: `["team-left", <account>, <when>, <invitation>]`, written by
+ *   this app in the same save that removes someone who had said yes. Neither record is believed alone. A founder
+ *   could write that tag about anyone, so "was on the team" is said only when the person's own signed yes to that
+ *   invitation is read too; and anyone can sign a yes for any project, so a yes counts only for an invitation the
+ *   founder's record names. Someone added and removed without ever saying yes leaves no trace at all.
+ * - an invitation's name is used once. A yes for an invitation with no name never counts, and neither does a yes for
+ *   an invitation the founder's record already lists under who left: someone removed and added again is asked again,
+ *   even if the old name were put back.
  *
  * Only people who said yes are shown as team; people added who have not answered are shown as that, publicly, because
  * the server already lets them act for the project.
@@ -50,9 +54,14 @@ export interface TeamMember {
 
 export interface FormerMember {
   pubkey: string;
-  /** When the founder's record says they left, in seconds; null when it does not say. */
-  until: number | null;
+  /** When the founder's record says they left, in seconds. */
+  until: number;
+  /** The invitation they were on the team by: their own yes to it is what makes "was on the team" true. */
+  invite: string;
 }
+
+/** The most "left the team" entries one record keeps (the newest). */
+const MAX_FORMER = 64;
 
 /** The team a project record's tags name, each account once (the first entry wins), never the founder. */
 export function parseTeam(tags: Tags, founder: string): TeamMember[] {
@@ -76,16 +85,20 @@ export function parseTeam(tags: Tags, founder: string): TeamMember[] {
   return out;
 }
 
-/** Who the founder's record says left, each account once (the latest date wins). */
+/** Who the founder's record says left, one entry per account and invitation. */
 export function parseFormerTeam(tags: Tags): FormerMember[] {
-  const out = new Map<string, number>();
+  const out = new Map<string, FormerMember>();
   for (const tag of tags) {
     if (tag[0] !== "team-left" || !PUBKEY.test(tag[1] ?? "")) continue;
     const until = Number(tag[2]);
     if (!Number.isSafeInteger(until) || until <= 0) continue;
-    out.set(tag[1], Math.max(out.get(tag[1]) ?? 0, until));
+    const invite = typeof tag[3] === "string" ? tag[3] : "";
+    const key = `${tag[1]}:${invite}`;
+    const was = out.get(key);
+    if (!was || until > was.until)
+      out.set(key, { pubkey: tag[1], until, invite });
   }
-  return [...out].map(([pubkey, until]) => ({ pubkey, until }));
+  return [...out.values()];
 }
 
 /** The tags a project record carries for its team and for who left. */
@@ -101,9 +114,7 @@ export function teamTags(
     ),
     // So each person can find the projects that name them.
     ...team.map((m) => ["p", m.pubkey]),
-    ...former.flatMap((m) =>
-      m.until === null ? [] : [["team-left", m.pubkey, String(m.until)]],
-    ),
+    ...former.map((m) => ["team-left", m.pubkey, String(m.until), m.invite]),
   ];
 }
 
@@ -141,14 +152,26 @@ export function withMember(
     throw new Error(
       `A team can have ${MAX_TEAM_MEMBERS} people besides the founder. Remove someone first.`,
     );
+  // An invitation's name is used once: an old yes must never answer a new invitation.
+  if (
+    invite === "" ||
+    record.formerTeam.some((m) => m.pubkey === pubkey && m.invite === invite)
+  )
+    throw new Error("That invitation was used before. Try again.");
   return {
     team: [...record.team, { pubkey, role: TEAM_ROLE, invite }],
-    // Back on the team: no longer someone who left.
-    formerTeam: record.formerTeam.filter((m) => m.pubkey !== pubkey),
+    // What the record says about their earlier time on the team stays: it is also what keeps old invitations spent.
+    formerTeam: [...record.formerTeam],
   };
 }
 
-/** The founder's record with `pubkey` removed and written down as having left at `now`. Null when they are not on it. */
+/**
+ * The founder's record with `pubkey` removed. Null when they are not on it.
+ *
+ * `saidYes` is whether the person's own yes to this invitation was read just now. Only then is it written down that
+ * they left and when: someone who never said yes was never on the team, and the record must not say they were. They
+ * are dropped without a trace.
+ */
 export function withoutMember(
   record: {
     team: readonly TeamMember[];
@@ -156,14 +179,16 @@ export function withoutMember(
   },
   pubkey: string,
   now: number,
+  saidYes: boolean,
 ): TeamChange {
-  if (!record.team.some((m) => m.pubkey === pubkey)) return null;
+  const member = record.team.find((m) => m.pubkey === pubkey);
+  if (!member) return null;
+  const former = [...record.formerTeam];
+  if (saidYes && member.invite !== "")
+    former.push({ pubkey, until: now, invite: member.invite });
   return {
     team: record.team.filter((m) => m.pubkey !== pubkey),
-    formerTeam: [
-      ...record.formerTeam.filter((m) => m.pubkey !== pubkey),
-      { pubkey, until: now },
-    ],
+    formerTeam: former.sort((x, y) => y.until - x.until).slice(0, MAX_FORMER),
   };
 }
 
@@ -190,7 +215,7 @@ export function teamAnswerEvent(input: {
 }): { content: { title: string; body: string }; tags: string[][] } {
   return {
     content: {
-      title: input.answer === "yes" ? "Joined the team" : "Said no to the team",
+      title: input.answer === "yes" ? "Joined the team" : "Not on the team",
       body: "",
     },
     tags: [
@@ -225,65 +250,143 @@ export function parseTeamAnswer(event: {
   };
 }
 
-export type MemberState = "accepted" | "invited" | "declined";
+/** `left`: they said yes and later no (they left of their own accord). `declined`: they said no and never yes. */
+export type MemberState = "accepted" | "invited" | "declined" | "left";
+
+const answersTo = (
+  who: string,
+  invite: string,
+  coordinate: string,
+  answers: readonly TeamAnswer[],
+) =>
+  answers.filter(
+    (a) =>
+      a.author === who && a.coordinate === coordinate && a.invite === invite,
+  );
 
 /**
- * Where one person stands on one invitation, from their own answers to it. A "no" is final for that invitation;
- * otherwise a "yes" is a yes; otherwise they have not answered. Answers signed by anyone else, for another project
- * or for another invitation are not looked at.
+ * Where one person stands on one invitation, from their own answers to it. Answers signed by anyone else, for another
+ * project or for another invitation are not looked at. An invitation with no name, or one the founder's record lists
+ * under who left (`former`), cannot be answered at all: nothing signed for it counts. No order of records decides
+ * anything: a no stands whatever else was signed for the same invitation.
  */
 export function memberState(
   member: TeamMember,
   coordinate: string,
   answers: readonly TeamAnswer[],
+  former: readonly FormerMember[] = [],
 ): MemberState {
-  const own = answers.filter(
-    (a) =>
-      a.author === member.pubkey &&
-      a.coordinate === coordinate &&
-      a.invite === member.invite,
-  );
-  if (own.some((a) => a.answer === "no")) return "declined";
-  return own.some((a) => a.answer === "yes") ? "accepted" : "invited";
+  if (
+    member.invite === "" ||
+    former.some((f) => f.pubkey === member.pubkey && f.invite === member.invite)
+  )
+    return "invited";
+  const own = answersTo(member.pubkey, member.invite, coordinate, answers);
+  const yes = own.some((a) => a.answer === "yes");
+  if (own.some((a) => a.answer === "no")) return yes ? "left" : "declined";
+  return yes ? "accepted" : "invited";
 }
 
 export interface TeamView {
   /** The people on the founder's record, with where each stands. */
   members: Array<TeamMember & { state: MemberState }>;
-  /** People who were on the team and are not now, as the founder's record says. */
+  /**
+   * People who were on the team and are not now: the founder's record says they left, and their own signed yes to
+   * that invitation was read. One entry per person, the latest.
+   */
   former: FormerMember[];
+}
+
+interface TeamProject {
+  author: string;
+  coordinate: string;
+  team: readonly TeamMember[];
+  formerTeam: readonly FormerMember[];
+}
+
+/** The entries of "who left" that the person's own yes bears out. */
+function verifiedFormer(
+  project: TeamProject,
+  answers: readonly TeamAnswer[],
+): FormerMember[] {
+  return project.formerTeam.filter(
+    (f) =>
+      f.invite !== "" &&
+      answersTo(f.pubkey, f.invite, project.coordinate, answers).some(
+        (a) => a.answer === "yes",
+      ),
+  );
 }
 
 /** The team as the page shows it. */
 export function teamView(
-  project: {
-    author: string;
-    coordinate: string;
-    team: readonly TeamMember[];
-    formerTeam: readonly FormerMember[];
-  },
+  project: TeamProject,
   answers: readonly TeamAnswer[],
 ): TeamView {
   const members = project.team.map((member) => ({
     ...member,
-    state: memberState(member, project.coordinate, answers),
+    state: memberState(member, project.coordinate, answers, project.formerTeam),
   }));
   const current = new Set([
     project.author,
     ...project.team.map((m) => m.pubkey),
   ]);
-  const former = new Map<string, number | null>();
-  for (const m of project.formerTeam)
-    if (!current.has(m.pubkey)) former.set(m.pubkey, m.until);
+  const former = new Map<string, FormerMember>();
+  for (const f of verifiedFormer(project, answers)) {
+    if (current.has(f.pubkey)) continue;
+    const was = former.get(f.pubkey);
+    if (!was || f.until > was.until) former.set(f.pubkey, f);
+  }
   return {
     members,
-    former: [...former]
-      .map(([pubkey, until]) => ({ pubkey, until }))
-      .sort(
-        (x, y) =>
-          (y.until ?? 0) - (x.until ?? 0) || (x.pubkey < y.pubkey ? -1 : 1),
-      ),
+    former: [...former.values()].sort(
+      (x, y) => y.until - x.until || (x.pubkey < y.pubkey ? -1 : 1),
+    ),
   };
+}
+
+/**
+ * Whose updates speak for the project, and until when: the founder and every member who said yes, with no end; a
+ * member who left of their own accord, until their own no; someone the record says left (and whose yes bears it out),
+ * until that date. Someone added who has not said yes, or who said no, does not speak for the project. `null` is "no
+ * end". A record signed after a person's end is not the project's.
+ */
+export function projectVoices(
+  project: TeamProject,
+  answers: readonly TeamAnswer[],
+): Map<string, number | null> {
+  const out = new Map<string, number | null>();
+  const until = (who: string, at: number) => {
+    const was = out.get(who);
+    if (was === null) return;
+    out.set(who, was === undefined ? at : Math.max(was, at));
+  };
+  for (const f of verifiedFormer(project, answers)) until(f.pubkey, f.until);
+  for (const member of project.team) {
+    const state = memberState(
+      member,
+      project.coordinate,
+      answers,
+      project.formerTeam,
+    );
+    if (state === "accepted") out.set(member.pubkey, null);
+    else if (state === "left")
+      until(
+        member.pubkey,
+        Math.min(
+          ...answersTo(
+            member.pubkey,
+            member.invite,
+            project.coordinate,
+            answers,
+          )
+            .filter((a) => a.answer === "no")
+            .map((a) => a.createdAt),
+        ),
+      );
+  }
+  out.set(project.author, null);
+  return out;
 }
 
 /** Who may post for the project from this app: the founder, and a member who said yes. */

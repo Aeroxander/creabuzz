@@ -27,6 +27,7 @@ import {
   memberState,
   newInvite,
   parseTeamAnswer,
+  projectVoices,
   TEAM_LABEL,
   type TeamAnswer,
   type TeamAnswerWord,
@@ -66,9 +67,16 @@ export function useProjectTeam(launch: Launch) {
   const { record } = launch;
   const coordinate = launchCoordinate(record.author, record.id);
   const relay = relayWsUrl();
+  // The people on the record, and the people it says left: each one's own answers are what bear the record out.
   const authors = useMemo(
-    () => record.team.map((member) => member.pubkey).sort(),
-    [record.team],
+    () =>
+      [
+        ...new Set([
+          ...record.team.map((member) => member.pubkey),
+          ...record.formerTeam.map((member) => member.pubkey),
+        ]),
+      ].sort(),
+    [record.team, record.formerTeam],
   );
   const read = useQuery({
     queryKey: [...teamQueryKey, "project", relay, coordinate, authors],
@@ -133,9 +141,35 @@ export function useTeamChanges(launch: Launch) {
   });
   const remove = useMutation({
     mutationFn: (pubkey: string) =>
-      change(id, (own) =>
-        withoutMember(own, pubkey, Math.floor(Date.now() / 1000)),
-      ),
+      change(id, async (own) => {
+        const member = own.team.find((m) => m.pubkey === pubkey);
+        if (!member) return null;
+        // Whether they ever said yes is read now, from their own records: only then does the record say they were
+        // on the team. If that cannot be read the removal is not sent, rather than guessed either way.
+        const coordinate = launchCoordinate(own.author, own.id);
+        const answers = answersOf(
+          await queryEvents(relayWsUrl(), {
+            kinds: [KIND_LAUNCH_UPDATE],
+            authors: [pubkey],
+            "#a": [coordinate],
+            "#l": [TEAM_LABEL],
+            limit: ANSWERS_LIMIT,
+          }),
+        );
+        const saidYes = answers.some(
+          (a) =>
+            a.author === pubkey &&
+            a.coordinate === coordinate &&
+            a.invite === member.invite &&
+            a.answer === "yes",
+        );
+        return withoutMember(
+          own,
+          pubkey,
+          Math.floor(Date.now() / 1000),
+          saidYes,
+        );
+      }),
     onSuccess: done,
     onError: done,
   });
@@ -238,6 +272,7 @@ async function readMyTeams(relay: string, me: string): Promise<MyTeams> {
       member,
       launchCoordinate(record.author, record.id),
       answers,
+      record.formerTeam,
     );
     if (state === "invited") invitations.push({ record, member });
     else if (state === "accepted") joined.push(record);
@@ -266,4 +301,54 @@ export function useMyTeams() {
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
+}
+
+/** How many answers one read asks for across the projects of a feed. */
+const VOICES_LIMIT = 500;
+
+/**
+ * Whose updates speak for each of `records`' projects (`projectVoices`), from one bounded read of the team answers
+ * signed by the people those records name. `cut` says the read was full: someone who said yes may then be missing.
+ */
+export async function readProjectVoices(
+  relay: string,
+  records: readonly LaunchRecord[],
+): Promise<{ voices: Map<string, Map<string, number | null>>; cut: boolean }> {
+  const people = [
+    ...new Set(
+      records.flatMap((record) => [
+        ...record.team.map((m) => m.pubkey),
+        ...record.formerTeam.map((m) => m.pubkey),
+      ]),
+    ),
+  ].sort();
+  const coordinates = records.map((r) => launchCoordinate(r.author, r.id));
+  const events =
+    people.length > 0
+      ? await queryEvents(relay, {
+          kinds: [KIND_LAUNCH_UPDATE],
+          authors: people,
+          "#a": coordinates,
+          "#l": [TEAM_LABEL],
+          limit: VOICES_LIMIT,
+        })
+      : [];
+  const answers = answersOf(events);
+  const voices = new Map<string, Map<string, number | null>>();
+  for (const record of records) {
+    const coordinate = launchCoordinate(record.author, record.id);
+    voices.set(
+      coordinate,
+      projectVoices(
+        {
+          author: record.author,
+          coordinate,
+          team: record.team,
+          formerTeam: record.formerTeam,
+        },
+        answers,
+      ),
+    );
+  }
+  return { voices, cut: events.length >= VOICES_LIMIT };
 }

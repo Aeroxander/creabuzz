@@ -2,7 +2,7 @@
  * Home's feed of project records: what the projects in view put on the record, newest first.
  *
  * One item per signed record, and only from the party entitled to sign it: an update from the project's founder or
- * team (with the founder's answers to earlier promises, and the help it asks for), a goal the founder marked reached,
+ * a team member who said yes (with the founder's answers to earlier promises, and the help it asks for), a goal the founder marked reached,
  * missed or changed, and work the team accepted (worked out with the same rules as the project's own page:
  * `projectTasks`). Anything else that names a project is not an item, whoever signed it.
  *
@@ -40,8 +40,14 @@ export const FEED_AUTHORS = 200;
 export interface FeedProject {
   coordinate: string;
   founder: string;
-  /** The founder and everyone on the founder's record. */
+  /** The founder and everyone on the founder's record: who the server lets make and check the project's tasks. */
   team: ReadonlySet<string>;
+  /**
+   * Whose updates speak for the project, and until when (`projectVoices` in `team.ts`): the founder and the members
+   * who said yes, with no end (null); someone who left, until they left. Someone the founder added who has not said
+   * yes is on `team` and not here: the server lets them post, and what they post is not the project's update.
+   */
+  voices: ReadonlyMap<string, number | null>;
 }
 
 interface FeedEvent {
@@ -137,8 +143,10 @@ export function feedItems(input: {
       isTeamAnswerTags(event.tags)
     )
       continue;
-    // Only the project's team speaks as the project.
-    if (!project.team.has(event.pubkey)) continue;
+    // Only the founder and the members who said yes speak as the project; someone who left, only until they left.
+    const until = project.voices.get(event.pubkey);
+    if (until === undefined) continue;
+    if (until !== null && event.created_at > until) continue;
     const update = parseLaunchUpdate(event);
     // Submitted work and check notes are shown with the work, not as news.
     if (!update || update.claim || update.checkNote) continue;

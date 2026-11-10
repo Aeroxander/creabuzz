@@ -12,7 +12,7 @@
  * No state is kept outside React and the query cache: nothing here outlives a change of community.
  */
 
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { teamOf } from "@/features/launchpad/lib/help-request";
@@ -35,6 +35,7 @@ import {
 } from "@/features/launchpad/models";
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { useMyProjects } from "@/features/launchpad/use-my-projects";
+import { readProjectVoices } from "@/features/launchpad/use-team";
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { type NostrEvent, queryEvents } from "@/shared/lib/nostr-client";
@@ -68,6 +69,9 @@ export function useFeedScope(): {
   loading: boolean;
   failed: boolean;
   retry: () => void;
+  /** Who the reader follows could not be read: the projects they follow are not in the feed. */
+  followsFailed: boolean;
+  retryFollows: () => void;
 } {
   const me = existingUserPubkey();
   const mine = useMyProjects();
@@ -96,6 +100,10 @@ export function useFeedScope(): {
       .map((l) => l.record);
   }, [launches.data]);
 
+  const follows = {
+    followsFailed: me !== null && mine.followsFailed,
+    retryFollows: mine.retryFollows,
+  };
   // Signed in, and not yet known whether anything is theirs: wait, never show everyone's in the meantime.
   if (me !== null && yours === null)
     return {
@@ -103,17 +111,20 @@ export function useFeedScope(): {
       loading: !mine.failed,
       failed: mine.failed,
       retry: mine.retry,
+      ...follows,
     };
   if (yours !== null && yours.length > 0)
     return {
       scope: {
         mode: "yours",
         projects: yours.slice(0, FEED_PROJECTS),
-        cut: yours.length > FEED_PROJECTS || mine.cut,
+        // (A failed read of who they follow is said on its own, with its retry.)
+        cut: yours.length > FEED_PROJECTS || (mine.cut && !mine.followsFailed),
       },
       loading: false,
       failed: false,
       retry: mine.retry,
+      ...follows,
     };
   if (listed === null)
     return {
@@ -121,6 +132,7 @@ export function useFeedScope(): {
       loading: launches.isLoading,
       failed: launches.isError,
       retry: () => void launches.refetch(),
+      ...follows,
     };
   return {
     scope: {
@@ -131,6 +143,7 @@ export function useFeedScope(): {
     loading: false,
     failed: false,
     retry: () => void launches.refetch(),
+    ...follows,
   };
 }
 
@@ -201,22 +214,48 @@ async function fetchFeedPage(
 /** The feed for a scope: its items, newest first, and how to read further back. */
 export function useRecordFeed(scope: FeedScope | null) {
   const relay = relayWsUrl();
+  const records = scope?.projects;
+  // Who said yes on each project, from their own signed answers: whose updates are the project's.
+  const said = useQuery({
+    queryKey: [
+      "launchpad",
+      "team",
+      "voices",
+      relay,
+      (records ?? []).map((r) => r.eventId),
+    ],
+    queryFn: () => readProjectVoices(relay, records ?? []),
+    enabled: (records?.length ?? 0) > 0,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const voices = said.data?.voices;
   const projects = useMemo(() => {
     const map = new Map<string, FeedProject>();
-    for (const record of scope?.projects ?? []) {
+    if (!voices) return map;
+    for (const record of records ?? []) {
       const coordinate = launchCoordinate(record.author, record.id);
       map.set(coordinate, {
         coordinate,
         founder: record.author,
         team: teamOf(record),
+        voices: voices.get(coordinate) ?? new Map([[record.author, null]]),
       });
     }
     return map;
-  }, [scope]);
+  }, [records, voices]);
   const coordinates = useMemo(() => [...projects.keys()].sort(), [projects]);
+  // Asked for: the teams (their task steps count) and everyone who speaks or spoke for a project.
   const everyone = useMemo(
     () =>
-      [...new Set([...projects.values()].flatMap((p) => [...p.team]))].sort(),
+      [
+        ...new Set(
+          [...projects.values()].flatMap((p) => [
+            ...p.team,
+            ...p.voices.keys(),
+          ]),
+        ),
+      ].sort(),
     [projects],
   );
   const authors = useMemo(() => everyone.slice(0, FEED_AUTHORS), [everyone]);
@@ -248,11 +287,16 @@ export function useRecordFeed(scope: FeedScope | null) {
   return {
     items,
     /** Nothing was asked for: the scope has no project. */
-    idle: coordinates.length === 0,
-    loading: query.isLoading,
-    /** The first read failed: there is nothing to show. */
-    error: query.isFetchNextPageError || pages ? null : query.error,
-    refetch: () => void refetch(),
+    idle: (records?.length ?? 0) === 0,
+    loading: said.isLoading || query.isLoading,
+    /** A first read failed: there is nothing to show. */
+    error:
+      (said.data ? null : said.error) ??
+      (query.isFetchNextPageError || pages ? null : query.error),
+    refetch: () => {
+      if (said.isError) void said.refetch();
+      void refetch();
+    },
     hasMore: query.hasNextPage,
     loadMore: () => void fetchNextPage(),
     loadingMore: query.isFetchingNextPage,
@@ -260,7 +304,10 @@ export function useRecordFeed(scope: FeedScope | null) {
     /** Older records exist that no further page can reach. */
     cut: pages ? projectListCut(pages, FEED_PAGE, FEED_MAX_PAGES) : false,
     /** Accepted work behind some confirmations could not be read. */
-    workCut: pages?.some((page) => page.workCut) ?? false,
+    workCut:
+      (pages?.some((page) => page.workCut) ?? false) ||
+      // Not every answer was read: an update by someone who said yes may be missing.
+      Boolean(said.data?.cut),
     /** The teams in view are more accounts than one read names: some teams' records are not in the feed. */
     authorsCut: everyone.length > FEED_AUTHORS,
   };

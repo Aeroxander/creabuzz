@@ -386,12 +386,26 @@ export function YourProjects() {
         count={following.length}
         description="Projects you follow, and how each is keeping its promises."
         empty={
-          <>
-            Follow a project to keep an eye on it here.{" "}
-            <Link className="underline" to="/discover">
-              Browse projects
-            </Link>
-          </>
+          mine.followsFailed ? (
+            <span data-testid="your-projects-follows-failed" role="alert">
+              Couldn't read which projects you follow, so none are listed here.{" "}
+              <Button
+                onClick={mine.retryFollows}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Try again
+              </Button>
+            </span>
+          ) : (
+            <>
+              Follow a project to keep an eye on it here.{" "}
+              <Link className="underline" to="/discover">
+                Browse projects
+              </Link>
+            </>
+          )
         }
         id="your-projects-following"
         title="Projects you follow"
@@ -404,7 +418,7 @@ export function YourProjects() {
           ))
         }
       </Group>
-      {mine.cut ? (
+      {mine.cut && !mine.followsFailed ? (
         <p className="text-xs" data-testid="your-projects-cut" role="status">
           You have more projects, tasks or follows than could be read here, so
           some may be missing from these lists.

@@ -406,7 +406,8 @@ export function useMyProjects() {
   );
   const following = useQuery({
     queryKey: ["launchpad", "launches", "followed-records", relay, followed],
-    enabled: me !== null && follows.ready,
+    // When who they follow cannot be read, the rest goes on without it (and says so): nothing waits for ever.
+    enabled: me !== null && (follows.ready || follows.failed),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     queryFn: () =>
@@ -462,6 +463,12 @@ export function useMyProjects() {
   const reads = [own, removed, teams, tasks, following];
   return {
     data,
+    /**
+     * Who the person follows could not be read: the projects they follow are missing from `data`, which is said
+     * wherever they would be listed, with `retryFollows`.
+     */
+    followsFailed: follows.failed,
+    retryFollows: follows.retry,
     /** The person's own tasks on the projects they started, too (a founder can be their own helper). */
     myTasks: tasks.data?.projects ?? [],
     failed: data === null && reads.some((r) => r.isError),
@@ -470,6 +477,7 @@ export function useMyProjects() {
       Boolean(teams.data?.cut) ||
       Boolean(following.data?.cut) ||
       (tasks.data ? !tasks.data.complete : false) ||
+      follows.failed ||
       follows.followed.size > FOLLOWED_READ,
     retry: () => {
       for (const r of reads) if (r.isError) void r.refetch();

@@ -66,9 +66,31 @@ export function recordToInput(
     // that dropped them would take everyone off the team without a word.
     team: record.team,
     formerTeam: record.formerTeam,
+    // Tags no form here owns. A save that left them out would erase them: the agent the record says wrote it, the
+    // projects it links to, and the bid gates.
+    ...(record.agent ? { agent: record.agent } : {}),
+    ...(record.projects.length > 0 ? { projects: record.projects } : {}),
+    ...(record.hooks.length > 0 ? { hooks: record.hooks } : {}),
     ...(record.funding ? { funding: record.funding } : {}),
     ...(record.tokenPlan ? { tokenPlan: record.tokenPlan } : {}),
     ...(record.vesting ? { vesting: record.vesting } : {}),
     ...overrides,
   };
+}
+
+/**
+ * The tags a save writes for what the record carries and no form owns (see `recordToInput`). The agent tag is left
+ * to the agent's own signing when the record is published as the agent, which writes it itself.
+ */
+export function carriedTags(input: {
+  asAgent?: boolean;
+  agent?: string;
+  projects?: readonly string[];
+  hooks?: readonly { address: string; bucket: string }[];
+}): string[][] {
+  return [
+    ...(input.agent && !input.asAgent ? [["agent", input.agent]] : []),
+    ...(input.projects ?? []).map((coordinate) => ["a", coordinate]),
+    ...(input.hooks ?? []).map((hook) => ["hook", hook.address, hook.bucket]),
+  ];
 }

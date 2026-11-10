@@ -12,7 +12,7 @@
  * read back; a send that fails says so beside the button that sent it, and that button is the retry.
  */
 
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { PersonSearch } from "@/features/social/ui/PersonSearch";
@@ -33,6 +33,11 @@ import {
   useProjectTeam,
   useTeamChanges,
 } from "../use-team";
+import {
+  LOST_CHANGE_WORDS,
+  type LostChange,
+  useRecordAgreement,
+} from "../use-record-agreement";
 import { MODAL_FOOTER_CLASS, Modal } from "./Modal";
 
 const day = (seconds: number) =>
@@ -50,6 +55,7 @@ const STATE_WORDS: Record<Exclude<MemberState, "accepted">, string> = {
     "Has not said yes yet. The server already lets them act for this project.",
   declined:
     "Said no. The server still lets them act for this project until the founder removes them.",
+  left: "Left the team. The server still lets them act for this project until the founder removes them.",
 };
 
 export function ProjectTeamCard({
@@ -67,30 +73,44 @@ export function ProjectTeamCard({
   const headingId = useId();
   const [adding, setAdding] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
-  // What the founder just did, shown until the record read back says the same.
-  const [justAdded, setJustAdded] = useState<string[]>([]);
-  const [justRemoved, setJustRemoved] = useState<string[]>([]);
   const [failure, setFailure] = useState<{
     pubkey: string;
     did: "add" | "remove";
+    /** What the send failed with, or why a saved change did not last. */
     cause: unknown;
+    lost?: LostChange;
   } | null>(null);
-  // The viewer's own answer, shown until the answers read back hold it.
+  // The viewer's own answer, shown until the answers read back hold it, and where they stood when they gave it.
   const [said, setSaid] = useState<"yes" | "no" | null>(null);
+  const [saidAs, setSaidAs] = useState<MemberState | null>(null);
   const [answerFailure, setAnswerFailure] = useState<FailureWords | null>(null);
 
   const onRecord = new Set(record.team.map((m) => m.pubkey));
-  useEffect(() => {
-    const names = new Set(record.team.map((m) => m.pubkey));
-    setJustAdded((was) => {
-      const left = was.filter((p) => !names.has(p));
-      return left.length === was.length ? was : left;
-    });
-    setJustRemoved((was) => {
-      const left = was.filter((p) => names.has(p));
-      return left.length === was.length ? was : left;
-    });
-  }, [record.team]);
+  // What the founder just did shows at once, and only until the record read back says the same. If a newer record
+  // arrives without it (another save replaced it), or none arrives, the row goes back to what the record says and
+  // the page says why.
+  const mineToShow = useRecordAgreement(
+    record.createdAt,
+    (key) => {
+      const [did, pubkey] = key.split(":");
+      return did === "add" ? onRecord.has(pubkey) : !onRecord.has(pubkey);
+    },
+    (key, why) => {
+      const [did, pubkey] = key.split(":");
+      setFailure({
+        pubkey,
+        did: did === "add" ? "add" : "remove",
+        cause: null,
+        lost: why,
+      });
+    },
+  );
+  const justAdded = mineToShow.waiting
+    .filter((key) => key.startsWith("add:"))
+    .map((key) => key.slice(4));
+  const justRemoved = mineToShow.waiting
+    .filter((key) => key.startsWith("remove:"))
+    .map((key) => key.slice(7));
 
   const rows: Array<{ pubkey: string; state: MemberState; saving: boolean }> = [
     ...team.view.members
@@ -117,7 +137,10 @@ export function ProjectTeamCard({
     ? said === "yes" && mine.state === "invited"
       ? "accepted"
       : said === "no"
-        ? "declined"
+        ? // Saying no after a yes is leaving; saying no to the invitation is declining it.
+          saidAs === "accepted" || mine.state === "left"
+          ? "left"
+          : "declined"
         : mine.state
     : null;
   const stateOf = (row: { pubkey: string; state: MemberState }) =>
@@ -129,28 +152,33 @@ export function ProjectTeamCard({
   const add = async (pubkey: string) => {
     setFailure(null);
     setAdding(false);
-    setJustAdded((was) => [...was.filter((p) => p !== pubkey), pubkey]);
+    mineToShow.drop(`remove:${pubkey}`);
+    mineToShow.begin(`add:${pubkey}`);
     try {
-      await changes.add.mutateAsync(pubkey);
+      const done = await changes.add.mutateAsync(pubkey);
+      mineToShow.saved(`add:${pubkey}`, done.signedAt);
     } catch (cause) {
-      setJustAdded((was) => was.filter((p) => p !== pubkey));
+      mineToShow.drop(`add:${pubkey}`);
       setFailure({ pubkey, did: "add", cause });
     }
   };
   const remove = async (pubkey: string) => {
     setFailure(null);
     setConfirmRemove(null);
-    setJustRemoved((was) => [...was.filter((p) => p !== pubkey), pubkey]);
+    mineToShow.drop(`add:${pubkey}`);
+    mineToShow.begin(`remove:${pubkey}`);
     try {
-      await changes.remove.mutateAsync(pubkey);
+      const done = await changes.remove.mutateAsync(pubkey);
+      mineToShow.saved(`remove:${pubkey}`, done.signedAt);
     } catch (cause) {
-      setJustRemoved((was) => was.filter((p) => p !== pubkey));
+      mineToShow.drop(`remove:${pubkey}`);
       setFailure({ pubkey, did: "remove", cause });
     }
   };
   const say = async (word: "yes" | "no") => {
     if (!mine || answer.isPending) return;
     setAnswerFailure(null);
+    setSaidAs(mine.state);
     setSaid(word);
     try {
       await answer.mutateAsync({
@@ -171,12 +199,20 @@ export function ProjectTeamCard({
   const busy = changes.add.isPending || changes.remove.isPending;
   const full = record.team.length >= MAX_TEAM_MEMBERS;
 
+  /** They said yes at some point (and may have left since): only then does removing them leave a line on the page. */
+  const wasOnTeam = (pubkey: string) => {
+    const state = rows.find((r) => r.pubkey === pubkey)?.state;
+    return state === "accepted" || state === "left";
+  };
   const removeControls = (pubkey: string) =>
     !isFounder ? null : confirmRemove === pubkey ? (
       <span className="flex flex-wrap items-center gap-2">
         <span className="text-xs">
           Remove {names(pubkey)}? They will no longer be able to act for this
-          project, and the page will say they were on the team until today.
+          project.{" "}
+          {wasOnTeam(pubkey)
+            ? "The page will say they were on the team until today."
+            : "They never said yes, so nothing will say they were on the team."}
         </span>
         <Button
           data-testid="team-remove-confirm"
@@ -239,7 +275,8 @@ export function ProjectTeamCard({
         </p>
       ) : null}
 
-      {myState === "invited" || (myState === "declined" && said === null) ? (
+      {myState === "invited" ||
+      ((myState === "declined" || myState === "left") && said === null) ? (
         <div
           className="mt-3 rounded-lg border border-primary/60 bg-primary/5 p-3 text-sm"
           data-testid="team-invitation"
@@ -276,8 +313,11 @@ export function ProjectTeamCard({
             </>
           ) : (
             <p>
-              You said no to this project's team. The server still lets you act
-              for it until the founder removes you.
+              {myState === "left"
+                ? "You left this project's team."
+                : "You said no to this project's team."}{" "}
+              The server still lets you act for it until the founder removes
+              you.
             </p>
           )}
         </div>
@@ -286,7 +326,9 @@ export function ProjectTeamCard({
         <p className="mt-2 text-sm" data-testid="team-answered" role="status">
           {said === "yes"
             ? "You joined the team."
-            : "You said no. The founder is shown your answer and can remove you."}
+            : myState === "left"
+              ? "You left the team. The founder is shown that and can remove you."
+              : "You said no. The founder is shown your answer and can remove you."}
         </p>
       ) : null}
       {answerFailure ? (
@@ -379,9 +421,7 @@ export function ProjectTeamCard({
                     <span className="text-xs text-muted-foreground">
                       {row.saving
                         ? "Added. Waiting for the server to show it."
-                        : STATE_WORDS[
-                            state === "declined" ? "declined" : "invited"
-                          ]}
+                        : STATE_WORDS[state === "accepted" ? "invited" : state]}
                     </span>
                   </span>
                   {row.saving ? null : removeControls(row.pubkey)}
@@ -405,8 +445,7 @@ export function ProjectTeamCard({
         >
           {former.map((f) => (
             <li key={f.pubkey}>
-              {names(f.pubkey)} was on the team
-              {f.until === null ? "." : ` until ${day(f.until)}.`}
+              {names(f.pubkey)} was on the team until {day(f.until)}.
             </li>
           ))}
         </ul>
@@ -415,12 +454,23 @@ export function ProjectTeamCard({
       {failure ? (
         <FailureNote
           className="mt-2"
-          failure={failureWords(
-            failure.cause,
-            failure.did === "add"
-              ? `${names(failure.pubkey)} was not added: the change was not saved. Try again.`
-              : `${names(failure.pubkey)} is still on the team: the change was not saved. Try again.`,
-          )}
+          failure={
+            failure.lost
+              ? {
+                  text: `${
+                    failure.did === "add"
+                      ? `${names(failure.pubkey)} is not on the team.`
+                      : `${names(failure.pubkey)} is still on the team.`
+                  } ${LOST_CHANGE_WORDS[failure.lost]}`,
+                  detail: null,
+                }
+              : failureWords(
+                  failure.cause,
+                  failure.did === "add"
+                    ? `${names(failure.pubkey)} was not added: the change was not saved. Try again.`
+                    : `${names(failure.pubkey)} is still on the team: the change was not saved. Try again.`,
+                )
+          }
           testId="team-failed"
         />
       ) : null}

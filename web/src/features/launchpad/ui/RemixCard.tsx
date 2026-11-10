@@ -1,9 +1,11 @@
 import { Link } from "@tanstack/react-router";
 
 import { Card } from "@/shared/ui/card";
+import { listedProject } from "../lib/listing";
+import { raisesOffered } from "../lib/raises-offered";
 import { offersLine, remixFit } from "../lib/remix";
 import { remixesOffered } from "../lib/remixes-offered";
-import type { Launch } from "../models";
+import { effectiveStage, type Launch } from "../models";
 import { useLaunches } from "../use-launches";
 import { RemixBondPanel } from "./RemixBondPanel";
 
@@ -27,10 +29,14 @@ function RemixCardBody({ launch }: { launch: Launch }) {
           l.record.id === record.builtOn?.id,
       )
     : undefined;
+  // The projects built on this one are a list of projects like any other: one its founder marked "Not listed yet",
+  // or a sale still being set up, is not in it (`listing.ts`).
+  const raises = raisesOffered();
   const children = all.filter(
     (l) =>
       l.record.builtOn?.author === record.author &&
-      l.record.builtOn?.id === record.id,
+      l.record.builtOn?.id === record.id &&
+      listedProject(l.record, effectiveStage(l), raises),
   );
   const terms = record.remixTerms;
   // A project that is built on nothing, has nothing built on it and invites nobody has nothing to say here.

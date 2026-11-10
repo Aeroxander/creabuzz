@@ -48,8 +48,8 @@ export function MoreProjects({
         </Button>
       ) : cut ? (
         <p data-testid="more-projects-cut" role="status">
-          There are more projects on this server than can be listed here. Open
-          one from its link, or look for it in search.
+          There are more projects on this server than can be listed here. An
+          older project still opens from its link.
         </p>
       ) : null}
       {newsCut ? (

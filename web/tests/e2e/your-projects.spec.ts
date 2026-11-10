@@ -169,3 +169,55 @@ test("at 390px Your projects fits with no sideways scroll", async ({
     ),
   ).toBe(true);
 });
+
+test("when who you follow cannot be read, the rest still shows and the page says so with a retry", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seedWorld(relay);
+  // The read of this person's follow lists never answers.
+  relay.setClosingSockets(
+    (filter) => Array.isArray(filter?.kinds) && filter.kinds.includes(10003),
+  );
+  await install(page, relay, ME_KEY);
+  await page.goto("/portfolio");
+  // Nothing waits for ever: what they started and help is there.
+  await expect(
+    card(page, "your-projects-started", "Nebula").getByTestId(
+      "your-project-update",
+    ),
+  ).toHaveText("No update in 10 days", { timeout: 60_000 });
+  await expect(card(page, "your-projects-helping", "Orbit")).toBeVisible();
+  // The projects they follow are not claimed to be none.
+  const failed = page.getByTestId("your-projects-follows-failed");
+  await expect(failed).toContainText("Couldn't read which projects you follow");
+  await expect(page.getByTestId("your-projects-following")).not.toContainText(
+    "Follow a project to keep an eye on it here.",
+  );
+
+  // Home's Updates tab goes on too, and says the same.
+  await page.goto("/?tab=updates");
+  const feed = page.getByTestId("record-feed");
+  await expect(feed.getByTestId("record-feed-follows-failed")).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(feed.getByTestId("record-card").first()).toBeVisible();
+  // And Home's next step is worked out without it.
+  await page.goto("/");
+  await expect(page.getByTestId("home-next-step")).toHaveAttribute(
+    "data-kind",
+    "check",
+    { timeout: 60_000 },
+  );
+
+  // Back on the page, the server answers again and Try again reads the list.
+  await page.goto("/portfolio");
+  await expect(failed).toBeVisible({ timeout: 60_000 });
+  relay.setClosingSockets(false);
+  await failed.getByRole("button", { name: "Try again" }).click();
+  await expect(card(page, "your-projects-following", "Comet")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(failed).toHaveCount(0);
+});

@@ -34,6 +34,8 @@ const MEMBER = pubkeyOf(MEMBER_KEY);
 const STRANGER = pubkeyOf("c3".repeat(32));
 const COORD = coordOf(FOUNDER, "nebula");
 const PROJECT = projectPath(FOUNDER, "nebula");
+const LINKED = `37015:${STRANGER}:pitch`;
+const HOOK = `0x${"7".repeat(40)}`;
 
 const profile = (pubkey: string, name: string) =>
   event(0, pubkey, { name, display_name: name }, [], now() - 30 * DAY);
@@ -257,7 +259,10 @@ test("the founder adds a person, they say yes, post an update and confirm work; 
   await expect(team.getByTestId("team-member")).toHaveCount(0);
   // Off the team, the app offers them nothing to post.
   await openAs(page, MEMBER_KEY, PROJECT);
-  await expect(team.getByTestId("team-former")).toBeVisible();
+  // (Signed in, the page has more to read before the answers that bear the line out arrive.)
+  await expect(team.getByTestId("team-former")).toBeVisible({
+    timeout: 20_000,
+  });
   await expect(page.getByTestId("team-post-update")).toHaveCount(0);
 });
 
@@ -354,7 +359,11 @@ test("another save of the project record keeps the team", async ({ page }) => {
     ["team", MEMBER, "member"],
     ["team-invite", MEMBER, "inv1"],
     ["p", MEMBER],
-    ["team-left", STRANGER, "1700000000"],
+    ["team-left", STRANGER, "1700000000", "old1"],
+    // Tags no form here owns: the agent the record says wrote it, a linked project, a bid gate.
+    ["agent", STRANGER],
+    ["a", LINKED],
+    ["hook", HOOK, "public"],
   ]);
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
@@ -366,7 +375,16 @@ test("another save of the project record keeps the team", async ({ page }) => {
   expect(saved?.tags).toContainEqual(["team", MEMBER, "member"]);
   expect(saved?.tags).toContainEqual(["team-invite", MEMBER, "inv1"]);
   expect(saved?.tags).toContainEqual(["p", MEMBER]);
-  expect(saved?.tags).toContainEqual(["team-left", STRANGER, "1700000000"]);
+  expect(saved?.tags).toContainEqual([
+    "team-left",
+    STRANGER,
+    "1700000000",
+    "old1",
+  ]);
+  // Nothing the record carried was erased by a save that only meant to change the listing.
+  expect(saved?.tags).toContainEqual(["agent", STRANGER]);
+  expect(saved?.tags).toContainEqual(["a", LINKED]);
+  expect(saved?.tags).toContainEqual(["hook", HOOK, "public"]);
 });
 
 test("at 390px the Team section and its dialog fit with no sideways scroll", async ({
@@ -390,4 +408,139 @@ test("at 390px the Team section and its dialog fit with no sideways scroll", asy
   await page.getByTestId("team-add").click();
   await expect(page.getByTestId("team-add-warning")).toBeVisible();
   expect(await fits()).toBe(true);
+});
+
+test("two changes to the record pressed close together both land, whichever part of the page they came from", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seedWorld(relay);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  const team = page.getByTestId("project-team");
+  await expect(team.getByTestId("team-add")).toBeVisible();
+  await expect(page.getByTestId("project-listing-toggle")).toBeVisible();
+  // The server is slow to answer the read of the founder's own record: both changes are started before either has
+  // read it. Left to themselves both would read the same record and the later save would undo the earlier.
+  relay.holdReads(
+    (filter) =>
+      Array.isArray(filter.kinds) &&
+      filter.kinds.includes(37001) &&
+      Array.isArray(filter.authors) &&
+      (filter.authors as string[]).includes(FOUNDER) &&
+      Array.isArray(filter["#d"]),
+  );
+  await page.getByTestId("project-listing-toggle").click();
+  await addMember(page);
+  // Both show at once.
+  await expect(page.getByTestId("project-listing-state")).toContainText(
+    "Not listed yet.",
+  );
+  await expect(team.getByTestId("team-invited-member")).toContainText(
+    "Max Mate",
+  );
+  relay.releaseReads();
+
+  // The record ends with both: not listed, and the person on the team.
+  await expect
+    .poll(
+      () => {
+        const saved = newest(relay, 37001, FOUNDER);
+        return [saved?.body.listing, teamTagsOf(relay).length];
+      },
+      { timeout: 30_000 },
+    )
+    .toEqual(["unlisted", 1]);
+  // And the page ends showing what the record says: no row left waiting, no failure.
+  await expect(team.getByTestId("team-invited-member")).toContainText(
+    "Has not said yes yet",
+    { timeout: 30_000 },
+  );
+  await expect(page.getByTestId("project-listing-state")).toContainText(
+    "Not listed yet.",
+  );
+  await expect(page.getByTestId("project-listing-failed")).toHaveCount(0);
+  await expect(team.getByTestId("team-failed")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("project-listing-state")).toContainText(
+    "Not listed yet.",
+  );
+  await expect(team.getByTestId("team-invited-member")).toContainText(
+    "Max Mate",
+  );
+});
+
+test("someone added and removed before they said yes leaves no trace, and a founder's word alone never says a person was on the team", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  // The founder's record claims a well-known account left the team. That account signed nothing.
+  seedWorld(relay, [["team-left", STRANGER, "1700000000", "forged1"]]);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  const team = page.getByTestId("project-team");
+  await addMember(page);
+  await expect.poll(() => teamTagsOf(relay).length).toBe(1);
+  await expect(team.getByTestId("team-invited-member")).toContainText(
+    "Has not said yes yet",
+  );
+  await team.getByTestId("team-remove").click();
+  await expect(team).toContainText(
+    "They never said yes, so nothing will say they were on the team.",
+  );
+  await team.getByTestId("team-remove-confirm").click();
+  await expect.poll(() => teamTagsOf(relay).length).toBe(0);
+  const saved = newest(relay, 37001, FOUNDER);
+  // Nothing on the record says Max Mate was ever on the team.
+  expect(saved?.tags.some((t) => t[0] === "team-left" && t[1] === MEMBER)).toBe(
+    false,
+  );
+
+  // A visitor reads no "was on the team" line at all: not for Max Mate, and not for the account the record names.
+  await openAs(page, null, PROJECT);
+  await expect(page.getByRole("heading", { name: "Nebula" })).toBeVisible();
+  await expect(page.getByTestId("team-former")).toHaveCount(0);
+  await expect(page.getByText("was on the team")).toHaveCount(0);
+});
+
+test("someone who joined and then leaves reads Left the team, and so does everyone else", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  seedWorld(relay, [
+    ["team", MEMBER, "member"],
+    ["team-invite", MEMBER, "inv1"],
+    ["p", MEMBER],
+  ]);
+  relay.seed(
+    event(
+      47003,
+      MEMBER,
+      { title: "Joined the team", body: "" },
+      [
+        ["a", COORD],
+        ["l", "creaton-team"],
+        ["team-answer", "yes"],
+        ["team-invite", "inv1"],
+      ],
+      now() - DAY,
+    ),
+  );
+  await install(page, relay, MEMBER_KEY);
+  await page.goto(PROJECT);
+  const team = page.getByTestId("project-team");
+  await expect(team.getByTestId("team-member")).toContainText("Max Mate");
+  await team.getByTestId("team-leave").click();
+  await expect(team.getByTestId("team-answered")).toContainText(
+    "You left the team.",
+  );
+  await expect.poll(() => answers(relay, MEMBER).length).toBe(2);
+  await openAs(page, null, PROJECT);
+  const row = team.getByTestId("team-invited-member");
+  await expect(row).toHaveAttribute("data-state", "left");
+  await expect(row).toContainText("Left the team.");
+  await expect(row).not.toContainText("Said no");
+  await expect(team.getByTestId("team-member")).toHaveCount(0);
 });

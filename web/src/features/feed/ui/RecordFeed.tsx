@@ -133,8 +133,28 @@ export function RecordFeed() {
               ? "From the projects you started, help or follow."
               : me === null
                 ? `This shows every listed project. ${needAccountTo("follow the ones you care about")}`
-                : "You follow no projects yet, so this shows every listed project. Follow one and this becomes your own feed."}
+                : scoped.followsFailed
+                  ? "This shows every listed project, because which projects you follow could not be read."
+                  : "You follow no projects yet, so this shows every listed project. Follow one and this becomes your own feed."}
           </p>
+          {scoped.followsFailed ? (
+            <p
+              className="text-sm"
+              data-testid="record-feed-follows-failed"
+              role="alert"
+            >
+              Couldn't read which projects you follow, so their records are not
+              here.{" "}
+              <Button
+                onClick={scoped.retryFollows}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Try again
+              </Button>
+            </p>
+          ) : null}
           {fresh > 0 ? (
             <p className="text-sm font-medium" data-testid="record-feed-new">
               {fresh} new to you

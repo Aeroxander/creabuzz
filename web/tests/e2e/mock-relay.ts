@@ -218,7 +218,7 @@ export function launchRecordRefusal(event: StoredEvent): string | null {
   if (team.some((tag) => tag.length !== 3 || !/^[0-9a-fA-F]{64}$/.test(tag[1])))
     return "invalid: launch record event `team` tag must be [`team`, <64-hex-pubkey>, <role>]";
   if (team.length > 64)
-    return `invalid: launch record event must have at most 32 \`team\` tags (got ${team.length})`;
+    return `invalid: launch record event must have at most 64 \`team\` tags (got ${team.length})`;
   return null;
 }
 

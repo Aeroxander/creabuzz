@@ -448,3 +448,61 @@ test("at 390px the feed fits with no sideways scroll", async ({ page }) => {
     ),
   ).toBe(true);
 });
+
+test("an update by someone the founder added is the project's only once that person has said yes", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  relay.seed(
+    projectRecord(FOUNDER, "nebula", "Nebula", now() - 60 * DAY, {
+      tags: [
+        ["team", MATE, "member"],
+        ["team-invite", MATE, "inv1"],
+        ["p", MATE],
+      ],
+    }),
+  );
+  relay.seed(
+    update(
+      FOUNDER,
+      NEBULA,
+      "From the founder",
+      [["update-kind", "weekly"]],
+      now() - 2 * DAY,
+    ),
+  );
+  // The server lets the added person post at once. Until they say yes it is not the project speaking.
+  relay.seed(
+    update(
+      MATE,
+      NEBULA,
+      "From someone added",
+      [["update-kind", "weekly"]],
+      now() - DAY,
+    ),
+  );
+  await install(page, relay, null);
+  await page.goto("/?tab=updates");
+  const feed = page.getByTestId("record-feed");
+  await expect(cards(page)).toHaveCount(1);
+  await expect(feed).toContainText("From the founder");
+  await expect(feed).not.toContainText("From someone added");
+
+  relay.seed(
+    event(
+      47003,
+      MATE,
+      { title: "Joined the team", body: "" },
+      [
+        ["a", NEBULA],
+        ["l", "creaton-team"],
+        ["team-answer", "yes"],
+        ["team-invite", "inv1"],
+      ],
+      now() - 60,
+    ),
+  );
+  await page.reload();
+  await expect(cards(page)).toHaveCount(2);
+  await expect(cards(page).first()).toContainText("From someone added");
+});

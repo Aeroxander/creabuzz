@@ -15,10 +15,24 @@ const HELPER = "b".repeat(64);
 const STRANGER = "c".repeat(64);
 const COORD = `37001:${FOUNDER}:nebula`;
 const NOW = 2_000_000;
+const INVITED = "d".repeat(64);
+const GONE = "e".repeat(64);
+const LEFT_AT = NOW - 1_000;
 const projects = new Map([
   [
     COORD,
-    { coordinate: COORD, founder: FOUNDER, team: new Set([FOUNDER, MATE]) },
+    {
+      coordinate: COORD,
+      founder: FOUNDER,
+      // Who the server lets act: the founder, a member who said yes, and one who was added and has not answered.
+      team: new Set([FOUNDER, MATE, INVITED]),
+      // Who speaks for the project: not the one who has not said yes; a former member only until they left.
+      voices: new Map([
+        [FOUNDER, null],
+        [MATE, null],
+        [GONE, LEFT_AT],
+      ]),
+    },
   ],
 ]);
 
@@ -52,6 +66,21 @@ test("an update counts only from the project's team; a stranger's is not an item
     [team.id],
   );
   assert.equal(itemLabel(out[0]), "Update");
+});
+
+test("someone added who has not said yes is not the project's voice, though the server lets them post", () => {
+  const theirs = ev(INVITED, [["update-kind", "weekly"]]);
+  assert.deepEqual(items([theirs]), []);
+});
+
+test("a former member's updates from before they left stay; anything signed after is not the project's", () => {
+  const before = ev(GONE, [["update-kind", "weekly"]], LEFT_AT - 10);
+  const onTheDay = ev(GONE, [["update-kind", "weekly"]], LEFT_AT);
+  const after = ev(GONE, [["update-kind", "weekly"]], LEFT_AT + 1);
+  assert.deepEqual(
+    items([before, onTheDay, after]).map((i) => i.id),
+    [onTheDay.id, before.id],
+  );
 });
 
 test("promises and the answers to them count only in the founder's own update", () => {
