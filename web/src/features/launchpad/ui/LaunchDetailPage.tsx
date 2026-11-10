@@ -16,6 +16,7 @@ import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
 import { LaunchChoice } from "./LaunchChoice";
 import { LaunchMissing } from "./LaunchMissing";
+import { restrictionOf } from "@/shared/lib/refusal-text";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
 import { KIND_LAUNCH_BID, KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
@@ -158,6 +159,8 @@ export function LaunchDetailPage({
   const [bidOpen, setBidOpen] = useState(false);
   const [updateOpen, setUpdateOpenRaw] = useState(false);
   const [updateFailed, setUpdateFailed] = useState(false);
+  /** The server's reason for refusing the update, in plain words, when it gave one. */
+  const [updateWhy, setUpdateWhy] = useState<string | null>(null);
   const setUpdateOpen = useCallback((open: boolean) => {
     setUpdateFailed(false);
     setUpdateOpenRaw(open);
@@ -320,8 +323,9 @@ export function LaunchDetailPage({
       setUpdateOpen(false);
       // The card at the top reads this project's updates on its own: read them again so it shows the new one.
       void queryClient.invalidateQueries({ queryKey: helpQueryKey });
-    } catch {
+    } catch (error) {
       // Said in the dialog, which stays open with what was written.
+      setUpdateWhy(restrictionOf(error));
       setUpdateFailed(true);
     }
   };
@@ -784,6 +788,7 @@ export function LaunchDetailPage({
       {updateOpen && isFounder ? (
         <UpdateDialogWithPromises
           failed={updateFailed}
+          failedWhy={updateWhy}
           isPublishing={mirror.isPending}
           onClose={() => setUpdateOpen(false)}
           onPublish={postUpdate}

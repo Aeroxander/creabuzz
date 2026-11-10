@@ -35,6 +35,7 @@ import {
   isGoalRecordTags,
   parseGoalVersion,
 } from "./lib/goals";
+import { removeEach } from "./lib/removals";
 import { isTaskRecordTags } from "./lib/tasks";
 import {
   foundEvent,
@@ -187,13 +188,19 @@ function sendSignal(
   });
 }
 
-/** Deletes the sender's own records in one signed removal: all of them go, or none. */
+/** Deletes the sender's own update records, one signed removal each (`lib/removals.ts`). */
 function removeOwn(ids: readonly string[]) {
-  return publishMirror({
-    kind: 5,
-    tags: [...ids.map((id) => ["e", id]), ["k", String(KIND_LAUNCH_UPDATE)]],
-    content: {},
-  });
+  return removeEach(ids, (id) =>
+    publishMirror({
+      kind: 5,
+      // `k` names the kind removed, and the server checks it against the record: these are update records.
+      tags: [
+        ["e", id],
+        ["k", String(KIND_LAUNCH_UPDATE)],
+      ],
+      content: {},
+    }),
+  );
 }
 
 /** Thrown when the offer a reply was written to is no longer on the server. */
@@ -248,12 +255,15 @@ export function useHelpActions(project: Project) {
     mutationFn: (input: { foundIds: readonly string[] }) =>
       removeOwn(input.foundIds),
     onSuccess,
+    // Some may have gone: the list is read again so what is left shows, and Try again removes it.
+    onError: onSuccess,
   });
   /** Takes an offer back: every offer record the person has on the update is deleted, so none comes back. */
   const withdraw = useMutation({
     mutationFn: (input: { offerIds: readonly string[] }) =>
       removeOwn(input.offerIds),
     onSuccess,
+    onError: onSuccess,
   });
   return { offer, reply, found, reopen, withdraw };
 }

@@ -12,6 +12,7 @@
 
 import { useState } from "react";
 
+import { restrictionOf } from "@/shared/lib/refusal-text";
 import { Button } from "@/shared/ui/button";
 import { Chip, type ChipTone } from "@/shared/ui/chip";
 
@@ -173,6 +174,7 @@ export function ProjectGoalCard({
   const dialog = target ? (
     <GoalDialog
       failed={save.isError}
+      failedWhy={restrictionOf(save.error)}
       isSaving={save.isPending}
       onClose={() => setTarget(null)}
       onSave={onSave}

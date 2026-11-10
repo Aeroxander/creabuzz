@@ -36,6 +36,7 @@ const AREA_CLASS =
 export function PostUpdateDialog({
   isPublishing,
   failed,
+  failedWhy,
   onClose,
   onPublish,
   due,
@@ -50,6 +51,8 @@ export function PostUpdateDialog({
   isPublishing: boolean;
   /** The last publish did not go through: said in the dialog, with what was written kept. */
   failed: boolean;
+  /** The server's reason in plain words, when it refused the update with one (who may post it, and what to do). */
+  failedWhy?: string | null;
   onClose: () => void;
   onPublish: (draft: UpdateDraft) => Promise<void>;
 }) {
@@ -345,6 +348,7 @@ export function PostUpdateDialog({
             role="alert"
           >
             Your update was not published. What you wrote is still here.
+            {failedWhy ? ` ${failedWhy}` : null}
           </p>
         ) : null}
         <div className="flex flex-wrap items-center justify-end gap-2">

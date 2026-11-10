@@ -62,12 +62,14 @@ export function UpdateDialogWithPromises({
   project,
   isPublishing,
   failed,
+  failedWhy,
   onClose,
   onPublish,
 }: {
   project: Launch["record"];
   isPublishing: boolean;
   failed: boolean;
+  failedWhy?: string | null;
   onClose: () => void;
   onPublish: (draft: UpdateDraft) => Promise<void>;
 }) {
@@ -81,6 +83,7 @@ export function UpdateDialogWithPromises({
     <PostUpdateDialog
       due={due}
       failed={failed}
+      failedWhy={failedWhy}
       isPublishing={isPublishing}
       onClose={onClose}
       onPublish={onPublish}

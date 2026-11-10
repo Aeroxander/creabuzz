@@ -40,6 +40,7 @@ export function GoalDialog({
   target,
   isSaving,
   failed,
+  failedWhy,
   onClose,
   onSave,
 }: {
@@ -47,6 +48,8 @@ export function GoalDialog({
   isSaving: boolean;
   /** The last save did not go through. */
   failed: boolean;
+  /** The server's reason in plain words, when it refused the goal with one (who may post it, and what to do). */
+  failedWhy?: string | null;
   onClose: () => void;
   onSave: (goal: GoalInput) => void;
 }) {
@@ -233,6 +236,7 @@ export function GoalDialog({
             role="alert"
           >
             Your goal was not saved. What you wrote is still here.
+            {failedWhy ? ` ${failedWhy}` : null}
           </p>
         ) : null}
         <div className="flex flex-wrap items-center justify-end gap-2">
