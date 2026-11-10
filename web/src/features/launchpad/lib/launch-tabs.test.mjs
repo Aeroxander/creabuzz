@@ -7,6 +7,7 @@ import {
   ideaShowsTeamSurfaces,
   tabAlias,
   tabShown,
+  updatesLabel,
   updatesUse,
 } from "./launch-tabs.ts";
 
@@ -128,4 +129,12 @@ test("the Updates tab follows the project's own read: hidden while reading, kept
     updatesUse({ count: 0, failed: false, complete: false }),
     "unknown",
   );
+});
+
+test("the Updates tab states a number only when the updates were read to the end", () => {
+  assert.equal(updatesLabel(3, true), "Updates (3)");
+  assert.equal(updatesLabel(0, true), "Updates (0)");
+  // Cut short: three were found, more may exist. No number is stated.
+  assert.equal(updatesLabel(3, false), "Updates");
+  assert.equal(updatesLabel(null, true), "Updates");
 });

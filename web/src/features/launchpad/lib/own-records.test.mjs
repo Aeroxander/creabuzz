@@ -3,6 +3,9 @@ import test from "node:test";
 
 import {
   newestOwnRecord,
+  OWN_RECORD_UNREADABLE,
+  ownRecordOrThrow,
+  pickById,
   OWN_RECORDS_PAGE,
   readOwnLaunchIds,
   recordByIdFilter,
@@ -113,4 +116,46 @@ test("the record to build on is the author's own newest with that id, never some
   assert.equal(newestOwnRecord(events, ME, "nebula"), newer);
   assert.equal(newestOwnRecord(events, ME, "missing"), null);
   assert.equal(newestOwnRecord([], ME, "nebula"), null);
+});
+
+test("a link that names no author is not answered with someone's project when several people have that id", () => {
+  const mine = record("nebula", 10);
+  const theirs = record("nebula", 99, OTHER);
+  assert.deepEqual(pickById([mine, theirs], "nebula", undefined), {
+    kind: "several",
+    authors: [ME, OTHER],
+  });
+  // With the author named, it is that author's and nobody else's, however new the other one is.
+  assert.deepEqual(pickById([mine, theirs], "nebula", ME), {
+    kind: "one",
+    author: ME,
+  });
+  // One author holds the id: the link means that project, whether or not it names them.
+  assert.deepEqual(
+    pickById([mine, record("nebula", 12)], "nebula", undefined),
+    {
+      kind: "one",
+      author: ME,
+    },
+  );
+  assert.deepEqual(pickById([record("comet", 1)], "nebula", undefined), {
+    kind: "none",
+  });
+  assert.deepEqual(pickById([theirs], "nebula", ME), { kind: "none" });
+});
+
+test("a record that is there but cannot be read is an error, never no record", () => {
+  const events = [record("nebula", 10)];
+  assert.equal(
+    ownRecordOrThrow(events, ME, "nebula", () => "parsed"),
+    "parsed",
+  );
+  assert.equal(
+    ownRecordOrThrow(events, ME, "comet", () => "parsed"),
+    null,
+  );
+  assert.throws(
+    () => ownRecordOrThrow(events, ME, "nebula", () => null),
+    (error) => error.message === OWN_RECORD_UNREADABLE,
+  );
 });

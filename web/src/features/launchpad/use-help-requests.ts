@@ -20,9 +20,13 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { type NostrEvent, queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
-import { readAuthorUpdates, readEvidenceEvents } from "./lib/evidence-query";
 import {
-  REMOVED_READ_LIMIT,
+  readAuthorUpdates,
+  readEvidenceEvents,
+  readPaged,
+} from "./lib/evidence-query";
+import {
+  deletionsFilter,
   type RemovedRecords,
   removedRecords,
 } from "./lib/removed-records";
@@ -113,11 +117,11 @@ export function useProjectUpdates(project: Project) {
           (filter) => queryEvents(relay, filter),
           project.author,
         ),
-        queryEvents(relay, {
-          kinds: [5],
-          authors: [project.author],
-          limit: REMOVED_READ_LIMIT,
-        }),
+        // The founder's deletions, by author, page by page: deletions of other things cannot push these out.
+        readPaged(
+          (filter) => queryEvents(relay, filter),
+          () => deletionsFilter(project.author),
+        ),
         queryEvents(relay, {
           kinds: [KIND_TEXT_NOTE],
           "#a": [coordinate],
@@ -155,7 +159,11 @@ export function useProjectUpdates(project: Project) {
             return goal ? [goal] : [];
           }),
           complete: own.complete,
-          removed: removedRecords(deletions, project.author),
+          removed: removedRecords(
+            deletions.events,
+            project.author,
+            deletions.complete,
+          ),
         },
         complete: records.complete,
         posts,

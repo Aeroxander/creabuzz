@@ -27,6 +27,8 @@ export function useTabUses(launch: Launch): {
   uses: Partial<Record<LaunchTab, TabUse>>;
   /** How many updates the Updates tab lists, or null while that is not known. */
   updates: number | null;
+  /** Both reads behind that number reached their end: only then is it the number there is. */
+  updatesComplete: boolean;
 } {
   const boards = useProjectBoardsOf(launch);
   const org = useOrgChart();
@@ -59,13 +61,15 @@ export function useTabUses(launch: Launch): {
         : null,
     [data, launch.record],
   );
+  const updatesComplete = Boolean(data?.complete && !data.postsCut);
   return {
     updates,
+    updatesComplete,
     uses: {
       updates: updatesUse({
         count: updates,
         failed: read.isError,
-        complete: Boolean(data?.complete && !data.postsCut),
+        complete: updatesComplete,
       }),
       boards:
         boards.boards.length > 0 ? "yes" : boards.error ? "unknown" : "no",

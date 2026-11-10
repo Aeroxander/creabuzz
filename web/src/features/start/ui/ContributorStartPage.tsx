@@ -62,7 +62,12 @@ import {
   loadFormDraft,
   saveFormDraft,
 } from "../lib/start-form-draft";
-import { clearIdea, type IdeaHandoff, peekIdea } from "../lib/from-idea";
+import {
+  clearIdea,
+  handoffFinishedBy,
+  type IdeaHandoff,
+  takeHandoff,
+} from "../lib/from-idea";
 import type { PitchStart } from "../lib/from-pitch";
 import { useContributorStart } from "../use-contributor-start";
 import { useStartFromPitch } from "../use-start-from-pitch";
@@ -191,13 +196,34 @@ function Steps({
   );
 }
 
+/** An empty form with the handed-over project's name and sentence in it. */
+function filledFrom(idea: IdeaHandoff): ContributorDraft {
+  return {
+    ...EMPTY,
+    name: idea.name,
+    pitch: idea.pitch,
+    symbol: contributorSymbol(idea.name),
+  };
+}
+
 export function ContributorStartPage() {
   const start = useContributorStart();
   const { job, flow, gate, wallet } = start;
   const search = useSearch({ from: "/start/contributor" });
   const fromBoard = useStartFromPitch(search.project, search.author);
-  // What was typed here before a reload or a closed tab, for this server, account and board project (`lib/start-form-draft.ts`).
-  // Follows the account: someone who signs in on this page gets their form kept from then on.
+  // The founder's own project, handed over by its page to have Shares set up for it. It is kept in this browser until
+  // that project is made (or the founder asks for a separate one), so a reload or a closed tab still carries on the same
+  // project instead of quietly making a second one. One kept the earlier way (for the visit only) is moved over once.
+  // Never over a board team.
+  const [fromIdea, setFromIdea] = useState<IdeaHandoff | null>(() =>
+    search.project
+      ? null
+      : takeHandoff(localStorage, sessionStorage, start.me, relayWsUrl()),
+  );
+  // What was typed here before a reload or a closed tab, for this server, account and the project the form is for: a
+  // board project, the founder's own project Shares are being set up for, or a new one (`lib/start-form-draft.ts`).
+  // What was typed for one project is never brought back under another. Follows the account: someone who signs in on
+  // this page gets their form kept from then on.
   const formKey = useMemo(
     () =>
       start.me
@@ -205,9 +231,10 @@ export function ContributorStartPage() {
             server: relayWsUrl(),
             account: start.me,
             fromBoard: search.project,
+            fromIdea: fromIdea?.id,
           })
         : null,
-    [start.me, search.project],
+    [start.me, search.project, fromIdea?.id],
   );
   // The key the form on screen belongs to; nothing is kept under a new key before its own copy has been read.
   const [loadedKey, setLoadedKey] = useState(formKey);
@@ -216,32 +243,27 @@ export function ContributorStartPage() {
   );
   // True when this browser refused to keep the form, so a reload would lose it.
   const [saveRefused, setSaveRefused] = useState(false);
-  const [draft, setDraft] = useState<ContributorDraft>(restored ?? EMPTY);
+  // The project's own name and sentence fill a form that holds nothing kept for that project.
+  const [draft, setDraft] = useState<ContributorDraft>(
+    () => restored ?? (fromIdea ? filledFrom(fromIdea) : EMPTY),
+  );
   const [symbolTouched, setSymbolTouched] = useState(restored !== null);
   const [tried, setTried] = useState(false);
   // Picking someone already among the reviewers changes nothing: said, instead of doing nothing.
   const [pickNote, setPickNote] = useState<string | null>(null);
-
-  // The founder's own project, handed over by its page to have Shares set up for it. It is kept in this browser until
-  // the project is made (or the founder asks for a separate one), so a reload or a closed tab still carries on the same
-  // project instead of quietly making a second one. Never over a board team.
-  const [fromIdea, setFromIdea] = useState<IdeaHandoff | null>(() =>
-    search.project ? null : peekIdea(localStorage, start.me, relayWsUrl()),
+  // The form as it starts for this project: nothing typed yet is nothing to keep, or to call "what you typed before".
+  const blank = useMemo(
+    () => (fromIdea ? filledFrom(fromIdea) : EMPTY),
+    [fromIdea],
   );
-  // A form brought back from an earlier visit already holds what the founder made of it: it is not filled over.
-  const openedWithForm = useRef(restored !== null);
-  useEffect(() => {
-    if (!fromIdea || openedWithForm.current) return;
-    setDraft((current) => ({
-      ...current,
-      name: fromIdea.name,
-      pitch: fromIdea.pitch,
-      symbol: contributorSymbol(fromIdea.name),
-    }));
-  }, [fromIdea]);
   const separateProject = () => {
     clearIdea(localStorage);
     setFromIdea(null);
+    // The words were the other project's: a separate project starts from an empty form.
+    setRestored(null);
+    setDraft(EMPTY);
+    setSymbolTouched(false);
+    setTried(false);
   };
 
   // A team from the Projects board fills the form once, when it has been read; the founder can still change anything.
@@ -250,14 +272,14 @@ export function ContributorStartPage() {
   // Signed in (or switched account) on this page: that account's earlier form comes back, unless something is typed.
   useEffect(() => {
     if (formKey === loadedKey) return;
-    const kept = formKey ? keptFormFor(formKey, draft, EMPTY) : null;
+    const kept = formKey ? keptFormFor(formKey, draft, blank) : null;
     setLoadedKey(formKey);
     if (!kept) return;
     setRestored(kept);
     setDraft(kept);
     setSymbolTouched(true);
     setSeeded(true);
-  }, [formKey, loadedKey, draft]);
+  }, [formKey, loadedKey, draft, blank]);
   useEffect(() => {
     if (seeded || !fromBoard.start) return;
     setDraft(fromBoard.start.draft);
@@ -266,22 +288,24 @@ export function ContributorStartPage() {
   }, [seeded, fromBoard.start]);
 
   const done = job !== null && flow.phase === "done";
-  // The project is made: the hand-off has done its work, and a later visit to this form starts a new project.
+  // The handed-over project is made: that hand-off has done its work. A job for another project, finished earlier and
+  // still kept here, leaves a newer hand-off alone.
   useEffect(() => {
-    if (done) clearIdea(localStorage);
-  }, [done]);
+    if (done && handoffFinishedBy(fromIdea, job)) clearIdea(localStorage);
+  }, [done, fromIdea, job]);
   // Kept as it is typed, until the project is made; then it is not needed (the run kept its own copy).
   useEffect(() => {
     if (!formKey || formKey !== loadedKey || job !== null) return;
-    setSaveRefused(!saveFormDraft(formKey, draft, EMPTY));
-  }, [formKey, loadedKey, draft, job]);
+    setSaveRefused(!saveFormDraft(formKey, draft, blank));
+  }, [formKey, loadedKey, draft, job, blank]);
   useEffect(() => {
     if (formKey && done) clearFormDraft(formKey);
   }, [formKey, done]);
   const startOver = () => {
     if (formKey) clearFormDraft(formKey);
     setRestored(null);
-    setDraft(EMPTY);
+    // Still setting up Shares for the same project: its name and sentence stay, as the line above the form says.
+    setDraft(fromIdea ? filledFrom(fromIdea) : EMPTY);
     setSymbolTouched(false);
     setTried(false);
     setPickNote(null);

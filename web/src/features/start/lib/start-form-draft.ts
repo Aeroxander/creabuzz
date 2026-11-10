@@ -1,7 +1,8 @@
 /**
  * The contributor project form as typed, kept in this browser so a reload or a closed tab does not lose a long setup
  * (names, reviewers, how the founder knows them, the first work areas). It is kept per server, per signed-in account,
- * and per Projects-board project it started from ("new" otherwise), and dropped only once the run itself has been
+ * and per project it started from (a Projects-board project, or the founder's own project that Shares are being set up
+ * for; "new" otherwise), and dropped only once the run itself has been
  * kept (the run then holds the draft) or the founder starts over.
  *
  * Pure and alias-free: `start-form-draft.test.mjs` drives it under `node --test`.
@@ -16,8 +17,18 @@ export function formDraftKey(scope: {
   account: string;
   /** The Projects-board project the form started from, if any. */
   fromBoard?: string | null;
+  /**
+   * The founder's own project the form is setting up Shares for, if any. Part of the key: what was typed for one
+   * project is never brought back under another, where it would be published over that project's name and sentence.
+   */
+  fromIdea?: string | null;
 }): string {
-  return `${PREFIX}${[scope.server, scope.account, scope.fromBoard || "new"]
+  const origin = scope.fromBoard
+    ? scope.fromBoard
+    : scope.fromIdea
+      ? `idea:${scope.fromIdea}`
+      : "new";
+  return `${PREFIX}${[scope.server, scope.account, origin]
     .map((part) => part.trim().toLowerCase())
     .join("|")}`;
 }

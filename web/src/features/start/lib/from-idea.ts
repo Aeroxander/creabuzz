@@ -191,3 +191,36 @@ export async function recordCarryingOver<
   const chat = input.chat ?? kept.chat;
   return { ...kept, ...input, ...(chat ? { chat } : {}) };
 }
+
+/**
+ * The project handed over for this founder on this server, looked for where it is kept now and, once, where it was
+ * kept before (`earlier`, the visit's own storage, with no server on it). One found there is moved over, so a hand-off
+ * made just before the app was updated still carries on the same project instead of being forgotten.
+ */
+export function takeHandoff(
+  store: HandoffStore | null | undefined,
+  earlier: HandoffStore | null | undefined,
+  me: string | null,
+  server: string,
+): IdeaHandoff | null {
+  const kept = peekIdea(store, me, server);
+  if (kept) return kept;
+  const old = peekIdea(earlier, me);
+  // One made on another server (it says so) is not this form's.
+  if (!old || (old.server !== undefined && old.server !== server)) return null;
+  const moved = { ...old, server };
+  handOffIdea(store, moved);
+  clearIdea(earlier);
+  return moved;
+}
+
+/**
+ * Whether a finished job's project is the one handed over: only then is the hand-off done with. A job finished earlier
+ * and still on screen must not clear a newer hand-off for another project.
+ */
+export function handoffFinishedBy(
+  handoff: Pick<IdeaHandoff, "id"> | null,
+  job: { launchId: string } | null,
+): boolean {
+  return handoff !== null && job !== null && handoff.id === job.launchId;
+}

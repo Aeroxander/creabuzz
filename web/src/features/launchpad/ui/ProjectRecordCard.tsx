@@ -206,8 +206,10 @@ export function ProjectRecordCard({
           className="mt-1 text-xs text-muted-foreground"
           data-testid="record-removed"
         >
-          {view.removed} A removed record is not counted here. This counts all
-          of the founder's projects, and reopening a help request counts too.
+          {view.removed}
+          {record.removed.count + record.removed.unnamed > 0
+            ? " A removed record is not counted here. This counts all of the founder's projects, and reopening a help request counts too."
+            : null}
         </p>
       ) : null}
       {stale ? (

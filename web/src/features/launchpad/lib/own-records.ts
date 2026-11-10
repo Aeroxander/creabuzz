@@ -120,3 +120,52 @@ export function newestOwnRecord<E extends RecordEvent>(
   }
   return newest;
 }
+
+/** Which project a link by id means, among the records the server answered with. */
+export type ByIdPick =
+  | { kind: "none" }
+  | { kind: "one"; author: string }
+  /** The link names no author and more than one author has a project with this id: none is picked for the reader. */
+  | { kind: "several"; authors: string[] };
+
+/**
+ * The project a link means. An id is only unique per author, so a link that names no author can match several
+ * people's projects. Then none is chosen: showing "the newest" would put one person's project under a link that
+ * was made for another's. With an author named, only that author's record counts.
+ */
+export function pickById<E extends RecordEvent>(
+  events: readonly E[],
+  id: string,
+  author: string | undefined,
+): ByIdPick {
+  const authors = new Set<string>();
+  for (const event of events) {
+    if (event.kind !== KIND_LAUNCH_RECORD || idOf(event) !== id) continue;
+    if (author !== undefined && event.pubkey !== author) continue;
+    authors.add(event.pubkey);
+  }
+  if (authors.size === 0) return { kind: "none" };
+  if (authors.size === 1) return { kind: "one", author: [...authors][0] };
+  return { kind: "several", authors: [...authors].sort() };
+}
+
+/** Said when the server has the founder's record but it cannot be read as a project record. */
+export const OWN_RECORD_UNREADABLE = "Your project's record could not be read.";
+
+/**
+ * `author`'s own record with this id, read with `parse`, or null when the server has none. A record that is there but
+ * cannot be read is an error, never "no record": whoever asked would otherwise publish over it as if nothing were
+ * there, or make a second project beside it.
+ */
+export function ownRecordOrThrow<E extends RecordEvent, R>(
+  events: readonly E[],
+  author: string,
+  id: string,
+  parse: (event: E) => R | null,
+): R | null {
+  const newest = newestOwnRecord(events, author, id);
+  if (!newest) return null;
+  const record = parse(newest);
+  if (record === null) throw new Error(OWN_RECORD_UNREADABLE);
+  return record;
+}

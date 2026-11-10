@@ -32,7 +32,8 @@ import { type RevenuePledge, revenuePledgeContent } from "./lib/revenue-pledge";
 import { supersedingTime } from "./lib/record-time";
 import { LAUNCH_QUERY_LIMIT, launchQueryFilter } from "./lib/launch-query";
 import {
-  newestOwnRecord,
+  ownRecordOrThrow,
+  pickById,
   readOwnLaunchIds,
   recordByIdFilter,
 } from "./lib/own-records";
@@ -79,23 +80,27 @@ async function fetchTombstones(
 ): Promise<{
   coordinates: Map<string, number>;
   deletedIds: Set<string>;
+  /** One of the reads came back full: there may be removals it did not return. */
+  cut: boolean;
 }> {
+  let cut = false;
   const removals: NostrEvent[] = [];
   for (let i = 0; i < coords.length; i += 100) {
     const group = coords.slice(i, i + 100);
     if (group.length === 0) continue;
-    removals.push(
-      ...(await queryEvents(relayWsUrl(), {
-        kinds: [5],
-        "#a": group,
-        limit: 200,
-      })),
-    );
+    const page = await queryEvents(relayWsUrl(), {
+      kinds: [5],
+      "#a": group,
+      limit: TOMBSTONE_LIMIT,
+    });
+    if (page.length >= TOMBSTONE_LIMIT) cut = true;
+    removals.push(...page);
   }
   // By coordinate and time, the author's own only: a record published again after its removal shows again.
   const out = {
     coordinates: launchRemovals(removals),
     deletedIds: new Set<string>(),
+    cut: false,
   };
   // NIP-09 `e`-tag tombstones hide individual mirrors — an agent-draft's
   // Reject disposal (persona-drafting-loop D5).
@@ -105,14 +110,16 @@ async function fetchTombstones(
     const events = await queryEvents(relayWsUrl(), {
       kinds: [5],
       "#e": group,
-      limit: 200,
+      limit: TOMBSTONE_LIMIT,
     });
+    if (events.length >= TOMBSTONE_LIMIT) cut = true;
     for (const event of events) {
       for (const tag of event.tags) {
         if (tag[0] === "e" && tag[1]) out.deletedIds.add(tag[1]);
       }
     }
   }
+  out.cut = cut;
   return out;
 }
 
@@ -134,6 +141,7 @@ export async function fetchLaunches(): Promise<Launch[]> {
       : {
           coordinates: new Map<string, number>(),
           deletedIds: new Set<string>(),
+          cut: false,
         };
   return buildLaunches(events, tombstones.coordinates, tombstones.deletedIds);
 }
@@ -295,28 +303,48 @@ export function useTrustSignals() {
   });
 }
 
+/** What reading one project by id answered. */
+export interface LaunchById {
+  /** The project, or null when the server has none (or the link could mean several: see `several`). */
+  launch: Launch | null;
+  /**
+   * Set when the link names no author and more than one author has a project with this id: their public keys. None
+   * is picked for the reader.
+   */
+  several: string[] | null;
+  /**
+   * What is recorded against the project (updates, removals of them) filled a whole read, so there may be more than
+   * was read. The project itself is not in doubt.
+   */
+  cut: boolean;
+}
+
+/** How many removals one read of them asks for (`fetchTombstones`). */
+const TOMBSTONE_LIMIT = 200;
+
 /**
  * One project read on its own, by id (and author, when known), with what is recorded against it. The list of every
  * project is cut at its newest records, so an older project is not in it while it is still on the server: its page
- * reads it this way instead of saying it was not found. Null when the server has no such project.
+ * reads it this way instead of saying it was not found.
  */
 export async function fetchLaunchById(
   launchId: string,
   author: string | undefined,
-): Promise<Launch | null> {
+): Promise<LaunchById> {
   const relay = relayWsUrl();
-  const records = (
-    await queryEvents(relay, { ...recordByIdFilter(launchId, author) })
-  ).filter(
+  const filter = recordByIdFilter(launchId, author);
+  const answered = await queryEvents(relay, { ...filter });
+  const pick = pickById(answered, launchId, author);
+  if (pick.kind === "none") return { launch: null, several: null, cut: false };
+  if (pick.kind === "several")
+    return { launch: null, several: pick.authors, cut: false };
+  const records = answered.filter(
     (event) =>
       event.kind === KIND_LAUNCH_RECORD &&
-      event.tags.some((tag) => tag[0] === "d" && tag[1] === launchId) &&
-      (author === undefined || event.pubkey === author),
+      event.pubkey === pick.author &&
+      event.tags.some((tag) => tag[0] === "d" && tag[1] === launchId),
   );
-  if (records.length === 0) return null;
-  const coords = [
-    ...new Set(records.map((e) => launchCoordinate(e.pubkey, launchId))),
-  ];
+  const coords = [launchCoordinate(pick.author, launchId)];
   const mirrors = await queryEvents(relay, {
     kinds: LAUNCHPAD_EVENT_KINDS.filter((kind) => kind !== KIND_LAUNCH_RECORD),
     "#a": coords,
@@ -326,13 +354,16 @@ export async function fetchLaunchById(
     coords,
     mirrors.map((e) => e.id),
   );
-  return (
-    buildLaunches(
-      [...records, ...mirrors],
-      tombstones.coordinates,
-      tombstones.deletedIds,
-    ).find((launch) => launch.record.id === launchId) ?? null
-  );
+  return {
+    launch:
+      buildLaunches(
+        [...records, ...mirrors],
+        tombstones.coordinates,
+        tombstones.deletedIds,
+      ).find((launch) => launch.record.id === launchId) ?? null,
+    several: null,
+    cut: mirrors.length >= LAUNCH_QUERY_LIMIT || tombstones.cut,
+  };
 }
 
 /**
@@ -346,8 +377,8 @@ export async function fetchOwnRecord(
   const events = await queryEvents(relayWsUrl(), {
     ...recordByIdFilter(launchId, author),
   });
-  const newest = newestOwnRecord(events, author, launchId);
-  return newest ? parseLaunchRecord(newest) : null;
+  // A record that is there but cannot be read is an error, never "no record".
+  return ownRecordOrThrow(events, author, launchId, parseLaunchRecord);
 }
 
 /**
@@ -375,17 +406,17 @@ export function useLaunch(
   author: string | undefined,
 ) {
   const query = useLaunches();
-  const listed = useMemo(
-    () =>
-      launchId === undefined
-        ? undefined
-        : query.data?.find(
-            (l) =>
-              l.record.id === launchId &&
-              (author === undefined || l.record.author === author),
-          ),
-    [query.data, launchId, author],
-  );
+  const listed = useMemo(() => {
+    if (launchId === undefined) return undefined;
+    const matches = (query.data ?? []).filter(
+      (l) =>
+        l.record.id === launchId &&
+        (author === undefined || l.record.author === author),
+    );
+    // A link with no author that several listed projects answer to is not settled by the list: the project's own read
+    // below says which authors hold the id, and none is picked for the reader.
+    return matches.length === 1 ? matches[0] : undefined;
+  }, [query.data, launchId, author]);
   // Not in the list (which is cut at its newest records), or the list could not be read: the project itself is read.
   const relay = relayWsUrl();
   const direct = useQuery({
@@ -395,19 +426,21 @@ export function useLaunch(
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
-  const launch = listed ?? direct.data ?? undefined;
+  const launch = listed ?? direct.data?.launch ?? undefined;
   const { refetch: refetchList } = query;
   const { refetch: refetchOne } = direct;
   return {
     ...query,
     launch,
+    /** The link names no author and these authors each have a project with this id: the reader chooses. */
+    several: launch ? null : (direct.data?.several ?? null),
+    /** The project was read on its own and what is recorded against it may not all have been read. */
+    cut: !listed && Boolean(direct.data?.launch && direct.data.cut),
     isLoading:
       query.isLoading ||
       (!listed && launchId !== undefined && direct.isLoading),
     // A project that was read is shown, whatever else failed; "not found" is said only when its own read answered.
-    error: launch
-      ? null
-      : (direct.error ?? (direct.data === null ? null : query.error)),
+    error: launch ? null : (direct.error ?? (direct.data ? null : query.error)),
     refetch: () => {
       void refetchOne();
       return refetchList();

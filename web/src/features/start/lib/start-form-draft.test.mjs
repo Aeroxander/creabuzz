@@ -123,3 +123,20 @@ test("the weekly-sale fields are kept with the form, and a malformed one is not 
   storage.setItem(key, JSON.stringify({ ...sale, saleDays: 90 }));
   assert.equal(loadFormDraft(key, storage), null);
 });
+
+test("what was typed while setting up Shares for one project is never brought back under another", () => {
+  const scope = { server: "wss://one.example", account: "a".repeat(64) };
+  const foo = formDraftKey({ ...scope, fromIdea: "foo" });
+  const bar = formDraftKey({ ...scope, fromIdea: "bar" });
+  const fresh = formDraftKey(scope);
+  assert.notEqual(foo, bar);
+  assert.notEqual(foo, fresh);
+  assert.notEqual(bar, fresh);
+  // The same project gets its own form back.
+  assert.equal(foo, formDraftKey({ ...scope, fromIdea: "foo" }));
+  // A Projects-board project keeps the key it always had.
+  assert.equal(
+    formDraftKey({ ...scope, fromBoard: "board-1" }),
+    formDraftKey({ ...scope, fromBoard: "board-1", fromIdea: "foo" }),
+  );
+});

@@ -146,3 +146,11 @@ export function updatesUse(input: {
   // None found in a read that was cut short is not "none".
   return input.complete ? "no" : "unknown";
 }
+
+/**
+ * The Updates tab's label. The number is said only when the project's updates were read to the end: a count from a
+ * read that was cut short is "at least", and a tab must not state it as the number there is.
+ */
+export function updatesLabel(count: number | null, complete: boolean): string {
+  return count === null || !complete ? "Updates" : `Updates (${count})`;
+}

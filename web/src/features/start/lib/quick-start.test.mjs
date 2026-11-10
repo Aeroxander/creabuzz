@@ -6,6 +6,9 @@ import { ideaToInput } from "../../launchpad/lib/idea.ts";
 import {
   EMPTY_QUICK_START,
   loadMadeProject,
+  loadStartAttempt,
+  projectToStart,
+  saveStartAttempt,
   loadQuickStart,
   quickStartGoal,
   quickStartIssue,
@@ -93,12 +96,23 @@ test("a project made whose goal is still to be saved is remembered for its found
   saveMadeProject(store, made);
   // The goal's id comes back with it: a retry after a reload sends the same goal, not a second main goal.
   assert.deepEqual(loadMadeProject(store, "me"), made);
-  // One kept before the goal's id was stored with it is not carried on: its goal id is not known.
+  // One kept before the goal's id was stored with it is still carried on (dropping it would make a second project):
+  // it is given a goal id, and keeps that one from then on.
   map.set(
     "creaton.start.quick.made",
     JSON.stringify({ id: "x", author: "me" }),
   );
-  assert.equal(loadMadeProject(store, "me"), null);
+  let minted = 0;
+  const mint = () => {
+    minted += 1;
+    return `minted${minted}`;
+  };
+  assert.deepEqual(loadMadeProject(store, "me", mint), {
+    id: "x",
+    author: "me",
+    goalId: "minted1",
+  });
+  assert.equal(loadMadeProject(store, "me", mint).goalId, "minted1");
   saveMadeProject(store, made);
   // Another account in the same browser does not carry on someone else's project.
   assert.equal(loadMadeProject(store, "someone-else"), null);
@@ -140,4 +154,80 @@ test("a new project is waited for a bounded number of times, and a read that fai
   assert.equal(await readableSoon(no, { tries: 4, waitMs: 10, sleep }), false);
   assert.equal(never, 4);
   assert.equal(pauses.length, 3);
+});
+
+test("a press whose publish landed but whose answer was lost is carried on, not made again under another id", async () => {
+  const fresh = (taken) =>
+    taken.includes("nebula") ? "nebula-ab12" : "nebula";
+  const attempt = { id: "nebula", author: "me" };
+  // The earlier press landed: the record is there. Carry on with it; do not see its id as taken and suffix.
+  assert.deepEqual(
+    await projectToStart({
+      attempt,
+      hasOwn: async (id) => id === "nebula",
+      fresh,
+      mine: ["nebula"],
+    }),
+    { id: "nebula", adopt: true },
+  );
+  // The earlier press did not land: publish, under the same id again.
+  assert.deepEqual(
+    await projectToStart({
+      attempt,
+      hasOwn: async () => false,
+      fresh,
+      mine: [],
+    }),
+    { id: "nebula", adopt: false },
+  );
+  // No earlier press, and the person already has a project by that id (an older one of theirs): a new id.
+  assert.deepEqual(
+    await projectToStart({
+      attempt: null,
+      hasOwn: async () => false,
+      fresh,
+      mine: ["nebula"],
+    }),
+    { id: "nebula-ab12", adopt: false },
+  );
+  // No earlier press, the list did not hold it, but the server has it under that id: still never replaced.
+  assert.deepEqual(
+    await projectToStart({
+      attempt: null,
+      hasOwn: async (id) => id === "nebula",
+      fresh,
+      mine: [],
+    }),
+    { id: "nebula-ab12", adopt: false },
+  );
+  // If the server cannot be asked, nothing is decided: the press fails and nothing is made.
+  await assert.rejects(
+    projectToStart({
+      attempt,
+      hasOwn: async () => {
+        throw new Error("offline");
+      },
+      fresh,
+      mine: [],
+    }),
+    /offline/,
+  );
+});
+
+test("the id a press is about to publish under is kept for its own account only", () => {
+  const map = new Map();
+  const store = {
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => void map.set(k, v),
+    removeItem: (k) => void map.delete(k),
+  };
+  assert.equal(loadStartAttempt(store, "me"), null);
+  saveStartAttempt(store, { id: "nebula", author: "me" });
+  assert.deepEqual(loadStartAttempt(store, "me"), {
+    id: "nebula",
+    author: "me",
+  });
+  assert.equal(loadStartAttempt(store, "someone-else"), null);
+  saveStartAttempt(store, null);
+  assert.equal(loadStartAttempt(store, "me"), null);
 });

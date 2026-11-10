@@ -244,6 +244,8 @@ function message(error: unknown): string {
 async function makeProject(
   job: ContributorJob,
   fx: ContributorEffects,
+  /** Called as soon as a send has gone through, before anything else can fail: the job then has its send on record. */
+  onSent: (job: ContributorJob) => void,
 ): Promise<ContributorJob> {
   const terms = contributorTerms(job.draft, job.founder, { resumed: true });
   // The weekly-sale kit's DAO is predicted with its market (`predictLaunch`, the DAO first in its answer), from the sale
@@ -277,7 +279,8 @@ async function makeProject(
     // answer was lost, with this try's own words. A try from before salts were per try is different: its address
     // follows from the project's id, so the DAO there may be an earlier, discarded try's, set up with other reviewers
     // and work areas. That one is never adopted: the words in this form would be published over a DAO they do not
-    // describe.
+    // describe. A try whose own send is on record (kept the moment the send went through, see below) is carried on
+    // whichever kind it is: that send is what made the DAO.
     if (!job.attempt && !job.createTx) throw new Error(EARLIER_TRY_MESSAGE);
     if (!(await kitMadeIt(job.kit, dao, fx)))
       throw new Error(
@@ -309,11 +312,14 @@ async function makeProject(
     if (weekly)
       await assertLaunchFits(() => fx.estimateGas(job.founder, job.kit, data));
     const sent = await fx.send(job.kit, data);
-    createTx = sent.txHash;
     if (sent.status !== "success")
       throw new Error(
         "The network turned the request down, so nothing was made. Most often another project was being set up at the same moment. Try again.",
       );
+    // The send went through: that is put on record now, before the node is asked whether it shows the project. If the
+    // node is a moment behind and this step stops, pressing again knows this try's own send made what is there.
+    createTx = sent.txHash;
+    onSent({ ...job, createTx });
     if (!(await daoShows(dao, fx)))
       throw new Error(
         `Your request went through (confirmation ${sent.txHash}), but this site cannot see the new project on the network yet. Press Try again in a minute: it picks the project up once it shows, and never makes a second one.`,
@@ -338,7 +344,11 @@ export async function runContributorStart(
     if (done.has(step)) continue;
     dispatch({ type: "step-start", step });
     try {
-      if (step === "create") job = await makeProject(job, fx);
+      if (step === "create")
+        job = await makeProject(job, fx, (sent) => {
+          job = sent;
+          fx.save(sent);
+        });
       if (step === "record") {
         await fx.publish(
           contributorRecordInput({
@@ -454,6 +464,13 @@ export function parseJob(raw: string | null): ContributorJob | null {
         ],
       };
     }
+    // A try's own part of the salt is 32 hex characters. Anything else is not one: the job is then read as a try
+    // without its own part, which is never allowed to adopt a project it has no send on record for.
+    if (
+      typeof value.attempt !== "string" ||
+      !/^[0-9a-f]{32}$/.test(value.attempt)
+    )
+      delete value.attempt;
     return { ...value, version: 3 } as ContributorJob;
   } catch {
     return null;

@@ -25,15 +25,21 @@ export function TabUsesProbe({
   onUses: (state: {
     uses: Partial<Record<LaunchTab, TabUse>>;
     updates: number | null;
+    updatesComplete: boolean;
   }) => void;
 }) {
   const {
     uses: { updates: updatesUse, boards, agents },
     updates,
+    updatesComplete,
   } = useTabUses(launch);
   useEffect(() => {
-    onUses({ uses: { updates: updatesUse, boards, agents }, updates });
-  }, [updatesUse, boards, agents, updates, onUses]);
+    onUses({
+      uses: { updates: updatesUse, boards, agents },
+      updates,
+      updatesComplete,
+    });
+  }, [updatesUse, boards, agents, updates, updatesComplete, onUses]);
   return null;
 }
 

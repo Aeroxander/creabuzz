@@ -14,7 +14,11 @@
  */
 
 import { ideaIssue } from "../../launchpad/lib/idea.ts";
-import { type GoalInput, goalProblem } from "../../launchpad/lib/goals.ts";
+import {
+  type GoalInput,
+  goalProblem,
+  newGoalId,
+} from "../../launchpad/lib/goals.ts";
 
 export interface QuickStartDraft {
   name: string;
@@ -168,18 +172,21 @@ export interface MadeProject {
 export function loadMadeProject(
   store: DraftStore | null | undefined,
   me: string | null,
+  /** Makes a goal id for an entry kept before goal ids were stored with it. */
+  mint: () => string = newGoalId,
 ): MadeProject | null {
   try {
     const value: unknown = JSON.parse(store?.getItem(MADE_KEY) ?? "null");
     if (!value || typeof value !== "object" || me === null) return null;
     const { id, author, goalId } = value as Record<string, unknown>;
-    return typeof id === "string" &&
-      id !== "" &&
-      author === me &&
-      typeof goalId === "string" &&
-      goalId !== ""
-      ? { id, author: me, goalId }
-      : null;
+    if (typeof id !== "string" || id === "" || author !== me) return null;
+    if (typeof goalId === "string" && goalId !== "")
+      return { id, author: me, goalId };
+    // Kept before the goal's id was stored with it. The project is still the one to carry on (dropping the entry
+    // would make a second project on the next press); it is given a goal id now, kept so a later retry sends the same.
+    const made = { id, author: me, goalId: mint() };
+    saveMadeProject(store, made);
+    return made;
   } catch {
     return null;
   }
@@ -196,4 +203,76 @@ export function saveMadeProject(
   } catch {
     // Storage refused: a reload would start a new project instead of carrying on.
   }
+}
+
+const ATTEMPT_KEY = "creaton.start.quick.attempt";
+
+/** The id a press of Start was about to publish a project under. */
+export interface StartAttempt {
+  id: string;
+  author: string;
+}
+
+/**
+ * The id the last press tried to publish under, for `me`, or null. Kept before anything is sent: a publish can land
+ * on the server while its answer is lost, and the next press must then find that project and carry on with it, not
+ * see its id as taken and make a second project beside it.
+ */
+export function loadStartAttempt(
+  store: DraftStore | null | undefined,
+  me: string | null,
+): StartAttempt | null {
+  try {
+    const value: unknown = JSON.parse(store?.getItem(ATTEMPT_KEY) ?? "null");
+    if (!value || typeof value !== "object" || me === null) return null;
+    const { id, author } = value as Record<string, unknown>;
+    return typeof id === "string" && id !== "" && author === me
+      ? { id, author: me }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveStartAttempt(
+  store: DraftStore | null | undefined,
+  attempt: StartAttempt | null,
+): void {
+  try {
+    if (attempt) store?.setItem(ATTEMPT_KEY, JSON.stringify(attempt));
+    else store?.removeItem(ATTEMPT_KEY);
+  } catch {
+    // Storage refused: a lost answer could not be told from a clash, so the next press takes a new id.
+  }
+}
+
+/**
+ * What a press of Start does about the project itself, given the id an earlier press tried (if any) and whether the
+ * person already has a record under an id.
+ *
+ * - An earlier press tried an id and a record is there under it: that press landed. Carry on with that project.
+ * - Otherwise a new project is published under a fresh id from `fresh`, which is given the ids to avoid.
+ */
+export async function projectToStart(input: {
+  attempt: StartAttempt | null;
+  /** Whether the person has a record under this id, asked of the server. Throws when that cannot be read. */
+  hasOwn: (id: string) => Promise<boolean>;
+  /** A fresh id that is none of `taken`. */
+  fresh: (taken: readonly string[]) => string;
+  /** The person's own ids, as read. */
+  mine: readonly string[];
+}): Promise<{ id: string; adopt: boolean }> {
+  const { attempt, hasOwn, fresh, mine } = input;
+  // Nothing there under the earlier press's id: that press did not land, and this one starts afresh (the same name
+  // gives the same id again; a changed name gets its own).
+  if (attempt && (await hasOwn(attempt.id)))
+    return { id: attempt.id, adopt: true };
+  const taken = [...mine];
+  let id = fresh(taken);
+  // Asked once more, by id, just before publishing: a project made a moment ago elsewhere is not replaced.
+  if (await hasOwn(id)) {
+    taken.push(id);
+    id = fresh(taken);
+  }
+  return { id, adopt: false };
 }

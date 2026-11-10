@@ -14,6 +14,7 @@ import { isSetupStage } from "../lib/sale-steps";
 import { raisesOffered } from "../lib/raises-offered";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { LaunchHero } from "./LaunchHero";
+import { LaunchChoice } from "./LaunchChoice";
 import { LaunchMissing } from "./LaunchMissing";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
@@ -38,6 +39,7 @@ import {
   tabAlias,
   tabShown,
   type TabUse,
+  updatesLabel,
 } from "../lib/launch-tabs";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { markSupportersSeen } from "../use-founder-activity";
@@ -119,6 +121,8 @@ export function LaunchDetailPage({
     isLoading,
     error: readError,
     refetch,
+    several,
+    cut: readCut,
   } = useLaunch(launchId, author);
   const launch = sandbox
     ? {
@@ -177,9 +181,11 @@ export function LaunchDetailPage({
   const [tabState, setTabState] = useState<{
     uses: Partial<Record<Tab, TabUse>>;
     updates: number | null;
+    updatesComplete: boolean;
   }>(() => ({
     uses: sandbox ? {} : { updates: "no", boards: "no", agents: "no" },
     updates: null,
+    updatesComplete: false,
   }));
   const tabUses = tabState.uses;
   const navigate = useNavigate({ from: "/launchpad/$launchId" });
@@ -245,6 +251,9 @@ export function LaunchDetailPage({
     setTab("mybids");
   }, [action, setTab]);
 
+  // A link that names no author, to an id several people have a project under: the reader picks, nothing is guessed.
+  if (!sandbox && !isLoading && !launch && several)
+    return <LaunchChoice authors={several} launchId={launchId} />;
   if (isLoading || !launch) {
     return (
       <LaunchMissing
@@ -383,11 +392,10 @@ export function LaunchDetailPage({
     {
       id: "updates",
       // Counted as the tab lists them, from this project's own records; no number while those are not read.
-      label:
-        (sandbox ? projectProgress([launch], []).length : tabState.updates) ===
-        null
-          ? "Updates"
-          : `Updates (${sandbox ? projectProgress([launch], []).length : tabState.updates})`,
+      // A read that was cut short found "at least" that many, so no number is stated.
+      label: sandbox
+        ? updatesLabel(projectProgress([launch], []).length, true)
+        : updatesLabel(tabState.updates, tabState.updatesComplete),
     },
     { id: "manage", label: "Manage", founderOnly: true },
   ];
@@ -487,6 +495,20 @@ export function LaunchDetailPage({
       {sandbox ? null : (
         <>
           <TabUsesProbe launch={launch} onUses={setTabState} />
+          {readCut ? (
+            <p className="text-sm" data-testid="launch-read-cut" role="status">
+              This project has more recorded against it than could be read here,
+              so some of it may be missing below.{" "}
+              <Button
+                onClick={() => void refetch()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Try again
+              </Button>
+            </p>
+          ) : null}
           {/* What the project is for comes first: its goal, and how everyone will know. */}
           <ProjectGoalCard isFounder={isFounder} launch={launch} />
         </>

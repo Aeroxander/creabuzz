@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  REMOVED_READ_LIMIT,
+  deletionsFilter,
   removedLine,
   removedRecords,
 } from "./removed-records.ts";
@@ -17,24 +17,43 @@ const del = (pubkey, at, ids, k = "47003") => ({
 });
 const day = (at) => `day ${at}`;
 
+test("the founder's deletions are asked for by author and kind alone, so a tag filter cannot hide any", () => {
+  const filter = deletionsFilter(FOUNDER);
+  assert.deepEqual(filter, { kinds: [5], authors: [FOUNDER], limit: 500 });
+  assert.equal(
+    Object.keys(filter).some((key) => key.startsWith("#")),
+    false,
+  );
+});
+
 test("the founder's deleted update records are counted, each once, with when the last was", () => {
   const removed = removedRecords(
     [del(FOUNDER, 10, ["a", "b"]), del(FOUNDER, 30, ["b", "c"])],
     FOUNDER,
+    true,
   );
-  assert.deepEqual(removed, { count: 3, lastAt: 30, atLeast: false });
+  assert.deepEqual(removed, {
+    count: 3,
+    unnamed: 0,
+    lastAt: 30,
+    complete: true,
+  });
   assert.equal(
     removedLine(removed, day),
-    "The founder has removed 3 update records, the last on day 30.",
+    "The founder has removed 3 update records. The last removal was on day 30.",
+  );
+  assert.equal(
+    removedLine(removedRecords([del(FOUNDER, 5, ["a"])], FOUNDER, true), day),
+    "The founder has removed 1 update record. The last removal was on day 5.",
   );
 });
 
-test("someone else's deletions, and deletions of other kinds of record, are not the founder's update records", () => {
+test("someone else's deletions, and deletions that say they remove another kind, are not counted", () => {
   const removed = removedRecords(
     [
       del(OTHER, 10, ["a"]),
       del(FOUNDER, 20, ["b"], "1"),
-      del(FOUNDER, 25, ["c"], null),
+      { kind: 5, pubkey: FOUNDER, created_at: 30, tags: [["a", "37001:x:y"]] },
       {
         kind: 1,
         pubkey: FOUNDER,
@@ -46,23 +65,60 @@ test("someone else's deletions, and deletions of other kinds of record, are not 
       },
     ],
     FOUNDER,
+    true,
   );
-  assert.deepEqual(removed, { count: 0, lastAt: null, atLeast: false });
+  assert.deepEqual(removed, {
+    count: 0,
+    unnamed: 0,
+    lastAt: null,
+    complete: true,
+  });
   assert.equal(removedLine(removed, day), null);
 });
 
-test("one removed record reads as one, and a cut read says at least", () => {
+test("a deletion that does not say what kind it removes may have removed an update: it is counted apart and said", () => {
+  const only = removedRecords(
+    [del(FOUNDER, 25, ["c", "d"], null)],
+    FOUNDER,
+    true,
+  );
+  assert.deepEqual(only, { count: 0, unnamed: 2, lastAt: 25, complete: true });
   assert.equal(
-    removedLine(removedRecords([del(FOUNDER, 5, ["a"])], FOUNDER), day),
-    "The founder has removed 1 update record, the last on day 5.",
+    removedLine(only, day),
+    "The founder has removed 2 records without saying what kind they were, the last on day 25. Some may have been updates.",
   );
-  const many = [];
-  for (let i = 0; i < REMOVED_READ_LIMIT; i += 1)
-    many.push(del(FOUNDER, i, [`id${i}`]));
-  const removed = removedRecords(many, FOUNDER);
-  assert.equal(removed.atLeast, true);
-  assert.match(
-    removedLine(removed, day),
-    /^The founder has removed at least 500 update records/,
+  const both = removedRecords(
+    [del(FOUNDER, 25, ["c"], null), del(FOUNDER, 10, ["a"])],
+    FOUNDER,
+    true,
   );
+  assert.equal(
+    removedLine(both, day),
+    "The founder has removed 1 update record, and 1 other record without saying what kind they were. The last removal was on day 25.",
+  );
+  // Named both ways: an update record, once.
+  assert.deepEqual(
+    removedRecords(
+      [del(FOUNDER, 1, ["a"], null), del(FOUNDER, 2, ["a"])],
+      FOUNDER,
+      true,
+    ),
+    { count: 1, unnamed: 0, lastAt: 2, complete: true },
+  );
+});
+
+test("a read that did not reach the end says at least, and with nothing found says removals could not be checked", () => {
+  assert.equal(
+    removedLine(removedRecords([del(FOUNDER, 5, ["a"])], FOUNDER, false), day),
+    "The founder has removed at least 1 update record. The last removal was on day 5.",
+  );
+  // Never "none": five hundred unrelated deletions may be hiding one.
+  assert.equal(
+    removedLine(
+      removedRecords([del(FOUNDER, 5, ["a"], "1")], FOUNDER, false),
+      day,
+    ),
+    "Whether the founder has removed update records could not be checked: they have more removals than could be read here.",
+  );
+  assert.equal(removedLine(removedRecords([], FOUNDER, true), day), null);
 });

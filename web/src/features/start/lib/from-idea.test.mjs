@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import {
   carryOnIssue,
+  handoffFinishedBy,
+  takeHandoff,
   clearIdea,
   handOffIdea,
   keptFromIdea,
@@ -182,4 +184,29 @@ test("when the founder's record cannot be read, nothing is published: the step f
     (error) => error.message === RECORD_UNREAD_MESSAGE,
   );
   assert.match(RECORD_UNREAD_MESSAGE, /was not published.*Try again\.$/);
+});
+
+test("a hand-off kept the earlier way is read once and moved, so it still carries on the same project", () => {
+  const local = memory();
+  const session = memory();
+  // Made before hand-offs were kept across visits: in the visit's own storage, with no server on it.
+  handOffIdea(session, idea);
+  const moved = takeHandoff(local, session, me, "wss://one.example");
+  assert.deepEqual(moved, { ...idea, server: "wss://one.example" });
+  assert.equal(session.size(), 0);
+  // From now on it is found where hand-offs are kept, and only on that server.
+  assert.deepEqual(takeHandoff(local, session, me, "wss://one.example"), moved);
+  assert.equal(takeHandoff(local, session, me, "wss://two.example"), null);
+  // Someone else's is not taken.
+  const other = memory();
+  handOffIdea(other, idea);
+  assert.equal(takeHandoff(memory(), other, "b".repeat(64), "wss://x"), null);
+});
+
+test("only the hand-off a finished job belongs to is done with", () => {
+  assert.equal(handoffFinishedBy({ id: "bar" }, { launchId: "bar" }), true);
+  // A job for another project, finished earlier and still kept, does not clear a newer hand-off.
+  assert.equal(handoffFinishedBy({ id: "bar" }, { launchId: "foo" }), false);
+  assert.equal(handoffFinishedBy(null, { launchId: "foo" }), false);
+  assert.equal(handoffFinishedBy({ id: "bar" }, null), false);
 });

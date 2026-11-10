@@ -420,6 +420,46 @@ test("a DAO that still does not show stops after the last try, says to press aga
   assert.equal(state.sends.length, 1);
 });
 
+test("a send that went through is on record at once, so an older try is carried on when the node catches up", async () => {
+  // A try from before tries had their own part of the salt. Its send succeeds while the page's node is behind.
+  const { fx, state } = fakeChain({ lag: 1_000 });
+  const first = await runContributorStart(
+    job({ attempt: undefined }),
+    fx,
+    () => {},
+  );
+  assert.equal(first.ok, false);
+  assert.match(first.message, /Press Try again in a minute/);
+  // The send is on the job that was kept, although the step itself failed.
+  assert.match(first.job.createTx, /^0x/);
+  assert.equal(state.saved.at(-1).createTx, first.job.createTx);
+  // Pressing again: its own send made what is there, so it is carried on. Not "Nothing was sent. Discard".
+  state.lag = 0;
+  const second = await runContributorStart(first.job, fx, () => {});
+  assert.equal(second.ok, true);
+  assert.equal(state.sends.length, 1);
+  assert.equal(second.job.dao, DAO);
+});
+
+test("a send the network turned down is not put on record as having made anything", async () => {
+  const { fx, state } = fakeChain({ revert: 1 });
+  const out = await runContributorStart(
+    job({ attempt: undefined }),
+    fx,
+    () => {},
+  );
+  assert.equal(out.ok, false);
+  assert.equal(out.job.createTx, null);
+  assert.equal(state.saved.at(-1).createTx, null);
+});
+
+test("a stored try's own part of the salt is checked: anything that is not one is dropped", () => {
+  const stored = (attempt) => parseJob(JSON.stringify({ ...job(), attempt }));
+  assert.equal(stored("ab".repeat(16)).attempt, "ab".repeat(16));
+  for (const bad of [true, 7, "yes", "AB".repeat(16), "ab".repeat(15), {}])
+    assert.equal("attempt" in stored(bad), false, String(bad));
+});
+
 test("a send that fails keeps the original words for Technical details", async () => {
   const raw =
     "bundler: zd_sponsorUserOperation RPC error UserOperation reverted during simulation with reason: 0x";

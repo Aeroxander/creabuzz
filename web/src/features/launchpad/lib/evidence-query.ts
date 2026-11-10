@@ -69,7 +69,11 @@ export function readAuthorUpdates<E extends { id: string; created_at: number }>(
   return readPaged(fetchPage, () => authorUpdatesFilter(author));
 }
 
-async function readPaged<E extends { id: string; created_at: number }>(
+/**
+ * Read a history a page at a time, newest first, with the filter `makeFilter` gives (it must hold this module's page
+ * size as its limit). `complete` is true only when a short page showed the end.
+ */
+export async function readPaged<E extends { id: string; created_at: number }>(
   fetchPage: (filter: NostrFilter) => Promise<readonly E[]>,
   makeFilter: () => NostrFilter,
 ): Promise<{ events: E[]; complete: boolean }> {

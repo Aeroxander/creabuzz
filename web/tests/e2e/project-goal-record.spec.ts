@@ -1124,12 +1124,253 @@ test("a record the founder removed leaves a trace: the count of removals, and an
   await page.reload();
   // The miss is no longer counted, and the page does not pretend nothing happened.
   await expect(record.getByTestId("record-removed")).toContainText(
-    `The founder has removed 1 update record, the last on ${new Date(at * 1000).toLocaleDateString()}.`,
+    `The founder has removed 1 update record. The last removal was on ${new Date(at * 1000).toLocaleDateString()}.`,
   );
   const line = record.getByTestId("record-line");
   await expect(line).toContainText("Promise removed");
   await expect(line).toContainText('Answered "Not done" (late)');
   await expect(record.getByTestId("record-promise-totals")).toHaveCount(0);
+});
+
+test("unrelated deletions cannot hide a removed update, a removal that names no kind is said, and a cut read is not 'none'", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  seedUpdate(relay, now() - 7 * DAY, "Week one", ["Ship sign-up"]);
+  // An old removal of an update record, then more than a page of newer deletions of other things (posts).
+  relay.seed(
+    event(
+      5,
+      FOUNDER,
+      "",
+      [
+        ["e", "a".repeat(64)],
+        ["k", "47003"],
+      ],
+      now() - 30 * DAY,
+    ),
+  );
+  // And one that does not say what kind of record it removed: the server takes those too.
+  relay.seed(event(5, FOUNDER, "", [["e", "b".repeat(64)]], now() - 29 * DAY));
+  for (let i = 0; i < 520; i += 1)
+    relay.seed(
+      event(
+        5,
+        FOUNDER,
+        "",
+        [
+          ["e", (1000 + i).toString(16).padStart(64, "c")],
+          ["k", "1"],
+        ],
+        now() - DAY - i,
+      ),
+    );
+  await install(page, relay, VISITOR_KEY);
+  await page.goto(PROJECT);
+  const removed = page
+    .getByTestId("project-record")
+    .getByTestId("record-removed");
+  await expect(removed).toContainText(
+    "The founder has removed 1 update record, and 1 other record without saying what kind they were.",
+    { timeout: 30_000 },
+  );
+
+  // A founder whose deletions cannot all be read (a full page in one second cannot be walked past), with no update
+  // removal among those read: the page does not say there were none.
+  const other = createMockRelay();
+  seedProject(other);
+  seedUpdate(other, now() - 7 * DAY, "Week one", ["Ship sign-up"]);
+  for (let i = 0; i < 500; i += 1)
+    other.seed(
+      event(
+        5,
+        FOUNDER,
+        "",
+        [
+          ["e", (2000 + i).toString(16).padStart(64, "d")],
+          ["k", "1"],
+        ],
+        now() - DAY,
+      ),
+    );
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await install(page, other, VISITOR_KEY);
+  await page.goto(PROJECT);
+  await expect(removed).toContainText(
+    "Whether the founder has removed update records could not be checked",
+    { timeout: 30_000 },
+  );
+});
+
+test("a Start whose publish landed but whose answer was lost carries on with that project, not a second one", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  // The earlier press: its record is on the server, and this browser remembers the id it tried, but never heard back.
+  seedProject(relay, now() - 60);
+  await install(page, relay, FOUNDER_KEY);
+  await page.addInitScript(
+    ([founder]) => {
+      sessionStorage.setItem(
+        "creaton.start.quick.attempt",
+        JSON.stringify({ id: "nebula", author: founder }),
+      );
+      sessionStorage.setItem(
+        "creaton.start.quick",
+        JSON.stringify({
+          name: "Nebula",
+          pitch: "A map of the night sky for everyone.",
+          goal: "A first version ten people use",
+          how: "Ten people sign in in a week",
+        }),
+      );
+    },
+    [FOUNDER],
+  );
+  await page.goto("/start");
+  const form = page.getByTestId("quick-start");
+  await expect(form.getByLabel("Project name")).toHaveValue("Nebula");
+  await form.getByRole("button", { name: "Start the project" }).click();
+  await expect(page).toHaveURL(/\/launchpad\/nebula\?/);
+  await expect(page.getByTestId("goal-text")).toHaveText(
+    "A first version ten people use",
+  );
+  // One project, with its goal: no "nebula-xxxx" beside it.
+  expect(records(relay, 37001)).toHaveLength(1);
+  expect(tagged(relay, "goal")).toHaveLength(1);
+  expect(tagsNamed(tagged(relay, "goal")[0], "a")).toEqual([["a", COORD]]);
+});
+
+test("a link that names no author, to an id two people use, asks which project instead of showing one of them", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  // Someone else's project with the same id, and newer.
+  relay.seed(
+    event(
+      37001,
+      VISITOR,
+      { pitch: "Another Nebula entirely.", stage: "draft" },
+      [
+        ["d", "nebula"],
+        ["name", "Other Nebula"],
+        ["t", "dao-launchpad"],
+      ],
+      now() - DAY,
+    ),
+  );
+  relay.seed(event(0, FOUNDER, { name: "Fay Founder" }, [], now() - 9 * DAY));
+  relay.seed(event(0, VISITOR, { name: "Vic Visitor" }, [], now() - 9 * DAY));
+  await install(page, relay, VISITOR_KEY);
+  await page.goto("/launchpad/nebula");
+  const choice = page.getByTestId("launch-choice");
+  await expect(choice).toContainText("Which project?");
+  await expect(page.getByTestId("launch-hero")).toHaveCount(0);
+  await choice
+    .getByRole("link", { name: "The project by Fay Founder" })
+    .click();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Nebula");
+  const hero = page.getByTestId("launch-hero");
+  await expect(hero).toContainText("A map of the night sky for everyone.");
+  // With the author in the link there is nothing to ask.
+  await page.goto(`/launchpad/nebula?author=${VISITOR}`);
+  await expect(hero).toContainText("Another Nebula entirely.");
+  await expect(page.getByTestId("launch-choice")).toHaveCount(0);
+});
+
+test("the Updates tab states no number when its read was cut short", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  // More posts marked as this project's updates than one read returns.
+  for (let i = 0; i < 200; i += 1)
+    relay.seed(
+      event(
+        1,
+        FOUNDER,
+        `Marked post ${i}`,
+        [
+          ["a", COORD],
+          ["l", "launch-update", "creaton.launch"],
+        ],
+        now() - 3600 - i,
+      ),
+    );
+  await install(page, relay, VISITOR_KEY);
+  await page.goto(PROJECT);
+  await expect(page.getByTestId("latest-update")).toBeVisible();
+  const tab = page.getByRole("tab", { name: /^Updates/ });
+  await expect(tab).toHaveText("Updates");
+});
+
+test("setting up Shares for one project never brings back what was typed for another", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  await install(page, relay, FOUNDER_KEY);
+  await page.addInitScript(
+    ([founder]) => {
+      const server = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`;
+      // A form half filled earlier for a new project "Foo"...
+      localStorage.setItem(
+        `buzz.start.contributor-form:${server}|${founder}|new`,
+        JSON.stringify({
+          name: "Foo",
+          pitch: "Foo's own sentence, typed weeks ago.",
+          symbol: "FOO",
+          founderShares: "100000",
+          budgetShares: "100000",
+          projectCap: "25000",
+          reviewers: "",
+          quorum: "",
+          projects: [{ name: "docs", check: "merged", shares: "25000" }],
+        }),
+      );
+      // ...and now "Set up Shares" pressed on the project Bar.
+      if (!sessionStorage.getItem("e2e.handed"))
+        localStorage.setItem(
+          "creaton.start.from-idea",
+          JSON.stringify({
+            id: "nebula",
+            author: founder,
+            name: "Nebula",
+            pitch: "A map of the night sky for everyone.",
+            server,
+          }),
+        );
+      sessionStorage.setItem("e2e.handed", "1");
+    },
+    [FOUNDER],
+  );
+  await page.goto("/start/contributor");
+  await expect(page.getByTestId("contributor-carry-on")).toContainText(
+    "You are setting up Shares for Nebula.",
+  );
+  // The form under that line is Nebula's, not Foo's.
+  await expect(page.getByLabel("Project name")).toHaveValue("Nebula");
+  await expect(page.getByLabel("What it is")).toHaveValue(
+    "A map of the night sky for everyone.",
+  );
+  // Nothing typed yet is not "what you typed before".
+  await expect(page.getByTestId("contributor-form-restored")).toHaveCount(0);
+  // A reload still carries on the same project.
+  await page.getByLabel("Project name").fill("Nebula Two");
+  await page.reload();
+  await expect(page.getByTestId("contributor-carry-on")).toContainText(
+    "Nebula",
+  );
+  await expect(page.getByLabel("Project name")).toHaveValue("Nebula Two");
+  // Start over keeps the project the line names.
+  await page.getByTestId("contributor-form-start-over").click();
+  await expect(page.getByLabel("Project name")).toHaveValue("Nebula");
+  // A separate project: the line goes, and Foo's kept form comes back as a new project's.
+  await page.getByTestId("contributor-separate").click();
+  await expect(page.getByTestId("contributor-carry-on")).toHaveCount(0);
+  await expect(page.getByLabel("Project name")).toHaveValue("Foo");
 });
 
 test("answers that disagree are both shown and the worse one is counted; a note that is not an update changes nothing", async ({

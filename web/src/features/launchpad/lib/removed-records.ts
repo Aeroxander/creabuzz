@@ -10,13 +10,16 @@
  * the count is of the founder's deleted update records on this server, whichever of their projects they were about;
  * reopening a help request is also done by deleting a record and is counted too. The page says so.
  *
+ * The founder's deletions are read by author, page by page to the end or a bound, so deletions of other things cannot
+ * push these out of sight. A deletion need not say what kind of record it removes: those are counted apart, as
+ * records that may have been updates. When the read did not reach the end the page says "at least", and when it found
+ * none it says removals could not be checked, never that there were none.
+ *
  * Pure and alias-free: `removed-records.test.mjs` drives it under `node --test`.
  */
 
 import { KIND_LAUNCH_UPDATE } from "../../../shared/constants/kinds.ts";
-
-/** How many of the founder's deletions are read: the newest ones. */
-export const REMOVED_READ_LIMIT = 500;
+import { EVIDENCE_QUERY_LIMIT } from "./evidence-query.ts";
 
 interface DeletionEvent {
   kind: number;
@@ -25,55 +28,93 @@ interface DeletionEvent {
   tags: readonly (readonly string[])[];
 }
 
-export interface RemovedRecords {
-  /** How many update records the founder deleted, among the deletions read. */
-  count: number;
-  /** When the newest of those deletions was made, or null when there is none. */
-  lastAt: number | null;
-  /** The read was cut at its limit: there may be more. */
-  atLeast: boolean;
+/** The filter for one author's deletions, a page at a time. */
+export function deletionsFilter(founder: string): {
+  kinds: number[];
+  authors: string[];
+  limit: number;
+} {
+  // By author and kind only: those are what the server narrows by before its limit. A tag filter (`#k`) is applied
+  // after it, so it would not keep unrelated deletions from filling a page, and it would leave out every deletion that
+  // carries no `k` tag. The pages are read to the end (or to a bound) and sorted out here.
+  return { kinds: [5], authors: [founder], limit: EVIDENCE_QUERY_LIMIT };
 }
 
-/** The founder's deletions of update records among `events` (their own deletions, as read). */
+export interface RemovedRecords {
+  /** How many update records the founder deleted (deletions that say they remove an update record). */
+  count: number;
+  /**
+   * How many more records the founder deleted without saying what kind they were. The server accepts such a deletion,
+   * so each may have been an update record.
+   */
+  unnamed: number;
+  /** When the newest of those deletions (of either sort) was made, or null when there is none. */
+  lastAt: number | null;
+  /** The founder's deletions were read to the end. False when there are more than could be read. */
+  complete: boolean;
+}
+
+/**
+ * The founder's deletions of update records among `events` (their own deletions, as read), and whether that read
+ * reached the end. A deletion naming a project record (an `a` tag only) or saying it removes another kind is neither.
+ */
 export function removedRecords(
   events: readonly DeletionEvent[],
   founder: string,
+  complete: boolean,
 ): RemovedRecords {
   const removed = new Set<string>();
+  const unnamed = new Set<string>();
   let lastAt: number | null = null;
   for (const event of events) {
     if (event.kind !== 5 || event.pubkey !== founder) continue;
-    // A deletion says which kind it removes; one that does not say is not counted as an update's.
-    if (
-      !event.tags.some(
-        (tag) => tag[0] === "k" && tag[1] === String(KIND_LAUNCH_UPDATE),
-      )
-    )
-      continue;
     const ids = event.tags
       .filter((tag) => tag[0] === "e" && typeof tag[1] === "string")
       .map((tag) => tag[1]);
     if (ids.length === 0) continue;
-    for (const id of ids) removed.add(id);
+    const kinds = event.tags
+      .filter((tag) => tag[0] === "k")
+      .map((tag) => tag[1]);
+    const into = kinds.includes(String(KIND_LAUNCH_UPDATE))
+      ? removed
+      : kinds.length === 0
+        ? unnamed
+        : null;
+    if (!into) continue;
+    for (const id of ids) into.add(id);
     if (lastAt === null || event.created_at > lastAt) lastAt = event.created_at;
   }
-  return {
-    count: removed.size,
-    lastAt,
-    atLeast: events.length >= REMOVED_READ_LIMIT,
-  };
+  // One named in both ways is an update record, counted once.
+  for (const id of removed) unnamed.delete(id);
+  return { count: removed.size, unnamed: unnamed.size, lastAt, complete };
 }
 
-/** "The founder has removed 2 update records, the last on 3 Nov 2026.", or null when none was removed. */
+const records = (n: number, what: string) =>
+  n === 1 ? `1 ${what}` : `${n} ${what}s`;
+
+/**
+ * What the page says about removals, or null when the founder removed nothing and that is known.
+ *
+ * - "The founder has removed 2 update records, the last on 3 Nov 2026."
+ * - with removals that do not say their kind: "... and 3 other records without saying what kind they were."
+ * - only those: "The founder has removed 3 records without saying what kind they were. Some may have been updates."
+ * - a read that did not reach the end says "at least", and with nothing found says removals could not be checked.
+ */
 export function removedLine(
   removed: RemovedRecords,
   day: (at: number) => string,
 ): string | null {
-  if (removed.count === 0 || removed.lastAt === null) return null;
-  const many = removed.atLeast
-    ? `at least ${removed.count} update records`
-    : removed.count === 1
-      ? "1 update record"
-      : `${removed.count} update records`;
-  return `The founder has removed ${many}, the last on ${day(removed.lastAt)}.`;
+  const { count, unnamed, lastAt, complete } = removed;
+  if (count + unnamed === 0 || lastAt === null)
+    return complete
+      ? null
+      : "Whether the founder has removed update records could not be checked: they have more removals than could be read here.";
+  const least = complete ? "" : "at least ";
+  if (count === 0)
+    return `The founder has removed ${least}${records(unnamed, "record")} without saying what kind they were, the last on ${day(lastAt)}. Some may have been updates.`;
+  const also =
+    unnamed > 0
+      ? `, and ${records(unnamed, "other record")} without saying what kind they were`
+      : "";
+  return `The founder has removed ${least}${records(count, "update record")}${also}. The last removal was on ${day(lastAt)}.`;
 }

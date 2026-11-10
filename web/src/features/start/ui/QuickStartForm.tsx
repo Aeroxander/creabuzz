@@ -39,7 +39,10 @@ import {
   EMPTY_QUICK_START,
   loadMadeProject,
   loadQuickStart,
+  loadStartAttempt,
   type MadeProject,
+  projectToStart,
+  saveStartAttempt,
   saveMadeProject,
   type QuickStartDraft,
   quickStartGoal,
@@ -124,32 +127,35 @@ export function QuickStartForm() {
     let project = made;
     try {
       if (!project) {
-        const taken = [...(ownIds.data ?? [])];
-        let id = freshLaunchId({
-          name: draft.name,
-          mine: taken,
-          removed: removed.data ?? [],
+        // An earlier press may have landed on the server while its answer was lost. Then the project is there under
+        // the id that press tried, and this press carries on with it instead of making a second one beside it. If the
+        // server cannot be asked, nothing is made.
+        const plan = await projectToStart({
+          attempt: loadStartAttempt(sessionStorage, me),
+          hasOwn: async (id) => (await fetchOwnRecord(me, id)) !== null,
+          fresh: (taken) =>
+            freshLaunchId({
+              name: draft.name,
+              mine: [...taken],
+              removed: removed.data ?? [],
+            }),
+          mine: ownIds.data ?? [],
         });
-        // Asked once more, by id, just before publishing: a project made a moment ago elsewhere is not replaced. If
-        // this read fails, nothing is made.
-        if (await fetchOwnRecord(me, id)) {
-          taken.push(id);
-          id = freshLaunchId({
-            name: draft.name,
-            mine: taken,
-            removed: removed.data ?? [],
-          });
+        if (!plan.adopt) {
+          // The id is kept before anything is sent, so a lost answer can be told from a clash on the next press.
+          saveStartAttempt(sessionStorage, { id: plan.id, author: me });
+          await create.mutateAsync(
+            ideaToInput({
+              id: plan.id,
+              name: draft.name,
+              pitch: draft.pitch,
+              chat: EMPTY_CHAT,
+            }),
+          );
         }
-        const event = await create.mutateAsync(
-          ideaToInput({
-            id,
-            name: draft.name,
-            pitch: draft.pitch,
-            chat: EMPTY_CHAT,
-          }),
-        );
-        project = { id, author: event.pubkey, goalId: newGoalId() };
+        project = { id: plan.id, author: me, goalId: newGoalId() };
         setMade(project);
+        saveStartAttempt(sessionStorage, null);
       }
     } catch (cause) {
       setFailure(
@@ -331,6 +337,7 @@ export function QuickStartForm() {
             className="h-auto p-0"
             onClick={() => {
               setMade(null);
+              saveStartAttempt(sessionStorage, null);
               setFailure(null);
               setNotShownYet(false);
               setDraft(EMPTY_QUICK_START);
