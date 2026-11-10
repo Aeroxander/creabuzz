@@ -10,7 +10,7 @@ import { isContributorProject } from "../lib/funding";
 import type { ReactNode } from "react";
 
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
-import { cn } from "@/shared/lib/cn";
+import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { ServerImage } from "@/shared/ui/ServerImage";
 import { progressPercent } from "../chain";
@@ -34,7 +34,10 @@ export function LaunchHero({
   chips,
   idea = false,
   supporters = null,
+  followNote = false,
 }: {
+  /** Says what following gives, under the buttons. Off where there is nothing to follow (a pretend project). */
+  followNote?: boolean;
   record: LaunchRecord;
   stage: LaunchStage;
   /** The funding status to show; null when the surface cannot resolve one. */
@@ -133,7 +136,7 @@ export function LaunchHero({
                 className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary-ink"
                 data-testid="launch-idea-badge"
               >
-                Idea
+                Project
               </span>
             ) : (
               <StageBadge record={record} stage={stage} />
@@ -147,9 +150,9 @@ export function LaunchHero({
               <span
                 className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-semibold text-violet-300"
                 data-testid="launch-agent-badge-detail"
-                title={`Run by an AI helper (${record.agent.slice(0, 8)}…)`}
+                title="An agent runs this project"
               >
-                AI-run
+                Agent
               </span>
             ) : null}
           </h1>
@@ -175,31 +178,36 @@ export function LaunchHero({
           {chips ? <div className="mt-3">{chips}</div> : null}
         </div>
         <div className="flex flex-col items-end gap-2">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             {showFollow ? (
-              <button
-                aria-label={followed ? "Unfollow launch" : "Follow launch"}
+              <Button
                 aria-pressed={followed}
-                className={cn(
-                  "grid h-10 w-10 place-items-center rounded-lg border",
-                  followed
-                    ? "border-amber-500/50 text-amber-500"
-                    : "border-border",
-                )}
                 data-testid="launch-follow"
                 disabled={followDisabled}
                 onClick={onToggleFollow}
                 type="button"
+                variant={followed ? "outline" : "default"}
               >
                 <Star
                   aria-hidden
-                  className="h-4 w-4"
+                  className="mr-1 h-4 w-4"
                   fill={followed ? "currentColor" : "none"}
                 />
-              </button>
+                {followed ? "Following" : "Follow"}
+              </Button>
             ) : null}
             {actions}
           </div>
+          {followNote ? (
+            <p
+              className="max-w-60 text-right text-xs text-muted-foreground"
+              data-testid="launch-follow-note"
+            >
+              {followed
+                ? "You follow this project. Its updates show in your Home, under Updates."
+                : "Follow to get this project's updates in your Home, under Updates."}
+            </p>
+          ) : null}
           {note}
         </div>
       </div>

@@ -21,6 +21,13 @@ import {
 import { parseUnlockPlan, type UnlockPlan } from "./lib/unlock-plans.ts";
 import { isHelpSignalTags } from "./lib/help-request.ts";
 import { partsFromTags, type UpdateParts } from "./lib/weekly-update.ts";
+import { isGoalRecordTags } from "./lib/goals.ts";
+import {
+  parseMarks,
+  parsePromises,
+  type PromiseMark,
+  type UpdatePromise,
+} from "./lib/promises.ts";
 import {
   KIND_LAUNCH_BID,
   KIND_LAUNCH_PROPOSAL,
@@ -242,6 +249,9 @@ export interface LaunchUpdate {
   parts?: UpdateParts;
   /** The help this update asks for, when it asks for any: shown as a card people can answer. */
   help?: UpdateParts["help"];
+  /** What this update promised for the next one, and its answers to earlier promises (`lib/promises.ts`). */
+  promises?: UpdatePromise[];
+  marks?: PromiseMark[];
   /**
    * Set when this update is the evidence a contributor submitted for a work claim: the claim it is for, the work budget
    * that holds it, and the exact words of the acceptance check. Reviewers read it, and it counts only when it hashes to
@@ -619,6 +629,8 @@ export function parseLaunchUpdate(event: NostrEvent): LaunchUpdate | null {
   if (!ref) return null;
   const body = contentObject(event);
   const parts = partsFromTags(event.tags);
+  const promises = parsePromises(event.tags);
+  const marks = parseMarks(event.tags);
   return {
     id: event.id,
     launchId: ref.launchId,
@@ -629,6 +641,8 @@ export function parseLaunchUpdate(event: NostrEvent): LaunchUpdate | null {
     body: typeof body.body === "string" ? body.body : "",
     links: strs(body.links),
     ...(parts ? { parts, help: parts.help } : {}),
+    ...(promises.length > 0 ? { promises } : {}),
+    ...(marks.length > 0 ? { marks } : {}),
     claim: parseUpdateClaim(body.claim),
     workArea: parseUpdateClaim(body.workArea),
     ...(isCheckNote(body.check) ? { checkNote: true as const } : {}),
@@ -828,6 +842,8 @@ export function buildLaunches(
       // An offer to help, a reply to one or "Help found" answers an update; it is not one. They are read for one
       // project at a time (`use-help-requests.ts`), never kept from this list, which is cut at a fixed size.
       if (isHelpSignalTags(event.tags)) continue;
+      // A goal record is the project's goal, not news: it is read with the project's own records.
+      if (isGoalRecordTags(event.tags)) continue;
       const update = parseLaunchUpdate(event);
       if (update) updates.push(update);
     } else if (event.kind === KIND_LAUNCH_PROPOSAL) {

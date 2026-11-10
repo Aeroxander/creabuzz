@@ -36,6 +36,8 @@ import {
   type LaunchTab,
   type PageKind,
   tabAlias,
+  tabShown,
+  type TabUse,
 } from "../lib/launch-tabs";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { markSupportersSeen } from "../use-founder-activity";
@@ -51,9 +53,14 @@ import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { getRpcEndpoint } from "../chain";
 import { useAuctionProgress, OwnershipOnlyNote } from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
-import { PostUpdateDialog } from "./PostUpdateDialog";
 import { ProjectUpdateCard } from "./ProjectUpdateCard";
+import { ProjectGoalCard } from "./ProjectGoalCard";
+import { ProjectOpenHelp } from "./ProjectOpenHelp";
+import { ProjectRecordCard } from "./ProjectRecordCard";
 import { helpQueryKey } from "../use-help-requests";
+import { TabUsesProbe, UpdateDialogWithPromises } from "./ProjectFrontParts";
+import { SIGN_UP_EVENT } from "@/features/identity/lib/account-copy";
+import { existingUserPubkey } from "@/shared/lib/identity";
 import { type UpdateDraft, updateEvent } from "../lib/weekly-update";
 import { sandboxRecord } from "../lib/sandbox";
 import { ManagePanel } from "./ManagePanel";
@@ -160,6 +167,8 @@ export function LaunchDetailPage({
     }
   }, [tab]);
   const follows = useLaunchFollows();
+  // Which of the tabs shown only once used this project uses. Empty until read: an unread answer hides nothing.
+  const [tabUses, setTabUses] = useState<Partial<Record<Tab, TabUse>>>({});
   const navigate = useNavigate({ from: "/launchpad/$launchId" });
   const setTab = useCallback(
     (next: Tab) => {
@@ -316,6 +325,14 @@ export function LaunchDetailPage({
   const contributor = isContributorProject(launch.record);
   const coord = launchCoord(launch.record);
   const followed = follows.followed.has(coord);
+  // Signed out: the account dialog, then the person can come back to the same button.
+  const toggleFollow = (onDone?: () => void) => {
+    if (existingUserPubkey() === null) {
+      window.dispatchEvent(new Event(SIGN_UP_EVENT));
+      return;
+    }
+    follows.toggle(coord, onDone);
+  };
 
   // The Work tab needs a DAO to read: the one this launch settled into, or the one its community bound.
   const workDao =
@@ -360,7 +377,10 @@ export function LaunchDetailPage({
   const raises = raisesOffered();
   const kind: PageKind = idea ? "idea" : contributor ? "contributor" : "raise";
   const allowed = allowedTabs(kind, raises);
-  const visibleTabs = allowed ? tabs.filter((t) => allowed.has(t.id)) : tabs;
+  const visibleTabs = (
+    allowed ? tabs.filter((t) => allowed.has(t.id)) : tabs
+  ).filter((t) => tabShown(t.id, { isFounder, uses: tabUses }));
+  const rowTabs = visibleTabs.filter((t) => !t.founderOnly || isFounder);
   // A link to a tab this project does not show (an old `?tab=treasury`) opens the overview, or the tab with the same
   // things on it.
   const wanted = tabAlias(tab, kind);
@@ -391,7 +411,7 @@ export function LaunchDetailPage({
               <BackIdeaButton
                 disabled={!follows.ready || follows.pending}
                 followed={followed}
-                onToggle={(onDone) => follows.toggle(coord, onDone)}
+                onToggle={toggleFollow}
                 supportersRoom={launch.record.chat.supporters}
               />
             ) : mainAction === null || !raisesOffered() ? null : (
@@ -434,17 +454,27 @@ export function LaunchDetailPage({
           ) : null
         }
         note={
-          contributor ? null : (
+          // A project with no Shares and no sale has nothing to buy, so the buyer's note has nothing to stand beside.
+          contributor || idea ? null : (
             /* §7 "Launch page copy": what a buyer acquires, said before the
                bid button — ownership only, never a yield. */
             <OwnershipOnlyNote className="max-w-60 text-right" />
           )
         }
-        onToggleFollow={() => follows.toggle(coord)}
+        onToggleFollow={() => toggleFollow()}
         record={launch.record}
+        followNote={!sandbox && !isFounder}
         showFollow={!sandbox && !idea}
         stage={stage}
       />
+
+      {sandbox ? null : (
+        <>
+          <TabUsesProbe launch={launch} onUses={setTabUses} />
+          {/* What the project is for comes first: its goal, and how everyone will know. */}
+          <ProjectGoalCard isFounder={isFounder} launch={launch} />
+        </>
+      )}
 
       {/* The project's news, above the tabs; the Updates tab is the full list, so it is not repeated there. */}
       {!sandbox && shown !== "updates" ? (
@@ -456,6 +486,13 @@ export function LaunchDetailPage({
           workTab={hasWorkTab}
         />
       ) : null}
+
+      {sandbox ? null : (
+        <>
+          <ProjectOpenHelp launch={launch} workTab={hasWorkTab} />
+          <ProjectRecordCard isFounder={isFounder} launch={launch} />
+        </>
+      )}
 
       {!sandbox && isFounder && idea ? (
         <IdeaProgressCard launch={launch} />
@@ -473,7 +510,8 @@ export function LaunchDetailPage({
         <LaunchChatCard isFounder={isFounder} launch={launch} />
       )}
 
-      <div className="relative">
+      {/* One tab is no choice: the row shows once there is a second one. */}
+      <div className={cn("relative", rowTabs.length < 2 && "hidden")}>
         <div
           className="flex gap-x-5 overflow-x-auto border-b border-border [scrollbar-width:none]"
           onScroll={measureTabs}
@@ -481,25 +519,23 @@ export function LaunchDetailPage({
           role="tablist"
           aria-label={contributor ? "Project sections" : "Launch sections"}
         >
-          {visibleTabs
-            .filter((t) => !t.founderOnly || isFounder)
-            .map((t) => (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={shown === t.id}
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  "-mb-px shrink-0 whitespace-nowrap border-b-[3px] px-1 pb-2 text-sm font-semibold transition-colors",
-                  shown === t.id
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-                type="button"
-              >
-                {t.label}
-              </button>
-            ))}
+          {rowTabs.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={shown === t.id}
+              onClick={() => setTab(t.id)}
+              className={cn(
+                "-mb-px shrink-0 whitespace-nowrap border-b-[3px] px-1 pb-2 text-sm font-semibold transition-colors",
+                shown === t.id
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+              type="button"
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
         {/* Decorative: the tabs themselves stay reachable by keyboard and screen reader whatever is scrolled. */}
         {tabOverflow.left ? (
@@ -700,11 +736,12 @@ export function LaunchDetailPage({
         />
       ) : null}
       {updateOpen && isFounder ? (
-        <PostUpdateDialog
+        <UpdateDialogWithPromises
           failed={updateFailed}
           isPublishing={mirror.isPending}
           onClose={() => setUpdateOpen(false)}
           onPublish={postUpdate}
+          project={launch.record}
         />
       ) : null}
     </div>

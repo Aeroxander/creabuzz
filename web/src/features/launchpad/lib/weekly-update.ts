@@ -11,6 +11,13 @@
  * Pure and alias-free: `weekly-update.test.mjs` drives it under `node --test`.
  */
 
+import {
+  type MarkDraft,
+  markTags,
+  marksSection,
+  promiseTags,
+} from "./promises.ts";
+
 export const HELP_SIZES = ["small", "medium", "large"] as const;
 export type HelpSize = (typeof HELP_SIZES)[number];
 
@@ -66,6 +73,8 @@ export interface UpdateDraft {
   help: string;
   helpSize: HelpSize;
   helpTime: string;
+  /** The founder's answers to the promises earlier updates made (`lib/promises.ts`). */
+  marks?: readonly MarkDraft[];
 }
 
 function clip(value: string, max: number): string {
@@ -115,9 +124,13 @@ export function updateEvent(draft: UpdateDraft): {
     help: helpText ? { text: helpText, size, time: helpTime } : null,
   };
 
+  const answered = marksSection(draft.marks ?? []);
+
   const tags: string[][] = [];
   if (done) tags.push([TAG_PART, "done", done]);
   if (next) tags.push([TAG_PART, "next", next]);
+  // Each line of "What's next" is also its own tag: a promise the next update answers.
+  tags.push(...promiseTags(next), ...markTags(draft.marks ?? []));
   if (helpText) {
     tags.push([TAG_HELP, helpText], [TAG_HELP_SIZE, size]);
     if (helpTime) tags.push([TAG_HELP_TIME, helpTime]);
@@ -125,7 +138,12 @@ export function updateEvent(draft: UpdateDraft): {
   return {
     content: {
       title: clip(draft.title, UPDATE_LIMITS.title),
-      body: [...(free ? [free] : []), ...partSections(parts)].join("\n\n"),
+      // The answers read as plain words after the founder's own, before the prompts' sections.
+      body: [
+        ...(free ? [free] : []),
+        ...(answered ? [answered] : []),
+        ...partSections(parts),
+      ].join("\n\n"),
     },
     tags,
   };

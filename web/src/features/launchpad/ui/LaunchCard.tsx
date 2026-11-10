@@ -171,9 +171,9 @@ export function LaunchCard({
             <span
               className="rounded-full bg-violet-500/15 px-1.5 py-0.5 text-2xs font-semibold text-violet-300"
               data-testid="launch-agent-badge"
-              title={`Run by an AI helper (${record.agent.slice(0, 8)}…)`}
+              title="An agent runs this project"
             >
-              AI-run
+              Agent
             </span>
           ) : null}
         </p>

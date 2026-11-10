@@ -1072,7 +1072,7 @@ test("an idea starts in one step with an open supporters room, and a supporter j
     // She is not a backer, so there is no gated room to be locked out of yet.
     await alice.getByTestId("launch-back-idea").click();
     await expect(alice.getByTestId("launch-back-idea")).toContainText(
-      "You're in",
+      "Following",
       {
         timeout: 30_000,
       },

@@ -24,8 +24,8 @@ function between(text, start, end) {
 test("an idea's sale steps show only where the build offers raises", () => {
   const card = source("./IdeaProgressCard.tsx");
   assert.match(card, /const raises = raisesOffered\(\);/);
-  // Everything that prepares a sale sits in the `raises ?` branch, before its `) : (`.
-  const saleBranch = between(card, "{raises ? (", ") : (");
+  // Everything that prepares a sale sits in the `raises ?` branch, before its `) : null}`.
+  const saleBranch = between(card, "{raises ? (", ") : null}");
   for (const testId of ["idea-prepare-sale", "idea-prepare-anyway"]) {
     assert.equal(
       card.split(`"${testId}"`).length - 1,
@@ -35,15 +35,14 @@ test("an idea's sale steps show only where the build offers raises", () => {
     assert.match(saleBranch, new RegExp(`"${testId}"`), `${testId} is gated`);
   }
   assert.match(card, /\{raises && preparing \? \(\s*<CreateLaunchDialog/);
-  // Without raises the idea still leads somewhere: a contributor project.
-  const otherwise = between(
-    card.slice(card.indexOf("{raises ? (") + saleBranch.length),
-    ") : (",
-    ")}",
-  );
-  assert.match(otherwise, /data-testid="idea-start-contributor"/);
-  assert.match(otherwise, /to="\/start\/contributor"/);
-  assert.doesNotMatch(otherwise, /sale/i);
+  // Setting up Shares is in every build, outside the sale's branch: the founder's one way to it from the page.
+  const after = card.slice(card.indexOf(saleBranch) + saleBranch.length);
+  assert.equal(card.split('"idea-start-contributor"').length - 1, 1);
+  assert.match(after, /data-testid="idea-start-contributor"/);
+  assert.match(after, /to="\/start\/contributor"/);
+  assert.doesNotMatch(saleBranch, /idea-start-contributor/);
+  // Never worded as something to earn.
+  assert.doesNotMatch(after, /\bearn/i);
 });
 
 test("an idea promises a sale only where the build offers raises", () => {

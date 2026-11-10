@@ -22,6 +22,11 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import { readEvidenceEvents } from "./lib/evidence-query";
 import {
+  type GoalVersion,
+  isGoalRecordTags,
+  parseGoalVersion,
+} from "./lib/goals";
+import {
   foundEvent,
   type HelpNotice,
   helpNotices,
@@ -65,6 +70,8 @@ export interface ProjectUpdatesRead {
   updates: LaunchUpdate[];
   /** Offers, replies and "Help found" marks on this project. */
   signals: HelpSignal[];
+  /** The project's goal records, anyone's: the reader keeps only the founder's (`lib/goals.ts`). */
+  goals: GoalVersion[];
   /** The records were read to the end. False when the project has more than the bound. */
   complete: boolean;
   /** Posts about this project marked as updates (the other form an update takes). */
@@ -98,11 +105,16 @@ export function useProjectUpdates(project: Project) {
         updates: records.events
           .flatMap((event) => {
             if (isHelpSignalTags(event.tags)) return [];
+            if (isGoalRecordTags(event.tags)) return [];
             const update = parseLaunchUpdate(event);
             return update ? [update] : [];
           })
           .sort((a, b) => b.createdAt - a.createdAt),
         signals: signalsOf(records.events),
+        goals: records.events.flatMap((event) => {
+          const goal = parseGoalVersion(event);
+          return goal ? [goal] : [];
+        }),
         complete: records.complete,
         posts,
         postsCut: posts.length >= MARKED_POSTS_LIMIT,

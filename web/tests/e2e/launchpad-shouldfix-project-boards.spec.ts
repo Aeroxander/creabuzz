@@ -222,7 +222,7 @@ test("if the second board is refused the first stays in the project, the problem
   expect(named(newestRecord(relay, "nebula"))).toHaveLength(2);
 });
 
-test("someone who did not publish the project sees its boards but is not offered to make any", async ({
+test("someone who did not publish the project is not offered to make its boards, and gets no empty Boards tab", async ({
   page,
 }) => {
   const relay = createOwningRelay();
@@ -230,9 +230,13 @@ test("someone who did not publish the project sees its boards but is not offered
   relay.seed(project({ id: "nebula", name: "Nebula", author: OTHER }));
   await openAs(page, relay, `/launchpad/nebula?author=${OTHER}&tab=boards`);
 
-  await expect(page.getByTestId("project-boards-empty")).toContainText(
-    "Its founder can add them.",
+  // A project with no boards shows a visitor no Boards tab: an old link to it opens the project's first page.
+  await expect(page.getByTestId("launch-hero")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+    "aria-selected",
+    "true",
   );
+  await expect(page.getByRole("tab", { name: "Boards" })).toHaveCount(0);
   await expect(page.getByTestId("project-boards-add")).toHaveCount(0);
 });
 

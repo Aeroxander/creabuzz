@@ -6,6 +6,7 @@ import {
   founderSettings,
   ideaShowsTeamSurfaces,
   tabAlias,
+  tabShown,
 } from "./launch-tabs.ts";
 
 test("an idea in a build without raises has no helpers tab, and keeps the rest", () => {
@@ -76,4 +77,34 @@ test("every kind of project page keeps a Boards tab, in every build", () => {
   }
   // A raise shows every tab the page has, Boards among them.
   assert.equal(allowedTabs("raise", true), null);
+});
+
+test("a visitor gets the updates, boards and helpers tabs only once the project uses them", () => {
+  const visitor = (uses) => (tab) => tabShown(tab, { isFounder: false, uses });
+  const unused = visitor({ updates: "no", boards: "no", agents: "no" });
+  for (const tab of ["updates", "boards", "agents"])
+    assert.equal(unused(tab), false, tab);
+  const used = visitor({ updates: "yes", boards: "yes", agents: "yes" });
+  for (const tab of ["updates", "boards", "agents"])
+    assert.equal(used(tab), true, tab);
+  // Everything else is not hidden by use: the overview, the talk, and what a project with Shares runs on.
+  for (const tab of ["overview", "discussion", "work", "decisions", "treasury"])
+    assert.equal(unused(tab), true, tab);
+});
+
+test("a read that failed, or has not answered, never takes a tab away", () => {
+  for (const tab of ["updates", "boards", "agents"]) {
+    assert.equal(
+      tabShown(tab, { isFounder: false, uses: { [tab]: "unknown" } }),
+      true,
+      tab,
+    );
+    assert.equal(tabShown(tab, { isFounder: false, uses: {} }), true, tab);
+  }
+});
+
+test("the founder always has every tab: an empty one is where they set it up", () => {
+  const uses = { updates: "no", boards: "no", agents: "no" };
+  for (const tab of ["updates", "boards", "agents", "manage"])
+    assert.equal(tabShown(tab, { isFounder: true, uses }), true, tab);
 });

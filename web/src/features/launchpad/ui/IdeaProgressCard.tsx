@@ -1,11 +1,10 @@
 /**
- * The founder's next steps while a launch is still just an idea: say something,
- * gather supporters, then prepare the sale. The sale (token, split, price) is
- * the heavy part, so it waits until people have shown up.
+ * The founder's next steps while a project has no Shares and no sale: say something, gather supporters, then set up
+ * what comes later. The later steps are the heavy part, so they wait until people have shown up.
  *
- * A build that offers no raises (`raisesOffered`, the contributor-only hosted
- * image) has no sale to prepare: the last step there is starting a contributor
- * project, so the idea leads somewhere instead of to a sale that cannot launch.
+ * Setting up Shares for people who help is always here. It is the founder's one way to it from the project page, so
+ * no other card or tab may take its place (a guard must not hide the only way back). A build that offers raises
+ * (`raisesOffered`) also offers to prepare a sale.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -72,18 +71,18 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
 
   return (
     <Card className="p-4" data-testid="idea-progress">
-      <h2 className="text-sm font-bold">Your idea is live</h2>
+      <h2 className="text-sm font-bold">Next steps</h2>
       <p className="text-xs text-muted-foreground">
         {raises
           ? "No token or price yet. Build interest first; set up the sale when you are ready."
-          : "Build interest first. When people want to help, start a contributor project for it."}
+          : "Your project is live. Post an update each week, and do these when you are ready."}
       </p>
       <ul className="mt-2 divide-y divide-border/60">
         <Step done={announced} title="Announce it">
           {writing ? (
             <div className="mt-1.5">
               <PostComposer
-                initialText={`I'm starting ${record.name}: ${record.pitch}\n\n${raises ? "Say you'd back it and join the chat." : "Say you're interested and join the chat."}`}
+                initialText={`I'm starting ${record.name}: ${record.pitch}\n\n${raises ? "Say you'd back it and join the chat." : "Follow it to see how it goes."}`}
                 onPosted={() => setWriting(false)}
                 teamUpdateFor={{
                   author: record.author,
@@ -147,35 +146,35 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
               ) : null}
             </div>
           </Step>
-        ) : (
-          <Step done={false} title="Start a contributor project">
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Set up the work and who reviews it. People who help earn Shares,
-              which are votes in the project. The idea&apos;s name and sentence
-              fill the form.
-            </p>
-            <Button
-              asChild
-              className="mt-1.5"
-              data-testid="idea-start-contributor"
-              size="sm"
+        ) : null}
+        <Step done={false} title="Set up Shares for people who help">
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Shares are votes in the project. You choose who reviews work, and
+            the project awards Shares for work the reviewers accept. It stays
+            the same project, with its goal, updates and record.
+          </p>
+          <Button
+            asChild
+            className="mt-1.5"
+            data-testid="idea-start-contributor"
+            size="sm"
+            variant={raises ? "outline" : "default"}
+          >
+            <Link
+              onClick={() =>
+                handOffIdea(sessionStorage, {
+                  id: record.id,
+                  author: record.author,
+                  name: record.name,
+                  pitch: record.pitch,
+                })
+              }
+              to="/start/contributor"
             >
-              <Link
-                onClick={() =>
-                  handOffIdea(sessionStorage, {
-                    id: record.id,
-                    author: record.author,
-                    name: record.name,
-                    pitch: record.pitch,
-                  })
-                }
-                to="/start/contributor"
-              >
-                Start a contributor project
-              </Link>
-            </Button>
-          </Step>
-        )}
+              Set up Shares
+            </Link>
+          </Button>
+        </Step>
       </ul>
       {raises && preparing ? (
         <CreateLaunchDialog

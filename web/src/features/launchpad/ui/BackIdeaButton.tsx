@@ -1,14 +1,13 @@
 /**
- * "I'd back this": the free way to support an idea. It follows the launch (the
- * signal the supporter count reads) and joins the open supporters room, so a
- * single click puts a person in the conversation.
+ * "Follow": the free way to support a project that has no Shares yet. It follows the project (the signal the supporter
+ * count reads, and what puts its updates in the person's Home) and joins the open supporters room, so a single click
+ * puts a person in the conversation.
  */
 
 import { toast } from "sonner";
 
 import { Button } from "@/shared/ui/button";
 
-import { raisesOffered } from "../lib/raises-offered";
 import { useJoinRoom } from "../use-launch-chat";
 
 export function BackIdeaButton({
@@ -34,7 +33,7 @@ export function BackIdeaButton({
       join.mutate(undefined, {
         onError: () =>
           toast.error(
-            "You are in, but the supporters room did not open. Use Join in the chat card.",
+            "You follow the project, but the supporters room did not open. Use Join in the chat card.",
           ),
       });
     });
@@ -47,11 +46,7 @@ export function BackIdeaButton({
       onClick={onClick}
       variant={followed ? "outline" : "default"}
     >
-      {followed
-        ? "You're in ✓"
-        : raisesOffered()
-          ? "I'd back this"
-          : "I'm interested"}
+      {followed ? "Following" : "Follow"}
     </Button>
   );
 }

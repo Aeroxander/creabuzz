@@ -99,3 +99,36 @@ export function founderSettings(
 export function ideaShowsTeamSurfaces(raises: boolean): boolean {
   return raises;
 }
+
+/** Whether a project uses a part of its page: it does, it does not, or that could not be read. */
+export type TabUse = "yes" | "no" | "unknown";
+
+/**
+ * The tabs that are shown only once the project uses them: its list of updates, its boards, and its people and
+ * helpers. The Discussion tab is not one of them: it is where a visitor writes the first word, so hiding it while
+ * empty would leave nobody able to begin. Work, Decisions, Contributions and Funds exist only for a project that has
+ * set up Shares, which is already "in use".
+ */
+const SHOWN_WHEN_USED: ReadonlySet<LaunchTab> = new Set([
+  "updates",
+  "boards",
+  "agents",
+]);
+
+/**
+ * Whether a tab the project's kind allows is shown to this viewer.
+ *
+ * The founder always gets every tab of their project: an empty Boards tab is where they make the first board, so
+ * hiding it from them would hide the only way to set it up. Everyone else gets a tab once the project uses it. When
+ * whether it is used could not be read, the tab is shown: a failed read never takes a part of the page away.
+ */
+export function tabShown(
+  tab: LaunchTab,
+  input: {
+    isFounder: boolean;
+    uses: Partial<Record<LaunchTab, TabUse>>;
+  },
+): boolean {
+  if (input.isFounder || !SHOWN_WHEN_USED.has(tab)) return true;
+  return (input.uses[tab] ?? "unknown") !== "no";
+}
