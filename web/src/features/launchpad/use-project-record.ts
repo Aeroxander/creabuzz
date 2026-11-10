@@ -16,6 +16,7 @@ import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import {
   type GoalInput,
   goalEvent,
+  goalSignedAt,
   type ProjectGoals,
   projectGoals,
 } from "./lib/goals";
@@ -79,10 +80,13 @@ export function useProjectRecord(project: Project): {
 /** Publishes a goal as it now stands: one signed record, which the page then reads back. */
 export function publishGoal(project: Project, goal: GoalInput) {
   const { content, tags } = goalEvent(goal);
+  // Later than the version it replaces, whatever the clock says: the newest record is the goal as it stands.
+  const createdAt = goalSignedAt(Math.floor(Date.now() / 1000), goal.after);
   return publishMirror({
     kind: KIND_LAUNCH_UPDATE,
     tags: [["a", launchCoordinate(project.author, project.id)], ...tags],
     content,
+    ...(createdAt === undefined ? {} : { createdAt }),
   });
 }
 

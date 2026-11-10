@@ -6,6 +6,7 @@ import {
   goalEvent,
   goalIssue,
   goalRecordEntries,
+  goalSignedAt,
   goalTotals,
   goalTotalsLine,
   isGoalRecordTags,
@@ -253,4 +254,44 @@ test("a new goal id is short and safe to put in a tag", () => {
   const id = newGoalId(() => 0.5);
   assert.match(id, /^[a-z0-9][a-z0-9-]{0,63}$/);
   assert.equal(parseGoalVersion(record(goal({ id }), 1)).id, id);
+});
+
+test("a goal changed twice in one second: the second change is signed later, so it is the goal as it stands", () => {
+  // The clock is later than the version being replaced: the record is signed now.
+  assert.equal(goalSignedAt(1_000, 990), undefined);
+  // A new goal replaces nothing.
+  assert.equal(goalSignedAt(1_000, undefined), undefined);
+  // The same second, or a clock that runs behind the device that saved the last version: one second after it.
+  assert.equal(goalSignedAt(1_000, 1_000), 1_001);
+  assert.equal(goalSignedAt(1_000, 1_030), 1_031);
+
+  // Why it matters: two versions signed in the same second are ordered by their ids, which is a coin toss. Here the
+  // reworded goal has the smaller id and loses; signed when goalSignedAt says, it is the goal whatever its id.
+  const missed = {
+    ...record(goal({ state: "missed", reason: "Too slow" }), 1_000),
+    id: "b".repeat(64),
+  };
+  const reworded = (at) => ({
+    ...record(
+      goal({
+        text: "A first version five people use",
+        reason: "Ten was too many",
+      }),
+      at,
+    ),
+    id: "a".repeat(64),
+  });
+  const tied = projectGoals(
+    [missed, reworded(1_000)].map(parseGoalVersion).filter(Boolean),
+    FOUNDER,
+  );
+  assert.equal(tied.primary.text, goal().text, "tied: the older words win");
+  const ordered = projectGoals(
+    [missed, reworded(goalSignedAt(1_000, 1_000))]
+      .map(parseGoalVersion)
+      .filter(Boolean),
+    FOUNDER,
+  );
+  assert.equal(ordered.primary.text, "A first version five people use");
+  assert.equal(ordered.primary.state, "open");
 });

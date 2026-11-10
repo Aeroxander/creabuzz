@@ -221,8 +221,28 @@ export interface PromiseEntry {
   conflict: boolean;
 }
 
-const byPosted = (a: RecordUpdate, b: RecordUpdate) =>
-  a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1);
+/**
+ * Oldest first. Two updates signed in the same second are put in the order their answers prove: an answer names its
+ * promise by the id of the update that made it, so the update that answers came after the one it answers. Without
+ * that, a tie is settled by id, which is a coin toss, and the older of the two could be taken for "the next update".
+ */
+function updatesInOrder<U extends RecordUpdate>(updates: readonly U[]): U[] {
+  const answered = new Map<string, Set<string>>();
+  for (const update of updates)
+    for (const mark of update.marks ?? []) {
+      const cut = mark.promiseId.lastIndexOf(":");
+      if (cut <= 0) continue;
+      const set = answered.get(update.id) ?? new Set<string>();
+      set.add(mark.promiseId.slice(0, cut));
+      answered.set(update.id, set);
+    }
+  return [...updates].sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+    if (answered.get(a.id)?.has(b.id)) return 1;
+    if (answered.get(b.id)?.has(a.id)) return -1;
+    return a.id < b.id ? -1 : 1;
+  });
+}
 
 /**
  * Every promise the founder's updates made, with how each stands, newest first (by when it was answered, or made when
@@ -237,9 +257,9 @@ export function promiseRecord(
   updates: readonly RecordUpdate[],
   founder: string,
 ): PromiseEntry[] {
-  const mine = updates
-    .filter((update) => update.author === founder)
-    .sort(byPosted);
+  const mine = updatesInOrder(
+    updates.filter((update) => update.author === founder),
+  );
   const made = new Map<string, string>();
   for (const update of mine)
     for (const promise of update.promises ?? [])

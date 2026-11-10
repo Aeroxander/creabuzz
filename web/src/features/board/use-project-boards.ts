@@ -12,7 +12,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { Channel } from "@/features/channels/use-channels";
 import { recordToInput } from "@/features/launchpad/lib/record-input";
 import {
-  fetchLaunches,
+  fetchOwnRecord,
   launchesQueryKey,
   useCreateLaunch,
   useLaunches,
@@ -226,23 +226,18 @@ function useNameBoards() {
     async (launch: Launch, ids: readonly string[]): Promise<number> => {
       const dropped = await nameBoardsInRecord(
         {
+          // The project's own record, read by who published it and its id: the list of every project is cut at its
+          // newest records, and an older project is not in it while it is still on the server.
           readLatest: async () => {
-            const launches = await client.fetchQuery({
-              queryKey: launchesQueryKey,
-              queryFn: fetchLaunches,
-              staleTime: 0,
-            });
-            const latest = launches.find(
-              (entry) =>
-                entry.record.id === launch.record.id &&
-                entry.record.author.toLowerCase() ===
-                  launch.record.author.toLowerCase(),
+            const latest = await fetchOwnRecord(
+              launch.record.author,
+              launch.record.id,
             );
             if (!latest)
               throw new Error(
                 "Couldn't find this project's saved record. Reload the page and try again.",
               );
-            return latest.record;
+            return latest;
           },
           boardsAmong: async (named) =>
             new Set(

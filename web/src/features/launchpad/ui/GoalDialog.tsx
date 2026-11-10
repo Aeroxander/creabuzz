@@ -86,6 +86,7 @@ export function GoalDialog({
       state,
       reason: needsReason ? reason : "",
       ...(target.kind === "new-shorter" ? { under: target.under } : {}),
+      ...(existing ? { after: existing.at } : {}),
     };
     const problem = goalProblem(goal, existing);
     setIssue(problem);

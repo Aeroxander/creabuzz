@@ -71,14 +71,16 @@ export function OfferTask({
   const [open, setOpen] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
 
-  if (task)
+  // Once a task was made here it is said at once and the button stays away: the read that brings the task back takes
+  // a moment on a real server, and a second press in that moment would make a second task.
+  if (task || said)
     return (
       <p className="mt-1 text-sm" data-testid="offer-task-made" role="status">
         {said ??
-          (task.agreed === null
+          (task?.agreed === null
             ? `A task was made from this offer. ${helperName} has not said yes yet.`
             : "This offer is now a task.")}{" "}
-        {task.state === "confirmed" ? (
+        {!task ? null : task.state === "confirmed" ? (
           "The work was accepted."
         ) : (
           <TaskLink id={task.id} launch={launch} />

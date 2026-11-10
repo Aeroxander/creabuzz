@@ -314,3 +314,30 @@ test("a cut read states no totals and never says no goal was set", () => {
     noGoal: false,
   });
 });
+
+test("two updates signed in the same second: the one that answers the other is the later one, whatever their ids", () => {
+  // The answering update has the smaller id, so a tie settled by id would put it first and call its own promise
+  // "not answered" by an update that is in fact the older of the two.
+  const updates = [
+    update(1, 100, {
+      next: "Invite ten people",
+      marks: [mark(2, 0, "done")],
+    }),
+    update(2, 100, { next: "Ship sign-up" }),
+  ];
+  const record = promiseRecord(updates, FOUNDER);
+  assert.deepEqual(record.map((e) => [e.text, e.state]).sort(), [
+    ["Invite ten people", "waiting"],
+    ["Ship sign-up", "kept"],
+  ]);
+  assert.equal(
+    promiseTotalsLine(promiseTotals(record)),
+    "1 kept, 0 missed, 0 changed",
+  );
+  // Different seconds are still ordered by time alone.
+  const apart = promiseRecord(
+    [update(1, 100, { next: "A" }), update(2, 200, { done: "Quiet." })],
+    FOUNDER,
+  );
+  assert.equal(apart[0].state, "unanswered");
+});

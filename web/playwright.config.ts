@@ -124,6 +124,8 @@ export default defineConfig({
         "**/project-goal-record.spec.ts",
         // Tasks with a finish line: made from an offer, handed in, sent back, confirmed by someone else; the profile.
         "**/project-tasks.spec.ts",
+        // The moment between making a task and reading it back, on a server that is slow to answer.
+        "**/project-tasks-slow-read.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

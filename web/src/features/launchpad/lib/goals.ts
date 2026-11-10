@@ -138,6 +138,21 @@ export interface GoalInput {
   state: GoalState;
   reason: string;
   under?: string;
+  /** When the version this one replaces was signed (seconds). Unset for a goal that is new. */
+  after?: number;
+}
+
+/**
+ * When a goal record is signed, given the clock (`now`, seconds) and the version it replaces. Versions are ordered by
+ * the second they were signed, so a change saved in the same second as the one before it (or from a device whose clock
+ * runs behind) would not reliably be the newest: it is signed one second after what it replaces instead. Undefined
+ * when the clock is already later, which is nearly always.
+ */
+export function goalSignedAt(
+  now: number,
+  after: number | undefined,
+): number | undefined {
+  return after !== undefined && after >= now ? after + 1 : undefined;
 }
 
 /** The field a goal's problem is about, so the form can point at it. */

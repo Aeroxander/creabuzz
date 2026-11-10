@@ -871,3 +871,34 @@ test.describe("on a phone", () => {
     );
   });
 });
+
+test("an older project that the list of every project no longer holds can still be given its boards", async ({
+  page,
+}) => {
+  // Found against the real server (`scripts/real-loop-e2e.sh`): the boards were made, then naming them looked the
+  // project up in the list of every project, which is cut at its newest 500 records, and gave up.
+  const relay = createOwningRelay();
+  relay.seed(channel(GENERAL, "general", "stream"));
+  relay.seed(project({ id: "nebula", name: "Nebula" }));
+  const otherCoord = `37001:${OTHER}:orbit`;
+  for (let i = 0; i < 520; i += 1)
+    relay.seed({
+      id: eid(),
+      pubkey: OTHER,
+      created_at: 1_000 + i,
+      kind: 47003,
+      tags: [["a", otherCoord]],
+      content: JSON.stringify({ title: `Note ${i}`, body: "…" }),
+      sig: "sig",
+    });
+  await openAs(page, relay, `/launchpad/nebula?author=${ME}&tab=boards`);
+
+  await page.getByTestId("project-boards-add").click();
+  await expect(
+    page.getByTestId("project-boards-list").getByTestId("project-board-name"),
+  ).toHaveText(["supporters", "founders"]);
+  await expect(page.getByTestId("project-boards-problem")).toHaveCount(0);
+  expect(named(newestRecord(relay, "nebula"))).toEqual(
+    created(relay).map((e) => field(e, "h")),
+  );
+});
