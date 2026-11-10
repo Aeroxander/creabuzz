@@ -1581,6 +1581,11 @@ pub enum LaunchpadCmd {
         #[command(subcommand)]
         step: commands::launchpad_work::WorkCmd,
     },
+    /// Tasks with a finish line, from the helper's side: list, offer, accept, hand in, ask for more time
+    Tasks {
+        #[command(subcommand)]
+        step: commands::launchpad_tasks::TasksCmd,
+    },
     /// Run a claim's declared checks against a local artifact directory and
     /// publish the signed run record reviewers read beside the evidence. Each
     /// check is an argv array executed with no shell, under a per-check
@@ -4077,6 +4082,7 @@ mod tests {
                 "record-receipt",
                 "record-verdict",
                 "show",
+                "tasks",
                 "vote",
                 "work",
                 "work-checks"
@@ -4257,7 +4263,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 20),
+            ("launchpad", 21),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

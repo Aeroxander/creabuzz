@@ -499,6 +499,54 @@ buzz notes get --name dco-check   # exits non-zero: not found
 buzz notes rm --name does-not-exist   # exits non-zero
 ```
 
+### 6.13 Tasks with a finish line (`launchpad tasks`, kind:47003)
+
+A helper's side of a project's tasks. A project asks for help in an update, a helper offers, the team accepts the
+offer in the web app and writes "Done means", the helper hands work in, and someone else on the team checks it.
+`list` prints one JSON object; the writes print `{event_id, accepted, message}`.
+
+There is deliberately no command to confirm work, send it back, cancel a task, vote or award anything.
+
+You need two identities: the founder (`$FOUNDER_HEX`, who owns project `$LAUNCH`) and a helper (the key the CLI runs
+as). Post the update that asks for help, accept the offer and confirm the work from the web app as the founder.
+
+```bash
+# list: open help requests and tasks, each task with its state and what this account can do next
+buzz launchpad tasks list "$LAUNCH" --author "$FOUNDER_HEX" | jq .
+# → {project, help_requests:[{update_id,text,size,offers,offered_by_me}], tasks:[{task_id,state,late,helper,
+#    what,done_means,size,due,mine,next,evidence,more_time}], complete:{help_requests,tasks}, rewards}
+
+# offer on a request (public; not an agreement)
+UPDATE_ID=$(buzz launchpad tasks list "$LAUNCH" --author "$FOUNDER_HEX" | jq -r '.help_requests[0].update_id')
+buzz launchpad tasks offer "$LAUNCH" --author "$FOUNDER_HEX" --update "$UPDATE_ID" --note "I can test this tonight." | jq .
+# again → exit 5 (conflict): this account already offered
+
+# (founder, in the web app: Accept and make a task, with "Done means")
+TASK_ID=$(buzz launchpad tasks list "$LAUNCH" --author "$FOUNDER_HEX" | jq -r '.tasks[] | select(.mine) | .task_id')
+
+# accept: only for a task given directly (state "offered"); a task made from your offer is already yours
+buzz launchpad tasks accept "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" | jq .
+# on a task you already agreed to → exit 5
+
+# submit: words and links (at least one of them)
+buzz launchpad tasks submit "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" \
+  --note "Tested on a Moto G6." --link https://example.org/recording | jq .
+# the same words and links again → exit 5 (a retry never hands in twice)
+# --link ftp://x or no --note/--link → exit 1
+
+# more-time: a reason, and optionally the date asked for
+buzz launchpad tasks more-time "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" \
+  --reason "The phone broke." --until 2027-01-15 | jq .
+# while an earlier ask is unanswered → exit 5
+
+# someone else's task → exit 1; a task id that is not this project's → exit 1 (not found)
+# there is no confirm:
+buzz launchpad tasks confirm "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID"   # exits non-zero: no such command
+```
+
+After `submit`, the task reads `state: "submitted"`, `next: "wait-for-check"`. Once a team member who is not the
+helper confirms it in the web app it reads `state: "confirmed"`, and the helper's profile lists it under Record.
+
 ---
 
 ## 7. Error Path Testing
@@ -638,3 +686,8 @@ buzz channels delete --channel "$FORUM_ID" | jq .
 | 60 | `notes ls` | ☐ | Own, --author all, --tag, --limit |
 | 61 | `notes rm` | ☐ | Delete→get 404, double-delete idempotent, missing slug → NotFound |
 | 62 | `users set-status` | ☐ | Text+emoji, text only, emoji-only (`--text ""`), `--clear`, `--clear` + `--text` → exit 1 |
+| 63 | `launchpad tasks list` | ☐ | Open help requests, task states, `next`, `complete` flags |
+| 64 | `launchpad tasks offer` | ☐ | Second offer → exit 5; team member → exit 1; closed request → exit 1 |
+| 65 | `launchpad tasks accept` | ☐ | Direct task only; already agreed → exit 5; not your task → exit 1 |
+| 66 | `launchpad tasks submit` | ☐ | Note and/or links; bad link → exit 1; identical resubmit → exit 5 |
+| 67 | `launchpad tasks more-time` | ☐ | Reason required; unanswered ask → exit 5; no `confirm` command exists |

@@ -371,6 +371,15 @@ export function isGoalRecordEvent(event: Pick<RelayEvent, "tags">): boolean {
   return event.tags.some((tag) => tag[0] === "goal");
 }
 
+/**
+ * Whether an update record is a task record: it carries a `task-part` tag (a task being made, work handed in, a check,
+ * and so on; the web app's `lib/tasks.ts`). Task records are steps on a task, not news, and are never listed or counted
+ * as updates.
+ */
+export function isTaskRecordEvent(event: Pick<RelayEvent, "tags">): boolean {
+  return event.tags.some((tag) => tag[0] === "task-part");
+}
+
 export function parseLaunchUpdateEvent(event: RelayEvent): LaunchUpdate | null {
   if (event.kind !== KIND_LAUNCH_UPDATE) return null;
   const launchId = launchIdFromCoordinate(tagValue(event.tags, "a"));
@@ -497,6 +506,8 @@ export function buildLaunchesFromEvents(
         if (isHelpSignalEvent(event)) break;
         // A goal record is the project's goal, not news.
         if (isGoalRecordEvent(event)) break;
+        // A task record is a step on a task, not news.
+        if (isTaskRecordEvent(event)) break;
         const update = parseLaunchUpdateEvent(event);
         if (update) updates.push(update);
         break;

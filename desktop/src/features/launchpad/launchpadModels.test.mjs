@@ -5,6 +5,7 @@ import {
   buildLaunchesFromEvents,
   isGoalRecordEvent,
   isHelpSignalEvent,
+  isTaskRecordEvent,
   launchCoordinate,
   parseLaunchBidEvent,
   parseLaunchProposalEvent,
@@ -370,6 +371,53 @@ test("a goal record is the project's goal, not news: it is not listed or counted
     recordEvent(),
     goal,
     missed,
+    weekly,
+  ]);
+  assert.deepEqual(
+    launch.updates.map((u) => u.title),
+    ["Week two"],
+  );
+});
+
+test("a task record is a step on a task, not news: it is not listed or counted as an update", () => {
+  const coordinate = launchCoordinate(FOUNDER, "nebula");
+  const mirror = (id, title, tags) => ({
+    id,
+    kind: 47003,
+    pubkey: FOUNDER,
+    created_at: 200,
+    content: JSON.stringify({ title, body: "words" }),
+    tags: [["a", coordinate], ...tags],
+    sig: "sig",
+  });
+  const task = mirror("task-1", "Task", [
+    ["l", "creaton-task"],
+    ["task-part", "task"],
+    ["task-helper", "a".repeat(64)],
+    ["task-what", "Test sign-up."],
+    ["task-done", "A recording of it working."],
+    ["task-size", "small"],
+  ]);
+  const confirm = mirror("task-2", "Work confirmed", [
+    ["l", "creaton-task"],
+    ["task-part", "confirm"],
+    ["task", "task-1"],
+  ]);
+  const weekly = mirror("update-1", "Week two", [
+    ["update-part", "done", "Shipped sign-up"],
+  ]);
+  assert.equal(isTaskRecordEvent(task), true);
+  assert.equal(isTaskRecordEvent(confirm), true);
+  // An ordinary update is still an update, even one that only shares the label.
+  assert.equal(isTaskRecordEvent(weekly), false);
+  assert.equal(
+    isTaskRecordEvent(mirror("update-2", "Labelled", [["l", "creaton-task"]])),
+    false,
+  );
+  const [launch] = buildLaunchesFromEvents([
+    recordEvent(),
+    task,
+    confirm,
     weekly,
   ]);
   assert.deepEqual(

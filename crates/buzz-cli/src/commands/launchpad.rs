@@ -17,7 +17,7 @@ use crate::error::CliError;
 pub(crate) const LAUNCHPAD_QUERY_EVENT_BOUND: u32 = 10_000;
 const LAUNCH_ID_RE: &str = "^[a-z0-9][a-z0-9_-]{0,63}$";
 
-fn validate_launch_id(id: &str) -> Result<(), CliError> {
+pub(crate) fn validate_launch_id(id: &str) -> Result<(), CliError> {
     let ok = !id.is_empty() && id.len() <= 64 && {
         let bytes = id.as_bytes();
         (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
@@ -214,6 +214,10 @@ async fn cmd_show(client: &BuzzClient, id: &str, author: Option<&str>) -> Result
             KIND_LAUNCH_BID => bids += 1,
             // A goal record shares the update kind; it is the project's goal, not news.
             KIND_LAUNCH_UPDATE if is_goal_record(event) => {}
+            // A task record is a step on a task, and an offer or "Help found" answers an update: neither is news.
+            KIND_LAUNCH_UPDATE
+                if super::launchpad_tasks::is_task_record(event)
+                    || super::launchpad_tasks::is_help_signal(event) => {}
             KIND_LAUNCH_UPDATE => updates += 1,
             KIND_LAUNCH_PROPOSAL => proposals += 1,
             KIND_LAUNCH_RECEIPT => receipts.push(serde_json::json!({
@@ -664,6 +668,7 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             verdict,
             tx,
         } => cmd_verdict(client, &id, &claim_id, &verdict, &tx).await,
+        LaunchpadCmd::Tasks { step } => super::launchpad_tasks::dispatch(step, client).await,
         LaunchpadCmd::WorkChecks {
             launch,
             launch_author,

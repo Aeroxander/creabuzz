@@ -12,6 +12,7 @@ pub mod issues;
 pub mod launchpad;
 pub mod launchpad_compose;
 pub mod launchpad_gov;
+pub mod launchpad_tasks;
 pub mod launchpad_work;
 pub mod mem;
 pub mod messages;
