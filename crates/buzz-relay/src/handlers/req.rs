@@ -981,74 +981,34 @@ pub(crate) fn count_fallback_exceeded(candidate_count: usize) -> bool {
 /// an exact count without post-filtering.
 ///
 /// Pushed constraints: kinds, authors (single or multi), ids, since, until,
-/// authorized channel scope (#h single or multi, injected by caller), #p (single),
-/// #d (single, NIP-33-only kinds), #e (any).
+/// authorized channel scope (#h single or multi, injected by caller), #e, a
+/// single #p (`event_mentions` join), #d on NIP-33-only filters (`d_tag`
+/// column), and every other tag filter — `#a`, `#t`, several `#p` values, `#d`
+/// on other kinds, uppercase tags — through `EventQuery::tag_filters`, which
+/// `count_events()` applies with the same exact predicate as the page read.
 ///
 /// The kind-47010 `#c` context triplet is pushed for READS (query_events, the
 /// WS REQ and bridge query paths) before SQL `LIMIT` via
 /// `EventQuery::custom_tag`, but NOT for the fast COUNT `count_events()` SQL,
-/// which cannot bind a generic tag — so `#c` filters stay non-fully-pushable
+/// which does not bind `custom_tag` — so `#c` filters stay non-fully-pushable
 /// here and COUNT uses the exact filtered-scan fallback.
 ///
-/// Anything else (multi-#p, #t, #a, search, #d on non-NIP-33) requires
-/// post-filtering and cannot use the fast COUNT path.
+/// `search` is never pushed here and cannot use the fast COUNT path.
 pub fn filter_fully_pushable(filter: &Filter) -> bool {
-    // Check if filter exclusively targets NIP-33 kinds (needed for #d pushability).
-    let is_nip33_only = filter.kinds.as_ref().is_some_and(|ks| {
-        !ks.is_empty()
-            && ks
-                .iter()
-                .all(|k| buzz_core::kind::is_parameterized_replaceable(k.as_u16() as u32))
-    });
-
-    for (tag_key, tag_values) in filter.generic_tags.iter() {
-        let key = tag_key.to_string();
-        match key.as_str() {
-            "h" => {
-                // The caller pushes the complete authorized #h set through
-                // EventQuery::channel_id/channel_ids before invoking COUNT.
-            }
-            "p" => {
-                // Single #p is pushed via event_mentions join; multi is not.
-                if tag_values.len() > 1 {
-                    return false;
-                }
-            }
-            "d" => {
-                // #d is pushed (single or multi) ONLY for NIP-33-only kind filters.
-                // Otherwise it's silently ignored by SQL → overcount.
-                if !tag_values.is_empty() && !is_nip33_only {
-                    return false;
-                }
-            }
-            "e" => {
-                // #e is fully pushed (any count) via JSONB containment.
-            }
-            "c" => {
-                // #c is pushed for READS (query_events) pre-LIMIT via
-                // EventQuery::custom_tag, but the fast COUNT SQL cannot bind a
-                // generic tag (buzz-db's count builder has no custom_tag
-                // predicate), so full-pushability stays FALSE: COUNT must keep
-                // using the exact filtered-scan fallback, which honors the
-                // pushdown. Upgrading count truthfulness requires adding the
-                // containment predicate to the buzz-db COUNT builder first.
-                if !tag_values.is_empty() {
-                    return false;
-                }
-            }
-            _ => {
-                // Any other generic tag (#t, #a, etc.) is not pushed.
-                if !tag_values.is_empty() {
-                    return false;
-                }
-            }
-        }
-    }
-    // search field is not pushed by filter_to_query_params
-    if filter.search.is_some() {
+    let c_tag = nostr::SingleLetterTag::lowercase(nostr::Alphabet::C);
+    // #c is pushed for READS pre-LIMIT, but for the canonical kind-47010 shape
+    // it travels in `EventQuery::custom_tag`, which the buzz-db COUNT builder
+    // does not bind. Keep every #c filter on the exact filtered-scan fallback
+    // (which honors the pushdown) rather than splitting the rule by shape.
+    if filter
+        .generic_tags
+        .get(&c_tag)
+        .is_some_and(|values| !values.is_empty())
+    {
         return false;
     }
-    true
+    // search field is not pushed by filter_to_query_params
+    filter.search.is_none()
 }
 
 /// Return whether every filter exclusively targets the globally stored NIP-43
@@ -1240,6 +1200,34 @@ fn filter_to_query_params(
         None
     };
 
+    // Every remaining tag constraint goes into SQL through the generic tag
+    // pushdown, so the match runs before `LIMIT` (and inside COUNT). Without
+    // it a tag such as `#a` — the coordinate every per-project read of kind
+    // 47003 records filters on — was only checked in Rust against the newest
+    // `limit` rows of the kind, and a project whose records are older than
+    // that came back short or empty with an ordinary EOSE.
+    //
+    // A tag is skipped only when a dedicated predicate above already binds it:
+    // `#h` is the channel scope (and has the `channel_id` fallback for events
+    // that carry no `h` tag), `#e` is `e_tags`, a single `#p` is the
+    // `event_mentions` join, `#d` on NIP-33-only filters is the `d_tag` column,
+    // and the kind-47010 `#c` triplet is `custom_tag`.
+    let tag_filters: Vec<(String, Vec<String>)> = filter
+        .generic_tags
+        .iter()
+        .filter_map(|(key, values)| {
+            let name = key.to_string();
+            let bound_elsewhere = match name.as_str() {
+                "h" | "e" => true,
+                "p" => p_tag_hex.is_some(),
+                "d" => d_tag.is_some() || d_tags.is_some(),
+                "c" => custom_tag.is_some(),
+                _ => false,
+            };
+            (!bound_elsewhere).then(|| (name, values.iter().map(|v| v.to_string()).collect()))
+        })
+        .collect();
+
     EventQuery {
         channel_id,
         kinds,
@@ -1255,6 +1243,7 @@ fn filter_to_query_params(
         e_tags,
         d_tag_values,
         custom_tag,
+        tag_filters,
         // Fail closed: every client-facing read excludes admin-only kinds
         // (the audit chain) unless the caller proved an owner/admin role and
         // flips this off.
@@ -2700,6 +2689,116 @@ mod tests {
         .expect("limitation")
         .max_limit
         .expect("max_limit") as i64
+    }
+
+    /// The exact per-project read every project page sends: kind 47003 records
+    /// (updates, offers, goals, evidence) addressed to one project by its `#a`
+    /// coordinate. The coordinate must reach SQL, or `LIMIT` is taken over the
+    /// newest records of that kind on the whole server and a busy server
+    /// returns a short or empty page for a project that has records.
+    #[test]
+    fn project_record_a_filter_is_pushed_before_limit() {
+        let community = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::new_v4());
+        let coordinate = format!("37001:{}:my-project", "ab".repeat(32));
+        let filter: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [47003],
+            "#a": [coordinate],
+            "limit": 500,
+        }))
+        .expect("parse project record filter");
+
+        let q = filter_to_query_params(&filter, None, community);
+        assert_eq!(
+            q.tag_filters,
+            vec![("a".to_string(), vec![coordinate.clone()])],
+            "#a must be bound in SQL before LIMIT"
+        );
+        assert_eq!(q.limit, Some(500));
+        // COUNT must take the same predicate, not a truncated candidate scan.
+        assert!(filter_fully_pushable(&filter));
+
+        // The HTTP bridge and COUNT build their query through this wrapper.
+        let multi: Filter = serde_json::from_value(serde_json::json!({
+            "kinds": [47003],
+            "#a": [coordinate, "37001:other:project"],
+        }))
+        .expect("parse multi-coordinate filter");
+        let q = filter_to_query_params(&multi, None, community);
+        let (name, mut values) = q.tag_filters.into_iter().next().expect("#a pushed");
+        values.sort();
+        let mut expected = vec![coordinate, "37001:other:project".to_string()];
+        expected.sort();
+        assert_eq!((name.as_str(), values), ("a", expected));
+        assert!(filter_fully_pushable(&multi));
+    }
+
+    /// Every tag constraint on a filter is bound in SQL by exactly one
+    /// mechanism. A constraint with none would only reach the Rust post-filter,
+    /// i.e. after `LIMIT`.
+    #[test]
+    fn every_tag_filter_is_bound_in_sql_exactly_once() {
+        let community = buzz_core::tenant::CommunityId::from_uuid(uuid::Uuid::new_v4());
+        let pk_a = "aa".repeat(32);
+        let pk_b = "bb".repeat(32);
+        let names = |q: &EventQuery| -> Vec<String> {
+            q.tag_filters.iter().map(|(name, _)| name.clone()).collect()
+        };
+        let parse = |json: serde_json::Value| -> Filter {
+            serde_json::from_value(json).expect("parse filter")
+        };
+
+        // #t and an uppercase tag: no dedicated column, so both go generic.
+        let f = parse(serde_json::json!({"kinds": [1], "#t": ["x", "y"], "#A": ["root"]}));
+        let q = filter_to_query_params(&f, None, community);
+        assert_eq!(names(&q), ["A", "t"]);
+        assert!(filter_fully_pushable(&f));
+
+        // Single #p keeps the event_mentions join; several values go generic.
+        let f = parse(serde_json::json!({"kinds": [1], "#p": [pk_a]}));
+        let q = filter_to_query_params(&f, None, community);
+        assert_eq!(q.p_tag_hex.as_deref(), Some(pk_a.as_str()));
+        assert!(q.tag_filters.is_empty());
+        let f = parse(serde_json::json!({"kinds": [1], "#p": [pk_a, pk_b]}));
+        let q = filter_to_query_params(&f, None, community);
+        assert_eq!(q.p_tag_hex, None);
+        assert_eq!(names(&q), ["p"]);
+        assert!(filter_fully_pushable(&f));
+
+        // #d uses the d_tag column for NIP-33-only filters, else goes generic.
+        let f = parse(serde_json::json!({"kinds": [37001], "#d": ["slug"]}));
+        let q = filter_to_query_params(&f, None, community);
+        assert_eq!(q.d_tag.as_deref(), Some("slug"));
+        assert!(q.tag_filters.is_empty());
+        let f = parse(serde_json::json!({"kinds": [47003], "#d": ["slug"]}));
+        let q = filter_to_query_params(&f, None, community);
+        assert_eq!((q.d_tag.as_ref(), q.d_tags.as_ref()), (None, None));
+        assert_eq!(
+            q.tag_filters,
+            vec![("d".to_string(), vec!["slug".to_string()])]
+        );
+        assert!(filter_fully_pushable(&f));
+
+        // #e and #h keep their existing mechanisms and are never duplicated.
+        let f = parse(serde_json::json!({
+            "kinds": [7],
+            "#e": ["cc".repeat(32)],
+            "#h": [uuid::Uuid::new_v4().to_string()],
+        }));
+        let q = filter_to_query_params(&f, None, community);
+        assert!(q.e_tags.is_some());
+        assert!(q.tag_filters.is_empty());
+
+        // The work-check-run #c containment is not bound a second time, and a
+        // sibling tag is still bound next to it.
+        let f = parse(serde_json::json!({"kinds": [47010], "#c": ["m:c:e"], "#a": ["coord"]}));
+        let q = filter_to_query_params(&f, None, community);
+        assert!(q.custom_tag.is_some());
+        assert_eq!(names(&q), ["a"]);
+        // Any other #c shape has no dedicated predicate, so it goes generic.
+        let f = parse(serde_json::json!({"kinds": [47010], "#c": ["one", "two"]}));
+        let q = filter_to_query_params(&f, None, community);
+        assert_eq!(q.custom_tag, None);
+        assert_eq!(names(&q), ["c"]);
     }
 
     #[test]

@@ -92,6 +92,18 @@ pub struct EventQuery {
     /// Restrict results to events with an exact custom tag pair.
     /// Uses JSONB containment against `tags` before SQL `LIMIT`.
     pub custom_tag: Option<(String, String)>,
+    /// Restrict results to events matching every listed tag filter, NIP-01
+    /// style: each entry is `(tag name, accepted values)`; entries are AND-ed
+    /// and the values of one entry are OR-ed. An event matches an entry when it
+    /// carries a tag whose first element is the name and whose second element
+    /// is one of the values (exact, case-sensitive — the same rule as
+    /// `buzz_core::filter::filters_match`).
+    ///
+    /// Applied in SQL before `LIMIT` and in COUNT, so a page or a count is
+    /// taken over matching rows only. JSONB containment (served by
+    /// `idx_events_tags_gin`) narrows the candidates and a positional check
+    /// keeps the match exact. An entry with no values matches nothing.
+    pub tag_filters: Vec<(String, Vec<String>)>,
     /// Restrict results to events in any of these channels. By default,
     /// channel-less global events are retained so this can enforce a viewer's
     /// accessible-channel scope without hiding global events. Set
@@ -169,6 +181,7 @@ impl EventQuery {
             e_tags: None,
             d_tag_values: None,
             custom_tag: None,
+            tag_filters: Vec::new(),
             channel_ids: None,
             channel_ids_include_global: true,
             max_limit: None,
@@ -605,6 +618,9 @@ pub(crate) async fn query_events_on(
     if q.e_tags.as_deref().is_some_and(|e| e.is_empty()) {
         return Ok(vec![]);
     }
+    if tag_filters_match_nothing(&q.tag_filters) {
+        return Ok(vec![]);
+    }
 
     let mut qb = build_query_events_sql(q);
     let rows = if q.e_tags.is_some() {
@@ -766,6 +782,8 @@ fn build_query_events_sql(q: &EventQuery) -> QueryBuilder<sqlx::Postgres> {
         push_artifact_d_tag_predicate(&mut qb, col_prefix, values);
     }
 
+    push_tag_filters(&mut qb, col_prefix, &q.tag_filters);
+
     if let Some((ref name, ref value)) = q.custom_tag {
         let containment = serde_json::json!([[name, value]]);
         qb.push(format!(" AND {col_prefix}tags @> "))
@@ -898,6 +916,50 @@ fn push_e_tag_filter(qb: &mut QueryBuilder<sqlx::Postgres>, col_prefix: &str, e_
         .push("::jsonb[])");
 }
 
+/// Whether any [`EventQuery::tag_filters`] entry has no accepted values: such
+/// an entry can match no event, so the whole query is empty.
+fn tag_filters_match_nothing(tag_filters: &[(String, Vec<String>)]) -> bool {
+    tag_filters.iter().any(|(_, values)| values.is_empty())
+}
+
+/// Generic tag pushdown for [`EventQuery::tag_filters`], one predicate pair per
+/// entry:
+///
+/// ```sql
+/// AND tags @> ANY($containments::jsonb[])
+/// AND EXISTS (SELECT 1 FROM jsonb_array_elements(<tags>) tf(tag)
+///             WHERE tf.tag->>0 = $name AND tf.tag->>1 = ANY($values))
+/// ```
+///
+/// The containment is the indexable prefilter (`idx_events_tags_gin`). It is
+/// not positional — `[["a","x"]]` is also contained in a row tagged
+/// `["x","a"]` — so the `EXISTS` restates the NIP-01 rule exactly. That makes
+/// the predicate usable by COUNT, which has no Rust post-filter behind it.
+fn push_tag_filters(
+    qb: &mut QueryBuilder<sqlx::Postgres>,
+    col_prefix: &str,
+    tag_filters: &[(String, Vec<String>)],
+) {
+    for (name, values) in tag_filters {
+        let containments: Vec<serde_json::Value> = values
+            .iter()
+            .map(|value| serde_json::json!([[name, value]]))
+            .collect();
+        qb.push(format!(" AND {col_prefix}tags @> ANY("))
+            .push_bind(containments)
+            .push(format!(
+                "::jsonb[]) AND EXISTS (SELECT 1 FROM jsonb_array_elements(\
+                 CASE WHEN jsonb_typeof({col_prefix}tags) = 'array' \
+                 THEN {col_prefix}tags ELSE '[]'::jsonb END) tf(tag) \
+                 WHERE tf.tag->>0 = "
+            ))
+            .push_bind(name.clone())
+            .push(" AND tf.tag->>1 = ANY(")
+            .push_bind(values.clone())
+            .push("))");
+    }
+}
+
 /// Match `#d` on artifact rows before `LIMIT` while leaving other kinds to the
 /// caller's post-filter: `(kind NOT IN (artifact kinds) OR tags @> [["d", v]] ...)`.
 fn push_artifact_d_tag_predicate(
@@ -1002,6 +1064,9 @@ pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuer
         return Ok(0);
     }
     if q.e_tags.as_deref().is_some_and(|e| e.is_empty()) {
+        return Ok(0);
+    }
+    if tag_filters_match_nothing(&q.tag_filters) {
         return Ok(0);
     }
 
@@ -1109,6 +1174,8 @@ pub(crate) async fn count_events_on(conn: &mut sqlx::PgConnection, q: &EventQuer
     if let Some(ref values) = q.d_tag_values {
         push_artifact_d_tag_predicate(&mut qb, col_prefix, values);
     }
+
+    push_tag_filters(&mut qb, col_prefix, &q.tag_filters);
 
     if let Some(s) = q.since {
         qb.push(format!(" AND {col_prefix}created_at >= "))
@@ -3209,6 +3276,86 @@ mod e_tag_filter_shape_tests {
 }
 
 #[cfg(test)]
+mod tag_filter_shape_tests {
+    use super::*;
+
+    fn query_with_tag_filters() -> EventQuery {
+        let mut q = EventQuery::for_community(CommunityId::from_uuid(uuid::Uuid::nil()));
+        q.kinds = Some(vec![47003]);
+        q.limit = Some(500);
+        q.tag_filters = vec![
+            ("a".to_string(), vec!["37001:pk:one".to_string()]),
+            ("t".to_string(), vec!["x".to_string(), "y".to_string()]),
+        ];
+        q
+    }
+
+    /// Each tag filter is one indexable containment plus one positional check,
+    /// AND-ed, and both sit before ORDER BY/LIMIT so the page is taken over
+    /// matching rows only.
+    #[test]
+    fn tag_filters_are_bound_before_order_and_limit() {
+        let q = query_with_tag_filters();
+        let qb = build_query_events_sql(&q);
+        let sql = qb.sql().as_str().to_owned();
+
+        assert_eq!(sql.matches(" AND tags @> ANY(").count(), 2, "{sql}");
+        assert_eq!(sql.matches("tf.tag->>0 = ").count(), 2, "{sql}");
+        assert_eq!(sql.matches("tf.tag->>1 = ANY(").count(), 2, "{sql}");
+        let order = sql.find(" ORDER BY ").expect("ordered");
+        let last_predicate = sql.rfind("tf.tag->>1 = ANY(").expect("tag predicate");
+        assert!(
+            last_predicate < order,
+            "tag match must precede LIMIT: {sql}"
+        );
+        assert!(sql[order..].contains(" LIMIT "));
+        // Values of one filter are one array bind, never an OR chain.
+        assert!(!sql.contains(" OR "), "{sql}");
+        // No fence: only e-tag reads use the MATERIALIZED CTE.
+        assert!(!sql.contains("MATERIALIZED"));
+    }
+
+    /// The `#p` join path qualifies every column with `e.`.
+    #[test]
+    fn tag_filters_qualify_columns_on_the_mention_join() {
+        let mut q = query_with_tag_filters();
+        q.p_tag_hex = Some("ab".repeat(32));
+        let qb = build_query_events_sql(&q);
+        let sql = qb.sql().as_str().to_owned();
+        assert_eq!(sql.matches(" AND e.tags @> ANY(").count(), 2, "{sql}");
+        assert_eq!(
+            sql.matches("jsonb_typeof(e.tags) = 'array' THEN e.tags ELSE")
+                .count(),
+            2,
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn query_without_tag_filters_is_unchanged() {
+        let mut q = query_with_tag_filters();
+        q.tag_filters.clear();
+        let qb = build_query_events_sql(&q);
+        let sql = qb.sql().as_str().to_owned();
+        assert!(!sql.contains("tags @>"), "{sql}");
+        assert!(!sql.contains("jsonb_array_elements"), "{sql}");
+    }
+
+    #[test]
+    fn tag_filter_without_values_matches_nothing() {
+        assert!(!tag_filters_match_nothing(&[]));
+        assert!(!tag_filters_match_nothing(&[(
+            "a".to_string(),
+            vec!["x".to_string()]
+        )]));
+        assert!(tag_filters_match_nothing(&[
+            ("a".to_string(), vec!["x".to_string()]),
+            ("t".to_string(), vec![]),
+        ]));
+    }
+}
+
+#[cfg(test)]
 mod postgres_tests {
     use super::*;
     use nostr::{EventBuilder, Keys, Kind, Tag};
@@ -3274,6 +3421,109 @@ mod postgres_tests {
             .await
             .expect("show timeout");
         (inside, after)
+    }
+
+    /// One signed kind-47003 project record with a fixed timestamp.
+    fn make_project_record(keys: &Keys, created_at: u64, tags: Vec<Tag>) -> nostr::Event {
+        EventBuilder::new(Kind::Custom(47003), format!("record {created_at}"))
+            .tags(tags)
+            .custom_created_at(nostr::Timestamp::from(created_at))
+            .sign_with_keys(keys)
+            .expect("sign project record")
+    }
+
+    /// The per-project read `{kinds:[47003], "#a":[coordinate], limit:500}` on
+    /// a busy server: 510 newer records of the same kind belong to other
+    /// projects. The tag match must run before `LIMIT`, in the page read and in
+    /// COUNT, and must be positional (a tag that merely contains the two
+    /// strings is not a match).
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn tag_filter_matches_before_limit_and_in_count() {
+        const NOISE: u64 = 510;
+        let pool = setup_pool().await;
+        let community_uuid = make_test_community(&pool).await;
+        let community = CommunityId::from_uuid(community_uuid);
+        let keys = Keys::generate();
+        let coordinate = format!("37001:{}:mine", keys.public_key().to_hex());
+        let other = format!("37001:{}:theirs", keys.public_key().to_hex());
+        let now = Utc::now().timestamp() as u64;
+
+        // The project's own records are the OLDEST rows of the kind.
+        let mut wanted = Vec::new();
+        for (i, tags) in [
+            vec![Tag::parse(["a", coordinate.as_str()]).unwrap()],
+            vec![Tag::parse(["a", coordinate.as_str(), "wss://relay.example"]).unwrap()],
+            vec![
+                Tag::parse(["t", "offer"]).unwrap(),
+                Tag::parse(["a", coordinate.as_str()]).unwrap(),
+            ],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let event = make_project_record(&keys, now - 2_000 - i as u64, tags);
+            insert_event(&pool, community, &event, None)
+                .await
+                .expect("insert project record");
+            wanted.push(event.id);
+        }
+        // Contained by `tags @> [["a", coordinate]]` but not an `a` tag.
+        let decoy = make_project_record(
+            &keys,
+            now - 1_900,
+            vec![Tag::parse(["x", "a", coordinate.as_str()]).unwrap()],
+        );
+        insert_event(&pool, community, &decoy, None)
+            .await
+            .expect("insert decoy");
+        for i in 0..NOISE {
+            let event = make_project_record(
+                &keys,
+                now - 1_000 + i,
+                vec![Tag::parse(["a", other.as_str()]).unwrap()],
+            );
+            insert_event(&pool, community, &event, None)
+                .await
+                .expect("insert other project's record");
+        }
+
+        let mut q = EventQuery::for_community(community);
+        q.kinds = Some(vec![47003]);
+        q.limit = Some(500);
+
+        // Without the pushdown the newest 500 rows hold none of the project's
+        // records: this is the page the relay used to post-filter to empty.
+        let page = query_events(&pool, &q).await.expect("unfiltered page");
+        assert_eq!(page.len(), 500);
+        assert!(page.iter().all(|e| !wanted.contains(&e.event.id)));
+
+        q.tag_filters = vec![("a".to_string(), vec![coordinate.clone()])];
+        let page = query_events(&pool, &q).await.expect("filtered page");
+        let mut got: Vec<_> = page.iter().map(|e| e.event.id).collect();
+        got.sort();
+        wanted.sort();
+        assert_eq!(got, wanted, "all and only the project's records");
+        assert_eq!(count_events(&pool, &q).await.expect("count"), 3);
+
+        // Values of one filter are OR-ed; filters are AND-ed.
+        q.tag_filters = vec![("a".to_string(), vec![coordinate.clone(), other.clone()])];
+        assert_eq!(
+            count_events(&pool, &q).await.expect("count either project"),
+            3 + NOISE as i64
+        );
+        q.tag_filters = vec![
+            ("a".to_string(), vec![coordinate.clone()]),
+            ("t".to_string(), vec!["offer".to_string()]),
+        ];
+        let page = query_events(&pool, &q).await.expect("two filters");
+        assert_eq!(page.len(), 1);
+        assert_eq!(count_events(&pool, &q).await.expect("count two"), 1);
+
+        // A filter with no values matches nothing.
+        q.tag_filters = vec![("a".to_string(), vec![])];
+        assert!(query_events(&pool, &q).await.expect("empty").is_empty());
+        assert_eq!(count_events(&pool, &q).await.expect("count empty"), 0);
     }
 
     #[tokio::test]
