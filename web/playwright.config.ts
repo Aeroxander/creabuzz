@@ -118,6 +118,8 @@ export default defineConfig({
         "**/tour.spec.ts",
         // Phase A review: the project front page as one story (one next action, honest window dates, failed reads).
         "**/v5-project-story.spec.ts",
+        // The weekly update and the help it can ask for: post, see, offer, reply, Help found.
+        "**/weekly-update-help.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

@@ -51,6 +51,8 @@ import { getRpcEndpoint } from "../chain";
 import { useAuctionProgress, OwnershipOnlyNote } from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
 import { PostUpdateDialog } from "./PostUpdateDialog";
+import { ProjectUpdateCard } from "./ProjectUpdateCard";
+import { type UpdateDraft, updateEvent } from "../lib/weekly-update";
 import { sandboxRecord } from "../lib/sandbox";
 import { ManagePanel } from "./ManagePanel";
 import { DecisionsTab } from "./DecisionsTab";
@@ -135,7 +137,12 @@ export function LaunchDetailPage({
     initialTab ?? (initialDecision ? "decisions" : "overview"),
   );
   const [bidOpen, setBidOpen] = useState(false);
-  const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateOpen, setUpdateOpenRaw] = useState(false);
+  const [updateFailed, setUpdateFailed] = useState(false);
+  const setUpdateOpen = useCallback((open: boolean) => {
+    setUpdateFailed(false);
+    setUpdateOpenRaw(open);
+  }, []);
   const [mybidsAutoAction, setMybidsAutoAction] = useState<
     "exit" | "claim" | null
   >(null);
@@ -263,22 +270,22 @@ export function LaunchDetailPage({
     }
   };
 
-  const postUpdate = async (input: { title: string; body: string }) => {
+  const postUpdate = async (draft: UpdateDraft) => {
+    const { content, tags } = updateEvent(draft);
+    setUpdateFailed(false);
     try {
       await mirror.mutateAsync({
         kind: KIND_LAUNCH_UPDATE,
         author: launch.record.author,
         launchId: launch.record.id,
-        content: { title: input.title, body: input.body },
+        extraTags: tags,
+        content,
       });
       toast.success("Update published.");
       setUpdateOpen(false);
-    } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "Couldn't publish the update. Try again.",
-      );
+    } catch {
+      // Said in the dialog, which stays open with what was written.
+      setUpdateFailed(true);
     }
   };
 
@@ -358,6 +365,8 @@ export function LaunchDetailPage({
     ? wanted
     : "overview";
 
+  const hasWorkTab = visibleTabs.some((t) => t.id === "work");
+
   const raiseOverview = (
     <>
       {contributor ? null : <SalePriceCard launch={launch} />}
@@ -431,6 +440,17 @@ export function LaunchDetailPage({
         showFollow={!sandbox && !idea}
         stage={stage}
       />
+
+      {/* The project's news, above the tabs; the Updates tab is the full list, so it is not repeated there. */}
+      {!sandbox && shown !== "updates" ? (
+        <ProjectUpdateCard
+          isFounder={isFounder}
+          launch={launch}
+          onOpenUpdates={() => setTab("updates")}
+          onPostUpdate={() => setUpdateOpen(true)}
+          workTab={hasWorkTab}
+        />
+      ) : null}
 
       {!sandbox && isFounder && idea ? (
         <IdeaProgressCard launch={launch} />
@@ -676,6 +696,7 @@ export function LaunchDetailPage({
       ) : null}
       {updateOpen && isFounder ? (
         <PostUpdateDialog
+          failed={updateFailed}
           isPublishing={mirror.isPending}
           onClose={() => setUpdateOpen(false)}
           onPublish={postUpdate}

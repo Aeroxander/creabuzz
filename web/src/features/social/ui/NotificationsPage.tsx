@@ -2,6 +2,7 @@ import { YourLaunchesSection } from "@/features/launchpad/ui/YourLaunchesSection
 import { Link } from "@tanstack/react-router";
 import {
   ArrowBigUp,
+  HandHelping,
   Megaphone,
   MessageCircle,
   MessagesSquare,
@@ -42,6 +43,8 @@ import { notificationsView } from "../lib/notifications-state";
 import { avatarName, bylineName } from "../lib/person-name";
 import { launchCoordinate } from "../../feed/lib/feed-events";
 import { useLaunches } from "../../launchpad/use-launches";
+import { useHelpNotices } from "../../launchpad/use-help-requests";
+import { useMutedSet } from "../use-social-actions";
 import { useNotificationBadge, useNotifications } from "../use-discovery";
 import {
   useMutedLaunchUpdates,
@@ -321,11 +324,78 @@ function LaunchUpdatesSection({ visitSeenAt }: { visitSeenAt: number }) {
   );
 }
 
+/**
+ * Offers to help on your projects' requests, and the team's replies to offers you made. Each opens the update it is
+ * about. Someone you muted is left out, as everywhere else on this page.
+ */
+function HelpNoticesSection({ visitSeenAt }: { visitSeenAt: number }) {
+  const muted = useMutedSet();
+  const notices = useHelpNotices().filter(
+    (n) => !muted.has(n.actor.toLowerCase()),
+  );
+  const people = usePeople(notices.map((n) => n.actor));
+  if (notices.length === 0) return null;
+  return (
+    <section
+      aria-label="Offers to help"
+      className="border-b border-black/10 dark:border-white/10"
+      data-testid="social-help-notices"
+    >
+      <h2 className="flex items-center gap-2 px-4 pt-3 text-sm font-bold text-black dark:text-white">
+        <HandHelping aria-hidden className="h-4 w-4" /> Offers to help
+      </h2>
+      <ul>
+        {notices.map((notice) => (
+          <li
+            className={cn(
+              "relative px-4 py-3 text-sm transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]",
+              notice.at > visitSeenAt && "bg-sky-500/5",
+            )}
+            data-kind={notice.kind}
+            data-testid="social-help-notice"
+            data-unread={notice.at > visitSeenAt ? "true" : undefined}
+            key={notice.id}
+          >
+            <p className="break-words text-black dark:text-white">
+              <span className="font-bold">
+                {bylineName(people[notice.actor])}
+              </span>{" "}
+              {notice.kind === "offer"
+                ? "offered to help with"
+                : "replied to your offer to help with"}{" "}
+              “{notice.updateTitle}” in {notice.project.name}
+              <span className="text-black/60 dark:text-white/60">
+                {" "}
+                · {shortRelativeTime(notice.at)}
+              </span>
+            </p>
+            {notice.note ? (
+              <p className="mt-1 line-clamp-2 break-words text-black/60 dark:text-white/60">
+                {notice.note}
+              </p>
+            ) : null}
+            <Link
+              aria-label={`Open the update “${notice.updateTitle}” in ${notice.project.name}`}
+              className="absolute inset-0"
+              hash={`update-${notice.updateId}`}
+              params={{ launchId: notice.project.id }}
+              search={{ author: notice.project.author, tab: "updates" }}
+              to="/launchpad/$launchId"
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** Up votes, reposts, quotes, replies, mentions, new followers, board replies and up votes, and moderators' notices. */
 export function NotificationsPage() {
   const me = existingUserPubkey();
   const notifications = useNotifications();
-  const hasLaunchUpdates = usePriorityNotifications().length > 0;
+  // Either section standing in for the list: "Nothing yet" under an offer to help would be untrue.
+  const hasLaunchUpdates =
+    usePriorityNotifications().length + useHelpNotices().length > 0;
   const { seenAt, markSeen } = useNotificationBadge();
   const [tab, setTab] = useState<Tab>("all");
 
@@ -389,6 +459,9 @@ export function NotificationsPage() {
         {me && tab === "all" ? <YourLaunchesSection /> : null}
         {me && tab === "all" ? (
           <LaunchUpdatesSection visitSeenAt={visitSeenAt.current ?? 0} />
+        ) : null}
+        {me && tab === "all" ? (
+          <HelpNoticesSection visitSeenAt={visitSeenAt.current ?? 0} />
         ) : null}
         {me && notifications.error && notifications.data ? (
           <div

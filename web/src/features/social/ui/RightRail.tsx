@@ -12,6 +12,7 @@ import {
   railBlurb,
   railPostIds,
   railPosts,
+  railHelpRequests,
   railProjects,
 } from "../lib/rail";
 import { firstError, listView, readUnknown } from "../lib/read-view";
@@ -164,6 +165,10 @@ function ProjectsBlock() {
     () => railProjects(launches.data ?? [], raises),
     [launches.data, raises],
   );
+  const asking = useMemo(
+    () => railHelpRequests(launches.data ?? [], raises),
+    [launches.data, raises],
+  );
   const view = listView({
     count: shown.length,
     error: launches.error,
@@ -225,6 +230,33 @@ function ProjectsBlock() {
           ))}
         </ul>
       )}
+      {view === "list" && asking.length > 0 ? (
+        <div data-testid="social-rail-help">
+          <h3 className="px-4 pt-2 text-xs font-bold text-black/60 dark:text-white/60">
+            Asking for help
+          </h3>
+          <ul>
+            {asking.map(({ project, updateId, ask }) => (
+              <li key={updateId}>
+                <Link
+                  className="block px-4 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                  hash={`update-${updateId}`}
+                  params={{ launchId: project.id }}
+                  search={{ author: project.author, tab: "updates" }}
+                  to="/launchpad/$launchId"
+                >
+                  <span className="block truncate text-sm font-bold text-black dark:text-white">
+                    {project.name}
+                  </span>
+                  <span className="line-clamp-2 text-xs text-black/60 dark:text-white/60">
+                    {ask.text}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </RailBlock>
   );
 }

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 import {
   KIND_CONTACT_LIST,
@@ -38,6 +38,7 @@ import {
   trendingHashtags,
 } from "./lib/trending";
 import { usePriorityNotifications } from "./use-launch-updates";
+import { useHelpNotices } from "../launchpad/use-help-requests";
 import { readEvents } from "./read";
 import { readUnknown } from "./lib/read-view";
 import { useMutedPeople, useMutedSet } from "./use-social-actions";
@@ -128,6 +129,13 @@ export function useNotificationBadge() {
   const notifications = useNotifications();
   const items = notifications.data;
   const updates = usePriorityNotifications();
+  // Offers to help on your projects, and replies to offers you made: counted with the rest, hidden by a mute.
+  const muted = useMutedSet();
+  const allHelp = useHelpNotices();
+  const help = useMemo(
+    () => allHelp.filter((n) => !muted.has(n.actor.toLowerCase())),
+    [allHelp, muted],
+  );
   const seenKey = [...socialKeys.all, "notifications-seen", me];
   const seen = useQuery({
     queryKey: seenKey,
@@ -139,7 +147,7 @@ export function useNotificationBadge() {
     mutationFn: async () => {
       if (!me) return;
       const newest =
-        Math.max(items?.[0]?.at ?? 0, updates[0]?.at ?? 0) ||
+        Math.max(items?.[0]?.at ?? 0, updates[0]?.at ?? 0, help[0]?.at ?? 0) ||
         Math.floor(Date.now() / 1000);
       writeSeenAt(me, newest);
       queryClient.setQueryData(seenKey, newest);
@@ -148,7 +156,7 @@ export function useNotificationBadge() {
   const { unread, failed } = badgeState(
     items,
     notifications.error,
-    updates,
+    [...updates, ...help],
     seen,
   );
   return {

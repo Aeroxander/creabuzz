@@ -2,7 +2,10 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Link as LinkIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLaunches } from "@/features/launchpad/use-launches";
-import type { Launch } from "@/features/launchpad/models";
+import type { Launch, LaunchUpdate } from "@/features/launchpad/models";
+import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
+import { isIdea } from "@/features/launchpad/lib/idea";
+import { UpdateBody } from "@/features/launchpad/ui/UpdateBody";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -31,6 +34,28 @@ export function ProjectProgressFeed({
     project ? `${project.record.author}:${project.record.id}` : "home",
   );
   return <ProgressList key={key} project={project} compact={compact} />;
+}
+
+/** Whether the project's page has a Work tab: it runs its work through a DAO, which an idea does not have yet. */
+function hasWorkTab(launch: Launch): boolean {
+  return !isIdea(launch.record) && daoOfLaunch(launch) !== null;
+}
+
+interface Source {
+  launch: Launch;
+  update: LaunchUpdate;
+}
+
+function SourceBody({ source }: { source: Source | null }) {
+  if (!source) return null;
+  return (
+    <UpdateBody
+      launch={source.launch}
+      max={600}
+      update={source.update}
+      workTab={hasWorkTab(source.launch)}
+    />
+  );
 }
 
 function ProgressList({
@@ -63,6 +88,19 @@ function ProgressList({
       ),
     [project, launches.data, notes.data],
   );
+  // The update record behind a row, when it is one (a post marked as an update has none): its parts and help request.
+  const sources = useMemo(() => {
+    const byCoordinate = new Map<string, Launch>();
+    for (const l of project ? [project] : (launches.data ?? []))
+      byCoordinate.set(`37001:${l.record.author}:${l.record.id}`, l);
+    return byCoordinate;
+  }, [project, launches.data]);
+  const raw = (item: { coordinate: string; id: string }): Source | null => {
+    if (compact) return null;
+    const launch = sources.get(item.coordinate);
+    const update = launch?.updates.find((u) => u.id === item.id);
+    return launch && update ? { launch, update } : null;
+  };
   const followed = followedLaunches(lists.data?.bookmarks ?? null);
   const mine = new Set(
     (launches.data ?? [])
@@ -273,11 +311,17 @@ function ProgressList({
             <h3 className="mt-2 break-words text-sm font-semibold">
               {i.title}
             </h3>
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {i.text.length > (compact ? 180 : 600)
-                ? `${i.text.slice(0, compact ? 180 : 600)}…`
-                : i.text}
-            </p>
+            {/* A weekly update shows its parts and the help it asks for; the short preview on an overview keeps to words,
+                because the card above it already carries the request. */}
+            {raw(i) ? (
+              <SourceBody source={raw(i)} />
+            ) : (
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+                {i.text.length > (compact ? 180 : 600)
+                  ? `${i.text.slice(0, compact ? 180 : 600)}…`
+                  : i.text}
+              </p>
+            )}
             <div className="mt-2 flex flex-wrap gap-2">
               {progressArtifacts(i.text).map((url, index) => (
                 <a

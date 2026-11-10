@@ -4,12 +4,18 @@
  */
 
 import { listedHere } from "../../launchpad/lib/contributor-only.ts";
+import {
+  type OpenHelpRequest,
+  openHelpRequests,
+} from "../../launchpad/lib/help-request.ts";
 import { isIdea } from "../../launchpad/lib/idea.ts";
 import { effectiveStage, type Launch } from "../../launchpad/models.ts";
 
 /** How many rows each rail block shows before its "See all". */
 export const RAIL_LIMITS = {
   projects: 4,
+  /** Open requests for help under the projects: a few, newest first. */
+  helpRequests: 3,
   posts: 3,
   /**
    * How many trending posts the rail reads by id to find `posts` to show: a few spare, for the authors the reader
@@ -31,20 +37,38 @@ export function railProjects(
   limit: number = RAIL_LIMITS.projects,
 ): Launch[] {
   return launches
-    .filter((launch) => {
-      const stage = effectiveStage(launch);
-      return (
-        stage !== "failed" &&
-        (stage !== "draft" || (!raises && isIdea(launch.record))) &&
-        listedHere(launch.record, raises)
-      );
-    })
+    .filter((launch) => listed(launch, raises))
     .sort(
       (a, b) =>
         b.record.createdAt - a.record.createdAt ||
         (a.record.id < b.record.id ? -1 : 1),
     )
     .slice(0, limit);
+}
+
+/** Whether Discover lists a project: public, not over, and offered by this build. */
+function listed(launch: Launch, raises: boolean): boolean {
+  const stage = effectiveStage(launch);
+  return (
+    stage !== "failed" &&
+    (stage !== "draft" || (!raises && isIdea(launch.record))) &&
+    listedHere(launch.record, raises)
+  );
+}
+
+/**
+ * The newest open requests for help, from the same projects Discover lists (any of them, not only the few the rail
+ * shows by name). One per project, newest first: a short list, not a ranking.
+ */
+export function railHelpRequests(
+  launches: readonly Launch[],
+  raises: boolean,
+  limit: number = RAIL_LIMITS.helpRequests,
+): OpenHelpRequest[] {
+  return openHelpRequests(
+    launches.filter((launch) => listed(launch, raises)),
+    limit,
+  );
 }
 
 /**

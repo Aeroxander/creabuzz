@@ -446,6 +446,8 @@ test("the screen audit's world", async ({ browser }) => {
 
   await frida.getByRole("button", { name: "Post update" }).click();
   await frida.locator("#update-title").fill("Creaton is open to a first group");
+  // The dialog leads with the weekly prompts; this update is one open paragraph, so it is written freely.
+  await frida.getByRole("button", { name: "Write freely instead" }).click();
   await frida
     .locator("#update-body")
     .fill(

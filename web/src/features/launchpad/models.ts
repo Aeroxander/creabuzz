@@ -20,6 +20,12 @@ import {
 } from "./lib/revenue-pledge.ts";
 import { parseUnlockPlan, type UnlockPlan } from "./lib/unlock-plans.ts";
 import {
+  type HelpSignal,
+  isHelpSignalTags,
+  parseHelpSignal,
+} from "./lib/help-request.ts";
+import { partsFromTags, type UpdateParts } from "./lib/weekly-update.ts";
+import {
   KIND_LAUNCH_BID,
   KIND_LAUNCH_PROPOSAL,
   KIND_LAUNCH_RECEIPT,
@@ -236,6 +242,10 @@ export interface LaunchUpdate {
   title: string;
   body: string;
   links: string[];
+  /** The weekly prompts this update answered, when it carries them (`lib/weekly-update.ts`). */
+  parts?: UpdateParts;
+  /** The help this update asks for, when it asks for any: shown as a card people can answer. */
+  help?: UpdateParts["help"];
   /**
    * Set when this update is the evidence a contributor submitted for a work claim: the claim it is for, the work budget
    * that holds it, and the exact words of the acceptance check. Reviewers read it, and it counts only when it hashes to
@@ -331,6 +341,8 @@ export interface Launch {
   updates: LaunchUpdate[];
   proposals: LaunchProposal[];
   receipts: LaunchReceipt[];
+  /** Offers to help, the team's replies and "Help found" marks (`lib/help-request.ts`): never listed as updates. */
+  helpSignals?: HelpSignal[];
 }
 
 export function launchCoordinate(author: string, launchId: string): string {
@@ -612,6 +624,7 @@ export function parseLaunchUpdate(event: NostrEvent): LaunchUpdate | null {
   const ref = launchRefFrom(event);
   if (!ref) return null;
   const body = contentObject(event);
+  const parts = partsFromTags(event.tags);
   return {
     id: event.id,
     launchId: ref.launchId,
@@ -621,6 +634,7 @@ export function parseLaunchUpdate(event: NostrEvent): LaunchUpdate | null {
     title: typeof body.title === "string" ? body.title : "Update",
     body: typeof body.body === "string" ? body.body : "",
     links: strs(body.links),
+    ...(parts ? { parts, help: parts.help } : {}),
     claim: parseUpdateClaim(body.claim),
     workArea: parseUpdateClaim(body.workArea),
     ...(isCheckNote(body.check) ? { checkNote: true as const } : {}),
@@ -795,6 +809,7 @@ export function buildLaunches(
   const updates: LaunchUpdate[] = [];
   const proposals: LaunchProposal[] = [];
   const receipts: LaunchReceipt[] = [];
+  const signals: Array<{ launchKey: string; signal: HelpSignal }> = [];
   for (const event of events) {
     // NIP-09 `e`-tag tombstones hide individual mirrors (an agent-draft's
     // Reject disposal, D5) — the hash chain keeps the audit.
@@ -817,8 +832,12 @@ export function buildLaunches(
       const bid = parseLaunchBid(event);
       if (bid) bids.push(bid);
     } else if (event.kind === KIND_LAUNCH_UPDATE) {
+      // An offer to help, a reply to one or "Help found" answers an update; it is not one.
+      const signal = parseHelpSignal(event);
       const update = parseLaunchUpdate(event);
-      if (update) updates.push(update);
+      if (signal && update)
+        signals.push({ launchKey: update.launchKey, signal });
+      else if (update && !isHelpSignalTags(event.tags)) updates.push(update);
     } else if (event.kind === KIND_LAUNCH_PROPOSAL) {
       const proposal = parseLaunchProposal(event);
       if (proposal) proposals.push(proposal);
@@ -845,6 +864,10 @@ export function buildLaunches(
     launches.get(launchKey);
   for (const bid of bids) ownerOf(bid.launchKey)?.bids.push(bid);
   for (const update of updates) ownerOf(update.launchKey)?.updates.push(update);
+  for (const { launchKey, signal } of signals) {
+    const owner = ownerOf(launchKey);
+    if (owner) owner.helpSignals = [...(owner.helpSignals ?? []), signal];
+  }
   for (const proposal of proposals)
     ownerOf(proposal.launchKey)?.proposals.push(proposal);
   for (const receipt of receipts)
