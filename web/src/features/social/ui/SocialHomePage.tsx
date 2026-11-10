@@ -16,7 +16,7 @@ import {
 
 import { HomeHero } from "@/features/feed/ui/HomeHero";
 import { HomeYours } from "@/features/feed/ui/HomeYours";
-import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
+import { RecordFeed } from "@/features/feed/ui/RecordFeed";
 import { KIND_CONTACT_LIST, KIND_TEXT_NOTE } from "@/shared/constants/kinds";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { communityHostName, relayWsUrl } from "@/shared/lib/relay-url";
@@ -62,7 +62,8 @@ const BoardDirectory = lazy(() =>
 /**
  * Home. Everyone is the General board: every post on this server, short posts and board posts together, ranked by
  * recency lifted by votes. Following is the people you follow, from General and every board, newest first. Boards
- * lists the boards to browse and join, and Updates the projects' own progress reports. One composer on top posts to
+ * lists the boards to browse and join, and Updates is the feed of project records: updates, promises kept and missed,
+ * goals, help wanted and work accepted, from the projects the reader follows or helps (every listed project otherwise). One composer on top posts to
  * General or a board. Above it, for someone signed in, what is waiting on them and their organizations; for a visitor,
  * what this place is for.
  */
@@ -193,7 +194,7 @@ export function SocialHomePage() {
           </Suspense>
         ) : tab === "updates" ? (
           <div className="p-3">
-            <ProjectProgressFeed />
+            <RecordFeed />
           </div>
         ) : tab === "following" && !me ? (
           <EmptyState title="Sign in to see who you follow">

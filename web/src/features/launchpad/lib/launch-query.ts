@@ -69,10 +69,13 @@ export interface ProjectPageShape {
  */
 export function nextProjectPage(
   pages: readonly ProjectPageShape[],
+  /** The page size and the page bound: the list of projects' own by default (other paged reads pass theirs). */
+  size: number = PROJECT_PAGE_SIZE,
+  max: number = PROJECT_MAX_PAGES,
 ): number | null {
   const last = pages[pages.length - 1];
-  if (!last || last.events.length < PROJECT_PAGE_SIZE) return null;
-  if (pages.length >= PROJECT_MAX_PAGES) return null;
+  if (!last || last.events.length < size) return null;
+  if (pages.length >= max) return null;
   if (pages.length > 1 && !broughtNew(pages)) return null;
   return Math.min(...last.events.map((event) => event.created_at));
 }
@@ -88,12 +91,16 @@ function broughtNew(pages: readonly ProjectPageShape[]): boolean {
  * Whether the server may hold project records that no further page can reach: the last page came back full and
  * {@link nextProjectPage} has nowhere to go. Never true while "Show more projects" can still be pressed.
  */
-export function projectListCut(pages: readonly ProjectPageShape[]): boolean {
+export function projectListCut(
+  pages: readonly ProjectPageShape[],
+  size: number = PROJECT_PAGE_SIZE,
+  max: number = PROJECT_MAX_PAGES,
+): boolean {
   const last = pages[pages.length - 1];
   return (
     last !== undefined &&
-    last.events.length >= PROJECT_PAGE_SIZE &&
-    nextProjectPage(pages) === null
+    last.events.length >= size &&
+    nextProjectPage(pages, size, max) === null
   );
 }
 

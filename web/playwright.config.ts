@@ -132,6 +132,8 @@ export default defineConfig({
         "**/project-list-paging.spec.ts",
         // The Team section: add a person, their yes or no, a team member's update and check, and removal on the record.
         "**/project-team.spec.ts",
+        // Home's Updates tab: a feed of project records, yours or everyone's, paged, from who may sign them.
+        "**/home-record-feed.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

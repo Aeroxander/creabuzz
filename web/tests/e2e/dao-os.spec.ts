@@ -172,13 +172,19 @@ test("Home connects project reports, reading history, discussion and the four ma
   await install(page, relay);
   await page.goto("/");
   await page.getByTestId("social-tab-projects").click();
-  const progress = page.getByTestId("project-progress");
+  // Home's Updates tab is the feed of project records: one card per record, from the project's own team only.
+  const progress = page.getByTestId("record-feed");
   await expect(progress).toContainText("Beta demo shipped");
   await expect(progress).not.toContainText("Fake official update");
-  await expect(progress).toContainText("From the team");
+  await expect(
+    progress
+      .getByTestId("record-card")
+      .first()
+      .getByTestId("record-card-label"),
+  ).toHaveText("Update");
   await expectAccessible(page, "Home project progress cards");
   await expect(
-    progress.getByRole("link", { name: "Artifact 1" }),
+    progress.getByRole("link", { name: /Artifact 1/ }),
   ).toHaveAttribute("href", "https://example.com/demo");
   await page.evaluate(() =>
     Object.defineProperty(navigator, "clipboard", {
@@ -191,7 +197,10 @@ test("Home connects project reports, reading history, discussion and the four ma
   const nav = page.getByTestId("app-nav");
   for (const name of ["Home", "Discover", "Communities", "Portfolio"])
     await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
-  await progress.getByRole("link", { name: "Nebula OS", exact: true }).click();
+  await progress
+    .getByRole("link", { name: "Nebula OS", exact: true })
+    .first()
+    .click();
   await expect(page.getByTestId("project-delivery-overview")).toContainText(
     "Ship the demo",
   );
@@ -210,18 +219,17 @@ test("Home connects project reports, reading history, discussion and the four ma
   );
   await page.reload();
   await page.getByTestId("social-tab-projects").click();
-  await expect(page.getByTestId("project-progress")).toContainText(
-    "1 new to you",
-  );
+  await expect(page.getByTestId("record-feed")).toContainText("1 new to you");
   await page
-    .getByTestId("project-progress")
-    .getByRole("button", { name: "Mark shown updates as read" })
+    .getByTestId("record-feed")
+    .getByRole("button", { name: "Mark shown records as read" })
     .click();
-  await expect(page.getByTestId("project-progress")).not.toContainText(
-    "New to you",
+  await expect(page.getByTestId("record-feed")).not.toContainText(
+    "new to you",
+    { ignoreCase: true },
   );
   await page
-    .getByTestId("project-progress")
+    .getByTestId("record-feed")
     .getByRole("link", { name: "Discuss project" })
     .first()
     .click();
@@ -262,11 +270,11 @@ test("marking reports from multiple projects uses one atomic reading-history wri
   });
   await page.goto("/");
   await page.getByTestId("social-tab-projects").click();
-  const progress = page.getByTestId("project-progress");
+  const progress = page.getByTestId("record-feed");
   await expect(progress).toContainText("Beta demo shipped");
   await expect(progress).toContainText("Second project ships");
   await progress
-    .getByRole("button", { name: "Mark shown updates as read" })
+    .getByRole("button", { name: "Mark shown records as read" })
     .click();
   await expect(progress).toContainText("marked as read in this browser");
   const saved = await page.evaluate(() => ({

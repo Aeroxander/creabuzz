@@ -245,13 +245,13 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
 
   // The follower: Home's Updates lists it for the project they follow, the request standing out as a card.
   await openAs(page, FOLLOWER_KEY, "/?tab=updates");
-  const feed = page.getByTestId("project-progress");
+  const feed = page.getByTestId("record-feed");
   const item = feed
-    .getByTestId("project-progress-item")
+    .getByTestId("record-card")
     .filter({ hasText: "Week two: sign-up works" });
   await expect(item).toContainText("Sign-up shipped on Tuesday.");
   // Newest first.
-  await expect(feed.getByTestId("project-progress-item").first()).toContainText(
+  await expect(feed.getByTestId("record-card").first()).toContainText(
     "Week two",
   );
   const homeRequest = item.getByTestId("help-request");
@@ -838,7 +838,7 @@ test("at 390px the update card, the help card and the dialog fit with no sideway
 
   await page.goto("/?tab=updates");
   await expect(
-    page.getByTestId("project-progress").getByTestId("help-request"),
+    page.getByTestId("record-feed").getByTestId("help-request"),
   ).toBeVisible();
   expect(await noSidewaysScroll(page)).toBe(true);
 
