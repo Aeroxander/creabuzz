@@ -402,7 +402,12 @@ export function ContributorStartPage() {
                 Your project is ready for contributions
               </h3>
               <p className="text-sm">{DONE_TEXT}</p>
-              {fromIdea ? (
+              {fromIdea && fromIdea.id === job?.launchId ? (
+                <p className="text-sm" data-testid="contributor-same-project">
+                  It is the same project as before: its page, goal, updates and
+                  record are all still there.
+                </p>
+              ) : fromIdea ? (
                 <p className="text-sm" data-testid="contributor-from-idea-done">
                   Your idea {fromIdea.name} is still listed on its own.{" "}
                   <Link
@@ -751,7 +756,7 @@ export function ContributorStartPage() {
                   showProblem();
                   return;
                 }
-                start.start(draft, search.project);
+                start.start(draft, search.project, fromIdea?.id);
               }}
               type="button"
             >

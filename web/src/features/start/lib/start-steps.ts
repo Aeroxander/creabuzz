@@ -36,7 +36,7 @@ export const START_STEPS: readonly StartStep[] = [
   {
     key: "workspace",
     title: "Set up a place to work",
-    body: "Pick a creative or a technical project. Channels, AI helpers and pages are set up for you.",
+    body: "Pick a creative or a technical project. Rooms, AI helpers and pages are set up for you.",
     action: "Set up your community",
     note: "Create one of your own, or open one you are in. Then press Start a project in its sidebar.",
     target: { to: "/c" },

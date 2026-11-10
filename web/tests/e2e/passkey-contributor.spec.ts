@@ -218,6 +218,7 @@ test("a founder and a contributor with no wallet start a project, do the work an
     window.localStorage.getItem("buzz.passkey.pubkey"),
   )) as string;
   await founder.goto("/start");
+  await founder.getByText("More ways to start").click();
   await founder.getByTestId("start-go-contributor").click();
   // The account that acts is the passkey account: no wallet asked for, the fees covered.
   await expect(founder.getByTestId("contributor-account-wallet")).toContainText(

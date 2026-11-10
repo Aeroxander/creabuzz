@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { clearIdea, handOffIdea, peekIdea } from "./from-idea.ts";
+import { clearIdea, handOffIdea, peekIdea, keptFromIdea } from "./from-idea.ts";
 
 /** What the form does: read it, then clear it. */
 function takeIdea(store, me) {
@@ -78,4 +78,21 @@ test("a broken entry or refused storage reads as nothing", () => {
   assert.equal(takeIdea(refusing, me), null);
   assert.doesNotThrow(() => clearIdea(refusing));
   assert.equal(takeIdea(undefined, me), null);
+});
+
+test("a project that sets up Shares keeps its cover, topic, story and rooms", () => {
+  const chat = { team: "t", supporters: "s", backers: null, board: null };
+  assert.deepEqual(
+    keptFromIdea({
+      image: "https://x/y.png",
+      category: "Games",
+      longPitch: null,
+      chat,
+    }),
+    { image: "https://x/y.png", category: "Games", chat },
+  );
+  assert.deepEqual(
+    keptFromIdea({ image: null, category: null, longPitch: "The story", chat }),
+    { longPitch: "The story", chat },
+  );
 });

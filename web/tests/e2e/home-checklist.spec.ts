@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { createMockRelay } from "./mock-relay";
@@ -49,6 +49,13 @@ async function openHome(
   await page.goto("/");
 }
 
+/** Opens "More ways to start" unless it is already open (the page remembers it for the visit). */
+async function openMoreWays(page: Page) {
+  const more = page.getByTestId("start-more");
+  if ((await more.getAttribute("open")) === null)
+    await more.locator("summary").click();
+}
+
 test("a signed-in person never sees a Get started block on Home, however new the account", async ({
   page,
 }) => {
@@ -70,6 +77,8 @@ test.describe("the one door for starting something", () => {
     await openHome(page);
     await page.getByTestId("app-nav-start").click();
     await expect(page).toHaveURL(/\/start$/);
+    // The short form leads; the steps toward a raise are among the other ways to start.
+    await openMoreWays(page);
     const steps = page.getByTestId("start-steps").getByRole("listitem");
     await expect(steps).toHaveCount(4);
     const titles = await steps.locator("h2").allTextContents();
@@ -92,6 +101,7 @@ test.describe("the one door for starting something", () => {
   }) => {
     await openHome(page);
     await page.goto("/start");
+    await openMoreWays(page);
     await page.getByTestId("start-go-idea").click();
     await expect(page.getByLabel("What is it called?")).toBeVisible({
       timeout: 20_000,
@@ -103,6 +113,7 @@ test.describe("the one door for starting something", () => {
     await expect(page.getByLabel("What is it called?")).toHaveCount(0);
 
     await page.goto("/start");
+    await openMoreWays(page);
     await page.getByTestId("start-go-raise").click();
     await expect(
       page.locator('div[data-testid="wizard-step-token"]'),
@@ -117,6 +128,7 @@ test.describe("the one door for starting something", () => {
       "creaton.first-steps": JSON.stringify(["project"]),
     });
     await page.goto("/start");
+    await openMoreWays(page);
     await expect(page.getByTestId("start-step-workspace")).toContainText(
       "Done",
     );

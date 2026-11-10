@@ -343,6 +343,7 @@ test("Start offers building with contributors, and no raise", async ({
   await relay.install(page);
   await signIn(page);
   await page.goto("/start");
+  await page.getByText("More ways to start").click();
   const contributor = page.getByTestId("start-contributor");
   await expect(contributor).toContainText("Build with contributors", {
     timeout: 20_000,

@@ -1,15 +1,17 @@
 /**
  * The one door for starting something.
  *
- * Making a place to work, sharing an idea and raising money used to be three buttons on three pages with different
- * names. This page puts them in the order most projects take them, says what each is for, ticks the ones the person has
- * really done, and points at the next. Every step still opens the same screens as before; it only gathers them.
+ * First comes the short form: a name, one sentence, the goal, and how everyone will know (`QuickStartForm`). It makes a
+ * project one person can start alone. Every other way to start sits under "More ways to start", unchanged: a project
+ * with reviewers and Shares, and the steps toward a raise in the order most projects take them, each ticked when the
+ * person has really done it. Every step still opens the same screens as before.
  *
  * Where the build offers no raises (the contributor-only hosted image), the raise steps and their heading are left out, so
  * a contributor-only server never sends anyone to a sale it cannot launch; what is left is an unnumbered option.
  */
 
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { Check } from "lucide-react";
 
 import { useLaunches } from "@/features/launchpad/use-launches";
@@ -21,6 +23,7 @@ import { cn } from "@/shared/lib/cn";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { Button } from "@/shared/ui/button";
 
+import { QuickStartForm } from "./QuickStartForm";
 import {
   startSteps,
   type StartStepView,
@@ -125,7 +128,28 @@ function Step({
   );
 }
 
+const MORE_KEY = "creaton.start.more";
+
+/** Whether "More ways to start" was left open in this visit, so coming back to the page finds it as it was. */
+function moreWasOpen(): boolean {
+  try {
+    return sessionStorage.getItem(MORE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberMore(open: boolean): void {
+  try {
+    if (open) sessionStorage.setItem(MORE_KEY, "1");
+    else sessionStorage.removeItem(MORE_KEY);
+  } catch {
+    // Not kept: the list starts closed next time.
+  }
+}
+
 export function StartPage() {
+  const [moreOpen] = useState(moreWasOpen);
   const me = existingUserPubkey();
   const launches = useLaunches();
   const mine = (launches.data ?? []).filter(
@@ -144,46 +168,65 @@ export function StartPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
       <PageHeader
-        description={
-          raises
-            ? "Most projects go in this order. You can begin at any step, and come back to the others later."
-            : "Build a project with contributors, or share an idea first."
-        }
-        title="Start something"
+        description="Say what you are aiming for. You can start alone, in about a minute."
+        title="Start a project"
       />
-      <section
-        className="flex flex-col gap-3 rounded-2xl border border-primary/60 bg-primary/5 p-5"
-        data-testid="start-contributor"
+      <QuickStartForm />
+      <details
+        className="group"
+        data-testid="start-more"
+        onToggle={(event) => rememberMore(event.currentTarget.open)}
+        open={moreOpen}
       >
-        <h2 className="text-base font-bold">Build with contributors</h2>
-        <p className="text-sm text-muted-foreground">
-          {raises
-            ? "Start without a token sale. Set up work, choose reviewers, and award Shares, the project's voting tokens, through project votes. A page shows who earned how much and for what."
-            : "Set up work and choose reviewers. People who do the work earn Shares, which are votes in the project, when the project votes to award them. A page shows who earned how much and for what."}
-        </p>
-        <div>
-          <Button asChild data-testid="start-go-contributor" size="sm">
-            <Link to="/start/contributor">Start a contributor project</Link>
-          </Button>
+        <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">
+          More ways to start
+        </summary>
+        <div className="mt-4 flex flex-col gap-6">
+          <section
+            className="flex flex-col gap-3 rounded-2xl border border-border/60 p-5"
+            data-testid="start-contributor"
+          >
+            <h2 className="text-base font-bold">Build with contributors</h2>
+            <p className="text-sm text-muted-foreground">
+              {raises
+                ? "Start without a token sale. Set up work, choose reviewers, and award Shares, the project's voting tokens, through project votes. A page shows who was awarded how much and for what."
+                : "Set up work and choose reviewers. Shares are votes in the project. The project votes to award them for work the reviewers accept. A page shows who was awarded how much and for what."}
+            </p>
+            <div>
+              <Button
+                asChild
+                data-testid="start-go-contributor"
+                size="sm"
+                variant="outline"
+              >
+                <Link to="/start/contributor">Start a contributor project</Link>
+              </Button>
+            </div>
+          </section>
+          <h2 className="text-sm font-semibold text-muted-foreground">
+            {raises ? "Or plan a raise, step by step" : "Other ways to begin"}
+          </h2>
+          {/* With raises these are steps in an order; without, the idea is an option beside the contributor project. */}
+          {raises ? (
+            <ol className="flex flex-col gap-3" data-testid="start-steps">
+              {steps.map((step, index) => (
+                <Step index={index} key={step.key} numbered step={step} />
+              ))}
+            </ol>
+          ) : (
+            <ul className="flex flex-col gap-3" data-testid="start-steps">
+              {steps.map((step, index) => (
+                <Step
+                  index={index}
+                  key={step.key}
+                  numbered={false}
+                  step={step}
+                />
+              ))}
+            </ul>
+          )}
         </div>
-      </section>
-      <h2 className="text-sm font-semibold text-muted-foreground">
-        {raises ? "Or plan a raise, step by step" : "Other ways to begin"}
-      </h2>
-      {/* With raises these are steps in an order; without, the idea is an option beside the contributor project. */}
-      {raises ? (
-        <ol className="flex flex-col gap-3" data-testid="start-steps">
-          {steps.map((step, index) => (
-            <Step index={index} key={step.key} numbered step={step} />
-          ))}
-        </ol>
-      ) : (
-        <ul className="flex flex-col gap-3" data-testid="start-steps">
-          {steps.map((step, index) => (
-            <Step index={index} key={step.key} numbered={false} step={step} />
-          ))}
-        </ul>
-      )}
+      </details>
     </div>
   );
 }

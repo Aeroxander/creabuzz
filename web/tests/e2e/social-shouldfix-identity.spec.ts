@@ -263,6 +263,8 @@ test("Back returns to where the page was scrolled; a new visit starts at the top
   await page.goto("/start");
   const main = page.locator("#app-main");
   await expect(page.getByTestId("app-nav")).toBeVisible();
+  // The short form alone fits a phone; with the other ways to start open the page is long, and stays open on Back.
+  await page.getByText("More ways to start").click();
   // Wait for the page to be long enough, then leave it part way down.
   await expect
     .poll(() => main.evaluate((el) => el.scrollHeight - el.clientHeight))

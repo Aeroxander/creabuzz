@@ -225,6 +225,8 @@ test("a contributor project is started from the page, work is claimed the same d
   // ── 1. the founder starts it: one transaction makes the DAO, its budget and first project; then it is published ──
   const founder = await context.newPage();
   await open(founder, FOUNDER_WALLET, "/start");
+  // The short form leads; a project with reviewers and Shares is one of the other ways to start.
+  await founder.getByText("More ways to start").click();
   await founder.getByTestId("start-go-contributor").click();
   // The pilot build never brings sales up, not even to say there is none.
   await expect(founder.getByTestId("contributor-no-raise")).toContainText(

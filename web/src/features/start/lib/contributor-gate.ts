@@ -168,11 +168,17 @@ export function canResume(input: {
  * else the name's slug, with a suffix when the founder has, or ever had, a project by that id. A removed project's id
  * is never reused: the DAO's address follows from the id, so reusing it would pick up the removed project's DAO, its
  * reviewers and work areas, and publish the new words over it.
+ *
+ * One id is kept on purpose: `fromIdea`, the founder's own project that has no Shares yet (the caller checks that it
+ * is one). Setting up Shares for it carries on the same project, so its page, goal, updates, record and followers stay
+ * with it. Such a project never had a DAO, so there is none to pick up.
  */
 export function freshLaunchId(
   input: {
     name: string;
     fromBoard?: string;
+    /** The founder's own project without Shares that this one carries on, by id. */
+    fromIdea?: string;
     /** The founder's projects on the list. */
     mine: readonly string[];
     /** The founder's projects ever taken off it. */
@@ -180,6 +186,12 @@ export function freshLaunchId(
   },
   random?: () => number,
 ): string {
+  if (
+    input.fromIdea &&
+    input.mine.includes(input.fromIdea) &&
+    !input.removed.includes(input.fromIdea)
+  )
+    return input.fromIdea;
   const taken = [...input.mine, ...input.removed];
   if (input.fromBoard && !taken.includes(input.fromBoard))
     return input.fromBoard;

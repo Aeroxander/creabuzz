@@ -4,6 +4,8 @@
  * account with covered fees, or the browser's wallet), the chain and the server. The job is kept in this browser per founder, so a reload offers to finish it instead of starting over.
  */
 import { useQuery } from "@tanstack/react-query";
+import { isIdea } from "@/features/launchpad/lib/idea";
+import { keptFromIdea } from "./lib/from-idea";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { onPasskeySessionChange } from "@/features/identity/lib/passkey-identity";
@@ -98,6 +100,9 @@ export function useContributorStart() {
   const wallet = useActingAccount();
   const launches = useLaunches();
   const removed = useRemovedLaunchIds(me);
+  // Read when the record is published, which may be long after the run began.
+  const launchesRef = useRef(launches.data);
+  launchesRef.current = launches.data;
   const create = useCreateLaunch().mutateAsync;
   // A passkey unlocked anywhere (here, the profile menu, the unlock overlay) changes what this page can do.
   const [, setSession] = useState(0);
@@ -247,12 +252,23 @@ export function useContributorStart() {
           // not stop the start, and the team opens it later from the Discussion tab.
           publish: async (input) => {
             assertJobCommunity(boardScope, relayWsUrl());
+            // A project that carries on the founder's own project without Shares keeps that one's cover, topic,
+            // story and rooms: the record is published again over the same id.
+            const before = (launchesRef.current ?? []).find(
+              (launch) =>
+                launch.record.author === start.author &&
+                launch.record.id === input.id,
+            );
+            const kept =
+              before && isIdea(before.record)
+                ? keptFromIdea(before.record)
+                : {};
             await publishWithProjectBoard({
               scope: boardScope,
               launchName: input.name,
-              chat: input.chat ?? EMPTY_CHAT,
+              chat: input.chat ?? kept.chat ?? EMPTY_CHAT,
               save: async (chat) => {
-                await create({ ...input, chat });
+                await create({ ...kept, ...input, chat });
               },
             });
           },
@@ -278,10 +294,11 @@ export function useContributorStart() {
 
   /**
    * Start a new project from the form. Throws a `ContributorInputError` for a draft that cannot start. `fromBoard` is a
-   * Projects-board project's id: the launch then takes that id, so the board links to it (D84).
+   * Projects-board project's id: the launch then takes that id, so the board links to it (D84). `fromIdea` is the
+   * founder's own project without Shares: the launch keeps that id, so the project carries on as one.
    */
   const start = useCallback(
-    (draft: ContributorDraft, fromBoard?: string) => {
+    (draft: ContributorDraft, fromBoard?: string, fromIdea?: string) => {
       if (!gate.ok || !network.data || !me || !wallet.address) return;
       const { chainId, kit, expectedSummoner, currency, weekly } = network.data;
       const terms = contributorTerms(draft, wallet.address);
@@ -289,6 +306,15 @@ export function useContributorStart() {
       const launchId = freshLaunchId({
         name: terms.name,
         fromBoard,
+        // Only the founder's own project that has no Shares yet is carried on under its id.
+        fromIdea: (launches.data ?? []).some(
+          (launch) =>
+            launch.record.author === me &&
+            launch.record.id === fromIdea &&
+            isIdea(launch.record),
+        )
+          ? fromIdea
+          : undefined,
         mine: (launches.data ?? [])
           .filter((launch) => launch.record.author === me)
           .map((launch) => launch.record.id),

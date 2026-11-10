@@ -231,6 +231,8 @@ test("Start offers a contributor project, says it has no token sale, and shows w
   await installChain(page);
   await signIn(page);
   await page.goto("/start");
+  // The short form leads; a project with reviewers and Shares is one of the other ways to start.
+  await page.getByText("More ways to start").click();
 
   const path = page.getByTestId("start-contributor");
   await expect(path).toContainText("Start without a token sale");

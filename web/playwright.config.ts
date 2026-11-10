@@ -120,6 +120,8 @@ export default defineConfig({
         "**/v5-project-story.spec.ts",
         // The weekly update and the help it can ask for: post, see, offer, reply, Help found.
         "**/weekly-update-help.spec.ts",
+        // The goal, the promises updates make and answer, the record, and starting a project alone.
+        "**/project-goal-record.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

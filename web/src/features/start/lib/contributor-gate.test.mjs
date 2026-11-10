@@ -135,6 +135,39 @@ test("a new project never takes the id of one its founder removed, so it never p
   );
 });
 
+test("setting up Shares for the founder's own project keeps its id, so its goal, record and followers stay with it", () => {
+  assert.equal(
+    freshLaunchId({
+      name: "Nebula",
+      fromIdea: "nebula",
+      mine: ["nebula", "other"],
+      removed: [],
+    }),
+    "nebula",
+  );
+  // An id that was ever removed is never kept, even when a project has it again: a removed project may have had a DAO.
+  const again = freshLaunchId(
+    {
+      name: "Nebula",
+      fromIdea: "nebula",
+      mine: ["nebula"],
+      removed: ["nebula"],
+    },
+    () => 0.5,
+  );
+  assert.match(again, /^nebula-[0-9a-z]{4}$/);
+  // Not on the founder's list (someone else's, or gone): a fresh id as before.
+  assert.equal(
+    freshLaunchId({
+      name: "Nebula",
+      fromIdea: "old-name",
+      mine: [],
+      removed: [],
+    }),
+    "nebula",
+  );
+});
+
 test("with two reviewers the empty box means both must agree, which the form says before anything is made", () => {
   assert.equal(reviewQuorum(2, ""), 2);
   assert.equal(everyReviewerMustAgree(2, ""), true);

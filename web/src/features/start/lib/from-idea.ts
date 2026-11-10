@@ -1,7 +1,7 @@
 /**
- * Starting a contributor project from one's own idea: the idea's name and sentence fill the form, and once the project
- * is made the founder is offered to take the idea off Discover, so the same project is not listed twice under two
- * kinds of record.
+ * Setting up Shares for one's own project (an idea: a project with no Shares yet): its name and sentence fill the
+ * form, and the project made carries on under the same id, so its page, goal, updates, record and followers stay with
+ * it. (Before this, the project made was a second record, and the founder was asked to take the first one down.)
  *
  * The idea's page hands these words over in this browser's session storage (one entry), so the start form's
  * link stays the same plain `/start/contributor`. The form clears it once read. Nothing is written to the network here.
@@ -95,4 +95,36 @@ export function clearIdea(store: HandoffStore | null | undefined): void {
   } catch {
     // Nothing to clear.
   }
+}
+
+/** What a project that sets up Shares keeps of the project it carries on: its cover, topic, story and rooms. */
+export interface KeptFromIdea {
+  image?: string;
+  category?: string;
+  longPitch?: string;
+  chat?: {
+    team: string | null;
+    supporters: string | null;
+    backers: string | null;
+    board: string | null;
+  };
+}
+
+/**
+ * The parts of a project's record that setting up Shares does not ask about, so publishing the record again over the
+ * same id does not drop them. Its name and sentence come from the form; its goal, updates and record are other
+ * records that name the project by id and need nothing done.
+ */
+export function keptFromIdea(record: {
+  image: string | null;
+  category: string | null;
+  longPitch: string | null;
+  chat: NonNullable<KeptFromIdea["chat"]>;
+}): KeptFromIdea {
+  return {
+    ...(record.image ? { image: record.image } : {}),
+    ...(record.category ? { category: record.category } : {}),
+    ...(record.longPitch ? { longPitch: record.longPitch } : {}),
+    chat: { ...record.chat },
+  };
 }

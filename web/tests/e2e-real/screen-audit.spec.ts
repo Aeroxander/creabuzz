@@ -793,6 +793,7 @@ test("the contributor-only build shows no sale", async ({ browser }) => {
   const page = await openAs(browser, "frida", "desktop", false);
   try {
     await page.goto("/start");
+    await page.getByText("More ways to start").click();
     await expect(page.getByTestId("start-go-contributor")).toBeVisible();
     await expect(page.getByTestId("start-step-raise")).toHaveCount(0);
     await expect(page.getByTestId("start-step-run")).toHaveCount(0);
