@@ -75,6 +75,14 @@ const MAX_IMAGE_BYTES: u64 = 50 * 1024 * 1024;
 /// Maximum file size for video uploads (500 MB).
 const MAX_VIDEO_BYTES: u64 = 500 * 1024 * 1024;
 
+/// Whether a 403 is worth the "BUZZ_AUTH_TAG may be stale" hint: the tag is
+/// set, and the refusal is not the server's rule about what an agent account
+/// may sign. That rule holds whatever tag is sent, so unsetting it fixes
+/// nothing and the hint would send an agent the wrong way.
+fn stale_auth_tag_is_a_likely_cause(message: &str) -> bool {
+    std::env::var("BUZZ_AUTH_TAG").is_ok() && !message.contains("an agent account cannot")
+}
+
 /// Sign a NIP-98 HTTP auth event (kind:27235) and return the Authorization header value.
 ///
 /// The event includes:
@@ -1133,7 +1141,8 @@ impl BuzzClient {
                                     .map(str::to_string)
                             })
                             .unwrap_or(body_text);
-                        let message = if status == 403 && std::env::var("BUZZ_AUTH_TAG").is_ok() {
+                        let message = if status == 403 && stale_auth_tag_is_a_likely_cause(&message)
+                        {
                             format!(
                                 "{message} (BUZZ_AUTH_TAG is set — it may be stale or revoked; try unsetting it)"
                             )
@@ -1413,7 +1422,7 @@ impl BuzzClient {
                         .map(|s| s.to_string())
                 })
                 .unwrap_or(body);
-            if status == 403 && std::env::var("BUZZ_AUTH_TAG").is_ok() {
+            if status == 403 && stale_auth_tag_is_a_likely_cause(&message) {
                 let message = format!(
                     "{message} (BUZZ_AUTH_TAG is set — it may be stale or revoked; try unsetting it)"
                 );

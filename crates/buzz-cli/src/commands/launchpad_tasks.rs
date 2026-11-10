@@ -8,11 +8,18 @@
 //! What this tool can do is what a helper can do, whether a person or an agent runs it:
 //!
 //! * `list`: a project's open help requests and its tasks, with each task's state worked out from who signed what;
+//! * `show`: one task by its id, with every field a machine needs to pick it up;
+//! * `open`: the help requests anyone may offer on, across every project, a bounded page at a time;
 //! * `offer`: "I can help" on an update that asks for help;
 //! * `accept`: say yes to a task that names this account. A task is this account's only once it signs a step for that
 //!   task: an offer to help is never agreement, since any project could name any offer ever made;
 //! * `submit`: hand work in, as words and links;
-//! * `more-time`: ask for more time, with a reason.
+//! * `more-time`: ask for more time, with a reason;
+//! * `give-up`: hand the task back.
+//!
+//! Every read prints one JSON object marked `"schema": "creaton.tasks.v1"`. A task always has the same fields (see
+//! [`project_tasks`]); a field with nothing to say is `null` or an empty list, never left out. A read that could not
+//! reach the end of what it reads says so (`complete`, `cut`) and never passes a partial answer off as the whole.
 //!
 //! There is deliberately no command to confirm work, send it back, cancel a task, vote or award anything: the one who
 //! did the work never checks it, and those steps need a person on the project's team.
@@ -43,6 +50,14 @@ const TEAM_TOLD: usize = 12;
 const MAX_LINKS: usize = 5;
 const MAX_NOTE: usize = 1_000;
 const MAX_LINK: usize = 500;
+/// The name every reading command's JSON carries, so a machine can tell when the shape changes.
+pub(crate) const SCHEMA: &str = "creaton.tasks.v1";
+/// How many update records `open` looks through in one call unless told otherwise, and the most it ever will.
+const OPEN_SCAN_DEFAULT: u32 = 500;
+const OPEN_SCAN_MAX: u32 = 2_000;
+/// The largest file `submit --file` will fingerprint.
+const MAX_FILE_BYTES: u64 = 1 << 30;
+const MAX_FILE_NAME: usize = 120;
 
 /// A helper's side of tasks with a finish line.
 #[derive(Subcommand)]
@@ -54,6 +69,26 @@ pub enum TasksCmd {
         /// Founder pubkey (64-char hex). Defaults to the current identity.
         #[arg(long)]
         author: Option<String>,
+    },
+    /// Show one task by its id, with every field: goal, what, done-means, size, due, limits, state, helper,
+    /// evidence (links and file fingerprints) and who checked it
+    Show {
+        /// Task id (64-char hex)
+        task: String,
+    },
+    /// List help requests anyone may offer on, across all projects: newest first, a bounded page at a time
+    #[command(
+        after_help = "One call looks through at most --scan update records, newest first, and prints the open \
+requests among them. When more records remain, `cut` is true and `next_until` is the value to pass as --until for \
+the next page. `cut: false` means the end was reached."
+    )]
+    Open {
+        /// Only look at records signed at or before this time (unix seconds). Use `next_until` from the page before.
+        #[arg(long)]
+        until: Option<u64>,
+        /// How many update records to look through in this call (default 500, at most 2000)
+        #[arg(long)]
+        scan: Option<u32>,
     },
     /// Offer to help on an update that asks for help (public; not an agreement, and not a yes to any task)
     Offer {
@@ -97,6 +132,10 @@ pub enum TasksCmd {
         /// A web link to the work (repeat for more; at most 5)
         #[arg(long = "link")]
         links: Vec<String>,
+        /// A local file to record by its fingerprint (sha256) and name; the file itself is not uploaded (repeat for
+        /// more; at most 5)
+        #[arg(long = "file")]
+        files: Vec<std::path::PathBuf>,
     },
     /// Ask for more time on your task
     #[command(name = "more-time")]
@@ -115,6 +154,21 @@ pub enum TasksCmd {
         /// The date asked for (YYYY-MM-DD)
         #[arg(long)]
         until: Option<String>,
+    },
+    /// Hand your task back: you will not finish it
+    #[command(name = "give-up")]
+    GiveUp {
+        /// Project id (slug)
+        id: String,
+        /// Founder pubkey (64-char hex)
+        #[arg(long)]
+        author: String,
+        /// Task id (64-char hex)
+        #[arg(long)]
+        task: String,
+        /// A short note on why
+        #[arg(long)]
+        note: Option<String>,
     },
 }
 
@@ -218,6 +272,10 @@ struct TaskRecord {
     done: String,
     size: String,
     due: Option<String>,
+    /// The goal the task sits under (`task-goal`: a goal id of the project), when it names one.
+    goal_id: Option<String>,
+    /// What the helper must stay within (`task-limits`), when the task says.
+    limits: String,
     update_id: Option<String>,
     offer_id: Option<String>,
     evidence_id: Option<String>,
@@ -292,6 +350,8 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
         done: String::new(),
         size: String::new(),
         due: first_tag(event, "task-due").and_then(|d| valid_date(&d)),
+        goal_id: None,
+        limits: String::new(),
         update_id: None,
         offer_id: None,
         evidence_id: None,
@@ -315,6 +375,12 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
         record.what = what;
         record.done = done;
         record.size = size;
+        record.goal_id = first_tag(event, "task-goal")
+            .map(|g| g.trim().to_string())
+            .filter(|g| !g.is_empty() && g.len() <= 64);
+        record.limits = first_tag(event, "task-limits")
+            .map(|l| l.trim().chars().take(MAX_NOTE).collect())
+            .unwrap_or_default();
         record.update_id = first_tag(event, "task-update").filter(|v| is_hex64(v));
         record.offer_id = first_tag(event, "task-offer").filter(|v| is_hex64(v));
         return Some(record);
@@ -369,7 +435,14 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
     Some(record)
 }
 
-/// Every task of one project as JSON, from its task records, by the same rules as the web app's `projectTasks`:
+/// Every task of one project as JSON, from its task records. Each task is one object with the same fields every
+/// time: `task_id`, `project`, `created_at`, `state`, `late`, `helper`, `helper_is_agent`, `made_by`, `goal_id`,
+/// `what`, `done_means`, `size`, `due`, `limits`, `update_id`, `offer_id`, `agreed`, `mine`, `next`, `checked_by`,
+/// `evidence` (each with `links`, `files` by sha256 fingerprint, `confirmed_by`, `sent_back`), `more_time`, and what
+/// closed it. The commands add `goal` (the goal's words) beside `goal_id`, and `helper_run_by` (who runs the helper,
+/// when its account is labelled as an agent).
+///
+/// The rules are the web app's `projectTasks`:
 /// a step counts only when the right party signed it, nothing is ordered by the time a record carries, a
 /// confirmation counts only from a team member who is not the helper (nor an agent, nor whoever runs the helper),
 /// and a helper is on a task only once they signed a step for that very task (a yes, work handed in, an ask for
@@ -532,8 +605,18 @@ fn project_tasks(
             (true, "submitted") => "wait-for-check",
             _ => "none",
         };
+        // Who checked the work that was accepted: the team members who confirmed that piece.
+        let checked_by: Vec<&str> = accepted
+            .and_then(|e| confirmed.get(e.id.as_str()))
+            .cloned()
+            .unwrap_or_default();
         out.push(json!({
             "task_id": task.id,
+            "project": task.coordinate,
+            "created_at": task.at,
+            "goal_id": task.goal_id,
+            "limits": (!task.limits.is_empty()).then_some(task.limits.as_str()),
+            "checked_by": checked_by,
             "state": state,
             "late": late,
             "helper": helper,
@@ -669,7 +752,7 @@ fn offer_parts(
     ))
 }
 
-/// The tags and body of a helper's step on a task (`accept`, `evidence` or `more-time`), as the web app's
+/// The tags and body of a helper's step on a task (`accept`, `evidence`, `more-time` or `give-up`), as the web app's
 /// `taskStepEvent` writes them. `tell` are the team members the step is for.
 fn step_parts(
     part: &str,
@@ -683,6 +766,7 @@ fn step_parts(
         "accept" => "Task accepted",
         "evidence" => "Work handed in",
         "more-time" => "More time asked",
+        "give-up" => "Task given up",
         other => {
             return Err(CliError::Other(format!(
                 "this tool does not send a {other:?} step"
@@ -729,21 +813,179 @@ fn parse_events(raw: Vec<Value>) -> Result<Vec<Event>, CliError> {
         .collect()
 }
 
-struct Project {
-    coordinate: String,
-    name: String,
+pub(crate) struct Project {
+    pub(crate) coordinate: String,
+    pub(crate) name: String,
     /// The founder first, then the people on the project's record.
-    team: Vec<String>,
+    pub(crate) team: Vec<String>,
 }
 
 impl Project {
     fn team_set(&self) -> HashSet<String> {
         self.team.iter().cloned().collect()
     }
+
+    /// The founder: the author of the project's record.
+    pub(crate) fn founder(&self) -> &str {
+        self.team.first().map_or("", String::as_str)
+    }
+
+    fn summary(&self, id: &str) -> Value {
+        json!({
+            "id": id,
+            "author": self.founder(),
+            "name": self.name,
+            "coordinate": self.coordinate,
+            "team": self.team,
+        })
+    }
+}
+
+/// The founder and the id a project coordinate (`37001:<founder>:<id>`) names.
+fn split_coordinate(coordinate: &str) -> Option<(&str, &str)> {
+    let mut parts = coordinate.splitn(3, ':');
+    let (kind, founder, id) = (parts.next()?, parts.next()?, parts.next()?);
+    (kind == KIND_LAUNCH_RECORD.to_string() && is_hex64(founder) && !id.is_empty())
+        .then_some((founder, id))
+}
+
+/// A project's goals as they stand, by goal id: of the founder's goal records (`goal`, `goal-level`, `goal-text`,
+/// `goal-how`, `goal-state`, `goal-under`), the newest version of each. `updates` are update records already read;
+/// only the founder's count.
+pub(crate) fn goals_as_they_stand(updates: &[Event], founder: &str) -> BTreeMap<String, Value> {
+    let mut newest: BTreeMap<String, (u64, String, Value)> = BTreeMap::new();
+    for event in updates {
+        if event.pubkey.to_hex() != founder {
+            continue;
+        }
+        let Some(id) = first_tag(event, "goal").filter(|id| !id.is_empty() && id.len() <= 64)
+        else {
+            continue;
+        };
+        let text = first_tag(event, "goal-text").unwrap_or_default();
+        let level = first_tag(event, "goal-level").unwrap_or_default();
+        let state = first_tag(event, "goal-state").unwrap_or_default();
+        if text.trim().is_empty()
+            || !matches!(level.as_str(), "primary" | "quarter" | "month" | "week")
+            || !matches!(state.as_str(), "open" | "reached" | "missed" | "changed")
+        {
+            continue;
+        }
+        let key = (event.created_at.as_secs(), event.id.to_hex());
+        if newest
+            .get(&id)
+            .is_some_and(|(at, event_id, _)| (*at, event_id.as_str()) >= (key.0, key.1.as_str()))
+        {
+            continue;
+        }
+        let view = json!({
+            "id": id,
+            "level": level,
+            "text": text.trim(),
+            "how_we_will_know": first_tag(event, "goal-how").map(|h| h.trim().to_string()).filter(|h| !h.is_empty()),
+            "state": state,
+            "under": first_tag(event, "goal-under").filter(|u| !u.is_empty()),
+        });
+        newest.insert(id, (key.0, key.1, view));
+    }
+    newest
+        .into_iter()
+        .map(|(id, (_, _, view))| (id, view))
+        .collect()
+}
+
+/// Put each task's goal beside its `goal_id`: the goal's words when the project has a goal under that id, the bare
+/// id when it does not (or its record was not among those read), `null` when the task names no goal.
+fn attach_goals(tasks: &mut [Value], goals: &BTreeMap<String, Value>) {
+    for task in tasks {
+        let goal = match task["goal_id"].as_str() {
+            Some(id) => goals.get(id).cloned().unwrap_or_else(|| {
+                json!({ "id": id, "level": null, "text": null, "how_we_will_know": null, "state": null, "under": null })
+            }),
+            None => Value::Null,
+        };
+        task["goal"] = goal;
+    }
+}
+
+/// Say of each task's helper whether the account is labelled as an agent, and who runs it: read from the helper's
+/// own profile (`buzz agents show`), so it is known before the helper has signed anything for the task. A helper
+/// whose steps carry an agent's mark stays marked. Returns whether every helper's profile was looked at.
+async fn attach_helper_labels(client: &BuzzClient, tasks: &mut [Value]) -> Result<bool, CliError> {
+    let mut helpers: Vec<String> = tasks
+        .iter()
+        .filter_map(|t| t["helper"].as_str().map(str::to_string))
+        .collect();
+    helpers.sort();
+    helpers.dedup();
+    let complete = helpers.len() <= HELPERS_READ;
+    helpers.truncate(HELPERS_READ);
+    let mut run_by: HashMap<String, Option<String>> = HashMap::new();
+    for chunk in helpers.chunks(50) {
+        let filter = json!({ "kinds": [0], "authors": chunk });
+        for profile in client
+            .query_pages_bounded(filter, chunk.len() as u32)
+            .await?
+        {
+            let label = super::agent_label::read_label(&profile);
+            let Some(who) = label["pubkey"]
+                .as_str()
+                .filter(|who| chunk.iter().any(|c| c == who))
+            else {
+                continue;
+            };
+            if label["agent"] == json!(true) {
+                run_by.insert(
+                    who.to_string(),
+                    label["operator"].as_str().map(str::to_string),
+                );
+            }
+        }
+    }
+    for task in tasks {
+        let operator = task["helper"]
+            .as_str()
+            .and_then(|helper| run_by.get(helper))
+            .cloned();
+        if operator.is_some() {
+            task["helper_is_agent"] = json!(true);
+        }
+        task["helper_run_by"] = json!(operator.flatten());
+    }
+    Ok(complete)
+}
+
+/// The founder's update records for one project (goals and weekly updates are among them), and whether they were
+/// read to the end.
+pub(crate) async fn read_founder_updates(
+    client: &BuzzClient,
+    project: &Project,
+) -> Result<(Vec<Event>, bool), CliError> {
+    let filter = json!({
+        "kinds": [KIND_LAUNCH_UPDATE],
+        "authors": [project.founder()],
+        "#a": [project.coordinate],
+    });
+    let mut events = parse_events(
+        client
+            .query_pages_bounded(filter, HELP_READ_BOUND + 1)
+            .await?,
+    )?;
+    let complete = events.len() <= HELP_READ_BOUND as usize;
+    // What comes back is checked again: only the founder's own records for this project.
+    events.retain(|e| {
+        e.pubkey.to_hex() == project.founder()
+            && first_tag(e, "a").as_deref() == Some(project.coordinate.as_str())
+    });
+    Ok((events, complete))
 }
 
 /// A project's own record, signed by its founder: its name and who is on its team.
-async fn read_project(client: &BuzzClient, id: &str, owner: &str) -> Result<Project, CliError> {
+pub(crate) async fn read_project(
+    client: &BuzzClient,
+    id: &str,
+    owner: &str,
+) -> Result<Project, CliError> {
     super::launchpad::validate_launch_id(id)?;
     require_hex64(owner, "--author")?;
     let filter = json!({ "kinds": [KIND_LAUNCH_RECORD], "authors": [owner], "#d": [id] });
@@ -883,20 +1125,27 @@ async fn cmd_list(client: &BuzzClient, id: &str, author: Option<&str>) -> Result
         help_complete &= found.len() <= HELP_READ_BOUND as usize;
         signals.extend(found);
     }
+    let mut tasks = project_tasks(&records, &project.coordinate, &team, &today(), &me);
+    // The goals are among the team's updates just read: the founder's goal records.
+    attach_goals(
+        &mut tasks,
+        &goals_as_they_stand(&updates, project.founder()),
+    );
+    let labels_complete = attach_helper_labels(client, &mut tasks).await?;
     println!(
         "{}",
         json!({
-            "project": {
-                "id": id,
-                "author": owner,
-                "name": project.name,
-                "coordinate": project.coordinate,
-                "team": project.team,
-            },
+            "schema": SCHEMA,
+            "project": project.summary(id),
             "help_requests": open_help_requests(&updates, &signals, &team, &me),
-            "tasks": project_tasks(&records, &project.coordinate, &team, &today(), &me),
-            // False: more records than were read, so a request, a task or a step may be missing.
-            "complete": { "help_requests": help_complete, "tasks": tasks_complete },
+            "tasks": tasks,
+            // False: more records than were read, so a request, a task, a step or a goal may be missing.
+            "complete": {
+                "help_requests": help_complete,
+                "tasks": tasks_complete,
+                "goals": help_complete,
+                "helper_labels": labels_complete,
+            },
             "rewards": "Rewards are decided separately, by the project's own rules.",
             "note": "A task is its helper's only once they say yes. One nobody has said yes to is listed only for the project's team and the person it names; the record itself is public. A project's team can change: steps count by who is on the team now.",
         })
@@ -1061,6 +1310,7 @@ async fn cmd_submit(
     task: &str,
     note: Option<&str>,
     links: &[String],
+    files: &[std::path::PathBuf],
 ) -> Result<(), CliError> {
     let note = note.unwrap_or("").trim();
     let mut clean: Vec<String> = Vec::new();
@@ -1077,9 +1327,19 @@ async fn cmd_submit(
     if clean.len() > MAX_LINKS {
         return Err(CliError::Usage(format!("at most {MAX_LINKS} links")));
     }
-    if note.is_empty() && clean.is_empty() {
+    if files.len() > MAX_LINKS {
+        return Err(CliError::Usage(format!("at most {MAX_LINKS} files")));
+    }
+    let mut prints: Vec<(String, String)> = Vec::new();
+    for path in files {
+        let print = file_fingerprint(path)?;
+        if !prints.iter().any(|(hash, _)| *hash == print.0) {
+            prints.push(print);
+        }
+    }
+    if note.is_empty() && clean.is_empty() && prints.is_empty() {
         return Err(CliError::Usage(
-            "hand in something: --note, --link, or both".into(),
+            "hand in something: --note, --link, --file, or any of them together".into(),
         ));
     }
     let me = client.keys().public_key().to_hex();
@@ -1103,14 +1363,296 @@ async fn cmd_submit(
             && r.author == me
             && r.note == kept_note
             && r.links == clean
+            && r.files.len() == prints.len()
+            && r.files.iter().all(|file| {
+                prints
+                    .iter()
+                    .any(|(hash, _)| file["sha256"].as_str() == Some(hash.as_str()))
+            })
     });
     if same {
         return Err(CliError::Conflict(
             "this account already handed in exactly this on that task".into(),
         ));
     }
-    let (tags, content) = step_parts("evidence", task, &tell(&project, &view), note, &clean, None)?;
+    let (mut tags, content) =
+        step_parts("evidence", task, &tell(&project, &view), note, &clean, None)?;
+    tags.extend(file_tags(&prints)?);
     publish(client, &project.coordinate, tags, content).await
+}
+
+/// The fingerprint (sha256, lower-case hex) and name of a local file handed in as evidence. The file is read in
+/// pieces and never uploaded: the record says exactly which bytes were handed in, wherever they end up.
+fn file_fingerprint(path: &std::path::Path) -> Result<(String, String), CliError> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let problem = |what: String| CliError::Usage(format!("--file {}: {what}", path.display()));
+    let meta = std::fs::metadata(path).map_err(|e| problem(e.to_string()))?;
+    if !meta.is_file() {
+        return Err(problem("not a file".into()));
+    }
+    if meta.len() > MAX_FILE_BYTES {
+        return Err(problem("larger than 1 GiB".into()));
+    }
+    let file = std::fs::File::open(path).map_err(|e| problem(e.to_string()))?;
+    // Bounded even if the file grows while it is read.
+    let mut reader = file.take(MAX_FILE_BYTES + 1);
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut total: u64 = 0;
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|e| problem(e.to_string()))?;
+        if read == 0 {
+            break;
+        }
+        total += read as u64;
+        hasher.update(&buffer[..read]);
+    }
+    if total > MAX_FILE_BYTES {
+        return Err(problem("larger than 1 GiB".into()));
+    }
+    let name: String = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+        .chars()
+        .take(MAX_FILE_NAME)
+        .collect();
+    Ok((hex::encode(hasher.finalize()), name))
+}
+
+/// The `task-file` tags for handed-in files, as the web app writes them: fingerprint, name, and no link (the file
+/// was not uploaded).
+fn file_tags(prints: &[(String, String)]) -> Result<Vec<Tag>, CliError> {
+    prints
+        .iter()
+        .map(|(hash, name)| tag(&["task-file", hash, name, ""]))
+        .collect()
+}
+
+async fn cmd_give_up(
+    client: &BuzzClient,
+    id: &str,
+    author: &str,
+    task: &str,
+    note: Option<&str>,
+) -> Result<(), CliError> {
+    let me = client.keys().public_key().to_hex();
+    let project = read_project(client, id, author).await?;
+    let (view, _) = my_task(client, &project, task, &me).await?;
+    match view["state"].as_str() {
+        Some("offered" | "in-progress" | "sent-back" | "submitted") => {}
+        Some("given-up") => {
+            return Err(CliError::Conflict(
+                "this account already gave that task up".into(),
+            ))
+        }
+        _ => return Err(CliError::Usage("that task is closed".into())),
+    }
+    let (tags, content) = step_parts(
+        "give-up",
+        task,
+        &tell(&project, &view),
+        note.unwrap_or(""),
+        &[],
+        None,
+    )?;
+    publish(client, &project.coordinate, tags, content).await
+}
+
+async fn cmd_show(client: &BuzzClient, task: &str) -> Result<(), CliError> {
+    require_hex64(task, "the task id")?;
+    let me = client.keys().public_key().to_hex();
+    let found = read_by_ids(client, &[task.to_string()]).await?;
+    let event = found
+        .first()
+        .ok_or_else(|| CliError::NotFound(format!("task {task} not found")))?;
+    let record = parse_task_record(event)
+        .ok_or_else(|| CliError::Usage(format!("record {task} is not a task record")))?;
+    if record.part != "task" {
+        return Err(CliError::Usage(format!(
+            "record {task} is a step ({}) on task {}; show that task instead",
+            record.part, record.task_id
+        )));
+    }
+    let (founder, id) = split_coordinate(&record.coordinate)
+        .ok_or_else(|| CliError::Other("the task names its project badly".into()))?;
+    let project = read_project(client, id, founder).await?;
+    let (records, tasks_complete) = read_task_records(client, &project).await?;
+    let mut tasks: Vec<Value> = project_tasks(
+        &records,
+        &project.coordinate,
+        &project.team_set(),
+        &today(),
+        &me,
+    )
+    .into_iter()
+    .filter(|t| t["task_id"].as_str() == Some(task))
+    .collect();
+    if tasks.is_empty() {
+        return Err(CliError::NotFound(format!(
+            "task {task} is not a task this account can see: it was not made by the project's team, or nobody has \
+             said yes to it yet and it names someone else"
+        )));
+    }
+    let (updates, goals_complete) = read_founder_updates(client, &project).await?;
+    attach_goals(
+        &mut tasks,
+        &goals_as_they_stand(&updates, project.founder()),
+    );
+    attach_helper_labels(client, &mut tasks).await?;
+    println!(
+        "{}",
+        json!({
+            "schema": SCHEMA,
+            "project": project.summary(id),
+            "task": tasks.remove(0),
+            // False: more records than were read, so a step or the goal may be missing and the state may be stale.
+            "complete": { "tasks": tasks_complete, "goals": goals_complete },
+        })
+    );
+    Ok(())
+}
+
+/// One page of update records, newest first, for `open`: at most `scan` records signed at or before `until`.
+///
+/// Returns the records to look at, whether older ones remain (`cut`), and the `until` that continues from here. A
+/// cut page gives up its oldest second whole, so the next page reads that second again from its start: no record
+/// is skipped and none is listed twice. When every record read shares one second there is nothing to give up; the
+/// page keeps them and continues from the second before, and says records in that second may have been missed.
+fn open_page(mut events: Vec<Event>, scan: usize) -> (Vec<Event>, bool, Option<u64>, bool) {
+    events.sort_by(|a, b| {
+        (b.created_at.as_secs(), b.id.to_hex()).cmp(&(a.created_at.as_secs(), a.id.to_hex()))
+    });
+    if events.len() <= scan {
+        return (events, false, None, false);
+    }
+    events.truncate(scan);
+    let oldest = events.last().map_or(0, |e| e.created_at.as_secs());
+    let newest = events.first().map_or(0, |e| e.created_at.as_secs());
+    if oldest == newest {
+        return (events, true, Some(oldest.saturating_sub(1)), true);
+    }
+    events.retain(|e| e.created_at.as_secs() > oldest);
+    (events, true, Some(oldest), false)
+}
+
+async fn cmd_open(
+    client: &BuzzClient,
+    until: Option<u64>,
+    scan: Option<u32>,
+) -> Result<(), CliError> {
+    let scan = scan.unwrap_or(OPEN_SCAN_DEFAULT);
+    if scan == 0 || scan > OPEN_SCAN_MAX {
+        return Err(CliError::Usage(format!(
+            "--scan must be between 1 and {OPEN_SCAN_MAX}"
+        )));
+    }
+    let me = client.keys().public_key().to_hex();
+    let mut filter = json!({ "kinds": [KIND_LAUNCH_UPDATE] });
+    if let Some(until) = until {
+        filter["until"] = json!(until);
+    }
+    let read = parse_events(client.query_pages_bounded(filter, scan + 1).await?)?;
+    let (page, cut, next_until, same_second) = open_page(read, scan as usize);
+    let scanned = page.len();
+
+    // The asks among them, by project.
+    let mut asks: BTreeMap<String, Vec<Event>> = BTreeMap::new();
+    for event in page {
+        if first_tag(&event, "help-needed").is_none_or(|t| t.trim().is_empty())
+            || is_help_signal(&event)
+            || is_task_record(&event)
+        {
+            continue;
+        }
+        if let Some(coordinate) = first_tag(&event, "a").filter(|c| split_coordinate(c).is_some()) {
+            asks.entry(coordinate).or_default().push(event);
+        }
+    }
+
+    let mut out: Vec<Value> = Vec::new();
+    let mut answers_complete = true;
+    let mut projects_gone = 0usize;
+    for (coordinate, updates) in &asks {
+        let Some((founder, id)) = split_coordinate(coordinate) else {
+            continue;
+        };
+        // An ask counts only from the project's team as it stands; a project that is no longer there has none.
+        let project = match read_project(client, id, founder).await {
+            Ok(project) => project,
+            Err(CliError::NotFound(_)) | Err(CliError::Usage(_)) => {
+                projects_gone += 1;
+                continue;
+            }
+            Err(other) => return Err(other),
+        };
+        let team = project.team_set();
+        let ids: Vec<String> = updates.iter().map(|u| u.id.to_hex()).collect();
+        let mut signals = Vec::new();
+        for chunk in ids.chunks(100) {
+            let filter = json!({ "kinds": [KIND_LAUNCH_UPDATE], "#e": chunk });
+            let found = parse_events(
+                client
+                    .query_pages_bounded(filter, HELP_READ_BOUND + 1)
+                    .await?,
+            )?;
+            answers_complete &= found.len() <= HELP_READ_BOUND as usize;
+            signals.extend(found);
+        }
+        for mut request in open_help_requests(updates, &signals, &team, &me) {
+            let update_id = request["update_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            let on_team = team.contains(&me);
+            request["project"] = json!({
+                "id": id,
+                "author": founder,
+                "name": project.name,
+                "coordinate": project.coordinate,
+            });
+            // The team asked, so its own members do not offer.
+            request["may_offer"] = json!(!on_team && request["offered_by_me"] == json!(false));
+            request["offer_command"] = json!(format!(
+                "buzz launchpad tasks offer {id} --author {founder} --update {update_id}"
+            ));
+            out.push(request);
+        }
+    }
+    // Newest first, then by id: a stable order from page to page.
+    out.sort_by(|a, b| {
+        let key = |v: &Value| {
+            (
+                std::cmp::Reverse(v["created_at"].as_u64().unwrap_or(0)),
+                v["update_id"].as_str().unwrap_or_default().to_string(),
+            )
+        };
+        key(a).cmp(&key(b))
+    });
+    println!(
+        "{}",
+        json!({
+            "schema": SCHEMA,
+            "open": out,
+            "scanned": scanned,
+            // True: older records remain. Pass `next_until` as --until to read on.
+            "cut": cut,
+            "next_until": next_until,
+            // True: more records share one second than one call looks through, so some in that second were not
+            // looked at. Read again with a larger --scan to be sure.
+            "skipped_in_one_second": same_second,
+            "complete": {
+                // False: a request has more answers than were read, so whether it is still open is not certain.
+                "answers": answers_complete,
+            },
+            "projects_no_longer_listed": projects_gone,
+            "note": "An offer is not an agreement. The project's team makes a task for whoever it picks, and that person says yes to it.",
+        })
+    );
+    Ok(())
 }
 
 async fn cmd_more_time(
@@ -1166,6 +1708,14 @@ async fn cmd_more_time(
 pub async fn dispatch(cmd: TasksCmd, client: &BuzzClient) -> Result<(), CliError> {
     match cmd {
         TasksCmd::List { id, author } => cmd_list(client, &id, author.as_deref()).await,
+        TasksCmd::Show { task } => cmd_show(client, &task).await,
+        TasksCmd::Open { until, scan } => cmd_open(client, until, scan).await,
+        TasksCmd::GiveUp {
+            id,
+            author,
+            task,
+            note,
+        } => cmd_give_up(client, &id, &author, &task, note.as_deref()).await,
         TasksCmd::Offer {
             id,
             author,
@@ -1179,7 +1729,8 @@ pub async fn dispatch(cmd: TasksCmd, client: &BuzzClient) -> Result<(), CliError
             task,
             note,
             links,
-        } => cmd_submit(client, &id, &author, &task, note.as_deref(), &links).await,
+            files,
+        } => cmd_submit(client, &id, &author, &task, note.as_deref(), &links, &files).await,
         TasksCmd::MoreTime {
             id,
             author,
@@ -1860,5 +2411,284 @@ mod tests {
             assert!(!is_task_record(s));
         }
         assert!(!is_help_signal(&open));
+    }
+
+    #[test]
+    fn a_task_is_one_object_with_every_field_a_machine_needs() {
+        let mut w = World::new();
+        let (founder, mate, helper) = (w.founder.clone(), w.mate.clone(), w.helper.clone());
+        let founder_hex = founder.public_key().to_hex();
+        let mate_hex = mate.public_key().to_hex();
+        // The founder's goal, changed once: the newest version is the goal as it stands.
+        let goal = |w: &mut World, text: &str| {
+            w.sign(
+                &founder,
+                vec![
+                    vec!["goal".into(), "g1".into()],
+                    vec!["goal-level".into(), "month".into()],
+                    vec!["goal-text".into(), text.into()],
+                    vec!["goal-how".into(), "The sign-up count".into()],
+                    vec!["goal-state".into(), "open".into()],
+                ],
+                json!({ "title": "Goal", "body": text }),
+            )
+        };
+        let first = goal(&mut w, "Fifty sign-ups");
+        let second = goal(&mut w, "A hundred sign-ups");
+        // Someone else's record with the same goal id says nothing about this project's goal.
+        let forged = w.sign(
+            &helper,
+            vec![
+                vec!["goal".into(), "g1".into()],
+                vec!["goal-level".into(), "month".into()],
+                vec!["goal-text".into(), "Pay the helper".into()],
+                vec!["goal-state".into(), "open".into()],
+            ],
+            json!({}),
+        );
+        let goals = goals_as_they_stand(&[first, second, forged], &founder_hex);
+        assert_eq!(goals.len(), 1);
+        assert_eq!(goals["g1"]["text"], "A hundred sign-ups");
+
+        let task = w.task(
+            &founder,
+            &[
+                ("task-goal", "g1"),
+                ("task-limits", "Do not email real users."),
+                ("task-due", "2026-12-01"),
+            ],
+        );
+        let accept = w.step(&helper, &task, "accept", &[], "");
+        let hash = "ab".repeat(32);
+        let id = task.id.to_hex();
+        let work = w.sign(
+            &helper,
+            vec![
+                vec!["l".into(), TASK_LABEL.into()],
+                vec!["task-part".into(), "evidence".into()],
+                vec!["task".into(), id],
+                vec!["task-link".into(), "https://example.org/run".into()],
+                vec![
+                    "task-file".into(),
+                    hash.clone(),
+                    "run.log".into(),
+                    "".into(),
+                ],
+            ],
+            json!({ "title": "Work handed in", "body": "x", "note": "It works." }),
+        );
+        let work_id = work.id.to_hex();
+        let confirm = w.step(&mate, &task, "confirm", &[("task-evidence", &work_id)], "");
+
+        let mut tasks = w.view(&[&task, &accept, &work, &confirm]);
+        attach_goals(&mut tasks, &goals);
+        let t = &tasks[0];
+        assert_eq!(t["task_id"], task.id.to_hex());
+        assert_eq!(t["project"], COORD);
+        assert_eq!(t["state"], "confirmed");
+        assert_eq!(t["goal_id"], "g1");
+        assert_eq!(t["goal"]["text"], "A hundred sign-ups");
+        assert_eq!(t["goal"]["how_we_will_know"], "The sign-up count");
+        assert_eq!(t["what"], "Test sign-up.");
+        assert_eq!(t["done_means"], "A recording of it working.");
+        assert_eq!(t["size"], "small");
+        assert_eq!(t["due"], "2026-12-01");
+        assert_eq!(t["limits"], "Do not email real users.");
+        assert_eq!(t["helper"], helper.public_key().to_hex());
+        assert_eq!(t["checked_by"], json!([mate_hex]));
+        assert_eq!(t["evidence"][0]["note"], "It works.");
+        assert_eq!(
+            t["evidence"][0]["links"],
+            json!(["https://example.org/run"])
+        );
+        assert_eq!(
+            t["evidence"][0]["files"],
+            json!([{ "sha256": hash, "name": "run.log", "url": "" }])
+        );
+        assert_eq!(t["evidence"][0]["confirmed_by"], json!([mate_hex]));
+
+        // A task that says none of that still has every field: null or empty, never missing.
+        let bare = w.task(&founder, &[]);
+        let mut tasks = w.view(&[&bare]);
+        attach_goals(&mut tasks, &goals);
+        let t = tasks[0].as_object().expect("an object");
+        for field in [
+            "task_id",
+            "project",
+            "created_at",
+            "state",
+            "late",
+            "helper",
+            "helper_is_agent",
+            "made_by",
+            "goal_id",
+            "goal",
+            "what",
+            "done_means",
+            "size",
+            "due",
+            "limits",
+            "update_id",
+            "offer_id",
+            "agreed",
+            "mine",
+            "next",
+            "checked_by",
+            "evidence",
+            "more_time",
+            "gave_up",
+            "cancelled",
+        ] {
+            assert!(t.contains_key(field), "{field} is missing");
+        }
+        assert_eq!(t["goal_id"], Value::Null);
+        assert_eq!(t["goal"], Value::Null);
+        assert_eq!(t["limits"], Value::Null);
+        assert_eq!(t["due"], Value::Null);
+        assert_eq!(t["checked_by"], json!([]));
+        assert_eq!(t["evidence"], json!([]));
+
+        // A goal id the project has no goal under is given back bare, never guessed at.
+        let lost = w.task(&founder, &[("task-goal", "g9")]);
+        let mut tasks = w.view(&[&lost]);
+        attach_goals(&mut tasks, &goals);
+        assert_eq!(tasks[0]["goal"]["id"], "g9");
+        assert_eq!(tasks[0]["goal"]["text"], Value::Null);
+    }
+
+    #[test]
+    fn a_page_of_open_requests_says_when_it_was_cut() {
+        let w = World::new();
+        let founder = w.founder.clone();
+        let at = |second: u64, n: u64| {
+            w.sign_at(
+                &founder,
+                vec![vec!["help-needed".into(), format!("ask {second}-{n}")]],
+                json!({}),
+                second,
+            )
+        };
+        // Seconds 100, 99, 99, 98: a scan of three stops inside second 99.
+        let events = vec![at(98, 0), at(99, 0), at(100, 0), at(99, 1)];
+
+        // Everything fits: not cut, nothing to continue from.
+        let (page, cut, next, skipped) = open_page(events.clone(), 4);
+        assert_eq!((page.len(), cut, next, skipped), (4, false, None, false));
+        assert!(page.windows(2).all(|p| p[0].created_at >= p[1].created_at));
+
+        // Cut inside second 99: the page gives that second up whole, and the next page starts at it again.
+        let (page, cut, next, skipped) = open_page(events.clone(), 3);
+        assert_eq!((cut, next, skipped), (true, Some(99), false));
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].created_at.as_secs(), 100);
+        // The next page (records at or before 99) holds the rest: nothing skipped, nothing twice.
+        let rest: Vec<Event> = events
+            .iter()
+            .filter(|e| e.created_at.as_secs() <= 99)
+            .cloned()
+            .collect();
+        let (page, cut, _, _) = open_page(rest, 3);
+        assert_eq!((page.len(), cut), (3, false));
+
+        // More records in one second than a call looks through: it moves on, and says some were not looked at.
+        let crowd: Vec<Event> = (0..4).map(|n| at(50, n)).collect();
+        let (page, cut, next, skipped) = open_page(crowd, 3);
+        assert_eq!((page.len(), cut, next, skipped), (3, true, Some(49), true));
+    }
+
+    #[test]
+    fn a_helper_can_give_a_task_up_and_read_tasks_by_command() {
+        let mut w = World::new();
+        let (founder, helper) = (w.founder.clone(), w.helper.clone());
+        let task = w.task(&founder, &[]);
+        let id = task.id.to_hex();
+        let (tags, content) =
+            step_parts("give-up", &id, &[], "No time this month.", &[], None).expect("a step");
+        assert_eq!(content["title"], "Task given up");
+        let gave_up = w.sign(&helper, pairs(&tags), content);
+        assert_eq!(w.state(&[&task, &gave_up]), "given-up");
+        // Only the helper's own word counts.
+        let (tags, content) =
+            step_parts("give-up", &id, &[], "For them.", &[], None).expect("a step");
+        let forged = w.sign(&founder, pairs(&tags), content);
+        assert_eq!(w.state(&[&task, &forged]), "offered");
+
+        let hex = "a".repeat(64);
+        for args in [
+            vec![
+                "give-up",
+                "orbit",
+                "--author",
+                hex.as_str(),
+                "--task",
+                hex.as_str(),
+            ],
+            vec!["show", hex.as_str()],
+            vec!["open"],
+            vec!["open", "--until", "1794000000", "--scan", "100"],
+            vec![
+                "submit",
+                "orbit",
+                "--author",
+                hex.as_str(),
+                "--task",
+                hex.as_str(),
+                "--file",
+                "run.log",
+            ],
+        ] {
+            let mut all = vec!["buzz", "launchpad", "tasks"];
+            all.extend(args.iter().copied());
+            assert!(crate::Cli::try_parse_from(all).is_ok(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn a_file_is_handed_in_by_its_fingerprint() {
+        let dir = std::env::temp_dir().join(format!("buzz-task-file-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("run.log");
+        std::fs::write(&path, b"abc").expect("write");
+        let (hash, name) = file_fingerprint(&path).expect("fingerprint");
+        // sha256("abc")
+        assert_eq!(
+            hash,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(name, "run.log");
+        assert!(file_fingerprint(&dir).is_err(), "a directory is not a file");
+        assert!(file_fingerprint(&dir.join("missing")).is_err());
+        std::fs::remove_dir_all(&dir).expect("clean up");
+
+        // The tag reads back as the same fingerprint through the reader every listing uses.
+        let mut w = World::new();
+        let (founder, helper) = (w.founder.clone(), w.helper.clone());
+        let task = w.task(&founder, &[]);
+        let (mut tags, content) =
+            step_parts("evidence", &task.id.to_hex(), &[], "", &[], None).expect("a step");
+        tags.extend(file_tags(&[(hash.clone(), name)]).expect("tags"));
+        let work = w.sign(&helper, pairs(&tags), content);
+        let record = parse_task_record(&work).expect("evidence of a file alone is evidence");
+        assert_eq!(
+            record.files,
+            vec![json!({ "sha256": hash, "name": "run.log", "url": "" })]
+        );
+    }
+
+    #[test]
+    fn a_project_coordinate_names_a_founder_and_an_id() {
+        let founder = "a".repeat(64);
+        assert_eq!(
+            split_coordinate(&format!("37001:{founder}:orbit")),
+            Some((founder.as_str(), "orbit"))
+        );
+        for bad in [
+            format!("37002:{founder}:orbit"),
+            format!("37001:{founder}:"),
+            "37001:founder:orbit".to_string(),
+            "orbit".to_string(),
+        ] {
+            assert_eq!(split_coordinate(&bad), None, "{bad}");
+        }
     }
 }

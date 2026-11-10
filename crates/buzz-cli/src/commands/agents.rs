@@ -164,6 +164,11 @@ pub async fn dispatch(command: AgentsCmd, client: &BuzzClient) -> Result<(), Cli
         }
 
         AgentsCmd::Archived => cmd_archived(client).await,
+        AgentsCmd::Confirm { agent, conditions } => {
+            super::agent_label::cmd_confirm(client, &agent, &conditions)
+        }
+        AgentsCmd::Label { operator } => super::agent_label::cmd_label(client, &operator).await,
+        AgentsCmd::Show { pubkey } => super::agent_label::cmd_show(client, pubkey.as_deref()).await,
     }
 }
 
@@ -363,7 +368,7 @@ async fn resolve_auth(
 
 /// Fetch the most-recent kind:0 for `target_hex` from the relay.
 /// Returns `None` when no event was found, `Err` on network/parse failure.
-async fn fetch_kind0(
+pub(crate) async fn fetch_kind0(
     client: &BuzzClient,
     target_hex: &str,
 ) -> Result<Option<serde_json::Value>, CliError> {

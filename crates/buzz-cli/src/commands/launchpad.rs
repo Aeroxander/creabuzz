@@ -681,6 +681,10 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             tx,
         } => cmd_verdict(client, &id, &claim_id, &verdict, &tx).await,
         LaunchpadCmd::Tasks { step } => super::launchpad_tasks::dispatch(step, client).await,
+        LaunchpadCmd::Updates { step } => super::launchpad_record::dispatch(step, client).await,
+        LaunchpadCmd::Record { id, author } => {
+            super::launchpad_record::cmd_record(client, &id, author.as_deref()).await
+        }
         LaunchpadCmd::WorkChecks {
             launch,
             launch_author,

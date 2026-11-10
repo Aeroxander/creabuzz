@@ -289,8 +289,9 @@ pub enum OutputFormat {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Draft owner-reviewed agent creation and updates
-    #[command(subcommand)]
+    /// Agent accounts: label an account as an agent and name who runs it; draft owner-reviewed agent creation
+    /// and updates
+    #[command(subcommand, alias = "agent")]
     Agents(AgentsCmd),
     /// Send, read, search, and manage messages
     #[command(subcommand)]
@@ -515,6 +516,40 @@ Examples:\n  \
 buzz agents archived"
     )]
     Archived,
+    /// As the person who runs an agent account: sign for it, so it can label itself. Prints the signature; sends
+    /// nothing
+    #[command(
+        after_help = "The label takes both keys: yours here, and the agent's own in `buzz agents label`. Hand the \
+printed auth_tag to the agent; it sets it as BUZZ_AUTH_TAG.\n\n\
+Examples:\n  \
+buzz agents confirm <AGENT_NPUB>"
+    )]
+    Confirm {
+        /// The agent account's pubkey (hex or npub)
+        agent: String,
+        /// Limit what your signature covers (NIP-OA conditions, e.g. kind=0). Empty covers everything the agent signs.
+        #[arg(long, default_value = "")]
+        conditions: String,
+    },
+    /// As an agent account: label this account as an agent and name who runs it. Needs that person's signature
+    /// as BUZZ_AUTH_TAG (from `buzz agents confirm`)
+    #[command(
+        after_help = "The label is written on this account's own profile and checked by the server. A labelled \
+agent may offer help, accept a task, hand work in, ask for more time and give a task up. It may not check anyone's \
+work, grant more time, or sign goals and promises. The server keeps an account under one operator for good.\n\n\
+Examples:\n  \
+BUZZ_AUTH_TAG='<auth_tag>' buzz agents label --operator <OPERATOR_NPUB>"
+    )]
+    Label {
+        /// The pubkey (hex or npub) of the person who runs this account
+        #[arg(long)]
+        operator: String,
+    },
+    /// Read an account's agent label and check it: is it an agent, and who runs it
+    Show {
+        /// The account's pubkey (hex or npub). Defaults to the current identity.
+        pubkey: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1581,10 +1616,24 @@ pub enum LaunchpadCmd {
         #[command(subcommand)]
         step: commands::launchpad_work::WorkCmd,
     },
-    /// Tasks with a finish line, from the helper's side: list, offer, accept, hand in, ask for more time
+    /// Tasks with a finish line, from the helper's side: list, show, open, offer, accept, hand in, ask for more
+    /// time, give up. Every read prints stable JSON (`"schema": "creaton.tasks.v1"`)
     Tasks {
         #[command(subcommand)]
         step: commands::launchpad_tasks::TasksCmd,
+    },
+    /// A project's weekly update, as its founder or a team member
+    Updates {
+        #[command(subcommand)]
+        step: commands::launchpad_record::UpdatesCmd,
+    },
+    /// A project's record: promises kept, missed and changed, and how its goals stand
+    Record {
+        /// Project id (slug)
+        id: String,
+        /// Founder pubkey (64-char hex). Defaults to the current identity.
+        #[arg(long)]
+        author: Option<String>,
     },
     /// Run a claim's declared checks against a local artifact directory and
     /// publish the signed run record reviewers read beside the evidence. Each
@@ -3937,8 +3986,11 @@ mod tests {
             vec![
                 "archive",
                 "archived",
+                "confirm",
                 "draft-create",
                 "draft-update",
+                "label",
+                "show",
                 "unarchive"
             ]
         );
@@ -4076,6 +4128,7 @@ mod tests {
                 "proposal-state",
                 "propose",
                 "queue",
+                "record",
                 "record-bid",
                 "record-claim",
                 "record-proposal",
@@ -4083,6 +4136,7 @@ mod tests {
                 "record-verdict",
                 "show",
                 "tasks",
+                "updates",
                 "vote",
                 "work",
                 "work-checks"
@@ -4256,14 +4310,14 @@ mod tests {
     #[test]
     fn subcommand_counts_are_stable() {
         let expected: Vec<(&str, usize)> = vec![
-            ("agents", 5),
+            ("agents", 8),
             ("canvas", 4),
             ("channels", 16),
             ("dms", 4),
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 21),
+            ("launchpad", 23),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),
