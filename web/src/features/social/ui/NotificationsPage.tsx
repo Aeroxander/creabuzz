@@ -44,6 +44,8 @@ import { avatarName, bylineName } from "../lib/person-name";
 import { launchCoordinate } from "../../feed/lib/feed-events";
 import { useLaunches } from "../../launchpad/use-launches";
 import { useHelpNotices } from "../../launchpad/use-help-requests";
+import { useTaskNotices } from "../../launchpad/use-tasks";
+import { TaskNoticesSection } from "../../launchpad/ui/TaskNoticesSection";
 import type { HelpNotice } from "../../launchpad/lib/help-request";
 import { useMutedSet } from "../use-social-actions";
 import { useNotificationBadge, useNotifications } from "../use-discovery";
@@ -402,7 +404,10 @@ export function NotificationsPage() {
   // Either section standing in for the list: "Nothing yet" under an offer to help would be untrue.
   const mutedPeople = useMutedSet();
   const hasLaunchUpdates =
-    usePriorityNotifications().length + useHelpNotices(mutedPeople).length > 0;
+    usePriorityNotifications().length +
+      useHelpNotices(mutedPeople).length +
+      useTaskNotices(mutedPeople).length >
+    0;
   const { seenAt, markSeen } = useNotificationBadge();
   const [tab, setTab] = useState<Tab>("all");
 
@@ -469,6 +474,12 @@ export function NotificationsPage() {
         ) : null}
         {me && tab === "all" ? (
           <HelpNoticesSection visitSeenAt={visitSeenAt.current ?? 0} />
+        ) : null}
+        {me && tab === "all" ? (
+          <TaskNoticesSection
+            muted={mutedPeople}
+            visitSeenAt={visitSeenAt.current ?? 0}
+          />
         ) : null}
         {me && notifications.error && notifications.data ? (
           <div

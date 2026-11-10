@@ -39,6 +39,7 @@ import {
 } from "./lib/trending";
 import { usePriorityNotifications } from "./use-launch-updates";
 import { useHelpNotices } from "../launchpad/use-help-requests";
+import { useTaskNotices } from "../launchpad/use-tasks";
 import { readEvents } from "./read";
 import { readUnknown } from "./lib/read-view";
 import { useMutedPeople, useMutedSet } from "./use-social-actions";
@@ -132,6 +133,8 @@ export function useNotificationBadge() {
   // Offers to help on your projects, and replies to offers you made: counted with the rest, hidden by a mute.
   const muted = useMutedSet();
   const help = useHelpNotices(muted);
+  // Task steps that need you or answer you: counted the same way.
+  const tasks = useTaskNotices(muted);
   const seenKey = [...socialKeys.all, "notifications-seen", me];
   const seen = useQuery({
     queryKey: seenKey,
@@ -143,8 +146,12 @@ export function useNotificationBadge() {
     mutationFn: async () => {
       if (!me) return;
       const newest =
-        Math.max(items?.[0]?.at ?? 0, updates[0]?.at ?? 0, help[0]?.at ?? 0) ||
-        Math.floor(Date.now() / 1000);
+        Math.max(
+          items?.[0]?.at ?? 0,
+          updates[0]?.at ?? 0,
+          help[0]?.at ?? 0,
+          tasks[0]?.at ?? 0,
+        ) || Math.floor(Date.now() / 1000);
       writeSeenAt(me, newest);
       queryClient.setQueryData(seenKey, newest);
     },
@@ -152,7 +159,7 @@ export function useNotificationBadge() {
   const { unread, failed } = badgeState(
     items,
     notifications.error,
-    [...updates, ...help],
+    [...updates, ...help, ...tasks],
     seen,
   );
   return {
