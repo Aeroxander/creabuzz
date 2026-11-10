@@ -67,9 +67,9 @@ export function SuggestCorrectionDialog({
           Suggest a correction
         </h2>
         <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-          This page is kept up to date by an agent, so it can&apos;t be edited
-          here. Describe the correction and it&apos;ll be reviewed and folded
-          into a later update.
+          An AI helper keeps this page up to date, so it can&apos;t be edited
+          here. Describe the correction; it is reviewed and added in a later
+          update.
         </p>
         <label
           className="mt-4 block text-sm font-medium text-black/70 dark:text-white/70"

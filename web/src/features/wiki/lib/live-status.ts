@@ -31,11 +31,11 @@ export type LiveStatus =
 const SAVE_FALLBACK = "Edits reach others when a page is saved.";
 
 const UNAVAILABLE_DETAIL: Record<LiveUnavailableReason, string> = {
-  "no-identity": `Live co-editing is unavailable: you need to be signed in with an account so the page can tell you are a community member. ${SAVE_FALLBACK}`,
+  "no-identity": `Live co-editing is unavailable: sign in so the page can tell you are a community member. ${SAVE_FALLBACK}`,
   "no-member-list": `Live co-editing is unavailable: this server publishes no member list, so we cannot tell who is a member. ${SAVE_FALLBACK}`,
   "member-list-error": `Live co-editing is unavailable: the community member list could not be loaded. Reopen the page to try again. ${SAVE_FALLBACK}`,
   "not-member": `Live co-editing is unavailable: it is limited to verified community members and this account is not one. ${SAVE_FALLBACK}`,
-  "room-failed": `Live co-editing is unavailable: the shared editing session could not be started. Reopen the page to try again. ${SAVE_FALLBACK}`,
+  "room-failed": `Live co-editing is unavailable: it could not be started. Reopen the page to try again. ${SAVE_FALLBACK}`,
   "cannot-sign": `Live co-editing is unavailable: your changes could not be confirmed with your account. Unlock your passkey or approve the request, then reopen the page. ${SAVE_FALLBACK}`,
   "too-large": `Live co-editing is unavailable: this page is too large to sync live. ${SAVE_FALLBACK}`,
 };

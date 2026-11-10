@@ -65,7 +65,7 @@ test("no member list and no identity are named explicitly", () => {
   assert.match(
     describeLive({ state: "unavailable", reason: "no-identity" }, { peers: 0 })
       .detail,
-    /signed in with an account/,
+    /sign in so the page can tell/,
   );
 });
 

@@ -226,11 +226,11 @@ export function LinkDevicePage() {
       {phase === "confirm" && pubkey ? (
         <section data-testid="link-device-confirm-panel">
           <h1 className="text-base font-semibold">
-            Log in to desktop as @{name}?
+            Sign in to the desktop app as @{name}?
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {lockedPasskey
-              ? "One passkey check logs this desktop in. Nothing is shared until you confirm here."
+              ? "One passkey check signs the desktop app in. Nothing is shared until you confirm here."
               : "The desktop app will be able to act as this account. Only confirm on a desktop you trust."}
           </p>
           <div
@@ -254,7 +254,7 @@ export function LinkDevicePage() {
                 ? "Waiting for your passkey…"
                 : lockedPasskey
                   ? "Continue with passkey"
-                  : "Log in desktop"}
+                  : "Sign in on desktop"}
             </button>
             <button
               type="button"

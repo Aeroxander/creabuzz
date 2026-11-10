@@ -126,7 +126,7 @@ export async function linkPasskeyAccount(
   );
   if (!accepted) {
     throw new Error(
-      "Your passkey account did not accept the signature, so nothing was published. Try again, or sign in with your passkey first.",
+      "Your passkey account did not accept your approval, so nothing was published. Try again, or sign in with your passkey first.",
     );
   }
 

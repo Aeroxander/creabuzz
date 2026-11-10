@@ -453,7 +453,7 @@ export function ProfileMenu({
                 <input
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  placeholder="Display name"
+                  placeholder="Name"
                   aria-label="Name"
                   className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
                   data-testid="profile-name-input"

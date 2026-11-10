@@ -123,7 +123,7 @@ test("an account that refuses the signature publishes nothing", async ({
   const dialog = await openLinkDialog(page);
   await dialog.getByTestId("link-passkey-account").click();
   await expect(dialog.getByTestId("wallet-sign-recovery")).toContainText(
-    "did not accept the signature",
+    "did not accept your approval",
     { timeout: 30_000 },
   );
   expect(relay.events.filter((event) => event.kind === 37017)).toHaveLength(0);

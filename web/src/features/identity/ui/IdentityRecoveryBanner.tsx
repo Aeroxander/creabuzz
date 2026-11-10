@@ -72,7 +72,7 @@ export function IdentityRecoveryBanner() {
           className="rounded-full bg-black px-2.5 py-1 text-2xs font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
           data-testid="identity-recovery-import"
         >
-          Import
+          Use this key
         </button>
       </form>
       {confirmReset ? (

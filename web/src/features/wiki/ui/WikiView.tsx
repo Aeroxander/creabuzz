@@ -665,9 +665,7 @@ export function WikiView({
                 className="inline-flex items-center gap-1 rounded-md bg-black px-2.5 py-1 font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
                 data-testid="wiki-save"
                 title={
-                  dirty
-                    ? "Publish this page to the server"
-                    : "No unpublished changes"
+                  dirty ? "Save this page for everyone" : "No unsaved changes"
                 }
               >
                 <Save className="h-3 w-3" /> {saving ? "Saving…" : "Save"}
@@ -777,7 +775,7 @@ export function WikiView({
                 >
                   {conflicting
                     ? "The records disagree about which team can edit this page. An admin needs to choose one before anyone can edit."
-                    : "Only this team's seat holders can edit this page. You can read it and propose a change."}
+                    : "Only this team's members can edit this page. You can read it and propose a change."}
                 </p>
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   <article className="prose prose-sm max-w-none p-4 dark:prose-invert [&_pre]:overflow-x-auto">

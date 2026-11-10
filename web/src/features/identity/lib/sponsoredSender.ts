@@ -209,19 +209,18 @@ export function sponsoredSenderAvailability(input: {
     { reason: string; action: string }
   > = {
     credential: {
-      reason: "No passkey is registered in this browser.",
+      reason: "No passkey is saved in this browser.",
       action:
-        'Open your profile menu, choose "Set up passkey sign-in", then retry.',
+        'Open your profile menu, choose "Set up passkey sign-in", then try again.',
     },
     "owner-key": {
       reason:
-        "This browser's passkey has no wallet owner key yet (it predates wallet-owner capture).",
+        "This browser's passkey is an older kind that cannot approve payments yet.",
       action: "Open your profile menu and set up passkey sign-in again.",
     },
     "chain-config": {
-      reason:
-        "The sponsored stack is not configured (VITE_ZERODEV_CHAIN_ID and a chain RPC URL are required).",
-      action: "Set the ZeroDev chain id and chain RPC URL, then reload.",
+      reason: "Passkey accounts are not set up on this site's network yet.",
+      action: "Ask whoever runs this site to finish the setup, then reload.",
     },
   };
   return {
