@@ -1172,7 +1172,9 @@ test("unrelated deletions cannot hide a removed update, a removal that names no 
     .getByTestId("project-record")
     .getByTestId("record-removed");
   await expect(removed).toContainText(
-    "The founder has removed 1 update record, and 1 other record without saying what kind they were.",
+    // The 520 removals that say they removed posts are counted too, apart: what a removal says it removes is its
+    // signer's word, and one of them may have taken an update away.
+    "The founder has removed 1 update record, and 521 other records not marked as updates (a removal can say any kind).",
     { timeout: 30_000 },
   );
 
@@ -1187,9 +1189,10 @@ test("unrelated deletions cannot hide a removed update, a removal that names no 
         5,
         FOUNDER,
         "",
+        // Removals of whole projects: they name a project, not a record, and are not counted as removed records.
         [
-          ["e", (2000 + i).toString(16).padStart(64, "d")],
-          ["k", "1"],
+          ["a", `37001:${FOUNDER}:old-${i}`],
+          ["k", "37001"],
         ],
         now() - DAY,
       ),

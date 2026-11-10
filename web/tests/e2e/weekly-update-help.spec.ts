@@ -624,14 +624,72 @@ test("withdrawing takes back every offer the person has on the request, so an ol
     request.getByRole("button", { name: "I can help" }),
   ).toBeFocused();
   expect(tagged(relay, "help-offer")).toHaveLength(0);
+  // One removal for each record: the server takes a removal that names exactly one.
   const removal = relay.events.filter((e) => e.kind === 5);
-  expect(removal).toHaveLength(1);
-  expect(removal[0].tags.filter((t) => t[0] === "e")).toHaveLength(2);
+  expect(removal).toHaveLength(2);
+  for (const one of removal) {
+    expect(one.tags.filter((t) => t[0] === "e")).toHaveLength(1);
+    expect(one.tags).toContainEqual(["k", "47003"]);
+  }
   await page.reload();
   await expect(
     request.getByRole("button", { name: "I can help" }),
   ).toBeVisible();
   await expect(request.getByTestId("help-my-offer")).toHaveCount(0);
+});
+
+test("a withdrawal that stops part way says what was and was not removed, and Try again removes the rest", async ({
+  page,
+}) => {
+  // The server takes the first removal and refuses the second, once.
+  let removals = 0;
+  const relay = createMockRelay({
+    applyDeletions: true,
+    refuse: (e) => {
+      if (e.kind !== 5) return null;
+      removals += 1;
+      return removals === 2 ? "error: database error: down" : null;
+    },
+  });
+  seedProject(relay);
+  const ask = seedUpdate(relay, now() - DAY, "Week one", {
+    text: "A second pair of eyes on the pitch.",
+    size: "small",
+  });
+  for (const [note, ago] of [
+    ["First try.", 7200],
+    ["Second try.", 3600],
+  ] as const)
+    relay.seed(
+      event(
+        47003,
+        FOLLOWER,
+        { title: "Offer to help", body: note },
+        [
+          ["a", COORD],
+          ["e", ask.id],
+          ["p", FOUNDER],
+          ["help-offer", ask.id],
+        ],
+        now() - ago,
+      ),
+    );
+  await install(page, relay, FOLLOWER_KEY);
+  await page.goto(PROJECT);
+  const request = page
+    .getByTestId("project-update-card")
+    .getByTestId("help-request");
+  await request.getByRole("button", { name: "Withdraw offer" }).click();
+  const failed = request.getByTestId("help-withdraw-failed");
+  await expect(failed).toContainText(
+    "1 of 2 records were removed and 1 was not. Try again to remove the rest.",
+  );
+  // What is left is what the page shows: the offer still stands, by its other record.
+  expect(tagged(relay, "help-offer")).toHaveLength(1);
+  await expect(request.getByTestId("help-my-offer")).toBeVisible();
+  await failed.getByRole("button", { name: "Try again" }).click();
+  await expect(request.getByTestId("help-my-offer")).toHaveCount(0);
+  expect(tagged(relay, "help-offer")).toHaveLength(0);
 });
 
 test("a reply to an offer withdrawn meanwhile is not sent, and the founder is told", async ({

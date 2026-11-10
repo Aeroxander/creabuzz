@@ -135,6 +135,100 @@ export function matches(filter: Filter, event: StoredEvent): boolean {
   return true;
 }
 
+const tagOf = (event: StoredEvent, name: string): string | undefined =>
+  event.tags.find((tag) => tag[0] === name)?.[1];
+
+/**
+ * Who may sign a project's update records, as the real server checks it when a record is written
+ * (`buzz-relay/src/handlers/launch_update_authority.rs`), with the server's own wording. The founder is the author of
+ * the project record; the team is the founder and every `team` tag on it.
+ */
+export function projectRecordRefusal(
+  event: StoredEvent,
+  events: readonly StoredEvent[],
+): string | null {
+  if (event.kind !== 47003) return null;
+  const has = (name: string) => event.tags.some((tag) => tag[0] === name);
+  const founderOnly = ["goal", "promise", "promise-mark"].some(has);
+  const teamOnly = [
+    "update-part",
+    "update-kind",
+    "help-needed",
+    "help-reply",
+    "help-found",
+  ].some(has);
+  const part = tagOf(event, "task-part");
+  if (!founderOnly && !teamOnly && !has("help-offer") && !part) return null;
+  const coordinate = tagOf(event, "a") ?? "";
+  const [kind, founder, ...rest] = coordinate.split(":");
+  const project = events.find(
+    (e) =>
+      e.kind === 37001 &&
+      kind === "37001" &&
+      e.pubkey === founder &&
+      tagOf(e, "d") === rest.join(":"),
+  );
+  if (!project)
+    return "invalid: this record names a project that is not on this server";
+  const team = new Set([
+    founder,
+    ...project.tags
+      .filter((tag) => tag[0] === "team" && tag.length >= 3)
+      .map((tag) => tag[1]),
+  ]);
+  const NOT_TEAM = "restricted: only this project's team can post this";
+  if (founderOnly && event.pubkey !== founder)
+    return "restricted: only this project's founder can post this";
+  if (teamOnly && !team.has(event.pubkey)) return NOT_TEAM;
+  if (!part) return null;
+  if (part === "task") return team.has(event.pubkey) ? null : NOT_TEAM;
+  const task = events.find(
+    (e) =>
+      e.id === tagOf(event, "task") &&
+      e.kind === 47003 &&
+      tagOf(e, "task-part") === "task",
+  );
+  if (!task)
+    return "invalid: this step names a task that is not on this server";
+  if (tagOf(task, "a") !== coordinate)
+    return "invalid: this step names a task from another project";
+  const helper = tagOf(task, "task-helper");
+  if (["accept", "evidence", "more-time", "give-up"].includes(part))
+    return event.pubkey === helper
+      ? null
+      : "restricted: only the helper this task names can post this";
+  if (!team.has(event.pubkey)) return NOT_TEAM;
+  if (part === "confirm" && event.pubkey === helper)
+    return "restricted: a task's work must be confirmed by someone other than its helper";
+  return null;
+}
+
+/**
+ * What the real server refuses in a removal (kind 5): it must name exactly one record (`handlers/ingest.rs`), never
+ * another removal, and a `k` tag must name the kind of the record it removes (`handlers/side_effects.rs`).
+ */
+export function deletionRefusal(
+  event: StoredEvent,
+  events: readonly StoredEvent[],
+): string | null {
+  if (event.kind !== 5) return null;
+  const e = event.tags.filter((tag) => tag[0] === "e").length;
+  const a = event.tags.filter((tag) => tag[0] === "a").length;
+  if (e + a !== 1)
+    return `invalid: deletion events must reference exactly one target via e or a tag (got e=${e}, a=${a})`;
+  const target = events.find((stored) => stored.id === tagOf(event, "e"));
+  const targetKind =
+    target?.kind ??
+    (a === 1 ? Number((tagOf(event, "a") ?? "").split(":")[0]) : undefined);
+  if (targetKind === undefined || Number.isNaN(targetKind)) return null;
+  if (targetKind === 5)
+    return "invalid: a deletion cannot be deleted; deleting one has no effect";
+  const named = event.tags.filter((tag) => tag[0] === "k").map((tag) => tag[1]);
+  if (named.length > 0 && !named.includes(String(targetKind)))
+    return `invalid: deletion \`k\` tag names kind ${named.join(", ")} but the target is kind ${targetKind}`;
+  return null;
+}
+
 export interface MockRelayOptions {
   /**
    * Refuse a write the way a relay does — return a reason to reject the event,
@@ -186,6 +280,12 @@ export interface MockRelayOptions {
    * the record is stored, and the client never hears so. Return true for the writes to lose the answer of.
    */
   loseAnswer?: (event: StoredEvent) => boolean;
+  /**
+   * Check writes the way the real server does: who may sign a project's update records
+   * ({@link projectRecordRefusal}) and what a removal may name ({@link deletionRefusal}). On by default, so a flow
+   * that sends something the server refuses fails here too. Seeded records are not checked, as stored ones are not.
+   */
+  enforceRecordRules?: boolean;
 }
 
 export function createMockRelay({
@@ -197,6 +297,7 @@ export function createMockRelay({
   deriveChannels = false,
   applyDeletions = false,
   loseAnswer,
+  enforceRecordRules = true,
 }: MockRelayOptions = {}) {
   const events: StoredEvent[] = [];
   const sockets = new Set<Socket>();
@@ -334,7 +435,12 @@ export function createMockRelay({
                 : null;
           }
           if (type === "EVENT") {
-            const reason = refuse?.(event);
+            const reason =
+              refuse?.(event) ??
+              (enforceRecordRules
+                ? (projectRecordRefusal(event, events) ??
+                  deletionRefusal(event, events))
+                : null);
             if (reason) {
               // Rejected writes are not stored and not fanned out: a client
               // that ignores the OK must not look like it succeeded.

@@ -2,7 +2,13 @@ import { expect, test, type Page } from "@playwright/test";
 import { getPublicKey } from "nostr-tools/pure";
 
 import { expectAccessible } from "../helpers/a11y";
-import { COMMUNITY_HOST, createMockRelay, matches } from "./mock-relay";
+import {
+  COMMUNITY_HOST,
+  createMockRelay,
+  deletionRefusal,
+  matches,
+  projectRecordRefusal,
+} from "./mock-relay";
 
 /**
  * Tasks with a finish line, as one loop on one server across three people: the founder accepts an offer and writes
@@ -277,7 +283,7 @@ test("an offer becomes a task with a finish line; the helper hands in, it is sen
   await form.getByLabel("Due date (optional)").fill("2099-01-15");
   await form.getByRole("button", { name: "Make the task" }).click();
   await expect(offer.getByTestId("offer-task-made")).toContainText(
-    "Task made. Robin Helper is told.",
+    "Task made. It is Robin Helper's once they say yes.",
   );
 
   // One team-signed record, its fields as tags, and no amount anywhere in it.
@@ -303,11 +309,18 @@ test("an offer becomes a task with a finish line; the helper hands in, it is sen
   // The project page lists it: who, what, done means, state, due.
   const tasks = page.getByTestId("project-tasks");
   const row = tasks.getByTestId("task");
-  await expect(row).toHaveAttribute("data-state", "in-progress");
-  await expect(row.getByTestId("task-state")).toHaveText("In progress");
+  // An offer to help is not agreement to this task: it waits for Robin's own yes, and until then only the team
+  // (and Robin) are shown it.
+  await expect(row).toHaveAttribute("data-state", "offered");
+  await expect(row.getByTestId("task-state")).toHaveText("Waiting for a yes");
   await expect(row).toContainText(ASK);
   await expect(row.getByTestId("task-done-means")).toContainText(DONE);
-  await expect(row.getByTestId("task-who")).toContainText("With Robin Helper");
+  await expect(row.getByTestId("task-who")).toContainText(
+    "Given to Robin Helper, who has not said yes",
+  );
+  await expect(row.getByTestId("task-not-agreed")).toContainText(
+    "The task itself is a public record that names them.",
+  );
   await expect(row.getByTestId("task-due")).toContainText("Due ");
   await expect(tasks).not.toContainText(/Shares|\$|earn/i);
 
@@ -315,11 +328,18 @@ test("an offer becomes a task with a finish line; the helper hands in, it is sen
   await openAs(page, HELPER_KEY, "/social/notifications");
   const notice = page.getByTestId("social-task-notice");
   await expect(notice).toContainText(
-    "Fay Founder accepted your offer and made it a task:",
+    "Fay Founder gave you a task to say yes or no to:",
   );
   await expect(notice).toContainText("in Nebula OS");
   await notice.getByRole("link").click();
+  await expect(row).toHaveAttribute("data-state", "offered");
+  await expect(row.getByRole("button", { name: "Hand in work" })).toHaveCount(
+    0,
+  );
+  await row.getByRole("button", { name: "Yes, I'll do it" }).click();
   await expect(row).toHaveAttribute("data-state", "in-progress");
+  await expect(row.getByTestId("task-who")).toContainText("With Robin Helper");
+  expect(parts(relay, "accept")[0].pubkey).toBe(HELPER);
   // The helper is never offered a confirmation of their own work.
   await expect(
     row.getByRole("button", { name: "Confirm it's done" }),
@@ -443,7 +463,7 @@ test("an offer becomes a task with a finish line; the helper hands in, it is sen
   await expect(accepted).toContainText("Work accepted");
   await expect(accepted).toContainText(ASK);
   await expect(accepted).toContainText(
-    "Done by Robin Helper, checked by Fay Founder",
+    "Done by Robin Helper. Checked by Fay Founder",
   );
   await expect(
     accepted.getByRole("link", { name: "https://example.org/recording" }),
@@ -464,14 +484,21 @@ test("an offer becomes a task with a finish line; the helper hands in, it is sen
   await page.getByRole("tab", { name: "Record" }).click();
   const track = page.getByTestId("track-record");
   await expect(track.getByTestId("track-record-accepted")).toHaveText(
-    "1 piece of work accepted",
+    "1 piece of work accepted, on 1 project, confirmed by 1 person",
+  );
+  await expect(track.getByTestId("track-record-how")).toContainText(
+    "Anyone can start a project and confirm work on it, so read who confirmed each piece.",
   );
   await expect(track.getByTestId("track-record-misses")).toHaveText(
     "1 task sent back at least once, 0 given up",
   );
   const item = track.getByTestId("track-work-item");
   await expect(item).toContainText(ASK);
-  await expect(item).toContainText("confirmed by Fay Founder");
+  await expect(item).toContainText(
+    "confirmed by the project's founder, Fay Founder",
+  );
+  // Outside work: nothing ties Robin to the project's team.
+  await expect(item.getByTestId("track-work-tie")).toHaveCount(0);
   await expect(item.getByRole("link", { name: "Nebula OS" })).toHaveAttribute(
     "href",
     new RegExp(`/launchpad/nebula-os\\?author=${FOUNDER}`),
@@ -486,7 +513,7 @@ test("an offer becomes a task with a finish line; the helper hands in, it is sen
   await openAs(page, null, `/u/${HELPER}`);
   await page.getByRole("tab", { name: "Record" }).click();
   await expect(track.getByTestId("track-record-accepted")).toHaveText(
-    "1 piece of work accepted",
+    "1 piece of work accepted, on 1 project, confirmed by 1 person",
   );
   await page.goto(`/u/${FOUNDER}`);
   await page.getByRole("tab", { name: "Record" }).click();
@@ -564,7 +591,17 @@ test("with a second team member, the founder's own work waits for them, and they
   await row.getByRole("button", { name: "Yes, confirm" }).click();
   await expect(
     page.getByTestId("project-record").getByTestId("record-work-accepted"),
-  ).toContainText("Done by Fay Founder, checked by Max Mate");
+  ).toContainText(
+    "Done by Fay Founder, who is on this project's team. Checked by Max Mate",
+  );
+  // On the profile it is visibly not outside work.
+  await page.goto(`/u/${FOUNDER}`);
+  await page.getByRole("tab", { name: "Record" }).click();
+  const item = page.getByTestId("track-work-item");
+  await expect(item).toContainText("confirmed by a team member, Max Mate");
+  await expect(item.getByTestId("track-work-tie")).toHaveText(
+    "They made this task for themselves, and are on this project's team.",
+  );
 });
 
 test("a task given directly names the person only once they say yes", async ({
@@ -577,13 +614,33 @@ test("a task given directly names the person only once they say yes", async ({
   const tasks = page.getByTestId("project-tasks");
   await tasks.getByRole("button", { name: "Give someone a task" }).click();
   const form = tasks.getByRole("form", { name: "Give someone a task" });
+  // The form opens with the keyboard on its first control, and says what is public before a name is typed.
+  await expect(form.getByTestId("direct-task-person")).toBeFocused();
+  await expect(form.getByTestId("direct-task-public")).toHaveText(
+    "This page shows the task and their name only once they say yes. The task itself is a public record that names them.",
+  );
+  // Cancel gives the keyboard back to the button that opened the form.
+  await page.keyboard.press("Escape");
+  await expect(form).toHaveCount(0);
+  const give = tasks.getByRole("button", { name: "Give someone a task" });
+  await expect(give).toBeFocused();
+  await give.click();
   await form.getByTestId("direct-task-person").fill(HELPER);
   await form.getByTestId("person-search-result").first().click();
   await expect(form.getByTestId("direct-task-who")).toContainText(
     "For Robin Helper",
   );
   await form.getByLabel("What is the task").fill("Draw the logo.");
-  await form.getByLabel("Done means").fill("An SVG the team agrees on.");
+  // A required field left empty is marked, the reason is read with it, and the keyboard goes to it.
+  await form.getByRole("button", { name: "Make the task" }).click();
+  const doneField = form.getByLabel("Done means");
+  await expect(doneField).toBeFocused();
+  await expect(doneField).toHaveAttribute("aria-invalid", "true");
+  await expect(doneField).toHaveAttribute("aria-required", "true");
+  await expect(doneField).toHaveAccessibleDescription(
+    /Say what finished looks like, so the work can be checked\./,
+  );
+  await doneField.fill("An SVG the team agrees on.");
   await form.getByRole("button", { name: "Make the task" }).click();
   await expect(tasks.getByTestId("tasks-said")).toHaveText(
     "Task made. It is Robin Helper's once they say yes.",
@@ -591,13 +648,23 @@ test("a task given directly names the person only once they say yes", async ({
   const row = tasks.getByTestId("task");
   await expect(row).toHaveAttribute("data-state", "offered");
 
-  // A visitor reads the task, without the name of someone who has not agreed. Their profile does not count it.
-  await openAs(page, null, PROJECT);
   await expect(row.getByTestId("task-who")).toContainText(
-    "Offered to someone who has not said yes yet",
+    "Given to Robin Helper, who has not said yes",
   );
-  await expect(row).not.toContainText("Robin Helper");
-  await expect(row.getByRole("button")).toHaveCount(0);
+
+  // A visitor is not shown a task nobody has said yes to, and the person's profile says nothing of it.
+  await openAs(page, null, PROJECT);
+  // Once the tasks were read (the record card says when), the card that lists them is not there.
+  await expect(page.getByTestId("project-record")).toHaveAttribute(
+    "data-work-read",
+    "true",
+    { timeout: 15_000 },
+  );
+  await expect(page.getByTestId("project-tasks")).toHaveCount(0);
+  await expect(page.getByText("Draw the logo.")).toHaveCount(0);
+  await page.goto(`/u/${HELPER}`);
+  await page.getByRole("tab", { name: "Record" }).click();
+  await expect(page.getByTestId("track-record-empty")).toBeVisible();
 
   // The person is told and says yes; from then on they are named.
   await openAs(page, HELPER_KEY, "/social/notifications");
@@ -659,7 +726,9 @@ test("a task whose answer was lost is carried on by Try again, with the draft ke
     ),
   ).toBe(1);
   await failed.getByRole("button", { name: "Try again" }).click();
-  await expect(tasks.getByTestId("tasks-said")).toContainText("Task made.");
+  await expect(tasks.getByTestId("tasks-said")).toContainText(
+    "An earlier try had already gone through, so nothing new was sent.",
+  );
   await expect(form).toHaveCount(0);
   await expect(tasks.getByTestId("task")).toHaveCount(1);
   // One task, not two; and nothing left kept.
@@ -685,7 +754,12 @@ test("a send the server refuses keeps what was written, and Try again sends it",
         : null,
   });
   const seeded = seedProject(relay);
-  seedTask(relay, { offerId: seeded.offer.id });
+  seedStep(
+    relay,
+    HELPER,
+    seedTask(relay, { offerId: seeded.offer.id }),
+    "accept",
+  );
   await install(page, relay, HELPER_KEY);
   await page.goto(PROJECT);
   const row = page.getByTestId("project-tasks").getByTestId("task");
@@ -832,6 +906,404 @@ test("a confirmation its signer removed is gone from the record, and the page sa
   );
 });
 
+test("naming someone's offer puts them on nothing: no public task, nothing on their profile, and they can say no without a mark", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  const seeded = seedProject(relay);
+  // The project names Robin's offer, dates the task long past, and "sends back" work Robin never handed in.
+  const task = seedTask(relay, {
+    offerId: seeded.offer.id,
+    due: "2020-01-01",
+    what: "Rebuild the whole app.",
+  });
+  seedStep(
+    relay,
+    MATE,
+    task,
+    "send-back",
+    [["task-evidence", "e".repeat(64)]],
+    "Late and bad.",
+  );
+  await install(page, relay, null);
+
+  // The public: no task, nothing late, nothing on the record.
+  await page.goto(PROJECT);
+  // Once the tasks were read (the record card says when), the card that lists them is not there.
+  await expect(page.getByTestId("project-record")).toHaveAttribute(
+    "data-work-read",
+    "true",
+    { timeout: 15_000 },
+  );
+  await expect(page.getByTestId("project-tasks")).toHaveCount(0);
+  await expect(page.getByText("Rebuild the whole app.")).toHaveCount(0);
+  await page.goto(`/u/${HELPER}`);
+  await page.getByRole("tab", { name: "Record" }).click();
+  const track = page.getByTestId("track-record");
+  await expect(track.getByTestId("track-record-empty")).toBeVisible();
+  await expect(track).not.toContainText(/sent back|in progress|Late/);
+
+  // Robin: the task is theirs to answer, not theirs. It is not late, and there is nothing to give up.
+  await openAs(page, HELPER_KEY, PROJECT);
+  const row = page.getByTestId("project-tasks").getByTestId("task");
+  await expect(row).toHaveAttribute("data-state", "offered");
+  await expect(row.getByTestId("task-late")).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Give up" })).toHaveCount(0);
+  await expect(row.getByTestId("task-step-removed")).toBeVisible();
+  // Saying no asks first, from the keyboard, and Escape puts the question away with the keyboard back on the button.
+  const no = row.getByRole("button", { name: "No, not for me" });
+  await no.focus();
+  await page.keyboard.press("Enter");
+  const ask = row.getByRole("group", { name: "Say no to this task?" });
+  await expect(ask).toContainText("leaves no mark on your record");
+  await expect(ask.getByRole("button", { name: "Yes, say no" })).toBeFocused();
+  expect(parts(relay, "give-up")).toHaveLength(0);
+  await page.keyboard.press("Escape");
+  await expect(ask).toHaveCount(0);
+  await expect(no).toBeFocused();
+  await no.click();
+  await ask.getByRole("button", { name: "Yes, say no" }).click();
+  await expect.poll(() => parts(relay, "give-up").length).toBe(1);
+
+  // After the no: still nothing public, no line on the project's record, nothing on the profile.
+  await openAs(page, null, PROJECT);
+  // Once the tasks were read (the record card says when), the card that lists them is not there.
+  await expect(page.getByTestId("project-record")).toHaveAttribute(
+    "data-work-read",
+    "true",
+    { timeout: 15_000 },
+  );
+  await expect(page.getByTestId("project-tasks")).toHaveCount(0);
+  await expect(page.getByTestId("record-task-closed")).toHaveCount(0);
+  await page.goto(`/u/${HELPER}`);
+  await page.getByRole("tab", { name: "Record" }).click();
+  await expect(track.getByTestId("track-record-empty")).toBeVisible();
+});
+
+test("a stranger's flood of records naming the project and the helper cuts no read and changes no number", async ({
+  page,
+}) => {
+  const STRANGER = pubkeyOf("7".repeat(64));
+  const relay = createMockRelay();
+  seedProject(relay, { offer: false });
+  const task = seedTask(relay, { what: "Fix the invite email." });
+  const work = seedStep(relay, HELPER, task, "evidence", [], "Fixed.");
+  seedStep(relay, MATE, task, "confirm", [["task-evidence", work.id]]);
+  // Junk in one second, with every tag a read by tag would look for.
+  const at = now();
+  for (let i = 0; i < 700; i += 1)
+    relay.seed(
+      event(
+        47003,
+        STRANGER,
+        { title: "junk", body: "" },
+        [
+          ["a", COORD],
+          ["l", "creaton-task"],
+          ["task-part", "send-back"],
+          ["e", task.id],
+          ["task", task.id],
+          ["p", HELPER],
+          ["task-evidence", work.id],
+        ],
+        at,
+      ),
+    );
+  await install(page, relay, null);
+  await page.goto(PROJECT);
+  const record = page.getByTestId("project-record");
+  await expect(record.getByTestId("record-work-totals")).toHaveText(
+    "1 piece of work accepted",
+    { timeout: 30_000 },
+  );
+  await expect(page.getByTestId("tasks-read-cut")).toHaveCount(0);
+  await expect(record.getByTestId("record-work-cut")).toHaveCount(0);
+
+  await page.goto(`/u/${HELPER}`);
+  await page.getByRole("tab", { name: "Record" }).click();
+  const track = page.getByTestId("track-record");
+  await expect(track.getByTestId("track-record-accepted")).toHaveText(
+    "1 piece of work accepted, on 1 project, confirmed by 1 person",
+    { timeout: 30_000 },
+  );
+  await expect(track.getByTestId("track-record-cut")).toHaveCount(0);
+  // The strangers' "send-backs" are not counted against the helper.
+  await expect(track.getByTestId("track-record-misses")).toHaveCount(0);
+});
+
+test("a check is of the piece that was read: the box shows it, and work handed in meanwhile stops the confirmation", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay, { offer: false });
+  const task = seedTask(relay, { what: "Fix the invite email." });
+  seedStep(relay, HELPER, task, "evidence", [], "The first version.");
+  await install(page, relay, MATE_KEY);
+  await page.goto(PROJECT);
+  const tasks = page.getByTestId("project-tasks");
+  const row = tasks.getByTestId("task");
+  const confirmButton = row.getByRole("button", { name: "Confirm it's done" });
+  await confirmButton.click();
+  // A labelled group, with the keyboard on its first control and the piece being confirmed inside it.
+  const box = row.getByRole("group", { name: "Confirm this work?" });
+  await expect(box.getByRole("button", { name: "Yes, confirm" })).toBeFocused();
+  await expect(box.getByTestId("task-confirm-piece")).toContainText(
+    "The first version.",
+  );
+  // "Not yet" (and Escape) gives the keyboard back to the button that opened the box.
+  await page.keyboard.press("Escape");
+  await expect(box).toHaveCount(0);
+  await expect(confirmButton).toBeFocused();
+
+  // The box is open on the first version when the helper hands in a different one.
+  await confirmButton.click();
+  seedStep(relay, HELPER, task, "evidence", [], "A different version.");
+  await box.getByRole("button", { name: "Yes, confirm" }).click();
+  await expect(tasks.getByTestId("tasks-said")).toHaveText(
+    "More work was handed in on this task while you were reading, so nothing was sent. Read what is there now, then answer it.",
+  );
+  expect(parts(relay, "confirm")).toHaveLength(0);
+  // Both pieces now wait, each with its own check.
+  await expect(row.getByTestId("task-evidence")).toHaveCount(2);
+  await expect(
+    row.getByRole("button", { name: /^Confirm it's done \(piece \d\)$/ }),
+  ).toHaveCount(2);
+  await expect(
+    row.getByRole("button", { name: /^Send back \(piece \d\)$/ }),
+  ).toHaveCount(2);
+});
+
+test("a handed-in file's fingerprint is called unchecked until Check this file compares it, and a link shows where it goes", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay, { offer: false });
+  const task = seedTask(relay, { what: "Record sign-up." });
+  // sha256("hello world")
+  const real =
+    "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+  seedStep(
+    relay,
+    HELPER,
+    task,
+    "evidence",
+    [
+      ["task-link", "https://good.example@evil.example/recording"],
+      [
+        "task-file",
+        real,
+        "recording.mp4",
+        `http://${COMMUNITY_HOST}/blob/real`,
+      ],
+      [
+        "task-file",
+        "c".repeat(64),
+        "invoice.pdf",
+        `http://${COMMUNITY_HOST}/blob/other`,
+      ],
+    ],
+    "See the files.",
+  );
+  await install(page, relay, null);
+  await page.route("**/blob/*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "video/mp4",
+      body: "hello world",
+    }),
+  );
+  await page.goto(PROJECT);
+  const piece = page.getByTestId("project-tasks").getByTestId("task-evidence");
+  // The link's real site is said beside it, whatever the address looks like.
+  await expect(piece.getByTestId("task-link-host")).toHaveText(
+    "(goes to evil.example)",
+  );
+  const files = piece.getByTestId("task-file");
+  await expect(files).toHaveCount(2);
+  await expect(files.first()).toContainText(
+    "Fingerprint stated by the helper, not checked here:",
+  );
+  await expect(files.first().getByTestId("task-file-check")).toHaveCount(0);
+  await files
+    .first()
+    .getByRole("button", { name: "Check this file: recording.mp4" })
+    .click();
+  await expect(files.first().getByTestId("task-file-check")).toHaveText(
+    "Checked just now: the file at this address matches the fingerprint.",
+  );
+  await files
+    .nth(1)
+    .getByRole("button", { name: "Check this file: invoice.pdf" })
+    .click();
+  await expect(files.nth(1).getByTestId("task-file-check")).toContainText(
+    "does NOT match the fingerprint",
+  );
+});
+
+test("a give-up stays on both records when the work is confirmed afterwards", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay, { offer: false });
+  const task = seedTask(relay, { what: "Fix the invite email." });
+  seedStep(relay, HELPER, task, "accept");
+  seedStep(relay, HELPER, task, "give-up", [], "No time this month.");
+  const work = seedStep(relay, HELPER, task, "evidence", [], "Did it anyway.");
+  seedStep(relay, MATE, task, "confirm", [["task-evidence", work.id]]);
+  await install(page, relay, null);
+  await page.goto(PROJECT);
+  const record = page.getByTestId("project-record");
+  await expect(record.getByTestId("record-work-accepted")).toContainText(
+    "Fix the invite email.",
+  );
+  await expect(record.getByTestId("record-task-closed")).toContainText(
+    "Robin Helper gave it up: No time this month. Work on it was confirmed all the same",
+  );
+  await page.goto(`/u/${HELPER}`);
+  await page.getByRole("tab", { name: "Record" }).click();
+  await expect(page.getByTestId("track-record-misses")).toHaveText(
+    "0 tasks sent back at least once, 1 given up",
+  );
+  await expect(page.getByTestId("track-record-accepted")).toContainText(
+    "1 piece of work accepted",
+  );
+});
+
+test("a step the server refuses says why in plain words, with what to do, and keeps what was written", async ({
+  page,
+}) => {
+  // The page thinks Max is on the team; the server's copy of the project says otherwise (the founder just took
+  // them off). The server's own wording comes back, and the page says it for people.
+  const relay = createMockRelay({
+    refuse: (e) =>
+      e.pubkey === MATE && e.kind === 47003
+        ? "restricted: only this project's team can post this"
+        : null,
+  });
+  seedProject(relay, { offer: false });
+  const task = seedTask(relay, { what: "Fix the invite email." });
+  seedStep(relay, HELPER, task, "evidence", [], "Fixed.");
+  await install(page, relay, MATE_KEY);
+  await page.goto(PROJECT);
+  const row = page.getByTestId("project-tasks").getByTestId("task");
+  await row.getByRole("button", { name: "Send back" }).click();
+  const back = row.getByRole("form", { name: "Send the work back" });
+  await back.getByLabel("What is missing").fill("There is no recording.");
+  await back.getByRole("button", { name: "Send back" }).click();
+  const failed = back.getByTestId("task-send-back-box-failed");
+  await expect(failed).toContainText(
+    "The work was not sent back. Only this project's team can post this. If you should be on the team, ask the founder to add you to the project, then try again.",
+  );
+  await expect(failed).not.toContainText("restricted");
+  await expect(back.getByLabel("What is missing")).toHaveValue(
+    "There is no recording.",
+  );
+  expect(parts(relay, "send-back")).toHaveLength(0);
+});
+
+test("the server's own rules hold on the test server: only the team, the named helper, and never the helper's own confirmation", async () => {
+  const relay = createMockRelay();
+  const STRANGER = pubkeyOf("7".repeat(64));
+  seedProject(relay, { offer: false });
+  const task = seedTask(relay);
+  const step = (by: string, part: string, extra: string[][] = []) =>
+    projectRecordRefusal(
+      event(
+        47003,
+        by,
+        {},
+        [["a", COORD], ["task-part", part], ["task", task.id], ...extra],
+        now(),
+      ),
+      relay.events,
+    );
+  expect(step(HELPER, "accept")).toBeNull();
+  expect(step(STRANGER, "accept")).toBe(
+    "restricted: only the helper this task names can post this",
+  );
+  expect(step(MATE, "confirm")).toBeNull();
+  expect(step(HELPER, "confirm")).toBe(
+    "restricted: only this project's team can post this",
+  );
+  expect(step(STRANGER, "send-back")).toBe(
+    "restricted: only this project's team can post this",
+  );
+  // The founder doing their own task cannot confirm it.
+  const own = seedTask(relay, { helper: FOUNDER });
+  expect(
+    projectRecordRefusal(
+      event(
+        47003,
+        FOUNDER,
+        {},
+        [
+          ["a", COORD],
+          ["task-part", "confirm"],
+          ["task", own.id],
+        ],
+        now(),
+      ),
+      relay.events,
+    ),
+  ).toBe(
+    "restricted: a task's work must be confirmed by someone other than its helper",
+  );
+  expect(
+    projectRecordRefusal(
+      event(
+        47003,
+        MATE,
+        {},
+        [
+          ["a", COORD],
+          ["promise", "0", "x"],
+        ],
+        now(),
+      ),
+      relay.events,
+    ),
+  ).toBe("restricted: only this project's founder can post this");
+  expect(
+    projectRecordRefusal(
+      event(
+        47003,
+        FOUNDER,
+        {},
+        [
+          ["a", `37001:${FOUNDER}:gone`],
+          ["update-kind", "weekly"],
+        ],
+        now(),
+      ),
+      relay.events,
+    ),
+  ).toBe("invalid: this record names a project that is not on this server");
+  // A removal names exactly one record, never another removal, and its `k` names the real kind.
+  const del = (tags: string[][]) =>
+    deletionRefusal(event(5, FOUNDER, "", tags, now()), relay.events);
+  expect(
+    del([
+      ["e", task.id],
+      ["k", "47003"],
+    ]),
+  ).toBeNull();
+  expect(
+    del([
+      ["e", task.id],
+      ["e", own.id],
+    ]),
+  ).toContain("exactly one target");
+  expect(
+    del([
+      ["e", task.id],
+      ["k", "1"],
+    ]),
+  ).toContain("`k` tag names kind 1");
+  const removal = event(5, FOUNDER, "", [["e", task.id]], now());
+  relay.seed(removal);
+  expect(del([["e", removal.id]])).toContain("a deletion cannot be deleted");
+});
+
 test("reads cut short are said, and no numbers are stated from them", async ({
   page,
 }) => {
@@ -859,6 +1331,23 @@ test("reads cut short are said, and no numbers are stated from them", async ({
         at,
       ),
     );
+  // And more of the helper's own steps than a page holds, for their profile.
+  for (let i = 0; i < 500; i += 1)
+    relay.seed(
+      event(
+        47003,
+        HELPER,
+        { title: "accept", body: "" },
+        [
+          ["a", COORD],
+          ["l", "creaton-task"],
+          ["task-part", "accept"],
+          ["e", task.id],
+          ["task", task.id],
+        ],
+        at,
+      ),
+    );
   await install(page, relay, null);
   await page.goto(PROJECT);
   await expect(page.getByTestId("tasks-read-cut")).toContainText(
@@ -878,6 +1367,8 @@ test("reads cut short are said, and no numbers are stated from them", async ({
     { timeout: 30_000 },
   );
   await expect(track.getByTestId("track-record-totals")).toHaveCount(0);
+  // And nothing is listed as accepted from a read that did not finish.
+  await expect(track.getByTestId("track-work")).toHaveCount(0);
 });
 
 test("when the tasks can't be read the page says so with Try again, and reads them on retry", async ({
