@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import { useStillOpen } from "@/features/launchpad/use-help-requests";
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { resolveUserName } from "@/features/profiles/use-profiles";
 import { existingUserPubkey } from "@/shared/lib/identity";
@@ -12,7 +13,7 @@ import {
   railBlurb,
   railPostIds,
   railPosts,
-  railHelpRequests,
+  railHelpCandidates,
   railProjects,
 } from "../lib/rail";
 import { firstError, listView, readUnknown } from "../lib/read-view";
@@ -165,10 +166,11 @@ function ProjectsBlock() {
     () => railProjects(launches.data ?? [], raises),
     [launches.data, raises],
   );
-  const asking = useMemo(
-    () => railHelpRequests(launches.data ?? [], raises),
+  const candidates = useMemo(
+    () => railHelpCandidates(launches.data ?? [], raises),
     [launches.data, raises],
   );
+  const asking = useStillOpen(candidates, RAIL_LIMITS.helpRequests);
   const view = listView({
     count: shown.length,
     error: launches.error,
@@ -230,13 +232,18 @@ function ProjectsBlock() {
           ))}
         </ul>
       )}
-      {view === "list" && asking.length > 0 ? (
+      {view === "list" && asking.failed ? (
+        <RailNote onRetry={asking.retry} testId="social-rail-help-error">
+          Couldn't check who is asking for help.
+        </RailNote>
+      ) : null}
+      {view === "list" && asking.requests.length > 0 ? (
         <div data-testid="social-rail-help">
           <h3 className="px-4 pt-2 text-xs font-bold text-black/60 dark:text-white/60">
             Asking for help
           </h3>
           <ul>
-            {asking.map(({ project, updateId, ask }) => (
+            {asking.requests.map(({ project, updateId, ask }) => (
               <li key={updateId}>
                 <Link
                   className="block px-4 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/10"

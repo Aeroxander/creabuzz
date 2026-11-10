@@ -4,9 +4,9 @@
  */
 
 import {
-  bodyWithoutParts,
   PART_HEADINGS,
   type UpdateParts,
+  updateLayout,
 } from "../lib/weekly-update";
 import type { Launch, LaunchUpdate } from "../models";
 import { HelpRequestCard } from "./HelpRequestCard";
@@ -48,7 +48,7 @@ export function UpdateBody({
   workTab: boolean;
 }) {
   const parts: UpdateParts | null = update.parts ?? null;
-  const free = bodyWithoutParts(update.body, parts);
+  const { free, showParts } = updateLayout(update.body, parts);
   return (
     <>
       {free ? (
@@ -56,7 +56,7 @@ export function UpdateBody({
           {clip(free, max)}
         </p>
       ) : null}
-      {parts ? (
+      {parts && showParts ? (
         <>
           <Part heading={PART_HEADINGS.done} max={max} text={parts.done} />
           <Part heading={PART_HEADINGS.next} max={max} text={parts.next} />

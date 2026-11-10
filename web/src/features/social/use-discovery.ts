@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 
 import {
   KIND_CONTACT_LIST,
@@ -131,11 +131,7 @@ export function useNotificationBadge() {
   const updates = usePriorityNotifications();
   // Offers to help on your projects, and replies to offers you made: counted with the rest, hidden by a mute.
   const muted = useMutedSet();
-  const allHelp = useHelpNotices();
-  const help = useMemo(
-    () => allHelp.filter((n) => !muted.has(n.actor.toLowerCase())),
-    [allHelp, muted],
-  );
+  const help = useHelpNotices(muted);
   const seenKey = [...socialKeys.all, "notifications-seen", me];
   const seen = useQuery({
     queryKey: seenKey,

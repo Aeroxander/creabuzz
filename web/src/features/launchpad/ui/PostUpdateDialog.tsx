@@ -130,8 +130,8 @@ export function PostUpdateDialog({
           </>
         )}
         <div>
+          {/* The label says what a press does next; it is not also a pressed state, which would say it twice. */}
           <Button
-            aria-pressed={freely}
             className="h-auto p-0"
             data-testid="update-write-freely"
             onClick={() => setFreely((was) => !was)}

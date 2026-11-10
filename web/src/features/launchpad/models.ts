@@ -19,11 +19,7 @@ import {
   type RevenuePledge,
 } from "./lib/revenue-pledge.ts";
 import { parseUnlockPlan, type UnlockPlan } from "./lib/unlock-plans.ts";
-import {
-  type HelpSignal,
-  isHelpSignalTags,
-  parseHelpSignal,
-} from "./lib/help-request.ts";
+import { isHelpSignalTags } from "./lib/help-request.ts";
 import { partsFromTags, type UpdateParts } from "./lib/weekly-update.ts";
 import {
   KIND_LAUNCH_BID,
@@ -341,8 +337,6 @@ export interface Launch {
   updates: LaunchUpdate[];
   proposals: LaunchProposal[];
   receipts: LaunchReceipt[];
-  /** Offers to help, the team's replies and "Help found" marks (`lib/help-request.ts`): never listed as updates. */
-  helpSignals?: HelpSignal[];
 }
 
 export function launchCoordinate(author: string, launchId: string): string {
@@ -809,7 +803,6 @@ export function buildLaunches(
   const updates: LaunchUpdate[] = [];
   const proposals: LaunchProposal[] = [];
   const receipts: LaunchReceipt[] = [];
-  const signals: Array<{ launchKey: string; signal: HelpSignal }> = [];
   for (const event of events) {
     // NIP-09 `e`-tag tombstones hide individual mirrors (an agent-draft's
     // Reject disposal, D5) — the hash chain keeps the audit.
@@ -832,12 +825,11 @@ export function buildLaunches(
       const bid = parseLaunchBid(event);
       if (bid) bids.push(bid);
     } else if (event.kind === KIND_LAUNCH_UPDATE) {
-      // An offer to help, a reply to one or "Help found" answers an update; it is not one.
-      const signal = parseHelpSignal(event);
+      // An offer to help, a reply to one or "Help found" answers an update; it is not one. They are read for one
+      // project at a time (`use-help-requests.ts`), never kept from this list, which is cut at a fixed size.
+      if (isHelpSignalTags(event.tags)) continue;
       const update = parseLaunchUpdate(event);
-      if (signal && update)
-        signals.push({ launchKey: update.launchKey, signal });
-      else if (update && !isHelpSignalTags(event.tags)) updates.push(update);
+      if (update) updates.push(update);
     } else if (event.kind === KIND_LAUNCH_PROPOSAL) {
       const proposal = parseLaunchProposal(event);
       if (proposal) proposals.push(proposal);
@@ -864,10 +856,6 @@ export function buildLaunches(
     launches.get(launchKey);
   for (const bid of bids) ownerOf(bid.launchKey)?.bids.push(bid);
   for (const update of updates) ownerOf(update.launchKey)?.updates.push(update);
-  for (const { launchKey, signal } of signals) {
-    const owner = ownerOf(launchKey);
-    if (owner) owner.helpSignals = [...(owner.helpSignals ?? []), signal];
-  }
   for (const proposal of proposals)
     ownerOf(proposal.launchKey)?.proposals.push(proposal);
   for (const receipt of receipts)

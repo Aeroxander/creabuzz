@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   RAIL_LIMITS,
   railBlurb,
-  railHelpRequests,
+  railHelpCandidates,
   railPostIds,
   railPosts,
   railProjects,
@@ -137,7 +137,7 @@ test("a mute matches a key whatever its letter case", () => {
   assert.deepEqual(railPosts(rows, new Set(["abcdef".padEnd(64, "0")])), []);
 });
 
-test("open requests for help come from listed projects only, newest first, a few at most", () => {
+test("requests for help the rail may show come from listed projects only, newest first, up to the limit", () => {
   const author = "a".repeat(64);
   const asking = (id, at, over = {}) => ({
     ...launch(id, at, { team: [], ...over }),
@@ -151,33 +151,19 @@ test("open requests for help come from listed projects only, newest first, a few
       },
     ],
   });
-  const closed = {
-    ...asking("closed", 90),
-    helpSignals: [
-      {
-        kind: "found",
-        target: "closed-update",
-        author,
-        at: 95,
-        id: "x",
-        note: "",
-      },
-    ],
-  };
   const all = [
     asking("p1", 10),
     asking("p2", 20),
     asking("p3", 30),
-    asking("p4", 40),
     // A failed project is over: Discover does not list it, so its request is not offered.
     asking("gone", 50, { stage: "failed" }),
-    closed,
     { ...launch("silent", 60, { team: [] }), updates: [] },
   ];
-  const shown = railHelpRequests(all, true);
-  assert.equal(shown.length, RAIL_LIMITS.helpRequests);
   assert.deepEqual(
-    shown.map((r) => r.ask.text),
-    ["Help p4", "Help p3", "Help p2"],
+    railHelpCandidates(all, true).map((r) => r.ask.text),
+    ["Help p3", "Help p2", "Help p1"],
   );
+  assert.equal(railHelpCandidates(all, true, 2).length, 2);
+  // More are checked than are shown, so a few closed ones do not empty the list.
+  assert.ok(RAIL_LIMITS.helpCandidates > RAIL_LIMITS.helpRequests);
 });

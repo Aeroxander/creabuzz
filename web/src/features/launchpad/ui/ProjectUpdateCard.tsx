@@ -5,12 +5,16 @@
  * The founder also gets one quiet prompt here when a week has passed with no update, which they can put away for the
  * week, and otherwise a line saying when the next one is due. There is no dialog and no reminder anywhere else. The
  * count of weeks in a row is this project's own: it is never a score and never compared with another project.
+ *
+ * All of it is worked out from this project's own records, read for it alone and to their end where that is possible
+ * (`useProjectUpdates`), not from the list of every project, which is cut at a fixed size. What a cut read cannot settle
+ * is left unsaid: no "no update in weeks", no "you haven't posted", no count in a row. A failed read says so, with a
+ * way to read again.
  */
 
 import { useMemo, useState } from "react";
 
 import { projectProgress } from "@/features/feed/lib/project-progress";
-import { useFeedNotes } from "@/features/feed/use-feed";
 import { progressScope } from "@/features/feed/use-progress-seen";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
@@ -22,9 +26,11 @@ import {
   freshnessLine,
   inARowLine,
   nudgeDismissed,
+  updateFacts,
   weeksInARow,
 } from "../lib/weekly-update";
 import { launchCoordinate, type Launch } from "../models";
+import { useProjectUpdates } from "../use-help-requests";
 import { UpdateBody } from "./UpdateBody";
 
 const DISMISSED_KEY = "creaton.update-nudge.v1";
@@ -78,7 +84,7 @@ export function ProjectUpdateCard({
   onOpenUpdates: () => void;
 }) {
   const me = existingUserPubkey();
-  const notes = useFeedNotes();
+  const read = useProjectUpdates(launch.record);
   const scope = progressScope(
     relayWsUrl(),
     me,
@@ -87,34 +93,73 @@ export function ProjectUpdateCard({
   const [dismissedAt, setDismissedAt] = useState<number | null>(
     () => readDismissed()[scope] ?? null,
   );
-  // The team's own updates, in both forms the app has: the same list the Updates tab shows, without submitted work.
+  const data = read.data;
+  // The team's own updates, in both forms the app has, without submitted work: what the Updates tab lists.
   const updates = useMemo(
     () =>
-      projectProgress(
-        [launch],
-        (notes.data ?? []).map((n) => n.event),
-      ).filter((item) => !item.evidence),
-    [launch, notes.data],
+      data
+        ? projectProgress(
+            [{ record: launch.record, updates: data.updates }],
+            data.posts,
+          ).filter((item) => !item.evidence)
+        : [],
+    [launch.record, data],
   );
+  if (!data) {
+    // Not read yet: nothing is said. Not readable: said, with a way to read again.
+    if (!read.isError) return null;
+    return (
+      <section
+        aria-label="Project updates"
+        className="glass rounded-2xl border p-4"
+        data-testid="project-update-card"
+      >
+        <p className="text-sm" data-testid="update-read-failed" role="alert">
+          Couldn't read this project's updates.{" "}
+          <Button
+            onClick={() => void read.refetch()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Try again
+          </Button>
+        </p>
+      </section>
+    );
+  }
+
   const now = Math.floor(Date.now() / 1000);
   const latest = updates[0] ?? null;
   const raw = latest
-    ? (launch.updates.find((u) => u.id === latest.id) ?? null)
+    ? (data.updates.find((u) => u.id === latest.id) ?? null)
     : null;
-  // Until the posts are read, "no update in weeks" would be a guess; a failed read says so instead.
-  const known = notes.isSuccess;
-  const inARow = inARowLine(
-    weeksInARow(
-      updates.map((u) => u.at),
-      now,
-    ),
-  );
+  const facts = updateFacts({
+    latestAt: latest?.at ?? null,
+    recordsComplete: data.complete,
+    postsCut: data.postsCut,
+    oldestPostAt:
+      data.posts.length > 0
+        ? Math.min(...data.posts.map((post) => post.created_at))
+        : null,
+  });
+  const inARow = facts.inARow
+    ? inARowLine(
+        weeksInARow(
+          updates.map((u) => u.at),
+          now,
+        ),
+      )
+    : null;
   const nudge = founderNudge(latest?.at ?? null, now);
   const showNudge =
-    known && isFounder && nudge.due && !nudgeDismissed(dismissedAt, now);
+    facts.freshness &&
+    isFounder &&
+    nudge.due &&
+    !nudgeDismissed(dismissedAt, now);
 
   // Nothing to say to a visitor about a project that has not posted: no empty card.
-  if (!latest && !notes.isError && !(isFounder && known)) return null;
+  if (!latest && !(isFounder && facts.freshness)) return null;
 
   return (
     <section
@@ -123,17 +168,25 @@ export function ProjectUpdateCard({
       data-testid="project-update-card"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {known ? (
+        {facts.freshness ? (
           <p className="text-sm font-semibold" data-testid="update-freshness">
             {freshnessLine(latest?.at ?? null, now)}
           </p>
-        ) : null}
-        {known && inARow ? (
+        ) : (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="update-freshness-unknown"
+          >
+            This project has more posts than could be read here, so how recent
+            its newest update is can't be worked out.
+          </p>
+        )}
+        {inARow ? (
           <Chip data-testid="updates-in-a-row" tone="success">
             {inARow}
           </Chip>
         ) : null}
-        {known && isFounder && !nudge.due ? (
+        {facts.freshness && isFounder && !nudge.due ? (
           <p
             className="text-xs text-muted-foreground"
             data-testid="update-next-due"
@@ -141,11 +194,11 @@ export function ProjectUpdateCard({
             {nudge.text}
           </p>
         ) : null}
-        {notes.isError ? (
+        {read.isError ? (
           <p className="text-sm" role="status">
-            Couldn't check for the newest updates.{" "}
+            Couldn't check for newer updates.{" "}
             <Button
-              onClick={() => void notes.refetch()}
+              onClick={() => void read.refetch()}
               size="sm"
               type="button"
               variant="outline"
@@ -166,7 +219,7 @@ export function ProjectUpdateCard({
             Post one
           </Button>
           <Button
-            aria-label="Hide this reminder for a week"
+            aria-label="Not now: hide this reminder for a week"
             onClick={() => {
               writeDismissed(scope, now);
               setDismissedAt(now);
@@ -210,7 +263,7 @@ export function ProjectUpdateCard({
               type="button"
               variant="link"
             >
-              See all {updates.length} updates
+              See all updates
             </Button>
           ) : null}
         </article>

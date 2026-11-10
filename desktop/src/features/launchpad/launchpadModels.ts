@@ -347,6 +347,21 @@ export function parseLaunchBidEvent(event: RelayEvent): LaunchBid | null {
   };
 }
 
+/** The tags the web app marks an offer to help, the team's reply and "Help found" with (its `lib/help-request.ts`). */
+const HELP_SIGNAL_TAGS: ReadonlySet<string> = new Set([
+  "help-offer",
+  "help-reply",
+  "help-found",
+]);
+
+/**
+ * Whether an update record is a help signal: an offer on an update that asked for help, a reply to an offer, or "Help
+ * found". They share the update kind so no server change was needed, and they are never listed or counted as updates.
+ */
+export function isHelpSignalEvent(event: Pick<RelayEvent, "tags">): boolean {
+  return event.tags.some((tag) => HELP_SIGNAL_TAGS.has(tag[0]));
+}
+
 export function parseLaunchUpdateEvent(event: RelayEvent): LaunchUpdate | null {
   if (event.kind !== KIND_LAUNCH_UPDATE) return null;
   const launchId = launchIdFromCoordinate(tagValue(event.tags, "a"));
@@ -469,6 +484,8 @@ export function buildLaunchesFromEvents(
         break;
       }
       case KIND_LAUNCH_UPDATE: {
+        // An offer to help, a reply to one or "Help found" answers an update; it is not one.
+        if (isHelpSignalEvent(event)) break;
         const update = parseLaunchUpdateEvent(event);
         if (update) updates.push(update);
         break;

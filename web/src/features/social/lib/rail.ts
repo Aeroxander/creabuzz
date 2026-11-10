@@ -5,8 +5,8 @@
 
 import { listedHere } from "../../launchpad/lib/contributor-only.ts";
 import {
+  helpCandidates,
   type OpenHelpRequest,
-  openHelpRequests,
 } from "../../launchpad/lib/help-request.ts";
 import { isIdea } from "../../launchpad/lib/idea.ts";
 import { effectiveStage, type Launch } from "../../launchpad/models.ts";
@@ -16,6 +16,8 @@ export const RAIL_LIMITS = {
   projects: 4,
   /** Open requests for help under the projects: a few, newest first. */
   helpRequests: 3,
+  /** How many requests are checked for "Help found" to find those few: some spare, for the ones since closed. */
+  helpCandidates: 12,
   posts: 3,
   /**
    * How many trending posts the rail reads by id to find `posts` to show: a few spare, for the authors the reader
@@ -57,15 +59,16 @@ function listed(launch: Launch, raises: boolean): boolean {
 }
 
 /**
- * The newest open requests for help, from the same projects Discover lists (any of them, not only the few the rail
- * shows by name). One per project, newest first: a short list, not a ranking.
+ * The requests for help the rail may show, from the same projects Discover lists (any of them, not only the few the
+ * rail shows by name): each project's newest, newest first. Which are still open is read after (`useStillOpen`), and
+ * the first few of those are shown. A short list, not a ranking.
  */
-export function railHelpRequests(
+export function railHelpCandidates(
   launches: readonly Launch[],
   raises: boolean,
-  limit: number = RAIL_LIMITS.helpRequests,
+  limit: number = RAIL_LIMITS.helpCandidates,
 ): OpenHelpRequest[] {
-  return openHelpRequests(
+  return helpCandidates(
     launches.filter((launch) => listed(launch, raises)),
     limit,
   );

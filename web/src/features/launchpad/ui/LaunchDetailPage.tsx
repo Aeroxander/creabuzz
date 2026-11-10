@@ -3,6 +3,7 @@ import type { ChallengeIntent } from "../lib/challenge";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { BackIdeaButton } from "./BackIdeaButton";
@@ -52,6 +53,7 @@ import { useAuctionProgress, OwnershipOnlyNote } from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
 import { PostUpdateDialog } from "./PostUpdateDialog";
 import { ProjectUpdateCard } from "./ProjectUpdateCard";
+import { helpQueryKey } from "../use-help-requests";
 import { type UpdateDraft, updateEvent } from "../lib/weekly-update";
 import { sandboxRecord } from "../lib/sandbox";
 import { ManagePanel } from "./ManagePanel";
@@ -132,6 +134,7 @@ export function LaunchDetailPage({
     }
   }, [isFounder, supporterCoord, seenCount]);
   const mirror = usePublishMirror();
+  const queryClient = useQueryClient();
   const remove = useDeleteLaunch();
   const [tab, setLocalTab] = useState<Tab>(
     initialTab ?? (initialDecision ? "decisions" : "overview"),
@@ -283,6 +286,8 @@ export function LaunchDetailPage({
       });
       toast.success("Update published.");
       setUpdateOpen(false);
+      // The card at the top reads this project's updates on its own: read them again so it shows the new one.
+      void queryClient.invalidateQueries({ queryKey: helpQueryKey });
     } catch {
       // Said in the dialog, which stays open with what was written.
       setUpdateFailed(true);

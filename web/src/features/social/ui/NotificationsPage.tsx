@@ -44,6 +44,7 @@ import { avatarName, bylineName } from "../lib/person-name";
 import { launchCoordinate } from "../../feed/lib/feed-events";
 import { useLaunches } from "../../launchpad/use-launches";
 import { useHelpNotices } from "../../launchpad/use-help-requests";
+import type { HelpNotice } from "../../launchpad/lib/help-request";
 import { useMutedSet } from "../use-social-actions";
 import { useNotificationBadge, useNotifications } from "../use-discovery";
 import {
@@ -324,15 +325,20 @@ function LaunchUpdatesSection({ visitSeenAt }: { visitSeenAt: number }) {
   );
 }
 
+/** What a help notice is about: the update by its title when it is known, and its project. */
+function noticeSubject(notice: HelpNotice): string {
+  return notice.updateTitle
+    ? `“${notice.updateTitle}” in ${notice.project.name}`
+    : `an update in ${notice.project.name}`;
+}
+
 /**
  * Offers to help on your projects' requests, and the team's replies to offers you made. Each opens the update it is
  * about. Someone you muted is left out, as everywhere else on this page.
  */
 function HelpNoticesSection({ visitSeenAt }: { visitSeenAt: number }) {
   const muted = useMutedSet();
-  const notices = useHelpNotices().filter(
-    (n) => !muted.has(n.actor.toLowerCase()),
-  );
+  const notices = useHelpNotices(muted);
   const people = usePeople(notices.map((n) => n.actor));
   if (notices.length === 0) return null;
   return (
@@ -363,7 +369,7 @@ function HelpNoticesSection({ visitSeenAt }: { visitSeenAt: number }) {
               {notice.kind === "offer"
                 ? "offered to help with"
                 : "replied to your offer to help with"}{" "}
-              “{notice.updateTitle}” in {notice.project.name}
+              {noticeSubject(notice)}
               <span className="text-black/60 dark:text-white/60">
                 {" "}
                 · {shortRelativeTime(notice.at)}
@@ -375,7 +381,7 @@ function HelpNoticesSection({ visitSeenAt }: { visitSeenAt: number }) {
               </p>
             ) : null}
             <Link
-              aria-label={`Open the update “${notice.updateTitle}” in ${notice.project.name}`}
+              aria-label={`Open ${noticeSubject(notice)}`}
               className="absolute inset-0"
               hash={`update-${notice.updateId}`}
               params={{ launchId: notice.project.id }}
@@ -394,8 +400,9 @@ export function NotificationsPage() {
   const me = existingUserPubkey();
   const notifications = useNotifications();
   // Either section standing in for the list: "Nothing yet" under an offer to help would be untrue.
+  const mutedPeople = useMutedSet();
   const hasLaunchUpdates =
-    usePriorityNotifications().length + useHelpNotices().length > 0;
+    usePriorityNotifications().length + useHelpNotices(mutedPeople).length > 0;
   const { seenAt, markSeen } = useNotificationBadge();
   const [tab, setTab] = useState<Tab>("all");
 

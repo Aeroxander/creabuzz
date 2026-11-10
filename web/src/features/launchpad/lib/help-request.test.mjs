@@ -4,15 +4,16 @@ import test from "node:test";
 import {
   foundEvent,
   HELP_NOTE_MAX,
+  helpCandidates,
   helpNotices,
   helpRequest,
   offerCountLine,
   offeredLine,
   offerEvent,
   OFFERS_SHOWN,
-  openHelpRequests,
   parseHelpSignal,
   replyEvent,
+  stillOpen,
 } from "./help-request.ts";
 import { buildLaunches } from "../models.ts";
 import { updateEvent } from "./weekly-update.ts";
@@ -136,11 +137,55 @@ test("one offer per person: their newest", () => {
   assert.equal(v.mine.note, "second");
 });
 
-test("an offer taken back is gone: the person can offer again", () => {
-  // Withdrawing deletes the record, so the server no longer returns it.
-  const v = view([offer(BEN, 200)], ANN);
-  assert.equal(v.mine, null);
+test("taking an offer back names every offer record the person has, so an older one cannot come back", () => {
+  // A send retried after the server had already taken it, or sent from two tabs: two records, one offer shown.
+  const first = offer(ANN, 100, "first");
+  const second = offer(ANN, 300, "second");
+  const v = view([first, second, offer(BEN, 200)], ANN);
+  assert.equal(v.mine.id, second.id);
+  assert.deepEqual([...v.myOfferIds].sort(), [first.id, second.id].sort());
+  // Once both are deleted the server returns neither: the person has no offer and can make one again.
+  const after = view([offer(BEN, 200)], ANN);
+  assert.equal(after.mine, null);
+  assert.deepEqual(after.myOfferIds, []);
+  assert.equal(after.offerCount, 1);
+});
+
+test("an offer dated after Help found is not an offer, though its sender can still delete it", () => {
+  const late = offer(ANN, 600, "too late");
+  const v = view(
+    [
+      offer(BEN, 100),
+      signed(FOUNDER, foundEvent({ updateId: UPDATE }), 500),
+      late,
+    ],
+    ANN,
+  );
   assert.equal(v.offerCount, 1);
+  assert.equal(v.mine, null);
+  assert.deepEqual(v.myOfferIds, [late.id]);
+});
+
+test("reopening: the viewer's own marks are the ones to delete, and the request is open once no valid mark is left", () => {
+  const mark = (who, at) => signed(who, foundEvent({ updateId: UPDATE }), at);
+  const a = mark(FOUNDER, 500);
+  const b = mark(FOUNDER, 510);
+  const mates = mark(MATE, 520);
+  const closed = view([a, b, mates], FOUNDER);
+  assert.equal(closed.open, false);
+  assert.deepEqual([...closed.myFoundIds].sort(), [a.id, b.id].sort());
+  assert.deepEqual([...closed.foundBy].sort(), [FOUNDER, MATE].sort());
+  // The founder's two marks deleted: the teammate's still stands, and is not the founder's to delete.
+  const stillClosed = view([mates], FOUNDER);
+  assert.equal(stillClosed.open, false);
+  assert.deepEqual(stillClosed.myFoundIds, []);
+  assert.deepEqual(stillClosed.foundBy, [MATE]);
+  // None left: open again, and offers made before still stand.
+  const reopened = view([offer(ANN, 100)], FOUNDER);
+  assert.equal(reopened.open, true);
+  assert.equal(reopened.offerCount, 1);
+  // An outsider's mark never closed it, so there is nothing to reopen.
+  assert.equal(view([mark(ANN, 1)], ANN).myFoundIds.length, 0);
 });
 
 test("the team's own records are not offers, and offers on another update are ignored", () => {
@@ -215,7 +260,7 @@ test("nothing a card can send or say names Shares or money", () => {
   assert.doesNotMatch(words, /share|earn|\$|paid|reward/i);
 });
 
-/** A project as the app builds it from the server's records. */
+/** A project as the app builds it from the list of every project. */
 function project(slug, extra = []) {
   const record = {
     id: `rec-${slug}`.padEnd(64, "0"),
@@ -257,8 +302,13 @@ const answer = (slug, who, built, at) => ({
   ...signed(who, built, at),
   tags: [["a", `37001:${FOUNDER}:${slug}`], ...built.tags],
 });
+/** A help record as Notifications reads it: the signal and the project it names. */
+const named = (event) => ({
+  signal: parseHelpSignal(event),
+  coordinate: event.tags.find((t) => t[0] === "a")[1],
+});
 
-test("read from the server's records: offers, replies and Help found never count as updates", () => {
+test("the list of every project keeps updates only: offers, replies and Help found are neither updates nor kept", () => {
   const ask = update("demo", FOUNDER, 100, "A tester.");
   const offered = answer(
     "demo",
@@ -283,39 +333,46 @@ test("read from the server's records: offers, replies and Help found never count
     size: "large",
     time: "",
   });
-  assert.deepEqual(launch.helpSignals.map((s) => s.kind).sort(), [
-    "found",
-    "offer",
-    "reply",
-  ]);
+  // Help records are read per project, on their own: nothing of them rides on this list.
+  assert.equal("helpSignals" in launch, false);
 });
 
-test("open requests: each project's newest open one, newest first, never a closed or outsider's one", () => {
+test("requests the side panel may show: each project's newest from its team, then the ones not marked found", () => {
   const a1 = update("alpha", FOUNDER, 100, "Old ask.");
   const a2 = update("alpha", MATE, 300, "New ask.");
   const b1 = update("beta", FOUNDER, 200, "Beta ask.");
   const c1 = update("gamma", FOUNDER, 400, "Gamma ask.");
-  const cFound = answer("gamma", FOUNDER, foundEvent({ updateId: c1.id }), 450);
   const d1 = update("delta", ANN, 500, "Not the team.");
   const launches = [
     ...project("alpha", [a1, a2]),
     ...project("beta", [b1]),
-    ...project("gamma", [c1, cFound]),
+    ...project("gamma", [c1]),
     ...project("delta", [d1]),
     ...project("quiet", [update("quiet", FOUNDER, 600, "")]),
   ];
-  const open = openHelpRequests(launches, 5);
+  const candidates = helpCandidates(launches, 5);
   assert.deepEqual(
-    open.map((r) => [r.project.id, r.ask.text]),
+    candidates.map((r) => [r.project.id, r.ask.text]),
     [
+      ["gamma", "Gamma ask."],
       ["alpha", "New ask."],
       ["beta", "Beta ask."],
     ],
   );
-  assert.equal(openHelpRequests(launches, 1).length, 1);
+  assert.equal(helpCandidates(launches, 1).length, 1);
+  // What answers them, read separately: the team closed gamma; an outsider's mark on beta closes nothing.
+  const answers = signals(
+    signed(FOUNDER, foundEvent({ updateId: c1.id }), 450),
+    signed(ANN, foundEvent({ updateId: b1.id }), 460),
+  );
+  assert.deepEqual(
+    stillOpen(candidates, answers, 5).map((r) => r.project.id),
+    ["alpha", "beta"],
+  );
+  assert.equal(stillOpen(candidates, answers, 1).length, 1);
 });
 
-test("the team is told about offers, and a person about replies to their own offer", () => {
+test("the person who asked is told about offers, and a person about replies to their own offer", () => {
   const ask = update("demo", FOUNDER, 100, "A tester.");
   const offered = answer(
     "demo",
@@ -329,18 +386,106 @@ test("the team is told about offers, and a person about replies to their own off
     replyEvent({ offerId: offered.id, offerAuthor: ANN, note: "Thanks" }),
     300,
   );
-  const launches = project("demo", [ask, offered, replied]);
-  const forFounder = helpNotices(launches, FOUNDER);
+  const launches = project("demo", [ask]);
+  // The records that name the founder: the offer. Those that name Ann: the reply.
+  const forFounder = helpNotices({
+    naming: [named(offered)],
+    mine: [],
+    launches,
+    viewer: FOUNDER,
+  });
   assert.deepEqual(
     forFounder.map((x) => [x.kind, x.actor, x.note, x.updateTitle]),
     [["offer", ANN, "Me", "Week 100"]],
   );
-  // A teammate is on the asking side too.
-  assert.equal(helpNotices(launches, MATE).length, 1);
   assert.deepEqual(
-    helpNotices(launches, ANN).map((x) => [x.kind, x.actor, x.note]),
-    [["reply", FOUNDER, "Thanks"]],
+    helpNotices({
+      naming: [named(replied)],
+      mine: signals(offered),
+      launches,
+      viewer: ANN,
+    }).map((x) => [x.kind, x.actor, x.note, x.updateId]),
+    [["reply", FOUNDER, "Thanks", ask.id]],
   );
-  // Someone who neither asked nor offered hears nothing.
-  assert.deepEqual(helpNotices(launches, BEN), []);
+  // A reply from someone who is not on the team is not the team's reply.
+  const fake = answer(
+    "demo",
+    BEN,
+    replyEvent({ offerId: offered.id, offerAuthor: ANN, note: "psst" }),
+    310,
+  );
+  assert.deepEqual(
+    helpNotices({
+      naming: [named(fake)],
+      mine: signals(offered),
+      launches,
+      viewer: ANN,
+    }),
+    [],
+  );
+  // A teammate's "offer" on the team's own request is not one.
+  const mates = answer(
+    "demo",
+    MATE,
+    offerEvent({ updateId: ask.id, updateAuthor: FOUNDER, note: "" }),
+    320,
+  );
+  assert.deepEqual(
+    helpNotices({
+      naming: [named(mates)],
+      mine: [],
+      launches,
+      viewer: FOUNDER,
+    }),
+    [],
+  );
+});
+
+test("an offer on an update the project list no longer holds is still told, without its title", () => {
+  const gone = "7".repeat(64);
+  const offered = answer(
+    "demo",
+    ANN,
+    offerEvent({ updateId: gone, updateAuthor: FOUNDER, note: "Me" }),
+    200,
+  );
+  const [notice] = helpNotices({
+    naming: [named(offered)],
+    mine: [],
+    launches: project("demo", []),
+    viewer: FOUNDER,
+  });
+  assert.equal(notice.updateId, gone);
+  assert.equal(notice.updateTitle, "");
+});
+
+test("muted people are left out before the list is cut, so they never push a real offer off the end", () => {
+  const ask = update("demo", FOUNDER, 100, "A tester.");
+  const launches = project("demo", [ask]);
+  const from = (who, at) =>
+    named(
+      answer(
+        "demo",
+        who,
+        offerEvent({ updateId: ask.id, updateAuthor: FOUNDER, note: "" }),
+        at,
+      ),
+    );
+  const noisy = Array.from({ length: 3 }, (_, i) =>
+    from(`${i}`.padStart(64, "d"), 900 + i),
+  );
+  const real = from(ANN, 200);
+  const muted = new Set(noisy.map((x) => x.signal.author));
+  const cut = (m) =>
+    helpNotices({
+      naming: [...noisy, real],
+      mine: [],
+      launches,
+      viewer: FOUNDER,
+      muted: m,
+      limit: 3,
+    }).map((x) => x.actor);
+  // Unmuted, the three newer ones fill the list.
+  assert.equal(cut(undefined).includes(ANN), false);
+  assert.deepEqual(cut(muted), [ANN]);
 });

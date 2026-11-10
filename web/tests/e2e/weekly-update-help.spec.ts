@@ -182,7 +182,7 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
   await dialog.getByLabel("Title").fill("Week two: sign-up works");
   await dialog
     .getByLabel("What happened this week")
-    .fill("Sign-up shipped on Tuesday.");
+    .fill("Sign-up shipped on Tuesday.\n\nThe invite email is fixed.");
   await dialog.getByLabel("What's next").fill("Invite the first ten people.");
   await dialog
     .getByLabel("Help needed (optional)")
@@ -202,7 +202,7 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
   ) as (typeof relay.events)[number];
   expect(JSON.parse(posted.content).body).toBe(
     [
-      "What happened this week\nSign-up shipped on Tuesday.",
+      "What happened this week\nSign-up shipped on Tuesday.\n\nThe invite email is fixed.",
       "What's next\nInvite the first ten people.",
       "Help needed (Medium, about 3 days)\nSomeone to test sign-up on an older phone.",
     ].join("\n\n"),
@@ -210,7 +210,11 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
   expect(posted.tags).toEqual(
     expect.arrayContaining([
       ["a", COORD],
-      ["update-part", "done", "Sign-up shipped on Tuesday."],
+      [
+        "update-part",
+        "done",
+        "Sign-up shipped on Tuesday.\n\nThe invite email is fixed.",
+      ],
       ["update-part", "next", "Invite the first ten people."],
       ["help-needed", "Someone to test sign-up on an older phone."],
       ["help-size", "medium"],
@@ -226,6 +230,9 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
   await expect(card.getByTestId("update-next-due")).toHaveText(
     "Next update due in 7 days.",
   );
+  // An answer of two paragraphs is shown once, under its prompt, not again as loose words.
+  await expect(card.getByText("The invite email is fixed.")).toHaveCount(1);
+  await expect(card.getByText("Invite the first ten people.")).toHaveCount(1);
   const request = card.getByTestId("help-request");
   await expect(request.getByTestId("help-size")).toHaveText("Medium");
   await expect(request.getByTestId("help-time")).toHaveText("about 3 days");
@@ -251,10 +258,29 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
   await expect(homeRequest).toContainText(
     "Someone to test sign-up on an older phone.",
   );
-  // One tap, an optional note, sent from the keyboard.
-  await homeRequest.getByRole("button", { name: "I can help" }).click();
+  // Before anything is sent: what an offer is not, and that it is public.
+  const canHelp = homeRequest.getByRole("button", { name: "I can help" });
+  await expect(homeRequest.getByTestId("help-no-promise")).toContainText(
+    "Offering help is not an agreement or a promise of reward.",
+  );
+  await canHelp.click();
   const box = homeRequest.getByTestId("help-offer-box");
-  await expect(box.getByLabel("Add a short note (optional)")).toBeFocused();
+  const noteField = box.getByLabel("Add a short note (optional)");
+  await expect(noteField).toBeFocused();
+  await expect(box.getByTestId("help-offer-box-hint")).toHaveText(
+    "Your offer and your note are public: anyone can read them.",
+  );
+  await expect(noteField).toHaveAccessibleDescription(
+    "Your offer and your note are public: anyone can read them.",
+  );
+  // Escape puts the box away and the keyboard is back on the button that opened it; nothing was sent.
+  await page.keyboard.press("Escape");
+  await expect(box).toHaveCount(0);
+  await expect(canHelp).toBeFocused();
+  expect(tagged(relay, "help-offer")).toHaveLength(0);
+  // One tap, an optional note, sent from the keyboard.
+  await page.keyboard.press("Enter");
+  await expect(noteField).toBeFocused();
   await page.keyboard.type("I have an old phone and an hour tonight.");
   await page.keyboard.press("Tab");
   await page.keyboard.press("Enter");
@@ -300,15 +326,33 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
   await expect(
     offer.getByRole("link", { name: "Robin Helper" }),
   ).toHaveAttribute("href", new RegExp(`/u/${FOLLOWER}`));
-  await offer.getByRole("button", { name: "Reply" }).click();
+  // The button names who it replies to; Cancel gives the keyboard back to it.
+  const replyButton = offer.getByRole("button", {
+    name: "Reply to Robin Helper",
+    exact: true,
+  });
+  await replyButton.click();
+  await offer.getByRole("button", { name: "Cancel" }).click();
+  await expect(replyButton).toBeFocused();
+  await replyButton.click();
   await offer.getByLabel("Reply to Robin Helper").fill("Thank you! Tonight?");
   await offer.getByRole("button", { name: "Send reply" }).click();
   await expect(offer.getByTestId("help-reply")).toContainText(
     "Thank you! Tonight?",
   );
 
+  // Help found closes the request, and a misclick has a way back.
   await listed.getByRole("button", { name: "Mark as Help found" }).click();
   await expect(listed.getByTestId("help-found")).toHaveText("Help found");
+  await expect(listed).toHaveAttribute("data-open", "false");
+  await expect.poll(() => tagged(relay, "help-found").length).toBe(1);
+  await listed.getByRole("button", { name: "Reopen" }).click();
+  await expect(listed).toHaveAttribute("data-open", "true");
+  await expect(listed.getByTestId("help-found")).toHaveCount(0);
+  expect(tagged(relay, "help-found")).toHaveLength(0);
+  // Offers made before are still there.
+  await expect(offer).toContainText("I have an old phone and an hour tonight.");
+  await listed.getByRole("button", { name: "Mark as Help found" }).click();
   await expect(listed).toHaveAttribute("data-open", "false");
   await expect.poll(() => tagged(relay, "help-found").length).toBe(1);
   // None of the answers is counted as an update of the project.
@@ -502,7 +546,7 @@ test("the weekly prompt can be put away for the week, and everyone sees weeks in
     "It's been 7 days since your last update.",
   );
   await card
-    .getByRole("button", { name: "Hide this reminder for a week" })
+    .getByRole("button", { name: "Not now: hide this reminder for a week" })
     .click();
   await expect(card.getByTestId("update-nudge")).toHaveCount(0);
   await page.reload();
@@ -531,6 +575,170 @@ test("one update is not a run: no count is shown", async ({ page }) => {
   await expect(card.getByTestId("update-freshness")).toHaveText(
     "Updated 2 days ago",
   );
+  await expect(card.getByTestId("updates-in-a-row")).toHaveCount(0);
+});
+
+test("withdrawing takes back every offer the person has on the request, so an older one does not come back", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  seedProject(relay);
+  const ask = seedUpdate(relay, now() - DAY, "Week one", {
+    text: "A second pair of eyes on the pitch.",
+    size: "small",
+  });
+  // Two records for one offer: a send that was retried after the server had already taken it.
+  for (const [note, ago] of [
+    ["First try.", 7200],
+    ["Second try.", 3600],
+  ] as const)
+    relay.seed(
+      event(
+        47003,
+        FOLLOWER,
+        { title: "Offer to help", body: note },
+        [
+          ["a", COORD],
+          ["e", ask.id],
+          ["p", FOUNDER],
+          ["help-offer", ask.id],
+        ],
+        now() - ago,
+      ),
+    );
+  await install(page, relay, FOLLOWER_KEY);
+  await page.goto(PROJECT);
+  const request = page
+    .getByTestId("project-update-card")
+    .getByTestId("help-request");
+  await expect(request.getByTestId("help-my-offer")).toContainText(
+    "Second try.",
+  );
+  await request.getByRole("button", { name: "Withdraw offer" }).click();
+  // Not replaced by the older record: the person has no offer and can make one.
+  await expect(request.getByTestId("help-my-offer")).toHaveCount(0);
+  await expect(
+    request.getByRole("button", { name: "I can help" }),
+  ).toBeFocused();
+  expect(tagged(relay, "help-offer")).toHaveLength(0);
+  const removal = relay.events.filter((e) => e.kind === 5);
+  expect(removal).toHaveLength(1);
+  expect(removal[0].tags.filter((t) => t[0] === "e")).toHaveLength(2);
+  await page.reload();
+  await expect(
+    request.getByRole("button", { name: "I can help" }),
+  ).toBeVisible();
+  await expect(request.getByTestId("help-my-offer")).toHaveCount(0);
+});
+
+test("a reply to an offer withdrawn meanwhile is not sent, and the founder is told", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  const ask = seedUpdate(relay, now() - DAY, "Week one", {
+    text: "A second pair of eyes on the pitch.",
+    size: "small",
+  });
+  const offered = event(
+    47003,
+    FOLLOWER,
+    { title: "Offer to help", body: "Happy to read it." },
+    [
+      ["a", COORD],
+      ["e", ask.id],
+      ["p", FOUNDER],
+      ["help-offer", ask.id],
+    ],
+    now() - 3600,
+  );
+  relay.seed(offered);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  const request = page
+    .getByTestId("project-update-card")
+    .getByTestId("help-request");
+  const offer = request.getByTestId("help-offer");
+  await offer.getByRole("button", { name: "Reply to Robin Helper" }).click();
+  await offer.getByLabel("Reply to Robin Helper").fill("Thank you!");
+  // The person takes the offer back while the founder is writing.
+  relay.events.splice(relay.events.indexOf(offered), 1);
+  await offer.getByRole("button", { name: "Send reply" }).click();
+  await expect(request.getByTestId("help-notice")).toContainText(
+    "Robin Helper withdrew their offer, so your reply was not sent.",
+  );
+  await expect(request.getByTestId("help-offer")).toHaveCount(0);
+  expect(tagged(relay, "help-reply")).toHaveLength(0);
+});
+
+test("when the project's updates can't be read the card says so with Try again, and reads them on retry", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  seedUpdate(relay, now() - 2 * DAY, "Week one", {
+    text: "A second pair of eyes on the pitch.",
+    size: "small",
+  });
+  let failing = true;
+  // Only the project's own read of its updates is dropped; the list of every project still answers.
+  relay.setClosingSockets(
+    (filter) =>
+      failing &&
+      Array.isArray(filter?.kinds) &&
+      (filter.kinds as number[]).includes(47003) &&
+      Array.isArray(filter?.["#a"]),
+  );
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  const card = page.getByTestId("project-update-card");
+  const failed = card.getByTestId("update-read-failed");
+  await expect(failed).toContainText("Couldn't read this project's updates.", {
+    timeout: 60_000,
+  });
+  // Nothing is claimed about a project whose updates were not read.
+  await expect(card.getByTestId("update-freshness")).toHaveCount(0);
+  await expect(card.getByTestId("update-nudge")).toHaveCount(0);
+  failing = false;
+  await failed.getByRole("button", { name: "Try again" }).click();
+  await expect(card.getByTestId("update-freshness")).toHaveText(
+    "Updated 2 days ago",
+    { timeout: 30_000 },
+  );
+});
+
+test("when a read was cut at its limit, freshness, the prompt and the count in a row are not stated as fact", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedProject(relay);
+  // Two weeks running, the newest a week ago: by these alone the founder would be prompted and a run of two shown.
+  for (const days of [7, 14]) seedUpdate(relay, now() - days * DAY, "Week");
+  // More posts marked as this project's updates than one read returns, all newer than the team's last record, from
+  // someone who is not on the team: none is an update, but an update could be hidden behind the cut.
+  for (let i = 0; i < 200; i += 1)
+    relay.seed(
+      event(
+        1,
+        FOLLOWER,
+        `Not from the team ${i}`,
+        [
+          ["a", COORD],
+          ["l", "launch-update", "creaton.launch"],
+        ],
+        now() - 3600 - i,
+      ),
+    );
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  const card = page.getByTestId("project-update-card");
+  await expect(card.getByTestId("update-freshness-unknown")).toContainText(
+    "can't be worked out",
+  );
+  await expect(card.getByTestId("latest-update")).toContainText("Week");
+  await expect(card.getByTestId("update-freshness")).toHaveCount(0);
+  await expect(card.getByTestId("update-nudge")).toHaveCount(0);
+  await expect(card.getByTestId("update-next-due")).toHaveCount(0);
   await expect(card.getByTestId("updates-in-a-row")).toHaveCount(0);
 });
 

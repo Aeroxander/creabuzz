@@ -83,6 +83,18 @@ function helpSizeLine(ask: Pick<HelpAsk, "size" | "time">): string {
     : HELP_SIZE_LABEL[ask.size];
 }
 
+/** The body's sections for these parts, exactly as {@link updateEvent} writes them after any free words. */
+function partSections(parts: UpdateParts): string[] {
+  const sections: string[] = [];
+  if (parts.done) sections.push(`${PART_HEADINGS.done}\n${parts.done}`);
+  if (parts.next) sections.push(`${PART_HEADINGS.next}\n${parts.next}`);
+  if (parts.help)
+    sections.push(
+      `${PART_HEADINGS.help} (${helpSizeLine(parts.help)})\n${parts.help.text}`,
+    );
+  return sections;
+}
+
 /**
  * The update record's content and extra tags for a draft. The body reads on its own in any app that shows updates;
  * the tags carry the same parts for this one.
@@ -97,29 +109,23 @@ export function updateEvent(draft: UpdateDraft): {
   const helpText = clip(draft.help, UPDATE_LIMITS.help);
   const helpTime = clip(draft.helpTime, UPDATE_LIMITS.helpTime);
   const size = isHelpSize(draft.helpSize) ? draft.helpSize : "small";
+  const parts: UpdateParts = {
+    done,
+    next,
+    help: helpText ? { text: helpText, size, time: helpTime } : null,
+  };
 
-  const sections: string[] = [];
   const tags: string[][] = [];
-  if (free) sections.push(free);
-  if (done) {
-    sections.push(`${PART_HEADINGS.done}\n${done}`);
-    tags.push([TAG_PART, "done", done]);
-  }
-  if (next) {
-    sections.push(`${PART_HEADINGS.next}\n${next}`);
-    tags.push([TAG_PART, "next", next]);
-  }
+  if (done) tags.push([TAG_PART, "done", done]);
+  if (next) tags.push([TAG_PART, "next", next]);
   if (helpText) {
-    sections.push(
-      `${PART_HEADINGS.help} (${helpSizeLine({ size, time: helpTime })})\n${helpText}`,
-    );
     tags.push([TAG_HELP, helpText], [TAG_HELP_SIZE, size]);
     if (helpTime) tags.push([TAG_HELP_TIME, helpTime]);
   }
   return {
     content: {
       title: clip(draft.title, UPDATE_LIMITS.title),
-      body: sections.join("\n\n"),
+      body: [...(free ? [free] : []), ...partSections(parts)].join("\n\n"),
     },
     tags,
   };
@@ -156,20 +162,27 @@ export function partsFromTags(
 }
 
 /**
- * The words to show for an update whose parts are laid out separately: its body without the sections the parts
- * repeat. A free-form update has no parts and shows its whole body.
+ * How to show an update: its free words, and whether its parts can be laid out under their prompts.
+ *
+ * The body ends with the parts' sections, written by {@link updateEvent}. Exactly those sections are taken off the end
+ * (rebuilt from the tags, so an answer of several paragraphs comes off whole) and what is left is the founder's free
+ * words, untouched: a paragraph of theirs that happens to begin "What's next" stays. A body that does not end with the
+ * rebuilt sections was written by something else: it is shown whole and the parts are not laid out beside it, so
+ * nothing is shown twice and nothing is hidden.
  */
-export function bodyWithoutParts(
+export function updateLayout(
   body: string,
   parts: UpdateParts | null,
-): string {
-  if (!parts) return body;
-  const headings = Object.values(PART_HEADINGS);
-  return body
-    .split(/\n{2,}/)
-    .filter((section) => !headings.some((h) => section.startsWith(h)))
-    .join("\n\n")
-    .trim();
+): { free: string; showParts: boolean } {
+  if (!parts) return { free: body, showParts: false };
+  const tail = partSections(parts).join("\n\n");
+  if (body === tail) return { free: "", showParts: true };
+  if (body.endsWith(`\n\n${tail}`))
+    return {
+      free: body.slice(0, body.length - tail.length - 2),
+      showParts: true,
+    };
+  return { free: body, showParts: false };
 }
 
 const DAY = 24 * 60 * 60;
@@ -239,6 +252,33 @@ export function weeksInARow(times: readonly number[], now: number): number {
     week -= 1;
   }
   return count;
+}
+
+/**
+ * What can be said as fact about a project's updates, given how much of them was read.
+ *
+ * The team's update records are read newest first, so the newest one read is the newest there is; "never posted" needs
+ * the read to have reached the end. Posts marked as updates come from a read cut at a fixed number of posts: when it
+ * was cut, a marked post older than the oldest one read may exist, so the newest update known is the newest only if it
+ * is not older than that. The count of weeks in a row needs every read complete. What is not known is not said.
+ */
+export function updateFacts(input: {
+  /** When the newest update known was posted, or null when none is known. */
+  latestAt: number | null;
+  /** The team's update records were read to the end. */
+  recordsComplete: boolean;
+  /** The read of posts was cut at its limit, and the oldest post it returned. */
+  postsCut: boolean;
+  oldestPostAt: number | null;
+}): { freshness: boolean; inARow: boolean } {
+  const { latestAt, recordsComplete, postsCut, oldestPostAt } = input;
+  const postsCover =
+    !postsCut ||
+    (latestAt !== null && oldestPostAt !== null && latestAt >= oldestPostAt);
+  return {
+    freshness: postsCover && (latestAt !== null || recordsComplete),
+    inARow: recordsComplete && !postsCut,
+  };
 }
 
 /** "3 weekly updates in a row", shown only from two: one update is not a run. */

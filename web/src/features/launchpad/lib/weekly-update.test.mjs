@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  bodyWithoutParts,
   daysSince,
   founderNudge,
   freshnessLine,
@@ -10,6 +9,8 @@ import {
   nudgeDismissed,
   partsFromTags,
   updateEvent,
+  updateFacts,
+  updateLayout,
   UPDATE_LIMITS,
   weeksInARow,
 } from "./weekly-update.ts";
@@ -56,9 +57,9 @@ test("the three prompts become one readable body and tags that read back the sam
     },
   });
   // With the parts laid out separately there is nothing left of the body to repeat.
-  assert.equal(
-    bodyWithoutParts(event.content.body, partsFromTags(event.tags)),
-    "",
+  assert.deepEqual(
+    updateLayout(event.content.body, partsFromTags(event.tags)),
+    { free: "", showParts: true },
   );
 });
 
@@ -69,10 +70,10 @@ test("a free-form update writes no part tags and keeps its body whole", () => {
   assert.deepEqual(event.tags, []);
   assert.equal(event.content.body, "We moved studios.\n\nMore soon.");
   assert.equal(partsFromTags(event.tags), null);
-  assert.equal(
-    bodyWithoutParts(event.content.body, null),
-    "We moved studios.\n\nMore soon.",
-  );
+  assert.deepEqual(updateLayout(event.content.body, null), {
+    free: "We moved studios.\n\nMore soon.",
+    showParts: false,
+  });
 });
 
 test("free-form words with a help request keep the words and carry only the help", () => {
@@ -85,7 +86,10 @@ test("free-form words with a help request keep the words and carry only the help
     next: "",
     help: { text: "A logo.", size: "small", time: "" },
   });
-  assert.equal(bodyWithoutParts(event.content.body, parts), "A quiet week.");
+  assert.deepEqual(updateLayout(event.content.body, parts), {
+    free: "A quiet week.",
+    showParts: true,
+  });
   assert.match(event.content.body, /Help needed \(Small\)\nA logo\./);
 });
 
@@ -196,4 +200,83 @@ test("a dismissed prompt stays away for the week and then comes back", () => {
   assert.equal(nudgeDismissed(NOW - 7 * DAY, NOW), false);
   // A clock set back: a dismissal "in the future" hides nothing.
   assert.equal(nudgeDismissed(NOW + DAY, NOW), false);
+});
+
+test("an answer of several paragraphs is shown once, under its prompt", () => {
+  const event = updateEvent(
+    draft({
+      done: "Shipped sign-up.\n\nAlso fixed the invite email.\n\n\nAnd a third thing.",
+      next: "Rest.\n\nThen invites.",
+      help: "A tester.\n\nOn an old phone.",
+    }),
+  );
+  const parts = partsFromTags(event.tags);
+  assert.equal(
+    parts.done,
+    "Shipped sign-up.\n\nAlso fixed the invite email.\n\n\nAnd a third thing.",
+  );
+  // Nothing of any part is left over to be shown a second time as free words.
+  assert.deepEqual(updateLayout(event.content.body, parts), {
+    free: "",
+    showParts: true,
+  });
+});
+
+test("free words that begin like a prompt are kept, with or without a help request", () => {
+  const body =
+    "A slow week.\n\nWhat's next is anyone's guess.\n\nHelp needed? Not this time.";
+  const plain = updateEvent(draft({ done: "", next: "", body }));
+  assert.deepEqual(
+    updateLayout(plain.content.body, partsFromTags(plain.tags)),
+    { free: body, showParts: false },
+  );
+  const asking = updateEvent(
+    draft({ done: "", next: "", body, help: "A logo." }),
+  );
+  assert.deepEqual(
+    updateLayout(asking.content.body, partsFromTags(asking.tags)),
+    { free: body, showParts: true },
+  );
+});
+
+test("a body something else wrote is shown whole, and the parts are not laid out beside it", () => {
+  const parts = partsFromTags([
+    ["update-part", "done", "Shipped."],
+    ["help-needed", "A tester."],
+  ]);
+  assert.deepEqual(updateLayout("Shipped. We need a tester.", parts), {
+    free: "Shipped. We need a tester.",
+    showParts: false,
+  });
+});
+
+test("what a cut read cannot settle is not said", () => {
+  const all = { recordsComplete: true, postsCut: false, oldestPostAt: null };
+  // Everything read: both facts stand, including "never posted".
+  assert.deepEqual(updateFacts({ ...all, latestAt: null }), {
+    freshness: true,
+    inARow: true,
+  });
+  // More update records than the bound: the newest read is still the newest, but the run cannot be counted, and
+  // "never posted" cannot be said of a read that found none and did not reach the end.
+  assert.deepEqual(
+    updateFacts({ ...all, recordsComplete: false, latestAt: 500 }),
+    { freshness: true, inARow: false },
+  );
+  assert.equal(
+    updateFacts({ ...all, recordsComplete: false, latestAt: null }).freshness,
+    false,
+  );
+  // The posts were cut: an update older than the oldest post read may be hidden behind them.
+  const cut = { recordsComplete: true, postsCut: true, oldestPostAt: 400 };
+  assert.deepEqual(updateFacts({ ...cut, latestAt: 300 }), {
+    freshness: false,
+    inARow: false,
+  });
+  assert.equal(updateFacts({ ...cut, latestAt: null }).freshness, false);
+  // The newest update known is inside what was read: nothing newer can be hidden.
+  assert.deepEqual(updateFacts({ ...cut, latestAt: 450 }), {
+    freshness: true,
+    inARow: false,
+  });
 });

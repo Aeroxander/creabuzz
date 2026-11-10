@@ -10,7 +10,11 @@
  *   Help found  names the update (`e`) and `help-found`
  *
  * Who may say what is decided here, when reading: only the project's team can mark a request found or reply as the
- * team, and the team's own "offers" are not offers. A person takes an offer back by deleting their record.
+ * team, and the team's own "offers" are not offers. A person takes an offer back by deleting their records, and the
+ * team reopens a request by deleting its "Help found" marks.
+ *
+ * These records are read for one project at a time (`use-help-requests.ts`), never from the list of every project,
+ * which is cut at a fixed number of records and would silently drop offers on a busy server.
  *
  * Pure and alias-free: `help-request.test.mjs` drives it under `node --test`.
  */
@@ -167,15 +171,25 @@ export interface Offer {
 export interface HelpRequestView {
   updateId: string;
   ask: HelpAsk;
-  /** False once the team marked it "Help found". */
+  /** False while a "Help found" mark from the team stands. */
   open: boolean;
   foundAt: number | null;
+  /** Who on the team marked it found (each once), for "marked found by". */
+  foundBy: string[];
+  /** The viewer's own "Help found" marks: deleting all of them is how the viewer reopens the request. */
+  myFoundIds: string[];
   /** Newest first, at most {@link OFFERS_SHOWN}. */
   offers: Offer[];
   /** Every offer, including the ones not listed. */
   offerCount: number;
-  /** The viewer's own offer, if they made one and did not take it back. */
+  /** The viewer's own offer (their newest), if they made one and did not take it back. */
   mine: Offer | null;
+  /**
+   * Every offer record the viewer has on this update, the one shown and any older ones (a send retried after the
+   * server had already taken it, or sent from two tabs). Taking the offer back deletes all of them, or an older one
+   * would come back in its place.
+   */
+  myOfferIds: string[];
   /** Whether the viewer is on the asking side (the project's team). */
   viewerOnTeam: boolean;
 }
@@ -194,17 +208,26 @@ export function helpRequest(input: {
   if (!update.help) return null;
 
   let foundAt: number | null = null;
+  const foundBy = new Set<string>();
+  const myFoundIds: string[] = [];
   for (const s of signals) {
     if (s.kind !== "found" || s.target !== update.id || !team.has(s.author))
       continue;
     if (foundAt === null || s.at < foundAt) foundAt = s.at;
+    foundBy.add(s.author);
+    if (s.author === viewer) myFoundIds.push(s.id);
   }
 
-  // One offer per person: their newest. The team asked, so its own records are not offers.
+  // One offer per person: their newest. The team asked, so its own records are not offers. An offer dated after the
+  // request was closed came too late to be one.
   const byAuthor = new Map<string, HelpSignal>();
+  const myOfferIds: string[] = [];
   for (const s of signals) {
     if (s.kind !== "offer" || s.target !== update.id || team.has(s.author))
       continue;
+    // Every record of the viewer's, late or not: taking an offer back must leave none behind.
+    if (s.author === viewer) myOfferIds.push(s.id);
+    if (foundAt !== null && s.at > foundAt) continue;
     const prev = byAuthor.get(s.author);
     if (!prev || s.at > prev.at || (s.at === prev.at && s.id < prev.id))
       byAuthor.set(s.author, s);
@@ -235,9 +258,12 @@ export function helpRequest(input: {
     ask: update.help,
     open: foundAt === null,
     foundAt,
+    foundBy: [...foundBy],
+    myFoundIds,
     offers: all.slice(0, OFFERS_SHOWN),
     offerCount: all.length,
     mine: viewer ? (all.find((o) => o.author === viewer) ?? null) : null,
+    myOfferIds,
     viewerOnTeam: viewer !== null && team.has(viewer),
   };
 }
@@ -274,14 +300,11 @@ interface HelpLaunch {
     title: string;
     help?: HelpAsk | null;
   }>;
-  helpSignals?: readonly HelpSignal[];
 }
 
-function teamOf(launch: HelpLaunch): Set<string> {
-  return new Set([
-    launch.record.author,
-    ...launch.record.team.map((m) => m.pubkey),
-  ]);
+/** The asking side of a project: its founder and the people on its record. */
+export function teamOf(record: HelpLaunch["record"]): Set<string> {
+  return new Set([record.author, ...record.team.map((m) => m.pubkey)]);
 }
 
 export interface OpenHelpRequest {
@@ -292,35 +315,47 @@ export interface OpenHelpRequest {
 }
 
 /**
- * Requests still open, newest first: each project's newest open one, from its team's updates. A short list for a side
- * panel, never a ranking.
+ * Requests that may still be open: each project's newest team update that asks for help, newest first, at most
+ * `limit`. Whether each was since marked found is a second read ({@link stillOpen}).
  */
-export function openHelpRequests(
+export function helpCandidates(
   launches: readonly HelpLaunch[],
   limit: number,
 ): OpenHelpRequest[] {
   const out: OpenHelpRequest[] = [];
   for (const launch of launches) {
-    const team = teamOf(launch);
-    const found = new Set(
-      (launch.helpSignals ?? [])
-        .filter((s) => s.kind === "found" && team.has(s.author))
-        .map((s) => s.target),
-    );
-    // Updates are kept newest first, so the first open one is the project's newest.
-    const open = launch.updates.find(
-      (u) => u.help && team.has(u.author) && !found.has(u.id),
-    );
-    if (open?.help)
+    const team = teamOf(launch.record);
+    // Updates are kept newest first, so the first that asks is the project's newest request.
+    const asking = launch.updates.find((u) => u.help && team.has(u.author));
+    if (asking?.help)
       out.push({
         project: launch.record,
-        updateId: open.id,
-        ask: open.help,
-        at: open.createdAt,
+        updateId: asking.id,
+        ask: asking.help,
+        at: asking.createdAt,
       });
   }
   return out
     .sort((a, b) => b.at - a.at || (a.updateId < b.updateId ? -1 : 1))
+    .slice(0, limit);
+}
+
+/** The candidates no team member has marked found, in the same order, at most `limit`. */
+export function stillOpen(
+  candidates: readonly OpenHelpRequest[],
+  signals: readonly HelpSignal[],
+  limit: number,
+): OpenHelpRequest[] {
+  return candidates
+    .filter((candidate) => {
+      const team = teamOf(candidate.project);
+      return !signals.some(
+        (s) =>
+          s.kind === "found" &&
+          s.target === candidate.updateId &&
+          team.has(s.author),
+      );
+    })
     .slice(0, limit);
 }
 
@@ -336,53 +371,70 @@ export interface HelpNotice {
 }
 
 /**
- * What to tell `viewer`: someone offered to help on a project they are on the team of, or the team replied to an offer
- * they made. Newest first, at most `limit`.
+ * What to tell `viewer`, from the help records that name them: someone offered to help on an update they wrote, or a
+ * project's team replied to an offer they made. `mine` are the viewer's own offers, which say which update a reply is
+ * about. People the viewer muted are left out before the list is cut to `limit`, so a muted person's offers never
+ * push a real one off the end. Newest first.
  */
-export function helpNotices(
-  launches: readonly HelpLaunch[],
-  viewer: string,
-  limit = 20,
-): HelpNotice[] {
+export function helpNotices(input: {
+  /** Help records that name the viewer (`p`), with the project each names (`a`). */
+  naming: ReadonlyArray<{ signal: HelpSignal; coordinate: string }>;
+  /** The viewer's own offers. */
+  mine: readonly HelpSignal[];
+  launches: readonly HelpLaunch[];
+  viewer: string;
+  muted?: ReadonlySet<string>;
+  limit?: number;
+}): HelpNotice[] {
+  const { naming, mine, launches, viewer, muted, limit = 20 } = input;
+  const projects = new Map(
+    launches.map((l) => [`37001:${l.record.author}:${l.record.id}`, l]),
+  );
+  const myOffers = new Map(mine.map((s) => [s.id, s]));
+  const seen = new Set<string>();
+  // One offer per person and update: their newest, as the card shows it.
+  const newestOffer = new Map<string, HelpNotice>();
   const out: HelpNotice[] = [];
-  for (const launch of launches) {
-    const signals = launch.helpSignals ?? [];
-    if (signals.length === 0) continue;
-    const team = teamOf(launch);
-    const onTeam = team.has(viewer);
-    for (const update of launch.updates) {
-      if (!update.help || !team.has(update.author)) continue;
-      const view = helpRequest({ update, signals, team, viewer });
-      if (!view) continue;
-      const base = {
-        project: launch.record,
-        updateId: update.id,
-        updateTitle: update.title,
-      };
-      if (onTeam) {
-        for (const offer of view.offers)
-          out.push({
-            ...base,
-            id: offer.id,
-            kind: "offer",
-            actor: offer.author,
-            at: offer.at,
-            note: offer.note,
-          });
-      } else if (view.mine) {
-        for (const reply of view.mine.replies)
-          out.push({
-            ...base,
-            id: reply.id,
-            kind: "reply",
-            actor: reply.author,
-            at: reply.at,
-            note: reply.note,
-          });
-      }
+  for (const { signal, coordinate } of naming) {
+    if (seen.has(signal.id) || signal.author === viewer) continue;
+    seen.add(signal.id);
+    if (muted?.has(signal.author.toLowerCase())) continue;
+    const launch = projects.get(coordinate);
+    if (!launch) continue;
+    const team = teamOf(launch.record);
+    const updateId =
+      signal.kind === "offer"
+        ? signal.target
+        : signal.kind === "reply"
+          ? myOffers.get(signal.target)?.target
+          : undefined;
+    if (!updateId) continue;
+    // The update may be older than the newest records the project list holds: the notice still stands, without its
+    // title. One that is held must be a request from the team.
+    const update = launch.updates.find((u) => u.id === updateId);
+    if (update && (!update.help || !team.has(update.author))) continue;
+    const notice: HelpNotice = {
+      id: signal.id,
+      kind: signal.kind === "offer" ? "offer" : "reply",
+      actor: signal.author,
+      at: signal.at,
+      note: signal.note,
+      project: launch.record,
+      updateId,
+      updateTitle: update?.title ?? "",
+    };
+    if (signal.kind === "offer") {
+      // To the person who asked, from someone who is not on the asking side.
+      if ((update && update.author !== viewer) || team.has(signal.author))
+        continue;
+      const key = `${updateId}:${signal.author}`;
+      const prev = newestOffer.get(key);
+      if (!prev || notice.at > prev.at) newestOffer.set(key, notice);
+    } else if (signal.kind === "reply" && team.has(signal.author)) {
+      out.push(notice);
     }
   }
-  return out
+  return [...out, ...newestOffer.values()]
     .sort((a, b) => b.at - a.at || (a.id < b.id ? -1 : 1))
     .slice(0, limit);
 }

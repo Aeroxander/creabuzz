@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildLaunchesFromEvents,
+  isHelpSignalEvent,
   launchCoordinate,
   parseLaunchBidEvent,
   parseLaunchProposalEvent,
@@ -288,4 +289,49 @@ test("removing the tombstone guard resurrects the launch", () => {
   // launch. Same input without the set must produce the card.
   const launches = buildLaunchesFromEvents([recordEvent()]);
   assert.equal(launches.length, 1);
+});
+
+test("offers to help, replies to them and Help found are not listed or counted as updates", () => {
+  const coordinate = launchCoordinate(FOUNDER, "nebula");
+  const mirror = (id, pubkey, title, tags) => ({
+    id,
+    kind: 47003,
+    pubkey,
+    created_at: 200,
+    content: JSON.stringify({ title, body: "words" }),
+    tags: [["a", coordinate], ...tags],
+    sig: "sig",
+  });
+  const update = mirror("update-1", FOUNDER, "Week two", [
+    ["help-needed", "A tester."],
+    ["help-size", "small"],
+  ]);
+  const offer = mirror("offer-1", INVESTOR, "Offer to help", [
+    ["e", "update-1"],
+    ["p", FOUNDER],
+    ["help-offer", "update-1"],
+  ]);
+  const reply = mirror("reply-1", FOUNDER, "Reply to an offer to help", [
+    ["e", "offer-1"],
+    ["help-reply", "offer-1"],
+  ]);
+  const found = mirror("found-1", FOUNDER, "Help found", [
+    ["e", "update-1"],
+    ["help-found", "update-1"],
+  ]);
+  assert.equal(isHelpSignalEvent(update), false);
+  for (const signal of [offer, reply, found])
+    assert.equal(isHelpSignalEvent(signal), true);
+  const [launch] = buildLaunchesFromEvents([
+    recordEvent(),
+    update,
+    offer,
+    reply,
+    found,
+  ]);
+  // The update that asked for help is still an update; what answers it is not.
+  assert.deepEqual(
+    launch.updates.map((u) => u.title),
+    ["Week two"],
+  );
 });
