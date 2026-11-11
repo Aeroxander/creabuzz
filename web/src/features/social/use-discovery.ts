@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
 import {
   KIND_CONTACT_LIST,
@@ -9,6 +9,8 @@ import {
   KIND_TEXT_NOTE,
 } from "@/shared/constants/kinds";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { relayWsUrl } from "@/shared/lib/relay-url";
+import { SEEN_EVENT } from "@/shared/lib/seen-state";
 
 import { indexProfiles } from "../profiles/lib/index-profiles";
 import {
@@ -140,8 +142,21 @@ export function useNotificationBadge() {
     queryKey: seenKey,
     enabled: Boolean(me),
     staleTime: Number.POSITIVE_INFINITY,
-    queryFn: () => (me ? readSeenAt(me) : 0),
+    queryFn: () => (me ? readSeenAt(relayWsUrl(), me) : 0),
   }).data;
+  // Marked read from the rooms' side of the same bell (or in another tab): this count follows.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the key is made of `me`
+  useEffect(() => {
+    if (!me) return;
+    const sync = () =>
+      queryClient.setQueryData(seenKey, readSeenAt(relayWsUrl(), me));
+    window.addEventListener(SEEN_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(SEEN_EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, [me, queryClient]);
   const mark = useMutation({
     mutationFn: async () => {
       if (!me) return;
@@ -152,8 +167,9 @@ export function useNotificationBadge() {
           help[0]?.at ?? 0,
           tasks[0]?.at ?? 0,
         ) || Math.floor(Date.now() / 1000);
-      writeSeenAt(me, newest);
-      queryClient.setQueryData(seenKey, newest);
+      writeSeenAt(relayWsUrl(), me, newest);
+      queryClient.setQueryData(seenKey, readSeenAt(relayWsUrl(), me));
+      window.dispatchEvent(new Event(SEEN_EVENT));
     },
   });
   const { unread, failed } = badgeState(

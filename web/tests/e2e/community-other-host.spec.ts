@@ -100,7 +100,7 @@ test("from the connected community, another community opens as its own card", as
   await expect(page.getByTestId("channel-here-lobby")).toBeVisible({
     timeout: 20_000,
   });
-  await page.getByTestId("app-nav-communities").click();
+  await page.goto("/c");
   await page.getByRole("link", { name: /Beta Garden/ }).click();
   await expect(page).toHaveURL(/\/c\/beta\.example\.com/);
 

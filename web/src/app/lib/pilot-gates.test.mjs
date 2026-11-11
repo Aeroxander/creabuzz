@@ -128,8 +128,8 @@ test("the pilot's project pages: no helpers on an idea, small settings, the same
   assert.equal(ideaShowsTeamSurfaces(raises), false);
 });
 
-test("the pilot shows Your projects only with an account, and copies nothing to other apps", () => {
-  assert.equal(portfolioLabel(), "Your projects");
+test("the pilot shows You only with an account, and copies nothing to other apps", () => {
+  assert.equal(portfolioLabel(), "You");
   assert.equal(portfolioInNav(raises, false), false);
   assert.equal(portfolioInNav(raises, true), true);
   assert.equal(mirrorOffered({ raisesOffered: raises, access: "open" }), false);

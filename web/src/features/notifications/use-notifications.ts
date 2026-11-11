@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import { readSeen, SEEN_EVENT, writeSeen } from "@/shared/lib/seen-state";
 import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages";
 import { useMutedSet } from "@/features/social/use-social-actions";
 
@@ -20,16 +21,20 @@ import {
   moderationItem,
 } from "./lib/moderation-items";
 
-const SEEN_KEY = "buzz.notifications.seen";
-/** Said on this page when the feed is marked read, so every count of it (the bell, the main nav) drops together. */
-const SEEN_EVENT = "buzz:notifications-seen";
-
-function readSeen(): number {
+const storage = () => {
   try {
-    return Number(localStorage.getItem(SEEN_KEY)) || 0;
+    return window.localStorage;
   } catch {
-    return 0;
+    return null;
   }
+};
+
+/**
+ * When this account last looked at its notifications on this server, in milliseconds (the items here are dated in
+ * them). It is the same time the timeline's bell keeps (`seen-state.ts`): looking at either marks both.
+ */
+function seenMs(me: string | null): number {
+  return me ? readSeen(storage(), relayWsUrl(), me) * 1000 : 0;
 }
 
 /**
@@ -157,17 +162,18 @@ export function useNotifications(): {
   retry: () => void;
 } {
   const me = existingUserPubkey();
-  const [lastSeen, setLastSeen] = useState<number>(readSeen);
+  const [lastSeen, setLastSeen] = useState<number>(() => seenMs(me));
   // Marked read anywhere on the page (or in another tab): every count follows.
   useEffect(() => {
-    const sync = () => setLastSeen(readSeen());
+    const sync = () => setLastSeen(seenMs(me));
+    sync();
     window.addEventListener(SEEN_EVENT, sync);
     window.addEventListener("storage", sync);
     return () => {
       window.removeEventListener(SEEN_EVENT, sync);
       window.removeEventListener("storage", sync);
     };
-  }, []);
+  }, [me]);
 
   /**
    * The feed, re-read every so often. The relay does not fan out `#p` filters (docs/archive/web-ui-roadmap.md §2), so
@@ -202,14 +208,11 @@ export function useNotifications(): {
 
   const markRead = useCallback(() => {
     const now = Date.now();
-    try {
-      localStorage.setItem(SEEN_KEY, String(now));
-    } catch {
-      // ignore
-    }
+    // Kept where the browser allows; either way the counts drop for this visit.
+    if (me) writeSeen(storage(), relayWsUrl(), me, Math.ceil(now / 1000));
     setLastSeen(now);
     window.dispatchEvent(new Event(SEEN_EVENT));
-  }, []);
+  }, [me]);
 
   const { view, stale } = bellState({
     data: feed.data === undefined ? undefined : shown,

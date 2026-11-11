@@ -4,11 +4,13 @@
 
 import { useEffect, useState, useRef } from "react";
 import { Link } from "@tanstack/react-router";
+import { useRoomsLink } from "@/features/communities/use-rooms-link";
 import {
   AlertTriangle,
   KeyRound,
   LogIn,
   LogOut,
+  MessagesSquare,
   Pencil,
   User,
 } from "lucide-react";
@@ -119,6 +121,7 @@ export function ProfileMenu({
   const compact = placement !== "sidebar";
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
+  const roomsLink = useRoomsLink();
   // Portalled and measured against the trigger: the header's blur would
   // otherwise trap this popover in its own stacking context.
   const popoverStyle = useAnchoredStyle(triggerRef, open, ANCHOR[placement]);
@@ -510,6 +513,16 @@ export function ProfileMenu({
                 >
                   <User aria-hidden className="h-3.5 w-3.5" />
                   Your profile
+                </Link>
+                {/* Rooms are no longer one of the main places: they are reached from here, a project or the bell. */}
+                <Link
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-black/70 hover:bg-black/5 dark:text-white/70 dark:hover:bg-white/10"
+                  data-testid="profile-menu-rooms"
+                  onClick={() => setOpen(false)}
+                  {...roomsLink}
+                >
+                  <MessagesSquare aria-hidden className="h-3.5 w-3.5" />
+                  Rooms
                 </Link>
                 <MenuItem
                   icon={<Pencil className="h-3.5 w-3.5" />}

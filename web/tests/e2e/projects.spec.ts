@@ -167,7 +167,7 @@ test("the board cards a pitch and flags the founder's pending request", async ({
   const entry = page.getByTestId("discover-board");
   await expect(entry).toBeVisible();
   await entry.click();
-  await expect(page.getByRole("link", { name: "Discover" })).toHaveAttribute(
+  await expect(page.getByTestId("app-nav-discover")).toHaveAttribute(
     "aria-current",
     "page",
   );

@@ -138,6 +138,10 @@ export default defineConfig({
         "**/your-projects.spec.ts",
         // Home's next step: one line, one action, from facts read off signed records.
         "**/home-next-step.spec.ts",
+        // Four places, one bell with one read state per server and account, and the older addresses.
+        "**/app-nav.spec.ts",
+        // Work: open requests across every listed project, and what waits on you.
+        "**/work.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],
@@ -182,7 +186,11 @@ export default defineConfig({
       // with scripts/web-pilot-e2e.sh. Anywhere else it skips itself, since the default build offers what it checks is gone.
       name: "pilot",
       // The listing spec holds in both builds, so it runs here too.
-      testMatch: ["**/pilot-build.spec.ts", "**/project-listing.spec.ts"],
+      testMatch: [
+        "**/pilot-build.spec.ts",
+        "**/project-listing.spec.ts",
+        "**/app-nav.spec.ts",
+      ],
       use: {
         ...devices["Desktop Chrome"],
         ...(process.env.PW_CHROMIUM_PATH

@@ -66,7 +66,6 @@ import {
   useWorkStanding,
 } from "../use-portfolio";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
-import { portfolioLabel } from "../lib/portfolio-label";
 import { YourProjects } from "./YourProjects";
 
 /** AppToken supply is minted with 18 decimals. */
@@ -576,7 +575,7 @@ export function PortfolioPage() {
         }
         title={
           <span className="flex items-center gap-2">
-            <Briefcase aria-hidden className="h-5 w-5" /> {portfolioLabel()}
+            <Briefcase aria-hidden className="h-5 w-5" /> Your projects
           </span>
         }
       />

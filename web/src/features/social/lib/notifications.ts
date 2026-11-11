@@ -7,6 +7,7 @@
  * `node --test`.
  */
 
+import { readSeen, writeSeen } from "../../../shared/lib/seen-state.ts";
 import {
   KIND_CONTACT_LIST,
   KIND_REACTION,
@@ -288,20 +289,20 @@ export function groupNotifications(
   return groups;
 }
 
-const seenKey = (viewer: string) => `buzz.social.notifications.seen.${viewer}`;
-
-export function readSeenAt(viewer: string): number {
+const storage = () => {
   try {
-    return Number(globalThis.localStorage?.getItem(seenKey(viewer))) || 0;
+    return globalThis.localStorage ?? null;
   } catch {
-    return 0;
+    return null;
   }
+};
+
+/** When `viewer` last looked at their notifications on `server`, in seconds (`seen-state.ts`: one time for both bells). */
+export function readSeenAt(server: string, viewer: string): number {
+  return readSeen(storage(), server, viewer);
 }
 
-export function writeSeenAt(viewer: string, at: number): void {
-  try {
-    globalThis.localStorage?.setItem(seenKey(viewer), String(at));
-  } catch {
-    // Storage refused: the unread badge just does not persist this visit.
-  }
+export function writeSeenAt(server: string, viewer: string, at: number): void {
+  // Storage refused: the unread badge just does not persist this visit.
+  writeSeen(storage(), server, viewer, at);
 }

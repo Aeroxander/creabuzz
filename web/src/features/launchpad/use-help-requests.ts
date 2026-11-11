@@ -330,6 +330,8 @@ export function useStillOpen(
 ): {
   requests: OpenHelpRequest[];
   known: boolean;
+  /** The read hit its limit: which requests are open cannot be said. */
+  cut: boolean;
   failed: boolean;
   retry: () => void;
 } {
@@ -362,6 +364,7 @@ export function useStillOpen(
   return {
     requests,
     known: Boolean(read.data && !read.data.cut),
+    cut: Boolean(read.data?.cut),
     failed: read.isError && !read.data,
     retry: () => void refetch(),
   };

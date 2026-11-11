@@ -228,7 +228,7 @@ test("the directory lists DAOs, live launches, and open projects", async ({
   await install(relay, page);
 
   await page.goto("/");
-  const entry = page.getByRole("link", { name: "Discover" });
+  const entry = page.getByTestId("app-nav-discover");
   await expect(entry).toBeVisible();
   await entry.click();
   await expect(page).toHaveURL(/\/discover$/);

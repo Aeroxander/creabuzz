@@ -2,7 +2,6 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Bell,
   Bookmark,
-  Compass,
   Feather,
   Mail,
   PenLine,
@@ -61,13 +60,6 @@ function navEntries(
       icon: Feather,
       link: { to: "/" },
       prefix: "/",
-    },
-    {
-      key: "explore",
-      label: "Explore",
-      icon: Compass,
-      link: { to: "/social/explore" },
-      prefix: "/social/explore",
     },
     ...(me
       ? [
@@ -184,7 +176,6 @@ export function SocialShell({
   const entries = useNavEntries();
   // On a phone the app's own tab bar has Home but no search box, so the strip carries Search, and is always shown.
   const mobileEntries: NavEntry[] = [
-    ...entries.filter((entry) => entry.key === "explore"),
     {
       key: "search",
       label: "Search",
@@ -192,9 +183,7 @@ export function SocialShell({
       link: { to: "/social/search" },
       prefix: "/social/search",
     },
-    ...entries.filter(
-      (entry) => entry.key !== "feed" && entry.key !== "explore",
-    ),
+    ...entries.filter((entry) => entry.key !== "feed"),
   ];
   const compose = useCompose();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -283,9 +272,19 @@ const IN_APP_NAV = new Set(["feed", "profile", "notifications", "messages"]);
  * Notifications and Messages for the app's top bar on wide screens, with the same counts and names as the timeline's
  * own nav. Rendered only for someone with an account (its reads need one).
  */
-export function InboxLinks() {
+export function InboxLinks({
+  rooms = { count: 0, failed: false },
+}: {
+  /**
+   * What is new in the rooms (mentions, a moderator's notice): counted on the same bell, so there is one bell and one
+   * number. The Notifications page says how many of them are in rooms and links there.
+   */
+  rooms?: { count: number; failed: boolean };
+}) {
   const me = existingUserPubkey();
-  const { unread, failed } = useNotificationBadge();
+  const badge = useNotificationBadge();
+  const unread = badge.unread + rooms.count;
+  const failed = badge.failed || rooms.failed;
   const newMessages = useHasNewMessages();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const entries = navEntries(me, unread, failed, newMessages).filter(

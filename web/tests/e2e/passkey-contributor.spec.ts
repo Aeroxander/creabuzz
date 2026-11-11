@@ -490,7 +490,7 @@ test("a founder and a contributor with no wallet start a project, do the work an
   //        project, held by the passkey account (outside review C 9) ───────────────────────────────────────────────
   await contributor.goto("/");
   const yourWork = contributor.getByTestId("app-nav-portfolio");
-  await expect(yourWork).toHaveText(/Your projects/, { timeout: 30_000 });
+  await expect(yourWork).toHaveText(/You/, { timeout: 30_000 });
   await yourWork.click();
   await expect(contributor).toHaveURL(/\/portfolio$/);
   const holding = contributor

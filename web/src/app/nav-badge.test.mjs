@@ -26,11 +26,14 @@ test("a read poll shows its count; nothing new shows nothing", () => {
   });
 });
 
-test("the main nav's Communities item reads the poll's state through communityBadge", () => {
+test("the one bell reads the rooms' poll through communityBadge, and counts it with the rest", () => {
   const source = readFileSync(new URL("./AppNav.tsx", import.meta.url), "utf8");
   assert.match(source, /communityBadge\(\{ view, unread \}\)/);
-  assert.match(
-    source,
-    /data-testid=\{`\$\{navTestId\(item\)\}-badge-failed`\}/,
+  assert.match(source, /<InboxLinks rooms=\{rooms\} \/>/);
+  const bell = readFileSync(
+    new URL("../features/social/ui/SocialShell.tsx", import.meta.url),
+    "utf8",
   );
+  assert.match(bell, /const unread = badge\.unread \+ rooms\.count;/);
+  assert.match(bell, /const failed = badge\.failed \|\| rooms\.failed;/);
 });

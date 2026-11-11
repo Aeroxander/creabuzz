@@ -377,7 +377,7 @@ test("Start's contributor page defines Shares once, in the header, with the pilo
   ).toHaveCount(1);
 });
 
-test("Home's navigation says Your projects, and only to someone with an account", async ({
+test("Home's navigation shows You only to someone with an account", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -390,12 +390,9 @@ test("Home's navigation says Your projects, and only to someone with an account"
 
   await signIn(page);
   await page.goto("/");
-  await expect(page.getByTestId("app-nav-portfolio")).toHaveText(
-    /Your projects/,
-    {
-      timeout: 20_000,
-    },
-  );
+  await expect(page.getByTestId("app-nav-portfolio")).toHaveText(/You/, {
+    timeout: 20_000,
+  });
 });
 
 test("a contributor project's Funds tab shows no Trading card: trading is off in the pilot build", async ({

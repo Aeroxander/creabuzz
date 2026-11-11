@@ -172,8 +172,8 @@ for (const status of [200, 404]) {
       page.getByText("Welcome to the supporters chat"),
     ).toBeVisible();
     await expect(page.getByTestId("channel-Demo · team")).toBeVisible();
-    // Returning through the main navigation opens the one community directly (D146: no one-card directory).
-    await page.getByTestId("app-nav-communities").click();
+    // Coming back by its address opens the community again (the main navigation no longer has a Communities place).
+    await page.goto(`/c/127.0.0.1%3A${PREVIEW_PORT}`);
     await expect(page).toHaveURL(
       new RegExp(`/c/127\\.0\\.0\\.1%3A${PREVIEW_PORT}`),
     );

@@ -8,9 +8,9 @@
  * Alias-free: `portfolio-label.test.mjs` drives it under `node --test`.
  */
 
-/** The page's name, in the navigation and as its title. */
+/** The page's name in the navigation: one of the four places. Its own heading is "Your projects". */
 export function portfolioLabel(): string {
-  return "Your projects";
+  return "You";
 }
 
 /** Whether the main navigation links to the page. */

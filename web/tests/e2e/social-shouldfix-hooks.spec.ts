@@ -147,7 +147,7 @@ test("an older page of board posts that fails is said at the bottom of Home, and
   });
 });
 
-test("the main nav marks Communities when the notification check failed, instead of showing no count", async ({
+test("the one bell is marked when the rooms' notification check failed, instead of showing no count", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -157,12 +157,13 @@ test("the main nav marks Communities when the notification check failed, instead
   await signIn(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/social/explore");
-  await expect(
-    page.getByTestId("app-nav-communities-badge-failed"),
-  ).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("app-nav-communities")).toContainText(
-    "couldn't check for new notifications",
-  );
+  const bell = page
+    .getByTestId("app-nav-inbox")
+    .getByTestId("social-nav-notifications");
+  await expect(bell.getByTestId("social-unread-failed")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(bell).toHaveAccessibleName(/couldn't check for new ones/);
 });
 
 test("timeline tabs name the content they show, and arrow keys move between them", async ({

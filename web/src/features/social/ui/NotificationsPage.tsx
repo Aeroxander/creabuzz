@@ -1,3 +1,6 @@
+import { useRoomsLink } from "@/features/communities/use-rooms-link";
+import { Button } from "@/shared/ui/button";
+import { useNotifications as useRoomNotifications } from "@/features/notifications/use-notifications";
 import { YourLaunchesSection } from "@/features/launchpad/ui/YourLaunchesSection";
 import { Link } from "@tanstack/react-router";
 import {
@@ -478,6 +481,9 @@ export function NotificationsPage() {
         {me && tab === "all" ? (
           <HelpNoticesSection visitSeenAt={visitSeenAt.current ?? 0} />
         ) : null}
+        {me && tab === "all" ? (
+          <RoomsNotice visitSeenAt={visitSeenAt.current ?? 0} />
+        ) : null}
         {me && tab === "all" ? <TeamInvitationsSection /> : null}
         {me && tab === "all" ? (
           <TaskNoticesSection
@@ -594,5 +600,45 @@ function NoteNotification({
       </p>
       <PostList rows={[row]} />
     </div>
+  );
+}
+
+/**
+ * What is new in the rooms, said on the one Notifications page: the bell counts these with the rest, and this is
+ * where they are. Opening the rooms shows them; a check that failed says so instead of showing nothing.
+ */
+function RoomsNotice({ visitSeenAt }: { visitSeenAt: number }) {
+  const rooms = useRoomNotifications();
+  // Opening this page marks everything read: what was new when the visit began is what is counted here.
+  const fresh = rooms.items.filter(
+    (item) => item.at > visitSeenAt * 1000,
+  ).length;
+  const link = useRoomsLink();
+  if (rooms.view === "error")
+    return (
+      <p
+        className="border-b border-black/10 px-4 py-3 text-sm dark:border-white/10"
+        data-testid="social-rooms-notice-failed"
+        role="alert"
+      >
+        Couldn't check your rooms for new mentions.{" "}
+        <Button onClick={rooms.retry} size="sm" type="button" variant="outline">
+          Try again
+        </Button>
+      </p>
+    );
+  if (fresh === 0) return null;
+  return (
+    <p
+      className="border-b border-black/10 px-4 py-3 text-sm dark:border-white/10"
+      data-testid="social-rooms-notice"
+    >
+      {fresh === 1
+        ? "1 new mention or notice in your rooms."
+        : `${fresh} new mentions or notices in your rooms.`}{" "}
+      <Link className="font-medium underline" {...link}>
+        Open rooms
+      </Link>
+    </p>
   );
 }

@@ -3,8 +3,8 @@ import { test } from "node:test";
 
 import { portfolioInNav, portfolioLabel } from "./portfolio-label.ts";
 
-test("the page is Your projects in every build, and a build with raises shows it to everyone", () => {
-  assert.equal(portfolioLabel(), "Your projects");
+test("the place is You in every build, and a build with raises shows it to everyone", () => {
+  assert.equal(portfolioLabel(), "You");
   assert.equal(portfolioInNav(true, false), true);
   assert.equal(portfolioInNav(true, true), true);
 });
