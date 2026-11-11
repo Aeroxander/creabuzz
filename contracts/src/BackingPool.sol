@@ -72,8 +72,10 @@ interface IRoundAuction {
 /// buyer's weight is priced on the escrow with the tranche already taken off. A milestone nobody
 /// resolves within `resolveWindow` of its window's end can only be voided, and releases nothing.
 ///
-/// ABANDONMENT. While any backer holds a weight, `abandonAfter` without a release that paid anything
-/// makes the project abandoned: no vote and no call is needed, the next sale makes the change itself. Backers
+/// ABANDONMENT. While any wallet holds a weight (round weight in claim tokens nobody has exchanged, and the
+/// few base units of a round that can never be exchanged, are not a wallet), `abandonAfter` without a
+/// release that paid anything makes the project abandoned: no vote and no call is needed, the next sale
+/// makes the change itself. Backers
 /// holding more than half the weight can also vote for it once `voteAfter` has passed without a
 /// release. Buying and milestones stop for good; selling keeps working on the curve with no fee, and
 /// each sale also pays the seller's part of the remaining escrow. Escrow nobody holds a weight for goes
@@ -328,7 +330,7 @@ contract BackingPool {
     /// @notice When the latest milestone was posted (the opening time before the first).
     uint64 public lastClaimAt;
     /// @notice When the abandonment clocks last restarted: at opening, when a backer arrives while no
-    /// backer holds a weight, and at every release that paid something.
+    /// wallet holds a weight, and at every release that paid something.
     uint64 public lastReleaseAt;
     /// @notice Weight currently voting to declare the project abandoned.
     uint256 public abandonVotes;
@@ -655,8 +657,9 @@ contract BackingPool {
             abandonVotes -= weightBefore;
         }
         lastBuyAt[msg.sender] = uint64(block.timestamp);
-        // The clocks measure time with backers' money held: they start again with the first backer in.
-        if (totalWeight == 0) lastReleaseAt = uint64(block.timestamp);
+        // The clocks measure time with backers' money held: they start again with the first backer in. Weight
+        // of the round nobody has redeemed is not a backer (see `_redeemableWeight`).
+        if (_redeemableWeight() == 0) lastReleaseAt = uint64(block.timestamp);
 
         // The buyer's weight is priced before their money goes in and on the escrow with any open
         // tranche already taken off, so it is worth what they add and an open milestone does not touch it.
@@ -1100,12 +1103,23 @@ contract BackingPool {
         if (m.status != MilestoneStatus.Open || block.timestamp >= m.windowEndsAt) return 0;
     }
 
-    /// @dev Whether the clock has made the project abandoned: some backer holds a weight, nothing was
+    /// @dev The weight wallets hold: all of it, less the round's weight nobody has redeemed. That bucket
+    /// belongs to claim tokens, not to a wallet that can sell, vote or be refunded, and part of it can never
+    /// be redeemed (the auction rounds the units it counts as sold up, and what its bidders are paid down, so
+    /// a few base units are left over for good). It counts as staying at a milestone and in the share of the
+    /// escrow a refund divides, but not as "somebody is backing this pool": that is a wallet's weight.
+    function _redeemableWeight() private view returns (uint256) {
+        return totalWeight - unredeemedWeight;
+    }
+
+    /// @dev Whether the clock has made the project abandoned: some wallet holds a weight, nothing was
     /// released for `abandonAfter`, and no milestone is still waiting to be resolved. With no backer there is
     /// nobody to hand anything back to: the pool stays open, and any escrow left behind by people who sold
-    /// stays project money, released by milestones.
+    /// stays project money, released by milestones. (Round buyers who have not redeemed yet are not backers
+    /// until they do; once one redeems, a clock that has already run out takes effect at once, so they can
+    /// always redeem and be refunded.)
     function _clockRanOut() private view returns (bool) {
-        if (totalWeight == 0 || block.timestamp < uint256(lastReleaseAt) + abandonAfter) return false;
+        if (_redeemableWeight() == 0 || block.timestamp < uint256(lastReleaseAt) + abandonAfter) return false;
         Milestone storage m = milestones[milestoneCount];
         return m.status != MilestoneStatus.Open || block.timestamp >= m.resolveBy;
     }

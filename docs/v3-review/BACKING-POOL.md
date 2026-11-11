@@ -179,7 +179,14 @@ Not protected. Say these plainly in the app:
 - One pool per project per factory, with that factory's terms and quote token (a pool whose round failed
   does not count).
 - Claim tokens from a round are ordinary transferable tokens until exchanged; units are not transferable.
-  Units for claim tokens nobody collects or exchanges stay set aside for good.
+  Units for claim tokens nobody collects or exchanges stay set aside for good. A few base units of every
+  round (2 in the test, out of 100 million whole tokens) can never be claimed at all: the auction counts the
+  units it sold rounded up and pays its bidders rounded down. Those units and the escrow weight behind them
+  belong to nobody and are not a backer. **Weight in claim tokens nobody has exchanged does not count as a
+  backer either**, for the abandonment clock only: with no wallet holding a weight the clock does not run, a
+  newcomer's buy restarts it, and the first exchange after the clock has run out is refunded at once. (So a
+  founder can restart the clock by buying while every round bidder is asleep; a bidder ends that by
+  exchanging his claim tokens once.)
 - The round's length is counted in blocks, so its length in days depends on the chain.
 - No owner and no upgrade: a defect cannot be patched, only replaced by a new deployment.
 - The quote token must move exactly what is asked. A token that takes a cut is refused at the first buy;

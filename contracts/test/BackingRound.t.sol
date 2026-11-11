@@ -48,6 +48,7 @@ interface IBackingPool {
 
     error NotFactory();
     error TooSoon(uint256 notBefore);
+    error NotAbandonable();
     error RoundNotLive();
     error RoundNotWaiting();
     error RoundNotOver(uint256 endBlock);
@@ -752,10 +753,11 @@ contract BackingRoundTest is BackingRoundFixture {
         _collect(c);
         uint256 escrow = pool.escrow();
         uint256 supply = pool.totalSupply();
-        vm.warp(pool.abandonableAt());
-        assertTrue(pool.abandoned());
+        // Carol exchanges her claim tokens, which makes her a backer (claim tokens nobody has exchanged are not).
         uint256 tokens = claim.balanceOf(CAROL);
         _redeemAll(CAROL);
+        vm.warp(pool.abandonableAt());
+        assertTrue(pool.abandoned());
         uint256 before = currency.balanceOf(CAROL);
         vm.prank(CAROL);
         pool.sell(tokens, 0, type(uint256).max);
@@ -963,6 +965,125 @@ contract BackingRoundVotesTest is BackingRoundFixture {
         // (`vm.getBlockTimestamp`: the compiler may reuse `block.timestamp` read before the warp)
         vm.expectRevert(abi.encodeWithSelector(IBackingPool.TooSoon.selector, vm.getBlockTimestamp() + 30 days));
         pool.voteAbandon();
+    }
+}
+
+/// @notice Weight of the round that nobody can redeem, and weight nobody has redeemed yet, are not backers.
+contract BackingRoundDustTest is BackingRoundFixture {
+    address internal constant ALICE = address(0xA11CE);
+    address internal constant BOB = address(0xB0B);
+    address internal constant CAROL = address(0xCA201);
+    address internal constant NEWBIE = address(0x4E5);
+
+    /// @dev The review's round: Alice bids twice and Bob once. The auction counts its sold units rounded up
+    /// and pays its bidders rounded down, so a few base units of the round are never claimable.
+    function _round() internal returns (uint256 a1, uint256 a2, uint256 b) {
+        a1 = _bid(ALICE, 2_000e18);
+        vm.roll(START + 30);
+        a2 = _bid(ALICE, 2_000e18);
+        vm.roll(START + 60);
+        b = _bid(BOB, 1_000e18);
+        vm.roll(END);
+        pool.seedFromAuction();
+    }
+
+    function _everyoneRedeemsAndSells(address[2] memory who) internal {
+        for (uint256 i; i < 2; ++i) {
+            _redeemAll(who[i]);
+            uint256 held = pool.balanceOf(who[i]);
+            vm.prank(who[i]);
+            pool.sell(held, 0, type(uint256).max);
+        }
+    }
+
+    /// @dev Everyone who can redeem has, and has sold: what is left is the leftover units and their weight.
+    /// That is not a backer. The pool is not abandoned by the clock, a newcomer is not refused, and the clocks
+    /// start again with them.
+    function test_rounding_leftovers_of_the_round_do_not_make_a_pool_with_no_backer_abandoned() public {
+        (uint256 a1, uint256 a2, uint256 b) = _round();
+        _collect(a1);
+        _collect(a2);
+        _collect(b);
+        _everyoneRedeemsAndSells([ALICE, BOB]);
+
+        // The leftovers: a few base units no bidder can claim, and the weight that goes with them.
+        uint256 leftoverUnits = pool.unredeemedUnits();
+        emit log_named_uint("leftover units (base units)", leftoverUnits);
+        emit log_named_uint("leftover weight", pool.unredeemedWeight());
+        assertGt(leftoverUnits, 0, "the auction rounds sold units up and fills down");
+        assertLt(leftoverUnits, 1e6, "and by no more than a few base units");
+        assertEq(pool.totalSupply(), leftoverUnits);
+        assertGt(pool.unredeemedWeight(), 0);
+        assertEq(pool.totalWeight(), pool.unredeemedWeight(), "no wallet holds any weight");
+
+        vm.warp(pool.abandonableAt() + 1 days);
+        assertFalse(pool.abandoned(), "nobody is backing the pool");
+        vm.expectRevert(IBackingPool.NotAbandonable.selector);
+        pool.declareAbandoned();
+
+        // A newcomer is served, and the clocks start with them.
+        currency.mint(NEWBIE, 1_000e18);
+        vm.startPrank(NEWBIE);
+        currency.approve(address(pool), type(uint256).max);
+        pool.buy(1_000e18, 0, type(uint256).max);
+        vm.stopPrank();
+        assertEq(pool.lastReleaseAt(), vm.getBlockTimestamp());
+        assertEq(pool.abandonableAt(), vm.getBlockTimestamp() + 180 days);
+        assertFalse(pool.abandoned());
+        _assertBooks(0);
+
+        // The newcomer is a backer: if no release comes for 180 days the pool is abandoned and they are refunded.
+        vm.warp(pool.abandonableAt());
+        assertTrue(pool.abandoned());
+        uint256 held = pool.balanceOf(NEWBIE);
+        vm.prank(NEWBIE);
+        pool.sell(held, 0, type(uint256).max);
+        assertGt(pool.refunded(), 0);
+        _assertBooks(0);
+    }
+
+    /// @dev Round buyers who have not exchanged their claim tokens are not backers yet: with nobody else the
+    /// clock does not run. When one of them exchanges, a clock that has already run out takes effect at once,
+    /// so they are refunded.
+    function test_claim_holders_who_have_not_redeemed_are_backers_from_the_moment_they_do() public {
+        (uint256 a1, uint256 a2, uint256 b) = _round();
+        _collect(a1);
+        _collect(a2);
+        _collect(b);
+        _redeemAll(BOB);
+        uint256 bobUnits = pool.balanceOf(BOB);
+        vm.prank(BOB);
+        pool.sell(bobUnits, 0, type(uint256).max);
+        assertGt(claim.balanceOf(ALICE), 0);
+
+        vm.warp(pool.abandonableAt() + 30 days);
+        assertFalse(pool.abandoned(), "Alice has weight in the pool, but only as claim tokens");
+        _redeemAll(ALICE);
+        assertTrue(pool.abandoned(), "the clock had run: she is refunded");
+        uint256 escrow = pool.escrow();
+        uint256 held = pool.balanceOf(ALICE);
+        vm.prank(ALICE);
+        pool.sell(held, 0, type(uint256).max);
+        assertGt(pool.refunded(), 0);
+        assertLt(pool.escrow(), escrow);
+        _assertBooks(0);
+    }
+
+    /// @dev Pools with no round are untouched: the same words, the same result.
+    function test_a_pool_without_a_round_still_counts_every_weight_as_a_backer() public {
+        IBackingPool plain = IBackingPool(
+            vm.deployCode(
+                "BackingPool.sol:BackingPool", abi.encode(treasury, FOUNDER, address(currency), terms(), uint256(0))
+            )
+        );
+        currency.mint(CAROL, 100e18);
+        vm.startPrank(CAROL);
+        currency.approve(address(plain), type(uint256).max);
+        plain.buy(100e18, 0, type(uint256).max);
+        vm.stopPrank();
+        assertEq(plain.unredeemedWeight(), 0);
+        vm.warp(plain.abandonableAt());
+        assertTrue(plain.abandoned());
     }
 }
 
