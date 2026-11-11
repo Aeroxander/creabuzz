@@ -305,24 +305,24 @@ function TrendingPostsBlock() {
       id="rail-posts"
       seeAll={
         <SeeAll
-          label="trending posts"
+          label="most discussed posts"
           search={{}}
           testId="social-rail-posts-all"
           to="/social/explore"
         />
       }
       busy={view === "loading"}
-      title="Trending posts"
+      title="Most discussed posts"
     >
       {view === "loading" ? (
         <RailNote testId="social-rail-posts-loading">Loading…</RailNote>
       ) : view === "error" ? (
         <RailNote onRetry={retry} testId="social-rail-posts-error">
-          Couldn't load what's trending.
+          Couldn't load the most discussed posts.
         </RailNote>
       ) : view === "empty" ? (
         <RailNote testId="social-rail-posts-empty">
-          Nothing is trending yet.
+          No post is being discussed much yet.
         </RailNote>
       ) : (
         <ul data-testid="social-rail-posts">

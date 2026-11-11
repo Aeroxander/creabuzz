@@ -174,7 +174,7 @@ test("timeline tabs name the content they show, and arrow keys move between them
   await setUp(page, relay);
   await page.goto("/social/explore");
   const trending = page.getByRole("tab", {
-    name: "Trending posts",
+    name: "Most discussed posts",
     exact: true,
   });
   await expect(trending).toHaveAttribute("aria-selected", "true");

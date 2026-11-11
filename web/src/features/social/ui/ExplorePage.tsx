@@ -32,7 +32,7 @@ import { TabStrip, tabPanelProps } from "./TabStrip";
 type Tab = "posts" | "people" | "hashtags";
 
 const TABS: readonly { id: Tab; label: string }[] = [
-  { id: "posts", label: "Trending posts" },
+  { id: "posts", label: "Most discussed posts" },
   { id: "people", label: "People to follow" },
   { id: "hashtags", label: "Hashtags" },
 ];
@@ -89,7 +89,7 @@ function TrendingPosts() {
         kinds={[KIND_REACTION, KIND_REPOST, KIND_TEXT_NOTE]}
         onRetry={retry}
         testId="social-trending-error"
-        title="Couldn't load what's trending"
+        title="Couldn't load the most discussed posts"
       />
     );
   }
@@ -97,7 +97,7 @@ function TrendingPosts() {
     return (
       <EmptyState
         testId="social-trending-empty"
-        title="Nothing is trending yet"
+        title="No post is being discussed much yet"
       >
         Posts that get likes, reposts and replies show up here.
       </EmptyState>
@@ -107,8 +107,8 @@ function TrendingPosts() {
     <>
       {partialError(view, error) ? (
         <PartialFailure onRetry={retry} testId="social-trending-partial-error">
-          What's trending couldn't be checked again, so this list may be out of
-          date.
+          The most discussed posts couldn't be checked again, so this list may
+          be out of date.
         </PartialFailure>
       ) : null}
       <PostList rows={notes.data} />

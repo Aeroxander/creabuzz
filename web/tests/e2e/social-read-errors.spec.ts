@@ -4,7 +4,7 @@ import { getPublicKey } from "nostr-tools/pure";
 import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
 
 /**
- * A read the server refuses is a failure with a retry, never "Nothing is trending yet" / "No posts for ..." / "Nothing
+ * A read the server refuses is a failure with a retry, never "No post is being discussed much yet" / "No posts for ..." / "Nothing
  * here yet" (Review B 4). Every read here is refused, so any empty state on screen would be a false one. Which state a
  * page shows is pinned in `src/features/social/lib/read-view.test.mjs`; this runs it on the real pages.
  */

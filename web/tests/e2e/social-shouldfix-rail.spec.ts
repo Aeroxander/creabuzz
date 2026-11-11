@@ -160,7 +160,7 @@ test("Home's rail lists the newest projects, trending posts, hashtags and people
   await expect(rail(page)).toHaveCount(1);
   for (const name of [
     "Projects",
-    "Trending posts",
+    "Most discussed posts",
     "Hashtags",
     "People to follow",
   ]) {
@@ -270,15 +270,18 @@ test("each See all opens its full page, and the old Explore address still works"
 
   await page.goto("/");
   await rail(page)
-    .getByRole("link", { name: "See all trending posts" })
+    .getByRole("link", { name: "See all most discussed posts" })
     .click();
   await expect(page).toHaveURL(/\/social\/explore$/);
-  await expect(tab("Trending posts")).toHaveAttribute("aria-selected", "true");
+  await expect(tab("Most discussed posts")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
 
   // The old address and an unknown tab both open Explore on its first tab, never a 404.
   for (const old of ["/social/explore", "/social/explore?tab=nonsense"]) {
     await page.goto(old);
-    await expect(tab("Trending posts")).toHaveAttribute(
+    await expect(tab("Most discussed posts")).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -288,7 +291,7 @@ test("each See all opens its full page, and the old Explore address still works"
   }
 
   // Picking a tab keeps it in the address, so a reload opens the same list.
-  await tab("Trending posts").focus();
+  await tab("Most discussed posts").focus();
   await page.keyboard.press("ArrowRight");
   await expect(page).toHaveURL(/tab=people/);
   await page.reload();
@@ -308,7 +311,7 @@ test("on a phone the rail sits below the feed with every block reachable and no 
   await expect(rail(page)).toHaveCount(1);
   for (const name of [
     "Projects",
-    "Trending posts",
+    "Most discussed posts",
     "Hashtags",
     "People to follow",
   ]) {
@@ -586,7 +589,10 @@ test("the rail reads a handful of trending posts by id, not the whole trending l
   // A page that is not Home: the rail is on every social page.
   await page.goto("/social/notifications");
   await expect(
-    rail(page).getByRole("heading", { name: "Trending posts", exact: true }),
+    rail(page).getByRole("heading", {
+      name: "Most discussed posts",
+      exact: true,
+    }),
   ).toBeVisible({ timeout: 20_000 });
   await expect(rail(page).getByTestId("social-rail-posts")).toBeVisible();
   const longest = Math.max(

@@ -111,7 +111,7 @@ test("older addresses still open", async ({ page }) => {
   await install(page, relay, ME_KEY);
   await page.goto("/social/explore");
   await expect(
-    page.getByRole("tab", { name: "Trending posts", exact: true }),
+    page.getByRole("tab", { name: "Most discussed posts", exact: true }),
   ).toBeVisible();
   await page.goto("/c");
   await expect(page.getByTestId("app-nav")).toBeVisible();
