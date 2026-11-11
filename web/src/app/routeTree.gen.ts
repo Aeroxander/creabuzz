@@ -27,6 +27,7 @@ import { Route as socialDotexploreRouteImport } from "./routes/social.explore";
 import { Route as socialDotbookmarksRouteImport } from "./routes/social.bookmarks";
 import { Route as reposDotrepoIdRouteImport } from "./routes/repos.$repoId";
 import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
+import { Route as pDotslugRouteImport } from "./routes/p.$slug";
 import { Route as launchpadDotlaunchIdRouteImport } from "./routes/launchpad.$launchId";
 import { Route as inviteDotcodeRouteImport } from "./routes/invite.$code";
 import { Route as cDothostRouteImport } from "./routes/c.$host";
@@ -146,6 +147,11 @@ const projectsDotprojectIdRoute = projectsDotprojectIdRouteImport.update({
   path: "/projects/$projectId",
   getParentRoute: () => rootRouteImport,
 } as any);
+const pDotslugRoute = pDotslugRouteImport.update({
+  id: "/p/$slug",
+  path: "/p/$slug",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const launchpadDotlaunchIdRoute = launchpadDotlaunchIdRouteImport.update({
   id: "/launchpad/$launchId",
   path: "/launchpad/$launchId",
@@ -207,6 +213,7 @@ export interface FileRoutesByFullPath {
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/p/$slug": typeof pDotslugRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/social/bookmarks": typeof socialDotbookmarksRoute;
@@ -239,6 +246,7 @@ export interface FileRoutesByTo {
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/p/$slug": typeof pDotslugRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/social/bookmarks": typeof socialDotbookmarksRoute;
@@ -272,6 +280,7 @@ export interface FileRoutesById {
   "/c/$host": typeof cDothostRoute;
   "/invite/$code": typeof inviteDotcodeRoute;
   "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
+  "/p/$slug": typeof pDotslugRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/repos/$repoId": typeof reposDotrepoIdRoute;
   "/social/bookmarks": typeof socialDotbookmarksRoute;
@@ -306,6 +315,7 @@ export interface FileRouteTypes {
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
+    | "/p/$slug"
     | "/projects/$projectId"
     | "/repos/$repoId"
     | "/social/bookmarks"
@@ -338,6 +348,7 @@ export interface FileRouteTypes {
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
+    | "/p/$slug"
     | "/projects/$projectId"
     | "/repos/$repoId"
     | "/social/bookmarks"
@@ -370,6 +381,7 @@ export interface FileRouteTypes {
     | "/c/$host"
     | "/invite/$code"
     | "/launchpad/$launchId"
+    | "/p/$slug"
     | "/projects/$projectId"
     | "/repos/$repoId"
     | "/social/bookmarks"
@@ -403,6 +415,7 @@ export interface RootRouteChildren {
   cDothostRoute: typeof cDothostRoute;
   inviteDotcodeRoute: typeof inviteDotcodeRoute;
   launchpadDotlaunchIdRoute: typeof launchpadDotlaunchIdRoute;
+  pDotslugRoute: typeof pDotslugRoute;
   projectsDotprojectIdRoute: typeof projectsDotprojectIdRoute;
   reposDotrepoIdRoute: typeof reposDotrepoIdRoute;
   socialDotbookmarksRoute: typeof socialDotbookmarksRoute;
@@ -574,6 +587,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof projectsDotprojectIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/p/$slug": {
+      id: "/p/$slug";
+      path: "/p/$slug";
+      fullPath: "/p/$slug";
+      preLoaderRoute: typeof pDotslugRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/launchpad/$launchId": {
       id: "/launchpad/$launchId";
       path: "/launchpad/$launchId";
@@ -651,6 +671,7 @@ const rootRouteChildren: RootRouteChildren = {
   cDothostRoute: cDothostRoute,
   inviteDotcodeRoute: inviteDotcodeRoute,
   launchpadDotlaunchIdRoute: launchpadDotlaunchIdRoute,
+  pDotslugRoute: pDotslugRoute,
   projectsDotprojectIdRoute: projectsDotprojectIdRoute,
   reposDotrepoIdRoute: reposDotrepoIdRoute,
   socialDotbookmarksRoute: socialDotbookmarksRoute,

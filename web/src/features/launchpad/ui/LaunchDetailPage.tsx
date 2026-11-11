@@ -553,6 +553,8 @@ export function LaunchDetailPage({
           project={launch.record}
         />
       ) : null}
+      {/* Backing goes here when it is offered, above the project's news: money raised, what is held for the project,
+          what each milestone releases, the next milestone, and the date backers may leave by. One full-width card. */}
       {/* The project's news, above the tabs; the Updates tab is the full list, so it is not repeated there. */}
       {!sandbox && shown !== "updates" ? (
         <ProjectUpdateCard

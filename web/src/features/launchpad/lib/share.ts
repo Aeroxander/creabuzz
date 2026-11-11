@@ -5,9 +5,25 @@
  * Pure and alias-free: `share.test.mjs` drives it under `node --test`.
  */
 
-/** Where a project's public page lives. */
+/** How much of the founder's account id a scorecard address carries: enough that no two projects share one. */
+const FOUNDER_PART = 16;
+const SLUG_RE = /^(.+)-([0-9a-f]{16})$/;
+
+/**
+ * Where a project's public scorecard lives: `/p/<project id>-<start of the founder's account id>`. The founder's
+ * part is there because two founders may pick the same project id; the page opens only the project whose founder
+ * matches it.
+ */
 export function projectSharePath(project: { id: string; author: string }) {
-  return `/launchpad/${encodeURIComponent(project.id)}?author=${project.author}`;
+  return `/p/${encodeURIComponent(project.id)}-${project.author.slice(0, FOUNDER_PART).toLowerCase()}`;
+}
+
+/** The project id and the start of the founder's account id a scorecard address names, or null when it names none. */
+export function parseScorecardSlug(
+  slug: string,
+): { id: string; founderStart: string } | null {
+  const match = SLUG_RE.exec(slug);
+  return match ? { id: match[1], founderStart: match[2] } : null;
 }
 
 /** "Nebula on Creaton: 4 weeks in a row, 3 of 4 promises kept." and then the link. */

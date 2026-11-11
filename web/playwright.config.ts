@@ -148,6 +148,8 @@ export default defineConfig({
         "**/project-board.spec.ts",
         // The weekly rhythm: due and late words, the pre-filled update dialog, the note after posting, sharing.
         "**/weekly-rhythm.spec.ts",
+        // A project's public scorecard at its own short address.
+        "**/scorecard.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],
