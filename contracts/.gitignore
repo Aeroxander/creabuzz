@@ -15,3 +15,6 @@ deployments/*.json
 
 # And the weekly-sale set (scripts/sepolia-deploy-v5.sh --broadcast): the same kind of public addresses, beside the 5 Nov manifest.
 !deployments/v5-sepolia-11155111.json
+
+# And the instant-backing set (script/DeployBackingSepolia.s.sol --broadcast), beside the weekly-sale manifest.
+!deployments/backing-sepolia-11155111.json
