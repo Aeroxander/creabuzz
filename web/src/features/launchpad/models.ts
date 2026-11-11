@@ -98,6 +98,12 @@ export interface LaunchRecord {
   eventId: string;
   author: string;
   createdAt: number;
+  /**
+   * When the project was first published, in seconds: what lists order by, so saving the record again never moves
+   * a project up. Written once (`content.started`) and carried by every later save; never later than `createdAt`,
+   * and `createdAt` itself for a record from before this was written.
+   */
+  startedAt: number;
   name: string;
   pitch: string;
   /** The fuller story investors weigh: what exists, why now, what failure looks like. */
@@ -460,6 +466,10 @@ export function parseLaunchRecord(event: NostrEvent): LaunchRecord | null {
     eventId: event.id,
     author: event.pubkey,
     createdAt: event.created_at,
+    startedAt:
+      typeof body.started === "number" && body.started > 0
+        ? Math.min(Math.floor(body.started), event.created_at)
+        : event.created_at,
     name,
     pitch: typeof body.pitch === "string" ? body.pitch : "",
     longPitch: str(body.longPitch),
@@ -906,7 +916,12 @@ export function buildLaunches(
     launch.proposals.sort((a, b) => b.createdAt - a.createdAt);
     launch.receipts.sort((a, b) => a.createdAt - b.createdAt);
   }
-  out.sort((a, b) => b.record.createdAt - a.record.createdAt);
+  // Newest project first, by when each was first published: saving a record again does not move it.
+  out.sort(
+    (a, b) =>
+      b.record.startedAt - a.record.startedAt ||
+      (a.record.eventId < b.record.eventId ? -1 : 1),
+  );
   return out;
 }
 

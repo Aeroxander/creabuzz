@@ -19,6 +19,7 @@ function launch(id, createdAt, over = {}) {
       name: `Project ${id}`,
       pitch: "",
       createdAt,
+      startedAt: createdAt,
       stage: "live",
       auction: "0xabc",
       token: null,
@@ -180,4 +181,16 @@ test("requests for help the rail may show come from listed projects only, newest
   assert.equal(railHelpCandidates(all, true, 2).length, 2);
   // More are checked than are shown, so a few closed ones do not empty the list.
   assert.ok(RAIL_LIMITS.helpCandidates > RAIL_LIMITS.helpRequests);
+});
+
+test("saving a project's record again does not move it up: the order is by when it was first published", () => {
+  const first = launch("first", 10);
+  // Saved again just now, first published long ago.
+  const resaved = launch("resaved", 999, { startedAt: 5 });
+  const second = launch("second", 20);
+  assert.deepEqual(ids(railProjects([resaved, first, second], true)), [
+    "second",
+    "first",
+    "resaved",
+  ]);
 });

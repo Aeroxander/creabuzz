@@ -506,3 +506,137 @@ test("an update by someone the founder added is the project's only once that per
   await expect(cards(page)).toHaveCount(2);
   await expect(cards(page).first()).toContainText("From someone added");
 });
+
+test("a visitor lands on what is happening: one sentence, two ways in, who is moving, and the live records", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  seedWorld(relay);
+  // Nebula's founder posted on three days this week; Orbit's on one.
+  for (const days of [1, 2, 3])
+    relay.seed(
+      update(
+        FOUNDER,
+        NEBULA,
+        `Day note ${days}`,
+        [["update-kind", "weekly"]],
+        now() - days * DAY,
+      ),
+    );
+  // Orbit's founder saves the project's record again, just now: that moves nothing.
+  relay.seed(projectRecord(OTHER, "orbit", "Orbit", now() - 60));
+  await install(page, relay, null);
+  await page.goto("/");
+  const welcome = page.getByTestId("home-welcome");
+  await expect(welcome.getByRole("heading")).toHaveText(
+    "Real projects, built in the open.",
+  );
+  await expect(welcome.getByTestId("home-welcome-start")).toHaveAttribute(
+    "href",
+    "/start",
+  );
+  await expect(welcome.getByTestId("home-welcome-work")).toHaveAttribute(
+    "href",
+    "/work",
+  );
+  await expect(welcome).not.toContainText(/earn/i);
+  // The feed is the first thing under it, without choosing a tab.
+  await expect(cards(page)).not.toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Updates" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  // Who is moving: by days the team posted on this week, not by whose record was saved last.
+  const moving = page.getByTestId("moving-now").getByTestId("moving-now-item");
+  await expect(moving).toHaveCount(2);
+  await expect(moving.nth(0)).toContainText("Nebula");
+  await expect(moving.nth(0)).toContainText("of the last 7 days");
+  await expect(moving.nth(1)).toContainText("Orbit");
+  await expect(moving.nth(1)).toContainText("Posted today");
+  await expect(page.getByTestId("moving-now")).not.toContainText("Quiet");
+  await moving.nth(0).getByRole("link").click();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Nebula");
+});
+
+test("a kept promise and accepted work can be cheered, once per account", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  seedWorld(relay);
+  relay.seed(event(10003, READER, "", [["a", NEBULA]], now() - 30 * DAY));
+  await install(page, relay, READER_KEY);
+  await page.goto("/?tab=updates");
+  const work = cards(page).filter({ hasText: "Record sign-up on Android 9." });
+  const kept = cards(page).filter({ hasText: "Week two: sign-up works" });
+  // Someone else cheered the work twice: it counts once.
+  const taskId = relay.events.find((e) =>
+    e.tags.some((t) => t[0] === "task-part" && t[1] === "task"),
+  )?.id as string;
+  for (const n of [1, 2])
+    relay.seed(
+      event(
+        7,
+        OTHER,
+        "+",
+        [
+          ["e", taskId],
+          ["p", HELPER],
+        ],
+        now() - 100 * n,
+      ),
+    );
+  await page.reload();
+  await expect(work.getByTestId("record-card-cheers")).toHaveText("1");
+  // Nothing else can be cheered: not a missed goal, not an update that kept nothing.
+  await expect(page.getByTestId("record-card-cheer")).toHaveCount(2);
+
+  await work.getByTestId("record-card-cheer").click();
+  await expect(work.getByTestId("record-card-cheers")).toHaveText("2");
+  await expect(work.getByTestId("record-card-cheer")).toBeDisabled();
+  await expect(work.getByTestId("record-card-cheer")).toHaveText(/Cheered/);
+  const mine = () =>
+    relay.events.filter((e) => e.kind === 7 && e.pubkey === READER);
+  await expect.poll(() => mine().length).toBe(1);
+  expect(mine()[0].content).toBe("+");
+  expect(mine()[0].tags).toContainEqual(["e", taskId]);
+  expect(mine()[0].tags).toContainEqual(["p", HELPER]);
+
+  await kept.getByTestId("record-card-cheer").click();
+  await expect(kept.getByTestId("record-card-cheers")).toHaveText("1");
+  // Read back from the server: still theirs, still once.
+  await page.reload();
+  await expect(work.getByTestId("record-card-cheers")).toHaveText("2");
+  await expect(work.getByTestId("record-card-cheer")).toBeDisabled();
+  await expect.poll(() => mine().length).toBe(2);
+});
+
+test("a record that arrives while the page is open waits behind a pill, then slides in at the top", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seedWorld(relay);
+  await install(page, relay, null);
+  await page.goto("/?tab=updates");
+  await expect(cards(page)).toHaveCount(5);
+  relay.seed(
+    update(
+      FOUNDER,
+      NEBULA,
+      "Just shipped",
+      [["update-part", "done", "The guide is out."]],
+      now(),
+    ),
+  );
+  // Nothing moves under the reader: the new record is offered, not inserted.
+  const pill = page.getByTestId("record-feed-new-pill");
+  await expect(pill).toHaveText("1 new record", { timeout: 60_000 });
+  await expect(cards(page)).toHaveCount(5);
+  await expect(page.getByTestId("record-feed")).not.toContainText(
+    "Just shipped",
+  );
+  await pill.click();
+  await expect(cards(page)).toHaveCount(6);
+  await expect(cards(page).first()).toContainText("Just shipped");
+  await expect(pill).toHaveCount(0);
+});

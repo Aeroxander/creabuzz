@@ -11,8 +11,11 @@ const TAB_ALIASES: Readonly<Record<string, HomeTab>> = {
 };
 
 interface HomeSearch {
-  /** The timeline tab, kept in the address so Back from a board post returns to it. */
-  tab?: Exclude<HomeTab, "everyone">;
+  /**
+   * The timeline tab, kept in the address so Back from a board post returns to it. Left out, it is the one the
+   * reader starts on: Everyone for someone signed in, the projects' live records for a visitor.
+   */
+  tab?: HomeTab;
 }
 
 export const Route = createFileRoute("/")({
@@ -22,7 +25,7 @@ export const Route = createFileRoute("/")({
         ? (TAB_ALIASES[search.tab] ?? search.tab)
         : undefined;
     const tab = TABS.find((t) => t === asked);
-    return tab && tab !== "everyone" ? { tab } : {};
+    return tab ? { tab } : {};
   },
   component: lazyRouteComponent(
     () => import("@/features/social/ui/SocialHomePage"),

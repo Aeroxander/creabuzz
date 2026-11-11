@@ -8,8 +8,8 @@
  */
 
 import { Link } from "@tanstack/react-router";
-import { Link as LinkIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Link as LinkIcon, PartyPopper } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   needAccountTo,
@@ -30,8 +30,12 @@ import { relativeTime } from "@/shared/lib/relative-time";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 
+import { cheerCountWords, cheerTarget } from "../lib/cheers";
+import { newPillWords, splitLive } from "../lib/live-feed";
 import { progressArtifacts } from "../lib/project-progress";
 import { answersLine, type FeedItem, itemLabel } from "../lib/record-feed";
+import { ProjectMark } from "./MovingNow";
+import { useCheers } from "../use-cheers";
 import { useLaunchFollows } from "../use-launch-follows";
 import { progressScope, useProgressSeen } from "../use-progress-seen";
 import { useFeedScope, useRecordFeed } from "../use-record-feed";
@@ -84,6 +88,41 @@ export function RecordFeed() {
         ? "The records shown here are marked as read in this browser."
         : "This browser could not save your reading history.",
     );
+  };
+  // Live: what arrives after the page was shown waits behind a pill, so nothing moves under the reader.
+  const [shown, setShown] = useState<ReadonlySet<string> | null>(null);
+  const [justIn, setJustIn] = useState<ReadonlySet<string>>(new Set());
+  const live = useMemo(() => splitLive(feed.items, shown), [feed.items, shown]);
+  useEffect(() => {
+    // The first read, and anything that is not news (an older page), is shown as it comes.
+    if (feed.loading || feed.items.length === 0) return;
+    setShown((was) => {
+      const next = new Set(was ?? []);
+      for (const item of live.visible) next.add(item.id);
+      return was !== null && next.size === was.size ? was : next;
+    });
+  }, [feed.loading, feed.items.length, live.visible]);
+  const showNew = () => {
+    setJustIn(new Set(live.waiting.map((item) => item.id)));
+    setShown(new Set(feed.items.map((item) => item.id)));
+  };
+  const cheers = useCheers(
+    feed.items.flatMap((item) => {
+      const target = cheerTarget(item);
+      return target ? [target.id] : [];
+    }),
+  );
+  const cheer = (item: FeedItem) => {
+    const target = cheerTarget(item);
+    if (!target) return;
+    if (me === null) {
+      window.dispatchEvent(new Event(SIGN_UP_EVENT));
+      return;
+    }
+    cheers.cheer.mutate(target, {
+      onError: () =>
+        setMessage("Your cheer was not sent. Try again in a moment."),
+    });
   };
   const follow = (coordinate: string) => {
     // Signed out: the account dialog, then the person can come back to the same button.
@@ -207,12 +246,44 @@ export function RecordFeed() {
             </p>
           ) : (
             <ul className="flex flex-col gap-3">
-              {feed.items.map((item) => {
+              {live.waiting.length > 0 ? (
+                <li className="sticky top-2 z-10 flex justify-center">
+                  <Button
+                    className="rounded-full shadow-md"
+                    data-testid="record-feed-new-pill"
+                    onClick={showNew}
+                    size="sm"
+                    type="button"
+                  >
+                    {newPillWords(live.waiting.length)}
+                  </Button>
+                </li>
+              ) : null}
+              {live.visible.map((item) => {
                 const record = byCoordinate.get(item.coordinate);
                 if (!record) return null;
+                const target = cheerTarget(item);
                 return (
-                  <li key={item.id}>
+                  <li
+                    className={
+                      justIn.has(item.id)
+                        ? "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-2 motion-safe:duration-300"
+                        : undefined
+                    }
+                    key={item.id}
+                  >
                     <RecordCard
+                      cheer={
+                        target
+                          ? {
+                              count: cheers.count(target.id),
+                              atLeast: cheers.cut,
+                              mine: cheers.mine(target.id),
+                              busy: cheers.cheer.isPending,
+                              onCheer: () => cheer(item),
+                            }
+                          : null
+                      }
                       followable={
                         scope.mode === "everyone" && record.author !== me
                       }
@@ -317,7 +388,17 @@ function RecordCard({
   onFollow,
   fresh,
   onMessage,
+  cheer,
 }: {
+  /** Set for a kept promise or accepted work: the count, whether the reader cheered, and the tap. */
+  cheer: {
+    count: number;
+    /** The cheers could not all be read: the count is "at least". */
+    atLeast: boolean;
+    mine: boolean;
+    busy: boolean;
+    onCheer: () => void;
+  } | null;
   /** This browser has shown the project's records before, and not this one. */
   fresh: boolean;
   /** Says what came of copying a link. */
@@ -350,7 +431,12 @@ function RecordCard({
       data-testid="record-card"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="min-w-0 text-sm">
+        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <ProjectMark
+            className="h-7 w-7 text-xs"
+            image={record.image}
+            name={record.name}
+          />
           <Link
             className="font-bold underline-offset-2 hover:underline"
             data-testid="record-card-project"
@@ -494,6 +580,36 @@ function RecordCard({
           </div>
         </div>
       )}
+      {cheer ? (
+        <div className="mt-3">
+          <Button
+            aria-label={
+              cheer.mine
+                ? `You cheered this. ${cheerCountWords(cheer.count)}`
+                : `Cheer this. ${cheerCountWords(cheer.count)}`
+            }
+            aria-pressed={cheer.mine}
+            data-testid="record-card-cheer"
+            disabled={cheer.mine || cheer.busy}
+            onClick={cheer.onCheer}
+            size="sm"
+            type="button"
+            variant={cheer.mine ? "default" : "outline"}
+          >
+            <PartyPopper aria-hidden className="mr-1 h-4 w-4" />
+            {cheer.mine ? "Cheered" : "Cheer"}
+            {cheer.count > 0 ? (
+              <span
+                className="ml-1.5 font-bold"
+                data-testid="record-card-cheers"
+              >
+                {cheer.count}
+                {cheer.atLeast ? "+" : ""}
+              </span>
+            ) : null}
+          </Button>
+        </div>
+      ) : null}
     </article>
   );
 }

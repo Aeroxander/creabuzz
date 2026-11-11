@@ -63,6 +63,7 @@ import { useVoteTallies, useVoteWeights } from "../use-feed";
 import { FollowButton } from "./FollowButton";
 import { launchCoord, LaunchVoteCard } from "./LaunchVoteCard";
 import { ForecastRecordLine } from "@/features/launchpad/ui/ForecastRecordLine";
+import { AccountAgentBadge } from "@/features/launchpad/ui/AccountAgentBadge";
 import { PersonTrackRecord } from "@/features/launchpad/ui/PersonTrackRecord";
 
 type Tab = "posts" | "replies" | "media" | "likes" | "launches" | "record";
@@ -555,7 +556,13 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
         ) : tab === "likes" ? (
           <Likes pubkey={pubkey} />
         ) : tab === "record" ? (
-          <PersonTrackRecord isSelf={isSelf} pubkey={pubkey} />
+          <>
+            {/* An account that is an agent says so on its own profile, with who runs it. */}
+            <div className="px-4 pt-3 empty:hidden">
+              <AccountAgentBadge pubkey={pubkey} />
+            </div>
+            <PersonTrackRecord isSelf={isSelf} pubkey={pubkey} />
+          </>
         ) : (
           <Launches pubkey={pubkey} />
         )}

@@ -16,6 +16,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { teamOf } from "@/features/launchpad/lib/help-request";
+import { LIVE_POLL_MS } from "./lib/live-feed";
 import {
   joinProjectPages,
   nextProjectPage,
@@ -269,6 +270,8 @@ export function useRecordFeed(scope: FeedScope | null) {
     enabled: coordinates.length > 0,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
+    // Live: asked again every half minute while the page is open. What arrives waits behind the "N new" pill.
+    refetchInterval: LIVE_POLL_MS,
   });
   const pages = query.data?.pages;
   const items = useMemo(

@@ -680,6 +680,11 @@ export interface CreateLaunchInput {
   /** "unlisted" keeps the project out of every list of projects (`lib/listing.ts`); left out, it is listed. */
   listing?: "unlisted";
   /**
+   * When the project was first published (seconds). Left out for a new project, which is stamped now; every later
+   * save carries the first one's, so lists that order by it never move a project for being saved again.
+   */
+  startedAt?: number;
+  /**
    * Tags the record carries that no form here owns, carried through every save so none is erased: the agent the
    * record says wrote it, the projects it links to (`a` tags other than the one it is built on), and the bid gates.
    */
@@ -778,6 +783,7 @@ export function useCreateLaunch() {
       const content: Record<string, unknown> = {
         pitch: input.pitch,
         stage: input.stage,
+        started: input.startedAt ?? Math.floor(Date.now() / 1000),
       };
       if (input.listing === "unlisted") content.listing = "unlisted";
       if (input.funding) content.funding = fundingContent(input.funding);
@@ -835,21 +841,24 @@ export function useCreateLaunch() {
       // saves in the same second (a link, then a click) would tie, and the
       // relay may keep the older one, silently dropping the later save.
       const me = existingUserPubkey();
-      const listedAt = Math.max(
-        0,
-        ...(
-          queryClient.getQueryData<InfiniteData<ProjectPage>>(
-            projectPagesKey(relayWsUrl()),
-          )?.pages ?? []
-        )
-          .flatMap((page) => page.events)
-          .filter(
-            (event) =>
-              event.pubkey === me &&
-              event.tags.some((tag) => tag[0] === "d" && tag[1] === input.id),
-          )
-          .map((event) => event.created_at),
-      );
+      const listed = (
+        queryClient.getQueryData<InfiniteData<ProjectPage>>(
+          projectPagesKey(relayWsUrl()),
+        )?.pages ?? []
+      )
+        .flatMap((page) => page.events)
+        .filter(
+          (event) =>
+            event.pubkey === me &&
+            event.tags.some((tag) => tag[0] === "d" && tag[1] === input.id),
+        );
+      const listedAt = Math.max(0, ...listed.map((e) => e.created_at));
+      // A form that builds the record from scratch does not know when the project was first published: the record
+      // already in the list does, and saving over it must not make the project look new.
+      if (input.startedAt === undefined && listed.length > 0)
+        content.started = Math.min(
+          ...listed.map((e) => parseLaunchRecord(e)?.startedAt ?? e.created_at),
+        );
       return publishMirror({
         kind: KIND_LAUNCH_RECORD,
         tags,

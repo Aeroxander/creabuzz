@@ -238,9 +238,11 @@ test("one person starts a project alone with four answers and lands on its page 
 
   // The project: no network, no Shares, no money, no rooms to wait for. The goal: its own record, as fields.
   const [project] = records(relay, 37001);
+  // (`started` is when it was first published: what lists order by, so saving it again never moves it.)
   expect(JSON.parse(project.content)).toEqual({
     pitch: "A map of the night sky for everyone.",
     stage: "draft",
+    started: expect.any(Number),
   });
   for (const name of ["chain", "token", "treasury", "auction", "buzz-channel"])
     expect(tagsNamed(project, name), name).toEqual([]);

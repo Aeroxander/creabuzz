@@ -116,7 +116,8 @@ test("an older page of board posts that fails is said at the bottom of Home, and
     (filter) => asks(filter, 45001) && typeof filter?.until === "number",
   );
   await setUp(page, relay);
-  await page.goto("/");
+  // (A visitor's Home opens on the projects' live records: the timeline is its Everyone tab.)
+  await page.goto("/?tab=everyone");
   await expect(page.getByText("board post 101")).toBeVisible({
     timeout: 20_000,
   });

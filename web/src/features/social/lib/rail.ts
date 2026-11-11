@@ -41,7 +41,7 @@ export function railProjects(
     .filter((launch) => listed(launch, raises))
     .sort(
       (a, b) =>
-        b.record.createdAt - a.record.createdAt ||
+        b.record.startedAt - a.record.startedAt ||
         (a.record.id < b.record.id ? -1 : 1),
     )
     .slice(0, limit);

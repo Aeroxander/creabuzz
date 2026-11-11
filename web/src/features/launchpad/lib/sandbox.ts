@@ -35,6 +35,7 @@ export function sandboxRecord(now = Date.now()): LaunchRecord {
     eventId: `sandbox-${SANDBOX_ID}`,
     author: "ab".repeat(32),
     createdAt: Math.floor(now / 1000),
+    startedAt: Math.floor(now / 1000),
     name: "Nebula Sandbox",
     pitch:
       "A simulated raise so the launchpad can be walked end to end. Terms are deployable; no chain is touched.",

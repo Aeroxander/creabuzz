@@ -64,6 +64,7 @@ export function recordToInput(
     ...(record.listing ? { listing: record.listing } : {}),
     // The team is tags on this record, and the server reads them to decide who may post for the project: a save
     // that dropped them would take everyone off the team without a word.
+    startedAt: record.startedAt,
     team: record.team,
     formerTeam: record.formerTeam,
     // Tags no form here owns. A save that left them out would erase them: the agent the record says wrote it, the

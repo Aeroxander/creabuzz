@@ -150,7 +150,7 @@ test.describe("the one door for starting something", () => {
   });
 });
 
-test("someone who is not signed in is told what the product is for: projects they can talk about and help build", async ({
+test("someone who is not signed in is told what this is in one sentence, with two ways in", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -158,14 +158,17 @@ test("someone who is not signed in is told what the product is for: projects the
   await page.goto("/");
   const welcome = page.getByTestId("home-welcome");
   await expect(welcome).toBeVisible({ timeout: 15_000 });
-  // The first release is the conversation and contributor work (D108): no sale, no tokens unlocking, no AI helpers.
-  await expect(welcome.getByRole("heading")).toContainText("Find projects.");
-  await expect(welcome).toContainText("pick up a piece of work");
-  await expect(welcome).toContainText("Do useful work");
+  await expect(welcome.getByRole("heading")).toContainText("Real projects,");
+  await expect(welcome).toContainText("shows whether it kept its word");
   await expect(welcome).not.toContainText("tokens");
   await expect(welcome).not.toContainText("AI helpers");
-  // The welcome is the one offer of an account on Home: no second one in the composer's place right under it.
+  await expect(welcome).not.toContainText(/earn/i);
+  // Two ways in, and no account asked for before there is a reason to have one.
+  await expect(welcome.getByRole("link")).toHaveText([
+    "Start a project",
+    "Find work",
+  ]);
   await expect(
     page.getByRole("button", { name: "Create your account" }),
-  ).toHaveCount(1);
+  ).toHaveCount(0);
 });

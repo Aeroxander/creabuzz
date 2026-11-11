@@ -15,6 +15,7 @@ import {
 } from "@/features/board/lib/board-feed";
 
 import { HomeHero } from "@/features/feed/ui/HomeHero";
+import { MovingNow } from "@/features/feed/ui/MovingNow";
 import { HomeNextStep } from "@/features/feed/ui/HomeNextStep";
 import { HomeYours } from "@/features/feed/ui/HomeYours";
 import { RecordFeed } from "@/features/feed/ui/RecordFeed";
@@ -71,12 +72,13 @@ const BoardDirectory = lazy(() =>
 export function SocialHomePage() {
   const me = existingUserPubkey();
   const search = useSearch({ from: "/" });
-  const tab: Tab = search.tab ?? "everyone";
+  // A visitor lands on what projects are doing right now; someone signed in, on the people they came to talk with.
+  const tab: Tab = search.tab ?? (me ? "everyone" : "updates");
   const navigate = useNavigate();
   const setTab = (next: Tab) =>
     void navigate({
       to: "/",
-      search: next === "everyone" ? {} : { tab: next },
+      search: next === (me ? "everyone" : "updates") ? {} : { tab: next },
       replace: true,
     });
   const following = useFollowing(me);
@@ -170,6 +172,7 @@ export function SocialHomePage() {
           {me ? <HomeNextStep me={me} /> : null}
           {me ? <HomeYours me={me} /> : null}
           <HomeHero />
+          {tab === "updates" ? <MovingNow /> : null}
         </div>
         {/* Signed out, the welcome above already offers the account: no second offer right under it. */}
         {tab === "boards" || !me ? null : <PostComposer postTo />}

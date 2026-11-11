@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  parseLaunchRecord,
   launchRemovals,
   removedLaunchIds,
   LAUNCH_DEFAULTS,
@@ -401,4 +402,28 @@ test("an update that carries a check note is marked as one; any other update is 
       ?.checkNote,
     undefined,
   );
+});
+
+test("when a project was first published is read from its record, never later than the record itself", () => {
+  const record = (content, created_at = 1_000) =>
+    parseLaunchRecord({
+      id: "e".repeat(64),
+      pubkey: "a".repeat(64),
+      kind: 37001,
+      created_at,
+      tags: [
+        ["d", "nebula"],
+        ["name", "Nebula"],
+      ],
+      content: JSON.stringify(content),
+      sig: "s",
+    });
+  // Carried by every later save: the record is newer, the project is not.
+  assert.equal(record({ started: 400 }).startedAt, 400);
+  // From before it was written: the record's own time.
+  assert.equal(record({}).startedAt, 1_000);
+  // Dated ahead of the record, or nonsense: it cannot make a project look newer than its record.
+  assert.equal(record({ started: 5_000 }).startedAt, 1_000);
+  assert.equal(record({ started: "soon" }).startedAt, 1_000);
+  assert.equal(record({ started: -3 }).startedAt, 1_000);
 });
