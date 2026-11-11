@@ -47,6 +47,7 @@ interface IBackingPool {
     }
 
     error NotFactory();
+    error TooSoon(uint256 notBefore);
     error RoundNotLive();
     error RoundNotWaiting();
     error RoundNotOver(uint256 endBlock);
@@ -65,6 +66,11 @@ interface IBackingPool {
     function postMilestone(bytes32 ref) external returns (uint256);
     function resolveMilestone() external returns (bool, uint256);
     function declareAbandoned() external;
+    function voteAbandon() external;
+    function abandonVotes() external view returns (uint256);
+    function votedAbandon(address) external view returns (bool);
+    function lastBuyAt(address) external view returns (uint64);
+    function voteSeasoning() external view returns (uint32);
     function roundInfo(address holder) external view returns (RoundView memory);
     function roundState() external view returns (uint8);
     function claimToken() external view returns (address);
@@ -830,6 +836,87 @@ contract BackingRoundTest is BackingRoundFixture {
     }
 }
 
+/// @dev A contract that takes claim tokens and, in one transaction, exchanges them and votes.
+contract RoundVoteSniper {
+    function snipe(IBackingPool pool, IClaim claim) external {
+        pool.redeem(claim.balanceOf(address(this)));
+        pool.voteAbandon();
+    }
+}
+
+/// @notice Exchanging claim tokens and the vote to declare the project abandoned.
+contract BackingRoundVotesTest is BackingRoundFixture {
+    address internal constant ALICE = address(0xA11CE);
+    address internal constant BOB = address(0xB0B);
+    address internal constant FRESH = address(0xFEE5);
+
+    /// @dev Alice bids twice and Bob once, 7,000 in all; the round is settled.
+    function _round() internal returns (uint256 a1, uint256 a2, uint256 b) {
+        a1 = _bid(ALICE, 2_000e18);
+        vm.roll(START + 30);
+        a2 = _bid(ALICE, 2_000e18);
+        vm.roll(START + 60);
+        b = _bid(BOB, 3_000e18);
+        vm.roll(END);
+        pool.seedFromAuction();
+    }
+
+    /// @dev Redeeming more after voting withdraws the vote, as a buy does, and the count of votes stays the sum
+    /// of the voters' weights: nobody's vote is lost or inflated, and the redeemer can still sell everything.
+    function test_redeeming_more_after_voting_withdraws_the_vote_and_leaves_the_others_whole() public {
+        (uint256 a1, uint256 a2, uint256 b) = _round();
+        _collect(a1);
+        _collect(b);
+        _redeemAll(ALICE);
+        _redeemAll(BOB);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(ALICE);
+        pool.voteAbandon();
+        vm.prank(BOB);
+        pool.voteAbandon();
+        uint256 bobWeight = pool.weightOf(BOB);
+        assertEq(pool.abandonVotes(), pool.weightOf(ALICE) + bobWeight);
+
+        _collect(a2);
+        uint256 weightBefore = pool.weightOf(ALICE);
+        uint256 tokens = claim.balanceOf(ALICE);
+        vm.prank(ALICE);
+        uint256 added = pool.redeem(tokens);
+        assertGt(added, 0);
+        assertEq(pool.weightOf(ALICE), weightBefore + added);
+        assertFalse(pool.votedAbandon(ALICE), "the vote was cast with the old weight");
+        assertEq(pool.abandonVotes(), bobWeight);
+
+        // She sells everything: no underflow, and Bob's vote is whole.
+        uint256 held = pool.balanceOf(ALICE);
+        vm.prank(ALICE);
+        pool.sell(held, 0, type(uint256).max);
+        assertEq(pool.abandonVotes(), bobWeight);
+        assertTrue(pool.votedAbandon(BOB));
+        assertEq(pool.weightOf(ALICE), 0);
+        _assertBooks(0);
+    }
+
+    /// @dev The case that used to lock a lone voter's units: vote, redeem the rest, sell it all.
+    function test_a_voter_who_redeems_the_rest_can_sell_everything_and_the_votes_return_to_zero() public {
+        (uint256 a1, uint256 a2,) = _round();
+        _collect(a1);
+        vm.startPrank(ALICE);
+        pool.redeem(claim.balanceOf(ALICE));
+        vm.warp(block.timestamp + 30 days);
+        pool.voteAbandon();
+        vm.stopPrank();
+        _collect(a2);
+        vm.startPrank(ALICE);
+        pool.redeem(claim.balanceOf(ALICE));
+        assertEq(pool.abandonVotes(), 0);
+        pool.sell(pool.balanceOf(ALICE), 0, type(uint256).max);
+        vm.stopPrank();
+        assertEq(pool.abandonVotes(), 0);
+        _assertBooks(0);
+    }
+}
+
 /// @dev After a round that went live: three round buyers holding claim tokens and two newcomers, through
 /// redeeming, trading, milestones, leaving and waiting, in random order.
 contract BackingRoundHandler is Test {
@@ -839,6 +926,7 @@ contract BackingRoundHandler is Test {
     address[5] public actors;
     uint256 public redeems;
     uint256 public leaves;
+    uint256 public votes;
 
     constructor(IBackingPool pool_, IClaim claim_, MockERC20 currency_, address[3] memory bidders) {
         pool = pool_;
@@ -903,6 +991,19 @@ contract BackingRoundHandler is Test {
         try pool.resolveMilestone() {} catch {}
     }
 
+    /// @dev A vote to declare the project abandoned, from whoever may cast one: redeeming, buying and selling
+    /// after it are what the invariants watch.
+    function voteAbandon(uint256 who) external {
+        address actor = actors[who % 5];
+        if (
+            pool.abandoned() || pool.weightOf(actor) == 0 || pool.votedAbandon(actor)
+                || block.timestamp < uint256(pool.lastBuyAt(actor)) + pool.voteSeasoning()
+        ) return;
+        vm.prank(actor);
+        pool.voteAbandon();
+        ++votes;
+    }
+
     function wait(uint256 time) external {
         vm.warp(block.timestamp + bound(time, 1 hours, 12 days));
     }
@@ -949,6 +1050,24 @@ contract BackingRoundInvariantTest is BackingRoundFixture {
         // Every claim token outside the pool has a unit waiting for it.
         assertLe(tokens, pool.unredeemedUnits());
         assertLe(claim.totalSupply() - claim.balanceOf(address(pool)), pool.unredeemedUnits() + 3);
+    }
+
+    /// @dev The votes to declare the project abandoned are exactly the weights of the wallets that vote, whatever
+    /// they did since: redeeming more, buying, selling, leaving.
+    function invariant_round_the_abandon_votes_are_the_weights_of_the_voters() public view {
+        uint256 voting;
+        for (uint256 i; i < 5; ++i) {
+            address actor = handler.actors(i);
+            if (pool.votedAbandon(actor)) voting += pool.weightOf(actor);
+        }
+        assertEq(pool.abandonVotes(), voting);
+        assertLe(pool.abandonVotes(), pool.totalWeight() - pool.unredeemedWeight());
+    }
+
+    /// @dev Not a property of the pool: the run above really casts votes (printed by `forge test -vv`).
+    function invariant_round_the_handler_reaches_the_vote_path() public {
+        emit log_named_uint("redeems", handler.redeems());
+        emit log_named_uint("votes", handler.votes());
     }
 
     /// @dev Everyone redeems what they hold and gets out, in either order, from any state.

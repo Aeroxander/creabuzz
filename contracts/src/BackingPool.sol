@@ -586,7 +586,8 @@ contract BackingPool {
 
     /// @notice Exchange `amount` of the round's claim tokens for the same number of units, with the
     /// matching part of the round's escrow weight. The claim tokens are burned. Works for as long as the
-    /// pool exists, abandoned or not.
+    /// pool exists, abandoned or not. Like a buy, it withdraws a standing vote to declare the project
+    /// abandoned.
     /// @param amount Claim tokens to exchange.
     /// @return weight The escrow weight that came with the units.
     function redeem(uint256 amount) external nonReentrant returns (uint256 weight) {
@@ -597,8 +598,16 @@ contract BackingPool {
         weight = amount == left ? unredeemedWeight : Math.mulDiv(unredeemedWeight, amount, left);
         unredeemedUnits = left - amount;
         unredeemedWeight -= weight;
+        // Weight acquired here is treated as a buy treats it: a standing vote is withdrawn (it was cast with
+        // the old weight and must not silently cover the new), so `abandonVotes` stays the sum of the weights
+        // of the wallets that vote.
+        uint256 weightBefore = weightOf[msg.sender];
+        if (votedAbandon[msg.sender]) {
+            votedAbandon[msg.sender] = false;
+            abandonVotes -= weightBefore;
+        }
         balanceOf[msg.sender] += amount;
-        weightOf[msg.sender] += weight;
+        weightOf[msg.sender] = weightBefore + weight;
         claimToken.burn(msg.sender, amount);
         emit Redeemed(msg.sender, amount, weight);
     }
@@ -807,7 +816,8 @@ contract BackingPool {
     // ---- abandonment ----------------------------------------------------------------------------------------------
 
     /// @notice Vote, with all of your weight, to declare the project abandoned. A wallet may vote only
-    /// `voteSeasoning` after its last buy; buying again withdraws the vote, selling shrinks it.
+    /// `voteSeasoning` after its last buy; buying again (or redeeming claim tokens) withdraws the vote,
+    /// selling shrinks it.
     function voteAbandon() external nonReentrant {
         if (abandoned()) revert IsAbandoned();
         uint256 weight = weightOf[msg.sender];
