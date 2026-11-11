@@ -8,12 +8,6 @@ import {BackingClaim} from "./BackingClaim.sol";
 
 /// @notice What a pool uses of its opening round's auction (Uniswap's Continuous Clearing Auction, unchanged).
 interface IRoundAuction {
-    struct LBPInitializationParams {
-        uint256 initialPriceX96;
-        uint256 tokensSold;
-        uint256 currencyRaised;
-    }
-
     function token() external view returns (address);
     function currency() external view returns (address);
     function fundsRecipient() external view returns (address);
@@ -23,7 +17,6 @@ interface IRoundAuction {
     function isGraduated() external view returns (bool);
     function currencyRaised() external view returns (uint256);
     function clearingPrice() external view returns (uint256);
-    function lbpInitializationParams() external view returns (LBPInitializationParams memory);
     function onTokensReceived() external;
     function checkpoint() external;
     function sweepCurrency() external;
@@ -531,7 +524,9 @@ contract BackingPool {
     /// @notice Settle the opening round once its auction is over; anyone may call, once. If the auction
     /// reached its minimum, collect what it raised, split it as a buy is split, and open the curve at the
     /// state one buy of the reserve part would have left. If it did not, close this pool for good (bidders
-    /// are refunded by the auction).
+    /// are refunded by the auction). The pool also closes, with nothing refundable, when the minimum was
+    /// reached but the auction's protocol fee left too little here to open a curve on (at most two base
+    /// units, which go to the treasury).
     /// @return live Whether the pool went live.
     function seedFromAuction() external nonReentrant returns (bool live) {
         if (roundState != RoundState.Waiting || auction == address(0)) revert RoundNotWaiting();
@@ -545,7 +540,10 @@ contract BackingPool {
             emit RoundFailed(address(a), a.currencyRaised(), minimumRaise);
             return false;
         }
-        uint256 finalPriceX96 = a.lbpInitializationParams().initialPriceX96;
+        // The final price is read plainly: the auction's `lbpInitializationParams` subtracts its protocol fee
+        // from the raise without clamping and reverts when a fee controller reports more than was raised, while
+        // `sweepCurrency` clamps. Seeding depends on the fee controller only through the sweep.
+        uint256 finalPriceX96 = a.clearingPrice();
 
         // Only what this call moves counts: money or claim tokens sent here by anyone are not the round's.
         uint256 heldQuote = quote.balanceOf(address(this));
@@ -558,9 +556,18 @@ contract BackingPool {
         uint256 fee = _bpsUp(received, feeBps);
         uint256 toProject = _bpsUp(received - fee, projectBps);
         uint256 toReserve = received - fee - toProject;
-        // A graduated round sold something for something; a raise so small that nothing reaches the reserve
-        // cannot open a curve, and the factory's least minimum rules it out.
-        if (sold == 0 || toReserve == 0 || toReserve > type(uint128).max) revert BadAuction();
+        // A round whose raise reached the minimum but left nothing for a curve to open on: the auction's
+        // protocol fee took the raise (the sweep clamps it to the raise, so `received` can be zero), which
+        // leaves at most two base units here. The pool closes for good, as a round under its minimum does, and
+        // the project may open another. Nothing is stranded: what the sweep delivered goes to the treasury.
+        // (Bidders were filled, so there is no refund to take; the money was the protocol's.)
+        if (sold == 0 || toReserve == 0) {
+            roundState = RoundState.Failed;
+            emit RoundFailed(address(a), a.currencyRaised(), minimumRaise);
+            if (received != 0) _payTreasury(received);
+            return false;
+        }
+        if (toReserve > type(uint128).max) revert BadAuction();
         // The paper reserve that puts (reserve, units sold) exactly on a curve from empty, rounded down so the
         // curve's product starts at or above its floor.
         uint256 paper = Math.mulDiv(toReserve, virtualUnits - sold, sold);

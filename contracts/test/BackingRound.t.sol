@@ -838,6 +838,115 @@ contract BackingRoundTest is BackingRoundFixture {
     }
 }
 
+/// @notice A protocol fee on the raise can take all of it, or leave too little to open a curve on: the round
+/// must still settle, and the pool must not wait for ever.
+contract BackingRoundFeeTest is BackingRoundFixture {
+    address internal constant ALICE = address(0xA11CE);
+    address internal constant FEE_RECIPIENT = address(0xFEE);
+
+    MockProtocolFeeController internal controller;
+
+    function _openWithFees() internal {
+        controller = new MockProtocolFeeController();
+        controller.setProtocolFeeRecipient(FEE_RECIPIENT);
+        _open(MINIMUM, address(controller));
+    }
+
+    /// @dev The review's proof: the controller reports more than the raise. The auction's sweep clamps the fee
+    /// to the raise; reading the final price through `lbpInitializationParams` (which does not clamp) used to
+    /// revert, so the pool waited for ever and the project could not open another.
+    function test_a_protocol_fee_above_the_raise_does_not_brick_the_settlement() public {
+        _openWithFees();
+        _bid(ALICE, 6_000e18);
+        controller.setProtocolFeeAmount(type(uint128).max);
+        vm.roll(END);
+        assertFalse(pool.seedFromAuction());
+        assertEq(pool.roundState(), 3, "closed for good, so the project may open another");
+        // The fee took what was raised (clamped to it), and nothing is stranded here.
+        assertApproxEqAbs(currency.balanceOf(FEE_RECIPIENT), 6_000e18, 1e9);
+        assertEq(currency.balanceOf(address(pool)), 0);
+        assertEq(pool.treasuryOwed(), 0);
+        assertEq(pool.totalSupply(), 0);
+        vm.expectRevert(IBackingPool.RoundNotWaiting.selector);
+        pool.seedFromAuction();
+        vm.prank(ALICE);
+        vm.expectRevert(IBackingPool.RoundNotLive.selector);
+        pool.buy(1e18, 0, type(uint256).max);
+        // The raise is on record as having reached its minimum: the app can tell this from a round that missed it.
+        IBackingPool.RoundView memory r = pool.roundInfo(address(0));
+        assertEq(r.state, 3);
+        assertGe(r.raised, r.minimumRaise);
+    }
+
+    /// @dev A fee that leaves a couple of base units: nothing to open a curve on, and whatever the sweep
+    /// delivered goes to the treasury instead of staying in the pool for good.
+    function test_a_fee_that_leaves_only_dust_closes_the_pool_and_sends_the_dust_to_the_treasury() public {
+        _openWithFees();
+        _bid(ALICE, 6_000e18);
+        vm.roll(END);
+        auction.checkpoint();
+        controller.setProtocolFeeAmount(auction.currencyRaised() - 2);
+        assertFalse(pool.seedFromAuction());
+        assertEq(pool.roundState(), 3);
+        assertEq(currency.balanceOf(treasury), 2, "what arrived went to the DAO treasury");
+        assertEq(currency.balanceOf(address(pool)), 0);
+        assertEq(pool.treasuryOwed(), 0);
+        assertEq(pool.reserve() + pool.escrow(), 0);
+    }
+
+    /// @dev A fee that leaves enough still opens the curve, from the raise net of the fee.
+    function test_a_fee_that_leaves_enough_still_opens_the_curve() public {
+        _openWithFees();
+        _bid(ALICE, 6_000e18);
+        vm.roll(END);
+        auction.checkpoint();
+        controller.setProtocolFeeAmount(auction.currencyRaised() - 10);
+        assertTrue(pool.seedFromAuction());
+        assertEq(pool.roundState(), 2);
+        assertEq(pool.roundInfo(address(0)).received, 10);
+        _assertBooks(0);
+    }
+
+    /// @dev Whatever the controller reports, from nothing to twice the raise: the round settles. It goes live on
+    /// exactly what the sweep delivered with its books exact, or it closes with nothing left in the pool; the raise
+    /// is always in the pool, with the fee recipient, or with the DAO treasury, and nowhere else.
+    function testFuzz_any_protocol_fee_settles_the_round(uint128 bid, uint256 feeAmount) public {
+        bid = uint128(bound(bid, 2_600e18, 30_000e18));
+        _openWithFees();
+        _bid(ALICE, bid);
+        vm.roll(END);
+        auction.checkpoint();
+        uint256 raised = auction.currencyRaised();
+        feeAmount = bound(feeAmount, 0, raised * 2);
+        controller.setProtocolFeeAmount(feeAmount);
+        uint256 taken = feeAmount > raised ? raised : feeAmount;
+        bool live = pool.seedFromAuction();
+        assertEq(currency.balanceOf(FEE_RECIPIENT), taken);
+        if (live) {
+            assertEq(pool.roundState(), 2);
+            assertEq(pool.roundInfo(address(0)).received, raised - taken);
+            _assertBooks(0);
+        } else {
+            assertEq(pool.roundState(), 3);
+            assertEq(currency.balanceOf(address(pool)), 0);
+            assertEq(currency.balanceOf(treasury), raised - taken);
+            assertLe(raised - taken, 2);
+        }
+    }
+
+    /// @dev The sweep needs the fee controller, and nothing else of the seeding does: the final price is the one
+    /// the auction publishes as its clearing price.
+    function test_the_final_price_is_the_auctions_clearing_price() public {
+        _openWithFees();
+        controller.setProtocolFeeAmount(100e18);
+        _bid(ALICE, 6_000e18);
+        vm.roll(END);
+        assertTrue(pool.seedFromAuction());
+        assertEq(pool.clearingPriceX96(), auction.clearingPrice());
+        assertEq(pool.roundInfo(address(0)).clearingPriceX96, auction.clearingPrice());
+    }
+}
+
 /// @dev A contract that takes claim tokens and, in one transaction, exchanges them and votes.
 contract RoundVoteSniper {
     function snipe(IBackingPool pool, IClaim claim) external {

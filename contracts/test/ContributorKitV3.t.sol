@@ -34,6 +34,12 @@ interface IRoundAuctionLike {
     function token() external view returns (address);
 }
 
+/// @dev The auction's mock fee controller, as far as these tests drive it.
+interface IFeeControllerLike {
+    function setProtocolFeeAmount(uint256 amount) external;
+    function setProtocolFeeRecipient(address recipient) external;
+}
+
 /// @dev Stands at Permit2's address for bids: the one call the auction makes to pull a bid.
 contract Permit2Stub {
     function transferFrom(address from, address to, uint160 amount, address token) external {
@@ -771,6 +777,32 @@ contract ContributorKitV3Test is Test {
         vm.prank(FOUNDER);
         vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(second)));
         poolFactory.open(address(dao));
+    }
+
+    /// @dev A protocol fee that takes the raise closes the pool the same way a missed minimum does, and the project
+    /// may open another: the factory counts a pool whose round failed as never opened.
+    function test_after_a_round_whose_raise_a_protocol_fee_took_the_project_may_open_again() public {
+        address controller = vm.deployCode("MockProtocolFeeController.sol:MockProtocolFeeController");
+        IFeeControllerLike(controller).setProtocolFeeRecipient(address(0xFEE));
+        BackingPoolFactory.RoundSettings memory r = rounds();
+        r.auctionFactory = vm.deployCode(
+            "ContinuousClearingAuctionFactory.sol:ContinuousClearingAuctionFactory", abi.encode(controller)
+        );
+        BackingPoolFactory feeFactory = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), r);
+        Moloch dao = _launchV2("fee round");
+        vm.prank(FOUNDER);
+        (BackingPool pool, address auction) = feeFactory.openWithRound(address(dao), 0);
+        _bid(auction, ALICE, 4_000e18);
+        IFeeControllerLike(controller).setProtocolFeeAmount(type(uint128).max);
+        vm.roll(IRoundAuctionLike(auction).endBlock());
+        assertFalse(pool.seedFromAuction());
+        assertEq(uint8(pool.roundState()), uint8(BackingPool.RoundState.Failed));
+        assertEq(quote.balanceOf(address(pool)), 0);
+
+        vm.prank(FOUNDER);
+        (BackingPool second,) = feeFactory.openWithRound(address(dao), 0);
+        assertTrue(address(second) != address(pool));
+        assertEq(feeFactory.poolOf(address(dao)), address(second));
     }
 
     /// @dev Opening with a round as its own transaction, and what a launch plus a round would cost in one.

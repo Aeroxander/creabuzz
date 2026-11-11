@@ -165,6 +165,11 @@ Not protected. Say these plainly in the app:
 - **If nobody settles a round that reached its minimum, nothing opens** and the raise waits in the auction.
   Anyone can settle it, at any time, and nobody else can take the money.
 - **A round on a chain where the auction charges a protocol fee** opens the pool with what is left after it.
+  If that fee takes the whole raise, or leaves two base units or fewer (nothing a curve can open on), the pool
+  closes for good like a round under its minimum, and the project may open another. Bidders were filled in
+  that case, so the auction refunds nothing: the money went to the protocol, and the couple of base units that
+  reached the pool go to the DAO treasury. The app can tell the two failures apart: a round that closed with
+  its raise at or above its minimum took this path.
 - **Earlier sellers get a better curve price than later ones**, as on any curve, including after abandonment.
 - **A rival with over half the weight, held for 30 days,** can end a pool that has released nothing for 90
   days. Backers get their money back (`test_A4_limit_*`).
