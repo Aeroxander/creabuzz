@@ -56,7 +56,7 @@ import { countOf } from "@/shared/lib/count-of";
 /** The contributor-only build's one way to start something: a contributor project. */
 function StartProjectButton({ variant }: { variant?: "outline" }) {
   return (
-    <Button asChild size="sm" variant={variant}>
+    <Button asChild className="max-sm:h-11" size="sm" variant={variant}>
       <Link data-testid="discover-start-project" to="/start/contributor">
         <Plus className="mr-1 h-4 w-4" aria-hidden /> Start a project
       </Link>
@@ -84,7 +84,7 @@ function EmptyState({
       <p className="text-sm text-black/60 dark:text-white/60">{message}</p>
       <div className="mt-3 flex justify-center">
         {children ?? (
-          <Button onClick={onPitch} size="sm">
+          <Button onClick={onPitch} className="max-sm:h-11" size="sm">
             <Plus className="mr-1 h-4 w-4" aria-hidden /> Pitch a project
           </Button>
         )}
@@ -179,17 +179,26 @@ export function DiscoverPage() {
         action={
           raises ? (
             <div className="flex flex-wrap items-center gap-2">
-              <Button asChild size="sm" variant="outline">
+              <Button
+                asChild
+                className="max-sm:h-11"
+                size="sm"
+                variant="outline"
+              >
                 <Link to="/launchpad" data-testid="discover-launches">
                   Launches
                 </Link>
               </Button>
-              <Button asChild size="sm" variant="ghost">
+              <Button asChild className="max-sm:h-11" size="sm" variant="ghost">
                 <Link data-testid="discover-board" to="/projects">
                   Project board
                 </Link>
               </Button>
-              <Button onClick={() => setPitchOpen(true)} size="sm">
+              <Button
+                className="max-sm:h-11"
+                onClick={() => setPitchOpen(true)}
+                size="sm"
+              >
                 <Plus className="mr-1 h-4 w-4" aria-hidden /> Pitch a project
               </Button>
             </div>
@@ -198,6 +207,7 @@ export function DiscoverPage() {
               <Button
                 data-testid="discover-share-idea-header"
                 onClick={() => setIdeaOpen(true)}
+                className="max-sm:h-11"
                 size="sm"
                 variant="outline"
               >
@@ -209,26 +219,26 @@ export function DiscoverPage() {
         }
         description={
           raises
-            ? "Everything on this server in one place: projects that already hold shared money, raises open now, and projects looking for people."
-            : "Projects on this server and the people they need."
+            ? "Who is posting every week, who keeps their promises, and who is looking for people. Raises open now and projects that hold shared money are below."
+            : "Who is posting every week, who keeps their promises, and who is looking for people."
         }
         title={
           <span className="flex items-center gap-2">
-            <Search aria-hidden className="h-5 w-5" /> Discover
+            <Search aria-hidden className="h-5 w-5" /> Projects
           </span>
         }
       />
 
       <div
         aria-label="Filter what is shown"
-        className="flex flex-wrap items-center gap-x-6 gap-y-2"
+        className="flex flex-wrap items-center gap-x-6 gap-y-2 max-sm:gap-x-4"
         role="tablist"
       >
         {discoverFilters(raises).map((entry) => (
           <button
             aria-selected={filter === entry.id}
             className={cn(
-              "border-b-[3px] px-1 pb-1.5 text-base font-semibold transition-colors",
+              "border-b-[3px] px-1 pb-1.5 text-base font-semibold transition-colors max-sm:min-h-11",
               filter === entry.id
                 ? "border-primary text-foreground"
                 : "border-transparent text-foreground/60 hover:text-foreground",
@@ -359,7 +369,7 @@ export function DiscoverPage() {
                       message="No projects listed right now. Start one and it shows up here."
                       testId="discover-launches-empty"
                     >
-                      <Button asChild size="sm">
+                      <Button asChild className="max-sm:h-11" size="sm">
                         <Link to="/start">
                           <Plus className="mr-1 h-4 w-4" aria-hidden /> Start a
                           project
@@ -426,7 +436,12 @@ export function DiscoverPage() {
                       testId="discover-daos-empty"
                     >
                       {raises ? (
-                        <Button asChild size="sm" variant="outline">
+                        <Button
+                          asChild
+                          className="max-sm:h-11"
+                          size="sm"
+                          variant="outline"
+                        >
                           <Link to="/launchpad">Open the launchpad</Link>
                         </Button>
                       ) : (

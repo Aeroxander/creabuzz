@@ -360,7 +360,9 @@ test("launchpad directory fits", async ({ page }) => {
 test("discover's actions all fit on a phone", async ({ page }) => {
   await mockRelay(page);
   await page.goto("/discover");
-  await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Projects" }),
+  ).toBeVisible();
   // The actions in the header wrap onto a second line; none is cut off at the edge.
   for (const name of ["Launches", "Project board", "Pitch a project"]) {
     const control = page

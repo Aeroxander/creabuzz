@@ -37,7 +37,7 @@ import { YourWork } from "./YourWork";
 const REQUESTS = 60;
 
 const ACTION_CLASS =
-  "inline-flex shrink-0 items-center rounded-full bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90";
+  "inline-flex shrink-0 items-center rounded-full bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 max-sm:min-h-11 max-sm:px-4";
 
 function WaitingOnYou() {
   const mine = useMyNeeds();
@@ -147,6 +147,7 @@ export function WorkPage() {
           {SIZE_FILTERS.map((filter) => (
             <Button
               aria-pressed={size === filter.id}
+              className="max-sm:h-11"
               data-testid={`work-size-${filter.id}`}
               key={filter.id}
               onClick={() => setSize(filter.id)}
@@ -219,7 +220,7 @@ export function WorkPage() {
                   <Card className="flex flex-col gap-2 p-4">
                     <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
                       <Link
-                        className="font-bold hover:underline"
+                        className="inline-flex items-center font-bold hover:underline max-sm:min-h-11"
                         params={{ launchId: project.id }}
                         search={{ author: project.author }}
                         to="/launchpad/$launchId"

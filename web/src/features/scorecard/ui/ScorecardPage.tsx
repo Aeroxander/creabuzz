@@ -10,7 +10,7 @@
  */
 
 import { Link, useParams } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 
 import { ProjectMark } from "@/features/feed/ui/MovingNow";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
@@ -52,16 +52,13 @@ const TONE: Partial<Record<PromiseState, ChipTone>> = {
 const PROMISES_SHOWN = 5;
 const TEAM_SHOWN = 8;
 
-const ACTION_CLASS =
-  "inline-flex items-center rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90";
-
 function Fact({
   label,
   value,
   testId,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   testId: string;
 }) {
   return (
@@ -144,6 +141,7 @@ function Scorecard({ launch }: { launch: Launch }) {
         <div className="flex flex-wrap items-start gap-2">
           <Button
             aria-pressed={followed}
+            className="max-sm:h-11"
             data-testid="scorecard-follow"
             disabled={
               existingUserPubkey() !== null &&
@@ -161,15 +159,16 @@ function Scorecard({ launch }: { launch: Launch }) {
           >
             {followed ? "Following" : "Follow"}
           </Button>
-          <Link
-            className={ACTION_CLASS}
-            data-testid="scorecard-help"
-            params={{ launchId: project.id }}
-            search={{ author: project.author, tab: "updates" }}
-            to="/launchpad/$launchId"
-          >
-            I can help
-          </Link>
+          <Button asChild className="max-sm:h-11">
+            <Link
+              data-testid="scorecard-help"
+              params={{ launchId: project.id }}
+              search={{ author: project.author, tab: "updates" }}
+              to="/launchpad/$launchId"
+            >
+              I can help
+            </Link>
+          </Button>
           <ShareRecordButton
             answered={answered}
             kept={totals?.kept ?? null}
@@ -224,12 +223,18 @@ function Scorecard({ launch }: { launch: Launch }) {
             }
           />
           <Fact
-            label="Missed · changed"
+            label="Not kept"
             testId="scorecard-missed"
             value={
-              totals === null
-                ? "Not known"
-                : `${totals.missed} · ${totals.changed}`
+              totals === null ? (
+                "Not known"
+              ) : (
+                <>
+                  <span className="block">{totals.missed} missed</span>
+                  <span className="hidden"> · </span>
+                  <span className="block">{totals.changed} changed</span>
+                </>
+              )
             }
           />
           <Fact
@@ -375,7 +380,7 @@ function Scorecard({ launch }: { launch: Launch }) {
           {team.slice(0, TEAM_SHOWN).map((pubkey) => (
             <li key={pubkey}>
               <Link
-                className="inline-flex rounded-full bg-foreground/[0.07] px-3 py-1 text-sm font-medium hover:bg-foreground/10"
+                className="inline-flex items-center rounded-full bg-foreground/[0.07] px-3 py-1 text-sm font-medium hover:bg-foreground/10 max-sm:min-h-11"
                 params={{ pubkey }}
                 to="/u/$pubkey"
               >

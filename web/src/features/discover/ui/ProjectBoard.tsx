@@ -66,7 +66,7 @@ export function ProjectBoard({ launches }: { launches: readonly Launch[] }) {
         {BOARD_TABS.map((entry) => (
           <button
             aria-selected={tab === entry.id}
-            className={`rounded-full px-3 py-1 text-sm font-semibold ${
+            className={`rounded-full px-3 py-1 text-sm font-semibold max-sm:min-h-11 ${
               tab === entry.id
                 ? "bg-primary text-primary-foreground"
                 : "bg-foreground/[0.07] text-foreground/80 hover:bg-foreground/10"

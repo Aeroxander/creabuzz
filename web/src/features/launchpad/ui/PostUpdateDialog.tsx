@@ -179,9 +179,9 @@ export function PostUpdateDialog({
                     <legend className="break-words text-sm">
                       {promise.text}
                     </legend>
-                    <div className="mt-1 flex flex-wrap gap-3">
+                    <div className="mt-1 grid grid-cols-2 gap-x-3 sm:flex sm:flex-wrap">
                       {/* The way back: a tapped answer can be taken off again before publishing. */}
-                      <label className="flex items-center gap-1.5 text-sm">
+                      <label className="flex items-center gap-1.5 text-sm max-sm:min-h-11">
                         <input
                           checked={!mark}
                           name={`promise-${promise.id}`}
@@ -198,7 +198,7 @@ export function PostUpdateDialog({
                       </label>
                       {MARK_STATES.map((state) => (
                         <label
-                          className="flex items-center gap-1.5 text-sm"
+                          className="flex items-center gap-1.5 text-sm max-sm:min-h-11"
                           key={state}
                         >
                           <input
@@ -289,6 +289,7 @@ export function PostUpdateDialog({
                         onClick={() =>
                           setRemoved((was) => new Set([...was, task.id]))
                         }
+                        className="max-sm:h-11"
                         size="sm"
                         type="button"
                         variant="ghost"
@@ -352,7 +353,7 @@ export function PostUpdateDialog({
         <div>
           {/* The label says what a press does next; it is not also a pressed state, which would say it twice. */}
           <Button
-            className="h-auto p-0"
+            className="h-auto p-0 max-sm:min-h-11"
             data-testid="update-write-freely"
             onClick={() => setFreely((was) => !was)}
             size="sm"
@@ -440,10 +441,16 @@ export function PostUpdateDialog({
               Add a title to publish.
             </p>
           ) : null}
-          <Button onClick={onClose} type="button" variant="outline">
+          <Button
+            className="max-sm:h-11"
+            onClick={onClose}
+            type="button"
+            variant="outline"
+          >
             Cancel
           </Button>
           <Button
+            className="max-sm:h-11"
             disabled={title.trim() === "" || isPublishing}
             onClick={publish}
             type="button"

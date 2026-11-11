@@ -38,12 +38,12 @@ function Welcome() {
         and shows whether it kept its word. Start yours, or lend a hand.
       </p>
       <div className="mt-5 flex flex-wrap gap-3">
-        <Button asChild size="lg">
+        <Button asChild className="max-sm:h-11" size="lg">
           <Link data-testid="home-welcome-start" to="/start">
             Start a project
           </Link>
         </Button>
-        <Button asChild size="lg" variant="outline">
+        <Button asChild className="max-sm:h-11" size="lg" variant="outline">
           <Link data-testid="home-welcome-work" to="/work">
             Find work
           </Link>

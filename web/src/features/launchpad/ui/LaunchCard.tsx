@@ -122,7 +122,7 @@ export function LaunchCard({
           aria-label={followed ? "Unfollow launch" : "Follow launch"}
           aria-pressed={followed}
           className={cn(
-            "absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-black/45 backdrop-blur transition hover:bg-black/60 disabled:opacity-50",
+            "absolute right-2 top-2 grid h-8 w-8 place-items-center max-sm:h-11 max-sm:w-11 rounded-full bg-black/45 backdrop-blur transition hover:bg-black/60 disabled:opacity-50",
             followed ? "text-amber-400" : "text-white",
           )}
           disabled={followDisabled}
@@ -145,7 +145,7 @@ export function LaunchCard({
       <div className="flex flex-1 flex-col px-3 pb-2 pt-8">
         <div className="flex items-start justify-between gap-2">
           <Link
-            className="min-w-0 text-xl font-extrabold leading-tight tracking-tight hover:underline"
+            className="min-w-0 text-xl font-extrabold leading-tight tracking-tight hover:underline max-sm:-my-2.5 max-sm:py-2.5"
             data-testid={titleTestId}
             params={{ launchId: record.id }}
             search={{ action: undefined, author: record.author }}

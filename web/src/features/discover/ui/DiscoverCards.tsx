@@ -151,7 +151,7 @@ function ContributorDaoCard({
           <ContributorDaoSource chainId={launch.chainId} dao={card.dao} />
         </div>
         <div className="flex gap-2">
-          <Button asChild size="sm" variant="outline">
+          <Button asChild className="max-sm:h-11" size="sm" variant="outline">
             <Link
               params={{ launchId: launch.id }}
               search={{ action: undefined, author: launch.author }}
@@ -256,7 +256,7 @@ export function DiscoverDaoCard({
         </div>
 
         <div className="flex gap-2">
-          <Button asChild size="sm" variant="outline">
+          <Button asChild className="max-sm:h-11" size="sm" variant="outline">
             <Link
               search={{ action: undefined, author: card.founder ?? undefined }}
               to="/projects/$projectId"
@@ -265,7 +265,7 @@ export function DiscoverDaoCard({
               View project
             </Link>
           </Button>
-          <Button asChild size="sm">
+          <Button asChild className="max-sm:h-11" size="sm">
             <Link
               search={{ action: "join", author: card.founder ?? undefined }}
               to="/projects/$projectId"
@@ -327,7 +327,7 @@ export function DiscoverLaunchCard({
                 directory lie by omission), but its CTA must not promise a bid
                 the auction will not take — Review-Proven Rule 6. */}
             {canBackLaunch(stage, raises) ? (
-              <Button asChild className="w-full" size="sm">
+              <Button asChild className="max-sm:h-11 w-full" size="sm">
                 <Link
                   params={{ launchId: launch.record.id }}
                   search={{ action: "bid", author: launch.record.author }}
@@ -338,7 +338,12 @@ export function DiscoverLaunchCard({
                 </Link>
               </Button>
             ) : (
-              <Button asChild className="w-full" size="sm" variant="outline">
+              <Button
+                asChild
+                className="max-sm:h-11 w-full"
+                size="sm"
+                variant="outline"
+              >
                 <Link
                   params={{ launchId: launch.record.id }}
                   search={{ action: undefined, author: launch.record.author }}
@@ -397,7 +402,7 @@ export function DiscoverProjectCard({
       titleTestId="discover-project-title"
     >
       {joinable ? (
-        <Button asChild size="sm">
+        <Button asChild className="max-sm:h-11" size="sm">
           <Link
             search={{ action: "join", author: card.founder }}
             to="/projects/$projectId"
@@ -407,7 +412,7 @@ export function DiscoverProjectCard({
           </Link>
         </Button>
       ) : (
-        <Button asChild size="sm" variant="outline">
+        <Button asChild className="max-sm:h-11" size="sm" variant="outline">
           <Link
             search={{ action: undefined, author: card.founder }}
             to="/projects/$projectId"

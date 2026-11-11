@@ -63,7 +63,7 @@ export function ProjectCardFrame({
       <Card className="flex h-full flex-col gap-3 p-4" data-testid={cardTestId}>
         <div className="flex items-start justify-between gap-2">
           <Link
-            className="min-w-0 flex-1 truncate text-base font-semibold hover:underline"
+            className="min-w-0 flex-1 truncate text-base font-semibold hover:underline max-sm:-my-2.5 max-sm:py-2.5"
             data-testid={titleTestId}
             search={{ action: undefined, author: card.founder }}
             to="/projects/$projectId"

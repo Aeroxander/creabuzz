@@ -329,7 +329,7 @@ function SocialNavLink({
       className={cn(
         "flex shrink-0 items-center gap-4 rounded-full text-base transition-colors hover:bg-black/5 dark:hover:bg-white/10",
         compact
-          ? "px-3 py-2"
+          ? "px-3 py-2 max-sm:min-h-11"
           : "h-11 w-11 justify-center xl:w-auto xl:justify-start xl:px-3",
         active
           ? "font-bold text-black dark:text-white"

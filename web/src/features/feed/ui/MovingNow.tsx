@@ -78,7 +78,7 @@ export function MovingNow() {
       <ul className="-mx-1 mt-2 flex snap-x gap-3 overflow-x-auto px-1 pb-2">
         {moving.map(({ launch, days, lastAt }) => (
           <li
-            className="w-56 shrink-0 snap-start"
+            className="w-72 shrink-0 snap-start"
             data-testid="moving-now-item"
             key={`${launch.record.author}:${launch.record.id}`}
           >

@@ -24,7 +24,7 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 
 const ACTION_CLASS =
-  "inline-flex shrink-0 items-center rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground hover:bg-primary/90";
+  "inline-flex shrink-0 items-center rounded-full bg-primary px-3 py-1 text-sm font-semibold text-primary-foreground hover:bg-primary/90 max-sm:min-h-11 max-sm:px-4";
 
 function storage(): Storage | null {
   try {

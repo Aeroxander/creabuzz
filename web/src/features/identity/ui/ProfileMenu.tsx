@@ -312,7 +312,7 @@ export function ProfileMenu({
         onClick={() => setShowOnboarding("signin")}
         className={
           placement === "tabbar"
-            ? "flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-2xs font-semibold text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
+            ? "flex min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-2xs font-semibold text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
             : "inline-flex h-10 items-center rounded-lg px-3 text-sm font-semibold text-foreground/80 transition hover:bg-foreground/[0.06] hover:text-foreground"
         }
         data-testid="sign-in-cta"

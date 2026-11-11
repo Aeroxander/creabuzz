@@ -430,7 +430,7 @@ function RecordCard({
       data-kind={item.kind}
       data-testid="record-card"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-start justify-between gap-2">
         <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <ProjectMark
             className="h-7 w-7 text-xs"
@@ -438,7 +438,7 @@ function RecordCard({
             name={record.name}
           />
           <Link
-            className="font-bold underline-offset-2 hover:underline"
+            className="inline-flex items-center font-bold underline-offset-2 hover:underline max-sm:min-h-11"
             data-testid="record-card-project"
             params={{ launchId: record.id }}
             search={{ author: record.author }}
@@ -465,6 +465,7 @@ function RecordCard({
                 : `Follow ${record.name}`
             }
             aria-pressed={followed}
+            className="shrink-0 max-sm:h-11"
             data-testid="record-card-follow"
             disabled={followDisabled}
             onClick={onFollow}
@@ -532,7 +533,7 @@ function RecordCard({
           <div className="mt-2 flex flex-wrap items-center gap-3">
             {progressArtifacts(item.update.body).map((url, index) => (
               <a
-                className="max-w-full truncate underline"
+                className="inline-flex max-w-full items-center truncate underline max-sm:min-h-11"
                 href={url}
                 key={url}
                 rel="noreferrer"
@@ -542,7 +543,7 @@ function RecordCard({
               </a>
             ))}
             <Link
-              className="underline"
+              className="inline-flex items-center underline max-sm:min-h-11"
               params={{ launchId: record.id }}
               search={{ author: record.author, tab: "discussion" }}
               to="/launchpad/$launchId"
@@ -551,6 +552,7 @@ function RecordCard({
             </Link>
             <Button
               aria-label="Copy update link"
+              className="max-sm:h-11 max-sm:w-11"
               onClick={async () => {
                 const url = new URL(
                   `/launchpad/${encodeURIComponent(record.id)}`,
@@ -589,6 +591,7 @@ function RecordCard({
                 : `Cheer this. ${cheerCountWords(cheer.count)}`
             }
             aria-pressed={cheer.mine}
+            className="max-sm:h-11"
             data-testid="record-card-cheer"
             disabled={cheer.mine || cheer.busy}
             onClick={cheer.onCheer}

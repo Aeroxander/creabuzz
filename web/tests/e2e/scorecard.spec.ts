@@ -124,7 +124,9 @@ test("signed out, a project's scorecard shows its record and no price; Follow as
     { timeout: 30_000 },
   );
   await expect(card.getByTestId("scorecard-kept")).toHaveText("1 of 3");
-  await expect(card.getByTestId("scorecard-missed")).toHaveText("1 · 1");
+  await expect(card.getByTestId("scorecard-missed")).toHaveText(
+    "1 missed · 1 changed",
+  );
   await expect(card.getByTestId("scorecard-open-help")).toHaveText(
     "1 open request",
   );
