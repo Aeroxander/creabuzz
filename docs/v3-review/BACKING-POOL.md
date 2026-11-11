@@ -1,7 +1,7 @@
 # Backing pool: instant backing, tied to the record
 
 **Status (2026-11-11, branch `v4-governance-rework`): built and tested, deployed nowhere.** Contracts:
-`contracts/src/BackingPool.sol`, `BackingPoolFactory.sol`, `ContributorKitV3.sol`. One internal adversarial
+`contracts/src/BackingPool.sol`, `BackingPoolFactory.sol`, `BackingClaim.sol`, `ContributorKitV3.sol`. One internal adversarial
 review (2026-11-11) found three medium flaws; all are fixed here and its proofs are now regression tests. No
 outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
 for counsel at the end are open.
@@ -19,6 +19,25 @@ Every buy is split three ways:
   receives it a quarter at a time, at milestones.
 - **The remainder (89.1% of what you paid) is the reserve.** It only ever pays people who sell.
 
+## Two ways to open
+
+- **Open with a fair round** (the default for new projects). For about a week (50,000 blocks) people bid in
+  an auction, the same Uniswap auction (Continuous Clearing Auction) our raise path already uses, unchanged.
+  The auction finds the price as bids come in, so nobody wins by being first. The founder chooses at most
+  the minimum to raise (default 2,500: the whole round at the opening price).
+  - **Minimum not reached:** every bidder takes all of their money back from the auction itself. The pool
+    never opens, and the project may open another.
+  - **Minimum reached:** anyone settles the round. The money raised is split exactly as a buy is (1% fee,
+    10% of the rest held as project money, the rest to the reserve) and the curve goes live. Bidders collect
+    claim tokens from the auction and exchange them here for units, one for one. Their held project money
+    is shared by units.
+  - **The curve opens at the average price the round paid, not at the auction's last price.** In this
+    auction bidders pay different prices over the week, and the last price is the highest. A curve opened
+    at the last price could owe sellers more than the round raised, so it opens at the price the money
+    actually raised supports. A late bidder can therefore see the curve start below what they paid. The app
+    shows both numbers (`clearingPriceX96` and `openingPrice`).
+- **Open now.** The curve is live in the same transaction, starting at 0.000025, with the early cap.
+
 ## For a backer
 
 - **Buy:** you pay, you get units. You set the fewest units you will accept and a deadline, so a price that
@@ -30,6 +49,8 @@ Every buy is split three ways:
   milestone you have 7 days. If you stay, a quarter of your held money goes to the project. If you leave,
   all your units are sold at the ordinary 1% fee and you get all of your held money, with nothing taken
   for that milestone. Nobody can stop a release, and nobody is made to fund a milestone they reject.
+- **Bought in the round?** Exchange your claim tokens for units first; until you do, your part counts as
+  staying.
 - **You can only leave if you held before the milestone was posted** and have not bought since. Money you
   put in after a post is not touched by that milestone.
 - **If the project is abandoned** (see below) you sell as usual, with no fee, and each sale also returns
@@ -38,16 +59,19 @@ Every buy is split three ways:
 
 ## For a founder
 
-- **Open it:** a new project gets its pool in the transaction that creates it
-  (`ContributorKitV3.launchWithPool`, same inputs as today's launch). An existing project made with
-  `ContributorKitV2` opens one with a single call from the founder (`BackingPoolFactory.open(dao)`), no vote.
-  A project from the older kit has no founder on record, so its pool takes one passed decision.
+- **Open with a round:** create the project, then one call, `BackingPoolFactory.openWithRound(dao, minimum)`
+  (zero for the default minimum). It is a second transaction because the two together do not fit in one
+  (18.5 million gas against a cap of 16.8 million on some chains).
+- **Open now:** a new project gets its pool in the transaction that creates it
+  (`ContributorKitV3.launchWithPool`, same inputs as today's launch), or an existing project made with
+  `ContributorKitV2` opens one with a single call from the founder (`BackingPoolFactory.open(dao)`). No vote
+  either way. A project from the older kit has no founder on record, so its pool takes one passed decision.
 - **You choose nothing.** Every term is fixed in the factory.
 - **Getting the money:** fees arrive as people trade. For the rest, post "milestone reached" with the id of
   the public record event. That fixes the tranche: a quarter of what is held at that moment. Seven days
   later anyone can release it to the project treasury, less the part of those who left. Release it within
   the next seven days; after that the milestone can only be cancelled and you post again. The first post is
-  possible 28 days after opening, then one every 28 days.
+  possible 28 days after opening (after the round is settled, if there was one), then one every 28 days.
 - **You stay the one who can post for the life of the pool** (the DAO can too). Posting is your only power:
   fees and released money go to the DAO treasury and nowhere else, and spending them is the DAO's decision.
 - **Your own Shares** stay locked on their sale schedule exactly as today. The pool mints no Shares.
@@ -76,7 +100,11 @@ never abandoned; the clock starts again with the next backer.
 | Abandoned by the clock | 180 days with no release | Six missed months is a dead project. |
 | Abandoned by vote | more than half the weight, after 90 days with no release | Backers can end it sooner than the clock, but not a project that is releasing. |
 | Wait before voting | 30 days after a wallet's last buy | A majority cannot be bought and used the same day. |
-| Early cap | 1,000 quote per wallet for the first 24 hours | Blunts a sniper taking the opening price in one transaction. |
+| Early cap | 1,000 quote per wallet for the first 24 hours | Blunts a sniper taking the opening price in one transaction. Only matters for "open now": a round lasts longer than the cap. |
+| Round: length | 50,000 blocks (about a week at 12 s) | Long enough to be seen. The number must divide 10,000,000: the auction sells an equal part every block. |
+| Round: supply | 100,000,000 claim tokens | A tenth of the curve's paper units, so most of the curve is left for after. |
+| Round: floor price | 0.000025 (the "open now" starting price) | A round never sells below what opening now would have charged. |
+| Round: minimum raise | 2,500 (the supply at the floor); the founder may set another | Under it, everyone is refunded and nothing opens. |
 
 "Weight" is a backer's part of the held project money. A new backer's weight is worth exactly what they
 just added.
@@ -99,7 +127,10 @@ what it owes the treasury, to the unit, and every holder can leave or sell every
 
 ## What is protected, and what is not
 
-Protected, each with a test that runs the attack (`contracts/test/BackingPoolAdversary.t.sol`):
+Protected, each with a test that runs the attack (`contracts/test/BackingPoolAdversary.t.sol`; the round's
+are in `BackingRound.t.sol`, against the real auction: settling gives the same result whoever does it and
+whatever was done first, only the pool can collect the raise, stray transfers change nothing, claim tokens
+cannot be exchanged twice):
 
 1. **Sandwiching a trade** loses money unless the victim's own trade moves the price by about 13%
    (`test_A1_*`, `testFuzz_A1_*`). A price limit stops that case too.
@@ -128,6 +159,11 @@ Not protected. Say these plainly in the app:
 - **An ordinary sale gives up your held money** to those who stay (`test_limit_those_who_stay_gain_*`), and
   gives it up by units sold, not by what they cost (`test_limit_a_sale_gives_up_weight_by_units_*`). To get
   it back, leave at a milestone or wait for abandonment.
+- **After a round the curve opens at the round's average price**, which can be below what the last
+  bidders paid (see "Two ways to open").
+- **If nobody settles a round that reached its minimum, nothing opens** and the raise waits in the auction.
+  Anyone can settle it, at any time, and nobody else can take the money.
+- **A round on a chain where the auction charges a protocol fee** opens the pool with what is left after it.
 - **Earlier sellers get a better curve price than later ones**, as on any curve, including after abandonment.
 - **A rival with over half the weight, held for 30 days,** can end a pool that has released nothing for 90
   days. Backers get their money back (`test_A4_limit_*`).
@@ -139,7 +175,11 @@ Not protected. Say these plainly in the app:
 
 ## Known limits
 
-- One pool per project per factory, with that factory's terms and quote token.
+- One pool per project per factory, with that factory's terms and quote token (a pool whose round failed
+  does not count).
+- Claim tokens from a round are ordinary transferable tokens until exchanged; units are not transferable.
+  Units for claim tokens nobody collects or exchanges stay set aside for good.
+- The round's length is counted in blocks, so its length in days depends on the chain.
 - No owner and no upgrade: a defect cannot be patched, only replaced by a new deployment.
 - The quote token must move exactly what is asked. A token that takes a cut is refused at the first buy;
   rebasing tokens are not supported. If the token refuses to pay the treasury, the money waits in the pool
@@ -152,25 +192,31 @@ Not protected. Say these plainly in the app:
 - `ContributorKitV3` repeats the `ContributorKitV2` launch code, because V2 is deployed and was left
   unchanged. A test launches through both and compares the result.
 - Gas for a whole transaction, measured in the test VM on a real project with every call run as its own
-  transaction (`forge test --match-test test_gas_ --isolate -vv`):
+  transaction (`forge test --match-path "test/{BackingRound*,ContributorKitV3*}" --match-test test_gas_ --isolate -vv`):
 
 | Step | Gas |
 |---|---|
-| Create project with pool (`launchWithPool`), 1 first project / 8 | 13,509,000 / 14,266,000 (the per-transaction cap some chains enforce is 16,777,216; the V2 launch alone is 10,754,000) |
-| Open a pool for an existing project (`open`) | 2,758,000 |
-| Buy (first time for a wallet / again) | 159,000 / 105,000 (282,000 for the pool's very first buy) |
-| Sell | 89,000 |
-| Claim milestone (`postMilestone`) | 180,000 |
-| Leave at a milestone | 140,000 |
-| Release (`resolveMilestone`, pays the treasury) | 121,000 |
-| Refund (sell once abandoned) | 68,000 (116,000 for the first one, which records the abandonment) |
+| Create project with pool, open now (`launchWithPool`), 1 first project / 8 | 14,702,000 / 15,458,000 (the per-transaction cap some chains enforce is 16,777,216, so about 8% to spare; the V2 launch alone is 10,754,000) |
+| Open a pool for an existing project, open now (`open`) | 3,951,000 |
+| Open a pool behind a round (`openWithRound`: pool, claim token, auction) | 7,788,000 |
+| Bid in a round (the auction's own call) | 396,000 |
+| Settle a round (`seedFromAuction`) | 605,000 |
+| Exchange claim tokens for units (`redeem`) | 93,000 |
+| Buy (first time for a wallet / again) | 164,000 / 110,000 (286,000 for the pool's very first buy) |
+| Sell | 92,000 |
+| Claim milestone (`postMilestone`) | 183,000 |
+| Leave at a milestone | 143,000 |
+| Release (`resolveMilestone`, pays the treasury) | 122,000 |
+| Refund (sell once abandoned) | 70,000 (118,000 for the first one, which records the abandonment) |
 
 ## Deploying (Sepolia)
 
 `contracts/script/DeployBackingSepolia.s.sol` deploys a market factory, the pool factory and `ContributorKitV3`
-beside the weekly-sale set, reusing its summoner and its free-mint test token, and writes
+beside the weekly-sale set, reusing its summoner and its free-mint test token, and the auction factory that
+is already on Sepolia (the one in `dao-launch-kit-11155111.json`). It writes
 `contracts/deployments/backing-sepolia-11155111.json`. It was rehearsed on a local node only
-(`script/BackingLocalFixture.s.sol` then the deploy script), never on a public network.
+(`script/BackingLocalFixture.s.sol`, which also opens a pool behind a round on a real auction factory, then
+the deploy script), never on a public network.
 
 ## Questions for counsel
 

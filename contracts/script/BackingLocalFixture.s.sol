@@ -30,12 +30,17 @@ import {BackingTerms} from "./BackingTerms.sol";
 ///
 /// Run (chain id 31337 only, never a public network):
 ///   forge script script/BackingLocalFixture.s.sol --rpc-url http://127.0.0.1:<port> --broadcast
-/// Env: PRIVATE_KEY (a throwaway local key with ETH on that node).
+/// Env: PRIVATE_KEY (a throwaway local key with ETH on that node), BACKING_AUCTION_FACTORY (the auction factory
+/// deployed on that node, see `run`).
 contract BackingLocalFixture is Script {
     function run() external {
         require(block.chainid == 31337, "BackingLocalFixture: a local node only (chain id 31337)");
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address me = vm.addr(pk);
+        // The real auction factory, deployed on this node beforehand (it pins another compiler, so a script cannot
+        // create it): `forge create lib/continuous-clearing-auction/src/ContinuousClearingAuctionFactory.sol:ContinuousClearingAuctionFactory --constructor-args 0x0000000000000000000000000000000000000000`.
+        address auctionFactory = vm.envAddress("BACKING_AUCTION_FACTORY");
+        require(auctionFactory.code.length != 0, "BackingLocalFixture: no auction factory at BACKING_AUCTION_FACTORY");
 
         vm.startBroadcast(pk);
         TreasuryMandateFactory mandateFactory = new TreasuryMandateFactory();
@@ -45,10 +50,6 @@ contract BackingLocalFixture is Script {
         ContributorKitV2 kitV2 = new ContributorKitV2(summoner, marketFactoryV2);
         TestQuoteToken quote = new TestQuoteToken();
 
-        // The real auction factory, from its compiled artifact (it pins another compiler), with no protocol fee.
-        address auctionFactory = vm.deployCode(
-            "ContinuousClearingAuctionFactory.sol:ContinuousClearingAuctionFactory", abi.encode(address(0))
-        );
         BackingPool.Params memory terms = BackingTerms.defaults(quote.decimals());
         address predicted = vm.computeCreateAddress(me, vm.getNonce(me) + 2);
         SecondaryMarketFactory marketFactory = new SecondaryMarketFactory(summoner, predicted);
