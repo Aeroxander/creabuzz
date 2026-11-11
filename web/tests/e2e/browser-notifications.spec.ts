@@ -127,6 +127,12 @@ test("nothing asks on arrival; after following a project the offer's button asks
   await follow.click();
   const offer = page.getByTestId("notify-offer");
   await expect(offer).toBeVisible();
+  // It sits at the bottom of the window, clear of the header and the bell it came from (the header's blur
+  // would otherwise box it into the header's own rect, over the navigation).
+  const box = await offer.boundingBox();
+  const header = await page.getByTestId("app-nav").boundingBox();
+  expect(box && header && box.y >= header.y + header.height).toBe(true);
+  expect(box && box.y + box.height <= 800).toBe(true);
   expect(await asked(page)).toBe(0);
   await expectAccessible(page, "the offer to turn notifications on");
   await offer.getByTestId("notify-offer-on").click();

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { APP_NAME } from "@/shared/constants/brand";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
+import { Portal } from "@/shared/ui/portal";
 
 import {
   MEANINGFUL_EVENT,
@@ -135,64 +136,72 @@ function NotifyOffer({ me }: { me: string }) {
     window.addEventListener(MEANINGFUL_EVENT, offer);
     return () => window.removeEventListener(MEANINGFUL_EVENT, offer);
   }, []);
+  // At the document root: the bell sits in the header, whose blur would box a fixed child into the header itself.
   if (blocked)
     return (
-      <div
-        className="glass fixed inset-x-3 bottom-20 z-40 mx-auto flex max-w-md flex-wrap items-center gap-2 rounded-2xl border p-3 text-sm shadow-lg md:bottom-4"
-        data-testid="notify-offer-blocked"
-        role="status"
-      >
-        <p className="min-w-0 flex-1">
-          Your browser didn't allow notifications. You can turn them on later on
-          the Notifications page.
-        </p>
-        <Button
-          onClick={() => setBlocked(false)}
-          size="sm"
-          type="button"
-          variant="outline"
+      <Portal>
+        <div
+          className="glass fixed inset-x-3 bottom-24 z-40 mx-auto flex max-w-md flex-wrap items-center gap-2 rounded-2xl border p-3 text-sm shadow-lg md:bottom-4"
+          data-testid="notify-offer-blocked"
+          role="status"
         >
-          OK
-        </Button>
-      </div>
+          <p className="min-w-0 flex-1">
+            Your browser didn't allow notifications. You can turn them on later
+            on the Notifications page.
+          </p>
+          <Button
+            className="max-sm:h-11"
+            onClick={() => setBlocked(false)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            OK
+          </Button>
+        </div>
+      </Portal>
     );
   if (!open || !offerNotifications({ pref, permission })) return null;
   return (
-    <section
-      aria-label="Turn on notifications"
-      className="glass fixed inset-x-3 bottom-20 z-40 mx-auto flex max-w-md flex-wrap items-center gap-2 rounded-2xl border p-3 text-sm shadow-lg md:bottom-4"
-      data-testid="notify-offer"
-    >
-      <p className="min-w-0 flex-1">
-        Want a heads-up when there's news for you? It works while a tab of the
-        app is open.
-      </p>
-      <Button
-        data-testid="notify-offer-on"
-        onClick={() =>
-          void turnOn().then((result) => {
+    <Portal>
+      <section
+        aria-label="Turn on notifications"
+        className="glass fixed inset-x-3 bottom-24 z-40 mx-auto flex max-w-md flex-wrap items-center gap-2 rounded-2xl border p-3 text-sm shadow-lg md:bottom-4"
+        data-testid="notify-offer"
+      >
+        <p className="min-w-0 flex-1">
+          Want a heads-up when there's news for you? It works while a tab of the
+          app is open.
+        </p>
+        <Button
+          className="max-sm:h-11"
+          data-testid="notify-offer-on"
+          onClick={() =>
+            void turnOn().then((result) => {
+              setOpen(false);
+              if (result !== "granted") setBlocked(true);
+            })
+          }
+          size="sm"
+          type="button"
+        >
+          Turn on
+        </Button>
+        <Button
+          className="max-sm:h-11"
+          data-testid="notify-offer-no"
+          onClick={() => {
+            choose("off");
             setOpen(false);
-            if (result !== "granted") setBlocked(true);
-          })
-        }
-        size="sm"
-        type="button"
-      >
-        Turn on
-      </Button>
-      <Button
-        data-testid="notify-offer-no"
-        onClick={() => {
-          choose("off");
-          setOpen(false);
-        }}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        No thanks
-      </Button>
-    </section>
+          }}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          No thanks
+        </Button>
+      </section>
+    </Portal>
   );
 }
 
