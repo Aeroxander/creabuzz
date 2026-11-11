@@ -31,6 +31,7 @@ import {
   SIZE_FILTERS,
   type SizeFilter,
 } from "../lib/open-work";
+import { YourWork } from "./YourWork";
 
 /** How many requests the page checks and lists: the newest, one per project. */
 const REQUESTS = 60;
@@ -131,6 +132,7 @@ export function WorkPage() {
         }
       />
       {me ? <WaitingOnYou /> : null}
+      {me ? <YourWork me={me} /> : null}
       <section
         aria-labelledby="work-open-heading"
         className="flex flex-col gap-3"

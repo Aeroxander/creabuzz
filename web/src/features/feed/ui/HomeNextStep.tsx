@@ -72,6 +72,15 @@ export function HomeNextStep({ me }: { me: string }) {
         >
           {words.text}
         </p>
+        {mine.needs.length > 1 ? (
+          <Link
+            className="whitespace-nowrap text-sm underline"
+            data-testid="home-next-step-more"
+            to="/work"
+          >
+            {mine.needs.length - 1} more waiting
+          </Link>
+        ) : null}
         <NeedLink
           className={ACTION_CLASS}
           need={first.need}
@@ -98,8 +107,12 @@ export function HomeNextStep({ me }: { me: string }) {
       <>
         <p className="min-w-0 flex-1 text-sm" data-testid="home-next-step-text">
           You have no project yet. Start one with four answers, or{" "}
-          <Link className="underline" to="/discover">
-            find one to help
+          <Link
+            className="underline"
+            data-testid="home-next-step-work"
+            to="/work"
+          >
+            find work on one
           </Link>
           .
         </p>

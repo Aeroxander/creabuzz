@@ -592,6 +592,9 @@ export interface TrackRecord {
   othersCut: boolean;
   /** Project names, by coordinate, for the projects that were read. */
   projects: Record<string, { id: string; author: string; name: string }>;
+  /** The task records the helper's side was worked out from, and each project's team now ("Your work" lists them). */
+  taskRecords: TaskRecord[];
+  teams: Record<string, string[]>;
 }
 
 /**
@@ -674,10 +677,11 @@ export function useTrackRecord(person: string, enabled = true) {
       );
       const some = (r: RemovedRecords) =>
         r.count + r.unnamed > 0 || !r.complete;
+      const taskRecords = taskRecordsOf(tasks.events);
       return {
         helper: helperRecord({
           person,
-          records: taskRecordsOf(tasks.events),
+          records: taskRecords,
           teams,
           now: Math.floor(Date.now() / 1000),
           mayHaveRemoved:
@@ -691,6 +695,10 @@ export function useTrackRecord(person: string, enabled = true) {
         founderComplete: own.complete,
         othersCut: tasks.othersCut,
         projects,
+        taskRecords,
+        teams: Object.fromEntries(
+          [...teams].map(([coordinate, team]) => [coordinate, [...team]]),
+        ),
       };
     },
   });

@@ -152,6 +152,39 @@ test("signed in, everything waiting on you comes first, each with its one action
   const first = waiting.getByTestId("work-waiting-item").first();
   await expect(first).toContainText("Work is waiting for your check in Nebula");
   await expect(first.getByRole("link")).toHaveText("Check the work");
+  // Your work: the task I said yes to, with its dated steps. The one that only names me is not my work yet.
+  const yours = page.getByTestId("work-yours");
+  const items = yours.getByTestId("work-yours-item");
+  await expect(items).toHaveCount(1, { timeout: 30_000 });
+  await expect(items).toContainText("Write the readme.");
+  await expect(items).toContainText("Orbit");
+  await expect(items.getByTestId("work-yours-state")).toHaveText("In progress");
+  await expect(yours).not.toContainText("Draw the logo.");
+  const steps = items.getByTestId("work-yours-steps").locator("li");
+  await expect
+    .poll(() =>
+      steps.evaluateAll((list) =>
+        list.map(
+          (li) =>
+            `${li.getAttribute("data-step")}:${li.getAttribute("data-done")}`,
+        ),
+      ),
+    )
+    .toEqual([
+      "offered:true",
+      "accepted:true",
+      "handed-in:false",
+      "checked:false",
+    ]);
+  const dayOf = (ago: number) =>
+    new Date((now() - ago * DAY) * 1000).toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+    });
+  await expect(steps.nth(0)).toContainText(dayOf(5));
+  await expect(steps.nth(1)).toContainText(dayOf(4));
+  await expect(steps.nth(2)).toContainText("Not yet");
+  await expectAccessible(page, "the Work page, signed in");
   // Their own project's request is in the open list too.
   await expect(page.getByTestId("work-open")).toContainText(
     "Someone to test on an older phone.",

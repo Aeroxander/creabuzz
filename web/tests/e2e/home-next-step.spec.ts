@@ -31,8 +31,15 @@ test("Home shows the most pressing need as one line with one action, and it can 
   await expect(line.getByTestId("home-next-step-text")).toHaveText(
     "Work is waiting for your check in Nebula: Record sign-up.",
   );
-  // One line, one action.
-  await expect(line.getByRole("link")).toHaveCount(1);
+  // One line, one action; the rest is one tap away on the Work page.
+  await expect(line.getByRole("link")).toHaveCount(2);
+  await expect(line.getByTestId("home-next-step-more")).toHaveText(
+    "5 more waiting",
+  );
+  await expect(line.getByTestId("home-next-step-more")).toHaveAttribute(
+    "href",
+    "/work",
+  );
   await expect(line.getByTestId("home-next-step-action")).toHaveText(
     "Check the work",
   );
@@ -141,8 +148,8 @@ test("someone with no project yet is offered to start one or help one; a visitor
     "Start a project",
   );
   await expect(
-    line.getByRole("link", { name: "find one to help" }),
-  ).toHaveAttribute("href", "/discover");
+    line.getByRole("link", { name: "find work on one" }),
+  ).toHaveAttribute("href", "/work");
 
   await openAs(page, null, "/");
   await expect(page.getByTestId("home-top")).toBeVisible();
