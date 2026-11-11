@@ -1093,7 +1093,9 @@ test("7. a project's records are still read when more than 500 newer records of 
   const noise = (writer: number) =>
     Array.from({ length: 155 }, (_, i) => ({
       kind: 47003,
-      content: JSON.stringify({ title: `Noise ${writer}.${i}`, body: "…" }),
+      // Evidence for on-chain work is the one plain record the server still takes from anyone; a plain update
+      // from outside the team is refused (flow 6), so it cannot be the noise here.
+      content: JSON.stringify({ claim: { title: `Noise ${writer}.${i}` } }),
       tags: [["a", otherCoord]],
     }));
   for (const writer of [0, 1, 2, 3]) {
