@@ -35,7 +35,7 @@ function storage(): Storage | null {
 }
 
 /** Whether the reader has moved down Home: its timeline scrolls inside the social shell, not the window. */
-function readerScrolled(): boolean {
+export function readerScrolled(): boolean {
   const shell = document.querySelector('[data-testid="social-shell"]');
   return (shell?.scrollTop ?? 0) + window.scrollY > 8;
 }

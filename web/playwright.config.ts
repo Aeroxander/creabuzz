@@ -150,6 +150,8 @@ export default defineConfig({
         "**/weekly-rhythm.spec.ts",
         // A project's public scorecard at its own short address.
         "**/scorecard.spec.ts",
+        // The newcomer's welcome on Home: three ways in, once.
+        "**/newcomer-welcome.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

@@ -17,6 +17,7 @@ import {
 import { HomeHero } from "@/features/feed/ui/HomeHero";
 import { MovingNow } from "@/features/feed/ui/MovingNow";
 import { HomeNextStep } from "@/features/feed/ui/HomeNextStep";
+import { NewcomerWelcome } from "@/features/feed/ui/NewcomerWelcome";
 import { HomeYours } from "@/features/feed/ui/HomeYours";
 import { RecordFeed } from "@/features/feed/ui/RecordFeed";
 import { KIND_CONTACT_LIST, KIND_TEXT_NOTE } from "@/shared/constants/kinds";
@@ -169,7 +170,11 @@ export function SocialHomePage() {
       </PageBar>
       <div {...tabPanelProps("home-tabs", tab)}>
         <div className="flex flex-col gap-3 px-3 pt-3" data-testid="home-top">
-          {me ? <HomeNextStep me={me} /> : null}
+          {me ? (
+            <NewcomerWelcome me={me}>
+              <HomeNextStep me={me} />
+            </NewcomerWelcome>
+          ) : null}
           {me ? <HomeYours me={me} /> : null}
           <HomeHero />
           {tab === "updates" ? <MovingNow /> : null}

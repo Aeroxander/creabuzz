@@ -140,6 +140,9 @@ test("someone with no project yet is offered to start one or help one; a visitor
   await install(page, relay, NEW_KEY);
   await page.goto("/");
   const line = page.getByTestId("home-next-step");
+  // A newcomer gets the welcome first; once it is put away, the usual line is there.
+  await expect(line).toHaveCount(0);
+  await page.getByTestId("welcome-dismiss").click();
   await expect(line).toHaveAttribute("data-kind", "start");
   await expect(line.getByTestId("home-next-step-text")).toContainText(
     "You have no project yet.",
