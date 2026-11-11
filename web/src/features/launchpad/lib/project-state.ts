@@ -21,7 +21,12 @@ import {
   type TaskRecord,
   type TaskView,
 } from "./tasks.ts";
-import { daysSince, founderNudge, type HelpAsk } from "./weekly-update.ts";
+import {
+  daysSince,
+  founderNudge,
+  type HelpAsk,
+  weeksInARow,
+} from "./weekly-update.ts";
 
 /** A task is "due soon" from this many days before its date. */
 const DUE_SOON_DAYS = 3;
@@ -69,6 +74,11 @@ export interface ProjectState {
   lastUpdateAt: number | null;
   /** The newest update read is the newest there is (or there is none). */
   updatesKnown: boolean;
+  /**
+   * Weeks in a row with a weekly update from the team, dated no later than now; null when not all of the team's
+   * updates were read.
+   */
+  streak: number | null;
   /** The founder's promises, totalled; null when not all of the founder's updates were read. */
   promises: PromiseTotals | null;
   /** How many requests for help are open; null when that is not known. */
@@ -150,6 +160,12 @@ export function projectState(input: ProjectStateInput): ProjectState {
     coordinate,
     lastUpdateAt,
     updatesKnown,
+    streak: complete.team
+      ? weeksInARow(
+          teamUpdates.filter((u) => u.weekly).map((u) => u.createdAt),
+          now,
+        )
+      : null,
     promises,
     openHelp: complete.team ? open.length : null,
     tasks,

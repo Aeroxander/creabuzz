@@ -146,6 +146,8 @@ export default defineConfig({
         "**/agent-account.spec.ts",
         // Projects as a scoreboard: streaks, kept promises, open requests; nothing a founder can inflate by re-saving.
         "**/project-board.spec.ts",
+        // The weekly rhythm: due and late words, the pre-filled update dialog, the note after posting, sharing.
+        "**/weekly-rhythm.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

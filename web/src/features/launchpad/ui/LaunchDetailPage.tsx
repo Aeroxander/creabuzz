@@ -16,6 +16,7 @@ import { LaunchChatCard } from "./LaunchChatCard";
 import { AGENT_NEEDS_PERSON, useViewerIsAgent } from "../use-account-agent";
 import { ListingNote } from "./ListingNote";
 import { PostUpdateDialog } from "./PostUpdateDialog";
+import { UpdatePosted } from "./UpdatePosted";
 import { ProjectTeamCard, TeamPostUpdate } from "./ProjectTeamCard";
 import { LaunchHero } from "./LaunchHero";
 import { LaunchChoice } from "./LaunchChoice";
@@ -163,6 +164,7 @@ export function LaunchDetailPage({
   );
   const [bidOpen, setBidOpen] = useState(false);
   const [updateOpen, setUpdateOpenRaw] = useState(false);
+  const [updatePosted, setUpdatePosted] = useState(false);
   const [updateFailed, setUpdateFailed] = useState(false);
   /** The server's reason for refusing the update, in plain words, when it gave one. */
   const [updateWhy, setUpdateWhy] = useState<string | null>(null);
@@ -327,8 +329,8 @@ export function LaunchDetailPage({
         extraTags: tags,
         content,
       });
-      toast.success("Update published.");
       setUpdateOpen(false);
+      setUpdatePosted(true);
       // The card at the top reads this project's updates on its own: read them again so it shows the new one.
       void queryClient.invalidateQueries({ queryKey: helpQueryKey });
     } catch (error) {
@@ -545,6 +547,12 @@ export function LaunchDetailPage({
         </>
       )}
 
+      {updatePosted ? (
+        <UpdatePosted
+          onClose={() => setUpdatePosted(false)}
+          project={launch.record}
+        />
+      ) : null}
       {/* The project's news, above the tabs; the Updates tab is the full list, so it is not repeated there. */}
       {!sandbox && shown !== "updates" ? (
         <ProjectUpdateCard

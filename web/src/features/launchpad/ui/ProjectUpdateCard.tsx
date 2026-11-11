@@ -23,6 +23,7 @@ import { Chip } from "@/shared/ui/chip";
 
 import {
   founderNudge,
+  updateDueWords,
   freshnessLine,
   inARowLine,
   nudgeDismissed,
@@ -152,6 +153,10 @@ export function ProjectUpdateCard({
       )
     : null;
   const nudge = founderNudge(latest?.at ?? null, now);
+  // For everyone: when the next weekly update is due, or how late it is.
+  const dueWords = facts.freshness
+    ? updateDueWords(latest?.at ?? null, now)
+    : null;
   const showNudge =
     facts.freshness &&
     isFounder &&
@@ -184,6 +189,14 @@ export function ProjectUpdateCard({
         {inARow ? (
           <Chip data-testid="updates-in-a-row" tone="success">
             {inARow}
+          </Chip>
+        ) : null}
+        {dueWords && !(isFounder && !nudge.due) ? (
+          <Chip
+            data-testid="update-due-words"
+            tone={dueWords.late ? "warning" : "neutral"}
+          >
+            {dueWords.text}
           </Chip>
         ) : null}
         {facts.freshness && isFounder && !nudge.due ? (

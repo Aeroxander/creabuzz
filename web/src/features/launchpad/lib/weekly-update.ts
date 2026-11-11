@@ -279,6 +279,81 @@ export function founderNudge(
   return { due: false, text: `Next update due in ${days(left)}.` };
 }
 
+/**
+ * When the next weekly update is due, for everyone to read: "Update due in 2 days", "Update due today",
+ * "Update late by 3 days". Null when the project never posted (there is no week to be late in yet).
+ */
+export function updateDueWords(
+  lastAt: number | null,
+  now: number,
+): { late: boolean; text: string } | null {
+  if (lastAt === null) return null;
+  const n = daysSince(lastAt, now);
+  if (n < UPDATE_EVERY_DAYS)
+    return {
+      late: false,
+      text: `Update due in ${days(UPDATE_EVERY_DAYS - n)}`,
+    };
+  if (n === UPDATE_EVERY_DAYS) return { late: false, text: "Update due today" };
+  return { late: true, text: `Update late by ${days(n - UPDATE_EVERY_DAYS)}` };
+}
+
+/** "Posted this week" for one, "4 weeks in a row" from two, null with none. */
+export function streakLine(weeks: number): string | null {
+  if (weeks <= 0) return null;
+  return weeks === 1 ? "1 week so far" : `${weeks} weeks in a row`;
+}
+
+/**
+ * The lines the update dialog starts "What we did" with: the work accepted since the last update, one per line,
+ * without the ones the founder took off. The founder's own words follow.
+ */
+export function doneWithAccepted(
+  done: string,
+  accepted: readonly { id: string; what: string }[],
+  removed: ReadonlySet<string>,
+): string {
+  const lines = accepted
+    .filter((task) => !removed.has(task.id))
+    .map((task) => `Work accepted: ${task.what.replace(/\s+/g, " ").trim()}`);
+  return [...lines, ...(done.trim() ? [done.trim()] : [])]
+    .join("\n")
+    .slice(0, UPDATE_LIMITS.part);
+}
+
+/** How many pieces of accepted work the dialog offers as lines. */
+const ACCEPTED_OFFERED = 5;
+
+/**
+ * The work accepted since the last update (or ever, with none), newest first, for the dialog to offer as lines. A
+ * confirmation dated ahead of now counts as now, so it cannot stay "new" for ever.
+ */
+export function acceptedSince<
+  T extends {
+    id: string;
+    what: string;
+    accepted: { confirmedAt: number } | null;
+  },
+>(tasks: readonly T[], lastAt: number | null, now: number): T[] {
+  const at = (task: T) => Math.min(task.accepted?.confirmedAt ?? 0, now);
+  return tasks
+    .filter((task) => task.accepted && (lastAt === null || at(task) > lastAt))
+    .sort((a, b) => at(b) - at(a) || (a.id < b.id ? -1 : 1))
+    .slice(0, ACCEPTED_OFFERED);
+}
+
+/** How many new promises the dialog takes from "What's next": a week holds about three. */
+const NEW_PROMISES = 3;
+
+/** The first {@link NEW_PROMISES} lines of "What's next" that say something, and whether more were typed. */
+export function firstPromises(next: string): { text: string; dropped: number } {
+  const lines = next.split("\n").filter((line) => line.trim() !== "");
+  return {
+    text: lines.slice(0, NEW_PROMISES).join("\n"),
+    dropped: Math.max(0, lines.length - NEW_PROMISES),
+  };
+}
+
 /** The week a moment falls in: weeks start on Monday, in UTC, so everyone counts the same weeks. */
 function weekOf(at: number): number {
   // 1 January 1970 was a Thursday: three days on, the count turns over on Mondays.

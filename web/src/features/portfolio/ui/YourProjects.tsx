@@ -25,7 +25,11 @@ import {
   TASK_STATE_LABEL,
   type TaskView,
 } from "@/features/launchpad/lib/tasks";
-import { freshnessLine } from "@/features/launchpad/lib/weekly-update";
+import {
+  freshnessLine,
+  streakLine,
+  updateDueWords,
+} from "@/features/launchpad/lib/weekly-update";
 import {
   launchCoordinate,
   type LaunchRecord,
@@ -87,6 +91,13 @@ function ProjectCard({
   const state = read.data;
   const now = Math.floor(Date.now() / 1000);
   const coordinate = launchCoordinate(record.author, record.id);
+  const due = state?.updatesKnown
+    ? updateDueWords(state.lastUpdateAt, now)
+    : null;
+  const streak =
+    state?.streak != null && state.streak >= 2
+      ? streakLine(state.streak)
+      : null;
   const needs: Need[] = orderNeeds([
     ...(state ? stateNeeds(state) : []),
     ...(me ? taskNeeds(tasks, me, now) : []),
@@ -128,11 +139,27 @@ function ProjectCard({
       ) : (
         <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
           <dt className="text-muted-foreground">Last update</dt>
-          <dd data-testid="your-project-update">
-            {state.updatesKnown
-              ? freshnessLine(state.lastUpdateAt, now)
-              : "Not known: its updates could not all be read"}
+          <dd>
+            <span data-testid="your-project-update">
+              {state.updatesKnown
+                ? freshnessLine(state.lastUpdateAt, now)
+                : "Not known: its updates could not all be read"}
+            </span>
+            {due ? (
+              <span
+                className={`ml-2 text-xs font-semibold ${due.late ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}
+                data-testid="your-project-due"
+              >
+                {due.text}
+              </span>
+            ) : null}
           </dd>
+          {streak ? (
+            <>
+              <dt className="text-muted-foreground">Run</dt>
+              <dd data-testid="your-project-streak">{streak}</dd>
+            </>
+          ) : null}
           <dt className="text-muted-foreground">Promises</dt>
           <dd data-testid="your-project-promises">
             {state.promises

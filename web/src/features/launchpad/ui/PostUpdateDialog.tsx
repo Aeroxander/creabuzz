@@ -3,6 +3,8 @@ import { useId, useState } from "react";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import {
+  doneWithAccepted,
+  firstPromises,
   HELP_SIZE_LABEL,
   HELP_SIZES,
   type HelpSize,
@@ -33,6 +35,8 @@ const AREA_CLASS =
  * publishing): a promise left without an answer shows as not answered, and is asked about again. Once published an
  * answer stays, and the dialog says so.
  */
+const NONE_ACCEPTED: readonly { id: string; what: string }[] = [];
+
 export function PostUpdateDialog({
   isPublishing,
   failed,
@@ -43,7 +47,10 @@ export function PostUpdateDialog({
   onRetryDue,
   asFounder = true,
   agent = false,
+  accepted = NONE_ACCEPTED,
 }: {
+  /** Work accepted since the last update: offered as lines of "What happened", each one removable. */
+  accepted?: readonly { id: string; what: string }[];
   /** The account posting is an agent: promises need a person, whoever's project it is. */
   agent?: boolean;
   /**
@@ -76,6 +83,10 @@ export function PostUpdateDialog({
   const [marks, setMarks] = useState<
     Record<string, { state: MarkState; note: string }>
   >({});
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
+  const offered = accepted.filter((task) => !removed.has(task.id));
+  // A founder's lines become promises: a week holds about three, and only those are sent.
+  const promised = asFounder ? firstPromises(next) : { text: next, dropped: 0 };
   const headingId = useId();
   const asksHelp = help.trim() !== "";
 
@@ -83,8 +94,8 @@ export function PostUpdateDialog({
     void onPublish({
       title: title.trim(),
       // Only the boxes on screen are sent: words left in the hidden ones are not published behind the founder's back.
-      done: freely ? "" : done,
-      next: freely ? "" : next,
+      done: freely ? "" : doneWithAccepted(done, accepted, removed),
+      next: freely ? "" : promised.text,
       body: freely ? body : "",
       help,
       helpSize,
@@ -247,6 +258,48 @@ export function PostUpdateDialog({
           </div>
         ) : (
           <>
+            {offered.length > 0 ? (
+              <section
+                aria-labelledby="update-accepted-heading"
+                className="rounded-xl border border-border p-3"
+                data-testid="update-accepted"
+              >
+                <h3
+                  className="text-sm font-medium"
+                  id="update-accepted-heading"
+                >
+                  Work accepted since your last update
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  These go in as the first lines of what happened. Take off any
+                  you'd rather not mention.
+                </p>
+                <ul className="mt-2 flex flex-col gap-1">
+                  {offered.map((task) => (
+                    <li
+                      className="flex items-start gap-2 text-sm"
+                      data-testid="update-accepted-item"
+                      key={task.id}
+                    >
+                      <span className="min-w-0 flex-1 break-words">
+                        {task.what}
+                      </span>
+                      <Button
+                        aria-label={`Leave out: ${task.what}`}
+                        onClick={() =>
+                          setRemoved((was) => new Set([...was, task.id]))
+                        }
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        Leave out
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
             <div>
               <label className="text-sm font-medium" htmlFor="update-done">
                 {PART_HEADINGS.done}
@@ -270,7 +323,7 @@ export function PostUpdateDialog({
                 id="update-next-hint"
               >
                 {asFounder
-                  ? "One per line. Each line is a promise your next update answers."
+                  ? "Up to three, one per line. Each line is a promise your next update answers."
                   : "One per line. These are plans, not promises on the record: only the founder's updates make promises."}
               </p>
               <textarea
@@ -283,6 +336,16 @@ export function PostUpdateDialog({
                 rows={3}
                 value={next}
               />
+              {promised.dropped > 0 ? (
+                <p
+                  className="mt-1 text-xs"
+                  data-testid="update-next-too-many"
+                  role="status"
+                >
+                  Only the first three lines become promises. Keep the week
+                  small enough to keep.
+                </p>
+              ) : null}
             </div>
           </>
         )}

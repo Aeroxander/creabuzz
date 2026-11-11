@@ -9,7 +9,9 @@ import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 
 import type { LaunchTab, TabUse } from "../lib/launch-tabs";
 import { duePromises } from "../lib/promises";
-import type { UpdateDraft } from "../lib/weekly-update";
+import { teamOf } from "../lib/help-request";
+import { acceptedSince, type UpdateDraft } from "../lib/weekly-update";
+import { useProjectTasks } from "../use-tasks";
 import type { Launch } from "../models";
 import { useProjectUpdates } from "../use-help-requests";
 import { useProjectRecord } from "../use-project-record";
@@ -79,8 +81,25 @@ export function UpdateDialogWithPromises({
     () => (record ? duePromises(record.promises) : readFailed ? null : []),
     [record, readFailed],
   );
+  // Work accepted since the team's last weekly update: offered as lines, once both reads have answered in full.
+  const updates = useProjectUpdates(project);
+  const work = useProjectTasks(project);
+  const accepted = useMemo(() => {
+    if (!updates.data?.complete || !work.tasks || !work.complete) return [];
+    const now = Math.floor(Date.now() / 1000);
+    const team = teamOf(project);
+    const times = updates.data.updates
+      .filter((u) => team.has(u.author) && u.weekly && u.createdAt <= now)
+      .map((u) => u.createdAt);
+    return acceptedSince(
+      work.tasks,
+      times.length > 0 ? Math.max(...times) : null,
+      now,
+    ).map((task) => ({ id: task.id, what: task.what }));
+  }, [updates.data, work.tasks, work.complete, project]);
   return (
     <PostUpdateDialog
+      accepted={accepted}
       due={due}
       failed={failed}
       failedWhy={failedWhy}

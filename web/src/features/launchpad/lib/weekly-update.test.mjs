@@ -284,3 +284,78 @@ test("what a cut read cannot settle is not said", () => {
     inARow: false,
   });
 });
+
+test("when the next update is due is said in days, and how late once a week has passed", async () => {
+  const { updateDueWords } = await import("./weekly-update.ts");
+  const D = 86_400;
+  const T = 1_800_000_000;
+  assert.equal(updateDueWords(null, T), null);
+  assert.deepEqual(updateDueWords(T - 5 * D, T), {
+    late: false,
+    text: "Update due in 2 days",
+  });
+  assert.deepEqual(updateDueWords(T - 6 * D, T), {
+    late: false,
+    text: "Update due in 1 day",
+  });
+  assert.deepEqual(updateDueWords(T - 7 * D, T), {
+    late: false,
+    text: "Update due today",
+  });
+  assert.deepEqual(updateDueWords(T - 10 * D, T), {
+    late: true,
+    text: "Update late by 3 days",
+  });
+  // A last update dated ahead of now is "today", never a negative count.
+  assert.equal(updateDueWords(T + 9 * D, T)?.text, "Update due in 7 days");
+});
+
+test("accepted work is offered as the first lines of what happened, without the ones taken off", async () => {
+  const { acceptedSince, doneWithAccepted } = await import(
+    "./weekly-update.ts"
+  );
+  const T = 1_800_000_000;
+  const task = (id, at) => ({
+    id,
+    what: `Task  ${id}`,
+    accepted: at === null ? null : { confirmedAt: at },
+  });
+  const tasks = [
+    task("a", T - 100),
+    task("b", T - 5000),
+    task("c", null),
+    task("d", T + 999_999),
+  ];
+  // Since the last update at T-1000: a, and d (dated ahead, counted as now). b is older; c was never accepted.
+  assert.deepEqual(
+    acceptedSince(tasks, T - 1000, T).map((t) => t.id),
+    ["d", "a"],
+  );
+  // The same record dated ahead is not "new" again once an update was posted at now.
+  assert.deepEqual(
+    acceptedSince(tasks, T, T).map((t) => t.id),
+    [],
+  );
+  assert.deepEqual(
+    acceptedSince(tasks, null, T).map((t) => t.id),
+    ["d", "a", "b"],
+  );
+  const offered = [
+    { id: "a", what: "Fix  sign-up" },
+    { id: "b", what: "Write docs" },
+  ];
+  assert.equal(
+    doneWithAccepted("We shipped.", offered, new Set(["b"])),
+    "Work accepted: Fix sign-up\nWe shipped.",
+  );
+  assert.equal(doneWithAccepted("", offered, new Set(["a", "b"])), "");
+});
+
+test("only the first three lines of what's next become promises", async () => {
+  const { firstPromises } = await import("./weekly-update.ts");
+  assert.deepEqual(firstPromises("one\n\n two \nthree\nfour\nfive"), {
+    text: "one\n two \nthree",
+    dropped: 2,
+  });
+  assert.deepEqual(firstPromises("one"), { text: "one", dropped: 0 });
+});
