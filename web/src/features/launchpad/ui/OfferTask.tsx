@@ -129,6 +129,8 @@ export function OfferTask({
             done: draft.done,
             size: draft.size,
             due: draft.due,
+            goalId: draft.goalId,
+            limits: draft.limits,
             updateId,
             offerId: offer.id,
           },

@@ -14,6 +14,7 @@
  * everyone else). The record itself is public; the form that makes a task says so.
  */
 
+import { AGENT_NEEDS_PERSON, useViewerIsAgent } from "../use-account-agent";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
@@ -174,6 +175,9 @@ export function TaskRow({
   /** The team's side of a task is someone on the team who is not doing it. */
   const checks = onTeam && !isHelper;
   const rule = confirmRule(task, team, viewer);
+  // An agent account on the team may send work back or cancel, never confirm or give more time: the server takes
+  // those from a person only, so the buttons are not offered and the page says why.
+  const agentViewer = useViewerIsAgent();
   const open = (next: Box, opener: string) => {
     for (const action of Object.values(actions)) action.reset();
     setReturnTo(null);
@@ -274,6 +278,12 @@ export function TaskRow({
         <span className="font-semibold">Done means:</span>{" "}
         <span className="whitespace-pre-wrap">{task.done}</span>
       </p>
+      {task.limits ? (
+        <p className="mt-1 break-words text-sm" data-testid="task-limits">
+          <span className="font-semibold">Limits:</span>{" "}
+          <span className="whitespace-pre-wrap">{task.limits}</span>
+        </p>
+      ) : null}
       <p
         className="mt-1 break-words text-xs text-muted-foreground"
         data-testid="task-who"
@@ -374,6 +384,13 @@ export function TaskRow({
           {ask.granted ? (
             <span className="block text-xs text-muted-foreground">
               {names(ask.granted.by)} gave until {dateWords(ask.granted.due)}.
+            </span>
+          ) : checks && canWork && agentViewer ? (
+            <span
+              className="block text-xs text-muted-foreground"
+              data-testid="task-agent-no-grant"
+            >
+              {AGENT_NEEDS_PERSON}
             </span>
           ) : checks && canWork ? (
             typeof box === "object" &&
@@ -733,8 +750,17 @@ export function TaskRow({
                 const known = task.evidence.map((p) => p.id);
                 return (
                   <li className="flex flex-wrap gap-2" key={piece.id}>
+                    {agentViewer ? (
+                      <span
+                        className="w-full text-xs text-muted-foreground"
+                        data-testid="task-agent-no-confirm"
+                      >
+                        {AGENT_NEEDS_PERSON}
+                      </span>
+                    ) : null}
                     <Button
                       aria-label={`Confirm it's done${pieceName(piece)}`}
+                      className={agentViewer ? "hidden" : undefined}
                       data-task-focus={`confirm-${piece.id}`}
                       onClick={() =>
                         open(

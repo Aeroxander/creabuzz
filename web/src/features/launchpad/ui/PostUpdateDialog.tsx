@@ -42,7 +42,10 @@ export function PostUpdateDialog({
   due,
   onRetryDue,
   asFounder = true,
+  agent = false,
 }: {
+  /** The account posting is an agent: promises need a person, whoever's project it is. */
+  agent?: boolean;
   /**
    * False for a team member who is not the founder: the update makes no promises and answers none (those are the
    * founder's alone), and the dialog says so.
@@ -122,9 +125,9 @@ export function PostUpdateDialog({
         </div>
         {!asFounder ? (
           <p className="text-sm" data-testid="update-as-team" role="status">
-            You are posting as a member of this project's team. Your update
-            shows with the project's news under your name. It makes no promises
-            and answers none: those are the founder's.
+            {agent
+              ? "This account is an agent. Its update shows with the project's news under its name. It makes no promises and answers none: those need a person."
+              : "You are posting as a member of this project's team. Your update shows with the project's news under your name. It makes no promises and answers none: those are the founder's."}
           </p>
         ) : due === null ? (
           <p className="text-sm" data-testid="update-due-unknown" role="status">

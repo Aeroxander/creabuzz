@@ -60,6 +60,10 @@ const TAG_SIZE = "task-size";
 const TAG_DUE = "task-due";
 const TAG_UPDATE = "task-update";
 const TAG_OFFER = "task-offer";
+/** The goal of the project the task sits under (a goal id), and what the helper must stay within: both optional. */
+const TAG_GOAL = "task-goal";
+const TAG_LIMITS = "task-limits";
+const GOAL_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const TAG_EVIDENCE = "task-evidence";
 const TAG_LINK = "task-link";
 const TAG_FILE = "task-file";
@@ -82,6 +86,7 @@ export const TASK_LIMITS = {
   what: 500,
   done: 500,
   note: 1000,
+  limits: 500,
   links: 5,
   files: 5,
   link: 500,
@@ -131,6 +136,10 @@ export interface TaskRecord {
   due: string | null;
   updateId: string | null;
   offerId: string | null;
+  /** The goal the task sits under (a goal id of the project), when it names one. */
+  goalId: string | null;
+  /** What the helper must stay within, in the team's words, when the task says. */
+  limits: string;
   /** The evidence a send-back or a confirmation answers. */
   evidenceId: string | null;
   /** The ask for more time a grant answers. */
@@ -209,6 +218,8 @@ export function parseTaskRecord(event: EventLike): TaskRecord | null {
     due: validDate(first(event.tags, TAG_DUE)),
     updateId: null,
     offerId: null,
+    goalId: null,
+    limits: "",
     evidenceId: null,
     askId: null,
     links: [],
@@ -233,6 +244,10 @@ export function parseTaskRecord(event: EventLike): TaskRecord | null {
       size,
       updateId: update && ID_RE.test(update) ? update : null,
       offerId: offer && ID_RE.test(offer) ? offer : null,
+      goalId: goalIdOf(first(event.tags, TAG_GOAL)),
+      limits: (first(event.tags, TAG_LIMITS) ?? "")
+        .trim()
+        .slice(0, TASK_LIMITS.limits),
     };
   }
   const taskId = first(event.tags, TAG_TASK);
@@ -299,14 +314,20 @@ export function taskEvent(input: {
   due?: string | null;
   updateId?: string | null;
   offerId?: string | null;
+  /** The goal of the project this task is for (its id), when the team names one. */
+  goalId?: string | null;
+  /** What the helper must stay within, when the team says. */
+  limits?: string | null;
 }): TaskEvent {
   const what = clip(input.what, TASK_LIMITS.what);
   const done = clip(input.done, TASK_LIMITS.done);
   const due = validDate(input.due);
+  const goalId = goalIdOf(input.goalId);
+  const limits = clip(input.limits ?? "", TASK_LIMITS.limits);
   return {
     content: {
       title: "Task",
-      body: `${what}\n\nDone means: ${done}${due ? `\n\nDue ${due}` : ""}`,
+      body: `${what}\n\nDone means: ${done}${limits ? `\n\nLimits: ${limits}` : ""}${due ? `\n\nDue ${due}` : ""}`,
     },
     tags: [
       ["l", TASK_LABEL],
@@ -319,8 +340,15 @@ export function taskEvent(input: {
       ...(due ? [[TAG_DUE, due]] : []),
       ...(input.updateId ? [[TAG_UPDATE, input.updateId]] : []),
       ...(input.offerId ? [[TAG_OFFER, input.offerId]] : []),
+      ...(goalId ? [[TAG_GOAL, goalId]] : []),
+      ...(limits ? [[TAG_LIMITS, limits]] : []),
     ],
   };
+}
+
+/** A goal id as goals carry it, or null for anything else. */
+function goalIdOf(value: string | null | undefined): string | null {
+  return typeof value === "string" && GOAL_ID_RE.test(value) ? value : null;
 }
 
 const TITLES: Record<Exclude<TaskPart, "task">, string> = {
@@ -459,6 +487,9 @@ export interface TaskView {
   updateId: string | null;
   /** The offer the task says it came from. It links the two on the page; it is never the helper's agreement. */
   offerId: string | null;
+  /** The goal the task sits under, and what the helper must stay within, when the task says. */
+  goalId: string | null;
+  limits: string;
   state: TaskState;
   /** Open, past its date, and the helper's move. */
   late: boolean;
@@ -718,6 +749,8 @@ export function projectTasks(input: {
       due,
       updateId: task.updateId,
       offerId: task.offerId,
+      goalId: task.goalId,
+      limits: task.limits,
       state,
       late:
         (state === "in-progress" || state === "sent-back") &&

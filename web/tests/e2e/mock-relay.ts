@@ -138,6 +138,37 @@ export function matches(filter: Filter, event: StoredEvent): boolean {
 const tagOf = (event: StoredEvent, name: string): string | undefined =>
   event.tags.find((tag) => tag[0] === name)?.[1];
 
+/** The bodies people outside a team write about work that lives on the chain (`OPEN_WORK_KEYS` on the server). */
+const OPEN_WORK_KEYS = [
+  "claim",
+  "review",
+  "agreement",
+  "agreementCorrections",
+  "workArea",
+  "challenge",
+];
+
+const AGENT_LIMIT =
+  "restricted: an agent account cannot check work, grant more time, or sign goals and promises; a person on the team must";
+
+/**
+ * Whether the server has `pubkey` on record as an agent: its newest profile (kind 0) carries `["agent", <its own
+ * key>]` and an `auth` tag naming whoever runs it. The real server also checks that person's signature when the
+ * profile is written; a seeded profile here stands for one that passed.
+ */
+export function isAgentAccount(
+  pubkey: string,
+  events: readonly StoredEvent[],
+): boolean {
+  const profile = events
+    .filter((e) => e.kind === 0 && e.pubkey === pubkey)
+    .sort((x, y) => y.created_at - x.created_at)[0];
+  return Boolean(
+    profile?.tags.some((t) => t[0] === "agent" && t[1] === pubkey) &&
+      profile.tags.some((t) => t[0] === "auth" && t.length >= 4),
+  );
+}
+
 /**
  * Who may sign a project's update records, as the real server checks it when a record is written
  * (`buzz-relay/src/handlers/launch_update_authority.rs`), with the server's own wording. The founder is the author of
@@ -158,9 +189,29 @@ export function projectRecordRefusal(
     "help-found",
   ].some(has);
   const part = tagOf(event, "task-part");
-  if (!founderOnly && !teamOnly && !has("help-offer") && !part) return null;
   const coordinate = tagOf(event, "a") ?? "";
   const [kind, founder, ...rest] = coordinate.split(":");
+  // A record of none of those families is the team's too (a plain update, a team answer, a check note, a tag the
+  // server has never heard of), unless its body is one of the records people outside the team write about work that
+  // lives on the chain. A record that names no project at all is not looked at.
+  const plain = !founderOnly && !teamOnly && !has("help-offer") && !part;
+  if (plain) {
+    if (kind !== "37001") return null;
+    let body: unknown = null;
+    try {
+      body = JSON.parse(event.content);
+    } catch {
+      body = null;
+    }
+    const open =
+      body !== null &&
+      typeof body === "object" &&
+      OPEN_WORK_KEYS.some((key) => {
+        const value = (body as Record<string, unknown>)[key];
+        return value !== null && typeof value === "object";
+      });
+    if (open) return null;
+  }
   // The record as it stands now: the real server keeps only the newest version of a project record, and this store
   // keeps them all, so the newest is picked (a team member added since the first version counts, as it does there).
   const project = events
@@ -183,7 +234,14 @@ export function projectRecordRefusal(
   const NOT_TEAM = "restricted: only this project's team can post this";
   if (founderOnly && event.pubkey !== founder)
     return "restricted: only this project's founder can post this";
-  if (teamOnly && !team.has(event.pubkey)) return NOT_TEAM;
+  if ((teamOnly || plain) && !team.has(event.pubkey)) return NOT_TEAM;
+  // An account on record as an agent (its own profile says so, with the signature of whoever runs it) is held to a
+  // helper's powers, even as the founder or on the team: goals, promises, confirming and giving more time need a person.
+  if (
+    (founderOnly || part === "confirm" || part === "grant") &&
+    isAgentAccount(event.pubkey, events)
+  )
+    return AGENT_LIMIT;
   if (!part) return null;
   if (part === "task") return team.has(event.pubkey) ? null : NOT_TEAM;
   const task = events.find(

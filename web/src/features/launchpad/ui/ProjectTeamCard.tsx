@@ -38,6 +38,7 @@ import {
   type LostChange,
   useRecordAgreement,
 } from "../use-record-agreement";
+import { AccountAgentBadge } from "./AccountAgentBadge";
 import { MODAL_FOOTER_CLASS, Modal } from "./Modal";
 
 const day = (seconds: number) =>
@@ -356,6 +357,7 @@ export function ProjectTeamCard({
               >
                 <span className="flex flex-wrap items-baseline gap-x-2">
                   <span className="font-semibold">{names(row.pubkey)}</span>
+                  <AccountAgentBadge pubkey={row.pubkey} />
                   <span className="text-xs text-muted-foreground">
                     {TEAM_ROLE_WORDS}
                   </span>

@@ -22,6 +22,10 @@ export interface TaskDraft {
   done: string;
   size: HelpSize;
   due: string | null;
+  /** The goal this task is for (a goal id of the project), or null. */
+  goalId: string | null;
+  /** What the helper must stay within, or empty. */
+  limits: string;
 }
 
 export function TaskForm({
@@ -34,7 +38,10 @@ export function TaskForm({
   onSend,
   onCancel,
   children,
+  goals = [],
 }: {
+  /** The project's open goals, to say which one the task is for. With none, the choice is not shown. */
+  goals?: readonly { id: string; text: string }[];
   testId: string;
   title: string;
   /** The request's own words and size, when the task comes from an offer: shown, not edited. */
@@ -53,6 +60,8 @@ export function TaskForm({
   const [done, setDone] = useState("");
   const [size, setSize] = useState<HelpSize>(fixed?.size ?? "small");
   const [due, setDue] = useState("");
+  const [goalId, setGoalId] = useState("");
+  const [limits, setLimits] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   /** Which field the problem is about: it is marked, the reason is read with it, and the keyboard goes there. */
   const [badField, setBadField] = useState<"what" | "done" | "due" | null>(
@@ -76,7 +85,14 @@ export function TaskForm({
     }
     setBadField(null);
     setProblem(null);
-    onSend({ what, done, size, due: due || null });
+    onSend({
+      what,
+      done,
+      size,
+      due: due || null,
+      goalId: goalId || null,
+      limits: limits.trim(),
+    });
   };
 
   return (
@@ -171,6 +187,49 @@ export function TaskForm({
         type="date"
         value={due}
       />
+      <label
+        className="mt-2 block text-sm font-medium"
+        htmlFor={`${id}-limits`}
+      >
+        Limits (optional)
+      </label>
+      <p className="text-xs text-muted-foreground" id={`${id}-limits-hint`}>
+        What they should not do or touch. A person or an agent taking the task
+        reads this first.
+      </p>
+      <textarea
+        aria-describedby={`${id}-limits-hint`}
+        className={FIELD_CLASS}
+        id={`${id}-limits`}
+        maxLength={TASK_LIMITS.limits}
+        onChange={(e) => setLimits(e.target.value)}
+        placeholder="For example: do not email real users."
+        rows={2}
+        value={limits}
+      />
+      {goals.length > 0 ? (
+        <>
+          <label
+            className="mt-2 block text-sm font-medium"
+            htmlFor={`${id}-goal`}
+          >
+            Which goal is this for (optional)
+          </label>
+          <select
+            className={FIELD_CLASS}
+            id={`${id}-goal`}
+            onChange={(e) => setGoalId(e.target.value)}
+            value={goalId}
+          >
+            <option value="">No goal named</option>
+            {goals.map((goal) => (
+              <option key={goal.id} value={goal.id}>
+                {goal.text}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : null}
       <p
         className="mt-2 text-xs text-muted-foreground"
         data-testid="task-rewards-line"

@@ -13,6 +13,7 @@ import { SaleProgressCard } from "./SaleProgressCard";
 import { isSetupStage } from "../lib/sale-steps";
 import { raisesOffered } from "../lib/raises-offered";
 import { LaunchChatCard } from "./LaunchChatCard";
+import { AGENT_NEEDS_PERSON, useViewerIsAgent } from "../use-account-agent";
 import { ListingNote } from "./ListingNote";
 import { PostUpdateDialog } from "./PostUpdateDialog";
 import { ProjectTeamCard, TeamPostUpdate } from "./ProjectTeamCard";
@@ -139,6 +140,7 @@ export function LaunchDetailPage({
       }
     : realLaunch;
   const isFounder = useIsFounder(launch);
+  const viewerIsAgent = useViewerIsAgent();
   const supporterCoord = realLaunch ? launchCoord(realLaunch.record) : null;
   const supporterCounts = useSupporters(supporterCoord ? [supporterCoord] : []);
   // The chain head is what tells a declared stance apart from a live sale.
@@ -313,7 +315,9 @@ export function LaunchDetailPage({
 
   const postUpdate = async (draft: UpdateDraft) => {
     // A team member's update makes no promises: the server takes those from the founder alone.
-    const { content, tags } = updateEvent(draft, { promises: isFounder });
+    const { content, tags } = updateEvent(draft, {
+      promises: isFounder && !viewerIsAgent,
+    });
     setUpdateFailed(false);
     try {
       await mirror.mutateAsync({
@@ -525,7 +529,19 @@ export function LaunchDetailPage({
           ) : null}
           <ListingNote isFounder={isFounder} launch={launch} stage={stage} />
           {/* What the project is for comes first: its goal, and how everyone will know. */}
-          <ProjectGoalCard isFounder={isFounder} launch={launch} />
+          {isFounder && viewerIsAgent ? (
+            <p
+              className="text-sm"
+              data-testid="agent-founder-note"
+              role="status"
+            >
+              {AGENT_NEEDS_PERSON}
+            </p>
+          ) : null}
+          <ProjectGoalCard
+            isFounder={isFounder && !viewerIsAgent}
+            launch={launch}
+          />
         </>
       )}
 
@@ -796,7 +812,7 @@ export function LaunchDetailPage({
           onPublish={recordBid}
         />
       ) : null}
-      {updateOpen && isFounder ? (
+      {updateOpen && isFounder && !viewerIsAgent ? (
         <UpdateDialogWithPromises
           failed={updateFailed}
           failedWhy={updateWhy}
@@ -807,6 +823,7 @@ export function LaunchDetailPage({
         />
       ) : updateOpen ? (
         <PostUpdateDialog
+          agent={viewerIsAgent}
           asFounder={false}
           due={[]}
           failed={updateFailed}

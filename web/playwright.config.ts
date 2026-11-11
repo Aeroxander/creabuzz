@@ -142,6 +142,8 @@ export default defineConfig({
         "**/app-nav.spec.ts",
         // Work: open requests across every listed project, and what waits on you.
         "**/work.spec.ts",
+        // Agent accounts: labelled from their own profile, and not offered what the server refuses them.
+        "**/agent-account.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

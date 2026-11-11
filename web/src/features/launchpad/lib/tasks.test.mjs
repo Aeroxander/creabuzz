@@ -813,3 +813,45 @@ test("several pieces can wait at once; which is 'first' never follows a date the
   );
   assert.deepEqual(done.waiting, []);
 });
+
+test("a task can name the goal it is for and the limits to stay within, and both are read back", () => {
+  const made = taskEvent({
+    helper: "b".repeat(64),
+    what: "Email the first ten users",
+    done: "Ten replies",
+    size: "small",
+    goalId: "g1abcdef",
+    limits: "  Do not email anyone who has not signed up.  ",
+  });
+  assert.deepEqual(
+    made.tags.filter((t) => t[0] === "task-goal" || t[0] === "task-limits"),
+    [
+      ["task-goal", "g1abcdef"],
+      ["task-limits", "Do not email anyone who has not signed up."],
+    ],
+  );
+  assert.match(made.content.body, /Limits: Do not email anyone/);
+  const read = parseTaskRecord({
+    id: "1".repeat(64),
+    pubkey: "a".repeat(64),
+    kind: 47003,
+    created_at: 10,
+    content: JSON.stringify(made.content),
+    tags: [["a", `37001:${"a".repeat(64)}:nebula`], ...made.tags],
+  });
+  assert.equal(read.goalId, "g1abcdef");
+  assert.equal(read.limits, "Do not email anyone who has not signed up.");
+  // Left out, neither tag is written, and a task without them reads as having none.
+  const plain = taskEvent({
+    helper: "b".repeat(64),
+    what: "x",
+    done: "y",
+    size: "small",
+    goalId: "not a goal id!",
+    limits: "   ",
+  });
+  assert.equal(
+    plain.tags.some((t) => t[0] === "task-goal" || t[0] === "task-limits"),
+    false,
+  );
+});

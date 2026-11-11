@@ -346,6 +346,8 @@ export function useTaskActions(project: Project) {
       due: string | null;
       updateId?: string | null;
       offerId?: string | null;
+      goalId?: string | null;
+      limits?: string | null;
     }) =>
       sendTaskRecord(
         project,
