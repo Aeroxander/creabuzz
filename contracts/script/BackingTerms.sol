@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {BackingPool} from "../src/BackingPool.sol";
+import {BackingPoolFactory} from "../src/BackingPoolFactory.sol";
 
 /// @title BackingTerms
 /// @notice The default terms of a backing pool, each explained in docs/v3-review/BACKING-POOL.md. One place, so the
@@ -23,5 +24,14 @@ library BackingTerms {
         p.voteAfter = 90 days;
         p.earlyWindow = 1 days;
         p.earlyCap = 1_000 * one;
+    }
+
+    /// @notice The default opening round: 50,000 blocks (about a week at 12 seconds a block; the number has to
+    /// divide 10,000,000) selling 100,000,000 claim tokens, a tenth of the curve's paper units, on the given
+    /// auction factory.
+    function round(address auctionFactory) internal pure returns (BackingPoolFactory.RoundSettings memory r) {
+        r.auctionFactory = auctionFactory;
+        r.blocks = 50_000;
+        r.supply = 100_000_000e18;
     }
 }

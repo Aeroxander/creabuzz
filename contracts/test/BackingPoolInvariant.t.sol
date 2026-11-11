@@ -214,7 +214,7 @@ contract BackingPoolInvariantTest is Test {
         p.voteAfter = 90 days;
         p.earlyWindow = 1 days;
         p.earlyCap = 1_000e18;
-        pool = new BackingPool(treasury, address(0xF0), IERC20(address(quote)), p);
+        pool = new BackingPool(treasury, address(0xF0), IERC20(address(quote)), p, 0);
         handler = new BackingPoolHandler(pool, quote, address(0xF0));
         targetContract(address(handler));
     }

@@ -84,7 +84,7 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
     }
 
     function test_a_pool_without_a_founder_takes_posts_from_the_dao_only() public {
-        BackingPool daoOnly = new BackingPool(treasury, address(0), IERC20(address(quote)), defaultTerms());
+        BackingPool daoOnly = new BackingPool(treasury, address(0), IERC20(address(quote)), defaultTerms(), 0);
         vm.warp(daoOnly.nextClaimAt());
         vm.prank(address(0));
         vm.expectRevert(BackingPool.NotClaimant.selector);
@@ -434,7 +434,7 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
 
     function test_a_token_that_refuses_the_treasury_never_blocks_a_milestone() public {
         BlockingQuote token = new BlockingQuote();
-        BackingPool blockPool = new BackingPool(treasury, FOUNDER, IERC20(address(token)), defaultTerms());
+        BackingPool blockPool = new BackingPool(treasury, FOUNDER, IERC20(address(token)), defaultTerms(), 0);
         token.mint(ALICE, 10_000e18);
         vm.startPrank(ALICE);
         token.approve(address(blockPool), type(uint256).max);

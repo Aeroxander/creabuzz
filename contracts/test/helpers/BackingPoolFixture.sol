@@ -133,7 +133,7 @@ abstract contract BackingPoolFixture is Test {
         vm.warp(1_800_000_000);
         quote = new PoolQuote();
         treasury = address(new TreasuryStub());
-        pool = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), defaultTerms());
+        pool = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), defaultTerms(), 0);
         _fund(ALICE);
         _fund(BOB);
         _fund(CAROL);

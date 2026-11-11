@@ -32,12 +32,16 @@ import {Summoner} from "../src/majeur/MolochPatched.sol";
 /// Writes `deployments/backing-sepolia-11155111.json` (not ignored: commit it after a real deploy; a run without
 /// `--broadcast`, or against a local node, writes the file too: delete that one).
 ///
+/// Opening rounds use the canonical auction factory already on Sepolia (the `auction-factory` of
+/// `deployments/dao-launch-kit-11155111.json`), with the round defaults of `BackingTerms.round`.
+///
 /// Env: PRIVATE_KEY (the deployer: a testnet-only key, passed through the environment, never on a command
-/// line). Optional: BACKING_SUMMONER and BACKING_QUOTE, to name a summoner and a quote token other than the ones
-/// in `deployments/v5-sepolia-11155111.json`.
+/// line). Optional: BACKING_SUMMONER, BACKING_QUOTE and BACKING_AUCTION_FACTORY, to name a summoner, a quote
+/// token and an auction factory other than the ones in the manifests.
 contract DeployBackingSepolia is Script {
     uint256 internal constant SEPOLIA = 11155111;
     string internal constant V5_MANIFEST = "deployments/v5-sepolia-11155111.json";
+    string internal constant LAUNCH_MANIFEST = "deployments/dao-launch-kit-11155111.json";
 
     string[] internal roleNames;
     address[] internal roleAddresses;
@@ -46,20 +50,24 @@ contract DeployBackingSepolia is Script {
         require(block.chainid == SEPOLIA, "DeployBackingSepolia: Sepolia only (chain id 11155111)");
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
-        Summoner summoner = Summoner(vm.envOr("BACKING_SUMMONER", _manifestRole("summoner")));
-        address quote = vm.envOr("BACKING_QUOTE", _manifestRole("test-quote-token"));
+        Summoner summoner = Summoner(vm.envOr("BACKING_SUMMONER", _manifestRole(V5_MANIFEST, "summoner")));
+        address quote = vm.envOr("BACKING_QUOTE", _manifestRole(V5_MANIFEST, "test-quote-token"));
         _requireCode(address(summoner), "summoner");
         _requireCode(quote, "quote token");
+        // The canonical auction factory opening rounds are created on: the one the 5 Nov launch kit uses.
+        address auctionFactory = vm.envOr("BACKING_AUCTION_FACTORY", _manifestRole(LAUNCH_MANIFEST, "auction-factory"));
+        _requireCode(auctionFactory, "auction factory");
         BackingPool.Params memory terms = BackingTerms.defaults(IERC20Metadata(quote).decimals());
         // The factory stores the terms unchecked (a pool's constructor is what refuses bad ones), so build one
         // pool here, in the simulation only, before anything is sent.
-        new BackingPool(address(summoner), deployer, IERC20(quote), terms);
+        new BackingPool(address(summoner), deployer, IERC20(quote), terms, 0);
         uint256 startBlock = block.number;
 
         vm.startBroadcast(pk);
         address predictedKit = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 2);
         SecondaryMarketFactory marketFactory = new SecondaryMarketFactory(summoner, predictedKit);
-        BackingPoolFactory poolFactory = new BackingPoolFactory(summoner, IERC20(quote), terms, predictedKit);
+        BackingPoolFactory poolFactory =
+            new BackingPoolFactory(summoner, IERC20(quote), terms, predictedKit, BackingTerms.round(auctionFactory));
         ContributorKitV3 kit = new ContributorKitV3(summoner, marketFactory, poolFactory);
         vm.stopBroadcast();
 
@@ -77,6 +85,9 @@ contract DeployBackingSepolia is Script {
         );
         require(address(poolFactory.quote()) == quote, "DeployBackingSepolia: pool factory on another quote");
         require(
+            address(poolFactory.auctionFactory()) == auctionFactory, "DeployBackingSepolia: another auction factory"
+        );
+        require(
             keccak256(abi.encode(poolFactory.terms())) == keccak256(abi.encode(terms)),
             "DeployBackingSepolia: the stored terms differ"
         );
@@ -84,6 +95,7 @@ contract DeployBackingSepolia is Script {
         console2.log("chain id:", block.chainid);
         _role("summoner", "Summoner (reused)", address(summoner));
         _role("backing-quote-token", "Quote token (reused)", quote);
+        _role("auction-factory", "Auction factory (reused)", auctionFactory);
         _role("market-factory-v3", "SecondaryMarketFactory", address(marketFactory));
         _role("backing-pool-factory", "BackingPoolFactory", address(poolFactory));
         _role("contributor-kit-v3", "ContributorKitV3", address(kit));
@@ -91,8 +103,8 @@ contract DeployBackingSepolia is Script {
     }
 
     /// @dev One role's address from the weekly-sale manifest.
-    function _manifestRole(string memory role) internal view returns (address) {
-        string memory json = vm.readFile(V5_MANIFEST);
+    function _manifestRole(string memory manifest, string memory role) internal view returns (address) {
+        string memory json = vm.readFile(manifest);
         for (uint256 i; i < 32; ++i) {
             string memory key = string.concat(".roles[", vm.toString(i), "]");
             if (!vm.keyExistsJson(json, key)) break;
@@ -100,7 +112,7 @@ contract DeployBackingSepolia is Script {
                 return vm.parseJsonAddress(json, string.concat(key, ".address"));
             }
         }
-        revert(string.concat("DeployBackingSepolia: no ", role, " in ", V5_MANIFEST));
+        revert(string.concat("DeployBackingSepolia: no ", role, " in ", manifest));
     }
 
     /// @dev The manifest, in the shape `DeployV5Sepolia` writes. `block` is the chain's head when the script began.

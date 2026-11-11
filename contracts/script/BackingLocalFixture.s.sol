@@ -24,7 +24,8 @@ import {BackingTerms} from "./BackingTerms.sol";
 ///      and kit, and a free-mint test token;
 ///   2. the new set, in the order `DeployBackingSepolia` uses: market factory, pool factory, `ContributorKitV3`;
 ///   3. a project launched with its pool (`launchWithPool`), a buy and a partial sale in it;
-///   4. a project launched by `ContributorKitV2`, and its pool opened afterwards by its founder in one call.
+///   4. a project launched by `ContributorKitV2`, and its pool opened afterwards by its founder in one call;
+///   5. a third project whose pool is opened behind an opening round, on the real auction factory.
 /// Everything is then read back from the node's state.
 ///
 /// Run (chain id 31337 only, never a public network):
@@ -44,10 +45,16 @@ contract BackingLocalFixture is Script {
         ContributorKitV2 kitV2 = new ContributorKitV2(summoner, marketFactoryV2);
         TestQuoteToken quote = new TestQuoteToken();
 
+        // The real auction factory, from its compiled artifact (it pins another compiler), with no protocol fee.
+        address auctionFactory = vm.deployCode(
+            "ContinuousClearingAuctionFactory.sol:ContinuousClearingAuctionFactory", abi.encode(address(0))
+        );
         BackingPool.Params memory terms = BackingTerms.defaults(quote.decimals());
         address predicted = vm.computeCreateAddress(me, vm.getNonce(me) + 2);
         SecondaryMarketFactory marketFactory = new SecondaryMarketFactory(summoner, predicted);
-        BackingPoolFactory poolFactory = new BackingPoolFactory(summoner, IERC20(address(quote)), terms, predicted);
+        BackingPoolFactory poolFactory = new BackingPoolFactory(
+            summoner, IERC20(address(quote)), terms, predicted, BackingTerms.round(auctionFactory)
+        );
         ContributorKitV3 kit = new ContributorKitV3(summoner, marketFactory, poolFactory);
 
         // A project with its pool at birth, and a first buy and sale in it.
@@ -62,7 +69,17 @@ contract BackingLocalFixture is Script {
         // A V2 project, then its pool in one more call.
         (address daoV2,,) = kitV2.launch(_params(me, "pool later", address(quote), mandateFactory));
         BackingPool later = poolFactory.open(daoV2);
+
+        // A third project, opened behind a round: the pool waits, the auction holds the claim tokens.
+        (address daoRound,,) = kitV2.launch(_params(me, "pool with a round", address(quote), mandateFactory));
+        (BackingPool waiting, address auction) = poolFactory.openWithRound(daoRound, 0);
         vm.stopBroadcast();
+
+        require(waiting.roundState() == BackingPool.RoundState.Waiting && waiting.auction() == auction, "round");
+        require(
+            waiting.claimToken().balanceOf(auction) == waiting.roundSupply() && auction.code.length != 0,
+            "the auction holds the claim tokens"
+        );
 
         require(address(kit) == predicted, "kit off its prediction");
         require(poolFactory.poolOf(dao) == poolAddress && pool.dao() == dao && pool.founder() == me, "pool at birth");
@@ -78,6 +95,10 @@ contract BackingLocalFixture is Script {
         console2.log("pool factory:", address(poolFactory));
         console2.log("pool at birth:", poolAddress);
         console2.log("pool opened later:", address(later));
+        console2.log("auction factory:", auctionFactory);
+        console2.log("pool waiting for its round:", address(waiting));
+        console2.log("its auction:", auction);
+        console2.log("auction runtime bytes (limit 24576):", auction.code.length);
         console2.log("kit v3 runtime bytes (limit 24576):", address(kit).code.length);
         console2.log("pool factory runtime bytes (limit 24576):", address(poolFactory).code.length);
         console2.log("pool runtime bytes (limit 24576):", poolAddress.code.length);

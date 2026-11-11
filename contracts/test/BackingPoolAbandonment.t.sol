@@ -252,7 +252,7 @@ contract BackingPoolAbandonmentTest is BackingPoolFixture {
         p.earlyCap = 0;
         p.voteSeasoning = 0;
         p.voteAfter = 0;
-        BackingPool even = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p);
+        BackingPool even = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p, 0);
         vm.prank(ALICE);
         quote.approve(address(even), type(uint256).max);
         vm.prank(BOB);

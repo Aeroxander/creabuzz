@@ -568,7 +568,7 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
     /// @dev The early cap is per wallet. Splitting across wallets gets around it and the document says so;
     /// what it does stop is one wallet taking the opening price in a single transaction.
     function test_the_early_cap_stops_one_wallet_taking_the_opening() public {
-        BackingPool fresh = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), defaultTerms());
+        BackingPool fresh = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), defaultTerms(), 0);
         vm.startPrank(MALLORY);
         quote.approve(address(fresh), type(uint256).max);
         vm.expectRevert(BackingPool.EarlyCapReached.selector);

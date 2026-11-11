@@ -18,7 +18,7 @@ contract BackingPoolFuzzTest is BackingPoolFixture {
         p.feeBps = 0;
         p.projectBps = 0;
         p.earlyCap = 0;
-        bare = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p);
+        bare = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p, 0);
         vm.prank(ALICE);
         quote.approve(address(bare), type(uint256).max);
         vm.prank(BOB);

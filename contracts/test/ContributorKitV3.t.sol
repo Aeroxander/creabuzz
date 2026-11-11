@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ActivationVoting} from "../src/ActivationVoting.sol";
 import {BackingPool} from "../src/BackingPool.sol";
-import {BackingPoolFactory} from "../src/BackingPoolFactory.sol";
+import {BackingPoolDeployer, BackingPoolFactory} from "../src/BackingPoolFactory.sol";
 import {ContributorKit} from "../src/ContributorKit.sol";
 import {ContributorKitV2} from "../src/ContributorKitV2.sol";
 import {ContributorKitV3} from "../src/ContributorKitV3.sol";
@@ -14,6 +14,32 @@ import {SecondaryMarketFactory} from "../src/SecondaryMarketFactory.sol";
 import {Moloch, Shares, Summoner} from "../src/majeur/MolochPatched.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
 import {PoolQuote} from "./helpers/BackingPoolFixture.sol";
+
+/// @dev The auction, as far as these tests drive it (it pins another compiler, so it is not imported).
+interface IRoundAuctionLike {
+    function submitBid(uint256 maxPrice, uint128 amount, address owner, uint256 prevTickPrice, bytes calldata hookData)
+        external
+        payable
+        returns (uint256);
+    function exitBid(uint256 bidId) external;
+    function claimTokens(uint256 bidId) external;
+    function endBlock() external view returns (uint64);
+    function claimBlock() external view returns (uint64);
+    function floorPrice() external view returns (uint256);
+    function tickSpacing() external view returns (uint256);
+    function totalSupply() external view returns (uint128);
+    function fundsRecipient() external view returns (address);
+    function tokensRecipient() external view returns (address);
+    function currency() external view returns (address);
+    function token() external view returns (address);
+}
+
+/// @dev Stands at Permit2's address for bids: the one call the auction makes to pull a bid.
+contract Permit2Stub {
+    function transferFrom(address from, address to, uint160 amount, address token) external {
+        require(IERC20(token).transferFrom(from, to, amount), "pull");
+    }
+}
 
 /// @notice The pool on real projects: opened at birth by `ContributorKitV3`, opened later by the founder of a
 /// `ContributorKitV2` project in one call, and what the factory refuses. Every DAO here is a real one from a
@@ -58,8 +84,24 @@ contract ContributorKitV3Test is Test {
         p.earlyCap = 1_000e18;
     }
 
+    /// @dev The real auction factory, from its compiled artifact (it pins another compiler, so it cannot be
+    /// imported here), with no protocol fee.
+    address internal auctionFactory;
+
+    function noRound() internal pure returns (BackingPoolFactory.RoundSettings memory r) {}
+
+    function rounds() internal view returns (BackingPoolFactory.RoundSettings memory r) {
+        r.auctionFactory = auctionFactory;
+        r.blocks = 50_000;
+        r.supply = 100_000_000e18;
+    }
+
     function setUp() public {
         vm.warp(1_800_000_000);
+        vm.roll(1_000);
+        auctionFactory = vm.deployCode(
+            "ContinuousClearingAuctionFactory.sol:ContinuousClearingAuctionFactory", abi.encode(address(0))
+        );
         mandateFactory = new TreasuryMandateFactory();
         ActivationVoting policy = new ActivationVoting(mandateFactory);
         summoner = new Summoner(address(policy));
@@ -71,7 +113,7 @@ contract ContributorKitV3Test is Test {
         // The new set, as the deploy script makes it: both factories first, authorised for the kit's address.
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 2);
         marketFactoryV3 = new SecondaryMarketFactory(summoner, predicted);
-        poolFactory = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), predicted);
+        poolFactory = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), predicted, rounds());
         kit = new ContributorKitV3(summoner, marketFactoryV3, poolFactory);
         assertEq(address(kit), predicted);
         for (uint256 i; i < 2; ++i) {
@@ -146,7 +188,7 @@ contract ContributorKitV3Test is Test {
         assertEq(pool.dao(), dao);
         assertEq(pool.founder(), FOUNDER);
         assertEq(address(pool.quote()), address(quote));
-        assertEq(pool.factory(), address(poolFactory));
+        assertEq(pool.factory(), address(poolFactory.poolDeployer()));
         assertEq(pool.openedAt(), _now());
         assertEq(pool.projectBps(), 1000);
         assertEq(pool.earlyCap(), 1_000e18);
@@ -356,13 +398,13 @@ contract ContributorKitV3Test is Test {
 
     function test_the_factory_refuses_a_summoner_or_quote_without_code() public {
         vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
-        new BackingPoolFactory(Summoner(address(0x1234)), IERC20(address(quote)), terms(), address(0));
+        new BackingPoolFactory(Summoner(address(0x1234)), IERC20(address(quote)), terms(), address(0), noRound());
         vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
-        new BackingPoolFactory(summoner, IERC20(address(0x1234)), terms(), address(0));
+        new BackingPoolFactory(summoner, IERC20(address(0x1234)), terms(), address(0), noRound());
     }
 
     function test_a_factory_without_a_kit_still_serves_founders() public {
-        BackingPoolFactory plain = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0));
+        BackingPoolFactory plain = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), noRound());
         Moloch dao = _launchV2("plain");
         vm.prank(address(0));
         vm.expectRevert(BackingPoolFactory.NotAllowed.selector);
@@ -374,7 +416,7 @@ contract ContributorKitV3Test is Test {
     function test_a_factory_with_bad_terms_opens_nothing() public {
         BackingPool.Params memory bad = terms();
         bad.trancheBps = 0;
-        BackingPoolFactory broken = new BackingPoolFactory(summoner, IERC20(address(quote)), bad, address(0));
+        BackingPoolFactory broken = new BackingPoolFactory(summoner, IERC20(address(quote)), bad, address(0), noRound());
         Moloch dao = _launchV2("bad terms");
         vm.prank(FOUNDER);
         vm.expectRevert(BackingPool.InvalidParams.selector);
@@ -384,7 +426,7 @@ contract ContributorKitV3Test is Test {
     function test_the_kit_refuses_a_pool_factory_made_for_another_kit_or_summoner() public {
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 2);
         SecondaryMarketFactory markets = new SecondaryMarketFactory(summoner, predicted);
-        BackingPoolFactory elsewhere = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0xBEEF));
+        BackingPoolFactory elsewhere = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0xBEEF), noRound());
         vm.expectRevert(ContributorKit.InvalidTerms.selector);
         new ContributorKitV3(summoner, markets, elsewhere);
 
@@ -394,7 +436,7 @@ contract ContributorKitV3Test is Test {
         Summoner other = new Summoner(address(new ActivationVoting(new TreasuryMandateFactory())));
         predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 2);
         markets = new SecondaryMarketFactory(summoner, predicted);
-        BackingPoolFactory wrongSummoner = new BackingPoolFactory(other, IERC20(address(quote)), terms(), predicted);
+        BackingPoolFactory wrongSummoner = new BackingPoolFactory(other, IERC20(address(quote)), terms(), predicted, noRound());
         vm.expectRevert(ContributorKit.InvalidTerms.selector);
         new ContributorKitV3(summoner, markets, wrongSummoner);
     }
@@ -416,16 +458,20 @@ contract ContributorKitV3Test is Test {
         );
         bytes memory factoryCreation = abi.encodePacked(
             vm.getCode("src/BackingPoolFactory.sol:BackingPoolFactory"),
-            abi.encode(summoner, address(quote), terms(), address(kit))
+            abi.encode(summoner, address(quote), terms(), address(kit), rounds())
         );
         bytes memory poolCreation = abi.encodePacked(
-            vm.getCode("src/BackingPool.sol:BackingPool"), abi.encode(address(1), FOUNDER, address(quote), terms())
+            vm.getCode("src/BackingPool.sol:BackingPool"), abi.encode(address(1), FOUNDER, address(quote), terms(), uint256(100_000_000e18))
         );
         assertLe(kitCreation.length, MAX_INITCODE, "kit creation over EIP-3860");
         assertLe(factoryCreation.length, MAX_INITCODE, "pool factory creation over EIP-3860");
         assertLe(poolCreation.length, MAX_INITCODE, "pool creation over EIP-3860");
         assertLe(address(kit).code.length, MAX_RUNTIME, "kit runtime over EIP-170");
         assertLe(address(poolFactory).code.length, MAX_RUNTIME, "pool factory runtime over EIP-170");
+        assertLe(address(poolFactory.poolDeployer()).code.length, MAX_RUNTIME, "pool deployer runtime over EIP-170");
+        assertLe(
+            vm.getDeployedCode("src/BackingClaim.sol:BackingClaim").length, MAX_RUNTIME, "claim token runtime over EIP-170"
+        );
         assertLe(
             vm.getDeployedCode("src/BackingPool.sol:BackingPool").length, MAX_RUNTIME, "pool runtime over EIP-170"
         );
@@ -512,7 +558,239 @@ contract ContributorKitV3Test is Test {
         uint256 used = vm.lastCallGas().gasTotalUsed;
         emit log_named_uint("create: launchWithPool with 8 first projects", used);
         assertEq(poolFactory.poolOf(dao), pool);
-        // Under the cap with at least a tenth of it to spare, measured with or without --isolate.
+        // Under the cap. The room left is about 8% (1.3 million gas): the pool's code grew with the opening
+        // round, and creating it is most of what this launch adds to a V2 launch.
+        assertLt(used, uint256(1 << 24) * 93 / 100);
+    }
+
+    // ---- opening with a round --------------------------------------------------------------------------------------
+
+    address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+
+    event RoundOpened(
+        address indexed dao,
+        address indexed pool,
+        address indexed auction,
+        address claimToken,
+        uint128 supply,
+        uint128 minimumRaise,
+        uint64 startBlock,
+        uint64 endBlock
+    );
+
+    function _bid(address auction, address who, uint128 amount) internal returns (uint256 id) {
+        if (PERMIT2.code.length == 0) vm.etch(PERMIT2, address(new Permit2Stub()).code);
+        uint256 floor = IRoundAuctionLike(auction).floorPrice();
+        vm.startPrank(who);
+        quote.approve(PERMIT2, amount);
+        id = IRoundAuctionLike(auction).submitBid(floor * 100, amount, who, floor, "");
+        vm.stopPrank();
+    }
+
+    function test_the_factory_reads_back_its_round_settings() public view {
+        assertEq(address(poolFactory.auctionFactory()), auctionFactory);
+        assertEq(poolFactory.roundBlocks(), 50_000);
+        assertEq(poolFactory.roundSupply(), 100_000_000e18);
+        // The floor is the price an "open now" curve starts at, to within the auction's price step.
+        uint256 opening = (uint256(25_000e18) << 96) / 1_000_000_000e18;
+        assertEq(poolFactory.roundTickSpacingX96(), opening / 100);
+        assertEq(poolFactory.roundFloorPriceX96(), opening / 100 * 100);
+        // The whole supply at the floor.
+        assertEq(poolFactory.defaultMinimumRaise(), 2_500e18);
+        assertEq(poolFactory.poolDeployer().owner(), address(poolFactory));
+    }
+
+    function test_the_founder_opens_a_pool_behind_a_round_in_one_call_choosing_nothing() public {
+        Moloch dao = _launchV2("round");
+        vm.recordLogs();
+        vm.prank(FOUNDER);
+        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0);
+
+        assertEq(poolFactory.poolOf(address(dao)), address(pool));
+        assertEq(uint8(pool.roundState()), uint8(BackingPool.RoundState.Waiting));
+        assertEq(pool.auction(), auction);
+        assertEq(pool.founder(), FOUNDER);
+        assertEq(pool.dao(), address(dao));
+        assertEq(pool.minimumRaise(), 2_500e18);
+        assertEq(pool.roundSupply(), 100_000_000e18);
+        IRoundAuctionLike a = IRoundAuctionLike(auction);
+        assertEq(a.endBlock(), block.number + 50_000);
+        assertEq(a.claimBlock(), block.number + 50_000);
+        assertEq(a.floorPrice(), poolFactory.roundFloorPriceX96());
+        assertEq(a.tickSpacing(), poolFactory.roundTickSpacingX96());
+        assertEq(a.totalSupply(), 100_000_000e18);
+        assertEq(a.fundsRecipient(), address(pool));
+        assertEq(a.tokensRecipient(), address(pool));
+        assertEq(a.currency(), address(quote));
+        assertEq(a.token(), address(pool.claimToken()));
+        assertEq(pool.claimToken().balanceOf(auction), 100_000_000e18);
+        BackingPool.RoundView memory r = pool.snapshot(ALICE).round;
+        assertEq(uint8(r.state), uint8(BackingPool.RoundState.Waiting));
+        assertEq(r.auction, auction);
+        assertEq(r.endBlock, block.number + 50_000);
+        assertEq(r.minimumRaise, 2_500e18);
+        assertEq(r.clearingPriceX96, a.floorPrice());
+
+        // Bids can be placed in the block the round was opened in; buying on the curve cannot.
+        _bid(auction, ALICE, 1_000e18);
+        vm.prank(ALICE);
+        vm.expectRevert(BackingPool.RoundNotLive.selector);
+        pool.buy(1e18, 0, type(uint256).max);
+    }
+
+    function test_the_founder_may_set_the_minimum_and_nothing_else() public {
+        Moloch dao = _launchV2("minimum");
+        vm.prank(FOUNDER);
+        vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.MinimumTooLow.selector, uint128(10_000)));
+        poolFactory.openWithRound(address(dao), 9_999);
+        vm.prank(FOUNDER);
+        (BackingPool pool,) = poolFactory.openWithRound(address(dao), 40_000e18);
+        assertEq(pool.minimumRaise(), 40_000e18);
+    }
+
+    function test_a_round_is_opened_by_the_same_people_as_a_pool_and_once() public {
+        Moloch dao = _launchV2("round auth");
+        vm.prank(ALICE);
+        vm.expectRevert(BackingPoolFactory.NotAllowed.selector);
+        poolFactory.openWithRound(address(dao), 0);
+        vm.expectRevert(BackingPoolFactory.UnprovenDao.selector);
+        poolFactory.openWithRound(address(quote), 0);
+        vm.prank(address(dao));
+        (BackingPool pool,) = poolFactory.openWithRound(address(dao), 0);
+        // Waiting counts as open: no second pool, of either kind.
+        vm.prank(FOUNDER);
+        vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(pool)));
+        poolFactory.openWithRound(address(dao), 0);
+        vm.prank(FOUNDER);
+        vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(pool)));
+        poolFactory.open(address(dao));
+        // Nobody but the factory's deployer binds a round.
+        vm.prank(address(poolFactory));
+        vm.expectRevert(BackingPool.NotFactory.selector);
+        pool.bindRound(address(1), 1);
+        BackingPoolDeployer deployer = poolFactory.poolDeployer();
+        vm.prank(FOUNDER);
+        vm.expectRevert(BackingPoolDeployer.NotOwner.selector);
+        deployer.bindRound(pool, address(1), 1);
+        vm.prank(FOUNDER);
+        vm.expectRevert(BackingPoolDeployer.NotOwner.selector);
+        deployer.deploy(address(dao), FOUNDER, IERC20(address(quote)), terms(), 0);
+    }
+
+    function test_a_factory_without_rounds_refuses_to_open_one() public {
+        BackingPoolFactory plain = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), noRound());
+        Moloch dao = _launchV2("no rounds");
+        vm.prank(FOUNDER);
+        vm.expectRevert(BackingPoolFactory.RoundsOff.selector);
+        plain.openWithRound(address(dao), 0);
+    }
+
+    function test_the_factory_refuses_round_settings_the_auction_would_refuse() public {
+        BackingPoolFactory.RoundSettings memory r = rounds();
+        r.blocks = 30_000; // does not divide 10,000,000
+        vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
+        new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), r);
+        r = rounds();
+        r.blocks = 0;
+        vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
+        new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), r);
+        r = rounds();
+        r.supply = 500_000_000e18 + 1; // over half the curve
+        vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
+        new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), r);
+        r = rounds();
+        r.auctionFactory = address(0x1234); // no code
+        vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
+        new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), r);
+        r = rounds();
+        r.supply = 1e18 - 1; // under one whole claim token
+        vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
+        new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), r);
+    }
+
+    /// @dev The whole path on a real project and the real auction factory: open with a round, bid, settle,
+    /// collect, redeem, and trade; the fee reaches the DAO.
+    function test_a_round_on_a_real_project_goes_live_and_its_buyers_hold_units() public {
+        Moloch dao = _launchV2("round live");
+        vm.prank(FOUNDER);
+        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0);
+        uint256 a = _bid(auction, ALICE, 4_000e18);
+        vm.roll(block.number + 20_000);
+        uint256 b = _bid(auction, BOB, 6_000e18);
+        vm.roll(IRoundAuctionLike(auction).endBlock());
+        vm.warp(_now() + 7 days);
+
+        assertTrue(pool.seedFromAuction());
+        assertEq(uint8(pool.roundState()), uint8(BackingPool.RoundState.Live));
+        assertEq(quote.balanceOf(address(pool)), pool.reserve() + pool.escrow() + pool.treasuryOwed());
+        assertApproxEqAbs(pool.roundReceived(), 10_000e18, 1e9);
+        BackingPool.Snapshot memory s = pool.snapshot(ALICE);
+        assertEq(s.round.openingPrice, pool.price());
+        assertEq(s.round.clearingPriceX96, pool.clearingPriceX96());
+        assertEq(s.round.unitsSold, pool.totalSupply());
+
+        IRoundAuctionLike(auction).exitBid(a);
+        IRoundAuctionLike(auction).claimTokens(a);
+        IRoundAuctionLike(auction).exitBid(b);
+        IRoundAuctionLike(auction).claimTokens(b);
+        uint256 tokens = pool.claimToken().balanceOf(ALICE);
+        assertEq(pool.snapshot(ALICE).round.holderClaimTokens, tokens);
+        vm.prank(ALICE);
+        pool.redeem(tokens);
+        assertEq(pool.balanceOf(ALICE), tokens);
+        // The curve is open to everyone now.
+        _buy(pool, BOB, 500e18);
+        vm.prank(ALICE);
+        pool.sell(tokens / 2, 0, type(uint256).max);
+        pool.payTreasury();
+        assertEq(quote.balanceOf(address(dao)), pool.feesTaken());
+        assertEq(quote.balanceOf(address(pool)), pool.reserve() + pool.escrow());
+    }
+
+    /// @dev A round that fails closes its pool, and only then may the project open another, of either kind.
+    function test_after_a_failed_round_the_project_may_open_again() public {
+        Moloch dao = _launchV2("round failed");
+        vm.prank(FOUNDER);
+        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0);
+        uint256 a = _bid(auction, ALICE, 1_000e18);
+        vm.roll(IRoundAuctionLike(auction).endBlock());
+        uint256 before = quote.balanceOf(ALICE);
+        assertFalse(pool.seedFromAuction());
+        IRoundAuctionLike(auction).exitBid(a);
+        assertEq(quote.balanceOf(ALICE) - before, 1_000e18, "refunded in full by the auction");
+
+        vm.prank(ALICE);
+        vm.expectRevert(BackingPoolFactory.NotAllowed.selector);
+        poolFactory.open(address(dao));
+        vm.prank(FOUNDER);
+        (BackingPool second,) = poolFactory.openWithRound(address(dao), 0);
+        assertTrue(address(second) != address(pool));
+        assertEq(poolFactory.poolOf(address(dao)), address(second));
+        assertEq(poolFactory.poolCount(), 2);
+        // And a third time only if the second fails too.
+        vm.prank(FOUNDER);
+        vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(second)));
+        poolFactory.open(address(dao));
+    }
+
+    /// @dev Opening with a round as its own transaction, and what a launch plus a round would cost in one.
+    function test_gas_opening_with_a_round() public {
+        Moloch dao = _launchV2("round gas");
+        vm.prank(FOUNDER);
+        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0);
+        uint256 used = vm.lastCallGas().gasTotalUsed;
+        emit log_named_uint("create: BackingPoolFactory.openWithRound (pool + claim token + auction)", used);
         assertLt(used, uint256(1 << 24) * 90 / 100);
+        uint256 a = _bid(auction, ALICE, 4_000e18);
+        emit log_named_uint("bid in the round (the auction's own submitBid)", vm.lastCallGas().gasTotalUsed);
+        vm.roll(IRoundAuctionLike(auction).endBlock());
+        pool.seedFromAuction();
+        emit log_named_uint("settle the round: seedFromAuction (goes live)", vm.lastCallGas().gasTotalUsed);
+        IRoundAuctionLike(auction).exitBid(a);
+        IRoundAuctionLike(auction).claimTokens(a);
+        uint256 tokens = pool.claimToken().balanceOf(ALICE);
+        vm.prank(ALICE);
+        pool.redeem(tokens);
+        emit log_named_uint("redeem claim tokens for units", vm.lastCallGas().gasTotalUsed);
     }
 }

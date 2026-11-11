@@ -4,6 +4,31 @@ pragma solidity ^0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {BackingClaim} from "./BackingClaim.sol";
+
+/// @notice What a pool uses of its opening round's auction (Uniswap's Continuous Clearing Auction, unchanged).
+interface IRoundAuction {
+    struct LBPInitializationParams {
+        uint256 initialPriceX96;
+        uint256 tokensSold;
+        uint256 currencyRaised;
+    }
+
+    function token() external view returns (address);
+    function currency() external view returns (address);
+    function fundsRecipient() external view returns (address);
+    function tokensRecipient() external view returns (address);
+    function endBlock() external view returns (uint64);
+    function claimBlock() external view returns (uint64);
+    function isGraduated() external view returns (bool);
+    function currencyRaised() external view returns (uint256);
+    function clearingPrice() external view returns (uint256);
+    function lbpInitializationParams() external view returns (LBPInitializationParams memory);
+    function onTokensReceived() external;
+    function checkpoint() external;
+    function sweepCurrency() external;
+    function sweepUnsoldTokens() external;
+}
 
 /// @title BackingPool
 /// @notice Instant backing for one project (docs/v3-review/BACKING-POOL.md). Anyone buys the project's
@@ -62,6 +87,22 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// against the escrow by a third per release at the default tranche. After about 300 releases (more
 /// than twenty years at one a month) a buy could overflow and revert; sales, leaving and refunds divide
 /// and never do.
+///
+/// THE OPENING ROUND (optional). A pool can be created waiting for a round: an auction (Uniswap's
+/// Continuous Clearing Auction, as deployed, unchanged) sells a fixed supply of claim tokens for the quote
+/// token, with this pool as the only address that can collect what it raised. Until the round is over
+/// nothing can be bought here. If the auction did not reach its minimum, bidders take their money back
+/// from the auction itself and this pool is closed for good. If it did, `seedFromAuction` (anyone may
+/// call it) collects the raise and splits it exactly as a buy is split: fee to the treasury, project
+/// part to the escrow, the rest to the reserve `R`. The claim tokens sold become `S` units, and the curve
+/// is set to the state one buy of `R` from an empty curve would have left: `virtualQuote = R * (virtualUnits
+/// - S) / S`, rounded down, which makes `x * y >= virtualQuote * virtualUnits` hold from the first second,
+/// so the proof above applies unchanged. That curve opens at the AVERAGE price the round's buyers paid
+/// (times `virtualUnits / (virtualUnits - S)`), not at the auction's last clearing price: bidders pay
+/// different prices over a round, and a curve opened at the last one could owe sellers more than was
+/// raised. A bidder collects claim tokens from the auction and `redeem`s them here for units one for one,
+/// with the matching part of the round's escrow weight. Weight not yet redeemed counts as staying at a
+/// milestone; to leave, redeem first.
 ///
 /// There is no owner, no admin, no pause and no upgrade; every parameter is fixed at creation.
 contract BackingPool {
@@ -122,6 +163,41 @@ contract BackingPool {
         uint256 released;
     }
 
+    /// @notice Where a pool's opening round stands. `None`: the pool was opened without one.
+    enum RoundState {
+        None,
+        Waiting,
+        Live,
+        Failed
+    }
+
+    /// @notice The opening round, for the app. Prices here are the auction's own: quote base units per
+    /// base unit of claim token, times 2**96.
+    struct RoundView {
+        RoundState state;
+        address auction;
+        address claimToken;
+        /// Claim tokens the round offers.
+        uint256 supply;
+        /// The round takes bids until this block; claim tokens can be collected from it too.
+        uint64 endBlock;
+        /// What the round has to raise, and what it has raised as of the auction's last checkpoint.
+        uint256 minimumRaise;
+        uint256 raised;
+        /// The auction's clearing price: live while waiting, the final one once seeded.
+        uint256 clearingPriceX96;
+        /// Once live: what arrived here from the auction, the units it became, the curve price it opened
+        /// at (see `price`), and when.
+        uint256 received;
+        uint256 unitsSold;
+        uint256 openingPrice;
+        uint64 liveAt;
+        /// Units of the round nobody has redeemed yet.
+        uint256 unredeemedUnits;
+        /// Claim tokens the wallet holds: what it can redeem for units now (when live).
+        uint256 holderClaimTokens;
+    }
+
     /// @notice Everything the app shows about a pool and one wallet, in one call.
     struct Snapshot {
         uint256 price;
@@ -150,6 +226,7 @@ contract BackingPool {
         uint256 holderLeaveValue;
         bool holderVotedAbandon;
         uint256 holderEarlyLeft;
+        RoundView round;
     }
 
     uint256 private constant BPS = 10_000;
@@ -164,7 +241,8 @@ contract BackingPool {
     /// @notice Units have 18 decimals, like the DAO's Shares.
     uint8 public constant decimals = 18;
 
-    /// @notice The factory that made this pool.
+    /// @notice The contract that created this pool: its factory's deployer (`BackingPoolDeployer`), the only
+    /// address that can bind an opening round. The registry of pools is `BackingPoolFactory.poolOf`.
     address public immutable factory;
     /// @notice The project's DAO: the treasury that fees and released tranches are paid to, and one of the
     /// two addresses that may post a milestone.
@@ -177,7 +255,8 @@ contract BackingPool {
     /// @notice When the pool opened.
     uint64 public immutable openedAt;
 
-    uint256 public immutable virtualQuote;
+    /// @notice The curve's paper reserve: fixed at creation, or set once from the opening round's result.
+    uint256 public virtualQuote;
     uint256 public immutable virtualUnits;
     uint16 public immutable projectBps;
     uint16 public immutable feeBps;
@@ -190,6 +269,28 @@ contract BackingPool {
     uint32 public immutable voteAfter;
     uint32 public immutable earlyWindow;
     uint256 public immutable earlyCap;
+
+    /// @notice The opening round's claim token; zero when the pool was opened without a round.
+    BackingClaim public immutable claimToken;
+    /// @notice Claim tokens the opening round offers.
+    uint256 public immutable roundSupply;
+    /// @notice Where the opening round stands.
+    RoundState public roundState;
+    /// @notice The round's auction, once the factory has bound it.
+    address public auction;
+    /// @notice What the round has to raise (the auction holds the same number and enforces it).
+    uint256 public minimumRaise;
+    /// @notice Set when the round went live: the auction's final clearing price (times 2**96), what
+    /// arrived here from it, the units it became, the curve price it opened at, and when.
+    uint256 public clearingPriceX96;
+    uint256 public roundReceived;
+    uint256 public roundUnits;
+    uint256 public openingPrice;
+    uint64 public liveAt;
+    /// @notice Units and escrow weight of the round that nobody has redeemed yet. They are counted in
+    /// `totalSupply` and `totalWeight` and belong to whoever holds the claim tokens.
+    uint256 public unredeemedUnits;
+    uint256 public unredeemedWeight;
 
     /// @notice Units in existence.
     uint256 public totalSupply;
@@ -301,6 +402,26 @@ contract BackingPool {
     /// @notice The project became abandoned. `escrow` is what is left for backers; `orphaned` is escrow
     /// nobody had a weight for, which went to the treasury.
     event Abandoned(address indexed by, bool byVote, uint256 escrow, uint256 orphaned);
+    /// @notice The opening round's auction was bound and given the claim tokens to sell.
+    event RoundBound(address indexed auction, address indexed claimToken, uint256 supply, uint256 minimumRaise, uint64 endBlock);
+    /// @notice The opening round reached its minimum and the pool went live: `received` arrived from the
+    /// auction and was split into `fee`, `toEscrow` and the reserve; `unitsSold` units exist for the claim
+    /// tokens sold; the curve opened at `openingPrice` (see `price`).
+    event RoundSeeded(
+        uint256 received,
+        uint256 fee,
+        uint256 toEscrow,
+        uint256 toReserve,
+        uint256 unitsSold,
+        uint256 clearingPriceX96,
+        uint256 openingPrice,
+        uint256 virtualQuote
+    );
+    /// @notice The opening round did not reach its minimum: bidders take their money back from the
+    /// auction, and this pool is closed for good.
+    event RoundFailed(address indexed auction, uint256 raised, uint256 minimumRaise);
+    /// @notice Claim tokens were exchanged for units, with their part of the round's escrow weight.
+    event Redeemed(address indexed backer, uint256 units, uint256 weight);
 
     error InvalidParams();
     error Reentrancy();
@@ -322,6 +443,11 @@ contract BackingPool {
     error AlreadyDone();
     error NotAbandonable();
     error NothingOwed();
+    error NotFactory();
+    error RoundNotLive();
+    error RoundNotWaiting();
+    error RoundNotOver(uint256 endBlock);
+    error BadAuction();
 
     modifier nonReentrant() {
         if (_entered) revert Reentrancy();
@@ -334,7 +460,8 @@ contract BackingPool {
     /// @param founder_ The founder who may post milestones, or zero.
     /// @param quote_ The quote token.
     /// @param p The pool's fixed terms.
-    constructor(address dao_, address founder_, IERC20 quote_, Params memory p) {
+    /// @param roundSupply_ Claim tokens an opening round will sell, or zero to open the curve at once.
+    constructor(address dao_, address founder_, IERC20 quote_, Params memory p, uint256 roundSupply_) {
         if (dao_ == address(0) || dao_.code.length == 0 || address(quote_).code.length == 0) revert InvalidParams();
         if (
             p.virtualQuote == 0 || p.virtualQuote > type(uint112).max || p.virtualUnits < 1e18
@@ -366,6 +493,114 @@ contract BackingPool {
         voteAfter = p.voteAfter;
         earlyWindow = p.earlyWindow;
         earlyCap = p.earlyCap;
+        if (roundSupply_ != 0) {
+            // At most half the curve: the seeded curve keeps a positive paper reserve whatever the round raised.
+            if (roundSupply_ < 1e18 || roundSupply_ > p.virtualUnits / 2) revert InvalidParams();
+            roundSupply = roundSupply_;
+            claimToken = new BackingClaim(roundSupply_);
+            roundState = RoundState.Waiting;
+        }
+    }
+
+    // ---- the opening round ----------------------------------------------------------------------------------------
+
+    /// @notice Bind the round's auction and hand it the claim tokens to sell. Only the factory, once,
+    /// in the transaction that creates the pool. The auction must sell this pool's claim token for this
+    /// pool's quote token and name this pool as the only address that can collect either.
+    /// @param auction_ The auction.
+    /// @param minimumRaise_ What the auction was created to require (kept here for the app to read).
+    function bindRound(address auction_, uint256 minimumRaise_) external nonReentrant {
+        if (msg.sender != factory) revert NotFactory();
+        if (roundState != RoundState.Waiting || auction != address(0)) revert RoundNotWaiting();
+        IRoundAuction a = IRoundAuction(auction_);
+        if (
+            auction_.code.length == 0 || a.token() != address(claimToken) || a.currency() != address(quote)
+                || a.fundsRecipient() != address(this) || a.tokensRecipient() != address(this)
+        ) revert BadAuction();
+        auction = auction_;
+        minimumRaise = minimumRaise_;
+        claimToken.transfer(auction_, roundSupply);
+        a.onTokensReceived();
+        emit RoundBound(auction_, address(claimToken), roundSupply, minimumRaise_, a.endBlock());
+    }
+
+    /// @notice Settle the opening round once its auction is over; anyone may call, once. If the auction
+    /// reached its minimum, collect what it raised, split it as a buy is split, and open the curve at the
+    /// state one buy of the reserve part would have left. If it did not, close this pool for good (bidders
+    /// are refunded by the auction).
+    /// @return live Whether the pool went live.
+    function seedFromAuction() external nonReentrant returns (bool live) {
+        if (roundState != RoundState.Waiting || auction == address(0)) revert RoundNotWaiting();
+        IRoundAuction a = IRoundAuction(auction);
+        uint256 end = a.endBlock();
+        if (block.number < end) revert RoundNotOver(end);
+        // The raise at the end block does not exist until the auction is told to record it.
+        a.checkpoint();
+        if (!a.isGraduated()) {
+            roundState = RoundState.Failed;
+            emit RoundFailed(address(a), a.currencyRaised(), minimumRaise);
+            return false;
+        }
+        uint256 finalPriceX96 = a.lbpInitializationParams().initialPriceX96;
+
+        // Only what this call moves counts: money or claim tokens sent here by anyone are not the round's.
+        uint256 heldQuote = quote.balanceOf(address(this));
+        uint256 heldClaim = claimToken.balanceOf(address(this));
+        a.sweepCurrency();
+        a.sweepUnsoldTokens();
+        uint256 received = quote.balanceOf(address(this)) - heldQuote;
+        uint256 sold = roundSupply - (claimToken.balanceOf(address(this)) - heldClaim);
+
+        uint256 fee = _bpsUp(received, feeBps);
+        uint256 toProject = _bpsUp(received - fee, projectBps);
+        uint256 toReserve = received - fee - toProject;
+        // A graduated round sold something for something; a raise so small that nothing reaches the reserve
+        // cannot open a curve, and the factory's least minimum rules it out.
+        if (sold == 0 || toReserve == 0 || toReserve > type(uint128).max) revert BadAuction();
+        // The paper reserve that puts (reserve, units sold) exactly on a curve from empty, rounded down so the
+        // curve's product starts at or above its floor.
+        uint256 paper = Math.mulDiv(toReserve, virtualUnits - sold, sold);
+        if (paper == 0 || paper + toReserve > type(uint128).max) revert BadAuction();
+
+        virtualQuote = paper;
+        reserve = toReserve;
+        totalSupply = sold;
+        unredeemedUnits = sold;
+        uint256 weight = toProject * WEIGHT_OFFSET;
+        unredeemedWeight = weight;
+        totalWeight = weight;
+        escrow = toProject;
+        feesTaken = fee;
+        treasuryOwed += fee;
+        lastClaimAt = uint64(block.timestamp);
+        lastReleaseAt = uint64(block.timestamp);
+        liveAt = uint64(block.timestamp);
+        clearingPriceX96 = finalPriceX96;
+        roundReceived = received;
+        roundUnits = sold;
+        openingPrice = price();
+        roundState = RoundState.Live;
+        emit RoundSeeded(received, fee, toProject, toReserve, sold, finalPriceX96, openingPrice, paper);
+        return true;
+    }
+
+    /// @notice Exchange `amount` of the round's claim tokens for the same number of units, with the
+    /// matching part of the round's escrow weight. The claim tokens are burned. Works for as long as the
+    /// pool exists, abandoned or not.
+    /// @param amount Claim tokens to exchange.
+    /// @return weight The escrow weight that came with the units.
+    function redeem(uint256 amount) external nonReentrant returns (uint256 weight) {
+        if (roundState != RoundState.Live) revert RoundNotLive();
+        if (amount == 0) revert ZeroAmount();
+        uint256 left = unredeemedUnits;
+        if (amount > left) revert InsufficientUnits();
+        weight = amount == left ? unredeemedWeight : Math.mulDiv(unredeemedWeight, amount, left);
+        unredeemedUnits = left - amount;
+        unredeemedWeight -= weight;
+        balanceOf[msg.sender] += amount;
+        weightOf[msg.sender] += weight;
+        claimToken.burn(msg.sender, amount);
+        emit Redeemed(msg.sender, amount, weight);
     }
 
     // ---- trading --------------------------------------------------------------------------------------------------
@@ -381,6 +616,7 @@ contract BackingPool {
         returns (uint256 unitsOut)
     {
         if (block.timestamp > deadline) revert Expired();
+        if (roundState == RoundState.Waiting || roundState == RoundState.Failed) revert RoundNotLive();
         if (abandoned()) revert IsAbandoned();
         if (earlyCap != 0 && block.timestamp < uint256(openedAt) + earlyWindow) {
             uint256 spent = earlySpent[msg.sender] + quoteIn;
@@ -505,6 +741,7 @@ contract BackingPool {
     /// @return id The milestone's id.
     function postMilestone(bytes32 ref) external nonReentrant returns (uint256 id) {
         if (msg.sender != dao && (founder == address(0) || msg.sender != founder)) revert NotClaimant();
+        if (roundState == RoundState.Waiting || roundState == RoundState.Failed) revert RoundNotLive();
         if (abandoned()) revert IsAbandoned();
         if (ref == bytes32(0)) revert ZeroAmount();
         if (milestones[milestoneCount].status == MilestoneStatus.Open) revert MilestoneOpen();
@@ -708,6 +945,28 @@ contract BackingPool {
         return lastReleaseAt + abandonAfter;
     }
 
+    /// @notice The opening round and what one wallet can redeem (pass the zero address for the round alone).
+    /// All zero for a pool opened without a round.
+    function roundInfo(address holder) public view returns (RoundView memory r) {
+        r.state = roundState;
+        if (r.state == RoundState.None) return r;
+        r.claimToken = address(claimToken);
+        r.supply = roundSupply;
+        r.minimumRaise = minimumRaise;
+        r.holderClaimTokens = claimToken.balanceOf(holder);
+        r.auction = auction;
+        if (r.auction == address(0)) return r;
+        IRoundAuction a = IRoundAuction(r.auction);
+        r.endBlock = a.endBlock();
+        r.raised = a.currencyRaised();
+        r.clearingPriceX96 = r.state == RoundState.Live ? clearingPriceX96 : a.clearingPrice();
+        r.received = roundReceived;
+        r.unitsSold = roundUnits;
+        r.openingPrice = openingPrice;
+        r.liveAt = liveAt;
+        r.unredeemedUnits = unredeemedUnits;
+    }
+
     /// @notice The pool and one wallet in one call (pass the zero address for the pool alone).
     function snapshot(address holder) external view returns (Snapshot memory s) {
         s.price = price();
@@ -735,6 +994,7 @@ contract BackingPool {
         s.holderCanLeave = canLeave(holder);
         (s.holderLeaveValue,,,,) = quoteLeave(holder);
         s.holderVotedAbandon = votedAbandon[holder];
+        s.round = roundInfo(holder);
         if (earlyCap != 0 && block.timestamp < uint256(openedAt) + earlyWindow) {
             s.holderEarlyLeft = earlyCap - earlySpent[holder];
         } else {

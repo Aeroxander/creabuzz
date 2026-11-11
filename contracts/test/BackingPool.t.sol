@@ -61,7 +61,7 @@ contract BackingPoolTest is BackingPoolFixture {
 
     function _expectBadTerms(BackingPool.Params memory p) internal {
         vm.expectRevert(BackingPool.InvalidParams.selector);
-        new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p);
+        new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p, 0);
     }
 
     function test_creation_refuses_terms_outside_the_bounds() public {
@@ -129,11 +129,11 @@ contract BackingPoolTest is BackingPoolFixture {
     function test_creation_refuses_a_treasury_or_quote_without_code() public {
         BackingPool.Params memory p = defaultTerms();
         vm.expectRevert(BackingPool.InvalidParams.selector);
-        new BackingPool(address(0), FOUNDER, IERC20(address(quote)), p);
+        new BackingPool(address(0), FOUNDER, IERC20(address(quote)), p, 0);
         vm.expectRevert(BackingPool.InvalidParams.selector);
-        new BackingPool(address(0x1234), FOUNDER, IERC20(address(quote)), p);
+        new BackingPool(address(0x1234), FOUNDER, IERC20(address(quote)), p, 0);
         vm.expectRevert(BackingPool.InvalidParams.selector);
-        new BackingPool(treasury, FOUNDER, IERC20(address(0x1234)), p);
+        new BackingPool(treasury, FOUNDER, IERC20(address(0x1234)), p, 0);
     }
 
     // ---- buy ------------------------------------------------------------------------------------------------------
@@ -197,7 +197,7 @@ contract BackingPoolTest is BackingPoolFixture {
         p.projectBps = 0;
         p.feeBps = 0;
         p.earlyCap = 0;
-        BackingPool big = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p);
+        BackingPool big = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p, 0);
         vm.prank(ALICE);
         vm.expectRevert(BackingPool.TooLarge.selector);
         big.buy(type(uint128).max, 0, type(uint256).max);
@@ -227,7 +227,7 @@ contract BackingPoolTest is BackingPoolFixture {
     function test_a_pool_without_a_cap_takes_any_size_at_once() public {
         BackingPool.Params memory p = defaultTerms();
         p.earlyCap = 0;
-        BackingPool open = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p);
+        BackingPool open = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p, 0);
         vm.startPrank(ALICE);
         quote.approve(address(open), type(uint256).max);
         open.buy(500_000e18, 0, type(uint256).max);
@@ -237,7 +237,7 @@ contract BackingPoolTest is BackingPoolFixture {
 
     function test_a_token_that_keeps_part_of_a_transfer_is_refused() public {
         SkimmingQuote skim = new SkimmingQuote();
-        BackingPool skimPool = new BackingPool(treasury, FOUNDER, IERC20(address(skim)), defaultTerms());
+        BackingPool skimPool = new BackingPool(treasury, FOUNDER, IERC20(address(skim)), defaultTerms(), 0);
         skim.mint(ALICE, 1_000e18);
         vm.startPrank(ALICE);
         skim.approve(address(skimPool), type(uint256).max);
@@ -417,7 +417,7 @@ contract BackingPoolTest is BackingPoolFixture {
         BackingPool.Params memory p = defaultTerms();
         p.virtualQuote = 25_000e6;
         p.earlyCap = 0;
-        BackingPool small = new BackingPool(treasury, FOUNDER, IERC20(address(six)), p);
+        BackingPool small = new BackingPool(treasury, FOUNDER, IERC20(address(six)), p, 0);
         six.mint(ALICE, 1_000_000e6);
         vm.startPrank(ALICE);
         six.approve(address(small), type(uint256).max);
@@ -438,7 +438,7 @@ contract BackingPoolTest is BackingPoolFixture {
 
     function _reenteringPool() internal returns (ReenteringQuote token, BackingPool rePool) {
         token = new ReenteringQuote();
-        rePool = new BackingPool(treasury, FOUNDER, IERC20(address(token)), defaultTerms());
+        rePool = new BackingPool(treasury, FOUNDER, IERC20(address(token)), defaultTerms(), 0);
         token.mint(ALICE, 10_000e18);
         vm.prank(ALICE);
         token.approve(address(rePool), type(uint256).max);
