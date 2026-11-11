@@ -81,7 +81,8 @@ Every buy is split three ways:
 A project is abandoned when backers hold money in the pool and **180 days pass without a release that paid
 something**. It needs no vote and no call: from that second buying and milestones stop for good, and the
 next sale is a refund. Backers holding more than half the held money can also vote it abandoned once 90 days
-have passed without a release (a wallet can vote 30 days after its last buy). Since nobody can block a
+have passed without a release (a wallet can vote 30 days after its last buy or its last exchange of claim
+tokens; buying or exchanging again withdraws its vote). Since nobody can block a
 release, only a founder who stops posting, or that vote, gets a project there. A pool nobody is backing is
 never abandoned; the clock starts again with the next backer.
 
@@ -99,7 +100,7 @@ never abandoned; the clock starts again with the next backer.
 | Time between posts | 28 days (also before the first) | At most a quarter of the escrow a month; nothing leaves in the first four weeks. |
 | Abandoned by the clock | 180 days with no release | Six missed months is a dead project. |
 | Abandoned by vote | more than half the weight, after 90 days with no release | Backers can end it sooner than the clock, but not a project that is releasing. |
-| Wait before voting | 30 days after a wallet's last buy | A majority cannot be bought and used the same day. |
+| Wait before voting | 30 days after a wallet's last buy or claim-token exchange | A majority cannot be bought and used the same day, and claim tokens, which are transferable, cannot be bought, exchanged and voted with in one transaction. A bidder who exchanges late only waits 30 days from then. |
 | Early cap | 1,000 quote per wallet for the first 24 hours | Blunts a sniper taking the opening price in one transaction. Only matters for "open now": a round lasts longer than the cap. |
 | Round: length | 50,000 blocks (about a week at 12 s) | Long enough to be seen. The number must divide 10,000,000: the auction sells an equal part every block. |
 | Round: supply | 100,000,000 claim tokens | A tenth of the curve's paper units, so most of the curve is left for after. |

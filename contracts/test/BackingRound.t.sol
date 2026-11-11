@@ -915,6 +915,55 @@ contract BackingRoundVotesTest is BackingRoundFixture {
         assertEq(pool.abandonVotes(), 0);
         _assertBooks(0);
     }
+
+    /// @dev Redeeming restarts the wait before a wallet may vote, like a buy does: claim tokens can be bought
+    /// and passed around, so the time since the wallet last acquired weight is what counts.
+    function test_claim_tokens_acquired_and_redeemed_in_one_transaction_cannot_vote_until_seasoned() public {
+        (uint256 a1,,) = _round();
+        _collect(a1);
+        uint256 tokens = claim.balanceOf(ALICE);
+        RoundVoteSniper sniper = new RoundVoteSniper();
+        vm.prank(ALICE);
+        claim.transfer(address(sniper), tokens);
+        uint256 notBefore = block.timestamp + 30 days;
+        vm.expectRevert(abi.encodeWithSelector(IBackingPool.TooSoon.selector, notBefore));
+        sniper.snipe(pool, claim);
+        assertEq(pool.abandonVotes(), 0);
+    }
+
+    /// @dev The wait counts from the redeem, to the second.
+    function test_a_vote_is_possible_thirty_days_after_the_redeem_and_not_a_second_before() public {
+        (uint256 a1,,) = _round();
+        _collect(a1);
+        uint256 redeemedAt = block.timestamp;
+        _redeemAll(ALICE);
+        assertEq(pool.lastBuyAt(ALICE), redeemedAt);
+        vm.warp(redeemedAt + 30 days - 1);
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(IBackingPool.TooSoon.selector, redeemedAt + 30 days));
+        pool.voteAbandon();
+        vm.warp(redeemedAt + 30 days);
+        vm.prank(ALICE);
+        pool.voteAbandon();
+        assertEq(pool.abandonVotes(), pool.weightOf(ALICE));
+    }
+
+    /// @dev A later, partial redeem restarts the wait too, and withdraws the vote it follows.
+    function test_each_redeem_restarts_the_wait() public {
+        (uint256 a1, uint256 a2,) = _round();
+        _collect(a1);
+        _redeemAll(ALICE);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(ALICE);
+        pool.voteAbandon();
+        _collect(a2);
+        _redeemAll(ALICE);
+        assertFalse(pool.votedAbandon(ALICE));
+        vm.prank(ALICE);
+        // (`vm.getBlockTimestamp`: the compiler may reuse `block.timestamp` read before the warp)
+        vm.expectRevert(abi.encodeWithSelector(IBackingPool.TooSoon.selector, vm.getBlockTimestamp() + 30 days));
+        pool.voteAbandon();
+    }
 }
 
 /// @dev After a round that went live: three round buyers holding claim tokens and two newcomers, through

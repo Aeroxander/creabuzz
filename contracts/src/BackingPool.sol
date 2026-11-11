@@ -102,7 +102,9 @@ interface IRoundAuction {
 /// different prices over a round, and a curve opened at the last one could owe sellers more than was
 /// raised. A bidder collects claim tokens from the auction and `redeem`s them here for units one for one,
 /// with the matching part of the round's escrow weight. Weight not yet redeemed counts as staying at a
-/// milestone; to leave, redeem first.
+/// milestone; to leave, redeem first. A redeem acquires weight like a buy does, so it withdraws a standing
+/// abandon vote and restarts the wait before the wallet may vote (claim tokens are transferable, so the
+/// wait counts from the redeem, not from the bid).
 ///
 /// There is no owner, no admin, no pause and no upgrade; every parameter is fixed at creation.
 contract BackingPool {
@@ -128,7 +130,7 @@ contract BackingPool {
         uint32 claimInterval;
         /// How long, with money held, without a release before the project counts as abandoned.
         uint32 abandonAfter;
-        /// How long after a wallet's last buy before it may vote the project abandoned.
+        /// How long after a wallet's last buy (or claim-token exchange) before it may vote the project abandoned.
         uint32 voteSeasoning;
         /// How long without a release before a vote of the backers can declare the project abandoned.
         uint32 voteAfter;
@@ -335,7 +337,7 @@ contract BackingPool {
     mapping(address => uint256) public boughtDuring;
     /// @notice Whether a wallet is voting to declare the project abandoned.
     mapping(address => bool) public votedAbandon;
-    /// @notice When a wallet last bought.
+    /// @notice When a wallet last bought or redeemed claim tokens (the two ways to acquire weight).
     mapping(address => uint64) public lastBuyAt;
     /// @notice Quote a wallet spent during the early window.
     mapping(address => uint256) public earlySpent;
@@ -587,7 +589,7 @@ contract BackingPool {
     /// @notice Exchange `amount` of the round's claim tokens for the same number of units, with the
     /// matching part of the round's escrow weight. The claim tokens are burned. Works for as long as the
     /// pool exists, abandoned or not. Like a buy, it withdraws a standing vote to declare the project
-    /// abandoned.
+    /// abandoned and restarts the wait before the wallet may vote again.
     /// @param amount Claim tokens to exchange.
     /// @return weight The escrow weight that came with the units.
     function redeem(uint256 amount) external nonReentrant returns (uint256 weight) {
@@ -606,6 +608,10 @@ contract BackingPool {
             votedAbandon[msg.sender] = false;
             abandonVotes -= weightBefore;
         }
+        // And it restarts the wait before the wallet may vote, as a buy does: claim tokens are an ordinary
+        // transferable token, so "when did this wallet last acquire weight" is the redeem, not the bid. A bidder
+        // who redeems late only waits `voteSeasoning` from then.
+        lastBuyAt[msg.sender] = uint64(block.timestamp);
         balanceOf[msg.sender] += amount;
         weightOf[msg.sender] = weightBefore + weight;
         claimToken.burn(msg.sender, amount);
@@ -816,8 +822,8 @@ contract BackingPool {
     // ---- abandonment ----------------------------------------------------------------------------------------------
 
     /// @notice Vote, with all of your weight, to declare the project abandoned. A wallet may vote only
-    /// `voteSeasoning` after its last buy; buying again (or redeeming claim tokens) withdraws the vote,
-    /// selling shrinks it.
+    /// `voteSeasoning` after its last buy or redeem; buying again (or redeeming claim tokens) withdraws the
+    /// vote, selling shrinks it.
     function voteAbandon() external nonReentrant {
         if (abandoned()) revert IsAbandoned();
         uint256 weight = weightOf[msg.sender];
