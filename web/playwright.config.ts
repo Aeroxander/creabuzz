@@ -144,6 +144,8 @@ export default defineConfig({
         "**/work.spec.ts",
         // Agent accounts: labelled from their own profile, and not offered what the server refuses them.
         "**/agent-account.spec.ts",
+        // Projects as a scoreboard: streaks, kept promises, open requests; nothing a founder can inflate by re-saving.
+        "**/project-board.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

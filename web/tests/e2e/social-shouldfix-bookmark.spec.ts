@@ -159,7 +159,7 @@ test("signed out, the button is live and a click opens sign-up", async ({
 }) => {
   const relay = createMockRelay();
   relay.seed(note("Look but do not touch."));
-  await open(page, relay, "/", false);
+  await open(page, relay, "/?tab=everyone", false);
 
   const bookmark = button(page, "Look but do not touch.");
   await expect(bookmark).toBeEnabled();

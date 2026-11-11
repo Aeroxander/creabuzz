@@ -153,16 +153,8 @@ export function LaunchCard({
           >
             <span className="block truncate">{record.name}</span>
           </Link>
-          {idea ? (
-            <span
-              className="shrink-0 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary-ink"
-              data-testid="launch-card-idea"
-            >
-              Idea
-            </span>
-          ) : (
-            <StageBadge record={record} stage={stage} />
-          )}
+          {/* A project started with the short form is a project like any other: it carries no "Idea" label. */}
+          {idea ? null : <StageBadge record={record} stage={stage} />}
         </div>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
           {founder ? <span>by {founder.name}</span> : null}

@@ -48,11 +48,7 @@ export function HomeYours({ me }: { me: string }) {
                   <span className="truncate text-sm font-semibold">
                     {launch.record.name}
                   </span>
-                  {isIdea(launch.record) ? (
-                    <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary-ink">
-                      Idea
-                    </span>
-                  ) : (
+                  {isIdea(launch.record) ? null : (
                     <StageBadge
                       record={launch.record}
                       stage={effectiveStage(launch)}

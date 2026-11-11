@@ -34,6 +34,7 @@ import { Button } from "@/shared/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { CategoryBrowse } from "./CategoryBrowse";
+import { ProjectBoard } from "./ProjectBoard";
 
 import {
   directoryNotice,
@@ -303,6 +304,9 @@ export function DiscoverPage() {
             )
           ) : (
             <>
+              {filter === "all" ? (
+                <ProjectBoard launches={allLaunches} />
+              ) : null}
               {sections.launches ? (
                 <section className="flex flex-col gap-3">
                   <SectionHeading

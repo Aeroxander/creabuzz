@@ -415,7 +415,7 @@ test("the timeline tabs are one tab stop, and the arrow keys move between them",
   page,
 }) => {
   await community("member").install(page);
-  await page.goto("/social");
+  await page.goto("/?tab=everyone");
   const tabs = page.getByRole("tablist", { name: "Timeline" });
   const everyone = tabs.getByRole("tab", { name: "Everyone" });
   const following = tabs.getByRole("tab", { name: "Following" });
